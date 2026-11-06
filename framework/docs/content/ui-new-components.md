@@ -184,7 +184,15 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
   The trigger is an anchor to `Href`; its accessible name keeps the required
   `Label` before the localized unread count, such as
   `Notifications: 0 unread notifications`. `SignalUnread` changes the count
-  without dropping that label prefix.
+  without dropping that label prefix. Mount the constructor's popover once,
+  then render `ui.NotificationBellTrigger(ctx, cfg)` in each request's
+  header. Its explicit context resolves both the initial spoken count and
+  the live-update sentence template; `cfg.Ctx` only resolves the snapshot
+  returned by the constructor. Nil uses English fallbacks. Keep `Name`
+  consistent with the mount, and build any translated caller `Label` with
+  that request's context before passing it to the trigger. The mounted
+  body's default empty text uses its own request context; explicit `Label`
+  and `EmptyText` remain as supplied.
 - **confirmaction**: `framework/ui.ConfirmAction`, trigger + alertdialog Modal
 - **commandpalette**: *(also under Selection; same component)*
 

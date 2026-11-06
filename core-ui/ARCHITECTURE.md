@@ -2888,6 +2888,16 @@ trigger label and the body's title independently; an explicit
 `TriggerLabel` overrides both. Nil trigger contexts use English fallbacks
 rather than the context captured in the config.
 
+`ui.NotificationBellTrigger(ctx, cfg)` shares the constructor's headless
+bell markup without constructing another popover. Mount that popover once;
+the trigger's request context resolves both the initial spoken unread count
+and `data-hui-notification-count-fmt` for later unread-signal updates,
+including zero. The required caller label stays separate from that format
+so literal `{{n}}` in a label is never substituted. `NotificationBellConfig.Ctx`
+only resolves the constructor's trigger snapshot; the mounted body's default
+empty text resolves from the body's request context. Explicit labels and
+empty text remain unchanged.
+
 Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
 every focusable candidate. Every consumer of the kernel's `_focusSel`
 checks the browser-normalized `tabIndex >= 0`: negative values exclude
