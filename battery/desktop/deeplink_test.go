@@ -106,9 +106,10 @@ func TestDeepLinkRefusesOffSchemeUserinfoLength(t *testing.T) {
 	if got := h.Navigations()[0]; got != "/notes/123" {
 		t.Fatalf("navigation = %q, want /notes/123 (only the accepted link)", got)
 	}
+	h.WaitEvent("deep_link")
 
 	// The refusals after the accepted link stay absent from both the
-	// navigation and the event record. They are synchronous, so a short
+	// navigation and the deep-link event record. They are synchronous, so a short
 	// beat makes the absence meaningful.
 	h.OpenURL("other://y")
 	h.OpenURL("notes://u:p@y")
@@ -116,8 +117,14 @@ func TestDeepLinkRefusesOffSchemeUserinfoLength(t *testing.T) {
 	if got := len(h.Navigations()); got != 1 {
 		t.Fatalf("navigations = %d after two more refusals, want 1", got)
 	}
-	if got := len(h.Events()); got != 1 {
-		t.Fatalf("events = %d after two more refusals, want 1 (deep_link only)", got)
+	deepLinks := 0
+	for _, event := range h.Events() {
+		if event.Name == "deep_link" {
+			deepLinks++
+		}
+	}
+	if deepLinks != 1 {
+		t.Fatalf("deep_link events = %d after two more refusals, want 1", deepLinks)
 	}
 }
 
