@@ -87,6 +87,8 @@ so the client sees a truncated response. The encoding is gzip only:
 the standard library has no Brotli.
 An empty file copy or a source error before its first byte does not commit
 response headers, so the handler can still choose an error status.
+Source errors returned alongside the first bytes are preserved, including
+at the content-sniffing boundary.
 Identity responses preserve the underlying writer's direct file-copy
 path after reading the first byte and any required content sniffing. Compressed responses still
 use the same streaming or held-body encoding rules for file copies.

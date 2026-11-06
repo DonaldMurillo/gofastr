@@ -297,11 +297,8 @@ func (w *compressWriter) ReadFrom(source io.Reader) (int64, error) {
 			firstChunk = int64(sniffLen - w.buf.Len())
 		}
 		var err error
-		copied, err = io.CopyN(struct{ io.Writer }{w}, source, firstChunk)
-		if err != nil {
-			if err == io.EOF {
-				err = nil
-			}
+		copied, err = io.Copy(struct{ io.Writer }{w}, io.LimitReader(source, firstChunk))
+		if err != nil || copied < firstChunk {
 			return copied, err
 		}
 	}
