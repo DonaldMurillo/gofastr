@@ -434,7 +434,9 @@ fmt.Printf("reclaimed %d jobs\n", n)
 
 RedisQueue's `Enqueue` runs under a recover guard, so a panicking
 host-supplied `RedisClient` implementation surfaces as an ordinary error
-instead of unwinding the scheduler/dispatch loops. Claim fencing on the
+with a control-byte-scrubbed panic value, instead of unwinding the
+scheduler/dispatch loops. This applies to immediate and scheduled jobs.
+Claim fencing on the
 Redis backend compares `ClaimToken` values in constant time
 (`subtle.ConstantTimeCompare`), so match status is not leaked through
 timing.
