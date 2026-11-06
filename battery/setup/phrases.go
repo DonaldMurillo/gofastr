@@ -34,6 +34,7 @@ var (
 	adminEmailLabel     = i18n.Define("setup.admin_email", "Admin email")
 	adminPasswordLabel  = i18n.Define("setup.admin_password", "Admin password")
 	reasonEmailRequired = i18n.Define("setup.email_required", "email is required")
+	reasonEmailInvalid  = i18n.Define("setup.invalid_email", "invalid email")
 	healthStepTitle     = i18n.Define("setup.health_step", "Verify Adapters")
 	reasonNotReady      = i18n.Define("setup.not_ready", "readiness checks failed:\n  - {{failures}}")
 )

@@ -46,6 +46,10 @@ auth battery's canonical form (`auth.CanonicalEmail`, or the host's
 `AuthConfig.CanonicalizeEmail` when set), so `Ops@Example.com` signs in
 as `ops@example.com`.
 
+Both the submitted address and the canonicalizer's result must be valid
+UTF-8 without NUL bytes. Field validation and the step's execution refuse
+unstorable email text before creating an account, even with a host override.
+
 ## The interactive skin
 
 When setup is incomplete and required values are missing from the

@@ -556,7 +556,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
 			slog.Warn("oauth email refused: not in composed Unicode form",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
-			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+			writeAuthErrorFor(w, r, http.StatusBadRequest, err, reasonComposedEmail)
 			return
 		}
 		// The same bound the form paths apply: the address becomes a

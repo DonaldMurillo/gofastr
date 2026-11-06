@@ -464,10 +464,7 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 // total: every email ingestion point in the battery funnels through
 // here.
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
-	if m.config.CanonicalizeEmail != nil {
-		return m.config.CanonicalizeEmail(email)
-	}
-	return CanonicalEmail(email)
+	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }
 
 // Config returns the auth configuration (read-only copy).
