@@ -142,6 +142,18 @@ transaction, so:
 
 - `AfterCreate` → `op = 'create'`, `diff = {"new": <record>}`
 - `AfterUpdate` → `op = 'update'`, `diff = {"old": <record>, "new": <record>}`
+- `UpsertOne` classifies hooks from a pre-read (inside its transaction
+  when the executor supports one):
+  an absent key selects `create`, an existing key selects `update` with
+  the pre-read's old image, and an existing key with no data selects no
+  audit row. This is not an atomic report of the SQL arm. On Postgres
+  at read-committed isolation, or an executor without a transaction,
+  a competing insert between the read and write can turn the intended
+  insert into an update or no-op while still auditing `create`. A competing
+  delete can turn an intended update into an insert audited as `update`
+  with a stale old image. Serialize conflicting-key writers externally,
+  or use explicit create/update operations when exact lifecycle auditing
+  is required; the portable upsert has no SQL-arm discriminator.
 - `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
 - a state move (`RunTransition`) → `op = 'transition:<key>'`, both images
   in `diff`, inside the move's transaction

@@ -411,7 +411,7 @@ paths that skip hooks entirely; by design, not accident:
 | `TypedQuery.UpdateAll` | all Before/AfterUpdate | Bulk SQL UPDATE; no per-row callback, and no lifecycle event or outbox row. It runs on the transaction the context carries (`App.InTx`, a hook's), so a rollback undoes it |
 | `TypedQuery.DeleteAll` | all Before/AfterDelete | Bulk SQL DELETE/soft-delete; same reason, no event either, and it joins the context's transaction the same way |
 | Upsert (`UpsertOne`) that inserts | BeforeCreate/AfterCreate fire | An upsert-as-insert IS a Create |
-| Upsert (`UpsertOne`) that updates | BeforeUpdate/AfterUpdate **do not fire** | Indistinguishable from create at the DB level; use Create/Update if you need update hooks. The event is `entity.updated`: the upsert probes the key inside its transaction and announces a create only when no row held it. The conflict arm sets only the columns the caller sent (plus the tenant), so an omitted column keeps its stored value rather than its default. A conflict that writes any column re-stamps an auto `updated_at` with the server time, as Update does; `created_at` and the key keep their stored values |
+| Upsert (`UpsertOne`) that updates | BeforeCreate prepares the body; AfterUpdate fires with the pre-image; BeforeUpdate and AfterCreate do not fire | The event is `entity.updated`; audit records `update` with old and new images. The conflict arm sets only columns the caller sent (plus scope columns), so omitted values keep their stored values. A data write re-stamps auto `updated_at`; `created_at` and the key stay unchanged. A conflict with no data to write runs no after hooks, adds no audit row, and emits no event |
 | Streaming list (`?stream=true`) | AfterList (blocked when any AfterList hook is registered; auto-falls back to buffered path for large `limit`) | Rows stream directly to wire; slice unavailable for redaction |
 | Cursor list (`?cursor=`) | none: AfterList fires over the page | The continue-cursor is derived from the stored keyset values first, so a hook that masks the keyset column cannot corrupt paging |
 | Eager-loaded rows (`?include=`) | none; the **child** entity's hooks fire: its BeforeList scope (plus BeforeGet for to-one relations, with an empty ID because the load is batched) narrows the child query, a nested `?rel.field=` filter honours the same scope, a hook error answers 400 with the same body the child's own route sends, and AfterList always runs over the rows, plus AfterGet for to-one relations | Runs after key conversion, so the hook sees the same keys the child's own endpoint returns. A to-one include serialises as a single object, so it also runs the hook its own `GET /child/{id}` route would. In-place edits and per-row projections both apply. Rows are matched by primary key, so reordering has no effect (the order a client sees comes from the attachment, not the hook's slice) and a reordered projection folds correctly. Changing the row count, dropping a row's id, returning an unknown id, or returning one row more often than the query did all fail the request. |
@@ -420,6 +420,37 @@ paths that skip hooks entirely; by design, not accident:
 | Create/update/patch responses | none; BeforeGet and AfterGet fire over the body | `RETURNING` yields every visible column, so a partial `PUT` would otherwise echo stored values for fields the caller never sent. After the commit the route also runs the BeforeGet chain GET would, with the written row's id, and answers with the id alone when its clauses exclude the row: a create, or a write that moves its row out of the caller's sight, returns nothing a GET would 404 (a write to a row the chain already hides answers 404 before it runs, the row above). This covers create, update, `_batch` create and update, transitions, and the MCP tools that dispatch to them. Rows a cascade write nests in the body run their own entity's AfterList (plus AfterGet for a to-one relation) at every written level, so a grandchild is masked the same way `?include=` masks it. A nested child the child entity's own BeforeList scope (plus BeforeGet for a to-one relation, as `?include=` picks them) hides comes back as its id alone, and a cascade item or `belongs_to` reference that names an existing row that scope hides answers 404, the same as a row that is not there, without writing it. A 409 or 422 state refusal names the stored state only when the BeforeGet chain admits the row. A hook error here degrades the body to a new row's id: the write has already committed, so answering 500 would make the caller retry and write it twice. In-process writes (`UpdateOne` and the rest) return the stored row, as `GetOne` does without `WithReadHooks`. |
 | In-process reads (`ListAll`, `CountAll`, `GetOne`, `TypedQuery.Find`/`First`/`Count`) | every read hook, unless the caller opts in | Stored values are the right default for a Go API: read-modify-write, seed lookups and aggregates all need them. Pass `crud.WithReadHooks(ctx)` where rows are rendered to an end user: the read then runs the chain the HTTP route runs. `BeforeList` scopes `ListAll`, `CountAll` and the typed query, `BeforeGet` scopes `GetOne`, and AfterList/AfterGet mask the result. A before hook that errors fails the read. |
 | `_batch` requests | none: per-item Before/After* all fire | Each item runs its hooks before the batch tx commits. AfterGet runs over each item body after the commit, and is skipped entirely when the batch rolled back. |
+
+**Upsert refuses entities with `BeforeUpdate` hooks.** `UpsertOne` returns
+`upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne`
+before running any hook, changing the body, or opening a transaction.
+This applies even when the key appears new, when no key is supplied, or
+when server writes are enabled. The existing-row SELECT is a separate
+statement: another writer may insert the key before `ON CONFLICT` runs,
+so choosing a Go before hook from that read would leave a TOCTOU window.
+Use `CreateOne` or `UpdateOne` to run the corresponding before hooks with
+their normal validation, mutation, transaction, and abort-on-error semantics.
+
+For entities **without** `BeforeUpdate` hooks, the upsert arms are:
+
+| Arm | Before hooks | After hooks |
+|---|---|---|
+| Insert | `BeforeCreate` prepares the body | `AfterCreate` |
+| Conflict update | `BeforeCreate` prepares the body | `AfterUpdate`; `BeforeUpdate` and `AfterCreate` do not run |
+| Conflict with no data to write | `BeforeCreate` prepares the body | None; no audit row or lifecycle event |
+| Any upsert with registered `BeforeUpdate` hooks | None; returns an error | None; no SQL, audit row, or lifecycle event |
+
+The after-hook and event arm follows the pre-read's classification; that
+read does not make an insert-versus-update decision atomic against other
+writers. In particular, a concurrent insert after an absent pre-read may
+still take the SQL update or no-op conflict arm while running `AfterCreate`.
+A concurrent delete after an existing pre-read can instead insert while
+running `AfterUpdate` with the old row's stale pre-image. This window is
+observable with read-committed Postgres or a non-transactional executor;
+SQLite transactions normally refuse the intervening writer or stale write.
+Serialize conflicting-key writers externally or use explicit create/update
+operations when exact hook/event classification is required. The fail-closed
+`BeforeUpdate` refusal does not depend on that classification.
 
 **Upsert and key-deriving hooks.** A `BeforeCreate` hook may derive or
 normalize the primary key that `UpsertOne` conflicts on (a slug from the
@@ -432,6 +463,13 @@ direct collision (`upsert: target row belongs to a different owner or
 tenant`, or the soft-delete one) and leaves the row untouched. `UpsertOne`
 also applies the belongs_to write check `CreateOne` and `UpdateOne` apply:
 an FK naming a parent the caller cannot read fails as not found.
+
+When an upsert replaces an image, its write also checks that the stored
+image source still matches the pre-read (including a `NULL` source).
+If another writer changes that source first, the row and its derived
+columns stay untouched and the HTTP handler returns **409 Conflict**.
+Reload the row before retrying. Ownership, tenant and soft-delete
+refusals still take precedence over this stale-source conflict.
 
 **Redaction implication.** A hook that masks a column protects every HTTP
 path that returns the row: List, Get, keyset pages, `?include=` children,

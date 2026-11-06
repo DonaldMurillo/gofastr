@@ -14,36 +14,43 @@ const blockBytes = 64 * 4
 // frame across scans: a block of 64 int32s for every block of every
 // component, counted the way the decoder counts them (whole MCUs, the
 // component's sampling factors, 1×1 for a grayscale frame). It reports
-// false for a JPEG that is not progressive, whose decoder keeps no
-// coefficients, and for a header it cannot read, which the decoder then
-// refuses itself.
+// zero bytes and true for a sequential JPEG, whose decoder keeps no
+// coefficients. False means the header could not be read; callers must
+// refuse decoding rather than silently bypass their memory budget.
 //
 // The walk starts after SOI, skips each segment by its length and stops
 // at the first frame header, the one the decoder uses. A component no
 // scan names is never allocated, so the count is an upper bound.
 func ProgressiveCoeffBytes(d []byte) (int64, bool) {
+	if len(d) < 2 || d[0] != 0xFF || d[1] != 0xD8 {
+		return 0, false
+	}
 	for i := 2; i+3 < len(d); {
 		if d[i] != 0xFF {
-			return 0, false
+			i++
+			continue
 		}
 		m := d[i+1]
 		switch {
 		case m == 0xFF: // fill byte
 			i++
 			continue
-		case m == 0x01 || (m >= 0xD0 && m <= 0xD7): // no length field
+		case m == 0x00 || m == 0x01 || (m >= 0xD0 && m <= 0xD7): // no length field
 			i += 2
 			continue
 		case m == 0xD9 || m == 0xDA: // EOI or a scan before any frame header
 			return 0, false
 		}
 		n := int(d[i+2])<<8 | int(d[i+3])
+		end := i + 2 + n
+		if n < 2 || end > len(d) {
+			return 0, false
+		}
 		if m >= 0xC0 && m <= 0xCF && m != 0xC4 && m != 0xC8 && m != 0xCC {
-			if m != 0xC2 {
-				return 0, false
+			if m == 0xC0 || m == 0xC1 {
+				return 0, true
 			}
-			end := i + 2 + n
-			if n < 2 || end > len(d) {
+			if m != 0xC2 {
 				return 0, false
 			}
 			return sof2CoeffBytes(d[i+4 : end])

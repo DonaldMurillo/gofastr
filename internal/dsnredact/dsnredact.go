@@ -9,16 +9,20 @@
 //
 //   - A DSN that carries no detectable secret is returned unchanged:
 //     SQLite file DSNs and passwordless URLs round-trip verbatim.
-//   - URL form: url.Parse first; a userinfo password is dropped by
-//     rebuilding the URL without it. A URL url.Parse rejects (e.g. a
+//   - URL form: userinfo passwords and password/sslpassword query parameters
+//     are removed. Unreadable query strings are dropped in full.
+//     An '@' after a raw authority delimiter is ambiguous userinfo even when
+//     parsing succeeds; only the scheme prefix is retained.
+//     A URL url.Parse rejects (e.g. a
 //     password containing a bad % escape) is cut TEXTUALLY at the LAST
-//     '@' before the path — the password may itself contain '@', so a
-//     first-'@' cut leaves password material past the mask. Fails closed:
+//     '@' before removing query or fragment text. Raw delimiters inside
+//     malformed passwords cannot safely delimit the authority; ambiguous
+//     at signs across those delimiters discard the whole remainder. Fails closed:
 //     an unparsable URL that carries a userinfo section is treated as
 //     secret-bearing.
-//   - key=value form (libpq): the password pair is dropped whole. Values
-//     may be single-quoted and contain spaces (password='a b'), so fields
-//     split quote-aware; a bare strings.Fields would leak the quoted tail.
+//   - key=value form (libpq): password and sslpassword assignments are dropped
+//     whole, allowing whitespace around '=' and quoted or escaped values.
+//     Splitting on whitespace alone would leak the password's tail.
 package dsnredact
 
 import (
@@ -31,31 +35,39 @@ func Redact(dsn string) string {
 	if !HasSecret(dsn) {
 		return dsn
 	}
-	if u, err := url.Parse(dsn); err == nil && u.User != nil {
-		if _, has := u.User.Password(); has {
+	if ambiguousURLUserinfo(dsn) {
+		return dsn[:strings.Index(dsn, "://")+3]
+	}
+	if u, err := url.Parse(dsn); err == nil && (u.Scheme != "" || u.User != nil) {
+		if u.User != nil {
 			u.User = url.User(u.User.Username())
-			return u.String()
 		}
+		query, err := url.ParseQuery(u.RawQuery)
+		if err != nil {
+			u.RawQuery = ""
+		} else if query.Has("password") || query.Has("sslpassword") {
+			query.Del("password")
+			query.Del("sslpassword")
+			u.RawQuery = query.Encode()
+		}
+		return u.String()
 	}
 	if i := strings.Index(dsn, "://"); i >= 0 {
-		// URL-form DSN that url.Parse rejected (e.g. a bad % escape in
-		// the password): strip the userinfo textually. The password may
-		// itself contain '@', so cut at the last '@' before the path.
 		rest := dsn[i+3:]
-		end := len(rest)
-		for _, sep := range []byte{'/', '?', '#'} {
-			if j := strings.IndexByte(rest, sep); j >= 0 && j < end {
-				end = j
+		if at := strings.LastIndexByte(rest, '@'); at >= 0 {
+			if separator := strings.IndexAny(rest, "/?#"); separator >= 0 && strings.IndexByte(rest, '@') < separator && separator < at {
+				return dsn[:i+3]
 			}
-		}
-		if at := strings.LastIndex(rest[:end], "@"); at >= 0 {
 			user := rest[:at]
 			if colon := strings.IndexByte(user, ':'); colon >= 0 {
 				user = user[:colon]
 			}
-			return dsn[:i+3] + user + "@" + rest[at+1:]
+			rest = user + "@" + rest[at+1:]
 		}
-		return dsn
+		if query := strings.IndexAny(rest, "?#"); query >= 0 {
+			rest = rest[:query]
+		}
+		return dsn[:i+3] + rest
 	}
 	// key=value form: drop the password pair. Values may be libpq
 	// single-quoted and contain spaces (password='a b'), so split
@@ -63,7 +75,9 @@ func Redact(dsn string) string {
 	fields := splitFields(dsn)
 	kept := fields[:0]
 	for _, f := range fields {
-		if strings.HasPrefix(f, "password=") {
+		key, _, _ := strings.Cut(f, "=")
+		key = strings.TrimSpace(key)
+		if key == "password" || key == "sslpassword" {
 			continue
 		}
 		kept = append(kept, f)
@@ -73,11 +87,15 @@ func Redact(dsn string) string {
 
 // HasSecret reports whether dsn carries a detectable credential: a
 // url.Parse-able userinfo password, a textual userinfo section on a URL
-// url.Parse rejects, or a `password=` pair. SQLite file DSNs return
+// url.Parse rejects, a password/sslpassword URL query parameter, or a libpq
+// password/sslpassword assignment with optional whitespace around '='.
+// An '@' beyond a raw authority delimiter also counts as a secret, even if
+// url.Parse accepts a numeric password prefix as a port.
+// SQLite file DSNs without credentials return
 // false: nothing to hide.
 //
 // Fails CLOSED on URL-form DSNs that url.Parse rejects: if there is a
-// userinfo section we cannot prove holds no credential, treat it as
+// userinfo section or query we cannot prove holds no credential, treat it as
 // secret-bearing rather than passing it through verbatim.
 //
 // Exported as the one credential-shape rule for DSNs (Redact routes
@@ -88,52 +106,94 @@ func HasSecret(dsn string) bool {
 	if dsn == "" {
 		return false
 	}
-	if strings.Contains(dsn, "password=") {
+	if ambiguousURLUserinfo(dsn) {
 		return true
 	}
+	for _, field := range splitFields(dsn) {
+		key, _, found := strings.Cut(field, "=")
+		key = strings.TrimSpace(key)
+		if found && (key == "password" || key == "sslpassword") {
+			return true
+		}
+	}
 	if u, err := url.Parse(dsn); err == nil {
+		if u.Scheme != "" {
+			query, err := url.ParseQuery(u.RawQuery)
+			if err != nil || query.Has("password") || query.Has("sslpassword") {
+				return true
+			}
+		}
 		if u.User != nil {
 			if _, has := u.User.Password(); has {
 				return true
 			}
 		}
-	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.Contains(dsn[i+3:], "@") {
+	} else if i := strings.Index(dsn, "://"); i >= 0 && strings.ContainsAny(dsn[i+3:], "@?") {
 		return true
 	}
 	return false
 }
 
-// splitFields splits a libpq key/value DSN on whitespace, keeping
-// single-quoted values (with \' escapes) intact so a quoted password is
-// dropped whole rather than leaking its tail.
+func ambiguousURLUserinfo(dsn string) bool {
+	scheme := strings.Index(dsn, "://")
+	if scheme < 0 {
+		return false
+	}
+	remainder := dsn[scheme+3:]
+	separator := strings.IndexAny(remainder, "/?#")
+	return separator >= 0 && strings.LastIndexByte(remainder, '@') > separator
+}
+
+// splitFields reads whole libpq assignments, including whitespace around '=',
+// single-quoted values and backslash escapes inside or outside quotes.
 func splitFields(dsn string) []string {
 	var fields []string
-	var cur strings.Builder
-	inQuote := false
-	escaped := false
-	for i := range len(dsn) {
-		c := dsn[i]
-		switch {
-		case escaped:
-			escaped = false
-			cur.WriteByte(c)
-		case c == '\\' && inQuote:
-			escaped = true
-			cur.WriteByte(c)
-		case c == '\'':
-			inQuote = !inQuote
-			cur.WriteByte(c)
-		case (c == ' ' || c == '\t') && !inQuote:
-			if cur.Len() > 0 {
-				fields = append(fields, cur.String())
-				cur.Reset()
-			}
-		default:
-			cur.WriteByte(c)
+	for offset := 0; offset < len(dsn); {
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
 		}
-	}
-	if cur.Len() > 0 {
-		fields = append(fields, cur.String())
+		start := offset
+		for offset < len(dsn) && !dsnSpace(dsn[offset]) && dsn[offset] != '=' {
+			offset++
+		}
+		keyEnd := offset
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
+		}
+		if offset >= len(dsn) || dsn[offset] != '=' {
+			if keyEnd > start {
+				fields = append(fields, dsn[start:keyEnd])
+			}
+			continue
+		}
+		offset++
+		for offset < len(dsn) && dsnSpace(dsn[offset]) {
+			offset++
+		}
+		inQuote := offset < len(dsn) && dsn[offset] == '\''
+		if inQuote {
+			offset++
+		}
+		for offset < len(dsn) {
+			char := dsn[offset]
+			if char == '\\' && offset+1 < len(dsn) {
+				offset += 2
+				continue
+			}
+			if inQuote && char == '\'' {
+				offset++
+				break
+			}
+			if dsnSpace(char) && !inQuote {
+				break
+			}
+			offset++
+		}
+		fields = append(fields, dsn[start:offset])
 	}
 	return fields
+}
+
+func dsnSpace(char byte) bool {
+	return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\v' || char == '\f'
 }

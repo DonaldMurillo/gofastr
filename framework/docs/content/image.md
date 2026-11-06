@@ -89,6 +89,11 @@ progressive 64 MP frame passes in grayscale (256 MiB) or 4:2:0 color
 (384 MiB) and is refused at 4:4:4 (768 MiB). Baseline JPEGs keep no
 coefficients and are not affected.
 
+The coefficient walk follows the decoder's marker resynchronization: stray
+bytes and top-level `FF 00` stuffing do not disable the cap. An unreadable
+frame header fails closed instead of falling through to an uncapped decode.
+The same rule applies to `file.StripMetadata` when baking EXIF orientation.
+
 `file.StripMetadata`'s orientation bake counts the SOS segments its own
 walk keeps and applies the same cap, scan budget and memory budget.
 

@@ -76,7 +76,13 @@ revoke, and upgrade (artifact change) are all live and propagate across
 replicas through the SQL-backed `ProcessModuleStore`.
 `RevokeGrants(ctx, name, grants)` takes the named grants out of the
 module's effective set, keeps the rest and bumps the generation; it
-refuses an empty `grants`. The store writes it as a compare-and-swap on
+refuses an empty `grants` or a revoke pattern covering no held grant.
+Patterns use the same `resource:verb` wildcard matcher as runtime access:
+revoking `orders:*` removes held `orders:read` and `orders:write` grants.
+A partial revoke under a retained wildcard is refused without changing
+grants, revocation history or generation. Revoke the wildcard in full,
+or use `SetEffectiveGrants` to replace it with explicit narrower grants.
+The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
 two revokes at once both stick. The store also records the revoke in
 `DesiredState.RevokedGrants` (the `revoked_grants` column), so it

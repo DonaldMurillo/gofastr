@@ -255,6 +255,8 @@ func (ch *windowChrome) setReduced(win, webView objc.ID, on bool) {
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("windowBackgroundColor")))
 		setWebViewBackground(webView, true)
 	case ch.resolved == desktop.MaterialGlass && !on:
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), 0)
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(win, objc.Sel("setContentView:"), uintptr(ch.glassView))
 		objc.Send(win, objc.Sel("setOpaque:"), 0)
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("clearColor")))

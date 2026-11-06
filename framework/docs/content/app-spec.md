@@ -165,6 +165,11 @@ is required. Supported syntax:
 Plain (unquoted) scalars resolve by the YAML 1.2 core schema, so a file
 reads the same here as in any other YAML tool:
 
+Constraint flags (`fields[].required`, `fields[].unique`, and
+`indices[].unique`) accept only booleans or the quoted strings `"true"`
+and `"false"`. Values such as `yes`, `on`, `1`, null, or a list are errors,
+not silently disabled constraints. Omitted flags still default to false.
+
 - `true`, `True`, `TRUE` and the three `false` spellings are booleans;
   `null`, `Null`, `NULL` and `~` are null. Any other casing (`tRuE`) is
   a string.
@@ -1378,6 +1383,19 @@ generated app commits no credentials:
   the emitted `dbURL` constant and the `getEnv` fallback)
 - `ADMIN_SEED_PASSWORD` → the bootstrap admin's password (no env var →
   no admin is seeded)
+
+DSN redaction removes userinfo passwords, URL query `password` and
+`sslpassword` parameters (including percent-encoded parameter names), and
+libpq `password`/`sslpassword` pairs. Non-secret host/database settings are
+retained; an unreadable URL query is removed entirely rather than leaked.
+An at sign after a raw `/`, `?`, or `#` authority delimiter can indicate
+accidentally unescaped userinfo, even when a numeric password prefix parses
+as a port. Such DSNs are treated as secret-bearing and redaction keeps only
+the scheme prefix. Passwordless URLs with an at-sign-free query, such as
+`?sslmode=disable`, remain unchanged.
+Libpq assignments may have whitespace around `=` and single-quoted or
+backslash-escaped values. Detection and redaction parse those assignments
+together, so a spaced or quoted credential cannot become a source fallback.
 
 When the app spec holds any of these values, the generator also emits a
 `.env` carrying them (so the app runs without extra setup). The

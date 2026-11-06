@@ -62,6 +62,10 @@ the point ("my notes"). To keep such a relation out of reads, set
 `gofastr.yml`): it is then refused like any hidden relation, on every
 surface above.
 
+Generation and packing preserve this relation-level flag. It accepts only
+`true` or `false` (including their quoted literal strings); ambiguous values
+such as `yes`, `on`, null, and lists are rejected rather than exposing rows.
+
 ## Path syntax
 
 ```

@@ -389,11 +389,11 @@ func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at
 	return tx.Commit()
 }
 
-// Unenqueued lists the queued jobs created before before that were never
-// marked Enqueued.
+// Unenqueued lists queued jobs created before before that were never
+// marked Enqueued or whose non-null bulk lease expired before before.
 func (s *sqlBulkStore) Unenqueued(ctx context.Context, before time.Time) ([]entityui.BulkJob, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
-		`SELECT %s FROM %s WHERE status = $1 AND enqueued = 0 AND created_at < $2 ORDER BY created_at, id`,
+		`SELECT %s FROM %s WHERE status = $1 AND created_at < $2 AND (enqueued = 0 OR lease_until < $2) ORDER BY created_at, id`,
 		bulkJobColumns, query.QuoteFolded(bulkJobsTable)), entityui.BulkQueued, before.UTC())
 	if err != nil {
 		return nil, err

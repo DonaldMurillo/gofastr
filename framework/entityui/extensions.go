@@ -305,8 +305,8 @@ type BulkStore interface {
 	// deletes its ids. It answers ErrBulkLeaseLost when runner does not
 	// hold the lease.
 	Finish(ctx context.Context, id, runner, status string, at time.Time) error
-	// Unenqueued lists the queued jobs created before before that no
-	// Enqueued call has marked.
+	// Unenqueued lists queued jobs created before before that no Enqueued
+	// call has marked, or whose non-null lease expired before before.
 	Unenqueued(ctx context.Context, before time.Time) ([]BulkJob, error)
 	// Prune deletes the jobs that finished before before, and reports
 	// how many.

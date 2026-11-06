@@ -501,6 +501,24 @@ entity with CRUD off finishes, and so does one the app's own bulk route
 queued. The queue job's payload carries only the job
 id; the confirmed selection lives in the host's snapshot store.
 
+A busy or lost bulk lease schedules a fresh queue delivery at least
+`entityui.BulkJobLease` (five minutes) later instead of burning the queue's
+five execution attempts immediately. The replacement preserves the job's
+creator identity for erasure. If that enqueue fails, the queue's normal
+failure policy still applies. `UI.ResumeBulkJobs` also adopts an enqueued
+snapshot whose bulk lease expired before the grace cutoff, so a dead queue
+entry cannot strand a partially settled run. Live leases and enqueued jobs
+that have never started are not adopted. Long-running hosts should call
+resume periodically; initialization alone recovers only at startup.
+
+Erasure must run with bulk producers and active deliveries quiesced. The
+queue's erasure sweep and a lease-contention successor enqueue do not share
+an atomic transaction across queue backends: a delivery that observed a busy
+lease before erasure can enqueue a successor carrying the creator's user id
+after that sweep. Deleting the bulk snapshot stops its later execution but
+does not prevent that new queue metadata. Stop/drain deliveries before erasure
+when the export must contain no newly recreated user metadata.
+
 `PrincipalFunc` (the second argument) rebuilds the confirming user's
 request context before every chunk: the user and their current roles,
 read fresh, and the run's tenant. The tenant is the one the selection

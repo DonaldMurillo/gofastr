@@ -226,7 +226,11 @@ Attributes injected: `data-cui-rpc-trigger="input"`,
 
 ### Optimistic Update (immediate visual + background RPC)
 
-`interactive.OptimisticUpdate(action, idle, success)` renders a button
+`interactive.OptimisticUpdate(action, idle, success)` accepts only the
+Action's RPC endpoint and method. An Action carrying confirmation, a body,
+toasts, or success effects panics at render time rather than discarding
+those options. Use `interactive.OnClick` for an Action needing that wiring.
+It renders a button
 that immediately flips to its success visual on click, then fires the
 RPC in the background. On failure the button shakes and reverts.
 

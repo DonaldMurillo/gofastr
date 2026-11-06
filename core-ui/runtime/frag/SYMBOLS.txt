@@ -27,7 +27,6 @@ boot	2	_rpcFormFallback
 boot	2	_rpcUnavailable
 boot	2	_runMountActions
 boot	2	_scanForModules
-boot	2	_scheduleIdleModules
 boot	2	_warnModuleUnavailable
 boot	2	hydrate
 boot	2	hydrated
@@ -39,7 +38,6 @@ boot	4	G
 boot	4	action
 boot	4	cached
 boot	4	el
-boot	4	idleQueue
 boot	4	init
 boot	4	key
 boot	4	lm
@@ -49,7 +47,6 @@ boot	4	name
 boot	4	names
 boot	4	node
 boot	4	observeNode
-boot	4	rIC
 boot	4	replay
 boot	4	scope
 boot	4	scope
@@ -66,6 +63,7 @@ boot	6	form
 boot	6	form
 boot	6	id
 boot	6	lm
+boot	6	load
 boot	6	mode
 boot	6	msg
 boot	6	name

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=766cb7dd46631a60
+//gofastr:generated generator=app kind=scaffold version=dev sum=7a382e4e6e2c0880
 
 package entities
 
@@ -32,8 +32,8 @@ type OrderItemsInput struct {
 	ProductId   string  `json:"productId"`
 	ProductName string  `json:"productName"`
 	Quantity    int     `json:"quantity"`
-	UnitPrice   string  `json:"unitPrice"`
-	TotalPrice  string  `json:"totalPrice"`
+	UnitPrice   *string `json:"unitPrice,omitempty"`
+	TotalPrice  *string `json:"totalPrice,omitempty"`
 }
 
 // OrderItemsPatch is the update payload for OrderItemsRepo: a nil field is left as
@@ -274,8 +274,8 @@ func registerOrderItems(app *framework.App) {
 			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
 			{Name: "product_name", Type: schema.String, Required: true, Max: floatPtr(200)},
 			{Name: "quantity", Type: schema.Int, Required: true, Min: floatPtr(1)},
-			{Name: "unit_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
-			{Name: "total_price", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "unit_price", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},
+			{Name: "total_price", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},
 		},
 		Relations: []framework.Relation{
 			{Type: framework.RelManyToOne, Name: "order", Entity: "orders", ForeignKey: []string{"order_id"}},

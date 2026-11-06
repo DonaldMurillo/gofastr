@@ -719,9 +719,21 @@ func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, modul
 		if d.DesiredGeneration > math.MaxInt64-1 {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: generation %d out of range", module, d.DesiredGeneration)
 		}
-		kept := slices.DeleteFunc(slices.Clone(d.EffectiveGrants), func(g access.Permission) bool {
-			return slices.Contains(grants, g)
-		})
+		kept := withoutRevoked(d.EffectiveGrants, grants)
+		for _, revoked := range grants {
+			if !access.ValidScope(string(revoked)) || !slices.ContainsFunc(d.EffectiveGrants, func(held access.Permission) bool {
+				return access.ScopeMatch([]access.Permission{revoked}, held)
+			}) {
+				return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: revoke %q covers no held grant; revoke a held wildcard in full or replace the effective set", module, revoked)
+			}
+			resource, verb, _ := strings.Cut(string(revoked), ":")
+			for _, held := range kept {
+				heldResource, heldVerb, _ := strings.Cut(string(held), ":")
+				if (resource == heldResource || resource == "*" || heldResource == "*") && (verb == heldVerb || verb == "*" || heldVerb == "*") {
+					return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: revoke %q partially overlaps held grant %q; revoke the wildcard in full or replace the effective set", module, revoked, held)
+				}
+			}
+		}
 		grantsJSON, err := marshalGrants(kept)
 		if err != nil {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)

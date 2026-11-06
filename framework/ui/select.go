@@ -36,6 +36,9 @@ type SelectConfig struct {
 	Label string
 	// Options is the list of <option> elements (required, at least one).
 	Options []SelectOption
+	// Selected keeps the stored value, including a value no option lists.
+	// A nonempty value overrides the options' Selected flags.
+	Selected string
 	// Placeholder adds a disabled, selected-first option with empty value
 	// that acts as a placeholder hint (e.g. "Choose a country…").
 	Placeholder string
@@ -82,9 +85,9 @@ func Select(cfg SelectConfig) render.HTML {
 	// With nothing flagged and no placeholder the first option is the
 	// browser's default; naming it keeps a later empty-value option
 	// from matching the empty selection.
-	selected, flagged := "", false
+	selected, flagged := cfg.Selected, cfg.Selected != ""
 	for _, opt := range cfg.Options {
-		if opt.Selected {
+		if cfg.Selected == "" && opt.Selected {
 			selected, flagged = opt.Value, true
 		}
 	}

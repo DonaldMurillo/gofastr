@@ -230,6 +230,13 @@ func stripJPEG(data []byte) ([]byte, error) {
 		if scans > stripMaxJPEGScans {
 			return nil, fmt.Errorf("strip: JPEG carries %d scans, over the %d-scan decode cap", scans, stripMaxJPEGScans)
 		}
+		n, ok := jpegcost.ProgressiveCoeffBytes(out)
+		if !ok {
+			return nil, fmt.Errorf("strip: cannot estimate JPEG coefficient memory")
+		}
+		if n > stripMaxProgressiveJPEGBytes {
+			return nil, fmt.Errorf("strip: progressive JPEG needs %d bytes of coefficients, over the %d-byte decode cap", n, stripMaxProgressiveJPEGBytes)
+		}
 		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
 		if err != nil {
 			return nil, fmt.Errorf("jpeg: decoding header for orientation bake: %w", err)
@@ -240,9 +247,6 @@ func stripJPEG(data []byte) ([]byte, error) {
 		// Divide: the pixel cap bounds width×height, so the quotient is exact.
 		if int64(scans) > stripMaxJPEGScanPixels/(int64(cfg.Width)*int64(cfg.Height)) {
 			return nil, fmt.Errorf("strip: JPEG carries %d scans of a %dx%d frame, over the %d pixel-scan decode budget", scans, cfg.Width, cfg.Height, stripMaxJPEGScanPixels)
-		}
-		if n, ok := jpegcost.ProgressiveCoeffBytes(out); ok && n > stripMaxProgressiveJPEGBytes {
-			return nil, fmt.Errorf("strip: progressive JPEG needs %d bytes of coefficients, over the %d-byte decode cap", n, stripMaxProgressiveJPEGBytes)
 		}
 		img, err := jpeg.Decode(bytes.NewReader(out))
 		if err != nil {

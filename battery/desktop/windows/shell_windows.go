@@ -873,17 +873,21 @@ func (s *winShell) createNativeWindow(id, title string, width, height int, style
 	const useDefault int32 = -2147483648
 	screenDPI := win32.SystemDPI()
 	x, y := useDefault, useDefault
-	if frame != nil {
-		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
-		width, height = frame.Width, frame.Height
-	} else if style.X != nil && style.Y != nil {
-		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
-	}
+	hadFrame := frame != nil
 	if width <= 0 {
 		width = 1024
 	}
 	if height <= 0 {
 		height = 768
+	}
+	if frame != nil {
+		frame = win32.RestoreMonitorFrame(frame, win32.MonitorWorkAreas(), screenDPI, width, height)
+	}
+	if frame != nil {
+		x, y = pointsToPixels(frame.X, screenDPI), pointsToPixels(frame.Y, screenDPI)
+		width, height = frame.Width, frame.Height
+	} else if !hadFrame && style.X != nil && style.Y != nil {
+		x, y = pointsToPixels(*style.X, screenDPI), pointsToPixels(*style.Y, screenDPI)
 	}
 	widthPixels, heightPixels := pointsToPixels(width, screenDPI), pointsToPixels(height, screenDPI)
 	exStyle := uint32(0)

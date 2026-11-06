@@ -59,6 +59,12 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
+The core's gzip gates remain 15,918 bytes at level 6 and tighten to
+18,465 bytes at level 1. Ordinary-page form-helper discovery fits those
+gates by scheduling idle modules directly instead of building a batch
+queue. Browsers without `requestIdleCallback` still defer each idle load
+with `setTimeout`; helper-marked controls do not wait for a widget.
+
 ## Stylesheets
 
 Every stylesheet the framework composes for a browser goes through
@@ -99,10 +105,9 @@ and both stylesheets together come to about 12 KB.
 
 After minification (typical end-user deploy):
 
-- `runtime.js`: 14,176 B gz at level 6 and 16,426 B at level 1
-  (46,639 B raw), measured 2026-10-18. `core-ui/runtime/budget_test.go`
-  holds the lines at 14,214 B (level 6) and 16,426 B (level 1). The
-  level-1 line sits 2,090 B past the 14 KiB initial congestion window,
+- `runtime.js`: `core-ui/runtime/budget_test.go` holds the gzip gates at
+  15,918 B (level 6) and 18,465 B (level 1). The
+  level-1 gate sits 4,129 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the

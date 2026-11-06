@@ -203,11 +203,8 @@ func invoicesConfig() entity.EntityConfig {
 	}.WithTimestamps(false)
 }
 
-// Ported from TestGatedRelatedSectionIsHiddenNotAnnounced, rows half. The
-// Related tab's design changed with entityui (a refused related list draws
-// its refusal notice; the entity names are the app's own declaration on a
-// page the caller already passed), so what must survive is that no row of
-// the gated entity reaches the page.
+// Ported from TestGatedRelatedSectionIsHiddenNotAnnounced: neither rows nor
+// a Related tab announce an entity the caller may not read.
 func TestPortedRelatedTabGatedEntityNoRows(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{"invoices": invoicesConfig(), "payments": paymentsConfig()},
@@ -228,9 +225,8 @@ func TestPortedRelatedTabGatedEntityNoRows(t *testing.T) {
 	if strings.Contains(anon, "PAY-77") {
 		t.Fatalf("the gated related entity's rows leaked:\n%s", anon)
 	}
-	// Nor does their number: the tab's count passes the same gate.
-	if got := tabBadge(t, anon, "related"); got != "" {
-		t.Fatalf("the gated related entity's row count leaked: %q", got)
+	if strings.Contains(anon, "?tab=related") {
+		t.Fatalf("the gated related entity's tab leaked:\n%s", anon)
 	}
 
 	signed := render(x.userCtx("/eui/invoices/inv-9", "?tab=related", "u1"))

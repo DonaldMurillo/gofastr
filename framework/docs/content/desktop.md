@@ -889,7 +889,10 @@ WebKit has no CSS signal for window activity and implements no
 - `reduce_transparency {"on": bool}` goes to every window on each
   change of the system setting. When it is on, the shell hides the
   effect views and restores an opaque window background, the same
-  window `MaterialNone` gives. `Shell.Appearance()` answers the
+  window `MaterialNone` gives. Turning it off restores the material
+  around the same live web view, including `MaterialGlass`; repeated
+  toggles preserve the page rather than replacing or reloading it.
+  `Shell.Appearance()` answers the
   current state at any time, including before `Run`.
 - `desktop.BootstrapJS(windowID, reduceTransparency)` carries the
   state at load, so the first paint is right.
@@ -1854,7 +1857,22 @@ crash.
   on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
-  changed) is dropped and the window centers.
+  changed) is dropped and the window centers. Windows checks native
+  monitor work areas in physical pixels, retaining each monitor's effective
+  DPI (`GetDpiForMonitor` from `shcore.dll`, falling back to system DPI).
+  Saved origins convert to pixels with system DPI; saved dimensions and
+  the overlap threshold convert with each candidate monitor's DPI. The
+  centered physical placement converts back only at the saved-frame boundary:
+  system-DPI origins and monitor-DPI dimensions are not one geometric scale.
+  Linux checks GDK work areas, including
+  monitors with negative coordinates. These hosts also discard saved
+  sizes outside 1–32767 points, avoiding native integer truncation.
+  Windows preserves a valid saved size when centering, using the configured
+  size only when the saved dimensions are invalid. Linux centers at the
+  configured size. Both fit the fallback to the primary work area. Native
+  frame callbacks can persist that fallback over the remembered frame;
+  the old off-screen position is not retained for a later relaunch. If no
+  work area can be read, the shell uses its default placement.
 - The boot handshake's redirect goes to the main window's remembered
   path instead of `/`, validated against the navigate grammar both
   when the page reports it and when the redirect uses it. Any doubt

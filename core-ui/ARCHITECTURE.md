@@ -1,5 +1,24 @@
 # GoFastr UI architecture
 
+The seven form-helper markers demand-load `widgethelpers` on ordinary
+pages, at boot and after insertion; widgets are not a loading prerequisite.
+The demand scanner schedules idle modules directly, without a batching
+queue, keeping those markers inside the existing level-6 byte budget.
+Its level-1 ceiling tightens to 18,465 bytes so the overflow fixture still
+proves the compression-cliff guard.
+
+Tree Enter follows the row's own link on branches as well as leaves;
+Space toggles branches, and Enter toggles only branches without a link.
+
+Scripted comboboxes own Enter even without an active result, so an
+unhighlighted, empty or closed list never submits its no-script GET form.
+
+`interactive.OptimisticUpdate` refuses Action options its headless action
+contract cannot carry, including confirmation, bodies, toasts and effects.
+
+`ui.SelectConfig.Selected` preserves stored values absent from its options;
+a nonempty value takes precedence over option-level selection flags.
+
 The CSP source linter accepts comment directives in LF and CRLF files.
 The directive must still occupy its whole comment line.
 Disk-backed UI host static files use operation-scoped `os.Root` handles.
@@ -341,7 +360,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, at boot and after every client-side navigation (which mounts and deep-links from that one catalog rather than asking `/__gofastr/widgets?page=`), and a `data-cui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#cui-nav-toast` mini toast) instead of firing a dead request, so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-cui-open` is **not** gated: overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
 | `data-hui-tree` / `data-hui-tree-toggle` | On a `framework/ui.Tree` (headless.Tree anatomy): the registered `headless-tree` module (framework/headless, `Requires("rpc")` for the lazy branches) owns the WAI-ARIA keyboard contract — the roving tabindex, arrows, Home/End, type-ahead, and expand/collapse that drives the same toggle button a click drives, so any lazy-load `data-cui-rpc` on the toggle fires either way. |
 | `data-cui-fill-input="<selector>"` / `data-cui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
-| `data-cui-disable-when-invalid` | On a submit button: disabled while any field in the surrounding `<form>` reports `:invalid`. |
+| `data-cui-disable-when-invalid` | On a submit button or image input: disabled while any field in its associated form reports `:invalid`. On a form, applies to all its submit controls, including image inputs and buttons with an omitted type. Fields and submitters associated via `form="<id>"` are included; input, change, reset and an inserted field or submitter resync validity. Ordinary pages and inserted controls demand-load and wire the helper without a widget. |
 | `data-cui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage`, stored namespaced as `gofastr.persist.` + `encodeURIComponent(<key>)` so an attribute-borne key can only ever touch that namespace. A value stored under the pre-namespace raw `<key>` is not read. |
 | `data-cui-flash-on-update` / `data-cui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `cui-flash`) for `<ms>` after each update (default 600). The built-in app.css styles the class: a `--color-primary` tint fading to the element's own background over `--duration-slow`, only under `prefers-reduced-motion: no-preference` (the runtime skips the class under `reduce`). |
 | `data-cui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |

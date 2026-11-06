@@ -398,7 +398,9 @@ when it arrives (`data-hui-counter-value`, bound by
 the first + on a counter showing 4 would show 1. `Seeded: true` leaves
 the seed to the page (`ui.Counter` sets it; its `store.Slice` seeds
 the signal). A `Tree` row's link is out of the tab order: the
-tree is one tab stop and Enter on the row follows the link.
+tree is one tab stop and Enter on the row follows the link, including a
+branch with its own `Href`. Space toggles a branch; Enter also toggles
+a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
@@ -426,7 +428,10 @@ The parts the navigation members draw beyond the shared vocabulary:
   combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
-  `ComboboxRows` renders an island answer's rows.
+  `ComboboxRows` renders an island answer's rows. With script, Enter
+  commits only a highlighted option; with no active option, a closed
+  list, or no results it does nothing and never submits the no-script
+  GET form. The GET fallback remains available without JavaScript.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one

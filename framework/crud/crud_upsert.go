@@ -33,22 +33,32 @@ var errSoftDeletedResurrection = errors.New("upsert: target row is soft-deleted;
 // ownership/tenant from the caller's context, a cross-principal takeover.
 var errUpsertForeignRow = errors.New("upsert: target row belongs to a different owner or tenant")
 
+var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks require CreateOne or UpdateOne")
+
 // UpsertOne performs an INSERT ... ON CONFLICT DO UPDATE on the entity's
 // primary key. If a row with the same PK already exists, every writable
 // field in body overwrites the existing row; otherwise a new row is
 // inserted. Returns the resulting row (post-insert or post-update).
 //
 // Both Postgres and SQLite 3.24+ support this exact syntax via the
-// EXCLUDED pseudo-table. The framework's BeforeCreate/AfterCreate hooks
-// fire (an upsert that turns into an INSERT is semantically a Create);
-// no Update hooks fire, if you need to distinguish, route through the
-// regular Create/Update endpoints. The lifecycle event does distinguish:
-// entity.created when no row held the key, entity.updated when one did.
+// EXCLUDED pseudo-table. BeforeCreate prepares either arm. After hooks
+// and lifecycle events follow a pre-read, not an atomic SQL-arm report:
+// an absent key selects AfterCreate/entity.created; a present key selects
+// AfterUpdate/entity.updated with its pre-image, or neither when there is
+// no data to write. A competing insert or delete after that read can change
+// the SQL arm at read-committed isolation or on a non-transactional executor.
+// Serialize conflicting-key writers or use CreateOne/UpdateOne when exact
+// lifecycle classification is required. Entities with BeforeUpdate hooks are
+// refused before hooks or SQL: the pre-read cannot predict conflicts
+// atomically. Use CreateOne or UpdateOne instead.
 // On conflict only the columns the body carries are written; a Default
 // fills an omitted column on the insert arm alone. A conflict that
 // writes any column re-stamps an auto updated_at with the server time,
 // as Update does; created_at and the key keep their stored values.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeUpdate)) > 0 {
+		return nil, errUpsertBeforeUpdate
+	}
 	req := syntheticRequest(ctx, http.MethodPost, "/")
 
 	// Refuse anonymous upserts on owner-scoped entities. Without this
@@ -82,6 +92,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	}
 
 	var result, out map[string]any
+	wrote := false
 	eventType := event.EntityCreated
 	err := ch.inTx(ctx, func(ctx context.Context, ch *CrudHandler) error {
 		// A storage key in a file field must be one this caller uploaded
@@ -174,10 +185,11 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// update by its values and a create only by the row being there,
 		// so a rolled-back upsert onto an existing row announced as a
 		// create would be confirmed by the row that survived it.
-		existed, err := ch.upsertRowExists(ctx, body)
+		previous, err := ch.upsertExistingRow(ctx, body)
 		if err != nil {
 			return err
 		}
+		existed := previous != nil
 		// The conflict arm would overwrite a row the caller's BeforeGet
 		// hooks hide: refused as another owner's row is (hook_scope.go).
 		// Like the preflight it is a separate read; the scope guard on
@@ -192,6 +204,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return err
 		}
 		if existed {
+			ctx = WithAuditPreImage(ctx, previous)
 			eventType = event.EntityUpdated
 			// The conflict arm updates the row, so a blank clears its
 			// column, as update reads it.
@@ -230,6 +243,12 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// below from the context-derived tenant id). Other ReadOnly/Hidden
 		// fields are persisted when the caller opted in via
 		// WithServerWrites(ctx).
+		clearedDerived, imageSources, err := ch.resetImageDerived(ctx, req, ch.colKeyVals(body), body, func(field schema.Field) bool {
+			return !ch.isKeyCol(field.Name) && ch.upsertSets(ctx, field) && ch.upsertSetsGuarded(ctx, field.Name, true)
+		})
+		if err != nil {
+			return err
+		}
 		var cols []string
 		var vals []any
 		// sent holds the columns the body carried, before a Default fills
@@ -263,7 +282,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				vals = append(vals, ch.bindJSONValue(f.Name, body[f.Name]))
 				continue
 			}
-			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) {
+			if f.Name != ch.Entity.Config.Scope.OwnerField && !ch.upsertSets(ctx, f) && !clearedDerived[f.Name] {
 				// The insert arm only: sent stays false, so the conflict
 				// arm keeps the stored state.
 				if ch.writesStateDefault(f) {
@@ -345,6 +364,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			vals = append(vals, ch.bindJSONValue(col, generateFieldValue(schema.AutoTimestamp)))
 			setParts = append(setParts, fmt.Sprintf("%s = $%d", query.QuoteKeyword(col), len(vals)))
 		}
+		wrote = !existed || dataSet > 0
 
 		visFields := ch.visibleFields()
 		var sb strings.Builder
@@ -372,7 +392,20 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			} else {
 				sb.WriteString("UPDATE SET ")
 				sb.WriteString(strings.Join(setParts, ", "))
-				if guard := ch.upsertConflictGuard(); guard != "" {
+				guard := ch.upsertConflictGuard()
+				for _, source := range imageSources {
+					if guard != "" {
+						guard += " AND "
+					}
+					column := upsertTarget + "." + query.QuoteKeyword(source.column)
+					if source.value == nil {
+						guard += column + " IS NULL"
+					} else {
+						vals = append(vals, source.value)
+						guard += fmt.Sprintf("%s = $%d", column, len(vals))
+					}
+				}
+				if guard != "" {
 					sb.WriteString(" WHERE ")
 					sb.WriteString(guard)
 				}
@@ -384,13 +417,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		row := ch.conn(ctx).QueryRowContext(ctx, sb.String(), vals...)
 		res, err := ch.scanOne(row, visFields)
 		if errors.Is(err, sql.ErrNoRows) && len(setParts) > 0 {
-			// The conflict row failed the DO UPDATE scope guard: it
-			// belongs to another owner or tenant, or is soft-deleted, and
-			// was left untouched. Re-run the preflight to report which;
-			// it can only come back clean if the row changed again in
-			// between, and that is still a refusal.
+			// The conflict row failed a DO UPDATE scope or image-source
+			// guard and was left untouched. Re-run the preflight so an
+			// ownership, tenant or soft-delete refusal takes precedence
+			// over a stale image source.
 			if perr := ch.upsertPreflight(ctx, body); perr != nil {
 				return perr
+			}
+			if len(imageSources) > 0 {
+				return errImageSourceChanged
 			}
 			return errUpsertForeignRow
 		}
@@ -428,15 +463,21 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			return fmt.Errorf("upsert: %w", err)
 		}
 
-		if ch.Hooks != nil {
-			if err := ch.afterRow(ctx, hook.AfterCreate, result); err != nil {
-				return fmt.Errorf("after-create hook: %w", err)
+		if ch.Hooks != nil && wrote {
+			phase := hook.AfterCreate
+			if existed {
+				phase = hook.AfterUpdate
+			}
+			if err := ch.afterRow(ctx, phase, result); err != nil {
+				return fmt.Errorf("upsert after hook: %w", err)
 			}
 		}
 		// Upsert writes directly (not via doCreate), so it stages its own
 		// outbox event inside the tx.
-		if err := ch.StageEvent(ctx, eventType, result); err != nil {
-			return fmt.Errorf("stage event: %w", err)
+		if wrote {
+			if err := ch.StageEvent(ctx, eventType, result); err != nil {
+				return fmt.Errorf("stage event: %w", err)
+			}
 		}
 		// The DO UPDATE RETURNING is a read handed to the caller: a row
 		// the caller's ReadScope hides comes back as its id only, as the
@@ -447,31 +488,33 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	if err != nil {
 		return nil, err
 	}
-	ch.EmitEvent(ctx, eventType, result)
+	if wrote {
+		ch.EmitEvent(ctx, eventType, result)
+	}
 	return out, nil
 }
 
-// upsertRowExists reports whether a row already holds the body's primary
+// upsertExistingRow reads the row already holding the body's primary
 // key, unscoped like upsertPreflight: the conflict arm runs on it whoever
 // owns it. A body with no key cannot conflict. Read in the upsert's tx; a
 // row another session commits between this read and the INSERT is still
 // taken by the conflict arm and announced as a create.
-func (ch *CrudHandler) upsertRowExists(ctx context.Context, body map[string]any) (bool, error) {
+func (ch *CrudHandler) upsertExistingRow(ctx context.Context, body map[string]any) (map[string]any, error) {
 	key := ch.colKeyVals(body)
 	if key == nil {
-		return false, nil
+		return nil, nil
 	}
 	kc, ka := ch.keyCond(key)
-	var one int
-	err := ch.conn(ctx).QueryRowContext(ctx,
-		fmt.Sprintf("SELECT 1 FROM %s WHERE %s", query.QuoteKeyword(ch.Entity.GetTable()), kc), ka...).Scan(&one)
+	columns := ch.visibleFields()
+	row, err := ch.scanOne(ch.conn(ctx).QueryRowContext(ctx,
+		fmt.Sprintf("SELECT %s FROM %s WHERE %s", strings.Join(query.QuoteKeywords(columns), ", "), query.QuoteKeyword(ch.Entity.GetTable()), kc), ka...), columns)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return false, nil
+		return nil, nil
 	case err != nil:
-		return false, fmt.Errorf("upsert: read existing row: %w", err)
+		return nil, fmt.Errorf("upsert: read existing row: %w", err)
 	}
-	return true, nil
+	return row, nil
 }
 
 // upsertPreflight inspects the pre-existing row (if any) matching the body's

@@ -234,7 +234,7 @@ var fragmentAttrs = map[string][]string{
 // form helpers (charcount-source, clear-on-esc, disable-when-invalid,
 // fill-input, persist-storage, submit-on-enter, tick-elapsed) are owned by
 // `widgethelpers`, which is a genuine independently-loadable module (it
-// self-registers a scanner and widgets.js demand-loads it), NOT by widgets.
+// self-registers a scanner and the kernel demand-loads it), NOT by widgets.
 var moduleAttrs = map[string][]string{
 	"desktop": {
 		// battery/desktop's module. The mousedown delegator that calls

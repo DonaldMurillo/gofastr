@@ -1624,10 +1624,14 @@ func decodeIndices(node *coreyaml.Node) ([]framework.Index, error) {
 		if err := rejectUnknownKeys(m, map[string]bool{"name": true, "columns": true, "unique": true}, fmt.Sprintf("indices[%d]", i)); err != nil {
 			return nil, err
 		}
+		unique, err := protectiveBool(m, "unique", fmt.Sprintf("indices[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, framework.Index{
 			Name:    stringValue(m["name"]),
 			Columns: stringListValue(m["columns"]),
-			Unique:  boolValue(m["unique"]),
+			Unique:  unique,
 		})
 	}
 	return out, nil
@@ -1655,6 +1659,14 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		// to clients, to every API response, and to the filter surface
 		// respectively. See protectiveBool.
 		fieldCtx := fmt.Sprintf("fields[%d]", i)
+		required, err := protectiveBool(m, "required", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
+		unique, err := protectiveBool(m, "unique", fieldCtx)
+		if err != nil {
+			return nil, err
+		}
 		readOnly, err := protectiveBool(m, "read_only", fieldCtx)
 		if err != nil {
 			return nil, err
@@ -1670,8 +1682,8 @@ func decodeFields(node *coreyaml.Node) ([]framework.FieldDeclaration, error) {
 		field := framework.FieldDeclaration{
 			Name:         stringValue(m["name"]),
 			Type:         stringValue(m["type"]),
-			Required:     boolValue(m["required"]),
-			Unique:       boolValue(m["unique"]),
+			Required:     required,
+			Unique:       unique,
 			Default:      scalarValue(m["default"]),
 			AutoGenerate: stringValue(m["auto_generate"]),
 			ReadOnly:     readOnly,
@@ -1733,6 +1745,10 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			}
 		}
 		cascadeWrite := boolValue(m["cascade_write"])
+		hidden, err := protectiveBool(m, "hidden", fmt.Sprintf("relations[%d]", i))
+		if err != nil {
+			return nil, err
+		}
 		// foreign_key is one column, or a list of one column per key
 		// column of a composite key it references.
 		var foreignKey []string
@@ -1754,7 +1770,7 @@ func decodeRelations(node *coreyaml.Node) ([]framework.Relation, error) {
 			ForeignKeyTarget: stringValue(m["foreign_key_target"]),
 			OnDelete:         onDelete,
 			CascadeWrite:     cascadeWrite,
-			Hidden:           boolValue(m["hidden"]),
+			Hidden:           hidden,
 		})
 	}
 	return out, nil
@@ -4675,7 +4691,7 @@ func protectiveBool(m map[string]*coreyaml.Node, key, context string) (bool, err
 	}
 	v, err := strictBoolValue(node)
 	if err != nil {
-		return false, fmt.Errorf("%s.%s %w: this flag gates access or exposure, so it is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
+		return false, fmt.Errorf("%s.%s %w: this flag is not guessed (YAML 1.2 reads yes/on/y/1 as strings, not booleans)", context, key, err)
 	}
 	return v, nil
 }

@@ -29,7 +29,7 @@ func TestProgressiveCoeffBytes(t *testing.T) {
 		// A grayscale frame declaring 2×2 is read as 1×1.
 		{"gray 2x2", sof(0xC2, 16, 8, 0x22), 2 * 256, true},
 		{"8192 square 4:4:4", sof(0xC2, 8192, 8192, 0x11, 0x11, 0x11), 3 * 1024 * 1024 * 256, true},
-		{"baseline", sof(0xC0, 8192, 8192, 0x11, 0x11, 0x11), 0, false},
+		{"baseline", sof(0xC0, 8192, 8192, 0x11, 0x11, 0x11), 0, true},
 		{"truncated", sof(0xC2, 16, 16, 0x11, 0x11, 0x11)[:20], 0, false},
 	} {
 		got, ok := ProgressiveCoeffBytes(tc.data)

@@ -587,17 +587,29 @@ JSON API applies live in the builders themselves:
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
   that entity's own gate first. A label, facet or picker also needs what
-  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  `?include=` needs (`CanReadRelatedScoped`), as do Related lists and
+  their count badges: the related entity's CRUD
   routes on (`Exposure.CRUD` not false), and a scope-restricted request
   (an API token or embed grant) holding `<table>:read`. So a posts
   screen shows no author names when the users entity has CRUD off, as
   `auth.UserEntityConfig()` declares. A related row a resource-aware
   Decider refuses by id is left out of labels, facets and the picker.
+  A refused Related list is omitted without an error callout; when every
+  related section is refused, the Related tab is omitted too. Unresolvable
+  entities, relations, or metadata still render the failed-slot callout.
+- Locked and key-column relation fields use the same related-read gate
+  as editable pickers, including CRUD exposure and token scopes.
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
-  related list draws its notice, never its rows. A refused stat prints
+  related list is omitted without an access notice. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
+
+Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
+target, including queued runs; a row hidden only from single-record reads
+cannot be changed through a bulk selection.
+App-action callbacks receive the same read-hook-enabled context, including
+when they write through their action context's CRUD handler.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
@@ -863,14 +875,16 @@ and so does an entity with no REST write routes.
   summary row counts every outcome the store holds (`BulkStore.Tally`),
   so a resumed run reports the whole job, and a queued run writes that
   row once, when it finishes.
-- **Queued runs are leased.** `RunBulkJob` claims the job for five
-  minutes before each chunk, and every outcome and the finish write are
+- **Queued runs are leased.** `RunBulkJob` claims the job for `BulkJobLease` (five
+  minutes) before each chunk, and every outcome and the finish write are
   fenced on that claim: a second worker handed the same job runs nothing
   while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
   a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
   that dies holding the lease blocks the job until it expires. A run
   can resume at the exact expiry timestamp; a released lease does not
-  require another wall-clock tick before a retry.
+  require another wall-clock tick before a retry. Queue runners delay busy
+  and lost-lease deliveries by at least `BulkJobLease`, without consuming
+  execution attempts just for contention (`admin.NewBulkJobs` does this).
   Delivery is at least once, so an app `Actions` callback reads
   `ActionContext.Run`, the job id, to make its own side effects
   idempotent.
@@ -881,7 +895,11 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  instead. Resume also adopts already-enqueued jobs whose non-null bulk
+  lease expired before the grace cutoff, preserving settled outcomes.
+  An enqueued job with no lease, a live lease, or a recently expired lease
+  is not adopted. Custom `BulkStore.Unenqueued` implementations must honor
+  this recovery rule too. Finished jobs older than `entityui.BulkRetention` (30 days)
   are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
   schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's

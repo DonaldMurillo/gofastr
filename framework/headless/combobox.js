@@ -227,8 +227,8 @@
         return;
       }
       case 'Enter': {
-        if (!isOpen || activeIdx < 0) return;
         e.preventDefault();
+        if (!isOpen || activeIdx < 0) return;
         pickOption(input, lb, opts[activeIdx]);
         return;
       }
