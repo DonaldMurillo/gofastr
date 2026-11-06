@@ -104,7 +104,7 @@ func RunVerify(args []string) {
 			// build makes unreliable.
 			vet.Output = out
 			if opts.json {
-				emitVetFailureJSON(opts.root, cfg, vet)
+				emitVetFailureJSON(pass.Root, cfg, vet)
 			} else {
 				cli.Fail("go vet found issues: fix those first")
 			}

@@ -635,6 +635,8 @@ must notice.
 With `--json`, stdout is exactly one JSON document on failures too,
 including invalid flags and unknown `--explain` rules. Operational errors
 carry an `error` string; human-readable error details go to stderr.
+Report `root` is the absolute analysed directory even when vet stops
+the run before contracts execute.
 
 `capabilities` appears when the run was scoped (`gofastr verify routing`),
 `config` when a config file was found, and `baselined`,
