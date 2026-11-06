@@ -2201,6 +2201,13 @@ Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
 page keys to `page.`, so this entry is never reachable from the page.
+The complete encoded object must fit within the app state's 64 KiB value
+limit, including keys, JSON escaping and any retained undeclared values.
+Updates are validated in sorted key order against the merged object, with
+all replaced values removed first so a batch can shrink another key to fit.
+An overflow refuses the whole update before storage: `preferences.set`
+answers `invalid_input` naming the key that exceeds the budget, and the
+settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
