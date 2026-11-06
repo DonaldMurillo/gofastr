@@ -217,8 +217,16 @@ column is never dropped, so an `Int` key part still refuses it, and a
 refused with `400` (`is required`): no route could name that row again.
 Empty
 text stays an
-empty string, since that is a value a user can mean. A filled number
-input arrives as text too: an `Int` field takes `"42"` and a `Float`
+empty string, since that is a value a user can mean.
+
+`String` and `Text` values must be valid UTF-8 without NUL bytes. Unstorable
+text is a validation 400 with code `invalid_text` keyed by the field's wire
+name, before any database write. This applies to create, update and upsert,
+including form and multipart input. JSON fields also refuse NUL in decoded
+string values or object keys and invalid UTF-8 in raw JSON text; a literal
+escaped backslash followed by `u0000` remains ordinary text.
+
+A filled number input arrives as text too: an `Int` field takes `"42"` and a `Float`
 field takes `"42.5"` as the number each spells, and a `Float` refuses
 hex, underscore separators, `NaN` and `Inf`. `Decimal` stays a string. The
 entityui forms (`framework/entityui`) rely on this; a JSON client gets
