@@ -59,6 +59,10 @@ CLI flags override config values where they overlap:
 - `--clean` and `--no-clean` override `codegen.clean`.
 
 Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
+With `--json`, invalid flags and missing arguments produce one error
+document on stdout (`files: []`, `errors: [{message: ...}]`); prose and
+usage hints go to stderr. The same error shape applies to every generate
+verb, including a verb that rejects `--json` as unsupported.
 Any other argument is an error.
 
 ## Config shape

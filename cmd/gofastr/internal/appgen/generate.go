@@ -134,8 +134,7 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 			opts.outputSet = true
 		case arg == "--out":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				cli.Fail("--out requires a directory argument")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
@@ -144,33 +143,28 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 		case kind == "screen" && strings.HasPrefix(arg, "--from-a11y="):
 			opts.fromA11y = strings.TrimPrefix(arg, "--from-a11y=")
 			if opts.fromA11y == "" {
-				cli.Fail("--from-a11y requires a snapshot file (or - for stdin)")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--from-a11y requires a snapshot file (or - for stdin)"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 		case kind == "screen" && arg == "--from-a11y":
 			if i+1 >= len(args) || (strings.HasPrefix(args[i+1], "-") && args[i+1] != "-") {
-				cli.Fail("--from-a11y requires a snapshot file (or - for stdin); use --from-a11y=<file> for a path starting with -")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--from-a11y requires a snapshot file (or - for stdin); use --from-a11y=<file> for a path starting with -"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
 			opts.fromA11y = args[i]
 		case arg == "--force", arg == "--add":
-			cli.Fail("%q is not supported on `gofastr generate %s`: scaffolding is additive (it never overwrites existing files)", arg, kind)
-			cli.Info("%s", scaffoldUsage(kind))
+			failGenerateArgs(args, fmt.Errorf("%q is not supported on `gofastr generate %s`: scaffolding is additive (it never overwrites existing files)", arg, kind), scaffoldUsage(kind))
 			return "", opts, false
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("Unknown flag %q for `gofastr generate %s`", arg, kind)
-			cli.Info("%s", scaffoldUsage(kind))
+			failGenerateArgs(args, fmt.Errorf("Unknown flag %q for `gofastr generate %s`", arg, kind), scaffoldUsage(kind))
 			return "", opts, false
 		default:
 			positionals = append(positionals, arg)
 		}
 	}
 	if len(positionals) != 1 {
-		cli.Fail("`gofastr generate %s` requires exactly one name argument", kind)
-		cli.Info("%s", scaffoldUsage(kind))
+		failGenerateArgs(args, fmt.Errorf("`gofastr generate %s` requires exactly one name argument", kind), scaffoldUsage(kind))
 		return "", opts, false
 	}
 	return positionals[0], opts, true
@@ -186,8 +180,7 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 func GenerateProject(args []string) {
 	options, err := ParseGenerateOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
+		failGenerateArgs(args, err, "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
 		cli.OsExit(1)
 		return
 	}
@@ -330,13 +323,12 @@ const appUsage = "Usage: gofastr generate app [spec] [--out=<dir>] [--force | --
 func RunGenerateApp(args []string) {
 	options, err := parseAppGenerateArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("%s", appUsage)
+		failGenerateArgs(args, err, appUsage)
 		cli.OsExit(1)
 		return
 	}
 	if options.add && options.force {
-		cli.Fail("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)")
+		failGenerateArgs(args, fmt.Errorf("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)"))
 		cli.OsExit(1)
 		return
 	}

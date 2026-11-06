@@ -173,8 +173,7 @@ var sdkValidTargets = map[string]bool{"go": true, "js": true}
 func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
+		failGenerateArgs(args, err, "Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
 		cli.OsExit(1)
 		return
 	}
