@@ -528,7 +528,7 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 	files := genCtx.Files.All()
 	reported := make([]GeneratedFile, 0, len(files))
 	for _, file := range files {
-		reported = append(reported, GeneratedFile{Name: file.Path, Content: file.Content})
+		reported = append(reported, GeneratedFile{Name: filepath.Join(cfg.Codegen.Output, file.Path), Content: file.Content})
 	}
 	if options.dryRun {
 		if options.json {

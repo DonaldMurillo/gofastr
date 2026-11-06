@@ -75,6 +75,10 @@ document only after endpoint and client rebuilds succeed; a late failure
 reports an error, not a second document after a success. Writes completed
 before an I/O failure are not rolled back; fix the error and rerun.
 
+Engine JSON `files[].path` includes `codegen.output` (or `--out`), just
+like the text report, in dry runs and write runs. Resolve relative paths
+from the discovered project's directory, where generation runs.
+
 ## Config shape
 
 ```yaml
