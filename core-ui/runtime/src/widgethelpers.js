@@ -118,21 +118,19 @@
     if (enterWired.has(form)) return;
     enterWired.add(form);
     const isEnter = function (e) { return e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13; };
-    form.querySelectorAll('textarea').forEach(function (ta) {
-      ta.addEventListener('keydown', function (e) {
-        // Safari's composition-ending Enter has isComposing false and
-        // the IME's keyCode 229: it confirms the conversion, not the form.
-        if (!isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (form.requestSubmit) form.requestSubmit();
-        else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      });
-      ta.addEventListener('keypress', function (e) {
-        if (!isEnter(e) || e.shiftKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-      });
+    form.addEventListener('keydown', function (e) {
+      // Safari's composition-ending Enter has isComposing false and
+      // the IME's keyCode 229: it confirms the conversion, not the form.
+      if (!e.target.matches('textarea') || !isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (form.requestSubmit) form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    form.addEventListener('keypress', function (e) {
+      if (!e.target.matches('textarea') || !isEnter(e) || e.shiftKey) return;
+      e.preventDefault();
+      e.stopPropagation();
     });
   }
 
