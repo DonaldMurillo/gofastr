@@ -122,7 +122,7 @@ turns isolation off: its port is part of its contract.
 | `.../control.sock` | The control channel |
 | `.../instance.lock` | Held by the running daemon or dev run (see "The control channel") |
 | `.../<ID>.service` | The systemd unit (Linux) |
-| `.../logs/service.log` | macOS and Windows log, trimmed to one 10 MB generation at start |
+| `.../logs/service.log` | macOS and Windows log; at startup, an oversized log's last 10 MB are archived to `service.log.1`, then the current log is truncated. No runtime rotation |
 | `.../bin/<Name>` | The installed binary (macOS, Linux) |
 | `%LOCALAPPDATA%\Programs\<ID>\<Name>.exe` | The installed binary (Windows) |
 

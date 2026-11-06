@@ -229,7 +229,7 @@ func TestTrimLogKeepsOneGeneration(t *testing.T) {
 		t.Fatalf("log not truncated: %d bytes", fi.Size())
 	}
 	old, err := os.Stat(path + ".1")
-	if err != nil || old.Size() != maxLogSize+1 {
+	if err != nil || old.Size() != maxLogSize {
 		t.Fatalf("previous generation missing or short: %v", err)
 	}
 	if err := os.WriteFile(path, []byte("small"), 0o600); err != nil {
