@@ -464,10 +464,7 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 // total: every email ingestion point in the battery funnels through
 // here.
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
-	if m.config.CanonicalizeEmail != nil {
-		return m.config.CanonicalizeEmail(email)
-	}
-	return CanonicalEmail(email)
+	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }
 
 // Config returns the auth configuration (read-only copy).
@@ -531,6 +528,9 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 // driven from scripts or future surfaces leave the same trail the admin
 // back-office writes today.
 func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
+	if !storableText(userID) {
+		return ErrUserNotFound
+	}
 	if err := m.userStore.UpdateRoles(ctx, userID, roles); err != nil {
 		return err
 	}

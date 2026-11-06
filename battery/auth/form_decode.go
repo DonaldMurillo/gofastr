@@ -141,7 +141,7 @@ func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
 func canonicalizeDecodedEmail(w http.ResponseWriter, r *http.Request, canonicalize func(string) (string, error), raw string) (string, bool) {
 	email, err := canonicalizeEmailWith(canonicalize, raw)
 	if err != nil {
-		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+		writeAuthErrorFor(w, r, http.StatusBadRequest, err, reasonComposedEmail)
 		return "", false
 	}
 	if !emailWithinLimit(w, r, email) {
@@ -191,8 +191,18 @@ func CanonicalEmail(email string) (string, error) {
 // AuthConfig.CanonicalizeEmail override) and the package default
 // otherwise, so the override is total.
 func canonicalizeEmailWith(canonicalize func(string) (string, error), email string) (string, error) {
+	if !storableText(email) {
+		return "", i18n.NewError(reasonInvalidEmail)
+	}
 	if canonicalize != nil {
-		return canonicalize(email)
+		canonical, err := canonicalize(email)
+		if err != nil {
+			return "", err
+		}
+		if !storableText(canonical) {
+			return "", i18n.NewError(reasonInvalidEmail)
+		}
+		return canonical, nil
 	}
 	return norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email)))), nil
 }

@@ -366,6 +366,10 @@ failed to load), then fires that component's mounts once it registers
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders; never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
 
+**Layer-key encoding.** `X-Gofastr-Swap` percent-encodes C0 control bytes,
+DEL, non-ASCII bytes and literal percent signs. Decode it once with
+`decodeURIComponent` to recover the DOM's layout key.
+
 **Deploy skew: `X-Gofastr-Markup`.** Every navigation request the
 runtime makes (the click's partial fetch, the envelope navigator,
 prefetch, intercepted overlays) names the markup generation its kernel

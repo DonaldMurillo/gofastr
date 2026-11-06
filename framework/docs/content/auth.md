@@ -941,6 +941,13 @@ lowercase. Custom `UserStore` implementations therefore always receive
 canonical input; a host that accepts emails on its own surfaces should
 call `auth.CanonicalEmail` too so its lookups agree with the battery's.
 
+Every email ingestion path refuses NUL bytes and malformed UTF-8 with 400
+`invalid_email` before lookup, registration, or token creation. This storage
+invariant is checked before normalization and on both the input and output
+of `AuthConfig.CanonicalizeEmail`; an override cannot silently repair or
+introduce unstorable bytes. Other override errors retain the composed-email
+fallback, unless the error carries its own localized phrase.
+
 **Invisible characters**: NFC cannot fold zero-width and bidi codepoints,
 so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
 right-to-left override inside the local part would otherwise register as
@@ -1350,6 +1357,12 @@ The identity mutations are covered too: a successful `GET
 `AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
 so a role change driven from a script or future surface leaves the same
 trail the admin back-office writes.
+
+`EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
+`AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8
+as `auth.ErrUserNotFound` before querying or mutating storage. A refused
+role update emits no success audit. Valid IDs keep their exact bytes,
+including any leading or trailing whitespace.
 
 ## The 2FA flow
 
