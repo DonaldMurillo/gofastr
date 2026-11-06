@@ -337,6 +337,13 @@ func validateJSON(value any) error {
 	switch v := value.(type) {
 	case string:
 		encoded = []byte(v)
+	case []byte:
+		// Byte slices bind as JSON text (crud's marshalJSONColumn), so
+		// they are checked as text, not as the base64 string
+		// json.Marshal would make of them.
+		encoded = v
+	case json.RawMessage:
+		encoded = v
 	default:
 		var err error
 		encoded, err = json.Marshal(v)
