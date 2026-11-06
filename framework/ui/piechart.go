@@ -78,8 +78,8 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		}
 		total += s.Value
 	}
-	if total == 0 {
-		// Every slice is zero: nothing to draw, but a legitimate empty state.
+	if total == 0 || !finite(total) {
+		// A zero or overflowing total has no drawable ratios.
 		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 

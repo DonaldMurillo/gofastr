@@ -1706,6 +1706,11 @@ answers **204** with the same `Allow`, and the screen's policy and
 `serveScreenMethodNotAllowed`). A route registered at the screen's
 path, including an explicit `host.PageHandler`, wins its method.
 
+`ui.FilterToolbar` namespaces its derived control IDs under `cfg.ID` when
+set, including search shortcut targets, pill labels, select facets and sort.
+Otherwise the controls share the request's ID scope. Form names never acquire
+the namespace: native GET submission keeps the same query keys.
+
 `ui.FilterToolbar` with `ClientNavigation: true` emits `data-cui-spa` on its GET form. With the runtime it
 uses the existing client navigator, preserving the document and shared layout.
 Without JavaScript it submits as an ordinary GET form. The form's successful
@@ -2368,6 +2373,11 @@ instead (`FormConfig.ExtraAttrs`, a new theme token). See
 
 ### The model in one paragraph
 
+Each component sheet owns the visually-hidden rules its anatomy needs.
+The `ui-skeleton-presets` sheet hides its single accessible loading
+announcement within the preset root without relying on a host app.css
+floor or a headless stylesheet; headless primitives ship structure only.
+
 A component declares its CSS by calling
 `registry.RegisterStyle(name, fn)` in a package var; the handle's
 `.Render(c)` wraps the component's output and injects
@@ -2713,6 +2723,14 @@ system does not provide is a MISSING component: add it upstream, in
 for a host to concatenate.
 
 ### Component behaviour: the same seam
+
+Caller-built navigation in ColumnPicker, ActionList and SegmentedLinks uses
+the shared anchor URL policy. A refused destination renders a disabled span,
+never an actionable anchor; all column toggle, move and reset paths follow it.
+
+FilterChipBar's clear-all destination and SegmentedControl's RPC endpoint
+share a render-time same-origin path check layered on the anchor URL policy.
+Invalid paths panic before rendering, including when no active filters exist.
 
 A component's behaviour registers the way its stylesheet does. The
 package that renders the markup embeds its module beside the Go and
@@ -3078,12 +3096,12 @@ your need:
 | Table with sort / filter / pagination | `framework/ui.DataTable` | Island-driven, server-side sort/filter/pagination. No client-side re-implementation. |
 | Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. |
 | Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
-| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
+| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. A zero or non-finite total renders the shared localized empty state instead of a blank SVG. |
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |
 | Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
 | Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
 | Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
-| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format. |
+| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format; hunk ranges distinguish changed `---`/`+++` lines from the next file's headers. A final newline adds no phantom context row. CRLF line endings are normalized without changing embedded carriage returns. `Ctx` localizes default split-column labels through `i18nui.DiffOld` / `DiffNew`; explicit labels win. |
 | Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |
 | Image gallery | `framework/ui.Gallery` | Grid / strip / masonry layouts. Optional Lightbox or per-item Href click behaviour. |
 | Image lightbox | `framework/ui.Lightbox` | Overlay viewer with Prev/Next nav, gallery groups, arrow-key keyboard nav. |
@@ -3107,7 +3125,7 @@ your need:
 | Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
 | Table of contents | `framework/ui.TableOfContents` | Server-rendered from explicit `Items` (required — the no-script contract is the rendered list). `headless-toc` marks the active entry through the observer `headless-rail` owns. |
 | In-page rail | `framework/ui.AnchoredRail` | Sticky `<aside>` of fragment links with optional eyebrow/count chips; `headless-rail` marks the entry whose section is in view (`aria-current` + class). |
-| Timeline / event history | `framework/ui.Timeline` | Vertical event list on a rail. Colored dot variants (neutral / success / warn / danger / info). Semantic `<ol>`. |
+| Timeline / event history | `framework/ui.Timeline` | Vertical event list on a rail. Colored dot variants (neutral / success / warn / danger / info). Semantic `<ol>`; `When` plus RFC 3339 `Machine` emits `<time datetime>`, display-only `When` a span. `Meta` remains a separate caption. |
 
 ### Forms & inputs
 

@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
@@ -57,6 +58,7 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 	}
 	rows := make([]render.HTML, 0, len(cfg.Columns)+1)
 	for _, c := range cfg.Columns {
+		href := urlsafe.CleanAnchor(c.ToggleHref)
 		markClass, glyph := "fui-colpick__mark", render.HTML("")
 		if c.Shown {
 			markClass, glyph = "fui-colpick__mark fui-colpick__mark--on", Icon("check", IconConfig{Size: "14"})
@@ -64,7 +66,7 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 		mark := render.Tag("span", map[string]string{"class": markClass, "aria-hidden": "true"}, glyph)
 		var toggle render.HTML
 		switch {
-		case c.Locked || c.ToggleHref == "":
+		case c.Locked || href == "":
 			toggle = render.Tag("span", map[string]string{"class": "fui-colpick__toggle", "aria-disabled": "true"}, mark, render.Text(c.Label))
 		default:
 			key := i18nui.ColumnShow
@@ -73,7 +75,7 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 			}
 			toggle = render.Tag("a", map[string]string{
 				"class":      "fui-colpick__toggle",
-				"href":       c.ToggleHref,
+				"href":       href,
 				"aria-label": key.Text(ctx, map[string]any{"column": c.Label}),
 			}, mark, render.Text(c.Label))
 		}
@@ -87,7 +89,15 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 	}
 	body := []render.HTML{render.Tag("ul", map[string]string{"class": "fui-colpick__list"}, rows...)}
 	if cfg.ResetHref != "" && cfg.ResetLabel != "" {
-		body = append(body, render.Tag("a", map[string]string{"class": "fui-colpick__reset", "href": cfg.ResetHref}, render.Text(cfg.ResetLabel)))
+		attrs := map[string]string{"class": "fui-colpick__reset"}
+		tag := "span"
+		if href := urlsafe.CleanAnchor(cfg.ResetHref); href != "" {
+			tag = "a"
+			attrs["href"] = href
+		} else {
+			attrs["aria-disabled"] = "true"
+		}
+		body = append(body, render.Tag(tag, attrs, render.Text(cfg.ResetLabel)))
 	}
 	// The rows are built from strings and the caller's hrefs: the
 	// panel is this component's own.
@@ -101,6 +111,7 @@ func ColumnPicker(cfg ColumnPickerConfig) render.HTML {
 
 // colpickMove is a move link, or the same glyph disabled with no href.
 func colpickMove(ctx context.Context, href, icon string, key i18n.Phrase, label string) render.HTML {
+	href = urlsafe.CleanAnchor(href)
 	name := key.Text(ctx, map[string]any{"column": label})
 	attrs := map[string]string{"class": "fui-colpick__move", "aria-label": name, "title": name}
 	tag := "a"
