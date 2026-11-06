@@ -70,10 +70,28 @@ local: () => {window.localClicks++;}});</script></body></html>`)
 				chromedp.Poll(`location.pathname === '/next'`, nil),
 				chromedp.Evaluate(`document.getElementById('insert').innerHTML = '<div data-component="late-comp"><i data-action-mount="mount"></i></div>'`, nil),
 				chromedp.Poll(`window.lateLoaded === true`, nil),
-				chromedp.Sleep(150*time.Millisecond),
-				chromedp.Evaluate(`window.mounts`, &mounts),
 			); err != nil {
 				t.Fatal(err)
+			}
+			// Live mode waits for the late component's mount and its post;
+			// a fixed pause lost them on a loaded runner. Static mode
+			// asserts that nothing happens, so it can only wait and look.
+			wantMounts, wantPosts := int32(3), int32(4)
+			if static {
+				wantMounts, wantPosts = 0, 0
+				if err := chromedp.Run(ctx, chromedp.Sleep(150*time.Millisecond)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			deadline := time.Now().Add(10 * time.Second)
+			for {
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`window.mounts`, &mounts)); err != nil {
+					t.Fatal(err)
+				}
+				if static || (int32(mounts) >= wantMounts && posts.Load() >= wantPosts) || time.Now().After(deadline) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
 			}
 			if localClicks != 1 {
 				t.Errorf("client-only action fired %d times", localClicks)
