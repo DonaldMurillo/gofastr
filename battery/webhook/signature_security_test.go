@@ -1,9 +1,6 @@
 package webhook
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 	"time"
 )
@@ -119,24 +116,15 @@ func TestSignature_FutureTimestampRejected(t *testing.T) {
 	}
 }
 
-// TestSignature_TimingSafeComparison verifies that the comparison is not
-// vulnerable to timing attacks. This is a documentation test, if the
-// implementation uses hmac.Equal, it is constant-time.
-func TestSignature_TimingSafeComparison(t *testing.T) {
-	secret := "test-secret"
+func TestSignatureRejectsWrongMAC(t *testing.T) {
 	body := []byte(`{"event":"test"}`)
-
-	// Compute a valid signature
-	validSig := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
-
-	// Craft a completely wrong signature (same length)
-	h := hmac.New(sha256.New, []byte("wrong-secret"))
-	h.Write(body)
-	wrongMAC := hex.EncodeToString(h.Sum(nil))
-
-	// Parse both and check, this just documents the implementation uses
-	// hmac.Equal (constant-time) rather than == (short-circuit)
-	t.Logf("Valid signature uses constant-time comparison: hmac.Equal=%v", hmac.Equal([]byte(validSig), []byte("t."+validSig[1:])))
-	t.Logf("NOTE: [signature] VerifyTimestamped should use constant-time comparison (hmac.Equal) to prevent timing attacks")
-	_ = wrongMAC
+	for _, key := range []string{"first-key", "second-key"} {
+		signature := SignWithTimestamp(key, time.Now().Unix(), "created", "delivery-1", body)
+		if !VerifyTimestamped(key, signature, "created", "delivery-1", body, time.Minute) {
+			t.Fatal("valid signature was rejected")
+		}
+		if VerifyTimestamped("wrong-key", signature, "created", "delivery-1", body, time.Minute) {
+			t.Fatal("signature under a different key was accepted")
+		}
+	}
 }

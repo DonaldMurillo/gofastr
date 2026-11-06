@@ -27,8 +27,8 @@ few lines, and link the PR or the docs page for the rest.
 ### Added
 - **`App.Run(ctx, host)` runs an App under any host, and
   `framework.ServicesHost()` runs it with no transport.** One lifecycle
-  engine sits behind `Start`, `Serve` and `Run`: one boot order, one
-  rollback, one `Shutdown`. A `framework.Host`
+  engine sits behind `Start`, `Serve` and `Run`: one set of startup
+  checks, one boot order, one rollback, one `Shutdown`. A `framework.Host`
   (`Run(ctx, *Session) error` and `Stop(ctx) error`) owns only its
   transport and how long the App runs; `Session` is opaque. `ServicesHost()` constructs no
   `http.Server`, listener or HTTP client, for a native, terminal or test
@@ -72,6 +72,27 @@ few lines, and link the PR or the docs page for the rest.
   while a guarded Back or Forward is unresolved. It replaces
   `_pushURL(url, {replace: true})`. See the
   [runtime contract](framework/docs/content/runtime-contract.md).
+- `gofastr generate sdk` now emits a typed repository interface per entity,
+  a Remote adapter over the Go client, and a Local adapter that calls the
+  app in-process through the new `app.InProcessHandler()`. Both go through
+  the REST access rules, scoping, validation and hooks; the SDK stays
+  stdlib-only. `InProcessHandler` refuses requests carrying cookies,
+  credentials or a TLS peer certificate, and battery/auth keeps the
+  server-set user (and its 2FA assurance) for the calls it admits. A
+  custom session or user store binds that assurance to the lookup tenant
+  unless `AuthConfig.GlobalSessionLookup` says lookup ignores the tenant.
+  See [sdk.md](framework/docs/content/sdk.md#typed-repositories) and
+  [auth.md](framework/docs/content/auth.md#session-middleware-cookie--ctx-user).
+- `router.Router.Root()` returns the router at the top of a Group chain,
+  for a registrar that must serve an absolute URL outside its group's
+  prefix. See [core-packages.md](framework/docs/content/core-packages.md#router).
+- **`ui.CommandPaletteTrigger`, `ui.ShortcutSheetTrigger` and
+  `ui.NotificationBellTrigger`** render a trigger for each request, in
+  that request's locale, from the same config whose body is mounted once.
+  The trigger used to be built beside the mounted body, so every reader
+  got the startup locale's label, placeholder and spoken unread count.
+  The admin, gallery, docs and tracker examples render their triggers
+  this way.
 - **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
   streams a server holds across every caller (default 1024; a connect
   past it gets `429`). The per-caller seat cap never bounded the total:
@@ -332,6 +353,13 @@ few lines, and link the PR or the docs page for the rest.
     dropping it. `errors.Is` still matches the boot error.
   - No `OnStart` or `OnReady` hook starts once `Shutdown` has begun.
   See [Application hosts](framework/docs/content/application-hosts.md).
+- **BREAKING: a top-level `AfterList` hook may not change the row
+  count.** A hook that adds or drops rows now fails the list with a 500
+  and a logged reason, on HTTP offset and cursor lists, `ListAll`, typed
+  queries and the entityui and admin screens. Before, the dropped rows
+  still counted in `Total`, `CountAll` and `Count`, so the total said how
+  many rows the hook hid. Filter visibility in `BeforeList`; `AfterList`
+  may still redact, project or reorder.
 - **BREAKING: `CrudHandler.UpsertOne` refuses an entity with
   `BeforeUpdate` hooks.** It returned the stored row after running only
   `BeforeCreate`, so a conflict update skipped the update validators
@@ -748,6 +776,470 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- A second UI host in the same process served a 404 for the toast
+  stylesheet its pages link. The widget registry is process-wide while
+  asset routes belong to each router, so the second host found the
+  first host's toast stack and skipped its routes. Each host now mounts
+  the routes it is missing for the registered stack (stylesheet, state,
+  chrome and RPCs, behind the same session gate) through the new
+  `widget.MountShared`, and an app's own stack is never joined by a
+  second default. See [widgets.md](framework/docs/content/widgets.md).
+- **Unstorable text.** A String or Text field refuses invalid UTF-8 and
+  NUL bytes with a keyed `invalid_text` error before a CRUD write, and a
+  JSON field refuses them in any decoded string value or object key.
+  Postgres refuses both bytes, so the write used to fail as a 500. Auth
+  checks an email the same way, and a custom canonicalizer's output
+  after it, before it looks up an identity, mints a token or lets
+  first-run setup create an account. Role assignment refuses such a
+  user ID before the lookup, and RBAC refuses such a role or permission
+  name before it changes a grant.
+- **Admin dashboard and entity screens.** The dashboard's updated-age
+  labels run on their own deadline, so they still show when the count
+  probe times out. Header and card New actions hide when the scoped
+  CRUD create gate refuses the caller. A NULL boolean renders as unset
+  in list cells instead of false, and cards and labels write booleans
+  as the localized Yes and No.
+- **Swap headers** percent-encode control bytes, DEL, `%` and non-ASCII
+  bytes in a parameterized layer key.
+- **Recovered panics and diagnostics.** MCP, ACP and module protocol
+  callbacks log a recovered panic with a scrubbed value, the method and
+  a stack, and the client still gets the generic protocol error. Webhook attempt and
+  persistence panics are scrubbed before they reach the configured
+  logger, and so are Redis-client panic values in enqueue errors. A
+  DBQueue worker panic that escapes is logged and its respawn backs
+  off, without delaying shutdown. Action extraction reports a panic and
+  returns an empty registry instead of nil or a partial one. The fanout
+  marshal-failure log says the event was skipped and logs once, instead
+  of claiming publishing stopped until restart, and the unconfirmed
+  CRUD event drop log says the drops are process-wide.
+- **`generate --watch` and the dev tools.** `generate --watch --json`
+  writes one JSON document per cycle to stdout, failures and argument
+  errors included, and keeps status lines on stderr. Watch regenerates
+  when the enclosing `go.mod` is created, renamed or removed. The dev
+  contract watcher analyzes the last save of a burst instead of
+  dropping it, and keeps queued work after an analyzer panic. In dev,
+  the contract MCP tools appear when introspection is enabled
+  explicitly, as generated apps do, not only when dev mode implied it. `app_readiness` uses the configured readiness timeout, as
+  `/readyz` does.
+- **Theme editor.** The modal, drawer, bottom sheet and mobile sidebar
+  demos open in the preview. A save works again after a failed disk
+  write, and startup refuses a dangling output symlink.
+- **Service battery.** The daemon exits promptly after a server that
+  stopped itself finishes draining, and startup log archiving reads at
+  most the last 10 MiB.
+- **`config.Load`** refuses an integer outside the destination field's
+  range instead of truncating it on 32-bit targets.
+- **First-run setup's 503 page** follows the request locale.
+- **Examples.** The live dashboard's Open incident count updates with
+  its status. The wizard demo answers a malformed form with a constant
+  400 instead of echoing the parse error. The presence demo says its
+  wiring is local-only and points at `WithFanout` for cross-replica
+  presence. The benchmark apps stop on an invalid entity declaration
+  instead of measuring a partial setup.
+- **Docs corrections.** `HookFunc` and the typed `AfterCreate` and
+  `AfterUpdate` hooks run inside the write transaction, and an error
+  rolls the write back. The BFF guide says an unset `APIPrefix` puts the
+  whole app behind the origin guard, so `AllowedOrigins` must list the
+  app's own origin. chromepdf's `AllowedHosts` does not widen the print
+  shell's CSP. The semantic watcher's zero poll interval means the
+  two-second default and only a negative one disables rescans. The
+  runtime contract's fill-template rows drop the obsolete hash claim.
+- **Desktop shells.** Clipboard reads refuse text over 1 MiB, the write
+  limit. A preference update over the size limit returns keyed
+  validation errors before anything is stored, and a failed batch writes
+  nothing. String preferences refuse CR and LF with a keyed error, and
+  saving the settings screen keeps an older multiline value instead of
+  stripping its line breaks. A remembered window no longer takes another
+  launch's secondary-window frame. The bootstrap script and typed bridge
+  run only in top-level frames on every shell, and macOS refuses native
+  posts from child frames. The picker docs say what a picked folder
+  grants (a stat of that path, never its contents), and the desktop auth
+  docs name the per-run boot cookie.
+- **Charts, diffs and timelines.** Bar charts keep finite geometry for
+  extreme and subnormal values. Small line charts no longer draw above
+  the SVG viewBox, and line-chart legends wrap across rows and measure
+  names in runes. `PieChart` shows its empty state when finite slice
+  values overflow their total. `DiffViewer` keeps removed comment and
+  separator lines as changed code, drops the phantom last context row of
+  a newline-terminated patch, strips CRLF line endings and localizes its
+  split-column headings. `ui.Timeline` carries a machine-readable
+  timestamp beside the displayed one. Skeleton loading announcements
+  stay visually hidden on hosts that load only the preset stylesheet.
+- **Component links and IDs.** `ColumnPicker`, `ActionList` and
+  `SegmentedLinks` disable a refused caller link through the shared
+  anchor URL policy, and `FilterChipBar`'s clear-all and
+  `SegmentedControl`'s RPC path refuse unsafe values before rendering.
+  `FilterToolbar` scopes every derived control ID, label and shortcut
+  target to its toolbar, so two toolbars on one page no longer share
+  IDs. Submitted field names do not change.
+- **Runtime.** Enter-to-submit works for a textarea inserted into a form
+  already wired. Nested dropdowns keep their ancestor panels open, and
+  Escape closes the innermost menu. A failed SSE connection retries with
+  capped, jittered backoff, and a DOM scan no longer starts a connection
+  while a retry is pending. Rail scroll-spy skips sections that are not
+  drawn, with or without `checkVisibility()`. A layout first reached by
+  client navigation shows its loading content on later navigations, and
+  a layout declaring `PrimaryConfig.Loading` with no outlet or route
+  area shows it during a client navigation too.
+- **Static export.** A server action on an exported page shows the
+  localized needs-server notice instead of sending a request, and mount
+  actions are skipped on hydration, navigation and inserted content.
+  Client-only actions still run.
+- **Markdown handlers.** Standalone screen and app markdown handlers
+  send `Cache-Control: private, no-store` and add `Vary: Cookie` without
+  replacing an existing `Vary`. Inline code decodes entities once and
+  keeps its angle brackets visible and inert.
+- **SDK downloads behind a policy** send `Cache-Control: private,
+  no-cache`, on 304 responses too. Public downloads keep `no-cache`.
+- **WebP metadata stripping** refuses a RIFF container it cannot walk to
+  the end, instead of storing a truncated 8 to 12 byte upload.
+- **JSON output from `gofastr verify`, `generate` and `semantic`.**
+  `verify --json` stays machine-readable for invalid flags and unknown
+  `--explain` rules, reports the canonical absolute root when vet fails,
+  keeps run notices under `--baseline-write`, and refuses
+  `--baseline-write` with `--sarif` before writing anything. Every
+  `generate` verb returns a JSON error for bad arguments, keeps
+  diagnostics off stdout, refuses `--styles` with `--json` before
+  writing, prints one JSON result after the endpoint and client rebuilds
+  finish, and includes the output directory in its file paths. A path
+  holding a control byte or a format rune such as a bidi override comes
+  out as a JSON escape, so the reported path is the one written.
+  `semantic query` and `semantic stats` return one JSON error document,
+  and malformed remote stats JSON is refused.
+- **Test helpers and repo tools.** `TestResponse` header, body and JSON
+  assertions report a request-construction error instead of panicking.
+  Unmount and remount settings rewrites recognize CRLF headers.
+  `scripts/coverage-floors.sh` names a package with no coverage figure,
+  keeps checking the rest and still exits nonzero.
+- **Screen routing refusals.** `uihost.Mount` normalizes intercept
+  origin patterns and refuses, at boot, an origin no registered screen
+  matches; a custom host calls `Router.ValidateIntercepts` after
+  registering its screens. `NewLayout` refuses an invalid layout or
+  area name, and a duplicate area, before it writes view-transition
+  CSS. A screen group refuses an absolute screen path outside its
+  prefix (`/docs-old` beside `/docs` included), and `SubGroup` no
+  longer leaves `//` in the joined prefix.
+- **A localized screen's `llm.md` body follows the request locale.**
+  Its links were localized and its body was not.
+- **DI refuses replacing a provider while its singleton builds.**
+  Before, the finished build overwrote the newer registration.
+- **Entity declarations refuse a scalar field and a relation with the
+  same name**, before a cascade write or include reads the wrong one. A
+  belongs-to relation named for its own single foreign-key column
+  (`doc_id` over `doc_id`) without cascade writes is still accepted.
+- **entityui trash restore and purge honor `BeforeGet`.** A row the
+  read hook hides can no longer be restored or purged from the trash.
+- **Relation pickers report read failures.** A failing store or hook
+  returns a structured error to a search and shows the unavailable
+  slot on the form, instead of an empty list.
+- **Routine migrations.** `RoutinesFS` loads from the root of an
+  embedded or disk filesystem. A rollback file tagged with a dialect
+  other than its Up file's, or a rollback suffix outside the last name
+  segment, is refused; before, the rollback body ran as an Up routine.
+  The docs now say a plain routine name cannot contain a dot.
+- **Deferred parts check the markup generation.** The runtime sends
+  its kernel's markup generation on deferred fills, cached navigations
+  included, and the server refuses a fill from an older runtime. Site
+  search sends the header only when the live kernel has one, and
+  follows redirects and document responses.
+- **PWA caches skip widget state.** The precache and the service
+  worker no longer store `/core-ui/widget` responses, which carry
+  per-user state.
+- **Runtime fixes.** A hidden autogrow textarea keeps its height and
+  fits when revealed. The visible-route preload observer releases links
+  a navigation removed. A search input's clear button follows a form
+  reset. A full-document navigation, or an intercepted overlay, that
+  re-mints the SSE session drops cached screens, so Back cannot replay
+  the previous identity's pages, and points the page's SSE meta at the
+  new session, so the reopened stream is accepted. A superseded navigation's loading exit
+  still finishes within its cap, so its cleanup and `aria-busy` reset
+  run. BackToTop recomputes its threshold after a soft navigation or an
+  island update that removes links, and counts a link again when it is put
+  back on the page. A
+  wizard submit that never answered no longer moves focus on a later
+  page.
+- **Toasts and the notification bell.** A server-rendered default or
+  polite `Toast` row carries a live status role, while the stack around
+  it stays non-live; the runtime's toast and sortable-list regions, the
+  fallback toast drawn when the feedback module cannot load, and text
+  signal nodes whose role list holds a status or alert token (padded
+  or behind a fallback role included) drop the redundant `aria-live`. Dismissing or evicting a toast returns focus
+  to where it came from, unless focus has moved elsewhere since.
+  `NotificationBell` keeps its label in the accessible name when the
+  unread count updates.
+- **`desktoptest` behaves more like a shell.** Reopening a closed window
+  id creates a fresh window, focus and close-to-tray actions fire the
+  focus and blur callbacks, and a native boot that exits before the
+  page is ready, or never becomes ready, fails the test instead of
+  passing it.
+- **Compression keeps `ReadFrom`.** An uncompressed response through
+  the compression middleware reaches the underlying writer's
+  `ReadFrom`, so file copies keep sendfile. A copy that reads nothing,
+  or fails on its first read, sends no headers, so the handler can
+  still answer with an error status.
+- **Closed desktop windows.** Every shell answers a call on a closed
+  window with the shared `not_found` error, Linux `Window.Close` is
+  idempotent, and Windows refuses focus, title and frame calls on a
+  destroyed handle instead of acting on one the OS may have reused.
+- **`embed.New` refuses a dynamic screen route** (`/reports/:id`) at
+  boot, naming the surface and route. Before, it rendered the pattern
+  as a request path, so the parameter bound to the literal `:id` or a
+  sibling screen answered. Register a static screen for the embed. A brace
+  or colon inside a literal segment (`/reports/rev{1}`) is static and
+  still embeds.
+- **Docs corrections.** `SecurityHeadersConfig.Secure` and HSTS
+  auto-detection; BackToTop's `ScrollTarget`, an element id with an
+  optional `#` rather than a selector; and `OnWindowFrame`, which
+  covers secondary windows.
+- **Combobox keyboard and pointer fixes.** ArrowUp with no active
+  option starts at the last option. Clearing the query keeps the list
+  closed. Escape during IME composition, Safari's keyCode 229 included,
+  leaves the list open and no longer closes the disclosure, dropdown,
+  widget or intercepted drawer around the combobox; every Escape
+  handler in the kit ignores composition, and the `keyguard` lint flags
+  one that does not. A combobox option with an `Href`, and each
+  site-search result, is now a real link kept out of the Tab order:
+  Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
+  plain click or keyboard pick navigates in-page once, so one Back
+  returns to where it started, fragment links included, and a link
+  option that also sets a signal still navigates. A click or Enter a
+  page listener cancels stays cancelled. Focus traps in modals, drawers,
+  disclosures and panes skip elements that cannot take focus: a negative
+  `tabindex`, a hidden or `inert` subtree, or a closed nested disclosure.
+  Tab and Shift+Tab stay inside the trap, including from a focused
+  negative-`tabindex` element and in browsers without
+  `checkVisibility()`; a nested disclosure's native `<summary>` stays a
+  stop, and an open nested disclosure's controls keep their place in the
+  trap's Tab order. A modal or intercepted page that opens moves focus to
+  its first drawn control, past hidden ones and a hidden `autofocus`
+  target. `navigate()` resolves a relative
+  destination against `<base href>` when deciding it is the current
+  page. `ComboboxRows`
+  refuses duplicate option IDs, as `Combobox` does. The site-search palette
+  closes when the query has no searchable terms left.
+- **Leave-guard Discard closes the pane that asked.** A declined close
+  or return drops pane fetches still in flight, and Discard closes the
+  layer whose guard declined, not whichever layer is on top by then.
+- **Intercepted panes clean up after themselves.** Closing or replacing
+  a pane closes the widget modals opened inside it, and a modal still
+  loading for the old content does not open afterwards. When Return or Back
+  refetches a pane, focus moves to the opener's replacement or the
+  pane's first control instead of falling to `<body>`. A popover whose
+  trigger is re-rendered away closes instead of jumping to the
+  viewport's top-left corner.
+- **Hidden state fields stay hidden in refusals.** The 409 and 422
+  transition refusals withhold the stored state and open moves when the
+  state field is `Hidden`, as list and get responses already did.
+- **Catch-all routes.** A root catch-all `/{path...}` no longer matches
+  `/` with an empty key. A catch-all redirect keeps an encoded slash
+  encoded: `/docs/a%2Fb` redirects to `/help/a%2Fb`, not `/help/a/b`.
+- **MCP state-move tools check the move's own permission.** A caller
+  with the entity's update permission but not the move's `Permission`
+  no longer sees the move's tool in `tools/list`.
+- **Component actions come out in a fixed order.**
+  `ActionRegistry.All` sorts by event name, so action scripts, their
+  content hashes and ETags match across renders and replicas, and a
+  revalidation behind a load balancer answers 304 again.
+- **Widgets pass the request context on.** `component.Widget.RenderCtx`
+  hands its context to the child, and `Widget.Render`,
+  `RenderComponent` and `ComponentList` prefer `RenderCtx`, so a
+  `component.ContextOnly` component renders through them.
+- **`Define` copies relation slices.** Two entity configs sharing one
+  `Relations` backing array no longer overwrite each other's derived
+  `belongs_to` relations.
+- **A `belongs_to` cascade needs a declared foreign key.** A cascade
+  whose key is not a declared field is refused before any child is
+  written. Before, the child was written and reported attached with no
+  link stored.
+- **`UpsertOne` refuses nested writes.** A body carrying a non-null
+  value for a cascade-write relation returns a `ValidationError`
+  (`validation.cascade_upsert_unsupported`) naming each relation, before
+  hooks run or a row is written. Before, upsert saved the parent and
+  dropped the children without an error. Send nested writes through
+  `CreateOne` or `UpdateOne`.
+- **Typed reads survive self-embedding structs.** An entity struct that
+  embeds a pointer to itself, or two that embed each other, no longer
+  overflows the stack on every typed read.
+- **Migration generation.** Changed views are dropped before removed
+  views, so a view can stop reading one removed in the same migration.
+  A unique field's index name joins the collision check against other
+  index names. SQLite table rebuilds keep NOT NULL deferred for a
+  required column added with no default. Postgres rollback retypes
+  restore the column's old default, renamed columns included.
+- **Generated migration files are written whole.**
+  `GenerateMigrationFile` writes a temporary file, syncs it, and links
+  it into place without replacing an existing file, so a crash
+  mid-write no longer leaves a torn file that makes the next run mint a
+  duplicate migration. The migrations directory needs hard-link
+  support.
+- **`gofastr upgrade` scans more of the app.** Unreadable files and
+  directories, and stylesheet, text and settings files over 8 MiB, are
+  listed as Unscanned instead of skipped. A build constraint naming
+  more than 8 tags is reported as such, not as unsatisfiable. Retired
+  HTML attributes match ASCII-case-insensitively in Go strings and
+  attribute maps. CSS class matches include `[class=…]` and
+  `[class~=…]` selectors and escaped identifiers. A `go.mod` with no
+  `go` directive is checked as Go 1.16, the go command's default,
+  instead of skipping every minimum-version note.
+- **Site search page.** A stale answer no longer rolls the event stream
+  back to an older session, and a session rollover flushes the router's
+  cache. A failed search clears the previous results and says the index
+  is unavailable, in the page's language. Adjacent block elements
+  (`<header>`, `<main>`, table sections, form parts and more) index as
+  separate words.
+- **A2A task stores.** `MemoryStore` refuses a task that cannot be
+  JSON-encoded, as `SQLStore` does, and keeps the scope set at
+  creation. A repeated `Working()` that changes nothing skips the store
+  write instead of bumping the version.
+- **Webhook auth and scheduling.** A bearer or API-key
+  `Subscriber.Auth` that also sets `Username` or `Password` is refused.
+  A pending delivery with a zero `NextAttemptAt` is due at once in
+  `SQLStore`, as it already was in `MemoryStore`.
+- **`DecodeBlurHash` refuses hashes over 166 characters** before
+  decoding them, so an over-long stored value no longer allocates
+  8 bytes per character on every render.
+- **Desktop FFI.** On Linux, `ffi.Call` panics on more integer or float
+  arguments than it can pass, as darwin already did, instead of
+  dropping them. On darwin/amd64, rect-returning Objective-C sends
+  return through heap memory.
+- **Repo tools.** `cmd/affected` reads git's file lists NUL-separated,
+  so a changed file whose name has a non-ASCII byte, a quote or a
+  backslash selects its package; a name with a line break widens the
+  run to everything. The upgrade registry gates fail when a release
+  has no matcher they can check, and skip package-main files.
+- **The SDK reference omits writes for read-only mounts.** Pass the new
+  `sdkdocs.Config.ReadOnlyMounted` (`App.EntityReadOnlyMounted`) and an
+  `App.View` page lists only its reads and event feed, with no create,
+  update, delete, batch or state-move rows. The quickstart and list
+  notes no longer assume a `created_at` sort column.
+- **`uinodev1` caps props arrays.** `Limits.MaxPropItems` (default 128)
+  bounds data-table rows, columns and cells and detail-list and
+  key-value items. A tree over the cap is refused whole; before, a table
+  could carry any number of empty rows.
+- **Widget catalogs match pages with escaped paths.** The catalog
+  decodes the runtime's `?page=` value once, so a widget scoped to
+  `/café` shows there, and a malformed escape answers 400.
+- **Signal bindings refuse prototype keys.** `BindHTML`, `BindText`,
+  `BindAttr` and `AnimateOnSignal` now panic on `__proto__`,
+  `constructor` or `prototype`, as the signal mutation helpers already
+  did.
+- **`OptimisticUpdate` buttons no longer submit their form.** They
+  render `type="button"`.
+- **Section menu counts use the page locale.** The filtered `shown/total`
+  ratio and the total format both numbers through the runtime's
+  number formatter, and the number-fill lint now catches a count ratio
+  written with ASCII digits.
+- **`gofastr init` checks agent onboarding paths before it writes.** A
+  hand-written agent detail file or an unreadable host skill stops init
+  before any scaffold file or secret is replaced.
+- **Singular names keep their final e.** houses, causes and blouses
+  singularize to house, cause and blouse, and common -ie nouns (cookies,
+  brownies, calories, movies, ties) to cookie, brownie, calorie, movie
+  and tie, also as the last word of `fortune_cookies` or `UserTies`.
+  series and species stay as they are.
+- **`gofastr desktop --version` accepts semver prerelease and build
+  suffixes.** The Windows file version comes from the numeric core
+  (`1.2.3-rc.1` gives 1.2.3.0) and ProductVersion keeps the full text.
+- **Example and doc fixes.** Ecommerce order totals round to the
+  columns' four-place scale on SQLite. `CreateOne` docs say rows come
+  back keyed by wire key, the factory docs drop a `Suite` that does not
+  exist, and the routegroup examples mount entities through
+  `App.GroupEntity`.
+- **View event streams work.** `App.View` handlers now carry the app's
+  event bus, so a view's stream route serves events instead of always
+  answering 503. Writes to the underlying tables do not publish view
+  events by themselves.
+- **EntityUI route conflicts fail before anything is published.** An
+  entity whose `_bulk`, `_export.csv` or `_pick` route collides with an
+  existing route is refused at registration, and `EntityUI` panics up
+  front, so a refused registration leaves nothing half-mounted.
+- **A refused bulk job stays stopped after the request is cancelled.**
+  The stop is written on a context detached from the request, so a
+  client disconnect no longer leaves the job for startup resume to run.
+- **A sandbox backend that panics during conformance probing fails
+  closed,** the same way a panic on the spawn path already did.
+- **`ComponentSheet` leaves keyframe steps unscoped inside media and
+  container queries,** and a `StyleSheet` rule left open across a
+  `Keyframes` call keeps taking properties.
+- **Headless carousel and menu fixes.** Carousel announcements format
+  the total in the page locale, not only the position. Space on a menu
+  link activates it without scrolling the page, except while it extends
+  a type-ahead search.
+- **Desktop native blocks register safely from several goroutines.**
+  Concurrent `NewBlock` calls no longer drop a block the native side
+  still holds.
+- **process-modules.md names the macOS sandbox's read gaps.** The
+  built-in profile can read temporary directories and `/etc`, so its
+  P2 and P5 probes report breaches.
+- **More example fixes.** desktop-notes exports every note past the
+  first thousand, and the tracker's "Done this week" counts the Done
+  issues in the seven days ending at the newest Done update.
+- **`SumAll` over a SQLite Decimal column is exact.** The total adds the
+  stored decimal values instead of summing floats, so `0.1 + 0.235`
+  reads `0.335`, not `0.33499999999999996`. Postgres keeps its NUMERIC
+  sum.
+- **`testkit` carved Postgres databases ignore `dbname` overrides.** A
+  `dbname=` or `database=` query option in the admin DSN no longer
+  points the carved connection back at the maintenance database.
+- **`semcov` recording survives a concurrent `Reset`.** A record call
+  racing a reset no longer writes into a cleared manifest.
+- **Example fixes.** Real-estate serves only active listings to the
+  public (staff with `properties:write` see every status) and sends
+  anonymous visitors on its staff screens to sign-in. The API tour
+  migrates before it seeds and its README describes the private
+  temporary upload directory. Acme's help docs keep a filled contents
+  rail beside an empty outlet, and the tracker orders recent activity
+  by date.
+- **Every version group mounts its queued `EntityEndpoints`.**
+  `GroupEntity` now serves endpoints queued under the entity's name, so
+  v1 and v2 of one entity both get them. A refused registration keeps
+  the queue, and boot still reports a queue no registration claimed.
+- **`InitPlugins` can retry after any failure.** An MCP tool
+  registration error no longer marks initialization done with the
+  tools missing.
+- **Data exports carry their primary keys.** `datexport.Register` adds
+  key columns an exporter left out, so an app can import its own
+  archive again.
+- **OAuth protected-resource metadata refuses bad URLs at startup.** A
+  resource or authorization-server URL that is not https or carries
+  userinfo or a fragment (or, for an issuer, a query) now fails `Start`
+  instead of serving malformed metadata.
+- **Module toggles warn when they stay on one replica.** `WithFanout`
+  without `WithDB` logs that toggles are not shared.
+- **Process-module digests match in either hex case.** An upper-case
+  pin no longer fails the integrity check, triggers a reinstall or
+  resets migration approval.
+- **Generated migrations refuse to drop a table that kept tables still
+  reference.** SQLite cascaded the drop and Postgres refused the apply.
+  Detach the foreign keys in an earlier migration.
+- **Migration snapshots record pivot primary keys,** so taking over a
+  join entity migrates its key.
+- **SQLite owner foreign-key repair keeps indexes and triggers** whose
+  table name differs in case from the entity's.
+- **`TypedQuery.UpdateAll` releases replaced stored files** after
+  commit. Shared keys and kept renditions stay.
+- **Docs corrections.** Shutdown drains run one after another in
+  registration order under one timeout. Postgres VARCHAR width changes
+  are detected by migrations. Health probes always pass through root
+  middleware, whatever the registration order.
+- **Prefetched navigation preserves the live CSRF token.** Following a link
+  prefetched before a session token rotation no longer restores the older
+  token; navigation listeners still receive `cached: false`.
+- **The admin Failed jobs figure uses localized numbers.** Dashboard
+  and polled counts now use the request locale's digits and grouping,
+  matching the Jobs page and other figures.
+- **App spec packing keeps metadata and controls canonical.** Generated
+  descriptions are no longer recovered as authored values. Base URL
+  trailing slashes and case-insensitive button values normalize during
+  parsing, and buttons/navigation links no longer gain generated defaults.
+  See `app-spec.md`.
+- **The ConditionalField gallery preview submits successfully.** Its
+  form now uses the docs site's no-op POST endpoint instead of posting
+  to a GET-only component screen.
+- **OpenAPI CLI nullable unions generate scalar flags.** A query, path,
+  header or body property with one non-null scalar `oneOf`/`anyOf`
+  branch now maps like `type: [T, "null"]`. Multi-type body unions keep
+  `--json`; parameter errors name the unsupported union. See `app-cli.md`.
 - **The entity screens read related data through the same gates as the
   API.** Related lists, their count badges and read-only relation
   fields checked record access but skipped CRUD exposure and token
@@ -884,6 +1376,74 @@ few lines, and link the PR or the docs page for the rest.
   names the table, row and column of a non-finite float. `Bind`'s docs
   describe the error an invalid destination returns, and the registry
   LLM index no longer promises a cursor `total`.
+- **Navigation keeps the CSRF token current.** Client-side navigation
+  takes the CSRF meta token from each response, so a long-lived tab can
+  still post after the signing key rotates. A response with no token
+  keeps the live one, and a cached back or forward replay never brings
+  an older token back. Envelope routes honour typed segment constraints
+  and decode each segment the way core navigation does, so the layout
+  key and deferred part address for `/projects/a%2Fb` match the
+  server's. A widget script that failed to download during boot retries
+  on the next navigation. A widget whose foreign `statePath` is refused
+  keeps its close button and actions. Native modal dialogs own Escape
+  and Tab above an intercept pane, and a browser that rejects `:modal`
+  keeps the pane's keyboard handling.
+- **Realtime.** An RTC peer with an offer outstanding at reconnect is
+  rebuilt instead of wedging renegotiation. Remote-assist sharing
+  renegotiates when the support socket reconnects. A slow entity event
+  stream keeps the newest buffered events.
+- **Entity events and exports.** Create, batch-create and upsert
+  inserts route hidden-owner events and outbox entries by the persisted
+  owner, including one a trusted create hook assigned. A soft delete
+  committed inside an ambient transaction publishes its event; a
+  rolled-back delete or purge stays quiet. User data exports include
+  durable schedules and their payloads, and queue job exports keep
+  occurrence, update, error and claim state. Cursor lists use the
+  entity list default and page-size cap.
+- **Admin.** A command-palette create entry needs the same scoped read
+  and create permissions as its destination screen. Jobs status counts
+  use the active locale's digits.
+- **Email, logs and relays.** A credentialed SMTP sender refuses a
+  relay that does not advertise AUTH instead of sending without it; a
+  sender with no credentials is unchanged. Access logs and trusted
+  client-IP selection read every `X-Forwarded-For` header line. A HEAD
+  relay response passes with a content type the relay refuses for a GET
+  body.
+- **Discovery and OpenAPI.** Agent-ready bundles keep the granular
+  discovery fields they leave unset: card endpoints, versions and llms
+  sections. A2A cards keep each skill's input and output MIME modes.
+  `llms.txt` links an MCP manifest only when its route is mounted.
+  OpenAPI types a `:id` custom-endpoint input as a path parameter and
+  treats a lowercase method like its uppercase spelling. Generated CLIs
+  leave union-valued body properties on `--json`, including unions
+  beside a reference or inside a composition.
+- **App spec, generate and pack.** App-spec validation refuses a screen
+  the auth battery's `/me` route would shadow, and a list that names an
+  `id` column a natural or composite-key entity does not have.
+  Generated CRUD tests skip constrained required and key fields instead
+  of sending values the app rejects. `generate --watch` reruns when an
+  owned style or token input is created, edited or removed. `gofastr
+  pack` keeps control-catalog screen blocks and the public OpenAPI
+  exposure, description and base URL, and stops adding the implicit
+  admin path and role defaults. `-o` and `--out` refuse an empty value
+  or another flag instead of printing a spec that holds recovered
+  secrets. YAML accepts an indentless block sequence under a mapping
+  key.
+- **Styles and desktop.** `@container` refuses custom media, which
+  never matches there, and still accepts nested and boolean `style()`
+  queries. Date-range announcements keep Gregorian dates and the page
+  language. A macOS material sidebar that starts collapsed creates its
+  material zone when it opens.
+- **Gallery and docs.** The Tag gallery dismisses, with a no-script
+  fallback. FilterChipBar, sign-in and repeater previews post to a
+  working endpoint instead of answering 405. The standalone drawer
+  trigger opens its drawer, LanguageMenu has no dead locale links,
+  OptimizedImage shows a real image, and the image API links point at
+  `framework/ui`. The SMTP agent recipe compiles. The queue capability
+  table lists in-memory and Redis inspection and dead-job replay.
+  Access-log guidance keeps the default middleware, cron errors go to
+  `slog.Default` when `OnError` is unset, and owner scoping with no
+  owner extractor answers 401.
 - **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
   streams an empty or failing reader.** Their `ReadFrom` wrote a 200
   before copying, so the handler's later status never reached the
@@ -9466,4 +10026,3 @@ registers, and a layout overlay under `gofastr dev`.
   mounted on a router built by hand got a 404 and never reloaded.
   `UIHost.Mount` now registers the dev script routes on the router it
   mounts on.
-

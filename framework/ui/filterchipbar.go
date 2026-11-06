@@ -93,6 +93,9 @@ type FilterChipBarConfig struct {
 
 // FilterChipBar renders the toolbar.
 func FilterChipBar(cfg FilterChipBarConfig) render.HTML {
+	if cfg.ClearAllPath != "" {
+		checkRPCPath("FilterChipBar", "ClearAllPath", cfg.ClearAllPath)
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()

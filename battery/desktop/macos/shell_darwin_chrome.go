@@ -293,7 +293,12 @@ func boolToIMP(b bool) uintptr {
 func (ch *windowChrome) setSidebarWidth(win objc.ID, points int) {
 	ch.sidebarW = points
 	if ch.zoneView == 0 {
-		return
+		if ch.resolved != desktop.MaterialSidebar || points <= 0 {
+			return
+		}
+		ch.zoneView = newEffectView(objc.Rect{W: float64(points), H: contentBounds(win).H}, effectMaterialSidebar, viewHeightSizable)
+		insertBelow(objc.ID(objc.Send(win, objc.Sel("contentView"))), ch.zoneView)
+		objc.Send(ch.zoneView, objc.Sel("setHidden:"), objc.Send(win, objc.Sel("isOpaque")))
 	}
 	objc.SendRect(ch.zoneView, objc.Sel("setFrame:"), objc.Rect{W: float64(points), H: contentBounds(win).H})
 }
@@ -446,6 +451,9 @@ func (w *darwinWindow) applyReduced(on bool) {
 func (w *darwinWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+	}
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
 	}
 	closed := false
 	err := w.shell.onMain(func() {

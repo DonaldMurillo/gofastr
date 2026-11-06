@@ -92,7 +92,6 @@
       live = document.createElement('div');
       live.id = 'hui-sortable-live';
       live.setAttribute('role', 'status');
-      live.setAttribute('aria-live', 'polite');
       live.setAttribute('data-hui-sortable-live', '');
       document.body.appendChild(live);
     }
@@ -342,6 +341,7 @@
   });
 
   document.addEventListener('keydown', (ev) => {
+    if (ev.isComposing || ev.keyCode === 229) return;
     const t = ev.target;
     if (!t?.matches?.('[data-hui-sortable-item]')) return;
 

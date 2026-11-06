@@ -68,6 +68,12 @@ type AuthConfig struct {
 	// If nil, an in-memory store is used (dev/test only).
 	SessionStore SessionStore
 
+	// GlobalSessionLookup declares that both session and user lookup ignore
+	// the context tenant: 2FA assurance is about the user alone. Custom stores
+	// bind assurance to the lookup tenant by default. The built-in stores are
+	// recognized as global without this opt-out. This does not add filtering.
+	GlobalSessionLookup bool
+
 	// LoginRateLimit applies a per-IP rate limit to /auth/login. nil
 	// does NOT mean unlimited: New installs 30 attempts/min with a
 	// 5-minute block, in DevMode too. To loosen it, pass a config with a
@@ -464,10 +470,7 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 // total: every email ingestion point in the battery funnels through
 // here.
 func (m *AuthManager) canonicalizeEmail(email string) (string, error) {
-	if m.config.CanonicalizeEmail != nil {
-		return m.config.CanonicalizeEmail(email)
-	}
-	return CanonicalEmail(email)
+	return canonicalizeEmailWith(m.config.CanonicalizeEmail, email)
 }
 
 // Config returns the auth configuration (read-only copy).
@@ -495,6 +498,21 @@ func (m *AuthManager) DefaultRoles() []string {
 // SessionStore returns the session storage backend.
 func (m *AuthManager) SessionStore() SessionStore {
 	return m.sessionStore
+}
+
+func (m *AuthManager) globalSessionLookup() bool {
+	if m.config.GlobalSessionLookup {
+		return true
+	}
+	if _, builtIn := m.UserStore().(*EntityUserStore); !builtIn {
+		return false
+	}
+	switch m.SessionStore().(type) {
+	case *MemorySessionStore, *EntitySessionStore:
+		return true
+	default:
+		return false
+	}
 }
 
 // UserStore returns the user storage backend.
@@ -531,6 +549,9 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 // driven from scripts or future surfaces leave the same trail the admin
 // back-office writes today.
 func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
+	if !storableText(userID) {
+		return ErrUserNotFound
+	}
 	if err := m.userStore.UpdateRoles(ctx, userID, roles); err != nil {
 		return err
 	}

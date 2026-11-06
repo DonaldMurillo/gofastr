@@ -8,11 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ErrSessionNotFound reports a session/load (or session/prompt) for a
@@ -327,7 +330,9 @@ func (c *conn) writeFrameCtx(ctx context.Context, v any) error {
 		// writer is recovered here, as runPrompt recovered it before.
 		// How much of the frame went out is unknown: the stream is broken.
 		defer func() {
-			if recover() != nil {
+			if rec := recover(); rec != nil {
+				slog.Error("panic in ACP writer recovered", "operation", "write",
+					"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 				c.werr = errWriterPanicked
 				done <- errWriterPanicked
 			}
@@ -868,6 +873,8 @@ func (st *serverState) sessionGate(method string) *wireRespError {
 func (st *serverState) runAuthenticate(ctx context.Context, methodID string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in ACP callback recovered", "operation", "authenticate",
+				"method", textsafe.SanitizeControlBytes(methodID), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			err = fmt.Errorf("authenticate panicked")
 		}
 	}()
@@ -883,7 +890,9 @@ func (st *serverState) runAuthenticate(ctx context.Context, methodID string) (er
 // recovered value is not echoed to the client.
 func (st *serverState) runNewSession(ctx context.Context, cwd string) (impl Session, err error) {
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in ACP callback recovered", "operation", "session/new",
+				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			impl = nil
 			err = errors.New("agent NewSession panicked")
 		}
@@ -893,7 +902,9 @@ func (st *serverState) runNewSession(ctx context.Context, cwd string) (impl Sess
 
 func (st *serverState) runLoadSession(ctx context.Context, sessionID, cwd string, client *Client) (impl Session, err error) {
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in ACP callback recovered", "operation", "session/load",
+				"session", textsafe.SanitizeControlBytes(sessionID), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			impl = nil
 			err = errors.New("agent LoadSession panicked")
 		}
@@ -903,7 +914,9 @@ func (st *serverState) runLoadSession(ctx context.Context, sessionID, cwd string
 
 func runPrompt(sess *session, ctx context.Context, prompt []ContentBlock, client *Client) (reason string, err error) {
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in ACP callback recovered", "operation", "session/prompt",
+				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			reason = ""
 			err = errors.New("session Prompt panicked")
 		}

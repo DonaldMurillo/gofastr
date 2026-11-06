@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -20,6 +21,16 @@ type SessionMiddlewareOption func(*sessionMiddlewareOpts)
 
 type sessionMiddlewareOpts struct {
 	logger *slog.Logger
+}
+
+type sessionAssuranceKey struct{}
+
+type sessionAssurance struct {
+	manager     *AuthManager
+	tenantID    string
+	tenantBound bool
+	userID      string
+	verified    bool
 }
 
 // WithSessionLogger overrides the logger SessionMiddleware uses for
@@ -39,6 +50,15 @@ func WithSessionLogger(l *slog.Logger) SessionMiddlewareOption {
 //   - Valid session → user is loaded from UserStore.FindByID and stashed
 //     in ctx via handler.SetUser. GetCurrentUser(ctx) then returns the
 //     User; CRUD owner-scoping picks it up automatically.
+//   - The resolved user's 2FA assurance records whether any of their live,
+//     non-pending cookie sessions on this request completed 2FA, bound to
+//     this manager, user and lookup tenant. Only built-in global stores or
+//     GlobalSessionLookup omit the tenant binding.
+//     Clearing or replacing the user also clears or replaces that assurance.
+//   - Verified embed grants and calls admitted by App.InProcessHandler
+//     preserve their trusted context user instead of clearing it.
+//     Marked calls also preserve the outer request's recorded assurance;
+//     it is a snapshot, not an expiry or revocation re-check.
 //
 // This is the missing counterpart to RequireAuth, which is JWT-only. Host
 // apps with HTML/form auth want SessionMiddleware mounted on the routes
@@ -84,11 +104,12 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 		// SessionMiddleware leaking one tenant's user into an inner one, does
 		// not apply to a credential this middleware never issued and cannot
 		// verify.
-		if _, embedded := embed.GrantFromContext(r.Context()); embedded {
+		if _, embedded := embed.GrantFromContext(r.Context()); embedded || framework.IsInProcessRequest(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		ctx := handler.SetUser(r.Context(), nil)
+		ctx = context.WithValue(ctx, sessionAssuranceKey{}, false)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 	return func(next http.Handler) http.Handler {
@@ -103,32 +124,59 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 			// path-specific first and r.Cookie returns only that one, so a
 			// dead cookie would shadow a live session and login would
 			// silently fail while a valid cookie sits one position later.
-			for _, token := range sessionCookieCandidates(r, cfg.SessionCookie) {
-				user, ok := resolveSessionUser(ctx, mgr, token, log)
-				if ok {
-					ctx = handler.SetUser(ctx, user)
-					ctx = handler.WithPrincipalCheck(ctx, sessionRecheck(mgr, token, log))
-					next.ServeHTTP(w, r.WithContext(ctx))
-					return
-				}
+			tokens := sessionCookieCandidates(r, cfg.SessionCookie)
+			user, assurance, ok := resolveSessionCandidates(ctx, mgr, tokens, "", log)
+			if ok {
+				ctx = handler.SetUser(ctx, user)
+				ctx = context.WithValue(ctx, sessionAssuranceKey{}, assurance)
+				ctx = handler.WithPrincipalCheck(ctx, sessionRecheck(mgr, tokens, assurance, log))
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
 			}
 			anon(w, r, next)
 		})
 	}
 }
 
-// sessionRecheck re-resolves the session token for a request that stays open
-// (an _events stream), so a deleted session, a pending-2FA downgrade or a
-// deleted user ends the stream the way it would refuse a fresh request. See
-// handler.WithPrincipalCheck.
-func sessionRecheck(mgr *AuthManager, token string, log *slog.Logger) handler.PrincipalCheck {
+// sessionRecheck re-resolves the original candidate session tokens for a
+// request that stays open (an _events stream). It keeps the established user
+// and partitioned lookup tenant; downstream checks derive the authorization
+// tenant. It recomputes assurance across live, non-pending sessions; no remaining
+// session or a deleted user ends the stream. See handler.WithPrincipalCheck.
+func sessionRecheck(mgr *AuthManager, tokens []string, principal sessionAssurance, log *slog.Logger) handler.PrincipalCheck {
 	return func(ctx context.Context) (context.Context, bool) {
-		user, ok := resolveSessionUser(ctx, mgr, token, log)
+		lookupContext := ctx
+		if principal.tenantBound {
+			lookupContext = handler.SetTenantID(lookupContext, principal.tenantID)
+		}
+		user, assurance, ok := resolveSessionCandidates(lookupContext, mgr, tokens, principal.userID, log)
 		if !ok {
 			return ctx, false
 		}
-		return handler.SetUser(ctx, user), true
+		ctx = handler.SetUser(ctx, user)
+		return context.WithValue(ctx, sessionAssuranceKey{}, assurance), true
 	}
+}
+
+func resolveSessionCandidates(ctx context.Context, mgr *AuthManager, tokens []string, userID string, log *slog.Logger) (User, sessionAssurance, bool) {
+	var user User
+	var assurance sessionAssurance
+	for _, token := range tokens {
+		if user != nil {
+			session, err := mgr.SessionStore().Get(ctx, token)
+			if err == nil && session != nil && session.UserID == assurance.userID && !session.PendingTwoFactor {
+				assurance.verified = assurance.verified || session.TwoFactorVerified
+			}
+			continue
+		}
+		candidate, candidateAssurance, ok := resolveSessionUser(ctx, mgr, token, log)
+		if !ok || userID != "" && candidateAssurance.userID != userID {
+			continue
+		}
+		user = candidate
+		assurance = candidateAssurance
+	}
+	return user, assurance, user != nil
 }
 
 // maxSessionCookieCandidates bounds the same-name session cookies one
@@ -158,7 +206,7 @@ func sessionCookieCandidates(r *http.Request, name string) []string {
 // resolveSessionUser resolves one session token to its user: session lookup,
 // pending-2FA refusal, user lookup. Logging matches the middleware's original
 // per-step diagnostics.
-func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log *slog.Logger) (User, bool) {
+func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log *slog.Logger) (User, sessionAssurance, bool) {
 	sess, err := mgr.SessionStore().Get(ctx, token)
 	if err != nil {
 		// Distinguish "session expired / not in store" (debug, normal
@@ -174,13 +222,13 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 					"err", err.Error())
 			}
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
 	if sess == nil {
 		if log != nil {
 			log.Debug("session: store returned nil session for cookie")
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
 	// Pending-2FA sessions are NOT loaded into context, they're
 	// only usable for /auth/2fa/challenge.
@@ -189,7 +237,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 			log.Debug("session: pending 2FA, request degraded to anonymous",
 				"user_id", sess.UserID)
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
 	store := mgr.UserStore()
 	if store == nil {
@@ -201,7 +249,7 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 			log.Warn("session: UserStore not configured on AuthManager: session cookie can't be resolved",
 				"recommendation", "set AuthConfig.UserStore at init")
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
 	user, err := store.FindByID(ctx, sess.UserID)
 	if err != nil {
@@ -214,20 +262,26 @@ func resolveSessionUser(ctx context.Context, mgr *AuthManager, token string, log
 					"user_id", sess.UserID, "err", err.Error())
 			}
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
 	if user == nil {
 		if log != nil {
 			log.Debug("session: user-store returned nil for session",
 				"user_id", sess.UserID)
 		}
-		return nil, false
+		return nil, sessionAssurance{}, false
 	}
-	return user, true
+	assurance := sessionAssurance{manager: mgr, userID: sess.UserID, verified: sess.TwoFactorVerified, tenantBound: !mgr.globalSessionLookup()}
+	if assurance.tenantBound {
+		assurance.tenantID = handler.GetTenantID(ctx)
+	}
+	return user, assurance, true
 }
 
 // RequireSession returns middleware that rejects requests without a
 // valid session-cookie-loaded user. Pair with SessionMiddleware upstream.
+// On calls admitted by App.InProcessHandler it trusts a non-nil server-set
+// context user without re-reading a session or requiring 2FA assurance.
 //
 // The gate is session-only by contract: a caller authenticated by a
 // scoped API token (TokenMiddleware sets the ctx user the same way a

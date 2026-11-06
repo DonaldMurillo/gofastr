@@ -842,6 +842,8 @@ func (u *UI) queueBulk(ctx context.Context, w http.ResponseWriter, r *http.Reque
 
 // abandonJob stops a job the JobRunner refused, so nothing resumes it.
 func (u *UI) abandonJob(ctx context.Context, store BulkStore, m *meta, job BulkJob) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), bulkSettleTimeout)
+	defer cancel()
 	runner := newRunID()
 	now := u.now()
 	ok, err := store.Claim(ctx, job.ID, runner, now, now.Add(bulkLease))

@@ -806,6 +806,58 @@ func Mount(r *router.Router, def *Definition) {
 	registryMu.Unlock()
 }
 
+// MountShared serves, on r's root, every endpoint of def that another
+// router already published and r does not serve yet: the stylesheet,
+// the signal snapshot, the chrome and the RPCs, at the absolute URLs
+// the catalog and the page markup name, behind the gate Mount puts on
+// each. The registry is process-wide while routes belong to a router,
+// so a second host in the same process finds a definition mounted by
+// the first and needs its routes as well. def keeps its mount prefix
+// and stays in the registry as it is.
+func MountShared(r *router.Router, def *Definition) {
+	served := map[string]bool{}
+	for _, route := range r.Routes() {
+		served[route.Method+" "+route.Pattern] = true
+	}
+	root := r.Root()
+	srv := &server{def: *def}
+	gate := def.gateLevelOf()
+	type endpoint struct {
+		method, url string
+		handler     http.Handler
+	}
+	endpoints := []endpoint{
+		{"GET", def.StyleURL(), http.HandlerFunc(srv.serveStyle)},
+		{"GET", def.StateURL(), gateSession(gate, def, http.HandlerFunc(srv.serveState))},
+		{"GET", def.ChromeURL(), gateSession(gate, def, http.HandlerFunc(srv.serveChrome))},
+	}
+	for _, rpc := range def.RPCs {
+		method := rpc.Method
+		if method == "" {
+			method = "POST"
+		}
+		endpoints = append(endpoints, endpoint{method, def.mountPrefix + rpc.Path, gateSession(gate, def, rpc.Handler)})
+	}
+	for _, e := range endpoints {
+		if served[e.method+" "+e.url] {
+			continue
+		}
+		served[e.method+" "+e.url] = true
+		switch e.method {
+		case "GET":
+			root.Get(e.url, e.handler)
+		case "PUT":
+			root.Put(e.url, e.handler)
+		case "PATCH":
+			root.Patch(e.url, e.handler)
+		case "DELETE":
+			root.Delete(e.url, e.handler)
+		default: // POST, the only other method Mount lets through
+			root.Post(e.url, e.handler)
+		}
+	}
+}
+
 // MountBuilder builds the widget from b and mounts it on r, sugar over the
 // two-step
 //

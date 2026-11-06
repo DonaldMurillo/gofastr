@@ -477,6 +477,10 @@
 
     /** Call a server action for a specific component */
     async _serverActionFor(componentId, action, params = {}) {
+      if (document.__fuiStaticDispatch) {
+        _showNavToast(say('runtime.needs_server', 'Needs the Go server.'));
+        return null;
+      }
       const r = await _fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -642,9 +646,25 @@
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Selector for focusable elements inside a modal, used by the
-        initial-focus pass and the Tab focus trap. */
-    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    /** Focus candidates for initial focus and Tab containment, a
+        native <summary> included. Consumers require _isTabStop before
+        using a candidate as a Tab stop. */
+    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])',
+    /** Whether el is drawn where focus can land: no inert ancestor and
+        visible. Without checkVisibility (WebKit before Safari 17.4) it
+        asks the same questions itself: client rects, computed
+        visibility, a closed <details> outside its summary, and a
+        content-visibility:hidden ancestor. */
+    _rendered: el => {
+      if (el.closest('[inert]')) return false;
+      if (el.checkVisibility) return el.checkVisibility({ visibilityProperty: true });
+      if (!el.getClientRects().length || getComputedStyle(el).visibility !== 'visible' || el.closest('details:not([open])>:not(summary:first-of-type)')) return false;
+      for (let a = el.parentElement; a; a = a.parentElement) if (getComputedStyle(a).contentVisibility === 'hidden') return false;
+      return true;
+    },
+    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && window.__gofastr._rendered(el),
+    /** The first Tab stop under root, for initial focus. */
+    _firstStop: root => Array.from(root.querySelectorAll(window.__gofastr._focusSel)).find(window.__gofastr._isTabStop),
 
     /** The layout demand modules' seam table (src/envelope.js,
         src/loading.js, src/parts.js, src/transition.js). The navigator
@@ -758,7 +778,6 @@
       };
       const item = mk('div', 'background:#1f2937;color:#fff;padding:12px 16px;border-radius:6px;font:.9rem system-ui;display:flex;gap:12px');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
-      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
       const text = mk('div', 'flex:1');
       text.appendChild(mk('strong', 'display:block', cfg.title));
       if (cfg.body) {

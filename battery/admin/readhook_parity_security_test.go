@@ -165,14 +165,20 @@ func TestReadHookParityAdmin(t *testing.T) {
 		}, "Visible case"},
 		{"csv export", func() *http.Request { return preq(http.MethodGet, "/admin/api/cases/_export.csv", "") }, "Visible case"},
 		{"csv export of named hidden ids", func() *http.Request {
-			return preq(http.MethodGet, "/admin/api/cases/_export.csv?ids=c-hid,c-vis", "")
+			return preq(http.MethodGet, "/admin/api/cases/_export.csv?_id=c-hid&_id=c-vis", "")
 		}, "Visible case"},
 	}
 	for _, c := range reads {
 		t.Run("read/"+c.name, func(t *testing.T) {
-			_, h := parityEnv(t)
+			x, h := parityEnv(t)
+			if c.name == "csv export of named hidden ids" {
+				x.insert("cases", map[string]any{"id": "c-other", "title": "UNSELECTED", "team": "a", "status": "open"})
+			}
 			rr := serve(h, c.req())
 			body := rr.Body.String()
+			if c.name == "csv export of named hidden ids" && strings.Contains(body, "UNSELECTED") {
+				t.Error("named export included a visible row that was not selected")
+			}
 			if strings.Contains(body, parityHidden) {
 				t.Errorf("SECURITY: %s drew a row the BeforeList/BeforeGet hook hides (%d):\n%s", c.name, rr.Code, excerpt(body, parityHidden))
 			}

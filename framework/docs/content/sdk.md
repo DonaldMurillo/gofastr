@@ -20,7 +20,8 @@ from the live schema, the fix is re-running the command.
 
 ```
 gen/sdk/
-  go/          client.go + go.mod + README.md   (standalone module)
+  go/          client.go + repositories.go + go.mod + README.md
+    local/     repositories.go                (in-process adapters)
   js/          client.js + client.d.ts + README.md
   dist/        sdk-go.zip  client.js  client.d.ts  manifest.json
 ```
@@ -61,6 +62,141 @@ curl -LO https://your-app.example.com/docs/api/sdk/go.zip
 unzip go.zip
 go mod edit -replace local/myapp-sdk=./myapp-sdk
 ```
+
+### Typed repositories
+
+The Go target also emits one `<Entity>Repo` interface per entity, using
+the same record, input, patch, and list-response structs as the client.
+For an entity named `notes` with a string id:
+
+```go
+type NotesRepo interface {
+    List(ctx context.Context, params url.Values) (NotesListResponse, error)
+    Get(ctx context.Context, id string) (Notes, error)
+    Create(ctx context.Context, body NotesInput) (Notes, error)
+    Update(ctx context.Context, id string, body NotesInput) (Notes, error)
+    Patch(ctx context.Context, id string, body NotesPatch) (Notes, error)
+    Delete(ctx context.Context, id string) error
+}
+```
+
+`List` forwards REST query parameters unchanged, including column filters,
+`sort`, `page`, `limit` (or `per_page`), and includes. It returns the SDK's
+existing paginated list envelope; cursor and streaming clients remain the
+separate SDK methods. Record methods use integer ids for incrementing
+integer keys, or one string argument per composite-key column, in key order.
+
+`repositories.go` declares the interfaces and `<Entity>Remote` adapters.
+`NewNotesRemote(api)` wraps the existing `*client.Client`, including its
+base URL, HTTP client, and bearer token. This package imports only the
+standard library; a client-only binary does not link the framework.
+
+The `local` subpackage declares `<Entity>Local` and
+`NewNotesLocal(handler http.Handler)`. Pass the app's in-process entry point:
+
+```go
+import (
+    "github.com/DonaldMurillo/gofastr/framework"
+
+    client "example.com/notes-sdk"
+    "example.com/notes-sdk/local"
+)
+
+func serverNotes(app *framework.App) client.NotesRepo {
+    return local.NewNotesLocal(app.InProcessHandler())
+}
+
+func remoteNotes(api *client.Client) client.NotesRepo {
+    return client.NewNotesRemote(api)
+}
+```
+
+Local dispatches directly to that handler using an in-memory HTTP
+transport. It opens no socket and does not call SQL or unhooked CRUD
+readers. The REST handlers are the policy boundary, so access rules,
+owner and tenant scoping, validation, lifecycle hooks, and read hooks
+run exactly as they do for Remote. REST read handlers already apply
+the read-hook chain, including the `crud.WithReadHooks` context on
+related reads; Local does not introduce a second implementation of it.
+The generated API prefix is used for dispatch. Explicit SDK settings
+(`api_prefix`) and `--api-prefix` flags win, including an explicit empty
+value. Otherwise the SDK reads `app.api_prefix` from `gofastr.yml`,
+`gofastr.yaml` or `gofastr.json` when present; app specs default to
+`/api`. When more than one of those files exists the SDK cannot tell
+which one the app was generated from, so it refuses and asks for
+`--api-prefix` or the settings `api_prefix`. Without an app spec the SDK
+prefix defaults to empty. Regenerate with `--api-prefix` to
+match a server whose owned Go configuration differs from its old spec.
+
+Use an authenticated server-side context for Local calls. The context,
+including identity, tenant, roles, and cancellation, reaches
+the handler; its middleware still runs. Never construct this
+context from an unverified client-supplied user or tenant id. Local does
+not mint credentials or store tokens. `App.InProcessHandler()` marks only
+admitted calls with a private context key: `auth.SessionMiddleware` keeps
+their context identity, `auth.RequireAuth` accepts it in place of a bearer
+token when it is a non-nil user, and `auth.CSRF` (including `WithBFFPosture`) skips
+browser-token checks. Ordinary network requests still clear stale users
+and enforce CSRF. `SessionMiddleware` also records the outer request's
+2FA assurance for that same user: whether any of their live, non-pending
+session cookies has completed 2FA. `TwoFAPlugin.RequireTwoFA()` accepts
+this fact on a marked call only while its user id matches the server-set
+context user and its issuing `AuthManager` matches the gate's manager.
+Custom session or user stores bind assurance to the lookup tenant by
+default, and a Local request must match it, including an empty tenant id.
+Resolve the lookup tenant before authentication for tenant-partitioned
+stores. An `EntityUserStore` paired with a `MemorySessionStore` or
+`EntitySessionStore` is recognized by its concrete types as global lookup;
+wrappers and other custom stores are not automatically exempt. Set
+`AuthConfig.GlobalSessionLookup` only when both custom session and user
+lookup ignore the tenant: assurance is then about the user alone. This
+explicit opt-out does not add store filtering. Global lookup carries no
+tenant binding, even with a pre-existing tenant. With the built-in stores,
+`SessionMiddleware` followed by `tenant.ResolveMiddleware` therefore keeps
+the user's assurance valid for Local calls and `_events` rechecks. Rechecks
+of custom partitioned stores retain the original lookup tenant while
+downstream middleware derives the authorization tenant.
+It looks up current enrollment and requires verified assurance for an
+enrolled user. Missing assurance, a missing user, a different user or manager,
+or a tenant mismatch for partitioned lookup gets 401. An enrolled user without
+verified assurance gets 403. The fact is a snapshot, not a session credential:
+Local does not re-check session expiry or revocation. Clearing or replacing the user in
+an outer `SessionMiddleware` also clears or replaces the assurance.
+An explicit `handler.RecheckPrincipal` refreshes assurance across all
+the original candidate cookies for the same principal. For partitioned stores,
+it uses the original lookup tenant, not a tenant derived downstream.
+Tenant derivation steps then refresh the authorization tenant. The recheck
+fails when none of that principal's live, non-pending sessions remain.
+`RequireSession()` trusts a marked call's non-nil server-set user without
+re-reading a session; it still refuses API-token-authenticated contexts.
+Built-in auth account routes return 403 for marked calls, including logout,
+`/auth/me`, 2FA self-service and challenge, passkeys, password changes,
+API-token management, OAuth linking, linked accounts, and email verification.
+Sign-in, registration, password reset, and magic-link flows also return
+403. Use the browser flows for these operations, not Local.
+The entry point refuses any Cookie, Authorization,
+Proxy-Authorization, X-API-Key, or X-Gofastr-Embed header (even empty),
+URL userinfo, or
+TLS peer certificate with 403 before routing. Do not mount it on a network
+listener. `framework.IsInProcessRequest(r)` is the read-only predicate for
+custom middleware; a custom `middleware.CSRF` can use it in `CSRFConfig.Skip`.
+Local requests have an empty `RemoteAddr`, so per-IP rate keys and
+allowlists see no client address; no synthetic peer is supplied.
+Redirects are
+returned as API errors rather than followed. The client sets a 30-second
+timeout or the caller's earlier deadline. Because dispatch is synchronous,
+the in-process handler must honor context cancellation; cancellation during
+dispatch is returned as a context error, not a JSON decode error. JSON is still
+encoded and decoded in-process so wire errors and typed values match
+Remote; this is not a direct database repository.
+
+The conformance fixture in
+`cmd/gofastr/internal/appgen/testdata/repository/conformance.go.txt`
+runs the same cases against Local and Remote on one app. When changing
+scoping, run `go test ./cmd/gofastr/internal/appgen -run '^TestSDKRepoParity$' -count=1`.
+To prove that the owner assertion remains live, temporarily clear the
+field inside `crud.applyOwnerScope`, watch both `OwnerScope` cases fail,
+restore it, and rerun.
 
 An entity with an Image or File field also gets `Create<Entity>WithFiles`,
 `Update<Entity>WithFiles` and `Patch<Entity>WithFiles`. Each takes the
@@ -258,6 +394,11 @@ over an unchanged schema rewrites every file byte for byte.
 `--stamp-time` adds `generatedAt`, and the reference page then shows the
 date beside the version.
 
+`gofastr generate sdk --json` writes one document to stdout on both success
+and failure. Source, validation and write errors return
+`{"files":[],"errors":[{"message":"..."}]}` with a nonzero exit status;
+prose diagnostics go to stderr and overwrite warnings are suppressed.
+
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
@@ -306,6 +447,9 @@ download buttons, an auth guide (minting `gfsk_` tokens), an errors
 reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
+The quickstart lists records without an assumed sort column, so entities
+without timestamps work too. To sort, use a filterable/sortable column from
+that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
@@ -313,6 +457,7 @@ site := app.NewApp("My App")
 err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
     Registry:     fwApp.Registry,
     CRUDMounted:  fwApp.EntityCRUDMounted,
+    ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
     Artifacts:    os.DirFS("gen/sdk/dist"), // or an embed.FS for single-binary deploys
     BaseURL:      "https://your-app.example.com",
     APIPrefix:    "api",
@@ -326,9 +471,12 @@ alone cannot answer that: an app with no DB mounts no CRUD at all while
 every entity still reads `nil` ("auto"). Without the predicate the site
 publishes a reference page, and an SDK download, for paths that answer
 404. A columned view registered with `App.View` counts as mounted — it
-serves read routes, and read routes are what the site documents. Leaving
-the field nil keeps the older `Exposure`-only behaviour for callers that
-document a registry without an App.
+serves read routes. Also pass `ReadOnlyMounted: fwApp.EntityReadOnlyMounted`
+to omit create, update, delete, batch and state-move routes and create
+examples for those views. Explicit custom endpoints remain documented.
+Leaving `CRUDMounted` nil keeps the older `Exposure`-only behaviour for
+callers that document a registry without an App; leaving `ReadOnlyMounted`
+nil assumes writable routes.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles
@@ -345,8 +493,11 @@ fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
-`manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
-from the manifest hash, so stable URLs revalidate for free.
+`manifest.json`. Public responses carry `Cache-Control: no-cache`;
+with a `Policy`, they carry `private, no-cache` so shared caches cannot
+store policy-gated artifacts. Artifact ETags use the manifest's recorded
+hashes, so stable URLs revalidate for free. The cache policy also accompanies
+304 responses to conditional GET and HEAD requests.
 The downloads follow the same visibility as the pages: every route
 answers 404 unless each entity the manifest's `entities` list names is
 one the site documents, and a missing manifest refuses too. Each file

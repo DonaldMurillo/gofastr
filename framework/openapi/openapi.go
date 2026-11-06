@@ -1249,15 +1249,16 @@ func addBodyRefusals(op *openapi.Operation, errorRef map[string]any) {
 func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName, apiPrefix string, components map[string]bool) (gated bool) {
 	errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 	for _, endpoint := range ent.Config.Endpoints {
-		if endpoint.Method == "" || endpoint.Path == "" {
+		method := strings.ToUpper(endpoint.Method)
+		if method == "" || endpoint.Path == "" {
 			continue
 		}
 		customOp := openapi.NewOperation()
 		customOp.Summary = endpoint.Description
 		if customOp.Summary == "" {
-			customOp.Summary = endpoint.Method + " " + endpoint.Path
+			customOp.Summary = method + " " + endpoint.Path
 		}
-		customOp.OperationID = DefaultEndpointToolName(schemaName, endpoint.Method, EntityEndpointPath(ent, endpoint.Path))
+		customOp.OperationID = DefaultEndpointToolName(schemaName, method, EntityEndpointPath(ent, endpoint.Path))
 		customOp.Tags = []string{tagName}
 		// A typed InputSchema splits by where each field travels. A field
 		// named by a {param} segment is a path parameter, typed from its
@@ -1267,12 +1268,12 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		// (GET/HEAD never do). Unset schemas fall back to the shapeless
 		// {type:object} response and no body.
 		pathParams := map[string]bool{}
-		for seg := range strings.SplitSeq(endpoint.Path, "/") {
+		for seg := range strings.SplitSeq(EntityEndpointPath(ent, endpoint.Path), "/") {
 			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
 				pathParams[seg[1:len(seg)-1]] = true
 			}
 		}
-		inQuery := endpoint.SDK && (endpoint.Method == "GET" || endpoint.Method == "DELETE")
+		inQuery := endpoint.SDK && (method == "GET" || method == "DELETE")
 		var body []schema.Field
 		for _, f := range endpoint.InputSchema {
 			switch {
@@ -1284,7 +1285,7 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 				body = append(body, f)
 			}
 		}
-		if len(body) > 0 && endpoint.Method != "GET" && endpoint.Method != "HEAD" {
+		if len(body) > 0 && method != "GET" && method != "HEAD" {
 			customOp.SetRequestBody("application/json", openapi.FieldsToSchema(body), true)
 		}
 		// The route answers 401 without a user unless the endpoint is
@@ -1297,7 +1298,7 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 		}
 		// Every method but GET, HEAD and OPTIONS refuses a forged
 		// cross-site form post first, Public or not.
-		switch strings.ToUpper(endpoint.Method) {
+		switch method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
 			customOp.AddResponse(403, "A cross-site form post", errorRef)
@@ -1313,7 +1314,7 @@ func addCustomEndpoints(s *openapi.Spec, ent *entity.Entity, schemaName, tagName
 			}
 		}
 		customOp.AddResponse(200, "OK", out)
-		s.AddPath(endpoint.Method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
+		s.AddPath(method, EntityEndpointRoutePath(ent, endpoint.Path, apiPrefix), *customOp)
 	}
 	return gated
 }

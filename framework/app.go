@@ -11,6 +11,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -293,9 +294,13 @@ type App struct {
 	auditCfg *AuditConfig
 	// entityUI is the UI EntityUI built; a second call is refused.
 	entityUI *entityui.UI
-	// pendingEndpoints holds EntityEndpoints calls until App.Entity
+	// pendingEndpoints holds EntityEndpoints calls until entity registration
 	// registers the entity they name.
 	pendingEndpoints map[string][]entity.Endpoint
+	// claimedEndpoints names the queues an entity registration merged.
+	// The queue stays in place, so the same entity registered into
+	// another version group gets the same endpoints.
+	claimedEndpoints map[string]bool
 	// crudMounts records where each entity's write routes mounted: the
 	// router that carries them (a group's sub-router, with its
 	// middleware) and the path on it. EntityUI mounts the bulk and export
@@ -833,6 +838,13 @@ func (a *App) entityCRUDEnabled(e *entity.Entity) bool {
 // TestEntityCRUDMountedTracksTheMount pins the symbol and its answers.
 func (a *App) EntityCRUDMounted(e *entity.Entity) bool {
 	return a.entityCrudMount(e).Mounted
+}
+
+// EntityReadOnlyMounted reports whether an entity's mounted auto-CRUD routes
+// are read-only, as with a columned App.View. Pass it to sdkdocs.Config alongside
+// EntityCRUDMounted so the reference omits unmounted write operations.
+func (a *App) EntityReadOnlyMounted(e *entity.Entity) bool {
+	return a.entityCrudMount(e).ReadOnly
 }
 
 // entityCrudMount is THE predicate for the llm.md index (#358): like
@@ -1688,6 +1700,9 @@ func (a *App) Group(prefix string, opts ...routegroup.GroupOption) *routegroup.R
 //
 // This is the group-scoped equivalent of App.Entity.
 func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.EntityConfig) *App {
+	if queued := a.pendingEndpoints[name]; len(queued) > 0 {
+		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
+	}
 	e := entity.Define(name, config)
 	// The registry keys on (name, version) so the same entity name can be
 	// registered into multiple groups. The version is the group's full
@@ -1772,6 +1787,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		}
 	}
 
+	a.claimQueuedEndpoints(name)
 	return a
 }
 
@@ -2131,6 +2147,10 @@ func NewApp(opts ...AppOption) *App {
 		a.Logger().Warn("framework: WithIdempotency keeps its keys in this process's memory, but WithFanout runs the app on several replicas: " +
 			"a retry that reaches another replica runs the handler again; set IdempotencyConfig.Store to a shared store (middleware.NewSQLIdempotencyStore)")
 	}
+	if a.fanout != nil && a.DB == nil {
+		a.Logger().Warn("framework: module toggles remain local with WithFanout but no WithDB: " +
+			"refresh messages re-read each replica's in-memory store; use WithDB against a shared database to propagate toggles")
+	}
 	if a.noDefaults && a.translator != nil {
 		panic("framework: WithI18n is incompatible with WithoutDefaultMiddleware: " +
 			"the i18n middleware lives in the default chain; mount it explicitly via " +
@@ -2248,16 +2268,44 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
-// EntityEndpoints queues endpoints for the entity that a later App.Entity
-// or TryEntity call registers under name. That call merges them into its
-// config's Endpoints, so they pass the same route and MCP checks as
+// checkQueuedEndpointsClaimed refuses to start while EntityEndpoints
+// holds endpoints for a name no entity registration claimed.
+func (a *App) checkQueuedEndpointsClaimed() error {
+	var unclaimed []string
+	for _, name := range slices.Sorted(maps.Keys(a.pendingEndpoints)) {
+		if !a.claimedEndpoints[name] {
+			unclaimed = append(unclaimed, name)
+		}
+	}
+	if len(unclaimed) > 0 {
+		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity, TryEntity, or GroupEntity call registered", strings.Join(unclaimed, ", "))
+	}
+	return nil
+}
+
+// claimQueuedEndpoints records that a committed registration merged
+// name's queue.
+func (a *App) claimQueuedEndpoints(name string) {
+	if len(a.pendingEndpoints[name]) == 0 {
+		return
+	}
+	if a.claimedEndpoints == nil {
+		a.claimedEndpoints = map[string]bool{}
+	}
+	a.claimedEndpoints[name] = true
+}
+
+// EntityEndpoints queues endpoints for the entity that a later App.Entity,
+// TryEntity, or GroupEntity call registers under name. Every such call
+// merges them into its config's Endpoints (an entity registered into a
+// v1 and a v2 group gets them in both), so they pass the same route and MCP checks as
 // endpoints written in the config. It is how a generated
 // entities/endpoints.gen.go attaches endpoints to entity files it does not
-// own. Calling it for an entity already registered panics, and Start fails
+// own. Calling it for an entity already registered panics, and Start, Serve and Run fail
 // while endpoints are still queued for a name nothing registered.
 func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
-	if _, err := a.Registry.Get(name); err == nil {
-		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity", name))
+	if _, err := a.Registry.Get(name); err == nil || a.claimedEndpoints[name] {
+		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity, TryEntity, or GroupEntity", name))
 	}
 	if a.pendingEndpoints == nil {
 		a.pendingEndpoints = map[string][]entity.Endpoint{}
@@ -2377,7 +2425,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 			return fmt.Errorf("failed to register endpoints for entity %q: %w", name, err)
 		}
 	}
-	delete(a.pendingEndpoints, name)
+	a.claimQueuedEndpoints(name)
 
 	return nil
 }
@@ -2545,6 +2593,7 @@ func (a *App) View(v migrate.View) *App {
 		ch := crud.NewCrudHandler(ent, a.DB).WithJSONCase(a.JSONCasing()) // republishes the wire keys; see wireCrudHandler
 		ch.Registry = a.Registry
 		ch.ChildHooks = a.lookupHookRegistry
+		ch.Events = a.Events()
 		// Views mount under the API prefix like entities do, so BasePath must
 		// match or anything deriving a URL from the handler addresses the
 		// wrong path. mcpBase() is BasePath + "/" + table, so an empty value
@@ -2773,7 +2822,7 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	// registry entry and CRUD routes are already published. Recovering
 	// that panic into an error cannot un-publish them, so the collision
 	// has to be caught here.
-	if len(endpoints) > 0 {
+	if len(endpoints) > 0 || (a.entityUI != nil && crudMount != "" && a.entityUIWouldOwn(ent)) {
 		// Values name what owns the route, so the error can tell a user
 		// who collided with an unrelated page from one who shadowed their
 		// own generated CRUD route. Different fixes.
@@ -2798,6 +2847,14 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
 				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
 				held.add(pattern, "this entity's own generated CRUD route")
+			}
+		}
+		if crudMount != "" && a.entityUI != nil && a.entityUIWouldOwn(ent) {
+			for _, pattern := range entityUIRoutePatterns(crudMount) {
+				if conflict, refused := held.add(pattern, "this entity's EntityUI route"); refused {
+					return fmt.Errorf("EntityUI route %s overlaps %s, %s", pattern, conflict.pattern, conflict.owner)
+				}
+				taken[normalizeRoutePattern(pattern)] = "this entity's EntityUI route"
 			}
 		}
 		for _, endpoint := range endpoints {
@@ -3020,25 +3077,24 @@ func (a *App) RegisterBattery(b Battery, deps ...string) *App {
 // later call returns nil without re-running plugin Inits. This lets tests
 // call InitPlugins() manually pre-Start without colliding with the
 // implicit call inside Start.
-func (a *App) InitPlugins() error {
+func (a *App) InitPlugins() (err error) {
 	if !a.initialized.CompareAndSwap(false, true) {
 		return nil
 	}
+	defer func() {
+		if err != nil {
+			a.initialized.Store(false)
+		}
+	}()
 	if err := a.Plugins.InitAll(a); err != nil {
-		// Rollback the latch so the caller can retry after fixing
-		// whatever caused the failure (otherwise a transient init
-		// error would permanently brick the app).
-		a.initialized.Store(false)
 		return err
 	}
 	if err := a.Batteries.InitAll(a); err != nil {
-		a.initialized.Store(false)
 		return err
 	}
 	// Load module enable/disable state from the store into the in-memory
 	// cache. Modules absent from the store default to enabled.
 	if err := a.modules.loadFromStore(context.Background()); err != nil {
-		a.initialized.Store(false)
 		return err
 	}
 	// Now that every plugin and battery has run Init and settled its own
@@ -3084,10 +3140,10 @@ func (a *App) InitPlugins() error {
 			a.Logger().Warn("dev MCP contract tools partially skipped", "error", err)
 		}
 		// contracts_verify / contracts_fix read (and fix WRITES) the source
-		// tree, so they ride the dev-implied flag rather than introspection
+		// tree, so they ride the dev-loop gate rather than introspection
 		// itself: an explicit WithMCPIntrospection() in production must not
 		// hand an MCP client a file-writing tool. See mcp_contracts_dev.go.
-		if a.mcpIntrospectionDevImplied {
+		if dev.DevMCPEnabled() {
 			if err := a.registerContractDevTools(); err != nil {
 				a.Logger().Warn("dev MCP contract source tools partially skipped", "error", err)
 			}
@@ -3929,6 +3985,11 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 	if a.mcpAutoMount {
 		a.router.Get("/.well-known/mcp/server-card.json", http.HandlerFunc(a.handleMCPServerCard))
 		a.router.Get("/.well-known/mcp.json", http.HandlerFunc(a.handleMCPManifest))
+		for _, mountable := range a.mountables {
+			if discovery, ok := mountable.(interface{ SetMCPManifestPath(string) }); ok {
+				discovery.SetMCPManifestPath("/.well-known/mcp.json")
+			}
+		}
 	}
 	a.router.Get("/.well-known/agent-skills/index.json", http.HandlerFunc(a.handleAgentSkillsIndex))
 	if a.oauthAuthServer != nil {

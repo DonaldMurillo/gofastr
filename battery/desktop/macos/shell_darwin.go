@@ -549,7 +549,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 	userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 		objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 	objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 	webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -814,11 +814,6 @@ func (s *darwinShell) sendSnap(out snapOutcome) {
 // channel exists for the Debug log and the e2e seam.
 const bridgeMessageHandlerName = "gofastr"
 
-// errWindowClosed is the fixed refusal for desktop.Window methods before Run.
-func errWindowClosed() *desktop.Error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
-}
-
 // desktop.MainWindowID lives in shell.go: the test double and the portable
 // code need it on every GOOS/GOARCH, not only darwin/arm64.
 
@@ -875,6 +870,9 @@ func (w *darwinWindow) ids() (objc.ID, objc.ID) {
 
 // Navigate loads url in this window's web view.
 func (w *darwinWindow) Navigate(url string) error {
+	if _, webview := w.ids(); webview == 0 {
+		return errWindowClosed()
+	}
 	s := w.shell
 	var callErr error
 	err := s.onMain(func() {
@@ -1114,6 +1112,11 @@ func (s *darwinShell) drainSnap() {
 
 // Title reads the live NSWindow title (cached copy on hop failure).
 func (w *darwinWindow) Title() string {
+	if win, _ := w.ids(); win == 0 {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.title
+	}
 	var title string
 	if err := w.shell.onMain(func() {
 		if win, _ := w.ids(); win != 0 {
@@ -1131,9 +1134,9 @@ func (w *darwinWindow) Title() string {
 
 // SetTitle changes this window's title.
 func (w *darwinWindow) SetTitle(title string) error {
-	w.mu.Lock()
-	w.title = title
-	w.mu.Unlock()
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
+	}
 	closed := false
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
@@ -1142,6 +1145,9 @@ func (w *darwinWindow) SetTitle(title string) error {
 			return
 		}
 		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		w.mu.Lock()
+		w.title = title
+		w.mu.Unlock()
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
@@ -1154,6 +1160,9 @@ func (w *darwinWindow) SetTitle(title string) error {
 
 // Focus brings this window to front and activates the app.
 func (w *darwinWindow) Focus() error {
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
+	}
 	s := w.shell
 	closed := false
 	err := s.onMain(func() {
@@ -1182,6 +1191,9 @@ func (w *darwinWindow) Native() uintptr {
 
 // Frame implements desktop.Window: the live frame, top-left screen points.
 func (w *darwinWindow) Frame() (desktop.Frame, error) {
+	if win, _ := w.ids(); win == 0 {
+		return desktop.Frame{}, errWindowClosed()
+	}
 	var f desktop.Frame
 	var ok bool
 	err := w.shell.onMain(func() { f, ok = w.readFrameOnMain() })
@@ -1203,6 +1215,9 @@ func (w *darwinWindow) Frame() (desktop.Frame, error) {
 func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
+	}
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
 	}
 	closed := false
 	err := w.shell.onMain(func() {
@@ -1259,6 +1274,9 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 // routing AppKit would, then close (which bypasses the delegate, as
 // always) tears the window down.
 func (w *darwinWindow) Close() error {
+	if win, _ := w.ids(); win == 0 {
+		return nil
+	}
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
@@ -1321,7 +1339,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 		userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 			objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 		objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),

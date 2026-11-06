@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
@@ -531,7 +532,9 @@ func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (ref
 		return false
 	}
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP listing gate recovered", "operation", "listing gate",
+				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			refused = true
 		}
 	}()
@@ -549,6 +552,8 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP tool gate recovered", "operation", "tool gate",
+				"tool", textsafe.SanitizeControlBytes(t.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			err = &RPCError{Code: ErrInternalError, Message: "internal tool error"}
 		}
 	}()
@@ -582,8 +587,9 @@ func runCallGate(gate func(toolName string) error, name string) (err error) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP call gate recovered",
 				slog.String("operation", "call gate"),
-				slog.String("tool", name),
-				slog.Any("panic", textsafe.Recovered(rec)))
+				slog.String("tool", textsafe.SanitizeControlBytes(name)),
+				slog.String("panic", textsafe.Recovered(rec)),
+				slog.String("stack", string(debug.Stack())))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -645,7 +651,8 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP server gate recovered",
 				slog.String("operation", "server gate"),
-				slog.Any("panic", textsafe.Recovered(rec)))
+				slog.String("panic", textsafe.Recovered(rec)),
+				slog.String("stack", string(debug.Stack())))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -773,6 +780,8 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]any) (result any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP tool handler recovered", "operation", "tool handler",
+				"tool", textsafe.SanitizeControlBytes(t.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			result = nil
 			err = &RPCError{
 				Code:    ErrInternalError,

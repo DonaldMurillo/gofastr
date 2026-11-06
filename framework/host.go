@@ -5,10 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
-	"slices"
-	"strings"
 	"time"
 )
 
@@ -182,13 +179,18 @@ func (a *App) Run(ctx context.Context, host Host) error {
 
 // run is the lifecycle engine behind Run, Start and Serve.
 func (a *App) run(ctx context.Context, host Host) (err error) {
+	if a.oauthResource != nil {
+		if err := a.oauthResource.validate(); err != nil {
+			return err
+		}
+	}
 	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
 	// drives the real binary over HTTP still records what it exercised.
 	// No-op in every other process.
 	a.enableSemanticCoverageFromEnv()
 
-	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	if err := a.checkQueuedEndpointsClaimed(); err != nil {
+		return err
 	}
 	web, _ := host.(*httpHost)
 	if web != nil {

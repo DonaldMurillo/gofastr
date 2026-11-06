@@ -30,12 +30,18 @@ data: {"type":"entity.updated","data":{"entity":"posts","table":"posts","record"
 ```
 
 - The connection stays open until the client disconnects.
+- HTTP and in-process creates, including batches, cascaded children and
+  the insert arm of `UpsertOne`, route their events and outbox entries by
+  the persisted row's owner even when that column is hidden from the
+  returned record or a trusted `BeforeCreate` hook assigns another owner.
 - The initial `: subscribed <entity>` comment is flushed after the
   entity's event listeners are installed. A write published after that
   acknowledgement can enter the stream's bounded delivery buffer.
 - Backpressure: each client has a bounded buffer. The default broker
   keeps emitters non-blocking by dropping the oldest queued event when a
   client cannot keep up, so the subscriber retains the latest events.
+  The entity stream's own 32-event delivery buffer uses the same
+  oldest-drop policy, including when publishers emit concurrently.
   This is intentional: SSE is for push notifications, not durable
   delivery. Use a real queue for that.
 - Clients that prefer delivery over emitter latency can opt in with

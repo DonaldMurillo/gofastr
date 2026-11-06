@@ -26,6 +26,7 @@ type navGapPage struct {
 	shell  bool
 	inner  func(hit int) (status int, html string)
 	header http.Header
+	stream string
 }
 
 func newNavGapSite(t *testing.T, routes string, pages map[string]navGapPage) *navGapSite {
@@ -72,7 +73,12 @@ func newNavGapSite(t *testing.T, routes string, pages map[string]navGapPage) *na
 				`<main role="main" tabindex="-1" data-cui-layout-slot="l:site">` + inner + `</main></div>`
 		}
 		w.WriteHeader(status)
+		meta := ""
+		if p.stream != "" {
+			meta = `<meta name="gofastr-sse" content="` + p.stream + `">`
+		}
 		fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+
+			meta+
 			`<script type="application/json" id="gofastr-routes">`+routes+`</script>`+
 			`</head><body>`+main+`<script src="/__gofastr/runtime.js"></script></body></html>`)
 	})

@@ -485,6 +485,10 @@
 
     /** Call a server action for a specific component */
     async _serverActionFor(componentId, action, params = {}) {
+      if (document.__fuiStaticDispatch) {
+        _showNavToast(say('runtime.needs_server', 'Needs the Go server.'));
+        return null;
+      }
       const r = await _fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -650,9 +654,25 @@
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Selector for focusable elements inside a modal, used by the
-        initial-focus pass and the Tab focus trap. */
-    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    /** Focus candidates for initial focus and Tab containment, a
+        native <summary> included. Consumers require _isTabStop before
+        using a candidate as a Tab stop. */
+    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])',
+    /** Whether el is drawn where focus can land: no inert ancestor and
+        visible. Without checkVisibility (WebKit before Safari 17.4) it
+        asks the same questions itself: client rects, computed
+        visibility, a closed <details> outside its summary, and a
+        content-visibility:hidden ancestor. */
+    _rendered: el => {
+      if (el.closest('[inert]')) return false;
+      if (el.checkVisibility) return el.checkVisibility({ visibilityProperty: true });
+      if (!el.getClientRects().length || getComputedStyle(el).visibility !== 'visible' || el.closest('details:not([open])>:not(summary:first-of-type)')) return false;
+      for (let a = el.parentElement; a; a = a.parentElement) if (getComputedStyle(a).contentVisibility === 'hidden') return false;
+      return true;
+    },
+    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && window.__gofastr._rendered(el),
+    /** The first Tab stop under root, for initial focus. */
+    _firstStop: root => Array.from(root.querySelectorAll(window.__gofastr._focusSel)).find(window.__gofastr._isTabStop),
 
     /** The layout demand modules' seam table (src/envelope.js,
         src/loading.js, src/parts.js, src/transition.js). The navigator
@@ -766,7 +786,6 @@
       };
       const item = mk('div', 'background:#1f2937;color:#fff;padding:12px 16px;border-radius:6px;font:.9rem system-ui;display:flex;gap:12px');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
-      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
       const text = mk('div', 'flex:1');
       text.appendChild(mk('strong', 'display:block', cfg.title));
       if (cfg.body) {
@@ -985,10 +1004,10 @@
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
-    // Tagged: this prevent is the runtime's own, not a page listener's,
-    // so a link that also sets a signal still navigates (nav.js).
+    // Tag only prevention this delegate initiates; an earlier page
+    // listener's cancellation still owns a signal-bearing link.
+    e._cuiSig = !e.defaultPrevented;
     e.preventDefault();
-    e._cuiSig = 1;
     const G = window.__gofastr;
 
     const set = node.getAttribute('data-cui-signal-set');
@@ -1046,7 +1065,7 @@
 // data-cui-open anchor guard) and two seams the demand modules own —
 // the commit seam (_swapCommit delegates to the transition module so a
 // plain page declaring a transition gets one) and the opt-in
-// stand-down (a document holding an outlet or area marker hands its
+// stand-down (a document holding an outlet, area, or loading template hands its
 // navigations to the envelope module: the pending path rides a
 // one-field slot, the module load starts, and this navigator stands
 // down; the module carries its own navigator, cache and tail). The
@@ -1123,16 +1142,15 @@
   // decoded, so /orders/%31 is the :id:int route there and here, with a
   // decoded "%" or "/" kept escaped so it stays one segment; a segment
   // that does not decode (%E0%A4) is taken literally, never thrown.
-  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (part) => encodeURIComponent(part)); };
+  const _routeMatch = (seg, part) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(part) : seg === part;
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
     const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
-    let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
-    if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
-    if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
+    const r = routes.get(clean) || clean !== '/' && routes.get(clean.endsWith('/') ? clean.slice(0, -1) : clean + '/');
     if (r) return r;
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern, entry] of routes) {
@@ -1143,14 +1161,11 @@
       // Each literal segment must align; a dynamic segment (":name",
       // incl. the catch-all ":name*") matches any value its constraint
       // (":id:int", ":id:uuid", ":id:alpha", ":id:alnum") accepts.
-      if (pp.every((seg, i) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(parts[i]) : seg === parts[i])) return entry;
+      if (pp.every((seg, i) => _routeMatch(seg, parts[i]))) return entry;
     }
     return null;
   };
-  const routeLayouts = (path) => {
-    const r = routeEntry(path);
-    return (r && r.layouts) || [];
-  };
+  const routeLayouts = (path) => routeEntry(path)?.layouts || [];
   // Count of outermost layers the live DOM shares with the target chain.
   // An empty key never matches (unnamed layers have no stable identity).
   const sharedDepth = (layouts) => {
@@ -1182,15 +1197,13 @@
     // Another locale is another document: its lang, its strings table
     // and every server-rendered word differ, not just the screen.
     if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
-    const de = routeEntry(destPath);
-    const dest = (de && de.docScripts) || [];
+    const dest = routeEntry(destPath)?.docScripts || [];
     const srcs = [];
     for (const s of document.querySelectorAll('script[data-cui-doc]')) {
       const v = s.getAttribute('src');
       if (v) srcs.push(v);
     }
-    srcs.sort();
-    return srcs.join('\n') !== dest.join('\n');
+    return srcs.sort().join('\n') !== dest.join('\n');
   };
   // A server redirect (X-Gofastr-Location) into another document loads
   // it in place of the requested URL. Both navigators ask before they
@@ -1224,26 +1237,29 @@
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
-  const syncPageHead = (root) => {
-    const carrier = root && (root.matches && root.matches('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
+  const syncPageHead = (root, skipCSRF) => {
+    const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
     const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
-    const incoming = [];
-    for (const node of source.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')) {
-      if (node.tagName === 'META' && (!node.hasAttribute('name') && !node.hasAttribute('property') || node.hasAttribute('http-equiv'))) continue;
+    const nodes = source.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]');
+    document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => { if (node.name !== 'csrf-token') node.remove(); });
+    for (const node of nodes) {
+      if (node.matches('meta:not([name]):not([property]),meta[http-equiv]')) continue;
       if (node.tagName === 'LINK') {
         try { if (!/^https?:$/.test(new URL(node.getAttribute('href'), location.href).protocol)) continue; } catch (_) { continue; }
       }
-      const copy = node.cloneNode(false);
-      for (const attr of Array.from(copy.attributes)) if (/^on/i.test(attr.name)) copy.removeAttribute(attr.name);
-      incoming.push(copy);
+      const copy = node.cloneNode();
+      for (const attr of copy.getAttributeNames()) if (/^on/i.test(attr)) copy.removeAttribute(attr);
+      if (copy.name === 'csrf-token') {
+        if (skipCSRF) continue;
+        document.head.querySelector('meta[name="csrf-token"]')?.remove();
+      }
+      document.head.append(copy);
     }
-    document.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]').forEach(node => node.remove());
-    incoming.forEach(node => document.head.appendChild(node));
   };
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
-    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
+    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]'), node => node.outerHTML).join(''));
     for (const attr of ['lang', 'dir']) {
       const value = source.documentElement[attr];
       if (value) carrier.setAttribute('data-cui-' + attr, value);
@@ -1567,8 +1583,8 @@
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
-  const applyDocShell = (root) => {
-    syncPageHead(root);
+  const applyDocShell = (root, skipCSRF) => {
+    syncPageHead(root, skipCSRF);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
     // The destination's runtime words; none means English.
     if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
@@ -1593,9 +1609,9 @@
   // consumes the popstate's pending value at entry, so a superseded
   // back/forward can never leak its position into a later click's
   // finishNav.
-  const finishNav = (path, prevPath, cached, root, ps) => {
+  const finishNav = (path, prevPath, cached, root, ps, skipCSRF) => {
     window.__gofastr._navShown = true;
-    applyDocShell(root);
+    applyDocShell(root, cached || skipCSRF);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -1641,7 +1657,7 @@
   const loadPage = (path, opts) => {
     if (!window.__gofastr._originOK(path)) return;
     if (crossesDocBoundary(path)) { location.assign(path); return; }
-    // The opt-in hand-off: a document holding an outlet or area marker
+    // The opt-in hand-off: a document holding an outlet, area, or loading template
     // hands its navigations to the envelope module. Warm, the
     // delegation above runs them; cold, the load starts now and the
     // module's navigator takes this one when it lands (the click has
@@ -1652,7 +1668,7 @@
     // to a whole-document load of the destination.
     const G0 = window.__gofastr;
     const N = G0._navHooks.envelope?.nav;
-    if (N || document.querySelector('[data-cui-outlet],[data-cui-area]')) {
+    if (N || document.querySelector('[data-cui-outlet],[data-cui-area],template[data-cui-loading]')) {
       // The pointer modality core recorded for THIS navigation rides
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
@@ -1752,7 +1768,7 @@
             _pendingNav.delete(path);
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
-              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
+              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps, true);
             }, null, pf.html, pf.title);
             return;
           }
@@ -1790,7 +1806,10 @@
         // the SSE reconnect loop recovers here too, not only on the
         // partial branch's X-Gofastr-Session path.
         const fm = sseMeta(pdoc), lm = sseMeta();
-        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
+        if (fm && lm) {
+          if (new URL(fm.content, location.href).searchParams.get('session') !== new URL(lm.content, location.href).searchParams.get('session')) G.invalidate('*');
+          lm.setAttribute('content', fm.getAttribute('content'));
+        }
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
@@ -2064,12 +2083,13 @@
       // Already there (or on the way: a repeat click while the page
       // loads). A fragment is the browser's own in-page jump; anything
       // else no-ops, the browser would reload the whole document.
-      if (!navHash) e.preventDefault();
+      if (!navHash) { e._cuiNav = 1; e.preventDefault(); }
       return;
     }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
+    e._cuiNav = 1;
     e.preventDefault();
     // gofastr:beforenavigate: cancellable hook fired on the anchor
     // (bubbles, cancelable) only for clicks the router is about to
@@ -2199,6 +2219,8 @@
   // SPA navigation (scheme guard -> pushState -> loadPage). _originOK is read
   // via `this`, so it resolves at call time regardless of composition order.
   Object.assign(window.__gofastr, {
+    _routeSeg,
+    _routeMatch,
     _settleScroll,
     // --- Router API ---
 
@@ -2210,7 +2232,6 @@
         the path is the current page and bypasses the screen cache,
         use it after a mutation so the destination reflects new state. */
     navigate(path, { replace = false, force = false } = {}) {
-      if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
       // touching the URL bar. Server-rendered data-cui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
@@ -2218,7 +2239,9 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
-      replace ||= path === currentPath;
+      const same = new URL(path, document.baseURI).href === location.href;
+      if (same && !force) return;
+      replace ||= same;
       this._navAsk({ to: path, replace }, () => {
         // Document boundary: load a real document instead of swapping.
         // assign/replace keep the push/replace shape the caller asked
@@ -3193,7 +3216,7 @@
   // behaviour, loaded on the details[data-hui-disclosure] marker);
   // the kernel holds none of it.
 
-  // Task A: auto-inject aria-live onto signal nodes so screen readers
+  // Task A: auto-inject live semantics onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
   // when data-cui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
@@ -3207,8 +3230,11 @@
     document.querySelectorAll('[data-cui-signal]').forEach((node) => {
       const mode = node.getAttribute('data-cui-signal-mode') || 'text';
       if (mode !== 'text') return;
-      if (!node.getAttribute('role')) node.setAttribute('role', 'status');
-      if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
+      // role is a token list (padding, fallbacks): any alert or status
+      // token already carries live semantics, so polite would downgrade it.
+      const role = node.getAttribute('role');
+      if (!role) node.setAttribute('role', 'status');
+      if (role && !/(^|\s)(alert|status)(\s|$)/i.test(role) && !node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
       if (!node.getAttribute('aria-atomic')) node.setAttribute('aria-atomic', 'true');
     });
   };
@@ -3231,6 +3257,7 @@
   // swap a navigation's pass already fired is not fired again when the
   // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
+    if (document.__fuiStaticDispatch) return;
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;

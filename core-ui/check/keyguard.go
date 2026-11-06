@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// LintKeyGuard fires on two keyboard shapes the 2026-11 headless bug
+// LintKeyGuard fires on three keyboard shapes the 2026-11 headless bug
 // bash fixed by hand, module by module, in keydown listeners
 // (addEventListener('keydown', fn) with an inline function or a
 // same-file named one, and .onkeydown = fn):
@@ -17,6 +17,9 @@ import (
 //     confirms a CJK conversion picks a combobox option, commits a tag
 //     or submits a form (e2988bd2: combobox). The fix spelling is
 //     `if (e.isComposing || e.keyCode === 229) return;`.
+//   - [keyguard-escape] an Escape keydown listener lacks either
+//     composition indicator. Escape belongs to the IME even after it
+//     bubbles out of a guarded combobox into an enclosing surface.
 //   - [keyguard-rtl] the listener maps ArrowLeft and ArrowRight to
 //     different outcomes (a case label, or a comparison in a ternary or
 //     an if) and never reads the page's direction, so on <html
@@ -32,7 +35,7 @@ import (
 //     the sides — and counts at the call.
 //
 // Silent on:
-//   - a listener that never reads isComposing (arm ime): nothing in it
+//   - an Enter listener that never reads isComposing (arm ime): nothing in it
 //     says its target composes text — a tree item, a day button, a
 //     radio. A text field's listener already guards isComposing; the
 //     Safari gap is the half this arm holds;
@@ -65,9 +68,14 @@ func LintKeyGuard(roots ...string) (*Result, error) {
 		for _, h := range keydownHandlers(f, heads) {
 			spans := append([][2]int{{h.start, h.end}}, helperSpans(f, heads, h.start, h.end)...)
 			code := spanText(f.Code, spans)
-			if pos := enterBranch(f, heads, h); pos >= 0 && strings.Contains(code, "isComposing") && !re229.MatchString(code) {
+			if pos := keyBranch(f, heads, h, reEnterLit); pos >= 0 && strings.Contains(code, "isComposing") && !re229.MatchString(code) {
 				if line := f.lineOf(pos); !allowed[line] {
 					res.add(f.Path, line, "[keyguard-ime] this keydown listener handles Enter and reads isComposing but not keyCode 229 — Safari ends a composition with a keydown whose isComposing is already false and whose keyCode is 229, so the Enter that confirms a CJK conversion acts as a real Enter; return on `e.isComposing || e.keyCode === 229`")
+				}
+			}
+			if pos := keyBranch(f, heads, h, reEscapeLit); pos >= 0 && (!strings.Contains(code, "isComposing") || !re229.MatchString(code)) {
+				if line := f.lineOf(pos); !allowed[line] {
+					res.add(f.Path, line, "[keyguard-escape] this Escape keydown listener must ignore `e.isComposing || e.keyCode === 229` — the IME owns Escape even when the event bubbles from a nested control")
 				}
 			}
 			if pos := directionalArrow(f, heads, h); pos >= 0 && !reDirectionRead.MatchString(code) {
@@ -97,6 +105,7 @@ var (
 	// mapped wrongly in the first place.
 	reDirectionRead = regexp.MustCompile(`\.\s*direction\b|getAttribute\s*\(\s*['"]dir['"]|\.\s*dir\b|\[dir\b|:dir\(|\brtl\b|\bRTL\b|\bisRtl\b|\bisRTL\b`)
 	reEnterLit      = regexp.MustCompile(`['"]Enter['"]|\b(?:keyCode|which)\s*===?\s*13\b`)
+	reEscapeLit     = regexp.MustCompile(`['"](?:Escape|Esc)['"]|\b(?:keyCode|which)\s*(?:===?|!==?)\s*27\b`)
 	reArrowCmp      = regexp.MustCompile(`(?:===?|!==?)\s*(['"])Arrow(Left|Right)['"]|(['"])Arrow(Left|Right)['"]\s*(?:===?|!==?)`)
 	reArrowCase     = regexp.MustCompile(`\bcase\s*['"]Arrow(Left|Right)['"]\s*:`)
 	reCaseLabel     = regexp.MustCompile(`^\s*case\s*(['"])([^'"]*)['"]\s*:`)
@@ -210,11 +219,11 @@ func spanText(s string, spans [][2]int) string {
 	return b.String()
 }
 
-// enterBranch returns the offset of the listener's first Enter test, or
-// -1. A test in a helper the listener calls (widgethelpers' isEnter)
+// keyBranch returns the offset of the listener's first matching key test,
+// or -1. A test in a helper the listener calls (widgethelpers' isEnter)
 // counts at the call.
-func enterBranch(f jsSource, heads []funcHead, h keyHandler) int {
-	if m := reEnterLit.FindStringIndex(f.Code[h.start:h.end]); m != nil {
+func keyBranch(f jsSource, heads []funcHead, h keyHandler, pattern *regexp.Regexp) int {
+	if m := pattern.FindStringIndex(f.Code[h.start:h.end]); m != nil {
 		return h.start + m[0]
 	}
 	for _, m := range reCallName.FindAllStringSubmatchIndex(f.Blank[h.start:h.end], -1) {
@@ -223,7 +232,7 @@ func enterBranch(f jsSource, heads []funcHead, h keyHandler) int {
 			continue
 		}
 		for _, hd := range heads {
-			if hd.name == name && (hd.end <= h.start || hd.start >= h.end) && reEnterLit.MatchString(f.Code[hd.start:hd.end]) {
+			if hd.name == name && (hd.end <= h.start || hd.start >= h.end) && pattern.MatchString(f.Code[hd.start:hd.end]) {
 				return h.start + m[0]
 			}
 		}

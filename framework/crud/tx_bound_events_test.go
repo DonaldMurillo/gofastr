@@ -165,7 +165,7 @@ func TestLandedHonoursDeadline(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := landed(ctx, conn, event.EntityCreated, "notes", []string{"id"}, []any{"x"}, nil)
+		_, err := landed(ctx, conn, event.EntityCreated, "notes", []string{"id"}, []any{"x"}, nil, false)
 		done <- err
 	}()
 	select {

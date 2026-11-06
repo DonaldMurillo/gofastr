@@ -230,7 +230,8 @@ func (p *parser) parseMapSeeded(indent int, seed map[string]int) (*Node, error) 
 		value = strings.TrimSpace(value)
 		p.pos++
 		if value == "" {
-			if p.pos >= len(p.lines) || p.lines[p.pos].indent <= indent {
+			if p.pos >= len(p.lines) || p.lines[p.pos].indent < indent ||
+				(p.lines[p.pos].indent == indent && !(strings.HasPrefix(p.lines[p.pos].text, "- ") || p.lines[p.pos].text == "-")) {
 				out.Map[key] = &Node{Kind: Map, Map: map[string]*Node{}, Line: line.line, Column: line.indent + 1}
 				continue
 			}
@@ -345,7 +346,8 @@ func (p *parser) parseList(indent int) (*Node, error) {
 			keyCol := line.indent + 1 + (len(line.text) - 1 - len(strings.TrimLeft(line.text[1:], " ")))
 			value = strings.TrimSpace(value)
 			if value == "" {
-				if p.pos < len(p.lines) && p.lines[p.pos].indent > keyCol {
+				if p.pos < len(p.lines) && (p.lines[p.pos].indent > keyCol ||
+					(p.lines[p.pos].indent == keyCol && (strings.HasPrefix(p.lines[p.pos].text, "- ") || p.lines[p.pos].text == "-"))) {
 					owned, err := p.parseBlock(p.lines[p.pos].indent)
 					if err != nil {
 						return nil, err

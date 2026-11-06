@@ -29,7 +29,10 @@ import (
 //
 // adminDSN must be a connection string with permission to create and
 // drop databases (typically a superuser connecting to a maintenance DB
-// like `postgres`). The helper hard-fails on missing or unusable DSNs,
+// like `postgres`). Use a postgres:// or postgresql:// URL; the carved
+// connection replaces its path and removes dbname/database query overrides,
+// preserving credentials, host and other connection options.
+// The helper hard-fails on missing or unusable DSNs,
 // by design, never t.Skip. Tests that hand-roll t.Skip when a DB is
 // missing pass without proving anything; this helper inverts that.
 //
@@ -180,6 +183,10 @@ func rewriteDBName(dsn, dbName string) (string, error) {
 		return "", fmt.Errorf("rewriteDBName: expected postgres scheme, got %q in %s", u.Scheme, redact(dsn))
 	}
 	u.Path = "/" + dbName
+	options := u.Query()
+	options.Del("dbname")
+	options.Del("database")
+	u.RawQuery = options.Encode()
 	return u.String(), nil
 }
 

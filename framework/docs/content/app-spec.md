@@ -20,6 +20,10 @@ degrades incomplete nodes instead of panicking:
 an image is omitted, an empty-legend fieldset stays a fieldset, a label may
 remain unassociated, and a link without `href` becomes text content.
 
+With `app.auth` enabled, a screen cannot use `{base_path}/me` (including
+a trailing slash): that GET route belongs to the auth JSON API. The
+default auth base path is `/auth`; GET login pages remain available.
+
 A `gofastr.yml` app spec is an optional way to scaffold a GoFastr app:
 declare your entities, screens, nav, seed data, and endpoint/middleware
 stubs in one file, then generate owned Go from it. The app spec is not
@@ -169,7 +173,8 @@ table is the entity's `table:` or, without one, its name in snake_case.
 GoFastr ships its own small YAML parser in `core/yaml`; no external YAML parser
 is required. Supported syntax:
 
-- indentation-based maps and lists
+- indentation-based maps and lists, including a mapping value whose list
+  dashes align with its key (`items:\n- a\n- b`)
 - strings, quoted strings, booleans, numbers, and `null`. A
   double-quoted string takes the YAML 1.2 escapes (`\n`, `\t`, `\"`,
   `\\`, `\/`, `\e`, `\xE9`, `é`, `\U0001F600` and the rest of the
@@ -551,6 +556,12 @@ report lists the written files under `files`, the files left alone under
 `skipped_existing`, and the files already there that the run changed (the
 settings file and the rebuilt derived files) under `updated`.
 
+With `--json`, source, validation, write and rebuild failures return one
+`{"files":[],"errors":[{"message":"..."}]}` document and exit nonzero.
+Endpoint and client rebuild failures are both fatal. Earlier writes are
+not rolled back; the error document is not an inventory of completed
+writes. Correct the error and rerun before building the updated app.
+
 Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
 in a full generate. This means `main.go`, `app.go`, `entities/register.go`,
@@ -734,11 +745,24 @@ each file's `screenRegistrar{order: …}` to recover authored order, with a
 legacy aggregated `screens.go` fallback for apps older generators emitted),
 reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 `appUI.List("x")…` → `entity_list`, and so on). The result
+also preserves the control catalog: custom forms and their text, number,
+toggle, select and radio controls; action buttons; static table columns
+and cells; ordered/unordered item lists; and labeled navigation links.
+Control properties round-trip in canonical form, not their original
+spelling: action-button variants and types are case-insensitive and
+lowercased while parsing. Default `variant: primary`, `type: button`,
+and navigation-link `gap: md` values are omitted both when parsing and
+packing, so a control gains no authored properties from generated defaults.
+The result
 prints to stdout, or to a file with `-o`:
 
 ```sh
 gofastr pack examples/meridian -o recovered.yml
 ```
+
+`-o`/`--out` requires a nonempty filename, not another flag. An empty value
+is refused rather than falling back to stdout. To deliberately write
+a dash-prefixed filename, use an explicit relative path such as `./-out.yml`.
 
 Every string in the output comes from the app's source, and none reaches
 the terminal raw if it could drive it: a value holding a control or
@@ -793,6 +817,21 @@ checkout without that `.env` packs a spec with no `seed_password`, so the
 spec seeds no admin. Pack says so before the check names `app.go` and
 `main.go`; add `seed_password` under `app.admin` before generating from
 it.
+
+Pack also reads `public_openapi`, the UI host's application description,
+and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
+override is not substituted for that authored fallback; the default
+`http://localhost:8080` fallback is omitted from the packed spec.
+Trailing `/` characters in `app.base_url` are removed while parsing:
+the value is a base prefix for absolute sitemap URLs, so
+`https://slash.example/` and `https://slash.example` have the same
+canonical form, as do base prefixes ending in a path. Pack retains that
+canonical form. Descriptions equal to the generator's name/entity-derived
+default are omitted rather than treated as authored metadata; custom
+descriptions are retained. The generator and pack share this derivation
+through `appgen.AppSpecSiteDescription`.
+Admin paths and roles equal to the defaults (`/admin` and `admin`) are
+also omitted; customized admin values are retained.
 
 The synthesized `/create` screen, and the `/login` screen added for an app spec with auth and no login form, are dropped (they weren't authored). Generate and pack are a matched inverse pair for the declarative
 pieces `app`, `entities`, `screens`, `nav`, and `seed`, so the invariant
@@ -863,7 +902,8 @@ partial and keeps the shell).
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
   params stay apart, and two blocks for the same entity on one screen are
-  refused at validate time.
+  refused at validate time. `fields: [id]` requires an actual `id` column:
+  natural and composite keys do not add one unless explicitly declared.
 - An entity listed on several screens has one **home list**: the list
   screen its detail screen sits under, else the first one with
   `create: true`, else the first one declared. A list on any other screen
@@ -1276,6 +1316,12 @@ The generated `authPolicy` composes `auth.SessionPolicy` and
 other battery/auth role gate (see
 [access control](access-control.md#wiring-it-decidermiddleware)), and a
 scoped API token is refused.
+
+The real-estate example gates its agents, tours and inquiries screens with
+`auth: true` under `access:` so anonymous visitors reach sign-in rather than a
+page of refused entity reads. The entities retain their staff permissions:
+signing in does not by itself authorize reading those records. Its public
+properties catalog remains available without signing in.
 
 ### Seed data
 
@@ -1917,6 +1963,11 @@ a test-only hand-written app shell that imports generated packages; that misses
 the app-generator boundary.
 
 ### Generated `e2e_test.go` is driver- and OS-portable
+
+The synthetic CRUD lifecycle chooses an entity whose required and key
+fields it can fill. It skips required relations and entities with required
+or key fields constrained by `min`, `max` or `pattern`, rather than sending
+invalid sample values. Screen rendering checks still cover those screens.
 
 Every generated app ships an `e2e_test.go` (gated by `-short`) that builds the
 binary, boots it as a child process, and drives the real HTTP endpoints. Two

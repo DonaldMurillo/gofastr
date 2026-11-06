@@ -2,17 +2,20 @@ package generatecmd
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
 // runGenerateWatch polls the codegen config and its inputs for changes and
@@ -29,11 +32,16 @@ import (
 func runGenerateWatch(args []string) {
 	options, err := appgen.ParseGenerateOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
+		appgen.ReportGenerateFailure(args, err)
 		cli.OsExit(1)
 		return
 	}
-	cli.Info("Watching generator inputs: Ctrl-C to stop.")
+	asJSON := slices.Contains(args, "--json")
+	if asJSON {
+		cli.Fprintln(os.Stderr, "Watching generator inputs: Ctrl-C to stop.")
+	} else {
+		cli.Info("Watching generator inputs: Ctrl-C to stop.")
+	}
 
 	// Initial pass.
 	runOnce(args)
@@ -48,8 +56,12 @@ func runGenerateWatch(args []string) {
 			continue
 		}
 		lastHash = h
-		fmt.Printf("\033[2J\033[H") // clear terminal
-		cli.Info("Detected codegen input change: regenerating...")
+		if asJSON {
+			cli.Fprintln(os.Stderr, "Detected codegen input change: regenerating...")
+		} else {
+			fmt.Printf("\033[2J\033[H") // clear terminal
+			cli.Info("Detected codegen input change: regenerating...")
+		}
 		runOnce(args)
 	}
 }
@@ -66,7 +78,7 @@ func runOnce(args []string) {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		cli.Fail("generate failed: %v", err)
+		appgen.ReportGenerateFailure(args, fmt.Errorf("generate failed: %w", err))
 		return
 	}
 	cmd := exec.Command(exe, append([]string{"generate"}, filtered...)...)
@@ -74,7 +86,12 @@ func runOnce(args []string) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	if err := cmd.Run(); err != nil {
-		cli.Fail("generate failed: %v", err)
+		var exited *exec.ExitError
+		if slices.Contains(args, "--json") && errors.As(err, &exited) {
+			cli.Fprintf(os.Stderr, "generate failed: %v\n", err)
+		} else {
+			appgen.ReportGenerateFailure(args, fmt.Errorf("generate failed: %w", err))
+		}
 	}
 }
 
@@ -121,10 +138,22 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 	if err == nil && discovery.Found && strings.TrimSpace(discovery.ProjectDir) != "" {
 		projectDir = discovery.ProjectDir
 	}
+	if absolute, pathErr := filepath.Abs(projectDir); pathErr == nil {
+		if _, moduleRoot := project.FindEnclosingGoMod(absolute); moduleRoot != "" {
+			hashFileInto(h, filepath.Join(moduleRoot, "go.mod"))
+		}
+	}
 	// The entity declarations feed entities/client, the CLI and the SDK.
 	hashEntityDecls(h, filepath.Join(projectDir, "entities"))
 	if err == nil && discovery.Found {
 		hashFileInto(h, discovery.Path)
+		styleInputs, styleErr := appgen.GenerateStyleInputs(projectDir, discovery.Config.Codegen.Generators)
+		if styleErr != nil {
+			fmt.Fprintln(h, styleErr)
+		}
+		for _, path := range styleInputs {
+			hashFileInto(h, path)
+		}
 		for _, ext := range discovery.Config.Codegen.Extensions {
 			if len(ext.Command) > 0 && filepath.Base(ext.Command[0]) != ext.Command[0] {
 				hashFileInto(h, projectRelativePath(projectDir, ext.Command[0]))

@@ -25,6 +25,10 @@
 //   - The callback table's entrySize is 8 on arm64 and 5 on amd64.
 //     Callers never see it: NewCallback returns an address.
 //
+// Calls panic instead of truncating arguments beyond the register and
+// eight-slot stack capacity, or beyond eight floating-point arguments.
+// A hidden struct-return pointer consumes one integer slot on amd64.
+//
 // On every other GOOS/GOARCH the package is empty; the native layers
 // that use it are build-tagged the same way.
 package ffi

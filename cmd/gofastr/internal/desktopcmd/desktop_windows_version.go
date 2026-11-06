@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
-	"strconv"
-	"strings"
 	"syscall"
 	"unsafe"
 
@@ -127,35 +125,6 @@ func windowsResourceCallError(name string, err error) error {
 		err = syscall.GetLastError()
 	}
 	return fmt.Errorf("%s: %w", name, err)
-}
-
-func windowsVersionParts(version string) ([4]uint16, error) {
-	var parts [4]uint16
-	if !desktopVersionRe.MatchString(version) {
-		return parts, fmt.Errorf("--version %q must match %s", version, desktopVersionRe.String())
-	}
-	if len(version) > 256 {
-		return parts, fmt.Errorf("--version is longer than 256 characters")
-	}
-	components := strings.Split(version, ".")
-	if len(components) > len(parts) {
-		return parts, fmt.Errorf("--version has more than four components; Windows file versions support at most four")
-	}
-	for i, component := range components {
-		end := 0
-		for end < len(component) && component[end] >= '0' && component[end] <= '9' {
-			end++
-		}
-		if end == 0 {
-			continue
-		}
-		n, err := strconv.ParseUint(component[:end], 10, 16)
-		if err != nil {
-			return parts, fmt.Errorf("--version component %q does not fit in a Windows file version: %w", component, err)
-		}
-		parts[i] = uint16(n)
-	}
-	return parts, nil
 }
 
 func renderWindowsVersionResource(info windowsDesktopVersion, version [4]uint16) []byte {

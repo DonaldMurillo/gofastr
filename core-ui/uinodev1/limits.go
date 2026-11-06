@@ -22,6 +22,10 @@ type Limits struct {
 	// may have. Default 128.
 	MaxChildrenPerNode int
 
+	// MaxPropItems bounds each props array: table rows, columns, cells,
+	// detail-list items and key-value items. Default 128.
+	MaxPropItems int
+
 	// MaxPropString bounds the length (bytes) of any single string
 	// field in any prop struct. Default 4096 (4 KiB).
 	MaxPropString int
@@ -50,6 +54,7 @@ const (
 	DefaultMaxDepth           = 32
 	DefaultMaxNodes           = 500
 	DefaultMaxChildrenPerNode = 128
+	DefaultMaxPropItems       = 128
 	DefaultMaxPropString      = 4 * 1024   // 4 KiB
 	DefaultMaxTotalText       = 256 * 1024 // 256 KiB
 	DefaultMaxInputBytes      = 1 << 20    // 1 MiB
@@ -64,6 +69,7 @@ func DefaultLimits() Limits {
 		MaxDepth:           DefaultMaxDepth,
 		MaxNodes:           DefaultMaxNodes,
 		MaxChildrenPerNode: DefaultMaxChildrenPerNode,
+		MaxPropItems:       DefaultMaxPropItems,
 		MaxPropString:      DefaultMaxPropString,
 		MaxTotalText:       DefaultMaxTotalText,
 		MaxInputBytes:      DefaultMaxInputBytes,
@@ -83,6 +89,9 @@ func (l Limits) withDefaults() Limits {
 	}
 	if l.MaxChildrenPerNode == 0 {
 		l.MaxChildrenPerNode = DefaultMaxChildrenPerNode
+	}
+	if l.MaxPropItems == 0 {
+		l.MaxPropItems = DefaultMaxPropItems
 	}
 	if l.MaxPropString == 0 {
 		l.MaxPropString = DefaultMaxPropString

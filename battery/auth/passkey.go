@@ -312,6 +312,7 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 
 // RegisterRoutes mounts the passkey endpoints.
 func (p *PasskeyPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/passkey/login/options", http.HandlerFunc(p.loginOptionsHandler))
 	r.Post(basePath+"/passkey/login", http.HandlerFunc(p.loginHandler))
 	r.Post(basePath+"/passkey/register/options", http.HandlerFunc(p.registerOptionsHandler))
@@ -330,6 +331,9 @@ var b64url = base64.RawURLEncoding
 // second factor when the account has one. Adding a passkey adds a way
 // in, so a password-only session of a 2FA account must not do it.
 func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
+	if rejectInProcessAccountOperation(w, r) {
+		return nil, false
+	}
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)

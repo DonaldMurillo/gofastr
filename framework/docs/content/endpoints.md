@@ -80,11 +80,16 @@ with the same tags `handler.Bind` reads:
 
 - `path:"id" json:"-"`: a `{id}` segment of the path. Every `{name}` in the
   path needs one. Never a pointer: a path value is always present.
+  Hand-registered endpoints may also use `:id` segments; OpenAPI normalizes
+  them to `{id}` and keeps matching input fields out of the JSON body.
 - `query:"q" json:"-"`: a query-string value. Only `GET` and `DELETE` take
   them, and they take nothing else besides path values. `query:"q,empty"`
   keeps an explicit `?q=` (see below); it is the only option a query tag
   takes, and a path tag takes none.
 - `json:"amount"`: a JSON body key, for `POST`, `PUT` and `PATCH`.
+
+Hand-registered endpoint methods are case-insensitive in both routing and
+OpenAPI: `get` has the same no-body and SDK query-input behavior as `GET`.
 
 A pointer field is optional; any other field is required. The generated CLI
 refuses a call that leaves out a required flag before it sends anything.

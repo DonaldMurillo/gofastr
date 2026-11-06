@@ -151,7 +151,8 @@ func (lc *Lifecycle) RegisterHealthChecker(hc HealthChecker) error {
 // Shutdown executes the graceful shutdown sequence:
 //
 //  1. Mark all health checkers as unhealthy (load balancers divert traffic).
-//  2. Drain all registered drainers concurrently with a timeout.
+//  2. Drain registered drainers sequentially, in registration order, under
+//     one shared timeout.
 //  3. Return the first error (if any).
 //
 // The context is used as the parent for the drain timeout.

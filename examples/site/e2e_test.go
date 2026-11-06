@@ -412,8 +412,8 @@ func TestE2EInteractive_SPANavigate(t *testing.T) {
 }
 
 // TestE2EInteractive_SignalHasAriaLive verifies the runtime auto-injects
-// role="status" aria-live="polite" aria-atomic="true" onto every
-// [data-cui-signal] node. This is a P0 a11y requirement: without it,
+// role="status" aria-atomic="true" without redundant aria-live onto every
+// text-mode [data-cui-signal] node. This is a P0 a11y requirement: without it,
 // screen readers do not announce signal-region updates (counter clicks,
 // form results, error feedback) because the DOM mutations are silent.
 func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
@@ -427,7 +427,7 @@ func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/rpc-signal"),
 		chromedp.WaitVisible(`[data-cui-signal="demo-counter"]`),
-		waitFor(`(n => n.getAttribute('role') === 'status' && n.getAttribute('aria-live') === 'polite' && n.getAttribute('aria-atomic') === 'true')(document.querySelector('[data-cui-signal="demo-counter"]'))`),
+		waitFor(`(n => n.getAttribute('role') === 'status' && !n.hasAttribute('aria-live') && n.getAttribute('aria-atomic') === 'true')(document.querySelector('[data-cui-signal="demo-counter"]'))`),
 		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('role')||''`, &role),
 		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('aria-live')||''`, &ariaLive),
 		chromedp.Evaluate(`document.querySelector('[data-cui-signal="demo-counter"]').getAttribute('aria-atomic')||''`, &ariaAtomic),
@@ -438,8 +438,8 @@ func TestE2EInteractive_SignalHasAriaLive(t *testing.T) {
 	if role != "status" {
 		t.Errorf(`signal node role = %q, want "status"`, role)
 	}
-	if ariaLive != "polite" {
-		t.Errorf(`signal node aria-live = %q, want "polite"`, ariaLive)
+	if ariaLive != "" {
+		t.Errorf(`signal node aria-live = %q, want absent (role="status" is implicitly polite)`, ariaLive)
 	}
 	if ariaAtomic != "true" {
 		t.Errorf(`signal node aria-atomic = %q, want "true"`, ariaAtomic)

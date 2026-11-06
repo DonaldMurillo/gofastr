@@ -76,15 +76,24 @@ type ScreenOption func(*Screen)
 // matching the boot-time failure style of the unknown-variant component
 // panics.
 func InterceptFrom(from string, as ScreenType, also ...string) ScreenOption {
-	for _, p := range append([]string{from}, also...) {
+	intercept := normalizeIntercept(&Intercept{From: from, AlsoFrom: also, As: as})
+	return func(s *Screen) {
+		s.Intercept = &Intercept{From: intercept.From, AlsoFrom: slices.Clone(intercept.AlsoFrom), As: as}
+	}
+}
+
+func normalizeIntercept(intercept *Intercept) *Intercept {
+	patterns := append([]string{intercept.From}, intercept.AlsoFrom...)
+	for index, p := range patterns {
 		if p == "" || p[0] != '/' {
 			panic(fmt.Sprintf("app: InterceptFrom needs an absolute route pattern to intercept from, got %q", p))
 		}
+		patterns[index] = normalizeRoutePath(p)
 	}
-	if as != ScreenDrawer && as != ScreenSheet {
-		panic(fmt.Sprintf("app: InterceptFrom presentation must be ScreenDrawer or ScreenSheet, got %v", as))
+	if intercept.As != ScreenDrawer && intercept.As != ScreenSheet {
+		panic(fmt.Sprintf("app: InterceptFrom presentation must be ScreenDrawer or ScreenSheet, got %v", intercept.As))
 	}
-	return func(s *Screen) { s.Intercept = &Intercept{From: from, AlsoFrom: also, As: as} }
+	return &Intercept{From: patterns[0], AlsoFrom: patterns[1:], As: intercept.As}
 }
 
 // InterceptFor reports how the screen at target should present when the

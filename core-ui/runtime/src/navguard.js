@@ -132,8 +132,8 @@
   } else {
     for (const k of ['pushState', 'replaceState']) {
       const f = history[k];
-      history[k] = function () {
-        const v = f.apply(this, arguments);
+      history[k] = function (...a) {
+        const v = f.apply(this, a);
         if (!heading) shown = cur();
         return v;
       };

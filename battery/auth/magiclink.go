@@ -384,6 +384,7 @@ func refuseInMemoryTokenStore(mgr *AuthManager, plugin string) error {
 
 // RegisterRoutes mounts the magic-link send and verify endpoints.
 func (p *MagicLinkPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	p.basePath = basePath
 	r.Post(basePath+"/magic-link/send", http.HandlerFunc(p.sendHandler))
 	// GET renders the confirmation screen; POST is what actually signs
@@ -513,7 +514,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var cerr error
 	body.Email, cerr = p.mgr.canonicalizeEmail(body.Email)
 	if cerr != nil {
-		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+		writeAuthErrorFor(w, r, http.StatusBadRequest, cerr, reasonComposedEmail)
 		return
 	}
 	if body.Email == "" {

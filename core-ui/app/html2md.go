@@ -111,6 +111,11 @@ func htmlToMarkdown(h string) string {
 	// parked in a \x00 slot and restored after the inline passes, so
 	// the normalization below cannot reach through the fence markers.
 	s, fences := extractFencedBlocks(s)
+	var inlineCode []string
+	s = reCode.ReplaceAllStringFunc(s, func(match string) string {
+		inlineCode = append(inlineCode, textWS.Replace(html.UnescapeString(stripTags(submatch(match, reCode, 1)))))
+		return "<code></code>"
+	})
 
 	// Decode entities once per text node (runs between tags) and
 	// flatten line breaks the way HTML renders them. Attribute values
@@ -119,8 +124,11 @@ func htmlToMarkdown(h string) string {
 
 	// Inline code: a backtick run one longer than the longest run in
 	// the content, so the content cannot close its own span.
-	s = reCode.ReplaceAllStringFunc(s, func(m string) string {
-		return mdCodeSpan(submatch(m, reCode, 1))
+	inlineIndex := 0
+	s = reCode.ReplaceAllStringFunc(s, func(string) string {
+		content := inlineCode[inlineIndex]
+		inlineIndex++
+		return mdCodeSpan(strings.NewReplacer("<", "\x00lt\x00", ">", "\x00gt\x00").Replace(content))
 	})
 
 	// Headings: h1-h6
@@ -204,6 +212,7 @@ func htmlToMarkdown(h string) string {
 	// Collapse whitespace, put the fenced blocks back, trim
 	s = collapseWhitespace(s)
 	s = restoreFences(s, fences)
+	s = strings.NewReplacer("\x00lt\x00", "<", "\x00gt\x00", ">").Replace(s)
 	return strings.TrimSpace(s)
 }
 

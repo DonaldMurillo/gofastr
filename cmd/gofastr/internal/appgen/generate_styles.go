@@ -49,7 +49,7 @@ func runGenerateStyles(args []string) {
 	}
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
-			cli.Fail("Unknown flag: %s (generate styles takes package patterns, not flags)", a)
+			failGenerateArgs(args, fmt.Errorf("Unknown flag: %s (generate styles takes package patterns, not flags)", a))
 			cli.OsExit(1)
 			return
 		}
@@ -200,7 +200,11 @@ func discoverStyleFiles(patterns []string) ([]styleFile, error) {
 // ".style.css" sheets and ".tokens.css" token sets share the name
 // grammar and the directory walk.
 func discoverOwnedFiles(patterns []string, suffix string) ([]styleFile, error) {
-	dirs, err := stylePatternDirs(patterns)
+	return discoverOwnedFilesAt(".", patterns, suffix)
+}
+
+func discoverOwnedFilesAt(base string, patterns []string, suffix string) ([]styleFile, error) {
+	dirs, err := stylePatternDirsAt(base, patterns)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +237,33 @@ func discoverOwnedFiles(patterns []string, suffix string) ([]styleFile, error) {
 		}
 	}
 	return out, nil
+}
+
+// GenerateStyleInputs returns the owned sheets read by configured styles
+// generators as filesystem paths based at projectDir, using the generator's
+// discovery rules. An absolute projectDir produces absolute paths.
+func GenerateStyleInputs(projectDir string, generators []codegen.GeneratorConfig) ([]string, error) {
+	_, runs, err := splitStylesEntries(generators)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, patterns := range runs {
+		if len(patterns) == 0 {
+			patterns = []string{"./..."}
+		}
+		for _, suffix := range []string{".style.css", ".tokens.css"} {
+			files, err := discoverOwnedFilesAt(projectDir, patterns, suffix)
+			if err != nil {
+				return nil, err
+			}
+			for _, file := range files {
+				paths = append(paths, file.path)
+			}
+		}
+	}
+	slices.Sort(paths)
+	return slices.Compact(paths), nil
 }
 
 // styleNamePattern is the owner-name grammar: ^[a-z][a-z0-9-]{0,63}$, no
@@ -293,6 +324,10 @@ func generateStyleFile(wd *os.Root, f styleFile, src, body string, checkDiags []
 // testdata/, node_modules/, dot directories and _-prefixed
 // directories are skipped, the same trees the go tool ignores.
 func stylePatternDirs(patterns []string) ([]string, error) {
+	return stylePatternDirsAt(".", patterns)
+}
+
+func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 	var dirs []string
 	seen := map[string]bool{}
 	add := func(dir string) {
@@ -317,6 +352,10 @@ func stylePatternDirs(patterns []string) ([]string, error) {
 		root = filepath.Clean(root)
 		if root == ".." || strings.HasPrefix(root, ".."+string(filepath.Separator)) {
 			return nil, fmt.Errorf("generate styles: %s: package patterns must stay under the working directory", pat)
+		}
+		root = filepath.Join(base, root)
+		if _, err := filepath.EvalSymlinks(root); err != nil {
+			return nil, fmt.Errorf("generate styles: resolve %s: %w", root, err)
 		}
 		if !recursive {
 			info, serr := os.Stat(root)

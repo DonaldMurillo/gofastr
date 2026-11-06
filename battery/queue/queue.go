@@ -93,9 +93,10 @@ type Queue interface {
 type JobStats map[string]int
 
 // Browsable is the optional read-only inspection interface, implemented
-// by DBQueue so admin tooling can list and aggregate jobs without
-// guessing at the underlying schema. Memory and Redis queues may
-// implement it later; admin code that depends on it should type-assert.
+// by DBQueue, MemoryQueue and RedisQueue so admin tooling can list and
+// aggregate jobs without guessing at the underlying schema.
+// MemoryQueue and RedisQueue list dead-letter jobs only; admin code should
+// type-assert the capability.
 type Browsable interface {
 	// ListJobs returns up to limit jobs in the given status, skipping
 	// the newest offset of them; pass an empty status to return all jobs
@@ -108,10 +109,9 @@ type Browsable interface {
 }
 
 // Replayable is the optional capability for re-queuing a dead-lettered job,
-// implemented by DBQueue (the durable backend). Admin tooling type-asserts for
-// it and only offers a "replay" action when the backend supports it. Memory and
-// Redis queues don't implement it yet (memory drops dead jobs; redis's
-// dead-list isn't readable through RedisClient).
+// implemented by DBQueue, MemoryQueue and RedisQueue. Each retains terminally
+// failed jobs for inspection and replay. Admin tooling type-asserts for the
+// capability before offering a replay action on a supplied Queue.
 type Replayable interface {
 	// Replay resets a terminally-failed job back to pending so it is picked up
 	// again (attempts counter cleared, scheduled immediately). It MUST only

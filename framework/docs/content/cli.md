@@ -50,7 +50,10 @@ scrubbed the same way.
   overwrites them, each through a temporary file renamed over the old
   one, so a crash or a full disk leaves the old file whole and a
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
-  it lacks. Every file `init` writes, and every file it reads to merge
+  it lacks. A hand-written `.agents/` detail file or an unsafe host-skill
+  path is refused before replacing any scaffold, settings, `.env` or signing
+  secret, including when `--force` is set.
+  Every file `init` writes, and every file it reads to merge
   into (`.gitignore`, `go.mod`), stays in the project: a symlink there,
   whether the file itself, a dangling one, or a directory on the way
   (`static/`, `migrations/`, `entities/`), is followed only while it
@@ -175,7 +178,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
   Playwright aria snapshot ([app specs](app-spec.md)).
   `generate [--config=<settings file>]` runs the configurable codegen engine
-  ([codegen](codegen.md)); `generate --watch` re-runs on every change.
+  ([codegen](codegen.md)); `generate --watch` re-runs when an input changes.
+  A configured `styles` entry watches both `.style.css` and `.tokens.css`
+  files under its package patterns, including additions and removals;
+  generated Go siblings are outputs, not watch inputs.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,
@@ -505,7 +511,9 @@ Each matcher reads the code the way its language means it:
   attribute name (a trailing `-` is a prefix); `properties` a `--x`
   custom property; `match` a regex, the last resort.
 - `css`: `.css` files through the CSS tokenizer. `classes` matches a
-  class selector, `properties` a custom property, and `selectors` a
+  class selector, including `[class=…]` and `[class~=…]` with escaped,
+  quoted or unquoted values and the `i`/`s` case flags;
+  `properties` a custom property, and `selectors` a
   whole compound selector such as `.cui-pos-center > .cui-slot`
   (whitespace around combinators does not matter). `declarations`
   lists `properties` (standard names, never a `--x`) with a `value`

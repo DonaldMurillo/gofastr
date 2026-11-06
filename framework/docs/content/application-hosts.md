@@ -93,6 +93,14 @@ owner extractor and puts a user in the context. A call with no user in
 it is refused on an owner-scoped entity, and another identity sees none
 of the owner's rows.
 
+To call through the REST handlers instead, as a generated SDK's Local
+repositories do, pass `app.InProcessHandler()`. It runs a request
+through the router and its middleware with no listener, takes identity
+from the request's context, and refuses a request carrying cookies or
+other credentials ([SDK](sdk.md#typed-repositories)). Like
+`App.Router()`, it skips the setup wizard, `WrapServer` and locale
+routing. It is a way to call the App, not a transport to serve.
+
 `WithRole` still picks what runs: `RoleServe` skips the workers and
 `RoleWorker` runs them. Under `ServicesHost` no role serves HTTP, the
 worker role's health endpoints included.
@@ -295,9 +303,10 @@ window's `Close` must tolerate a second call.
 - **A `Stop` that ignores `ctx`.** `Shutdown` waits for `Stop`, so one
   that blocks on a toolkit call with no timeout holds the whole teardown.
   Pass `ctx` on, or give up when it is done.
-- **Serving `App.Router()` from your own HTTP host.** It skips the setup
-  wizard, `WrapServer` and locale routing. Use `Serve` with your
-  listener.
+- **Serving `App.Router()` or `App.InProcessHandler()` from your own
+  HTTP host.** Both skip the setup wizard, `WrapServer` and locale
+  routing, and `InProcessHandler` is for trusted server-side calls,
+  never a network listener. Use `Serve` with your listener.
 - **Calling `Shutdown` synchronously from an `OnStart` hook to abort
   boot.** It waits out its deadline, and with `context.Background()` it
   never returns. Return the error instead.

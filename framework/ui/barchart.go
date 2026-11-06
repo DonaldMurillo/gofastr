@@ -126,6 +126,9 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	// (6/5/5) datasets from rendering as identical full-height slabs. The
 	// tallest bar lands around 85% of the plot, not the ceiling.
 	valueMax := niceCeil(dataMax / 0.85)
+	if !finite(valueMax) || valueMax <= 0 {
+		valueMax = dataMax
+	}
 	if valueMax == 0 {
 		valueMax = 1
 	}
@@ -185,7 +188,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		// scale, not as blank pixels above the caps.
 		const fitTallestBar = 96.0
 		if dataMax > 0 {
-			plotH = fitTallestBar * valueMax / dataMax
+			plotH = fitTallestBar * (valueMax / dataMax)
 		} else {
 			plotH = fitTallestBar
 		}
@@ -373,11 +376,22 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 // niceCeil rounds v up to a clean "nice" number (1/1.5/2/2.5/3/4/5/6/8 ×
 // 10ⁿ) so axis maxima land on values a reader recognizes.
+// chartLog10 is math.Log10 that holds for subnormals too. On amd64
+// math.Log reads a subnormal as if it were normal (log10(1e-310) came
+// out -307.95), while math.Log2 splits the exponent out first; normal
+// values keep math.Log10's exact answer.
+func chartLog10(v float64) float64 {
+	if v > 0 && v < 0x1p-1022 {
+		return math.Log2(v) * math.Log10(2)
+	}
+	return math.Log10(v)
+}
+
 func niceCeil(v float64) float64 {
 	if v <= 0 {
 		return 1
 	}
-	exp := math.Floor(math.Log10(v))
+	exp := math.Floor(chartLog10(v))
 	base := math.Pow(10, exp)
 	f := v / base
 	var nf float64

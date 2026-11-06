@@ -243,7 +243,7 @@
         // Chrome's HTTP-cache write lock otherwise (see the page
         // fetch's comment).
         resp = await NS.fetch(st.path, {
-          headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Part': addr },
+          headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Part': addr, ...(NS._markup ? { 'X-Gofastr-Markup': NS._markup } : {}) },
           priority: 'low',
           cache: 'no-store',
           signal: st.ctl.signal,

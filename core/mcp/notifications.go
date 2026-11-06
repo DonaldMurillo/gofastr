@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"runtime/debug"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // sseSubBufferSize is the bounded per-subscriber notification buffer. A
@@ -253,7 +256,9 @@ func (s *Server) subscriberMayReceive(ctx context.Context, n sseNotification) bo
 // in app-supplied gate code must never kill a transport loop.
 func gateAllows(gate func(ctx context.Context) error, ctx context.Context) (ok bool) {
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP notification gate recovered", "operation", "notification gate",
+				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			ok = false
 		}
 	}()

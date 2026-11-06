@@ -73,21 +73,22 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		op          crudOp
 		item        bool // the route judges one record: Ref{Type, ID}
 		write       bool // dev-implied entities mark their write tools
+		permission  access.Permission
 	}
 	keyArgs := crud.toolKeyArgs()
 	defs := []toolDef{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(keyArgs), crud.getTool(router), opRead, true, false},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, keyArgs), crud.updateTool(router), opUpdate, true, true},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(keyArgs), crud.deleteTool(router), opDelete, true, true},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false, ""},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(keyArgs), crud.getTool(router), opRead, true, false, ""},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true, ""},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
 	}
 	// One tool per non-system move, named by its key (the boot check
 	// keeps keys off the names above and the other reserved ones),
 	// posting to the move's route.
 	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
-		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true})
+		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
 	}
 	for _, def := range defs {
 		// Every tool carries the Access permission its route enforces
@@ -95,7 +96,7 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		// router; the gate also drops the tool from tools/list, so a
 		// caller without posts:delete does not see posts_delete or its
 		// input schema.
-		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item))}
+		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item, def.permission))}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
 		}
@@ -131,7 +132,7 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 // exist after the router's middleware. An entity mounted on a route group
 // (MCPRouteScoped) is left to the route entirely: the group's own
 // middleware may replace the policy the /mcp context carries.
-func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Context) error {
+func (ch *CrudHandler) mcpToolGate(op crudOp, item bool, permission access.Permission) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if ch.MCPRouteScoped {
 			return nil
@@ -152,13 +153,13 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool) func(ctx context.Contex
 			return nil
 		}
 		perm := ch.permissionForOp(op)
-		if perm == "" {
-			return nil
+		if perm != "" && !ch.accessAllows(ctx, perm, "") {
+			return errMCPToolForbidden
 		}
-		if ch.accessAllows(ctx, perm, "") {
-			return nil
+		if permission != "" && !access.CanResourceExact(ctx, permission, access.Ref{Type: ch.Entity.GetName()}) {
+			return errMCPToolForbidden
 		}
-		return errMCPToolForbidden
+		return nil
 	}
 }
 

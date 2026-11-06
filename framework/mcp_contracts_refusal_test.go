@@ -19,8 +19,10 @@ func toolCall(name, args string) string {
 // tools/call with its message (unknown rule and the suggestion, no
 // autofix, an unknown capability), never as "internal tool error".
 func TestContractRefusalsReachTheAgent(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "development")
+	t.Setenv("GOFASTR_DEV_MCP", "")
 	app := NewApp(WithConfig(AppConfig{Name: "mcp-refusals"}), WithMCP(), WithMCPIntrospection())
-	app.mcpIntrospectionDevImplied = true
 	app, cleanup := startApp(t, app)
 	t.Cleanup(cleanup)
 
@@ -52,6 +54,9 @@ func TestContractRefusalsReachTheAgent(t *testing.T) {
 // A contracts_fix that stopped part way has already rewritten files.
 // The admission naming them reaches the agent over tools/call.
 func TestContractsFixPartialWriteOverMCP(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "development")
+	t.Setenv("GOFASTR_DEV_MCP", "")
 	dir := writeTreeAndChdir(t, map[string]string{
 		"a.go": "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +
 			"func wireA(r *router.Router) {\n\tr.Handle(\"post\", \"/a\", nil)\n}\n",
@@ -63,7 +68,6 @@ func TestContractsFixPartialWriteOverMCP(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
 	app := NewApp(WithConfig(AppConfig{Name: "mcp-partial"}), WithMCP(), WithMCPIntrospection())
-	app.mcpIntrospectionDevImplied = true
 	app, cleanup := startApp(t, app)
 	t.Cleanup(cleanup)
 

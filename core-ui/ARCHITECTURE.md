@@ -32,6 +32,56 @@ the value's lossy slug. Standalone radio, checkbox and switch configs
 carry `Ctx` too; a Switch allocates its control ID once and reuses it for
 its message, even when another switch has the same submitted name.
 
+Agent-ready bundles merge nonzero discovery fields into granular llms.txt
+and card settings, preserving omitted fields rather than replacing surfaces.
+Agent-card skills retain per-skill input/output MIME modes across A2A wiring.
+MCP manifest discovery links require an explicitly mounted manifest path;
+an advertised MCP endpoint alone does not imply a well-known manifest.
+
+DatePicker range announcements use the Gregorian calendar of the server's
+grid even when the page locale defaults to another calendar. An undrawn
+day without a page language keeps its ISO date instead of the host locale.
+
+RTC reconnect snapshots retain connected/connecting peer connections only
+with stable signaling. A pending offer rebuilds with tracks and channels,
+so perfect negotiation can accept the remote peer's replacement offer.
+
+Action-script seeding observes SSR script errors and, after document load,
+only retains scripts whose component handlers registered. Failed boot
+scripts remain eligible for the next component scan.
+
+Navigation refreshes a supplied CSRF meta token from full documents and
+partial head carriers. Responses omitting the token retain the current one.
+CSRF tokens are live security state, never page-owned metadata: marked tokens
+survive page-head cleanup, and cache or prefetch replay never restores an
+earlier token. Prefetch replay still reports `cached: false` to navigation
+listeners; its separate head-sync flag skips only CSRF token installation.
+Head synchronization finishes before `gofastr:navigate`, so its listeners can
+submit with the supplied token immediately.
+
+Envelope and core navigation share percent-decoded segment normalization
+and typed-parameter matching, including deferred-region route addresses.
+Layout keys and deferred addresses substitute decoded captured values, including
+literal slashes and percent signs, exactly as the server's layout resolver does.
+
+Widget state hydration refuses cross-origin endpoints without aborting
+mounting: local actions, lifecycle listeners and dismissal remain wired.
+
+An open native modal dialog owns Escape and Tab above an intercepted
+pane. The intercept keyboard handlers stand down until the dialog closes,
+then resume the pane's own dismissal and focus containment.
+When return or Back refetches a pane, focus is restored after replacement:
+prefer the opener's replacement by ID (or the current control on a same-pane
+refresh), otherwise focus the first control in the refreshed pane.
+The native-modal lookup is guarded: browsers rejecting `:modal` still receive
+the pane's Escape dismissal and forward/reverse Tab containment.
+
+Owned-style checking and compilation reject custom media inside
+`@container`, including dark-nested blocks. Container size features and
+style queries remain native CSS; symbolic viewport media belong in `@media`.
+The container scanner exempts the full nested or boolean contents of `style()`;
+custom-media-shaped conditions outside that function remain refused.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
@@ -47,6 +97,14 @@ unhighlighted, empty or closed list never submits its no-script GET form.
 
 `interactive.OptimisticUpdate` refuses Action options its headless action
 contract cannot carry, including confirmation, bodies, toasts and effects.
+Its native button uses `type="button"`, so an enclosing form never submits
+before hydration or in a static export.
+Signal display bindings (`BindHTML`, `BindText`, `BindAttr`) and
+`AnimateOnSignal` refuse `__proto__`, `constructor` and `prototype` before
+emitting a binding, just as signal mutation helpers do.
+SectionMenu formats both filtered and total counts through the kernel's
+`formatNumber`, retaining the page language's digits after filtering and
+clearing. The number-fill lint also rejects raw slash-separated count ratios.
 
 `ui.SelectConfig.Selected` preserves stored values absent from its options;
 a nonempty value takes precedence over option-level selection flags.
@@ -309,6 +367,10 @@ registers for the lower layer to clone (`registry.RegisterTemplate`,
 `preset.ToastTemplate`), or a module the kit ships itself
 (`framework/ui/searchinput.js`, `filedropzone.js`, `lightbox.js`).
 
+SearchInput's kit-owned scanner keeps its clear button in step with the
+input value on input and after a native form reset. The reset update runs
+on the next animation frame, after the browser restores default values.
+
 The `data-fui-*` keys that remain are the framework's own modules'
 and hosts': `data-fui-lightbox*` and `data-fui-zoomed` (the kit's
 lightbox module), `data-fui-dropzone-preview*` (its dropzone module),
@@ -328,7 +390,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-rpc-open="<widget-name>"` | A registered widget opens on 2xx (e.g. "save in drawer → open results sheet") |
 | `data-cui-rpc-navigate="<path>"` | Client-side SPA navigation to `<path>` on 2xx. Bypasses the screen cache and re-renders even when `<path>` is the current page: the RPC mutated server state, so the destination must be fetched fresh. When the RPC method is not `GET`, the page it ran on is evicted (its exact URL, or every query variant when it has no query, on every locale) from the screen cache first, so Back after a delete fetches the record again instead of replaying it |
 | `data-cui-rpc-refresh="<widget-name>"` | On 2xx, triggers an immediate `/state` re-fetch (`pollNow`) on the NAMED polling widget instead of the one the button lives in. For a mutation whose result a *different* widget renders, e.g. a Reset button inside a confirm modal refreshing the chat panel. |
-| `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes |
+| `data-cui-signal="<name>"` | This node's content/attribute updates when the named signal changes. Text-mode bindings gain `role="status"` and `aria-atomic="true"` unless already supplied; `status` and `alert` use their implicit live semantics without injected `aria-live`. Other existing roles gain polite `aria-live` only when absent, preserving explicit live overrides. Attr/html-mode bindings gain none of these attributes. |
 | `data-cui-signal-mode="text\|number\|html\|attr"` | How to apply the signal value (default `text`). `number` is `text` to the kernel; the marker loads the `headless-numbers` module, which rewrites a numeric value the way the page's `<html lang>` writes numbers (`Intl.NumberFormat`) in a microtask after each write, matching the server's `i18n.Number` text. The core runtime carries no bytes for it. `html` is the trusted-HTML escape hatch: on a string value the runtime replaces `innerHTML`, on a non-string value (e.g. the dispatchRPC error object `{ok:false,status,text}` broadcast on non-2xx) it leaves the DOM **unchanged** so a failed RPC cannot corrupt the trusted region. `text` always renders (a human-readable "Error: …" string for error objects). `attr` updates the attribute named by `data-cui-signal-attr`. |
 | `data-cui-signal-attr="<attr>"` | Attribute name when mode is `attr`. For the boolean attributes `disabled`, `hidden`, `checked`, `open` and `selected`, a false value (`false`, `null`, `""`, `0`, `"false"`) removes the attribute and any other value sets it, since a boolean attribute is on whenever it is present; `checked` and `selected` also write the live property (`disabled`, `hidden` and `open` reflect the attribute), so a checkbox the reader already clicked still follows the signal. The server render (`store.Slice.BindAttr`) follows the same rule: a false value omits the attribute and a true one writes it with an empty value, so the page never arrives with `disabled="false"`. `value` writes the live `el.value` as well as the attribute. Other attributes, `aria-*` included, get the value as text. |
 | `data-cui-signal-set="<name>[:<value>]"` | Click sets the named signal to `<value>` purely client-side (no RPC). Omit `:<value>` to set the empty string. Used by `framework/ui.Tabs` buttons (`<name>:<index>`). |
@@ -361,12 +423,12 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-layout-key="<key>"` | The layer's comparable identity, on the same wrapper `<div>`: `l:<name>` for a plain layout (the app default root, a direct screen's layout) (`l:<key>` in both forms when the layout declares `Layout.WithKey`, so a shell's identity can vary per language while its name keeps the CSS contract), `g:<prefix>:<name>` for a screen-group layer (`g:<prefix>` when the level is marker-only because its layout already renders at an outer level). The route manifest carries each route's chain as the `layouts` array of these keys, outermost → innermost; document order of the marked elements is the chain order. On SPA navigation the runtime compares the DOM's key spine against the destination's chain positionally: it swaps at the deepest shared layer, and when no root is shared it fetches the full page and replaces the whole shell. A group layer's key embeds the layout name so a per-screen layout override inside a group compares as a different layer than its siblings. |
 | `data-cui-layout-slot="<key>"` | On the layer's content cell: the `<main id="main-content">` for layer 0, the `.layout-content` div (tabindex="-1") for nested layers, the group wrapper itself for marker-only levels. This is the runtime's swap target: a partial response's `X-Gofastr-Swap: <key>` (or a cache entry's recorded layer) selects the cell whose slot key matches, replacing the old `.layout-content ?? [role=main] ?? main` structural guess. After the swap the runtime focuses the cell (screen-reader announcement); a pointer-initiated navigation passes `focusVisible: false` so the focus ring stays keyboard signal, and uihost's base CSS suppresses `outline` on the swap targets when they are not `:focus-visible`. |
 | `data-cui-outlet="<layer key>#<name>"` | On a tree-layout outlet cell (`app.NewLayout`): a non-primary outlet of a layout layer, addressed by its layer key plus outlet name. The SPA navigator resolves envelope fills by this address (loop + string compare, like `findSlot`) and replaces the cell's innerHTML with the fill on every navigation its layer survives (no hash, no skip). |
-| `data-cui-area="<layer key>~<name>"` | On a tree-layout route-area cell (a `div`, or a `span` for an `AreaSpec.Inline` area that sits inside phrasing content): a layout area re-rendered by the server on every navigation its layer survives. Same addressing and swap rules as `data-cui-outlet`; the area's fn runs on every render, kept layers included (collect mode on partials). |
+| `data-cui-area="<layer key>~<name>"` | On a tree-layout route-area cell (a `div`, or a `span` for an `AreaSpec.Inline` area that sits inside phrasing content): a layout area re-rendered by the server on every navigation its layer survives. Same addressing and swap rules as `data-cui-outlet`; the area's fn runs on every render, kept layers included (collect mode on partials). Layout and area names are nonempty ASCII letters, digits, `-` and `_`; `NewLayout` refuses invalid names and duplicate area addresses before CSS or markup is emitted. |
 | `data-cui-fill="<addr>"` | On the `<template>` elements of a fills-envelope partial body (`X-Gofastr-Envelope: 2`): the primary payload is addressed by the bare swap key (always applied), every non-primary fill by its `data-cui-outlet`/`data-cui-area` address. Parsed inert in a detached template. No fill-hash attribute exists — every kept-layer fill is re-applied on every navigation; outlet DOM that must persist lives in a nested layout layer the chain keeps. |
 | `data-cui-vt="<name>"` | On a tree-layout placed cell (primary, outlet, or route area) whose Go placement names a view transition (`app.PrimaryConfig.Transition` on the LayoutSpec primary / `app.OutletSpec.Transition` / `app.AreaSpec.Transition`, typed `app.Transition` values). The server renders the name (the author's raw `Transition.Name`, or a generated `vt-<layout>-<slot>`); the transition demand module (runtime `src/transition.js`, loaded when the document holds a `data-cui-vt` cell or a `data-cui-vt-kinds` vocabulary, at boot or after any apply) mirrors every `data-cui-vt` cell onto the CSSOM `view-transition-name` before a client navigation's view-transition snapshots (a `style` attribute is refused by the framework's default CSP, a CSSOM write is not), and wraps the swap in `document.startViewTransition({update, types})` with types `forward` / `back` / `reload`. Before that module loads — and on every page that declares no transition — the swap applies directly, with no view transition at all. `Layout.TransitionCSS()` generates the animation rules (enter/exit, back-direction variants, the name assignment), which the host collects into app.css for every registered layout; a raw `Transition.Name` with zero anims generates only the assignment and leaves the animation to author CSS (the platform's full power: shared-element morphs, geometry, custom keyframes); root-wide presets ship as `app.ViewTransitionPresetCSS` (fade / slide / none). Under `prefers-reduced-motion: reduce` the runtime starts no transition at all. A cancelable `gofastr:transition` event (detail `{from, to, types}`) fires on `document` before each transition; `preventDefault()` commits the swap with no transition. A streamed envelope's first unit (seed + primary + ready fills) commits through the same wrapper, so loading content being replaced by the real fill rides the same transition; late units apply directly. |
 | `data-cui-vt-when="<media condition>"` | Beside `data-cui-vt` on a placed cell, or on the region the layout build marks via `app.LayoutTree.VTRegion()`, when the transition declares `app.Transition.Narrow` ("920px"): the name is breakpoint-conditional — the placed cell owns it at `(width >= Narrow)`, the region below it. The master-detail collapse: below the breakpoint list and detail are one pane and the whole pane must transition; a detail-only snapshot there would morph its group geometry across the list. The runtime mirror writes the CSSOM `view-transition-name` only while the condition matches and CLEARS it otherwise, so a viewport resize across the breakpoint moves the name instead of duplicating it (two live names of one spelling make the browser skip the whole transition); `Layout.TransitionCSS()` wraps the two assignment rules in the same `@media` conditions, keyed on this attribute. |
-| `data-cui-loading="<addr>"` | On the inert `<template>` the server renders BESIDE an outlet cell, an area cell, or the primary slot's cell (addressed by the bare layer key) when that region declares `Loading` (`app.OutletSpec.Loading` / `app.AreaSpec.Loading` / `app.PrimaryConfig.Loading`): the browser already holds the loading content before any navigation fetch starts. On a navigation that will change the outlet, after `data-cui-after` ms of in-flight wait the runtime moves the outlet's old nodes into an in-document hidden park and clones the template's content in; on apply the response replaces it (honoring `data-cui-min`), and on failure, abort or a superseded navigation the parked nodes come back exactly — same nodes, so input values, listeners and island state survive. Inert with JavaScript off: SSR pages never show loading content, the real content is in the outlet. |
-| `data-cui-after="<ms>"` / `data-cui-min="<ms>"` | On the loading template: `after` is how long the navigation must be in flight before the loading content shows (default 120 ms, the dim's delay — a faster response paints nothing extra); `min` keeps it, once shown, at least this long before the apply replaces it (no skeleton flash). Emitted by the server from `app.Loading.After` / `.Min`. |
+| `data-cui-loading="<addr>"` | On the inert `<template>` the server renders BESIDE an outlet cell, an area cell, or the primary slot's cell (addressed by the bare layer key) when that region declares `Loading` (`app.OutletSpec.Loading` / `app.AreaSpec.Loading` / `app.PrimaryConfig.Loading`): the browser already holds the loading content before any navigation fetch starts. A loading template also opts a bare-primary layout with no outlets or route areas into the envelope navigator at navigation time; the envelope and loading modules remain demand-loaded, and a layout without these declarations fetches neither. The envelope navigator checks live templates before scheduling, including templates first received by client navigation; no full reload is required. On a navigation that will change the region, after `data-cui-after` ms of in-flight wait the runtime moves the region's old nodes into an in-document hidden park and clones the template's content in; on apply the response replaces it (honoring `data-cui-min`), and on failure, abort or a superseded navigation the parked nodes come back exactly — same nodes, so input values, listeners and island state survive. Inert with JavaScript off: SSR pages never show loading content, the real content is in the region. |
+| `data-cui-after="<ms>"` / `data-cui-min="<ms>"` | On the loading template: `after` is how long the navigation must be in flight before the loading content shows (default 120 ms, the dim's delay — a faster response paints nothing extra); `min` keeps it, once shown, at least this long before the apply replaces it (no skeleton flash). Emitted by the server from `app.Loading.After` / `.Min`. Exit waits retain their own timeout when another navigation settles, restores or takes over the region, so the superseded navigation still finishes its cleanup. |
 | `data-cui-loadstate="shown\|exit\|error"` | Runtime-written, on the outlet/slot cell across the loading content's lifecycle: `shown` while it holds the cloned content (the enter animation runs now — author CSS keys richer enter/exit effects off the same states; the framework ships a default fade in `frameworkDimCSS`), `exit` while the apply waits for the region's own `animationend` (capped at 400 ms, child animations ignored) before replacing it, `error` on a deferred outlet whose part request failed twice (the request and its one retry): the runtime's `runtime.part_failed` phrase replaces the loading content, and the mark stays while that phrase does (a later navigation that refills the region drops it), absent otherwise. The framework CSS also exempts the region from the aria-busy dim (the loading content replaces the old content; dimming it would double the signal). Removed when the content is replaced or restored. |
 | `data-cui-vt-kinds="<names>"` | On `<html>` at first paint and on the doc shell every swapped payload's root layer carries (copied onto the documentElement after a swap): the document's declared keyed-transition vocabulary, the sorted union of the chain's `Transitions` map keys (`app.PrimaryConfig` / `app.OutletSpec` `.Transitions`). The runtime gates the page answer's `X-Gofastr-Transition` pick against it — a name outside the vocabulary is ignored and the navigation keeps the direction type only. After a swap the transition demand module copies the vocabulary off the payload's doc shell with a direct `setAttribute`; the attribute is module-owned, so the `__gofastr.doc` manifest does not list it. |
 | `data-fui-page-loading` | On the body-level `<div>` a host's `uihost.WithPageLoading(component)` renders into every full page: the host's own page-wide loading indicator, REPLACING the default `html[aria-busy]::after` progress strip (both never show at once). Pure CSS state — visibility keys off the same `html[aria-busy]` carrier, so it transitions in and out with no runtime involvement. The component is presentational config, rendered once per page with no Load/DI. |
@@ -379,24 +441,24 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-disclosure` / `data-hui-disclosure-trap` / `data-hui-disclosure-dismiss` / `data-hui-disclosure-persist="<key>"` | On a `headless.Disclosure` / `framework/ui.Collapsible` `<details>` (and on menu dropdowns, which compose the same anatomy): `headless-disclosure` (a registered behaviour of `framework/headless`) mirrors `aria-expanded` onto the controller, closes the deepest open disclosure containing focus on Escape with focus returned to its controller, closes non-persistent disclosures on `gofastr:navigate` and when a link inside one is clicked (not a `data-cui-open` link, which opens a widget over the page, so the menu stays and the widget returns focus into it), restores/writes the open state of persistent ones under a namespaced, component-encoded session key, closes an open dismiss disclosure (every menu root, and `Disclosure.Dismiss`) on a click outside it or a touch or pen release on plain content outside it (iOS Safari sends no click for a tap on content with no click handler of its own; a tap on a control closes it through the control's click, so an in-flow panel never collapses before the browser aims that click), shifts an opened dismiss disclosure's panel back inside the viewport when it would cross an inline edge (writing `--hui-panel-shift`, which the kit's menu and dropdown panels read as a `translate`), floats an opened dismiss panel that a scrolling ancestor would clip (a table's last-row menu) as `position: fixed` at its trigger's edge, flipped above the trigger when the viewport has no room below and moved with it while anything scrolls, its inline styles cleared on close, and confines Tab inside the topmost open trap disclosure (the widget runtime's own containment technique over the kernel's focus selector). |
 | `X-Gofastr-Defer: 1` | On a client navigation's PAGE request (with `X-Gofastr-Navigate`/`X-Gofastr-From`) whose destination route has deferred outlets (`app.OutletSpec.Deferred`, listed per route in the manifest's `deferred` array): the server skips those outlets' loaders and ships their `Loading` content in place — kept layers as envelope fills, rendered layers inline in the cells. Without the header (a first load, a whole document) every fill renders inline: nothing depends on JavaScript. Deferral belongs to the OUTLET, not a fill (a candidate can decline at request time, so a per-fill flag cannot tell the manifest in advance).. |
 | `X-Gofastr-Part: <addr>` | One deferred outlet's fill, as its own request beside the page fetch: the same URL plus this header (plus `X-Gofastr-Navigate: 1`), read with `text()` so DevTools shows the request with its body, status and timing (streaming was removed for exactly this: Chrome keeps no body for a fetch read through a stream reader). The server runs the policy phase and ONLY the winning fill's loader — no screen `Load`, no other fills, no area builds — and answers one `<template data-cui-fill="<addr>">` plus an optional seed delta (never a session mint; `Cache-Control: no-store`). Parts fetch with priority `low` beside the page's `high`, at most three in flight, the rest queued; parts landing before the page commit wait in a buffer, the commit applies the page then the buffer, later parts apply on land through the region's `data-cui-loadstate` exit (never a second view transition). A whole-page disagreement — the route not resolving, the address not a deferred outlet of it, a policy Redirect/Block, a dead session — answers 409 with `X-Gofastr-Part-Reset: 1` and no body the client applies; the runtime reloads the URL as a whole document, at most once per navigation. A part that fails in transport (a non-2xx answer such as a proxy's 502, 503 or 429, or a dropped connection) is requested once more after a short pause; a second failure puts the region in `data-cui-loadstate="error"`. |
-| `X-Gofastr-Markup: 2` | On every navigation request the runtime makes (the click's partial fetch, the envelope navigator, hover/visible prefetch, intercepted overlays): the markup generation the live kernel reads, from `window.__gofastr._markup` (`runtime.MarkupVersion` in Go; 2 is the `data-cui-*` spelling, 1 the `data-fui-*` one through v0.86). Modules read the kernel's value, so a module loaded into an older kernel sends none. A tab opened before a deploy keeps its runtime, and swapping in markup that kernel cannot read leaves every interactive marker dead (a `data-cui-rpc` form submits as a native GET, its fields in the URL). So when a browser script fetch (`Sec-Fetch-Mode` `cors`, `same-origin` or `no-cors`) names another generation or none, uihost answers 409 with an HTML partial at the swap key the live DOM holds, carrying `<meta http-equiv="refresh">` to the destination and a reload link: every runtime applies an HTML partial the same way, inserting the meta starts the browser's own navigation, and the destination loads whole with the current runtime. A request without Fetch Metadata (curl, a Go test, a browser older than Safari 16.4) gets the ordinary partial. Not covered: an old runtime's cross-chain navigation, which fetches the whole document with no navigate header and cannot be told apart from app code fetching a page; bump the generation in `frag/kernel.js` and `core-ui/runtime/markup.go` together when the attribute vocabulary changes again. |
+| `X-Gofastr-Markup: 2` | On every navigation request the runtime makes (the click's partial fetch, the envelope navigator, hover/visible prefetch, intercepted overlays, deferred parts): the markup generation the live kernel reads, from `window.__gofastr._markup` (`runtime.MarkupVersion` in Go; 2 is the `data-cui-*` spelling, 1 the `data-fui-*` one through v0.86). Modules read the kernel's value, so a module loaded into an older kernel sends none. A tab opened before a deploy keeps its runtime, and swapping in markup that kernel cannot read leaves every interactive marker dead (a `data-cui-rpc` form submits as a native GET, its fields in the URL). So when a browser script fetch (`Sec-Fetch-Mode` `cors`, `same-origin` or `no-cors`) names another generation or none, uihost answers 409 with an HTML partial at the swap key the live DOM holds, carrying `<meta http-equiv="refresh">` to the destination and a reload link: every runtime applies an HTML partial the same way, inserting the meta starts the browser's own navigation, and the destination loads whole with the current runtime. Deferred parts reject that mismatch with the existing bodyless 409 `X-Gofastr-Part-Reset: 1` before rendering a fill, including when their page came from cache. A request without Fetch Metadata (curl, a Go test, a browser older than Safari 16.4) gets the ordinary partial. Not covered: an old runtime's cross-chain navigation, which fetches the whole document with no navigate header and cannot be told apart from app code fetching a page; bump the generation in `frag/kernel.js` and `core-ui/runtime/markup.go` together when the attribute vocabulary changes again. |
 | `data-cui-action="close"` | On any element inside a mounted widget: clicking it dismisses the widget (the widget's scoped click handler in `widgets.js`), with no request. `close` is the only value the runtime reads; `headless.ButtonProps.Action` (and so `ui.Button` `ExtraAttrs`) admits exactly that value and refuses any other at render. |
 | `data-cui-widget="<name>"` | Marks a registered widget instance: the runtime mounts behavior on it after first paint. |
 | `data-cui-backdrop` | Marks an element as a click-to-dismiss overlay backdrop. Pairs with `data-cui-open` to make the floating surface dismissible. |
 | `data-cui-style="<name>"` | The dedup key for a component's stylesheet `<link>`. `loadComponentCSS` appends a link only when no `link[data-cui-style="<name>"]` exists, so every per-component link carries it, whether the runtime injected it or the host SSR-emitted it (a single-component page, and every page of a static export, where the bundle is not used). The host's link also carries `id="cui-css-<name>"`, the id the runtime would have given it. An SSR link without the marker is invisible to the dedup and gets loaded a second time, after `app.css`, which reverses the cascade against the host's overrides. |
-| `data-cui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form. |
-| `data-cui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value. |
-| `data-cui-autogrow` | On a `<textarea>`, height auto-grows with content. |
-| `data-cui-charcount-source="<id>"` | An element that displays the live character count of the referenced input. |
+| `data-cui-submit-on-enter` | On a `<form>`, Enter inside any child textarea submits the form, including textareas inserted or replaced after the form is wired. Shift+Enter and IME composition Enter do not submit; other controls keep their own key behavior. |
+| `data-cui-clear-on-esc` | On an `<input>`/`<textarea>`, Escape clears the value unless `isComposing` is true or keyCode is 229; composition Escape belongs to the IME. |
+| `data-cui-autogrow` | On a `<textarea>`, height auto-grows with content on input, reset and focus. Hidden controls keep their height until measurable; a shared ResizeObserver fits them on reveal and width changes. Detached targets are unobserved on navigation or DOM removal and re-observed if inserted again; the weak wiring map prevents duplicate listeners. |
+| `data-cui-charcount-source="<selector>"` | An element that displays the live character count of the input matched by this CSS selector (for example, `#message`, not the bare id `message`). |
 | `data-cui-os` *(on `<html>`)* | Set by the runtime at boot to `"mac"` or `"other"` based on best-effort platform detection. Used by `framework/ui.ShortcutHint` to display platform-correct mod-key glyphs purely in CSS (no per-component JS). Functional shortcut matching does not depend on this attribute. |
 | `data-cui-static` *(on `<html>`)* | Injected **only** by the static exporter (`framework/static.Builder`) onto `<html>`. When present, the runtime enters static mode: it fetches the dumped catalog file (`/__gofastr/widgets.json`) instead of the live session-gated endpoint, at boot and after every client-side navigation (which mounts and deep-links from that one catalog rather than asking `/__gofastr/widgets?page=`), and a `data-cui-rpc` click/submit surfaces a "Needs the Go server" notice (via the CSP-clean `#cui-nav-toast` mini toast) instead of firing a dead request, so a visitor who tries a server-backed demo learns why it's inert and how to run it locally. `data-cui-open` is **not** gated: overlays resolve against the widget catalog + chrome HTML the exporter dumps as query-free files, so navigation surfaces (command palette, section-menu drawers) work. Client-only features (theme toggle, copy, signal mutations) are unaffected. Live pages never carry it, so every static-mode guard is a no-op in the normal server-backed app. |
 | `data-hui-tree` / `data-hui-tree-toggle` | On a `framework/ui.Tree` (headless.Tree anatomy): the registered `headless-tree` module (framework/headless, `Requires("rpc")` for the lazy branches) owns the WAI-ARIA keyboard contract — the roving tabindex, arrows, Home/End, type-ahead, and expand/collapse that drives the same toggle button a click drives, so any lazy-load `data-cui-rpc` on the toggle fires either way. |
-| `data-cui-fill-input="<selector>"` / `data-cui-fill-text="<selector>"` | A button that fills the target input or text node with this element's `data-value` (or text content). |
+| `data-cui-fill-input="<selector>"` / `data-cui-fill-text="<text>"` | A button that fills the selected input or textarea's value with the literal `fill-text` value, including an explicitly empty value; if `fill-text` is absent, it uses the button's trimmed text content. `data-value` is not read. The target receives an input event and focus. |
 | `data-cui-disable-when-invalid` | On a submit button or image input: disabled while any field in its associated form reports `:invalid`. On a form, applies to all its submit controls, including image inputs and buttons with an omitted type. Fields and submitters associated via `form="<id>"` are included; input, change, reset and an inserted field or submitter resync validity. Ordinary pages and inserted controls demand-load and wire the helper without a widget. |
 | `data-cui-persist-storage="<key>"` | The element's value persists across reloads in `localStorage`, stored namespaced as `gofastr.persist.` + `encodeURIComponent(<key>)` so an attribute-borne key can only ever touch that namespace. A value stored under the pre-namespace raw `<key>` is not read. |
 | `data-cui-flash-on-update` / `data-cui-flash-duration-ms="<ms>"` | A signal-bound element flashes (CSS class `cui-flash`) for `<ms>` after each update (default 600). The built-in app.css styles the class: a `--color-primary` tint fading to the element's own background over `--duration-slow`, only under `prefers-reduced-motion: no-preference` (the runtime skips the class under `reduce`). |
 | `data-cui-scroll-bottom-on-update` | A signal-bound scroll container auto-scrolls to the bottom on each update (chat / log views). |
-| `data-cui-tick-elapsed="<unix-ms>"` | Element's text updates once per second with the elapsed human-readable interval since the given epoch. |
+| `data-cui-tick-elapsed="<unix-ms>"` | Element's text updates every 200 ms with the elapsed interval since the given epoch: milliseconds below one second, tenths of a second below ten seconds, and whole seconds thereafter, using the reader's number locale. |
 | `data-cui-rpc-body="<json>"` | Static JSON body for `data-cui-rpc` requests that don't come from a `<form>`. |
 | `data-cui-rpc-after-done` | Internal marker: set by the runtime after a one-shot `after-text` / `after-disable` fires so re-clicks are idempotent. |
 | `data-cui-deeplink="<k1=v1&k2=v2>"` | On a `data-cui-open` button: per-click overrides for the opened widget's declared `DeepLinkParams`. The runtime mirrors the pairs into the widget's signals on open AND pushes them onto the URL (alongside the widget's `DeepLinkKey=DeepLinkValue`) so refresh / share / back-button preserve the open modal AND its data. Used for row-level "Edit user 42" flows. |
@@ -405,9 +467,10 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-toast-stack="<name>"` | Marks the container into which `__gofastr.toast()` appends items. The name matches the widget name passed to `preset.ToastStack`. `framework/uihost` mounts one named `uihost.DefaultToastStack` (`gofastr-toasts`) at boot when the app mounted none, so a header toast always has a region; the module mounts no container of its own and returns `null` without one, which hands the toast to the kernel's `data-cui-toast-fallback` region. |
 | `data-hui-toast-template` | On the inert `<template>` `preset.ToastSlotHTML` renders inside the stack: the row `headless-feedback` clones for a runtime toast. The kit registers it under `preset.ToastTemplate` (`registry.RegisterTemplate`), rendered by `headless.ToastTemplate`; the template carries `data-hui-toast-glyph-<tone>` (the icon text), `data-hui-toast-variant-<tone>` (the class the root gains), and the stack's words as fallbacks (`data-hui-toast-dismiss-label`, `data-hui-toast-tone-<tone>`). Inside, the row is hooks: `data-hui-toast-item` (the stack row), `data-hui-toast` (the root), `data-hui-toast-tone`, `-icon`, `-title`, `-body` (filled, or removed when empty), `data-hui-toast-action` (a button, `hidden` until a toast's `action: {label, attrs}` fills it, removed otherwise) and `data-hui-toast-dismiss`. No template on the page: the module builds the same row bare. |
 | `data-hui-toast-ttl-ms="<n>"` | On a toast item: auto-dismiss after `n` milliseconds, armed by `headless-feedback` for module-built and server-rendered rows alike. The timer runs only while the item is neither hovered nor holding focus: the pointer leaving while focus is still inside keeps it paused, and an item holds one timer at most. Leaving both resumes from where it stopped. Omit (or 0) for persistent toasts that require explicit dismissal. |
-| `data-hui-toast-leaving` | Written by `headless-feedback` on a toast item the moment it is dismissed; the kit's `ui-toast-stack` sheet animates the row out on it and the module removes the row when the animation ends. |
+| `data-hui-toast-leaving` | Written by `headless-feedback` on a toast item the moment it is dismissed; the kit's `ui-toast-stack` sheet animates the row out on it and the module removes the row when the animation ends. A focused row returns focus at dismissal, before an action RPC can disable its button: next available row control, previous row, then the last connected external control. Removal and capacity eviction use the same recovery only while focus remains inside the row; they never steal focus moved elsewhere. A leaving row cannot rearm its TTL. |
+| `data-hui-notification-bell` / `data-hui-notification-label` / `data-hui-notification-count-fmt` | The notification anchor's accessible name is its required label followed by the localized unread-count sentence. `headless-bell` watches the bound `data-hui-notification-count` badge and rebuilds the same name on changes. The label travels separately from the sentence format; `{{n}}` is substituted only in the count sentence, never in the caller's label. |
 | `data-cui-embed-state` *(on the embed root)* | Lifecycle of an embedded surface. The server writes `loading` into the shell HTML; the `boot-embed` fragment writes every later value, and ships **only** in the `embed` bundle served at `/__gofastr/embed-runtime.js`. `ready` once the handshake completed and the surface's server-rendered content was injected. `error` when there is no parent to hand over a nonce, no token arrived within 15s, the exchange was refused, or the content fetch failed. `expired` when the grant's absolute lifetime ran out and refresh could not renew it. Nothing in the runtime branches on it; it exists so tests can see the frame's state. The host page is cross-origin and can neither read nor style inside the frame. See `framework/docs/content/embed.md`. |
-| `data-cui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup). Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Unstyled-but-visible; no TTL, no animation. |
+| `data-cui-toast-fallback` | Marks the degraded inline container core injects when the `headless-feedback` module fails to load (transient 5xx, network hiccup) or returns `null` without a stack. Used by `__gofastr._fallbackToast(cfg)` so an X-Gofastr-Toast payload still reaches the user even when the full module is unavailable. Rows announce through `role="alert"` (warning/danger) or `role="status"` (other variants), with no redundant `aria-live`, just like the full module. Unstyled-but-visible; no TTL, no animation. |
 | `data-hui-menu` / `data-hui-menu-trigger="<id>"` / `data-hui-menu-panel` / `data-hui-menu-radio="<group>"` / `data-hui-menu-lazy` | On a `framework/ui.Menu` (headless.Menu anatomy): the dropdown and its submenus are disclosures (`data-hui-disclosure` beside `data-hui-menu`), `headless-menu` (a registered behaviour of `framework/headless`, `Requires("headless-disclosure", "widgets")`) owns the keyboard contract — roving focus scoped to the item's own panel, wrapping arrows, Home/End, bounded type-ahead, RTL-aware submenu open/close, Tab closing the chain, radio arbitration across the whole menu, focus-on-open, and the lazy template's inflation. The retired menu-module attribute family is gone with the `menu` module. |
 | `data-cui-match-prefix="<path>"` | On an `<a>` link, inside a `<nav>` landmark or not: opts the link into prefix-matching for active-route highlighting. The attribute's VALUE, when non-empty, names the section prefix — a link can own a section it does not live at (`framework/ui.Sidebar` emits its items' `MatchPath` there, which is how a section stays lit across client navigations into it); an empty value falls back to the href. The runtime tags it `aria-current="page"` + `.active` when the current path equals the prefix or continues it at a segment boundary: `/docs` and `/docs/` both light up on `/docs` and `/docs/getting-started`, and neither matches `/docs-old`. Without this attribute the runtime does exact matching only (a query-less href matches the URL's path, a trailing slash aside, since a screen's sort, page and filter live in its query, unless its nav also links that path with a query, a tab strip whose current tab the server picks; an href with a query must equal the URL, again a trailing slash on its path aside), so breadcrumbs and sidebars (where multiple links share prefixes) keep the server-rendered single active item. Root `/` is never a prefix match. |
 | `data-cui-activelink` | On an `<a>` link, inside a `<nav>` landmark or not: hands the link's current-state to the `activelink` module without changing how it matches (exact, as above, unless `data-cui-match-prefix` is present too). `headless.Sidebar` marks every leaf with it, so the `aria-current="page"` the server settled for first paint is the module's to clear after a client navigation. The module loads idle, so a navigation can land before it ever stamped `.active` on the old link; without the handover the stale first-paint mark survived beside the fresh one, two lit entries. The handover covers navigations only: on a document that has not navigated client-side, the load-time sweep stamps matches and leaves these marks alone, so `Active` on `/orders` served at `/orders?page=2` or on a detail page keeps its mark. Links with neither handover attribute nor the module's `.active` class keep owning their attributes. |
@@ -415,7 +478,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-popover-anchor` | On a `data-cui-open` trigger button: opt the opened widget into trigger-anchored positioning. The value is the preferred side: `"top"`, `"bottom"`, `"left"`, `"right"`, or empty / `"auto"` (= bottom-first, then top, right, left). The runtime measures both rects after open and applies inline `position: fixed; top; left` so the popover sits next to the trigger; if the preferred side would overflow the viewport (8px margin), it auto-flips to the opposite. Re-runs on `window.resize` AND `window.scroll` (capture, rAF-throttled) so the popover tracks the trigger when the page scrolls. Distinct from `preset.Modal`'s deep-link affordances: popovers are click-driven and don't deep-link. |
 | `data-hui-multiselect` / `data-hui-multiselect-chips` / `data-hui-multiselect-placeholder="<text>"` / `data-hui-multiselect-remove-label="<fmt>"` / `data-hui-multiselect-remove="<input-id>"` | On a `framework/ui.MultiSelect` (headless.MultiSelect anatomy; the disclosure itself is `data-hui-disclosure`'s): the registered `headless-multiselect` module (framework/headless, `Requires("headless-disclosure")`) rebuilds the chips strip from the checkboxes' own state after every change, names each chip's × from the remove-label format (`{{label}}` substituted), unchecks the checkbox a × names inside that ×'s own multiselect (option ids derive from the instance id, which defaults to the field name, so two multiselects for one field share them), and closes the disclosure on click-outside. The placeholder is the sheet's `:empty::before` content. The submit contract is the plain form: every checkbox shares the field name, no script needed. |
 | `data-hui-datepicker` / `-input="single\|start\|end"` / `-calendar` / `-nav="prev-year\|prev-month\|next-month\|next-year"` / `-caption` / `-grid="<YYYY-MM>"` / `data-hui-date="<YYYY-MM-DD>"` / `-range="start\|end\|inside"` / `-range-mode` / `-status` / `-chosen` / `-choose-end` / `-ranged` | On a `framework/ui.DatePicker` (headless.DatePicker anatomy): the registered `headless-datepicker` module (framework/headless) writes a clicked day into the native `<input type=date>` (a range's first pick is the start, the second the end, a pick before the start restarts it), dispatching `input` and `change`, and keeps `aria-selected` and the range place on each cell in step with whatever the inputs hold, a typed date included. It owns the date-grid keyboard (arrows a day or a week, mirrored when the computed direction is rtl; Home/End the row's ends; PageUp/PageDown a month, with Shift a year) with one day in the tab order; a move past the shown month clicks the matching nav anchor, whose `data-cui-rpc` GET the kernel fetches and swaps into the calendar (`data-cui-signal` mode html, no push-state), and when the swap lands the module focuses the day the key named or the anchor that was clicked and says the new caption in the status region. The pick sentences travel on the root (`-chosen`, `-choose-end`, `-ranged`, `{{date}}`/`{{start}}`/`{{end}}` filled at say-time). Each day button carries `aria-pressed` mirroring its cell's selection, so the element focus lands on says it; a range's grid is `aria-multiselectable`. Keys pressed while a month is in flight count from the day the last one asked for, and the arrival walks on toward it (a year, then a month, at a time); a reader whose focus left the calendar keeps it; the module listens on the calendar's signal slot, so a failed month (the anchor's `data-cui-rpc-error-toast` says it) ends the wait at once, with a 5 s expiry as the backstop. A day or nav anchor clicked while the module is cold is replayed once it registers. The server holds the shown month between Min's and Max's months, and an anchor that would not move is disabled. Without script the inputs submit and the nav anchors are plain links. |
-| `data-cui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click. Outside-click and SPA navigation close all dropdowns without moving focus. Escape defers to the modal stack, then closes only the focused (or topmost) dropdown layer; when focus was inside its panel, focus returns to that dropdown's trigger. Opening one dropdown still closes the others by default. |
+| `data-cui-dropdown` | On a dropdown trigger button. The `dropdown` runtime module toggles `aria-expanded` and shows/hides the paired panel on click. Outside-click and SPA navigation close all dropdowns without moving focus. Escape defers to the modal stack, then closes only the innermost focused (or topmost) dropdown layer; when focus was inside its panel, focus returns to that dropdown's trigger. Opening a nested dropdown keeps its ancestors open, while closing unrelated open dropdowns and sibling branches. |
 | `data-cui-dropdown-wrap` | On the wrapper around a `data-cui-dropdown` trigger + `data-cui-dropdown-panel`. Scopes open/close to one dropdown instance; the runtime sets/clears `data-cui-dropdown-open` on it to track state. |
 | `data-cui-dropdown-panel` | On the floating panel sibling of a `data-cui-dropdown` trigger. The runtime toggles its `hidden` attribute as the dropdown opens/closes. |
 | `data-cui-dropdown-open` | Runtime-written marker on a `data-cui-dropdown-wrap` while its dropdown is open. CSS keys the open state off it; the runtime uses it to find and close open dropdowns. |
@@ -425,7 +488,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-fui-dropzone-preview` | On a `<input type="file">` inside a `framework/ui.FileDropzone`: opt the input into image-preview rendering. After each `change`, the `filedropzone` module (framework/ui's own) FileReader-reads each selected image and renders `<img>` tags into the sibling `[data-fui-dropzone-preview-for="<input-id>"]` container; the drop itself, the chosen-names list and the pick announcement are the headless module's `data-hui-drop` hooks. |
 | `data-fui-dropzone-preview-for="<input-id>"` | On the previews strip element: links it to the input it should display previews for. |
 | `data-hui-back-to-top-visible` | Runtime-written BackToTop visibility marker (`headless-navigation` owns it; no component renders it). CSS uses it to reveal the control once the threshold is crossed. |
-| `data-hui-back-to-top-threshold="<px>"` / `data-hui-back-to-top-target="<id>"` / `data-hui-back-to-top-smooth` | BackToTop tuning: the scroll threshold before the control becomes visible, the target ELEMENT ID to scroll to (never a selector — the module resolves it with `getElementById`; empty scrolls the document root), and the smooth-scroll opt-in (ignored under reduced motion). |
+| `data-hui-back-to-top-threshold="<px>"` / `data-hui-back-to-top-target="<id>"` / `data-hui-back-to-top-smooth` | BackToTop tuning: the scroll threshold before the control becomes visible, the target ELEMENT ID to scroll to (never a selector — the module resolves it with `getElementById`; empty scrolls the document root), and the smooth-scroll opt-in (ignored under reduced motion). The styled BackToTop config accepts the element id with an optional leading `#`; it does not accept CSS selectors. |
 | `data-hui-back-to-top` | On a `framework/ui.BackToTop` anchor: marks the real same-origin link (its href is the no-script jump). The `headless-navigation` module adds the threshold, the in-page scroll and the focus return. |
 | `data-hui-toc` / `data-hui-toc-target="<selector>"` | On a `framework/ui.TableOfContents` nav (headless.TableOfContents anatomy): the server renders the entry list from explicit `Items`, and `headless-toc` (a registered behaviour of `framework/headless`, loaded on the `data-hui-toc` marker) marks the active entry — `aria-current="true"` plus a class, never a style — through the IntersectionObserver `headless-rail` owns (`Requires("headless-rail")`, one observer shared with AnchoredRail). The retired runtime-filled toc contract is gone with the `toc` module. |
 | `data-hui-rail` / `data-hui-rail-observe="<selector>"` / `data-hui-rail-target="<selector>"` | On a `framework/ui.AnchoredRail` aside (headless.Rail anatomy): `headless-rail` (a registered behaviour of `framework/headless`) watches the observed region and sets `aria-current="true"` + `.is-active` on the link whose target section holds the top of the view. The entries are real fragment links, so the rail works with no script. The retired scrollspy wrapper contract is gone with the `scrollspy` module. |
@@ -439,7 +502,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-hui-copy-failed` | On the same wrapper (`framework/ui.CopyButton` renders it from the `ui.copy.failed` phrase): the sentence the module writes into the status span, `{{name}}` substituted, when the clipboard refuses the write (a declined permission) or has none (an insecure origin). A failed copy shows no copied label, sets no `data-hui-copy-state` and fires no toast. |
 | `data-hui-copy-toast="<json>"` | On the button (or any element) inside a `data-hui-copy` wrapper: the module reads the first `[data-hui-copy-toast]` in the wrapper and, once the clipboard write resolves, hands `<json>` to the kernel's `_toastOrFallback`: `headless-feedback` renders it into the page's stack (the copy wrapper is among that module's markers too, so it is usually loaded already), and a page with no stack gets the kernel's `data-cui-toast-fallback` region. Use for "Copied to clipboard" notifications without per-button JS. |
 | `data-hui-counter-value="<n>"` | On a stepping `headless.Counter` root (not a `Display` figure, not `Seeded`): the value the counter shows, in plain digits. `data-cui-signal-inc` steps the value the signal store holds, not the markup, so a counter no page seed covers would step from 0 while it shows its value. The `headless-controls` module (this hook is one of its markers) hands the store the value when the counter arrives: page load, an island swap, a navigation. Fresh markup is the number on screen, so it wins over a count the reader stepped on the markup it replaced; a rescan of the same markup (the pass a navigation that kept it runs) is not an arrival and changes nothing. `framework/ui.Counter` sets `Seeded`, so the page's `store.Slice` seed (the signals block and every partial) stays the only one. Until the module has loaded, a + steps an unseeded signal from 0. |
-| `data-hui-counter-animate` | On a `framework/ui.AnimatedCounter` (the signal-bound counter's root): the `headless-controls` module ticks the signal-written value from `data-hui-counter-from` to `data-hui-counter-to` over `data-hui-counter-ms` on arrival, each frame written in the page's language. A live write to the signal during the walk (`setSignal`, a poll) stops it, and a counter animates once, so a rescan never walks the number again. The final value is always the SSR text, so a reader without script sees the true count; `prefers-reduced-motion` leaves the number where the server put it. |
+| `data-hui-counter-animate` | On a `framework/ui.AnimatedCounter` (the signal-bound counter's root): the `headless-controls` module queues an arrival walk with `requestAnimationFrame`, from `data-hui-counter-from` to `data-hui-counter-to` over `data-hui-counter-ms`, each frame written in the page's language. A live signal value that differs from the arrival target stops the walk, even before its first frame or when it matches the last painted number; the animation never owns the signal. A counter animates once, so a rescan never walks the number again. The SSR text is the true count for readers without script; `prefers-reduced-motion` leaves it untouched. |
 | `data-hui-counter-from="<n>"` / `data-hui-counter-to="<n>"` / `data-hui-counter-ms="<n>"` | AnimatedCounter starting and final values (plain digits; the display text is localized and never parsed) and animation duration (ms; the module's default when unset). |
 | `data-hui-carousel` | Marks a `framework/ui.Carousel` root (the headless primitive's anatomy). The registered `headless-carousel` module wires Prev/Next clicks, dot clicks, ArrowLeft/Right keyboard nav, and the live slide status. The arrows, Home and End are the track's only when the key is not a modifier chord and focus is not in a field inside a slide (an input, a select, a textarea, editable content), which keeps its caret keys. The deferred-slide virtual scroll went with the retired core-ui/runtime module. |
 | `data-hui-carousel-track` | The inner scrolling `<ul>` of a carousel. The module reads its `scrollLeft` + slide offsets to compute the current index, and marks the slide at the track's start when a manual scroll (swipe, trackpad, scrollbar) settles. It measures slides per view from the layout; the reachable positions are the slide count minus that, plus one. |
@@ -472,7 +535,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-fui-lightbox-group="<id>"` | On a trigger anchor that opens a Lightbox: identifies the gallery group whose siblings the lightbox module walks during Prev/Next nav. |
 | `data-fui-lightbox-prev` / `data-fui-lightbox-next` | On Prev/Next buttons inside the open Lightbox: clicking steps to the previous/next image in the gallery group. |
 | `data-cui-popover-side` | Written by the runtime onto the anchored popover's widget root after placement: value is the final chosen side (`"top"`, `"bottom"`, `"left"`, `"right"`, post auto-flip). CSS uses it to position the directional arrow (`::before`) and to apply the anchored chrome (border, shadow, max-inline/block-size). Cleared on dismiss. |
-| `data-cui-popover-trigger` | Written by the runtime onto the originating trigger button while its anchored popover is open. The runtime also adds the `.is-popover-trigger-active` class so the trigger can be highlighted while its popover is the currently-active surface. Both are stripped on dismiss or when the popover re-anchors to a different trigger. |
+| `data-cui-popover-trigger` | Written by the runtime onto the originating trigger button while its anchored popover is open. The runtime also adds the `.is-popover-trigger-active` class so the trigger can be highlighted while its popover is the currently-active surface. Both are stripped on dismiss or when the popover re-anchors to a different trigger. Initial placement and scroll/resize placement dismiss the popover if its trigger is detached or has an all-zero rect; queued placement from an earlier open or anchor cannot dismiss the current popover. |
 | `data-cui-prefetch="<module>"` | On any element: opt the page into hover/focus-prefetch of a split runtime module (e.g. `data-cui-prefetch="popover"`). On the first `pointerover` or `focusin` (capture phase, once per element) the runtime fires `__gofastr.loadModule(<module>)` so the module is ready by the time the user clicks. Multiple modules can be listed space-separated. Used to keep typical pages on `core.js` only while still feeling instant on interaction. Module names are shape-checked (`^[\w-]+$`) before the URL is built: the value is DOM input, and a `../../../evil` token would otherwise normalize out of the runtime serve route onto an arbitrary same-origin script. See `framework/docs/content/runtime-minification.md` for the size story. |
 | `data-cui-nav="off"` | On an anchor: decline SPA navigation for this link. The runtime lets the click through to the browser, so the destination gets a full document load. For hosts whose destination page binds behavior at script load — a soft swap never re-runs those initializers, so every handler on the destination dies. The screen-level equivalent is `Screen.NoSPA`, which excludes a route from the client manifest so *every* link to it loads fully. |
 | `data-cui-doc` | On a `<script src>` emitted by `uihost.RegisterDocumentScript(src, scope)`: the script has a DOCUMENT lifetime, shipping only on routes the scope predicate accepts (the predicate sees the registered route pattern, `/session/:id`, at render time and in the manifest alike). The runtime reads the live document's `data-cui-doc` srcs and compares them against the destination route's manifest `docScripts` at every soft-nav entry point (click hijack before `preventDefault`, `navigate()`, `popstate`, `loadPage`'s redirect leg). A difference — entering OR leaving the scope — performs a real document load instead of a partial swap; equal sets stay partial, and Back/Forward across an edge loads the destination fresh. The reason is a browser fact: such a script installs capabilities INTO the document (WebMCP's `navigator.modelContext` tools are the driving case), and DOM removal is not capability revocation, nor does a partial swap ever run a body script. |
@@ -507,7 +570,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-fui-plugin-for="<json,md>"` | Plugin-defined extension attribute (wysiwyg): names the hidden form fields the host adapter mirrors `docChanged` content into. Plugins may add namespaced `data-fui-plugin-*` extras via `MountConfig.Attributes`; document them in the owning plugin. |
 | `data-fui-plugin-fallback` | Wraps the server-rendered pre-hydration node inside the plugin mount marker (`MountConfig.Fallback`). The broker shows it while the frame loads, hides it — never removes it — on the frame's `ready`, and swaps back to it on `bootError` (a dead frame degrades to the static node, not an empty box). |
 | `data-search` / `data-search-loading` / `data-search-empty` / `data-search-all="<path>"` / `data-search-all-label` | On the listbox of a `ui.CommandPalette` with `Search`. The marker loads `battery/sitesearch`'s `sitesearch` module, which adds result rows (`data-search-result`) as the reader types, a disabled row in the loading or empty words while there are none, and, with `data-search-all` (`CommandPaletteConfig.SearchPage`), a last row opening that search page for the query, worded by `data-search-all-label` with `{{q}}` filled. Tests: `battery/sitesearch/parity_chromium_test.go`. |
-| `data-search-page="<path>"` / `-query` / `-count` / `-one` / `-none` / `-more` / `-limit` / `-input` / `-status` / `-list` / `-pager` | On the `<section>` `ui.SearchResults` renders and its parts. The root names the page's path and the query the server rendered, the status words (`{{n}}`, `{{q}}`) and the page size; the parts mark the input, the status line, the result list and the pager. The marker loads `battery/sitesearch`'s `sitesearch-page` module. As the reader types it fetches the page's own render for the new query with the router's partial headers and swaps in the status, list and pager, never the input; the address follows with `_pushURL(url, {replace: true})`, and a submit runs at once instead of reloading. On a static export (`data-cui-static`) it ranks with `sitesearch-static`, draws the rows with DOM calls, runs a `?q=` from the address on load, and pages with a "more" button worded by `-more`. Without the runtime the form GETs the page and the pager links page it. Tests: `battery/sitesearch/page_chromium_test.go`. |
+| `data-search-page="<path>"` / `-query` / `-count` / `-one` / `-none` / `-more` / `-limit` / `-input` / `-status` / `-list` / `-pager` | On the `<section>` `ui.SearchResults` renders and its parts. The root names the page's path and the query the server rendered, the status words (`{{n}}`, `{{q}}`) and the page size; the parts mark the input, the status line, the result list and the pager. The marker loads `battery/sitesearch`'s `sitesearch-page` module. As the reader types it fetches the page's own render for the new query with the router's partial headers and swaps in the status, list and pager, never the input; the address follows with `_pushURL(url, {replace: true})`, and a submit runs at once instead of reloading. On a static export (`data-cui-static`) it ranks with `sitesearch-static`, draws the rows with DOM calls, runs a `?q=` from the address on load, and pages with a "more" button worded by `-more`. A current-query failure clears the list and pager and announces the translated `sitesearch.unavailable` phrase in the existing status line; an older failure cannot erase newer results. Without the runtime the form GETs the page and the pager links page it. Tests: `battery/sitesearch/page_chromium_test.go`, `battery/sitesearch/page_failure_chromium_test.go`. |
 | `data-cui-drag-handle="true"` | On the visible drag-handle bar rendered at the top of a drag-dismiss-enabled widget. Marks the affordance for cursor styling; the actual pointer logic is delegated from the widget root. |
 | `data-fui-zoomed` | Written by the lightbox module onto the viewer's `[data-fui-lightbox-image]` image when the user has pinch-zoomed past 1×. CSS uses it to flip the cursor from `zoom-in` to `grab` and to enable single-pointer panning. Cleared on snap-back, on Prev/Next and on lightbox close. |
 | `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
@@ -530,14 +593,25 @@ below). The build fails on an unassigned attribute, so the map cannot
 drift ahead of the source.
 
 **Component-action attributes** (the compiled `data-action` family, distinct
-from the `data-cui-*` runtime primitives above): `data-action="<name>"` on an
+from the `data-cui-*` runtime primitives above) use registries collected by
+`component.ExtractActions`. If `Actions()` panics during extraction, it logs
+the component type, scrubbed panic and stack through `slog` and returns a
+fresh empty registry, discarding any partial actions. The extraction context
+is restored so subsequent components can still compile normally.
+
+`data-action="<name>"` on an
 element inside a `[data-component]` binds the named compiled action to that
 element's click (and `data-action-<event>` / `data-action-type` to
 input/change/submit). `data-action-mount="<name>"` fires the named action
 *once on hydration* (and again after each SPA nav), the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
-`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. Markup inserted outside a navigation (an intercepted
+`params`. Static exports retain client-only click/input actions, but skip
+all automatic mounts (hydration, navigation and insertion). A compiled
+server action shows the localized "Needs the Go server." notice and sends
+no request in the static composition; the full live runtime is unchanged.
+Covered by `core-ui/runtime/action_mount_e2e_test.go` and
+`static_actions_e2e_test.go`. Markup inserted outside a navigation (an intercepted
 route's overlay, an island swap, a widget's chrome) fires its mounts too,
 each element once, through the `actionloader` module a page with compiled
 actions loads (boot marks what its own pass fired). The module also
@@ -556,10 +630,15 @@ there gets them; a screen registered while the app serves does not.
 | `X-Gofastr-Push-State: <path>` | Apply via `history.pushState` after the RPC succeeds (URL update without re-fetch) |
 | `X-Gofastr-Partial: true` | Body is a screen-partial (used by the cross-page nav path) |
 | `X-Gofastr-Swap: <layer key>` | Names the layout layer the partial body renders BELOW (see `data-cui-layout-key`). The runtime swaps the matching `data-cui-layout-slot` cell and records the key on the cache entry so a replay swaps the same cell. Emitted when the navigation request carried `X-Gofastr-From` and the two routes share an addressable chain prefix; a key the DOM doesn't have (deploy skew) makes the runtime recover with a full-page load. Absent → the body is bare screen content for the whole `<main>`. |
-| `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-cui-fill>` (addressed by the bare swap key, no hash), then one hashed template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
+| `X-Gofastr-Envelope: 2` | Set when the partial body is a fills envelope: the seed island, then the primary `<template data-cui-fill>` (addressed by the bare swap key, no hash), then one template per kept-layer fill. Emitted only when the request carried `X-Gofastr-Fills: 2` and the render produced fills; otherwise today's body. |
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) An untitled screen's header carries the app name, the same title its full document gets (uihost; a partial that omitted it left the previous page's title and announcement in place). With no header at all (another server) the runtime keeps the current `document.title` verbatim: only the header is decoded, and a header that fails to decode is used as sent. |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
+
+**Layer-key encoding.** `X-Gofastr-Swap` percent-encodes C0 control bytes,
+DEL, non-ASCII bytes and literal percent signs. The runtime decodes it
+once with `decodeURIComponent`, preserving the DOM key without sending
+invalid HTTP header bytes.
 
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
@@ -579,6 +658,10 @@ tab actually navigates. Surfaces that must stay fresh across tabs
 belong on the polling rung (`data-cui-poll`), not on cache eviction.
 The embed composition ships no nav fragment, hence no cache, so the
 header is a no-op there by construction.
+
+Visible-route preloading disconnects its link observer before each navigation
+rescan, then observes only links in the current document. Detached links and
+their old page subtrees never remain in the observer's target list.
 
 **Cache entry layering and whole-document navigation answers.** A cache
 entry records the layer key its HTML renders below, and a replay swaps
@@ -1001,6 +1084,11 @@ is the same as the component-CSS pipeline: ship only the JavaScript a page
 needs. `fragment_map_test.go` fails the build if any attribute in the runtime
 sources lacks an owner, or any declared owner has drifted out of the source.
 
+After changing fragment declarations, refresh `frag/SYMBOLS.txt` with
+`GOFASTR_UPDATE_RUNTIME_SYMBOLS=1 go test ./core-ui/runtime/ -run TestComposedRuntimeIsSymbolComplete`
+as well as regenerating `runtime.js`. Re-run both composition guards without
+update flags: regenerating the bundle does not update the symbol manifest.
+
 Two kinds of fragment, and the distinction is a safety rule, not an
 optimization knob:
 
@@ -1118,7 +1206,22 @@ parameter with `ui.PaneDeepLink` and set `SecondaryOpen`/`TertiaryOpen`
 plus the pane's content from it; skip that and a shared link paints the
 pane closed, then opens and fills it after hydration.
 
+### Screen groups
+
+Screen-group prefixes compose parent-relative, even when a subgroup prefix
+starts with `/`. Empty subgroup prefixes retain the parent prefix; joining
+normalizes repeated and trailing slashes before relative screens are registered.
+
 ### Intercepting routes (`app.InterceptFrom`)
+
+Every screen registration normalizes intercept `From` and `AlsoFrom`
+brace parameters to the router's colon form, including typed parameters
+and catch-alls. This applies both to `InterceptFrom` and to a screen's
+`Intercept` field, including grouped screens and custom screen options.
+Non-absolute origins and non-overlay presentations panic at registration.
+At mount the UI host validates
+every origin against the registered screen patterns; a misspelling panics
+with the target and missing origin instead of silently disabling the overlay.
 
 One detail screen, two presentations. `/products/42` is an ordinary
 page registration and stays the canonical render: hard load, refresh,
@@ -1152,7 +1255,12 @@ module only when some entry has one, and the UI host injects
 
 Intercepted HTML never enters the screen cache. The cache is keyed by
 path and holds canonical page renders, so storing an overlay variant
-would poison a later direct visit. Closing routes through
+would poison a later direct visit. An intercepted response carrying
+`X-Gofastr-Session` refreshes the token in `meta[name="gofastr-sse"]`
+(the UI host emits a name, not an id) and invalidates every
+cached canonical screen before checking response success, including on 404 and
+policy refusals, just like ordinary navigation: an earlier identity's pages must
+not replay after the session changes. Closing routes through
 `history.back()`, so Back, Escape, the backdrop, and any
 `data-cui-intercept-close` button are one code path and the page
 underneath is never refetched.
@@ -1197,6 +1305,14 @@ The navigation guards are asked about the same moves, before the leave
 guard, with intent `'overlay'` and `affects` naming the layers the move
 discards (see "Guarding departures" above).
 
+Widget modals belong to the intercept layer their opener occupied, including
+modals opened from another owned modal. Removing a layer or replacing its
+content closes its modals and backdrops, not unrelated widgets. Each content
+swap advances the layer's generation; an open captures that generation before
+loading chrome and checks it again before mounting or applying deep-link
+parameters, including after the deep-link module loads. Connectedness alone
+does not make an opener current: a refresh keeps the layer element in place.
+
 URL-only writes through the shared `_pushURL` helper (pagination and
 deep-linked widgets included) belong to the top intercept pane's history
 span. Replace rewrites its current entry, keeping its id, position and
@@ -1211,6 +1327,11 @@ When the leave guard declines a link, it invalidates the shared navigation
 epoch immediately. An older overlay response cannot mount behind the
 confirmation dialog and change what the guarded retry would discard.
 Cancel retains the dirty pane; Discard replays against the same stack.
+
+Declined pane closes and post-save returns invalidate pending pane replies
+before asking the leave guard. A close retry retains its original layer
+and does nothing if that layer has left the stack; a late answer cannot
+replace the guarded form or make Discard close an unrelated replacement.
 
 **More than one origin.** `Intercept.AlsoFrom` names more patterns the
 overlay opens over, beside `From`: a create screen opens over its list
@@ -1249,7 +1370,7 @@ AND a pane is open, the registered `headless-panehost` module sets
 `data-hui-pane-mode="overlay"` on the host. CSS repositions the open
 pane as a fixed right-edge drawer with a backdrop scrim (`::before`);
 the module applies a focus trap (Tab cycles within the pane, reusing
-`NS._focusSel`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
+`NS._focusSel` candidates filtered by `tabIndex >= 0`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
 and ESC / backdrop-click-to-close. Widening the viewport or closing the
 pane clears overlay mode and releases the lock. The 768px breakpoint
 literal MUST stay in sync between this module and the `ui-pane-host`
@@ -1340,6 +1461,14 @@ on full pages (`base` is a static export's mount path, which sits in
 front of the prefix); the kernel reads it once into
 `window.__gofastr_locales`. The id is reserved: `registry.RegisterDataBlock`
 refuses it.
+
+Screen markdown renders context-aware components with the same locale
+context as the page, including pattern-level fallback docs. Localized
+content and localized links therefore describe the same language. A
+request carrying a translator or locale renders its screen markdown
+even when its URL has no prefix, including the default locale and
+header- or cookie-negotiated locales. Only requests with no translator,
+locale or locale prefix reuse the background-context pattern document.
 
 Three kernel helpers, exported on `__gofastr` for modules, carry the
 rules:
@@ -1499,6 +1628,10 @@ navigation apply (cached replays included, through the per-module
 scanner hook), when a deferred part lands (`gofastr:fill`), and on DOM
 insertion; a reopen re-reads the meta, so the session parameter is the
 current one (the navigator's `X-Gofastr-Session` rollover rewrites it).
+Both navigators clear page caches when a full document's stream metadata
+names a different session, before replacing the live metadata, just as
+they do for a partial's session header. Other stream URL changes with the
+same session do not invalidate pages.
 
 The module mirrors its transport state onto ONE live object, mutated
 in place so every reference (the NetworkRetryBanner, app code) sees
@@ -1509,6 +1642,14 @@ updates without re-reading:
 | `window.__gofastr.sseStatus.connected` | `true` on EventSource `open`, `false` on `error`, when the last push target leaves the document, and on `pagehide` (the transport closes when the page hides, bfcache entry or unload, and reconnects on `pageshow.persisted`, so a navigated-away page never hoards one of the tab's ~6 per-host connections) |
 | `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
 | `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` and on a deliberate close |
+
+Transport errors retry with exponential backoff and independent jitter: the
+first delay is 1.5–3 seconds, doubling to a ceiling of 30–60 seconds per
+attempt. A successful open or deliberate close resets the backoff. DOM
+rescans do not bypass a pending retry. Session re-minting remains best-effort
+on every second failure and shares the same increasingly spaced attempts.
+Hiding the page cancels the retry and clears its ownership, so a bfcache
+restore reconnects immediately instead of waiting for a cancelled timer.
 
 Connect/disconnect transitions also dispatch
 `document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.
@@ -1782,6 +1923,11 @@ resolve host-side through an injected resolver (actionRef → installed route
 id → namespaced URL); an unknown ref fails the whole render closed rather
 than emitting a guessed URL.
 
+Prop arrays are independently bounded by `Limits.MaxPropItems` (default
+128): table rows, columns and row cells, plus detail-list and key-value
+items. Empty cell text cannot bypass the array cap. An oversized array
+rejects the whole tree; hosts may explicitly adjust the cap.
+
 This is deliberately NOT `core-ui/noderender` (a *denylist* for first-party
 IR, through which a third party could forge the trusted `data-cui-*`
 attributes `runtime.js` acts on via its `extraAttrs` passthrough). The
@@ -1810,7 +1956,8 @@ the rest of this document:
 - **The service worker never interferes with the runtime's rails.**
   Its fetch handler has a baked deny list (`/__gofastr/sse`,
   `/__gofastr/session`, `/__gofastr/action`,
-  `/__gofastr/widgets`, `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
+  `/__gofastr/widgets`, `/core-ui/widget/*` (widget state and chrome),
+  `/api/*`, `/auth/*`, plus `PWAConfig.DenyPaths`
   for custom mounts) and ignores non-GET, so island RPCs, SSE streams,
   sessions, and auth always hit the network untouched. Documents are
   network-first and never cached (SSR HTML can be personalized); only
@@ -1863,6 +2010,11 @@ answers **204** with the same `Allow`, and the screen's policy and
 `Load` never run and no session is minted (uihost
 `serveScreenMethodNotAllowed`). A route registered at the screen's
 path, including an explicit `host.PageHandler`, wins its method.
+
+`ui.FilterToolbar` namespaces its derived control IDs under `cfg.ID` when
+set, including search shortcut targets, pill labels, select facets and sort.
+Otherwise the controls share the request's ID scope. Form names never acquire
+the namespace: native GET submission keeps the same query keys.
 
 `ui.FilterToolbar` with `ClientNavigation: true` emits `data-cui-spa` on its GET form. With the runtime it
 uses the existing client navigator, preserving the document and shared layout.
@@ -2069,6 +2221,10 @@ completeness test: when it can't, you found the gap.
    an **island** (see below).
 4. Register on the app router.
 
+Register injected services before their first use. The DI container refuses
+replacing a type while its constructor is running or after its singleton
+is cached; an accepted registration never loses to an in-flight build.
+
 ### How to build an island
 
 1. Define a `widget.Definition` via the builder:
@@ -2135,6 +2291,19 @@ triggers a screen-partial fetch.*
 ---
 
 ### Guarding a dynamic screen (route match + `RenderScreen`)
+
+A screen registered in a group must stay at or below that group's URL
+prefix. Absolute paths outside it panic at registration, including sibling
+prefixes such as `/settings-old` beside `/settings`. Brace and colon route
+parameters compare in the same normalized form.
+
+Catch-all screen and redirect patterns require a nonempty remainder,
+including a catch-all registered at the root: `/` never binds an empty key.
+
+Redirect substitution retains routing-form captures until the target is
+expanded, so an encoded slash inside a catch-all segment never becomes a
+separator. Screen parameters remain decoded; redirect literal and constraint
+checks use the same decoded segment comparisons as screens.
 
 Middleware that guards `/session/:sessionId` must not re-parse the
 path: `host.RouteMatchMiddleware()` resolves every request against the
@@ -2395,6 +2564,11 @@ spelling (`minmax(0,1fr)`), so compare tokens, not spacing.
 
 ## Component CSS
 
+ComponentSheet preserves keyframe step selectors inside every enclosing
+media or container query; only ordinary component selectors are scoped.
+StyleSheet keeps an open rule active across Keyframes calls, so subsequent
+properties, pseudo selectors, children and query blocks stay on that rule.
+
 Every component-owned stylesheet is registered, served and versioned
 by the host, loaded lazily per-component, dedup'd globally, and
 **always scoped** to `[data-cui-comp="<name>"]`. A first-load page
@@ -2434,7 +2608,8 @@ dimension in it is a token.
 
 A docs page releases its TOC column when the slot is an empty
 `data-cui-outlet` cell: the page's sheet observes the cell with
-`:has(> :empty)`, so navigation can clear or refill it without
+`:empty` and `:has(> :only-child:empty)`, so an empty sibling never hides
+other rail content and navigation can clear or refill it without
 rebuilding the surrounding layout. Documentation navigation uses
 `SidebarConfig.Compact`, including in the mobile drawer and no-script
 fallback. It retains normal link and group semantics.
@@ -2537,6 +2712,11 @@ under `immutable` headers in prod, content-addressed by a hash of
 the sheet as served (minified outside dev), so a deploy that changes
 the bytes, a source edit or a minifier change, busts the URL
 automatically.
+
+A sheet scopes every rule its own markup needs, visually-hidden text
+included (`[data-cui-comp="<name>"] .fui-visually-hidden`): a component
+rendered alone on a page cannot lean on another component's sheet or on
+the app's stylesheet for it.
 
 A client navigation does not paint the new page before its sheets
 arrive. Each page links only the sheets it renders, so nearly every
@@ -2746,6 +2926,56 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
 
+Toast focus tracking observes child-list changes only while a toast holds
+focus. An Island response removing a server row returns focus to its
+external origin only if removal left focus on the document body; a reader
+who focused another control while waiting keeps that focus.
+
+BackToTop recalculates its connected links' maximum threshold on arrival
+and on child-list changes after its first sentinel is armed. Removal-only
+HTML signal updates lower the threshold without waiting for a scroll or
+an inserted element; removing every link resets it to zero. A link
+removed and put back is armed again by the insertion scan.
+
+Widget, intercept, disclosure and pane-host Tab traps share the kernel's
+focus-eligibility predicate. Candidates need a nonnegative tab index,
+rendered visibility and no inert ancestor or native disabled state.
+Closed disclosure content is excluded only while it is not rendered:
+CSS exposing `::details-content` preserves its nested Tab stops.
+
+Carousel status announcements format both the active index and total in
+the page locale, including updates after the server's first render.
+Menu link rows activate on Space and prevent page scrolling, except while
+Space extends an active type-ahead prefix.
+Navigable combobox options are anchors with `role="option"` and
+`tabindex="-1"`, inside presentational list items. Their IDs and classes
+stay on the anchors: keyboard picks use the SPA navigator, while plain
+clicks commit the value and close the list without repeating navigation
+already claimed by the link router (including a cancelled navigation).
+The router marks the click event when it takes ownership, before firing
+the cancellable navigation hook. A signal delegate preventing default
+does not claim navigation: a link the router declines still uses the
+picker's programmatic navigator while committing its signal and value.
+Router ownership excludes even a redundant call to the programmatic
+navigator; URL deduplication is not a substitute for a single owner.
+Page click cancellation before the runtime's signal and routing delegates
+suppresses picker navigation. The signal delegate marks only its own default prevention,
+so adding a signal mutation cannot erase that earlier cancellation.
+Enter picks likewise honor default prevention already set when the
+combobox's document keydown delegate runs, including input listeners and
+document listeners installed before boot. A cancelled Enter does not
+commit selection or close the list. Listeners running after the relevant
+runtime delegate cannot undo a pick or navigation already handled.
+Modified clicks follow the native `href`. The programmatic navigator's
+same-destination guard resolves against `document.baseURI`, matching
+history writes and fetches, and compares the complete URL, including query
+and fragment; changing or removing a fragment is a navigation, while
+forcing an identical destination re-fetches with a replacement entry.
+Escape keydown consumers ignore both `isComposing` and keyCode 229,
+including enclosing disclosures, widgets and intercept panes: an IME
+key left alone by a nested control must not dismiss its parent or clear
+its input. The `keyguard-escape` source lint enforces both indicators.
+
 A second way to author a component separates what this section joins:
 structure in one function, classes in a Classes value, behaviour bound by a
 `data-hui-*` hook rather than a class. A headless component renders the
@@ -2817,6 +3047,14 @@ system does not provide is a MISSING component: add it upstream, in
 for a host to concatenate.
 
 ### Component behaviour: the same seam
+
+Caller-built navigation in ColumnPicker, ActionList and SegmentedLinks uses
+the shared anchor URL policy. A refused destination renders a disabled span,
+never an actionable anchor; all column toggle, move and reset paths follow it.
+
+FilterChipBar's clear-all destination and SegmentedControl's RPC endpoint
+share a render-time same-origin path check layered on the anchor URL policy.
+Invalid paths panic before rendering, including when no active filters exist.
 
 A component's behaviour registers the way its stylesheet does. The
 package that renders the markup embeds its module beside the Go and
@@ -2958,6 +3196,63 @@ that navigated away.
 
 ### What about widgets?
 
+`ui.CommandPalette` returns a trigger snapshot resolved from `cfg.Ctx` and
+a body builder to mount once. Render `ui.CommandPaletteTrigger(ctx, cfg)`
+in each request's chrome: the explicit request context resolves the default
+accessible label and visible field text, while the mounted body's own
+request context resolves its title, placeholder and hints. Explicit caller
+strings remain unchanged. Trigger rendering shares the constructor's
+markup and validation without constructing another body or mount; keep
+the widget name and shortcut consistent with the mounted builder.
+
+`ui.ShortcutSheetTrigger(ctx, cfg)` follows the same split: mount the
+`ShortcutSheet` or `ShortcutSheetFunc` body once, then render the hidden or
+visible trigger for each reader. The request context resolves the default
+trigger label and the body's title independently; an explicit
+`TriggerLabel` overrides both. Nil trigger contexts use English fallbacks
+rather than the context captured in the config.
+
+`ui.NotificationBellTrigger(ctx, cfg)` shares the constructor's headless
+bell markup without constructing another popover. Mount that popover once;
+the trigger's request context resolves both the initial spoken unread count
+and `data-hui-notification-count-fmt` for later unread-signal updates,
+including zero. The required caller label stays separate from that format
+so literal `{{n}}` in a label is never substituted. `NotificationBellConfig.Ctx`
+only resolves the constructor's trigger snapshot; the mounted body's default
+empty text resolves from the body's request context. Explicit labels and
+empty text remain unchanged.
+
+Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
+every focusable candidate. Every consumer of the kernel's `_focusSel`
+checks the browser-normalized `tabIndex >= 0`: negative values exclude
+links, buttons, inputs and arbitrary elements alike, including values
+other than `-1` and whitespace-padded negative integers. This applies to
+widget initial focus, modal traps, intercept handoff and traps, disclosures
+and responsive pane hosts. Explicit `autofocus` may still select a
+programmatic focus target outside the sequential Tab order. From such a
+target inside a trap, Tab moves to the next tabbable control in DOM order
+and Shift+Tab to the previous one, wrapping within the trap at either end.
+With no tabbable controls, the trap consumes Tab without moving focus.
+An untrapped nested disclosure contributes its visible tabbable controls
+to the enclosing trap, including its first and last Tab boundaries.
+Its negative-tabindex targets use the same directional recovery.
+
+The live widget catalog decodes its escaped `page` path once before
+page-scoped matching, matching SSR's decoded request path. Malformed path
+escapes return 400 rather than selecting a different widget set.
+
+Gallery hosts call `gallery.MountDemoWidgets` before mounting their UIHost.
+The docs site and theme editor share these mounts so demo triggers always
+resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets.
+
+`component.Widget.RenderCtx` forwards the request context to its child and
+prefers `RenderCtx` over `Render`. Context-free widget and composition
+helpers use the same dispatch with a background context, including for
+components embedding `component.ContextOnly`.
+
+Component action registries return actions in event-name order, keeping
+generated action scripts byte-stable across renders and replicas.
+
 The `core-ui/widget` registry continues to drive widgets (their
 position chrome, slot composition, RPC endpoints). Widgets that
 host styled components benefit from the same on-demand loader: the
@@ -2967,6 +3262,17 @@ serves from the widget's `StylePath` (default
 `/core-ui/widget/<name>/style.css`) under the prefix of the router
 group `Mount` was given, the URL the widget catalog publishes; future
 work may collapse the two paths.
+
+The UI host guarantees a toast stack and its assets at boot. The widget
+catalog is process-global: boot registers the default only when no toast
+stack is registered anywhere in the process. If a stack already exists,
+boot adds only its missing stylesheet route on this router, at the
+catalog's published URL (including a widget mount prefix), without
+registering another stack or changing the original definition. Every
+registered stack gets its missing assets; unrelated widgets do not
+suppress the default. Repeated boot validation is idempotent. This also
+applies to multiple in-process hosts, not just TCP servers. Toast stacks
+have no separate per-stack script; the host mounts the shared runtime.
 
 Both registries coexist safely: they share the
 `data-cui-style="<name>"` link dedup key on the client, so a widget
@@ -3156,14 +3462,14 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Table with sort / filter / pagination | `framework/ui.DataTable` | Island-driven, server-side sort/filter/pagination. No client-side re-implementation. |
-| Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. |
-| Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
-| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
+| Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. Finite readings keep finite axes and fitted heights, including subnormal values and values near the float64 limit; unrepresentable headroom falls back to the data maximum. |
+| Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. The legend wraps by rune-counted entry width and reserves each row's height. Small heights expand to fit labels, the legend, and at least an 8px plot. |
+| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. A zero or non-finite total renders the shared localized empty state instead of a blank SVG. |
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |
 | Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
 | Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
 | Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
-| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format. |
+| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format; hunk ranges distinguish changed `---`/`+++` lines from the next file's headers. A final newline adds no phantom context row. CRLF line endings are normalized without changing embedded carriage returns. `Ctx` localizes default split-column labels through `i18nui.DiffOld` / `DiffNew`; explicit labels win. |
 | Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |
 | Image gallery | `framework/ui.Gallery` | Grid / strip / masonry layouts. Optional Lightbox or per-item Href click behaviour. |
 | Image lightbox | `framework/ui.Lightbox` | Overlay viewer with Prev/Next nav, gallery groups, arrow-key keyboard nav. |
@@ -3186,8 +3492,8 @@ your need:
 | Toolbar of action buttons | `framework/ui.Toolbar` | `role="toolbar"` wrapper with optional named groups. Horizontal strip of buttons/links with visual separators. |
 | Step progress indicator | `framework/ui.ProgressSteps` | Linear step indicator (upcoming / current / complete). Horizontal or vertical. `<ol>` with `aria-current="step"`. |
 | Table of contents | `framework/ui.TableOfContents` | Server-rendered from explicit `Items` (required — the no-script contract is the rendered list). `headless-toc` marks the active entry through the observer `headless-rail` owns. |
-| In-page rail | `framework/ui.AnchoredRail` | Sticky `<aside>` of fragment links with optional eyebrow/count chips; `headless-rail` marks the entry whose section is in view (`aria-current` + class). |
-| Timeline / event history | `framework/ui.Timeline` | Vertical event list on a rail. Colored dot variants (neutral / success / warn / danger / info). Semantic `<ol>`. |
+| In-page rail | `framework/ui.AnchoredRail` | Sticky `<aside>` of fragment links with optional eyebrow/count chips; `headless-rail` marks the entry whose section is in view (`aria-current` + class). Both initial selection and scroll updates skip targets not rendered by the browser, including hidden sections and closed-details content (which can still report rectangles). With no rendered targets at bootstrap, every link stays unmarked. |
+| Timeline / event history | `framework/ui.Timeline` | Vertical event list on a rail. Colored dot variants (neutral / success / warn / danger / info). Semantic `<ol>`; `When` plus RFC 3339 `Machine` emits `<time datetime>`, display-only `When` a span. `Meta` remains a separate caption. |
 
 ### Forms & inputs
 

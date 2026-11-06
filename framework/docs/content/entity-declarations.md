@@ -92,7 +92,8 @@ with `CrudRouteOptions{ReadOnly: true}` get a doc without the write,
 batch and Create/Update-column sections — those routes answer 404/405 —
 and the `limit` row reports the same cap the List route clamps `?limit`
 with (`Pagination.MaxListLimit`, never above 1000, 100 when unset), and
-the default page size, 20 or the cap when that is smaller.
+the default page size, 20 or the cap when that is smaller. Offset and
+cursor requests use the same default, including an empty `?cursor=`.
 `/openapi.json` states the same two numbers on its `limit` parameter
 (`crud.ListLimits` returns them), and lists the 409 a write answers (a
 unique value or key already in use, a relation naming no record, or on a
@@ -216,8 +217,16 @@ column is never dropped, so an `Int` key part still refuses it, and a
 refused with `400` (`is required`): no route could name that row again.
 Empty
 text stays an
-empty string, since that is a value a user can mean. A filled number
-input arrives as text too: an `Int` field takes `"42"` and a `Float`
+empty string, since that is a value a user can mean.
+
+`String` and `Text` values must be valid UTF-8 without NUL bytes. Unstorable
+text is a validation 400 with code `invalid_text` keyed by the field's wire
+name, before any database write. This applies to create, update and upsert,
+including form and multipart input. JSON fields also refuse NUL in decoded
+string values or object keys and invalid UTF-8 in raw JSON text; a literal
+escaped backslash followed by `u0000` remains ordinary text.
+
+A filled number input arrives as text too: an `Int` field takes `"42"` and a `Float`
 field takes `"42.5"` as the number each spells, and a `Float` refuses
 hex, underscore separators, `NaN` and `Inf`. `Decimal` stays a string. The
 entityui forms (`framework/entityui`) rely on this; a JSON client gets
@@ -523,10 +532,22 @@ field) declare how entities associate with one another:
 - `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
 - `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`).
 
+A Go `belongs_to` relation can share the name of its own single scalar
+foreign-key column when cascade writes are disabled. For example,
+`BelongsTo("author_id", "users", "author_id")` beside a scalar `author_id`
+field accepts IDs on create/update; `?include=author_id` expands that ID
+into the related record under the field's wire key. Raw `migrate.Table`
+foreign keys use this same shape. Other scalar-field/relation name
+collisions are refused at registration, including this shape with
+`.Cascade()`: a scalar ID and a nested child object would address the same
+write key. Use distinct names for the scalar FK and cascade relation, or
+declare a `schema.Relation` field when the column itself is the relation.
+
 ### Cascade Writes & Atomic Nested Mutations
 When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.
 All writes execute inside the parent's database transaction (`inTx`). If any child validation or constraint check fails, the transaction is completely rolled back, leaving zero orphaned rows.
-- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. A foreign key this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update) refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
+- **Upsert refuses nested writes**: `UpsertOne` returns a `ValidationError` naming every supplied cascade-write relation, with reason `validation.cascade_upsert_unsupported`, before running hooks or writing either the insert or conflict arm. This covers all four relation kinds and the same relation-key spellings accepted by create/update, after resolving field aliases to columns with the same precedence. A scalar field's wire alias is not a cascade merely because its input spelling also matches a relation alias: `tag_label` with `WireName: "tags"` remains scalar beside relation `_tags`. Registration rejects an exact scalar-field/cascade-write relation name collision, including hidden and auto-generated fields, but Go declarations can still have a column named `profileRow` beside relation `profile_row`. A wire key resolving to that column is a cascade under camelCase, just as on create/update. A field with `WireName: "_tags"` also remains reachable through relation `_tags`'s own wire-key lookup and is treated as a cascade. Normalized keys and auto-generated values are checked even without hooks; a generated non-null `profileRow` therefore refuses the upsert too. Empty objects, empty arrays, and other non-null values are refused too; a null or omitted relation is not a nested write. A `BeforeCreate` hook that adds a cascade value is refused before the upsert writes. Use `CreateOne` or `UpdateOne` for nested writes instead.
+- **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. An undeclared foreign key, or one this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update), refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.
 - **The child's link column**: A `has_one` or `has_many` child that is created points at the parent through its own foreign key, so the child must declare that field and its create must write it. A foreign key that is `ReadOnly`, `Hidden`, the child's tenant column, or not declared refuses the nested create with 400 `validation.cascade_key_not_writable` and rolls the parent back, instead of storing a child with no parent.
@@ -718,7 +739,9 @@ it rounds to the float `1`. A `bool` field takes a number the same way,
 only when its text is exactly 0 or 1: `1.0` and `10e-1` pass,
 `1.0000000000000001` and `1e-400` are refused. A `date` field reads back as `YYYY-MM-DD` on
 every read path and in hooks; a typed read into a `time.Time` field
-still decodes it as midnight UTC. An in-process write (`CreateOne`,
+still decodes it as midnight UTC, including promoted fields in embedded
+structs with self-referential or mutually recursive pointer types.
+An in-process write (`CreateOne`,
 `UpdateOne`, `UpsertOne`, batch, the typed repository) also takes a
 `date` as a Go `time.Time` or RFC 3339 text at exact midnight, and
 stores it as `YYYY-MM-DD`, so a row read back and saved again keeps its
@@ -737,6 +760,16 @@ eager-loads the related row, so you do not have to declare the relation twice. A
 explicit relation you declare for the same name always wins and is never
 overwritten. Has-many relations (`many: true`) keep their FK on the *other*
 table and must be declared explicitly via `HasMany`/`Relations`.
+
+A declared relation cannot reuse a scalar field's name: `Entity.Validate`
+refuses the collision before writes or includes can interpret one key as
+both values. A `relation`-typed field may share its name with its derived
+or explicitly declared relation.
+
+`Define` copies the supplied relation slice and each relation's foreign-key
+columns before deriving entries. Multiple entity configs may reuse a relation
+slice, including one with spare capacity, without one entity's derived entries
+or later caller edits changing another entity's registered relations.
 
 A relation column is `TEXT`, except when the target's key is an `int`
 field: then it takes the key's integer type, `BIGINT` on Postgres and
@@ -830,9 +863,9 @@ neither lists nor requires them.
 The owner id comes from `framework/owner.Get(ctx)`. Any battery that
 registers an extractor wires this up: `battery/auth` does so in
 `init()`, pulling from `auth.GetCurrentUser(ctx).GetID()`. If no
-extractor is registered, `OwnerField` is inert (no scoping, no
-stamping), so adding the field to an entity config in an app that
-hasn't wired auth is harmless.
+extractor is registered, auto-CRUD routes refuse with
+401 until an owner extractor is registered. Owner scoping fails closed;
+declaring `OwnerField` never silently disables that protection.
 
 Pair with **session middleware** so cookie-authenticated requests
 appear as a User in context:
@@ -1065,6 +1098,11 @@ values" with `in`, not with multiple declarations.
   a weak one on purpose: "any signed-in user" means exactly that, not an
   editor role. If drafts should be limited to editors, give the entity an
   `Unrestricted` permission and grant it to the editor role.
+
+The real-estate example uses this permission-gated posture: only `active`
+properties are public, while `properties:write` permits staff to read
+draft, pending, sold, rented and withdrawn listings. A session alone does
+not disclose those statuses.
 
 The filter applies to every read of the entity's own table: List, Get,
 count, cursor and stream variants, the in-process API (`GetOne`,
@@ -1550,8 +1588,11 @@ total, err := invoices.SumAll(ctx, "amount", crud.ListOptions{Where: open})
 groups, err := invoices.GroupCountAll(ctx, "status", crud.ListOptions{}, 50)
 ```
 
-`SumAll` returns the database's own decimal text ("0" over no rows), so
-a `decimal` column sums as `NUMERIC` on Postgres, exactly; it takes a
+`SumAll` returns decimal text ("0" over no rows). A `decimal` column sums
+as exact `NUMERIC` on Postgres; SQLite streams the scoped stored values
+and adds their decimal text exactly, avoiding binary-float accumulation.
+This uses constant working memory but reads every matching decimal row.
+Trailing zeroes may differ between dialects. It takes a
 visible int, float or decimal field. `GroupCountAll` returns each stored
 value with its count, ordered by value, a bool as `true`/`false`; a
 positive limit caps the groups, so ask for one more than you draw to
@@ -2482,9 +2523,12 @@ See [plugins](plugins.md) → MCP tool gating.
 ### Endpoints from another file
 
 `App.EntityEndpoints` queues endpoints for an entity that a later
-`App.Entity` or `TryEntity` call registers. That call merges them into the
-config's `Endpoints`, so they pass the same route and MCP checks as
-endpoints written in the config. The generated
+`App.Entity`, `TryEntity`, or `GroupEntity` call registers. Every successful
+registration under that name merges them into its config's `Endpoints`, so an
+entity registered into a v1 and a v2 group gets them in both. They pass the
+same route and MCP checks as endpoints written in the config. A refused
+registration does not count, and `Start` fails while a queue has no
+successful registration. The generated
 `entities/endpoints.gen.go` uses it to attach the
 [settings endpoints](endpoints.md) to entity files it does not own:
 
@@ -2496,8 +2540,8 @@ app.Entity("posts", postsConfig)
 ```
 
 Calling it after the entity registered panics, and `Start` returns an
-error while endpoints are still queued for a name no `App.Entity` call
-registered, such as a misspelled table.
+error while endpoints are still queued for a name no `App.Entity`, `TryEntity`,
+or `GroupEntity` call registered, such as a misspelled table.
 
 ### Typed input/output schemas
 
@@ -2547,8 +2591,8 @@ input schema. Both fields are optional: leave them `nil` to keep the historical
   a blog's comments), never as a quick way past a login wall during
   development.
 - **Setting `OwnerField` in an app that never wires an owner
-  extractor.** Without a registered extractor the field is inert: no
-  scoping, no stamping, no error. Importing `battery/auth` registers
+  extractor.** Auto-CRUD routes refuse with
+  401 until an owner extractor is registered. Importing `battery/auth` registers
   one in `init()`; pair it with `auth.SessionMiddleware` so
   cookie-authenticated requests carry a user.
 - **Setting `Access` and forgetting the policy middleware.** The CRUD

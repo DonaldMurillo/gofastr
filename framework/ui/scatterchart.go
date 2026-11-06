@@ -363,7 +363,7 @@ func exactText(ctx context.Context, v float64) string {
 
 // niceStep rounds v up to 1, 2, 2.5 or 5 times a power of ten.
 func niceStep(v float64) float64 {
-	base := math.Pow(10, math.Floor(math.Log10(v)))
+	base := math.Pow(10, math.Floor(chartLog10(v)))
 	for _, f := range []float64{1, 2, 2.5, 5, 10} {
 		if v <= f*base {
 			return f * base

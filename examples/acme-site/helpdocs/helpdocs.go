@@ -30,8 +30,9 @@ type Config struct {
 	Body render.HTML
 	// Pager sits under the article (see Pager).
 	Pager render.HTML
-	// Toc is the right rail. When it renders an empty element (an
-	// outlet with no fill) the column collapses.
+	// Toc is the right rail. An empty rail, or a sole empty element
+	// (an outlet with no fill), collapses the column. An empty element
+	// beside other content does not hide that content.
 	Toc render.HTML
 }
 

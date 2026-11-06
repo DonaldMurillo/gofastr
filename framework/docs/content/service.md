@@ -122,7 +122,7 @@ turns isolation off: its port is part of its contract.
 | `.../control.sock` | The control channel |
 | `.../instance.lock` | Held by the running daemon or dev run (see "The control channel") |
 | `.../<ID>.service` | The systemd unit (Linux) |
-| `.../logs/service.log` | macOS and Windows log, trimmed to one 10 MB generation at start |
+| `.../logs/service.log` | macOS and Windows log; at startup, an oversized log's last 10 MB are archived to `service.log.1`, then the current log is truncated. No runtime rotation |
 | `.../bin/<Name>` | The installed binary (macOS, Linux) |
 | `%LOCALAPPDATA%\Programs\<ID>\<Name>.exe` | The installed binary (Windows) |
 
@@ -365,6 +365,8 @@ exits non-zero, which would undo the stop.
 The whole stop (MCP sessions, the drain and the control channel)
 shares one 10 s deadline, inside systemd's `TimeoutStopSec=20`,
 launchd's exit timeout and the 20 s that `service stop` waits.
+If the server stops on its own, the process exits non-zero as soon as
+the drain finishes, without waiting out the remaining stop budget.
 On Linux the unit is `Type=notify`: the daemon sends `READY=1` once it
 is serving and `STOPPING=1` before the drain, so `systemctl --user
 start` reports a port collision as a failed start.

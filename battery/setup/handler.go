@@ -114,7 +114,7 @@ func (r *Runner) serve(w http.ResponseWriter, req *http.Request, healthz, readyz
 			http.Redirect(w, req, textsafe.ScrubControlBytes(loc), http.StatusTemporaryRedirect)
 			return
 		}
-		r.write503(w)
+		r.write503(w, req)
 	}
 }
 
@@ -372,12 +372,12 @@ func (r *Runner) runStepSerialized(ctx context.Context, stepIdx int, step Step, 
 }
 
 // write503 emits the "setup required" body for any non-setup path.
-func (r *Runner) write503(w http.ResponseWriter) {
+func (r *Runner) write503(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Retry-After", "60")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	fmt.Fprintln(w, "Service is in first-run setup mode.")
-	fmt.Fprintln(w, "Complete setup at /setup to enable this service.")
+	fmt.Fprintln(w, pageUnavailable.Text(req.Context()))
+	fmt.Fprintln(w, pageUnavailableHelp.Text(req.Context()))
 }
 
 // completeAndSwap re-checks the Complete predicate and fires the swap

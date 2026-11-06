@@ -156,6 +156,11 @@ work), and a derived `mcp` skill points agents at it.
 | `DefaultInputModes`, `DefaultOutputModes` | MIME types; default `["text/plain"]`. |
 | `SigningKeys` | Sign the card (A2A §8.4) + serve `/.well-known/jwks.json`; requires a pinned `BaseURL` — see [Signed agent cards](#signed-agent-cards-a2a-v10-84). |
 
+Each `AgentSkill` may override the card's MIME defaults with `InputModes`
+and `OutputModes` (`inputModes`/`outputModes` in JSON, omitted when empty).
+`App.A2ASkills()` preserves these modes, including `application/json` for
+entity skills that require a JSON data part.
+
 ### Signed agent cards (A2A v1.0 §8.4)
 
 Set `AgentCardConfig.SigningKeys` and the card gains a `signatures`
@@ -344,6 +349,24 @@ fills, or a status set with `app.SetStatus` or `ScreenStatusCode`. The
 static exporter writes no llm.md for such a page. Any other failure
 degrades to the pattern-level doc rather than erroring.
 
+Context-aware page content uses the request's translator and locale,
+including the unprefixed default locale, header- or cookie-negotiated
+locales, and pattern-level fallback docs. Links receive a locale prefix
+only when that locale's URLs have one. The standalone
+`app.ScreenLLMMDHandler` also renders per request when a translator or
+locale is attached; without either or a locale prefix, it reuses its
+background-context document.
+
+Both standalone handlers, `app.ScreenLLMMDHandler` and
+`app.AppLLMMDHandler`, send `Cache-Control: private, no-store` and add
+`Vary: Cookie` without replacing existing Vary fields. Their policy- and
+locale-dependent bodies must not be retained by a shared cache.
+
+Inline code in markdown preserves the HTML's displayed code: entities
+decode once, so `&lt;div&gt;` becomes `<div>` inside an inert code span,
+while double-encoded `&amp;lt;` remains the literal text `&lt;`. Tag-shaped
+code and backticks cannot become live markup or terminate their span.
+
 Every markdown surface evaluates the screen's policy chain with the live
 request: a non-Allow decision, or a region guard (an outlet's, an area's,
 or a fill's policy) that redirects, serves a metadata-free "withheld" doc
@@ -395,6 +418,9 @@ describes what the framework requires of the app's own code. Under
 the analyzers over the app's source and returns structured findings, and
 `contracts_fix` applies one rule's autofixes. Neither is registered
 outside the dev loop, since both touch local source files.
+Explicit `WithMCPIntrospection()` does not suppress these dev tools;
+generated apps receive them too. `GOFASTR_DEV_MCP=0` or a production
+environment keeps them off even when introspection was explicitly enabled.
 Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict. Pick one. Generated apps ship with
 `WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
@@ -652,6 +678,13 @@ When `Resource` has a path (`https://api.example.com/mcp`), the document is
 also served at `/.well-known/oauth-protected-resource/mcp`, the URL RFC 9728
 §3.1 has a client build for it.
 
+`Resource` is required and must be an absolute HTTPS URL with a hostname,
+no userinfo, and no fragment. A query is allowed but discouraged. Each
+`AuthorizationServers` entry must be an absolute HTTPS issuer URL with a
+hostname and no userinfo, query, or fragment; an issuer path is allowed.
+`Start`, `Serve` and `Run` reject invalid metadata configuration before
+booting, under any host.
+
 The framework serves the document; emitting the companion
 `WWW-Authenticate: … resource_metadata=…` header on 401s (RFC 9728 §5) is left
 to the host's auth middleware so it can be scoped to the exact token-protected
@@ -741,6 +774,10 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 - **Forgetting `WithMCP` (or a manual `/mcp` mount).** The agent card can
   advertise `/mcp`, but if nothing serves it the endpoint 404s. The bundle
   does *not* mount MCP for you. Call `framework.WithMCP()` alongside it.
+  `/llms.txt` links the well-known MCP manifest only when `WithMCP` mounts
+  it. A manual `/mcp` mount still gets its endpoint link, not a nonexistent
+  manifest link. Manual hosts serving a manifest can declare its path with
+  `UIHost.SetMCPManifestPath` before serving requests.
 - **Advertising markdown negotiation without `WithPublicLLMMD`.**
   `WithMarkdownNegotiation` renders via the per-screen LLM doc, which only
   exists when markdown rendering is public. Without it, the negotiated
@@ -753,11 +790,16 @@ refuses to mount without one (see [Signed agent cards](#signed-agent-cards-a2a-v
 - **Serving `/llms-full.txt` without linking it from `/llms.txt`.** Agents
   start at the index; a full-corpus file nothing points to won't be found.
   Add a `Sections` entry with URL `/llms-full.txt`.
-- **Mixing `WithAgentReady` with granular agent-ready options** is safe in any
-  order. `WithAgentReady` *merges* into whatever a granular option
+- **Mixing `WithAgentReady` with granular agent-ready options** is safe.
+  `WithAgentReady` *merges* into whatever a granular option
   (`WithMarkdownNegotiation`, `WithLLMsTxt`, `WithAgentCard`,
   `WithAgentLinkHeaders`) already installed: the bundle wins for every field
   it explicitly sets, and a field it leaves unset preserves the granular value.
+  Empty strings, nil slices/maps/pointers, and false card capability flags
+  are unset; non-nil empty slices/maps can explicitly clear collections.
+  A title-derived card preserves a granular version and MCP/A2A endpoints.
+  Apply granular baselines before the bundle; a later granular surface option
+  replaces that surface's configuration.
   So `WithMarkdownNegotiation()` before `WithAgentReady{Title: …}` keeps content
   negotiation on; you can equally enable it via the bundle's `ContentNegotiation`
   field. (Both still require `WithPublicLLMMD`, per the note above.)

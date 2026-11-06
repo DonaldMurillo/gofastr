@@ -238,8 +238,8 @@
       window.scrollTo(0, 0);
     });
   };
-  const finishNav = (path, prevPath, cached, root, ps) => {
-    NS._applyDocShell(root);
+  const finishNav = (path, prevPath, cached, root, ps, skipCSRF) => {
+    NS._applyDocShell(root, cached || skipCSRF);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -602,27 +602,26 @@
   const _segName = (seg) => seg.slice(1).split(':')[0].replace(/\*$/, '');
   const routeInfo = (path) => {
     // Routes register unprefixed: /es/pricing resolves as /pricing.
-    const bare = path.split('?')[0].split('#')[0];
-    const clean = NS._unlocalize?.(bare) ?? bare;
+    const clean = NS._unlocalize(path.split(/[?#]/)[0]).split('/').map(NS._routeSeg).join('/');
     const list = window.__gofastr_routes || [];
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
       if (pattern === clean) return { entry: e, params: null };
     }
+    const parts = clean.split('/').filter(Boolean);
     for (const e of list) {
       const pattern = (e && (e.path || e.Path)) || '';
       if (!pattern.includes(':')) continue;
-      const parts = clean.split('/').filter(Boolean);
       const pp = pattern.split('/').filter(Boolean);
       if (pattern.includes('*') ? parts.length < pp.length : pp.length !== parts.length) continue;
-      if (!pp.every((seg, i) => seg.startsWith(':') || seg === parts[i])) continue;
+      if (!pp.every((seg, i) => NS._routeMatch(seg, parts[i]))) continue;
       const params = {};
       const catchAll = pp.length && pp[pp.length - 1].endsWith('*');
       const upto = catchAll ? pp.length - 1 : pp.length;
       for (let i = 0; i < upto; i++) {
-        if (pp[i].startsWith(':')) params[_segName(pp[i])] = parts[i];
+        if (pp[i].startsWith(':')) params[_segName(pp[i])] = decodeURIComponent(parts[i]);
       }
-      if (catchAll) params[_segName(pp[pp.length - 1])] = parts.slice(pp.length - 1).join('/');
+      if (catchAll) params[_segName(pp[pp.length - 1])] = parts.slice(pp.length - 1).map(decodeURIComponent).join('/');
       return { entry: e, params };
     }
     return null;
@@ -675,9 +674,9 @@
     } catch (_) { /* ancient browsers: location is the best guess */ }
     return location.pathname + location.search;
   })();
-  const _done = (path, prevPath, cached, root, ps, notOk) => {
+  const _done = (path, prevPath, cached, root, ps, notOk, skipCSRF) => {
     if (!notOk) _liveDomPath = path;
-    finishNav(path, prevPath, cached, root, ps);
+    finishNav(path, prevPath, cached, root, ps, skipCSRF);
   };
   const sseMeta = (d) => (d || document).querySelector('meta[name="gofastr-sse"]');
   // core's rule (nav.js): an HTML answer applies, any status; any other
@@ -807,8 +806,8 @@
           // navigation may beat its script. The marks paint now (the
           // dim does not wait for it); only the SCHEDULER needs the
           // module, so the wait sits here, behind the supersede rule.
-          if (_loadingReady && !H.loading) {
-            await _loadingReady;
+          if (!H.loading && document.querySelector('template[data-cui-loading]')) {
+            await NS.loadModule('loading').catch(() => null);
             if (!NS._navLive(myEpoch)) return;
           }
           // P9: the marked regions' loading content schedules through
@@ -918,7 +917,7 @@
               _applied(slot, pfResolved);
               if (load) load.sweep();
               if (parts && P && P.commit(parts, true)) P.flush(parts);
-              _done(path, prevPath, false, slot, ps);
+              _done(path, prevPath, false, slot, ps, false, true);
             }, null);
             return;
           }
@@ -950,7 +949,10 @@
         document.title = t;
         announceRoute(t);
         const fm = sseMeta(pdoc), lm = sseMeta();
-        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
+        if (fm && lm) {
+          if (new URL(fm.content, location.href).searchParams.get('session') !== new URL(lm.content, location.href).searchParams.get('session')) NS.invalidate('*');
+          lm.setAttribute('content', fm.getAttribute('content'));
+        }
         const nm = pdoc.querySelector('main');
         await swapCommit(myEpoch, prevPath, dest, () => {
           // The whole-shell swap: cross-chain replaces the outermost
@@ -1281,8 +1283,8 @@
     target: findFillTarget,
     // The client's share of param-keyed layer keys and deferred
     // addresses (spike/layout-resolve): resolve the path against the
-    // manifest's patterns and substitute. Never matches constraints:
-    // the server stays the matcher.
+    // manifest's patterns and substitute, sharing core's normalization
+    // and constraint matching so both navigators select the same route.
     subst: (tmpl, path) => substTmpl(tmpl, routeParams(path)),
     // The RAW manifest entry for a path (plus its captured params): the
     // loading and parts modules read their per-route fields off it.
@@ -1305,14 +1307,9 @@
 
   // ─── The module's attachment ────────────────────────────────────────
   //
-  // The loading module's trigger: its scheduler is called only by
-  // THIS navigator, so the template marker is meaningless without it
-  // — a page with no outlet marker loads nothing at boot for a
-  // template it can never schedule. Started at evaluation (not in
-  // frag/boot.js) so the very first navigation's scheduler finds it
-  // (the wait above).
-  const _loadingReady = document.querySelector('template[data-cui-loading]')
-    ? NS.loadModule('loading').catch(() => null) : null;
+  // Warm loading content already present at evaluation. Navigation also
+  // rechecks the live document before scheduling templates from later swaps.
+  if (document.querySelector('template[data-cui-loading]')) NS.loadModule('loading').catch(() => null);
 
   // Unless core's navigator ran first (_liveDomPath null, and then the
   // check below only keeps a dead null-keyed entry out of the cache's

@@ -145,7 +145,11 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 
 	listen := net.JoinHostPort(b.bindHost(), strconv.Itoa(mode.port))
 	startErr := make(chan error, 1)
-	go func() { startErr <- app.Start(listen) }()
+	startDone := make(chan struct{})
+	go func() {
+		startErr <- app.Start(listen)
+		close(startDone)
+	}()
 
 	var addr string
 	select {
@@ -229,7 +233,7 @@ func (b *Battery) serveLocked(ctx context.Context, mode serveMode, build Builder
 	t := time.NewTimer(time.Until(deadline))
 	defer t.Stop()
 	select {
-	case <-startErr:
+	case <-startDone:
 	case <-t.C:
 	}
 	return runErr

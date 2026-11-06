@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -30,6 +31,8 @@ const CSRFHeaderName = "X-CSRF-Token"
 //   - Bearer-token / X-API-Key requests are skipped (not cookie-based).
 //     Any other Authorization scheme (Basic, Negotiate) is one the
 //     browser attaches by itself, so it is checked.
+//   - Verified embed exchanges and App.InProcessHandler calls are skipped:
+//     admission excludes ambient credentials before marking the context.
 //
 // Auth defaults: cookie name "auth_csrf", header X-CSRF-Token, form
 // field "_csrf". Pair with CSRFInputHTML in your templates.
@@ -50,7 +53,7 @@ func CSRF(opts ...CSRFOption) middleware.Middleware {
 		// so a double-submit check there would 403 every exchange with
 		// "missing cookie" and the feature would be dead in exactly the
 		// configuration this framework recommends. See embed.CSRFExempt.
-		Skip: middleware.SkipAny(middleware.SkipBearerAuth(), embed.CSRFExempt),
+		Skip: middleware.SkipAny(middleware.SkipBearerAuth(), embed.CSRFExempt, framework.IsInProcessRequest),
 	}
 	for _, fn := range opts {
 		fn(&cfg)

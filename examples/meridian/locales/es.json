@@ -683,6 +683,10 @@
       "select": "Elegir",
       "title": "Paleta de comandos"
     },
+    "diff": {
+      "new": "Nuevo",
+      "old": "Anterior"
+    },
     "contentRow": {
       "aside": "Contexto",
       "sidebar": "Barra lateral",

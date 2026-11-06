@@ -125,11 +125,20 @@
   // pane loads the stylesheet of each component it brings, as every
   // other swap path does.
   function swap(t, res) {
+    NS._closeInterceptWidgets?.(t.el);
+    t.el._cuiGen = (t.el._cuiGen || 0) + 1;
     t.el.innerHTML = res.html;
     // The pane's page signals, as an in-page navigation seeds them.
     NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
     NS.scanAndLoadCSS?.(t.el);
+  }
+
+  function refresh(t, res, focus) {
+    const id = (focus || document.activeElement)?.id;
+    swap(t, res);
+    refocus(id && t.el.querySelector('#' + CSS.escape(id)));
+    if (!t.el.contains(document.activeElement)) focusFirst(t.el);
   }
 
   function overlayHost() {
@@ -156,8 +165,7 @@
   }
 
   function focusFirst(el) {
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])';
-    const first = el.querySelector(sel);
+    const first = NS._firstStop(el);
     const target = first || el.firstElementChild;
     if (!target) return;
     if (!first) target.setAttribute('tabindex', '-1');
@@ -204,7 +212,13 @@
     return NS.fetch(path, { headers: hdrs, credentials: 'same-origin' }).then((r) => {
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
-      if (r.ok) NS._inval?.(r);
+      const session = r.headers.get('X-Gofastr-Session');
+      const meta = session && document.querySelector('meta[name="gofastr-sse"]');
+      if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, prefix) => prefix + session));
+      if (session) NS.invalidate('*');
+      if (r.ok) {
+        NS._inval?.(r);
+      }
       // A record that is gone (404/410) is gone as a page too: drop any
       // cached copy so the fallback navigation fetches the 404 page
       // instead of replaying the record from before it went. The bare
@@ -268,12 +282,12 @@
   // the backdrop): guard, drop the DOM, restore focus to the control
   // that opened it, then consume the layer's history entries in one
   // move. The popstate that follows finds the stack already settled.
-  function closeTopDirect() {
-    const t = top();
-    if (!t || !guardOK(t.el, closeTopDirect, { to: layers.at(-2)?.url ?? underPath, delta: -t.cur - 1 })) return;
+  function closeTopDirect(t = top()) {
+    if (!t || !layers.includes(t)) return;
     epoch++;
-    layers.pop();
-    t.el.remove();
+    if (!guardOK(t.el, () => closeTopDirect(t), { to: layers[layers.indexOf(t) - 1]?.url ?? underPath, delta: -t.cur - 1 })) return;
+    layers.splice(layers.indexOf(t), 1);
+    drop(t);
     settleAfterDrop(t.restoreFocus);
     history.go(-(t.cur + 1)); // the entries this layer owns
   }
@@ -283,8 +297,14 @@
   function closeAllNow() {
     epoch++;
     if (!layers.length) return;
+    for (const layer of layers) drop(layer);
     layers.length = 0;
     settleAfterDrop();
+  }
+
+  function drop(layer) {
+    NS._closeInterceptWidgets?.(layer.el);
+    layer.el.remove();
   }
 
   // After dropping layer(s): expose the new top (or nothing), restore
@@ -452,13 +472,13 @@
     let i = layers.length - 1;
     while (i >= 0 && pathOf(layers[i].url) !== p) i--;
     if (i < 0 && pathOf(underPath) !== p) return false;
-    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node), { to: path })) return true;
     const e = ++epoch;
+    if (!guardOK(i < 0 ? null : layers.slice(i).map((l) => l.el), () => NS._interceptReturn(path, node), { to: path })) return true;
     let focus = null;
     while (layers.length > i + 1) {
       const shut = layers.pop();
       focus = shut.restoreFocus;
-      shut.el.remove();
+      drop(shut);
     }
     const lay = top();
     const back = t.p0 + t.cur - (lay ? lay.p0 + lay.cur : 0);
@@ -476,7 +496,7 @@
       .then((res) => {
         if (e !== epoch) return;
         if (!res) { fallbackNav(lay.url, ''); return; }
-        swap(lay, res);
+        refresh(lay, res, focus);
       })
       .catch(() => { if (e === epoch) fallbackNav(lay.url, ''); });
     return true;
@@ -520,7 +540,7 @@
       while (layers.length > i + 1) {
         const shut = layers.pop();
         focus = shut.restoreFocus;
-        shut.el.remove();
+        drop(shut);
       }
       if (refetch) {
         const u = location.pathname + location.search + location.hash;
@@ -531,7 +551,7 @@
           .then((res) => {
             if (e !== epoch) return;
             if (!res) { fallbackNav(u, ''); return; }
-            swap(lay, res);
+            refresh(lay, res, focus);
           })
           .catch(() => { if (e === epoch) fallbackNav(u, ''); });
       }
@@ -585,11 +605,15 @@
       .catch(() => { if (e === epoch) fallbackNav(p.rec, ''); });
   });
 
+  const modalOwnsKeys = () => {
+    try { return NS._modalStack?.length || document.querySelector(':modal'); } catch (_) { return false; }
+  };
+
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Escape' || NS._modalStack?.length) return;
+    if (!layers.length || e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     // Surfaces inside the layer that own Escape themselves consume it:
     // a modal widget, an open dropdown, an overlay-mode pane host.
-    if (document.querySelector('[data-cui-dropdown-open], [data-hui-pane-mode="overlay"]')) return;
+    if (modalOwnsKeys() || document.querySelector('[data-cui-dropdown-open],[data-hui-pane-mode="overlay"]')) return;
     e.preventDefault();
     closeTopDirect();
   });
@@ -600,11 +624,17 @@
   // focus module's trap; a modal widget opened inside the layer keeps
   // its own trap, so defer to it.
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Tab' || NS._modalStack?.length) return;
-    const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (!layers.length || e.key !== 'Tab' || modalOwnsKeys()) return;
+    const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter(NS._isTabStop);
     if (!items.length) { e.preventDefault(); return; }
     const first = items[0], last = items.at(-1);
-    if (document.activeElement === (e.shiftKey ? first : last)) {
+    const active = document.activeElement;
+    if (!items.includes(active)) {
+      const next = top().el.contains(active) && (e.shiftKey
+        ? items.findLast(el => el.compareDocumentPosition(active) & 4)
+        : items.find(el => el.compareDocumentPosition(active) & 2));
+      e.preventDefault(); (next || (e.shiftKey ? last : first)).focus();
+    } else if (active === (e.shiftKey ? first : last)) {
       e.preventDefault(); (e.shiftKey ? last : first).focus();
     }
   }, true);

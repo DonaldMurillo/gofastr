@@ -171,7 +171,11 @@ name its request inherited from a route that redispatched it. Entity
 routes use it so `auth.RequireAPIScopes` scopes `/_batch`, the other
 subroutes and the entity's Endpoints to its table. The
 framework owns the root `*Router` and hands it to batteries and authors
-to mount routes. Direct. Start at `core/router/router.go`: `Router`.
+to mount routes. `Prefix()` returns a group's full prefix and `Root()`
+the router at the top of its Group chain, for a registrar that must
+serve an absolute URL outside its own prefix (routes added there skip
+the group's middleware). Direct. Start at `core/router/router.go`:
+`Router`.
 
 ## Real-time
 
@@ -526,6 +530,9 @@ choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
 fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
 the `default:` tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
+Integer values must fit the destination field: `int` uses the target
+architecture's width (32 or 64 bits), while `int64` always accepts the
+64-bit range. Out-of-range values fail `Load` rather than truncating.
 
 A named struct field (`DB DBConfig`) reads its keys under `DB_`. An
 embedded struct does not: its fields are promoted the way

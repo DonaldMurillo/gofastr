@@ -240,6 +240,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if cfg.ID != "" {
+		ctx = render.WithIDNamespace(ctx, cfg.ID)
+	}
 	// Action flows to both the <form action> and the reset LinkButton, so
 	// clean it once here through the same urlsafe.CleanAnchor allow-list
 	// ui.Form uses. A javascript:/vbscript:/data: action never becomes a
@@ -484,7 +487,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
-	id := "filter-search-" + slug(s.Name)
+	id := render.UniqueID(ctx, "filter-search-"+slug(s.Name))
 	wrap := html.Attrs{"data-cui-internal": ""}
 	kids := []render.HTML{SearchInput(SearchInputConfig{
 		Ctx:         ctx,
@@ -517,9 +520,9 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 		id := "filter-" + slug(f.Name) + "-" + slug(o.Value+"-"+o.Label)
 		seen[id]++
 		if n := seen[id]; n > 1 {
-			return id + "-" + strconv.Itoa(n)
+			id += "-" + strconv.Itoa(n)
 		}
-		return id
+		return render.UniqueID(ctx, id)
 	}
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel

@@ -18,6 +18,7 @@ import (
 // routes the value through NS.formatNumber, which follows <html lang>.
 //
 // Shapes:
+//   - a textContent assignment concatenating counts with a slash;
 //   - .replace / .replaceAll whose pattern is the '{{n}}' string, or a
 //     regex naming {{n}}, and whose replacement is computed and never
 //     mentions formatNumber; for a regex that also fills other keys
@@ -37,6 +38,25 @@ func LintNumberFill(roots ...string) (*Result, error) {
 		return nil, err
 	}
 	for _, f := range files {
+		for _, loc := range reCountTextAssign.FindAllStringIndex(f.Blank, -1) {
+			end := strings.IndexAny(f.Code[loc[1]:], ";\n")
+			if end < 0 {
+				end = len(f.Code) - loc[1]
+			}
+			expression := f.Code[loc[1] : loc[1]+end]
+			parts := splitTopLevel(expression, '+')
+			for index := 1; index+1 < len(parts); index++ {
+				if parts[index] != "'/'" && parts[index] != `"/"` {
+					continue
+				}
+				left := splitTopLevel(parts[index-1], '?')
+				right := splitTopLevel(parts[index+1], ':')
+				if numberFillBad(left[len(left)-1], true) || numberFillBad(right[0], true) {
+					res.add(f.Path, f.lineOf(loc[0]), "[number-fill] count ratio writes ASCII digits; format both counts through NS.formatNumber(n)")
+					break
+				}
+			}
+		}
 		for _, loc := range reReplaceCall.FindAllStringIndex(f.Blank, -1) {
 			open := loc[1] - 1
 			close := matchDelimForward(f.Blank, open)
@@ -95,6 +115,8 @@ func LintNumberFill(roots ...string) (*Result, error) {
 
 // reSayCall matches a say( call, bare or as a member (NS.say, G.say).
 var reSayCall = regexp.MustCompile(`\bsay\s*\(`)
+
+var reCountTextAssign = regexp.MustCompile(`\.\s*textContent\s*=\s*`)
 
 // reParamN matches the n key of an object literal property, quoted or
 // not, and captures its value.

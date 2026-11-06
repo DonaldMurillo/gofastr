@@ -135,6 +135,9 @@ func decodeBlurHashComponents(hash string, punch float64) (blurHashComponents, e
 	if len(hash) < 6 {
 		return zero, fmt.Errorf("image: BlurHash too short (%d chars, minimum 6)", len(hash))
 	}
+	if len(hash) > 4+2*9*9 {
+		return zero, fmt.Errorf("image: BlurHash too long (%d chars, maximum 166)", len(hash))
+	}
 	digits, err := decodeBase83(hash)
 	if err != nil {
 		return zero, err

@@ -20,8 +20,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -368,6 +370,7 @@ func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 
 // RegisterRoutes mounts the 2FA HTTP endpoints.
 func (p *TwoFAPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/2fa/enroll", http.HandlerFunc(p.enrollHandler))
 	r.Post(basePath+"/2fa/verify", http.HandlerFunc(p.verifyHandler))
 	r.Post(basePath+"/2fa/challenge", http.HandlerFunc(p.challengeHandler))
@@ -417,6 +420,9 @@ func (p *TwoFAPlugin) swapTwoFAState(w http.ResponseWriter, r *http.Request, use
 // 2FA with the password alone. Writes the 401/403 response and returns ok=false
 // when the caller must abort.
 func (p *TwoFAPlugin) requireStepUpSession(w http.ResponseWriter, r *http.Request) (*Session, bool) {
+	if rejectInProcessAccountOperation(w, r) {
+		return nil, false
+	}
 	sess, err := p.mgr.requestSession(r, false)
 	if err != nil {
 		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
@@ -832,25 +838,40 @@ func (p *TwoFAPlugin) markSessionTwoFA(ctx context.Context, token string) error 
 //
 // It relies on the SessionStore implementing SessionTwoFAMarker, otherwise
 // RequireTwoFA fails closed (always 403 for enrolled users).
+// Calls admitted by App.InProcessHandler instead use the outer request's
+// SessionMiddleware assurance, bound to this manager, any partitioned lookup tenant
+// and the same non-nil context user.
+// This fact does not re-check the underlying session's expiry or revocation.
 func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			u := GetCurrentUser(r.Context())
-			if u == nil {
-				writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
-				return
-			}
-			userID := u.GetID()
-			var mine []*Session
-			for _, s := range p.mgr.requestSessions(r) {
-				if s.UserID == userID && !s.PendingTwoFactor {
-					mine = append(mine, s)
+			verified := false
+			if framework.IsInProcessRequest(r) {
+				assurance, ok := r.Context().Value(sessionAssuranceKey{}).(sessionAssurance)
+				if !ok || u == nil || assurance.userID != u.GetID() || assurance.manager != p.mgr || assurance.tenantBound && assurance.tenantID != handler.GetTenantID(r.Context()) {
+					writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
+					return
+				}
+				verified = assurance.verified
+			} else {
+				if u == nil {
+					writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
+					return
+				}
+				mine := false
+				for _, session := range p.mgr.requestSessions(r) {
+					if session.UserID == u.GetID() && !session.PendingTwoFactor {
+						mine = true
+						verified = verified || session.TwoFactorVerified
+					}
+				}
+				if !mine {
+					writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
+					return
 				}
 			}
-			if len(mine) == 0 {
-				writeAuthError(w, r, http.StatusUnauthorized, reasonNoSession)
-				return
-			}
+			userID := u.GetID()
 			state, err := p.store.GetTwoFA(r.Context(), userID)
 			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reason2faLookupFailed)
@@ -863,11 +884,9 @@ func (p *TwoFAPlugin) RequireTwoFA() func(http.Handler) http.Handler {
 			}
 			// Enrolled: one of the principal's own sessions must have
 			// cleared the challenge.
-			for _, s := range mine {
-				if s.TwoFactorVerified {
-					next.ServeHTTP(w, r)
-					return
-				}
+			if verified {
+				next.ServeHTTP(w, r)
+				return
 			}
 			writeAuthError(w, r, http.StatusForbidden, reason2faRequired)
 		})

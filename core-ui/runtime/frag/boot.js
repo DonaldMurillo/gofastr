@@ -688,7 +688,7 @@
   // behaviour, loaded on the details[data-hui-disclosure] marker);
   // the kernel holds none of it.
 
-  // Task A: auto-inject aria-live onto signal nodes so screen readers
+  // Task A: auto-inject live semantics onto signal nodes so screen readers
   // announce dynamic updates. Restricted to TEXT-mode nodes (the default
   // when data-cui-signal-mode is absent or "text"): attr-mode and
   // html-mode bindings must NOT receive role=status because:
@@ -702,8 +702,11 @@
     document.querySelectorAll('[data-cui-signal]').forEach((node) => {
       const mode = node.getAttribute('data-cui-signal-mode') || 'text';
       if (mode !== 'text') return;
-      if (!node.getAttribute('role')) node.setAttribute('role', 'status');
-      if (!node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
+      // role is a token list (padding, fallbacks): any alert or status
+      // token already carries live semantics, so polite would downgrade it.
+      const role = node.getAttribute('role');
+      if (!role) node.setAttribute('role', 'status');
+      if (role && !/(^|\s)(alert|status)(\s|$)/i.test(role) && !node.getAttribute('aria-live')) node.setAttribute('aria-live', 'polite');
       if (!node.getAttribute('aria-atomic')) node.setAttribute('aria-atomic', 'true');
     });
   };
@@ -726,6 +729,7 @@
   // swap a navigation's pass already fired is not fired again when the
   // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
+    if (document.__fuiStaticDispatch) return;
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;

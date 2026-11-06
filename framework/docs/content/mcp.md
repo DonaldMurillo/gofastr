@@ -440,7 +440,10 @@ plain error is invalid-params carrying its message, and a gate that
 returns its own `*RPCError` keeps that error's code and message. The handler runs under a recover guard, so a panic
 in handler code becomes an internal error with no detail echoed, instead of
 unwinding the transport loop; the same guard covers resource contents funcs
-and prompt handlers.
+and prompt handlers. Recovered callback and gate panics log a server-side
+`slog` Error diagnostic with the operation, available tool/prompt/resource
+identity, control-byte-scrubbed panic value and stack. Client errors remain
+generic; listing and notification gate panics still fail closed.
 
 ## Server-initiated notifications
 

@@ -313,6 +313,7 @@ func (p *OAuth2Plugin) providerKeys() []string {
 
 // RegisterRoutes mounts the OAuth2 auth and callback routes.
 func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Get(basePath+"/oauth/{provider}", p.redirectHandler())
 	r.Get(basePath+"/oauth/{provider}/link", p.linkHandler())
 	r.Get(basePath+"/oauth/{provider}/callback", p.callbackHandler())
@@ -473,6 +474,9 @@ func (p *OAuth2Plugin) undoLink(ctx context.Context, store UserStore, userID, pr
 // (after writing the error) when there is no valid, fully-authenticated
 // session, a pending-2FA session cannot initiate a provider link.
 func (p *OAuth2Plugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if rejectInProcessAccountOperation(w, r) {
+		return "", false
+	}
 	// Bound to the context principal when there is one (see
 	// AuthManager.requestSession): a link started under one user must not
 	// land on the account behind another cookie.
@@ -556,7 +560,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
 			slog.Warn("oauth email refused: not in composed Unicode form",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
-			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+			writeAuthErrorFor(w, r, http.StatusBadRequest, err, reasonComposedEmail)
 			return
 		}
 		// The same bound the form paths apply: the address becomes a

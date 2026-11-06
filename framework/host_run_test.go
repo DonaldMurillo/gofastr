@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -834,6 +835,58 @@ func TestRunRefusesInteractiveSetupWithoutListener(t *testing.T) {
 	}
 	if r.rec.has("host.run") || r.rec.has("onstart") || r.rec.count("onstop") != 1 {
 		t.Fatalf("events %v", r.rec.snapshot())
+	}
+}
+
+// The configuration checks Start and Serve make before boot hold under
+// every host. An EntityEndpoints queue stays in place once a registration
+// claims it, so a claimed queue boots and an unclaimed one is refused; an
+// OAuth protected-resource config naming a non-HTTPS URL is refused.
+func TestRunChecksConfigurationBeforeBoot(t *testing.T) {
+	revoke := framework.Endpoint{Method: http.MethodPost, Path: "{id}/revoke", Public: true,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })}
+	t.Run("claimed endpoints boot", func(t *testing.T) {
+		r := newLocalRun(t, t.TempDir())
+		r.app.EntityEndpoints("licenses", revoke)
+		r.app.Entity("licenses", framework.EntityConfig{Fields: []schema.Field{{Name: "name", Type: schema.String}}})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := r.run(ctx, framework.ServicesHost())
+		waitReady(t, r.app, done)
+		rec := httptest.NewRecorder()
+		r.app.InProcessHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/licenses/abc/revoke", nil))
+		cancel()
+		if err := waitRun(t, done); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("queued endpoint in-process = %d, want 204", rec.Code)
+		}
+	})
+	for _, refused := range []struct {
+		name, want string
+		opts       []framework.AppOption
+		queue      bool
+	}{
+		{name: "unclaimed endpoints", want: "licences", queue: true},
+		{name: "invalid OAuth resource", want: "OAuth protected resource", opts: []framework.AppOption{
+			framework.WithOAuthProtectedResource(framework.OAuthProtectedResourceConfig{Resource: "http://api.example.com"}),
+		}},
+	} {
+		t.Run(refused.name, func(t *testing.T) {
+			r := newLocalRun(t, t.TempDir(), refused.opts...)
+			if refused.queue {
+				r.app.EntityEndpoints("licences", revoke)
+			}
+			host := newRecordingHost(r.rec)
+			host.runErr = errors.New("host ran")
+			err := r.app.Run(context.Background(), host)
+			if err == nil || !strings.Contains(err.Error(), refused.want) {
+				t.Fatalf("Run = %v, want a refusal naming %q", err, refused.want)
+			}
+			if len(r.rec.snapshot()) != 0 {
+				t.Fatalf("a refused run started work: %v", r.rec.snapshot())
+			}
+		})
 	}
 }
 

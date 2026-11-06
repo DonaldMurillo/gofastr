@@ -288,7 +288,7 @@ app.Entity("posts", framework.EntityConfig{
 | Multi-tenant     | `tenant_id` column + automatic scope from request context                       |
 | Hooks            | `BeforeCreate`, `AfterUpdate`, etc. for custom behaviour                        |
 | Custom routes    | `EntityConfig.Endpoints` with optional MCP exposure                             |
-| Client SDKs      | `gofastr generate sdk`: a Go module + JS/TS clients, with a live docs site ([sdk](framework/docs/content/sdk.md)) |
+| Client SDKs      | `gofastr generate sdk`: a Go module with typed Local/Remote repositories + JS/TS clients, with a live docs site ([sdk](framework/docs/content/sdk.md)) |
 | Customer CLI     | `gofastr generate cli`: a branded terminal client for your customers, scoped API-token auth |
 
 Try all of it against a running server: [`examples/api-tour`](examples/api-tour/README.md)

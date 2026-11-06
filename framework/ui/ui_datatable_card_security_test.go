@@ -424,14 +424,14 @@ func TestBanner_MessageXSS(t *testing.T) {
 
 func TestBanner_ActionLinkXSS(t *testing.T) {
 	t.Parallel()
-	// Action is render.HTML (raw). A javascript: href in a raw action
-	// would pass through. Test that we can at least render without panic
-	// and note the caller responsibility.
-	xssAction := render.HTML(`<a href="javascript:alert('action-xss')">Click</a>`)
-	_ = ui.Banner(ui.BannerConfig{Title: "Info", Action: xssAction})
-	_ = xssAction
-	// Action is raw render.HTML, caller responsibility.
-	t.Logf("NOTE: [banner-action-link] Action is raw render.HTML — callers are responsible for sanitization")
+	action := ui.Link(ui.LinkConfig{Href: "javascript:alert(1)", Text: "<script>Click</script>"})
+	output := string(ui.Banner(ui.BannerConfig{Title: "Info", Action: action}))
+	if strings.Contains(output, "javascript:") || strings.Contains(output, "<script>") {
+		t.Fatalf("unsafe banner action: %s", output)
+	}
+	if !strings.Contains(output, string(action)) {
+		t.Fatalf("banner dropped its safe action: %s", output)
+	}
 }
 
 func TestBanner_ClassInjection(t *testing.T) {
@@ -465,16 +465,14 @@ func TestBanner_VariantHandling(t *testing.T) {
 
 func TestToolbar_ButtonXSS(t *testing.T) {
 	t.Parallel()
-	// Toolbar groups contain raw render.HTML children.
-	// A script tag in a button child would pass through as raw HTML.
-	xssBtn := render.HTML(`<button onclick="alert('toolbar-xss')">Evil</button>`)
-	_ = xssBtn
-	_ = ui.Toolbar(ui.ToolbarConfig{
+	button := ui.Button(ui.ButtonConfig{Label: `<script>alert(1)</script>`})
+	output := string(ui.Toolbar(ui.ToolbarConfig{
 		Label:  "Actions",
-		Groups: []ui.ToolbarGroup{{Children: []render.HTML{xssBtn}}},
-	})
-	// Group.Children are raw render.HTML, caller responsibility.
-	t.Logf("NOTE: [toolbar-button-xss] Group.Children are raw render.HTML — callers are responsible for sanitization")
+		Groups: []ui.ToolbarGroup{{Children: []render.HTML{button}}},
+	}))
+	if strings.Contains(output, "<script>") || !strings.Contains(output, string(button)) {
+		t.Fatalf("toolbar did not preserve its escaped button: %s", output)
+	}
 }
 
 // ─── Other component security (10 tests) ───────────────────────────

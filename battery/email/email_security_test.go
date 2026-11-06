@@ -52,10 +52,18 @@ func TestEmail_HeaderInjection(t *testing.T) {
 // TestEmail_TemplateInjection verifies that template content doesn't
 // allow arbitrary Go template execution. Attack: SSTI via email template.
 func TestEmail_TemplateInjection(t *testing.T) {
-	// Go's html/template auto-escapes, so template injection is mitigated
-	// by default. This test documents that raw user input in templates
-	// should use html/template, not text/template.
-	t.Logf("NOTE: [email] ensure email templates use html/template (auto-escaping) not text/template")
+	for _, attack := range []string{`<script>alert(1)</script>`, `<img src=x onerror="alert(2)">{{.secret}}`} {
+		message, err := Execute(Template{HTMLBody: "<p>{{.input}}</p>"}, map[string]any{
+			"input": attack, "secret": "private-value",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(message.HTMLBody, attack) || strings.Contains(message.HTMLBody, "private-value") ||
+			!strings.Contains(message.HTMLBody, "&lt;") {
+			t.Fatalf("template data executed or escaped its text node: %s", message.HTMLBody)
+		}
+	}
 }
 
 // TestEmail_Base64Encoding verifies that Base64 encoding is correct

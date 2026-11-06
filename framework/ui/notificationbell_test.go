@@ -80,8 +80,8 @@ func TestNotificationBellEmitsButtonWithAnchorTrigger(t *testing.T) {
 	if !strings.Contains(h, `data-cui-popover-anchor="bottom"`) {
 		t.Errorf("trigger should anchor the popover below the bell:\n%s", h)
 	}
-	if !strings.Contains(h, `aria-label="0 unread notifications"`) {
-		t.Errorf("the anchor's name says the spoken count:\n%s", h)
+	if !strings.Contains(h, `aria-label="Notifications: 0 unread notifications"`) {
+		t.Errorf("the anchor's name keeps its label before the spoken count:\n%s", h)
 	}
 }
 
@@ -163,7 +163,7 @@ func TestNotificationBellExtraAttrsCannotOverrideOwned(t *testing.T) {
 	// old button's type and the describedby paragraph are the
 	// primitive's; here the count rides the anchor's name and the
 	// badge's hook.
-	for _, want := range []string{`href="/notifications"`, `aria-label="3 unread notifications"`} {
+	for _, want := range []string{`href="/notifications"`, `aria-label="Notifications: 3 unread notifications"`} {
 		if !strings.Contains(string(trigger), want) {
 			t.Errorf("owned attr lost its framework value (%q):\n%s", want, trigger)
 		}

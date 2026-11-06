@@ -109,7 +109,7 @@ func TestLLMsTxt_AutoLinksAPIAndMCP(t *testing.T) {
 	body := doGet(ds, "/llms.txt", "").Body.String()
 	for _, want := range []string{
 		"## API", "(/openapi.json)",
-		"## MCP", "(/mcp)", "(/.well-known/mcp.json)",
+		"## MCP", "(/mcp)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("auto-link %q missing:\n%s", want, body)

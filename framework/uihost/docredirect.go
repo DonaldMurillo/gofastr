@@ -41,14 +41,25 @@ func escapeNonASCII(s string) string {
 }
 
 // escapeLayerKey percent-encodes a layer key for X-Gofastr-Swap: every
-// byte >= 0x80, and % itself, so the runtime's decodeURIComponent gives
+// C0 control byte, DEL, byte >= 0x80, and % itself, so decodeURIComponent gives
 // back exactly the key the DOM holds (a {param} value's %25 included).
-// An ASCII key with no % goes out unchanged.
+// A printable ASCII key with no % goes out unchanged.
 func escapeLayerKey(s string) string {
-	if !strings.ContainsFunc(s, func(r rune) bool { return r == '%' || r >= 0x80 }) {
+	if !strings.ContainsFunc(s, func(character rune) bool {
+		return character < 0x20 || character == 0x7f || character == '%' || character >= 0x80
+	}) {
 		return s
 	}
-	return escapeNonASCII(strings.ReplaceAll(s, "%", "%25"))
+	var encoded strings.Builder
+	for index := range len(s) {
+		character := s[index]
+		if character < 0x20 || character == 0x7f || character == '%' || character >= 0x80 {
+			fmt.Fprintf(&encoded, "%%%02X", character)
+		} else {
+			encoded.WriteByte(character)
+		}
+	}
+	return encoded.String()
 }
 
 // scriptFetch reports whether a request came from a script's fetch

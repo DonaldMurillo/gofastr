@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/ownstyle"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // cssFile runs the CSS matchers over one stylesheet through the CSS
@@ -97,13 +98,29 @@ func cutImportant(v string) string {
 // prelude; a ";" or "}" proves it sat inside a declaration value
 // (content: ".x", grid-template-areas: . a b) and drops it.
 func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
-	var pending []int // indices of ident tokens following a "." delim
+	type classReference struct {
+		index      int
+		value      string
+		ignoreCase bool
+	}
+	var pending []classReference
+	add := func(index int, value string, ignoreCase bool) {
+		if ignoreCase {
+			value = asciicase.Lower(value)
+		}
+		pending = append(pending, classReference{index, value, ignoreCase})
+	}
 	flush := func() {
-		for _, i := range pending {
+		for _, reference := range pending {
 			for _, n := range e.cssNotes {
 				for _, name := range n.Find.CSS.Classes {
-					if cssClassMatches(cssUnescape(toks[i].Text), name) {
-						e.add(n, Hit{File: rel, Line: toks[i].Line, Col: toks[i].Col, Why: "css ." + name})
+					wanted := name
+					if reference.ignoreCase {
+						wanted = asciicase.Lower(wanted)
+					}
+					if cssClassMatches(reference.value, wanted) {
+						token := toks[reference.index]
+						e.add(n, Hit{File: rel, Line: token.Line, Col: token.Col, Why: "css ." + name})
 					}
 				}
 			}
@@ -119,22 +136,70 @@ func (e *engine) cssClasses(rel string, toks []ownstyle.Token) {
 			flush()
 		case ownstyle.TokenSemicolon, ownstyle.TokenCloseCurly:
 			pending = nil
+		case ownstyle.TokenOpenSquare:
+			if index := classAttrValue(toks, i); index >= 0 {
+				value := toks[index].Text
+				if toks[index].Type == ownstyle.TokenString {
+					value = value[1 : len(value)-1]
+				}
+				flag := nextSignificant(toks, index)
+				ignoreCase := flag >= 0 && attrNameEqual(cssUnescape(toks[flag].Text), "i")
+				for _, name := range strings.FieldsFunc(cssUnescape(value), func(char rune) bool {
+					return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '\f'
+				}) {
+					add(index, name, ignoreCase)
+				}
+			}
 		case ownstyle.TokenDelim:
 			if t.Text != "." {
 				continue
 			}
 			if j := nextSignificant(toks, i); j >= 0 && toks[j].Type == ownstyle.TokenIdent {
-				pending = append(pending, j)
+				add(j, cssUnescape(toks[j].Text), false)
 			}
 		}
 	}
 }
 
-// cssUnescape decodes the escapes in a raw ident token the way the CSS
+func classAttrValue(tokens []ownstyle.Token, start int) int {
+	name := nextSignificant(tokens, start)
+	if name < 0 || tokens[name].Type != ownstyle.TokenIdent || !attrNameEqual(cssUnescape(tokens[name].Text), "class") {
+		return -1
+	}
+	operator := nextSignificant(tokens, name)
+	if operator >= 0 && tokens[operator].Type == ownstyle.TokenDelim && tokens[operator].Text == "~" {
+		operator = nextSignificant(tokens, operator)
+	}
+	if operator < 0 || tokens[operator].Type != ownstyle.TokenDelim || tokens[operator].Text != "=" {
+		return -1
+	}
+	value := nextSignificant(tokens, operator)
+	if value < 0 || (tokens[value].Type != ownstyle.TokenIdent && tokens[value].Type != ownstyle.TokenString) {
+		return -1
+	}
+	if tokens[value].Type == ownstyle.TokenString {
+		text := tokens[value].Text
+		if len(text) < 2 || text[len(text)-1] != text[0] {
+			return -1
+		}
+	}
+	end := nextSignificant(tokens, value)
+	if end >= 0 && tokens[end].Type == ownstyle.TokenIdent &&
+		(attrNameEqual(cssUnescape(tokens[end].Text), "i") || attrNameEqual(cssUnescape(tokens[end].Text), "s")) {
+		end = nextSignificant(tokens, end)
+	}
+	if end < 0 || tokens[end].Type != ownstyle.TokenCloseSquare {
+		return -1
+	}
+	return value
+}
+
+// cssUnescape decodes escapes in a raw ident token or string content the way the CSS
 // syntax spec consumes them: a backslash and one to six hex digits (plus
 // the one whitespace after them) is that code point, U+FFFD for zero, a
 // surrogate or anything past U+10FFFF; a backslash and any other
-// character is that character. .ui\2d button names the class ui-button.
+// character is that character. Escaped string line breaks contribute nothing.
+// .ui\2d button names the class ui-button.
 func cssUnescape(raw string) string {
 	if !strings.Contains(raw, `\`) {
 		return raw
@@ -147,6 +212,13 @@ func cssUnescape(raw string) string {
 			continue
 		}
 		i++ // the backslash
+		if raw[i] == '\n' || raw[i] == '\r' || raw[i] == '\f' {
+			if raw[i] == '\r' && i+1 < len(raw) && raw[i+1] == '\n' {
+				i++
+			}
+			i++
+			continue
+		}
 		j := i
 		for j < len(raw) && j-i < 6 && isHexByte(raw[j]) {
 			j++
@@ -239,13 +311,15 @@ func prevSignificant(toks []ownstyle.Token, i int) int {
 // joined, one space where whitespace stood, none around a combinator
 // or a comma. starts maps each token's offset in text to its position.
 type selectorRun struct {
-	text   strings.Builder
-	starts []selectorTok
-	space  bool
+	text       strings.Builder
+	starts     []selectorTok
+	space      bool
+	combinator bool
 }
 
 type selectorTok struct {
-	off, line, col int
+	off, end, line, col int
+	kind                ownstyle.TokenType
 }
 
 func isCombinator(t ownstyle.Token) bool {
@@ -258,24 +332,29 @@ func (s *selectorRun) add(t ownstyle.Token) {
 		s.space = s.text.Len() > 0
 		return
 	}
-	cur := s.text.String()
-	if s.space && !isCombinator(t) && !strings.HasSuffix(cur, ">") && !strings.HasSuffix(cur, "+") &&
-		!strings.HasSuffix(cur, "~") && !strings.HasSuffix(cur, ",") {
+	if s.space && !isCombinator(t) && !s.combinator {
 		s.text.WriteByte(' ')
 	}
 	s.space = false
-	s.starts = append(s.starts, selectorTok{off: s.text.Len(), line: t.Line, col: t.Col})
+	s.combinator = isCombinator(t)
+	position := selectorTok{off: s.text.Len(), line: t.Line, col: t.Col, kind: t.Type}
+	switch t.Type {
+	case ownstyle.TokenIdent, ownstyle.TokenHash, ownstyle.TokenFunction, ownstyle.TokenAtKeyword:
+		t.Text = cssUnescape(t.Text)
+	}
 	s.text.WriteString(t.Text)
+	position.end = s.text.Len()
+	s.starts = append(s.starts, position)
 }
 
 // normalizeSelector reads a registry selector the way cssSelectors reads
 // a prelude, so both sides compare in one spelling.
-func normalizeSelector(sel string) string {
+func normalizeSelector(sel string) *selectorRun {
 	var run selectorRun
 	for _, t := range ownstyle.Tokenize(sel) {
 		run.add(t)
 	}
-	return run.text.String()
+	return &run
 }
 
 // cssSelectors matches a selector entry (".a > .b") inside a rule
@@ -302,41 +381,21 @@ func (e *engine) matchSelectors(rel string, run *selectorRun) {
 	text := run.text.String()
 	for _, n := range e.cssNotes {
 		for _, sel := range n.Find.CSS.Selectors {
-			want := normalizeSelector(sel)
-			for from := 0; want != "" && from <= len(text); {
-				i := strings.Index(text[from:], want)
-				if i < 0 {
-					break
-				}
-				at := from + i
-				from = at + 1
-				if !selectorBounded(text, at, len(want)) {
+			wanted := normalizeSelector(sel)
+			want := wanted.text.String()
+			for start, position := range run.starts {
+				end := start + len(wanted.starts)
+				if want == "" || end > len(run.starts) || position.off+len(want) != run.starts[end-1].end ||
+					!strings.HasPrefix(text[position.off:], want) {
 					continue
 				}
-				pos := run.starts[0]
-				for _, s := range run.starts {
-					if s.off > at {
-						break
-					}
-					pos = s
+				if !slices.EqualFunc(run.starts[start:end], wanted.starts, func(actual, expected selectorTok) bool {
+					return actual.kind == expected.kind && actual.off-position.off == expected.off && actual.end-position.off == expected.end
+				}) {
+					continue
 				}
-				e.add(n, Hit{File: rel, Line: pos.line, Col: pos.col, Why: "css " + sel})
+				e.add(n, Hit{File: rel, Line: position.line, Col: position.col, Why: "css " + sel})
 			}
 		}
 	}
-}
-
-// selectorBounded: the match neither starts inside a name nor runs on
-// into one.
-func selectorBounded(text string, at, n int) bool {
-	isName := func(c byte) bool {
-		return c == '-' || c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
-	}
-	if end := at + n; end < len(text) && isName(text[end]) && isName(text[end-1]) {
-		return false
-	}
-	if at > 0 && isName(text[at]) && isName(text[at-1]) {
-		return false
-	}
-	return true
 }

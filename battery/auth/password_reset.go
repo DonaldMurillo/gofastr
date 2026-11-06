@@ -160,6 +160,7 @@ func (p *PasswordResetPlugin) Init(mgr *AuthManager) error {
 }
 
 func (p *PasswordResetPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/forgot-password", http.HandlerFunc(p.forgotHandler))
 	r.Post(basePath+"/reset-password", http.HandlerFunc(p.resetHandler))
 }
@@ -199,7 +200,7 @@ func (p *PasswordResetPlugin) forgotHandler(w http.ResponseWriter, r *http.Reque
 	{
 		ce, cerr := p.mgr.canonicalizeEmail(body.Email)
 		if cerr != nil {
-			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+			writeAuthErrorFor(w, r, http.StatusBadRequest, cerr, reasonComposedEmail)
 			return
 		}
 		body.Email = ce

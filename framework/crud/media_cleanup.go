@@ -201,9 +201,55 @@ func (ch *CrudHandler) deleteReturningObjects(ctx context.Context, del *query.De
 		return int(n), nil
 	}
 	sqlStr, args := del.Returning(cols...).Build()
-	rows, err := ch.conn(ctx).QueryContext(ctx, sqlStr, args...)
+	objs, count, err := ch.queryStoredObjects(ctx, sqlStr, args, fields)
 	if err != nil {
 		return 0, err
+	}
+	keys, err := ch.releasedObjects(ctx, objs, nil)
+	if err != nil {
+		return count, fmt.Errorf("read stored object references: %w", err)
+	}
+	ch.deleteAfterCommit(ctx, keys)
+	return count, nil
+}
+
+func (ch *CrudHandler) updateReturningObjects(ctx context.Context, update *query.UpdateBuilder) (int, error) {
+	count := 0
+	err := ch.inTx(ctx, func(ctx context.Context, handler *CrudHandler) error {
+		fields := handler.mediaFields()
+		columns := mediaColumns(fields)
+		statement, args := update.Matching(columns...)
+		if isPostgres(ctx, handler.conn(ctx)) {
+			statement += " FOR UPDATE"
+		}
+		before, _, err := handler.queryStoredObjects(ctx, statement, args, fields)
+		if err != nil {
+			return err
+		}
+		statement, args = update.Returning(columns...).Build()
+		after, affected, err := handler.queryStoredObjects(ctx, statement, args, fields)
+		if err != nil {
+			return err
+		}
+		keys, err := handler.releasedObjects(ctx, before, after)
+		if err != nil {
+			return fmt.Errorf("read stored object references: %w", err)
+		}
+		handler.deleteAfterCommit(ctx, keys)
+		count = affected
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (ch *CrudHandler) queryStoredObjects(ctx context.Context, statement string, args []any, fields [][2]string) ([]storedObject, int, error) {
+	cols := mediaColumns(fields)
+	rows, err := ch.conn(ctx).QueryContext(ctx, statement, args...)
+	if err != nil {
+		return nil, 0, err
 	}
 	defer rows.Close()
 	vals := make([]sql.NullString, len(cols))
@@ -215,7 +261,7 @@ func (ch *CrudHandler) deleteReturningObjects(ctx context.Context, del *query.De
 	n := 0
 	for rows.Next() {
 		if err := rows.Scan(dest...); err != nil {
-			return 0, err
+			return nil, 0, err
 		}
 		n++
 		got := make(map[string]string, len(cols))
@@ -225,13 +271,7 @@ func (ch *CrudHandler) deleteReturningObjects(ctx context.Context, del *query.De
 		objs = appendObjects(objs, fields, got)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, err
+		return nil, 0, err
 	}
-	rows.Close()
-	keys, err := ch.releasedObjects(ctx, objs, nil)
-	if err != nil {
-		return n, fmt.Errorf("read stored object references: %w", err)
-	}
-	ch.deleteAfterCommit(ctx, keys)
-	return n, nil
+	return objs, n, rows.Close()
 }

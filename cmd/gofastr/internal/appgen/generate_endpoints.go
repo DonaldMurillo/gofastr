@@ -196,14 +196,13 @@ func runGenerateEndpoints(args []string) {
 		case "--json":
 			asJSON = true
 		default:
-			cli.Fail("unknown flag: %s", a)
-			cli.Info("Usage: gofastr generate endpoints [--dry-run] [--json]")
+			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), "Usage: gofastr generate endpoints [--dry-run] [--json]")
 			cli.OsExit(1)
 			return
 		}
 	}
 	if !fileExistsUnder(".", "entities") {
-		cli.Fail("no entities package found in the current directory: run from your app root (the directory holding entities/)")
+		failGenerate(asJSON, fmt.Errorf("no entities package found in the current directory: run from your app root (the directory holding entities/)"))
 		cli.OsExit(1)
 		return
 	}

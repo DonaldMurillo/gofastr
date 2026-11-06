@@ -99,6 +99,16 @@ func CallRet8(fn, ret unsafe.Pointer, ints []uintptr, floats []float64) (r1, r2 
 var callArgsPool = sync.Pool{New: func() any { return new(callArgs) }}
 
 func call(fn uintptr, ints []uintptr, floats []float64, ret unsafe.Pointer) (r1, r2 uintptr, f0 float64) {
+	count := len(ints)
+	if ret != nil {
+		count++
+	}
+	if count > intRegs+len(callArgs{}.stks) {
+		panic("ffi: too many integer arguments for one Call")
+	}
+	if len(floats) > len(callArgs{}.flts) {
+		panic("ffi: too many float arguments for one Call")
+	}
 	a := callArgsPool.Get().(*callArgs)
 	*a = callArgs{fn: fn}
 

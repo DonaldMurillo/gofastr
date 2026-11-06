@@ -90,6 +90,11 @@ framework gates their listing on the entity's `Access` permission.)
 - Tests can call `InitPlugins` manually before driving the router
   in-memory; the call is idempotent. `framework.TestHarness(t, app)`
   invokes it automatically.
+- Only a successful `InitPlugins` call latches initialization. Every error,
+  including MCP registration errors, leaves it retryable; a retry must
+  complete initialization rather than silently allowing `Start` to proceed.
+  Registrars that already changed the MCP server before an error must handle
+  those existing registrations when retried.
 
 `RegisterPlugin` after `InitPlugins` panics: the new plugin would
 never get to run, which would silently break the caller's expectations.

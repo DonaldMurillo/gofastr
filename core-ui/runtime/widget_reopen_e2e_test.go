@@ -18,6 +18,11 @@ import (
 // a reopened dialog's RPC button sends one request per click, and closing
 // it again re-hides the root instead of removing it.
 func TestHydratedWidgetReopenWiresOnce(t *testing.T) {
+	testHydratedWidgetReopen(t, "")
+}
+
+func testHydratedWidgetReopen(t *testing.T, statePath string) {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +30,9 @@ func TestHydratedWidgetReopenWiresOnce(t *testing.T) {
 	var posts atomic.Int64
 	catalog := `[{"hidden":true,"cfg":{"name":"dlg","position":"center","backdrop":false,` +
 		`"closeOnEscape":false,"closeOnClick":false,"stylePath":"/style.css","chromePath":"/chrome/dlg"}}]`
+	if statePath != "" {
+		catalog = strings.Replace(catalog, `"name":"dlg"`, fmt.Sprintf(`"name":"dlg","statePath":%q`, statePath), 1)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")

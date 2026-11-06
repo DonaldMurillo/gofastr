@@ -28,6 +28,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -48,7 +49,8 @@ import (
 //   - PrimaryKey is the keyset-paging column, or a comma-joined list for a
 //     composite key ("provider,provider_id"). Leave it empty for a table
 //     with no key: the export then reads the table in one statement.
-//   - Columns are the physical column names in a stable order.
+//   - Columns are the physical column names in a stable order. Register
+//     appends any missing PrimaryKey columns so the archive can be restored.
 //
 // Table, PrimaryKey, and every Column are validated by the framework via
 // core/query.SafeIdent before they ever reach a query.
@@ -213,6 +215,13 @@ func Register(e DataExporter) {
 		panic(fmt.Sprintf("datexport: Register: unsafe exporter Name %q: "+
 			"must be one path segment of [A-Za-z0-9_-] (it becomes the "+
 			"<name>.ndjson path stem at export and import)", e.Name))
+	}
+	e.Columns = slices.Clone(e.Columns)
+	for _, column := range strings.Split(e.PrimaryKey, ",") {
+		column = strings.TrimSpace(column)
+		if column != "" && !slices.Contains(e.Columns, column) {
+			e.Columns = append(e.Columns, column)
+		}
 	}
 	mu.Lock()
 	defer mu.Unlock()
