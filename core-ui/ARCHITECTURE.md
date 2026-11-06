@@ -2596,6 +2596,16 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
 
+Toast focus tracking observes child-list changes only while a toast holds
+focus. An Island response removing a server row returns focus to its
+external origin only if removal left focus on the document body; a reader
+who focused another control while waiting keeps that focus.
+
+BackToTop recalculates its connected links' maximum threshold on arrival
+and on child-list changes after its first sentinel is armed. Removal-only
+HTML signal updates lower the threshold without waiting for a scroll or
+an inserted element; removing every link resets it to zero.
+
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
 Menu link rows activate on Space and prevent page scrolling, except while

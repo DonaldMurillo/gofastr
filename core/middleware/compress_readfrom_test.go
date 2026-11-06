@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -89,6 +90,37 @@ type compressReadError struct{ err error }
 
 func (source compressReadError) Read([]byte) (int, error) { return 0, source.err }
 
+func TestCompressEmptyCopyKeepsStatus(t *testing.T) {
+	want := errors.New("source failed")
+	for _, contentType := range []string{"text/plain", "application/octet-stream", ""} {
+		for _, accepts := range []string{"", "gzip", "gzip;q=0"} {
+			for _, sourceErr := range []error{io.EOF, want} {
+				t.Run(contentType+"/"+accepts+"/"+sourceErr.Error(), func(t *testing.T) {
+					recorder := &readerFromRecorder{ResponseRecorder: httptest.NewRecorder()}
+					request := httptest.NewRequest(http.MethodGet, "/file", nil)
+					request.Header.Set("Accept-Encoding", accepts)
+					Compress()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						if contentType != "" {
+							w.Header().Set("Content-Type", contentType)
+						}
+						copied, err := io.Copy(w, compressReadError{err: sourceErr})
+						if copied != 0 || (sourceErr == io.EOF && err != nil) || (sourceErr != io.EOF && !errors.Is(err, sourceErr)) {
+							t.Fatalf("empty copy = %d, %v", copied, err)
+						}
+						w.WriteHeader(http.StatusServiceUnavailable)
+						if _, err := io.WriteString(w, "unavailable"); err != nil {
+							t.Fatal(err)
+						}
+					})).ServeHTTP(recorder, request)
+					if recorder.Code != http.StatusServiceUnavailable || recorder.Body.String() != "unavailable" {
+						t.Fatalf("response = %d %q, want 503 unavailable", recorder.Code, recorder.Body.String())
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestCompressReadFromReturnsErrors(t *testing.T) {
 	want := errors.New("source failed")
 	for _, sniff := range []bool{false, true} {
@@ -105,6 +137,58 @@ func TestCompressReadFromReturnsErrors(t *testing.T) {
 		})).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/file", nil))
 		if recorder.Body.String() != "partial" {
 			t.Fatalf("partial response = %q", recorder.Body.String())
+		}
+	}
+}
+
+type compressFinalReadError struct {
+	body string
+	err  error
+}
+
+func (source *compressFinalReadError) Read(buffer []byte) (int, error) {
+	if source.body == "" {
+		return 0, io.EOF
+	}
+	copied := copy(buffer, source.body)
+	source.body = source.body[copied:]
+	if source.body == "" {
+		return copied, source.err
+	}
+	return copied, nil
+}
+
+func TestCompressCopyKeepsFinalReadError(t *testing.T) {
+	want := errors.New("source failed with final bytes")
+	for _, contentType := range []string{"text/plain", "application/octet-stream", ""} {
+		for _, accepts := range []string{"", "gzip", "gzip;q=0"} {
+			for _, bodySize := range []int{1, 7, sniffLen} {
+				for _, prefix := range []string{"", "prefix"} {
+					t.Run(contentType+"/"+accepts+"/"+strconv.Itoa(bodySize)+"/"+prefix, func(t *testing.T) {
+						body := strings.Repeat("x", bodySize)
+						recorder := httptest.NewRecorder()
+						request := httptest.NewRequest(http.MethodGet, "/file", nil)
+						request.Header.Set("Accept-Encoding", accepts)
+						Compress()(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+							if contentType != "" {
+								writer.Header().Set("Content-Type", contentType)
+							}
+							if prefix != "" {
+								if _, err := io.WriteString(writer, prefix); err != nil {
+									t.Fatal(err)
+								}
+							}
+							copied, err := io.Copy(writer, &compressFinalReadError{body: body, err: want})
+							if copied != int64(bodySize) || !errors.Is(err, want) {
+								t.Fatalf("copy = %d, %v, want %d and source error", copied, err, bodySize)
+							}
+						})).ServeHTTP(recorder, request)
+						if recorder.Body.String() != prefix+body {
+							t.Fatalf("response = %q, want %q", recorder.Body.String(), prefix+body)
+						}
+					})
+				}
+			}
 		}
 	}
 }

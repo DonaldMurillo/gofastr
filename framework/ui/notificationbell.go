@@ -53,8 +53,10 @@ type NotificationBellConfig struct {
 	// to nowhere is a dead link on the no-script page, and "#" is
 	// not a destination.
 	Href string
-	// Label is the accessible label on the bell button (required,
-	// e.g. "Notifications").
+	// Label is the required prefix of the trigger anchor's accessible
+	// name, followed by the localized unread count. "Notifications" with
+	// no unread items says "Notifications: 0 unread notifications"; the
+	// prefix remains when SignalUnread updates the count.
 	Label string
 	// UnreadCount renders as a badge on the bell. Hidden when 0
 	// (unless SignalUnread is set, then the badge always renders
@@ -84,14 +86,14 @@ type NotificationBellConfig struct {
 	ID    string
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the bell's root <button>.
+	// analytics markers, ARIA overrides) to the bell's root <a>.
 	// Keys the component owns are dropped: class and id (use Class /
 	// ID), data-cui-* (the popover wiring), type, aria-label (use
 	// Label), and aria-describedby (the unread-count announcement).
 	ExtraAttrs html.Attrs
 }
 
-// NotificationBell returns the bell-button trigger HTML and a
+// NotificationBell returns the bell-anchor trigger HTML and a
 // *widget.Builder for the paired Popover. Mount the popover once:
 //
 //	trigger, pop := ui.NotificationBell(ui.NotificationBellConfig{...})

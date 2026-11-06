@@ -180,7 +180,11 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **floatingpanel**: `core-ui/widget/preset.FloatingPanel`, corner-anchored persistent panel
 - **tooltip**: `framework/ui.Tooltip`, CSS-only hover/focus reveal
 - **toast**: `core-ui/widget/preset.ToastStack`, client-side slide-in notifications (no SSE, no server queue)
-- **notificationbell**: `framework/ui.NotificationBell`, bell + unread badge + popover dropdown
+- **notificationbell**: `framework/ui.NotificationBell`, bell + unread badge + popover dropdown.
+  The trigger is an anchor to `Href`; its accessible name keeps the required
+  `Label` before the localized unread count, such as
+  `Notifications: 0 unread notifications`. `SignalUnread` changes the count
+  without dropping that label prefix.
 - **confirmaction**: `framework/ui.ConfirmAction`, trigger + alertdialog Modal
 - **commandpalette**: *(also under Selection; same component)*
 

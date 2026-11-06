@@ -38,3 +38,28 @@ func TestBackToTopThresholdTracksPage(t *testing.T) {
 		}
 	}
 }
+
+func TestBackToTopRemovalLowersThreshold(t *testing.T) {
+	for _, thresholds := range [][2]int{{100, 800}, {170, 640}} {
+		t.Run(fmt.Sprint(thresholds), func(t *testing.T) {
+			page := fmt.Sprintf(`<a href="#" data-hui-back-to-top data-hui-back-to-top-threshold="%d">Top</a>
+				<div data-cui-signal="threshold" data-cui-signal-mode="html"><a href="#" data-hui-back-to-top data-hui-back-to-top-threshold="%d">Top</a></div>`, thresholds[0], thresholds[1])
+			ctx := behaviorPage(t, startBehaviorServer(t, page))
+			if !pollTrue(ctx, fmt.Sprintf(`document.getElementById('cui-backtotop-sentinel')?.style.height === '%dpx'`, thresholds[1])) {
+				t.Fatal("initial threshold was not armed")
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('threshold', '')`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, fmt.Sprintf(`document.getElementById('cui-backtotop-sentinel').style.height === '%dpx'`, thresholds[0])) {
+				t.Fatalf("removal-only island did not lower threshold to %d", thresholds[0])
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('[data-hui-back-to-top]').remove()`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			if !pollTrue(ctx, `document.getElementById('cui-backtotop-sentinel').style.height === '0px'`) {
+				t.Fatal("removing the final link did not clear its threshold")
+			}
+		})
+	}
+}

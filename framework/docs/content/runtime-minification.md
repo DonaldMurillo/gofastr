@@ -118,6 +118,12 @@ After minification (typical end-user deploy):
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
   modules whose markers it renders
 
+`headless-feedback` has a 3,146-byte ceiling (3,144 measured). Its
+focused-row detach observer restores the external origin after a
+server-rendered toast's Island dismissal without changing the kernel;
+`TestIslandToastReturnsFocus` pins that path and the pending-request
+focus guard. The observer runs only while a toast holds focus.
+
 Post-navigation cosmetics live in on-demand modules too: `activelink`
 (aria-current highlighting, idle-loaded), `preload` (route prefetch,
 loaded only when a route declares `app.Preload`), and `actionloader`

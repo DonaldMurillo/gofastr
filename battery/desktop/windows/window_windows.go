@@ -317,9 +317,17 @@ func (w *winWindow) withHandle(apply func(uintptr) error) error {
 	return nativeErr
 }
 
-func (w *winWindow) Native() uintptr { return w.webview }
+func (w *winWindow) Native() uintptr {
+	if w.closed.Load() {
+		return 0
+	}
+	return w.webview
+}
 
 func (w *winWindow) Frame() (desktop.Frame, error) {
+	if w.closed.Load() {
+		return desktop.Frame{}, errWindowClosed()
+	}
 	var out desktop.Frame
 	err := w.shell.Main(func() {
 		if w.closed.Load() || !win32.IsWindow(w.hwnd) {
@@ -380,8 +388,10 @@ func (w *winWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebar width is outside the supported range"}
 	}
-	w.sidebarWidth = points
-	return nil
+	return w.withHandle(func(uintptr) error {
+		w.sidebarWidth = points
+		return nil
+	})
 }
 
 func (w *winWindow) Close() error {
