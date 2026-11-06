@@ -2783,7 +2783,10 @@ links, buttons, inputs and arbitrary elements alike, including values
 other than `-1` and whitespace-padded negative integers. This applies to
 widget initial focus, modal traps, intercept handoff and traps, disclosures
 and responsive pane hosts. Explicit `autofocus` may still select a
-programmatic focus target outside the sequential Tab order.
+programmatic focus target outside the sequential Tab order. From such a
+target inside a trap, Tab moves to the next tabbable control in DOM order
+and Shift+Tab to the previous one, wrapping within the trap at either end.
+With no tabbable controls, the trap consumes Tab without moving focus.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path

@@ -607,7 +607,13 @@
     const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement));
     if (!items.length) { e.preventDefault(); return; }
     const first = items[0], last = items.at(-1);
-    if (document.activeElement === (e.shiftKey ? first : last)) {
+    const active = document.activeElement;
+    if (!items.includes(active)) {
+      const next = top().el.contains(active) && (e.shiftKey
+        ? items.findLast(el => el.compareDocumentPosition(active) & 4)
+        : items.find(el => el.compareDocumentPosition(active) & 2));
+      e.preventDefault(); (next || (e.shiftKey ? last : first)).focus();
+    } else if (active === (e.shiftKey ? first : last)) {
       e.preventDefault(); (e.shiftKey ? last : first).focus();
     }
   }, true);

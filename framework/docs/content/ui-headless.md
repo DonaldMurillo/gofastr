@@ -471,7 +471,11 @@ The parts the navigation members draw beyond the shared vocabulary:
   staying out of the Tab order, including inside a modal, intercepted
   drawer, trap disclosure or responsive pane. Tab and Shift+Tab wrap
   between tabbable controls, never through option links; closing the
-  list cannot strand focus on a hidden option. Middle-click and modified clicks retain
+  list cannot strand focus on a hidden option. From a programmatically
+  focused negative-tabindex target, either direction moves to the next
+  tabbable control in DOM order, wrapping inside the trap when necessary;
+  a trap with no Tab stops consumes Tab without moving focus.
+  Middle-click and modified clicks retain
   native link behavior. A plain primary click fills the input and closes
   the list while letting the link router own navigation exactly once;
   an already-claimed or cancelled click is not retried by the picker.

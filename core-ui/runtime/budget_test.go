@@ -1650,7 +1650,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Escape guard on an intercepted drawer, including keyCode 229.
 		// 3796 measured with both. Pinned at the measured size plus 2.
 		// TestComboboxLinksStayOutOfTrap and TestTrapSkipsNegativeControls: 3821 + 2.
-		"intercept": 3823,
+		// TestTrapKeepsProgrammaticFocus pins DOM-order recovery: 3897 + 2.
+		"intercept": 3899,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
