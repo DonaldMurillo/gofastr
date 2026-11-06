@@ -208,6 +208,7 @@
       const bandBottom = innerHeight * 0.3;
       let passed = null;
       for (const t of targets) {
+        if (!t.getClientRects().length) continue;
         const r = t.getBoundingClientRect();
         if (r.bottom - bandTop >= 1 && bandBottom - r.top >= 1) { markActive(t.id); return; }
         if (r.bottom - bandTop < 1) passed = t;
