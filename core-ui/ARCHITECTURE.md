@@ -2713,6 +2713,10 @@ Caller-built navigation in ColumnPicker, ActionList and SegmentedLinks uses
 the shared anchor URL policy. A refused destination renders a disabled span,
 never an actionable anchor; all column toggle, move and reset paths follow it.
 
+FilterChipBar's clear-all destination and SegmentedControl's RPC endpoint
+share a render-time same-origin path check layered on the anchor URL policy.
+Invalid paths panic before rendering, including when no active filters exist.
+
 A component's behaviour registers the way its stylesheet does. The
 package that renders the markup embeds its module beside the Go and
 registers it with its markers:
