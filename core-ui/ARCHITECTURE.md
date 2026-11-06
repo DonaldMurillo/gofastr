@@ -3081,7 +3081,7 @@ your need:
 | Table with sort / filter / pagination | `framework/ui.DataTable` | Island-driven, server-side sort/filter/pagination. No client-side re-implementation. |
 | Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. |
 | Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
-| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
+| Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. A zero or non-finite total renders the shared localized empty state instead of a blank SVG. |
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |
 | Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
 | Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
