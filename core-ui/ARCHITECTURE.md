@@ -2556,7 +2556,8 @@ stay on the anchors: keyboard picks use the SPA navigator, while plain
 clicks commit the value and close the list without repeating navigation
 already claimed by the link router (including a cancelled navigation).
 Modified clicks follow the native `href`. The programmatic navigator's
-same-destination guard compares the resolved complete URL, including query
+same-destination guard resolves against `document.baseURI`, matching
+history writes and fetches, and compares the complete URL, including query
 and fragment; changing or removing a fragment is a navigation, while
 forcing an identical destination re-fetches with a replacement entry.
 Escape keydown consumers ignore both `isComposing` and keyCode 229,

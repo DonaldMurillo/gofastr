@@ -481,6 +481,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   an already-claimed or cancelled click is not retried by the picker.
   A keyboard pick uses the SPA navigator once. Disabled or unsafe
   destinations have no native link.
+  Programmatic navigation resolves relative destinations against the
+  document's base URL, including a `<base href>` when present, before
+  deciding whether the complete destination is already current.
   `ComboboxRows` and the site-search palette use the same link contract.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),

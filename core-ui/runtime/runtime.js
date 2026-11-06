@@ -2179,7 +2179,7 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
-      const same = new URL(path, location.href).href === location.href;
+      const same = new URL(path, document.baseURI).href === location.href;
       if (same && !force) return;
       // Document boundary: load a real document instead of swapping.
       // assign/replace keep the push/replace shape the caller asked for.
