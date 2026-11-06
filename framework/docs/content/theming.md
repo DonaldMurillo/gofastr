@@ -448,6 +448,8 @@ without restarting the editor. If the directory already contains a Go file,
 the generated file uses that package name; otherwise it uses the sanitized
 directory name. The editor regenerates the file whole, so confirm before
 replacing hand-edited values.
+Startup applies the same overwrite check to existing files and dangling
+output symlinks: choose another `--out` or explicitly pass `--force`.
 
 The tool binds loopback, pins the Host header (DNS-rebinding defence), and
 mints a per-process bearer token delivered in a `<meta>` tag, the same

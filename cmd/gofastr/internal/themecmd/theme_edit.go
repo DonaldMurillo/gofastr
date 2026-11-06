@@ -73,11 +73,14 @@ func runThemeEdit(args []string) {
 	// the guard exists to stop a user clobbering hand-edited values by
 	// accident.
 	if !force {
-		if _, err := os.Stat(outPath); err == nil {
+		if _, err := projectfs.LstatFile(projectfs.Split(outPath)); err == nil {
 			cli.Warn("%s already exists.", outPath)
 			fmt.Println("  The editor regenerates it whole on write-back, which would")
 			fmt.Println("  overwrite any hand-edited values. Pass --force to proceed, or")
 			fmt.Println("  write to a new path via --out=<path>.")
+			cli.OsExit(1)
+		} else if !os.IsNotExist(err) {
+			cli.Fail("stat %s: %v", outPath, err)
 			cli.OsExit(1)
 		}
 	}
