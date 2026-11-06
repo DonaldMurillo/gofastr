@@ -5,7 +5,9 @@
 // <template data-cui-loading="<addr>" data-cui-after data-cui-min>
 // BESIDE its outlet, area, or slot cell, so the browser holds the
 // bytes before any fetch starts. Loaded when the document carries
-// such a template (marker scan, at boot and after any apply).
+// such a template: the envelope navigator warms it at evaluation and
+// checks again before scheduling a later navigation, so templates
+// introduced by a layout swap also work without a full reload.
 //
 // Before it loads the busy dim alone shows: the navigator marks the
 // regions it will change (aria-busy, core) and no clone parks.

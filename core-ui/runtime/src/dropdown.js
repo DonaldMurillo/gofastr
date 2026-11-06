@@ -42,7 +42,7 @@
     if (isOpen(trigger)) {
       close(trigger, panel);
     } else {
-      // Close all other open dropdowns first (singleton-by-default).
+      // Close unrelated open dropdowns while keeping the ancestor branch.
       closeAll(wrap);
       open(trigger, panel);
     }
@@ -51,7 +51,7 @@
   const closeAll = (except) => {
     const sel = '[data-cui-dropdown-wrap][' + IS_OPEN + ']';
     for (const w of document.querySelectorAll(sel)) {
-      if (w === except) continue;
+      if (w === except || w.contains(except)) continue;
       const trig = w.querySelector('[data-cui-dropdown]');
       const panel = w.querySelector('[data-cui-dropdown-panel]');
       if (trig && panel) close(trig, panel);
@@ -64,7 +64,7 @@
     if (openWraps.length === 0) return;
 
     const active = document.activeElement;
-    const focusedWrap = openWraps.find((w) => {
+    const focusedWrap = openWraps.findLast((w) => {
       const panel = w.querySelector('[data-cui-dropdown-panel]');
       return panel && panel.contains(active);
     });
@@ -93,7 +93,7 @@
     }
   });
 
-  // Escape → close all.
+  // Escape → close the innermost focused or topmost dropdown.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
     // Defer to modal stack if one is active.

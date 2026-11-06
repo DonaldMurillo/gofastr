@@ -806,8 +806,8 @@
           // navigation may beat its script. The marks paint now (the
           // dim does not wait for it); only the SCHEDULER needs the
           // module, so the wait sits here, behind the supersede rule.
-          if (_loadingReady && !H.loading) {
-            await _loadingReady;
+          if (!H.loading && document.querySelector('template[data-cui-loading]')) {
+            await NS.loadModule('loading').catch(() => null);
             if (!NS._navLive(myEpoch)) return;
           }
           // P9: the marked regions' loading content schedules through
@@ -1307,14 +1307,9 @@
 
   // ─── The module's attachment ────────────────────────────────────────
   //
-  // The loading module's trigger: its scheduler is called only by
-  // THIS navigator, so the template marker is meaningless without it
-  // — a page with no outlet marker loads nothing at boot for a
-  // template it can never schedule. Started at evaluation (not in
-  // frag/boot.js) so the very first navigation's scheduler finds it
-  // (the wait above).
-  const _loadingReady = document.querySelector('template[data-cui-loading]')
-    ? NS.loadModule('loading').catch(() => null) : null;
+  // Warm loading content already present at evaluation. Navigation also
+  // rechecks the live document before scheduling templates from later swaps.
+  if (document.querySelector('template[data-cui-loading]')) NS.loadModule('loading').catch(() => null);
 
   // Unless core's navigator ran first (_liveDomPath null, and then the
   // check below only keeps a dead null-keyed entry out of the cache's

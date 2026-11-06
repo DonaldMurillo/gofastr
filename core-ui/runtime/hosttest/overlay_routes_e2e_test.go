@@ -129,7 +129,7 @@ func TestOverlayDoesNotMoveRouteSignals(t *testing.T) {
 		chromedp.WaitVisible(`#detail-body`, chromedp.ByID),
 		chromedp.Sleep(300*time.Millisecond),
 		chromedp.Evaluate(`document.getElementById('route-title-bind')?.textContent || ''`, &bindText),
-		chromedp.Evaluate(`window.__gofastr && window.__gofastr._getSignal ? String(window.__gofastr._getSignal('route.path')) : (window.__gofastr_signals ? String(window.__gofastr_signals['route.path']) : '')`, &routePath),
+		chromedp.Evaluate(`String(window.__gofastr.getSignal('route.path'))`, &routePath),
 		chromedp.Evaluate(`!!document.getElementById('cui-intercept')`, &overlayOpen),
 	); err != nil {
 		t.Fatalf("run: %v", err)
@@ -140,7 +140,7 @@ func TestOverlayDoesNotMoveRouteSignals(t *testing.T) {
 	if want := "Products"; bindText != want {
 		t.Errorf("route.title binding = %q, want the underlying page's %q — an overlay mount does not activate a route", bindText, want)
 	}
-	if routePath != "" && routePath != "/products" {
+	if routePath != "/products" {
 		t.Errorf("route.path = %q, want /products (the page underneath)", routePath)
 	}
 	for _, h := range rig.navs() {

@@ -208,6 +208,7 @@
       const bandBottom = innerHeight * 0.3;
       let passed = null;
       for (const t of targets) {
+        if (!t.checkVisibility()) continue;
         const r = t.getBoundingClientRect();
         if (r.bottom - bandTop >= 1 && bandBottom - r.top >= 1) { markActive(t.id); return; }
         if (r.bottom - bandTop < 1) passed = t;
@@ -253,12 +254,13 @@
       const midY = window.innerHeight * 0.5;
       let picked = null;
       for (const t of targets) {
+        if (!t.checkVisibility()) continue;
         const r = t.getBoundingClientRect();
         if (r.top <= midY) picked = t;
         else break;
       }
-      if (!picked) picked = targets[0];
-      markActive(picked.id);
+      if (!picked) picked = targets.find(target => target.checkVisibility());
+      if (picked) markActive(picked.id);
     });
   }
   NS._huiRailWatch = watch;
