@@ -350,7 +350,8 @@ mgr := webhook.New(store, webhook.Options{
 ```
 
 The worker survives a panicking store: every store call on the delivery
-loop runs under a recover guard that logs through `Options.Logger`, so a
+loop runs under a recover guard that logs the control-byte-scrubbed panic
+value through `Options.Logger`, so a
 custom `Store` implementation that panics costs the affected tick or
 attempt (due rows stay pending and retry, at-least-once) instead of the
 process. A subscriber row whose `events` column no longer parses as JSON

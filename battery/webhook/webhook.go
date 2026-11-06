@@ -781,7 +781,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// error branches below already document.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %v", d.ID, v)
+			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %s", d.ID, textsafe.Recovered(v))
 		}
 	}()
 	// d.Attempts counts this claim. Past the budget means earlier claims
@@ -1014,7 +1014,7 @@ func (m *Manager) saveDelivery(d Delivery) {
 	// configured Logger and the worker keeps running.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %v", d.ID, d.Status, v)
+			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %s", d.ID, d.Status, textsafe.Recovered(v))
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)
