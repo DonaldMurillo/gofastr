@@ -150,6 +150,15 @@ These hold for every host, the built-in ones included.
   running phase returns, `Shutdown` returns `ctx`'s error, and the
   teardown still runs once the phase returns, on a fresh five-second
   budget that keeps `ctx`'s values.
+- **Shutdown during the deferred start.** With interactive first-run
+  setup, the `OnStart` hooks and the outbox relay start when the
+  wizard completes. Boot has ended by then and the HTTP host is
+  serving, but the rule above still holds. A `Shutdown` while they
+  run cancels the lifecycle context and waits for them, bounded by its
+  `ctx`. The teardown, the HTTP drain included, runs once they return,
+  never under them. A swap after `Shutdown` began starts nothing,
+  whether a wizard request or the `SetupRunner`'s own goroutine calls
+  it.
 - **What a stop during boot returns.** `Run` returns nil when the
   running phase returns the stop's own cancellation: `context.Canceled`,
   `sql.ErrTxDone` for a transaction rolled back when the context ended,
@@ -189,7 +198,8 @@ These hold for every host, the built-in ones included.
   waits for it, then returns nil, or `ctx`'s error if its own `ctx`
   ends first. The stop order is the readiness drain, A2A runs,
   `host.Stop`, process modules, batteries, then `OnStop` hooks, all
-  bounded by `ctx`.
+  bounded by `ctx`. `/readyz` answers 503 from the moment `Shutdown`
+  is called, including while it waits for a running phase.
 
 ## Write a host
 

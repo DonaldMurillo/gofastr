@@ -37,9 +37,13 @@ type SetupRunner interface {
 	RunSteps(ctx context.Context) error
 
 	// Handler returns the interactive setup surface. swap is called
-	// once setup completes to switch to the real handler. healthz and
-	// readyz are the app's existing health handlers, passed so the
-	// setup surface can serve /healthz and /readyz during setup.
+	// once setup completes to switch to the real handler and start the
+	// deferred OnStart hooks; it returns once they have run. Call it from
+	// a wizard request or from a goroutine of the runner's own. A swap
+	// after Shutdown began starts nothing, and a Shutdown while the hooks
+	// run waits for them before it tears down. healthz and readyz are the
+	// app's existing health handlers, passed so the setup surface can
+	// serve /healthz and /readyz during setup.
 	Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler
 
 	// SetupURL returns the operator-facing URL (with token) for the

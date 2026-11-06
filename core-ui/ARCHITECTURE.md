@@ -720,6 +720,11 @@ repeat click on a link whose navigation is still loading, is
 suppressed and does nothing, never a whole-document reload.
 
 **Guarding departures (`__gofastr.guardNavigation`).**
+Traversal tests wait for native completion or supersession, the surviving
+guard's answer, and its `gofastr:navigate` landing before asserting router
+coherence. An undo can restore matching URL, entry and DOM while the guard
+is still pending, so a quiet page or a fixed sleep is not a completion signal.
+
 `gofastr:beforenavigate` covers one source, a link the router takes, and
 only a synchronous answer. Code that has to finish something before the
 page goes away (flush a draft to durable storage, ask in its own dialog)

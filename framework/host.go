@@ -138,6 +138,14 @@ func (a *App) markServicesReadyLocked() {
 // returns and the run hangs. Return an error instead, or call Shutdown
 // on another goroutine.
 //
+// The OnStart hooks and outbox relay that interactive setup defers run
+// after boot ended, when the setup swap starts them, and they follow the
+// same rules. A Shutdown while they run cancels the lifecycle context
+// and waits for them, bounded by its own deadline. The teardown, the
+// HTTP host's drain included, runs once they return and never under
+// them. A swap after Shutdown began starts nothing. Either way /readyz
+// answers 503 from the moment Shutdown is called.
+//
 // A stop during boot is not a failure: Run returns nil when the running
 // phase returns the stop's own cancellation, context.Canceled, or the
 // two forms a database driver reports it in (database/sql's ErrTxDone
@@ -391,6 +399,20 @@ func (a *App) endBoot() (handoff bool, ctx context.Context) {
 	a.serverMu.Lock()
 	defer a.serverMu.Unlock()
 	a.booting = false
+	return a.takeHandoffLocked()
+}
+
+// takeHandoffLocked claims the teardown a Shutdown left to a running
+// phase, and that Shutdown's context, for the caller whose phase just
+// ended. While another phase still runs it claims nothing: that phase
+// takes the teardown when it ends, so none runs under it. Boot and the
+// deferred start never overlap, but a host that fails while the deferred
+// start runs ends boot's bookkeeping again (abortRun), and that call must
+// not tear down under the hooks. Callers hold serverMu.
+func (a *App) takeHandoffLocked() (handoff bool, ctx context.Context) {
+	if a.booting || a.deferredStarting {
+		return false, nil
+	}
 	handoff, a.teardownToEngine = a.teardownToEngine, false
 	ctx, a.handoffCtx = a.handoffCtx, nil
 	return handoff, ctx
@@ -577,29 +599,76 @@ func (a *App) startOutboxRelay() {
 
 // startDeferred runs the boot phases interactive setup postponed, the
 // OnStart hooks and the outbox relay, then closes ServicesReady. The HTTP
-// host's setup swap calls it once, after the wizard completes. A failure
-// gets the same fail-loud semantics as the identical failure at normal
-// boot (which aborts Start): log and shut down. The process exits, and
-// the NEXT boot finds setup complete and runs the hooks on the normal
-// path, failing Start properly. Silently running without consumers would
-// be a half-up server.
+// host's setup swap calls it once, after the wizard completes: from the
+// wizard's request, or from whatever goroutine a SetupRunner calls swap
+// on.
+//
+// Boot is over by then, but these are boot phases, and they coordinate
+// with Shutdown the way boot does, under serverMu. A swap after a
+// Shutdown began starts nothing. A Shutdown while the hooks run cancels
+// the lifecycle context and leaves the teardown to this phase, which
+// runs it once the hooks return, never under them, on that Shutdown's
+// context (finishHandoff), so the caller keeps its deadline. The
+// teardown runs on a goroutine of its own: the swap may be running
+// inside a request the HTTP host's drain waits for.
+//
+// A failure gets the same fail-loud semantics as the identical failure
+// at normal boot (which aborts Start): log and shut down. The process
+// exits, and the NEXT boot finds setup complete and runs the hooks on the
+// normal path, failing Start properly. Silently running without consumers
+// would be a half-up server.
 func (a *App) startDeferred() {
-	if err := a.runStartHooks(); err != nil {
-		if a.stopRequestedNow() && stopShaped(err) {
-			return // the hooks stopped because the App is stopping
-		}
+	a.serverMu.Lock()
+	if a.stopRequestedLocked() {
+		a.serverMu.Unlock()
+		return
+	}
+	a.deferredStarting = true
+	a.serverMu.Unlock()
+
+	// The phase ends on every path, a panic's included: a phase left
+	// marked running would hand every later Shutdown's teardown to a
+	// phase that never ends. A panic is reported as a failure and shuts
+	// the App down, then continues.
+	err := errDeferredStartPanicked
+	defer func() { a.endDeferred(err) }()
+	startErr := a.runStartHooks()
+	if startErr == nil {
+		a.startOutboxRelay()
+	}
+	err = startErr
+}
+
+var errDeferredStartPanicked = errors.New("deferred start panicked")
+
+// endDeferred ends the deferred start: it closes ServicesReady when the
+// hooks succeeded and no stop is under way, runs the teardown a Shutdown
+// left to the phase, and shuts down after a failure.
+func (a *App) endDeferred(err error) {
+	a.serverMu.Lock()
+	a.deferredStarting = false
+	stopping := a.stopRequestedLocked()
+	if err == nil && !stopping {
+		a.markServicesReadyLocked()
+	}
+	handoff, hctx := a.takeHandoffLocked()
+	a.serverMu.Unlock()
+
+	// A hook the stop cancelled is silent; any other failure is logged,
+	// a stop already pending or not.
+	failed := err != nil && !(stopping && stopShaped(err))
+	if failed {
 		a.Logger().Error("setup: deferred start hooks failed; shutting down (restart will boot normally and surface this error at Start)", "error", err)
+	}
+	if handoff {
+		go a.finishHandoff(hctx)
+		return
+	}
+	if failed {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_ = a.Shutdown(ctx)
 		}()
-		return
 	}
-	a.startOutboxRelay()
-	a.serverMu.Lock()
-	if !a.stopRequestedLocked() {
-		a.markServicesReadyLocked()
-	}
-	a.serverMu.Unlock()
 }

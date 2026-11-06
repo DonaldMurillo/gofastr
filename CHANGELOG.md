@@ -776,6 +776,12 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- Shutdown coordinates with the startup hooks interactive first-run setup
+  deferred, including a setup swap outside an HTTP request. It cancels the
+  running phase and respects the caller's deadline, but never drains HTTP
+  or stops batteries under a running hook. `/readyz` answers 503 as soon
+  as shutdown begins, and a late setup swap starts nothing. See
+  [Application hosts](framework/docs/content/application-hosts.md).
 - A second UI host in the same process served a 404 for the toast
   stylesheet its pages link. The widget registry is process-wide while
   asset routes belong to each router, so the second host found the

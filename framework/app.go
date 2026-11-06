@@ -362,15 +362,18 @@ type App struct {
 	shutdownDone chan struct{}
 	// Run state (host.go), guarded by serverMu. runHost is the host the
 	// one admitted run was given; booting is set from admission until the
-	// engine hands the App to the host or aborts; stopRequested latches
-	// at the first Shutdown. teardownToEngine records a Shutdown that
-	// arrived during boot and left the teardown to the engine, and
-	// handoffCtx is that Shutdown's context, which the teardown runs on;
-	// the engine takes both when boot ends and passes the result back in
-	// handoffErr (written before shutdownDone closes, read after).
-	// servicesReady is App.ServicesReady's channel.
+	// engine hands the App to the host or aborts; deferredStarting is set
+	// while startDeferred runs the OnStart hooks interactive setup
+	// postponed, a boot phase that runs after boot ended; stopRequested
+	// latches at the first Shutdown. teardownToEngine records a Shutdown
+	// that arrived while either phase ran and left the teardown to it,
+	// and handoffCtx is that Shutdown's context, which the teardown runs
+	// on; whichever phase ends last takes both (takeHandoffLocked) and
+	// passes the result back in handoffErr (written before shutdownDone
+	// closes, read after). servicesReady is App.ServicesReady's channel.
 	runHost             Host
 	booting             bool
+	deferredStarting    bool
 	stopRequested       bool
 	teardownToEngine    bool
 	handoffCtx          context.Context
@@ -3470,9 +3473,11 @@ func (a *App) closeNewConns() {
 // concurrent call waits for it to finish, then returns nil, or returns
 // ctx's error if its own ctx ends first.
 //
-// Called while the App is still booting, Shutdown cancels the lifecycle
+// Called while the App is still booting, or while the OnStart hooks that
+// interactive setup deferred are running, Shutdown cancels the lifecycle
 // context, and the run tears down once its current phase returns, before
-// any later phase or the host starts. The teardown runs on ctx, with its
+// any later phase or the host starts. A running HTTP host keeps serving
+// until then, with /readyz answering 503. The teardown runs on ctx, with its
 // deadline and values; Shutdown waits for it and returns its error, or
 // returns ctx's error once ctx ends first. A teardown whose ctx ended
 // before the phase returned runs on a fresh five-second budget that keeps
@@ -3515,11 +3520,12 @@ func (a *App) stop(ctx context.Context) (began bool, err error) {
 	}
 	done := make(chan struct{})
 	a.shutdownDone = done
-	// Record the stop under the lock admission and the end of boot take,
-	// so no run starts its host, and none starts at all, after this.
+	// Record the stop under the lock admission, the end of boot and the
+	// deferred start take, so no run starts its host, none starts at all,
+	// and no deferred start begins after this.
 	a.serverMu.Lock()
 	a.stopRequested = true
-	handoff := a.booting
+	handoff := a.booting || a.deferredStarting
 	a.teardownToEngine = handoff
 	if handoff {
 		a.handoffCtx = ctx
@@ -3527,11 +3533,17 @@ func (a *App) stop(ctx context.Context) (began bool, err error) {
 	cancel := a.appCancel
 	a.serverMu.Unlock()
 	a.shutdownMu.Unlock()
+	// /readyz answers 503 from the stop request on, not from the start of
+	// the teardown's readiness drain: a stop handed to a running phase
+	// postpones that drain until the phase returns, and while the
+	// deferred start runs the HTTP host is already serving.
+	a.draining.Store(true)
 	if handoff {
-		// A boot phase is running. Tearing down under it would stop
-		// batteries a start hook is still starting and close the store a
-		// migration is writing. Cancel it instead; the engine tears down
-		// on ctx when the phase returns and passes the result back.
+		// A boot phase is running, or the deferred start interactive
+		// setup postponed. Tearing down under it would stop batteries a
+		// start hook is still starting and close the store a migration is
+		// writing. Cancel it instead; the phase tears down on ctx when it
+		// returns and passes the result back.
 		if cancel != nil {
 			cancel()
 		}

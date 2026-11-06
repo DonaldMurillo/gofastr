@@ -675,18 +675,48 @@ func TestNavGuardRapidTraversals(t *testing.T) {
 	}
 	entries := ngJSON[[]string](t, ctx, `navigation.entries().map((e) => e.key)`)
 	asked := len(ngCalls(t, ctx))
-	ngMode(t, ctx, "later")
-	ngEval(t, ctx, `history.back(); history.back()`, nil)
-	time.Sleep(2 * time.Second)
-	ngQuiet(t, ctx)
-	s := ngCoherent(t, ctx, entries)
-	if s.Key != entries[s.Index] {
-		t.Fatalf("entry %q is not at index %d of %v", s.Key, s.Index, entries)
+	ngEval(t, ctx, `
+window.__rapid = { attempts: [], nativeDone: false, nativeErrors: [] };
+__gofastr.guardNavigation((nav) => {
+  const record = { nav, answered: false, landed: false };
+  __rapid.attempts.push(record);
+  return new Promise((resolve) => setTimeout(() => { record.answered = true; resolve(true); }, 2200));
+});
+addEventListener('gofastr:navigate', () => {
+  for (const record of __rapid.attempts) {
+    if (record.answered && !record.nav.signal.aborted && record.nav.to.entry === navigation.currentEntry.key) record.landed = true;
+  }
+});
+window.__rapidComplete = (moves) => Promise.allSettled(moves).then((results) => {
+  __rapid.nativeErrors = results.filter((result) => result.status === 'rejected' && result.reason?.name !== 'AbortError').map((result) => String(result.reason));
+  __rapid.nativeDone = true;
+});
+__rapidComplete([navigation.back().finished, navigation.back().finished]);
+true`, nil)
+	waitTraversal := func() {
+		t.Helper()
+		ngWait(t, ctx, `__rapid.nativeDone && __rapid.attempts.length > __rapidStart && __rapid.attempts.slice(__rapidStart).every((record) => record.nav.signal.aborted || (record.answered && record.landed))`, "native traversal completion or supersession, guard answers and router landings")
+		if failures := ngJSON[[]string](t, ctx, `__rapid.nativeErrors`); len(failures) > 0 {
+			t.Fatalf("native traversal failures: %v", failures)
+		}
+		ngQuiet(t, ctx)
+		state := ngCoherent(t, ctx, entries)
+		var destination string
+		ngEval(t, ctx, `__rapid.attempts.findLast((record) => !record.nav.signal.aborted).nav.to.entry`, &destination)
+		if state.Key != destination || state.Key != entries[state.Index] {
+			t.Fatalf("entry %q at index %d, want decided destination %q in %v", state.Key, state.Index, destination, entries)
+		}
 	}
-	ngEval(t, ctx, `history.go(-2); setTimeout(() => history.forward(), 20)`, nil)
-	time.Sleep(2 * time.Second)
-	ngQuiet(t, ctx)
-	ngCoherent(t, ctx, entries)
+	ngEval(t, ctx, `window.__rapidStart = 0`, nil)
+	waitTraversal()
+	ngEval(t, ctx, `
+__rapidStart = __rapid.attempts.length;
+__rapid.nativeDone = false;
+const jump = navigation.traverseTo(navigation.entries()[Math.max(1, navigation.currentEntry.index - 2)].key).finished;
+const forward = new Promise((resolve, reject) => setTimeout(() => navigation.forward().finished.then(resolve, reject), 20));
+__rapidComplete([jump, forward]);
+true`, nil)
+	waitTraversal()
 	for _, c := range ngCalls(t, ctx)[asked:] {
 		found := false
 		for _, k := range entries {

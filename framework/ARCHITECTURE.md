@@ -488,7 +488,7 @@ either require an API redesign or create an unbreakable import cycle.
 | File | Why it stays |
 |---|---|
 | `app.go` | Defines `App` itself plus all `(a *App)` configuration methods. The package whose name is on the import path is by definition where App lives. |
-| `host.go` | `Host`, `Session`, `ServicesHost`, `ServicesReady` and `App.Run`: the one lifecycle engine (`(*App).run`) behind `Start`, `Serve` and `Run`. The engine owns admission, the boot order, rollback through `Shutdown` and the hand-off when `Shutdown` lands mid-boot (the teardown runs on that `Shutdown`'s context, and only a phase error shaped like the stop's own cancellation, `stopShaped`, counts as graceful); a host owns only its transport and running lifetime. The engine reads and writes App state on every phase, so it lives with App. |
+| `host.go` | `Host`, `Session`, `ServicesHost`, `ServicesReady` and `App.Run`: the one lifecycle engine (`(*App).run`) behind `Start`, `Serve` and `Run`. The engine owns admission, the boot order, rollback through `Shutdown` and the hand-off when `Shutdown` lands mid-boot (the teardown runs on that `Shutdown`'s context, and only a phase error shaped like the stop's own cancellation, `stopShaped`, counts as graceful). The deferred start, which the interactive setup swap runs after boot, joins the same hand-off (see "Every phase that starts work joins the stop hand-off" below). A host owns only its transport and running lifetime. The engine reads and writes App state on every phase, so it lives with App. |
 | `host_http.go` | `httpHost`, the built-in host `Start` and `Serve` hand the booted App to: server construction and timeouts, TLS, the bind, the signal handler, the local run record, the banner, `OnReady`, and `Stop`'s drain. It adopts no server once a `Shutdown` has begun. |
 | `plugin.go` | `Plugin` interface + `PluginManager` consumed by `App.RegisterPlugin`. Both Plugin and Battery use a single `Init(*App)` integration point; the router late-binds middleware so anything Init does wraps existing routes. |
 | `battery.go` | `Battery` interface + `BatteryManager` consumed by `App.RegisterBattery`. Same single-Init shape as plugin, plus dependency-resolved init order and an optional `BatteryLifecycle` for OnStart/OnStop. |
@@ -668,6 +668,35 @@ where one exists, as in the capability registry's dead-grant warning), or
 an error where the caller can act on one. Silent no-ops, best-effort
 fallbacks that hide their fallback, and errors swallowed into defaults
 all fail review. When in doubt, scream.
+
+### Every phase that starts work joins the stop hand-off
+
+A lifecycle phase that starts batteries, hooks or loops coordinates
+with `Shutdown` under `serverMu`, wherever and whenever it runs. Boot
+does it through `booting`. The deferred start that interactive setup
+postpones (`startDeferred`) runs after boot ended, from the setup
+swap, and the PR #673 review (2026-11) found it racing the teardown.
+An HTTP drain that timed out on the wizard's request, or a
+`SetupRunner` calling swap from its own goroutine, let `StopAll` run
+while `Batteries.StartAll` was still starting batteries. A swap after
+`Shutdown` started batteries that nothing would stop.
+
+The fix made it a phase like boot. It checks for a stop and marks
+itself running (`deferredStarting`) in one critical section. A
+`Shutdown` that finds it running cancels the lifecycle context and
+hands the teardown over, and whichever phase ends last runs it
+(`takeHandoffLocked`). Two details carry over to any new phase. The
+handed-off teardown runs on its own goroutine, because the phase may
+be inside a request the HTTP drain waits for. And the phase ends on
+every path, a panic's included: a phase left marked running takes
+every later `Shutdown`'s teardown and never runs it.
+
+Inside a phase, check for a stop before each step that starts
+something, not only between hooks. The check after
+`Batteries.StartAll` is the only thing in front of the process-module
+loops, and a test that asserts only on `OnStart` hooks passes with it
+deleted (`TestStopDuringBatteryStartSkipsProcessModuleLoops` asserts
+on the loops).
 
 ### Pre-rename to avoid package shadowing
 

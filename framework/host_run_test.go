@@ -915,19 +915,7 @@ func (*wizardSetup) SetupURL(_, addr string) string { return "http://" + addr + 
 // the transport is ready (OnReady fired) before the services are.
 func TestStartInteractiveSetupDefersServicesReady(t *testing.T) {
 	r := newLocalRun(t, t.TempDir(), framework.WithSetup(&wizardSetup{}))
-	addr := make(chan string, 1)
-	r.app.OnReady(func(a string) { addr <- a })
-	done := make(chan error, 1)
-	go func() { done <- r.app.Start("127.0.0.1:0") }()
-	var base string
-	select {
-	case a := <-addr:
-		base = "http://" + a
-	case err := <-done:
-		t.Fatalf("Start: %v", err)
-	case <-time.After(10 * time.Second):
-		t.Fatal("OnReady never fired")
-	}
+	base, done := startSetupRun(t, r)
 	if readyClosed(r.app) || r.rec.has("battery.start") || r.rec.has("onstart") {
 		t.Fatalf("services ready before setup completed: ready %v, events %v", readyClosed(r.app), r.rec.snapshot())
 	}
@@ -951,6 +939,311 @@ func TestStartInteractiveSetupDefersServicesReady(t *testing.T) {
 	}
 	if err := waitRun(t, done); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// startSetupRun starts r's App on a loopback port and returns its base
+// URL once the listener is bound, with Start's result channel.
+func startSetupRun(t *testing.T, r *localRun) (string, chan error) {
+	t.Helper()
+	addr := make(chan string, 1)
+	r.app.OnReady(func(a string) { addr <- a })
+	done := make(chan error, 1)
+	go func() { done <- r.app.Start("127.0.0.1:0") }()
+	select {
+	case a := <-addr:
+		return "http://" + a, done
+	case err := <-done:
+		t.Fatalf("Start: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("OnReady never fired")
+	}
+	return "", nil
+}
+
+// externalSwapSetup is an interactive first-run setup whose runner calls
+// swap itself, outside any request, as a runner that finishes setup in
+// the background would. Handler hands the swap to the test.
+type externalSwapSetup struct{ swap chan func() }
+
+func newExternalSwapSetup() *externalSwapSetup {
+	return &externalSwapSetup{swap: make(chan func(), 1)}
+}
+
+func (*externalSwapSetup) Incomplete(context.Context) (bool, error)     { return true, nil }
+func (*externalSwapSetup) CanRunHeadless(context.Context) (bool, error) { return false, nil }
+func (*externalSwapSetup) RunSteps(context.Context) error               { return nil }
+func (s *externalSwapSetup) Handler(swap func(), _, _ http.HandlerFunc) http.Handler {
+	s.swap <- swap
+	return http.HandlerFunc(func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(http.StatusServiceUnavailable)
+	})
+}
+func (*externalSwapSetup) SetupURL(string, string) string { return "" }
+
+// gatedBattery's OnStart blocks until release closes and ignores its
+// context, as a battery stuck dialing a dependency does.
+type gatedBattery struct {
+	rec     *events
+	entered chan struct{}
+	release chan struct{}
+}
+
+func newGatedBattery(rec *events) *gatedBattery {
+	return &gatedBattery{rec: rec, entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (*gatedBattery) Name() string              { return "gated-test" }
+func (*gatedBattery) Init(*framework.App) error { return nil }
+func (b *gatedBattery) OnStart(context.Context) error {
+	close(b.entered)
+	<-b.release
+	b.rec.add("gated.started")
+	return nil
+}
+func (b *gatedBattery) OnStop(context.Context) error { b.rec.add("gated.stop"); return nil }
+
+// finishTeardown waits for the teardown under way: a later Shutdown
+// returns nil once it has finished.
+func finishTeardown(t *testing.T, app *framework.App) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatalf("waiting for the teardown: %v", err)
+	}
+}
+
+// before reports whether a was recorded, and recorded before b.
+func before(got []string, a, b string) bool {
+	i, j := slices.Index(got, a), slices.Index(got, b)
+	return i >= 0 && j >= 0 && i < j
+}
+
+// A Shutdown while the OnStart hooks interactive setup deferred are
+// running treats them as a boot phase: it cancels the lifecycle context
+// and waits for them, bounded by its own deadline, and the teardown (the
+// HTTP drain included) runs once they return, never under them. The
+// swap here runs inside the wizard's request, so a teardown begun at
+// once would wait out the HTTP drain on that request, give up, and stop
+// the batteries under the running hook.
+func TestShutdownDuringDeferredStartWaitsForTheHooks(t *testing.T) {
+	r := newLocalRun(t, t.TempDir(), framework.WithSetup(&wizardSetup{}))
+	entered, release := make(chan struct{}), make(chan struct{})
+	r.app.OnStart(func(context.Context) error {
+		close(entered)
+		<-release // ignores the cancelled context
+		r.rec.add("hook.exit")
+		return nil
+	})
+	r.app.OnStart(func(context.Context) error { r.rec.add("late.start"); return nil })
+	base, done := startSetupRun(t, r)
+	finished := make(chan int, 1)
+	go func() {
+		resp, err := http.Get(base + "/finish")
+		if err != nil {
+			finished <- 0
+			return
+		}
+		resp.Body.Close()
+		finished <- resp.StatusCode
+	}()
+	<-entered
+
+	sctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := r.app.Shutdown(sctx)
+	for _, step := range []string{"battery.stop", "onstop"} {
+		if r.rec.has(step) {
+			t.Fatalf("%s ran while a deferred OnStart hook was still running: %v", step, r.rec.snapshot())
+		}
+	}
+	if err != context.DeadlineExceeded {
+		t.Fatalf("Shutdown under a blocked deferred hook = %v, want its own deadline", err)
+	}
+	// The teardown waits, but the stop is public at once: a balancer
+	// stops routing here while the hook unwinds.
+	resp, err := http.Get(base + "/readyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("/readyz = %d during a pending Shutdown, want 503", resp.StatusCode)
+	}
+	close(release)
+	finishTeardown(t, r.app)
+	if err := waitRun(t, done); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if code := <-finished; code != http.StatusNoContent {
+		t.Fatalf("the wizard's request ended with %d, want 204: the drain cut it", code)
+	}
+	got := r.rec.snapshot()
+	if !before(got, "hook.exit", "battery.stop") || r.rec.count("battery.stop") != 1 || r.rec.count("onstop") != 1 {
+		t.Fatalf("teardown ran under the deferred hook or more than once: %v", got)
+	}
+	if r.rec.has("late.start") || readyClosed(r.app) {
+		t.Fatalf("work started after the stop (events %v, ready %v)", got, readyClosed(r.app))
+	}
+}
+
+// A SetupRunner may call swap from a goroutine of its own, outside any
+// request the HTTP drain waits for. A Shutdown while that swap's battery
+// startup blocks still stops nothing under it, returns at its deadline,
+// and leaves the teardown to run once the battery's OnStart returns.
+func TestShutdownDuringDeferredBatteryStartFromExternalSwap(t *testing.T) {
+	setup := newExternalSwapSetup()
+	r := newLocalRun(t, t.TempDir(), framework.WithSetup(setup))
+	bat := newGatedBattery(r.rec)
+	r.app.RegisterBattery(bat)
+	_, done := startSetupRun(t, r)
+	swap := <-setup.swap
+	go swap()
+	<-bat.entered
+
+	sctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err := r.app.Shutdown(sctx)
+	for _, step := range []string{"gated.stop", "battery.stop", "onstop"} {
+		if r.rec.has(step) {
+			t.Fatalf("%s ran while a battery was still starting: %v", step, r.rec.snapshot())
+		}
+	}
+	if err != context.DeadlineExceeded {
+		t.Fatalf("Shutdown under a blocked battery start = %v, want its own deadline", err)
+	}
+	close(bat.release)
+	finishTeardown(t, r.app)
+	if err := waitRun(t, done); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got := r.rec.snapshot()
+	if !before(got, "gated.started", "gated.stop") || r.rec.count("gated.stop") != 1 || r.rec.count("onstop") != 1 {
+		t.Fatalf("teardown ran under the battery start or more than once: %v", got)
+	}
+	if r.rec.has("onstart") || readyClosed(r.app) {
+		t.Fatalf("work started after the stop (events %v, ready %v)", got, readyClosed(r.app))
+	}
+}
+
+// A swap that arrives after Shutdown began, from a wizard request the
+// drain is finishing or a runner's own goroutine, starts nothing: no
+// battery, no OnStart hook, no ServicesReady, and no second teardown.
+func TestLateSetupSwapAfterShutdownStartsNothing(t *testing.T) {
+	setup := newExternalSwapSetup()
+	r := newLocalRun(t, t.TempDir(), framework.WithSetup(setup))
+	_, done := startSetupRun(t, r)
+	swap := <-setup.swap
+	finishTeardown(t, r.app)
+	if err := waitRun(t, done); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	swap()
+	if r.rec.has("battery.start") || r.rec.has("onstart") || readyClosed(r.app) {
+		t.Fatalf("a swap after Shutdown started work (events %v, ready %v)", r.rec.snapshot(), readyClosed(r.app))
+	}
+	if r.rec.count("battery.stop") != 1 || r.rec.count("onstop") != 1 {
+		t.Fatalf("the teardown did not run exactly once: %v", r.rec.snapshot())
+	}
+}
+
+// A deferred OnStart hook that calls Shutdown synchronously gets the
+// same answer as a boot callback: Shutdown returns at its own deadline
+// with nothing torn down under the hook, and the teardown runs once the
+// hook returns.
+func TestDeferredHookReentrantShutdownIsBounded(t *testing.T) {
+	r := newLocalRun(t, t.TempDir(), framework.WithSetup(&wizardSetup{}))
+	inner := make(chan error, 1)
+	tornDown := make(chan bool, 1)
+	r.app.OnStart(func(context.Context) error {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		inner <- r.app.Shutdown(ctx)
+		tornDown <- r.rec.has("battery.stop") || r.rec.has("onstop")
+		return nil
+	})
+	base, done := startSetupRun(t, r)
+	resp, err := http.Get(base + "/finish")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if err := <-inner; err != context.DeadlineExceeded {
+		t.Fatalf("the re-entrant Shutdown returned %v, want its deadline", err)
+	}
+	if <-tornDown {
+		t.Fatalf("the teardown ran under the hook that called Shutdown: %v", r.rec.snapshot())
+	}
+	finishTeardown(t, r.app)
+	if err := waitRun(t, done); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if r.rec.count("battery.stop") != 1 || r.rec.count("onstop") != 1 || readyClosed(r.app) {
+		t.Fatalf("events %v, ready %v", r.rec.snapshot(), readyClosed(r.app))
+	}
+}
+
+// breakingListener accepts nothing until broken; then Accept fails the
+// way a listener whose socket died does, which ends Serve with an error.
+type breakingListener struct {
+	broken, closed       chan struct{}
+	breakOnce, closeOnce sync.Once
+}
+
+var errListenerBroke = errors.New("listener broke")
+
+func newBreakingListener() *breakingListener {
+	return &breakingListener{broken: make(chan struct{}), closed: make(chan struct{})}
+}
+
+func (l *breakingListener) Accept() (net.Conn, error) {
+	select {
+	case <-l.broken:
+		return nil, errListenerBroke
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+func (l *breakingListener) Close() error   { l.closeOnce.Do(func() { close(l.closed) }); return nil }
+func (l *breakingListener) Addr() net.Addr { return memAddr{} }
+func (l *breakingListener) breakNow()      { l.breakOnce.Do(func() { close(l.broken) }) }
+
+// A host that fails while the deferred start runs ends the run with its
+// error, but its rollback does not tear down under the battery still
+// starting: the teardown a pending Shutdown left to the deferred start
+// stays with it, and runs once the battery's OnStart returns.
+func TestHostFailureDuringDeferredStartWaitsForIt(t *testing.T) {
+	setup := newExternalSwapSetup()
+	r := newLocalRun(t, t.TempDir(), framework.WithSetup(setup))
+	bat := newGatedBattery(r.rec)
+	r.app.RegisterBattery(bat)
+	ln := newBreakingListener()
+	done := make(chan error, 1)
+	go func() { done <- r.app.Serve(ln) }()
+	swap := <-setup.swap
+	go swap()
+	<-bat.entered
+
+	sctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	_ = r.app.Shutdown(sctx) // leaves the teardown to the deferred start
+	ln.breakNow()
+	<-ln.closed // the host returned
+	time.Sleep(100 * time.Millisecond)
+	for _, step := range []string{"gated.stop", "battery.stop", "onstop"} {
+		if r.rec.has(step) {
+			t.Fatalf("%s ran while a battery was still starting: %v", step, r.rec.snapshot())
+		}
+	}
+	close(bat.release)
+	if err := waitRun(t, done); !errors.Is(err, errListenerBroke) {
+		t.Fatalf("Serve = %v, want the host's failure", err)
+	}
+	finishTeardown(t, r.app)
+	got := r.rec.snapshot()
+	if !before(got, "gated.started", "gated.stop") || r.rec.count("gated.stop") != 1 || r.rec.count("onstop") != 1 {
+		t.Fatalf("teardown ran under the battery start or more than once: %v", got)
 	}
 }
 

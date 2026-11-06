@@ -134,6 +134,120 @@ func TestStopAtEndOfBootSkipsHost(t *testing.T) {
 	}
 }
 
+// gatedStartBattery's OnStart blocks until release closes, then returns
+// nil, ignoring its cancelled context.
+type gatedStartBattery struct{ entered, release chan struct{} }
+
+func (*gatedStartBattery) Name() string    { return "gated-start" }
+func (*gatedStartBattery) Init(*App) error { return nil }
+func (b *gatedStartBattery) OnStart(context.Context) error {
+	close(b.entered)
+	<-b.release
+	return nil
+}
+func (*gatedStartBattery) OnStop(context.Context) error { return nil }
+
+// A Shutdown that lands while a battery's OnStart runs stops
+// runStartHooks before the process-module supervisor starts its loops,
+// even when that OnStart then returns nil. The check right after
+// Batteries.StartAll is the only guard in front of StartLoops: the
+// per-hook checks cover only the OnStart hooks after it, so an OnStart
+// hook that never runs proves nothing about the loops. A loop started
+// there would spawn module children after the stop.
+func TestStopDuringBatteryStartSkipsProcessModuleLoops(t *testing.T) {
+	app := quietServeApp()
+	sup, err := NewProcessModuleSupervisor(SupervisorConfig{Store: newTestStore(t), Broker: NopBroker{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	app.processModules = sup
+	bat := &gatedStartBattery{entered: make(chan struct{}), release: make(chan struct{})}
+	app.RegisterBattery(bat)
+	var hookRan atomic.Bool
+	app.OnStart(func(context.Context) error { hookRan.Store(true); return nil })
+	done := make(chan error, 1)
+	go func() { done <- app.Run(context.Background(), ServicesHost()) }()
+	<-bat.entered
+
+	stopped := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		stopped <- app.Shutdown(ctx)
+	}()
+	for !app.stopRequestedNow() {
+		time.Sleep(time.Millisecond)
+	}
+	close(bat.release)
+	for name, ch := range map[string]chan error{"Shutdown": stopped, "Run": done} {
+		select {
+		case err := <-ch:
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s did not return", name)
+		}
+	}
+	if sup.loopsStarted.Load() {
+		t.Fatal("process-module loops started after Shutdown began")
+	}
+	if hookRan.Load() {
+		t.Fatal("an OnStart hook ran after Shutdown began")
+	}
+}
+
+// A panic in the deferred start still ends the phase. Left marked
+// running, it would take every later Shutdown's teardown and never run
+// it. Hooks and batteries recover their own panics, so the panic comes
+// from a supervisor slot StartLoops cannot start. shutdownMu is held so
+// the Shutdown the failure triggers waits until the slot is removed;
+// the teardown's Drain would fault on it too.
+func TestDeferredStartPanicEndsThePhase(t *testing.T) {
+	app := quietServeApp()
+	sup, err := NewProcessModuleSupervisor(SupervisorConfig{Store: newTestStore(t), Broker: NopBroker{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sup.slots["faulty"] = nil
+	app.processModules = sup
+	var stopped atomic.Int32
+	app.OnStop(func() error { stopped.Add(1); return nil })
+
+	app.shutdownMu.Lock()
+	panicked := func() (v any) {
+		defer func() { v = recover() }()
+		app.startDeferred()
+		return nil
+	}()
+	app.serverMu.Lock()
+	running := app.deferredStarting
+	app.serverMu.Unlock()
+	sup.mu.Lock()
+	delete(sup.slots, "faulty")
+	sup.mu.Unlock()
+	app.shutdownMu.Unlock()
+
+	if panicked == nil {
+		t.Fatal("the faulty slot did not panic the deferred start")
+	}
+	if running {
+		t.Fatal("a panic left the deferred start marked running")
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for stopped.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if stopped.Load() != 1 {
+		t.Fatalf("the panicked deferred start did not shut the App down (OnStop ran %d times)", stopped.Load())
+	}
+	select {
+	case <-app.ServicesReady():
+		t.Fatal("ServicesReady closed after the deferred start panicked")
+	default:
+	}
+}
+
 // A Shutdown that completes after boot but before the HTTP host adopts
 // its server (here from a WrapServer wrapper, which runs while the
 // handler is composed) leaves Start nothing to serve: no server is
