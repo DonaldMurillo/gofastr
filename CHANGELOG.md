@@ -686,6 +686,66 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Unstorable text.** A String or Text field refuses invalid UTF-8 and
+  NUL bytes with a keyed `invalid_text` error before a CRUD write, and a
+  JSON field refuses them in any decoded string value or object key.
+  Postgres refuses both bytes, so the write used to fail as a 500. Auth
+  checks an email the same way, and a custom canonicalizer's output
+  after it, before it looks up an identity, mints a token or lets
+  first-run setup create an account. Role assignment refuses such a
+  user ID before the lookup, and RBAC refuses such a role or permission
+  name before it changes a grant.
+- **Admin dashboard and entity screens.** The dashboard's updated-age
+  labels run on their own deadline, so they still show when the count
+  probe times out. Header and card New actions hide when the scoped
+  CRUD create gate refuses the caller. A NULL boolean renders as unset
+  in list cells instead of false, and cards and labels write booleans
+  as the localized Yes and No.
+- **Swap headers** percent-encode control bytes, DEL, `%` and non-ASCII
+  bytes in a parameterized layer key.
+- **Recovered panics and diagnostics.** MCP, ACP and module protocol
+  callbacks log a recovered panic with a scrubbed value, the method and
+  a stack, and the client still gets the generic protocol error. Webhook attempt and
+  persistence panics are scrubbed before they reach the configured
+  logger, and so are Redis-client panic values in enqueue errors. A
+  DBQueue worker panic that escapes is logged and its respawn backs
+  off, without delaying shutdown. Action extraction reports a panic and
+  returns an empty registry instead of nil or a partial one. The fanout
+  marshal-failure log says the event was skipped and logs once, instead
+  of claiming publishing stopped until restart, and the unconfirmed
+  CRUD event drop log says the drops are process-wide.
+- **`generate --watch` and the dev tools.** `generate --watch --json`
+  writes one JSON document per cycle to stdout, failures and argument
+  errors included, and keeps status lines on stderr. Watch regenerates
+  when the enclosing `go.mod` is created, renamed or removed. The dev
+  contract watcher analyzes the last save of a burst instead of
+  dropping it, and keeps queued work after an analyzer panic. In dev,
+  the contract MCP tools appear when introspection is enabled
+  explicitly, as generated apps do, not only when dev mode implied it. `app_readiness` uses the configured readiness timeout, as
+  `/readyz` does.
+- **Theme editor.** The modal, drawer, bottom sheet and mobile sidebar
+  demos open in the preview. A save works again after a failed disk
+  write, and startup refuses a dangling output symlink.
+- **Service battery.** The daemon exits promptly after a server that
+  stopped itself finishes draining, and startup log archiving reads at
+  most the last 10 MiB.
+- **`config.Load`** refuses an integer outside the destination field's
+  range instead of truncating it on 32-bit targets.
+- **First-run setup's 503 page** follows the request locale.
+- **Examples.** The live dashboard's Open incident count updates with
+  its status. The wizard demo answers a malformed form with a constant
+  400 instead of echoing the parse error. The presence demo says its
+  wiring is local-only and points at `WithFanout` for cross-replica
+  presence. The benchmark apps stop on an invalid entity declaration
+  instead of measuring a partial setup.
+- **Docs corrections.** `HookFunc` and the typed `AfterCreate` and
+  `AfterUpdate` hooks run inside the write transaction, and an error
+  rolls the write back. The BFF guide says an unset `APIPrefix` puts the
+  whole app behind the origin guard, so `AllowedOrigins` must list the
+  app's own origin. chromepdf's `AllowedHosts` does not widen the print
+  shell's CSP. The semantic watcher's zero poll interval means the
+  two-second default and only a negative one disables rescans. The
+  runtime contract's fill-template rows drop the obsolete hash claim.
 - **Desktop shells.** Clipboard reads refuse text over 1 MiB, the write
   limit. A preference update over the size limit returns keyed
   validation errors before anything is stored, and a failed batch writes
