@@ -260,8 +260,11 @@ a credential nothing else has:
 2. `Run` navigates the fresh window to
    `/__gofastr/desktop/enter?t=<token>`, single use, constant-time
    compared.
-3. The handler sets the `__gofastr_desktop` cookie (HttpOnly,
-   SameSite=Strict, session lifetime) and 302s to `/`.
+3. The handler sets the `__gofastr_desktop_<session value>` cookie
+   (HttpOnly, SameSite=Strict, session lifetime) and 302s to `/`.
+   Its name is unique to this running battery: WebView2 profiles share
+   cookies across loopback ports, so a second instance must not replace
+   the first instance's session cookie.
 4. A gate middleware, installed app-wide in `Init` and armed by `Run`
    before the listener opens, then requires the pinned `Host` header
    and that cookie for every route, including pages and the SSE bus.
