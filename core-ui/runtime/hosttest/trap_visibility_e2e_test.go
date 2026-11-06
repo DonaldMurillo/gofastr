@@ -48,7 +48,7 @@ func TestTrapSkipsUnfocusable(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				for _, mode := range []string{"closed", "closed-summary", "visibility-hidden", "content-visibility-hidden", "inert", "hidden", "display-none", "closed-css-visible", "visible", "disabled-fieldset", "disabled-tabindex"} {
+				for _, mode := range []string{"closed", "closed-summary", "closed-second-summary", "visibility-hidden", "content-visibility-hidden", "inert", "hidden", "display-none", "closed-css-visible", "visible", "disabled-fieldset", "disabled-tabindex"} {
 					// ::details-content arrived after checkVisibility in every
 					// engine, so no browser on the fallback path can show it.
 					if path == "fallback" && mode == "closed-css-visible" {
@@ -63,6 +63,8 @@ func TestTrapSkipsUnfocusable(t *testing.T) {
 							const mode = %q;
 							if (mode.startsWith('closed')) nested.open = false;
 							if (mode === 'closed-summary') { const summary = nested.querySelector('summary'); summary.removeAttribute('tabindex'); summary.id = 'nested-summary'; }
+							// Only a closed details' first summary is drawn; a later one keeps its box.
+							if (mode === 'closed-second-summary') { const second = document.createElement('summary'); second.tabIndex = 0; second.textContent = 'Second'; nested.querySelector('summary').after(second); }
 							if (mode === 'visibility-hidden') panel.style.visibility = 'hidden';
 							if (mode === 'content-visibility-hidden') panel.style.contentVisibility = 'hidden';
 							if (mode === 'inert') panel.inert = true;

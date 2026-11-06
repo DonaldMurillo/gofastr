@@ -656,7 +656,7 @@
     _rendered: el => {
       if (el.closest('[inert]')) return false;
       if (el.checkVisibility) return el.checkVisibility({ visibilityProperty: true });
-      if (!el.getClientRects().length || getComputedStyle(el).visibility !== 'visible' || el.closest('details:not([open])>:not(summary)')) return false;
+      if (!el.getClientRects().length || getComputedStyle(el).visibility !== 'visible' || el.closest('details:not([open])>:not(summary:first-of-type)')) return false;
       for (let a = el.parentElement; a; a = a.parentElement) if (getComputedStyle(a).contentVisibility === 'hidden') return false;
       return true;
     },
