@@ -660,8 +660,23 @@ const (
 	// own() (20). Boot's mount pass marking each element it fires, so
 	// the actionloader module fires inserted markup's mounts without
 	// repeating a navigation's, adds 8 (the firing itself is the
-	// module's).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8
+	// module's). The navigation guards' seams add 62: a taken link and
+	// navigate() perform their move through the kernel's _navAsk, which
+	// runs it at once until src/navguard.js answers for registered
+	// guards, and popstate asks the module's _navPop first. The move
+	// must wait inside core's own handlers, so only the seams stay; the
+	// guard engine is the navguard module's. The history entry tags add
+	// 94: every entry core writes carries {__fup: [numbering, position]}
+	// beside its {__fui} id, a replace keeps its entry's id, place and
+	// state, and boot and popstate adopt an untagged entry, so the
+	// navguard module can undo a Back or Forward by its exact distance
+	// where the browser has no Navigation API. A position must be written
+	// with the entry, before any module could load, so the tags stay in
+	// core. __gofastr.replaceURL adds 50: a synchronous public call
+	// through the same choke point, with the origin, base and document
+	// checks, and the choke point telling it when the browser refused
+	// the write.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 62 + 94 + 50
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1146,7 +1161,17 @@ const (
 	// module (+59 in core before the carve), leaving only the mark the
 	// navigation pass must set. Two bytes of clearance, cliff fixture
 	// re-run.
-	coreCongestionWindowGZ = 18465
+	// The navigation guards' seams (a taken link and navigate() moving
+	// through the kernel's _navAsk, popstate asking _navPop first)
+	// measure 18495 at level 1. The move has to wait inside core's own
+	// handlers, so only the seams stay and the engine is the navguard
+	// module. Two bytes of clearance, cliff fixture re-run.
+	// The history entry tags (_entryTag, _adopt) and replaceURL measure
+	// 18672 at level 1 (+123 and +54). A position is known only when the
+	// entry is written, before any module could load, and replaceURL
+	// answers synchronously, so neither carves. Two bytes of clearance,
+	// cliff fixture re-run.
+	coreCongestionWindowGZ = 18674
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1259,6 +1284,18 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// Firing inserted markup's mounts in boot measured +59; the firing
 		// moved to the actionloader module and only this mark stayed.
 		"boot's mount pass marks the elements it fired (_cuiM)": 8, // (l1: 9)
+		// Measured 15916 → 15978: TestNavGuardCheckpointBeforeLeaving,
+		// TestNavGuardNoGuardCompatibility. The departure waits inside
+		// core's click handler and navigate(); the engine is a module.
+		"navigation guard seams (_navAsk, _navPop)": 62, // (l1: 57)
+		// Measured 15978 → 16072: TestNavGuardHistoryDeniedBackKeepsForward,
+		// TestNavGuardHistoryReload, TestNavGuardHistoryReplaceAndBranch,
+		// TestNavGuardHistoryRepeatedURLs, and the "tags without a
+		// position" case of TestNavGuardHistoryMutationsAreCaught.
+		"history entry tags (_entryTag, _adopt)": 94, // (l1: 123)
+		// Measured 16072 → 16122: TestNavGuardHistoryReplaceURL,
+		// TestNavGuardHistoryReplaceURLInLayer.
+		"__gofastr.replaceURL": 50, // (l1: 54)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1594,7 +1631,22 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3610 measured (3608 + 2) after ordinary links declined by an
 		// open pane retain the captured history and transition wrapper
 		// (TestPaneDeclinedLinkKeepsForwardTransition).
-		"intercept": 3610,
+		// 3706 measured (3704 + 2) after the stack's departures ask the
+		// navigation guards (TestNavGuardOverlayDepartures): each guard
+		// hook names its move to _navGate, a declined overlay's hand-back
+		// to the router asks as a departure of its own, and core passes
+		// the clicked link (an asynchronous allow outlives the click).
+		// 3727 measured (3725 + 2) after a Back or Forward off the stack
+		// to a page further afield hands the guards its re-push and lets
+		// them undo the move by key (TestNavGuardOverlayDepartures/afield).
+		// 3757 measured (3755 + 2) after the stack's raw entries carry
+		// core's entry tags (_entryTag), so a move off the stack has a
+		// known distance without the Navigation API, a replace keeps the
+		// entry's id and the state other code put on it, and a write the
+		// browser refuses is reported to replaceURL as core's is
+		// (TestNavGuardHistoryStack, TestNavGuardHistoryReplaceURLInLayer
+		// and its mutation case). The writes are the stack's own.
+		"intercept": 3757,
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1654,7 +1706,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// promise a skipped transition rejects, which surfaced as an
 		// unhandled rejection on every rage click (2026-11-02 bug bash,
 		// TestSkippedTransitionRaisesNoUnhandledRejection).
-		"transition": 1448,
+		// 1456 measured (1454 + 2) after the click-shaped pick is bound
+		// to the entry the last _pushURL write left: a URL-only write
+		// (replaceURL) followed by Back animated the Back as an
+		// undecided forward (TestNavGuardHistoryReplaceURL).
+		"transition": 1456,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's

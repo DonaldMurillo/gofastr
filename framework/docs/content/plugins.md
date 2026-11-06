@@ -65,6 +65,9 @@ framework gates their listing on the entity's `Access` permission.)
 - `InitPlugins` runs every queued plugin's `Init` in registration
   order, then every battery's `Init` in dependency-resolved order.
 - `App.Start` calls `InitPlugins` then binds the HTTP listener.
+  `Start`, `Serve` and `App.Run(ctx, host)` share one lifecycle
+  engine, so the order below is the same under every host; see
+  [Application hosts](application-hosts.md).
 - `App.Serve(ln net.Listener)` runs the same lifecycle (migrate, seed,
   `InitPlugins`, `OnStart`, the full handler chain, `OnReady`, graceful
   `Shutdown`) on a listener the host supplies instead of binding a TCP
@@ -130,7 +133,9 @@ other shutdown code emits its final entries.
 
 `OnStart` runs *before* the port binds. To run code only once the HTTP
 listener is actually up, e.g. a startup banner or a "register with service
-discovery" call, use `App.OnReady`:
+discovery" call, use `App.OnReady`. To wait for the App's services
+whatever the host, with or without a listener, wait on
+`App.ServicesReady()`, which closes once every boot phase has succeeded:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -154,6 +159,11 @@ Generated apps and `gofastr init` scaffolds print their
 startup banner this way. The framework's own `server ready` banner follows
 the same bind boundary and includes `Listening: http://<resolved-address>`;
 a bind failure emits no readiness banner.
+
+A host with no HTTP listener (`framework.ServicesHost()`, or a native
+host) cannot give an `OnReady` hook an address, so `App.Run` refuses an
+App that registered one. Register the hook only on the path that calls
+`Start` or `Serve`, and wait on `ServicesReady` on the other.
 
 ## Post-migrate seeding: `App.WithSeed`
 

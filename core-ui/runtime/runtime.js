@@ -376,6 +376,12 @@
     get currentPath() { return currentPath; },
     /** Split modules cannot close over the IIFE-local route state. */
     _setCurrentPath(path) { currentPath = path; },
+    // The navigator's departure seam (a taken link, navigate()): o
+    // names the move ({to, anchor} or {to, replace}) and go performs
+    // it. Until a guard registers there is nothing to ask, so go runs
+    // at once; src/navguard.js replaces this with the guarded engine
+    // (NS.guardNavigation).
+    _navAsk(o, go) { go(); },
 
     // --- State helpers (compiled Go code uses these) ---
 
@@ -1408,7 +1414,14 @@
 
   // --- History entry identity + scroll restoration ---
   // Every history entry the runtime writes carries {__fui: <id>} so
-  // back/forward can restore the exact scroll position it left.
+  // back/forward can restore the exact scroll position it left, and
+  // {__fup: [numbering, position]}: its place in history. A push sits
+  // one past the entry it leaves, a replace keeps its entry's place
+  // (and id), and an entry without a place starts a numbering of its
+  // own, so no position is ever guessed. Both live in history.state and
+  // survive a reload; the navigation-guard module reads them to undo a
+  // Back or Forward by its exact distance where the browser has no
+  // Navigation API. The same URL in two entries is never one entry.
   // scrollRestoration is manual: the browser's own restore fires before
   // the swapped content exists and clamps to the wrong page's height.
   try { history.scrollRestoration = 'manual'; } catch (_) {}
@@ -1421,11 +1434,29 @@
   })();
   let _entrySeq = 0;
   for (const k in _scrollStore) { const n = +k; if (n > _entrySeq) _entrySeq = n; }
-  let _entryId = (history.state && history.state.__fui) || 0;
-  if (!_entryId) {
-    _entryId = ++_entrySeq;
-    try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
-  } else if (_entryId > _entrySeq) { _entrySeq = _entryId; }
+  let _entryId = 0;
+  // The tag of an entry: a push (step 1) gets a new id one place past
+  // the entry the browser is on, a replace (step 0) keeps that entry's
+  // id and place. A numbering is a random number.
+  const _entryTag = (step) => {
+    const s = history.state, p = s && s.__fup;
+    return { __fui: step || !(s && s.__fui) ? ++_entrySeq : s.__fui, __fup: p ? [p[0], p[1] + step] : [Math.random(), 0] };
+  };
+  // Adopts the entry the browser is on (at boot, and on a popstate the
+  // router takes): its id, or a tag for an entry that lacks one, keeping
+  // whatever state other code put there. The sequence moves past every
+  // id seen, so a reload whose stored ids lag never reissues one.
+  const _adopt = () => {
+    const s = history.state;
+    _entryId = s && s.__fui;
+    if (_entryId > _entrySeq) _entrySeq = _entryId;
+    if (!_entryId || !s.__fup) {
+      const t = _entryTag(0);
+      _entryId = t.__fui;
+      try { history.replaceState({ ...s, ...t }, '', location.href); } catch (_) {}
+    }
+  };
+  _adopt();
   let _scrollTimer = 0;
   const _persistScroll = () => {
     const ids = Object.keys(_scrollStore);
@@ -1460,14 +1491,18 @@
   // moves the URL, and keeps currentPath in sync, modules that
   // pushState'd around the router left currentPath stale, so the next
   // popstate mis-diffed the URL change.
+  // A replace keeps the entry: its id, its place and the state other
+  // modules put on it (a guard's tag, a transition's pick).
   const _pushURL = (url, { replace = false } = {}) => {
     // Capture the outgoing entry's position synchronously, the scroll
     // listener is event-driven and can lag the traversal on slow
     // renderers; this is the last moment the old id is current.
     if (!replace) _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
-    const id = replace ? _entryId : ++_entrySeq;
-    try { history[replace ? 'replaceState' : 'pushState']({ __fui: id }, '', url); } catch (_) { return; }
-    _entryId = id;
+    const t = _entryTag(+!replace);
+    // 1: the browser refused the write (Safari's rate limit), nothing
+    // changed.
+    try { history[replace ? 'replaceState' : 'pushState'](replace ? { ...history.state, ...t } : t, '', url); } catch (_) { return 1; }
+    _entryId = t.__fui;
     currentPath = location.pathname + location.search;
   };
 
@@ -2046,19 +2081,23 @@
       bubbles: true, cancelable: true,
       detail: { href, path: fullPath, hash: navHash, anchor },
     }))) return;
-    // An intercepting route presents as an overlay when reached from its
-    // declared origin. The module owns the URL and the fetch in that
-    // case; returning true means it took the navigation.
-    if (window.__gofastr._intercept?.(fullPath, navHash)) return;
-    // Capture the origin BEFORE _pushURL syncs currentPath to the
-    // destination, loadPage's X-Gofastr-From must name where the user
-    // came from.
-    const origin = currentPath;
     // detail > 0 is a real pointer click; Enter/Space on a focused
     // link synthesize a click with detail 0 (keyboard: keep the ring).
     _navRing = e.detail < 1;
-    _pushPub(fullPath + navHash);
-    loadPage(fullPath, { from: origin });
+    // The departure itself waits on the navigation guards (kernel
+    // _navAsk): it runs now, or after an asynchronous allow, or never.
+    window.__gofastr._navAsk({ to: fullPath + navHash, anchor }, () => {
+      // An intercepting route presents as an overlay when reached from
+      // its declared origin. The module owns the URL and the fetch in
+      // that case; returning true means it took the navigation.
+      if (window.__gofastr._intercept?.(fullPath, navHash, anchor)) return;
+      // Capture the origin BEFORE _pushURL syncs currentPath to the
+      // destination, loadPage's X-Gofastr-From must name where the
+      // user came from.
+      const origin = currentPath;
+      _pushPub(fullPath + navHash);
+      loadPage(fullPath, { from: origin });
+    });
   });
 
   // Stateful query params describe in-page state (open panes, widget
@@ -2112,19 +2151,17 @@
     // leave guard declined, and the stack's URLs never moved the
     // router's currentPath, so the diff below would misread them. The
     // module loads only when a route declares an intercept; without it
-    // this is one absent-property read.
-    if (window.__gofastr._interceptPopstate?.()) return;
+    // this is one absent-property read. The navigation-guard module,
+    // once loaded, answers first and calls the intercept hook itself
+    // for the moves it lets through: the history has already moved, so
+    // it undoes a move its guards have not allowed yet.
+    if ((window.__gofastr._navPop || window.__gofastr._interceptPopstate)?.()) return;
     // With manual scrollRestoration the viewport still holds the LEAVING
     // page's position when popstate fires, record it under the old id
     // before switching, so the entry we just left can always restore
     // even if its event-driven capture lagged.
     _scrollStore[_entryId] = [scrollX | 0, scrollY | 0];
-    const st = history.state;
-    _entryId = (st && st.__fui) || 0;
-    if (!_entryId) {
-      _entryId = ++_entrySeq;
-      try { history.replaceState({ __fui: _entryId }, '', location.href); } catch (_) {}
-    }
+    _adopt();
     const path = location.pathname + location.search;
     if (path === currentPath) {
       // Same page, another entry (Back across an in-page #anchor jump):
@@ -2181,17 +2218,21 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
-      // Document boundary: load a real document instead of swapping.
-      // assign/replace keep the push/replace shape the caller asked for.
-      if (crossesDocBoundary(path)) {
-        if (replace) { try { location.replace(path); } catch (_) {} }
-        else location.assign(path);
-        return;
-      }
-      const origin = currentPath;
-      _navRing = void 0; // programmatic: the browser's heuristic decides
-      _pushPub(path, { replace: replace || path === currentPath });
-      loadPage(path, { bypassCache: force, from: origin });
+      replace ||= path === currentPath;
+      this._navAsk({ to: path, replace }, () => {
+        // Document boundary: load a real document instead of swapping.
+        // assign/replace keep the push/replace shape the caller asked
+        // for.
+        if (crossesDocBoundary(path)) {
+          if (replace) { try { location.replace(path); } catch (_) {} }
+          else location.assign(path);
+          return;
+        }
+        const origin = currentPath;
+        _navRing = void 0; // programmatic: the browser's heuristic decides
+        _pushPub(path, { replace });
+        loadPage(path, { bypassCache: force, from: origin });
+      });
     },
 
     // The history-write choke point, exported for the modules that
@@ -2199,6 +2240,24 @@
     // deep links, intercept). Writing history around it leaves
     // currentPath stale and breaks scroll restoration.
     _pushURL,
+    // The tag for an entry a module writes around the choke point (the
+    // intercept stack's raw entries, keeping currentPath on the page
+    // under it): _entryTag(1) for a push, (0) for a replace keeping the
+    // entry.
+    _entryTag,
+
+    /** Replace the current entry's URL without loading anything: the
+        page, its scroll position, the entry's identity and every tag on
+        it stay, and the router's current path follows. true once
+        written. Same-origin URLs under the app's base, in this document
+        (same locale, same document scripts), only: false, and nothing
+        written, for any other, or when the browser refuses the write
+        (the navigation-guard module also refuses one while a guarded
+        Back or Forward is unresolved). */
+    replaceURL(url) {
+      const p = resolvePath(url);
+      return this._sameOrigin(url) && p.startsWith(_locBase() + '/') && !crossesDocBoundary(p) && !_pushPub(url, { replace: true });
+    },
 
     /** Drop cached screens so the next visit re-fetches. Selectors:
         "/orders" drops that pathname AND every cached query variant;

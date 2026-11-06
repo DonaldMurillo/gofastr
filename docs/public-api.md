@@ -35,10 +35,12 @@ Read `stability/stability.go` for the exact rules (longest matching path prefix
 wins). The seed:
 
 - **Provisional**: `framework/` (except `framework/experimental/`), `core/`,
-  `core-ui/`, `battery/`, `sqlite/`, `cmd/`.
-- **Experimental**: `framework/experimental/*`, `kiln/`, `codegen/`.
-- **Internal**: anything under an `internal/` directory, and the `stability`
-  gate package.
+  `core-ui/`, `battery/` (except `battery/desktop` and `battery/service`),
+  `sqlite/`, `cmd/`.
+- **Experimental**: `framework/experimental/*`, `kiln/`, `codegen/`,
+  `battery/desktop`, `battery/service`.
+- **Internal**: anything under an `internal/` directory, the `stability`
+  gate package, and `assets/` (the project's own brand files).
 - **Excluded**: `examples/`, `benchmarks/`, `evals/`, `dist/`.
 
 ## Changing a classification
@@ -48,9 +50,30 @@ manifest in `stability/stability.go`, recorded in the commit message and
 `CHANGELOG.md`. Promotion to Stable is a freeze: do it only when the package's
 exported surface is one you are willing to carry across a major version.
 
-## Proposed extension seams
+## Presentation-host seams
 
 [Presentation-host extension seams](proposals/presentation-host-seams.md)
-proposes supported asynchronous web-navigation guards and listener-free
-application activation for external presentation packages. It is a design
-proposal, not an implemented API or a change to the support tiers above.
+proposed two seams for external presentation packages. Both are now in the
+tree, in tiers the list above already assigns:
+
+- **Application hosts** (`framework/`, Provisional): `App.Run(ctx, host)`, the
+  `framework.Host` interface, the opaque `framework.Session`,
+  `framework.ServicesHost()`, `App.ServicesReady()` and
+  `framework.ErrAlreadyStarted`. `Start` and `Serve` are `Run` with the
+  built-in HTTP host. See
+  [Application hosts](../framework/docs/content/application-hosts.md).
+- **Navigation guards** (`core-ui/runtime`, Provisional): the `navguard`
+  module's `__gofastr.guardNavigation`, and core's `__gofastr.replaceURL`
+  for rewriting the current entry's URL without departing. Both are for
+  renderer libraries, not application code: an app authors its screens
+  in Go and writes no JavaScript to use them. Where the browser has no
+  Navigation API, the guard undoes and replays a Back or Forward by the
+  distance between the tags core writes on every history entry, and with
+  no known distance it pushes no entry. See the
+  [runtime contract](../framework/docs/content/runtime-contract.md).
+
+Underscore-prefixed runtime properties such as `_pushURL` and
+`_interceptPopstate` are internal hooks, not a contract in any tier. The
+proposal tracks what is still open: acceptance of the guard on WebKit
+(its browser tests run Chromium only, with and without the Navigation
+API) and the consumer's migration.

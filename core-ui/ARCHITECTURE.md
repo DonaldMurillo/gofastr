@@ -636,6 +636,286 @@ through to native hash behavior; one without a fragment, including a
 repeat click on a link whose navigation is still loading, is
 suppressed and does nothing, never a whole-document reload.
 
+**Guarding departures (`__gofastr.guardNavigation`).**
+`gofastr:beforenavigate` covers one source, a link the router takes, and
+only a synchronous answer. Code that has to finish something before the
+page goes away (flush a draft to durable storage, ask in its own dialog)
+registers a navigation guard. Every managed departure asks the guards
+before it discards anything: a link, `navigate()`, Back and Forward, and
+the intercept stack's own moves. The guards live in the `navguard` demand
+module, and nothing loads it on its own. Without it a page pays only for
+core's two seams and the history entry tags (below), which core writes
+either way.
+
+```js
+await __gofastr.loadModule('navguard');
+const stop = __gofastr.guardNavigation(async (nav) => {
+  if (!editor.dirty || !nav.affects(editor.root)) return true;
+  return editor.checkpoint({ signal: nav.signal }); // resolves true or false
+});
+// When the editor unmounts:
+stop(); // safe to call more than once
+```
+
+- A guard returns `true` or `undefined` to allow, `false` to deny, or a
+  promise of either. A throw, a rejected promise, or a returned object
+  whose `then` getter throws denies; the error is logged with
+  `console.warn` and reported as `'error'`, and a Back or Forward is put
+  back as on any denial.
+- Guards run in registration order, one at a time: a guard is asked only
+  after every guard before it allowed, and the first denial ends the
+  decision. Order comes from registration alone, never from listener
+  order or from which package replaced a router property last.
+- `guardNavigation(fn)` returns a disposer. A second call does nothing.
+  Disposing a guard while its own answer is pending cancels the attempt:
+  the move does not run, and the report says `'disposed'`. A guard
+  disposed before its turn is skipped; one registered during a decision
+  is first asked on the next move.
+- With no guard registered, or when every guard allows synchronously,
+  the move runs in the same tick it did before the module existed. A
+  move that discards nothing is not asked about: an intercept layer
+  opening over the page, a layer refused at the stack cap, a URL-only
+  write such as `replaceURL()`.
+- There is no timeout and no bypass. A guard that never settles keeps
+  the page where it is until the reader makes another move, which
+  supersedes the attempt. `navigate(path, {force: true})` asks like any
+  other navigate; `force` only skips the cache.
+
+The attempt a guard receives is frozen:
+
+| Field | Meaning |
+|---|---|
+| `id` | A number unique to the attempt, increasing over the page's life. Not consecutive: moves the guards are not asked about take ids too. |
+| `intent` | `'push'` (a link, `navigate()`), `'replace'` (`navigate(path, {replace: true})`, or a forced navigate to the current path), `'traverse'` (Back, Forward, `history.go`), `'overlay'` (a move inside an open intercept stack: Esc, the backdrop, the close control, Back or Forward between layers, a pane's query link, a save returning to a layer). |
+| `from` | `{url, entry}`: the absolute URL of the page the move leaves and the key of the history entry it shows (see "History entries" below). |
+| `to` | `{url, entry}`: the destination's absolute URL, and the key of its entry when that entry already exists (a traversal); `entry` is `null` for a push or a replace, and for an entry no router wrote. |
+| `delta` | The history distance of the move (`-1` for one Back, or for an Esc that closes one layer), or `null` when it is unknown or the move is not a history move. |
+| `signal` | An `AbortSignal`. It aborts with `'superseded'` when a newer move replaces the attempt and with `'disposed'` when the guard being waited on is disposed. An aborted attempt's late answer is dropped and never authorizes a later move. Aborting undoes nothing a guard already did: a checkpoint it wrote stays written. |
+| `affects(node)` | Whether the move discards `node`. A page move discards everything; an overlay move discards only the layers it closes or re-renders. |
+
+**History entries.** Where the browser has the Navigation API, `entry`
+is the entry's `key`. Elsewhere it comes from the tag core writes on
+every history entry it makes: `history.state` carries `__fui` (the
+entry's id) and `__fup` (`[numbering, position]`), and `entry` is
+`numbering:position:id`. A push gets a new id one position past the
+entry it leaves, in that entry's numbering. A replace keeps the entry's
+id, its position and the rest of its state. When the router lands on an
+entry without a tag (the document's first entry, an entry that code
+outside the runtime wrote), it adopts it: the entry keeps its state, and
+its id if it has one, and starts a numbering of its own (a random number,
+position 0), so no position is guessed. The tags live in `history.state`
+and survive a reload. Two entries are a known distance apart only when
+they share a numbering. One URL can name several entries (the same page
+visited twice), so a guard that tracks entries compares `entry`, never
+`url`. Code that writes `history.state` itself keeps the tags by
+spreading the state it replaces (`{...history.state, mine: 1}`). A foreign
+push writes its own state, never a copy of core's entry tags: copying
+those tags would give two entries one identity.
+
+**Back and Forward under a guard.** When `popstate` fires the browser has
+already moved its history, but the router has swapped nothing. A move
+the guards allow synchronously goes straight on. Otherwise the module
+undoes the traversal at once and takes the browser back to the entry the
+page still shows: by key with the Navigation API
+(`navigation.traverseTo`), and without it (Safari before 26.2, Firefox
+before 147) by `history.go(-delta)`, the distance read off the two
+entries' tags. That entry returns with its own state, not as a new entry
+carrying a copy of its URL. The leaving page's DOM, inputs, focus and
+scroll stay as they were. On allow the module goes to the destination
+entry again (by key, or by its distance), and that landing goes on to
+the router, the leave guard and the intercept stack without a second
+ask. On denial the page stays on its own entry and the move is reported.
+A landing counts only on the entry the module was heading for, so a Back
+the reader makes meanwhile is never taken for the undo. No entry is
+added, dropped or rewritten, and nothing reloads. While one of the
+module's own traversals is in flight, a new link or `navigate()` is
+refused (reported as `'pending'`) and `replaceURL()` returns `false`,
+because a write from the wrong entry would cut off the forward history
+being restored; a Back or Forward made during it is overtaken by it.
+
+**When there is no known way back.** The module cannot measure the move
+when the landing has no tag (an entry that code outside the runtime
+wrote), when the two entries are in different numberings (an entry the
+browser makes for a `#fragment` jump starts a numbering of its own, so a
+move of more than one step across it is unknown), when
+`navigation.traverseTo` throws or its commit rejects, or when a fallback
+`history.go` does not reach the entry (a few tries, 2 seconds each).
+Nothing is
+pushed and nothing is cut off then: the browser stays on the landing
+while the page stays on the entry it shows, with the destination's URL
+in the address bar while the guards decide. On allow the landing goes on
+to the router. On denial the module replaces that landing, and only it,
+with the page's URL; the landing keeps its own state and identity (it
+never takes the id of the page's entry), every other entry stays where
+it was, and the report's reason is `'unknown'`. An allowed move whose
+destination cannot be reached after the undo has landed leaves the page
+where it is and also reports `'unknown'`.
+
+Inside an open intercept stack the guards are asked with intent
+`'overlay'`, and `affects` is true only for the layers the move closes
+or re-renders. A Back between layers, or back to the page under the
+stack, is undone the way the stack always undid one (its entries carry
+their positions), and the approval is bound to the entry the retry
+lands on, so no other landing can use it. A Back or Forward that leaves
+the stack for some other page (Back past the page under it to an
+earlier one) is asked as `'traverse'` and undone and replayed like a
+page traversal, by key or by the tags' distance: the stack's entries
+carry core's tags too. A page link clicked inside the stack is asked
+once, before the stack walks back out of history to the page under it.
+
+| Departure | Asked | Notes |
+|---|---|---|
+| A link the router takes | `'push'`; `'overlay'` for a pane's query link inside a stack | After `gofastr:beforenavigate`: a cancelled event never reaches the guards. |
+| `navigate()` | `'push'` or `'replace'` | Also a `data-cui-spa` GET form, a save's `data-cui-rpc-navigate`, and an RPC button or toggle whose answer redirects (asked after the write). A `navigate()` to a document boundary is asked before the document load. |
+| Back, Forward, `history.go` between router pages | `'traverse'` | Includes entries that survived a reload of this document. A move that changes only the fragment is not asked. One that changes only a pane's or a widget's deep-link query loads nothing, but it can close that pane and drop a form in it, which the guards cannot see: it is asked as a page move, and `affects()` is true for every node. |
+| Moves inside an intercept stack | `'overlay'`; `'traverse'` for a Back or Forward that leaves the stack for a page other than the one under it | |
+| A redirect inside a partial navigation | no second ask | The move was asked once; the redirect leg replaces its entry. |
+| An intercepted POST or JSON form whose answer redirects | no | The runtime loads the target as a new document after the write. |
+| `refresh()`, `invalidate()` | no | They re-render or evict in place. |
+| URL-only writes (`replaceURL()`, pagination, widget deep links, `X-Gofastr-Push-State`) | no | They record state; nothing departs. A later Back or Forward across their entries is asked like any other. |
+| Reload, tab close, the address bar, external links, links marked `data-cui-nav="off"`, document-boundary links | no | Browser loads; only `beforeunload` can prompt. |
+| Back or Forward onto an entry of another document | no | The browser loads that document, or restores it from the back-forward cache. |
+| `history.pushState` from code outside the runtime | the write is not asked | A later Back or Forward onto that entry is asked as `'traverse'` when its URL differs from the router's page. The entry has no tag, so the move has no known way back (see above). |
+
+A blocked move dispatches `gofastr:navigateblocked` on `window`, with
+`detail: {attempt, reason, error}`. `reason` is `'denied'`, `'error'` (a
+guard threw or rejected, and `error` holds what it threw), `'disposed'`,
+`'pending'`, or `'unknown'` (refused with no known way back, as above;
+`error` holds a guard's throw if one caused the refusal). A superseded
+attempt does not report: the newer move replaced it. A denial leaves the page interactive, so a guard that wants
+to tell the reader why says so itself or listens for this event.
+
+Order with the older hooks: `gofastr:beforenavigate` listeners, the leave
+guard's link ask among them, run before the guards, and so does the
+leave guard's ask on a `data-cui-spa` GET form. On Back, Forward and the
+stack's moves the guards run first and the leave guard after them. A
+leave-guard Discard makes the move again, which asks the guards again:
+with the kit's themed dialog a guard is asked twice about one Back the
+reader discards, once before the dialog and once for the replay. When
+the leave guard itself declines a Back or Forward, its own repair
+applies, as without this module: back by the distance its own tags
+give, or, when it has none, a push of the page's URL again.
+
+A host shell that held a departure by wrapping `_interceptPopstate` or
+`_pushURL` registers a guard instead, and no package needs to replace a
+router property to take part. The guards see the departures those
+wrappers saw (Back and Forward, the stack's moves, the router's own
+pushes) and links and `navigate()` besides. They are not asked about
+URL-only writes, which a `_pushURL` wrapper also saw: pagination, deep
+links, `X-Gofastr-Push-State`, `replaceURL()`. A shell that rewrote the
+address with `_pushURL(url, {replace: true})` calls `replaceURL(url)`.
+
+**Rewriting the address (`__gofastr.replaceURL(url)`).** Replaces the URL
+of the history entry the browser is on, and does nothing else: no fetch,
+no `gofastr:navigate`, no guard asked, no view transition. The page, its
+scroll position and focus, and the entry's id, position and every other
+key on its state stay; `__gofastr.currentPath` follows. Inside an open
+intercept stack the top layer's entry takes the URL and `currentPath`
+stays on the page under the stack, as for every URL write there. It
+returns `true` once written, and `false`, with nothing written, for a URL
+on another origin (a `javascript:` URL included), a path outside the
+app's base, one in another document (another locale, or a route with
+other document scripts), or a write the browser refuses (Safari limits
+how often a page may write its history). With the `navguard` module
+loaded it also returns `false` while a guarded Back or Forward is
+unresolved. A later Back or Forward from the rewritten entry is measured
+like any other, because it is the same entry.
+
+**How the guards are built.** Core carries two seams and the entry tags.
+The kernel's `_navAsk(o, go)` is the departure seam: the link handler
+(after `gofastr:beforenavigate`) and `navigate()` pass the move and its
+continuation, and until the module loads `_navAsk` runs the
+continuation at once. The router's popstate handler asks `_navPop` when
+it exists and `_interceptPopstate` otherwise; `_navPop` calls
+`_interceptPopstate` itself for each landing it lets through. Loading
+`navguard` replaces `_navAsk`, wraps `replaceURL` (refused while the
+browser may not be on the entry the page shows), and defines `_navPop`,
+`_navGate` (the intercept module's `guardOK` calls it before the leave
+guard) and `_navHold` (a page link's approval, kept for the stack's walk
+back out of history: single use, bound to the URL).
+
+Core writes the tags in `_pushURL`, the one history-write choke point,
+and exports `_entryTag(step)` for the writes made around it:
+`_entryTag(1)` for a push, `_entryTag(0)` for a replace that keeps the
+entry's id and position. The intercept stack's raw entries, its
+hand-back to the router and the module's rename of a refused landing
+use it. `_adopt()` tags an untagged entry at boot and on each popstate
+the router takes, keeping the state already there.
+
+- One decision is live at a time. A new move supersedes it: the signal
+  aborts, the late answer is dropped, and any approval it left is
+  cleared, so an old allow can never let a newer move through.
+- An approved continuation runs under a pass bound to its destination
+  URL. A synthetic popstate inside it (the stack's hand-back to the
+  router) or the stack's own retry is recognized as the decided move and
+  not asked again. The pass clears when the continuation returns.
+- The module tracks the entry the page shows. A push or a replace moves
+  it at once; a traversal moves it only when the module lets the
+  traversal through. The undo heads for that entry:
+  `navigation.traverseTo(shownKey)` with the API, `history.go(distance)`
+  from the tags without it. While it is in flight the module swallows
+  every popstate until the landing on that entry, then heads for the
+  destination entry the same way on allow, or stays on denial. Without
+  the API a landing elsewhere (a Back the reader made, a `go` the
+  browser dropped) is measured again from where the browser is, and the
+  module heads on after 100 ms: a few tries at most, 2 seconds each. The
+  replayed landing is the one the router, the leave guard and the stack
+  see.
+- With no way to get there, the module looks at where the browser is.
+  On the shown entry, the undo is done (or, after it, the destination is
+  out of reach: `'unknown'`). Still on the landing, the move waits there:
+  an allow dispatches a popstate to the router under a pass, and a
+  denial replaces that landing with `{...state, ..._entryTag(0)}` and
+  the page's URL, so the landing keeps its own id and position.
+  Anywhere else a move of the reader's overtook it, and the module asks
+  about the browser's entry afresh.
+- The stack undoes its own moves by distance (its entries are tagged
+  with their positions). The gate binds the approval to the entry the
+  retry lands on (the key, or the URL plus `history.state` without the
+  API) and holds the retry until the undo has landed. A move off the
+  stack to a page further afield has no distance the stack knows, so the
+  gate undoes it like a page traversal, by key or by core's tags, and
+  returns `null` (handled) instead of `false`, which would make the
+  stack push its top entry again.
+
+**Browser facts the guards depend on**, each pinned by
+`navguard_e2e_test.go` or `navguard_history_e2e_test.go`:
+
+- Chromium drops a `history.go()` issued before the previous traversal
+  has landed. An allow that arrives before the stack's undo lands would
+  lose its retry, so the gate holds the retry for the undo's popstate
+  (`TestNavGuardOverlayDepartures/back-allowed-before-undo-lands`).
+- `popstate` fires after the entry has changed and cannot be cancelled.
+  Only `traverseTo` by key returns to the same entry; a `pushState` of
+  the same URL makes a new entry and drops the forward history
+  (`TestNavGuardRepeatedURLsAreDistinctEntries`).
+- After a reload, the document's earlier `pushState` entries are still
+  same-document (`sameDocument: true`), so Back onto them fires
+  `popstate` in the reloaded document and is asked (`TestNavGuardLimits`).
+  Their `history.state`, tags included, comes back with them, so the
+  distance is still known (`TestNavGuardHistoryReload`).
+- Without the API, a `history.go()` made inside a `popstate` handler
+  while another traversal is queued is dropped, and two `history.back()`
+  calls in one task both run. The fallback therefore measures again from
+  the entry the browser is on after each landing instead of trusting a
+  count (`TestNavGuardHistorySecondBackWhilePending`,
+  `TestNavGuardHistoryTwoBacksInOneTask`).
+- An entry made by a document load (a link with `data-cui-nav="off"`) is
+  cross-document: Back onto it loads that document, and the
+  back-forward cache may restore it whole, scripts and globals
+  included. A browser test that asserts on the page after such a Back
+  checks which document it is on, not a global the restored document
+  still carries.
+
+The history tests compare the browser's own entry list, read over CDP
+(`Page.getNavigationHistory`), before and after each move, so "no entry
+added, dropped or rewritten" is checked against the browser rather than
+`history.length`. Each runs twice: with the Navigation API, and with
+`window.navigation` removed before the page's scripts run. That second
+run is Chromium without the API, not Safari or Firefox; neither engine
+runs in this suite. `TestNavGuardHistoryMutationsAreCaught` takes each
+check the contract rests on out alone and requires a scenario to fail.
+
 **Widget lifecycle events (`fui:widget-open` / `fui:widget-close`).**
 The widgets module dispatches `fui:widget-open` on `document` at the
 end of `mountWidget`, once the root is in the DOM and wired: once per
@@ -884,7 +1164,9 @@ the first open, with the layer the click happened in as the origin
 stacks over). Each open is one `pushState`, inside the tab's history;
 the router's `currentPath` deliberately stays on the page under the
 stack, so the router's own popstate diff never refetches the list
-underneath (the module claims those history moves first). At most
+underneath (the module claims those history moves first; with the
+navigation guards loaded, their popstate hook runs before it and hands
+it each landing they let through). At most
 four layers (a record and three related records over it): a fifth
 intercepted open is REFUSED with a warning toast, fetching nothing and
 leaving the stack, the URL and every layer's content as they were, so
@@ -911,10 +1193,14 @@ form in a layer carrying `data-hui-leave-guard` asks before any of
 these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
+The navigation guards are asked about the same moves, before the leave
+guard, with intent `'overlay'` and `affects` naming the layers the move
+discards (see "Guarding departures" above).
 
 URL-only writes through the shared `_pushURL` helper (pagination and
 deep-linked widgets included) belong to the top intercept pane's history
-span. Replace rewrites its current entry; push extends the span. Closing
+span. Replace rewrites its current entry, keeping its id, position and
+state (`replaceURL()` included); push extends the span. Closing
 consumes the whole span without changing the router's underlying path.
 A refused history write changes neither the pane's URL nor its span.
 Successful writes retain the browser-resolved path, query and fragment,
@@ -1592,7 +1878,9 @@ The plain-form bridge carries the activated submitter's name/value and its
 `formaction`, `formmethod`, `formenctype`, and `formtarget` overrides. Alternate
 browsing targets, dialog and image submissions, and plain-text POSTs stay native.
 GET client navigation asks the existing leave guard at document scope before
-discarding edits; Cancel stays put and Discard retries the complete URL. A
+discarding edits; Cancel stays put and Discard retries the complete URL.
+The submit then goes through `navigate()`, so the navigation guards are
+asked too, after the leave guard. A
 plain form whose RPC module cannot load replays native submission with the
 original submitter. JSON/RPC-only forms retain their failure behavior instead
 of being sent with an unsupported native encoding.
@@ -1604,7 +1892,9 @@ When the interceptor IS active and the handler responds with a `30x`
 (`window.location.assign`): the target may not be in the SPA route
 table, and the load resets the SSE connection the way a native form
 submit would. For the non-intercepted default path, redirect-following
-is the browser's own job, same result.
+is the browser's own job, same result. That load comes after the write
+and does not ask the navigation guards: a guard that must run before a
+form leaves the page acts before the submit, not on the redirect.
 
 An answer that is not a redirect is handled as on a `data-cui-rpc`
 form. A refusal (non-2xx) renders the server's validation envelope

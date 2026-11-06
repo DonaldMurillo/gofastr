@@ -11,11 +11,9 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path"
 	"reflect"
 	"runtime"
@@ -26,7 +24,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlprefix"
@@ -358,6 +355,23 @@ type App struct {
 	// down again. Guarded by shutdownMu.
 	shutdownMu   sync.Mutex
 	shutdownDone chan struct{}
+	// Run state (host.go), guarded by serverMu. runHost is the host the
+	// one admitted run was given; booting is set from admission until the
+	// engine hands the App to the host or aborts; stopRequested latches
+	// at the first Shutdown. teardownToEngine records a Shutdown that
+	// arrived during boot and left the teardown to the engine, and
+	// handoffCtx is that Shutdown's context, which the teardown runs on;
+	// the engine takes both when boot ends and passes the result back in
+	// handoffErr (written before shutdownDone closes, read after).
+	// servicesReady is App.ServicesReady's channel.
+	runHost             Host
+	booting             bool
+	stopRequested       bool
+	teardownToEngine    bool
+	handoffCtx          context.Context
+	handoffErr          error
+	servicesReady       chan struct{}
+	servicesReadyClosed bool
 	// draining is set when Shutdown starts: /readyz answers 503 from
 	// then on, through the readiness grace and the drain after it.
 	draining atomic.Bool
@@ -3147,12 +3161,17 @@ func (a *App) lookupHookRegistry(entityName string) *hook.HookRegistry {
 	return a.hooks[entityName]
 }
 
-// OnStart registers a function to run once during App.Start, before the
-// HTTP server begins accepting connections. The context passed in is
-// cancelled when Stop is called, so workers should respect it.
+// OnStart registers a function to run once during boot (Run, Start or
+// Serve), after plugin Init and before the host starts its transport (for
+// Start, before the HTTP server begins accepting connections). The
+// context passed in is the App's lifecycle context, cancelled when
+// Shutdown begins, so workers should respect it.
 //
 // Hooks run in registration order; the first to return a non-nil error
-// aborts Start.
+// aborts the run. No later hook starts once Shutdown has begun. To stop
+// the App from a hook, return an error: a Shutdown called synchronously
+// from inside one waits out its own deadline, and with no deadline never
+// returns (see Run).
 func (a *App) OnStart(fn func(ctx context.Context) error) *App {
 	a.startHooks = append(a.startHooks, fn)
 	return a
@@ -3164,7 +3183,10 @@ func (a *App) OnStart(fn func(ctx context.Context) error) *App {
 // arrives with the real port), so it is safe to print in a startup
 // banner: every earlier phase, auto-migrate, seeds, plugin init, OnStart
 // hooks, and the bind itself, has already succeeded. Hooks run in
-// registration order and must not block.
+// registration order and must not block, and none starts once Shutdown
+// has begun. OnReady is HTTP transport readiness: Run with a host that
+// binds no listener (ServicesHost) refuses an App that registers one.
+// ServicesReady reports service readiness under any host.
 func (a *App) OnReady(fn func(addr string)) *App {
 	a.readyHooks = append(a.readyHooks, fn)
 	return a
@@ -3249,12 +3271,17 @@ func (a *App) AddCron(s *cron.Scheduler) *App {
 // runStartHooks fires every OnStart hook with the app's lifecycle context.
 // Battery lifecycle hooks are called first, then app-level start hooks.
 // Returns the first error so Start aborts cleanly before binding the port.
+// Once Shutdown has begun it starts nothing more and returns
+// context.Canceled, which the engine treats as a graceful stop.
 func (a *App) runStartHooks() error {
 	a.ensureLifecycleContext()
 
 	// Start batteries in dependency order
 	if err := a.Batteries.StartAll(a.appCtx); err != nil {
 		return err
+	}
+	if a.stopRequestedNow() {
+		return context.Canceled
 	}
 
 	// Start the process-module supervisor's per-module loops (issue #37).
@@ -3267,6 +3294,9 @@ func (a *App) runStartHooks() error {
 
 	// Then app-level start hooks (cron, queues, custom)
 	for _, fn := range a.startHooks {
+		if a.stopRequestedNow() {
+			return context.Canceled
+		}
 		if err := a.runStartHookSafe(fn); err != nil {
 			return err
 		}
@@ -3384,8 +3414,32 @@ func (a *App) closeNewConns() {
 // concurrent call waits for it to finish, then returns nil, or returns
 // ctx's error if its own ctx ends first.
 //
+// Called while the App is still booting, Shutdown cancels the lifecycle
+// context, and the run tears down once its current phase returns, before
+// any later phase or the host starts. The teardown runs on ctx, with its
+// deadline and values; Shutdown waits for it and returns its error, or
+// returns ctx's error once ctx ends first. A teardown whose ctx ended
+// before the phase returned runs on a fresh five-second budget that keeps
+// ctx's values, so the cleanup is neither dropped nor unbounded. Called
+// synchronously from inside a boot callback (a seed, an OnStart hook, a
+// BootValidator), Shutdown waits for a teardown that cannot start until
+// the callback returns: it returns at ctx's deadline, and with no
+// deadline it never returns. Return an error from the callback instead,
+// or call Shutdown on another goroutine. Called before any run, Shutdown
+// tears down what was registered, and a later Run, Start or Serve returns
+// nil without starting. The host's Stop runs where the HTTP server's
+// drain always has: after the readiness grace and before batteries stop.
+//
 // Call this from your signal handler.
 func (a *App) Shutdown(ctx context.Context) error {
+	_, err := a.stop(ctx)
+	return err
+}
+
+// stop is Shutdown. began reports whether this call began the teardown,
+// so err is the teardown's own; a later or concurrent call only waits for
+// it.
+func (a *App) stop(ctx context.Context) (began bool, err error) {
 	// A second call used to find the server already detached and go
 	// straight to stopping batteries: sequentially every OnStop ran
 	// twice, and concurrently (a signal handler plus a deferred Shutdown)
@@ -3398,16 +3452,42 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.shutdownMu.Unlock()
 		select {
 		case <-done:
-			return nil
+			return false, nil
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 	}
 	done := make(chan struct{})
 	a.shutdownDone = done
+	// Record the stop under the lock admission and the end of boot take,
+	// so no run starts its host, and none starts at all, after this.
+	a.serverMu.Lock()
+	a.stopRequested = true
+	handoff := a.booting
+	a.teardownToEngine = handoff
+	if handoff {
+		a.handoffCtx = ctx
+	}
+	cancel := a.appCancel
+	a.serverMu.Unlock()
 	a.shutdownMu.Unlock()
+	if handoff {
+		// A boot phase is running. Tearing down under it would stop
+		// batteries a start hook is still starting and close the store a
+		// migration is writing. Cancel it instead; the engine tears down
+		// on ctx when the phase returns and passes the result back.
+		if cancel != nil {
+			cancel()
+		}
+		select {
+		case <-done:
+			return true, a.handoffErr
+		case <-ctx.Done():
+			return true, ctx.Err()
+		}
+	}
 	defer close(done)
-	return a.shutdown(ctx)
+	return true, a.shutdown(ctx)
 }
 
 // shutdown is Shutdown's teardown, run once.
@@ -3420,8 +3500,8 @@ func (a *App) shutdown(ctx context.Context) error {
 	a.serverMu.Lock()
 	cancel := a.appCancel
 	a.appCancel = nil
-	srv := a.server
 	a.server = nil
+	host := a.runHost
 	a2aSrv := a.a2a
 	a.serverMu.Unlock()
 	if cancel != nil {
@@ -3436,25 +3516,12 @@ func (a *App) shutdown(ctx context.Context) error {
 			firstErr = fmt.Errorf("stopping a2a runs: %w", err)
 		}
 	}
-	if srv != nil {
-		// A connection that never sent a request would hold the drain
-		// for five seconds. srv.Shutdown closes those through the
-		// closeNewConns hook Start registered, once its listener is
-		// closed: the stream end below can take two seconds, and a
-		// connection accepted during it would be missed by a close run
-		// here.
-		//
-		// An event stream never goes idle and a WebSocket is outside the
-		// drain: end each one now rather than wait out the deadline on
-		// it or leave it serving past Shutdown (shutdown_streams.go).
-		a.streams.endAll(ctx)
-		if err := srv.Shutdown(ctx); err != nil {
-			// Bounded drain: the deadline expired with connections still
-			// open (an SSE stream never goes idle, so Server.Shutdown
-			// alone would leave it, and the process, hanging).
-			// Force-close the stragglers so shutdown completes.
-			_ = srv.Close()
-			firstErr = fmt.Errorf("draining http server: %w", err)
+	// The host releases its transport next: the HTTP host drains its
+	// server here (host_http.go), and a host stopped during boot releases
+	// what it already holds.
+	if host != nil {
+		if err := a.stopHost(ctx, host); err != nil {
+			firstErr = err
 		}
 	}
 
@@ -3544,8 +3611,9 @@ func (a *App) runSeedHooksSerialized() error {
 }
 
 // ensureLifecycleContext lazily creates the app's cancellable lifecycle
-// context under serverMu, the same lock that guards server. Start and
-// runStartHooks both call this before binding the port, and Shutdown
+// context under serverMu, the same lock that guards server. Run's
+// admission creates it from the caller's context values; the seed and
+// start hook phases call this for callers that run them directly. Shutdown
 // reads/nils appCancel under the same lock, so a SIGTERM-driven Shutdown
 // racing pre-listen setup is data-race free.
 func (a *App) ensureLifecycleContext() {
@@ -3593,8 +3661,15 @@ func (a *App) warnUnresolvableRelations() {
 	}
 }
 
-// Start starts the HTTP server on the given address.
-func (a *App) Start(addr string) error { return a.start(addr, nil) }
+// Start boots the app and serves it over HTTP on addr. It is Run with
+// the built-in HTTP host: the lifecycle engine runs every boot phase
+// (Run documents the order and the stop rules), then the host binds addr
+// (worktree isolation may remap it), fires OnReady and serves until
+// Shutdown, after which Start returns nil. Start installs a SIGINT and
+// SIGTERM handler unless AppConfig.DisableSignalHandling is set.
+func (a *App) Start(addr string) error {
+	return a.run(context.Background(), &httpHost{app: a, addr: addr})
+}
 
 // Serve runs the app exactly as Start does (migrate, seed, init plugins,
 // start hooks, the composed handler chain, OnReady, graceful Shutdown),
@@ -3603,12 +3678,15 @@ func (a *App) Start(addr string) error { return a.start(addr, nil) }
 // for a mobile shell's WebView, where no socket may be opened, or a
 // listener a supervisor already holds. Worktree isolation does not
 // remap a caller-supplied listener. OnReady hooks receive
-// ln.Addr().String(). Serve closes ln when it returns.
+// ln.Addr().String(). Serve closes ln when it returns, on every path,
+// a refused or failed start included.
 func (a *App) Serve(ln net.Listener) error {
 	if ln == nil {
 		return errors.New("framework: Serve: nil listener")
 	}
-	return a.start("", &onceCloseListener{Listener: ln})
+	l := &onceCloseListener{Listener: ln}
+	defer func() { _ = l.Close() }()
+	return a.run(context.Background(), &httpHost{app: a, ln: l})
 }
 
 // onceCloseListener closes the caller's listener once however many
@@ -3671,189 +3749,62 @@ func (a *App) resolveListenAddr(addrp *string) error {
 	return nil
 }
 
-// start is Start and Serve: ln nil binds addr, a non-nil ln is served
-// as given.
-func (a *App) start(addr string, ln net.Listener) error {
-	if ln != nil {
-		// Every return closes a caller-supplied listener, the early
-		// aborts included (Serve's contract); the bind path closes its
-		// own listener after binding.
-		defer func() { _ = ln.Close() }()
+// bootSetup checks first-run setup status (WithSetup). When incomplete
+// and not disabled via GOFASTR_SETUP=off, the run either executes the
+// steps inline (headless: every required env present) or reports
+// interactive, and the HTTP host defers consumer startup and serves the
+// wizard until the final step completes. Worker role + incomplete setup
+// is a hard error: setup touches tables the worker's consumers would
+// race on. So is a host with no HTTP listener (web false), which cannot
+// serve the wizard.
+func (a *App) bootSetup(web bool) (interactive bool, err error) {
+	if a.setup == nil {
+		return false, nil
 	}
-	// Opt-in via GOFASTR_SEMANTIC_COVERAGE=1, so an integration test that
-	// drives the real binary over HTTP still records what it exercised.
-	// No-op in every other process.
-	a.enableSemanticCoverageFromEnv()
-
-	if len(a.pendingEndpoints) > 0 {
-		return fmt.Errorf("EntityEndpoints queued endpoints for %s, which no App.Entity call registered", strings.Join(slices.Sorted(maps.Keys(a.pendingEndpoints)), ", "))
+	mode, err := resolveSetupEnv()
+	if err != nil {
+		return false, fmt.Errorf("setup: %w", err)
 	}
-	if err := a.checkRequestWriteTimeouts(); err != nil {
-		return err
+	if mode == setupOff {
+		return false, nil
 	}
-
-	network := "tcp"
-	if ln != nil {
-		// A caller-supplied listener is served as given: there is no
-		// address to remap, and the guards below read its own address
-		// and network.
-		addr, network = ln.Addr().String(), ln.Addr().Network()
-	} else if err := a.resolveListenAddr(&addr); err != nil {
-		return err
+	incomplete, err := a.setup.Incomplete(a.appCtx)
+	if err != nil {
+		return false, fmt.Errorf("setup: %w", err)
 	}
-
-	// Create the app's lifecycle context early so AutoMigrate, RunSeeds,
-	// InitPlugins, and runStartHooks all share a single cancellable
-	// context. A failure in any of these phases calls Shutdown, which
-	// cancels the context and drains any goroutines an earlier phase
-	// spawned. Without this, a startHook that spawns a worker before a
-	// later startHook fails would leak that worker past Start returning.
-	a.ensureLifecycleContext()
-
-	a.warnUnresolvableRelations()
-	a.guardDevMCPBind(listenAddrFor(addr), network)
-	a.guardDevLiveReloadBind(listenAddrFor(addr), network)
-
-	abort := func(err error) error {
-		// Read the shutdown state BEFORE draining: the drain below calls
-		// Shutdown itself, which always cancels the lifecycle context, so
-		// checking afterwards could not tell an external Shutdown from
-		// abort's own. appCancel nil + appCtx cancelled together mean a
-		// concurrent Shutdown already ran.
-		a.serverMu.Lock()
-		wasShutDown := a.appCancel == nil && a.appCtx != nil && a.appCtx.Err() != nil
-		a.serverMu.Unlock()
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-		_ = a.Shutdown(shutdownCtx)
-		// A phase failing with context.Canceled because the app's own
-		// Shutdown cancelled the lifecycle context is a graceful stop,
-		// not a failure: Start returns nil for a shutdown at any later
-		// point, and a SIGTERM mid-migration deserves the same answer.
-		if err != nil && wasShutDown && errors.Is(err, context.Canceled) {
-			return nil
+	if mode != setupForce && !incomplete {
+		return false, nil
+	}
+	if a.role == RoleWorker {
+		return false, fmt.Errorf("setup incomplete: run a serve/all process to complete setup first")
+	}
+	canHeadless, err := a.setup.CanRunHeadless(a.appCtx)
+	if err != nil {
+		return false, fmt.Errorf("setup: %w", err)
+	}
+	if canHeadless {
+		if err := a.setup.RunSteps(a.appCtx); err != nil {
+			return false, fmt.Errorf("setup: %w", err)
 		}
-		return err
+		// Headless bootstrap finished. Proceed normally.
+		return false, nil
 	}
+	if !web {
+		return false, errors.New("setup incomplete: the interactive setup wizard needs an HTTP host; supply every required setup value so setup runs headless, or complete setup through Start once")
+	}
+	return true, nil
+}
 
-	if err := a.migrateAndSeed(); err != nil {
-		return abort(err)
-	}
-	// App-level seed hooks (App.WithSeed). Run after auto-migration + the
-	// per-entity RunSeeds phase so every table exists, and before plugins
-	// init so a plugin that reads seed data sees it. Serialize across
-	// replicas behind the SAME advisory lock as RunSeeds ( DISTINCT from
-	// the migration lock) so two booting replicas don't race a hook.
-	// WithSeed hooks have no ledger. They serialize-per-boot but still
-	// run on every replica, so keep them idempotent. SQLite is unwrapped
-	// (single-process; the lock pin would fight the pool the hooks use).
-	// With no DB the call is unchanged (no coordination to do).
-	if err := a.runSeedHooksSerialized(); err != nil {
-		return abort(fmt.Errorf("seed hooks: %w", err))
-	}
-
-	// Initialize plugins and batteries (routes, middleware, tools, hooks).
-	// Must happen after auto-migrate (so entity tables exist) but before
-	// start hooks (so batteries can reference their routes).
-	schemaBefore := a.schemaSize()
-	if err := a.InitPlugins(); err != nil {
-		return abort(fmt.Errorf("init plugins: %w", err))
-	}
-	// An entity, view or routine declared from a battery's or module's
-	// Init (the pattern modules.md documents) missed the pass above, so
-	// migrate and seed again. Both are idempotent: what the first pass
-	// covered diffs to nothing and its seeds are in the ledger.
-	if a.schemaSize() != schemaBefore {
-		if err := a.migrateAndSeed(); err != nil {
-			return abort(fmt.Errorf("after init plugins: %w", err))
-		}
-	}
-	// `gofastr export` runs the app with GOFASTR_EXPORT set: export
-	// every page now (migrations and seeds have run, so data-backed
-	// pages render their rows) and return instead of serving.
-	if dir := os.Getenv(envExport); dir != "" {
-		res, err := a.exportStatic(a.appCtx, dir, os.Getenv(envExportBase))
-		if err != nil {
-			return abort(fmt.Errorf("export: %w", err))
-		}
-		// The receipt goes last: it says the export above is complete.
-		if err := writeExportReceipt(dir, os.Getenv(envExportRun), len(res.Pages)); err != nil {
-			return abort(fmt.Errorf("export receipt: %w", err))
-		}
-		a.Logger().Info("static export written", "dir", dir)
-		return abort(nil)
-	}
-	// Check first-run setup status (WithSetup). When incomplete and not
-	// disabled via GOFASTR_SETUP=off, Start either runs the steps inline
-	// (headless: every required env present) or defers consumer startup
-	// and serves the interactive wizard until the final step completes.
-	// Worker role + incomplete setup is a hard error. Setup touches
-	// tables the worker's consumers would race on.
-	setupInteractive := false
-	var setupURL string
-	if a.setup != nil {
-		mode, err := resolveSetupEnv()
-		if err != nil {
-			return abort(fmt.Errorf("setup: %w", err))
-		}
-		if mode != setupOff {
-			incomplete, err := a.setup.Incomplete(a.appCtx)
-			if err != nil {
-				return abort(fmt.Errorf("setup: %w", err))
-			}
-			if mode == setupForce || incomplete {
-				if a.role == RoleWorker {
-					return abort(fmt.Errorf("setup incomplete: run a serve/all process to complete setup first"))
-				}
-				canHeadless, err := a.setup.CanRunHeadless(a.appCtx)
-				if err != nil {
-					return abort(fmt.Errorf("setup: %w", err))
-				}
-				if canHeadless {
-					if err := a.setup.RunSteps(a.appCtx); err != nil {
-						return abort(fmt.Errorf("setup: %w", err))
-					}
-					// Headless bootstrap finished. Proceed normally.
-				} else {
-					setupInteractive = true
-				}
-			}
-		}
-	}
-
-	// Run OnStart hooks (cron/queue workers, custom setup). Failure here
-	// aborts before we bind the port, better than a half-up server.
-	// Deferred when interactive setup is active: the hooks may start
-	// consumers that touch tables setup owns. They run inside the swap
-	// callback once setup completes.
-	if !setupInteractive {
-		if err := a.runStartHooks(); err != nil {
-			return abort(fmt.Errorf("start hooks: %w", err))
-		}
-	}
-
-	// Start the outbox relay (WithOutbox). Runs on the app lifecycle
-	// context so Shutdown cancels it; the returned stop func is also
-	// registered as an OnStop drainer so shutdown blocks until the loop
-	// has fully exited: no half-delivered batch outlives the process.
-	// Worker-scoped: a serve-only process stages rows (StageEvent runs in
-	// the write transaction regardless of role) but never claims them.
-	// Delivery belongs to the worker/all processes.
-	// Deferred when interactive setup is active (started in the swap).
-	if a.outbox != nil && a.runsWorkers() && !setupInteractive {
-		stopRelay := a.outbox.StartRelay(a.appCtx)
-		a.OnStop(func() error {
-			stopRelay()
-			return nil
-		})
-	}
-
+// finalizeRoutes registers the routes that need the complete app (the
+// OpenAPI spec, llm.md, metrics, MCP and A2A mounts, well-known
+// documents, the API 404, health), then runs the deferred BootValidator
+// checks. It reports which documents the startup banner may advertise.
+func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 	// Auto-generate and serve OpenAPI spec. Only when the app actually
 	// declares entities, a UI-only app (e.g. a content site) has an
 	// empty registry and gets none of these routes. The startup banner
-	// below keys off the same flags so it never advertises a 404.
-	hasAPI := len(a.Registry.All()) > 0
-	hasLLMMD := false
+	// keys off the same flags so it never advertises a 404.
+	hasAPI = len(a.Registry.All()) > 0
 	if hasAPI {
 		appName := a.Config.Name
 		if appName == "" {
@@ -3953,7 +3904,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 	// built from a.MCP.ListTools().
 	if a.a2aCfg != nil {
 		if err := a.mountA2A(); err != nil {
-			return abort(err)
+			return hasAPI, hasLLMMD, err
 		}
 	}
 	if a.mcpAutoMount {
@@ -4026,237 +3977,7 @@ func (a *App) start(addr string, ln net.Listener) error {
 		}
 	}
 
-	name := a.Config.Name
-	if name == "" {
-		name = "gofastr"
-	}
-
-	// Set process title so it shows in ps / Activity Monitor
-	os.Args[0] = "gofastr-" + name
-
-	a.serverMu.Lock()
-	// Resolve the real handler (full router for all/serve, health mux
-	// for worker). When interactive setup is active, the server delegates
-	// to whatever handlerCell currently points at, initially the setup
-	// wizard, swapped to realHandler by the swap callback on completion.
-	realHandler := a.roleHandler()
-	serveHandler := realHandler
-	if setupInteractive {
-		var swapOnce sync.Once
-		swap := func() {
-			swapOnce.Do(func() {
-				// Serve the real router first: setup IS complete (the
-				// runner only swaps after its Complete predicate flips),
-				// so the app must never keep answering 503 from here on.
-				a.handlerCell.Store(&servingHandler{h: realHandler})
-				// Start the deferred consumers. A failure here gets the
-				// same fail-loud semantics as the identical failure at
-				// normal boot (which aborts Start): log and shut down.
-				// The process exits, and the NEXT boot finds setup
-				// complete and runs the hooks on the normal Start path,
-				// failing Start properly. Silently running without
-				// consumers would be a half-up server.
-				if err := a.runStartHooks(); err != nil {
-					a.Logger().Error("setup: deferred start hooks failed; shutting down (restart will boot normally and surface this error at Start)", "error", err)
-					go func() {
-						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-						defer cancel()
-						_ = a.Shutdown(ctx)
-					}()
-					return
-				}
-				if a.outbox != nil && a.runsWorkers() {
-					stopRelay := a.outbox.StartRelay(a.appCtx)
-					a.OnStop(func() error {
-						stopRelay()
-						return nil
-					})
-				}
-			})
-		}
-		liveness, readiness := a.healthHandlers()
-		a.handlerCell.Store(&servingHandler{h: a.setup.Handler(swap, liveness, readiness)})
-		serveHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if cell := a.handlerCell.Load(); cell != nil {
-				cell.h.ServeHTTP(w, r)
-			} else {
-				realHandler.ServeHTTP(w, r)
-			}
-		})
-	}
-	for i := len(a.serverWrappers) - 1; i >= 0; i-- {
-		serveHandler = a.serverWrappers[i](serveHandler)
-	}
-	serveHandler = a.serveLocale(serveHandler)
-	// Outermost, so a stream's context is the one every layer below sees.
-	serveHandler = a.endStreamsOnShutdown(serveHandler)
-	a.serverWrapped = true
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           serveHandler,
-		ConnState:         a.trackConnState,
-		ReadHeaderTimeout: defaultServerReadHeaderTimeout,
-		ReadTimeout:       defaultServerReadTimeout,
-		WriteTimeout:      defaultServerWriteTimeout,
-		IdleTimeout:       defaultServerIdleTimeout,
-	}
-	// net/http runs this right after Shutdown closes the listener, so it
-	// also closes a connection accepted while Shutdown ended the streams.
-	// The server is new on every Start, so the hook is registered once.
-	srv.RegisterOnShutdown(a.closeNewConns)
-	// Apply host overrides (AppConfig.HTTPServerTimeouts / WithHTTPServerTimeouts).
-	// Each field is *time.Duration: nil keeps the default above; an explicit
-	// pointer, including one to 0, wins. net/http treats a zero duration as
-	// "no timeout", so a pointer to 0 disables that one deadline rather than
-	// falling back to the default, which a plain time.Duration field could not
-	// express.
-	to := a.Config.HTTPServerTimeouts
-	if to.ReadHeaderTimeout != nil {
-		srv.ReadHeaderTimeout = *to.ReadHeaderTimeout
-	}
-	if to.ReadTimeout != nil {
-		srv.ReadTimeout = *to.ReadTimeout
-	}
-	if to.WriteTimeout != nil {
-		srv.WriteTimeout = *to.WriteTimeout
-	}
-	if to.IdleTimeout != nil {
-		srv.IdleTimeout = *to.IdleTimeout
-	}
-	if a.Config.DisableRequestTimeout {
-		// The documented opt-out for SSE and long uploads drops the Timeout
-		// middleware from the chain and zeroes the server-level read/write
-		// deadlines to match (header and idle stay, they bound the
-		// connection, not the request body or the stream). It zeroes only the
-		// fields the host left unset: an explicit HTTPServerTimeouts value is
-		// authoritative, so the fine-grained knob can keep a custom deadline
-		// while still dropping the middleware.
-		if to.ReadTimeout == nil {
-			srv.ReadTimeout = 0
-		}
-		if to.WriteTimeout == nil {
-			srv.WriteTimeout = 0
-		}
-	}
-	if budget := a.requestBudget(); budget > 0 && to.WriteTimeout == nil && srv.WriteTimeout <= budget {
-		// A RequestTimeout raised past the default write deadline: the
-		// handler it was raised for would finish inside its budget and
-		// lose its response at the deadline. An explicit WriteTimeout in
-		// the same position is refused by checkRequestWriteTimeouts.
-		srv.WriteTimeout = budget + requestTimeoutWriteSlack
-	}
-	if p := a.Config.HTTPProtocols; p != nil {
-		protos := *p
-		srv.Protocols = &protos
-	}
-	tlsCfg, err := a.serverTLSConfig()
-	if err != nil {
-		a.serverMu.Unlock()
-		return abort(err)
-	}
-	srv.TLSConfig = tlsCfg
-	// A concurrent Shutdown may have run while the pre-listen phases
-	// were still executing (a host tearing down mid-boot, or a test that
-	// observed a seeded row before the server existed). It found no
-	// server to stop and drained what was started; adopting a server NOW
-	// would serve forever with nobody left to stop it. The record of that
-	// Shutdown is appCancel cleared beside a live appCtx (the context is
-	// never recreated), written under the lock checked here, so the window
-	// is closed, not narrowed. The cancelled context alone is not enough:
-	// Shutdown cancels it after unlocking. abort re-drains whatever started
-	// after that Shutdown's sweep (Shutdown is idempotent) and nil keeps
-	// the graceful-shutdown contract: Start reports no error when told to
-	// stop.
-	if a.appCtx != nil && (a.appCancel == nil || a.appCtx.Err() != nil) {
-		a.serverMu.Unlock()
-		return abort(nil)
-	}
-	a.server = srv
-	a.serverMu.Unlock()
-	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
-	// fire only after the port is actually held. http.ListenAndServe
-	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
-	if ln == nil {
-		bound, err := net.Listen("tcp", listenAddrFor(addr))
-		if err != nil {
-			// Bind failure (port in use is the common case), drain like every
-			// earlier start phase does, otherwise the batteries/cron/queue and
-			// OnStart workers spawned above leak past Start returning.
-			return abort(fmt.Errorf("listen and serve: %w", err))
-		}
-		ln = bound
-	}
-	// Serve closes the listener on Shutdown; this extra Close only matters
-	// on the Shutdown-raced path where Serve returns without adopting ln.
-	defer func() { _ = ln.Close() }()
-	a.serverMu.Lock()
-	// Only a TCP address is a host:port. A unix socket's address is its
-	// path, and a path like "127.0.0.1:8080" must not read as loopback.
-	network = ln.Addr().Network()
-	if host, _, splitErr := net.SplitHostPort(ln.Addr().String()); splitErr == nil && tcpNetwork(network) {
-		a.boundHost = host
-	}
-	a.boundInProcess = inProcessNetwork(network)
-	a.serverMu.Unlock()
-
-	// Graceful shutdown by default: docker stop and kubectl rollouts send
-	// SIGTERM, and without a handler the runtime kills the process
-	// mid-request, no drain, no battery stop, no OnStop hooks. The
-	// deferred join keeps Start from returning while a signal-triggered
-	// drain is still running (Serve returns ErrServerClosed as soon as
-	// Shutdown begins). Opt out via DisableSignalHandling when the host
-	// process owns signals and calls Shutdown/RunWithSignals itself;
-	// concurrent Shutdown calls are safe. It is idempotent.
-	if !a.Config.DisableSignalHandling {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		sigQuit := make(chan struct{})
-		sigDone := make(chan struct{})
-		go func() {
-			defer close(sigDone)
-			defer signal.Stop(sigCh)
-			select {
-			case sig := <-sigCh:
-				timeout := a.signalShutdownTimeout()
-				a.Logger().Info("shutdown signal received; draining",
-					"signal", sig.String(), "timeout", timeout.String())
-				ctx, cancel := context.WithTimeout(context.Background(), timeout)
-				defer cancel()
-				if err := a.Shutdown(ctx); err != nil {
-					a.Logger().Error("graceful shutdown incomplete", "error", err)
-				}
-			case <-sigQuit:
-			}
-		}()
-		defer func() {
-			close(sigQuit)
-			<-sigDone
-		}()
-	}
-
-	// The local run record (framework/localrun) exists while Serve
-	// does: written once the port is held, removed as Start returns.
-	defer a.registerLocalRun(ln.Addr().String())()
-
-	if setupInteractive {
-		setupURL = a.setup.SetupURL(a.urlScheme(), ln.Addr().String())
-	}
-	a.printStartupBanner(ln.Addr().String(), ln.Addr().Network(), name, hasAPI, hasLLMMD, setupURL)
-	for _, fn := range a.readyHooks {
-		if rerr := a.runReadyHookSafe(fn, ln.Addr().String()); rerr != nil {
-			return abort(rerr)
-		}
-	}
-	serve := srv.Serve
-	if srv.TLSConfig != nil {
-		// ServeTLS adds h2 to the offered protocols and wraps ln; the
-		// certificate comes from TLSConfig, so no files are named here.
-		serve = func(ln net.Listener) error { return srv.ServeTLS(ln, "", "") }
-	}
-	if err := serve(ln); err != nil && err != http.ErrServerClosed {
-		return abort(fmt.Errorf("listen and serve: %w", err))
-	}
-	return nil
+	return hasAPI, hasLLMMD, nil
 }
 
 // runReadyHookSafe fires one OnReady hook under the recover-to-error

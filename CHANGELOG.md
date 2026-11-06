@@ -25,6 +25,53 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`App.Run(ctx, host)` runs an App under any host, and
+  `framework.ServicesHost()` runs it with no transport.** One lifecycle
+  engine sits behind `Start`, `Serve` and `Run`: one boot order, one
+  rollback, one `Shutdown`. A `framework.Host`
+  (`Run(ctx, *Session) error` and `Stop(ctx) error`) owns only its
+  transport and how long the App runs; `Session` is opaque. `ServicesHost()` constructs no
+  `http.Server`, listener or HTTP client, for a native, terminal or test
+  presentation that calls the App in-process. `App.ServicesReady()`
+  closes once every boot phase succeeds, under any host. `OnReady` still
+  means a bound HTTP listener, so `Run` under a host without one refuses
+  an App with `OnReady` hooks or interactive first-run setup. When `ctx`
+  ends, `Run` shuts the App down with the signal handler's deadline. To
+  serve GoFastr's HTTP surface over your own transport, keep using
+  `Serve` with your listener. GoFastr renders no native UI. See
+  [Application hosts](framework/docs/content/application-hosts.md).
+- **Navigation guards for renderer libraries.** After
+  `await __gofastr.loadModule('navguard')`, `__gofastr.guardNavigation(fn)`
+  registers a guard that every router-managed departure asks before it
+  discards the page: a link the router takes, `navigate()`, Back and
+  Forward between router pages, and the intercept stack's moves. Guards
+  answer in registration order, at once or through a promise, and the
+  first denial wins. The call returns a disposer. Each attempt is frozen
+  (`id`, `intent`, `from`, `to`, `delta`, `signal`, `affects(node)`), and
+  a blocked move fires `gofastr:navigateblocked`. URL-only writes,
+  document loads and history written outside the runtime are not asked.
+  A Back or Forward the guards do not allow at once is undone, then
+  replayed on allow: by entry key with the Navigation API, and without
+  it by the distance between the tags core now writes on every history
+  entry (`history.state.__fup` beside `__fui`). With no known distance
+  the module pushes nothing, and a denial gives only the landing entry
+  the page's URL. Code that writes `history.state` itself spreads the
+  state it replaces to keep the tags. A renderer that wrapped the
+  runtime's internal `_interceptPopstate` or `_pushURL` to hold a
+  departure registers a guard instead; app screens stay in Go. A page
+  with no guard behaves as before. See the
+  [runtime contract](framework/docs/content/runtime-contract.md).
+- **`__gofastr.replaceURL(url)`** rewrites the URL of the history entry
+  the browser is on, for a renderer library that records state in the
+  address. It fetches nothing, asks no guard and adds no entry; the
+  entry keeps its id, position and state, and `currentPath` follows
+  unless an intercept stack is open (the top layer's entry takes the
+  URL). It returns `false` and writes nothing for another origin, a
+  path outside the app's base, another document (locale or document
+  scripts), a write the browser refuses, or, with `navguard` loaded,
+  while a guarded Back or Forward is unresolved. It replaces
+  `_pushURL(url, {replace: true})`. See the
+  [runtime contract](framework/docs/content/runtime-contract.md).
 - **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
   streams a server holds across every caller (default 1024; a connect
   past it gets `429`). The per-caller seat cap never bounded the total:
@@ -256,6 +303,35 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **BREAKING: an App runs once, and `Shutdown` during boot waits for the
+  running phase.**
+  - A second `Start`, `Serve` or `Run` on one App returns
+    `framework.ErrAlreadyStarted`; nothing refused it before. One that
+    begins after `Shutdown` returns nil and starts nothing. Build a new App
+    to run again.
+  - `Shutdown` while the App boots cancels the lifecycle context, waits
+    for the running phase (a migration, a seed, an `OnStart` hook) to
+    return, starts no later phase, then tears down. It used to stop
+    batteries and run `OnStop` hooks under the running phase. A boot
+    callback that calls `Shutdown` synchronously now waits until its
+    context's deadline, and with `context.Background()` it never returns.
+    Return an error from the callback, or call `Shutdown` on another
+    goroutine.
+  - That teardown runs on the stopping `Shutdown`'s context, with its
+    deadline and values. If the context ends before the phase returns,
+    `Shutdown` returns the context's error and the teardown runs once the
+    phase returns, on a five-second budget. A failure of a teardown whose
+    caller stopped waiting is logged.
+  - A boot error during a stop is returned unless it is only the stop's
+    own cancellation: `context.Canceled`, `sql.ErrTxDone`, or SQLite's
+    `SQLITE_INTERRUPT`. Before, any error `errors.Is` matched to
+    `context.Canceled` was dropped, a join with an unrelated failure
+    included.
+  - `Start` and `Serve` join the rollback's teardown error (a failing
+    `OnStop` hook, a drain that timed out) to the boot error instead of
+    dropping it. `errors.Is` still matches the boot error.
+  - No `OnStart` or `OnReady` hook starts once `Shutdown` has begun.
+  See [Application hosts](framework/docs/content/application-hosts.md).
 - **BREAKING: `CrudHandler.UpsertOne` refuses an entity with
   `BeforeUpdate` hooks.** It returned the stored row after running only
   `BeforeCreate`, so a conflict update skipped the update validators

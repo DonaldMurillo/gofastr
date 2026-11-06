@@ -81,6 +81,17 @@ extractor that reads it back:
 `localapp.Valid(id)` checks the id grammar, and `localapp.ForID(id)`
 builds a `User` for a test.
 
+## Running with no server
+
+A local app whose UI calls the App in-process, such as a native screen
+reading entities directly, needs no HTTP server at all.
+`app.Run(ctx, framework.ServicesHost())` boots the App from the same
+data directory and opens no listener; wait on `app.ServicesReady()`,
+then call `app.MustCrudHandler(name)` with
+`handler.SetUser(ctx, data.User)` in the context. Owner scoping applies
+exactly as it does to a request. See
+[Application hosts](application-hosts.md) for the lifecycle rules.
+
 ## Common mistakes
 
 - **Handing out the local identity when `Install` returned `true`.**
