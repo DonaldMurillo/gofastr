@@ -6,6 +6,8 @@ import (
 	"testing"
 )
 
+//gofastr:test-reads /framework/docs/content/desktop.md
+
 func TestBootCookieDocsNameSession(t *testing.T) {
 	data, err := os.ReadFile("../../framework/docs/content/desktop.md")
 	if err != nil {
