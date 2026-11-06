@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 )
 
 // runGenerateWatch polls the codegen config and its inputs for changes and
@@ -120,6 +121,11 @@ func hashGenerateInputs(options appgen.GenerateOptions) string {
 	discovery, err := appgen.DiscoverGenerateConfig(options)
 	if err == nil && discovery.Found && strings.TrimSpace(discovery.ProjectDir) != "" {
 		projectDir = discovery.ProjectDir
+	}
+	if absolute, pathErr := filepath.Abs(projectDir); pathErr == nil {
+		if _, moduleRoot := project.FindEnclosingGoMod(absolute); moduleRoot != "" {
+			hashFileInto(h, filepath.Join(moduleRoot, "go.mod"))
+		}
 	}
 	// The entity declarations feed entities/client, the CLI and the SDK.
 	hashEntityDecls(h, filepath.Join(projectDir, "entities"))

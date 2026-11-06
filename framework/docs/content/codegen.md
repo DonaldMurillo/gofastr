@@ -64,6 +64,8 @@ document on stdout (`files: []`, `errors: [{message: ...}]`); prose and
 usage hints go to stderr. The same error shape applies to every generate
 verb, including a verb that rejects `--json` as unsupported.
 Any other argument is an error.
+Watch mode also tracks the enclosing `go.mod`, including when the codegen
+config lives in a subdirectory, so module-path edits rebuild generated imports.
 
 JSON runs send extension diagnostics to stderr and suppress overwrite
 warnings on stdout. An error diagnostic returns the error document and
