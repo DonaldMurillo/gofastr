@@ -10,6 +10,7 @@
 //
 // Build output is suitable for any static host (S3, GitHub Pages,
 // Cloudflare Pages, etc.). The runtime.js included alongside the HTML
-// drives client-side navigation, form actions, and signal-driven updates
-// after first paint, so behavior matches the SSR server.
+// drives client-side navigation, client-only actions, and signal-driven
+// updates after first paint. Server-backed dispatches show a needs-server
+// notice without a request, and automatic mount actions are skipped.
 package static

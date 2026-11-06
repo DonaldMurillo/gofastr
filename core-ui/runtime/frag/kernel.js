@@ -471,6 +471,10 @@
 
     /** Call a server action for a specific component */
     async _serverActionFor(componentId, action, params = {}) {
+      if (document.__fuiStaticDispatch) {
+        _showNavToast(say('runtime.needs_server', 'Needs the Go server.'));
+        return null;
+      }
       const r = await _fetch(_lp('/__gofastr/action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

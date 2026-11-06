@@ -600,7 +600,12 @@ input/change/submit). `data-action-mount="<name>"` fires the named action
 *once on hydration* (and again after each SPA nav), the hook a server-rendered
 island uses to populate itself on load, since the other triggers are
 user-event-driven. Any `data-param-*` on the element flows into the handler's
-`params`. Covered by `core-ui/runtime/action_mount_e2e_test.go`. Markup inserted outside a navigation (an intercepted
+`params`. Static exports retain client-only click/input actions, but skip
+all automatic mounts (hydration, navigation and insertion). A compiled
+server action shows the localized "Needs the Go server." notice and sends
+no request in the static composition; the full live runtime is unchanged.
+Covered by `core-ui/runtime/action_mount_e2e_test.go` and
+`static_actions_e2e_test.go`. Markup inserted outside a navigation (an intercepted
 route's overlay, an island swap, a widget's chrome) fires its mounts too,
 each element once, through the `actionloader` module a page with compiled
 actions loads (boot marks what its own pass fired). The module also

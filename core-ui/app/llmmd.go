@@ -566,8 +566,7 @@ func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 		} else if i18n.PathPrefix(ctx) != "" || i18n.TranslatorFrom(ctx) != nil || i18n.FromContext(ctx).Tag != "" {
 			body = ScreenLLMMD(ctx, screen)
 		}
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setMarkdownHeaders(w)
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 		w.Write([]byte(body))
 	})
@@ -580,11 +579,16 @@ func ScreenLLMMDHandler(a *App, screen *Screen) http.Handler {
 func AppLLMMDHandler(a *App) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		md := AppLLMMDCtx(WithRequest(r.Context(), r), a)
-		w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache")
+		setMarkdownHeaders(w)
 		w.Header().Set("Content-Length", strconv.Itoa(len(md)))
 		w.Write([]byte(md))
 	})
+}
+
+func setMarkdownHeaders(writer http.ResponseWriter) {
+	writer.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	writer.Header().Set("Cache-Control", "private, no-store")
+	writer.Header().Add("Vary", "Cookie")
 }
 
 // extractParamNames parses a route path like "/products/:slug/reviews/:id"

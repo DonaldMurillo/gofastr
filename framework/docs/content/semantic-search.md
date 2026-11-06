@@ -169,6 +169,10 @@ gofastr semantic stats
 gofastr semantic clear
 ```
 
+`query` and `stats` write exactly one JSON document to stdout, including
+on failure. Errors use `{"error":"..."}`, print a diagnostic to stderr,
+and exit nonzero. A remote stats response must itself be one JSON document.
+
 `query` takes one query (quote a query of several words; `--` before one
 that starts with a dash) and its flags before or after it, as `-k 5` or
 `-k=5`. `-k` must be at least 1; an empty query, a second word or an

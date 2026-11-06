@@ -55,6 +55,10 @@ SHORT=1 ./scripts/test-all.sh          # -short, skips the slow suites
 Quick iteration: `go test ./path/to/pkg/` on the packages you touched, plus
 `make test` (`-short ./...`) for a fast sweep.
 
+`scripts/coverage-floors.sh` fails closed when a successful test run emits
+no coverage percentage (for example, `[no test files]`). It names the
+package and continues checking subsequent floors, then exits nonzero.
+
 `make test`, the git hooks and CI run through `cmd/affected`, which
 records the axe and semantic-coverage manifests in a per-checkout
 directory under your user cache instead of the module's `.gofastr/`. A

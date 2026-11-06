@@ -727,6 +727,7 @@
   // swap a navigation's pass already fired is not fired again when the
   // mutation observer hands the same nodes over a microtask later.
   const _runMountActions = (root) => {
+    if (document.__fuiStaticDispatch) return;
     const G = window.__gofastr;
     if (!G || !G.trigger) return;
     const scope = root || document;

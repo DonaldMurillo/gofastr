@@ -49,7 +49,7 @@ func runGenerateStyles(args []string) {
 	}
 	for _, a := range args {
 		if strings.HasPrefix(a, "-") {
-			cli.Fail("Unknown flag: %s (generate styles takes package patterns, not flags)", a)
+			failGenerateArgs(args, fmt.Errorf("Unknown flag: %s (generate styles takes package patterns, not flags)", a))
 			cli.OsExit(1)
 			return
 		}

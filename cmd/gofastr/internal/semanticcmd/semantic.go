@@ -273,7 +273,7 @@ func parseQueryArgs(args []string) (semantic.Query, error) {
 func embedQuery(args []string) {
 	q, err := parseQueryArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
+		failSemanticJSON(err)
 		cli.OsExit(1)
 		return
 	}
@@ -281,8 +281,9 @@ func embedQuery(args []string) {
 	if url := os.Getenv("GOFASTR_URL"); url != "" {
 		hits, err := remoteQuery(url, q)
 		if err != nil {
-			cli.Fail("remote query: %v", err)
+			failSemanticJSON(fmt.Errorf("remote query: %w", err))
 			cli.OsExit(1)
+			return
 		}
 		printHits(hits)
 		return
@@ -290,14 +291,16 @@ func embedQuery(args []string) {
 
 	idx, err := openLocalIndex(true)
 	if err != nil {
-		cli.Fail("open index: %v", err)
+		failSemanticJSON(fmt.Errorf("open index: %w", err))
 		cli.OsExit(1)
+		return
 	}
 	defer idx.Close()
 	hits, err := idx.Query(context.Background(), q)
 	if err != nil {
-		cli.Fail("query: %v", err)
+		failSemanticJSON(fmt.Errorf("query: %w", err))
 		cli.OsExit(1)
+		return
 	}
 	printHits(hits)
 }
@@ -311,22 +314,32 @@ func printHits(hits []semantic.Hit) {
 func embedStats() {
 	if url := os.Getenv("GOFASTR_URL"); url != "" {
 		body, err := remoteGet(url + "/semantic/stats")
+		if err == nil && !json.Valid(body) {
+			err = errors.New("response is not one JSON document")
+		}
 		if err != nil {
-			cli.Fail("remote stats: %v", err)
+			failSemanticJSON(fmt.Errorf("remote stats: %w", err))
 			cli.OsExit(1)
+			return
 		}
 		cli.Println(string(body))
 		return
 	}
 	idx, err := openLocalIndex(true)
 	if err != nil {
-		cli.Fail("open index: %v", err)
+		failSemanticJSON(fmt.Errorf("open index: %w", err))
 		cli.OsExit(1)
+		return
 	}
 	defer idx.Close()
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(idx.Stats())
+}
+
+func failSemanticJSON(err error) {
+	_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"error": err.Error()})
+	cli.Fprintf(os.Stderr, "  ✗ %v\n", err)
 }
 
 func embedClear() {

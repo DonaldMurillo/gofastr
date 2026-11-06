@@ -556,6 +556,12 @@ report lists the written files under `files`, the files left alone under
 `skipped_existing`, and the files already there that the run changed (the
 settings file and the rebuilt derived files) under `updated`.
 
+With `--json`, source, validation, write and rebuild failures return one
+`{"files":[],"errors":[{"message":"..."}]}` document and exit nonzero.
+Endpoint and client rebuild failures are both fatal. Earlier writes are
+not rolled back; the error document is not an inventory of completed
+writes. Correct the error and rerun before building the updated app.
+
 Partial ymls are legal: an entities-only (or screens-only) fragment omits
 `app.module`, so the module is derived from the enclosing `go.mod` exactly as
 in a full generate. This means `main.go`, `app.go`, `entities/register.go`,

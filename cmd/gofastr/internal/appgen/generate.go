@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"golang.org/x/mod/modfile"
 )
 
@@ -79,10 +80,10 @@ func GenerateScaffoldScreen(args []string) {
 			err = fmt.Errorf("--from-a11y: %w", err)
 			// --dry-run --json keeps stdout machine-readable, the way a
 			// validation error on the same path does.
-			if opts.dryRun && opts.json {
+			if opts.json {
 				printGeneratedErrorsJSON(err)
 			} else {
-				cli.Fail("%v", err)
+				failGenerate(opts.json, err)
 			}
 			cli.OsExit(1)
 			return
@@ -134,8 +135,7 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 			opts.outputSet = true
 		case arg == "--out":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				cli.Fail("--out requires a directory argument")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
@@ -144,33 +144,28 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 		case kind == "screen" && strings.HasPrefix(arg, "--from-a11y="):
 			opts.fromA11y = strings.TrimPrefix(arg, "--from-a11y=")
 			if opts.fromA11y == "" {
-				cli.Fail("--from-a11y requires a snapshot file (or - for stdin)")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--from-a11y requires a snapshot file (or - for stdin)"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 		case kind == "screen" && arg == "--from-a11y":
 			if i+1 >= len(args) || (strings.HasPrefix(args[i+1], "-") && args[i+1] != "-") {
-				cli.Fail("--from-a11y requires a snapshot file (or - for stdin); use --from-a11y=<file> for a path starting with -")
-				cli.Info("%s", scaffoldUsage(kind))
+				failGenerateArgs(args, fmt.Errorf("--from-a11y requires a snapshot file (or - for stdin); use --from-a11y=<file> for a path starting with -"), scaffoldUsage(kind))
 				return "", opts, false
 			}
 			i++
 			opts.fromA11y = args[i]
 		case arg == "--force", arg == "--add":
-			cli.Fail("%q is not supported on `gofastr generate %s`: scaffolding is additive (it never overwrites existing files)", arg, kind)
-			cli.Info("%s", scaffoldUsage(kind))
+			failGenerateArgs(args, fmt.Errorf("%q is not supported on `gofastr generate %s`: scaffolding is additive (it never overwrites existing files)", arg, kind), scaffoldUsage(kind))
 			return "", opts, false
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("Unknown flag %q for `gofastr generate %s`", arg, kind)
-			cli.Info("%s", scaffoldUsage(kind))
+			failGenerateArgs(args, fmt.Errorf("Unknown flag %q for `gofastr generate %s`", arg, kind), scaffoldUsage(kind))
 			return "", opts, false
 		default:
 			positionals = append(positionals, arg)
 		}
 	}
 	if len(positionals) != 1 {
-		cli.Fail("`gofastr generate %s` requires exactly one name argument", kind)
-		cli.Info("%s", scaffoldUsage(kind))
+		failGenerateArgs(args, fmt.Errorf("`gofastr generate %s` requires exactly one name argument", kind), scaffoldUsage(kind))
 		return "", opts, false
 	}
 	return positionals[0], opts, true
@@ -186,32 +181,30 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 func GenerateProject(args []string) {
 	options, err := ParseGenerateOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
+		failGenerateArgs(args, err, "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
 		cli.OsExit(1)
 		return
 	}
 	discovered, err := DiscoverGenerateConfig(options)
 	if err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("Failed to load codegen config: %v", err)
+		failGenerate(options.json, fmt.Errorf("Failed to load codegen config: %v", err))
 		cli.OsExit(1)
 	}
 	if discovered.Found {
-		generateFromCodegenConfig(options, discovered)
+		files := generateFromCodegenConfig(options, discovered)
 		// Discovery's project dir is absolute and the writer takes only a
 		// root relative to the working directory, so rebuild from inside it.
 		restore, err := enterCodegenProjectDir(discovered)
 		if err != nil {
-			cli.Fail("Failed to enter codegen project: %v", err)
+			failGenerate(options.json, fmt.Errorf("Failed to enter codegen project: %v", err))
 			cli.OsExit(1)
 			return
 		}
 		defer restore()
-		rebuildAppClient(options, false)
+		files = append(files, rebuildAppClient(options, false)...)
+		if options.json {
+			printGeneratedFilesJSON(files)
+		}
 		return
 	}
 	// entities/endpoints.gen.go and entities/client need no config entry:
@@ -221,8 +214,8 @@ func GenerateProject(args []string) {
 		rebuildAppClient(options, true)
 		return
 	}
-	cli.Fail("Nothing to generate: no codegen config found.")
-	cli.Info("Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
+	failGenerate(options.json, fmt.Errorf("Nothing to generate: no codegen config found."))
+	cli.Fprintf(os.Stderr, "Derived generators (%s) run from gofastr.settings.yml, entities/endpoints.gen.go is rebuilt from its endpoints section, and entities/client whenever it exists. To generate an app from an app spec, run `gofastr generate app gofastr.yml`. See `gofastr docs codegen`.", derivedGeneratorNames())
 	cli.OsExit(1)
 }
 
@@ -230,8 +223,8 @@ func GenerateProject(args []string) {
 // whose typed calls cover those endpoints, in the working directory for a
 // plain generate. It exits on failure the way the other generators of that
 // run do. report: under --json, these files are the whole run, so they are
-// the document; with a codegen config the engine already printed one.
-func rebuildAppClient(options GenerateOptions, report bool) {
+// the document; with a codegen config they join the engine's report.
+func rebuildAppClient(options GenerateOptions, report bool) []GeneratedFile {
 	files, err := RefreshAppEndpoints(".", options.dryRun, options.json)
 	if err == nil {
 		var client []GeneratedFile
@@ -242,14 +235,15 @@ func rebuildAppClient(options GenerateOptions, report bool) {
 		if options.json {
 			printGeneratedErrorsJSON(err)
 		} else {
-			cli.Fail("%v", err)
+			failGenerate(options.json, err)
 		}
 		cli.OsExit(1)
-		return
+		return nil
 	}
 	if report && options.json {
 		printGeneratedFilesJSON(files)
 	}
+	return files
 }
 
 type GenerateOptions struct {
@@ -330,13 +324,12 @@ const appUsage = "Usage: gofastr generate app [spec] [--out=<dir>] [--force | --
 func RunGenerateApp(args []string) {
 	options, err := parseAppGenerateArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("%s", appUsage)
+		failGenerateArgs(args, err, appUsage)
 		cli.OsExit(1)
 		return
 	}
 	if options.add && options.force {
-		cli.Fail("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)")
+		failGenerateArgs(args, fmt.Errorf("--add and --force are mutually exclusive (--add never overwrites; --force overwrites everything)"))
 		cli.OsExit(1)
 		return
 	}
@@ -423,30 +416,23 @@ func applyGenerateOverrides(cfg *codegen.Config, options GenerateOptions) {
 	}
 }
 
-func generateFromCodegenConfig(options GenerateOptions, discovery codegen.Discovery) {
+func generateFromCodegenConfig(options GenerateOptions, discovery codegen.Discovery) []GeneratedFile {
 	restore, err := enterCodegenProjectDir(discovery)
 	if err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("Failed to enter codegen project: %v", err)
+		failGenerate(options.json, fmt.Errorf("Failed to enter codegen project: %v", err))
 		cli.OsExit(1)
+		return nil
 	}
 	defer restore()
 	cfg := discovery.Config
 	applyGenerateOverrides(&cfg, options)
 	failConfig := func(err error) {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("%v", err)
+		failGenerate(options.json, err)
 		cli.OsExit(1)
 	}
 	if err := checkConfigGenerators(cfg.Codegen); err != nil {
 		failConfig(err)
-		return
+		return nil
 	}
 	// styles writes each .gen.go beside the sheet it comes from, not under
 	// codegen.output, so it runs after the engine instead of inside its
@@ -454,36 +440,33 @@ func generateFromCodegenConfig(options GenerateOptions, discovery codegen.Discov
 	engineGens, stylePatterns, err := splitStylesEntries(cfg.Codegen.Generators)
 	if err != nil {
 		failConfig(err)
-		return
+		return nil
 	}
-	if stylePatterns != nil && options.dryRun && options.json {
-		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
-		return
+	if stylePatterns != nil && options.json {
+		failGenerate(true, fmt.Errorf("the styles generator has no dry run or JSON report; run a config without it, or drop --json"))
+		cli.OsExit(1)
+		return nil
 	}
 	// Decode against the full list so an error names the entry's own index.
 	_, cliRuns, err := splitCLIEntries(cfg.Codegen.Generators)
 	if err != nil {
 		failConfig(err)
-		return
+		return nil
 	}
 	engineGens = slices.DeleteFunc(engineGens, func(gen codegen.GeneratorConfig) bool {
 		return gen.Extension == "" && gen.Name == "cli"
 	})
 	if len(cliRuns) > 0 && options.json {
 		err := fmt.Errorf("a cli entry writes its own --json document, so the codegen config cannot report it in one; run `gofastr generate cli --json` for it, or drop --json")
-		if !options.dryRun {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-			return
-		}
 		failConfig(err)
-		return
+		return nil
 	}
 	cfg.Codegen.Generators = engineGens
 	// With nothing left for the engine (a styles- or cli-only config), skip
 	// it: a clean would otherwise wipe codegen.output for no generator.
+	var files []GeneratedFile
 	if len(engineGens) > 0 {
-		runCodegenEngine(options, cfg, discovery)
+		files = runCodegenEngine(options, cfg, discovery)
 	}
 	for _, cliOpts := range cliRuns {
 		cliOpts.dryRun = options.dryRun
@@ -491,42 +474,38 @@ func generateFromCodegenConfig(options GenerateOptions, discovery codegen.Discov
 		generateCLI(cliOpts)
 	}
 	if stylePatterns == nil {
-		return
+		return files
 	}
 	if options.dryRun {
 		cli.Info("styles has no dry run; skipped (run `gofastr generate styles` to see its findings)")
-		return
+		return files
 	}
 	for _, patterns := range stylePatterns {
 		runGenerateStyles(patterns)
 	}
+	return files
 }
 
 // runCodegenEngine runs the engine generators and extensions of a codegen
 // config and writes their files under codegen.output.
-func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery codegen.Discovery) {
+func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery codegen.Discovery) []GeneratedFile {
 	if err := validateOutputDir(cfg.Codegen.Output); err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("%v", err)
+		failGenerate(options.json, err)
 		cli.OsExit(1)
+		return nil
 	}
 	reg := codegen.NewRegistry()
 	// First-party in-process generators, so a config entry naming them
 	// works without an external extension command.
 	if err := reg.RegisterGenerator(sdkGenerator{}); err != nil {
-		cli.Fail("Code generation setup failed: %v", err)
+		failGenerate(options.json, fmt.Errorf("Code generation setup failed: %v", err))
 		cli.OsExit(1)
+		return nil
 	}
 	if err := reg.RegisterCommandExtensions(cfg.Codegen, os.Stderr); err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("Code generation setup failed: %v", err)
+		failGenerate(options.json, fmt.Errorf("Code generation setup failed: %v", err))
 		cli.OsExit(1)
+		return nil
 	}
 	// A cancellable context so an operator can interrupt a wedged extension.
 	// exec.CommandContext only kills the child when its context is done, so
@@ -535,44 +514,52 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 	defer stopSignals()
 	genCtx, err := reg.Run(runCtx, ".", cfg)
 	if err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("Code generation failed: %v", err)
+		failGenerate(options.json, fmt.Errorf("Code generation failed: %v", err))
 		cli.OsExit(1)
+		return nil
 	}
-	if reportCodegenDiagnostics(genCtx.Diagnostics) {
+	if reportCodegenDiagnostics(genCtx.Diagnostics, options.json) {
+		if options.json {
+			printGeneratedErrorsJSON(fmt.Errorf("code generation failed: an extension reported an error diagnostic"))
+		}
 		cli.OsExit(1)
+		return nil
 	}
 	files := genCtx.Files.All()
+	reported := make([]GeneratedFile, 0, len(files))
+	for _, file := range files {
+		reported = append(reported, GeneratedFile{Name: filepath.Join(cfg.Codegen.Output, file.Path), Content: file.Content})
+	}
 	if options.dryRun {
 		if options.json {
-			printCodegenFilesJSON(files)
-			return
+			return reported
 		}
 		cli.Info("Would generate %d files in %s:", len(files), cfg.Codegen.Output)
 		for _, file := range files {
 			cli.Printf("    %s\n", filepath.Join(cfg.Codegen.Output, file.Path))
 		}
-		return
+		return reported
 	}
-	warnEditedOutputs(cfg.Codegen, files)
+	if !options.json {
+		warnEditedOutputs(cfg.Codegen, files)
+	}
 	if discovery.Path == "" && codegen.CleanEnabled(cfg.Codegen) {
 		if err := safeCleanOutputDir(cfg.Codegen.Output); err != nil {
-			cli.Fail("Failed to clean %s: %v", cfg.Codegen.Output, err)
+			failGenerate(options.json, fmt.Errorf("Failed to clean %s: %v", cfg.Codegen.Output, err))
 			cli.OsExit(1)
+			return nil
 		}
 	}
 	if err := codegen.WriteFiles(genCtx.Files, codegen.WriteOptions{OutputRoot: cfg.Codegen.Output, Clean: discovery.Path != "" && codegen.CleanEnabled(cfg.Codegen), SkipManifest: discovery.Path == ""}); err != nil {
-		cli.Fail("Failed to write generated files: %v", err)
+		failGenerate(options.json, fmt.Errorf("Failed to write generated files: %v", err))
 		cli.OsExit(1)
+		return nil
 	}
 	if options.json {
-		printCodegenFilesJSON(files)
-		return
+		return reported
 	}
 	cli.Success("Generated %d file(s) in %s", len(files), cfg.Codegen.Output)
+	return reported
 }
 
 // splitStylesEntries pulls the `styles` entries out of a config's
@@ -670,11 +657,7 @@ func GenerateFromAppSpec(options GenerateOptions) {
 		bp, err = appspec.LoadAppSpec(options.Spec)
 	}
 	if err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("Failed to load app spec: %v", err)
+		failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", err))
 		cli.OsExit(1)
 	}
 	generateAppSpec(bp, options)
@@ -696,11 +679,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 	// one enclosing the cwd. Derive app.module from it when omitted; refuse
 	// a conflicting declaration (the output would not compile).
 	if err := ResolveAppSpecModule(&bp, "."); err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("%v", err)
+		failGenerate(options.json, err)
 		cli.OsExit(1)
 	}
 	// The app spec is a one-shot generator: it emits ordinary owned app code
@@ -772,11 +751,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 	// module root is written file-by-file and never wiped.
 	if outDir != "" {
 		if err := validateOutputDir(outDir); err != nil {
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(err)
-				cli.OsExit(1)
-			}
-			cli.Fail("%v", err)
+			failGenerate(options.json, err)
 			cli.OsExit(1)
 		}
 	}
@@ -799,11 +774,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		legacy, lerr := readLegacyRegisterUnder(writeRoot)
 		if lerr == nil && len(legacy) > 0 {
 			lerr = fmt.Errorf("entities/ uses the pre-0.15 aggregated layout, which --add cannot extend. Recover your app spec with `gofastr pack`, merge the new pieces into it, and regenerate with `gofastr generate app <spec.yml> --force`")
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(lerr)
-				cli.OsExit(1)
-			}
-			cli.Fail("%v", lerr)
+			failGenerate(options.json, lerr)
 			cli.OsExit(1)
 		}
 		// Symmetric guard for screens: a pre-per-screen aggregated screens.go
@@ -818,11 +789,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 				// hand-edit seams its CLAUDE.md names instead.
 				serr = fmt.Errorf("this project uses the `gofastr init` layout (screens.go, main.go, entities/entities.go), which --add and `generate entity|screen` cannot extend; they extend apps made by `gofastr generate app <spec.yml>`. Add an entity with another app.Entity call in entities/entities.go's RegisterAll, and a screen with a type in screens.go plus a site.Register call in main.go")
 			}
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(serr)
-				cli.OsExit(1)
-			}
-			cli.Fail("%v", serr)
+			failGenerate(options.json, serr)
 			cli.OsExit(1)
 		}
 		// Union the project's existing entities into the fragment so (a) a
@@ -858,11 +825,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// settings section is rewritten whole, so it must hold both.
 		projectEndpoints, eerr := ExistingEndpoints(writeRoot)
 		if eerr != nil {
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(eerr)
-				cli.OsExit(1)
-			}
-			cli.Fail("Failed to load app spec: %v", eerr)
+			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", eerr))
 			cli.OsExit(1)
 		}
 		addsEndpoints = len(mergeEndpoints(projectEndpoints, bp.Endpoints)) > len(projectEndpoints)
@@ -888,20 +851,12 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 				continue // same screen being re-added → handled as skip-existing
 			}
 			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project. Pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(cerr)
-				cli.OsExit(1)
-			}
-			cli.Fail("Failed to load app spec: %v", cerr)
+			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", cerr))
 			cli.OsExit(1)
 		}
 		bp.MarkFragment()
 		if verr := appspec.ValidateAppSpec(bp); verr != nil {
-			if options.dryRun && options.json {
-				printGeneratedErrorsJSON(verr)
-				cli.OsExit(1)
-			}
-			cli.Fail("Failed to load app spec: %v", verr)
+			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", verr))
 			cli.OsExit(1)
 		}
 		// New entities sit at indices len(recovered).. in the union; the
@@ -925,11 +880,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		files, err = StampGeneratedFiles("app", files)
 	}
 	if err != nil {
-		if options.dryRun && options.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-		}
-		cli.Fail("App spec code generation failed: %v", err)
+		failGenerate(options.json, fmt.Errorf("App spec code generation failed: %v", err))
 		cli.OsExit(1)
 	}
 	// Self-hosted fonts: if the generate-time fetch couldn't reach the CDN,
@@ -965,11 +916,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		sort.Strings(skipNames)
 		if addsEndpoints {
 			if err := checkAddEndpoints(writeRoot, bp, written); err != nil {
-				if options.json {
-					printGeneratedErrorsJSON(err)
-					cli.OsExit(1)
-				}
-				cli.Fail("%v", err)
+				failGenerate(options.json, err)
 				cli.OsExit(1)
 			}
 		}
@@ -1023,7 +970,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if len(written) > 0 {
 			fileSet, werr := FileSetFromGeneratedFiles(written, "app")
 			if werr != nil {
-				cli.Fail("App spec code generation failed: %v", werr)
+				failGenerate(options.json, fmt.Errorf("App spec code generation failed: %v", werr))
 				cli.OsExit(1)
 			}
 			writeOpts := codegen.WriteOptions{
@@ -1032,14 +979,14 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 				Conflict:     codegen.ConflictOverwrite,
 			}
 			if werr := codegen.WriteFiles(fileSet, writeOpts); werr != nil {
-				cli.Fail("Failed to write generated files: %v", werr)
+				failGenerate(options.json, fmt.Errorf("Failed to write generated files: %v", werr))
 				cli.OsExit(1)
 			}
 		}
 		var updated []string
 		if addsEndpoints {
 			if err := settings.SetEndpoints(filepath.Join(writeRoot, settings.FileName), bp.Endpoints); err != nil {
-				cli.Fail("Failed to write the endpoints: %v", err)
+				failGenerate(options.json, fmt.Errorf("Failed to write the endpoints: %v", err))
 				cli.OsExit(1)
 			}
 			updated = append(updated, settings.FileName)
@@ -1047,7 +994,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			// the registration is rebuilt from the source on disk.
 			rebuilt, err := RefreshAppEndpoints(writeRoot, false, options.json)
 			if err != nil {
-				cli.Fail("Failed to rebuild %s: %v", AppEndpointsPath, err)
+				failGenerate(options.json, fmt.Errorf("Failed to rebuild %s: %v", AppEndpointsPath, err))
 				cli.OsExit(1)
 			}
 			if len(rebuilt) > 0 {
@@ -1058,12 +1005,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// entities and new, instead of leaving it stale.
 		if hasNewEntities {
 			if rebuilt, err := RefreshAppClient(writeRoot, false, options.json); err != nil {
-				// stderr under --json: stdout is the document.
-				if options.json {
-					cli.Fprintf(os.Stderr, "warning: could not rebuild %s: %v\n", appClientPath, err)
-				} else {
-					cli.Warn("could not rebuild %s: %v", appClientPath, err)
-				}
+				failGenerate(options.json, fmt.Errorf("Failed to rebuild %s: %v", appClientPath, err))
+				cli.OsExit(1)
+				return
 			} else if len(rebuilt) > 0 {
 				updated = append(updated, filepath.FromSlash(appClientPath))
 			}
@@ -1124,7 +1068,7 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 	toWrite, writesEndpoints := splitSettingsFile(files)
 	fileSet, err := FileSetFromGeneratedFiles(toWrite, "app")
 	if err != nil {
-		cli.Fail("App spec code generation failed: %v", err)
+		failGenerate(options.json, fmt.Errorf("App spec code generation failed: %v", err))
 		cli.OsExit(1)
 	}
 	// One-shot: the emitted files are ordinary owned app code, not a
@@ -1144,13 +1088,11 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		if len(conflicts) > 0 {
 			sort.Strings(conflicts)
 			cerr := fmt.Errorf("generate is one-shot and would overwrite existing files: %s. The emitted code is yours to own. To ADD to an existing project (new entities/screens) use `gofastr generate app <spec.yml> --add`; to overwrite everything, re-run with --force", strings.Join(conflicts, ", "))
-			if options.json {
-				printGeneratedErrorsJSON(cerr)
-				cli.OsExit(1)
-			}
-			cli.Fail("%v", cerr)
-			if d := describeExisting(writeRoot, existingNames(files, writeRoot)); d != "" {
-				cli.Info("%s", d)
+			failGenerate(options.json, cerr)
+			if !options.json {
+				if description := describeExisting(writeRoot, existingNames(files, writeRoot)); description != "" {
+					cli.Info("%s", description)
+				}
 			}
 			cli.OsExit(1)
 		}
@@ -1158,7 +1100,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// --force skips the conflict check by design, but silently
 		// discarding hand edits is how a scaffolded app drifts into an
 		// unregenerable one without anyone noticing (issue #131).
-		warnForceOverwrite(editedTargets(toWrite, writeRoot, outDir))
+		if !options.json {
+			warnForceOverwrite(editedTargets(toWrite, writeRoot, outDir))
+		}
 	}
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   writeRoot,
@@ -1166,18 +1110,18 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		Conflict:     codegen.ConflictOverwrite,
 	}
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
-		cli.Fail("Failed to write generated files: %v", err)
+		failGenerate(options.json, fmt.Errorf("Failed to write generated files: %v", err))
 		cli.OsExit(1)
 	}
 	if writesEndpoints {
 		if err := settings.SetEndpoints(filepath.Join(writeRoot, settings.FileName), bp.Endpoints); err != nil {
-			cli.Fail("Failed to write the endpoints: %v", err)
+			failGenerate(options.json, fmt.Errorf("Failed to write the endpoints: %v", err))
 			cli.OsExit(1)
 		}
 	}
 	if options.force {
 		if err := removeRetiredAppSpecFiles(writeRoot); err != nil {
-			cli.Fail("Failed to remove retired generated files: %v", err)
+			failGenerate(options.json, fmt.Errorf("Failed to remove retired generated files: %v", err))
 			cli.OsExit(1)
 		}
 	}
@@ -1359,22 +1303,26 @@ func removeRetiredAppSpecFiles(writeRoot string) error {
 // child's stderr does; an extension does not get to drive the operator's
 // terminal through a JSON field either. The cli helpers scrub every
 // argument (cli.ScrubTerminalOutput), so the message goes to them as is.
-func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
+func reportCodegenDiagnostics(diags []codegen.Diagnostic, jsonMode ...bool) bool {
 	failed := false
+	output := os.Stdout
+	if len(jsonMode) > 0 && jsonMode[0] {
+		output = os.Stderr
+	}
 	for _, d := range diags {
 		message := d.Message
-		switch strings.ToLower(strings.TrimSpace(d.Severity)) {
+		switch asciicase.Lower(strings.TrimSpace(d.Severity)) {
 		case "error":
-			cli.Fail("%s", message)
+			cli.Fprintf(output, "  ✗ %s\n", message)
 			failed = true
 		case "warning", "warn":
-			cli.Warn("%s", message)
+			cli.Fprintf(output, "  ⚠ %s\n", message)
 		default:
-			cli.Info("%s", message)
+			cli.Fprintf(output, "  → %s\n", message)
 		}
 	}
 	if failed {
-		cli.Fail("Code generation failed: an extension reported an error diagnostic")
+		cli.Fprintf(output, "  ✗ Code generation failed: an extension reported an error diagnostic\n")
 	}
 	return failed
 }
