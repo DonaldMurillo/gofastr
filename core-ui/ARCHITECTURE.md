@@ -3071,7 +3071,7 @@ your need:
 | You want | Use | Notes |
 | --- | --- | --- |
 | Table with sort / filter / pagination | `framework/ui.DataTable` | Island-driven, server-side sort/filter/pagination. No client-side re-implementation. |
-| Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. |
+| Categorical bar chart | `framework/ui.BarChart` | Pure-SVG, no JS. Per-bar color overrides, theme-primary default. Finite readings keep finite axes and fitted heights, including subnormal values and values near the float64 limit; unrepresentable headroom falls back to the data maximum. |
 | Multi-series line / area chart | `framework/ui.LineChart` | Pure-SVG time-series, no JS. Multiple series, area fill mode, palette cycling. |
 | Ratio chart (pie / donut) | `framework/ui.PieChart` | Pure-SVG, no JS. Slice colors from theme palette, configurable inner radius for donut. |
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |

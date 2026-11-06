@@ -126,6 +126,9 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	// (6/5/5) datasets from rendering as identical full-height slabs. The
 	// tallest bar lands around 85% of the plot, not the ceiling.
 	valueMax := niceCeil(dataMax / 0.85)
+	if !finite(valueMax) || valueMax <= 0 {
+		valueMax = dataMax
+	}
 	if valueMax == 0 {
 		valueMax = 1
 	}
@@ -185,7 +188,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		// scale, not as blank pixels above the caps.
 		const fitTallestBar = 96.0
 		if dataMax > 0 {
-			plotH = fitTallestBar * valueMax / dataMax
+			plotH = fitTallestBar * (valueMax / dataMax)
 		} else {
 			plotH = fitTallestBar
 		}
