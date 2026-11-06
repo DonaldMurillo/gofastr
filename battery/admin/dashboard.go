@@ -143,7 +143,9 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 		count = b.probeCount(ctx, e)
 	}
 	updated := ""
-	if t, ok := b.ui.LastUpdated(cctx, e.GetName()); ok {
+	uctx, cancelUpdated := context.WithTimeout(ctx, probeDeadline)
+	defer cancelUpdated()
+	if t, ok := b.ui.LastUpdated(uctx, e.GetName()); ok {
 		updated = i18nui.AdminUpdatedAgo.Text(ctx, map[string]any{"ago": ui.Ago(ctx, time.Now(), t)})
 	}
 	icon := ""

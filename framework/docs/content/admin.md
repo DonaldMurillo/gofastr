@@ -109,7 +109,7 @@ its own routes:
 | `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
 | `POST /admin/api/<name>/_views/_delete?id=<id>` | Delete a saved view |
-| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
+| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too). The newest-record age has a separate 1-second budget, so a late count does not hide it. |
 
 For an entity with a composite `PrimaryKey`, `{id}` above is one path
 segment per key column (`/admin/api/enrollments/{student_id}/{course_id}`),
