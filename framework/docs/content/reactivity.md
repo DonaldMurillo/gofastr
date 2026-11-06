@@ -324,6 +324,11 @@ issued by one replica verifies on every other replica that shares the secret.
   `meta[name="gofastr-sse"]` moves to the new token (no element id is needed)
   and all cached screens from the old identity are
   discarded. No application-side retry or cache reset is needed.
+  Transport failures retry after 1.5–3 seconds with independent jitter,
+  doubling to a cap of 30–60 seconds per attempt. A successful stream open
+  resets the backoff. DOM insertions cannot bypass a pending retry, so a
+  permanent failure does not hammer the stream and session endpoints every
+  few seconds.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:
   - `framework.WithSecret(secret)` in code, or

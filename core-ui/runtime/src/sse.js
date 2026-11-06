@@ -39,7 +39,7 @@
 //   - core looks for a push target (any [data-island] region, the
 //     offline banner) at boot and after every apply; if one is
 //     present, idle-loads this module.
-//   - reconnects on transport error (3s back-off).
+//   - reconnects on transport error with capped, jittered exponential backoff.
 //   - closes the transport on pagehide and re-establishes it on a
 //     bfcache restore (pageshow.persisted). See the lifecycle block.
 (() => {
@@ -138,7 +138,8 @@
       // picks it up on this or the next cycle. Reconnect timing is NOT
       // blocked on the re-mint (a hung fetch must not stall recovery).
       if (status.retryCount >= 2 && status.retryCount % 2 === 0) remintSession();
-      retryTimer = setTimeout(connect, 3000);
+      const retryCeiling = Math.min(60000, 3000 * 2 ** Math.min(status.retryCount - 1, 5));
+      retryTimer = setTimeout(connect, Math.round(retryCeiling * (0.5 + Math.random() / 2)));
     };
   }
 
@@ -164,7 +165,7 @@
   // banner arriving on the reopening page).
   function demand() {
     if (document.querySelector(PUSH_TARGETS)) {
-      if (!source) connect();
+      if (!source && !retryTimer) connect();
       return;
     }
     clearTimeout(retryTimer);

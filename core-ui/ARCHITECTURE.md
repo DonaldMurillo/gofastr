@@ -1341,6 +1341,12 @@ updates without re-reading:
 | `window.__gofastr.sseStatus.lastEventAt` | every received `island` frame and on `open` (a `Date.now()` ms timestamp) |
 | `window.__gofastr.sseStatus.retryCount` | incremented on each transport error, reset to 0 on `open` and on a deliberate close |
 
+Transport errors retry with exponential backoff and independent jitter: the
+first delay is 1.5–3 seconds, doubling to a ceiling of 30–60 seconds per
+attempt. A successful open or deliberate close resets the backoff. DOM
+rescans do not bypass a pending retry. Session re-minting remains best-effort
+on every second failure and shares the same increasingly spaced attempts.
+
 Connect/disconnect transitions also dispatch
 `document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.
 Per-frame updates only touch `lastEventAt` silently. No event is
