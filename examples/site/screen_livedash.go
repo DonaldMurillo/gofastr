@@ -514,13 +514,9 @@ func renderDashConsole(ctx context.Context) render.HTML {
 		html.Div(html.DivConfig{Role: "status", AriaLabel: "Operational status"}, ui.Stack(ui.StackConfig{Gap: ui.GapSM, Align: ui.AlignStart},
 			statusPill,
 			html.Paragraph(html.TextConfig{}, ui.Muted(
-				render.Text("Open "+strconv.Itoa(open)+" · Acknowledged "),
-				// Live-bound count: dashIncidentsAckd.Bind emits a
-				// <span data-cui-signal="dash.incidentsAckd"> that the
-				// runtime updates in place whenever the Acknowledge
-				// button's data-cui-signal-inc fires. Without this
-				// bind the click increments the signal but the visible
-				// count stays at the SSR-painted 0 forever.
+				render.Text("Open "),
+				dashIncidentsOpen.Bind(ctx, "span", nil),
+				render.Text(" · Acknowledged "),
 				dashIncidentsAckd.Bind(ctx, "span", nil),
 			)),
 		)),
