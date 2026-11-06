@@ -718,7 +718,8 @@ few lines, and link the PR or the docs page for the rest.
   a navigation removed. A search input's clear button follows a form
   reset. A full-document navigation, or an intercepted overlay, that
   re-mints the SSE session drops cached screens, so Back cannot replay
-  the previous identity's pages. A superseded navigation's loading exit
+  the previous identity's pages, and points the page's SSE meta at the
+  new session, so the reopened stream is accepted. A superseded navigation's loading exit
   still finishes within its cap, so its cleanup and `aria-busy` reset
   run. BackToTop recomputes its threshold after a soft navigation or an
   island update that removes links. A
@@ -726,8 +727,10 @@ few lines, and link the PR or the docs page for the rest.
   page.
 - **Toasts and the notification bell.** A server-rendered default or
   polite `Toast` row carries a live status role, while the stack around
-  it stays non-live; the runtime's toast and sortable-list regions drop
-  the redundant `aria-live`. Dismissing or evicting a toast returns focus
+  it stays non-live; the runtime's toast and sortable-list regions, the
+  fallback toast drawn when the feedback module cannot load, and text
+  signal nodes given a status or alert role drop the redundant
+  `aria-live`. Dismissing or evicting a toast returns focus
   to where it came from, unless focus has moved elsewhere since.
   `NotificationBell` keeps its label in the accessible name when the
   unread count updates.
