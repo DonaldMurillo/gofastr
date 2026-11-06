@@ -4,13 +4,20 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
 
 func TestCodegenJSONPathsIncludeOutput(t *testing.T) {
-	for _, outputDir := range []string{"gen", "generated/reports with spaces"} {
+	outputDirs := []string{"gen", "generated/reports with spaces"}
+	if runtime.GOOS != "windows" {
+		// A control byte in a valid POSIX directory name: Go's %q spells it
+		// \x1b, which no JSON parser reads.
+		outputDirs = append(outputDirs, "generated/report\x1b")
+	}
+	for _, outputDir := range outputDirs {
 		for _, dryRun := range []bool{false, true} {
 			t.Run(outputDir+map[bool]string{true: "/dry", false: "/write"}[dryRun], func(t *testing.T) {
 				dir := jsonExtension(t, "")
