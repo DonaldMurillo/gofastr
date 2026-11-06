@@ -677,7 +677,9 @@ const (
 	// kernel live-region semantics cannot demand-load.
 	// TestStaticActionsSkipRequests: kernel dispatch and boot mount guards (+51);
 	// with the role-only live regions the core measures 16115, plus 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 51 + 3
+	// TestBarePrimaryLoading: loading templates opt into the demand-loaded
+	// envelope scheduler; the core handoff measures 16126 (+11), plus 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 51 + 3 + 11
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1174,7 +1176,9 @@ const (
 	// 18610 at level 1. The role-only live regions
 	// (TestFallbackToastUsesRoleOnly) bring it to 18603, and the static-action
 	// guards (TestStaticActionsSkipRequests) to 18671, plus 2.
-	coreCongestionWindowGZ = 18673
+	// TestBarePrimaryLoading's template handoff measures 18694 (+23)
+	// at level 1, plus 2; the loading scheduler remains demand-loaded.
+	coreCongestionWindowGZ = 18696
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1309,6 +1313,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"session invalidation and click ownership compress together": 8,
 		"static-action guards (TestStaticActionsSkipRequests)":       51,
 		"static-action guards and role-only live regions together":   3,
+		"bare-primary loading handoff (TestBarePrimaryLoading)":      11,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
