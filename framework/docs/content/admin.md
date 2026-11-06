@@ -601,6 +601,11 @@ grid save or role assignment containing such text is refused before any
 change: form posts return `bad-input`, and RPCs answer 400 with a `fields`
 entry naming the submitted control.
 
+Role assignment also checks `user_id` before looking up the account: NUL or
+malformed UTF-8 produces `bad-input` for a form and a 400 RPC refusal keyed
+by `user_id`, without a lookup or role mutation. A valid ID is used exactly
+as submitted; whitespace is not trimmed from account keys.
+
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A
 caller may grant or revoke only a permission its own roles hold (or the

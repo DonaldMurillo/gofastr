@@ -1353,6 +1353,12 @@ The identity mutations are covered too: a successful `GET
 so a role change driven from a script or future surface leaves the same
 trail the admin back-office writes.
 
+`EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
+`AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8
+as `auth.ErrUserNotFound` before querying or mutating storage. A refused
+role update emits no success audit. Valid IDs keep their exact bytes,
+including any leading or trailing whitespace.
+
 ## The 2FA flow
 
 ```
