@@ -349,6 +349,7 @@ func applySDKAppDefaults(dir string, opts *SdkOptions) error {
 	if opts.apiPrefix != "" || opts.set["api-prefix"] {
 		return nil
 	}
+	var found []string
 	for _, name := range appspec.RootFileNames {
 		path := filepath.Join(dir, name)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -356,13 +357,23 @@ func applySDKAppDefaults(dir string, opts *SdkOptions) error {
 		} else if err != nil {
 			return err
 		}
-		spec, err := appspec.DecodeAppSpecFile(path)
-		if err != nil {
-			return err
-		}
-		opts.apiPrefix = spec.App.APIPrefix
-		return nil
+		found = append(found, name)
 	}
+	switch len(found) {
+	case 0:
+		return nil
+	case 1:
+	default:
+		// The app may have been generated from either file, or from the
+		// directory with their app: blocks merged; probe order would pick
+		// a prefix the app might not mount.
+		return fmt.Errorf("found %s: cannot tell which spec sets the API prefix; pass --api-prefix or set api_prefix on the sdk generator in gofastr.settings.yml", strings.Join(found, " and "))
+	}
+	spec, err := appspec.DecodeAppSpecFile(filepath.Join(dir, found[0]))
+	if err != nil {
+		return err
+	}
+	opts.apiPrefix = spec.App.APIPrefix
 	return nil
 }
 

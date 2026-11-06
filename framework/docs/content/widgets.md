@@ -83,6 +83,14 @@ builds each one. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
 
+The registry is process-wide but routes belong to a router, so a second
+router in the same process that serves a widget another router mounted
+calls `widget.MountShared(r, def)`. It registers, on `r`'s root, each of
+the widget's endpoints (stylesheet, state, chrome, RPCs) that `r` does
+not serve yet, at the absolute URLs the catalog publishes and behind the
+same session gate `Mount` uses. `framework/uihost` does this for the
+registered toast stack.
+
 ## Anatomy
 
 A widget is described by a `widget.Definition`:

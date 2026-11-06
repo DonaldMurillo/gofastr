@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
@@ -106,5 +107,22 @@ func TestSDKAppPrefixFromJSONSpec(t *testing.T) {
 	}
 	if opts.apiPrefix != "api" {
 		t.Fatalf("gofastr.json prefix = %q, want %q", opts.apiPrefix, "api")
+	}
+}
+
+// Two root specs left the prefix to probe order (PR #666 review): an
+// entity-only gofastr.yml hid a gofastr.json that set api_prefix, and the
+// Local client called the unprefixed path. The SDK cannot tell which file
+// the app was generated from, so it asks for the prefix instead.
+func TestSDKAppPrefixTwoRootSpecs(t *testing.T) {
+	directory := t.TempDir()
+	clitest.WriteTestFile(t, filepath.Join(directory, "gofastr.yml"), "entities: []\n")
+	clitest.WriteTestFile(t, filepath.Join(directory, "gofastr.json"), `{"app": {"name": "repo", "api_prefix": "v2"}}`)
+	if err := applySDKAppDefaults(directory, &SdkOptions{}); err == nil || !strings.Contains(err.Error(), "--api-prefix") {
+		t.Fatalf("two root specs: err = %v, want a refusal naming --api-prefix", err)
+	}
+	opts := SdkOptions{set: map[string]bool{"api-prefix": true}, apiPrefix: "v2"}
+	if err := applySDKAppDefaults(directory, &opts); err != nil || opts.apiPrefix != "v2" {
+		t.Fatalf("explicit prefix beside two specs: %q, %v", opts.apiPrefix, err)
 	}
 }

@@ -69,6 +69,11 @@ func TestSDKRepoParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	clitest.WriteTestFile(t, filepath.Join(directory, "repository_test.go"), string(fixture))
+	transportFixture, err := os.ReadFile("testdata/repository/transport_test.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	clitest.WriteTestFile(t, filepath.Join(directory, "local", "transport_test.go"), string(transportFixture))
 	goVersion, err := clitest.RepoGoVersion(repoRoot)
 	if err != nil {
 		t.Fatal(err)

@@ -26,6 +26,10 @@ import (
 type transport struct { handler http.Handler }
 
 func (local transport) RoundTrip(request *http.Request) (*http.Response, error) {
+	// A RoundTripper closes the request body on every path.
+	if request.Body != nil {
+		defer request.Body.Close()
+	}
 	if err := request.Context().Err(); err != nil {
 		return nil, err
 	}

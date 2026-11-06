@@ -704,9 +704,10 @@ few lines, and link the PR or the docs page for the rest.
   stylesheet its pages link. The widget registry is process-wide while
   asset routes belong to each router, so the second host found the
   first host's toast stack and skipped its routes. Each host now mounts
-  the stylesheet routes it is missing for the registered stack, and an
-  app's own stack is never joined by a second default. See
-  [widgets.md](framework/docs/content/widgets.md).
+  the routes it is missing for the registered stack (stylesheet, state,
+  chrome and RPCs, behind the same session gate) through the new
+  `widget.MountShared`, and an app's own stack is never joined by a
+  second default. See [widgets.md](framework/docs/content/widgets.md).
 - **Unstorable text.** A String or Text field refuses invalid UTF-8 and
   NUL bytes with a keyed `invalid_text` error before a CRUD write, and a
   JSON field refuses them in any decoded string value or object key.

@@ -122,7 +122,10 @@ The generated API prefix is used for dispatch. Explicit SDK settings
 (`api_prefix`) and `--api-prefix` flags win, including an explicit empty
 value. Otherwise the SDK reads `app.api_prefix` from `gofastr.yml`,
 `gofastr.yaml` or `gofastr.json` when present; app specs default to
-`/api`. Without an app spec the SDK prefix defaults to empty. Regenerate with `--api-prefix` to
+`/api`. When more than one of those files exists the SDK cannot tell
+which one the app was generated from, so it refuses and asks for
+`--api-prefix` or the settings `api_prefix`. Without an app spec the SDK
+prefix defaults to empty. Regenerate with `--api-prefix` to
 match a server whose owned Go configuration differs from its old spec.
 
 Use an authenticated server-side context for Local calls. The context,

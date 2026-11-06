@@ -1,9 +1,6 @@
 package uihost
 
 import (
-	"fmt"
-	"net/http"
-
 	"github.com/DonaldMurillo/gofastr/core-ui/widget"
 	"github.com/DonaldMurillo/gofastr/core-ui/widget/preset"
 )
@@ -28,23 +25,10 @@ func (ds *UIHost) ensureToastStack() {
 	for _, d := range widget.AllForSSR() {
 		if preset.IsToastStack(d) {
 			registered = true
-			mounted := false
-			for _, route := range ds.coreRouter.Routes() {
-				if route.Method == "GET" && route.Pattern == d.StyleURL() {
-					mounted = true
-					break
-				}
-			}
-			if !mounted {
-				// The definition is process-wide, so its URL may sit under
-				// another host's prefix; register it where that absolute
-				// path resolves, which is this router's root.
-				ds.coreRouter.Root().Get(d.StyleURL(), http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-					writer.Header().Set("Content-Type", "text/css; charset=utf-8")
-					writer.Header().Set("Cache-Control", "no-store")
-					fmt.Fprint(writer, widget.RenderCSS(d))
-				}))
-			}
+			// The definition is process-wide, so another host may have
+			// mounted it under its own prefix; serve whatever of its
+			// published endpoints this router is missing.
+			widget.MountShared(ds.coreRouter, d)
 		}
 	}
 	if !registered {
