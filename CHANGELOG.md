@@ -692,7 +692,9 @@ few lines, and link the PR or the docs page for the rest.
 - **DI refuses replacing a provider while its singleton builds.**
   Before, the finished build overwrote the newer registration.
 - **Entity declarations refuse a scalar field and a relation with the
-  same name**, before a cascade write or include reads the wrong one.
+  same name**, before a cascade write or include reads the wrong one. A
+  belongs-to relation named for its own single foreign-key column
+  (`doc_id` over `doc_id`) without cascade writes is still accepted.
 - **entityui trash restore and purge honor `BeforeGet`.** A row the
   read hook hides can no longer be restored or purged from the trash.
 - **Relation pickers report read failures.** A failing store or hook
