@@ -718,7 +718,8 @@ few lines, and link the PR or the docs page for the rest.
   re-mints the SSE session drops cached screens, so Back cannot replay
   the previous identity's pages. A superseded navigation's loading exit
   still finishes within its cap, so its cleanup and `aria-busy` reset
-  run. BackToTop recomputes its threshold after a soft navigation. A
+  run. BackToTop recomputes its threshold after a soft navigation or an
+  island update that removes links. A
   wizard submit that never answered no longer moves focus on a later
   page.
 - **Toasts and the notification bell.** A server-rendered default or
@@ -735,7 +736,9 @@ few lines, and link the PR or the docs page for the rest.
   passing it.
 - **Compression keeps `ReadFrom`.** An uncompressed response through
   the compression middleware reaches the underlying writer's
-  `ReadFrom`, so file copies keep sendfile.
+  `ReadFrom`, so file copies keep sendfile. A copy that reads nothing,
+  or fails on its first read, sends no headers, so the handler can
+  still answer with an error status.
 - **Closed desktop windows.** Every shell answers a call on a closed
   window with the shared `not_found` error, Linux `Window.Close` is
   idempotent, and Windows refuses focus, title and frame calls on a
