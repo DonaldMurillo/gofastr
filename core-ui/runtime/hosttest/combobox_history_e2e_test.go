@@ -14,6 +14,9 @@ func recordComboboxHistory(t *testing.T, ctx context.Context) {
 	t.Helper()
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`
 		window.historyPushes = 0; window.historyReplaces = 0; window.historyPops = 0; window.navEvents = 0;
+		window.programmaticPicks = 0;
+		const originalNavigate = __gofastr.navigate;
+		__gofastr.navigate = function(...args) { window.programmaticPicks++; return originalNavigate.apply(this, args); };
 		const originalPush = history.pushState.bind(history);
 		const originalReplace = history.replaceState.bind(history);
 		history.pushState = function(...args) { window.historyPushes++; return originalPush(...args); };
@@ -72,16 +75,25 @@ func TestComboboxPickWritesHistoryOnce(t *testing.T) {
 					}
 				}
 				var pushes int
+				var programmatic int
 				var picked bool
 				if err := chromedp.Run(ctx,
 					chromedp.Poll(`window.navEvents > 0 && location.pathname + location.search + location.hash === '/birch?view=tree#leaves' && !!document.getElementById('leaves')`, nil),
 					chromedp.Evaluate(`window.historyPushes`, &pushes),
+					chromedp.Evaluate(`window.programmaticPicks`, &programmatic),
 					chromedp.Evaluate(fmt.Sprintf(`window.pickedInput.value === %q && window.pickedList.hidden && window.pickedInput.getAttribute('aria-expanded') === 'false'`, label), &picked),
 				); err != nil {
 					t.Fatal(err)
 				}
 				if pushes != 1 {
 					t.Errorf("one pick wrote %d history entries, want 1", pushes)
+				}
+				wantProgrammatic := 0
+				if method == "keyboard" {
+					wantProgrammatic = 1
+				}
+				if programmatic != wantProgrammatic {
+					t.Errorf("pick invoked the programmatic navigator %d times, want %d", programmatic, wantProgrammatic)
 				}
 				if !picked {
 					t.Error("pick did not fill the input and close the list")
@@ -108,9 +120,9 @@ func TestClaimedComboboxLinkStaysClaimed(t *testing.T) {
 	recordComboboxHistory(t, ctx)
 	var preserved bool
 	if err := chromedp.Run(ctx,
-		chromedp.Evaluate(`document.addEventListener('gofastr:beforenavigate', event => event.preventDefault())`, nil),
+		chromedp.Evaluate(`window.beforeNavigations = 0; document.addEventListener('gofastr:beforenavigate', event => { window.beforeNavigations++; event.preventDefault(); })`, nil),
 		chromedp.Click(`#links-listbox a span`),
-		chromedp.Evaluate(`historyPushes === 0 && location.pathname === '/' && pickedInput.value === 'Birch' && pickedList.hidden`, &preserved),
+		chromedp.Evaluate(`historyPushes === 0 && programmaticPicks === 0 && beforeNavigations === 1 && location.pathname === '/' && pickedInput.value === 'Birch' && pickedList.hidden`, &preserved),
 	); err != nil {
 		t.Fatal(err)
 	}

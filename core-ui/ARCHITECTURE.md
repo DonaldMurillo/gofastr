@@ -2555,8 +2555,15 @@ Navigable combobox options are anchors with `role="option"` and
 stay on the anchors: keyboard picks use the SPA navigator, while plain
 clicks commit the value and close the list without repeating navigation
 already claimed by the link router (including a cancelled navigation).
+The router marks the click event when it takes ownership, before firing
+the cancellable navigation hook. A signal delegate preventing default
+does not claim navigation: a link the router declines still uses the
+picker's programmatic navigator while committing its signal and value.
+Router ownership excludes even a redundant call to the programmatic
+navigator; URL deduplication is not a substitute for a single owner.
 Modified clicks follow the native `href`. The programmatic navigator's
-same-destination guard compares the resolved complete URL, including query
+same-destination guard resolves against `document.baseURI`, matching
+history writes and fetches, and compares the complete URL, including query
 and fragment; changing or removing a fragment is a navigation, while
 forcing an identical destination re-fetches with a replacement entry.
 Escape keydown consumers ignore both `isComposing` and keyCode 229,
@@ -2783,7 +2790,10 @@ links, buttons, inputs and arbitrary elements alike, including values
 other than `-1` and whitespace-padded negative integers. This applies to
 widget initial focus, modal traps, intercept handoff and traps, disclosures
 and responsive pane hosts. Explicit `autofocus` may still select a
-programmatic focus target outside the sequential Tab order.
+programmatic focus target outside the sequential Tab order. From such a
+target inside a trap, Tab moves to the next tabbable control in DOM order
+and Shift+Tab to the previous one, wrapping within the trap at either end.
+With no tabbable controls, the trap consumes Tab without moving focus.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path

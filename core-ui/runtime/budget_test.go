@@ -668,7 +668,9 @@ const (
 	// core navigator threads a separate CSRF replay guard without changing
 	// the navigate event's cached flag. This is core's own swap path and
 	// cannot demand-load. Retain two bytes of clearance.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22
+	// TestNavigateRespectsDocumentBase: 16002 measured + 2; identity is core navigation.
+	// TestSignalComboboxLinkNavigates: 16008 measured + 2; router ownership is core.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22 + 1 + 6
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1162,7 +1164,9 @@ const (
 	// TestNavigateComparesFullDestination and TestComboboxPickWritesHistoryOnce
 	// measure 18542 at level 1 with resolved query/fragment identity in
 	// the core navigator. Two bytes of clearance; cliff fixture re-run.
-	coreCongestionWindowGZ = 18544
+	// TestNavigateRespectsDocumentBase: 18562 measured + 2; identity is core navigation.
+	// TestSignalComboboxLinkNavigates: 18569 measured + 2; router ownership is core.
+	coreCongestionWindowGZ = 18571
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1287,6 +1291,10 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// measure 16001; line 16003. Destination identity belongs in the
 		// core navigator shared by links and programmatic picks.
 		"navigation deduplicates the resolved URL including query and fragment": 22,
+		// TestNavigateRespectsDocumentBase: 16001 -> 16002; line 16004.
+		"navigation identity resolves against the document base": 1,
+		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
+		"router marks its click ownership independently of signal prevention": 6,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1650,7 +1658,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// Escape guard on an intercepted drawer, including keyCode 229.
 		// 3796 measured with both. Pinned at the measured size plus 2.
 		// TestComboboxLinksStayOutOfTrap and TestTrapSkipsNegativeControls: 3821 + 2.
-		"intercept": 3823,
+		// TestTrapKeepsProgrammaticFocus pins DOM-order recovery: 3897 + 2.
+		"intercept": 3899,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
