@@ -743,7 +743,9 @@ few lines, and link the PR or the docs page for the rest.
   `generate` verb returns a JSON error for bad arguments, keeps
   diagnostics off stdout, refuses `--styles` with `--json` before
   writing, prints one JSON result after the endpoint and client rebuilds
-  finish, and includes the output directory in its file paths.
+  finish, and includes the output directory in its file paths. A path
+  holding a control byte or a format rune such as a bidi override comes
+  out as a JSON escape, so the reported path is the one written.
   `semantic query` and `semantic stats` return one JSON error document,
   and malformed remote stats JSON is refused.
 - **Test helpers and repo tools.** `TestResponse` header, body and JSON
