@@ -365,6 +365,8 @@ exits non-zero, which would undo the stop.
 The whole stop (MCP sessions, the drain and the control channel)
 shares one 10 s deadline, inside systemd's `TimeoutStopSec=20`,
 launchd's exit timeout and the 20 s that `service stop` waits.
+If the server stops on its own, the process exits non-zero as soon as
+the drain finishes, without waiting out the remaining stop budget.
 On Linux the unit is `Type=notify`: the daemon sends `READY=1` once it
 is serving and `STOPPING=1` before the drain, so `systemctl --user
 start` reports a port collision as a failed start.
