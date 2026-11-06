@@ -4,6 +4,12 @@ import "github.com/DonaldMurillo/gofastr/core/i18n"
 
 var reasonClipboardTextLimit = i18n.Define("desktop.clipboard_text_limit", "text must be at most 1 MiB")
 
+var (
+	reasonPrefLineBreaks  = i18n.Define("desktop.pref_line_breaks", "must not contain CR or LF line breaks")
+	reasonPrefLegacyLines = i18n.Define("desktop.pref_legacy_lines", "this stored value contains line breaks; replace it through the preferences API before editing it here")
+	hintPrefLegacyLines   = i18n.Define("desktop.pref_legacy_lines_help", "This stored value contains line breaks that this field cannot display. It is preserved when other settings are saved; use the preferences API to replace it.")
+)
+
 // The refusals the preferences screen writes, under their catalog keys.
 var (
 	reasonPrefNull         = i18n.Define("desktop.pref_null", "must not be null")

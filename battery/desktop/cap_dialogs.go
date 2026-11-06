@@ -14,12 +14,12 @@ import (
 func (b *Battery) dialogsCapability() Capability {
 	return Capability{
 		Name:        "dialogs",
-		Description: "Operating-system file and folder dialogs. Paths the user picks become readable (and writable for files) through the fs capability.",
+		Description: "Operating-system file and folder dialogs. Each pick grants only its exact path through fs; folders allow fs.stat, never descendants.",
 		Version:     1,
 		Methods: []Method{
 			{
 				Name:        "openFile",
-				Description: "Shows an open-file dialog; returns the picked path(s).",
+				Description: "Shows an open-file dialog; grants fs.stat, fs.readText, and fs.writeText only on the exact returned file path(s).",
 				Input: json.RawMessage(`{"type":"object","properties":{` +
 					`"filters":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"extensions":{"type":"array","items":{"type":"string"}}}}},` +
 					`"multiple":{"type":"boolean"}}}`),
@@ -57,7 +57,7 @@ func (b *Battery) dialogsCapability() Capability {
 			},
 			{
 				Name:        "saveFile",
-				Description: "Shows a save-file dialog; returns the chosen destination path.",
+				Description: "Shows a save-file dialog; grants fs.stat, fs.readText, and fs.writeText only on the exact destination file path.",
 				Input:       json.RawMessage(`{"type":"object","properties":{"defaultName":{"type":"string"}}}`),
 				Output:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
@@ -79,7 +79,7 @@ func (b *Battery) dialogsCapability() Capability {
 			},
 			{
 				Name:        "openFolder",
-				Description: "Shows a folder-picker dialog; returns the chosen folder.",
+				Description: "Shows a folder-picker dialog; grants fs.stat on the exact returned folder and nothing under it.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 					path, err := b.shell.Dialogs().OpenFolder(ctx)

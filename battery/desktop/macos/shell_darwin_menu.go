@@ -231,7 +231,12 @@ func bridgeScriptMessage(a *ffi.Args) uintptr {
 	if s == nil {
 		return 0
 	}
-	body := objc.ID(objc.Send(objc.ID(a.Int[3]), objc.Sel("body")))
+	message := objc.ID(a.Int[3])
+	frame := objc.ID(objc.Send(message, objc.Sel("frameInfo")))
+	if frame == 0 || objc.Send(frame, objc.Sel("isMainFrame"))&0xff == 0 {
+		return 0
+	}
+	body := objc.ID(objc.Send(message, objc.Sel("body")))
 	var text string
 	if objc.Send(body, objc.Sel("isKindOfClass:"), uintptr(objc.Class("NSString"))) != 0 {
 		text = objc.GoString(body)

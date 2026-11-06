@@ -549,7 +549,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 	userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 		objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 	objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 	webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -1339,7 +1339,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 		userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 			objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 		objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),

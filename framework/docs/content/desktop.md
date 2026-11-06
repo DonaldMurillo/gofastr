@@ -253,6 +253,20 @@ extractor as its own and keeps its local identity
 
 ## How the window authenticates
 
+The native bootstrap and generated typed bridge are top-frame-only in
+every main and secondary window. Same-origin and foreign iframes receive
+no `window.__gofastr_desktop` marker or typed bridge. macOS also refuses
+child-frame native script messages; Windows listens only to WebView2's
+top-level `WebMessageReceived` event, not frame message events. WebView2
+runs document-created scripts in child frames too, so the shared bootstrap
+checks `window === window.top` before publishing its marker. Linux installs
+its bootstrap with WebKitGTK's `TOP_FRAME` scope.
+
+This is an injection contract, not isolation from trusted same-origin
+JavaScript: a same-origin child can still access its parent's objects and
+authenticated HTTP endpoints. Do not embed untrusted content on the app's
+own origin.
+
 Any local process can find the loopback port, so the page must present
 a credential nothing else has:
 
@@ -406,7 +420,13 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). The path must arrive in
+(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
+on the exact picked folder and nothing under the folder: no descendant
+`stat`, reads, or writes. It does not grant directory traversal or listing.
+`openFile` and `saveFile` grant only the exact returned file paths for
+`fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
+parent directory. All picks retain the same least-authority `AllowPath`
+grant; a folder pick does not create a prefix grant. The path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink
@@ -2201,6 +2221,11 @@ bad menu. `New` also takes a defensive copy of the list (`Choices`,
 `Min`, `Max` included), so mutating the Config afterwards changes
 nothing.
 
+String defaults and every new string preference write refuse CR and LF
+line breaks. `Preferences.Set`, `preferences.set`, and the settings form
+validate this before storing any part of the update; errors identify the
+preference key, and the form returns a field error on 400.
+
 Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
@@ -2215,6 +2240,16 @@ settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
+
+Compatibility exception: a stored string containing CR or LF from an older
+version remains readable verbatim through `String`, `All`, and
+`preferences.get`. The single-line settings field warns that it cannot
+display those line breaks. Saving another field leaves that stored string
+untouched: its browser-sanitized display value is omitted from the update.
+Trying to change the legacy field through that form refuses the whole Save
+with a keyed field error, even when the proposed replacement is single-line.
+To repair it intentionally, replace it with a single-line string through
+`Preferences.Set` or `preferences.set`, then reopen the screen.
 
 ### The typed reads
 
