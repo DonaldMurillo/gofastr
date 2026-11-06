@@ -730,8 +730,8 @@ few lines, and link the PR or the docs page for the rest.
   polite `Toast` row carries a live status role, while the stack around
   it stays non-live; the runtime's toast and sortable-list regions, the
   fallback toast drawn when the feedback module cannot load, and text
-  signal nodes given a status or alert role drop the redundant
-  `aria-live`. Dismissing or evicting a toast returns focus
+  signal nodes whose role list holds a status or alert token (padded
+  or behind a fallback role included) drop the redundant `aria-live`. Dismissing or evicting a toast returns focus
   to where it came from, unless focus has moved elsewhere since.
   `NotificationBell` keeps its label in the accessible name when the
   unread count updates.

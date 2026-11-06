@@ -681,7 +681,8 @@ const (
 	// TestInitialFocusSkipsHidden (+139): the fallback's visibility checks, native
 	// summaries and the shared first stop are kernel state.
 	// Layer 6 and layer 7 together compress 8 bytes better than apart: 16300 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8
+	// TestSignalRolesAvoidDuplicateLive: alert and status read as role tokens (+15); 16315 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1180,7 +1181,8 @@ const (
 	// TestCancelledComboboxLinkStaysPut, TestTrapSkipsUnfocusable and
 	// TestTrapWorksWithoutCheckVisibility (trap eligibility and its fallback) and
 	// TestInitialFocusSkipsHidden with layer 7: 18876 measured + 2.
-	coreCongestionWindowGZ = 18878
+	// The role-token check measures 18890 at level 1, plus 2.
+	coreCongestionWindowGZ = 18892
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1319,6 +1321,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"focus eligibility without checkVisibility, native summaries, shared initial focus": 139,
 		// Merged with layer 7: 16300 measured; line 16302.
 		"trap eligibility and layer-7 navigation compress together": -8,
+		"signal role tokens (TestSignalRolesAvoidDuplicateLive)":    15,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
