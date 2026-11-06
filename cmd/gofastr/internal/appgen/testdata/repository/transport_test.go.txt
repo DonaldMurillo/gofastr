@@ -1,0 +1,46 @@
+package local
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type closeRecorder struct {
+	io.Reader
+	closed bool
+}
+
+func (body *closeRecorder) Close() error {
+	body.closed = true
+	return nil
+}
+
+// An http.RoundTripper closes the request body on every path, the
+// canceled early return included.
+func TestTransportClosesTheBody(t *testing.T) {
+	handler := http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	})
+	for _, canceled := range []bool{false, true} {
+		ctx, cancel := context.WithCancel(context.Background())
+		if canceled {
+			cancel()
+		}
+		body := &closeRecorder{Reader: strings.NewReader("{}")}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://gofastr.local/notes", body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response, err := (transport{handler: handler}).RoundTrip(request)
+		if err == nil {
+			response.Body.Close()
+		}
+		cancel()
+		if !body.closed {
+			t.Errorf("canceled=%v: request body left open", canceled)
+		}
+	}
+}

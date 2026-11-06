@@ -1,5 +1,20 @@
 # Widgets: `core-ui/widget`
 
+The UI host mounts a default toast stack at boot only when the global
+widget catalog contains no toast stack. On a host mounted at the root,
+the default stylesheet is served at
+`/core-ui/widget/gofastr-toasts/style.css`; a host mounted on a router
+group serves it under that group's prefix. When another host already
+registered a stack (including an app-defined one), this host adds only
+its missing stylesheet routes, on its root router at the catalog's
+published URLs, so a stack published under `/first` is served at
+`/first/...` even by a host mounted under `/second`. The stack keeps
+its names and mount prefixes. It does not register a second
+stack or replace the existing definitions, so booting another app cannot
+give the first app two toast regions. Repeated boot validation adds no
+duplicate routes. Stack behavior uses the host's shared runtime, not a
+separate per-stack script.
+
 Widgets are self-mounting overlay UIs that run on top of any page. They
 are distinct from components:
 
@@ -67,6 +82,14 @@ registered widget: the runtime fetches `/__gofastr/widgets` on boot and
 builds each one. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
+
+The registry is process-wide but routes belong to a router, so a second
+router in the same process that serves a widget another router mounted
+calls `widget.MountShared(r, def)`. It registers, on `r`'s root, each of
+the widget's endpoints (stylesheet, state, chrome, RPCs) that `r` does
+not serve yet, at the absolute URLs the catalog publishes and behind the
+same session gate `Mount` uses. `framework/uihost` does this for the
+registered toast stack.
 
 ## Anatomy
 

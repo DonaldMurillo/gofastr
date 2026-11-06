@@ -325,6 +325,7 @@ entities:
 
   # Per-verb roles on an owned entity.
   - name: notes
+    # The SDK's Go target also emits NotesRepo and its Local/Remote adapters.
     crud: true
     owner_field: user_id
     access:

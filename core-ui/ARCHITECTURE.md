@@ -2973,6 +2973,17 @@ serves from the widget's `StylePath` (default
 group `Mount` was given, the URL the widget catalog publishes; future
 work may collapse the two paths.
 
+The UI host guarantees a toast stack and its assets at boot. The widget
+catalog is process-global: boot registers the default only when no toast
+stack is registered anywhere in the process. If a stack already exists,
+boot adds only its missing stylesheet route on this router, at the
+catalog's published URL (including a widget mount prefix), without
+registering another stack or changing the original definition. Every
+registered stack gets its missing assets; unrelated widgets do not
+suppress the default. Repeated boot validation is idempotent. This also
+applies to multiple in-process hosts, not just TCP servers. Toast stacks
+have no separate per-stack script; the host mounts the shared runtime.
+
 Both registries coexist safely: they share the
 `data-cui-style="<name>"` link dedup key on the client, so a widget
 and a registered styled component can never double-load CSS even

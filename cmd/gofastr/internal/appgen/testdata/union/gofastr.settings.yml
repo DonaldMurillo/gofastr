@@ -6,4 +6,4 @@ codegen:
         binary: union
     - name: sdk
       config:
-        targets: [js]
+        targets: [go, js]

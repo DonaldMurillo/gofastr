@@ -21,10 +21,17 @@ func (ds *UIHost) ensureToastStack() {
 	if ds.coreRouter == nil {
 		return
 	}
+	registered := false
 	for _, d := range widget.AllForSSR() {
 		if preset.IsToastStack(d) {
-			return
+			registered = true
+			// The definition is process-wide, so another host may have
+			// mounted it under its own prefix; serve whatever of its
+			// published endpoints this router is missing.
+			widget.MountShared(ds.coreRouter, d)
 		}
 	}
-	widget.MountBuilder(ds.coreRouter, preset.ToastStack(DefaultToastStack))
+	if !registered {
+		widget.MountBuilder(ds.coreRouter, preset.ToastStack(DefaultToastStack))
+	}
 }

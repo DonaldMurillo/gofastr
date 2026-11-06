@@ -72,7 +72,7 @@ func renderedSDK(t *testing.T) map[string]string {
 func TestRenderSDKFiles_Layout(t *testing.T) {
 	got := renderedSDK(t)
 	for _, want := range []string{
-		"go/client.go", "go/go.mod", "go/README.md",
+		"go/client.go", "go/repositories.go", "go/local/repositories.go", "go/go.mod", "go/README.md",
 		"js/client.js", "js/client.d.ts", "js/README.md",
 		"dist/" + sdk.GoArtifact, "dist/" + sdk.JSArtifact,
 		"dist/" + sdk.JSTypesArtifact, "dist/" + sdk.ManifestFile,
@@ -292,7 +292,7 @@ func TestSDKZipDeterministic(t *testing.T) {
 	for _, f := range zr.File {
 		names = append(names, f.Name)
 	}
-	want := []string{"myapp-sdk/README.md", "myapp-sdk/client.go", "myapp-sdk/go.mod"}
+	want := []string{"myapp-sdk/README.md", "myapp-sdk/client.go", "myapp-sdk/go.mod", "myapp-sdk/local/repositories.go", "myapp-sdk/repositories.go"}
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Fatalf("zip entries %v, want %v", names, want)
 	}
@@ -488,6 +488,9 @@ entities:
 	if !strings.Contains(string(readme), "https://cfg.example.com") {
 		t.Error("config base_url ignored")
 	}
+	if !strings.Contains(string(readme), "https://cfg.example.com/api") {
+		t.Error("direct SDK command did not inherit the app prefix")
+	}
 	if !strings.Contains(string(readme), "configapp") {
 		t.Error("config name ignored")
 	}
@@ -511,6 +514,13 @@ entities:
 	GenerateProject([]string{"--config=gofastr.settings.yml"})
 	if _, err := os.Stat(filepath.Join(dir, "gen", "sdk", "js", "client.js")); err != nil {
 		t.Fatalf("registry path did not emit client.js: %v", err)
+	}
+	registryReadme, err := os.ReadFile(filepath.Join(dir, "gen", "sdk", "js", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(registryReadme), "https://cfg.example.com/api") {
+		t.Error("registered SDK generator did not inherit the app prefix")
 	}
 	if _, err := sdk.ReadManifest(os.DirFS(filepath.Join(dir, "gen", "sdk", "dist"))); err != nil {
 		t.Fatalf("registry path did not emit a valid manifest: %v", err)

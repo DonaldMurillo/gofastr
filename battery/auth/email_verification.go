@@ -115,6 +115,7 @@ func (p *EmailVerificationPlugin) Init(mgr *AuthManager) error {
 }
 
 func (p *EmailVerificationPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/send-verification", http.HandlerFunc(p.sendHandler))
 	r.Get(basePath+"/verify-email", http.HandlerFunc(p.verifyHandler))
 }

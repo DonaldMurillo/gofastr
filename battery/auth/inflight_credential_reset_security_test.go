@@ -102,7 +102,7 @@ func TestTokenCreateAfterResetBeforeSnapshot(t *testing.T) {
 	// The session middleware resolved alice, then the reset ran in full:
 	// new hash, session deleted. The snapshot is taken after it.
 	ctx := handler.WithPrincipalCheck(handler.SetUser(context.Background(), alice),
-		sessionRecheck(mgr, sess.Token, slog.Default()))
+		sessionRecheck(mgr, []string{sess.Token}, sessionAssurance{userID: alice.ID}, slog.Default()))
 	resetHash, _ := HashPassword("resetpw123")
 	if err := users.SetPassword(context.Background(), alice.ID, resetHash); err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestTokenCreateOnLiveSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := handler.WithPrincipalCheck(handler.SetUser(context.Background(), alice),
-		sessionRecheck(mgr, sess.Token, slog.Default()))
+		sessionRecheck(mgr, []string{sess.Token}, sessionAssurance{userID: alice.ID}, slog.Default()))
 	req := bearerRequestWithJSON("POST", "/auth/tokens", `{"name":"keep","scopes":["a:b"]}`).WithContext(ctx)
 	rec := httptest.NewRecorder()
 	plugin.createTokenHandler().ServeHTTP(rec, req)

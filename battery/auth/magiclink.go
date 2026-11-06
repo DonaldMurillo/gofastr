@@ -384,6 +384,7 @@ func refuseInMemoryTokenStore(mgr *AuthManager, plugin string) error {
 
 // RegisterRoutes mounts the magic-link send and verify endpoints.
 func (p *MagicLinkPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	p.basePath = basePath
 	r.Post(basePath+"/magic-link/send", http.HandlerFunc(p.sendHandler))
 	// GET renders the confirmation screen; POST is what actually signs

@@ -25,6 +25,20 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- `gofastr generate sdk` now emits a typed repository interface per entity,
+  a Remote adapter over the Go client, and a Local adapter that calls the
+  app in-process through the new `app.InProcessHandler()`. Both go through
+  the REST access rules, scoping, validation and hooks; the SDK stays
+  stdlib-only. `InProcessHandler` refuses requests carrying cookies,
+  credentials or a TLS peer certificate, and battery/auth keeps the
+  server-set user (and its 2FA assurance) for the calls it admits. A
+  custom session or user store binds that assurance to the lookup tenant
+  unless `AuthConfig.GlobalSessionLookup` says lookup ignores the tenant.
+  See [sdk.md](framework/docs/content/sdk.md#typed-repositories) and
+  [auth.md](framework/docs/content/auth.md#session-middleware-cookie--ctx-user).
+- `router.Router.Root()` returns the router at the top of a Group chain,
+  for a registrar that must serve an absolute URL outside its group's
+  prefix. See [core-packages.md](framework/docs/content/core-packages.md#router).
 - **`ui.CommandPaletteTrigger`, `ui.ShortcutSheetTrigger` and
   `ui.NotificationBellTrigger`** render a trigger for each request, in
   that request's locale, from the same config whose body is mounted once.
@@ -686,6 +700,14 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- A second UI host in the same process served a 404 for the toast
+  stylesheet its pages link. The widget registry is process-wide while
+  asset routes belong to each router, so the second host found the
+  first host's toast stack and skipped its routes. Each host now mounts
+  the routes it is missing for the registered stack (stylesheet, state,
+  chrome and RPCs, behind the same session gate) through the new
+  `widget.MountShared`, and an app's own stack is never joined by a
+  second default. See [widgets.md](framework/docs/content/widgets.md).
 - **Unstorable text.** A String or Text field refuses invalid UTF-8 and
   NUL bytes with a keyed `invalid_text` error before a CRUD write, and a
   JSON field refuses them in any decoded string value or object key.

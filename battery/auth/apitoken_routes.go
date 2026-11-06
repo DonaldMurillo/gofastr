@@ -70,6 +70,7 @@ func (p *TokensPlugin) Init(mgr *AuthManager) error {
 }
 
 func (p *TokensPlugin) RegisterRoutes(r *router.Router, basePath string) {
+	r = r.Group("", browserAccountOnly)
 	r.Post(basePath+"/tokens", p.createTokenHandler())
 	r.Get(basePath+"/tokens", p.listTokensHandler())
 	r.Delete(basePath+"/tokens/{id}", p.revokeTokenHandler())
@@ -84,6 +85,9 @@ func (p *TokensPlugin) RegisterRoutes(r *router.Router, basePath string) {
 // escaping its own scope leash, and list/revoke the owner's other tokens.
 // Token scopes in ctx are the discriminator (only TokenMiddleware sets them).
 func (p *TokensPlugin) requireSessionUserID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if rejectInProcessAccountOperation(w, r) {
+		return "", false
+	}
 	u := GetCurrentUser(r.Context())
 	if u == nil {
 		writeAuthError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)

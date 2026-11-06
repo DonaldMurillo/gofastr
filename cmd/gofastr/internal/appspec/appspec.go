@@ -321,6 +321,11 @@ func LoadAppSpecPath(path string, validate bool) (AppSpec, error) {
 	return bp, nil
 }
 
+// RootFileNames are the conventional app spec file names at a project
+// root, in probe order. Callers that look for "the app spec" in a
+// directory use this list so YAML and JSON specs are found alike.
+var RootFileNames = []string{"gofastr.yml", "gofastr.yaml", "gofastr.json"}
+
 func DecodeAppSpecFile(path string) (AppSpec, error) {
 	node, err := parseAppSpecFile(path)
 	if err != nil {

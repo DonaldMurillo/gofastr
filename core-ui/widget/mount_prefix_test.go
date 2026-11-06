@@ -62,3 +62,56 @@ func TestPrefixedMountPublishesItsURLs(t *testing.T) {
 		t.Errorf("StylePath = %q, want the unprefixed default", def.StylePath)
 	}
 }
+
+// A second host in the process served only a shared widget's stylesheet
+// (PR #666 review), so the state, chrome and RPC URLs its catalog and
+// markup name were 404s on that host.
+func TestMountSharedServesEveryEndpoint(t *testing.T) {
+	widget.IsolateForTest(t)
+	first, second := router.New(), router.New()
+	def := widget.New("shared-mount").
+		Signal("n", widget.SignalFunc(func() (any, error) { return 1, nil })).
+		RPC("POST", "/core-ui/widget/shared-mount/ping", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})).
+		Build()
+	widget.Mount(first.Group("/v2"), &def)
+	widget.MountShared(second, &def)
+	// A repeat registers nothing again; the router panics on a duplicate.
+	widget.MountShared(second, &def)
+	for _, c := range []struct {
+		method, url string
+		want        int
+	}{
+		{http.MethodGet, def.StyleURL(), http.StatusOK},
+		{http.MethodGet, def.StateURL(), http.StatusOK},
+		{http.MethodGet, def.ChromeURL(), http.StatusOK},
+		{http.MethodPost, "/v2/core-ui/widget/shared-mount/ping", http.StatusNoContent},
+	} {
+		got := httptest.NewRecorder()
+		second.ServeHTTP(got, httptest.NewRequest(c.method, c.url, nil))
+		if got.Code != c.want {
+			t.Errorf("%s %s on the second router = %d, want %d", c.method, c.url, got.Code, c.want)
+		}
+	}
+}
+
+// The routes MountShared adds carry the gate Mount puts on the same
+// endpoints: a shared copy must not serve what the original refuses.
+func TestMountSharedKeepsTheSessionGate(t *testing.T) {
+	widget.IsolateForTest(t)
+	first, second := router.New(), router.New()
+	def := widget.New("shared-gated").
+		Signal("n", widget.SignalFunc(func() (any, error) { return 1, nil })).
+		Build()
+	def.RequireSession = true
+	widget.Mount(first, &def)
+	widget.MountShared(second, &def)
+	for _, url := range []string{def.StateURL(), def.ChromeURL()} {
+		got := httptest.NewRecorder()
+		second.ServeHTTP(got, httptest.NewRequest(http.MethodGet, url, nil))
+		if got.Code != http.StatusForbidden {
+			t.Errorf("GET %s without a session = %d, want 403", url, got.Code)
+		}
+	}
+}
