@@ -2881,6 +2881,13 @@ strings remain unchanged. Trigger rendering shares the constructor's
 markup and validation without constructing another body or mount; keep
 the widget name and shortcut consistent with the mounted builder.
 
+`ui.ShortcutSheetTrigger(ctx, cfg)` follows the same split: mount the
+`ShortcutSheet` or `ShortcutSheetFunc` body once, then render the hidden or
+visible trigger for each reader. The request context resolves the default
+trigger label and the body's title independently; an explicit
+`TriggerLabel` overrides both. Nil trigger contexts use English fallbacks
+rather than the context captured in the config.
+
 Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
 every focusable candidate. Every consumer of the kernel's `_focusSel`
 checks the browser-normalized `tabIndex >= 0`: negative values exclude
