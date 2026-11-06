@@ -99,12 +99,16 @@ func (f *FileField) Validate() error {
 	if f == nil {
 		return nil
 	}
-	for name, v := range map[string]string{
-		"url":        f.URL,
-		"filename":   f.Filename,
-		"mimeType":   f.MimeType,
-		"storageRef": f.StorageRef,
+	for _, entry := range []struct {
+		key string
+		val string
+	}{
+		{"url", f.URL},
+		{"filename", f.Filename},
+		{"mimeType", f.MimeType},
+		{"storageRef", f.StorageRef},
 	} {
+		name, v := entry.key, entry.val
 		if len(v) > MaxFileFieldStringBytes {
 			return fmt.Errorf("%w: field %q is %d bytes (max %d)", ErrFileFieldOversize, name, len(v), MaxFileFieldStringBytes)
 		}
@@ -127,11 +131,15 @@ func (f *FileField) Validate() error {
 	// Checked after the scheme guard so a control byte smuggled into a
 	// javascript: URL still reports as ErrFileFieldURLScheme, that is the
 	// actionable diagnosis, and TestFileField_RejectsJavaScriptScheme pins it.
-	for name, v := range map[string]string{
-		"url":         f.URL,
-		"filename":    f.Filename,
-		"storage_ref": f.StorageRef,
+	for _, entry := range []struct {
+		key string
+		val string
+	}{
+		{"url", f.URL},
+		{"filename", f.Filename},
+		{"storage_ref", f.StorageRef},
 	} {
+		name, v := entry.key, entry.val
 		if i := indexControlByte(v); i >= 0 {
 			return fmt.Errorf("%w: %s contains %#x at offset %d", ErrFileFieldControlBytes, name, v[i], i)
 		}
@@ -143,11 +151,15 @@ func (f *FileField) Validate() error {
 	// zero-width space manufactures visually identical twin refs, and
 	// the 8-bit CSI/OSC forms drive terminal escapes like ESC-[ does.
 	// They forge text rather than decorate it; same error class.
-	for name, v := range map[string]string{
-		"url":         f.URL,
-		"filename":    f.Filename,
-		"storage_ref": f.StorageRef,
+	for _, entry := range []struct {
+		key string
+		val string
+	}{
+		{"url", f.URL},
+		{"filename", f.Filename},
+		{"storage_ref", f.StorageRef},
 	} {
+		name, v := entry.key, entry.val
 		if r, off := indexForgedRune(v); off >= 0 {
 			return fmt.Errorf("%w: %s contains invisible or bidi rune U+%04X at offset %d",
 				ErrFileFieldControlBytes, name, r, off)

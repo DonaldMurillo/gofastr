@@ -152,6 +152,29 @@ func fetchTaggedSwitch(c *http.Client, host string) {
 	}
 }
 
+// The install spelled as replacing the whole client: the guarded
+// transport rides a NEW client, and a caller-supplied one still
+// escapes the guard.
+func fetchReplaceClient(c *http.Client, host string) {
+	_ = checkHost(host)
+	if c.Transport == nil { // want `resolvedial: the dial-time guard is installed only when Transport is nil`
+		c = &http.Client{Transport: guarded()}
+	}
+}
+
+// The install one frame down: a package-local helper assigns the
+// client's Transport, still only under the nil test.
+func fetchHelperInstall(c *http.Client, host string) {
+	_ = checkHost(host)
+	if c.Transport == nil { // want `resolvedial: the dial-time guard is installed only when Transport is nil`
+		installGuarded(c)
+	}
+}
+
+func installGuarded(c *http.Client) {
+	c.Transport = guarded()
+}
+
 // A rewrite after the RoundTrip changes nothing the dial used.
 type lateRewriteRT struct{ inner http.RoundTripper }
 

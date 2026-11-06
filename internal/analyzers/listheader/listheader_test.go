@@ -12,3 +12,7 @@ import (
 func TestListHeader(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), allow.Guard(listheader.Analyzer), "a")
 }
+
+func TestReviewWrappedHeaderValues(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), allow.Guard(listheader.Analyzer), "review")
+}

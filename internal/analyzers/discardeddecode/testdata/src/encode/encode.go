@@ -158,3 +158,30 @@ func nearMiss(resp Response) {
 }
 
 var _ handleFunc
+
+// floatKeyResponse: json.Marshal always refuses a float key.
+type floatKeyResponse struct {
+	JSONRPC string             `json:"jsonrpc"`
+	Rates   map[float64]string `json:"rates"`
+}
+
+// stringKeyResponse: string and integer keys (and time.Time, a
+// TextMarshaler) encode fine.
+type stringKeyResponse struct {
+	JSONRPC string            `json:"jsonrpc"`
+	Tags    map[string]int    `json:"tags"`
+	At      map[int64]string  `json:"at"`
+	Stamps  map[time.Time]int `json:"stamps"`
+}
+
+func floatKey(w io.Writer) {
+	_ = json.NewEncoder(w).Encode(floatKeyResponse{JSONRPC: "2.0", Rates: map[float64]string{1.5: "x"}}) // want `Encode error discarded on a floatKeyResponse`
+}
+
+func floatKeyVar(w io.Writer, rates map[float64]string) {
+	_ = json.NewEncoder(w).Encode(floatKeyResponse{JSONRPC: "2.0", Rates: rates}) // want `Encode error discarded on a floatKeyResponse`
+}
+
+func stringKey(w io.Writer, tags map[string]int, at map[int64]string, stamps map[time.Time]int) {
+	json.NewEncoder(w).Encode(stringKeyResponse{JSONRPC: "2.0", Tags: tags, At: at, Stamps: stamps})
+}

@@ -9,7 +9,7 @@ import (
 
 // No class may become a method the embedded *Sheet already exports:
 // the outer method would replace it, and OwnedSheet (the interface
-// app.StyleSheet requires) breaking stops the app compiling. The list
+// app.OwnedStyle requires) breaking stops the app compiling. The list
 // comes from *Sheet's method set, so a method added to Sheet later is
 // refused without anyone remembering to list it.
 func TestGenRefusesEverySheetMethodName(t *testing.T) {

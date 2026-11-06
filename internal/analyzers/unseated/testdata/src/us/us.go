@@ -31,6 +31,43 @@ func openSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+const sseCT = "text/event-stream"
+
+// openConstHeader names the content-type through a constant: the same
+// admission.
+func openConstHeader(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", sseCT) // want `long-lived stream opened here`
+	w.WriteHeader(http.StatusOK)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-events():
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+	}
+}
+
+// openHeaderMap writes the header map directly: not a Set call at all.
+func openHeaderMap(w http.ResponseWriter, r *http.Request) {
+	w.Header()["Content-Type"] = []string{"text/event-stream"} // want `long-lived stream opened here`
+	w.WriteHeader(http.StatusOK)
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-events():
+			fmt.Fprintf(w, "data: %s\n\n", ev)
+		}
+	}
+}
+
+// A plain page through the header map: no stream, no park, quiet.
+func plainHeaderMap(w http.ResponseWriter) {
+	w.Header()["Content-Type"] = []string{"text/html"}
+	fmt.Fprintln(w, "hi")
+}
+
 // openPolled checks for the caller leaving through a select with a
 // default and ticks on a timer. It never blocks on input, but a polling
 // loop holds the stream open just the same.

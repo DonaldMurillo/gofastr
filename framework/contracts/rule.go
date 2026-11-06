@@ -154,9 +154,17 @@ func validateRule(r Rule) error {
 	if r.Severity == SeverityOff {
 		return fmt.Errorf("rule %s: a rule may not declare severity off: omit it from the catalog instead", r.ID)
 	}
-	for field, val := range map[string]string{
-		"Title": r.Title, "Summary": r.Summary, "Why": r.Why, "Fix": r.Fix, "Doc": r.Doc,
+	for _, entry := range []struct {
+		key string
+		val string
+	}{
+		{"Title", r.Title},
+		{"Summary", r.Summary},
+		{"Why", r.Why},
+		{"Fix", r.Fix},
+		{"Doc", r.Doc},
 	} {
+		field, val := entry.key, entry.val
 		if strings.TrimSpace(val) == "" {
 			return fmt.Errorf("rule %s: %s is required", r.ID, field)
 		}

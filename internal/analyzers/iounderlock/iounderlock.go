@@ -30,6 +30,10 @@
 //     package and exported across packages, so getKey → fetchLocked →
 //     c.httpClient.Do counts.
 //
+// Every mutex held at the call is judged (acquisition order), not just
+// the first: a lock taken earlier on another object must not hide the
+// throttle mutex taken after it.
+//
 // Network I/O fires under any held mutex. Database I/O fires only when
 // the mutex guards a throttle or TTL timestamp: between the acquisition
 // and the I/O, a time.Time field of the mutex's owner (the root of the
@@ -54,11 +58,16 @@
 //     it, or one read only after the I/O, or a timestamp on another
 //     object (a job's startedAt): the mutex serializes the work, which is
 //     a design choice, not the refresh-under-cache-lock bug;
-//   - calls inside nested function literals: a sync.Once body, a
-//     closure handed to `go` or deferred, or a comparator runs outside
-//     the linear region (and once.Do's own serialization is the point);
-//   - `go` launches and deferred calls under the lock: the launch does
-//     not block, and the deferred call runs at exit;
+//   - calls inside function literals that do not run in the region: a
+//     closure handed to `go` or deferred, to time/context.AfterFunc
+//     (which run it later on their own goroutine), to sync.Once.Do
+//     (once.Do's own serialization is the point), to a goroutine
+//     launcher (sync.WaitGroup.Go, errgroup.Group.Go) or a handler
+//     registration (net/http Handle/HandleFunc, which store it for a
+//     later request), appended to a slice, and one merely stored or
+//     returned. A literal called in place or passed straight to any
+//     other call IS the region — runNow(func(){ … }) runs under the
+//     lock — as is a package-level function literal checked on its own;
 //   - a mutex reached through an alias or a custom wrapper type: only
 //     sync.Mutex/RWMutex selectors are tracked (callbackunderlock's
 //     posture);
@@ -79,6 +88,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -123,17 +133,13 @@ func run(pass *analysis.Pass) (any, error) {
 		k := a.io[obj]
 		pass.ExportObjectFact(obj, &doesIO{Via: k.Via, Net: k.Net})
 	}
-	for _, fn := range fns {
-		if strings.HasSuffix(pass.Fset.Position(fn.Pos()).Filename, "_test.go") {
+	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
 		}
-		a.checkBody(fn.Body)
-		ast.Inspect(fn.Body, func(n ast.Node) bool {
-			if lit, ok := n.(*ast.FuncLit); ok {
-				a.checkBody(lit.Body)
-			}
-			return true
-		})
+		for _, fn := range astx.AllFuncs(f) {
+			a.checkBody(astx.BodyOf(fn))
+		}
 	}
 	return nil, nil
 }
@@ -143,25 +149,111 @@ type analyzer struct {
 	io   map[*types.Func]ioKind
 }
 
-// linearCalls visits the calls body makes itself: not inside nested
-// literals, not launched with `go`, not deferred.
-func linearCalls(body *ast.BlockStmt, visit func(*ast.CallExpr)) {
-	skip := map[*ast.CallExpr]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
+// linearCalls visits the calls body makes itself: not launched with
+// `go`, not deferred, and not inside a function literal other than one
+// called in place or passed straight to a call — a synchronous closure
+// argument runs in this region. A literal handed to `go` or defer, or
+// to a function that runs it later (time/context.AfterFunc) or
+// serializes it itself (sync.Once.Do), does not.
+func (a *analyzer) linearCalls(body *ast.BlockStmt, visit func(*ast.CallExpr)) {
+	launched := map[*ast.FuncLit]bool{} // inside a go/defer call's subtree
+	runsHere := map[*ast.FuncLit]bool{} // called in place, or a direct call argument
+	var async []ast.Expr
+	for _, stmt := range body.List {
+		collectLiterals(a.pass, stmt, launched, runsHere, &async)
+	}
+	for _, call := range async {
+		ast.Inspect(call, func(n ast.Node) bool {
+			if lit, ok := n.(*ast.FuncLit); ok {
+				launched[lit] = true
+			}
+			return true
+		})
+	}
+	var walk func(n ast.Node) bool
+	walk = func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
-			return false
+			return !launched[n] && runsHere[n]
 		case *ast.GoStmt:
-			skip[n.Call] = true
+			for _, arg := range n.Call.Args {
+				ast.Inspect(arg, walk)
+			}
+			return false
 		case *ast.DeferStmt:
-			skip[n.Call] = true
+			for _, arg := range n.Call.Args {
+				ast.Inspect(arg, walk)
+			}
+			return false
 		case *ast.CallExpr:
-			if !skip[n] {
-				visit(n)
+			visit(n)
+		}
+		return true
+	}
+	ast.Inspect(body, walk)
+}
+
+// collectLiterals gathers the function literals of stmt's subtree:
+// launched collects the `go`/defer call subtrees (marked wholesale,
+// arguments included — whether a callee runs a passed closure here is
+// unknowable, and the quiet direction is right), runsHere the literals
+// that run synchronously in this region: called in place, or a direct
+// argument of a call that is not one of the run-it-later spellings.
+func collectLiterals(pass *analysis.Pass, stmt ast.Stmt, launched, runsHere map[*ast.FuncLit]bool, async *[]ast.Expr) {
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.GoStmt:
+			*async = append(*async, n.Call)
+			return false
+		case *ast.DeferStmt:
+			*async = append(*async, n.Call)
+			return false
+		case *ast.CallExpr:
+			if lit, ok := ast.Unparen(n.Fun).(*ast.FuncLit); ok {
+				runsHere[lit] = true
+			}
+			if !runsItLater(pass, n) {
+				for _, arg := range n.Args {
+					if lit, ok := ast.Unparen(arg).(*ast.FuncLit); ok {
+						runsHere[lit] = true
+					}
+				}
 			}
 		}
 		return true
 	})
+}
+
+// runsItLater: a call that does NOT run its function argument in this
+// region: time.AfterFunc and context.AfterFunc run it on their own
+// goroutine, sync.Once.Do serializes and runs it under its own lock,
+// sync.WaitGroup.Go and errgroup.Group.Go launch a goroutine, the
+// net/http registration calls (ServeMux.Handle/HandleFunc and the
+// package-level twins) store the handler for a later request, and
+// append only stores the literal for whoever runs it. Everything else
+// that takes a literal runs it here, runNow(fn) included.
+func runsItLater(pass *analysis.Pass, call *ast.CallExpr) bool {
+	switch ob := typeutil.Callee(pass.TypesInfo, call).(type) {
+	case *types.Builtin:
+		return ob.Name() == "append"
+	case *types.Func:
+		if ob.Pkg() == nil {
+			return false
+		}
+		switch ob.Pkg().Path() {
+		case "time", "context":
+			return ob.Name() == "AfterFunc"
+		case "sync":
+			return (ob.Name() == "Do" && recvName(ob) == "Once") ||
+				(ob.Name() == "Go" && recvName(ob) == "WaitGroup")
+		case "golang.org/x/sync/errgroup":
+			return ob.Name() == "Go" && recvName(ob) == "Group"
+		case "net/http":
+			return (ob.Name() == "Handle" || ob.Name() == "HandleFunc") &&
+				(recvName(ob) == "ServeMux" || recvName(ob) == "")
+		}
+	}
+	return false
 }
 
 // collect computes the package's doesIO functions to a fixed point.
@@ -177,7 +269,7 @@ func (a *analyzer) collect(fns []*ast.FuncDecl) {
 				continue
 			}
 			var k ioKind
-			linearCalls(fn.Body, func(call *ast.CallExpr) {
+			a.linearCalls(fn.Body, func(call *ast.CallExpr) {
 				// Network I/O wins: it is the arm that fires under any lock.
 				if c := a.ioOf(call); c.Via != "" && (k.Via == "" || c.Net && !k.Net) {
 					k = c
@@ -282,7 +374,7 @@ func (a *analyzer) checkBody(body *ast.BlockStmt) {
 		kind ioKind
 	}
 	var ios []ioCall
-	linearCalls(body, func(call *ast.CallExpr) {
+	a.linearCalls(body, func(call *ast.CallExpr) {
 		if key, lock, ok := a.mutexOp(call); ok {
 			events = append(events, lockEvent{pos: call.Pos(), key: key, lock: lock})
 			return
@@ -296,12 +388,24 @@ func (a *analyzer) checkBody(body *ast.BlockStmt) {
 	}
 	checks := a.timestampChecks(body)
 	for _, c := range ios {
-		key, since, held := heldAt(events, c.call.Pos())
-		if !held {
+		held := heldLocks(events, c.call.Pos())
+		if len(held) == 0 {
 			continue
 		}
-		if !c.kind.Net && !checkedBetween(checks, key, since, c.call.Pos()) {
-			// Database I/O under a mutex that serializes the work
+		// Network I/O fires under any held mutex. Database I/O fires
+		// under the first held mutex (acquisition order) whose owner's
+		// throttle timestamp was read between its acquisition and the
+		// call — a lock taken earlier on another object must not hide
+		// the throttle mutex taken after it.
+		var key string
+		for _, lk := range held {
+			if c.kind.Net || checkedBetween(checks, lk.key, lk.pos, c.call.Pos()) {
+				key = lk.key
+				break
+			}
+		}
+		if key == "" {
+			// Database I/O under mutexes that serialize the work
 			// itself (a SQLite single writer, a role transition, a
 			// schema ensure) is a design choice. The bug is the mutex
 			// that guards a throttle or TTL timestamp, held across the
@@ -429,12 +533,12 @@ func (a *analyzer) mutexOp(call *ast.CallExpr) (key string, lock, ok bool) {
 	return types.ExprString(sel.X), sel.Sel.Name == "Lock" || sel.Sel.Name == "RLock", true
 }
 
-// heldAt reports a mutex held at pos: the last event for its key before
-// pos is an acquisition. Branches flatten by source position, which can
-// only under-report (a release on one branch reads as a release). A
-// deferred Unlock never appears as an event, so Lock + defer Unlock
-// holds to the end of the body.
-func heldAt(events []lockEvent, pos token.Pos) (string, token.Pos, bool) {
+// heldLocks reports the mutexes held at pos, in acquisition order: the
+// last event for each key before pos is an acquisition. Branches
+// flatten by source position, which can only under-report (a release
+// on one branch reads as a release). A deferred Unlock never appears
+// as an event, so Lock + defer Unlock holds to the end of the body.
+func heldLocks(events []lockEvent, pos token.Pos) []lockEvent {
 	last := map[string]lockEvent{}
 	var order []string
 	for _, e := range events {
@@ -446,12 +550,13 @@ func heldAt(events []lockEvent, pos token.Pos) (string, token.Pos, bool) {
 		}
 		last[e.key] = e
 	}
+	var held []lockEvent
 	for _, key := range order {
 		if e := last[key]; e.lock {
-			return key, e.pos, true
+			held = append(held, e)
 		}
 	}
-	return "", token.NoPos, false
+	return held
 }
 
 func calleeName(info *types.Info, call *ast.CallExpr) string {

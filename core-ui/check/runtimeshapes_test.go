@@ -326,6 +326,34 @@ function zoneOf(code) { return zoneMap[code] ?? null; }
 	}
 }
 
+// TestLintRegistryOwnProps_EventDetailIndex: a CustomEvent's .detail
+// is page-script data — any script can dispatchEvent(new
+// CustomEvent(…, { detail: { name: 'constructor' } })) — so an index
+// member-chain reading it is attribute-borne, not catalog config like
+// cfg.name. Reduced from popover.js's fui:widget-close handler.
+func TestLintRegistryOwnProps_EventDetailIndex(t *testing.T) {
+	dir := writeRuntimeFixture(t, "detail.js", `const NS = window.__gofastr;
+const widgetIndex = {};
+function onClose(e) {
+  const st = widgetIndex[(e.detail || {}).name];
+  const cfg = widgetIndex[(e.cfg || {}).name];
+  return [st, cfg];
+}
+`)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The detail-borne read fires; the cfg.name member chain stays the
+	// declared catalog-config silence.
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, "widgetIndex[") {
+		t.Errorf("expected the finding on widgetIndex: %s", res.Violations[0].Message)
+	}
+}
+
 func TestLintRegistryOwnProps_RepoIsClean(t *testing.T) {
 	repoRoot, err := findRepoRoot()
 	if err != nil {
@@ -405,6 +433,396 @@ func TestLintResponseMountedAfterOK_FiresOnPreFixShape(t *testing.T) {
 		if !strings.HasPrefix(v.Message, "[response-mounted-unchecked]") {
 			t.Errorf("unexpected message: %s", v.Message)
 		}
+	}
+}
+
+// TestLintResponseMountedAfterOK_MountSpells: the mounts that hand
+// response text to the markup parser — DOMParser().parseFromString,
+// document.write(ln), and an iframe srcdoc assignment — are mounts
+// like innerHTML; a promise-chain spelling of them was invisible.
+func TestLintResponseMountedAfterOK_MountSpells(t *testing.T) {
+	dir := writeRuntimeFixture(t, "mounts.js", `function loadDoc(el, path) {
+  fetch(path).then(r => r.text()).then(t => {
+    const doc = new DOMParser().parseFromString(t, 'text/html');
+    el.replaceChildren(doc.body.firstChild);
+  });
+}
+function rewritePage(path) {
+  fetch(path).then(r => r.text()).then(t => { document.write(t); });
+}
+function frameDoc(frame, path) {
+  fetch(path).then(r => r.text()).then(t => { frame.srcdoc = t; });
+}
+function loadDocFixed(el, path) {
+  fetch(path).then(r => { if (!r.ok) throw new Error('x'); return r.text(); })
+    .then(t => { const doc = new DOMParser().parseFromString(t, 'text/html'); el.replaceChildren(doc.body.firstChild); });
+}
+`)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected exactly 3 findings (parseFromString, document.write, srcdoc), got %d:\n%s",
+			len(res.Violations), res.Error())
+	}
+}
+
+// TestLintAttributePathSegments_RegexBraceSkew: an odd brace inside a
+// regex literal (/^\{/) inflates the depth walk of the code view, so a
+// reject gate inside a nested callback — whose return only ends the
+// callback — was credited as dominating the outer build. The gate walk
+// must use the blank view, where regex bodies cannot carry braces.
+func TestLintAttributePathSegments_RegexBraceSkew(t *testing.T) {
+	dir := writeRuntimeFixture(t, "regexskew.js", `function gatedInCallback(el) {
+  const v = el.getAttribute('data-kiln-tool');
+  const cb = () => {
+    if (!/^[A-Za-z0-9_-]+$/.test(v)) return;
+    side(/^\{/);
+  };
+  fetch('/kiln/tool/' + v);
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The gate's return ends only cb: it does not dominate the fetch.
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestLintProtoKeyWrite_RegexBraceSkew: the same skew through lint 10's
+// reserved-key guard walk.
+func TestLintProtoKeyWrite_RegexBraceSkew(t *testing.T) {
+	dir := writeRuntimeFixture(t, "protoskew.js", `const store = {};
+function writeInCallback(el) {
+  const k = el.getAttribute('data-cui-zone');
+  const cb = () => {
+    if (k === '__proto__') return;
+    side(/^\{/);
+  };
+  store[k] = { value: 1 };
+}
+`)
+	res, err := LintProtoKeyWrite(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestLintAttributePathSegments_WrappedAttrAssign pins the wrapped
+// assignment the R8-CK3-06 finding claimed was silent: the \s* between
+// the '=' and the RHS capture consumes the newline, so `const tool =\n
+// el.getAttribute(…)` is attribute-borne today — this test holds that.
+func TestLintAttributePathSegments_WrappedAttrAssign(t *testing.T) {
+	dir := writeRuntimeFixture(t, "wrapped.js", `function loadTool(el) {
+  const tool =
+    el.getAttribute('data-kiln-tool');
+  fetch('/kiln/tool/' + tool);
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestParenArrowParams: a parenthesised arrow — `const f = (raw) => {`
+// — got no parameter events and no function head, so parameter
+// provenance and shadowing failed for it (R8-CK4-01): the decode trace
+// could not follow parsePair's parameter, and a same-named parameter
+// laundered a file-scope literal through the selector build.
+func TestParenArrowParams(t *testing.T) {
+	decodeDir := writeRuntimeFixture(t, "parendecode.js", `(() => {
+  const out = {};
+  const parsePair = (raw) => { out[decodeURIComponent(raw)] = 1; };
+  parsePair(btn.getAttribute('data-cui-deeplink'));
+})();
+`)
+	res, err := LintDecodeURIRaw(decodeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 decode finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+
+	selDir := writeRuntimeFixture(t, "parensel.js", `const id = 'fixed';
+const pick = (id) => document.querySelector('[data-tool="' + id + '"]');
+pick(el.dataset.tool);
+`)
+	sres, err := LintSelectorInterpolation(selDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sres.Violations) != 1 {
+		t.Fatalf("expected 1 selector finding, got %d:\n%s", len(sres.Violations), sres.Error())
+	}
+}
+
+// TestParenArrowParamsStayUntraceable: the fix must not over-reach — a
+// paren-arrow parameter with NO attribute-derived call site stays the
+// family's out-of-scope silence.
+func TestParenArrowParamsStayUntraceable(t *testing.T) {
+	dir := writeRuntimeFixture(t, "parenquiet.js", `const save = (key) => localStorage.setItem(PREFIX + encodeURIComponent(key), '1');
+save(el.getAttribute('data-cui-note'));
+`)
+	res, err := LintDecodeURIRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.HasErrors() {
+		t.Errorf("expected silence, got:\n%s", res.Error())
+	}
+}
+
+// TestWrappedBuildOperands: a build wrapped after a binary operator —
+// Prettier's line-length wrapping — lost its unsafe operand because
+// statementEnd stopped at the newline (R8-CK4-02). The operand beyond
+// the wrap is still joined into the sink and must be judged.
+func TestWrappedBuildOperands(t *testing.T) {
+	urlDir := writeRuntimeFixture(t, "wrapurl.js", `function load(id) {
+  const s = document.createElement('script');
+  s.src = '/__gofastr/widget/' +
+    id + '.js';
+  document.head.append(s);
+}
+`)
+	res, err := LintModuleURLShape(urlDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 || !strings.Contains(res.Error(), `"id"`) {
+		t.Fatalf("expected 1 module-url finding on id, got %d:\n%s", len(res.Violations), res.Error())
+	}
+
+	cookieDir := writeRuntimeFixture(t, "wrapcookie.js", `const PREFIX = 'gofastr.prefs.';
+function setPref(id) {
+  document.cookie = PREFIX +
+    id + '=1; path=/';
+}
+`)
+	cres, err := LintCookieConcat(cookieDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cres.Violations) != 1 || !strings.Contains(cres.Error(), `"id"`) {
+		t.Fatalf("expected 1 cookie finding on id, got %d:\n%s", len(cres.Violations), cres.Error())
+	}
+
+	// Quiet postfix: a statement whose line ends in ++ is closed, not a
+	// wrapped binary operand.
+	quietDir := writeRuntimeFixture(t, "wrappostfix.js", `let n = 0;
+function tick() { n++; }
+document.cookie = 'gofastr.seen=1; path=/';
+`)
+	qres, err := LintCookieConcat(quietDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qres.HasErrors() {
+		t.Errorf("expected silence, got:\n%s", qres.Error())
+	}
+}
+
+// TestStorageKeyLiteralMustPrefix: a literal anywhere in the key was
+// credited as the namespace, so an encoded attribute value heading the
+// key with a literal suffix passed (R8-CK4-03) — the attribute names
+// the head of the key, and encoding leaves dots, so markup still writes
+// "gofastr.sidebar….prefs". The literal (or provably-literal
+// identifier) must sit BEFORE the first encoded operand.
+func TestStorageKeyLiteralMustPrefix(t *testing.T) {
+	dir := writeRuntimeFixture(t, "keyorder.js", `const SIDEBAR_PREFIX = 'gofastr.sidebar.';
+function panePrefs(pane) { // FIRES: the suffix literal does not name the namespace
+  localStorage.setItem(encodeURIComponent(pane.dataset.cuiPaneKey) + '.prefs', '1');
+}
+function paneFixed(pane) { // quiet: the prefix heads the key
+  localStorage.setItem(SIDEBAR_PREFIX + encodeURIComponent(pane.dataset.cuiPaneKey) + '.prefs', '1');
+}
+`)
+	res, err := LintStorageKeyRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, "names no namespace") {
+		t.Errorf("expected the unnamed-namespace finding: %s", res.Violations[0].Message)
+	}
+}
+
+// TestProtoKeyBareComposite: a template holding one interpolation and
+// no literal text, or an `x + ”` join, still equals the bare value —
+// compositeKey's "can never equal a bare prototype property name" was
+// false for them (R8-CK4-04), so `${name}` with data-cui-
+// animate-signal="__proto__" re-parented the store silently.
+func TestProtoKeyBareComposite(t *testing.T) {
+	body := strings.ReplaceAll(`(() => {
+  const G = window.__gofastr;
+  const wireTpl = (el) => {
+    const name = el.getAttribute('data-cui-animate-signal');
+    G._signals[~${name}~] = { value: 1 };
+  };
+  const wireJoin = (el) => {
+    const name = el.getAttribute('data-cui-animate-signal');
+    G._signals[name + ''] = { value: 2 };
+  };
+  const wireComposite = (el) => { // quiet: a real join
+    const name = el.getAttribute('data-cui-animate-signal');
+    G._signals['sig.' + name] = { value: 3 };
+  };
+})();`, "~", "\x60")
+	dir := writeRuntimeFixture(t, "barecomp.js", body)
+	res, err := LintProtoKeyWrite(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestProtoMapStoreFullReceiver: mapStore ORed the receiver's last
+// dotted segment into the pattern, so `other.timers = new Map()`
+// silenced a write to `G.timers[k]` — a different object (R8-CK4-05).
+func TestProtoMapStoreFullReceiver(t *testing.T) {
+	dir := writeRuntimeFixture(t, "maprecv.js", `(() => {
+  const G = window.__gofastr;
+  const other = {};
+  other.timers = new Map();
+  function rec(el) { // FIRES: other.timers is not G.timers
+    const k = el.getAttribute('data-cui-timer');
+    G.timers[k] = { at: 1 };
+  }
+  const slotMap = new Map();
+  function mapBracket(el) { // quiet: the full receiver is a Map
+    const k = el.getAttribute('data-cui-map-key');
+    slotMap[k] = { v: 1 };
+  }
+  const cell = {};
+  function chained(el) { // FIRES: cell[a] is a plain object
+    const a = el.getAttribute('data-cui-a');
+    const b = el.getAttribute('data-cui-b');
+    cell[a][b] = { v: 2 };
+  }
+})();
+`)
+	res, err := LintProtoKeyWrite(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (G.timers, cell[a][b]), got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, pair := range []string{"G.timers[k]", "cell[a][b]"} {
+		if !strings.Contains(res.Error(), pair) {
+			t.Errorf("expected a finding on %s (full result:\n%s)", pair, res.Error())
+		}
+	}
+}
+
+// TestProtoNestedBracketKey: reBracketAccess stopped at the first ']',
+// so `X[keys[i]] = …` never saw its write and `X[a][b] = …` lost its
+// receiver (R8-CK4-06). The bracket is delimiter-matched now.
+func TestProtoNestedBracketKey(t *testing.T) {
+	dir := writeRuntimeFixture(t, "nestedkey.js", `(() => {
+  const q = btn.getAttribute('data-cui-q');
+  function nested(el) { // FIRES on parts[0]
+    const parts = el.getAttribute('data-cui-pane').split('.');
+    const box = {};
+    box[parts[0]] = { v: 1 };
+  }
+  // Quiet: destructuring binds names, it writes no property — not even
+  // when the name is attr-borne at file scope (q here).
+  function destructure(pair) {
+    const [q, r] = pair;
+    return [q, r];
+  }
+  window.__probe = { q: q };
+})();
+`)
+	res, err := LintProtoKeyWrite(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Error(), "box[parts[0]]") {
+		t.Errorf("expected the finding on box[parts[0]]: %s", res.Error())
+	}
+}
+
+// TestForOfDestructuredHead: reForOfHeader captured `(\w+)\s+of` only,
+// so a destructured for…of head (`const [k, v] of …`) never bound its
+// names and lints 9 and 10 stayed quiet on them (R8-CK4-07).
+func TestForOfDestructuredHead(t *testing.T) {
+	dir := writeRuntimeFixture(t, "forofhead.js", `function overridePrefs(el, overrides) {
+  const raw = el.getAttribute('data-cui-prefs') || '';
+  for (const [k, v] of raw.split('&')) {
+    overrides[decodeURIComponent(k)] = decodeURIComponent(v);
+  }
+}
+`)
+	res, err := LintDecodeURIRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both decodes: k and v each derive from the attribute-borne iterable.
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 decode findings, got %d:\n%s", len(res.Violations), res.Error())
+	}
+
+	pdir := writeRuntimeFixture(t, "forofproto.js", `const store = {};
+function seedSignals(el) {
+  for (const [k, v] of Object.entries(JSON.parse(el.getAttribute('data-cui-seed')))) {
+    store[k] = { value: v };
+  }
+}
+`)
+	pres, err := LintProtoKeyWrite(pdir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pres.Violations) != 1 || !strings.Contains(pres.Error(), "store[k]") {
+		t.Fatalf("expected 1 proto-key finding on store[k], got %d:\n%s", len(pres.Violations), pres.Error())
+	}
+}
+
+// TestStorageBracketAccessIsASink: the bracket spelling of a Web
+// storage access (localStorage[el.dataset.k] = '1') is the same keyed
+// sink as setItem — the WP file's trailing note; reStorageCall matched
+// the method calls only.
+func TestStorageBracketAccessIsASink(t *testing.T) {
+	dir := writeRuntimeFixture(t, "storagesink.js", `const PREFIX = 'gofastr.prefs.';
+function bracketKey(el) { // FIRES
+  localStorage[el.dataset.prefKey] = '1';
+}
+function bracketFixed(el) { // quiet: namespaced and encoded at the sink
+  localStorage[PREFIX + encodeURIComponent(el.dataset.prefKey)] = '1';
+}
+function bracketLiteral() { // quiet: a literal key
+  localStorage['gofastr.seen'] = '1';
+}
+`)
+	res, err := LintStorageKeyRaw(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding, got %d:\n%s", len(res.Violations), res.Error())
+	}
+	if !strings.Contains(res.Violations[0].Message, "el.dataset.prefKey") {
+		t.Errorf("expected the finding on the dataset read: %s", res.Violations[0].Message)
 	}
 }
 
@@ -2289,5 +2707,301 @@ func TestLintStorageKeyRaw_RepoIsClean(t *testing.T) {
 	}
 	if res.HasErrors() {
 		t.Errorf("runtime JS builds a storage key from a raw value:\n%s", res.Error())
+	}
+}
+
+// ── review-8 findings (WP9): string-literal assignment prose, regex
+// quotes, guard keys, composite separators, expression arrows,
+// display-only gates, truncated templates, negated containment gates,
+// alternation anchors, whole-operand encodes, join/concat builds ────
+
+// TestSafeIdentsIgnoreStringProse: assignment-shaped text inside a
+// string literal is prose, not an event (R8-CK-01). 'Rebuilt sel =
+// "fallback"; retry' used to parse as a clean string-literal RHS on
+// the code view and launder the attribute-borne sel past lint 5, and
+// prose like 'sel = x failed' revoked a real escape result the other
+// way. The prose rides a bare call so no member assignment swallows
+// it first.
+func TestSafeIdentsIgnoreStringProse(t *testing.T) {
+	dir := writeRuntimeFixture(t, "proseassign.js", `(function () {
+  function log(msg) { return msg; }
+  function copyFrom(btn) { // FIRES: sel is attribute-borne
+    const sel = btn.getAttribute('data-cui-copy-text-from');
+    log('Rebuilt sel = "fallback"; retry');
+    return document.querySelector(sel);
+  }
+  function laundersProse(el, id) { // quiet: the prose revokes nothing
+    const sel = CSS.escape(id);
+    log('sel = x failed; see logs');
+    return document.querySelector('[data-x="' + sel + '"]');
+  }
+  window.__probe = { copyFrom: copyFrom, laundersProse: laundersProse };
+})();`)
+	bare, err := LintSelectorBareArgGuarded(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bare.Violations) != 1 {
+		t.Fatalf("expected 1 bare-arg finding (copyFrom's sel), got %d:\n%s", len(bare.Violations), bare.Error())
+	}
+	sel, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sel.HasErrors() {
+		t.Errorf("laundersProse's escaped sel must stay quiet:\n%s", sel.Error())
+	}
+}
+
+// TestRegistryGuardKeyMustMatch: an own-property guard on one key does
+// not guard a read of another (R8-CK2-01) — own(REG, first) must not
+// silence REG[second], in the call idiom and the compute-once boolean
+// alike.
+func TestRegistryGuardKeyMustMatch(t *testing.T) {
+	dir := writeRuntimeFixture(t, "guardkey.js", `const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+const catalog = {};
+function pick(first, second) { // FIRES: the guard named first
+  if (own(catalog, first)) return catalog[second];
+}
+function pickInline(first, second) { // FIRES: same shape, inline idiom
+  if (Object.prototype.hasOwnProperty.call(catalog, first)) {
+    return catalog[second];
+  }
+}
+function pickBool(first, second) { // FIRES: compute-once boolean on first
+  const known = Object.prototype.hasOwnProperty.call(catalog, first);
+  if (!known) return null;
+  return catalog[second];
+}
+function pickFixed(name) { // quiet: guard and read share the key
+  if (own(catalog, name)) return catalog[name];
+}
+`)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings (pick, pickInline, pickBool), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestCompositeIndexNeedsSeparator: lint 2's composite-key silence
+// held for any '+' on the blank view, so `name + ”` (equal to the
+// bare value) and `a + b` (two caller values) were silent although
+// both can be "constructor" (R8-CK2-02). A non-empty literal separator
+// ('\0') is what makes a composite key unable to equal a prototype
+// property name.
+func TestCompositeIndexNeedsSeparator(t *testing.T) {
+	dir := writeRuntimeFixture(t, "composite.js", `const zoneMap = {};
+function emptyJoin(name) { // FIRES: name + '' equals the bare value
+  const k = name + '';
+  return zoneMap[k];
+}
+function pairJoin(a, b) { // FIRES: two caller values still spell "constructor"
+  const k2 = a + b;
+  return zoneMap[k2];
+}
+function sepJoin(name, ctx) { // quiet: the \0 separator holds
+  const k3 = name + '\0' + (ctx || '');
+  return zoneMap[k3];
+}
+`)
+	res, err := LintRegistryOwnProps(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (emptyJoin, pairJoin), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestThenExpressionArrowBody: a continuation passed by bare reference
+// to an expression-bodied arrow (const render = t => el.innerHTML = t)
+// mounted unseen (R8-CK2-03) — only brace-bodied declarations
+// resolved.
+func TestThenExpressionArrowBody(t *testing.T) {
+	dir := writeRuntimeFixture(t, "exprarrow.js", `function loadPanel(el, src) { // FIRES: render mounts
+  fetch(src).then(r => r.text()).then(render);
+  const render = t => el.innerHTML = t;
+}
+function loadPair(el, src) { // FIRES: parenthesised parameters, expression body
+  fetch(src).then(r => r.text()).then(show);
+  const show = (t) => (el.innerHTML = t);
+}
+function loadQuiet(el, src) { // quiet: the arrow never mounts
+  fetch(src).then(r => r.text()).then(logLine);
+  const logLine = t => console.log(t);
+}
+`)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 2 {
+		t.Fatalf("expected 2 findings (loadPanel, loadPair), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestDisplayOnlyOKIsNotAGate: a .ok read that only paints a badge
+// gates nothing (R8-CK2-04) — the gate must dominate the body read or
+// the mount, the model lint 4's gates already use.
+func TestDisplayOnlyOKIsNotAGate(t *testing.T) {
+	dir := writeRuntimeFixture(t, "displayok.js", `function load(el, src, badge) { // FIRES: .ok displayed only
+  fetch(src).then(function (r) {
+    badge.textContent = r.ok ? 'OK' : 'ERR';
+    return r.text();
+  }).then(function (t) { el.innerHTML = t; });
+}
+function loadGated(el, src) { // quiet: the read sits in the gated arm
+  fetch(src).then(r => r.ok ? r.text() : Promise.reject(new Error('x')))
+    .then(t => { el.innerHTML = t; });
+}
+`)
+	res, err := LintResponseMountedAfterOK(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (load), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestTruncatedTemplateNoPanic: a template literal truncated by the
+// end of the file (a lone backtick closing a src RHS) made
+// templateOperands slice tpl[1:0] and crash the whole lint run
+// (R8-CK2-05). Malformed JS must degrade to no finding, not a panic.
+func TestTruncatedTemplateNoPanic(t *testing.T) {
+	dir := writeRuntimeFixture(t, "trunc.js", "function load(el) {\n  const s = document.createElement('script');\n  s.src = `")
+	attr, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attr.HasErrors() {
+		t.Errorf("expected silence on a truncated template:\n%s", attr.Error())
+	}
+	mod, err := LintModuleURLShape(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mod.HasErrors() {
+		t.Errorf("expected silence on a truncated template:\n%s", mod.Error())
+	}
+}
+
+// TestNegatedGateInBranchFires: lint 4's containment arm credited a
+// gate anywhere in the if condition, negated included, so a URL built
+// only when the check FAILED was quiet (R8-CK3-01). Negated gates stay
+// valid through the reject arm only.
+func TestNegatedGateInBranchFires(t *testing.T) {
+	dir := writeRuntimeFixture(t, "neggate.js", `const loaded = new Set();
+function loadIfMissing(el) { // FIRES: the build runs when the check failed
+  const id = el.getAttribute('data-widget-id');
+  if (!loaded.has(id)) {
+    const s = document.createElement('script');
+    s.src = '/w/' + id + '.js';
+  }
+}
+function loadIfKnown(el) { // quiet: positive containment
+  const id = el.getAttribute('data-widget-id');
+  if (loaded.has(id)) {
+    const s = document.createElement('script');
+    s.src = '/w/' + id + '.js';
+  }
+}
+function loadReject(el) { // quiet: the reject arm keeps negated gates
+  const id = el.getAttribute('data-widget-id');
+  if (!loaded.has(id)) return;
+  const s = document.createElement('script');
+  s.src = '/w/' + id + '.js';
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadIfMissing), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestAlternationGateNotAnchored: /^a|b$/ means (^a)|(b$), so it
+// accepts "a/../../admin" — a top-level alternation is not an anchored
+// gate (R8-CK3-02). Inside a group it is.
+func TestAlternationGateNotAnchored(t *testing.T) {
+	dir := writeRuntimeFixture(t, "alternation.js", `function loadAlt(el) { // FIRES: alternation splits the anchors
+  const tool = el.getAttribute('data-tool');
+  if (/^[a-z]+|basic$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+function loadGrouped(el) { // quiet: the alternation sits in the group
+  const tool = el.getAttribute('data-tool');
+  if (/^([a-z]+|basic)$/.test(tool)) {
+    return fetch('/kiln/tool/' + tool);
+  }
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadAlt), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestEncodeWrapsWholeOperand: a value holding encodeURIComponent(
+// anywhere in it was silently credited as encoded, though a ternary
+// arm can carry the raw attribute read (R8-CK3-03) — the twin of lint
+// 1's whole-operand CSS.escape rule.
+func TestEncodeWrapsWholeOperand(t *testing.T) {
+	dir := writeRuntimeFixture(t, "encwhole.js", `function loadMaybe(el, small) { // FIRES: dataset.b goes in raw
+  fetch('/m/' + (small ? encodeURIComponent(el.dataset.a) : el.dataset.b));
+}
+function loadFixed(el) { // quiet: whole-operand encode
+  fetch('/m/' + encodeURIComponent(el.dataset.a));
+}
+`)
+	res, err := LintAttributePathSegments(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 1 {
+		t.Fatalf("expected 1 finding (loadMaybe), got %d:\n%s", len(res.Violations), res.Error())
+	}
+}
+
+// TestSelectorJoinConcatBuilds: ['.a', v].join(”), ('.a' + v) and
+// `.a`.concat(v) build a selector exactly like '+' does (R8-CK3-04);
+// lint 1 judged only top-level '+' and templates.
+func TestSelectorJoinConcatBuilds(t *testing.T) {
+	body := strings.ReplaceAll(`(function () {
+  function headFor(el) { // FIRES: .join() builds the selector
+    return document.querySelector(['#head-', el.dataset.id].join(''));
+  }
+  function wrappedFor(el) { // FIRES: parenthesised concatenation
+    return document.querySelector(('.tag-' + el.dataset.id));
+  }
+  function concatFor(el) { // FIRES: template .concat
+    return document.querySelector(~.tag~.concat(el.dataset.id));
+  }
+  function headFixed(el) { // quiet: the element is escaped
+    return document.querySelector(['#head-', CSS.escape(el.dataset.id)].join(''));
+  }
+  window.__probe = { headFor: headFor, wrappedFor: wrappedFor, concatFor: concatFor, headFixed: headFixed };
+})();`, "~", "\x60")
+	dir := writeRuntimeFixture(t, "joinbuild.js", body)
+	res, err := LintSelectorInterpolation(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Violations) != 3 {
+		t.Fatalf("expected 3 findings (join, paren, concat), got %d:\n%s", len(res.Violations), res.Error())
+	}
+	for _, op := range []string{`"el.dataset.id"`} {
+		if !strings.Contains(res.Error(), op) {
+			t.Errorf("expected a finding on %s (full result:\n%s)", op, res.Error())
+		}
 	}
 }

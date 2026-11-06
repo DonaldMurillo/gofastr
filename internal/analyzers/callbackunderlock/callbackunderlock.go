@@ -108,16 +108,15 @@ func checkBody(pass *analysis.Pass, fn *ast.FuncDecl, body *ast.BlockStmt) {
 		if !ok {
 			continue
 		}
-		key, held := heldAt(events, call.Pos())
-		if !held {
-			continue
+		for _, key := range heldKeys(events, call.Pos()) {
+			if serializedOneShot(deferredRelease, inLoop, ownBatch, key, desc, call) {
+				continue
+			}
+			pass.Reportf(call.Pos(),
+				"callbackunderlock: %s is called while %s is held; a blocking or panicking callback wedges every other user of the mutex (snapshot under the lock, invoke outside)",
+				desc, key)
+			break
 		}
-		if serializedOneShot(deferredRelease, inLoop, ownBatch, key, desc, call) {
-			continue
-		}
-		pass.Reportf(call.Pos(),
-			"callbackunderlock: %s is called while %s is held; a blocking or panicking callback wedges every other user of the mutex (snapshot under the lock, invoke outside)",
-			desc, key)
 	}
 }
 
@@ -133,6 +132,9 @@ func checkBody(pass *analysis.Pass, fn *ast.FuncDecl, body *ast.BlockStmt) {
 // exists for is the SHARED registry: per-item callbacks in a loop
 // (mcp's listing gates, cron's per-job gate) or any explicit lock/
 // unlock span a panicking callback can skip past.
+// With more than one mutex held the carve-out must hold for EACH of
+// them; the report names the first held lock (acquisition order) whose
+// posture the call breaks.
 func serializedOneShot(deferredRelease map[string]bool, inLoop, ownBatch map[token.Pos]bool, key, desc string, call *ast.CallExpr) bool {
 	if !deferredRelease[key] {
 		return false
@@ -307,24 +309,31 @@ func scanLocks(pass *analysis.Pass, body *ast.BlockStmt) ([]lockEvent, []ast.Cal
 	return events, calls, deferredRelease
 }
 
-// heldAt reports the mutex key held at pos, if any: the last event for
-// some key before pos is an acquisition. A deferred release never
-// appears as an event (it happens at function exit), so Lock+defer
-// Unlock holds through the end of the body, which is the rule's intent.
-func heldAt(events []lockEvent, pos token.Pos) (string, bool) {
+// heldKeys reports the mutex keys held at pos, in acquisition order:
+// the last event for each key before pos is an acquisition. A deferred
+// release never appears as an event (it happens at function exit), so
+// Lock+defer Unlock holds through the end of the body, which is the
+// rule's intent. Every held key is returned — which one a callback
+// breaks the posture of must not depend on map iteration order.
+func heldKeys(events []lockEvent, pos token.Pos) []string {
 	last := map[string]bool{}
+	var order []string
 	for _, e := range events {
 		if e.pos >= pos {
 			break
 		}
+		if _, seen := last[e.key]; !seen {
+			order = append(order, e.key)
+		}
 		last[e.key] = e.lock
 	}
-	for key, locked := range last {
-		if locked {
-			return key, true
+	var held []string
+	for _, key := range order {
+		if last[key] {
+			held = append(held, key)
 		}
 	}
-	return "", false
+	return held
 }
 
 // funcValueCallee classifies the callee if it is a func-typed VALUE —

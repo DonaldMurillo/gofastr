@@ -128,6 +128,14 @@ func queryValues(c *http.Client, r *http.Request) {
 	}
 }
 
+// parenCallee ranges with a parenthesised method value: the callee
+// resolves through the parens and must not crash the walk.
+func parenCallee(store Store, r *http.Request) {
+	for _, v := range (r.Header.Values)("X-Token") { // want `fanoutreq: store\.Get runs once per element`
+		store.Get(context.Background(), v)
+	}
+}
+
 // constantTime compares bytes already read: no backend call.
 func constantTime(r *http.Request, secret string) bool {
 	for _, c := range r.Cookies() {

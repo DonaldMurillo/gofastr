@@ -67,6 +67,39 @@ func Responses(w http.ResponseWriter, resp *http.Response) bool {
 	return false
 }
 
+// WrapperLocal: the Get through a string wrapper into a local, then
+// token-read.
+func WrapperLocal(h http.Header) bool {
+	cc := strings.TrimSpace(h.Get("Cache-Control")) // want `listheader: Header\.Get\("Cache-Control"\) reads only the first field line`
+	return strings.Contains(cc, "no-store")
+}
+
+// VarLocal: a var declaration binds the Get like an assignment does.
+func VarLocal(h http.Header) bool {
+	var cc = strings.TrimSpace(h.Get("Vary")) // want `listheader: Header\.Get\("Vary"\) reads only the first field line`
+	return strings.Contains(cc, "origin")
+}
+
+// SwitchTag: a switch on the value against constant cases is a token
+// compare.
+func SwitchTag(r *http.Request) string {
+	switch r.Header.Get("Connection") { // want `listheader: Header\.Get\("Connection"\) reads only the first field line`
+	case "Upgrade":
+		return "websocket"
+	}
+	return ""
+}
+
+// SwitchLocal: the switch reads the wrapper-bound local.
+func SwitchLocal(h http.Header) string {
+	cc := strings.TrimSpace(h.Get("TE")) // want `listheader: Header\.Get\("TE"\) reads only the first field line`
+	switch cc {
+	case "trailers":
+		return "trailers"
+	}
+	return ""
+}
+
 // ---- quiet ------------------------------------------------------------
 
 // The fix spellings.

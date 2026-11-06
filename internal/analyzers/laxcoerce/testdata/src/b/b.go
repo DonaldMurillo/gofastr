@@ -29,6 +29,21 @@ func collectDisplayNames(records []map[string]any) []string {
 	return out
 }
 
+// collectUntilWrong stops at the first record whose display_name is
+// present but not a string, and returns the truncated list with a nil
+// error: break is continue's twin on the loop's early exit.
+func collectUntilWrong(records []map[string]any) ([]string, error) {
+	var out []string
+	for _, rec := range records {
+		name, ok := rec["display_name"].(string) // want `type assertion on rec treated as absence`
+		if !ok {
+			break
+		}
+		out = append(out, name)
+	}
+	return out, nil
+}
+
 // regionFor narrows a search by an optional region filter. Pre-fix
 // shape via a local: the entry is read once, asserted through the
 // local, and a wrong-typed region quietly widens the search.

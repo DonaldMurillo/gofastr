@@ -91,8 +91,8 @@ func TestStringsForMapsEveryField(t *testing.T) {
 
 // TestStringsForNoTranslatorIsHeadlessEnglish: without a translator
 // every field is the English default headless itself ships, field by
-// field — i18nui.Defaults and headless's defaultStrings cannot drift
-// apart without this failing.
+// field — the i18nui phrases' English text and headless's
+// defaultStrings cannot drift apart without this failing.
 func TestStringsForNoTranslatorIsHeadlessEnglish(t *testing.T) {
 	want := headless.DefaultStrings()
 	got := StringsFor(context.Background())

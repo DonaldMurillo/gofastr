@@ -1644,7 +1644,7 @@ func (a *App) reserveEmbedPrefixes() {
 
 // Mountables returns the Mountables registered via Mount, in registration
 // order. Batteries use it to discover a mounted UI host (type-asserting to
-// *uihost.Host) so they can register screens on the host's render pipeline
+// *uihost.UIHost) so they can register screens on the host's render pipeline
 // rather than spinning up a second host. Returns a copy. Callers must not
 // mutate the App's internal slice.
 func (a *App) Mountables() []Mountable {
@@ -2215,7 +2215,7 @@ func NewApp(opts ...AppOption) *App {
 //	app := framework.NewApp(opts...)
 //	app.Mount(host)
 //
-// host is any Mountable (typically a *uihost.Host). Returns the App for
+// host is any Mountable (typically a *uihost.UIHost). Returns the App for
 // fluent chaining.
 func NewUIHostApp(host Mountable, opts ...AppOption) *App {
 	return NewApp(opts...).Mount(host)

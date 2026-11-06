@@ -45,3 +45,21 @@ func scrubCtl(s string) string {
 	}
 	return string(out)
 }
+
+// The listheader rule steers reads toward .Values and the index
+// spelling; those bytes are as request-derived as Get's, and so are
+// the cookies the request supplied.
+func headerListReads(r *http.Request) {
+	_ = slog.String("xff", r.Header.Values("X-Forwarded-For")[0]) // want `controlbytes: request-derived value reaches slog.String/slog.Any unscrubbed`
+	_ = slog.String("tok", r.Header["X-Token"][0])                // want `controlbytes: request-derived value reaches slog.String/slog.Any unscrubbed`
+	for _, v := range r.Header.Values("X-Token") {
+		_ = slog.String("tok2", v) // want `controlbytes: request-derived value reaches slog.String/slog.Any unscrubbed`
+	}
+	_ = slog.String("cs", r.Cookies()[0].Value) // want `controlbytes: request-derived value reaches slog.String/slog.Any unscrubbed`
+}
+
+// A response's headers and cookies are the server's own text.
+func responseListReads(resp *http.Response) {
+	_ = slog.String("etag", resp.Header.Values("Etag")[0])
+	_ = slog.String("cs", resp.Cookies()[0].Value)
+}

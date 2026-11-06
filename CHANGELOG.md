@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
+  streams a server holds across every caller (default 1024; a connect
+  past it gets `429`). The per-caller seat cap never bounded the total:
+  an anonymous caller is keyed by peer host, so a client with many IPv6
+  addresses got a cap for each one. `n < 0` lifts the limit. See
+  `mcp.md`.
 - **Windows desktop signing and auto-update** ([#651](https://github.com/DonaldMurillo/gofastr/issues/651)).
   `gofastr desktop build --sign=<thumbprint|subject>` signs the `.exe`
   with signtool, timestamped through `--timestamp-url`, and `--zip`
@@ -250,6 +256,90 @@ few lines, and link the PR or the docs page for the rest.
   (`GOFASTR_NO_VERSION_CHECK=1` silences it).
 
 ### Changed
+- **Docs and comments must name identifiers that exist; the runtime
+  contract sync reads every attribute family (2026-11-03).**
+  - `TestDocsNameRealIdentifiers`, `TestRepoDocsNameRealIdentifiers`
+    and `TestGoCommentsNameRealIdentifiers` in `framework/docs` fail
+    when a docs page, a repo `.md` file or a Go comment names a
+    `pkg.Name` or `Type.Member` the code does not declare. The first
+    run found about 60 stale names, fixed here (`Screen.Load` is
+    `ScreenLoader.Load`, `i18nui.KeyAgo` is `i18nui.AgoNow`). A
+    sentence saying a name is gone or renamed stays quiet.
+  - The `core-ui/ARCHITECTURE.md` / `runtime-contract.md` sync gate
+    reads every `data-*` family, not only `data-cui-*`, matches whole
+    tokens (`data-cui-compute` passed on `data-cui-computed`) and
+    checks both directions. The two tables had drifted by 52 rows and
+    are synced. `TestAttrRowsSpellDoubleBraceFills` refuses a `{x}` or
+    `%s` fill token in an attribute row: the modules replace `{{x}}`.
+  - `mapwriter`'s return arm also fires on a range over a non-empty
+    map literal that returns an error built from the entry it reached:
+    which entry failed first changed from run to run. Ten tree sites
+    now range a slice of pairs.
+  - 97 documented false negatives fixed across 51 vet analyzers:
+    `rootwrite`, `rootread` (which crashed on a `filepath.Join()` with
+    no arguments), `fixedtmp`, `tightenshared`,
+    `worldreadable`, `layoutfunc`; `textbind`, `controlbytes`,
+    `errleak`, `recoverlog`, `unboundedbody`, `reqparamlimit`,
+    `authpresence`, `fanoutreq`, `listheader`, `sanitizefix`;
+    `intwrap`, `divlimit`, `negdur`, `optzero`, `nonfinite`, `keytrim`,
+    `nullarray`, `settlectx`, `silentskip`, `statusrange`,
+    `discardeddecode` (which also crashed on one input),
+    `discardederr`; `recovercallback`, `callbackunderlock`,
+    `deferreset`, `doublewrite`, `growmap`, `iounderlock`,
+    `nowaitdelay`, `poisonedconn`, `recoverwrite`, `unseated`,
+    `wrapwriter`; `secretcompare`, `laxenvelope`, `laxcoerce`,
+    `asciifold`, `compositekey`, `credfetch`, `emitident`, `nostore`,
+    `rawtext`, `resolvedial`, `timestampid`, `unboundedresp`. Each
+    analyzer's doc comment names the spelling it now reads.
+  - `textbind` follows request text through struct fields: a field
+    some literal or assignment fills with request text (directly, or
+    through a constructor's parameter) is request text wherever it is
+    read, in its own package and, through a fact, in every importer;
+    a field another package declares is request text in the package
+    that fills it. Check the value before you store it; a check on the
+    read, or one after a helper already bound the value, is not
+    credited. Its first tree run found the saved-view store below.
+  - An allow marker can list several analyzers separated by spaces or
+    tabs, `//gofastr:allow(rootwrite rootread) why`. `gofastr verify`
+    already read that list; `go vet -vettool` read commas only, so the
+    marker silenced nothing there. It also reads a marker inside a
+    multi-line block comment, as `gofastr verify` does, and
+    `TestEveryAnalyzerIsWiredOrExplained` finds an analyzer built by a
+    constructor, not only one declared as a literal.
+  - 22 false negatives fixed in the browser-runtime JS lints in
+    `core-ui/check` (`keyguard` and the `runtimeshapes` family): string
+    prose and regex literals no longer read as code, wrapped and
+    parenthesised builds are followed, a negated gate earns no credit,
+    and a lone backtick no longer crashes the template walk. The widened
+    lints found one site, `popover.js`'s event-detail registry read.
+  - 15 false negatives fixed in the `gofastr verify` contracts rules:
+    GOFASTR1105, 1401, 1408, 1417, 1802, 1804, 1806, 1812, 1814, 1815,
+    1816 and 1824, and the `check-csp` style lane's allow marker.
+  - The other static tools no longer pass a tree they never read.
+    `gofastr verify` follows a symlinked root, fails on a root it cannot
+    read, counts an unreadable or dangling source file as not checked,
+    and refuses a tree with no source files. An exempt glob that starts
+    with `/` matches from the root, `--changed` against a ref includes
+    untracked files, a git path with spaces or quotes keeps its name, a
+    NaN coverage minimum is refused, and a repo vettool that fails to
+    build prints the compiler's output. `check-embed` checks every
+    package pattern it is given, fails on one that matches nothing, and
+    blocks on an action it cannot read: options built in a variable, or
+    a child built inside `Render()` that has no value at boot.
+    `check-csp` honours its ignore directive only in a real comment,
+    skips build output, and scans the same files for `./` as for `.`.
+    `gofastr audit lint` reports a `.go` file that does not parse, keeps
+    line numbers through CRLF comments, checks a bare, deferred or `go`
+    `Exec`, and flags every `t.Skip` with no annotation. `gofastr audit
+    deps` follows symlinked package directories, and the a11y and
+    sandbox audits scan a root named `build` or `dist`. repolint catches
+    an emitted `data-cui-rpc` attribute and a raw-string key,
+    `nullarray` wants proof a field was set before
+    `x.F = append(x.F, …)`, and the response-mount lint follows
+    `.then(this.render)` to a method, a field arrow or a static. These
+    walks now share one directory walker. It follows a symlinked
+    directory once, walks real paths before their aliases, skips a
+    dangling link, and keeps going past a directory it cannot read.
 - **`gofastr init .` refuses a symlinked `.env` or settings file, even
   one inside the project.** The two files it writes a generated secret
   into, `.env` (`JWT_SECRET`, `DATABASE_URL`) and
@@ -557,6 +647,60 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **A handler's 404 or 503 survives `Metrics` and `Tracing` when it
+  streams an empty or failing reader.** Their `ReadFrom` wrote a 200
+  before copying, so the handler's later status never reached the
+  client. They now record the 200 only once bytes are copied.
+- **A rate-limit key that starts with `sha256:` no longer shares a
+  bucket with a hashed key.** The limiter hashes an unstorable key to
+  `sha256:<hex>` and passed any other key through, so a caller could
+  send that spelling and spend another caller's budget. Keys with the
+  prefix are hashed too, so after the upgrade such a key starts a fresh
+  budget, and a block it held under the old spelling no longer applies.
+- **`pluginhost.NewAssetServer` keeps disk-backed assets inside their
+  directory.** An `os.DirFS` follows a symlink at an asset's path, so
+  a link pointing outside the plugin's directory was served at the
+  asset route. Disk filesystems are now read through `os.Root`.
+- **An A2A artifact with no parts encodes `"parts": []`, not `null`.**
+  Recording an artifact without parts, or appending to one stored
+  without them, kept a nil slice, so a client that requires the array
+  read `null`. The widened `nullarray` analyzer found it.
+- **A leading UTF-8 byte order mark no longer breaks a hand-written
+  text file.** Windows editors save one. It made line 1 of a `.env`
+  file an invalid key, hid a migration's first `-- +migrate`
+  directive, reached the database inside a routine `.sql` body, broke
+  a markdown frontmatter fence, and kept a line-anchored upgrade text
+  pattern off line 1. Every reader strips it, and
+  `TestReadersIgnoreBOM` holds them to one result.
+- **Saving or deleting a saved view with unstorable text answers 400
+  and 404, not 500.** A name or filter holding a NUL byte or invalid
+  UTF-8 reached the admin store's INSERT, and Postgres refused the
+  bind; the delete's `?id=` did the same. The entityui handler now
+  refuses that text before any store sees it.
+- **Settings endpoint and unmounted-settings validation name the first
+  missing field in declaration order.** A config with two unset
+  required fields named either one at random.
+- **A rate-limit key a SQL store cannot hold no longer reads as an
+  outage.** `ratelimit.Limiter` digests a key that is not valid UTF-8
+  or holds a NUL, as it already did a key past 256 bytes. An
+  `X-Api-Key` with a byte past 0x7F made Postgres refuse the bind, and
+  the limiter failed closed: a 429 for that client and a store-outage
+  warning in the log.
+- **A panicking host callback no longer ends a desktop app.** The
+  macOS shell's menu, settings, window-close, focus, blur, frame and
+  appearance callbacks, the Linux shell's menu and settings callbacks,
+  and `appstate` watchers each run behind a recover that logs the
+  panic and drops that one event.
+- **Panic values are scrubbed before they are logged** in the cron
+  scheduler and the webhook battery's delivery loop
+  (`textsafe.Recovered` strips control bytes and truncates).
+- **`middleware.Logging` keeps the sendfile path.** Its writer had no
+  `ReadFrom`, so every file served behind it was copied through a
+  buffer.
+- **A kiln graduation with a bad PWA `start_url` and `scope` names
+  `start_url` every time**, and `gofastr generate cli --from-openapi`
+  refuses a `$ref` that is not a string instead of treating the schema
+  as inline.
 - **Generated app CLI bug bash (2026-11-02).** `gofastr generate cli`
   (entity mode); regenerate the CLI to pick these up. Details in
   [app-cli.md](framework/docs/content/app-cli.md):

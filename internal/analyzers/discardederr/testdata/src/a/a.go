@@ -36,3 +36,34 @@ func (m *Manager) SubscribeFixed(sessionID string) (<-chan IslandUpdate, func())
 	}
 	return ch, cancel
 }
+
+// fieldKeep: the kept results land in the receiver's fields — a nil
+// channel and a no-op cancel still march on.
+type holder struct {
+	ch     <-chan IslandUpdate
+	cancel func()
+}
+
+func (h *holder) fieldKeep(m *Manager, id string) {
+	h.ch, h.cancel, _ = m.subscribeImpl(id) // want `assignment discards the error from subscribeImpl`
+	for upd := range h.ch {
+		_ = upd
+	}
+}
+
+// overwrittenBoth: every kept value is only ever overwritten or
+// explicitly discarded — nothing marches on with the refusal hidden.
+func (m *Manager) overwrittenBoth(id string) {
+	ch, cancel, _ := m.subscribeImpl(id)
+	ch, cancel, _ = m.subscribeImpl(id)
+	_ = ch
+	_ = cancel
+}
+
+// keepThenReassign: a second fetch overwrites both, and the NEW values
+// are used — the first drop is still the swallowed refusal.
+func (m *Manager) keepThenReassign(id string) (<-chan IslandUpdate, func()) {
+	ch, cancel, _ := m.subscribeImpl(id) // want `assignment discards the error from subscribeImpl`
+	ch, cancel, _ = m.subscribeImpl(id)  // want `assignment discards the error from subscribeImpl`
+	return ch, cancel
+}

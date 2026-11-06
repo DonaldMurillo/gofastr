@@ -52,6 +52,13 @@ func inlineAssert(params map[string]any, term string) []hit {
 	return searchDB(term, params["limit"].(int)) // want `reqparamlimit: request-sourced params\["limit"\] passed unclamped to searchDB's "limit" parameter`
 }
 
+// twoStep: the map read parked in a local before its assertion.
+func twoStep(params map[string]any, term string) []hit {
+	v := params["limit"]
+	n := v.(int)
+	return searchDB(term, n) // want `reqparamlimit: request-sourced params\["limit"\] passed unclamped to searchDB's "limit" parameter`
+}
+
 // aliasedMap: the params map arrives through a type alias — map type
 // identity, not spelling, is what the lane sees.
 type Params = map[string]any

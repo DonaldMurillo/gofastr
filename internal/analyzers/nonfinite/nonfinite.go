@@ -11,11 +11,12 @@
 // core/config/config.go:315.
 //
 // Shape — a strconv.ParseFloat call in a non-test function whose
-// first result, captured into a variable, reaches a STORE sink or a
-// bare return:
+// first result reaches a STORE sink or a bare return:
 //   - a store: a struct field or map/slice element assignment, a
-//     field of a composite literal, or a Set*-named method call
-//     carrying the value (reflect's SetFloat, a setter) — the value
+//     field of a composite literal, a Set*-named method call carrying
+//     the value (reflect's SetFloat, a setter), or the parse assigned
+//     STRAIGHT into a map/slice element or struct field
+//     (out["rate"], err = strconv.ParseFloat(env, 64)) — the value
 //     leaves the function as state;
 //   - a bare return: `return f` where the function's results carry
 //     the float with no error/bool companion to gate it. A
@@ -62,6 +63,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/pathflow"
 	"golang.org/x/tools/go/analysis"
 )
@@ -149,19 +151,32 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		if tv, ok := pass.TypesInfo.Types[call.Args[0]]; ok && tv.Value != nil {
 			return true // a compile-time constant operand
 		}
-		val, ok := st.Lhs[0].(*ast.Ident)
-		if !ok || val.Name == "_" {
-			return true
-		}
-		obj := pass.TypesInfo.ObjectOf(val)
-		if obj == nil {
-			return true
-		}
 		if !paramRooted(pass, call.Args[0], params, assigns, 0) {
 			return true // scanner/receiver-fed grammar: see the doc comment
 		}
 		if grammarGated(pass, call, parents) {
 			return true // the string's charset cannot spell NaN/Inf
+		}
+		val, isIdent := st.Lhs[0].(*ast.Ident)
+		if !isIdent || val.Name == "_" {
+			// The parse lands straight in a map/slice element or struct
+			// field (out["rate"], err = strconv.ParseFloat(...)): the
+			// store is the assignment itself, with no variable to gate —
+			// only a math.IsNaN/IsInf on the same target quiets it.
+			if !storeTarget(st.Lhs[0]) {
+				return true
+			}
+			if targetChecked(pass, st.Lhs[0], fn.Body) {
+				return true
+			}
+			pass.Reportf(call.Pos(),
+				"strconv.ParseFloat result stored with no math.IsNaN/math.IsInf gate: %q parses to NaN with a nil error and slips every < min || > max bound (RATE=NaN, probe TestLoadFloatRejectsNonFinite) — reject non-finite like core/schema validateFloat, or gate the string's grammar first",
+				renderOperand(call.Args[0]))
+			return true
+		}
+		obj := pass.TypesInfo.ObjectOf(val)
+		if obj == nil {
+			return true
 		}
 		if checkedInFunc(pass, obj, fn.Body) || validatorHop(pass, obj, fn.Body, pkgFuncs) {
 			return true
@@ -174,6 +189,45 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 			renderOperand(call.Args[0]))
 		return true
 	})
+}
+
+// storeTarget reports whether e is a store sink the doc names: a map
+// index or slice element, or a struct field selector.
+func storeTarget(e ast.Expr) bool {
+	switch ast.Unparen(e).(type) {
+	case *ast.IndexExpr, *ast.SelectorExpr:
+		return true
+	}
+	return false
+}
+
+// targetChecked reports whether the function gates the stored target
+// itself: math.IsNaN(t) / math.IsInf(t, ·) on the same expression.
+func targetChecked(pass *analysis.Pass, target ast.Expr, body *ast.BlockStmt) bool {
+	text := types.ExprString(target)
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		switch qualifiedFunc(pass, call.Fun) {
+		case "math.IsNaN", "math.IsInf":
+		default:
+			return true
+		}
+		for _, a := range call.Args {
+			if types.ExprString(a) == text {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // paramRooted reports whether e is, or resolves through plain local
@@ -315,17 +369,27 @@ func grammarGated(pass *analysis.Pass, call *ast.CallExpr, parents map[ast.Node]
 	}
 	for _, cond := range conds {
 		for _, leaf := range flattenBool(cond) {
-			if charsetTest(pass, leaf.X, call) || charsetTest(pass, leaf.Y, call) {
-				return true
+			switch v := leaf.(type) {
+			case *ast.BinaryExpr:
+				if charsetTest(pass, v.X, call) || charsetTest(pass, v.Y, call) {
+					return true
+				}
+			case *ast.CallExpr:
+				// A bare call conjunct (`err == nil &&
+				// strings.ContainsAny(raw, ".eE")`, or the whole
+				// condition a regexp test) is the gate itself.
+				if charsetTest(pass, v, call) {
+					return true
+				}
 			}
 		}
 	}
 	return false
 }
 
-// charsetTest reports whether e is a regexp MatchString or
-// strings.Contains/ContainsAny/ContainsRune call naming the ParseFloat
-// operand.
+// charsetTest reports whether e is a charset test of the ParseFloat
+// operand: regexp.MatchString (the package function or a *regexp.Regexp
+// receiver's method) or the strings.Contains family naming the operand.
 func charsetTest(pass *analysis.Pass, e ast.Expr, pf *ast.CallExpr) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
@@ -334,7 +398,14 @@ func charsetTest(pass *analysis.Pass, e ast.Expr, pf *ast.CallExpr) bool {
 	switch qualifiedFunc(pass, call.Fun) {
 	case "regexp.MatchString", "strings.Contains", "strings.ContainsAny", "strings.ContainsRune":
 	default:
-		return false
+		// A compiled *regexp.Regexp's own MatchString method.
+		sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "MatchString" {
+			return false
+		}
+		if t := pass.TypesInfo.TypeOf(sel.X); t == nil || !astx.IsNamed(astx.Deref(t), "regexp", "Regexp") {
+			return false
+		}
 	}
 	for _, a := range call.Args {
 		if sameOperand(a, pf.Args[0]) {
@@ -348,9 +419,12 @@ func sameOperand(a, b ast.Expr) bool {
 	return types.ExprString(a) == types.ExprString(b)
 }
 
-// flattenBool reduces a boolean expression to its comparison leaves.
-func flattenBool(e ast.Expr) []*ast.BinaryExpr {
-	var out []*ast.BinaryExpr
+// flattenBool reduces a boolean expression to its leaves: comparison
+// operands and bare (possibly negated) calls, so a CallExpr conjunct
+// (`err == nil && strings.ContainsAny(raw, ".eE")`, or a condition
+// that IS a regexp test) survives instead of being dropped.
+func flattenBool(e ast.Expr) []ast.Expr {
+	var out []ast.Expr
 	var walk func(ast.Expr)
 	walk = func(x ast.Expr) {
 		switch v := x.(type) {
@@ -364,6 +438,8 @@ func flattenBool(e ast.Expr) []*ast.BinaryExpr {
 				walk(v.Y)
 				return
 			}
+			out = append(out, v)
+		case *ast.CallExpr:
 			out = append(out, v)
 		}
 	}

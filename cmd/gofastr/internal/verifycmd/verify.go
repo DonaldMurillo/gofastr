@@ -433,12 +433,15 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	}
 	var suiteArgs, suiteEnv []string
 	if isFrameworkTree(root) {
-		tool, dir := buildRepoVettool(root)
+		tool, dir, buildErr := buildRepoVettool(root)
 		if dir != "" {
 			defer os.RemoveAll(dir)
 		}
 		if tool == "" {
 			note("gofastr verify: ./cmd/vettool does not build, so the analyzer pass cannot run")
+			if buildErr != nil {
+				note(buildErr.Error())
+			}
 			return strings.TrimSpace(buf.String()), "", false
 		}
 		suiteArgs = []string{"-vettool=" + tool}
@@ -499,21 +502,21 @@ func suiteSkipReason(moduleGo, builtWith string) string {
 // buildRepoVettool builds ./cmd/vettool from root into a private temp
 // dir. Empty bin (with the dir still returned for cleanup) when the
 // tree has no vettool or the build fails.
-func buildRepoVettool(root string) (bin, dir string) {
+func buildRepoVettool(root string) (bin, dir string, err error) {
 	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err != nil {
-		return "", ""
+		return "", "", err
 	}
-	dir, err := os.MkdirTemp("", "gofastr-verify-vettool-")
+	dir, err = os.MkdirTemp("", "gofastr-verify-vettool-")
 	if err != nil {
-		return "", ""
+		return "", "", err
 	}
 	bin = filepath.Join(dir, "vettool")
 	build := exec.Command("go", "build", "-o", bin, "./cmd/vettool")
 	build.Dir = root
-	if err := build.Run(); err != nil {
-		return "", dir
+	if output, err := build.CombinedOutput(); err != nil {
+		return "", dir, fmt.Errorf("build repo vettool: %w\n%s", err, output)
 	}
-	return bin, dir
+	return bin, dir, nil
 }
 
 // emitVetFailureJSON writes the document for a run that stopped at the

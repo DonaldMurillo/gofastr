@@ -18,6 +18,18 @@ import (
 // and re-count first: ls framework/docs/content/*.md | wc -l
 const MinExpectedTopics = 92
 
+func TestTwoFASecretCompatibilityGuidance(t *testing.T) {
+	body, err := Get("auth")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"uppercase base32", "Lowercase-base32", "fail closed", "re-enrollment"} {
+		if !strings.Contains(string(body), required) {
+			t.Errorf("2FA compatibility guidance omits %q", required)
+		}
+	}
+}
+
 func TestEmbedManifestFloor(t *testing.T) {
 	topics, err := List()
 	if err != nil {

@@ -9,5 +9,5 @@ import (
 )
 
 func TestIOUnderLock(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), iounderlock.Analyzer, "a", "iolib")
+	analysistest.Run(t, analysistest.TestData(), iounderlock.Analyzer, "a", "iolib", "deferred")
 }

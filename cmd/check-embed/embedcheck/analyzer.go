@@ -137,10 +137,9 @@ func runPass(pass *analysis.Pass) (any, error) {
 // component VALUES, so a child held in a field, including through an
 // interface, a map key, or an island wrapper, is checked at Mount.
 //
-// Blocking is the exception: a child CONSTRUCTED inside Render() whose type
-// lives in another package is visible to neither gate. It does not exist as a
-// value when the boot walk runs, and its Actions() body is not in this syntax
-// tree. Only that class fails the build.
+// Blocking is the exception: a child constructed inside Render whose actions
+// cannot be decided statically is covered by neither gate. Its type may live
+// in another package, or its own options may be unresolved.
 type Unresolved struct {
 	Pos     token.Pos
 	Surface string // the surface Name; "<dynamic>" when not a string literal
@@ -226,6 +225,7 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 				note(comp.Pos(), "the screen's component has no concrete type visible in this package")
 				return true
 			}
+			bootVisible := r.bootVisibleComponents(named, comp)
 			for _, reached := range r.reachableComponents(named, comp, note, blockingNote) {
 				acts, actNotes := r.serverActions(reached)
 				for _, act := range acts {
@@ -237,13 +237,89 @@ func analyze(pkg *types.Package, info *types.Info, files []*ast.File) ([]Finding
 					})
 				}
 				for _, an := range actNotes {
-					note(an.pos, an.reason)
+					if bootVisible[reached] {
+						note(an.pos, an.reason)
+					} else {
+						blockingNote(an.pos, an.reason)
+					}
 				}
 			}
 			return true
 		})
 	}
 	return findings, notes
+}
+
+func (r *resolver) bootVisibleComponents(root *types.Named, expression ast.Expr) map[*types.Named]bool {
+	visible := map[*types.Named]bool{root: true}
+	seen := map[ast.Expr]bool{}
+	var inspect func(ast.Expr)
+	inspect = func(expression ast.Expr) {
+		if expression == nil || seen[expression] {
+			return
+		}
+		seen[expression] = true
+		ast.Inspect(expression, func(node ast.Node) bool {
+			var value ast.Expr
+			switch node := node.(type) {
+			case *ast.FuncLit:
+				return false
+			case *ast.Ident:
+				if variable, ok := r.info.Uses[node].(*types.Var); ok && !variable.IsField() && variable.Pkg() == r.pkg && !r.variableWrittenBefore(variable, node.Pos()) {
+					inspect(r.varInitializer(variable))
+				}
+				return false
+			case *ast.CompositeLit:
+				value = node
+			case *ast.CallExpr:
+				if identifier, ok := node.Fun.(*ast.Ident); ok {
+					if builtin, ok := r.info.Uses[identifier].(*types.Builtin); ok && builtin.Name() == "new" {
+						value = node
+					}
+				}
+				if value == nil && !r.info.Types[node.Fun].IsType() {
+					return false
+				}
+			}
+			if value != nil {
+				if named := namedOf(r.info.TypeOf(value)); named != nil && hasRenderMethod(named) {
+					visible[named] = true
+				}
+			}
+			return true
+		})
+	}
+	inspect(expression)
+	return visible
+}
+
+func (r *resolver) variableWrittenBefore(variable *types.Var, before token.Pos) bool {
+	written := false
+	check := func(expression ast.Expr) {
+		if identifier, ok := ast.Unparen(expression).(*ast.Ident); ok && r.info.Uses[identifier] == variable {
+			written = true
+		}
+	}
+	for _, file := range r.files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if node == nil || node.Pos() >= before || written {
+				return false
+			}
+			switch node := node.(type) {
+			case *ast.AssignStmt:
+				for _, target := range node.Lhs {
+					check(target)
+				}
+			case *ast.RangeStmt:
+				if node.Tok == token.ASSIGN {
+					check(node.Key)
+					check(node.Value)
+				}
+			}
+			return !written
+		})
+	}
+	return written
 }
 
 // maxReachDepth bounds the type walk. Component trees are shallow; the cap stops
@@ -911,11 +987,21 @@ func (r *resolver) hasClientJSOption(call *ast.CallExpr) bool {
 	}
 	for _, arg := range call.Args[2:] {
 		opt, ok := arg.(*ast.CallExpr)
-		if ok && r.isComponentCall(opt, "WithClientJS") {
+		if !ok || !r.isComponentCall(opt, componentOptionName(opt)) || r.isComponentCall(opt, "WithClientJS") {
 			return true
 		}
 	}
 	return false
+}
+
+func componentOptionName(call *ast.CallExpr) string {
+	switch function := call.Fun.(type) {
+	case *ast.SelectorExpr:
+		return function.Sel.Name
+	case *ast.Ident:
+		return function.Name
+	}
+	return ""
 }
 
 func (r *resolver) isComponentCall(call *ast.CallExpr, name string) bool {
@@ -937,6 +1023,12 @@ func (r *resolver) isComponentCall(call *ast.CallExpr, name string) bool {
 // concatenations, wrapper options, and options returned by helpers are static
 // give-ups; evaluating them would risk reporting code that never registers.
 func (r *resolver) clientJSLiteral(call *ast.CallExpr) (string, bool) {
+	for _, arg := range call.Args[2:] {
+		opt, ok := arg.(*ast.CallExpr)
+		if !ok || !r.isComponentCall(opt, componentOptionName(opt)) {
+			return "", false
+		}
+	}
 	for _, arg := range call.Args[2:] {
 		opt, ok := arg.(*ast.CallExpr)
 		if !ok || !r.isComponentCall(opt, "WithClientJS") || len(opt.Args) != 1 {

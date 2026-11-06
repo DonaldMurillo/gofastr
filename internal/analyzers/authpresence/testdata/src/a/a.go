@@ -42,6 +42,25 @@ func lenPresence(r *http.Request) bool {
 	return len(h) > 0 // want `authpresence: an Authorization`
 }
 
+// litPresence: the Authorization local is read only inside a nested
+// func literal, and the presence test still belongs to this function.
+func litPresence(r *http.Request) {
+	auth := r.Header.Get("Authorization")
+	go func() {
+		if auth != "" { // want `authpresence: an Authorization header's presence is not its scheme`
+			markTokenAuthed()
+		}
+	}()
+}
+
+func markTokenAuthed() {}
+
+// varAuth: a var-declared local binds like an assigned one.
+func varAuth(r *http.Request) bool {
+	var auth = r.Header.Get("Authorization")
+	return auth != "" // want `authpresence: an Authorization header's presence is not its scheme`
+}
+
 // extractBearer is battery/auth's extractBearerToken: an empty check
 // guarding a parse of the same value.
 func extractBearer(r *http.Request) string { // want extractBearer:"parsesAuth"

@@ -15,6 +15,7 @@ func TestLaxEnvelope(t *testing.T) {
 		"xraw",        // round-5 arm b: envelope RawMessage one level down
 		"xrawok",      // round-5 arm b: chokepoint credit, quiet
 		"xtop",        // round-5 arm c: CheckTopLevelKeys one level short
+		"xtop2",       // arm c across two files of one package
 		"xownlax",     // fact names a type the strict package declares itself
 		"xownvia",     // fact reaches a package that never imports xown
 		"xopts",       // I6: a strict decode passing options is still strict

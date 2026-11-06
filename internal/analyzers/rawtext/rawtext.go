@@ -45,7 +45,10 @@
 //     (Label, Title, Placeholder, AriaLabel, Alt, Heading, Description,
 //     Text, Hint, Caption, Subtitle, Empty, or any name ending in Label,
 //     Title, Text or Placeholder) of a component type from a UI package
-//     (framework/ui, framework/headless, framework/entityui, core-ui).
+//     (framework/ui, framework/headless, framework/entityui, core-ui),
+//     in a composite literal or by field assignment — a config built
+//     empty and filled piecewise (card.Title = "Recent orders") is the
+//     literal's twin (2026-11-03 round).
 //     Prose is a constant, or a concatenation with a constant operand,
 //     holding two words or one capitalised word; a class, key, path,
 //     symbol or all-capitals token ("GET, POST") stays quiet. A local
@@ -62,17 +65,21 @@
 //     ScreenDescription method returning such a constant is the same
 //     shape: the method takes the request ctx, so return phrase.Text(ctx).
 //   - nativetext: prose handed to the OS by a desktop shell: the string
-//     argument of objc.NSString/NSStringErr, and the title or text of
+//     argument of objc.NSString/NSStringErr, the title or text of
 //     win32.SetWindowText, AppendMenu, MessageBox, CreateWindow and
-//     CreateWindowEx. The shell speaks the OS language
-//     (desktop.ShellContext), so render a phrase in that context and
-//     pass its text. AppKit keys and selectors ("CFBundleShortVersionString")
-//     read as no words and stay quiet.
+//     CreateWindowEx, and the string of the Linux shell's withString
+//     and capsSetString wrappers (gtk_menu_item_new_with_label,
+//     gtk_window_set_title — 2026-11-03 round). The shell speaks the OS
+//     language (desktop.ShellContext), so render a phrase in that
+//     context and pass its text. AppKit keys and selectors
+//     ("CFBundleShortVersionString") read as no words and stay quiet,
+//     and so do the Linux wrappers' atom and script-message names.
 //   - numtext: a number turned into Go's digits (strconv.Itoa,
 //     FormatInt, FormatUint, FormatFloat, or fmt.Sprint/Sprintf of plain
 //     numbers) where a reader sees it: a value in a params map literal
 //     passed to Phrase.Text, Translator.T or i18n's T, Fill, FillContext,
-//     NewError or Wrap; the argument of render.Text; a label attribute
+//     NewError or Wrap — the map hoisted into a local first included
+//     (2026-11-03 round) — the argument of render.Text; a label attribute
 //     or reader-facing component field. Phrase params write a number in
 //     the reader's locale (1 234 in French, ١٬٢٣٤ in Egyptian Arabic) and
 //     pick the plural form from it, so ASCII digits read wrong both ways.
@@ -171,6 +178,7 @@ func run(pass *analysis.Pass) (any, error) {
 	}
 	defer localProseCache.Delete(pass)
 	defer localNumberCache.Delete(pass)
+	defer localParamsCache.Delete(pass)
 	defer packageProseCache.Delete(pass)
 	forwarders := phraseForwarders(pass)
 	texts := textParams(pass)
@@ -205,6 +213,7 @@ func run(pass *analysis.Pass) (any, error) {
 				checkParams(pass, n.Type, "func literal")
 			case *ast.AssignStmt:
 				checkLabelIndex(pass, n, ui)
+				checkUIAssign(pass, n, ui)
 			}
 			return true
 		})
@@ -308,10 +317,12 @@ func checkCall(pass *analysis.Pass, call *ast.CallExpr, bodies []*ast.BlockStmt,
 // through NSString), with the argument positions that carry it. The
 // shell renders its words in the OS language, so a constant here is
 // English on every machine. Keys and selectors passed to NSString
-// ("CFBundleShortVersionString") are not prose and stay quiet. The
-// Linux shell has no entry yet: internal/gtk only resolves symbols and
-// nothing calls gtk_menu_item_new_with_label or gtk_window_set_title,
-// so the wrappers that do add their rows here.
+// ("CFBundleShortVersionString") are not prose and stay quiet, and so
+// do the Linux wrappers' atom and script-message names ("CARDINAL",
+// "gofastr"). The Linux shell speaks through the battery/desktop/linux
+// package's withString and capsSetString wrappers — the uintptr symbol
+// calls they drive (gtk_menu_item_new_with_label,
+// gtk_window_set_title) carry no argument the arm could key on.
 var nativeSinks = map[string]map[string][]int{
 	module + "battery/desktop/internal/objc": {
 		"NSString": {0}, "NSStringErr": {0},
@@ -319,6 +330,9 @@ var nativeSinks = map[string]map[string][]int{
 	module + "battery/desktop/internal/win32": {
 		"SetWindowText": {1}, "AppendMenu": {3}, "MessageBox": {1, 2},
 		"CreateWindow": {1}, "CreateWindowEx": {2},
+	},
+	module + "battery/desktop/linux": {
+		"withString": {0}, "capsSetString": {2},
 	},
 }
 
@@ -532,6 +546,54 @@ func checkLabelIndex(pass *analysis.Pass, as *ast.AssignStmt, ui uiReporter) {
 			ui.reportf(as.Rhs[i], "%s %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", constant.StringVal(k.Value), s)
 		}
 	}
+}
+
+// checkUIAssign reports a reader-facing string field of a framework
+// type set to English by field assignment, card.Title = "Recent
+// orders": a UI config built empty and filled piecewise is the
+// composite literal's twin.
+func checkUIAssign(pass *analysis.Pass, as *ast.AssignStmt, ui uiReporter) {
+	if (as.Tok != token.ASSIGN && as.Tok != token.DEFINE) || len(as.Lhs) != len(as.Rhs) {
+		return
+	}
+	for i, lhs := range as.Lhs {
+		sel, ok := lhs.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		selInfo, ok := pass.TypesInfo.Selections[sel]
+		if !ok || selInfo.Kind() != types.FieldVal {
+			continue
+		}
+		field, ok := selInfo.Obj().(*types.Var)
+		if !ok || !uiField(field.Name()) {
+			continue
+		}
+		recv := selInfo.Recv()
+		if p, ok := recv.(*types.Pointer); ok {
+			recv = p.Elem()
+		}
+		named, ok := types.Unalias(recv).(*types.Named)
+		if !ok || named.Obj() == nil || named.Obj().Pkg() == nil || !uiPackage(named.Obj().Pkg().Path()) {
+			continue
+		}
+		reportUIFieldText(pass, as.Rhs[i], field, ui)
+	}
+}
+
+// reportUIFieldText reports English prose and number text written
+// into one reader-facing string field of a framework type.
+func reportUIFieldText(pass *analysis.Pass, val ast.Expr, field *types.Var, ui uiReporter) {
+	if !uiField(field.Name()) {
+		return
+	}
+	if b, ok := field.Type().Underlying().(*types.Basic); !ok || b.Kind() != types.String {
+		return
+	}
+	if s, ok := uiProse(pass, val); ok {
+		ui.reportf(val, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", field.Name(), s)
+	}
+	reportNumberText(pass, val, ui, "a number into "+field.Name())
 }
 
 // localProseCache holds each pass's localProse map while it runs, and
@@ -858,17 +920,7 @@ func hasJSONField(st *types.Struct, name string) bool {
 // type set to English.
 func checkUIFields(pass *analysis.Pass, lit *ast.CompositeLit, st *types.Struct, ui uiReporter) {
 	for i, val := range litFields(lit, st) {
-		f := st.Field(i)
-		if !uiField(f.Name()) {
-			continue
-		}
-		if b, ok := f.Type().Underlying().(*types.Basic); !ok || b.Kind() != types.String {
-			continue
-		}
-		if s, ok := uiProse(pass, val); ok {
-			ui.reportf(val, "%s: %q is English written into the page: define it as an i18n.Phrase at package level and set phrase.Text(ctx), or take it from the component's Strings", f.Name(), s)
-		}
-		reportNumberText(pass, val, ui, "a number into "+f.Name())
+		reportUIFieldText(pass, val, st.Field(i), ui)
 	}
 }
 

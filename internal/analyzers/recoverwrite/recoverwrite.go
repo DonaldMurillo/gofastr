@@ -29,7 +29,8 @@
 // nested literal, and that then writes a response: a WriteHeader or
 // Write on an http.ResponseWriter, http.Error/Redirect/NotFound/
 // ServeContent/ServeFile on one, fmt.Fprint*/io.WriteString/io.Copy into
-// one, json.NewEncoder(w).Encode, or a call to a respond helper — a
+// one, json.NewEncoder(w).Encode, a html/template or text/template
+// Execute/ExecuteTemplate into one, or a call to a respond helper — a
 // function that writes its own ResponseWriter parameter, computed to a
 // fixed point in the package and exported as a writesResponse fact, so
 // handler.WriteError and i18n.HTTPError count from any importer.
@@ -37,13 +38,13 @@
 // position before the write, a variable, field or method whose name
 // says the response state: started, wrote/written, wroteHeader,
 // committed, sent/headerSent, flushed, hijacked (camel-case words, so
-// `rw.started`, `w.Written()`, `headerSent` all count).
-//
-// Silent postures, deliberately:
-//   - a guard read anywhere earlier in the deferred body, whether or not
-//     it dominates the write: `cut = cut || rw.started; ...; if cut {
-//     panic(...) }` is Recovery's spelling, and following the flag
-//     through locals buys nothing a reviewer cannot see;
+// `rw.started`, `w.Written()`, `headerSent` all count). The guard must
+// READ the state: writing the latch (`started = true` in the recover,
+// recording it for the log) is not a check that the response had not
+// started. The read counts anywhere earlier in the deferred body,
+// whether or not it dominates the write: `cut = cut || rw.started;
+// ...; if cut { panic(...) }` is Recovery's spelling, and following
+// the flag through locals buys nothing a reviewer cannot see;
 //   - a deferred recover that only logs, records a metric or re-panics
 //     (metrics, tracing, idempotency): no write, no splice;
 //   - a deferred function with no recover() in it: it answers no
@@ -150,6 +151,21 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, helpers rwcall.HelperIndex,
 	recoverAt := token.NoPos
 	var guards []token.Pos
 	var writes []*ast.CallExpr
+	// The identifiers in write position: a WRITE of the latch
+	// (`rw.started = true` in the recover) records state, it does not
+	// read it — only a read can be the guard.
+	written := map[*ast.Ident]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch n := n.(type) {
+		case *ast.AssignStmt:
+			for _, l := range n.Lhs {
+				markWritten(l, written)
+			}
+		case *ast.IncDecStmt:
+			markWritten(n.X, written)
+		}
+		return true
+	})
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch n := n.(type) {
 		case *ast.FuncLit:
@@ -167,7 +183,7 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, helpers rwcall.HelperIndex,
 				writes = append(writes, n)
 			}
 		case *ast.Ident:
-			if stateName(n.Name) {
+			if stateName(n.Name) && !written[n] {
 				if _, isVar := pass.TypesInfo.Uses[n].(*types.Var); isVar {
 					guards = append(guards, n.Pos())
 				} else if _, isFunc := pass.TypesInfo.Uses[n].(*types.Func); isFunc {
@@ -196,6 +212,27 @@ func check(pass *analysis.Pass, body *ast.BlockStmt, helpers rwcall.HelperIndex,
 		reported[w.Pos()] = true
 		pass.Reportf(w.Pos(),
 			"recoverwrite: a deferred recover writes a response with no check that the response had not started; a panic after the status went out splices this onto the partial body (track started in the writer, and once it is set log and panic(http.ErrAbortHandler) instead)")
+	}
+}
+
+// markWritten records every identifier of an lvalue (x, x.f's root and
+// field, x[i]) as written.
+func markWritten(e ast.Expr, written map[*ast.Ident]bool) {
+	for {
+		switch x := ast.Unparen(e).(type) {
+		case *ast.Ident:
+			written[x] = true
+			return
+		case *ast.SelectorExpr:
+			written[x.Sel] = true
+			e = x.X
+		case *ast.IndexExpr:
+			e = x.X
+		case *ast.StarExpr:
+			e = x.X
+		default:
+			return
+		}
 	}
 }
 

@@ -153,3 +153,46 @@ var queryResolverInBuild = app.NewLayout("qr", app.LayoutSpec{}, func(ctx contex
 	})
 	return l.Primary()
 })
+
+// ---------- named builds in the other arms (AZ16-04, 2026-11) ----------
+
+// conversionNamed: the conversion of a NAMED build, not a literal. The
+// arm resolved literals only, so this flagged body was never walked.
+func conversionNamed(ctx context.Context, l *app.LayoutTree) app.HTML {
+	m, _ := app.MatchFromContext(ctx) // want `layout build reads route state outside a RouteArea`
+	_ = m.Param("id")                 // want `layout build reads route state outside a RouteArea`
+	return l.Primary()
+}
+
+var convertedNamed = app.NewLayout("conv-named", app.LayoutSpec{}, app.LayoutFunc(conversionNamed))
+
+// typedVarNamed: the explicit app.LayoutFunc variable bound to a named
+// build.
+func typedVarNamed(ctx context.Context, l *app.LayoutTree) app.HTML {
+	m, _ := app.MatchFromContext(ctx) // want `layout build reads route state outside a RouteArea`
+	_ = m.Path()                      // want `layout build reads route state outside a RouteArea`
+	return l.Primary()
+}
+
+var typedBuildNamed app.LayoutFunc = typedVarNamed
+
+// typedAssignNamed: assignment to a LayoutFunc-typed left side.
+func typedAssignNamed(ctx context.Context, l *app.LayoutTree) app.HTML {
+	m, _ := app.MatchFromContext(ctx) // want `layout build reads route state outside a RouteArea`
+	_ = m.Param("slug")               // want `layout build reads route state outside a RouteArea`
+	return l.Primary()
+}
+
+var reassignTargetNamed app.LayoutFunc
+
+func init() {
+	reassignTargetNamed = typedAssignNamed
+}
+
+// namedBuildClean is a named build that reads nothing: binding it
+// through any arm stays silent.
+func namedBuildClean(ctx context.Context, l *app.LayoutTree) app.HTML {
+	return l.Primary()
+}
+
+var typedClean app.LayoutFunc = namedBuildClean

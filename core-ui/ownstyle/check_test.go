@@ -14,6 +14,25 @@ func defaultTokens(t *testing.T) map[string]string {
 	return style.ThemeToTokens(style.DefaultTheme())
 }
 
+func TestChainedMediaRangeReportsBothBounds(t *testing.T) {
+	source, err := os.ReadFile("testdata/chained-range.style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range strings.Split(strings.TrimSpace(string(source)), "\n") {
+		diagnostics := Check("range.style.css", query, KindScoped, defaultTokens(t))
+		var widths []Diagnostic
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Rule == RuleRawMediaWidth {
+				widths = append(widths, diagnostic)
+			}
+		}
+		if len(widths) != 2 || widths[0].Col == widths[1].Col {
+			t.Errorf("query %q: got %v, want distinct lower and upper bound findings", query, widths)
+		}
+	}
+}
+
 // The bad inbox file from the design walkthrough. 1817 is a Go+CSS
 // rule (slice 5); it is not expected here.
 const inboxCSS = `:scope { padding: 16px; color: #52525B; }
@@ -281,8 +300,11 @@ func TestCheckRawMediaWidths(t *testing.T) {
 		{"@container (min-width: 26rem) { .a { color: red; } }", ""},
 		{"@media (hover: hover) { .a { color: red; } }", ""},
 		{"@media (aspect-ratio: 16/9) { .a { color: red; } }", ""},
-		// Range syntax counts too.
+		// Range syntax counts too, in both orders: the value after
+		// the feature name, or before it (the reversed form).
 		{"@media (width >= 900px) { .a { color: red; } }", "1:18"},
+		{"@media (900px >= width) { .a { color: red; } }", "1:9 error GOFASTR1812"},
+		{"@media (768px <= min-width) { .a { color: red; } }", "1:9 error GOFASTR1812 768px is the md breakpoint"},
 	}
 	for _, tc := range cases {
 		ds := Check("t.style.css", tc.src, KindScoped, defaultTokens(t))

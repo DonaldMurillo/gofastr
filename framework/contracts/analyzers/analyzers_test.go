@@ -285,7 +285,41 @@ func f(db *sql.DB, req struct{ Email string }) {
 }
 `,
 	})
+	if got := countRule(t, ds, contracts.RuleSQLStringConcat); len(got) != 1 {
+		t.Fatalf("one expression, one finding; got %d: %v", len(got), got)
+	}
+}
+
+// The two spellings the line scan cannot see: a raw-string literal
+// (its text carries no `"` for the regex) and a `+` split across
+// lines. The catalog promises any statement built by concatenation.
+func TestSQLConcatRawStringAndSplitLines(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"db.go": "package main\n\nimport \"database/sql\"\n\nfunc f(db *sql.DB, req struct{ Email string }) {\n\trows, _ := db.Query(`SELECT * FROM users WHERE email = '` + req.Email + `'`)\n\t_ = rows\n}\n",
+	})
 	assertHas(t, ds, contracts.RuleSQLStringConcat)
+	ds = fixture(t, map[string]string{
+		"db.go": `package main
+
+import "database/sql"
+
+func f(db *sql.DB, req struct{ Email string }) {
+	rows, _ := db.Query(
+		"SELECT * FROM users WHERE email = '" +
+		req.Email + "'")
+	_ = rows
+}
+`,
+	})
+	if got := countRule(t, ds, contracts.RuleSQLStringConcat); len(got) != 1 {
+		t.Fatalf("the split concatenation is one expression; want 1 finding, got %d: %v", len(got), got)
+	}
+	// The same spellings with a placeholder, not a concatenation, stay
+	// clean: there is no host value in the statement.
+	ds = fixture(t, map[string]string{
+		"db.go": "package main\n\nimport \"database/sql\"\n\nfunc f(db *sql.DB, email string) {\n\trows, _ := db.Query(`SELECT * FROM users WHERE email = $1`, email)\n\t_ = rows\n}\n",
+	})
+	assertNot(t, ds, contracts.RuleSQLStringConcat, "a raw literal with a placeholder has no host value in the statement")
 }
 
 func TestSQLPlaceholderIsClean(t *testing.T) {

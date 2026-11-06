@@ -26,13 +26,18 @@
 // the token, and stay quiet).
 //
 // The compare has more spellings than ==/!=, and each short-circuits
-// the same way: bytes.Equal on the pair (bytes.Equal on a MAC is the
-// textbook timing bug), bytes.Compare or strings.Compare whose result is
-// tested == 0 / != 0, a switch whose
+// the same way: bytes.Equal or slices.Equal on the pair (bytes.Equal on
+// a MAC is the textbook timing bug), bytes.Compare or strings.Compare
+// whose result is tested == 0 / != 0 — including a switch over the
+// call whose zero case is the match test — a switch whose
 // tag is compared against each case, and an operand behind parentheses
 // or a string <-> []byte conversion (`string(sig) == want`). A type
 // parameter whose every constraint term is a string or []byte counts as
-// one. The 2026-11-02 guard bash found the rule blind to all of them.
+// one. The 2026-11-02 guard bash found the rule blind to all of them,
+// and the 2026-11-03 round added slices.Equal, the switch-over-Compare
+// zero case, and input reads keyed on the receiver's type (a url.Values
+// or http.Header Get, an *http.Request Cookie/FormValue) rather than
+// its spelling.
 //
 // Silent postures, deliberately:
 //   - a literal, named constant, or nil on either side: an empty-check
@@ -48,8 +53,9 @@
 //     uiSub`, the oauth store's RefreshToken guard) or any computed
 //     non-input value. The compare must face either another
 //     credential-named operand or an input-fetching call (os.Getenv,
-//     header/query/form/cookie reads) for the timing to carry
-//     attacker-steerable information;
+//     header/query/form/cookie reads, including one through a
+//     url.Values / http.Header / *http.Request receiver) for the timing
+//     to carry attacker-steerable information;
 //   - hash- and digest-named operands (content digests, not
 //     credentials; see credentialWords below);
 //   - a bytes.Compare / strings.Compare used to ORDER, not to match: a
@@ -100,16 +106,25 @@ func run(pass *analysis.Pass) (any, error) {
 					check(pass, v.X, v.Y, v.Pos(), "==/!=")
 				}
 			case *ast.CallExpr:
-				// bytes.Equal is == spelled as a call: the same
-				// byte-at-a-time short circuit.
-				if pathflow.QualifiedFunc(pass, v.Fun) == "bytes.Equal" && len(v.Args) == 2 {
-					check(pass, v.Args[0], v.Args[1], v.Pos(), "bytes.Equal")
+				// bytes.Equal and slices.Equal are == spelled as a call:
+				// the same byte-at-a-time short circuit.
+				if name := pathflow.QualifiedFunc(pass, v.Fun); (name == "bytes.Equal" || name == "slices.Equal") && len(v.Args) == 2 {
+					check(pass, v.Args[0], v.Args[1], v.Pos(), name)
 				}
 			case *ast.SwitchStmt:
 				// `switch token { case want: }` compares the tag with ==
-				// against every case expression.
+				// against every case expression. A Compare call as the
+				// tag is the == 0 spelling nested one level deeper:
+				// only its zero case is an equality check.
 				if v.Tag == nil {
 					return true
+				}
+				var cmpCall *ast.CallExpr
+				var cmpName string
+				if call, ok := ast.Unparen(v.Tag).(*ast.CallExpr); ok && len(call.Args) == 2 {
+					if name := pathflow.QualifiedFunc(pass, call.Fun); name == "bytes.Compare" || name == "strings.Compare" {
+						cmpCall, cmpName = call, name
+					}
 				}
 				for _, st := range v.Body.List {
 					cc, ok := st.(*ast.CaseClause)
@@ -117,6 +132,12 @@ func run(pass *analysis.Pass) (any, error) {
 						continue
 					}
 					for _, e := range cc.List {
+						if cmpCall != nil {
+							if isZeroLiteral(pass, e) {
+								check(pass, cmpCall.Args[0], cmpCall.Args[1], e.Pos(), cmpName+"(...) == 0")
+							}
+							continue
+						}
 						check(pass, v.Tag, e, e.Pos(), "a switch case")
 					}
 				}
@@ -140,13 +161,18 @@ func compareAgainstZero(pass *analysis.Pass, x, y ast.Expr) (*ast.CallExpr, stri
 		if name != "bytes.Compare" && name != "strings.Compare" {
 			continue
 		}
-		tv, ok := pass.TypesInfo.Types[pair[1]]
-		if !ok || tv.Value == nil || tv.Value.String() != "0" {
+		if !isZeroLiteral(pass, pair[1]) {
 			continue
 		}
 		return call, name
 	}
 	return nil, ""
+}
+
+// isZeroLiteral reports whether e is the constant 0.
+func isZeroLiteral(pass *analysis.Pass, e ast.Expr) bool {
+	tv, ok := pass.TypesInfo.Types[ast.Unparen(e)]
+	return ok && tv.Value != nil && tv.Value.String() == "0"
 }
 
 // check reports a compare of x against y at pos when one side is
@@ -338,7 +364,9 @@ func operandCredential(e ast.Expr) (string, bool) {
 
 // inputFetch reports whether e is a call that reads attacker-steerable
 // input: os.Getenv, or a Get/FormValue/PostFormValue/Cookie method on
-// a receiver naming header/query/form/cookie storage.
+// a receiver that either names header/query/form/cookie storage or is
+// one of the request types themselves (a url.Values or http.Header
+// parameter, an *http.Request named anything at all).
 func inputFetch(pass *analysis.Pass, e ast.Expr) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok {
@@ -356,6 +384,9 @@ func inputFetch(pass *analysis.Pass, e ast.Expr) bool {
 	default:
 		return false
 	}
+	if requestInputType(pass, sel.X, sel.Sel.Name) {
+		return true
+	}
 	mentionsInput := false
 	ast.Inspect(sel.X, func(n ast.Node) bool {
 		if id, ok := n.(*ast.Ident); ok {
@@ -369,6 +400,32 @@ func inputFetch(pass *analysis.Pass, e ast.Expr) bool {
 		return !mentionsInput
 	})
 	return mentionsInput
+}
+
+// requestInputType reports whether x's type is one of the request
+// storage types whose reads are attacker-steerable regardless of the
+// receiver's spelling: url.Values and http.Header for Get, and
+// *http.Request for the form/cookie reads.
+func requestInputType(pass *analysis.Pass, x ast.Expr, method string) bool {
+	t := pass.TypesInfo.TypeOf(x)
+	if t == nil {
+		return false
+	}
+	if p, ok := t.(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	named, ok := t.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Pkg() == nil {
+		return false
+	}
+	full := named.Obj().Pkg().Path() + "." + named.Obj().Name()
+	switch full {
+	case "net/url.Values", "net/http.Header":
+		return method == "Get"
+	case "net/http.Request":
+		return method == "FormValue" || method == "PostFormValue" || method == "Cookie" || method == "Cookies"
+	}
+	return false
 }
 
 // credentialWord reports whether the identifier name carries a

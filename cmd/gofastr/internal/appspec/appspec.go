@@ -1171,10 +1171,15 @@ func mergeEntityScopeDeclaration(
 		}
 		grouped.MultiTenant = flat
 	}
-	for key, target := range map[string]*string{
-		"tenant_field": &grouped.TenantField, "owner_field": &grouped.OwnerField,
-		"cross_owner_read": &grouped.CrossOwnerRead,
+	for _, entry := range []struct {
+		key string
+		val *string
+	}{
+		{"tenant_field", &grouped.TenantField},
+		{"owner_field", &grouped.OwnerField},
+		{"cross_owner_read", &grouped.CrossOwnerRead},
 	} {
+		key, target := entry.key, entry.val
 		if node := root[key]; node != nil {
 			// requireScalarString: owner_field/tenant_field as a list or
 			// map must be an error, not "" — an empty owner field

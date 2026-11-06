@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
@@ -52,11 +53,13 @@ func runSecurity(p *contracts.Pass) ([]contracts.Diagnostic, error) {
 			continue
 		}
 		lines := strings.Split(string(body), "\n")
-		out = append(out, ruleSQLConcat(p, f.Rel, string(body), lines)...)
+		sqlConcat := ruleSQLConcat(p, f.Rel, string(body), lines)
+		out = append(out, sqlConcat...)
 		htmlConcat := ruleHTMLConcat(p, f.Rel, lines)
 		out = append(out, htmlConcat...)
 		out = append(out, ruleFormCSRF(p, f.Rel, string(body), lines)...)
 		if file, parsed := p.AST(f.Rel); parsed {
+			out = append(out, ruleSQLConcatAST(p, f.Rel, file, string(body), lines, sqlConcat)...)
 			out = append(out, ruleHTMLBuiltAST(p, f.Rel, file, lines, htmlConcat)...)
 			out = append(out, ruleInsecureCookie(p, f.Rel, file, lines)...)
 			out = append(out, ruleHardcodedSecret(p, f.Rel, file, lines)...)
@@ -137,6 +140,122 @@ func ruleSQLConcat(p *contracts.Pass, rel, body string, lines []string) []contra
 		})
 	}
 	return out
+}
+
+// sqlCallNames are the call targets whose arguments carry statements:
+// the database Query/Exec family and the query-builder clause methods
+// the line scan names.
+var sqlCallNames = map[string]bool{
+	"Query": true, "QueryRow": true, "QueryContext": true, "QueryRowContext": true,
+	"Exec": true, "ExecContext": true,
+	"Where": true, "Having": true, "OrderBy": true, "GroupBy": true,
+}
+
+// reSQLVerbText matches a statement verb in rendered literal text.
+var reSQLVerbText = regexp.MustCompile(`(?i)\b` + sqlVerb)
+
+// ruleSQLConcatAST is GOFASTR1401's AST arm, for the two spellings a
+// one-line regex over source text cannot see: a raw-string literal
+// (“ `SELECT … '` “ + email carries no double quote to anchor on)
+// and a concatenation split across lines. It reads each Query/Exec/
+// builder argument through the AST, renders the statement as the
+// literals joined with %s where the host values sit, and applies the
+// same suspicion gates as the line scan: a value inside SQL quotes, or
+// a request-derived name on the expression. The line scan's findings
+// arrive as already so one expression is reported once.
+func ruleSQLConcatAST(p *contracts.Pass, rel string, file *ast.File, body string, lines []string, already []contracts.Diagnostic) []contracts.Diagnostic {
+	seen := map[int]bool{}
+	for _, d := range already {
+		seen[d.Line] = true
+	}
+	var out []contracts.Diagnostic
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || !sqlCallNames[sel.Sel.Name] {
+			return true
+		}
+		for _, arg := range call.Args {
+			text, isConcat := sqlConcatText(arg)
+			if !isConcat || !reSQLVerbText.MatchString(text) {
+				continue
+			}
+			start := p.Position(arg.Pos())
+			end := p.Position(arg.End())
+			reported := false
+			for ln := start.Line; ln <= end.Line && ln <= len(lines); ln++ {
+				if seen[ln] || hasLegacyAnnotation(lines, ln, "safe-sql:") {
+					reported = true
+					break
+				}
+			}
+			if reported {
+				continue
+			}
+			// Suspicion gates, the line scan's two: a host value inside
+			// SQL quotes (here: a %s hole the quotes enclose), or a
+			// request-derived name anywhere in the expression's source.
+			suspicious := reSQLQuotedInterp.MatchString(text)
+			src := strings.ToLower(body[start.Offset:end.Offset])
+			for _, marker := range taintMarkers {
+				if strings.Contains(src, marker) {
+					suspicious = true
+					break
+				}
+			}
+			if !suspicious {
+				continue
+			}
+			out = append(out, contracts.Diagnostic{
+				RuleID:  contracts.RuleSQLStringConcat,
+				File:    rel,
+				Line:    start.Line,
+				Message: "request-derived value concatenated into a SQL statement",
+				Snippet: strings.TrimSpace(lines[min(start.Line-1, len(lines)-1)]),
+			})
+		}
+		return true
+	})
+	return out
+}
+
+// sqlConcatText renders e the way the statement would read: every
+// string literal operand unquoted, every other operand (a host value)
+// as a %s directive. ok is false when e holds no string
+// concatenation — a lone literal or a placeholder argument is not
+// this rule's shape.
+func sqlConcatText(e ast.Expr) (string, bool) {
+	var sb strings.Builder
+	lit, concat := false, false
+	var walk func(ast.Expr)
+	walk = func(e ast.Expr) {
+		switch v := unparen(e).(type) {
+		case *ast.BasicLit:
+			if v.Kind == token.STRING {
+				if s, err := strconv.Unquote(v.Value); err == nil {
+					sb.WriteString(s)
+					lit = true
+					return
+				}
+			}
+			sb.WriteString("%s")
+		case *ast.BinaryExpr:
+			if v.Op == token.ADD {
+				concat = true
+				walk(v.X)
+				walk(v.Y)
+				return
+			}
+			sb.WriteString("%s")
+		default:
+			sb.WriteString("%s")
+		}
+	}
+	walk(e)
+	return sb.String(), lit && concat
 }
 
 // ----------------------------------------------------------------------

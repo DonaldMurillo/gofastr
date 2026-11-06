@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // The darwin/arm64 desktop.Shell: a real AppKit + WKWebView host on top of
@@ -32,6 +33,24 @@ const evalTimeout = 15 * time.Second
 
 // snapTimeout bounds one window snapshot.
 const snapTimeout = 30 * time.Second
+
+// deliverOnGoroutine launches a host callback on its own goroutine with
+// a recover, so a panicking app callback drops that one event instead
+// of the whole desktop process (deliverDeepLink's spelling).
+func deliverOnGoroutine(fn func()) {
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				if s := activeShell.Load(); s != nil && s.logger != nil {
+					s.logger.Error("desktop: callback panicked", "panic", textsafe.Recovered(v))
+				} else {
+					slog.Default().Error("desktop: callback panicked", "panic", textsafe.Recovered(v))
+				}
+			}
+		}()
+		fn()
+	}()
+}
 
 // ─── desktop.Window styles ───────────────────────────────────────────────────
 
@@ -612,6 +631,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 	close(loopStopped)
 	s.mu.Lock()
+	//gofastr:allow(deferreset) the reset follows the process-lifetime AppKit run loop on the main thread; any panic between the set and this reset is an unrecovered crash that ends the process, so no later caller can observe the stale flag
 	s.running = false
 	s.mu.Unlock()
 
@@ -1227,7 +1247,7 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 		return
 	}
 	if f, ok := w.readFrameOnMain(); ok {
-		go cb(w.id, f)
+		deliverOnGoroutine(func() { cb(w.id, f) })
 	}
 }
 

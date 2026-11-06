@@ -30,7 +30,7 @@ import (
 	"unicode/utf8"
 )
 
-const name = "G.serverAction"
+const name = "serverAction"
 
 // ServerActionCall reports whether clientJS contains a call of
 // G.serverAction outside comments, strings, template text and regular
@@ -86,6 +86,13 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			i, prev, word = end, '`', ""
 		case c == '\'' || c == '"':
 			i, prev, word = skipString(src, i+1, c), c, ""
+		case c == '(' && (regexAllowed(prev, word) || prev == ')'):
+			if receiverEnd, ok := parenthesizedReceiverEnd(src, i); ok {
+				if after, called := serverActionEnd(src, receiverEnd); called {
+					return true, after
+				}
+			}
+			i, prev, word = i+1, c, ""
 		case inInterpolation && c == '{':
 			depth++
 			i, prev, word = i+1, c, ""
@@ -95,22 +102,11 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 			}
 			depth--
 			i, prev, word = i+1, c, ""
-		case strings.HasPrefix(src[i:], name) && (i == 0 || !isIdentByte(src[i-1])):
-			after := i + len(name)
-			if after < len(src) && isIdentByte(src[after]) {
-				// G.serverActionFor and the like: another member.
-				j := after
-				for j < len(src) && isIdentByte(src[j]) {
-					j++
-				}
-				i, prev, word = j, src[j-1], src[after-len("serverAction"):j]
-				continue
-			}
-			after = skipTrivia(src, after)
-			if after < len(src) && src[after] == '(' {
+		case c == 'G' && (i == 0 || !isIdentByte(src[i-1])):
+			if after, ok := serverActionEnd(src, i+1); ok {
 				return true, after
 			}
-			i, prev, word = after, 'n', "serverAction"
+			i, prev, word = i+1, c, "G"
 		case isIdentByte(c):
 			j := i
 			for j < len(src) && isIdentByte(src[j]) {
@@ -122,6 +118,49 @@ func scanCode(src string, i int, inInterpolation bool) (bool, int) {
 		}
 	}
 	return false, i
+}
+
+func parenthesizedReceiverEnd(src string, start int) (int, bool) {
+	position, depth := start, 0
+	for position < len(src) && src[position] == '(' {
+		depth++
+		position = skipTrivia(src, position+1)
+	}
+	if position >= len(src) || src[position] != 'G' {
+		return 0, false
+	}
+	position = skipTrivia(src, position+1)
+	for range depth {
+		if position >= len(src) || src[position] != ')' {
+			return 0, false
+		}
+		position = skipTrivia(src, position+1)
+	}
+	return position, true
+}
+
+func serverActionEnd(src string, start int) (int, bool) {
+	member := skipTrivia(src, start)
+	if strings.HasPrefix(src[member:], "?.") {
+		member += 2
+	} else if strings.HasPrefix(src[member:], ".") {
+		member++
+	} else {
+		return 0, false
+	}
+	member = skipTrivia(src, member)
+	if !strings.HasPrefix(src[member:], name) {
+		return 0, false
+	}
+	after := member + len(name)
+	if after < len(src) && isIdentByte(src[after]) {
+		return 0, false
+	}
+	after = skipTrivia(src, after)
+	if strings.HasPrefix(src[after:], "?.") {
+		after = skipTrivia(src, after+2)
+	}
+	return after, after < len(src) && src[after] == '('
 }
 
 // regexAllowed reports whether a "/" after prev (and word, when prev

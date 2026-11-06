@@ -30,3 +30,15 @@ func fixed(w http.ResponseWriter, err error) {
 	_ = err
 	http.Error(w, fmt.Sprintf("failed after %d tries", 3), 500)
 }
+
+// An explicit argument index is the same text verb.
+func sprintfIndexed(w http.ResponseWriter, err error) {
+	http.Error(w, fmt.Sprintf("failed: %[1]v (see %[1]v)", err), 500) // want `internal error`
+}
+
+// leakFmt is a named constant carrying the verb.
+const leakFmt = "failed: %v"
+
+func sprintfConst(w http.ResponseWriter, err error) {
+	http.Error(w, fmt.Sprintf(leakFmt, err), http.StatusInternalServerError) // want `internal error`
+}

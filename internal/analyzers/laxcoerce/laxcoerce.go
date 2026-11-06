@@ -1,7 +1,8 @@
 // Package laxcoerce catches a wrong type masquerading as absence: a
 // comma-ok type assertion on a map[string]any entry whose failure path
-// returns zero values with a nil error — or continues — as though the
-// key had never been sent.
+// returns zero values with a nil error — or continues, or breaks/gotos
+// out of the loop with the nil error intact (2026-11-03 round) — as
+// though the key had never been sent.
 //
 // The bug class: MCP tool args / JSON payloads arrive as
 // map[string]any, and `v, ok := m[k].(T)` collapses two distinct states —
@@ -61,6 +62,7 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/cfg"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/dominance"
 )
@@ -188,7 +190,7 @@ func checkFunc(pass *analysis.Pass, fnType *ast.FuncType, body *ast.BlockStmt) {
 			asserted = pass.TypesInfo.ObjectOf(id)
 		}
 		for _, br := range notOKBranches(pass, body, assertOK[i]) {
-			if branchIsLax(pass, br, hasErrorResult, asserted) {
+			if branchIsLax(pass, br, hasErrorResult, asserted, body) {
 				pass.Reportf(st.Pos(),
 					"type assertion on %s treated as absence: a key present with the wrong type falls into the not-found branch and silently drops the caller's input; separate presence (v, present := m[k]) or return an error",
 					m)
@@ -520,13 +522,14 @@ func isFalse(e ast.Expr) bool {
 }
 
 // branchIsLax reports whether the !ok branch silently swallows the wrong
-// type: it continues, or (in a function with an error result to speak
-// through) returns without any operand carrying an error — counting
-// only statements at the branch's own top level, since a lax statement
-// nested under another condition executes only when that condition
-// holds; or neither diverges nor records an error but rebinds the
-// asserted variable to its zero value and falls through.
-func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object) bool {
+// type: it continues, or breaks/gotos out of the loop when the function
+// has an error result to speak through, or returns without any operand
+// carrying an error — counting only statements at the branch's own top
+// level, since a lax statement nested under another condition executes
+// only when that condition holds; or neither diverges nor records an
+// error but rebinds the asserted variable to its zero value and falls
+// through.
+func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, asserted types.Object, body *ast.BlockStmt) bool {
 	// An error surfaced or recorded anywhere in the branch — nested or
 	// not — precludes laxness.
 	surfaced := false
@@ -579,7 +582,16 @@ func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, as
 			return true
 		case *ast.BranchStmt:
 			diverges = true
+			if x.Tok == token.GOTO && gotoSurfacesError(pass, body, x) {
+				return false
+			}
 			if x.Tok == token.CONTINUE {
+				return true
+			}
+			// A break or goto that leaves the loop early is the
+			// continue's twin: the list truncates and the nil error
+			// still says fine (2026-11-03 round).
+			if hasErrorResult && (x.Tok == token.BREAK || x.Tok == token.GOTO) {
 				return true
 			}
 		case *ast.ExprStmt:
@@ -595,6 +607,48 @@ func branchIsLax(pass *analysis.Pass, br *ast.BlockStmt, hasErrorResult bool, as
 	// wrong type already erased — the zero default reads as "not
 	// supplied" while the nil error says fine.
 	return !diverges && hasErrorResult && zeroesAsserted(pass, br, asserted)
+}
+
+func gotoSurfacesError(pass *analysis.Pass, body *ast.BlockStmt, branch *ast.BranchStmt) bool {
+	if branch.Label == nil {
+		return false
+	}
+	graph := cfg.New(body, func(*ast.CallExpr) bool { return true })
+	visiting := map[*cfg.Block]bool{}
+	var refuses func(*cfg.Block) bool
+	refuses = func(block *cfg.Block) bool {
+		if visiting[block] {
+			return false
+		}
+		visiting[block] = true
+		defer delete(visiting, block)
+		for _, node := range block.Nodes {
+			if statement, ok := node.(*ast.ReturnStmt); ok {
+				for _, result := range statement.Results {
+					if carriesError(pass, result) {
+						return true
+					}
+				}
+				return false
+			}
+		}
+		if len(block.Succs) == 0 {
+			return false
+		}
+		for _, successor := range block.Succs {
+			if !refuses(successor) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, block := range graph.Blocks {
+		label, ok := block.Stmt.(*ast.LabeledStmt)
+		if ok && block.Kind == cfg.KindLabel && pass.TypesInfo.ObjectOf(label.Label) == pass.TypesInfo.ObjectOf(branch.Label) {
+			return refuses(block)
+		}
+	}
+	return false
 }
 
 // zeroesAsserted reports whether the branch assigns the asserted
@@ -646,7 +700,7 @@ func isZeroLiteral(pass *analysis.Pass, e ast.Expr) bool {
 // call return carries an error when any result does (`return
 // t.Render(...)`, where the call's second result is the error).
 func carriesError(pass *analysis.Pass, e ast.Expr) bool {
-	if id, ok := e.(*ast.Ident); ok && id.Name == "nil" {
+	if nilErrorValue(pass, e) || zeroErrorVariable(pass, e) {
 		return false
 	}
 	t := pass.TypesInfo.TypeOf(e)
@@ -663,6 +717,73 @@ func carriesError(pass *analysis.Pass, e ast.Expr) bool {
 		return false
 	}
 	return types.Implements(t, errorIface) || types.Identical(t, errorIface)
+}
+
+func nilErrorValue(pass *analysis.Pass, expression ast.Expr) bool {
+	expression = ast.Unparen(expression)
+	if identifier, ok := expression.(*ast.Ident); ok {
+		_, isNil := pass.TypesInfo.ObjectOf(identifier).(*types.Nil)
+		return isNil
+	}
+	// Nil survives only a conversion to an interface type. A conversion to a
+	// concrete type makes a typed nil, and wrapping that in an error gives a
+	// non-nil error: error((*E)(nil)) != nil.
+	if conversion, ok := expression.(*ast.CallExpr); ok && len(conversion.Args) == 1 && pass.TypesInfo.Types[conversion.Fun].IsType() {
+		if !types.IsInterface(pass.TypesInfo.TypeOf(conversion.Fun)) {
+			return false
+		}
+		return nilErrorValue(pass, conversion.Args[0])
+	}
+	return false
+}
+
+func zeroErrorVariable(pass *analysis.Pass, expression ast.Expr) bool {
+	identifier, ok := ast.Unparen(expression).(*ast.Ident)
+	if !ok {
+		return false
+	}
+	object, ok := pass.TypesInfo.ObjectOf(identifier).(*types.Var)
+	// Only an interface variable's zero value is a nil error; a nil
+	// pointer of a concrete error type is non-nil once returned as error.
+	if !ok || object.Parent() == pass.Pkg.Scope() || !types.IsInterface(object.Type()) {
+		return false
+	}
+	declared, assigned := false, false
+	for _, file := range pass.Files {
+		ast.Inspect(file, func(node ast.Node) bool {
+			if node == nil || node.Pos() >= expression.Pos() {
+				return false
+			}
+			switch statement := node.(type) {
+			case *ast.ValueSpec:
+				for index, name := range statement.Names {
+					if pass.TypesInfo.ObjectOf(name) == object {
+						declared = true
+						if index < len(statement.Values) && !nilErrorValue(pass, statement.Values[index]) {
+							assigned = true
+						}
+					}
+				}
+			case *ast.AssignStmt:
+				for index, left := range statement.Lhs {
+					if name, ok := ast.Unparen(left).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(name) == object {
+						declared = declared || pass.TypesInfo.Defs[name] == object
+						if len(statement.Rhs) != len(statement.Lhs) || !nilErrorValue(pass, statement.Rhs[index]) {
+							assigned = true
+						}
+					}
+				}
+			case *ast.UnaryExpr:
+				if statement.Op == token.AND {
+					if name, ok := ast.Unparen(statement.X).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(name) == object {
+						assigned = true
+					}
+				}
+			}
+			return true
+		})
+	}
+	return declared && !assigned
 }
 
 var errorIface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)

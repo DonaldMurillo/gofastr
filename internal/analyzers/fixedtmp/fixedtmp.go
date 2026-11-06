@@ -27,8 +27,11 @@
 //     os.MkdirTemp / os.CreateTemp / t.TempDir result: unique by
 //     construction (kiln/db EphemeralSQLite);
 //   - the tail components' assembly provably involves crypto/rand,
-//     directly or through locals, same-package helper bodies, or the
-//     package-wide provenance of the struct fields feeding the path
+//     directly or through locals, same-package helper or method
+//     bodies (2026-11: the hop indexed plain functions only, so a
+//     fixed /tmp name returned by a method was invisible and entropy
+//     minted inside one did not quiet), or the package-wide
+//     provenance of the struct fields feeding the path
 //     (processmodule's scratch dir derives from the InstanceID nonce
 //     mintInstanceID mints with crypto/rand);
 //   - paths not rooted at the shared temp root: os.TempDir() or a
@@ -71,13 +74,13 @@ type prov struct {
 }
 
 type pkgCtx struct {
-	funcs     map[string]*ast.FuncDecl // package-level functions
-	fieldProv map[string][]prov        // field name -> literal assignments
+	funcs     map[string][]*ast.FuncDecl // package-level functions and methods, by name
+	fieldProv map[string][]prov          // field name -> literal assignments
 }
 
 func run(pass *analysis.Pass) (any, error) {
 	ctx := &pkgCtx{
-		funcs:     map[string]*ast.FuncDecl{},
+		funcs:     map[string][]*ast.FuncDecl{},
 		fieldProv: map[string][]prov{},
 	}
 	var files []*ast.File
@@ -88,8 +91,13 @@ func run(pass *analysis.Pass) (any, error) {
 		files = append(files, f)
 		for _, d := range f.Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if ok && fn.Body != nil && fn.Recv == nil {
-				ctx.funcs[fn.Name.Name] = fn
+			// Methods share the namespace with functions (2026-11,
+			// AZ16-03): a fixed /tmp path returned by a method was
+			// invisible at its call sites, and entropy minted inside a
+			// method did not quiet a real report. CalleeDecl picks
+			// between same-named decls by receiver.
+			if ok && fn.Body != nil {
+				ctx.funcs[fn.Name.Name] = append(ctx.funcs[fn.Name.Name], fn)
 			}
 		}
 	}
@@ -257,27 +265,29 @@ func tainted(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, h
 			}
 		}
 	}
-	// One same-package helper hop: devServerBinaryPath(rt).
+	// One same-package helper hop — plain function or method
+	// (devServerBinaryPath(rt), s.binaryPath()).
 	if call, ok := e.(*ast.CallExpr); ok {
-		if id, ok := call.Fun.(*ast.Ident); ok {
-			if decl, ok := ctx.funcs[id.Name]; ok && decl.Body != nil {
-				hBound := pathflow.Bindings(pass, decl.Body)
-				hHist := bindingHistory(pass, decl.Body)
-				found := false
-				ast.Inspect(decl.Body, func(n ast.Node) bool {
-					if ret, ok := n.(*ast.ReturnStmt); ok {
-						for _, r := range ret.Results {
-							if tempRootedPredictableWith(pass, r, hBound, hHist, decl, ctx, 0) {
-								found = true
-								return false
-							}
+		if decl := pathflow.CalleeDecl(pass, call.Fun, ctx.funcs); decl != nil && decl.Body != nil {
+			hBound := pathflow.Bindings(pass, decl.Body)
+			hHist := bindingHistory(pass, decl.Body)
+			found := false
+			ast.Inspect(decl.Body, func(n ast.Node) bool {
+				if _, literal := n.(*ast.FuncLit); literal {
+					return false
+				}
+				if ret, ok := n.(*ast.ReturnStmt); ok {
+					for _, r := range returnValues(decl, ret) {
+						if tempRootedPredictableWith(pass, r, hBound, hHist, decl, ctx, 0) {
+							found = true
+							return false
 						}
 					}
-					return !found
-				})
-				if found {
-					return true
 				}
+				return !found
+			})
+			if found {
+				return true
 			}
 		}
 	}
@@ -420,7 +430,7 @@ func isTempRootExpr(pass *analysis.Pass, e ast.Expr) bool {
 // bodies, and the package-wide provenance of struct fields read in the
 // assembly.
 func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, hist map[types.Object][]ast.Expr, ctx *pkgCtx, depth int) bool {
-	if depth > 3 || e == nil {
+	if depth > 12 || e == nil {
 		return false
 	}
 	found := false
@@ -442,14 +452,25 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 				found = true // t.TempDir()
 				return
 			}
-			// Same-package helper: entropy inside its body counts.
-			if id, ok := n.Fun.(*ast.Ident); ok {
-				if decl, ok := ctx.funcs[id.Name]; ok && decl.Body != nil {
-					if bodyHasEntropy(pass, decl.Body, ctx, depth+1) {
-						found = true
-						return
+			if decl := pathflow.CalleeDecl(pass, n.Fun, ctx.funcs); decl != nil && decl.Body != nil {
+				helperHistory := bindingHistory(pass, decl.Body)
+				for object, expressions := range hist {
+					helperHistory[object] = expressions
+				}
+				argument := 0
+				for _, field := range decl.Type.Params.List {
+					for _, parameter := range field.Names {
+						if argument < len(n.Args) {
+							object := pass.TypesInfo.ObjectOf(parameter)
+							helperHistory[object] = append(helperHistory[object], n.Args[argument])
+						}
+						argument++
 					}
 				}
+				if returnedEntropy(pass, decl, helperHistory, ctx, depth+1) {
+					found = true
+				}
+				return
 			}
 			for _, a := range n.Args {
 				walk(a)
@@ -462,8 +483,11 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 			if obj == nil {
 				return
 			}
-			for _, b := range hist[obj] {
-				walk(b)
+			for _, expression := range hist[obj] {
+				if hasEntropy(pass, expression, bound, hist, ctx, depth+1) {
+					found = true
+					return
+				}
 			}
 		case *ast.SelectorExpr:
 			// A struct field read: follow the package's assignments of
@@ -500,25 +524,21 @@ func hasEntropy(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr
 	return found
 }
 
-// bodyHasEntropy scans a helper body once (depth-limited recursion
-// through hasEntropy).
-func bodyHasEntropy(pass *analysis.Pass, body *ast.BlockStmt, ctx *pkgCtx, depth int) bool {
+func returnedEntropy(pass *analysis.Pass, function *ast.FuncDecl, history map[types.Object][]ast.Expr, ctx *pkgCtx, depth int) bool {
 	found := false
-	ast.Inspect(body, func(n ast.Node) bool {
+	ast.Inspect(function.Body, func(node ast.Node) bool {
 		if found {
 			return false
 		}
-		if call, ok := n.(*ast.CallExpr); ok {
-			q := pathflow.QualifiedFunc(pass, call.Fun)
-			if q == "os.MkdirTemp" || q == "os.CreateTemp" ||
-				strings.HasPrefix(q, "crypto/rand.") {
-				found = true
-				return false
-			}
-			if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "TempDir" &&
-				pathflow.QualifiedFunc(pass, call.Fun) != "os.TempDir" {
-				found = true
-				return false
+		if _, literal := node.(*ast.FuncLit); literal {
+			return false
+		}
+		if statement, ok := node.(*ast.ReturnStmt); ok {
+			for _, result := range returnValues(function, statement) {
+				if hasEntropy(pass, result, nil, history, ctx, depth) {
+					found = true
+					break
+				}
 			}
 		}
 		return !found
@@ -526,13 +546,57 @@ func bodyHasEntropy(pass *analysis.Pass, body *ast.BlockStmt, ctx *pkgCtx, depth
 	return found
 }
 
+func returnValues(function *ast.FuncDecl, statement *ast.ReturnStmt) []ast.Expr {
+	if len(statement.Results) > 0 || function.Type.Results == nil {
+		return statement.Results
+	}
+	var results []ast.Expr
+	for _, field := range function.Type.Results.List {
+		for _, name := range field.Names {
+			results = append(results, name)
+		}
+	}
+	return results
+}
+
 // bindingHistory maps each local to EVERY expression it was ever
 // bound to (including +=): entropy may enter at any assignment.
 func bindingHistory(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]ast.Expr {
 	hist := map[types.Object][]ast.Expr{}
 	ast.Inspect(body, func(n ast.Node) bool {
+		if _, literal := n.(*ast.FuncLit); literal {
+			return false
+		}
+		if call, ok := n.(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "crypto/rand.Read" && len(call.Args) == 1 {
+			argument := call.Args[0]
+			for {
+				switch expression := ast.Unparen(argument).(type) {
+				case *ast.SliceExpr:
+					argument = expression.X
+				case *ast.Ident:
+					if object := pass.TypesInfo.ObjectOf(expression); object != nil {
+						hist[object] = append(hist[object], call)
+					}
+					return true
+				default:
+					return true
+				}
+			}
+		}
+		if declaration, ok := n.(*ast.ValueSpec); ok {
+			for index, name := range declaration.Names {
+				if index < len(declaration.Values) {
+					if object := pass.TypesInfo.ObjectOf(name); object != nil {
+						hist[object] = append(hist[object], declaration.Values[index])
+					}
+				}
+			}
+		}
 		st, ok := n.(*ast.AssignStmt)
 		if !ok || len(st.Rhs) != 1 {
+			return true
+		}
+		if call, ok := st.Rhs[0].(*ast.CallExpr); ok && pathflow.QualifiedFunc(pass, call.Fun) == "crypto/rand.Read" {
 			return true
 		}
 		for _, lhs := range st.Lhs {

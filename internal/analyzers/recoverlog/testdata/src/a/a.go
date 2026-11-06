@@ -130,6 +130,35 @@ func helperHop() {
 	maybePanic()
 }
 
+type panicRecorder struct{}
+
+// methodHelperHop is the one-hop arm through a method call.
+func methodHelperHop() {
+	defer func() {
+		if r := recover(); r != nil {
+			rec := panicRecorder{}
+			rec.logPanic(r) // want `recoverlog: recover\(\) value passed to logPanic reaches its log sink unscrubbed`
+		}
+	}()
+	maybePanic()
+}
+
+func (panicRecorder) logPanic(v any) {
+	slog.Error("panicked", "value", v)
+}
+
+// varRecover binds the value through a var declaration, not an
+// assignment.
+func varRecover() {
+	defer func() {
+		var r any = recover()
+		if r != nil {
+			slog.Warn("panicked", "value", r) // want `recoverlog: recover\(\) value reaches slog\.Debug/Info/Warn/Error key-value unscrubbed`
+		}
+	}()
+	maybePanic()
+}
+
 func logPanic(v any) {
 	slog.Error("panicked", "value", v)
 }

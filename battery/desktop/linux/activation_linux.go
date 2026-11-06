@@ -192,6 +192,20 @@ func (d *activationDelivery) drain() {
 	}
 }
 
+// deliverOnGoroutine runs a host callback on its own goroutine behind a
+// recover, so a panicking menu or settings handler drops that one event
+// instead of the desktop process (the darwin shell's spelling).
+func deliverOnGoroutine(fn func()) {
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				slog.Default().Error("desktop/linux: callback panicked", "panic", textsafe.Recovered(v))
+			}
+		}()
+		fn()
+	}()
+}
+
 // A host callback can panic; it must not tear down the broker or process.
 func deliverActivation(raw string, onURL func(string), focus func()) {
 	defer func() {

@@ -100,6 +100,54 @@ func TestScheduler_JobPanicRecovered(t *testing.T) {
 	t.Fatalf("SECURITY: [cron] panic was not surfaced via OnError")
 }
 
+// TestScheduler_JobPanicScrubbed verifies the panic value routed to
+// OnError is scrubbed (textsafe.Recovered at the recover): a panic
+// carrying CRLF must not forge a second line in the operator tail.
+func TestScheduler_JobPanicScrubbed(t *testing.T) {
+	s := cron.NewScheduler()
+	var mu sync.Mutex
+	var caught error
+	s.OnError = func(_ string, err error) {
+		mu.Lock()
+		defer mu.Unlock()
+		caught = err
+	}
+	if err := s.Register(cron.CronJob{
+		Name: "forge",
+		Spec: "* * * * *",
+		Run:  func(context.Context) error { panic("boom\r\nforged-log-line") },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	done := make(chan struct{})
+	go func() { defer close(done); s.RunOnce(context.Background(), time.Now()) }()
+	<-done
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		got := caught
+		mu.Unlock()
+		if got != nil {
+			if strings.Contains(got.Error(), "\r") {
+				t.Errorf("SECURITY: [cron] panic value reached OnError with control bytes: %q", got.Error())
+			}
+			// The forged payload must not survive as its own log
+			// line; the stack trace's own newlines are fine.
+			if s := got.Error(); strings.Contains(s, "\nforged-log-line") || strings.HasPrefix(s, "forged-log-line") {
+				t.Errorf("SECURITY: [cron] panic value forged a log line: %q", s)
+			}
+			if !strings.Contains(got.Error(), "boom") {
+				t.Errorf("panic message lost by the scrub: %q", got.Error())
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("SECURITY: [cron] panic was not surfaced via OnError")
+}
+
 // TestScheduler_StopBeforeStart verifies that Stop() returns promptly when
 // Start() was never called, a shutdown path that fires the OnStop drainer
 // after an aborted boot must not hang forever on a bare channel receive.

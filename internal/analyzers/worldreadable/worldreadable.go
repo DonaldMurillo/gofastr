@@ -65,12 +65,13 @@
 //     posture of an executable, not a read leak;
 //   - paths under a throwaway root: a local bound to os.MkdirTemp /
 //     t.TempDir in the same function;
-//   - a write to a path this function already read or opened
-//     (os.ReadFile / os.Open on the same expression), or that a
+//   - a write to a path this function read or opened BEFORE the
+//     write (os.ReadFile / os.Open on the same expression), or that a
 //     same-package caller read before passing it here (cmd/mutate's
 //     restore of pre-mutation source): the perm argument of these
 //     calls applies only at creation, so a write to a known-existing
-//     file leaves its mode alone;
+//     file leaves its mode alone — a read AFTER the write (a
+//     verifying read-back, 2026-11) is not that evidence;
 //   - PUBLIC artifacts, judged by the path argument's provenance and
 //     name, exactly one of:
 //     (a) the final name component visible in the path assembly — a
@@ -381,7 +382,7 @@ func createTempMinted(pass *analysis.Pass, path ast.Expr, bound map[types.Object
 
 // silent reports whether site s is one of the deliberate postures.
 // depth guards the directory-content recursion (one level only).
-func silent(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]bool, ctx *pkgCtx, all []site, depth int) bool {
+func silent(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]token.Pos, ctx *pkgCtx, all []site, depth int) bool {
 	// Test scaffolding: an unexported writer no non-test code calls.
 	if fn.Recv == nil && !ast.IsExported(fn.Name.Name) && !ctx.calledNames[fn.Name.Name] {
 		return true
@@ -394,11 +395,13 @@ func silent(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[types.Objec
 	if underTempRoot(pass, s.path, bound) {
 		return true
 	}
-	// Mode applies only at creation: a path this function already read
-	// or opened exists, so the write cannot loosen anything. The same
-	// holds one hop up: a helper rewriting bytes its caller read from
-	// that path (cmd/mutate's restore).
-	if readPaths[exprString(pathflow.Resolve(pass, s.path, bound, 0))] ||
+	// Mode applies only at creation: a path this function read or
+	// opened BEFORE the write exists, so the write cannot loosen
+	// anything — a read after it (a verifying read-back, 2026-11
+	// AZ16-02) proves nothing about create time. The same holds one
+	// hop up: a helper rewriting bytes its caller read from that path
+	// before the call (cmd/mutate's restore).
+	if readBefore(readPaths, exprString(pathflow.Resolve(pass, s.path, bound, 0)), s.call.Pos()) ||
 		callerReadsPath(pass, s, fn, bound, ctx) {
 		return true
 	}
@@ -475,9 +478,12 @@ func callName(q string) string {
 }
 
 // readFirstPaths collects the resolved path expressions the same
-// function reads or opens before writing them.
-func readFirstPaths(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr) map[string]bool {
-	reads := map[string]bool{}
+// function reads or opens, with the position of the first read of
+// each: the exemption holds only for a read that comes BEFORE the
+// write (2026-11, AZ16-02 — a verifying read-back after a 0644 write
+// proved nothing about the file's existence at create time).
+func readFirstPaths(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr) map[string]token.Pos {
+	reads := map[string]token.Pos{}
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -486,7 +492,10 @@ func readFirstPaths(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Ob
 		switch pathflow.QualifiedFunc(pass, call.Fun) {
 		case "os.ReadFile", "os.Open":
 			if p := pathflow.ArgAt(call, 0); p != nil {
-				reads[exprString(pathflow.Resolve(pass, p, bound, 0))] = true
+				k := exprString(pathflow.Resolve(pass, p, bound, 0))
+				if prev, seen := reads[k]; !seen || call.Pos() < prev {
+					reads[k] = call.Pos()
+				}
 			}
 		}
 		return true
@@ -818,7 +827,9 @@ func callerReadsPath(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound map[ty
 }
 
 // callerReadsArg reports whether caller reads (os.ReadFile / os.Open)
-// the expression it passes at index idx to callee name.
+// the expression it passes at index idx to callee name — BEFORE the
+// call that hands it over (2026-11: a read after the helper wrote is
+// a read-back, not evidence the file existed at create time).
 func callerReadsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name string, callerBound map[types.Object]ast.Expr) bool {
 	found := false
 	ast.Inspect(caller.Body, func(n ast.Node) bool {
@@ -833,7 +844,7 @@ func callerReadsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name str
 		case "os.ReadFile", "os.Open":
 			if p := pathflow.ArgAt(call, 0); p != nil {
 				target := exprString(pathflow.Resolve(pass, p, callerBound, 0))
-				if readFeedsArg(pass, caller, idx, name, target, callerBound) {
+				if readFeedsArgAfter(pass, caller, idx, name, target, call.Pos(), callerBound) {
 					found = true
 					return false
 				}
@@ -844,16 +855,17 @@ func callerReadsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name str
 	return found
 }
 
-// readFeedsArg reports whether the read target expression is also
-// passed at index idx in a call to name inside caller.
-func readFeedsArg(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name, target string, callerBound map[types.Object]ast.Expr) bool {
+// readFeedsArgAfter reports whether the read target expression is
+// passed at index idx in a call to name inside caller at a position
+// after the read.
+func readFeedsArgAfter(pass *analysis.Pass, caller *ast.FuncDecl, idx int, name, target string, readPos token.Pos, callerBound map[types.Object]ast.Expr) bool {
 	found := false
 	ast.Inspect(caller.Body, func(n ast.Node) bool {
 		if found {
 			return false
 		}
 		call, ok := n.(*ast.CallExpr)
-		if !ok || astx.CalleeName(call.Fun) != name {
+		if !ok || astx.CalleeName(call.Fun) != name || call.Pos() < readPos {
 			return true
 		}
 		if arg := pathflow.ArgAt(call, idx); arg != nil &&
@@ -912,7 +924,7 @@ func dirOfCallerOwnedWrite(pass *analysis.Pass, s site, fn *ast.FuncDecl, bound 
 // on the handle), or writes in a same-package helper called with that
 // dir — is itself public or owner-only. A dir with no reachable
 // writer stays loud.
-func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]bool, ctx *pkgCtx, all []site) bool {
+func dirHoldsOnlyPublic(pass *analysis.Pass, d site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]token.Pos, ctx *pkgCtx, all []site) bool {
 	dRes := pathflow.Resolve(pass, d.path, bound, 0)
 	dExpr := exprString(dRes)
 	dRoot := exprString(resolveRoot(pass, dRes, bound))
@@ -988,7 +1000,7 @@ func resolveRoot(pass *analysis.Pass, resolved ast.Expr, bound map[types.Object]
 
 // dirContentNeutral reports whether a write into a directory is public
 // or owner-only (anything but a loud group-bits state write).
-func dirContentNeutral(pass *analysis.Pass, w site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]bool, ctx *pkgCtx) bool {
+func dirContentNeutral(pass *analysis.Pass, w site, fn *ast.FuncDecl, bound map[types.Object]ast.Expr, readPaths map[string]token.Pos, ctx *pkgCtx) bool {
 	if w.perm&0o077 == 0 {
 		return true // owner-only: the discipline itself
 	}
@@ -996,11 +1008,17 @@ func dirContentNeutral(pass *analysis.Pass, w site, fn *ast.FuncDecl, bound map[
 }
 
 // readPathsFor recomputes the read-first set for a helper body.
-func readPathsFor(pass *analysis.Pass, fn *ast.FuncDecl, bound map[types.Object]ast.Expr) map[string]bool {
+func readPathsFor(pass *analysis.Pass, fn *ast.FuncDecl, bound map[types.Object]ast.Expr) map[string]token.Pos {
 	if fn.Body == nil {
-		return map[string]bool{}
+		return map[string]token.Pos{}
 	}
 	return readFirstPaths(pass, fn.Body, bound)
+}
+
+// readBefore reports whether path was read before pos.
+func readBefore(readPaths map[string]token.Pos, path string, pos token.Pos) bool {
+	p, ok := readPaths[path]
+	return ok && p < pos
 }
 
 // helperConsumesDir reports the parameter name of helper h that the

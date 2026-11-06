@@ -9,5 +9,9 @@ import (
 )
 
 func TestMapWriter(t *testing.T) {
-	analysistest.Run(t, analysistest.TestData(), mapwriter.Analyzer, "a", "joined", "returned")
+	analysistest.Run(t, analysistest.TestData(), mapwriter.Analyzer, "a", "joined", "returned", "literalkeys")
+}
+
+func TestReviewLiteralAliases(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), mapwriter.Analyzer, "review")
 }

@@ -330,7 +330,7 @@ func regexLiteralStartsAt(out []byte) bool {
 	prev := out[j]
 	isWord := prev == '_' || prev == '$' || (prev >= 'a' && prev <= 'z') || (prev >= 'A' && prev <= 'Z') || (prev >= '0' && prev <= '9')
 	if !isWord {
-		return prev != ')' && prev != ']'
+		return prev != ')' && prev != ']' && prev != '\'' && prev != '"' && prev != '`'
 	}
 	k := j
 	for k >= 0 && (out[k] == '_' || out[k] == '$' || (out[k] >= 'a' && out[k] <= 'z') || (out[k] >= 'A' && out[k] <= 'Z') || (out[k] >= '0' && out[k] <= '9')) {

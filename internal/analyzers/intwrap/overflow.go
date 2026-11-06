@@ -80,10 +80,10 @@ var maxNameRe = regexp.MustCompile(`(?i)max|limit|cap|ceil`)
 
 var offsetNameRe = regexp.MustCompile(`(?i)^(offset|skip)|(offset|skip)$`)
 
-func checkOverflowArms(pass *analysis.Pass, fn *ast.FuncDecl, idx *pkgIndex) {
+func checkOverflowArms(pass *analysis.Pass, fn *funcInfo, idx *pkgIndex) {
 	r := newRoots(pass, fn, idx)
 	usesBitsMul := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
+	ast.Inspect(fn.body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok {
 			if q := pkgFunc(pass, call.Fun); strings.HasPrefix(q, "math/bits.Mul") {
 				usesBitsMul = true
@@ -91,8 +91,8 @@ func checkOverflowArms(pass *analysis.Pass, fn *ast.FuncDecl, idx *pkgIndex) {
 		}
 		return true
 	})
-	offsetUses := offsetTargets(pass, fn.Body)
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
+	offsetUses := offsetTargets(pass, fn.body)
+	ast.Inspect(fn.body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.BinaryExpr:
 			if x.Op != token.MUL {
@@ -110,7 +110,7 @@ func checkOverflowArms(pass *analysis.Pass, fn *ast.FuncDecl, idx *pkgIndex) {
 }
 
 // checkDurationMul is shape D.
-func checkDurationMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.BinaryExpr) {
+func checkDurationMul(pass *analysis.Pass, fn *funcInfo, r *roots, mul *ast.BinaryExpr) {
 	for _, pair := range [][2]ast.Expr{{mul.X, mul.Y}, {mul.Y, mul.X}} {
 		conv, unit := ast.Unparen(pair[0]), ast.Unparen(pair[1])
 		if !isTimeUnit(pass, unit) {
@@ -133,7 +133,7 @@ func checkDurationMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.
 		if !r.rooted(subj, false) {
 			continue
 		}
-		if upperBoundedBefore(pass, fn.Body, subj, mul.Pos()) {
+		if upperBoundedBefore(pass, fn.body, subj, mul.Pos()) {
 			continue
 		}
 		pass.Reportf(mul.Pos(),
@@ -144,7 +144,7 @@ func checkDurationMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.
 }
 
 // checkSentinelPlus is shape E.
-func checkSentinelPlus(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, call *ast.CallExpr) {
+func checkSentinelPlus(pass *analysis.Pass, fn *funcInfo, r *roots, call *ast.CallExpr) {
 	var args []ast.Expr
 	name := ""
 	switch q := pkgFunc(pass, call.Fun); q {
@@ -162,15 +162,20 @@ func checkSentinelPlus(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, call *as
 		if !ok || add.Op != token.ADD {
 			continue
 		}
-		subj := ast.Unparen(add.X)
-		k, ok := pass.TypesInfo.Types[add.Y]
-		if !ok || k.Value == nil || k.Value.Kind() != constant.Int || constant.Sign(k.Value) <= 0 {
-			continue
+		// Either operand order: limit+1 and 1+limit are the same
+		// sentinel.
+		subj, k := ast.Unparen(add.X), ast.Unparen(add.Y)
+		if !posConst(pass, k) {
+			if posConst(pass, subj) {
+				subj, k = add.Y, add.X
+			} else {
+				continue
+			}
 		}
 		if !isSignedIntExpr(pass, subj) || isConst(pass, subj) || !r.rooted(subj, true) {
 			continue
 		}
-		if upperBoundedBefore(pass, fn.Body, subj, add.Pos()) {
+		if upperBoundedBefore(pass, fn.body, subj, add.Pos()) {
 			continue
 		}
 		pass.Reportf(add.Pos(),
@@ -179,8 +184,14 @@ func checkSentinelPlus(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, call *as
 	}
 }
 
+// posConst: e is an integer constant above zero.
+func posConst(pass *analysis.Pass, e ast.Expr) bool {
+	tv, ok := pass.TypesInfo.Types[e]
+	return ok && tv.Value != nil && tv.Value.Kind() == constant.Int && constant.Sign(tv.Value) > 0
+}
+
 // checkOffsetMul is shape F.
-func checkOffsetMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.BinaryExpr, offsetUses map[ast.Expr]bool) {
+func checkOffsetMul(pass *analysis.Pass, fn *funcInfo, r *roots, mul *ast.BinaryExpr, offsetUses map[ast.Expr]bool) {
 	a, b := ast.Unparen(mul.X), ast.Unparen(mul.Y)
 	if !isSignedIntExpr(pass, a) || !isSignedIntExpr(pass, b) || isConst(pass, a) || isConst(pass, b) {
 		return
@@ -189,7 +200,7 @@ func checkOffsetMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.Bi
 		return
 	}
 	ops := []ast.Expr{operandOf(pass, a), operandOf(pass, b)}
-	if divisionPrecheck(pass, fn.Body, ops, mul.Pos()) {
+	if divisionPrecheck(pass, fn.body, ops, mul.Pos()) {
 		return
 	}
 	// An operand the caller cannot reach is the author's (a constant
@@ -197,7 +208,7 @@ func checkOffsetMul(pass *analysis.Pass, fn *ast.FuncDecl, r *roots, mul *ast.Bi
 	// reach must be bounded above before the multiply.
 	unbounded := false
 	for _, op := range ops {
-		if r.rooted(op, false) && !upperBoundedBefore(pass, fn.Body, op, mul.Pos()) {
+		if r.rooted(op, false) && !upperBoundedBefore(pass, fn.body, op, mul.Pos()) {
 			unbounded = true
 		}
 	}
@@ -480,15 +491,15 @@ type roots struct {
 	parsed map[types.Object]bool
 }
 
-func newRoots(pass *analysis.Pass, fn *ast.FuncDecl, idx *pkgIndex) *roots {
+func newRoots(pass *analysis.Pass, fn *funcInfo, idx *pkgIndex) *roots {
 	r := &roots{pass: pass, idx: idx, params: map[types.Object]bool{}, locals: map[types.Object][]ast.Expr{}, parsed: map[types.Object]bool{}}
-	fnObj, _ := pass.TypesInfo.Defs[fn.Name].(*types.Func)
 	i := 0
-	for _, f := range fn.Type.Params.List {
+	for _, f := range fn.ft.Params.List {
 		for _, n := range f.Names {
 			// An unexported function every in-package caller hands a
-			// constant for this parameter: the author bounded it.
-			if obj := pass.TypesInfo.ObjectOf(n); obj != nil && !idx.constantOnly(fnObj, i) {
+			// constant for this parameter: the author bounded it. A
+			// package-level literal has no callers to check.
+			if obj := pass.TypesInfo.ObjectOf(n); obj != nil && (fn.obj == nil || !idx.constantOnly(fn.obj, i)) {
 				r.params[obj] = true
 			}
 			i++
@@ -497,10 +508,10 @@ func newRoots(pass *analysis.Pass, fn *ast.FuncDecl, idx *pkgIndex) *roots {
 			i++
 		}
 	}
-	if fn.Recv != nil && len(fn.Recv.List) == 1 && len(fn.Recv.List[0].Names) == 1 {
-		r.recv = pass.TypesInfo.ObjectOf(fn.Recv.List[0].Names[0])
+	if fn.recv != nil && len(fn.recv.List) == 1 && len(fn.recv.List[0].Names) == 1 {
+		r.recv = pass.TypesInfo.ObjectOf(fn.recv.List[0].Names[0])
 	}
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
+	ast.Inspect(fn.body, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.AssignStmt:
 			if len(x.Rhs) == 1 && len(x.Lhs) >= 1 {

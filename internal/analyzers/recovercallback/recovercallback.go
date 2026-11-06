@@ -108,6 +108,12 @@
 // R9); the rule saw only a named function call. An accessor that
 // returns a closure it built, or a method value, stays quiet.
 //
+// A callback expression that is itself a `go` target (go s.bus.Push(…),
+// go r.onTick()) reports outright: it runs on its own goroutine, where
+// no recover of the launching frame can reach it, whatever path the
+// launcher sits on. A method VALUE taken from a host-installed
+// extension-point slot (pub := b.backend.Publish; pub(ev)) is host code
+// one hop from the field and is judged like the call through it.
 // The 2026-11 lifecycle round fixed two blind spots core/a2a's run
 // finalize and push drain goroutines slipped through (fixed by hand in
 // 6fce08fe6). First, literal nodes link their own bodies: `go func(){
@@ -232,6 +238,9 @@ type callbackCall struct {
 	// read loop the host calls synchronously (a generated client's SSE
 	// watch) runs the host's Transport on the host's own goroutine.
 	asyncOnly bool
+	// launched: the call itself is a `go` target. It runs on its own
+	// goroutine, where no recover of ours can reach it, hot or not.
+	launched bool
 }
 
 type graph struct {
@@ -379,6 +388,14 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 			goCalls = map[*ast.CallExpr]bool{}
 		}
 		goCalls[goStmt.Call] = true
+		// A callback expression launched with `go` runs on its own
+		// goroutine: no recover of this frame can reach it, so it is
+		// reported whatever this function's own path is.
+		for i := range n.calls {
+			if n.calls[i].call == goStmt.Call {
+				n.calls[i].launched = true
+			}
+		}
 		g.markAsync(goStmt.Call.Fun, n)
 		return true
 	})
@@ -599,17 +616,32 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 // field the host installs, a registry map entry, a parameter the host
 // passes, or a local one hop from one of those.
 func (g *graph) ifaceMethodCallee(sel *ast.SelectorExpr, n *node) (string, bool) {
+	if !g.extensionPointMethod(sel) {
+		return "", false
+	}
+	if !g.hostSuppliedIface(sel.X, n) {
+		return "", false
+	}
+	return types.ExprString(sel), true
+}
+
+// extensionPointMethod: sel names a method of an interface declared in
+// this module that counts as a registry callback — every gate of
+// ifaceMethodCallee short of the receiver test, so a method VALUE
+// taken from a host-supplied slot (pub := b.backend.Publish; pub(ev))
+// is judged the same way as the call through it.
+func (g *graph) extensionPointMethod(sel *ast.SelectorExpr) bool {
 	s, ok := g.pass.TypesInfo.Selections[sel]
 	if !ok {
-		return "", false
+		return false
 	}
 	fn, ok := s.Obj().(*types.Func)
 	if !ok {
-		return "", false
+		return false
 	}
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok || sig.Recv() == nil {
-		return "", false
+		return false
 	}
 	recv := sig.Recv().Type()
 	if ptr, ok := recv.(*types.Pointer); ok {
@@ -617,40 +649,37 @@ func (g *graph) ifaceMethodCallee(sel *ast.SelectorExpr, n *node) (string, bool)
 	}
 	named, ok := recv.(*types.Named)
 	if !ok {
-		return "", false // an unnamed inline interface has no declaring package to judge
+		return false // an unnamed inline interface has no declaring package to judge
 	}
 	if _, ok := named.Underlying().(*types.Interface); !ok {
-		return "", false // concrete method: package-local code, reached through the edge flood
+		return false // concrete method: package-local code, reached through the edge flood
 	}
 	if !g.isModulePkg(named.Obj().Pkg()) {
-		return "", false // stdlib or third-party interface: data plumbing, not an app callback
+		return false // stdlib or third-party interface: data plumbing, not an app callback
 	}
 	if named.Obj().Pkg().Name() == "main" {
 		// A command declares no extension point: it IS the host, and an
 		// interface it declares is a seam over its own wiring
 		// (examples/site's dashIslandPusher over *island.Manager).
-		return "", false
+		return false
 	}
 	if !fn.Exported() {
 		// An unexported method can only be implemented inside this
 		// package: the interface is a test seam over package code
 		// (battery/service's toolRunner over exec), and the edge flood
 		// already reaches every implementation.
-		return "", false
+		return false
 	}
 	if readMethodName.MatchString(fn.Name()) {
-		return "", false // the loop's own input plumbing (Read/Scan/Recv/...), not a registry callback
+		return false // the loop's own input plumbing (Read/Scan/Recv/...), not a registry callback
 	}
 	if plumbingName.MatchString(fn.Name()) {
-		return "", false // the data-access/teardown spellings inherited from stdlib backends
+		return false // the data-access/teardown spellings inherited from stdlib backends
 	}
 	if sig.Params().Len() == 0 && sig.Results().Len() == 1 {
-		return "", false // accessor-shaped (c.ID, agent.Info): a value query, not an event callback
+		return false // accessor-shaped (c.ID, agent.Info): a value query, not an event callback
 	}
-	if !g.hostSuppliedIface(sel.X, n) {
-		return "", false
-	}
-	return types.ExprString(sel), true
+	return true
 }
 
 // hostSuppliedIface: the receiver expression holds the interface as a
@@ -768,10 +797,17 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					continue
 				}
 				if sel, ok := ast.Unparen(rhs).(*ast.SelectorExpr); ok {
-					if s, ok := pass.TypesInfo.Selections[sel]; ok && s.Kind() == types.FieldVal && isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) {
-						if id, ok := x.Lhs[i].(*ast.Ident); ok {
-							if obj := pass.TypesInfo.Defs[id]; obj != nil {
-								out[obj] = true
+					if s, ok := pass.TypesInfo.Selections[sel]; ok {
+						// A func-typed field, or a method VALUE off a
+						// host-installed extension-point slot: `pub :=
+						// b.backend.Publish` holds the host's code one
+						// hop from the field, exactly like the field.
+						if s.Kind() == types.FieldVal && isCallbackType(s.Type()) && !isCancelNamed(s.Obj().Name()) ||
+							s.Kind() == types.MethodVal && isCallbackType(s.Type()) && g.extensionPointMethod(sel) && g.hostSuppliedIface(sel.X, n) {
+							if id, ok := x.Lhs[i].(*ast.Ident); ok {
+								if obj := pass.TypesInfo.Defs[id]; obj != nil {
+									out[obj] = true
+								}
 							}
 						}
 					}
@@ -932,10 +968,19 @@ func (g *graph) flood(seeds []*node) map[*node]bool {
 
 func (g *graph) report() {
 	for _, n := range g.all {
-		if !g.hot[n] || g.protected(n) {
-			continue
-		}
 		for _, c := range n.calls {
+			if c.launched {
+				// A callback on its own goroutine has no recover by
+				// construction: the enclosing function's deferred
+				// recover runs on a different stack, hot or not.
+				g.pass.Reportf(c.call.Pos(),
+					"recovercallback: %s is invoked with no recover in scope; it is launched on its own goroutine, where a panicking callback kills the process",
+					c.desc)
+				continue
+			}
+			if !g.hot[n] || g.protected(n) {
+				continue
+			}
 			if c.asyncOnly && !g.async[n] {
 				continue
 			}

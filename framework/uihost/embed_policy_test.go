@@ -12,8 +12,8 @@ import (
 
 // policyEmbedFixture builds an embed fixture whose /reports screen carries the
 // given policy, so a granted subject who does not satisfy it still hits the
-// policy on the content render. It stands in for a screen gated with
-// decide.RequireRole("analyst") over a subject who is not an analyst.
+// policy on the content render. It stands in for a screen whose policy
+// requires the "analyst" role, over a subject who is not an analyst.
 func policyEmbedFixture(t *testing.T, policy app.Policy) embedFixture {
 	t.Helper()
 	application := app.NewApp("Embed Policy Test")

@@ -148,3 +148,12 @@ func mapProbe(m map[string]json.RawMessage) string {
 	}
 	return crv
 }
+
+// errorStatement: a bare err.Error() statement and a blanked one. The
+// universe error type has no package; walking it must not crash the
+// analyzer (it is not a decoder, so neither reports).
+func errorStatement(err error) string {
+	err.Error()
+	_ = err.Error()
+	return ""
+}

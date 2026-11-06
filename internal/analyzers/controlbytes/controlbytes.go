@@ -43,8 +43,10 @@
 // (Clean, Base, Dir, Join) never clear taint at all.
 //
 // A tested value is clean for that variable when a validator-named
-// call (validRequestID(id)) vetted it anywhere earlier in the
-// function and the code kept its verdict (a call statement or an
+// call (validRequestID(id)) vetted it earlier in the function and the
+// code kept its verdict — the vetting lasts until the variable's next
+// assignment (2026-11-03: `validRequestID(id); id = r.Header.Get("X")`
+// used to stay vetted forever). A call statement or an
 // assignment to _ throws the answer away and vets nothing, ledger I9 of
 // the 2026-10-27 bug bash; a call with no result still counts, since it
 // can only refuse by panicking), or when a map membership (allowed[origin]) appears in the
@@ -69,7 +71,9 @@
 //     that panicked on request data hands request bytes to recover(),
 //     and the reporter seam cannot tell which panic did, so a struct
 //     whose field some in-package literal filled from recover() (or
-//     from any request-derived value) is CARRYING, and exactly its
+//     from any request-derived value — rendered straight, through a
+//     wrapper call, or through a method on it like rec.(error).Error())
+//     is CARRYING, and exactly its
 //     carrying fields are sources wherever a parameter of that type
 //     reaches a sink (battery/log's ErrorReport, read by
 //     SlogErrorReporter.Report — probe TestErrorReporterRedScrubsAttrs).
@@ -118,8 +122,9 @@
 // BODY is not a sink — it is the response; span NAMES (tracer.Start,
 // span.SetName) and log keys are left alone, only messages and VALUES
 // are checked; fmt.Sprint* without a writer, and Fprint* to any writer
-// other than os.Stdout/os.Stderr (an http.ResponseWriter or a
-// bytes.Buffer has its own framing); Header.Set/Add on a map whose
+// other than os.Stdout/os.Stderr themselves or a local every binding
+// of which is one (an http.ResponseWriter or a bytes.Buffer has its
+// own framing); Header.Set/Add on a map whose
 // provenance is an OUTBOUND *http.Request — an
 // http.NewRequest/NewRequestWithContext result, or any request-typed
 // value that is not the inbound handler parameter — because the client
@@ -130,10 +135,11 @@
 // the byte-indexing form above is the whole interprocedural
 // concession; and structured values like a whole *http.Request or an
 // ErrorReport struct are not sources, only the string-bearing request
-// selectors are (Method/Host/RemoteAddr/RequestURI/URL.Path/
-// URL.RawQuery, the Header.Get/FormValue/PathValue/PostFormValue/
-// Referer/UserAgent/BasicAuth accessors, url.Values.Get, and the
-// Value field of a cookie bound from r.Cookie);
+// selectors are (Method/Host/RemoteAddr/RequestURI/Header itself/
+// URL.Path/URL.RawQuery, the Header.Get/Header.Values/FormValue/
+// PathValue/PostFormValue/Referer/UserAgent/BasicAuth accessors,
+// url.Values.Get, an index into r.Header, and the Value field of a
+// cookie bound from r.Cookie or an element of r.Cookies());
 //   - a whole same-package struct handed to a helper is a payload, not
 //     a derivation: flash.put(&formFlash{...}) returns a random token
 //     whatever the record's fields carried, so the call's result stays
@@ -151,10 +157,13 @@
 // deletes tab, CR and LF from a Location before it parses it: a
 // RedirectPattern target of "/\t/evil.example" was //evil.example in
 // the browser. At the http.Redirect sink and at Header.Set/Add of
-// "Location", a same-package scrub whose body (or one callee hop) holds
-// a != comparison against a literal in 0x01..0x1f lets that byte
-// through and clears nothing. The same scrub still clears a log value or
-// any other header. Fix spelling: encode every C0 byte and DEL.
+// "Location", a same-package scrub whose body (or one callee hop)
+// holds a != comparison against a literal in 0x01..0x1f — or the
+// keep-side spelling of the same carve-out, an == against a C0
+// literal beside a printable-boundary comparison in one boolean chain
+// (`c >= 0x20 || c == '\t'`) — lets that byte through and clears
+// nothing. The same scrub still clears a log value or any other
+// header. Fix spelling: encode every C0 byte and DEL.
 //
 // Guard, then scrub (df472714): `if s.nextID != "" {
 // b.WriteString(stripSSEControlChars(s.nextID)) }` tested the raw value
@@ -198,10 +207,12 @@ var Analyzer = &analysis.Analyzer{
 }
 
 // scrubName matches the callee names the repo treats as a control-byte
-// scrub. Deliberately generous: any escape/quote re-encodes by
-// construction, and recognizing scrubbing by body shape across package
-// boundaries is beyond a one-pass analyzer.
-var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact`)
+// scrub. Deliberately generous: any escape/quote/encode re-encodes by
+// construction (url.Values.Encode percent-encodes every unsafe byte,
+// the receiver-walk round of 2026-11-03 made that load-bearing), and
+// recognizing scrubbing by body shape across package boundaries is
+// beyond a one-pass analyzer.
+var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact|encode`)
 
 // strongScrubName matches the unambiguous re-encoders; cleanOnlyName
 // matches names whose ONLY scrub evidence is the substring "clean".
@@ -209,7 +220,7 @@ var scrubName = regexp.MustCompile(`(?i)scrub|sanitiz|clean|escape|quote|redact`
 // control byte through, so a clean-named callee must show byte-level
 // body evidence instead of clearing on the name.
 var (
-	strongScrubName = regexp.MustCompile(`(?i)scrub|sanitiz|escape|quote|redact`)
+	strongScrubName = regexp.MustCompile(`(?i)scrub|sanitiz|escape|quote|redact|encode`)
 	cleanOnlyName   = regexp.MustCompile(`(?i)clean`)
 )
 
@@ -283,7 +294,7 @@ func run(pass *analysis.Pass) (any, error) {
 // so the walk below stops at literals.
 func checkBody(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carrying map[*types.Named]map[string]bool, body *ast.BlockStmt, parent *taint) {
 	t := newTaint(pass, decls, carrying, body, parent)
-	guards := testedValues(pass, body)
+	guards := testedValues(pass, body, t)
 	for _, stmt := range body.List {
 		walkStmt(pass, decls, carrying, t, guards, stmt)
 	}
@@ -366,14 +377,14 @@ func testedAt(gs []guard, pos token.Pos) bool {
 // testedValues records where each variable was TESTED before use: an
 // argument of a validator-named call (validRequestID(id),
 // isSafePartialRedirect(u)) whose result the code keeps vets the
-// variable for the rest of the function; a membership lookup (allowed[origin]) vets it only when
+// variable until its next assignment; a membership lookup (allowed[origin]) vets it only when
 // the lookup keys a value the code gates on — the index appears in the
 // condition of an if statement or switch case that lexically encloses
 // the sink, so the sink runs only for members of the configured set.
 // A value the code has already vetted cannot smuggle control bytes
 // past that vetting; a dedup/seen lookup anywhere else proves nothing
 // about the bytes and does not vet.
-func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]guard {
+func testedValues(pass *analysis.Pass, body *ast.BlockStmt, provenance *taint) map[types.Object][]guard {
 	out := map[types.Object][]guard{}
 	dropped := droppedVerdicts(pass, body)
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -413,7 +424,88 @@ func testedValues(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object][]g
 		}
 		return true
 	})
+	// A vetting covers the variable only until its next assignment:
+	// after `validRequestID(id); id = r.Header.Get("X")` the new bytes
+	// were never vetted (2026-11-03, R8-AZ17-03). Only an assignment
+	// that CERTAINLY runs between the vetting and the sink ends the
+	// guard — one at the top of the function body. A rebind inside a
+	// branch (requestid's `if !validRequestID(id) { id = uuid… }`)
+	// replaces the value on that path only; on the other the vetted
+	// bytes are still what the sink sees — unless the branch rebinds it
+	// to fresh request bytes, which reach the sink unvetted on that
+	// path. An assignment BEFORE the guard (a loop rebinding at the top
+	// of every iteration, or the := that first bound it) ends nothing.
+	endAt := func(id *ast.Ident) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil {
+			return
+		}
+		gs := out[obj]
+		for i, g := range gs {
+			if id.Pos() > g.pos && (g.end == 0 || id.Pos() < g.end) {
+				gs[i].end = id.Pos()
+			}
+		}
+	}
+	topLevel := map[ast.Stmt]bool{}
+	for _, st := range body.List {
+		topLevel[st] = true
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
+		a, ok := n.(*ast.AssignStmt)
+		if !ok || topLevel[a] {
+			return true
+		}
+		for _, lhs := range a.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" && readsRequest(provenance, a.Rhs, pass.TypesInfo.ObjectOf(id)) {
+				endAt(id)
+			}
+		}
+		return true
+	})
+	for _, st := range body.List {
+		var idents []*ast.Ident
+		switch a := st.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range a.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					idents = append(idents, id)
+				}
+			}
+		case *ast.DeclStmt:
+			gd, ok := a.Decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.VAR {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				if vs, ok := spec.(*ast.ValueSpec); ok {
+					idents = append(idents, vs.Names...)
+				}
+			}
+		default:
+			continue
+		}
+		for _, id := range idents {
+			endAt(id)
+		}
+	}
 	return out
+}
+
+// readsRequest reports whether any of exprs reads request bytes
+// through the same local bindings and scrub rules used at sinks. The
+// rebound value itself does not count: `id = strings.ToLower(id)`
+// keeps the bytes the guard already vetted.
+func readsRequest(provenance *taint, exprs []ast.Expr, self types.Object) bool {
+	for _, e := range exprs {
+		if provenance.orig(e, map[types.Object]bool{self: true}, 0) {
+			return true
+		}
+	}
+	return false
 }
 
 // droppedVerdicts returns the calls in body that return a result the
@@ -863,16 +955,19 @@ var sinks = []sink{
 				return false
 			}
 			// os.Stdout is itself a selector on the os package; a
-			// local variable or parameter that merely shares the name
-			// is not the terminal sink this rule means.
-			wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr)
-			if !ok {
-				return false
+			// local bound to it (every binding) is the same stream,
+			// while a parameter that merely shares the name is not
+			// the terminal sink this rule means.
+			if wsel, ok := ast.Unparen(call.Args[0]).(*ast.SelectorExpr); ok {
+				if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
+					return false
+				}
+				return pkgPathOf(t.pass, wsel) == "os"
 			}
-			if wsel.Sel.Name != "Stdout" && wsel.Sel.Name != "Stderr" {
-				return false
+			if id, ok := ast.Unparen(call.Args[0]).(*ast.Ident); ok {
+				return stdStreamLocals(t.pass)[t.pass.TypesInfo.ObjectOf(id)]
 			}
-			return pkgPathOf(t.pass, wsel) == "os"
+			return false
 		},
 		// The F forms carry the writer at offset 0; the bare Print
 		// forms check every argument, format string included.
@@ -1010,10 +1105,12 @@ func newTaint(pass *analysis.Pass, decls map[types.Object]*ast.FuncDecl, carryin
 					continue
 				}
 				obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
-				if !ok || !carriesStrings(obj.Type()) && !t.samePackageStruct(obj.Type()) {
+				if !ok || !carriesStrings(obj.Type()) && !t.samePackageStruct(obj.Type()) && !isCookieType(obj.Type()) {
 					// A same-package struct element (for _, att := range
 					// email.Attachments) carries the seam onward: its
-					// fields are the input struct's fields.
+					// fields are the input struct's fields. A cookie
+					// element (for _, c := range r.Cookies()) carries
+					// the request's bytes in its Value field.
 					continue
 				}
 				t.bind[obj] = append(t.bind[obj], n.X)
@@ -1148,6 +1245,16 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if t.callCleared(e, seen, depth) {
 			return false
 		}
+		// A method's result derives from its receiver the way a
+		// function's does from its arguments: rec.(error).Error()
+		// renders the recover() value. A package-qualified call has
+		// no receiver, and a same-package struct receiver is a
+		// payload, like an argument.
+		if sel, ok := ast.Unparen(e.Fun).(*ast.SelectorExpr); ok && pkgPathOf(t.pass, sel) == "" {
+			if !t.structPayload(sel.X) && t.orig(sel.X, seen, depth+1) {
+				return true
+			}
+		}
 		for _, arg := range e.Args {
 			if t.structPayload(arg) {
 				// A whole same-package struct handed to a helper is a
@@ -1168,9 +1275,10 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 		if isRequestSelector(t.pass, e) {
 			return true
 		}
-		if e.Sel.Name == "Value" && t.boundToCookie(e.X) {
-			// c.Value where c was assigned from r.Cookie(...): the
-			// cookie's Value is request bytes.
+		if e.Sel.Name == "Value" && t.cookieValue(e.X) {
+			// c.Value where c is a cookie the request supplied —
+			// r.Cookie(name)'s pair, or an element of r.Cookies():
+			// the cookie's Value is request bytes.
 			return true
 		}
 		if t.seamField(e) {
@@ -1194,6 +1302,9 @@ func (t *taint) orig(e ast.Expr, seen map[types.Object]bool, depth int) bool {
 	case *ast.KeyValueExpr:
 		return t.orig(e.Value, seen, depth+1)
 	case *ast.IndexExpr:
+		return t.orig(e.X, seen, depth+1)
+	case *ast.TypeAssertExpr:
+		// v.(error) and friends carry v's bytes through the assert.
 		return t.orig(e.X, seen, depth+1)
 	case *ast.UnaryExpr:
 		// &x (chiefly &SomeStruct{...}): what x carries, the pointer
@@ -1287,37 +1398,109 @@ func locationHeaderSet(pass *analysis.Pass, s sink, call *ast.CallExpr) bool {
 }
 
 // exemptsC0 reports whether a scrub body lets a C0 byte through: a !=
-// comparison against a literal in 0x01..0x1f (`c != '\t'`), in the body
-// or one same-package callee hop. A scrub with such an exemption still
-// clears a log or header value (HTAB is a legal header byte) but not a
+// comparison against a literal in 0x01..0x1f (`c != '\t'`), or the
+// keep-side spelling of the same carve-out — an == against a C0
+// literal inside a boolean chain that also holds a printable-boundary
+// comparison (`c >= 0x20 || c == '\t'` keeps the byte; 2026-11-03,
+// R8-AZ17-02) — in the body or one same-package callee hop. A lone ==
+// against a C0 literal is a refusal of that byte, not an exemption of
+// it, and exempts nothing. A scrub with such an exemption still clears
+// a log or header value (HTAB is a legal header byte) but not a
 // Location.
 func exemptsC0(body ast.Node, pass *analysis.Pass, depth int) bool {
+	if c0ExemptionIn(body) {
+		return true
+	}
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if found {
 			return false
 		}
-		switch n := n.(type) {
-		case *ast.BinaryExpr:
-			if n.Op != token.NEQ {
-				return true
-			}
-			for _, e := range []ast.Expr{n.X, n.Y} {
-				if v, ok := litValue(e); ok && v >= 0x01 && v < 0x20 {
-					found = true
-				}
-			}
-		case *ast.CallExpr:
-			if depth >= 1 {
-				return true
-			}
-			if fd := sameDecl(pass, n.Fun); fd != nil && exemptsC0(fd.Body, pass, depth+1) {
+		if call, ok := n.(*ast.CallExpr); ok && depth < 1 {
+			if fd := sameDecl(pass, call.Fun); fd != nil && exemptsC0(fd.Body, pass, depth+1) {
 				found = true
 			}
 		}
 		return !found
 	})
 	return found
+}
+
+// c0ExemptionIn: a != against a C0 literal, or a keep-side == beside a
+// printable boundary in the same boolean chain.
+func c0ExemptionIn(body ast.Node) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		be, ok := n.(*ast.BinaryExpr)
+		if !ok {
+			return true
+		}
+		switch be.Op {
+		case token.NEQ:
+			for _, e := range []ast.Expr{be.X, be.Y} {
+				if v, ok := litValue(e); ok && v >= 0x01 && v < 0x20 {
+					found = true
+				}
+			}
+		case token.LAND, token.LOR:
+			var eqC0, boundary bool
+			for _, o := range boolOperands(be, nil) {
+				c, ok := o.(*ast.BinaryExpr)
+				if !ok {
+					continue
+				}
+				if c.Op == token.EQL && (c0Literal(c.X) || c0Literal(c.Y)) {
+					eqC0 = true
+				}
+				if boundaryComparison(c) {
+					boundary = true
+				}
+			}
+			if eqC0 && boundary {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
+}
+
+// boolOperands flattens a boolean AND/OR chain to its non-chain
+// operands.
+func boolOperands(be *ast.BinaryExpr, out []ast.Expr) []ast.Expr {
+	for _, e := range []ast.Expr{be.X, be.Y} {
+		if b, ok := e.(*ast.BinaryExpr); ok && (b.Op == token.LAND || b.Op == token.LOR) {
+			out = boolOperands(b, out)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// c0Literal: a literal in 0x01..0x1f.
+func c0Literal(e ast.Expr) bool {
+	v, ok := litValue(e)
+	return ok && v >= 0x01 && v < 0x20
+}
+
+// boundaryComparison: an ordering against the printable boundary
+// (0x1f/0x20) on either side.
+func boundaryComparison(c *ast.BinaryExpr) bool {
+	switch c.Op {
+	case token.LSS, token.LEQ, token.GTR, token.GEQ:
+	default:
+		return false
+	}
+	for _, e := range []ast.Expr{c.X, c.Y} {
+		if v, ok := litValue(e); ok && (v == 0x1f || v == 0x20) {
+			return true
+		}
+	}
+	return false
 }
 
 // sameDecl resolves a callee to its same-package declaration.
@@ -1576,11 +1759,12 @@ func declsOf(pass *analysis.Pass) map[types.Object]*ast.FuncDecl {
 // ---- source expressions ------------------------------------------------
 
 // isRequestSelector: r.Method, r.Host, r.RemoteAddr, r.RequestURI,
-// r.URL.Path, r.URL.RawQuery on an *http.Request (or an http.Request
-// value).
+// r.Header (whose values are the request's field lines, read whole,
+// indexed or through Values), r.URL.Path, r.URL.RawQuery on an
+// *http.Request (or an http.Request value).
 func isRequestSelector(pass *analysis.Pass, e *ast.SelectorExpr) bool {
 	switch e.Sel.Name {
-	case "Method", "Host", "RemoteAddr", "RequestURI":
+	case "Method", "Host", "RemoteAddr", "RequestURI", "Header":
 		return isRequestTyped(pass, e.X)
 	case "Path", "RawQuery":
 		inner, ok := e.X.(*ast.SelectorExpr)
@@ -1612,7 +1796,7 @@ func isRequestSourceCall(pass *analysis.Pass, call *ast.CallExpr) bool {
 	switch sel.Sel.Name {
 	case "FormValue", "PathValue", "PostFormValue", "Referer", "UserAgent", "BasicAuth":
 		return isRequestTyped(pass, sel.X)
-	case "Get":
+	case "Get", "Values":
 		tv, ok := pass.TypesInfo.Types[sel.X]
 		if !ok {
 			return false
@@ -1704,6 +1888,121 @@ func isRecoverCallExpr(pass *analysis.Pass, e ast.Expr) bool {
 // isRecoverCall: the builtin recover().
 func (t *taint) isRecoverCall(call *ast.CallExpr) bool {
 	return isRecoverCallExpr(t.pass, call)
+}
+
+// isRequestCookiesCall: r.Cookies() — every *http.Cookie it returns
+// carries request bytes in its Value field.
+func isRequestCookiesCall(pass *analysis.Pass, call *ast.CallExpr) bool {
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "Cookies" && isRequestTyped(pass, sel.X)
+}
+
+// cookieValue reports whether e names a cookie whose Value field holds
+// request bytes: a local bound from r.Cookie(name) or from a range over
+// r.Cookies(), or an index into r.Cookies() directly. The cookie struct
+// is not a string carrier, so its bytes enter only through .Value.
+func (t *taint) cookieValue(e ast.Expr) bool {
+	x := ast.Unparen(e)
+	for {
+		ix, ok := x.(*ast.IndexExpr)
+		if !ok {
+			break
+		}
+		x = ast.Unparen(ix.X)
+	}
+	if call, ok := x.(*ast.CallExpr); ok {
+		return isRequestCookiesCall(t.pass, call)
+	}
+	id, ok := x.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	obj, ok := t.pass.TypesInfo.ObjectOf(id).(*types.Var)
+	if !ok {
+		return false
+	}
+	for _, b := range t.bind[obj] {
+		call, ok := ast.Unparen(b).(*ast.CallExpr)
+		if !ok {
+			continue
+		}
+		if isRequestCookieCall(t.pass, call) || isRequestCookiesCall(t.pass, call) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCookieType: *http.Cookie (or an http.Cookie value).
+func isCookieType(t types.Type) bool {
+	return astx.IsNamed(astx.Deref(t), "net/http", "Cookie")
+}
+
+// stdLocalsMemo caches stdStreamLocals per pass.
+var stdLocalsMemo = struct {
+	sync.Mutex
+	byPass map[*analysis.Pass]map[types.Object]bool
+}{byPass: map[*analysis.Pass]map[types.Object]bool{}}
+
+// stdStreamLocals maps each local EVERY binding of which is os.Stdout
+// or os.Stderr: fmt.Fprintf(w, …) through such a local is the terminal
+// sink. A local re-bound to some other writer is not, and a parameter
+// that merely shares the name never was.
+func stdStreamLocals(pass *analysis.Pass) map[types.Object]bool {
+	stdLocalsMemo.Lock()
+	defer stdLocalsMemo.Unlock()
+	if m, ok := stdLocalsMemo.byPass[pass]; ok {
+		return m
+	}
+	out := map[types.Object]bool{}
+	nonStd := map[types.Object]bool{}
+	isStdStream := func(e ast.Expr) bool {
+		sel, ok := ast.Unparen(e).(*ast.SelectorExpr)
+		if !ok || (sel.Sel.Name != "Stdout" && sel.Sel.Name != "Stderr") {
+			return false
+		}
+		return pkgPathOf(pass, sel) == "os"
+	}
+	bind := func(id *ast.Ident, rhs ast.Expr) {
+		obj := pass.TypesInfo.ObjectOf(id)
+		if obj == nil {
+			return
+		}
+		if isStdStream(rhs) {
+			out[obj] = true
+		} else {
+			nonStd[obj] = true
+		}
+	}
+	for _, f := range pass.Files {
+		if pathflow.IsTestFile(pass, f) {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.FuncLit:
+				return true
+			case *ast.AssignStmt:
+				for i, l := range x.Lhs {
+					if id, ok := l.(*ast.Ident); ok && i < len(x.Rhs) {
+						bind(id, x.Rhs[i])
+					}
+				}
+			case *ast.ValueSpec:
+				for i, name := range x.Names {
+					if i < len(x.Values) {
+						bind(name, x.Values[i])
+					}
+				}
+			}
+			return true
+		})
+	}
+	for obj := range nonStd {
+		delete(out, obj)
+	}
+	stdLocalsMemo.byPass[pass] = out
+	return out
 }
 
 // structPayload: e is a value of a same-package struct type (a record

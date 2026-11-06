@@ -53,6 +53,20 @@ func rebound(url string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// reboundViaLocal hoists the limiter into a local first: the rebind's
+// right side names the local, not the limiter call, but the body it
+// caps is the one read. Quiet.
+func reboundViaLocal(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	limited := io.LimitReader(resp.Body, 1<<20)
+	resp.Body = io.NopCloser(limited)
+	return io.ReadAll(resp.Body)
+}
+
 // reboundMaxBytes rebinds through http.MaxBytesReader. Quiet.
 func reboundMaxBytes(url string) error {
 	resp, err := http.Get(url)

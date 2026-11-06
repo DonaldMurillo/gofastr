@@ -648,7 +648,7 @@ func (m *Manager) tick(ctx context.Context) {
 	// worker goroutine and the process with it.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: store panic in tick (due deliveries stay pending): %v", v)
+			m.logf("webhook: store panic in tick (due deliveries stay pending): %s", textsafe.Recovered(v))
 		}
 	}()
 	if ctx == nil {
@@ -735,7 +735,7 @@ func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Deliv
 	// panic leaves the rest leased until the lease expires.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: release of unstarted claims panicked (they are re-claimed when the lease expires): %v", v)
+			m.logf("webhook: release of unstarted claims panicked (they are re-claimed when the lease expires): %s", textsafe.Recovered(v))
 		}
 	}()
 	now := m.nowFn()

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/codegen"
+	"github.com/DonaldMurillo/gofastr/internal/sourcewalk"
 )
 
 // provenanceMaxBytes bounds the files the provenance scan reads: a
@@ -25,10 +26,11 @@ type provenanceEntry struct {
 
 // ScanProvenance walks root for files carrying a provenance marker,
 // skipping the directories the go tool skips (vendor, testdata,
-// node_modules, and names starting with "." or "_").
+// node_modules, build outputs, and names starting with "." or "_").
 func ScanProvenance(root string) ([]provenanceEntry, error) {
+	root = filepath.Clean(root)
 	var found []provenanceEntry
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+	err := sourcewalk.Walk(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}

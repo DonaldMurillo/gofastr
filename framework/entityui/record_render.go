@@ -36,8 +36,8 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 		return "", err
 	}
 	// The app's translator rides the context: every chrome string the
-	// screen draws (and every string an extension tab draws through
-	// i18nui.T) resolves through it.
+	// screen draws (and every phrase an extension tab draws with
+	// Phrase.Text(ctx)) resolves through it.
 	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {

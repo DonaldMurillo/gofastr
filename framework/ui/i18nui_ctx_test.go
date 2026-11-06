@@ -1,7 +1,7 @@
 package ui
 
-// D14b: tests that cfg.Ctx threads the request locale into i18nui.T
-// calls inside Repeater, PasswordInput and StepWizard, and that the
+// D14b: tests that cfg.Ctx threads the request locale into the i18nui
+// phrase lookups inside Repeater, PasswordInput and StepWizard, and that the
 // mounted Lightbox slot takes the locale from the render's context.
 //
 // Run: go test ./framework/ui/... -run TestCtxLocale

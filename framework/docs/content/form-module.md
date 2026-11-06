@@ -392,7 +392,7 @@ headless counterpart, so it ships as framework/ui's own module.
   validation.
 - **Using `FormField` without setting `For` + `ID`.** The
   label-to-input association is `<label for="X">` + `<input id="X">`.
-  If `FormField.For` and the inner input's `ID` don't match, screen
+  If `FormFieldConfig.For` and the inner input's `ID` don't match, screen
   readers can't pair them and axe will report a violation.
 - **Passing `ui.FieldErrors` with camelCase keys.** `FieldErrors` keys
   must match the HTML field `name` attribute exactly (typically

@@ -1,0 +1,16 @@
+package app
+import "testing"
+func TestConcatenated(t *testing.T) {
+	t.Skip("not " + "yet")
+}
+func TestParenthesized(t *testing.T) {
+	t.Skip(("not " + "yet"))
+}
+func TestFormatted(t *testing.T) {
+	t.Skipf("not " + "yet: %s", "reason")
+}
+func TestLane(t *testing.T) {
+	if testing.Short() {
+		t.Skip("short " + "mode: unavailable")
+	}
+}

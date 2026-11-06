@@ -120,12 +120,15 @@ func physicalSide(prop, value string, bgMirrored bool) (lit, want string, ok boo
 // checkPhysicalSides reports one GOFASTR1824 per declaration on a
 // design-system line that pins a physical side. bgMirrored is true when
 // the file holds a `:dir(rtl)` rule setting a background position.
-func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored, inDir bool) []contracts.Diagnostic {
-	if inDir {
-		return nil
-	}
+// inDir is the line's per-byte :dir() flags (nil when none of it is in
+// a block): a declaration inside the block is the override itself and
+// stays quiet, one after its closing brace is judged.
+func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored bool, inDir []bool) []contracts.Diagnostic {
 	var out []contracts.Diagnostic
-	report := func(prop, value string) {
+	report := func(prop, value string, off int) {
+		if off < len(inDir) && inDir[off] {
+			return
+		}
 		prop = strings.ToLower(prop)
 		lit, want, ok := physicalSide(prop, value, bgMirrored)
 		if !ok {
@@ -141,13 +144,13 @@ func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored, i
 		})
 	}
 	if strings.Contains(scan, ":") {
-		for _, m := range reBareDeclCSS.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
+		for _, m := range reBareDeclCSS.FindAllStringSubmatchIndex(scan, -1) {
+			report(scan[m[2]:m[3]], scan[m[4]:m[5]], m[2])
 		}
 	}
 	if strings.Contains(scan, `",`) {
-		for _, m := range reBareDeclPair.FindAllStringSubmatch(scan, -1) {
-			report(m[1], m[2])
+		for _, m := range reBareDeclPair.FindAllStringSubmatchIndex(scan, -1) {
+			report(scan[m[2]:m[3]], scan[m[4]:m[5]], m[2])
 		}
 	}
 	return out
@@ -156,10 +159,22 @@ func checkPhysicalSides(rel string, lineNo int, scan, orig string, bgMirrored, i
 // mirrorsBackground reports whether the comment-stripped lines hold a
 // `:dir(rtl)` block that sets a background position.
 func mirrorsBackground(scan []string) bool {
-	var dir dirBlock
+	dir := dirBlock{rtlOnly: true}
 	for _, line := range scan {
-		if dir.line(line) && strings.Contains(line, "background-position") {
-			return true
+		flags := dir.line(line)
+		if flags == nil {
+			continue
+		}
+		for start := 0; start < len(line); {
+			offset := strings.Index(line[start:], "background-position")
+			if offset < 0 {
+				break
+			}
+			position := start + offset
+			if position < len(flags) && flags[position] {
+				return true
+			}
+			start = position + len("background-position")
 		}
 	}
 	return false
@@ -169,24 +184,39 @@ func mirrorsBackground(scan []string) bool {
 type dirBlock struct {
 	depth   int
 	pending bool // a :dir() selector seen, its '{' not yet
+	rtlOnly bool
 }
 
-// line advances through s and reports whether any of it sits in a
-// :dir() block: the selector line itself, or a line the block spans.
-func (d *dirBlock) line(s string) bool {
-	in := d.depth > 0 || d.pending
+// line advances through s and reports, for each byte offset, whether it
+// sits in a :dir() block: from the selector itself until the block's
+// braces close. One line of CSS in a Go string can hold a :dir()
+// override AND an ordinary rule after it; per-byte flags keep the two
+// apart, the way the dark-scheme tracker does.
+func (d *dirBlock) line(s string) []bool {
 	if d.depth == 0 && !d.pending && !strings.Contains(s, ":dir(") {
-		return false // the common line: no block to open or close
+		return nil // the common line: no block to open or close
 	}
+	in := make([]bool, len(s))
 	sel := reDirOverride.FindAllStringIndex(s, -1)
-	for i := 0; i < len(s); i++ {
+	if d.rtlOnly {
+		filtered := sel[:0]
+		for _, match := range sel {
+			if s[match[0]:match[1]] == ":dir(rtl)" {
+				filtered = append(filtered, match)
+			}
+		}
+		sel = filtered
+	}
+	open := d.depth > 0 || d.pending
+	for i := range len(s) {
 		if len(sel) > 0 && i == sel[0][0] {
-			in = true
+			open = true
 			if d.depth == 0 {
 				d.pending = true
 			}
 			sel = sel[1:]
 		}
+		in[i] = open
 		switch s[i] {
 		case '{':
 			if d.depth > 0 || d.pending {
@@ -196,6 +226,7 @@ func (d *dirBlock) line(s string) bool {
 		case '}':
 			d.depth = max(d.depth-1, 0)
 		}
+		open = d.depth > 0 || d.pending
 	}
 	return in
 }

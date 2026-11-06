@@ -42,6 +42,16 @@ func TestBuildContractsGateBlocksAnErrorFinding(t *testing.T) {
 	}
 }
 
+func TestBuildContractsGateBlocksZeroSourceFiles(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "gofastr.settings.yml"), []byte("contracts:\n  strict: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if buildContractsGate(root) {
+		t.Fatal("the build gate reported a config-only tree as clean")
+	}
+}
+
 // `gofastr verify --baseline-write` is the documented way to adopt
 // contracts on an existing app: accept what is there, fail on what is
 // added. The build gate has to honour the same file, or adopting the

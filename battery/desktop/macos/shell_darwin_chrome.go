@@ -419,7 +419,7 @@ func (s *darwinShell) appearanceChanged(on bool) {
 		w.applyReduced(on)
 	}
 	if cb != nil {
-		go cb(desktop.Appearance{ReduceTransparency: on})
+		deliverOnGoroutine(func() { cb(desktop.Appearance{ReduceTransparency: on}) })
 	}
 }
 
@@ -487,10 +487,10 @@ func (s *darwinShell) reportWindowActivity(w *darwinWindow, focus bool) {
 	s.mu.Unlock()
 	id := w.ID()
 	if focus && focusCB != nil {
-		go focusCB(id)
+		deliverOnGoroutine(func() { focusCB(id) })
 	}
 	if !focus && blurCB != nil {
-		go blurCB(id)
+		deliverOnGoroutine(func() { blurCB(id) })
 	}
 }
 

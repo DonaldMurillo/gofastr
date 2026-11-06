@@ -31,12 +31,13 @@
 // literal anyway.
 //
 // Shape: the result of recover() — directly, through a local assigned
-// from it, through fmt.Sprint/Sprintln/Sprintf rendering it (%v/%s; a
-// format whose every verb is %q or %T is quiet), or through any
-// string/error/any-returning wrapper the value is piped into
-// (truncate, errors.New, fmt.Errorf) — reaches a LOG SINK in the same
-// function, or is passed to a same-package helper whose body sinks
-// that parameter, with no scrub in between. Log sinks are the ones
+// or declared from it (`var r any = recover()`), through fmt.Sprint/
+// Sprintln/Sprintf rendering it (%v/%s; a format whose every verb is
+// %q or %T is quiet), or through any string/error/any-returning
+// wrapper the value is piped into (truncate, errors.New, fmt.Errorf)
+// — reaches a LOG SINK in the same function, or is passed to a
+// same-package function or method whose body sinks that parameter,
+// with no scrub in between. Log sinks are the ones
 // controlbytes lists: package-level slog.* and *slog.Logger methods
 // (message and values, slog.Any/slog.String), slog.Log, the std log
 // package (package-level or on a *log.Logger; Print*, and the Fatal* and
@@ -175,19 +176,27 @@ func (a *analyzer) walk(t *taint, body *ast.BlockStmt) {
 			return true
 		}
 		// The one-hop helper arm: a tainted argument handed to a
-		// same-package function whose own body sinks that parameter
-		// raw.
-		if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok {
-			if obj, ok := a.pass.TypesInfo.ObjectOf(id).(*types.Func); ok {
-				if decl, ok := a.decls[obj]; ok {
-					flags := a.helperParamFlags(decl)
-					for i, arg := range call.Args {
-						if i < len(flags) && flags[i] && t.tainted(arg) {
-							a.pass.Reportf(call.Pos(),
-								"recoverlog: recover() value passed to %s reaches its log sink unscrubbed; the panicked-on bytes forge log lines (scrub at the sink: textsafe.Recovered)",
-								id.Name)
-							break
-						}
+		// same-package function or method whose own body sinks that
+		// parameter raw.
+		var obj *types.Func
+		var name string
+		switch fun := ast.Unparen(call.Fun).(type) {
+		case *ast.Ident:
+			obj, _ = a.pass.TypesInfo.ObjectOf(fun).(*types.Func)
+			name = fun.Name
+		case *ast.SelectorExpr:
+			obj, _ = a.pass.TypesInfo.ObjectOf(fun.Sel).(*types.Func)
+			name = fun.Sel.Name
+		}
+		if obj != nil {
+			if decl, ok := a.decls[obj]; ok {
+				flags := a.helperParamFlags(decl)
+				for i, arg := range call.Args {
+					if i < len(flags) && flags[i] && t.tainted(arg) {
+						a.pass.Reportf(call.Pos(),
+							"recoverlog: recover() value passed to %s reaches its log sink unscrubbed; the panicked-on bytes forge log lines (scrub at the sink: textsafe.Recovered)",
+							name)
+						break
 					}
 				}
 			}
@@ -279,42 +288,62 @@ type taint struct {
 func (a *analyzer) newTaint(body *ast.BlockStmt, seeds map[*types.Var]bool) *taint {
 	t := &taint{a: a, bind: map[types.Object][]ast.Expr{}, seeds: seeds}
 	ast.Inspect(body, func(n ast.Node) bool {
-		assign, ok := n.(*ast.AssignStmt)
-		if !ok {
+		switch x := n.(type) {
+		case *ast.AssignStmt:
+			bindAssign(t, a.pass, x)
 			return true
-		}
-		if len(assign.Lhs) == len(assign.Rhs) {
-			for i, lhs := range assign.Lhs {
-				id, ok := lhs.(*ast.Ident)
-				if !ok {
+		case *ast.ValueSpec:
+			// var r any = recover(): a declared local binds like an
+			// assigned one.
+			for i, id := range x.Names {
+				if i >= len(x.Values) {
 					continue
 				}
 				obj, ok := a.pass.TypesInfo.ObjectOf(id).(*types.Var)
 				if !ok {
 					continue
 				}
-				t.bind[obj] = append(t.bind[obj], assign.Rhs[i])
+				t.bind[obj] = append(t.bind[obj], x.Values[i])
 			}
 			return true
-		}
-		// v, ok := m[k] / x, err := call(): bind every value slot to
-		// the single right-hand expression.
-		if len(assign.Lhs) > 1 && len(assign.Rhs) == 1 {
-			for _, lhs := range assign.Lhs {
-				id, ok := lhs.(*ast.Ident)
-				if !ok {
-					continue
-				}
-				obj, ok := a.pass.TypesInfo.ObjectOf(id).(*types.Var)
-				if !ok {
-					continue
-				}
-				t.bind[obj] = append(t.bind[obj], assign.Rhs[0])
-			}
 		}
 		return true
 	})
 	return t
+}
+
+// bindAssign records an assignment's ident slots as taint bindings,
+// matching multi-value forms (v, ok := m[k]) to the single rhs.
+func bindAssign(t *taint, pass *analysis.Pass, assign *ast.AssignStmt) {
+	if len(assign.Lhs) == len(assign.Rhs) {
+		for i, lhs := range assign.Lhs {
+			id, ok := lhs.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
+			if !ok {
+				continue
+			}
+			t.bind[obj] = append(t.bind[obj], assign.Rhs[i])
+		}
+		return
+	}
+	// v, ok := m[k] / x, err := call(): bind every value slot to
+	// the single right-hand expression.
+	if len(assign.Lhs) > 1 && len(assign.Rhs) == 1 {
+		for _, lhs := range assign.Lhs {
+			id, ok := lhs.(*ast.Ident)
+			if !ok {
+				continue
+			}
+			obj, ok := pass.TypesInfo.ObjectOf(id).(*types.Var)
+			if !ok {
+				continue
+			}
+			t.bind[obj] = append(t.bind[obj], assign.Rhs[0])
+		}
+	}
 }
 
 // tainted reports whether e carries a recover()-derived value.

@@ -754,9 +754,12 @@ func compositeDst(pass *analysis.Pass, dst ast.Expr) bool {
 // ---- arm c: CheckTopLevelKeys one level short -------------------------
 
 func armC(pass *analysis.Pass, files []*ast.File) {
+	// Call sites of package functions, collected over the WHOLE
+	// package before the per-file walk: a strict-looking helper and
+	// the caller passing the nested destination sit in two files of
+	// one package as often as not.
+	callSites := map[*types.Func][]*ast.CallExpr{}
 	for _, f := range files {
-		// Call sites of package functions, for resolving any-dst.
-		callSites := map[*types.Func][]*ast.CallExpr{}
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
@@ -767,6 +770,8 @@ func armC(pass *analysis.Pass, files []*ast.File) {
 			}
 			return true
 		})
+	}
+	for _, f := range files {
 		dropped := discardedCalls(f)
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)

@@ -9,8 +9,10 @@
 //     WriteHeader(int));
 //   - http.Error, http.Redirect, http.NotFound, http.ServeContent,
 //     http.ServeFile or http.ServeFileFS with x as the writer argument;
-//   - fmt.Fprint/Fprintf/Fprintln, io.WriteString or io.Copy into x;
+//   - fmt.Fprint/Fprintf/Fprintln, io.WriteString or io.Copy/CopyN
+//     into x;
 //   - json.NewEncoder(x).Encode(...);
+//   - a html/template or text/template Execute/ExecuteTemplate into x;
 //   - a call to a function that writes its own writer parameter (a
 //     respond helper): the analyzers compute that set to a fixed point
 //     inside the package with Writers and export it as a fact, so
@@ -69,6 +71,23 @@ var writerFirst = map[string]bool{
 	"io.CopyN":              true,
 }
 
+// isTemplate: t is a template.Template or *template.Template of html/template or
+// text/template.
+func isTemplate(t types.Type) bool {
+	if t == nil {
+		return false
+	}
+	t = types.Unalias(t)
+	if pointer, ok := t.Underlying().(*types.Pointer); ok {
+		t = types.Unalias(pointer.Elem())
+	}
+	n, ok := t.(*types.Named)
+	if !ok || n.Obj().Pkg() == nil || n.Obj().Name() != "Template" {
+		return false
+	}
+	return n.Obj().Pkg().Path() == "html/template" || n.Obj().Pkg().Path() == "text/template"
+}
+
 // HelperIndex returns, for a callee, the argument indexes it writes as a
 // response writer (from the analyzer's fact or local computation).
 type HelperIndex func(fn *types.Func) []int
@@ -88,6 +107,12 @@ func Target(pass *analysis.Pass, call *ast.CallExpr, helpers HelperIndex) ast.Ex
 				pathflow.QualifiedFunc(pass, ast.Unparen(inner.Fun)) == "encoding/json.NewEncoder" &&
 				IsWriter(pass.TypesInfo.TypeOf(inner.Args[0])) {
 				return inner.Args[0]
+			}
+		case "Execute", "ExecuteTemplate":
+			// html/template and text/template render into the writer
+			// they are handed.
+			if isTemplate(pass.TypesInfo.TypeOf(sel.X)) && len(call.Args) > 0 && IsWriter(pass.TypesInfo.TypeOf(call.Args[0])) {
+				return call.Args[0]
 			}
 		}
 	}

@@ -141,3 +141,31 @@ func p10(s seat, now time.Time) seat {
 	}
 	return s
 }
+
+// p11: rejecting one duration field of a struct does not reject
+// another — the fields are keyed separately.
+type window2 struct {
+	TTL     time.Duration
+	Timeout time.Duration
+}
+
+func p11(s window2) window2 {
+	if s.TTL < 0 {
+		return s
+	}
+	if s.Timeout <= 0 { // want `Timeout <= 0 folds a NEGATIVE`
+		s.Timeout = time.Hour
+	}
+	return s
+}
+
+// p12: the same field, rejected then defaulted, stays quiet.
+func p12(s window2) window2 {
+	if s.TTL < 0 {
+		return s
+	}
+	if s.TTL <= 0 {
+		s.TTL = time.Hour
+	}
+	return s
+}

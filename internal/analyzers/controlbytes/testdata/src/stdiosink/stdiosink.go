@@ -35,6 +35,21 @@ func otherWritersAreQuiet(w http.ResponseWriter, out io.Writer, r *http.Request)
 	_ = fmt.Sprintf("%s", r.URL.Path)
 }
 
+// stdStreamLocals: the terminal stream through a local bound to it.
+func stdStreamLocals(r *http.Request) {
+	errW := os.Stderr
+	fmt.Fprintf(errW, "path=%s\n", r.URL.Path) // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+	var out io.Writer = os.Stdout
+	fmt.Fprint(out, " ", r.Referer()) // want `controlbytes: request-derived value reaches stdout/stderr print unscrubbed`
+}
+
+// A local re-bound to some other writer is not the terminal sink.
+func reBoundLocal(buf *strings.Builder, r *http.Request) {
+	var out io.Writer = os.Stdout
+	out = buf
+	fmt.Fprintf(out, "%s", r.URL.Path)
+}
+
 // escapeClearance pins the escape/quote clearance on the stdio arm too:
 // a value arg AND the format string itself are both sink arguments.
 func escapeClearance(r *http.Request) {

@@ -28,6 +28,8 @@ type Server struct {
 	resourceSubs   map[string]int
 	resourceSubsBy map[resourceSubKey]int
 	lastSeen       map[string]time.Time
+	stamps         map[string]int64
+	stale          map[string]bool
 	hits           map[string]int
 	sessions       map[string][]string
 	tenants        map[string]bool
@@ -88,6 +90,46 @@ func (s *Server) sweepLoop(stop <-chan struct{}) {
 	}
 }
 
+// The sweep whose TTL tests read Unix seconds and time.Time.Compare,
+// with the deletes AFTER the select's tick case instead of inside it:
+// the loop that receives from the ticker drives both.
+func (s *Server) sweepUnix(stop <-chan struct{}) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+		}
+		s.mu.Lock()
+		now := time.Now()
+		for k := range s.stale {
+			delete(s.stale, k)
+		}
+		for k, v := range s.stamps {
+			if now.Unix()-v > 600 {
+				delete(s.stamps, k)
+			}
+		}
+		for k, v := range s.lastSeen {
+			if v.Compare(now.Add(-10*time.Minute)) < 0 {
+				delete(s.lastSeen, k)
+			}
+		}
+		s.mu.Unlock()
+	}
+}
+
+// stampUnix records the caller under the sweeps above: both maps are
+// bounded by the ticker loop, quiet.
+func (s *Server) stampUnix(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	s.stamps[r.RemoteAddr] = time.Now().Unix()
+	s.stale[r.RemoteAddr] = true
+	s.lastSeen[r.RemoteAddr] = time.Now()
+}
+
 // Near miss: a caller-driven delete (unsubscribe) bounds nothing; the
 // attacker never sends it. Quiet only because the key below is from the
 // body, not the caller.
@@ -109,6 +151,35 @@ func collect(ctx context.Context) {
 // Near miss: a write with no identity root in scope.
 func (s *Server) record(caller string) {
 	s.hits[caller]++
+}
+
+// An emptiness check is no cap: len(pokes) == 0 only asks whether the
+// record is empty, not whether it is bounded.
+type poked struct {
+	pokes map[string]int
+}
+
+func (p *poked) poke(ctx context.Context) {
+	p.pokes[subscriptionCaller(ctx)]++ // want `pokes grows by a key derived from the caller`
+}
+
+func (p *poked) empty() bool { return len(p.pokes) == 0 }
+
+// Near miss for the sweep credit: a caller-driven unsubscribe that
+// stamps the clock. The delete is driven by the caller (the attacker
+// never sends it), so it sweeps nothing.
+type stamped struct {
+	subs      map[string]bool
+	lastLeave time.Time
+}
+
+func (s *stamped) join(ctx context.Context) {
+	s.subs[subscriptionCaller(ctx)] = true // want `subs grows by a key derived from the caller`
+}
+
+func (s *stamped) leave(ctx context.Context) {
+	delete(s.subs, subscriptionCaller(ctx))
+	s.lastLeave = time.Now()
 }
 
 // The marker for a map bounded by construction.

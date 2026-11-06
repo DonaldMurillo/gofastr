@@ -368,7 +368,8 @@ func (w *winWindow) SetFrame(f desktop.Frame) error {
 			return nativeErr
 		}
 		if w.shell.onFrame != nil {
-			go w.shell.onFrame(w.id, applied)
+			onFrame, id := w.shell.onFrame, w.id
+			deliverOnGoroutine(func() { onFrame(id, applied) })
 		}
 	}
 	return err

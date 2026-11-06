@@ -758,7 +758,9 @@ _ = list.RenderCtx(ctx)
   delete form post to `POST <write base>/_views` and
   `POST <write base>/_views/_delete?id=<id>`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
-  and columns against the entity's fields before storing anything;
+  and columns against the entity's fields before storing anything,
+  and answers 400 to a name or filter holding a NUL byte or invalid
+  UTF-8 (404 to such a delete id), text no store can bind;
   owner and tenant come only from the caller's context, which the
   store enforces. A list with a saved view open draws no Export link
   and offers no "every match" bulk scope: the saved narrowing is not

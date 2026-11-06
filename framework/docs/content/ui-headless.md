@@ -153,8 +153,8 @@ The primitive prefixes the sort when `SortBy` names a column, from
 three `Strings` fields: `TableSortedBy` ("Sorted by {column},
 {direction}", the column named by its `Header` or its `Key`),
 `SortAscending` ("ascending") and `SortDescending` ("descending"),
-bridged by `ui.StringsFor` to `i18nui.KeyTableSortedBy`,
-`KeyTableDirAscending` and `KeyTableDirDescending`. The result lands in
+bridged by `ui.StringsFor` to `i18nui.TableSortedBy`,
+`TableDirAscending` and `TableDirDescending`. The result lands in
 `data-hui-table-announcement` on the root, and the behaviour module
 copies it into the table's status after the swap; a table with no sort
 and no `Summary` renders no announcement at all.

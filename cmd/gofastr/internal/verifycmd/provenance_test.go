@@ -10,6 +10,29 @@ import (
 	"github.com/DonaldMurillo/gofastr/codegen"
 )
 
+func TestScanProvenanceNormalizesRoot(t *testing.T) {
+	root := t.TempDir()
+	stamped, err := codegen.Stamp("app.go", "package app\n", codegen.Marker{Generator: "app", Kind: codegen.KindScaffold, Version: "v0.92.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".app"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, directory := range []string{root, filepath.Join(root, ".app")} {
+		if err := os.WriteFile(filepath.Join(directory, "app.go"), []byte(stamped), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(root)
+	for _, spelling := range []string{".", "./", ".app/"} {
+		entries, err := ScanProvenance(spelling)
+		if err != nil || len(entries) != 1 || entries[0].Path != "app.go" || entries[0].Edited {
+			t.Errorf("root=%q entries=%v err=%v", spelling, entries, err)
+		}
+	}
+}
+
 func TestReportProvenance(t *testing.T) {
 	dir := t.TempDir()
 	write := func(rel, content string, m codegen.Marker) {

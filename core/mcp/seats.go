@@ -47,6 +47,16 @@ func (s *Server) SetSSESeatCap(n int) {
 	s.sseMu.Unlock()
 }
 
+// SetSSEStreamLimit bounds how many SSE notification streams the server
+// holds across every caller; a connect past it is answered 429. n == 0
+// restores the default (1024); n < 0 lifts the limit for deployments
+// that bound connections elsewhere.
+func (s *Server) SetSSEStreamLimit(n int) {
+	s.sseMu.Lock()
+	s.sseStreamLimit = n
+	s.sseMu.Unlock()
+}
+
 // SetSSESeatOverflow selects the seat overflow policy; see
 // SeatOverflowPolicy. The zero value (SeatOverflowRefuse) is the
 // default.
@@ -107,4 +117,13 @@ func (s *Server) seatCapLocked() int {
 // broker and framework/crud's stream-seat registry.
 func (s *Server) spliceSeatLocked(sub *sseSubscriber) {
 	stream.SpliceSeat(s.sseSeatOrder, sub.seatKey, sub)
+}
+
+// streamLimitLocked resolves the configured stream limit; the caller
+// holds sseMu. Zero means the default; negative means unlimited.
+func (s *Server) streamLimitLocked() int {
+	if s.sseStreamLimit == 0 {
+		return defaultSSEStreamLimit
+	}
+	return s.sseStreamLimit
 }

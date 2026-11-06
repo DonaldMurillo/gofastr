@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -82,6 +83,72 @@ func TestMetricsReadFromLatchesStatus(t *testing.T) {
 	MetricsHandler(m).ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	if !strings.Contains(scrape.Body.String(), `status="200"`) || strings.Contains(scrape.Body.String(), `status="500"`) {
 		t.Fatalf("want the 200 the client got:\n%s", scrape.Body.String())
+	}
+}
+
+type panicAfterChunk struct{ sent bool }
+
+func (reader *panicAfterChunk) Read(buffer []byte) (int, error) {
+	if reader.sent {
+		panic("source failed after writing")
+	}
+	reader.sent = true
+	return copy(buffer, "x"), nil
+}
+
+func TestPartialReadFromPanicPreservesCommittedStatus(t *testing.T) {
+	previous := otel.GetTracerProvider()
+	spans := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spans)))
+	t.Cleanup(func() { otel.SetTracerProvider(previous) })
+	metrics := NewMetrics()
+	handler := MetricsMiddleware(metrics)(Tracing()(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = io.Copy(writer, &panicAfterChunk{})
+	})))
+	recorder, recovered := serveRecovered(handler)
+	if recovered == nil || recorder.Code != http.StatusOK || recorder.Body.String() != "x" {
+		t.Fatalf("panic=%v status=%d body=%q", recovered, recorder.Code, recorder.Body.String())
+	}
+	scrape := httptest.NewRecorder()
+	MetricsHandler(metrics).ServeHTTP(scrape, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if !strings.Contains(scrape.Body.String(), `status="200"`) || strings.Contains(scrape.Body.String(), `status="500"`) {
+		t.Errorf("metrics lost the committed status:\n%s", scrape.Body.String())
+	}
+	ended := spans.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("spans=%d, want 1", len(ended))
+	}
+	found := false
+	for _, attribute := range ended[0].Attributes() {
+		if attribute.Key == "http.status_code" {
+			found = true
+			if attribute.Value.AsInt64() != http.StatusOK {
+				t.Errorf("span status=%d, want 200", attribute.Value.AsInt64())
+			}
+		}
+	}
+	if !found {
+		t.Error("span has no status attribute")
+	}
+}
+
+func TestReadFromPreservesContentTypeSniffing(t *testing.T) {
+	for _, middleware := range []Middleware{MetricsMiddleware(NewMetrics()), Tracing()} {
+		server := httptest.NewServer(middleware(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			_, _ = io.Copy(writer, fileLike("<!doctype html><html><body>asset</body></html>"))
+		})))
+		client := server.Client()
+		client.Timeout = 5 * time.Second
+		response, err := client.Get(server.URL)
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		server.Close()
+		if contentType := response.Header.Get("Content-Type"); contentType != "text/html; charset=utf-8" {
+			t.Errorf("Content-Type=%q, want HTML", contentType)
+		}
 	}
 }
 
