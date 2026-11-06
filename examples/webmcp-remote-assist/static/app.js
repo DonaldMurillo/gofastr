@@ -169,7 +169,8 @@
           note('phase', 'hydrated');
           // A live socket proves nothing about media: renegotiate the
           // peer through the fresh generation (operator re-offers).
-          if (cfg.role === 'operator' && localStream) sendOffer();
+          if (cfg.role === 'operator' && localStream) sendOffer(true);
+          if (cfg.role === 'support') send({ kind: 'signal', to: 'operator', type: 'ready', data: {} });
         }
       },
       onGenerationEnd(info) {
@@ -266,17 +267,26 @@
     return pc;
   }
 
-  function sendOffer() {
-    ensurePC();
+  function sendOffer(rebuild) {
+    if (rebuild) {
+      if (pc) pc.close();
+      pc = newPC();
+      localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    }
+    const current = ensurePC();
     note('signaling', 'offering');
-    pc.createOffer().then((offer) => pc.setLocalDescription(offer)).then(() => {
-      send({ kind: 'signal', to: peerRole(), type: 'offer', data: { sdp: pc.localDescription } });
+    current.createOffer().then((offer) => current.setLocalDescription(offer)).then(() => {
+      if (current === pc) send({ kind: 'signal', to: peerRole(), type: 'offer', data: { sdp: current.localDescription } });
     }).catch(() => { note('signaling', 'offer-failed'); });
   }
 
   function onSignal(sig) {
     if (!sig || !sig.data) return;
     note('signaling', sig.type);
+    if (sig.type === 'ready' && cfg.role === 'operator' && localStream) {
+      sendOffer(true);
+      return;
+    }
     if (sig.type === 'offer') {
       ensurePC();
       const remote = new RTCSessionDescription(sig.data.sdp);

@@ -58,10 +58,17 @@ func (f File) Unmounted() ([]Unmounted, error) {
 			}
 		}
 		var u Unmounted
-		for key, dst := range map[string]*string{"source": &u.Source, "version": &u.Version, "path": &u.Path, "date": &u.Date} {
+		for _, entry := range []struct {
+			key string
+			val *string
+		}{{"source", &u.Source}, {"version", &u.Version}, {"path", &u.Path}, {"date", &u.Date}} {
+			key, dst := entry.key, entry.val
 			n := item.Map[key]
+			if n == nil {
+				return nil, fmt.Errorf("%s: %s is required", at, key)
+			}
 			s, ok := "", false
-			if n != nil && n.Kind == coreyaml.Scalar {
+			if n.Kind == coreyaml.Scalar {
 				s, ok = n.Value.(string)
 			}
 			if !ok {
@@ -260,7 +267,7 @@ func withoutSection(doc, name, header string) string {
 		top := isTop(line)
 		if top && strings.HasPrefix(line, name+":") {
 			in = true
-			if n := len(out); n > 0 && out[n-1] == header+"\n" {
+			if n := len(out); n > 0 && strings.TrimRight(out[n-1], "\r\n") == header {
 				out = out[:n-1]
 			}
 			continue

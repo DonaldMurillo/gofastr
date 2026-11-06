@@ -17,7 +17,14 @@
   // ids may contain dots, which a [^.?]+ class truncated.
   for (const s of document.querySelectorAll('script[src^="/__gofastr/widget/"]')) {
     const m = s.getAttribute('src').split('?')[0].match(/\/__gofastr\/widget\/(.+)\.js$/);
-    if (m) loaded.add(m[1]);
+    if (!m) continue;
+    const id = m[1];
+    loaded.add(id);
+    const failed = () => { s.remove(); loaded.delete(id); };
+    s.addEventListener('error', failed, { once: true });
+    const settled = () => { if (!Object.hasOwn(G.handlers, id)) failed(); };
+    if (document.readyState === 'complete') settled();
+    else window.addEventListener('load', settled, { once: true });
   }
 
   // A mount node's data-param-* attributes, as boot's collectParams reads them.
@@ -35,6 +42,7 @@
   // Scoped to one id so components whose registries were already live
   // (and whose mounts boot fired) don't fire twice.
   const fireMounts = (root, id) => {
+    if (document.__fuiStaticDispatch) return;
     for (const el of (root || document).querySelectorAll('[data-action-mount]')) {
       const owner = el.closest('[data-component],[data-widget]');
       const cid = owner && (owner.getAttribute('data-component') || owner.getAttribute('data-widget'));
@@ -86,7 +94,7 @@
   // script is still loading is fired again by fireMounts when it lands.
   (G._moduleScanners ||= {}).actionloader = (root) => {
     scan(root);
-    if (root === document || !root.querySelectorAll) return;
+    if (document.__fuiStaticDispatch || root === document || !root.querySelectorAll) return;
     for (const el of [root, ...root.querySelectorAll('[data-action-mount]')]) {
       const action = el.getAttribute('data-action-mount');
       if (!action || el._cuiM) continue;

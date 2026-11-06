@@ -66,6 +66,11 @@ explicitly approves after reviewing the verbatim `resource:verb` list**,
 not a signature/PKI (no signing authority, key distribution, or revocation
 is defined yet).
 
+Artifact SHA-256 pins accept uppercase or lowercase hexadecimal. Case-only
+differences identify the same artifact during spawning, installation,
+supervisor reconciliation, and migration approval; they do not trigger an
+upgrade or clear an existing migration approval.
+
 Process modules default to **disabled** at install, and a never-enabled
 module's routes answer 404. The operator enables one via
 `app.ProcessModules().Enable(ctx, "billing")`; `app.Modules().Enable`, the
@@ -76,7 +81,13 @@ revoke, and upgrade (artifact change) are all live and propagate across
 replicas through the SQL-backed `ProcessModuleStore`.
 `RevokeGrants(ctx, name, grants)` takes the named grants out of the
 module's effective set, keeps the rest and bumps the generation; it
-refuses an empty `grants`. The store writes it as a compare-and-swap on
+refuses an empty `grants` or a revoke pattern covering no held grant.
+Patterns use the same `resource:verb` wildcard matcher as runtime access:
+revoking `orders:*` removes held `orders:read` and `orders:write` grants.
+A partial revoke under a retained wildcard is refused without changing
+grants, revocation history or generation. Revoke the wildcard in full,
+or use `SetEffectiveGrants` to replace it with explicit narrower grants.
+The store writes it as a compare-and-swap on
 the generation it read (`ProcessModuleStore.RemoveEffectiveGrants`), so
 two revokes at once both stick. The store also records the revoke in
 `DesiredState.RevokedGrants` (the `revoked_grants` column), so it
@@ -213,7 +224,12 @@ platform where an untrusted module runs**: the bwrap backend passes every
 probe on a host with bubblewrap, util-linux `prlimit` and unprivileged user
 namespaces. Some probe properties are **structurally unreachable on a
 stock host** elsewhere: distinct-uid and resource caps on macOS,
-network-egress denial on Windows. So: **an untrusted module is unrunnable
+network-egress denial on Windows. The built-in macOS profile also permits
+reads across the user's temporary directories and `/etc`, so its probes
+report P2 (host secrets in temporary directories) and
+P5 (host files such as `/etc/passwd`) as breaches, not passes. It is not
+a filesystem confidentiality boundary for those locations.
+So: **an untrusted module is unrunnable
 on stock macOS/Windows until the operator installs a conforming backend.**
 Fail-closed refusal is the correct, honest enforcement, not a gap to paper
 over.
@@ -284,7 +300,9 @@ message carries the conformance report. A trusted-only app never probes.
   machine without a conforming sandbox calls it first and registers the
   untrusted module only when it returns nil. The error is a
   `*SandboxConformanceError` whose `Report` holds the per-probe results;
-  it unwraps to `ErrSandboxUnavailable`.
+  it unwraps to `ErrSandboxUnavailable`. A backend's `Wrap` panic during
+  conformance becomes an unreachable probe and this same refusal; it
+  does not crash the host or start an unconfined child.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))
@@ -439,10 +457,14 @@ which the host maps to the real runtime RPC URLs.
 
 The closed validator lives in [`core-ui/uinodev1`](../../../core-ui/uinodev1)
 (`uinodev1.Validate`): it enforces the whole-tree caps (depth ≈ 32, nodes ≈
-500, per-prop strings ≈ 4 KiB), the closed component enum, typed scalar
+500, per-prop strings ≈ 4 KiB, and each props array at 128 items by default),
+the closed component enum, typed scalar
 props (no `id`/`class`/`style`/`data-*` passthrough: `data-cui-*` and `on*`
 are *unrepresentable*, not merely denied), host-relative-only URL schemes,
 and action_ref shape. A forged tree is whole-tree rejected.
+`Limits.MaxPropItems` bounds table rows, columns and cells per row, plus
+detail-list and key-value items, even when their text is empty. Hosts can
+override that cap; zero selects the default. Overflow rejects the whole tree.
 
 The proxy renders a validated tree through
 [`framework/uihost/uinoderender`](../../uihost/uinoderender): each component

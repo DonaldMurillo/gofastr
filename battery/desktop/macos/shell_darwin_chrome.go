@@ -255,6 +255,8 @@ func (ch *windowChrome) setReduced(win, webView objc.ID, on bool) {
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("windowBackgroundColor")))
 		setWebViewBackground(webView, true)
 	case ch.resolved == desktop.MaterialGlass && !on:
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), 0)
+		objc.Send(ch.glassView, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(win, objc.Sel("setContentView:"), uintptr(ch.glassView))
 		objc.Send(win, objc.Sel("setOpaque:"), 0)
 		objc.Send(win, objc.Sel("setBackgroundColor:"), objc.Send(objc.Class("NSColor"), objc.Sel("clearColor")))
@@ -291,7 +293,12 @@ func boolToIMP(b bool) uintptr {
 func (ch *windowChrome) setSidebarWidth(win objc.ID, points int) {
 	ch.sidebarW = points
 	if ch.zoneView == 0 {
-		return
+		if ch.resolved != desktop.MaterialSidebar || points <= 0 {
+			return
+		}
+		ch.zoneView = newEffectView(objc.Rect{W: float64(points), H: contentBounds(win).H}, effectMaterialSidebar, viewHeightSizable)
+		insertBelow(objc.ID(objc.Send(win, objc.Sel("contentView"))), ch.zoneView)
+		objc.Send(ch.zoneView, objc.Sel("setHidden:"), objc.Send(win, objc.Sel("isOpaque")))
 	}
 	objc.SendRect(ch.zoneView, objc.Sel("setFrame:"), objc.Rect{W: float64(points), H: contentBounds(win).H})
 }
@@ -419,7 +426,7 @@ func (s *darwinShell) appearanceChanged(on bool) {
 		w.applyReduced(on)
 	}
 	if cb != nil {
-		go cb(desktop.Appearance{ReduceTransparency: on})
+		deliverOnGoroutine(func() { cb(desktop.Appearance{ReduceTransparency: on}) })
 	}
 }
 
@@ -444,6 +451,9 @@ func (w *darwinWindow) applyReduced(on bool) {
 func (w *darwinWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "sidebarWidth must be between 0 and 4096"}
+	}
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
 	}
 	closed := false
 	err := w.shell.onMain(func() {
@@ -487,10 +497,10 @@ func (s *darwinShell) reportWindowActivity(w *darwinWindow, focus bool) {
 	s.mu.Unlock()
 	id := w.ID()
 	if focus && focusCB != nil {
-		go focusCB(id)
+		deliverOnGoroutine(func() { focusCB(id) })
 	}
 	if !focus && blurCB != nil {
-		go blurCB(id)
+		deliverOnGoroutine(func() { blurCB(id) })
 	}
 }
 

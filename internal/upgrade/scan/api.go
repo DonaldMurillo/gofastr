@@ -42,10 +42,11 @@ type Result struct {
 	Broken []string
 	// Unexplained holds compile errors no note matched; Why is the error.
 	Unexplained []Hit
-	// Unscanned lists files the load could not reach, root-relative
+	// Unscanned lists files the scan could not read or load, root-relative
 	// and sorted, each with its reason: "x.go (no satisfiable build
 	// configuration)" for a constraint no GOOS/GOARCH/tag combination
-	// satisfies, "x.go (not compiled under GOOS=… GOARCH=…)" when the
+	// satisfies, "x.go (constraint names more than 8 tags)" when the solver's
+	// free-tag search limit is exceeded, "x.go (not compiled under GOOS=… GOARCH=…)" when the
 	// configuration's load did not build it. Files a load reached are
 	// never listed, including those of packages that failed to
 	// type-check: those carry hits through the compile-error fallback.

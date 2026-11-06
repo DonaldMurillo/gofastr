@@ -123,7 +123,7 @@ func TestBackofficeE2E_RecordFromRow(t *testing.T) {
 	var picker bool
 	if err := chromedp.Run(ctx,
 		chromedp.Value(productForm+` input[name="name"]`, &value, chromedp.ByQuery),
-		chromedp.Evaluate(`!!document.querySelector('`+productForm+` [data-hui-combobox-pick] input[type="hidden"][name="supplier_id"]')`, &picker),
+		chromedp.Evaluate(`!!document.querySelector('`+productForm+` [data-hui-combobox-pick] input[type="hidden"][name="supplierId"]')`, &picker),
 	); err != nil {
 		t.Fatalf("read record: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestBackofficeE2E_RelationDropdown(t *testing.T) {
 	waitHydrated(t, ctx)
 
 	search := productForm + ` [data-hui-combobox-pick] input[role="combobox"]`
-	picked := productForm + ` [data-hui-combobox-pick] input[type="hidden"][name="supplier_id"]`
+	picked := productForm + ` [data-hui-combobox-pick] input[type="hidden"][name="supplierId"]`
 	var optionText string
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`a[href="/admin/entities/products/create"]`, chromedp.ByQuery),

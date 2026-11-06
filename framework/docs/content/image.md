@@ -89,6 +89,11 @@ progressive 64 MP frame passes in grayscale (256 MiB) or 4:2:0 color
 (384 MiB) and is refused at 4:4:4 (768 MiB). Baseline JPEGs keep no
 coefficients and are not affected.
 
+The coefficient walk follows the decoder's marker resynchronization: stray
+bytes and top-level `FF 00` stuffing do not disable the cap. An unreadable
+frame header fails closed instead of falling through to an uncapped decode.
+The same rule applies to `file.StripMetadata` when baking EXIF orientation.
+
 `file.StripMetadata`'s orientation bake counts the SOS segments its own
 walk keeps and applies the same cap, scan budget and memory budget.
 
@@ -364,7 +369,10 @@ encoding, note that cost scales with `width × height × components`;
 `BlurHash` auto-downscales to 64 px internally so you do not have to
 resize first.
 
-A malformed hash returns an error rather than pixels. Treat a
+A malformed hash returns an error rather than pixels. Hashes longer than
+166 characters (the 9×9 component limit) are rejected before decoding
+their digits, so invalid stored values cannot grow the decoder's buffers.
+Treat a
 placeholder as optional when rendering user data. The UI components
 already drop an unusable `Placeholder` and render the image without one,
 so a bad legacy row degrades instead of failing the page.

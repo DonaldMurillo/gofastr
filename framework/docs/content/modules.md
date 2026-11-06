@@ -6,8 +6,8 @@ jobs, queue consumers, MCP tools. A runtime **enable/disable** gate
 enforces at dispatch time: a disabled module's routes 404, its cron jobs
 and queue consumers skip, and its MCP tools refuse.
 
-Toggling is live (no restart), persisted, and propagates across replicas
-via the fanout seam (`WithFanout`).
+Toggling is live (no restart), persisted when `WithDB` is configured, and
+propagates across replicas via `WithFanout` when they share that database.
 
 ## When to use module vs battery vs plugin
 
@@ -147,7 +147,9 @@ When the app has a DB (`WithDB`), the module state persists in a
 The table is self-migrating (`CREATE TABLE IF NOT EXISTS`); it is NOT
 a migrate group. Modules absent from the table are **enabled by default**;
 store rows for unknown module names (a removed module) are kept but
-ignored. Without a DB the state is in-memory and resets on every boot.
+ignored. Without a DB the state is in-memory, stays local to the replica,
+and resets on every boot. `NewApp` warns when `WithFanout` is configured
+without `WithDB`; refresh messages cannot synchronize independent stores.
 If the table cannot be created (e.g. a read-only or corrupt DB), `Start`
 **fails closed** rather than silently falling back to in-memory: a
 deliberately disabled module must not come back enabled on a broken store.
@@ -173,7 +175,7 @@ persistence is orthogonal (the store is always written).
 
 ## Migration-group tie-in
 
-`Manifest.MigrationGroup` defaults to the module name and is an
+`ModuleManifest.MigrationGroup` defaults to the module name and is an
 informational pointer to the `-- +migrate Group <name>` directive from
 the migrations system. The framework does not enforce that it matches a
 registered migration group, but the convention keeps schema migrations

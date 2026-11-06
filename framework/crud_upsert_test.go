@@ -65,19 +65,23 @@ func TestUpsert_InsertOnNew(t *testing.T) {
 }
 
 // ============================================================================
-// UpsertOne fires BeforeCreate + AfterCreate hooks (same semantics as Create)
+// UpsertOne prepares both arms with BeforeCreate and dispatches their after hook
 // ============================================================================
 
 func TestUpsert_FiresHooks(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, db *sql.DB, _ Dialect) {
 		app, ch := upsertApp(t, db)
-		var beforeCalled, afterCalled int
+		var beforeCalled, afterCalled, updateCalled int
 		app.HookRegistry("posts").RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 			beforeCalled++
 			return nil
 		})
 		app.HookRegistry("posts").RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 			afterCalled++
+			return nil
+		})
+		app.HookRegistry("posts").RegisterHook(hook.AfterUpdate, func(context.Context, any) error {
+			updateCalled++
 			return nil
 		})
 
@@ -87,8 +91,8 @@ func TestUpsert_FiresHooks(t *testing.T) {
 		if _, err := ch.UpsertOne(context.Background(), map[string]any{"id": "p1", "title": "second"}); err != nil {
 			t.Fatalf("second: %v", err)
 		}
-		if beforeCalled != 2 || afterCalled != 2 {
-			t.Fatalf("expected hooks fired twice each, got before=%d after=%d", beforeCalled, afterCalled)
+		if beforeCalled != 2 || afterCalled != 1 || updateCalled != 1 {
+			t.Fatalf("hooks before=%d create=%d update=%d, want 2, 1, 1", beforeCalled, afterCalled, updateCalled)
 		}
 	})
 }

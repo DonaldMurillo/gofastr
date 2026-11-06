@@ -24,6 +24,25 @@ var goldenCases = []goldenCase{
 	{"nested.style.css", "nested", KindScoped},
 }
 
+func TestCompileCommentsDoNotSupplyMathWhitespace(t *testing.T) {
+	for _, expression := range []string{
+		"1px/*c*/+ 2px", "1px +/*c*/2px", "1px/*c*/- 2px", "1px -/*c*/2px",
+	} {
+		sheet, diagnostics := Parse(".a{width:calc(" + expression + ")}")
+		if len(diagnostics) != 0 {
+			t.Fatal(diagnostics)
+		}
+		output, err := Compile(sheet, "math", KindScoped, defaultTokens(t))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := strings.ReplaceAll(expression, "/*c*/", "/**/")
+		if !strings.Contains(output, "calc("+want+")") {
+			t.Errorf("invalid math %q lost its comment-only boundary: %s", expression, output)
+		}
+	}
+}
+
 // compileFile parses and compiles a testdata sheet against the default
 // theme's tokens.
 func compileFile(t *testing.T, tc goldenCase, tokens map[string]string) string {
@@ -487,6 +506,35 @@ func TestCompileDarkChainKeepsSelectorLists(t *testing.T) {
 		// Every output of these shapes stays free of symbolic media.
 		if reMediaCustom.MatchString(out) {
 			t.Errorf("%q: custom media survived:\n%s", tc.src, out)
+		}
+	}
+}
+
+// Two tokens separated only by a comment must not merge into one
+// when minified. `margin:0/*c*/auto`
+// used to compile to `margin:0auto`, which the browser drops, and a
+// selector like `.fui/*c*/-card` used to style the kit root `.fui-card`.
+func TestCompileCommentKeepsTokensApart(t *testing.T) {
+	tokens := style.ThemeToTokens(style.DefaultTheme())
+	rows := []struct{ src, want, not string }{
+		{".a{margin:0/*c*/auto}", "margin:0 auto", "0auto"},
+		{".fui/*c*/-card{color:red}", ".fui/**/-card", ".fui-card"},
+		{"[data-cui/*c*/-rpc]{color:red}", "[data-cui/**/-rpc]", "[data-cui-rpc]"},
+	}
+	for _, tc := range rows {
+		sheet, diags := Parse(tc.src)
+		if len(diags) != 0 {
+			t.Fatalf("%q: parse: %v", tc.src, diags)
+		}
+		out, err := Compile(sheet, "x", KindScoped, tokens)
+		if err != nil {
+			t.Fatalf("%q: compile: %v", tc.src, err)
+		}
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%q: want %s in output, got:\n%s", tc.src, tc.want, out)
+		}
+		if strings.Contains(out, tc.not) {
+			t.Errorf("%q: %s merged two tokens in:\n%s", tc.src, tc.not, out)
 		}
 	}
 }

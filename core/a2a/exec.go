@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -176,6 +177,9 @@ func (t *taskRun) Working(parts ...Part) error {
 
 // Artifact records an artifact and emits an artifact-update event.
 func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
+	if a.Parts == nil {
+		a.Parts = []Part{}
+	}
 	if err := validateParts(a.Parts); err != nil {
 		return err
 	}
@@ -193,7 +197,11 @@ func (t *taskRun) Artifact(a Artifact, appendParts bool) error {
 			}
 			found = true
 			if appendParts {
-				task.Artifacts[i].Parts = append(task.Artifacts[i].Parts, a.Parts...)
+				parts := task.Artifacts[i].Parts
+				if parts == nil {
+					parts = []Part{}
+				}
+				task.Artifacts[i].Parts = append(parts, a.Parts...)
 			} else {
 				task.Artifacts[i] = a
 			}
@@ -350,6 +358,9 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	ev, err := build(&cand.Task)
 	if err != nil {
 		return err
+	}
+	if ev == nil && reflect.DeepEqual(cand.Task, cloneTask(t.rec.Task)) {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()

@@ -171,7 +171,8 @@ type WSConfig struct {
 
 	// PongTimeout bounds how long after a Ping we wait for the matching
 	// Pong. If exceeded, the connection is closed. 0 means default 10s.
-	// Set negative to disable the pong timeout check.
+	// Set negative to disable the pong timeout check; keepalive then checks
+	// activity every quarter of ReadIdleTimeout (at least 10ms).
 	PongTimeout time.Duration
 
 	// MaxControlFramesPerSecond caps the Ping and Pong frames a client
@@ -306,6 +307,14 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	if err != nil {
 		return nil, fmt.Errorf("stream: hijack failed: %w", err)
 	}
+	handshakeTimeout := cfg.WriteTimeout
+	if handshakeTimeout <= 0 {
+		handshakeTimeout = defaultWriteTimeout
+	}
+	if err := hijackConn.SetWriteDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		hijackConn.Close()
+		return nil, fmt.Errorf("stream: set handshake deadline: %w", err)
+	}
 
 	var conn io.ReadWriteCloser = hijackConn
 	// Flush any buffered response data, then drain the request reader:
@@ -317,7 +326,10 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	// silently loses its auth frame and hangs. Serve them in front of the
 	// raw conn instead.
 	if bufrw != nil {
-		bufrw.Flush()
+		if err := bufrw.Flush(); err != nil {
+			hijackConn.Close()
+			return nil, fmt.Errorf("stream: flush hijacked writer: %w", err)
+		}
 		if n := bufrw.Reader.Buffered(); n > 0 {
 			prefix := make([]byte, n)
 			if _, err := io.ReadFull(bufrw.Reader, prefix); err != nil {
@@ -343,6 +355,10 @@ func Upgrade(w http.ResponseWriter, r *http.Request, cfg WSConfig) (*WebSocketCo
 	if _, err := conn.Write([]byte(upgradeResp)); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("stream: write upgrade response: %w", err)
+	}
+	if err := hijackConn.SetWriteDeadline(time.Time{}); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("stream: clear handshake deadline: %w", err)
 	}
 
 	readLimit := cfg.ReadLimit
@@ -847,7 +863,11 @@ func (c *WebSocketConn) keepalive() {
 		pongTimeout = 10 * time.Second
 	}
 	// Check at a granularity finer than the smaller of the two thresholds.
-	tick := max(min(pongTimeout/4, idle/4), 10*time.Millisecond)
+	tick := idle / 4
+	if pongTimeout > 0 {
+		tick = min(tick, pongTimeout/4)
+	}
+	tick = max(tick, 10*time.Millisecond)
 	t := time.NewTicker(tick)
 	defer t.Stop()
 

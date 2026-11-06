@@ -240,6 +240,9 @@ func FilterToolbar(cfg FilterToolbarConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if cfg.ID != "" {
+		ctx = render.WithIDNamespace(ctx, cfg.ID)
+	}
 	// Action flows to both the <form action> and the reset LinkButton, so
 	// clean it once here through the same urlsafe.CleanAnchor allow-list
 	// ui.Form uses. A javascript:/vbscript:/data: action never becomes a
@@ -431,7 +434,7 @@ func renderSelectFacet(ctx context.Context, f Facet) render.HTML {
 		opts = append(opts, SelectOption{Value: o.Value, Text: o.Label, Selected: o.Value == f.Value})
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		Select(SelectConfig{Name: f.Name, Label: f.Label, Options: opts}))
+		Select(SelectConfig{Ctx: ctx, Name: f.Name, Label: f.Label, Options: opts}))
 }
 
 // facetOptions is the facet's options plus its active value when no
@@ -468,7 +471,7 @@ func renderSortFacet(ctx context.Context, cfg FilterToolbarConfig) render.HTML {
 	}
 	return html.Div(html.DivConfig{Class: "fui-filter-toolbar__facet fui-filter-toolbar__sort",
 		ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
-		Select(SelectConfig{Name: name, Label: sortLabel, Options: opts}))
+		Select(SelectConfig{Ctx: ctx, Name: name, Label: sortLabel, Options: opts}))
 }
 
 // renderSearchFacet composes ui.SearchInput (no nested <form>).
@@ -484,7 +487,7 @@ func renderSearchFacet(ctx context.Context, s FilterSearch) render.HTML {
 	if s.Label != "" {
 		extra["aria-label"] = s.Label
 	}
-	id := "filter-search-" + slug(s.Name)
+	id := render.UniqueID(ctx, "filter-search-"+slug(s.Name))
 	wrap := html.Attrs{"data-cui-internal": ""}
 	kids := []render.HTML{SearchInput(SearchInputConfig{
 		Ctx:         ctx,
@@ -517,9 +520,9 @@ func renderPillFacet(ctx context.Context, f Facet) render.HTML {
 		id := "filter-" + slug(f.Name) + "-" + slug(o.Value+"-"+o.Label)
 		seen[id]++
 		if n := seen[id]; n > 1 {
-			return id + "-" + strconv.Itoa(n)
+			id += "-" + strconv.Itoa(n)
 		}
-		return id
+		return render.UniqueID(ctx, id)
 	}
 	if !hasEmptyValue(f.Options) {
 		allLabel := f.AllLabel

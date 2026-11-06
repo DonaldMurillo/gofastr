@@ -24,7 +24,10 @@
 // itself is a REBIND before it: resp.Body = io.NopCloser(
 // io.LimitReader(resp.Body, n)) or http.MaxBytesReader(w, resp.Body, n)
 // in the same function, or resp handed first to a same-package helper
-// that rebinds its parameter's Body that way.
+// that rebinds its parameter's Body that way. The limiter may sit one
+// local away (limited := io.LimitReader(resp.Body, n);
+// resp.Body = io.NopCloser(limited), 2026-11-03 round): the rebind's
+// right side is resolved through the file's single bindings.
 //
 // Bug bash 2026-10-27 I15 narrowed the credit: it used to be any
 // limiter in the function that MENTIONED the body (wrapsInLimiter), so
@@ -93,6 +96,7 @@ func run(pass *analysis.Pass) (any, error) {
 		if isTest(pass, f) {
 			continue
 		}
+		aliases := readsrc.SingleBindings(pass, f)
 		for _, decl := range f.Decls {
 			fd, ok := decl.(*ast.FuncDecl)
 			if !ok || fd.Body == nil || fd.Type == nil || fd.Type.Params == nil {
@@ -100,7 +104,7 @@ func run(pass *analysis.Pass) (any, error) {
 			}
 			for _, field := range fd.Type.Params.List {
 				for _, name := range field.Names {
-					if rebindsBody(pass, fd.Body, pass.TypesInfo.ObjectOf(name), fd.Body.End()) {
+					if rebindsBody(pass, fd.Body, pass.TypesInfo.ObjectOf(name), fd.Body.End(), aliases) {
 						if _, ok := cappingHelpers[funcOf(pass, fd)]; !ok {
 							cappingHelpers[funcOf(pass, fd)] = indexOfParam(pass, fd, name)
 						}
@@ -177,7 +181,7 @@ func run(pass *analysis.Pass) (any, error) {
 				return true
 			}
 			if obj, ok := bodyOwner(pass, readsrc.Source(pass, src, aliases)); ok {
-				reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers)
+				reportIfUnbounded(pass, f, call, obj, literalResp, cappingHelpers, aliases)
 			}
 			return true
 		})
@@ -220,7 +224,7 @@ func buffersInMemory(pass *analysis.Pass, dst ast.Expr) bool {
 // that rebinds its parameter's Body. A limiter that merely MENTIONS the
 // body is no credit (I15): it bounds whatever reads through it, and
 // this read does not.
-func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, resp types.Object, literalResp map[types.Object]bool, cappingHelpers map[*types.Func]int) {
+func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, resp types.Object, literalResp map[types.Object]bool, cappingHelpers map[*types.Func]int, aliases map[types.Object]ast.Expr) {
 	if literalResp[resp] {
 		return
 	}
@@ -228,7 +232,7 @@ func reportIfUnbounded(pass *analysis.Pass, f *ast.File, call *ast.CallExpr, res
 	if fn == nil {
 		return
 	}
-	if rebindsBody(pass, fn.Body, resp, call.Pos()) {
+	if rebindsBody(pass, fn.Body, resp, call.Pos(), aliases) {
 		return
 	}
 	if passesToCappingHelper(pass, fn, resp, cappingHelpers, call.Pos()) {
@@ -273,7 +277,7 @@ func passesToCappingHelper(pass *analysis.Pass, fn *ast.FuncDecl, resp types.Obj
 // resp.Body = io.NopCloser(io.LimitReader(resp.Body, n)), or
 // http.MaxBytesReader(w, resp.Body, n). Only the rebind makes a later
 // read of resp.Body bounded.
-func rebindsBody(pass *analysis.Pass, body *ast.BlockStmt, resp types.Object, pos token.Pos) bool {
+func rebindsBody(pass *analysis.Pass, body *ast.BlockStmt, resp types.Object, pos token.Pos, aliases map[types.Object]ast.Expr) bool {
 	if resp == nil {
 		return false
 	}
@@ -290,7 +294,7 @@ func rebindsBody(pass *analysis.Pass, body *ast.BlockStmt, resp types.Object, po
 			if obj, ok := bodyOwner(pass, lhs); !ok || obj != resp {
 				continue
 			}
-			if limitsBodyOf(pass, assign.Rhs[i], resp) {
+			if limitsBodyOf(pass, assign.Rhs[i], resp, aliases, 0) {
 				found = true
 				return false
 			}
@@ -301,8 +305,14 @@ func rebindsBody(pass *analysis.Pass, body *ast.BlockStmt, resp types.Object, po
 }
 
 // limitsBodyOf reports whether e contains an io.LimitReader /
-// http.MaxBytesReader call whose reader argument mentions resp.
-func limitsBodyOf(pass *analysis.Pass, e ast.Expr, resp types.Object) bool {
+// http.MaxBytesReader call whose reader argument mentions resp —
+// directly, or through a local the limiter was hoisted into
+// (limited := io.LimitReader(resp.Body, n); resp.Body =
+// io.NopCloser(limited)).
+func limitsBodyOf(pass *analysis.Pass, e ast.Expr, resp types.Object, aliases map[types.Object]ast.Expr, depth int) bool {
+	if depth > 4 {
+		return false
+	}
 	found := false
 	ast.Inspect(e, func(n ast.Node) bool {
 		if found {
@@ -312,12 +322,30 @@ func limitsBodyOf(pass *analysis.Pass, e ast.Expr, resp types.Object) bool {
 		if !ok {
 			return true
 		}
+		limiter := false
 		switch qualified(pass, call.Fun) {
 		case "io.LimitReader", "http.MaxBytesReader":
+			limiter = true
+		default:
+		}
+		if limiter {
 			for _, arg := range call.Args {
 				if mentionsObject(arg, resp, pass) {
 					found = true
 					return false
+				}
+			}
+			return true
+		}
+		// Any other call: its argument may name the local a limiter
+		// was hoisted into.
+		for _, arg := range call.Args {
+			if id, ok := ast.Unparen(arg).(*ast.Ident); ok {
+				if b := aliases[pass.TypesInfo.ObjectOf(id)]; b != nil {
+					if limitsBodyOf(pass, b, resp, aliases, depth+1) {
+						found = true
+						return false
+					}
 				}
 			}
 		}

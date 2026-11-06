@@ -16,9 +16,12 @@ package framework
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // OAuthProtectedResourceConfig configures the
@@ -61,10 +64,31 @@ type OAuthProtectedResourceConfig struct {
 // WithOAuthProtectedResource serves /.well-known/oauth-protected-resource
 // (RFC 9728) from cfg. Use it when the app exposes OAuth-token-protected
 // resources so clients can discover how to obtain and present tokens.
+// Start and Serve reject invalid resource and authorization-server URLs.
 func WithOAuthProtectedResource(cfg OAuthProtectedResourceConfig) AppOption {
 	return func(a *App) {
 		a.oauthResource = &cfg
 	}
+}
+
+func (c *OAuthProtectedResourceConfig) validate() error {
+	if !validOAuthMetadataURL(c.Resource, false) {
+		return fmt.Errorf("OAuth protected resource Resource must be an absolute HTTPS URL without userinfo or a fragment")
+	}
+	for index, issuer := range c.AuthorizationServers {
+		if !validOAuthMetadataURL(issuer, true) {
+			return fmt.Errorf("OAuth protected resource AuthorizationServers[%d] must be an absolute HTTPS issuer URL without userinfo, a query, or a fragment", index)
+		}
+	}
+	return nil
+}
+
+func validOAuthMetadataURL(raw string, issuer bool) bool {
+	parsed, err := url.Parse(raw)
+	if err != nil || asciicase.Lower(parsed.Scheme) != "https" || parsed.Hostname() == "" || parsed.User != nil || strings.ContainsAny(raw, "# \t\r\n") {
+		return false
+	}
+	return !issuer || (parsed.RawQuery == "" && !parsed.ForceQuery)
 }
 
 // oauthResourceWellKnownPath is the well-known prefix of RFC 9728.

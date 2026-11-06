@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -278,4 +280,114 @@ func isStorable(s string) bool { // want isStorable:`check=1 `
 		}
 	}
 	return utf8.ValidString(s)
+}
+
+// --- wrapper accessors and cookies are request text -------------------
+
+func wrapperAccessors(w http.ResponseWriter, r *http.Request) {
+	db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE agent = $1", r.UserAgent()) // want `request text reaches a SQL bind`
+	db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE ref = $1", r.Referer())     // want `request text reaches a SQL bind`
+}
+
+func cookieBinds(w http.ResponseWriter, r *http.Request) {
+	c, err := r.Cookie("sid")
+	if err != nil {
+		return
+	}
+	db.ExecContext(r.Context(), "UPDATE s SET seen = $1 WHERE sid = $2", true, c.Value) // want `request text reaches a SQL bind`
+	for _, ck := range r.Cookies() {
+		db.ExecContext(r.Context(), "DELETE FROM s WHERE sid = $1", ck.Value) // want `request text reaches a SQL bind`
+	}
+	db.ExecContext(r.Context(), "DELETE FROM s WHERE sid = $1", r.Cookies()[0].Value) // want `request text reaches a SQL bind`
+}
+
+// A response's cookie is the server's own text.
+func responseCookie(ctx context.Context, resp *http.Response) {
+	db.ExecContext(ctx, "UPDATE s SET seen = $1 WHERE sid = $2", true, resp.Cookies()[0].Value)
+}
+
+// --- Query on a local bound to r.URL ----------------------------------
+
+func localQuery(w http.ResponseWriter, r *http.Request) {
+	u := r.URL
+	db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE q = $1", u.Query().Get("q")) // want `request text reaches a SQL bind`
+}
+
+// A URL the program received as a parameter is not the request's.
+func otherQuery(ctx context.Context, base *url.URL) {
+	db.QueryRowContext(ctx, "SELECT 1 FROM t WHERE q = $1", base.Query().Get("q"))
+}
+
+// --- a check verdict that never gates the bind ------------------------
+
+// logOnlyVerdict: the check's error is logged, never gated, so the
+// bytes still reach the bind.
+func logOnlyVerdict(w http.ResponseWriter, r *http.Request) {
+	v := r.URL.Query().Get("v")
+	_, err := filter.CoerceValue("v", v)
+	slog.Debug("coerce", "err", err)
+	db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE v = $1", v) // want `request text reaches a SQL bind`
+}
+
+// keptVerdict: the same check, its error gated by a diverging if.
+func keptVerdict(w http.ResponseWriter, r *http.Request) {
+	v := r.URL.Query().Get("v")
+	_, err := filter.CoerceValue("v", v)
+	if err != nil {
+		return
+	}
+	db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE v = $1", v)
+}
+
+// keptVerdictEnclosing: the verdict holds the use in its then-branch.
+func keptVerdictEnclosing(w http.ResponseWriter, r *http.Request) {
+	v := r.URL.Query().Get("v")
+	ok := isStorable(v)
+	if ok {
+		db.QueryRowContext(r.Context(), "SELECT 1 FROM t WHERE v = $1", v)
+	}
+}
+
+// --- a helper that binds before it checks -----------------------------
+
+var errNotStorable = errors.New("value is not storable text")
+
+// lateCheck validates its parameter only after the bytes already bound:
+// the Check fact must not follow, or a caller that enforces its error
+// reads as vetted.
+func lateCheck(v string) error { // want lateCheck:`sink=1 return=0 check=0`
+	db.ExecContext(context.Background(), "INSERT INTO t (v) VALUES ($1)", v)
+	if !utf8.ValidString(v) || strings.IndexByte(v, 0) >= 0 {
+		return errNotStorable
+	}
+	return nil
+}
+
+func lateCheckCaller(w http.ResponseWriter, r *http.Request) {
+	v := r.FormValue("v")
+	if err := lateCheck(v); err != nil { // want `request text reaches a SQL bind through a.lateCheck \(param v\)`
+		return
+	}
+	// The helper already bound the raw bytes, so the enforced error
+	// vets nothing here either.
+	db.ExecContext(r.Context(), "INSERT INTO t2 (v) VALUES ($1)", v) // want `request text reaches a SQL bind`
+}
+
+// earlyCheckCaller is the same call with the check-first helper: the
+// Check fact stands, so the enforced error vets the value.
+func earlyCheckCaller(w http.ResponseWriter, r *http.Request) {
+	v := r.FormValue("v")
+	if err := earlyCheck(v); err != nil {
+		return
+	}
+	db.ExecContext(r.Context(), "INSERT INTO t2 (v) VALUES ($1)", v)
+}
+
+// earlyCheck is lateCheck with the check first: the Check fact stands.
+func earlyCheck(v string) error { // want earlyCheck:`check=1 `
+	if !utf8.ValidString(v) || strings.IndexByte(v, 0) >= 0 {
+		return errNotStorable
+	}
+	db.ExecContext(context.Background(), "INSERT INTO t (v) VALUES ($1)", v)
+	return nil
 }

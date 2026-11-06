@@ -514,7 +514,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	var cerr error
 	body.Email, cerr = p.mgr.canonicalizeEmail(body.Email)
 	if cerr != nil {
-		writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+		writeAuthErrorFor(w, r, http.StatusBadRequest, cerr, reasonComposedEmail)
 		return
 	}
 	if body.Email == "" {

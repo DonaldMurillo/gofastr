@@ -212,9 +212,13 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
   table (treat as pending) instead of marking it applied.
 - `--from=<yml>` (`generate`/`repair`): the app spec holding the entity
   declarations; `repair` needs it to know each table's owner column.
+  `generate` validates every entity before diffing or writing files. An
+  invalid field default or other registration error exits 1, names the
+  entity, and leaves migrations and the committed snapshot unchanged.
 - `--apply` (`repair` only): rebuild the reported tables instead of only
-  reporting them. The rebuild keeps every row, column, default, index, and
-  other constraint.
+  reporting them. The rebuild keeps every row, column, default, index,
+  trigger, and other constraint, including triggers that spell the table
+  name with different ASCII letter casing.
 - `--group=<name>`: scope `up`/`down`/`status` to one or more groups
   (repeat the flag); a single `--group` on `force` targets that group's
   version. `--group=default` addresses the default (ungrouped) set.
@@ -319,6 +323,10 @@ this; for a snapshot written before it, the diff reads them from the
 value they hold: a float in its shortest exact form (`1e-07`, not
 `0.000000`), and a scalar on a JSON field JSON-encoded (`'true'`).
 
+Changed views and their dependents are dropped before removed views, so a
+view can stop reading a view removed in the same migration. Rollback
+recreates the removed source before restoring its old dependents.
+
 `required` or `default` changed on a column that already exists is
 compared against the `CREATE TABLE` the snapshot recorded. On Postgres
 the file sets or drops `NOT NULL` (setting it fails while a row holds
@@ -357,7 +365,11 @@ It then updates the snapshot. The typical loop:
 What it generates: `CREATE TABLE` (new entity), `ADD COLUMN` (new
 field), `DROP COLUMN` (removed field, whose `Down` re-adds the column but
 does not restore row data), and `DROP TABLE`
-(removed entity). The forward DDL is built by the same code path as
+(removed entity). Generation refuses a table drop when the recorded schema
+contains foreign keys from tables that remain. Remove those foreign keys in
+a separate migration before dropping the referenced table; otherwise SQLite
+can delete referencing rows and Postgres refuses the drop. Tables removed
+together retain dependency-ordered drops. The forward DDL is built by the same code path as
 auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
 *nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing
@@ -370,7 +382,9 @@ Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so
 numeric text converts and anything else fails the migration; a text
 default is dropped before the retype and the declared default set
-after it, since Postgres cannot cast the old one; other
+after it, since Postgres cannot cast the old one. When a generated rollback
+uses that conversion, it restores the original default recorded in the schema
+snapshot, including on a column renamed in the same migration. Other
 changes may still need a data-specific `USING` clause, so review and
 hand-tighten. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
@@ -417,9 +431,12 @@ foreign_keys=OFF` before the rebuild and `PRAGMA foreign_keys=ON` after it.
 Rows are carried over, not regenerated. A column added in the same change
 is added first and copied like the rest, with the value its `ADD COLUMN`
 default gave each row, so a key moved onto new columns keeps the table's
-rows (and fails, keeping them, when those rows repeat the new key). A required-but-undefaulted column added in the same
-change still fails loud on a populated table until you backfill it, and a
-migration holding a rebuild ships no `Down` (the pre-migration constraints
+rows (and fails, keeping them, when those rows repeat the new key). A required
+column added without a default stays nullable through a rebuild in the same
+change, just as it does for a standalone `ADD COLUMN`. Backfill existing rows
+before tightening that constraint in a later migration. Existing required
+columns and new required columns with defaults keep their `NOT NULL` constraint.
+A migration holding a rebuild ships no `Down` (the pre-migration constraints
 are not recoverable, and the other changes' inverses alone would roll back to
 a table matching neither schema), so a SQLite retype is forward-only. Renames: declare
 `EntityConfig.Renames: {"old": "new"}` and the diff emits a non-destructive
@@ -445,9 +462,16 @@ identifiers at validate time. Renames run, and their errors are reported, in
 order of the old name, so the same declaration gives the same migration and
 the same error text on every run.
 
-Type-change detection catches the type *class* (e.g. TEXT→INTEGER) but NOT
-size/precision changes: `VARCHAR(50)→VARCHAR(100)` and `DECIMAL(10,2)→(19,4)`
-are normalized away, so express those as a hand-written migration. Columns
+Generated snapshots record composite primary keys for automatically created
+many-to-many pivot tables as well as entity tables. If a join entity later
+owns a pivot's table, migration generation compares its declared key with
+the pivot's existing key instead of silently keeping the old constraint.
+
+Type-change detection catches the type *class* (e.g. TEXT→INTEGER) and
+compares character widths on Postgres: `VARCHAR(50)→VARCHAR(100)` generates
+an `ALTER COLUMN … TYPE` change. Decimal precision and scale changes such as
+`DECIMAL(10,2)→DECIMAL(19,4)` are normalized away; express those as a
+hand-written migration. Columns
 declared with `RawType` (Postgres domains, arrays, custom types) are skipped:
 the live DB reports the underlying type, which never matches the raw type, so
 they would otherwise false-positive every diff. And an existing Postgres table
@@ -524,7 +548,9 @@ derived (table `a_b` on `c` and table `a` on `b_c` are both
 and `migrate generate` refuse the pair and name both tables, as they do
 one table declaring two different indexes under one name. Names are
 compared folded and cut at 63 bytes, the way Postgres stores them, on
-both dialects. Give one of the indexes its own `Name`.
+both dialects. Field-level `Unique` names participate in the same check,
+including collisions with explicitly named indexes. Give a declared index
+its own `Name`, or rename a table or field when two field-level names collide.
 
 A `Unique` field's `<table>_<column>_key` is the name Postgres gives
 the inline constraint `CREATE TABLE` writes. Past 63 bytes it is
@@ -562,7 +588,10 @@ compares the declared key with the live one (or the snapshot's
   another table's foreign key depends on, so when entities or generated
   `many_to_many` pivots declare foreign keys onto the table, the change
   first drops the foreign keys those tables hold onto the old key and
-  re-adds each declared one after `ADD PRIMARY KEY`. A key whose columns
+  re-adds each declared one after `ADD PRIMARY KEY`. `DiffSchema` validates
+  a generated pivot against the live key before that planned rewrite;
+  its primary key, cascading delete actions and unaffected references
+  must still match. A key whose columns
   the child table gains only in its own changes (a column renamed or added
   in the same change) is re-added after every table's changes. A foreign
   key onto a separately unique column of the table does not depend on the
@@ -692,6 +721,15 @@ snapshot. It is the same loop the app spec CLI runs, byte-for-byte (same
 `NNNN_<slug>.sql` naming, same `-- +migrate` directives, same
 `schema.snapshot.json`), because both paths share `GeneratePlan` +
 `RenderMigrationFile` + `SaveSnapshot`.
+
+Migration generation writes and syncs a temporary file in the migration
+directory before atomically publishing the numbered `.sql` entry. Publication
+uses a hard link, not an overwriting rename: an existing file or symlink at
+the selected name is refused. The filesystem must support same-directory hard
+links. A failed write leaves no numbered migration; abandoned `.tmp` files
+after a process crash do not consume migration versions. On non-Windows hosts
+the directory is synced before advancing the snapshot; Windows uses the
+platform's existing directory-sync policy.
 
 The call is safe to re-run after a crash (or a failed snapshot write) between
 the migration file landing and the snapshot updating: the re-run compares the
@@ -854,6 +892,22 @@ files, missing directories, and Down-without-Up files are likewise errors
 (the framework screams rather than silently no-op'ing, the same posture as a
 misconfigured entity). Dotfiles, sub-directories, and non-`.sql` files are
 ignored, so a `README.md` next to the routines is fine.
+
+A plain routine name cannot contain dots. In `audit.log_fn.sql` the loader
+reads `.log_fn` as a dialect suffix and refuses it as unknown, the same check
+that catches a typo like `refresh.mysql.sql`. A dotted name loads with a
+dialect tag: `audit.log_fn.pg.sql` is the Postgres routine `audit.log_fn`.
+
+Pass `"."` as the directory to load SQL files at the filesystem root,
+including an `os.DirFS` rooted at the routines directory or root-level embeds.
+
+A dialect-tagged Down must match its Up's dialect; a tagged Down cannot
+pair with an untagged Up. An untagged Down may pair with any Up. Mismatches
+fail at registration before any SQL runs.
+
+The `.down` marker must be immediately before `.sql`, after any dialect
+suffix. A reversed form such as `refresh.down.sqlite.sql` is refused, not
+loaded as another routine's Up.
 
 ### Dialect scoping
 
@@ -1078,6 +1132,9 @@ app.View(migrate.View{
   Create/Update columns), and the `/api/llm.md` index counts the same
   three, labelled `read-only`. The query layer is not one of them: it is
   a Go surface, not an HTTP route, so it never appears in either count.
+  The event stream uses the app event bus and the view's own resource
+  name. It does not infer view changes from writes to underlying tables;
+  without events published for the view it remains open and quiet.
   Without `Columns`, the view is migration-only. Query it with raw SQL.
   The key columns follow an entity's rule: `App.View` panics on a float,
   decimal, bool, date, timestamp or JSON key, or one with a `RawType`
@@ -1208,6 +1265,21 @@ place the first time a non-default group is applied. Never edit the
 table by hand. Use `migrate force` to reconcile state instead.
 
 ## Auto-migrate path
+
+Generated `many_to_many` pivot tables are checked on boot and during live
+or snapshot diffs. Changing a pivot's link-column names or endpoint key
+types is refused with the pivot and column named; generation does not
+advance the snapshot past that refusal. Write and apply an explicit
+migration that preserves the existing links before adopting the changed
+relation. An entity-owned join table follows its entity's normal diff.
+Live diffing and boot also verify the composite primary key and both
+cascading foreign keys; an existing pivot missing those constraints must
+be migrated explicitly. Snapshot generation has no live constraints to inspect.
+Every declaration sharing a generated Through table must agree on its link
+columns, endpoint SQL types, referenced tables and referenced keys, including reciprocal declarations. Snapshot
+generation, live diffing, and boot migration refuse inconsistent declarations
+before generating or applying schema changes, even on an empty database.
+Only table creation and DDL emission are deduplicated, never validation.
 
 ```go
 app := framework.NewApp(framework.WithDB(db))

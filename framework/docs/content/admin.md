@@ -109,7 +109,7 @@ its own routes:
 | `POST /admin/api/<name>/_pick?field=<field>` | A relation picker's search |
 | `POST /admin/api/<name>/_views` | Save a view (`Config.SavedViews`) |
 | `POST /admin/api/<name>/_views/_delete?id=<id>` | Delete a saved view |
-| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too) |
+| `GET /admin/_count/<name>` | A dashboard count card (polled every 60 s; a count past its 2-second deadline falls back to a 1-second read of at most 10,000 ids, "10k+" past it, and "—" only when that fails too). The newest-record age has a separate 1-second budget, so a late count does not hide it. |
 
 For an entity with a composite `PrimaryKey`, `{id}` above is one path
 segment per key column (`/admin/api/enrollments/{student_id}/{course_id}`),
@@ -226,7 +226,10 @@ translating.
   ```
 - **DashboardNew** names an exposed entity whose New button heads the
   dashboard as its primary action (`DashboardNew: "customers"` draws
-  "New Customer"). `Init` refuses an entity the admin does not expose.
+  "New Customer"). It and each entity card's New action appear only when
+  the caller passes the entity's scoped create gate, including explicit
+  policy denials and the required owner identity. `Init` refuses an entity
+  the admin does not expose.
 - **Attention** is the Needs attention panel beside the recent activity.
   Each `Watch` names an entity and one of its declared list views
   (`View`); the panel previews the first `Rows` rows (5 by default, at
@@ -293,7 +296,10 @@ never elevated.
 ### Command palette
 
 The toolbar's search field opens the palette. It lists the pages, each
-entity's list and create screen, and your `Commands`. Typing searches the
+entity's list and permitted create screen, and your `Commands`. Create
+entries require both scoped CRUD read and create permission in the same
+elevated context as the destination screen, including a resource Decider's
+refusal of either permission. Typing searches the
 exposed entities' `SearchFields` through `entityui.SearchRecords`, in the
 caller's scope, and lists the matching records. The palette posts to
 `POST <PathPrefix>/_palette`; the body is capped at 4 KiB and the query
@@ -313,6 +319,8 @@ keys.
 The operations pages draw through the UI host like every other admin
 page: an app that mounts the admin only for its queue or audit log still
 builds with `framework.NewUIHostApp`, or `Init` fails.
+Jobs status-filter counts and the dashboard's Failed jobs figure use the request locale's number formatting,
+including localized digits and grouping, just like the page's other counts.
 
 <!-- gofastr:compile
 import "database/sql"
@@ -501,6 +509,24 @@ entity with CRUD off finishes, and so does one the app's own bulk route
 queued. The queue job's payload carries only the job
 id; the confirmed selection lives in the host's snapshot store.
 
+A busy or lost bulk lease schedules a fresh queue delivery at least
+`entityui.BulkJobLease` (five minutes) later instead of burning the queue's
+five execution attempts immediately. The replacement preserves the job's
+creator identity for erasure. If that enqueue fails, the queue's normal
+failure policy still applies. `UI.ResumeBulkJobs` also adopts an enqueued
+snapshot whose bulk lease expired before the grace cutoff, so a dead queue
+entry cannot strand a partially settled run. Live leases and enqueued jobs
+that have never started are not adopted. Long-running hosts should call
+resume periodically; initialization alone recovers only at startup.
+
+Erasure must run with bulk producers and active deliveries quiesced. The
+queue's erasure sweep and a lease-contention successor enqueue do not share
+an atomic transaction across queue backends: a delivery that observed a busy
+lease before erasure can enqueue a successor carrying the creator's user id
+after that sweep. Deleting the bulk snapshot stops its later execution but
+does not prevent that new queue metadata. Stop/drain deliveries before erasure
+when the export must contain no newly recreated user metadata.
+
 `PrincipalFunc` (the second argument) rebuilds the confirming user's
 request context before every chunk: the user and their current roles,
 read fresh, and the run's tenant. The tenant is the one the selection
@@ -569,6 +595,16 @@ The User roles page lists each user's roles once, as tags; the row's
 Edit roles dropdown holds the form that replaces them. It shows 50
 accounts a page (`?limit=`, up to 500), and the pager under the table
 turns pages through `?p=`.
+
+Role and permission names must be valid UTF-8 without NUL bytes. A grant,
+grid save or role assignment containing such text is refused before any
+change: form posts return `bad-input`, and RPCs answer 400 with a `fields`
+entry naming the submitted control.
+
+Role assignment also checks `user_id` before looking up the account: NUL or
+malformed UTF-8 produces `bad-input` for a form and a 400 RPC refusal keyed
+by `user_id`, without a lookup or role mutation. A valid ID is used exactly
+as submitted; whitespace is not trimmed from account keys.
 
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A

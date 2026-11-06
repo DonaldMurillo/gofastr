@@ -5,7 +5,9 @@
 // <template data-cui-loading="<addr>" data-cui-after data-cui-min>
 // BESIDE its outlet, area, or slot cell, so the browser holds the
 // bytes before any fetch starts. Loaded when the document carries
-// such a template (marker scan, at boot and after any apply).
+// such a template: the envelope navigator warms it at evaluation and
+// checks again before scheduling a later navigation, so templates
+// introduced by a layout swap also work without a full reload.
 //
 // Before it loads the busy dim alone shows: the navigator marks the
 // regions it will change (aria-busy, core) and no clone parks.
@@ -111,11 +113,12 @@
       if (ev && ev.target !== e.el) return;
       if (done) return;
       done = true;
+      clearTimeout(timer);
       e.el.removeEventListener('animationend', fin);
       res();
     };
     e.el.addEventListener('animationend', fin);
-    e.timer = setTimeout(fin, 400);
+    const timer = setTimeout(fin, 400);
     e.el.setAttribute('data-cui-loadstate', 'exit');
   });
   const holdExit = async (e) => {

@@ -398,7 +398,7 @@ func TestBridgeScriptAndHostMarker(t *testing.T) {
 	// The host marker a shell injects at document start is the same
 	// script a browser-backed harness injects.
 	marker := desktop.BootstrapJS("main", false)
-	if !strings.HasPrefix(marker, "window.__gofastr_desktop = JSON.parse(") || !strings.Contains(marker, `\"os\":`) || !strings.Contains(marker, `\"window\":\"main\"`) {
+	if !strings.HasPrefix(marker, "if (window === window.top) {") || !strings.Contains(marker, "window.__gofastr_desktop = JSON.parse(") || !strings.Contains(marker, `\"os\":`) || !strings.Contains(marker, `\"window\":\"main\"`) {
 		t.Fatalf("BootstrapJS = %q", marker)
 	}
 	// A stranger gets the inert answer from the gate, not the script.

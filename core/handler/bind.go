@@ -40,7 +40,7 @@ import (
 // on a path tag, is an error on every bind.
 //
 // If the body is present but not valid JSON, a 400 error is returned.
-// If dst is not a pointer, Bind panics.
+// If dst is not a non-nil pointer, Bind returns an error.
 func Bind(r *http.Request, dst any) error {
 	if dst == nil {
 		return errors.New("bind: nil destination")

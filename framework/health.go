@@ -170,7 +170,7 @@ func (a *App) signalShutdownTimeout() time.Duration {
 // slowest check before reporting partial results.
 const defaultReadinessTimeout = 5 * time.Second
 
-// WithReadinessTimeout overrides the per-request /readyz deadline.
+// WithReadinessTimeout overrides the /readyz and app_readiness deadline.
 // Default 5 seconds. Checks that don't return within the deadline are
 // reported as errors with status "timeout".
 func WithReadinessTimeout(d time.Duration) AppOption {

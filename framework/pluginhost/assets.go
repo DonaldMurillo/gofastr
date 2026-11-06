@@ -3,12 +3,15 @@ package pluginhost
 import (
 	"io/fs"
 	"net/http"
+	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/static"
+	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 )
 
 // framedCSP builds the Content-Security-Policy for the sandboxed plugin frame,
@@ -177,7 +180,10 @@ type loadedAsset struct {
 }
 
 // NewAssetServer builds an AssetServer that reads the named specs lazily from
-// fsys (an embed.FS sub or any fs.FS) and serves them under prefix. Files
+// fsys and serves them under prefix. Disk-backed filesystems such as os.DirFS
+// are bound to their directory at registration and read through os.Root;
+// other implementations must already confine reads to their root (embed.FS
+// and its sub-filesystems satisfy this contract). Files
 // missing from fsys at request time yield a 404; for go:embed'd bundles that
 // never happens. Call [AssetServer.AddBytes] for host-page scripts that live in
 // a different embed root, then [AssetServer.Register].
@@ -284,14 +290,77 @@ func joinPath(prefix, name string) string {
 
 func (s *AssetServer) serveFS(spec AssetSpec) http.HandlerFunc {
 	contentType := resolveContentType(spec.Name, spec.ContentType)
+	assets, bindErr := confinedAssetFS(s.fsys)
 	return func(w http.ResponseWriter, r *http.Request) {
-		b, err := fs.ReadFile(s.fsys, spec.Name)
+		if bindErr != nil {
+			http.NotFound(w, r)
+			return
+		}
+		b, err := fs.ReadFile(assets, spec.Name) //gofastr:allow(rootread) confinedAssetFS wraps disk roots with os.Root; other filesystems must be embedded or root-confined by the NewAssetServer contract
 		if err != nil {
 			http.NotFound(w, r)
 			return
 		}
 		writeAsset(w, r, b, contentType, responsePolicy{framed: spec.Framed, csp: s.csp})
 	}
+}
+
+func confinedAssetFS(fsys fs.FS) (fs.FS, error) {
+	if !plainDiskAssetFS(reflect.ValueOf(fsys)) {
+		return fsys, nil
+	}
+	directory, err := fsys.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	file, disk := directory.(*os.File)
+	if !disk {
+		return fsys, nil
+	}
+	identity, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	root, err := rootfs.Open(file.Name())
+	if err != nil {
+		return nil, err
+	}
+	bound, err := root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	if !os.SameFile(identity, bound) {
+		return nil, fs.ErrNotExist
+	}
+	return root.FS(), nil
+}
+
+// plainDiskAssetFS reports whether value is os.DirFS, directly or under
+// fs.Sub. Only those are rebound to os.Root: any other filesystem whose
+// Open returns an *os.File (an os.Root FS, a filtering wrapper) already
+// decides what it serves. The fs.Sub step reads io/fs's unexported field;
+// if a Go release renames it, this returns false instead of panicking, and
+// TestAssetServerConfinesDiskSymlinks's fs.Sub case fails.
+func plainDiskAssetFS(value reflect.Value) bool {
+	if !value.IsValid() {
+		return false
+	}
+	if value.Type() == reflect.TypeOf(os.DirFS(".")) {
+		return true
+	}
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return false
+	}
+	elem := value.Type().Elem()
+	if elem.PkgPath() != "io/fs" || elem.Name() != "subFS" || elem.Kind() != reflect.Struct {
+		return false
+	}
+	inner := value.Elem().FieldByName("fsys")
+	if !inner.IsValid() || inner.Kind() != reflect.Interface || inner.IsNil() {
+		return false
+	}
+	return plainDiskAssetFS(inner.Elem())
 }
 
 // resolveContentType returns the header to send for name, preferring the

@@ -1,5 +1,8 @@
 # Core packages
 
+WebSocket keepalive with a negative `WSConfig.PongTimeout` disables pong expiry
+and checks activity every quarter of `ReadIdleTimeout`, with a 10ms floor.
+
 This is a map of the exported `core/*` packages that have no dedicated
 reference page. Each entry names what the package does, whether you reach
 for it directly or through the framework, and one code anchor to start
@@ -37,6 +40,8 @@ one error envelope every route shares, crud's included:
 absent with no violations.
 
 `Bind` applies header, query, path, then JSON values in that priority order.
+Its destination must be a non-nil pointer; an invalid destination returns
+an error rather than panicking.
 A present higher-priority value replaces an earlier value, including a JSON
 zero value; an omitted property preserves the value already bound.
 `header`, `query` and `path` tags on an untagged embedded struct bind as
@@ -290,7 +295,11 @@ hijacks: a method other than GET, a request older than HTTP/1.1, no
 `Connection: Upgrade` token, a version other than 13, or a key that is
 not base64 of 16 bytes. `Connection` and `Sec-WebSocket-Protocol` are
 read across every line the client sent them on. A zero or negative
-`WSConfig.SendBuffer` means the default of 32. A
+`WSConfig.SendBuffer` means the default of 32. After hijacking, buffered
+response data and the 101 response share a write deadline: `WriteTimeout`
+when positive, otherwise 10 seconds even when frame deadlines are disabled.
+The deadline is cleared before the connection starts its frame pumps;
+deadline, flush, or response-write failures close the hijacked connection. A
 transport that hijacks the connection itself runs the same check,
 `stream.CheckUpgradeRequest(r, originOK)`, before writing its 101;
 `originOK` decides the Origin as `WSConfig.CheckOrigin` does.
@@ -521,6 +530,9 @@ choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
 fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
 the `default:` tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
+Integer values must fit the destination field: `int` uses the target
+architecture's width (32 or 64 bits), while `int64` always accepts the
+64-bit range. Out-of-range values fail `Load` rather than truncating.
 
 A named struct field (`DB DBConfig`) reads its keys under `DB_`. An
 embedded struct does not: its fields are promoted the way

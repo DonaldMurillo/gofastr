@@ -528,3 +528,95 @@ func (l *labeled) feed(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
+// ---- 2026-11-03 gap round: decisions in helpers, nested selects ----
+
+// admitFeed is a helper family the opener calls: it neither opens a
+// stream nor holds a delivery loop, so the decision scan used to skip
+// it and the connect-time authorize below was never judged.
+func admitFeed(ctx context.Context) bool {
+	return authorizeFeed(ctx) // want `connect-time decision authorizeFeed is never re-run`
+}
+
+func authorizeFeed(ctx context.Context) bool { return true }
+
+// decisionHelper re-checks its principal on tick and delivery but
+// never re-runs the authorize its helper made at connect.
+func decisionHelper(w http.ResponseWriter, r *http.Request) {
+	if !admitFeed(r.Context()) {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	tick := time.NewTicker(time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-tick.C:
+			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+				return
+			}
+		case ev := <-feed():
+			if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+				return
+			}
+			_ = sse.WriteEvent("e", ev)
+		}
+	}
+}
+
+// nestedSelectPark parks on a select wrapped in an if inside the loop
+// body: the select hunt read only the top of the body, so the idle
+// gap was neither reported nor credited there.
+func nestedSelectPark(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	for { // want `re-checks its principal only when this select delivers an event`
+		if r.Context().Err() == nil {
+			select {
+			case <-r.Context().Done():
+				return
+			case ev := <-feed():
+				if _, ok := handler.RecheckPrincipal(r.Context()); !ok {
+					return
+				}
+				_ = sse.WriteEvent("e", ev)
+			}
+		}
+	}
+}
+
+// nestedSelectTick is the fix spelling of the same loop: the keep-alive
+// case inside the nested select re-checks on the timer. Quiet.
+func nestedSelectTick(w http.ResponseWriter, r *http.Request) {
+	if _, ok := handler.GetUser(r.Context()); !ok {
+		return
+	}
+	sse := stream.NewSSEWriter(w)
+	keepAlive := time.NewTicker(time.Second)
+	defer keepAlive.Stop()
+	held := func() bool {
+		_, ok := handler.RecheckPrincipal(r.Context())
+		return ok
+	}
+	for {
+		if r.Context().Err() == nil {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-keepAlive.C:
+				if !held() {
+					return
+				}
+			case ev := <-feed():
+				if !held() {
+					return
+				}
+				_ = sse.WriteEvent("e", ev)
+			}
+		}
+	}
+}

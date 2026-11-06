@@ -124,6 +124,8 @@ func (a *App) A2ASkills() []uihost.AgentSkill {
 			Description: sk.Description,
 			Tags:        sk.Tags,
 			Examples:    sk.Examples,
+			InputModes:  sk.InputModes,
+			OutputModes: sk.OutputModes,
 		})
 	}
 	slices.SortFunc(out, func(x, y uihost.AgentSkill) int { return strings.Compare(x.ID, y.ID) })

@@ -27,6 +27,17 @@ through the SSG-aware render path, and dumps all `/__gofastr` assets with
 **query-free filenames**. `basePath` is the URL subpath for a project-site
 deploy (`"/gofastr"`); pass `""` for an apex deploy.
 
+Generated locale alternates and `x-default` include that mount path, just
+like sitemap URLs. A sitemap `BaseURL` already ending in the mount path
+does not duplicate it. Explicit screen-provided alternates remain unchanged.
+For direct `UIHost.RenderStaticPage` / `RenderStaticPageResult` calls, pass
+`uihost.WithStaticBasePath(ctx, "/gofastr")` to supply the same mount path.
+
+Static client navigations preserve the incoming page's language and
+direction markers, including when only a layout slot swaps. Entering an
+RTL locale loads the direction behavior on demand and updates `<html dir>`;
+returning to a cached LTR page restores its direction without a full reload.
+
 ```go
 fwApp, _ := framework.NewApp(opts...)
 // "" = apex; "/gofastr" for a https://<user>.github.io/gofastr/ deploy.
@@ -463,7 +474,7 @@ on this 404 page, which is exactly the honest answer for a static copy.
 ## Static mode: what works, what's disabled
 
 Every exported page is stamped with `<html data-cui-static>`. The runtime
-reads this marker once at boot and, when present, **skips server-backed
+uses its static composition and **skips server-backed
 dispatches** so a click on a dead demo doesn't fire a request that 404s
 against the serverless host:
 
@@ -474,6 +485,7 @@ against the serverless host:
 | Signal mutations (`set`/`inc`/`toggle`) | ✓ works | client-only |
 | SPA navigation | ✓ works | fetches pre-rendered pages |
 | `data-cui-rpc` (island round-trips) | disabled | needs the Go handler |
+| Compiled server actions | disabled | user-triggered calls show "Needs the Go server." without posting; automatic mount actions are skipped on hydration, navigation and inserted content |
 | `data-cui-open` (modals, ⌘K palette) | ✓ works | the export writes the widget catalog (`widgets.json`) and each widget's chrome and style sheet; an unregistered widget shows a "Needs the Go server." toast. A widget with `RequireSession` or `RequireAuthenticated` gets its style sheet and no chrome file, since the live `/chrome` endpoint refuses an anonymous caller and every exported file is public |
 | Palette search (`Search: true`) | ✓ works | reads the [site search](site-search.md) index files |
 | SSE islands | not emitted | the SSE `<meta>` is omitted at render time |
@@ -483,7 +495,7 @@ A dismissible "Static preview — run locally" banner (using the shared
 read as intentionally inactive rather than broken. The dismissal persists
 in `localStorage`.
 
-Live pages never carry the marker, so every static-mode guard is a no-op
+Client-only action handlers still run. Live pages use the full runtime, so every static-mode guard is a no-op
 in the normal server-backed app.
 
 ## Deploying to GitHub Pages

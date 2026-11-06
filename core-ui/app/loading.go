@@ -20,6 +20,9 @@ import (
 // Loading declares what an outlet, the primary slot, or a route area
 // shows while a navigation that will change it is in flight. The zero
 // Loading (or a nil pointer) means the busy dim only.
+// PrimaryConfig.Loading also works on layouts without outlets or route
+// areas. Loading templates opt navigation into the demand-loaded scheduler;
+// a layout without loading content does not fetch it.
 type Loading struct {
 	// Show renders the loading content: a skeleton, a spinner, any
 	// component. Shown only in place of the outlet's previous content

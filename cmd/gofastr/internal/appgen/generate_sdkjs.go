@@ -419,7 +419,7 @@ func renderSDKJSReadme(spec sdkSpec) string {
 	sb.WriteString("Two plain files, zero dependencies, no build step: `client.js` (ESM) and\n`client.d.ts` (types). Drop them into your project, or import the client\nstraight from the running app:\n\n")
 	fmt.Fprintf(&sb, "```js\nimport { Client } from %q;\n// or, served by the app itself:\n// import { Client } from %q;\n\nconst api = new Client({ baseURL: %q, token: process.env.API_TOKEN });\nconst page = await api.%s.list({ sort: \"-created_at\", limit: 50 });\n```\n\n", "./client.js", sdkExampleHost(spec)+"/docs/api/sdk/client.js", sdkExampleBaseURL(spec), prop)
 	sb.WriteString("TypeScript picks up `client.d.ts` automatically when both files sit side by\nside. There is intentionally no package.json: if you want this on npm,\nadd your own and publish it; it's your API.\n\n")
-	sb.WriteString("## Casing contract\n\nResponses are camelCase. Filter/sort **query params** and validation-error\n`fields` keys are the server's snake_case column names. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent: validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
+	sb.WriteString("## Casing contract\n\nResponses are camelCase. Error `fields` keys use response wire keys, including\nexplicit WireName overrides. Filter/sort **query params** use snake_case column\nnames. Use the exported\n`<entity>Fields` constants for filter and sort keys instead of guessing.\nThey list only the queryable columns, so a column the API refuses to filter\non is absent: validation errors can still name it, since a field can be\nwritable without being queryable:\n\n")
 	// Pick the example field AND operator from the one type predicate
 	// (filter.OpSuitsType, via the CLI model's derived operator set): a
 	// `_gte` on a Bool or JSON column — the first queryable field, when
@@ -490,8 +490,8 @@ function parseJSON(text) {
  * ApiError is thrown for non-2xx responses. The message is in the
  * request's locale; reason is its stable code (unique_taken,
  * unknown_filter), the thing to branch on. fields (when present) maps
- * snake_case column names to validation messages: the server keys
- * validation errors by DB column, not by the camelCase response casing.
+ * response wire keys (camelCase by default, including WireName overrides)
+ * to validation messages.
  * fieldReasons holds each message's code, in the same order.
  */
 export class ApiError extends Error {
@@ -924,7 +924,7 @@ const dtsRuntimePrelude = `export declare class ApiError extends Error {
   code: number;
   /** The error's stable code (unique_taken, unknown_filter); null on a non-JSON body. */
   reason: string | null;
-  /** Validation errors keyed by snake_case column name. */
+  /** Validation errors keyed by response wire key. */
   fields: Record<string, string[]> | null;
   /** The code of each message in fields, in the same order. */
   fieldReasons: Record<string, string[]> | null;
@@ -979,7 +979,7 @@ export interface BatchResult<T> {
   error?: string;
   /** The error's stable code. */
   reason?: string;
-  /** Validation errors keyed by snake_case column name. */
+  /** Validation errors keyed by response wire key. */
   fields?: Record<string, string[]>;
   /** The code of each message in fields, in the same order. */
   field_reasons?: Record<string, string[]>;

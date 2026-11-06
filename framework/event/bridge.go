@@ -88,7 +88,7 @@ func AttachFanout(bus *EventBus, f fanout.Fanout) (stop func(), err error) {
 		}
 		marshalErrLogged = true
 		slog.Default().Error(
-			"event: fanout bridge skipped non-marshalable event data; remote publish disabled for this bus until restart (logging once)",
+			"event: fanout bridge skipped non-marshalable event data; later events still publish (logging once; later marshal failures are silent)",
 			"topic", fanoutTopic, "type", eventType, "err", err,
 		)
 	}

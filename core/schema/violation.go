@@ -55,6 +55,7 @@ var (
 	ReasonInvalid          = i18n.Define("validation.invalid", "is invalid: {{detail}}")
 	ReasonUnsupportedType  = i18n.Define("validation.unsupported_type", "has unsupported field type {{type}}")
 	ReasonNotString        = i18n.Define("validation.not_string", "must be a string")
+	ReasonInvalidText      = i18n.Define("validation.invalid_text", "must be valid UTF-8 without NUL bytes")
 	ReasonMinLength        = i18n.Define("validation.min_length", "must be at least {{min}} characters")
 	ReasonMaxLength        = i18n.Define("validation.max_length", "must be at most {{max}} characters")
 	ReasonPatternInvalid   = i18n.Define("validation.pattern_invalid", "has an invalid pattern: {{detail}}")

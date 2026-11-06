@@ -17,7 +17,8 @@ import (
 const maxLogSize = 10 << 20
 
 // trimLog keeps one generation: when path is over maxLogSize it is
-// copied to path.1 and truncated in place. Copy-then-truncate, not
+// its last maxLogSize bytes are copied to path.1 and it is truncated in
+// place. Copy-then-truncate, not
 // rename, because launchd opened the file before the daemon ran and
 // keeps writing through that descriptor (O_APPEND lands at the new
 // end).
@@ -26,8 +27,13 @@ func trimLog(path string) error {
 	if err != nil || fi.Size() <= maxLogSize {
 		return nil
 	}
-	data, err := os.ReadFile(path)
+	file, err := os.Open(path)
 	if err != nil {
+		return err
+	}
+	defer file.Close()
+	data := make([]byte, maxLogSize)
+	if _, err := io.ReadFull(io.NewSectionReader(file, fi.Size()-maxLogSize, maxLogSize), data); err != nil {
 		return err
 	}
 	if err := fileperm.WriteOwnerOnly(path+".1", data); err != nil {

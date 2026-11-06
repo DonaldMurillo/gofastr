@@ -196,7 +196,7 @@ func (b *Battery) moduleActions(ctx context.Context, m framework.ProcessModuleIn
 		label: i18nui.AdminRevoke.Text(ctx), variant: ui.ButtonDanger, small: true,
 		confirm: i18nui.AdminRevokeConfirm.Text(ctx, vars),
 		fields:  map[string]string{"module": m.Name},
-		body: []render.HTML{ui.TextField(ui.TextFieldConfig{
+		body: []render.HTML{ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 			Name: "grant", Label: i18nui.AdminCapability.Text(ctx), ID: "admin-grant-" + m.Name,
 			Placeholder: "resource:verb", Required: true,
 		})},

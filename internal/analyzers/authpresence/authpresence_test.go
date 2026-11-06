@@ -11,3 +11,7 @@ import (
 func TestAuthPresence(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), authpresence.Analyzer, "a", "lib")
 }
+
+func TestReviewClosureUses(t *testing.T) {
+	analysistest.Run(t, analysistest.TestData(), authpresence.Analyzer, "review")
+}

@@ -21,7 +21,7 @@ import (
 // as "name\x00description" lines so one helper serves both methods.
 func mcpCall(t *testing.T, app *App, body string) (text string, isError bool) {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	rec := httptest.NewRecorder()

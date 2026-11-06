@@ -117,6 +117,9 @@ and the CRUD event stream) caps concurrent signaling sockets per
 `Join.User` across every room. A principal's next socket past the
 cap displaces their oldest one, mirroring rtc's own
 replace-on-rejoin behaviour, and a peer's departure frees its seat.
+A displaced local socket does not announce a departure while another
+replica still holds that peer ID. If the surviving remote seat is newer,
+local observers receive its reconnect join instead.
 A negative value is refused at `New`.
 
 **A join with no user is refused by default.** When `Authorize` returns
@@ -321,10 +324,12 @@ channels, state}`. The room handle adds:
 **Reconnects.** The signaling WebSocket reconnects with a new
 generation, like every `ws` consumer. On the snapshot after a
 reconnect, peers that are gone close (`onPeerLeave`), peers still
-`connected` or `connecting` keep their peer connection (no
+`connected` or `connecting` with `stable` signaling keep their peer connection (no
 renegotiation storm), anything else is torn down and rebuilt with the
-tracks and channels re-added, and the remembered status is resent. The
-other side saw you leave and rejoin and rebuilt its connection, so its
+tracks and channels re-added, and the remembered status is resent.
+An unanswered renegotiation offer therefore cannot pin an impolite peer
+on a connection that would ignore the remote peer's replacement offer.
+The other side saw you leave and rejoin and rebuilt its connection, so its
 next offer restarts ICE and DTLS on your kept one; media carries on,
 but the old data channel objects close with the old transport, and the
 module recreates them on the live connection. A status a peer already

@@ -3,7 +3,10 @@ package crud
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -13,6 +16,219 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/internal/teststorage"
 )
+
+func TestImageChangeClearsDerivedColumns(t *testing.T) {
+	for _, method := range []string{"update", "upsert", "update-readonly", "upsert-readonly", "update-no-storage", "upsert-no-storage"} {
+		for _, replacement := range []any{"https://cdn.example.com/new.png", nil, clnKey} {
+			t.Run(method+"/"+fmt.Sprint(replacement), func(t *testing.T) {
+				ch, db := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "", []schema.Field{
+					{Name: "id", Type: schema.String},
+					{Name: "photo", Type: schema.Image},
+					{Name: "photo_variants", Type: schema.JSON, ReadOnly: strings.HasSuffix(method, "readonly")},
+					{Name: "photo_blurhash", Type: schema.String, ReadOnly: strings.HasSuffix(method, "readonly")},
+					{Name: "photo_placeholder", Type: schema.String, Hidden: strings.HasSuffix(method, "readonly")},
+				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT, photo_blurhash TEXT, photo_placeholder TEXT)`)
+				ch.Storage = teststorage.New(t, t.TempDir())
+				for _, key := range []string{clnKey, clnVariant} {
+					if err := ch.Storage.Save(context.Background(), key, strings.NewReader("x")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				seedRows(t, db, "cln", []map[string]any{{"id": "a", "photo": clnKey,
+					"photo_variants": `[{"storage_ref":"` + clnVariant + `"}]`, "photo_blurhash": "old-hash", "photo_placeholder": "old-placeholder"}})
+				body := map[string]any{"photo": replacement}
+				if strings.HasSuffix(method, "no-storage") {
+					ch.Storage = nil
+				}
+				var err error
+				if strings.HasPrefix(method, "update") {
+					_, err = ch.UpdateOne(context.Background(), "a", body)
+				} else {
+					body["id"] = "a"
+					_, err = ch.UpsertOne(context.Background(), body)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				var variants, blurhash, placeholder sql.NullString
+				if err := db.QueryRow(`SELECT photo_variants, photo_blurhash, photo_placeholder FROM cln WHERE id = 'a'`).Scan(&variants, &blurhash, &placeholder); err != nil {
+					t.Fatal(err)
+				}
+				unchanged := replacement == clnKey
+				if unchanged {
+					var decoded []struct {
+						StorageRef string `json:"storage_ref"`
+					}
+					if json.Unmarshal([]byte(variants.String), &decoded) != nil || len(decoded) != 1 || decoded[0].StorageRef != clnVariant || blurhash.String != "old-hash" || placeholder.String != "old-placeholder" {
+						t.Errorf("unchanged image lost derivatives: %v %v %v", variants, blurhash, placeholder)
+					}
+				} else if variants.Valid || blurhash.Valid || placeholder.Valid {
+					t.Errorf("changed image kept derivatives: %v %v %v", variants, blurhash, placeholder)
+				}
+				if ch.Storage != nil {
+					for _, key := range []string{clnKey, clnVariant} {
+						if exists := clnExists(t, ch, key); exists != unchanged {
+							t.Errorf("stored object %s exists=%v, want %v", key, exists, unchanged)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+type imageRaceExecutor struct {
+	DBExecutor
+	beforeWrite func()
+	writes      []string
+}
+
+func (executor *imageRaceExecutor) QueryRowContext(ctx context.Context, statement string, args ...any) *sql.Row {
+	if strings.HasPrefix(statement, "UPDATE cln SET") || strings.HasPrefix(statement, "INSERT INTO cln ") {
+		executor.writes = append(executor.writes, statement)
+		if executor.beforeWrite != nil {
+			callback := executor.beforeWrite
+			executor.beforeWrite = nil
+			callback()
+		}
+	}
+	return executor.DBExecutor.QueryRowContext(ctx, statement, args...)
+}
+
+func TestImageSourceGuardsUsePortableSQL(t *testing.T) {
+	for _, method := range []string{"update", "upsert"} {
+		for _, initial := range []any{nil, "https://cdn.example.com/old.png"} {
+			t.Run(method+"/"+fmt.Sprint(initial), func(t *testing.T) {
+				ch, database := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "", []schema.Field{
+					{Name: "id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "banner", Type: schema.Image},
+					{Name: "photo_variants", Type: schema.JSON}, {Name: "banner_variants", Type: schema.JSON},
+				}), `CREATE TABLE cln (id TEXT PRIMARY KEY, photo TEXT, banner TEXT, photo_variants TEXT, banner_variants TEXT)`)
+				banner := any("https://cdn.example.com/old-banner.png")
+				if initial != nil {
+					banner = nil
+				}
+				seedRows(t, database, "cln", []map[string]any{{"id": "a", "photo": initial, "banner": banner,
+					"photo_variants": `[{"storage_ref":"old-photo"}]`, "banner_variants": `[{"storage_ref":"old-banner"}]`}})
+				executor := &imageRaceExecutor{DBExecutor: database}
+				ch.DB = executor
+				body := map[string]any{"photo": "https://cdn.example.com/new-photo.png", "banner": "https://cdn.example.com/new-banner.png"}
+				var row map[string]any
+				var err error
+				if method == "update" {
+					row, err = ch.UpdateOne(context.Background(), "a", body)
+				} else {
+					body["id"] = "a"
+					row, err = ch.UpsertOne(context.Background(), body)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if row["photo"] != body["photo"] || row["banner"] != body["banner"] || row["photo_variants"] != nil || row["banner_variants"] != nil {
+					t.Errorf("image guards did not preserve separate bind values or clear derivatives: %v", row)
+				}
+				if len(executor.writes) != 1 {
+					t.Fatalf("captured %d writes, want 1", len(executor.writes))
+				}
+				if statement := executor.writes[0]; strings.Contains(statement, "IS NOT DISTINCT FROM") || !strings.Contains(statement, " IS NULL") {
+					t.Errorf("source guard requires SQLite 3.39 instead of portable null-safe equality: %s", statement)
+				}
+			})
+		}
+	}
+}
+
+func TestImageDerivedSourceRaceRefused(t *testing.T) {
+	installSecurityOwnerExtractor(t)
+	ctx := upsertSecurityContext("alice", "")
+	for _, method := range []string{"update", "upsert", "upsert-foreign", "upsert-deleted"} {
+		for _, initial := range []any{clnKey, nil} {
+			t.Run(method+"/"+fmt.Sprint(initial), func(t *testing.T) {
+				ch, database := setupSecurityTestHandler(t, makeEntityConfig("cln", "cln", "owner_id", []schema.Field{
+					{Name: "id", Type: schema.String}, {Name: "owner_id", Type: schema.String}, {Name: "photo", Type: schema.Image}, {Name: "photo_variants", Type: schema.JSON},
+				}, func(config *entity.EntityConfig) { config.Scope.SoftDelete = true }), `CREATE TABLE cln (id TEXT PRIMARY KEY, owner_id TEXT, photo TEXT, photo_variants TEXT, deleted_at TEXT)`)
+				seedRows(t, database, "cln", []map[string]any{{"id": "a", "owner_id": "alice", "photo": initial, "photo_variants": `[{"storage_ref":"old"}]`}})
+				ch.DB = &imageRaceExecutor{DBExecutor: database, beforeWrite: func() {
+					if _, err := database.Exec(`UPDATE cln SET photo = 'https://cdn.example.com/y.png', photo_variants = '[{"storage_ref":"y"}]' WHERE id = 'a'`); err != nil {
+						t.Fatal(err)
+					}
+					if method == "upsert-foreign" {
+						if _, err := database.Exec(`UPDATE cln SET owner_id = 'bob' WHERE id = 'a'`); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if method == "upsert-deleted" {
+						if _, err := database.Exec(`UPDATE cln SET deleted_at = '2026-11-04' WHERE id = 'a'`); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}}
+				var err error
+				if method == "update" {
+					_, err = ch.UpdateOne(ctx, "a", map[string]any{"photo": initial})
+				} else {
+					_, err = ch.UpsertOne(ctx, map[string]any{"id": "a", "photo": initial})
+				}
+				if err == nil {
+					t.Error("stale image update succeeded after its source changed")
+				}
+				switch method {
+				case "upsert":
+					if refusal := crudRefusal(ctx, err); refusal.code != http.StatusConflict || errors.Is(err, errUpsertForeignRow) {
+						t.Errorf("owned stale-source refusal = %v (HTTP %d), want a conflict, not a foreign-row error", err, refusal.code)
+					}
+				case "upsert-foreign":
+					if !errors.Is(err, errUpsertForeignRow) {
+						t.Errorf("ownership race = %v, want foreign-row refusal", err)
+					}
+				case "upsert-deleted":
+					if !errors.Is(err, errSoftDeletedResurrection) {
+						t.Errorf("deletion race = %v, want soft-delete refusal", err)
+					}
+				}
+				var photo, variants string
+				if err := database.QueryRow(`SELECT photo, photo_variants FROM cln WHERE id = 'a'`).Scan(&photo, &variants); err != nil {
+					t.Fatal(err)
+				}
+				if photo != "https://cdn.example.com/y.png" || variants != `[{"storage_ref":"y"}]` {
+					t.Errorf("stale write mixed image and derivatives: %q %q", photo, variants)
+				}
+			})
+		}
+	}
+}
+
+func TestImageDerivativesKeepNewValues(t *testing.T) {
+	for _, method := range []string{"update", "upsert"} {
+		t.Run(method, func(t *testing.T) {
+			ch, database := setupSecurityTestHandler(t, makeEntityConfig("photos", "photos", "", []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "photo", Type: schema.Image},
+				{Name: "photo_variants", Type: schema.JSON},
+				{Name: "photo_blurhash", Type: schema.String},
+				{Name: "photo_placeholder", Type: schema.String},
+			}), `CREATE TABLE photos (id TEXT PRIMARY KEY, photo TEXT, photo_variants TEXT, photo_blurhash TEXT, photo_placeholder TEXT)`)
+			seedRows(t, database, "photos", []map[string]any{{"id": "a", "photo": "https://cdn.example.com/old.png", "photo_placeholder": "old"}})
+			body := map[string]any{"photo": "https://cdn.example.com/new.png", "photo_variants": `[]`, "photo_blurhash": "new-hash"}
+			var err error
+			if method == "update" {
+				_, err = ch.UpdateOne(context.Background(), "a", body)
+			} else {
+				body["id"] = "a"
+				_, err = ch.UpsertOne(context.Background(), body)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			var variants, blurhash, placeholder sql.NullString
+			if err := database.QueryRow(`SELECT photo_variants, photo_blurhash, photo_placeholder FROM photos WHERE id = 'a'`).Scan(&variants, &blurhash, &placeholder); err != nil {
+				t.Fatal(err)
+			}
+			if variants.String != "[]" || blurhash.String != "new-hash" || placeholder.Valid {
+				t.Fatalf("replacement metadata: %v %v %v", variants, blurhash, placeholder)
+			}
+		})
+	}
+}
 
 // Deleting or purging a record, or replacing its file, left the stored
 // object in place and still served at /uploads/<key> to anyone holding

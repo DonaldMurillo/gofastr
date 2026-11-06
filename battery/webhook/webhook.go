@@ -164,7 +164,8 @@ type Delivery struct {
 	unclaimedAttempt bool
 }
 
-// Store is the persistence interface.
+// Store is the persistence interface. A pending delivery with a zero
+// NextAttemptAt is immediately due, including after UpdateDelivery.
 type Store interface {
 	AddSubscriber(ctx context.Context, s Subscriber) error
 	GetSubscriber(ctx context.Context, id string) (*Subscriber, error)
@@ -648,7 +649,7 @@ func (m *Manager) tick(ctx context.Context) {
 	// worker goroutine and the process with it.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: store panic in tick (due deliveries stay pending): %v", v)
+			m.logf("webhook: store panic in tick (due deliveries stay pending): %s", textsafe.Recovered(v))
 		}
 	}()
 	if ctx == nil {
@@ -735,7 +736,7 @@ func (m *Manager) releaseClaims(ctx context.Context, r claimReleaser, ds []Deliv
 	// panic leaves the rest leased until the lease expires.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: release of unstarted claims panicked (they are re-claimed when the lease expires): %v", v)
+			m.logf("webhook: release of unstarted claims panicked (they are re-claimed when the lease expires): %s", textsafe.Recovered(v))
 		}
 	}()
 	now := m.nowFn()
@@ -780,7 +781,7 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// error branches below already document.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %v", d.ID, v)
+			m.logf("webhook: delivery %s: attempt panicked (row stays pending → duplicate delivery): %s", d.ID, textsafe.Recovered(v))
 		}
 	}()
 	// d.Attempts counts this claim. Past the budget means earlier claims
@@ -788,8 +789,11 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// its lease expired, and this tick re-claimed the row): dead-letter
 	// it without sending. schedule only checks the budget after a failed
 	// send, so without this a MaxAttempts 1 delivery was sent once per
-	// crash. No request is made, so no attempt is counted.
+	// crash. No request is made, but processing the dead letter still
+	// counts as one failed delivery in the metrics.
 	if d.Attempts > m.opts.MaxAttempts {
+		m.deliveriesTotal.Add(1)
+		m.failuresTotal.Add(1)
 		d.Status = StatusDead
 		d.LastError = fmt.Sprintf("attempt budget exhausted: claimed %d times, max %d (a worker died between claim and settle)",
 			d.Attempts, m.opts.MaxAttempts)
@@ -1010,7 +1014,7 @@ func (m *Manager) saveDelivery(d Delivery) {
 	// configured Logger and the worker keeps running.
 	defer func() {
 		if v := recover(); v != nil {
-			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %v", d.ID, d.Status, v)
+			m.logf("webhook: delivery %s: persist %s state panicked (row may be stale → duplicate delivery): %s", d.ID, d.Status, textsafe.Recovered(v))
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), settleTimeout)

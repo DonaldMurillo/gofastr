@@ -72,6 +72,28 @@ func Idempotency(next http.Handler) http.Handler {
 	})
 }
 
+// A wrapper that reaches the dispatch through a helper returning the
+// writer interface: the helper's returned concrete type is still this
+// chain's wrapper.
+type hiddenWriter struct { // want `wrapwriter: hiddenWriter wraps http.ResponseWriter and intercepts Write/WriteHeader with no Unwrap`
+	w http.ResponseWriter
+}
+
+func (hw *hiddenWriter) Header() http.Header { return hw.w.Header() }
+func (hw *hiddenWriter) WriteHeader(code int) {
+	hw.w.WriteHeader(code)
+}
+func (hw *hiddenWriter) Write(p []byte) (int, error) { return hw.w.Write(p) } // want `wrapwriter: hiddenWriter forwards Write to the writer it wraps but declares no ReadFrom`
+
+func reveal(hw *hiddenWriter) http.ResponseWriter { return hw }
+
+func Hidden(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hw := &hiddenWriter{w: w}
+		next.ServeHTTP(reveal(hw), r)
+	})
+}
+
 // B16, reduced: the cache recorder buffers on purpose. Still reported:
 // buffering does not decide what happens to a stream.
 type responseRecorder struct { // want `wrapwriter: responseRecorder wraps`

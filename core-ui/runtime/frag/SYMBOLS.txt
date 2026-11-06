@@ -27,7 +27,6 @@ boot	2	_rpcFormFallback
 boot	2	_rpcUnavailable
 boot	2	_runMountActions
 boot	2	_scanForModules
-boot	2	_scheduleIdleModules
 boot	2	_warnModuleUnavailable
 boot	2	hydrate
 boot	2	hydrated
@@ -39,7 +38,6 @@ boot	4	G
 boot	4	action
 boot	4	cached
 boot	4	el
-boot	4	idleQueue
 boot	4	init
 boot	4	key
 boot	4	lm
@@ -49,7 +47,6 @@ boot	4	name
 boot	4	names
 boot	4	node
 boot	4	observeNode
-boot	4	rIC
 boot	4	replay
 boot	4	scope
 boot	4	scope
@@ -66,6 +63,7 @@ boot	6	form
 boot	6	form
 boot	6	id
 boot	6	lm
+boot	6	load
 boot	6	mode
 boot	6	msg
 boot	6	name
@@ -74,6 +72,7 @@ boot	6	names
 boot	6	node
 boot	6	o
 boot	6	reqs
+boot	6	role
 boot	6	script
 boot	6	sub
 boot	6	target
@@ -236,6 +235,7 @@ nav	2	_persistScroll
 nav	2	_plainLoadPage
 nav	2	_pushPub
 nav	2	_pushURL
+nav	2	_routeMatch
 nav	2	_routeSeg
 nav	2	_scrollStore
 nav	2	_scrollTimer
@@ -276,6 +276,7 @@ nav	2	swapAtSlot
 nav	2	swapShell
 nav	2	syncPageHead
 nav	4	G
+nav	4	G
 nav	4	G0
 nav	4	N
 nav	4	T
@@ -291,7 +292,6 @@ nav	4	clean
 nav	4	cur
 nav	4	d
 nav	4	data
-nav	4	de
 nav	4	dest
 nav	4	doc
 nav	4	dom
@@ -306,9 +306,7 @@ nav	4	href
 nav	4	id
 nav	4	id
 nav	4	ids
-nav	4	incoming
 nav	4	keys
-nav	4	lang
 nav	4	lang
 nav	4	link
 nav	4	m
@@ -316,6 +314,7 @@ nav	4	m
 nav	4	myEpoch
 nav	4	names
 nav	4	navHash
+nav	4	nodes
 nav	4	origin
 nav	4	out
 nav	4	p
@@ -325,7 +324,6 @@ nav	4	parts
 nav	4	path
 nav	4	prevPath
 nav	4	ps
-nav	4	r
 nav	4	r
 nav	4	r
 nav	4	set
@@ -354,7 +352,6 @@ nav	6	hdrs
 nav	6	html
 nav	6	layouts
 nav	6	notOk
-nav	6	oldest
 nav	6	origin
 nav	6	p
 nav	6	p
@@ -363,12 +360,14 @@ nav	6	pp
 nav	6	redirectTo
 nav	6	resp
 nav	6	rs
+nav	6	same
 nav	6	slot
 nav	6	swapKey
 nav	6	title
 nav	6	u
 nav	6	v
 nav	6	v
+nav	6	value
 nav	8	a
 nav	8	dest
 nav	8	el

@@ -41,7 +41,7 @@ type SchemaSnapshot struct {
 	// snapshots written by an older gofastr fall back to recreateTableSQL.
 	TableDDL map[string]string   `json:"table_ddl,omitempty"`
 	Indices  map[string][]string `json:"indices,omitempty"`
-	// PrimaryKeys holds each entity table's key columns in key order, so a
+	// PrimaryKeys holds each entity and generated pivot table's key columns in key order, so a
 	// later generation can see a key change. A snapshot written before it
 	// existed has none, and the first generation after records them.
 	PrimaryKeys map[string][]string `json:"primary_keys,omitempty"`
@@ -136,6 +136,10 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 				continue
 			}
 			snap.Tables[spec.Safe] = spec.Cols
+			if snap.PrimaryKeys == nil {
+				snap.PrimaryKeys = map[string][]string{}
+			}
+			snap.PrimaryKeys[spec.Safe] = []string{rel.LocalKey, rel.ForeignKeyTarget}
 			if snap.TableDDL == nil {
 				snap.TableDDL = map[string]string{}
 			}
@@ -196,6 +200,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		if err := checkIndexNames(ordered, all); err != nil {
 			return "", "", SchemaSnapshot{}, err
 		}
+		if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+			return "", "", SchemaSnapshot{}, err
+		}
 	}
 	prev = respellTables(prev, declaredTableNames(all), dialect)
 
@@ -225,8 +232,8 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 		return "", "", SchemaSnapshot{}, err
 	}
 
-	changes := append(routineDrops, viewDrops...)
-	changes = append(changes, viewRedrops...)
+	changes := append(routineDrops, viewRedrops...)
+	changes = append(changes, viewDrops...)
 	// The snapshot's column sets let a Postgres key change detach the
 	// foreign keys onto its table; it records no constraint names, so
 	// foreign keys themselves are not compared (fks stays nil). The keys a
@@ -417,6 +424,15 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	}
 	dropped = sortDroppedTables(dialect, dropped, prev.TableDDL)
 	for _, table := range dropped {
+		var kept []string
+		for _, referrer := range slices.Sorted(maps.Keys(recordedReferencesOnto(dialect, prev.TableDDL, table))) {
+			if declaredTables[tableKey(dialect, referrer)] {
+				kept = append(kept, referrer)
+			}
+		}
+		if len(kept) > 0 {
+			return "", "", SchemaSnapshot{}, fmt.Errorf("%s: cannot drop table while kept tables %s reference it; remove their foreign keys in a separate migration first", table, strings.Join(kept, ", "))
+		}
 		qtable, qerr := query.SafeIdent(table)
 		if qerr != nil {
 			return "", "", SchemaSnapshot{}, fmt.Errorf("generate: invalid table name %q: %w", table, qerr)
@@ -713,7 +729,11 @@ func RenderMigrationFile(version uint64, name, up, down string) string {
 // — same refusal as the SQL bodies, never a silent rewrite, because
 // rewriting a migration's Name changes its identity.
 func RenderMigrationFileChecked(version uint64, name, up, down string) (string, error) {
-	for label, sql := range map[string]string{"up": up, "down": down, "name": name} {
+	for _, entry := range []struct {
+		key string
+		val string
+	}{{"up", up}, {"down", down}, {"name", name}} {
+		label, sql := entry.key, entry.val
 		if containsDirectiveLine(sql) {
 			return "", fmt.Errorf("%w (in the %s section); a column DEFAULT or other literal spans a line starting with \"-- +migrate\"", ErrDirectiveInSQL, label)
 		}

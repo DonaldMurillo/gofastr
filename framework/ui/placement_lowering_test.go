@@ -64,6 +64,14 @@ func TestKitRootPlacementRulesAreLowered(t *testing.T) {
 
 // kitRootClasses is every class a kit component's top-level element
 // carries, across both of the marking gate's renders.
+// utilityRootClasses are shared utilities a root may wear without being
+// the class an owner places it by. The command palette and shortcut
+// sheet triggers are visually hidden shortcut links whose only kit
+// class is fui-visually-hidden; an owner places them through the
+// config's Class. Every kit rule naming the utility is a component
+// hiding its own text, not a placement rule aimed at the trigger.
+var utilityRootClasses = map[string]bool{"fui-visually-hidden": true}
+
 func kitRootClasses(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -75,6 +83,9 @@ func kitRootClasses(t *testing.T) map[string]string {
 			}
 			for _, n := range parseTagTree(string(html)) {
 				for _, cls := range strings.Fields(n.attrs["class"]) {
+					if utilityRootClasses[cls] {
+						continue
+					}
 					if _, seen := out[cls]; !seen {
 						out[cls] = c.name
 					}

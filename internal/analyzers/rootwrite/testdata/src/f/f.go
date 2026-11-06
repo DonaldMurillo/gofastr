@@ -71,10 +71,15 @@ func (c *cellar) decantLexical(ref string, payload []byte) error {
 	return f.Close()
 }
 
-// decantResolved is the unmutated core/upload Save: the same sanitized
-// join with both EvalSymlinks calls the mutation deleted — the storage
-// root and the destination's parent — back in place. Resolution on the
-// write's own chain, sanitizer and all.
+// decantResolved is the unmutated core/upload Save as of 1c3e4842c:
+// the same sanitized join with both EvalSymlinks calls the mutation
+// deleted — the storage root and the destination's parent — back in
+// place. Resolution on the write's own chain, sanitizer and all. The
+// 2026-11 ordering round exposed the one write the resolution did NOT
+// cover: the MkdirAll planted directories through a symlinked
+// component BEFORE either eval ran (detect-after-plant); the modern
+// site refuses before creating (c682f7462 moved it under os.Root), so
+// this spelling stays a positive on that one sink.
 func (c *cellar) decantResolved(ref string, payload []byte) error {
 	safe, err := filterRef(ref)
 	if err != nil {
@@ -86,7 +91,7 @@ func (c *cellar) decantResolved(ref string, payload []byte) error {
 		return err
 	}
 	dir := filepath.Dir(full)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil { // want `write under a root with lexical containment only`
 		return err
 	}
 	realVault, err := filepath.EvalSymlinks(absVault)
@@ -105,6 +110,30 @@ func (c *cellar) decantResolved(ref string, payload []byte) error {
 		return err
 	}
 	return nil
+}
+
+// decantOrdered is the ordering the 2026-11 round demands: resolve the
+// existing chain BEFORE creating anything under it, so a planted
+// symlink is refused before a directory can land outside the vault —
+// refuse-before-plant, the c682f7462 posture.
+func (c *cellar) decantOrdered(ref string, payload []byte) error {
+	safe, err := filterRef(ref)
+	if err != nil {
+		return err
+	}
+	absVault, err := filepath.Abs(c.vaultDir)
+	if err != nil {
+		return err
+	}
+	realVault, err := filepath.EvalSymlinks(absVault)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(realVault, filepath.Dir(safe))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, filepath.Base(safe)), payload, 0o600)
 }
 
 // decantViaRoot is the strongest fix posture on Go 1.27: os.OpenRoot
@@ -189,6 +218,18 @@ func overwriteChecked(spoolDir, id string, payload []byte) error {
 		return err
 	}
 	if fi != nil && fi.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symlink at target")
+	}
+	return os.WriteFile(p, payload, 0o600)
+}
+
+func overwriteVarChecked(spoolDir, id string, payload []byte) error {
+	p := filepath.Join(spoolDir, id)
+	var info, err = os.Lstat(p)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if info != nil && info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("symlink at target")
 	}
 	return os.WriteFile(p, payload, 0o600)

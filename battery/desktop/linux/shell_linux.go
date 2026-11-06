@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/gtk"
+	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/placement"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -450,9 +451,13 @@ func (s *linuxShell) createWindow(id string, spec desktop.WindowSpec) (*linuxWin
 	if spec.Style.AllSpaces {
 		call(gtk.Sym.GtkWindowStick, handle)
 	}
-	if spec.Frame != nil {
-		w.setFrameMain(*spec.Frame)
-	} else if spec.Style.X != nil && spec.Style.Y != nil {
+	frame := spec.Frame
+	if frame != nil {
+		frame = placement.Restore(frame, screenWorkAreas(handle), width, height)
+	}
+	if frame != nil {
+		w.setFrameMain(*frame)
+	} else if spec.Frame == nil && spec.Style.X != nil && spec.Style.Y != nil {
 		call(gtk.Sym.GtkWindowMove, handle, uintptr(*spec.Style.X), uintptr(*spec.Style.Y))
 	}
 	box := call(gtk.Sym.GtkBoxNew, 1 /* VERTICAL */, 0)
@@ -523,9 +528,6 @@ func readBoundedString(p uintptr, limit int) (string, bool) {
 func errStopped() error {
 	return &desktop.Error{Code: desktop.CodeCancelled, Message: "Linux desktop shell is not running"}
 }
-func errClosed() error {
-	return &desktop.Error{Code: desktop.CodeNotFound, Message: "window is closed"}
-}
 func (w *linuxWindow) withMain(fn func()) error {
 	var err error
 	if w.closed.Load() {
@@ -573,7 +575,7 @@ func (w *linuxWindow) Focus() error {
 	return w.withMain(func() { call(gtk.Sym.GtkWindowPresent, w.handle) })
 }
 func (w *linuxWindow) Close() error {
-	return w.withMain(func() { call(gtk.Sym.GtkWindowClose, w.handle) })
+	return closeNativeWindow(w.closed.Load, w.shell.Main, func() { call(gtk.Sym.GtkWindowClose, w.handle) })
 }
 func (w *linuxWindow) SetSidebarWidth(points int) error {
 	if points < 0 || points > desktop.MaxSidebarWidth {

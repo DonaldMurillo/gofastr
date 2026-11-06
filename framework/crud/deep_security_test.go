@@ -376,16 +376,8 @@ func TestCursor_FieldsNotInEntity(t *testing.T) {
 	t.Parallel()
 	// Create a cursor for a field that doesn't exist on the entity
 	cursor := pagination.EncodeCursor("nonexistent_column", "value")
-	decoded, err := decodeCursorAny(cursor, []string{"id"})
-	if err != nil {
-		t.Logf("NOTE: cursor for nonexistent field returned err=%v (some decoders reject it)", err)
-		return
-	}
-	// The cursor decoded, but the field "nonexistent_column" doesn't match
-	// the entity's cursor fields ["id"], so the query builder will either
-	// use the wrong field or the caller must validate.
-	if _, ok := decoded["nonexistent_column"]; ok {
-		t.Logf("NOTE: cursor decoded with field=%q — field validation must happen at query time, not decode time", "nonexistent_column")
+	if decoded, err := decodeCursorAny(cursor, []string{"id"}); err == nil {
+		t.Fatalf("foreign cursor field was accepted: %#v", decoded)
 	}
 }
 
@@ -648,7 +640,7 @@ func TestBatchCreate_MixedValidInvalid(t *testing.T) {
 // TestBatchCreate_DuplicateIDsInOneBatch verifies that duplicate IDs
 // within the same batch are handled (UUID auto-gen means this tests
 // that the system doesn't crash or insert fewer rows than expected).
-func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
+func TestBatchCreateAllocatesUniqueIDs(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ch, db := setupSecurityTestHandler(t, entity.EntityConfig{Name: "dup_items",
@@ -670,13 +662,17 @@ func TestBatchCreate_DuplicateIDsInOneBatch(t *testing.T) {
 	rr := httptest.NewRecorder()
 	ch.BatchCreate()(rr, req)
 
-	if rr.Code == http.StatusInternalServerError {
-		t.Errorf("SECURITY: [batch] duplicate content in batch returned 500. Attack: duplicate data causes unexpected error")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("batch returned %d, want 200: %s", rr.Code, rr.Body.String())
 	}
 	// With UUID auto-gen, both rows should succeed (different IDs, same title)
-	var count int
-	db.QueryRow("SELECT COUNT(*) FROM dup_items").Scan(&count)
-	t.Logf("NOTE: duplicate title batch → status=%d, rows=%d", rr.Code, count)
+	var count, distinct int
+	if err := db.QueryRow("SELECT COUNT(*), COUNT(DISTINCT id) FROM dup_items WHERE user_id = 'alice' AND title = 'dup'").Scan(&count, &distinct); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 || distinct != 2 {
+		t.Fatalf("duplicate-content batch stored %d rows and %d distinct IDs, want two of each", count, distinct)
+	}
 }
 
 // TestBatchUpdate_IDMismatch verifies that a batch update where items

@@ -106,7 +106,7 @@
     if (clearWired.has(el)) return;
     clearWired.add(el);
     el.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape' || e.isComposing || !el.value) return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !el.value) return;
       e.preventDefault();
       e.stopPropagation();
       el.value = '';
@@ -118,36 +118,41 @@
     if (enterWired.has(form)) return;
     enterWired.add(form);
     const isEnter = function (e) { return e.key === 'Enter' || e.code === 'Enter' || e.keyCode === 13; };
-    form.querySelectorAll('textarea').forEach(function (ta) {
-      ta.addEventListener('keydown', function (e) {
-        // Safari's composition-ending Enter has isComposing false and
-        // the IME's keyCode 229: it confirms the conversion, not the form.
-        if (!isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
-        e.preventDefault();
-        e.stopPropagation();
-        if (form.requestSubmit) form.requestSubmit();
-        else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      });
-      ta.addEventListener('keypress', function (e) {
-        if (!isEnter(e) || e.shiftKey) return;
-        e.preventDefault();
-        e.stopPropagation();
-      });
+    form.addEventListener('keydown', function (e) {
+      // Safari's composition-ending Enter has isComposing false and
+      // the IME's keyCode 229: it confirms the conversion, not the form.
+      if (!e.target.matches('textarea') || !isEnter(e) || e.shiftKey || e.isComposing || e.keyCode === 229) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (form.requestSubmit) form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+    form.addEventListener('keypress', function (e) {
+      if (!e.target.matches('textarea') || !isEnter(e) || e.shiftKey) return;
+      e.preventDefault();
+      e.stopPropagation();
     });
   }
 
   function wireValidity(form) {
-    if (validityWired.has(form)) return;
-    validityWired.add(form);
     const sync = function () {
       const disabled = !form.checkValidity();
-      form.querySelectorAll('button[type="submit"],input[type="submit"]').forEach(function (btn) { btn.disabled = disabled; });
+      document.querySelectorAll('button,input').forEach(function (btn) {
+        if (btn.form === form && (btn.type === 'submit' || btn.type === 'image') && (form.hasAttribute('data-cui-disable-when-invalid') || btn.hasAttribute('data-cui-disable-when-invalid'))) btn.disabled = disabled;
+      });
     };
-    form.addEventListener('input', sync);
-    form.addEventListener('change', sync);
+    if (validityWired.has(form)) { sync(); return; }
+    validityWired.add(form);
     form.addEventListener('reset', function () { requestAnimationFrame(sync); });
     Promise.resolve().then(sync);
   }
+
+  function syncValidity(event) {
+    const form = event.target.form;
+    if (form && validityWired.has(form)) wireValidity(form);
+  }
+  document.addEventListener('input', syncValidity);
+  document.addEventListener('change', syncValidity);
 
   // within: the scope itself when it matches, then its descendants. The
   // kernel hands the scanner each inserted node, and a node that IS the
@@ -168,6 +173,14 @@
     within(scope, '[data-cui-clear-on-esc]').forEach(wireClear);
     within(scope, 'form[data-cui-submit-on-enter]').forEach(wireEnter);
     within(scope, 'form[data-cui-disable-when-invalid]').forEach(wireValidity);
+    within(scope, 'button[data-cui-disable-when-invalid],input[data-cui-disable-when-invalid]').forEach(function (button) {
+      if (button.form) wireValidity(button.form);
+    });
+    // An unmarked field or submitter inserted into a wired form changes
+    // its validity or its set of submitters: resync that form now.
+    new Set(within(scope, 'button,input,select,textarea').map(function (el) { return el.form; })).forEach(function (form) {
+      if (form && validityWired.has(form)) wireValidity(form);
+    });
   }
 
   scan(document);

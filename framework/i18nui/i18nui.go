@@ -151,6 +151,9 @@ var (
 	CommandPaletteSelect      = i18n.Define("ui.commandPalette.select", "Select")
 	CommandPaletteClose       = i18n.Define("ui.commandPalette.close", "Close")
 
+	DiffOld = i18n.Define("ui.diff.old", "Old")
+	DiffNew = i18n.Define("ui.diff.new", "New")
+
 	// Form extras
 	FormErrorsSummary      = i18n.Define("ui.form.errorsSummary", "Please fix the highlighted fields and try again.")
 	FormHasErrors          = i18n.Define("ui.form.hasErrors", "Form has errors")

@@ -149,12 +149,8 @@ func TestLink_ExtraAttrsEventHandler(t *testing.T) {
 		},
 	})
 	out := string(h)
-	// ExtraAttrs are passed through to buildAttrs → writeAttrs → Attr → Escape.
-	// The framework escapes attribute values but does NOT strip dangerous
-	// attribute names (onclick, onerror, etc.). Caller is responsible.
-	if strings.Contains(out, `onclick="alert(document.cookie)"`) {
-		t.Logf("NOTE: SECURITY FINDING — onclick rendered in output (attribute-escaped value but event handler name not stripped)")
-		t.Logf("NOTE: ExtraAttrs is an escape hatch — callers must not pass event handlers")
+	if strings.Contains(out, "onclick=") {
+		t.Fatalf("Link retained event handler: %s", out)
 	}
 }
 
@@ -166,14 +162,8 @@ func TestLink_HrefPathTraversal(t *testing.T) {
 	})
 	out := string(h)
 	href := extractAttr(out, "href")
-	if href == "" {
-		t.Fatal("SECURITY: [link-xss] href attribute missing from output")
-	}
-	// The framework doesn't sanitize path traversal in href: that's the
-	// server's job. But the attribute should be properly escaped.
-	if strings.Contains(out, `"../../../../etc/passwd"`) {
-		t.Logf("NOTE: path traversal in href is passed through (attribute-escaped but not path-sanitized)")
-		t.Logf("NOTE: server-side routing should resolve and reject traversal paths")
+	if href != "/safe/../../../../etc/passwd" {
+		t.Fatalf("Link changed same-origin relative path: %q", href)
 	}
 }
 
@@ -521,23 +511,6 @@ func TestForm_ErrorMessageXSS(t *testing.T) {
 	mustNotContain(t, h, `<script>alert("xss")</script>`)
 	mustContain(t, h, "&lt;script&gt;")
 	t.Logf("NOTE: error message with script tags was escaped")
-}
-
-func TestForm_CSRFTokenInjection(t *testing.T) {
-	t.Parallel()
-	// CSRF token is rendered via csrfHiddenInput which uses
-	// html/template.HTMLEscapeString. Test that special characters
-	// in a token-like value are escaped.
-	// We can't easily inject a context with a malicious token here,
-	// but we can verify the hidden input escaping behavior directly.
-	// The token value goes through template.HTMLEscapeString which
-	// escapes &, <, >, ", '.
-	token := `" onclick="alert(1)`
-	escaped := `" onclick=&#34;alert(1)`
-	if token == escaped {
-		t.Errorf("SECURITY: [form-csrf] CSRF token with quotes not escaped")
-	}
-	t.Logf("NOTE: CSRF token escaping confirmed — %q → %q", token, escaped)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

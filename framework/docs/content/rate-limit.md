@@ -122,7 +122,9 @@ replicas can't multiply the limit by N, supply a `Store`.
 `battery/auth.SQLRateLimitStore` is the reference implementation (SQLite or
 PostgreSQL); one store instance backs many limiters, with keys namespaced by
 `Config.Scope` so a login limiter and a checkout limiter sharing one store never
-collide:
+collide. A key longer than 256 bytes, or one that is not valid UTF-8 or holds a
+NUL byte (a client-sent `X-Api-Key` can be either), reaches the store as
+`sha256:<hex>`, so one odd header cannot read as a store outage:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/battery/auth"

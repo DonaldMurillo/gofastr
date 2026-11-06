@@ -131,7 +131,7 @@ func (s systemdUser) uninstall(b *Battery) error {
 	// unit and waits for it. A failure here is not "not installed": the
 	// unit may still be running, so it is returned and nothing is
 	// deleted.
-	if fileExists(path) {
+	if fileExists(path) { //gofastr:allow(rootread) the user's own systemd unit path, developer configuration like the rootwrite allowance above
 		if err := b.run("systemctl", "--user", "disable", "--now", s.unitName(b)); err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func (s systemdUser) installed(b *Battery) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return fileExists(path), nil
+	return fileExists(path), nil //gofastr:allow(rootread) the user's own systemd unit path, developer configuration like the rootwrite allowance above
 }
 
 func (s systemdUser) logs(b *Battery, n int, follow bool) error {

@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -176,8 +178,8 @@ func calleeFunc(pass *analysis.Pass, call *ast.CallExpr) *types.Func {
 }
 
 // checkPhraseParams reports a stringified number in a params map
-// literal handed straight to a phrase sink, or in any argument of a
-// helper that forwards to one.
+// literal handed straight to a phrase sink, in any argument of a
+// helper that forwards to one, or in a map hoisted into a local first.
 func checkPhraseParams(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
 	forwarded := false
 	if !phraseSink(pass, call) {
@@ -192,11 +194,8 @@ func checkPhraseParams(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
 				continue
 			}
 		}
-		lit, ok := ast.Unparen(arg).(*ast.CompositeLit)
+		lit, hoisted, ok := paramsMapArg(pass, arg)
 		if !ok {
-			continue
-		}
-		if _, isMap := pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map); !isMap {
 			continue
 		}
 		for _, e := range lit.Elts {
@@ -205,10 +204,138 @@ func checkPhraseParams(pass *analysis.Pass, call *ast.CallExpr, ui uiReporter) {
 				continue
 			}
 			if fn, ok := numberText(pass, kv.Value); ok {
-				ui.reportf(kv.Value, "%s turns a number into Go's digits before the phrase sees it: pass the number itself, which phrase params write in the reader's locale and read to pick the plural form", fn)
+				// The hoisted map reports at the sink: the digits may
+				// sit lines above the phrase that reads them.
+				at := kv.Value
+				if hoisted {
+					at = arg
+				}
+				ui.reportf(at, "%s turns a number into Go's digits before the phrase sees it: pass the number itself, which phrase params write in the reader's locale and read to pick the plural form", fn)
 			}
 		}
 	}
+}
+
+// paramsMapArg returns the params map literal an argument carries —
+// the literal itself, or the map a local was declared with when no
+// later assignment or index write changed it (params := map[string]
+// any{…}; phrase.Text(ctx, params)) — and whether it was hoisted.
+func paramsMapArg(pass *analysis.Pass, arg ast.Expr) (lit *ast.CompositeLit, hoisted, ok bool) {
+	e := ast.Unparen(arg)
+	if l, isLit := e.(*ast.CompositeLit); isLit {
+		if _, isMap := pass.TypesInfo.TypeOf(l).Underlying().(*types.Map); isMap {
+			return l, false, true
+		}
+		return nil, false, false
+	}
+	id, isIdent := e.(*ast.Ident)
+	if !isIdent {
+		return nil, false, false
+	}
+	v, isVar := pass.TypesInfo.Uses[id].(*types.Var)
+	if !isVar {
+		return nil, false, false
+	}
+	if l := localParams(pass)[v]; l != nil {
+		return l, true, true
+	}
+	return nil, false, false
+}
+
+// localParamsCache holds each pass's localParams map while it runs.
+var localParamsCache sync.Map // *analysis.Pass -> map[*types.Var]*ast.CompositeLit
+
+// localParams maps each function-scoped variable declared with a map
+// literal (params := map[string]any{…}) onto that literal, when no
+// other assignment, and no index write into it, may have changed what
+// it holds.
+func localParams(pass *analysis.Pass) map[*types.Var]*ast.CompositeLit {
+	if m, ok := localParamsCache.Load(pass); ok {
+		return m.(map[*types.Var]*ast.CompositeLit)
+	}
+	out := map[*types.Var]*ast.CompositeLit{}
+	poisoned := map[*types.Var]bool{}
+	localVar := func(e ast.Expr) *types.Var {
+		id, ok := ast.Unparen(e).(*ast.Ident)
+		if !ok {
+			return nil
+		}
+		v, _ := pass.TypesInfo.ObjectOf(id).(*types.Var)
+		if v == nil || v.IsField() || v.Parent() == nil || v.Parent() == pass.Pkg.Scope() {
+			return nil
+		}
+		return v
+	}
+	record := func(lhs, rhs ast.Expr) {
+		v := localVar(lhs)
+		if v == nil {
+			return
+		}
+		lit, isMap := ast.Unparen(rhs).(*ast.CompositeLit)
+		if isMap {
+			_, isMap = pass.TypesInfo.TypeOf(lit).Underlying().(*types.Map)
+		}
+		// Only a local bound to a map literal once and never touched
+		// again is followed: any later binding may be the live one at
+		// the sink.
+		if !isMap || out[v] != nil || poisoned[v] {
+			poisoned[v] = true
+			return
+		}
+		out[v] = lit
+	}
+	poisonIndex := func(lhs ast.Expr) {
+		idx, ok := lhs.(*ast.IndexExpr)
+		if !ok {
+			return
+		}
+		if v := localVar(idx.X); v != nil {
+			poisoned[v] = true
+		}
+	}
+	for _, f := range pass.Files {
+		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch st := n.(type) {
+			case *ast.AssignStmt:
+				for _, l := range st.Lhs {
+					poisonIndex(l)
+				}
+				if len(st.Lhs) != len(st.Rhs) {
+					return true
+				}
+				if st.Tok != token.ASSIGN && st.Tok != token.DEFINE {
+					return true // an op-assign keeps what the variable holds
+				}
+				for i, l := range st.Lhs {
+					record(l, st.Rhs[i])
+				}
+			case *ast.GenDecl:
+				if st.Tok != token.VAR {
+					return true
+				}
+				for _, spec := range st.Specs {
+					vs, ok := spec.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, name := range vs.Names {
+						if i < len(vs.Values) {
+							record(name, vs.Values[i])
+						}
+					}
+				}
+			}
+			return true
+		})
+	}
+	for v := range poisoned {
+		delete(out, v)
+	}
+	localParamsCache.Store(pass, out)
+	return out
 }
 
 // reportNumberText reports number text written into the page, at a

@@ -83,11 +83,18 @@
     // Mark trigger as the currently-active source.
     trigger.classList.add('is-popover-trigger-active');
     trigger.setAttribute('data-cui-popover-trigger', name);
+    widget.anchorTrigger = trigger;
 
     const place = () => {
+      if (!Object.prototype.hasOwnProperty.call(NS._widgets, name)
+        || NS._widgets[name] !== widget || widget.anchorTrigger !== trigger) return false;
       const gap = 10; // gap >= arrow size so the pointer fits cleanly
       const margin = 8;
       const tr = trigger.getBoundingClientRect();
+      if (!trigger.isConnected || (!tr.width && !tr.height && !tr.x && !tr.y)) {
+        NS.closeWidget(name);
+        return false;
+      }
       // Set the anchored marker BEFORE measuring so the chrome's
       // border + shadow + max-inline-size are reflected in the
       // bounding rect, without this the measurement is from the
@@ -152,7 +159,7 @@
         root.style.setProperty('--ui-popover-arrow-y', Math.max(12, Math.min(arrowY, wr.height - 12)) + 'px');
       }
     };
-    place();
+    if (place() === false) return;
     // Reposition on viewport resize AND on scroll, the popover is
     // position:fixed, so without these the trigger moves under the
     // page scroll while the popover stays glued to the viewport.
@@ -176,7 +183,6 @@
     window.addEventListener('scroll', onScroll, { passive: true, capture: true });
     widget.anchorResize = onResize;
     widget.anchorScroll = onScroll;
-    widget.anchorTrigger = trigger;
   };
 
   // Dismissal (Escape or an outside click) returns focus to the
@@ -187,7 +193,14 @@
   // single announce point and fires before teardown, so this covers
   // each dismissal without growing the widgets module.
   document.addEventListener('fui:widget-close', (e) => {
-    const st = NS._widgets && NS._widgets[(e.detail || {}).name];
+    const closedName = (e.detail || {}).name;
+    // Own-property read: fui:widget-close is a DOM CustomEvent, so
+    // e.detail is page-script data and a name like "constructor" would
+    // resolve through the prototype chain and pass the truthiness gate.
+    const st = NS._widgets
+      && Object.prototype.hasOwnProperty.call(NS._widgets, closedName)
+        ? NS._widgets[closedName]
+        : undefined;
     const at = st && st.anchorTrigger;
     if (!at) return;
     const w = st.root;

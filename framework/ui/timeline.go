@@ -41,6 +41,11 @@ type TimelineEvent struct {
 	// or actor: "2h ago" / "by dom"), rendered in the header row
 	// after the title.
 	Meta string
+	// When is the human-readable timestamp, independent of Meta.
+	When string
+	// Machine is its RFC 3339 timestamp. With When it renders <time
+	// datetime>; When alone renders a span. An invalid pair panics.
+	Machine string
 	// Body is the optional supporting prose / nested HTML.
 	Body render.HTML
 	// Variant tints the dot on the rail. Defaults to neutral.
@@ -73,6 +78,7 @@ var timelineClasses = headless.Classes{
 	headless.PartTimelineMark: "fui-timeline__dot",
 	headless.PartTimelineHead: "fui-timeline__header",
 	headless.PartTimelineMeta: "fui-timeline__meta",
+	headless.PartTimelineTime: "fui-timeline__meta",
 	headless.PartTimelineBody: "fui-timeline__content",
 	headless.PartTitle:        "fui-timeline__title",
 	headless.PartDesc:         "fui-timeline__detail",
@@ -114,12 +120,14 @@ func Timeline(cfg TimelineConfig) render.HTML {
 			icon = Icon(e.Icon, IconConfig{})
 		}
 		events[i] = headless.Event{
-			Title: e.Title,
-			Lead:  e.Lead,
-			Meta:  e.Meta,
-			Body:  body,
-			Tone:  string(e.Variant),
-			Icon:  icon,
+			Title:   e.Title,
+			Lead:    e.Lead,
+			Meta:    e.Meta,
+			When:    e.When,
+			Machine: e.Machine,
+			Body:    body,
+			Tone:    string(e.Variant),
+			Icon:    icon,
 		}
 	}
 

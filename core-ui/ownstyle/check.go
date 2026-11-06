@@ -365,6 +365,9 @@ func preludeNamesCustomMedia(prel []Token, name string) bool {
 // named --reduced-motion; inKF whether an enclosing @keyframes holds
 // the rule (keyframe selectors are not style-rule selectors).
 func (c *checker) walk(r *Rule, inRM, inKF bool) {
+	if err := containerMediaError(r); err != nil {
+		c.report(Diagnostic{Rule: RuleParseError, Severity: SeverityError, Line: r.Pos.Line, Col: r.Pos.Col, Message: err.Error()})
+	}
 	switch {
 	case r.At && r.Name == "media":
 		c.checkMediaWidths(r)
@@ -403,6 +406,23 @@ func (c *checker) checkMediaWidths(r *Rule) {
 		case "min-width", "max-width", "width":
 		default:
 			continue
+		}
+		// Reversed range syntax: 768px <= min-width. The value stands
+		// before the feature name, across the comparison operator run.
+		k := i - 1
+		for k >= 0 && isComparisonDelim(prel[k]) {
+			k--
+		}
+		if k < i-1 && k >= 0 {
+			if v := prel[k]; v.Type == TokenDimension || v.Type == TokenNumber || v.Type == TokenPercentage {
+				c.report(Diagnostic{
+					Rule:     RuleRawMediaWidth,
+					Severity: SeverityError,
+					Line:     v.Line,
+					Col:      v.Col,
+					Message:  c.rawWidthMessage(v.Text),
+				})
+			}
 		}
 		// The feature's value: after ':' or a comparison operator.
 		j := i + 1
@@ -506,7 +526,12 @@ func (c *checker) rawWidthMessage(raw string) string {
 // checkSelector runs GOFASTR1810 (kit class / runtime attribute) and,
 // for the app sheet, GOFASTR1819 (class-only subjects).
 func (c *checker) checkSelector(r *Rule) {
-	prel := r.Prel
+	var prel []Token
+	for _, tok := range r.Prel {
+		if tok.Type != TokenComment {
+			prel = append(prel, tok)
+		}
+	}
 	for i := 0; i < len(prel); i++ {
 		t := prel[i]
 		switch {
@@ -599,7 +624,8 @@ func splitSelectors(prel []Token) [][]Token {
 }
 
 // splitCompounds splits one selector into compound selectors at
-// descendant whitespace and the > + ~ combinators.
+// descendant whitespace and the > + ~ combinators. A comment alone
+// separates tokens without separating compounds.
 func splitCompounds(sel []Token) [][]Token {
 	var out [][]Token
 	var cur []Token
@@ -742,8 +768,8 @@ func (c *checker) checkVarRefs(d *Decl) {
 		// one other way out is a gofastr:allow(GOFASTR1806) marker with
 		// its reason.
 		if !c.declaredProps[name] &&
-			//gofastr:allow(layerprefix) the owned-style checker names the kit class prefix to tell a kit sheet from an app sheet
-			!strings.HasPrefix(name, "ui-") && !strings.HasPrefix(name, "fui-") {
+			//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt runtime-owned properties
+			!runtimeOwnedVarPrefix(name) {
 			if _, known := slices.BinarySearch(c.known, name); !known {
 				msg := fmt.Sprintf("--%s is not a theme token", name)
 				if fix, ok := closestToken(name, c.known); ok {
@@ -764,6 +790,16 @@ func (c *checker) checkVarRefs(d *Decl) {
 			c.checkFallbackDrift(d, t, name, fallback[0].Text)
 		}
 	}
+}
+
+// runtimeOwnedVarPrefix reports whether a custom-property name belongs
+// to a layer that writes it at runtime (the ui kit's fui-* knobs, the
+// kernel's cui-*, headless's hui-*): the theming doc exempts all four
+// prefixes beside the theme's own tokens.
+func runtimeOwnedVarPrefix(name string) bool {
+	//gofastr:allow(layerprefix) the owned-style checker names the layer prefixes to exempt them
+	return strings.HasPrefix(name, "ui-") || strings.HasPrefix(name, "fui-") ||
+		strings.HasPrefix(name, "cui-") || strings.HasPrefix(name, "hui-")
 }
 
 // checkFallbackDrift is GOFASTR1808.

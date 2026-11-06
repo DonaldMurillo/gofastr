@@ -115,7 +115,7 @@ type assistEvent struct {
 type signalMessage struct {
 	From role            `json:"from"`
 	To   role            `json:"to"`
-	Type string          `json:"type"` // offer | answer | ice
+	Type string          `json:"type"` // offer | answer | ice | ready
 	Data json.RawMessage `json:"data"`
 }
 
@@ -709,6 +709,10 @@ func (a *assistApp) relaySignal(s *assistSession, from role, msg signalMessage) 
 	}
 	switch msg.Type {
 	case "offer", "answer", "ice":
+	case "ready":
+		if from != roleSupport {
+			return false
+		}
 	default:
 		return false
 	}

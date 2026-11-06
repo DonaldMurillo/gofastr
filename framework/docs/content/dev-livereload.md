@@ -47,7 +47,9 @@ When enabled:
     and remembers the build ID the first `ready` event carries. A
     `ready` with a different ID (the reconnect after a rebuild, or
     `gofastr dev`'s hold page below) calls `location.reload()`; a
-    reconnect to the same process does not.
+    reconnect to the same process does not: the existing document and
+    its in-memory page state survive. A transient connection interruption
+    therefore leaves unsaved form edits and client-only state intact.
 - `uihost.New()` auto-appends `/__livereload.js` to the `extraScripts`
   list so every rendered page links to the client script before
   `</body>`. CSP-safe: it's a `<script src="...">`, no inline JS.

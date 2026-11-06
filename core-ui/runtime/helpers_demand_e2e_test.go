@@ -1,0 +1,117 @@
+package runtime
+
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+)
+
+func TestHelpersLoadWithoutWidgets(t *testing.T) {
+	cases := map[string]string{
+		"fill":                   `<input id="target"><button data-cui-fill-input="#target">Fill</button>`,
+		"elapsed":                `<span data-cui-tick-elapsed="1"></span>`,
+		"persist":                `<textarea data-cui-persist-storage="probe"></textarea>`,
+		"count":                  `<input id="source"><span data-cui-charcount-source="#source"></span>`,
+		"clear":                  `<textarea data-cui-clear-on-esc></textarea>`,
+		"enter":                  `<form data-cui-submit-on-enter><textarea></textarea></form>`,
+		"invalid":                `<form data-cui-disable-when-invalid><input required><button>Save</button></form>`,
+		"invalid-button":         `<form><input required><button data-cui-disable-when-invalid>Save</button><button type="submit">Other</button></form>`,
+		"invalid-external":       `<form id="save"><input required></form><button form="save" data-cui-disable-when-invalid>Save</button>`,
+		"invalid-image":          `<form data-cui-disable-when-invalid><input required><input type="image" alt="Save"></form>`,
+		"invalid-image-marker":   `<form><input required><input type="image" data-cui-disable-when-invalid alt="Save"></form>`,
+		"invalid-external-image": `<form id="save" data-cui-disable-when-invalid><input required></form><input type="image" form="save" alt="Save">`,
+		"invalid-external-field": `<form id="save" data-cui-disable-when-invalid><button>Save</button></form><input form="save" required>`,
+	}
+	for name, markup := range cases {
+		for _, inserted := range []bool{false, true} {
+			mode := "boot"
+			body := markup
+			if inserted {
+				mode, body = "insert", ""
+			}
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				if !slices.Contains(NeededModules(markup), "widgethelpers") {
+					t.Error("server preloads omit the helper module")
+				}
+				url := widgetHelpersServer(t, body)
+				ctx := chromedptest.Context(t)
+				if err := chromedp.Run(ctx,
+					chromedp.Navigate(url),
+					chromedp.Poll(`typeof window.__gofastr?.loadModule === 'function'`, nil),
+				); err != nil {
+					t.Fatal(err)
+				}
+				if inserted {
+					var loaded bool
+					encoded, _ := json.Marshal(markup)
+					if err := chromedp.Run(ctx,
+						chromedp.Evaluate(`!!window.__gofastr.loadedModules?.widgethelpers`, &loaded),
+						chromedp.Evaluate(`document.querySelector('main').insertAdjacentHTML('beforeend', `+string(encoded)+`)`, nil),
+					); err != nil {
+						t.Fatal(err)
+					}
+					if loaded {
+						t.Fatal("helpers loaded without any helper marker")
+					}
+				}
+				if err := chromedp.Run(ctx, chromedp.Poll(`!!window.__gofastr.loadedModules?.widgethelpers`, nil,
+					chromedp.WithPollingTimeout(2*time.Second))); err != nil {
+					t.Fatalf("%s did not demand-load helpers: %v", markup, err)
+				}
+				if strings.HasPrefix(name, "invalid") {
+					if name == "invalid-button" {
+						var disabled bool
+						if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelectorAll('button')[1].disabled`, &disabled)); err != nil || disabled {
+							t.Fatalf("unmarked sibling disabled=%v, err=%v", disabled, err)
+						}
+					}
+					if err := chromedp.Run(ctx,
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = 'valid'; field.dispatchEvent(new Event('input', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`!document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = ''; field.dispatchEvent(new Event('change', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`(() => { const field = document.querySelector('input:not([type="image"])'); field.value = 'valid'; field.dispatchEvent(new Event('change', {bubbles:true})); })()`, nil),
+						chromedp.Poll(`!document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+						chromedp.Evaluate(`document.querySelector('form').reset()`, nil),
+						chromedp.Poll(`document.querySelector('button,input[type="image"]').disabled`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+					); err != nil {
+						t.Fatalf("invalid-state helper did not follow form validity: %v", err)
+					}
+				}
+			})
+		}
+	}
+}
+
+// An unmarked control inserted into a form the helper already wired
+// takes part at once: a submitter starts disabled under an invalid
+// form, and a required field disables a valid form's submitters,
+// without waiting for the next input event.
+func TestValidityTracksInsertedControls(t *testing.T) {
+	cases := map[string]struct{ body, insert, want string }{
+		"submitter":          {`<form id="vf" data-cui-disable-when-invalid><input required><button>Save</button></form>`, `document.getElementById('vf').insertAdjacentHTML('beforeend', '<button id="late">Again</button>')`, `document.getElementById('late').disabled`},
+		"external-submitter": {`<form id="vf" data-cui-disable-when-invalid><input required><button>Save</button></form>`, `document.querySelector('main').insertAdjacentHTML('beforeend', '<input id="late" type="image" form="vf" alt="Again">')`, `document.getElementById('late').disabled`},
+		"field":              {`<form id="vf" data-cui-disable-when-invalid><input value="ok"><button id="late">Save</button></form>`, `document.getElementById('vf').insertAdjacentHTML('afterbegin', '<p><input required></p>')`, `document.getElementById('late').disabled`},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := chromedptest.Context(t)
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(widgetHelpersServer(t, tc.body)),
+				chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil, chromedp.WithPollingTimeout(2*time.Second)),
+				chromedp.Sleep(100*time.Millisecond),
+				chromedp.Evaluate(tc.insert, nil),
+				chromedp.Poll(tc.want, nil, chromedp.WithPollingTimeout(2*time.Second)),
+			); err != nil {
+				t.Fatalf("inserted control did not follow form validity: %v", err)
+			}
+		})
+	}
+}

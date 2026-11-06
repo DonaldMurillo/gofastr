@@ -38,6 +38,19 @@ func listFire(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"tokens": toks}) // want `2xx response for a resolved principal`
 }
 
+// aliasFire is listFire through a local copy of the writer: w2 := w
+// is the same ResponseWriter, and the encode through it is the same
+// per-caller body.
+func aliasFire(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireUser(w, r); !ok {
+		return
+	}
+	toks := listTokens(r)
+	w2 := w
+	w2.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w2).Encode(map[string]any{"tokens": toks}) // want `2xx response for a resolved principal`
+}
+
 func listTokens(r *http.Request) []string { return []string{"t1"} }
 
 func requireUser(w http.ResponseWriter, r *http.Request) (string, bool) {

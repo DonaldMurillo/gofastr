@@ -9,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/node"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // RenderNode walks a node.Node tree and emits HTML by dispatching to
@@ -270,19 +271,13 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: attrs,
 		})
 	case "link", "a":
-		text := propString(props, "text")
-		if text == "" && len(children) > 0 {
-			// Wrap children HTML, html.Link only accepts plain text;
-			// fall through to LinkHTML for HTML children.
-			return html.LinkHTML(html.LinkHTMLConfig{
-				Href:    propString(props, "href"),
-				Content: render.Join(children...),
-				ID:      propString(props, "id"), Class: propString(props, "class"),
-				ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
-			})
+		content := render.Join(withTextProp(props, children)...)
+		if propString(props, "href") == "" || (strings.TrimSpace(string(content)) == "" &&
+			strings.TrimSpace(propString(props, "aria-label")) == "" && strings.TrimSpace(propString(props, "aria-labelledby")) == "") {
+			return html.Span(textConfig(props), withTextProp(props, children)...)
 		}
-		return html.Link(html.LinkConfig{
-			Href: propString(props, "href"), Text: text,
+		return html.LinkHTML(html.LinkHTMLConfig{
+			Href: propString(props, "href"), Content: content,
 			ID: propString(props, "id"), Class: propString(props, "class"),
 			ExtraAttrs: extraAttrs(props, "id", "class", "href", "text"),
 		})
@@ -306,7 +301,7 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 	case "label":
 		text := propString(props, "text")
 		body := children
-		if text != "" && len(children) == 0 {
+		if text != "" && len(children) == 0 && propString(props, "for") != "" {
 			return html.Label(html.LabelConfig{
 				For: propString(props, "for"), Text: text,
 				ID: propString(props, "id"), Class: propString(props, "class"),
@@ -385,6 +380,9 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			ExtraAttrs: extraAttrs(props, "id", "class", "name", "value"),
 		})
 	case "fieldset":
+		if propString(props, "legend") == "" {
+			return render.Tag("fieldset", attrsFromProps(props, "id", "class"), children...)
+		}
 		return html.FieldSet(html.FieldSetConfig{
 			Legend: propString(props, "legend"),
 			ID:     propString(props, "id"), Class: propString(props, "class"),
@@ -393,6 +391,9 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 
 	// --- media ----------------------------------------------------
 	case "image", "img":
+		if propString(props, "src") == "" {
+			return ""
+		}
 		// Width/height pass through via Attrs since ImageConfig keeps
 		// only Src/Alt as first-class fields.
 		return html.Image(html.ImageConfig{
@@ -576,11 +577,11 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 	}
 	skip := make(map[string]struct{}, len(known))
 	for _, k := range known {
-		skip[k] = struct{}{}
+		skip[asciicase.Lower(k)] = struct{}{}
 	}
 	out := html.Attrs{}
 	for k, v := range props {
-		if _, ok := skip[k]; ok {
+		if _, ok := skip[asciicase.Lower(k)]; ok {
 			continue
 		}
 		if v == nil {
@@ -589,7 +590,9 @@ func extraAttrs(props map[string]any, known ...string) html.Attrs {
 		if !attrAllowed(k) {
 			continue
 		}
-		out[k] = fmt.Sprint(v)
+		if value, keep := attributeValue(k, v); keep {
+			out[k] = value
+		}
 	}
 	if len(out) == 0 {
 		return nil
@@ -713,11 +716,23 @@ func attrsFromProps(p map[string]any, keys ...string) map[string]string {
 	out := map[string]string{}
 	for _, k := range keys {
 		if v, ok := p[k]; ok && v != nil {
-			out[k] = fmt.Sprint(v)
+			if value, keep := attributeValue(k, v); keep {
+				out[k] = value
+			}
 		}
 	}
 	if len(out) == 0 {
 		return nil
 	}
 	return out
+}
+
+func attributeValue(key string, value any) (string, bool) {
+	if enabled, ok := value.(bool); ok {
+		switch strings.ToLower(key) {
+		case "hidden", "required", "disabled", "readonly", "checked", "selected", "multiple", "open", "download":
+			return "", enabled
+		}
+	}
+	return fmt.Sprint(value), true
 }

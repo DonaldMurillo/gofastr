@@ -706,7 +706,10 @@ func (fc *funcCtx) resolve(e ast.Expr, depth int) (string, string, bool) {
 			return "", "", false
 		}
 		if r, s, ok := fc.rootOfBase(x.X, depth+1); ok {
-			return r + s, x.Sel.Name, true
+			// The field name is part of the key: s.TTL and s.Timeout
+			// are different durations, and rejecting one rejects only
+			// that one (p11).
+			return r + s + "." + x.Sel.Name, x.Sel.Name, true
 		}
 		return "", "", false
 	}

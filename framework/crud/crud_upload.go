@@ -209,10 +209,8 @@ func decodeJSONBody(r *http.Request, v any) error {
 }
 
 // readRequestBody decodes the incoming request into a snake_cased body map.
-// Multipart requests run through parseMultipartBody (no JSON casing conversion,
-// multipart field names are taken literally as DB column names); JSON
-// requests are decoded and reverse-cased back to snake_case so they match the
-// schema's field names regardless of the wire casing.
+// Multipart requests run through parseMultipartBody; both multipart and JSON
+// requests resolve wire keys and column names back to the schema's fields.
 //
 // The second return value lists the storage keys a multipart parse already
 // saved (nil for JSON bodies). The write handlers pass them to
@@ -306,6 +304,16 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 	// key, so the ledger is simply dropped on the success path.
 	var rec *savedKeyLedger
 	if r.MultipartForm != nil {
+		keys := make(map[string]any, len(r.MultipartForm.Value)+len(r.MultipartForm.File))
+		for key := range r.MultipartForm.Value {
+			keys[key] = nil
+		}
+		for key := range r.MultipartForm.File {
+			keys[key] = nil
+		}
+		if err := ch.itemKeyFoldsUnambiguous(keys); err != nil {
+			return nil, nil, err
+		}
 		// Plain form values first. A repeated form key is either a
 		// multi-select (HTML submits one part per selected value) or a
 		// smuggling attempt: the JSON body path REFUSES duplicate keys
@@ -323,26 +331,27 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		// names the same one on every request.
 		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.Value)) {
 			vals := r.MultipartForm.Value[key]
+			column := ch.wireKeyColumn(key)
 			if len(vals) == 0 {
 				continue
 			}
 			// The HTML checkbox idiom: a bool field's hidden "false"
 			// followed by its checked box. Exactly that pair is one
 			// value, the box's, as the runtime folds it on the JSON path.
-			if len(vals) == 2 && vals[0] == "false" && ch.isBoolColumn(key) {
-				body[key] = coerceFormValue(ch.Entity, key, vals[1])
+			if len(vals) == 2 && vals[0] == "false" && ch.isBoolColumn(column) {
+				body[column] = coerceFormValue(ch.Entity, column, vals[1])
 				continue
 			}
 			if len(vals) == 1 {
-				body[key] = coerceFormValue(ch.Entity, key, vals[0])
+				body[column] = coerceFormValue(ch.Entity, column, vals[0])
 				continue
 			}
-			if ch.isJSONColumn(key) {
+			if ch.isJSONColumn(column) {
 				list := make([]any, len(vals))
 				for i, v := range vals {
 					list[i] = v
 				}
-				body[key] = list
+				body[column] = list
 				continue
 			}
 			return nil, rec.saved(), i18n.NewError(reasonDupFormKey, map[string]any{"key": strconv.Quote(key)})
@@ -354,7 +363,8 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		// second part a proxy may have inspected. Refuse.
 		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.File)) {
 			headers := r.MultipartForm.File[key]
-			if _, isFileField := fileFieldNames[key]; !isFileField {
+			column := ch.wireKeyColumn(key)
+			if _, isFileField := fileFieldNames[column]; !isFileField {
 				continue
 			}
 			if len(headers) == 0 {
@@ -370,7 +380,7 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 				rec = &savedKeyLedger{Storage: ch.Storage}
 			}
 			fh := headers[0]
-			if err := saveFilePart(r.Context(), ch, rec, key, fileFieldNames[key], fh, body); err != nil {
+			if err := saveFilePart(r.Context(), ch, rec, column, fileFieldNames[column], fh, body); err != nil {
 				return nil, rec.saved(), err
 			}
 		}

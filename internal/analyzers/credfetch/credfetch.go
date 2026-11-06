@@ -472,10 +472,14 @@ func (f *fnCtx) credential(req ast.Expr) string {
 	if call == nil {
 		return ""
 	}
-	// The URL argument: NewRequest(method, url, ...) and
-	// NewRequestWithContext(ctx, method, url, ...).
-	if len(call.Args) >= 2 {
-		if name := urlName(call.Args[1]); name != "" {
+	// The URL argument: NewRequest(method, url, ...) at index 1,
+	// NewRequestWithContext(ctx, method, url, ...) at index 2.
+	urlIdx := 1
+	if f.c.qualifiedFunc(call.Fun) == "net/http.NewRequestWithContext" {
+		urlIdx = 2
+	}
+	if len(call.Args) > urlIdx {
+		if name := urlName(call.Args[urlIdx]); name != "" {
 			return name
 		}
 	}

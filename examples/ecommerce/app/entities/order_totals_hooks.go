@@ -24,7 +24,10 @@ package entities
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
@@ -63,12 +66,18 @@ func registerOrderTotalsHooks(app *framework.App) {
 		if err != nil {
 			return err
 		}
+		if err := priceOrderItem(ctx, row); err != nil {
+			return err
+		}
 		return recomputeFromItemRow(ctx, row)
 	}
 	app.HookRegistry("order_items").RegisterHook(framework.AfterCreate, item)
 	app.HookRegistry("order_items").RegisterHook(framework.AfterUpdate, func(ctx context.Context, data any) error {
 		row, err := rowOf("order_items", data)
 		if err != nil {
+			return err
+		}
+		if err := priceOrderItem(ctx, row); err != nil {
 			return err
 		}
 		// An update may move the item to a different order: recompute
@@ -96,6 +105,50 @@ func registerOrderTotalsHooks(app *framework.App) {
 	})
 }
 
+func priceOrderItem(ctx context.Context, row map[string]any) error {
+	exec, ok := framework.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("order pricing: no transaction on context")
+	}
+	id := idFromRow(row)
+	if id == "" {
+		return fmt.Errorf("order pricing: missing line item id")
+	}
+	var price string
+	var quantity int64
+	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), order_items.quantity
+		FROM order_items JOIN products ON products.id = order_items.product_id
+		WHERE order_items.id = $1`, id).Scan(&price, &quantity)
+	if err != nil {
+		return fmt.Errorf("order pricing: load product price: %w", err)
+	}
+	unit, ok := new(big.Rat).SetString(price)
+	if !ok || unit.Sign() < 0 || quantity < 1 {
+		return fmt.Errorf("order pricing: invalid stored price or quantity")
+	}
+	total := new(big.Rat).Mul(unit, new(big.Rat).SetInt64(quantity))
+	unitPrice, totalPrice := unit.FloatString(4), total.FloatString(4)
+	if !schema.DecimalExactOnSQLite("DECIMAL(19,4)", totalPrice) {
+		var version string
+		if err := exec.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil || !strings.Contains(strings.ToLower(version), "postgresql") {
+			return crud.NewValidationError(map[string][]schema.Violation{
+				"total_price": {{Reason: schema.ReasonDecimalSignificantDigits, Params: map[string]any{"max": schema.SQLiteDecimalDigits}}},
+			})
+		}
+	}
+	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2 WHERE id = $3`, unitPrice, totalPrice, id); err != nil {
+		return fmt.Errorf("order pricing: persist line prices: %w", err)
+	}
+	for key, value := range map[string]string{"unitPrice": unitPrice, "totalPrice": totalPrice} {
+		if _, exists := row[key]; exists {
+			row[key] = value
+		} else {
+			row[snakeTwin(key)] = value
+		}
+	}
+	return nil
+}
+
 // recomputeFromItemRow recomputes the parent order named by an item row.
 func recomputeFromItemRow(ctx context.Context, row map[string]any) error {
 	orderID := orderIDFromRow(row)
@@ -106,17 +159,16 @@ func recomputeFromItemRow(ctx context.Context, row map[string]any) error {
 }
 
 // recomputeOrderTotals rewrites subtotal and total from the order's
-// current line items, inside the caller's transaction. Both dialects in
-// play (sqlite, postgres) evaluate the scalar subquery the same way;
-// the decimal columns keep their stored precision.
+// current line items, inside the caller's transaction, rounded to the
+// columns' four-place scale even when SQLite evaluates sums as floats.
 func recomputeOrderTotals(ctx context.Context, orderID string) error {
 	exec, ok := framework.TxFromContext(ctx)
 	if !ok {
 		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
 	}
 	const q = `UPDATE orders SET
-		subtotal = COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0),
-		total = COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0) + COALESCE(tax, 0) + COALESCE(shipping_cost, 0)
+		subtotal = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0), 4),
+		total = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0) + COALESCE(tax, 0) + COALESCE(shipping_cost, 0), 4)
 		WHERE id = $1`
 	if _, err := exec.ExecContext(ctx, q, orderID); err != nil {
 		return fmt.Errorf("order totals: recompute order %s: %w", orderID, err)

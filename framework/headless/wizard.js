@@ -39,6 +39,7 @@
   // this pass did not see) drops it.
   let fromStep = null;
   let fromForm = null;
+  let fromEpoch = null;
   document.addEventListener('click', function (ev) {
     const t = ev.target;
     if (!t || !t.closest) return;
@@ -47,9 +48,11 @@
     const form = btn.closest('[data-hui-step-wizard]');
     fromStep = form ? form.getAttribute('data-hui-step-wizard-current') : null;
     fromForm = form;
+    fromEpoch = NS._navEpoch;
   }, true);
 
   function scan(root) {
+    if (fromEpoch !== NS._navEpoch) { fromStep = null; fromForm = null; }
     if (fromStep === null) return;
     const scope = root && root.querySelectorAll ? root : document;
     const form = within(scope, '[data-hui-step-wizard]')[0];

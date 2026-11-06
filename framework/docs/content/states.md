@@ -168,8 +168,11 @@ a `WithStateOverride` that has its reason and audit log, so an omitted
 state field keeps the stored state and the insert arm's `Default` never
 lands on conflict), and the in-process `CreateOne` and `UpdateOne`.
 
-A refusal names the stored state and the open moves only to a caller whose
-read scope admits the record. A record the `BeforeGet` chain
+A refusal names the stored state and the open moves only when the state
+field is not `Hidden` and the caller's read scope admits the record. A
+Hidden state field stays absent from 409 and 422 bodies, including their
+error and field messages; those refusals leave `current` and `moves` empty even
+when the caller can read the rest of the record. A record the `BeforeGet` chain
 `GET /<entity>/{id}` runs hides (in process only under
 `crud.WithReadHooks`, as `GetOne` applies it) is never written at all:
 the update, the move or the override answers the 404 a missing id gets,
@@ -246,8 +249,12 @@ including on bodyless POSTs; apps do not need middleware to add it.
 
 When the entity sets `mcp: true`, each non-system move is one MCP tool,
 `<entity>_<key>`, taking the record's `id` and posting to the move's
-route. The update permission gates it like update. System moves get no
-tool.
+route. The update permission gates it like update, and a move's own
+`Permission` also gates its listing and invocation. A role-level caller missing
+either permission does not see the tool; a Wildcard alone does not satisfy the
+move's named permission. Record-aware and route-group policies remain on the
+redispatched route, where the record and group middleware are available.
+System moves get no tool.
 
 ## Who may move
 

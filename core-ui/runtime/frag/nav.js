@@ -11,7 +11,7 @@
 // data-cui-open anchor guard) and two seams the demand modules own —
 // the commit seam (_swapCommit delegates to the transition module so a
 // plain page declaring a transition gets one) and the opt-in
-// stand-down (a document holding an outlet or area marker hands its
+// stand-down (a document holding an outlet, area, or loading template hands its
 // navigations to the envelope module: the pending path rides a
 // one-field slot, the module load starts, and this navigator stands
 // down; the module carries its own navigator, cache and tail). The
@@ -35,10 +35,9 @@
   // write/read promotes the path to most-recently-used; oldest entry
   // is always keys().next() when we exceed the cap.
   const cacheScreen = (path, html, title, layer) => {
-    if (screenCache.has(path)) screenCache.delete(path);
+    screenCache.delete(path);
     if (screenCache.size >= MAX_CACHE_SIZE) {
-      const oldest = screenCache.keys().next().value;
-      screenCache.delete(oldest);
+      screenCache.delete(screenCache.keys().next().value);
     }
     // vt is the transition pick this entry landed with, read off the
     // hook at write time (the commit settles the pick before the apply
@@ -89,16 +88,15 @@
   // decoded, so /orders/%31 is the :id:int route there and here, with a
   // decoded "%" or "/" kept escaped so it stays one segment; a segment
   // that does not decode (%E0%A4) is taken literally, never thrown.
-  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (c) => encodeURIComponent(c)); };
+  const _routeSeg = (s) => { try { s = decodeURIComponent(s); } catch (_) {} return s.replace(/[%/]/g, (part) => encodeURIComponent(part)); };
+  const _routeMatch = (seg, part) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(part) : seg === part;
   const routeEntry = (path) => {
     // Routes register unprefixed: /es/pricing looks up /pricing.
     const clean = _unlocalize(path.split('?')[0].split('#')[0]).split('/').map(_routeSeg).join('/');
-    let r = routes.get(clean);
     // A screen group registers its root as "/components/" but links may
     // write "/components", the server redirects between them, so the
     // SPA router must accept both forms.
-    if (!r && clean !== '/' && !clean.endsWith('/')) r = routes.get(clean + '/');
-    if (!r && clean !== '/' && clean.endsWith('/')) r = routes.get(clean.slice(0, -1));
+    const r = routes.get(clean) || clean !== '/' && routes.get(clean.endsWith('/') ? clean.slice(0, -1) : clean + '/');
     if (r) return r;
     const parts = clean.split('/').filter(Boolean);
     for (const [pattern, entry] of routes) {
@@ -109,14 +107,11 @@
       // Each literal segment must align; a dynamic segment (":name",
       // incl. the catch-all ":name*") matches any value its constraint
       // (":id:int", ":id:uuid", ":id:alpha", ":id:alnum") accepts.
-      if (pp.every((seg, i) => seg[0] === ':' ? (_segTest[seg.split(':')[2]] || /./).test(parts[i]) : seg === parts[i])) return entry;
+      if (pp.every((seg, i) => _routeMatch(seg, parts[i]))) return entry;
     }
     return null;
   };
-  const routeLayouts = (path) => {
-    const r = routeEntry(path);
-    return (r && r.layouts) || [];
-  };
+  const routeLayouts = (path) => routeEntry(path)?.layouts || [];
   // Count of outermost layers the live DOM shares with the target chain.
   // An empty key never matches (unnamed layers have no stable identity).
   const sharedDepth = (layouts) => {
@@ -148,15 +143,13 @@
     // Another locale is another document: its lang, its strings table
     // and every server-rendered word differ, not just the screen.
     if (_localeOf(destPath) !== _localeOf(location.pathname)) return true;
-    const de = routeEntry(destPath);
-    const dest = (de && de.docScripts) || [];
+    const dest = routeEntry(destPath)?.docScripts || [];
     const srcs = [];
     for (const s of document.querySelectorAll('script[data-cui-doc]')) {
       const v = s.getAttribute('src');
       if (v) srcs.push(v);
     }
-    srcs.sort();
-    return srcs.join('\n') !== dest.join('\n');
+    return srcs.sort().join('\n') !== dest.join('\n');
   };
   // A server redirect (X-Gofastr-Location) into another document loads
   // it in place of the requested URL. Both navigators ask before they
@@ -190,28 +183,33 @@
 
   // Page-owned metadata travels with cached page content, independently of
   // the layout boundaries the navigator keeps. Scripts are never copied.
-  const syncPageHead = (root) => {
-    const carrier = root && (root.matches && root.matches('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
+  const syncPageHead = (root, skipCSRF) => {
+    const carrier = root && (root.matches?.('template[data-cui-page-head]') ? root : root.querySelector('template[data-cui-page-head]'));
     const source = carrier ? new DOMParser().parseFromString(carrier.getAttribute('data-cui-page-head') || '', 'text/html') : (root && root.nodeType === 9 ? root : null);
     if (!source) return;
-    const incoming = [];
-    for (const node of source.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')) {
-      if (node.tagName === 'META' && (!node.hasAttribute('name') && !node.hasAttribute('property') || node.hasAttribute('http-equiv'))) continue;
+    const nodes = source.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]');
+    document.head.querySelectorAll(':is(meta,link)[data-cui-page-meta]').forEach(node => { if (node.name !== 'csrf-token') node.remove(); });
+    for (const node of nodes) {
+      if (node.matches('meta:not([name]):not([property]),meta[http-equiv]')) continue;
       if (node.tagName === 'LINK') {
         try { if (!/^https?:$/.test(new URL(node.getAttribute('href'), location.href).protocol)) continue; } catch (_) { continue; }
       }
-      const copy = node.cloneNode(false);
-      for (const attr of Array.from(copy.attributes)) if (/^on/i.test(attr.name)) copy.removeAttribute(attr.name);
-      incoming.push(copy);
+      const copy = node.cloneNode();
+      for (const attr of copy.getAttributeNames()) if (/^on/i.test(attr)) copy.removeAttribute(attr);
+      if (copy.name === 'csrf-token') {
+        if (skipCSRF) continue;
+        document.head.querySelector('meta[name="csrf-token"]')?.remove();
+      }
+      document.head.append(copy);
     }
-    document.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]').forEach(node => node.remove());
-    incoming.forEach(node => document.head.appendChild(node));
   };
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
-    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll('meta[data-cui-page-meta],link[data-cui-page-meta]')).map(node => node.outerHTML).join(''));
-    const lang = source.documentElement.getAttribute('lang');
-    if (lang) carrier.setAttribute('data-cui-lang', lang);
+    carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]'), node => node.outerHTML).join(''));
+    for (const attr of ['lang', 'dir']) {
+      const value = source.documentElement[attr];
+      if (value) carrier.setAttribute('data-cui-' + attr, value);
+    }
     const skip = source.querySelector('[data-skip-link]');
     if (skip) carrier.setAttribute('data-cui-skip-label', skip.textContent);
     // The live document's head block is the first page's: after a soft
@@ -502,8 +500,8 @@
   // (doc.setHtmlAttr, manifest-governed) and the skip link's text.
   // root is the swapped element (the new shell, or the slot that received
   // the payload); a payload with no markers changes nothing.
-  const applyDocShell = (root) => {
-    syncPageHead(root);
+  const applyDocShell = (root, skipCSRF) => {
+    syncPageHead(root, skipCSRF);
     const fresh = root && root.querySelector('template[data-cui-page-head][data-cui-lang]');
     // The destination's runtime words; none means English.
     if (fresh) _says = _json(fresh.getAttribute('data-cui-strings')) || {};
@@ -528,9 +526,9 @@
   // consumes the popstate's pending value at entry, so a superseded
   // back/forward can never leak its position into a later click's
   // finishNav.
-  const finishNav = (path, prevPath, cached, root, ps) => {
+  const finishNav = (path, prevPath, cached, root, ps, skipCSRF) => {
     window.__gofastr._navShown = true;
-    applyDocShell(root);
+    applyDocShell(root, cached || skipCSRF);
     if (!ps && (location.hash || (prevPath || '').split('?')[0] != path.split('?')[0])) scrollToHash();
     window.dispatchEvent(new CustomEvent('gofastr:navigate', { detail: { path, prevPath, cached, root } }));
     if (ps) {
@@ -576,7 +574,7 @@
   const loadPage = (path, opts) => {
     if (!window.__gofastr._originOK(path)) return;
     if (crossesDocBoundary(path)) { location.assign(path); return; }
-    // The opt-in hand-off: a document holding an outlet or area marker
+    // The opt-in hand-off: a document holding an outlet, area, or loading template
     // hands its navigations to the envelope module. Warm, the
     // delegation above runs them; cold, the load starts now and the
     // module's navigator takes this one when it lands (the click has
@@ -587,7 +585,7 @@
     // to a whole-document load of the destination.
     const G0 = window.__gofastr;
     const N = G0._navHooks.envelope?.nav;
-    if (N || document.querySelector('[data-cui-outlet],[data-cui-area]')) {
+    if (N || document.querySelector('[data-cui-outlet],[data-cui-area],template[data-cui-loading]')) {
       // The pointer modality core recorded for THIS navigation rides
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
@@ -601,13 +599,14 @@
     }
     return _plainLoadPage(path, opts);
   };
-  const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from = null, restore = null } = {}) => {
+  const _plainLoadPage = async (path, { bypassCache = false, forceFull = false, from, restore } = {}) => {
+    const G = window.__gofastr;
     // Single gate for every branch below: the SPA navigator's target
     // comes from an href / a data-cui-* attribute / a server header,
     // and a cross-origin one must never be fetched with the page's
     // credentials and swapped into the DOM. A javascript: or data: URL
     // resolves to a null origin, so this subsumes the scheme check too.
-    if (!window.__gofastr._originOK(path)) return;
+    if (!G._originOK(path)) return;
     // Document-boundary backstop: the click hijack, navigate(), and
     // popstate gate this BEFORE any history write; this arm covers the
     // X-Gofastr-Location redirect leg and any future caller.
@@ -617,15 +616,15 @@
     // a stale epoch, and returning here left B live, committing under
     // the URL /a. A replay (cache or prefetch) drops its entry, so a
     // forced fetch never joins the copy the force exists to replace.
-    if (_pendingNav.get(path) === window.__gofastr._navEpoch) return;
-    const myEpoch = ++window.__gofastr._navEpoch;
+    if (_pendingNav.get(path) === G._navEpoch) return;
+    const myEpoch = ++G._navEpoch;
     _pendingNav.set(path, myEpoch);
     // The transition module's direction seam (its twin sits in the
     // module navigator's entry): binds the recorded direction and
     // pick-edge rule to THIS navigation's epoch before any await.
-    window.__gofastr._navHooks.transition?.take(myEpoch);
+    G._navHooks.transition?.take(myEpoch);
     const prevPath = from || currentPath;
-    if (window.__gofastr._navBase === null) window.__gofastr._navBase = prevPath;
+    if (G._navBase === null) G._navBase = prevPath;
     currentPath = path;
     // Consume the popstate's restore target NOW, into this navigation,
     // left in module state, a superseded back/forward's position leaked
@@ -676,8 +675,8 @@
       // partial, swap it in when its layer is live, exactly like the
       // screen cache but single-use and TTL-bounded. Post-mutation navs
       // (bypassCache) skip it: it was fetched before the mutation.
-      if (!cached && !bypassCache && !forceFull && window.__gofastr._takePrefetched) {
-        const pf = window.__gofastr._takePrefetched(path);
+      if (!cached && !bypassCache && !forceFull && G._takePrefetched) {
+        const pf = G._takePrefetched(path);
         if (pf) {
           // A layout-less entry swaps into <main> only when the live DOM
           // is layout-less too, as for the screen cache above.
@@ -686,7 +685,7 @@
             _pendingNav.delete(path);
             await _swapCommit(myEpoch, prevPath, path, () => {
               cacheScreen(path, pf.html, pf.title, pf.layer);
-              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps);
+              finishNav(path, prevPath, false, swapAtSlot(slot, pf.html), ps, true);
             }, null, pf.html, pf.title);
             return;
           }
@@ -706,7 +705,7 @@
       if (forceFull || ((layouts.length > 0 || domChainKeys().length > 0) && sharedDepth(layouts) === 0)) {
         const fr = await _fetch(path);
       if (!_navLive(myEpoch)) return;
-        window.__gofastr._inval(fr);
+        G._inval(fr);
         const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
       if (!_navLive(myEpoch)) return;
         // The path keeps the search string: the cache key and the URL
@@ -724,7 +723,10 @@
         // the SSE reconnect loop recovers here too, not only on the
         // partial branch's X-Gofastr-Session path.
         const fm = sseMeta(pdoc), lm = sseMeta();
-        if (fm && lm) lm.setAttribute('content', fm.getAttribute('content'));
+        if (fm && lm) {
+          if (new URL(fm.content, location.href).searchParams.get('session') !== new URL(lm.content, location.href).searchParams.get('session')) G.invalidate('*');
+          lm.setAttribute('content', fm.getAttribute('content'));
+        }
         const nm = pdoc.querySelector('main');
         await _swapCommit(myEpoch, prevPath, dest, () => {
           const sourceRoot = shellEl(pdoc) || nm;
@@ -765,13 +767,13 @@
       if (rm) rm.setAttribute('content', rm.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, p) => p + rs));
       // A session change is an identity change: one identity's pages
       // must never replay for another.
-      if (rs) window.__gofastr.invalidate('*');
+      if (rs) G.invalidate('*');
       const notOk = !resp.ok;
 
       // Evict server-named stale screens BEFORE chasing a redirect, so
       // a "mutated + redirected" response drops entries first and the
       // redirect target is then fetched/cached fresh.
-      window.__gofastr._inval(resp);
+      G._inval(resp);
 
       // X-Gofastr-Location signals "server policy redirected this
       // partial, go nav to the new URL instead of trying to swap
@@ -814,7 +816,7 @@
       // stays as it came.
       try { swapKey = decodeURIComponent(swapKey); } catch (_) {}
       if (partial) {
-        title = window.__gofastr._title(resp);
+        title = G._title(resp);
         body = html;
       } else {
         const pdoc = new DOMParser().parseFromString(html, 'text/html');
@@ -838,6 +840,7 @@
       }, resp, body, title);
     } catch (err) {
       if (!_navLive(myEpoch)) return;
+      G._cancelPanel?.();
       // CLAUDE.md hard rule 4, no location.href fallback. Surface a
       // toast and stay on the current page; URL has already been
       // pushState'd by the click handler so revert it, to the page the
@@ -847,7 +850,7 @@
       _showNavToast(err && /^HTTP \d+$/.test(err.message)
         ? say('runtime.load_failed_status', 'Could not load {{path}} ({{status}})', { path, status: err.message })
         : say('runtime.load_failed', 'Could not load {{path}}: check your connection', { path }));
-      const base = window.__gofastr._navBase;
+      const base = G._navBase;
       _pushPub(base || location.pathname, { replace: true });
       currentPath = base;
     } finally {
@@ -858,7 +861,7 @@
       // in-flight one.
       if (_navLive(myEpoch)) {
         doc.removeHtmlAttr('aria-busy');
-        window.__gofastr._navBase = null;
+        G._navBase = null;
       }
     }
   };
@@ -997,12 +1000,13 @@
       // Already there (or on the way: a repeat click while the page
       // loads). A fragment is the browser's own in-page jump; anything
       // else no-ops, the browser would reload the whole document.
-      if (!navHash) e.preventDefault();
+      if (!navHash) { e._cuiNav = 1; e.preventDefault(); }
       return;
     }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
+    e._cuiNav = 1;
     e.preventDefault();
     // gofastr:beforenavigate: cancellable hook fired on the anchor
     // (bubbles, cancelable) only for clicks the router is about to
@@ -1130,6 +1134,8 @@
   // SPA navigation (scheme guard -> pushState -> loadPage). _originOK is read
   // via `this`, so it resolves at call time regardless of composition order.
   Object.assign(window.__gofastr, {
+    _routeSeg,
+    _routeMatch,
     _settleScroll,
     // --- Router API ---
 
@@ -1141,7 +1147,6 @@
         the path is the current page and bypasses the screen cache,
         use it after a mutation so the destination reflects new state. */
     navigate(path, { replace = false, force = false } = {}) {
-      if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
       // touching the URL bar. Server-rendered data-cui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
@@ -1149,6 +1154,8 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
+      const same = new URL(path, document.baseURI).href === location.href;
+      if (same && !force) return;
       // Document boundary: load a real document instead of swapping.
       // assign/replace keep the push/replace shape the caller asked for.
       if (crossesDocBoundary(path)) {
@@ -1158,7 +1165,7 @@
       }
       const origin = currentPath;
       _navRing = void 0; // programmatic: the browser's heuristic decides
-      _pushPub(path, { replace: replace || path === currentPath });
+      _pushPub(path, { replace: replace || same });
       loadPage(path, { bypassCache: force, from: origin });
     },
 

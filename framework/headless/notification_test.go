@@ -53,7 +53,7 @@ func TestToastStackCarriesBothContracts(t *testing.T) {
 	// An SSR row is visible inside it with no script.
 	withRow := ToastStack(ToastStackProps{Label: "Notifications",
 		Toasts: []render.HTML{Toast(ToastProps{Tone: "success", Title: "Saved"}, nil)}}, nil)
-	has(t, withRow, `data-hui-toast="">`, "the SSR toast row is not inside the stack")
+	has(t, withRow, `data-hui-toast="" role="status">`, "the SSR toast row is not a live status inside the stack")
 }
 
 func TestToastStackRefusesAnUnnamedOrNegativeStack(t *testing.T) {
@@ -64,7 +64,7 @@ func TestToastStackRefusesAnUnnamedOrNegativeStack(t *testing.T) {
 func TestNotificationBellSpeaksItsCount(t *testing.T) {
 	got := NotificationBell(NotificationBellProps{Href: "/notifications",
 		Label: "Notifications", UnreadCount: 3}, nil)
-	has(t, got, `aria-label="3 unread notifications"`, "the trigger does not say its count in words")
+	has(t, got, `aria-label="Notifications: 3 unread notifications"`, "the trigger does not say its label and count in words")
 	has(t, got, `href="/notifications"`, "the trigger is not a real link to a real page")
 	has(t, got, `data-hui-notification-count="3"`, "the badge's count hook is missing")
 

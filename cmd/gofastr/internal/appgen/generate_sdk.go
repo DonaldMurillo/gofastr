@@ -175,50 +175,44 @@ var sdkValidTargets = map[string]bool{"go": true, "js": true}
 func RunGenerateSDK(args []string) {
 	opts, err := parseSDKOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
-		cli.Info("Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
+		failGenerateArgs(args, err, "Usage: gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--module=<path>] [--base-url=<url>] [--sdk-version=<semver>] [--no-archive] [--stamp-time] [--dry-run] [--json]")
 		cli.OsExit(1)
 		return
 	}
 	if err := ApplySDKConfigDefaults(&opts); err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 
 	decls, err := ReadAppDecls(".")
 	if err != nil {
-		cli.Fail("read entities: %v", err)
+		failGenerate(opts.json, fmt.Errorf("read entities: %v", err))
 		cli.OsExit(1)
 		return
 	}
 	if len(decls) == 0 {
-		cli.Fail("no entities package found in the current directory")
-		cli.Info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
+		failGenerate(opts.json, fmt.Errorf("no entities package found in the current directory"))
+		cli.Fprintln(os.Stderr, "Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
 		cli.OsExit(1)
 		return
 	}
 
 	spec, err := buildSDKSpec(decls, &opts)
 	if err != nil {
-		if opts.dryRun && opts.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-			return
-		}
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 	if err := validateOutputDir(opts.OutDir); err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 
 	files, err := renderSDKFiles(spec, opts.targets, !opts.noArchive)
 	if err != nil {
-		cli.Fail("SDK generation failed: %v", err)
+		failGenerate(opts.json, fmt.Errorf("SDK generation failed: %v", err))
 		cli.OsExit(1)
 		return
 	}
@@ -235,14 +229,16 @@ func RunGenerateSDK(args []string) {
 		return
 	}
 
-	for _, f := range files {
-		if existing, rerr := readFileUnder(opts.OutDir, f.Name); rerr == nil {
-			warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), "the entity declarations")
+	if !opts.json {
+		for _, f := range files {
+			if existing, rerr := readFileUnder(opts.OutDir, f.Name); rerr == nil {
+				warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), "the entity declarations")
+			}
 		}
 	}
 	fileSet, err := FileSetFromGeneratedFiles(files, "sdk")
 	if err != nil {
-		cli.Fail("SDK generation failed: %v", err)
+		failGenerate(opts.json, fmt.Errorf("SDK generation failed: %v", err))
 		cli.OsExit(1)
 		return
 	}
@@ -252,7 +248,7 @@ func RunGenerateSDK(args []string) {
 		Conflict:     codegen.ConflictOverwrite,
 	}
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
-		cli.Fail("Failed to write generated files: %v", err)
+		failGenerate(opts.json, fmt.Errorf("Failed to write generated files: %v", err))
 		cli.OsExit(1)
 		return
 	}
@@ -789,7 +785,7 @@ func renderSDKGoReadme(spec sdkSpec) string {
 		fmt.Fprintf(&sb, "```go\nparams := url.Values{}\nparams.Set(%q, \"x\")        // equality\nparams.Set(%q, \"x\")   // ne/gt/gte/lt/lte/like/in suffixes\nparams.Set(\"sort\", \"-created_at\")\nparams.Set(\"limit\", \"50\")\nc.List%s(ctx, params)\n```\n\n", eqKey, first.filterKeys.Key(filterField, filter.OpGte), first.Struct)
 	}
 	sb.WriteString(sdkBracketKeysNote(spec))
-	sb.WriteString("Every non-2xx answer returns `*APIError`; its `Body` holds the JSON envelope every\nroute (CRUD, a declared endpoint, its auth gate) shares,\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nsnake_case column names and `field_reasons` holds each message's code.\n\n")
+	sb.WriteString("Every non-2xx answer returns `*APIError`; its `Body` holds the JSON envelope every\nroute (CRUD, a declared endpoint, its auth gate) shares,\n`{\"error\", \"success\", \"code\", \"reason\", \"fields\", \"field_reasons\"}`: `error` is the\nmessage in the request's locale and `reason` its stable code; `fields` keys are\nresponse wire keys (camelCase by default, or WireName) and `field_reasons` holds each message's code.\n\n")
 	sb.WriteString("`Do(ctx, method, path, body, out)` is the escape hatch for custom endpoints\nand presence-faithful `map[string]any` bodies. `Watch<Entity>` subscribes to\nthe live SSE feed. `Batch*` methods hit the atomic `_batch` routes.\n")
 	return sb.String()
 }

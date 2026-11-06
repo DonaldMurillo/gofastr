@@ -270,7 +270,7 @@
 
     // Reconcile the live peer objects against a fresh snapshot roster:
     // new peers get a pc, gone peers are closed, kept peers keep their
-    // pc only while it is connected or connecting.
+    // pc only while connected or connecting with stable signaling.
     const reconcile = () => {
       roster.forEach((info, id) => {
         const peer = peers.get(id);
@@ -287,7 +287,7 @@
         const cs = peer.pc ? peer.pc.connectionState : 'closed';
         const st = peer.pc ? nst.get(peer.pc) : null;
         if (st) { st.ice = false; st.rechan = 0; } // one restartIce, fresh channel budget, per generation
-        if (reborn || (cs !== 'connected' && cs !== 'connecting')) {
+        if (reborn || (cs !== 'connected' && cs !== 'connecting') || peer.pc.signalingState !== 'stable') {
           closePC(peer);
           newPC(peer);
         }

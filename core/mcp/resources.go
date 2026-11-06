@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // ResourceContents is the payload a resource yields on resources/read. Set
@@ -229,6 +231,8 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 func (s *Server) readResourceContents(ctx context.Context, res Resource) (out ResourceContents, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP resource callback recovered", "operation", "resource callback",
+				"resource", textsafe.SanitizeControlBytes(res.URI), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			out = ResourceContents{}
 			err = &RPCError{Code: ErrInternalError, Message: "internal resource error"}
 		}

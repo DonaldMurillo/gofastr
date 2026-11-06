@@ -119,6 +119,12 @@ the fixtures are handed is harness infrastructure, not caller surface.
   kernel, which hands it every inserted subtree; a MutationObserver or
   a navigate listener in a host, or a second module binding the same
   hooks, arms everything twice.
+- **Using painted counter text as its source of truth.** The arrival
+  animation reads the signal before every frame, including the first:
+  a live value can equal the last interpolated text. Next time, hold
+  the browser's animation callbacks rather than sleeping; run
+  `go test -count=20 -run TestE2E_CounterAnimationDoesNotOverwriteALiveValue ./framework/headless/`
+  to pin writes before the first frame and between frames.
 - **Saying a sentence in the behaviour module.** Strings travel as
   `data-hui-*` attributes from `Strings`, so the module itself writes no
   sentence a translated page would say in English.

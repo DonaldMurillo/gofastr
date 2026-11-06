@@ -1,13 +1,84 @@
 package analyzers_test
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
+
+func TestSkipLanePhraseInCommentDoesNotHideDebt(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/debt_test.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := testingRun(t, contracts.DefaultConfig(), map[string]string{
+		"debt_test.go": string(source),
+	})
+	if findings := countRule(t, diagnostics, contracts.RuleDisabledTest); len(findings) != 1 {
+		t.Fatalf("want one debt skip and one quiet lane skip; got %v", findings)
+	} else if findings[0].Line != 6 || findings[0].File != "debt_test.go" {
+		t.Fatalf("finding must identify TestDebt at debt_test.go:6: %+v", findings[0])
+	}
+}
+
+func TestConcatenatedSkipReasons(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/concat-debt_test.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostics := testingRun(t, contracts.DefaultConfig(), map[string]string{"debt_test.go": string(source)})
+	findings := countRule(t, diagnostics, contracts.RuleDisabledTest)
+	if len(findings) != 3 {
+		t.Fatalf("want three concatenated debt skips: %+v", findings)
+	}
+	for index, line := range []int{4, 7, 10} {
+		if findings[index].Line != line {
+			t.Errorf("finding line=%d, want %d", findings[index].Line, line)
+		}
+	}
+}
+
+func TestLaneFixtureRunsOutsideShortMode(t *testing.T) {
+	source, err := os.ReadFile("testdata/review/debt_test.go.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(t.TempDir(), "lane_test.go")
+	if err := os.WriteFile(file, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, short := range []bool{false, true} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		args := []string{"test", "-json", "-count=1", file, "-run=^TestLane$"}
+		want := "pass"
+		if short {
+			args = append(args, "-short")
+			want = "skip"
+		}
+		command := exec.CommandContext(ctx, "go", args...)
+		command.WaitDelay = time.Second
+		output, err := command.CombinedOutput()
+		cancel()
+		if err != nil {
+			t.Fatalf("short=%v: %v\n%s", short, err, output)
+		}
+		found := false
+		for _, line := range strings.Split(string(output), "\n") {
+			if strings.Contains(line, `"Test":"TestLane"`) && strings.Contains(line, `"Action":"`+want+`"`) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("short=%v: want TestLane %s:\n%s", short, want, output)
+		}
+	}
+}
 
 // testingRun is hookFixture generalised to a file map and an explicit
 // config: the disabled-test rule needs _test.go files and the coverage
@@ -138,6 +209,22 @@ func TestCoverageAtFloorIsClean(t *testing.T) {
 // ----------------------------------------------------------------------
 // GOFASTR1105: disabled tests
 // ----------------------------------------------------------------------
+
+func TestDebtSkipMessageOnNextLineReported(t *testing.T) {
+	ds := testingRun(t, contracts.DefaultConfig(), map[string]string{
+		"checkout_test.go": `package main
+
+import "testing"
+
+func TestCheckout(t *testing.T) {
+	t.Skipf(
+		"not yet implemented",
+	)
+}
+`,
+	})
+	assertHas(t, ds, contracts.RuleDisabledTest)
+}
 
 func TestDebtSkipIsReported(t *testing.T) {
 	ds := testingRun(t, contracts.DefaultConfig(), map[string]string{

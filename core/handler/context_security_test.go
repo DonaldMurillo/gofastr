@@ -12,11 +12,11 @@ import (
 // Attack: fingerprinting the server for targeted attacks.
 func TestRespond_NoServerHeader(t *testing.T) {
 	w := httptest.NewRecorder()
-	w.WriteHeader(http.StatusOK)
+	Respond(w, httptest.NewRequest(http.MethodGet, "/", nil), map[string]bool{"ok": true})
 
 	server := w.Header().Get("Server")
 	if server != "" {
-		t.Logf("NOTE: [respond] Server header present: %q — consider removing to reduce fingerprinting surface.", server)
+		t.Fatalf("response disclosed Server header: %q", server)
 	}
 }
 
@@ -24,11 +24,11 @@ func TestRespond_NoServerHeader(t *testing.T) {
 // X-Content-Type-Options: nosniff. Attack: MIME sniffing XSS.
 func TestRespond_XContentTypeOptions(t *testing.T) {
 	w := httptest.NewRecorder()
-	w.WriteHeader(http.StatusOK)
+	Respond(w, httptest.NewRequest(http.MethodGet, "/", nil), HTML("<p>safe</p>"))
 
 	nosniff := w.Header().Get("X-Content-Type-Options")
 	if nosniff != "nosniff" {
-		t.Logf("SECURITY: [respond] X-Content-Type-Options missing or wrong: %q. Attack: MIME sniffing may reinterpret response as HTML.", nosniff)
+		t.Fatalf("HTML response missing nosniff: %q", nosniff)
 	}
 }
 

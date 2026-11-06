@@ -65,6 +65,102 @@ func pinnedFirst(name string) *gadget {
 	return gadgets[strings.ToLower(name)]
 }
 
+// pinAfter checks the bytes only after the fold already ran: the
+// lookup resolved through the fold before anything was pinned.
+func pinAfter(name string) *gadget {
+	r := gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	if name[0] >= 0x80 {
+		discard(name)
+	}
+	return r
+}
+
+// pinNotRejecting compares a byte view but its branch only logs: no
+// branch leaves, so the lookup still resolves look-alikes.
+func pinNotRejecting(name string, i int) *gadget {
+	if name[i] >= 0x80 {
+		discard(name)
+	}
+	return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
+}
+
+// inBranchPin: the lookup sits INSIDE the then-branch of the pinning
+// check — the branch where the value is ASCII — and is covered, not
+// only the statements after a diverging branch.
+func inBranchPin(name string) *gadget {
+	if isASCII(name) {
+		return gadgets[strings.ToLower(name)]
+	}
+	return nil
+}
+
+func isASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] >= 0x80 {
+			return false
+		}
+	}
+	return true
+}
+
+// inBranchNegated: the negated ContainsFunc spelling — inside the
+// branch the value carries no non-ASCII rune.
+func inBranchNegated(name string) *gadget {
+	if !strings.ContainsFunc(name, func(r rune) bool { return r >= 0x80 }) {
+		return gadgets[strings.ToLower(name)]
+	}
+	return nil
+}
+
+// inBranchBelow: checking one byte does not certify the whole key.
+func inBranchBelow(name string, i int) *gadget {
+	if name[i] < 0x80 {
+		return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func inBranchFirstByte(name string) *gadget {
+	if len(name) > 0 && name[0] < 128 {
+		return gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func inBranchNegatedByte(name string) *gadget {
+	if len(name) > 0 && !(name[0] >= 128) {
+		return gadgets[strings.ToUpper(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func inBranchNegatedIndexFunc(name string) *gadget {
+	if strings.IndexFunc(name, func(value rune) bool { return value >= 0x80 }) == -1 {
+		return gadgets[strings.ToUpper(name)]
+	}
+	return nil
+}
+
+func wholeStringByteLoop(name string) *gadget {
+	for index := range len(name) {
+		if name[index] >= 0x80 {
+			return nil
+		}
+	}
+	return gadgets[strings.ToUpper(name)]
+}
+
+// inBranchBadSide: the then-branch of an at-or-above comparison is the
+// NON-ASCII side: the lookup there still reports.
+func inBranchBadSide(name string, i int) *gadget {
+	if name[i] >= 0x80 {
+		return gadgets[strings.ToLower(name)] // want `registry lookup folds Unicode case`
+	}
+	return nil
+}
+
+func discard(s string) {}
+
 // ---- deliberate silences ------------------------------------------------
 
 // plainValues: string-valued map, an alias table — no entry to

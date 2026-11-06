@@ -46,6 +46,10 @@ auth battery's canonical form (`auth.CanonicalEmail`, or the host's
 `AuthConfig.CanonicalizeEmail` when set), so `Ops@Example.com` signs in
 as `ops@example.com`.
 
+Both the submitted address and the canonicalizer's result must be valid
+UTF-8 without NUL bytes. Field validation and the step's execution refuse
+unstorable email text before creating an account, even with a host override.
+
 ## The interactive skin
 
 When setup is incomplete and required values are missing from the
@@ -175,6 +179,8 @@ The wizard runs in front of the router, and the app negotiates the
 reader's locale ahead of it, so its pages, the built-in steps and the
 page title (`Config.Title`, `setup.title` when zero) follow
 `Accept-Language` and any `WithLocaleResolver` cookie.
+The 503 response on non-setup paths uses the same locale through
+`setup.unavailable` and `setup.unavailable_help`; it keeps `Retry-After: 60`.
 
 Fields with `Secret: true` render as password inputs and are never
 prefilled or logged. `setup.HealthStep(app)` runs the app's registered

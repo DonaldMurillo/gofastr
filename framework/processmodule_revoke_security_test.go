@@ -67,3 +67,58 @@ func TestRevokeNamingNothingRefused(t *testing.T) {
 		t.Error("a revoke naming no grant succeeded")
 	}
 }
+
+func TestPatternRevokeRemovesHeldGrants(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	initial := DesiredState{Module: "demo", ArtifactSHA256: hex256("aa"), EffectiveGrants: []access.Permission{"orders:read", "orders:write", "users:read"}}
+	if err := store.Install(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RemoveEffectiveGrants(ctx, "demo", []access.Permission{"orders:*"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetDesired(ctx, "demo")
+	if err != nil || !slices.Equal(got.EffectiveGrants, []access.Permission{"users:read"}) {
+		t.Errorf("effective grants=%v err=%v, want users:read only", got.EffectiveGrants, err)
+	}
+	if _, err := store.InstallOrUpdate(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.GetDesired(ctx, "demo")
+	if err != nil || !slices.Equal(got.EffectiveGrants, []access.Permission{"users:read"}) {
+		t.Errorf("reinstalled grants=%v err=%v, want users:read only", got.EffectiveGrants, err)
+	}
+}
+
+func TestIneffectiveRevokeRefused(t *testing.T) {
+	for name, grants := range map[string][]access.Permission{
+		"absent":   {"users:read"},
+		"wildcard": {"orders:*"},
+		"overlap":  {"orders:read", "orders:*"},
+		"crossed":  {"*:read"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := newTestStore(t)
+			ctx := context.Background()
+			if err := store.Install(ctx, DesiredState{Module: "demo", ArtifactSHA256: hex256("aa"), EffectiveGrants: grants}); err != nil {
+				t.Fatal(err)
+			}
+			before, err := store.GetDesired(ctx, "demo")
+			if err != nil {
+				t.Fatal(err)
+			}
+			revoke := access.Permission("orders:read")
+			if name == "crossed" {
+				revoke = "orders:*"
+			}
+			if _, err := store.RemoveEffectiveGrants(ctx, "demo", []access.Permission{revoke}); err == nil {
+				t.Error("a revoke that cannot remove the permission succeeded")
+			}
+			after, err := store.GetDesired(ctx, "demo")
+			if err != nil || after.DesiredGeneration != before.DesiredGeneration || !slices.Equal(after.EffectiveGrants, before.EffectiveGrants) || !slices.Equal(after.RevokedGrants, before.RevokedGrants) {
+				t.Errorf("refused revoke changed state: before=%+v after=%+v err=%v", before, after, err)
+			}
+		})
+	}
+}

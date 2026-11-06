@@ -20,7 +20,8 @@
 // Shape, within one function body: a `defer` of a function literal that
 // writes the response at its top level (a WriteHeader or Write on a
 // ResponseWriter, http.Error and friends, fmt.Fprint*/io.WriteString
-// into one, json.NewEncoder(w).Encode, or a respond helper that writes
+// into one, json.NewEncoder(w).Encode, a html/template or text/template
+// Execute/ExecuteTemplate into one, or a respond helper that writes
 // its ResponseWriter parameter, computed to a fixed point and exported
 // as a writesResponse fact), and, lexically after the defer statement
 // and outside any nested function literal, another write to the same

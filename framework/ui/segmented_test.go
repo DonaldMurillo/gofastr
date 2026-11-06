@@ -29,7 +29,7 @@ func TestSegmentedControlBasic(t *testing.T) {
 		`data-position="0"`,
 		`data-position="2"`,
 		`data-count="3"`, // now on the wrapper, drives equal-width column math
-		`for="view--day"`,
+		`for="view--0"`,
 	}
 	for _, w := range wants {
 		if !strings.Contains(out, w) {

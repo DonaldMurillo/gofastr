@@ -187,6 +187,9 @@ type kfSeg struct {
 // inside its splits and lets the browser's nesting resolve selector
 // lists and &.
 func (c *compiler) build(r *Rule, conds []string, chain []*Rule) (nodes []*enode, darks []*darkSeg, kfs []*kfSeg, err error) {
+	if err := containerMediaError(r); err != nil {
+		return nil, nil, nil, err
+	}
 	switch {
 	case r.At && r.Name == "keyframes":
 		return nil, nil, []*kfSeg{{conds: conds, rule: c.registerKeyframes(r)}}, nil
@@ -312,6 +315,9 @@ func (c *compiler) chainNode(link *Rule, decls []*Decl, children []*enode) (*eno
 // whatever declarations fold out of its interior; @keyframes hoists.
 func (c *compiler) darkInterior(rules []*Rule, conds []string) (decls []*Decl, nodes []*enode, kfs []*kfSeg, err error) {
 	for _, r := range rules {
+		if err := containerMediaError(r); err != nil {
+			return nil, nil, nil, err
+		}
 		switch {
 		case r.At && r.Name == "keyframes":
 			kfs = append(kfs, &kfSeg{conds: conds, rule: c.registerKeyframes(r)})
@@ -445,6 +451,34 @@ func isCustomMedium(cond []Token) bool {
 		cond[0].Type == TokenOpenParen &&
 		cond[1].Type == TokenIdent && strings.HasPrefix(cond[1].Text, "--") &&
 		cond[2].Type == TokenCloseParen
+}
+
+func containerMediaError(rule *Rule) error {
+	if !rule.At || rule.Name != "container" {
+		return nil
+	}
+	prelude := significantTokens(rule.Prel)
+	depth, styleDepth := 0, 0
+	for index, token := range prelude {
+		switch token.Type {
+		case TokenFunction:
+			depth++
+			if styleDepth == 0 && strings.EqualFold(token.Text, "style(") {
+				styleDepth = depth
+			}
+		case TokenOpenParen:
+			depth++
+		case TokenCloseParen:
+			if depth == styleDepth {
+				styleDepth = 0
+			}
+			depth--
+		}
+		if styleDepth == 0 && index+3 <= len(prelude) && isCustomMedium(prelude[index:index+3]) {
+			return fmt.Errorf("%d:%d: custom media %s are only supported in @media, not @container", rule.Pos.Line, rule.Pos.Col, prelude[index+1].Text)
+		}
+	}
+	return nil
 }
 
 // mediaQueryTokens strips a leading at-keyword ("@media") from a rule
@@ -745,21 +779,35 @@ func emitRun(toks []Token, mode emitMode) string {
 	var sb strings.Builder
 	prev := Token{}
 	hadWS := false
+	hadComment := false
 	first := true
 	for _, t := range toks {
-		if isTrivia(t) {
-			if t.Type == TokenWhitespace {
-				hadWS = true
-			}
+		if t.Type == TokenWhitespace {
+			hadWS = true
 			continue
 		}
-		if !first && sep(prev, t, hadWS, mode) {
+		if t.Type == TokenComment {
+			hadComment = true
+			continue
+		}
+		mathBoundary := mode == emitValue && (isAddDelim(prev) || isAddDelim(t))
+		if !first && sep(prev, t, hadWS || (mode == emitValue && hadComment && !mathBoundary), mode) {
 			sb.WriteByte(' ')
+		} else if !first && mathBoundary && hadComment && !hadWS {
+			sb.WriteString("/**/")
+		} else if !first && mode == emitSelector && hadComment && !hadWS && selectorTokensMerge(prev, t) {
+			sb.WriteString("/**/")
 		}
 		sb.WriteString(t.Text)
-		prev, hadWS, first = t, false, false
+		prev, hadWS, hadComment, first = t, false, false, false
 	}
 	return sb.String()
+}
+
+func selectorTokensMerge(prev, next Token) bool {
+	tokens := Tokenize(prev.Text + next.Text)
+	return len(tokens) != 2 || tokens[0].Type != prev.Type || tokens[0].Text != prev.Text ||
+		tokens[1].Type != next.Type || tokens[1].Text != next.Text
 }
 
 // sep decides whether a space between two significant tokens must

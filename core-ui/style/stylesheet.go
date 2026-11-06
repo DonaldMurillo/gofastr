@@ -7,9 +7,10 @@ import (
 
 // StyleSheet is a Go-native CSS builder that produces CSS using theme tokens.
 type StyleSheet struct {
-	theme  Theme
-	rules  []cssRule
-	during *cssRule // rule being built by fluent API
+	theme       Theme
+	rules       []cssRule
+	during      *cssRule // rule being built by fluent API
+	duringIndex int
 }
 
 // cssRule represents a single CSS rule (selector + properties + children).
@@ -53,7 +54,8 @@ func NewStyleSheet(theme Theme) *StyleSheet {
 func (ss *StyleSheet) Rule(selector string) *StyleSheet {
 	r := cssRule{selector: selector}
 	ss.rules = append(ss.rules, r)
-	ss.during = &ss.rules[len(ss.rules)-1]
+	ss.duringIndex = len(ss.rules) - 1
+	ss.during = &ss.rules[ss.duringIndex]
 	return ss
 }
 
@@ -202,6 +204,9 @@ func (ss *StyleSheet) Keyframes(name string, steps ...KeyframeStep) *StyleSheet 
 		r.children = append(r.children, stepRule)
 	}
 	ss.rules = append(ss.rules, r)
+	if ss.during != nil {
+		ss.during = &ss.rules[ss.duringIndex]
+	}
 	return ss
 }
 

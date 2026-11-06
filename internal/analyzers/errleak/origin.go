@@ -84,6 +84,7 @@ type fnOrigins struct {
 	params map[types.Object]bool
 	defs   map[types.Object][]errDef
 	busy   map[types.Object]bool
+	args   map[types.Object]origin
 }
 
 type errDef struct {
@@ -145,7 +146,7 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 	info := f.pass.TypesInfo
 	switch x := ast.Unparen(e).(type) {
 	case *ast.Ident:
-		obj := info.Uses[x]
+		obj := info.ObjectOf(x)
 		if obj == nil || f.busy[obj] {
 			return 0
 		}
@@ -158,6 +159,9 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 			}
 		}
 		if best == nil {
+			if argument, ok := f.args[obj]; ok {
+				return argument
+			}
 			if f.params[obj] {
 				return fromParam
 			}
@@ -171,6 +175,17 @@ func (f *fnOrigins) of(e ast.Expr, pos token.Pos) origin {
 		return f.of(best.rhs, best.pos)
 	case *ast.CallExpr:
 		return f.callOrigin(x, pos)
+	case *ast.IndexExpr:
+		return f.of(x.X, pos)
+	case *ast.CompositeLit:
+		var combined origin
+		for _, element := range x.Elts {
+			if entry, ok := element.(*ast.KeyValueExpr); ok {
+				element = entry.Value
+			}
+			combined |= f.of(element, pos)
+		}
+		return combined
 	}
 	return 0
 }
@@ -189,6 +204,8 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 		} else if id, ok := fun.X.(*ast.Ident); ok {
 			obj = info.Uses[id]
 		}
+	case *ast.FuncLit:
+		return f.litReturns(fun, call.Args, pos)
 	default:
 		return 0
 	}
@@ -197,7 +214,9 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 		// A call through a func value: a host callback, whose error can
 		// be any type the host chose. A local bound only to func
 		// literals in this body is the function's own code (json
-		// detail's pick helper), not a callback.
+		// detail's pick helper), not a callback: the origin is the
+		// union of the literals' own returns, so a decoder bound to a
+		// literal still carries encoding/json's error.
 		if _, ok := ob.Type().Underlying().(*types.Signature); !ok {
 			return 0
 		}
@@ -209,7 +228,26 @@ func (f *fnOrigins) callOrigin(call *ast.CallExpr, pos token.Pos) origin {
 				}
 			}
 			if own {
-				return 0
+				// The literal's own code: take the origin of its
+				// returns instead of dropping it — a decoder bound to
+				// a literal still returns encoding/json's error
+				// (fromJSONLit), while a callback's error stays
+				// foreign only when the literal itself calls one. A
+				// literal that calls the var itself (re-bound in a
+				// retry loop, or two literals calling each other)
+				// re-enters here: the busy guard cuts the cycle —
+				// any origin reachable through the self call is
+				// reachable through the literal's other returns too.
+				if f.busy[ob] {
+					return 0
+				}
+				f.busy[ob] = true
+				defer delete(f.busy, ob)
+				var o origin
+				for _, d := range ds {
+					o |= f.litReturns(ast.Unparen(d.rhs).(*ast.FuncLit), call.Args, pos)
+				}
+				return o
 			}
 		}
 		return fromForeign
@@ -260,6 +298,64 @@ func (f *fnOrigins) importFact(fn *types.Func, fact analysis.Fact) bool {
 		return false
 	}
 	return f.pass.ImportObjectFact(fn, fact)
+}
+
+// litReturns is the union of the origins a func literal's error
+// results carry.
+func (f *fnOrigins) litReturns(lit *ast.FuncLit, args []ast.Expr, pos token.Pos) origin {
+	if lit == nil || lit.Body == nil {
+		return 0
+	}
+	invocation := *f
+	invocation.args = make(map[types.Object]origin, len(f.args)+len(args))
+	for obj, argument := range f.args {
+		invocation.args[obj] = argument
+	}
+	argument := 0
+	if lit.Type.Params != nil {
+		for _, field := range lit.Type.Params.List {
+			if len(field.Names) == 0 {
+				argument++
+				continue
+			}
+			for _, name := range field.Names {
+				if argument < len(args) {
+					boundOrigin := f.of(args[argument], pos)
+					if _, variadic := field.Type.(*ast.Ellipsis); variadic {
+						for _, actual := range args[argument+1:] {
+							boundOrigin |= f.of(actual, pos)
+						}
+					}
+					invocation.args[f.pass.TypesInfo.ObjectOf(name)] = boundOrigin
+				}
+				argument++
+			}
+		}
+	}
+	var o origin
+	ast.Inspect(lit.Body, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.FuncLit:
+			return false
+		case *ast.ReturnStmt:
+			if len(x.Results) == 0 && lit.Type.Results != nil {
+				for _, field := range lit.Type.Results.List {
+					for _, name := range field.Names {
+						if isErrorType(f.pass.TypesInfo.TypeOf(name)) {
+							o |= invocation.of(name, x.Pos())
+						}
+					}
+				}
+			}
+			for _, r := range x.Results {
+				if isErrorType(f.pass.TypesInfo.TypeOf(r)) {
+					o |= invocation.of(r, x.Pos())
+				}
+			}
+		}
+		return true
+	})
+	return o
 }
 
 // returnsOrigin is the union of the origins a declaration's error
@@ -375,10 +471,10 @@ func errorTexts(pass *analysis.Pass, e ast.Node) []ast.Expr {
 						return true
 					}
 					s, ok := constString(pass, args[0])
-					if !ok || !textVerb.MatchString(s) {
+					if !ok {
 						return true
 					}
-					args = args[1:]
+					args = formattedTextArgs(s, args[1:])
 				default:
 					return true
 				}

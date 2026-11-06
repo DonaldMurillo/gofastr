@@ -1,5 +1,18 @@
 # Desktop host (experimental)
 
+`desktop keygen` and `desktop feed` reject valued flags without a value,
+including an output flag followed by another flag. Use `--out=<path>`
+when the intended path itself starts with a dash.
+
+A tray that enables `CloseHidesWindow` always has a Show menu action, even
+when no menu was supplied. An existing Show action, including a nested one,
+is preserved without adding a duplicate.
+
+A macOS build recreates the destination `.app` tree before writing the new
+bundle. Old signatures and resources do not survive `--no-sign` rebuilds.
+The previous bundle is removed before compilation; preserve a separate copy
+if it must remain available when a build fails.
+
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.
@@ -240,6 +253,20 @@ extractor as its own and keeps its local identity
 
 ## How the window authenticates
 
+The native bootstrap and generated typed bridge are top-frame-only in
+every main and secondary window. Same-origin and foreign iframes receive
+no `window.__gofastr_desktop` marker or typed bridge. macOS also refuses
+child-frame native script messages; Windows listens only to WebView2's
+top-level `WebMessageReceived` event, not frame message events. WebView2
+runs document-created scripts in child frames too, so the shared bootstrap
+checks `window === window.top` before publishing its marker. Linux installs
+its bootstrap with WebKitGTK's `TOP_FRAME` scope.
+
+This is an injection contract, not isolation from trusted same-origin
+JavaScript: a same-origin child can still access its parent's objects and
+authenticated HTTP endpoints. Do not embed untrusted content on the app's
+own origin.
+
 Any local process can find the loopback port, so the page must present
 a credential nothing else has:
 
@@ -247,8 +274,11 @@ a credential nothing else has:
 2. `Run` navigates the fresh window to
    `/__gofastr/desktop/enter?t=<token>`, single use, constant-time
    compared.
-3. The handler sets the `__gofastr_desktop` cookie (HttpOnly,
-   SameSite=Strict, session lifetime) and 302s to `/`.
+3. The handler sets the `__gofastr_desktop_<session value>` cookie
+   (HttpOnly, SameSite=Strict, session lifetime) and 302s to `/`.
+   Its name is unique to this running battery: WebView2 profiles share
+   cookies across loopback ports, so a second instance must not replace
+   the first instance's session cookie.
 4. A gate middleware, installed app-wide in `Init` and armed by `Run`
    before the listener opens, then requires the pinned `Host` header
    and that cookie for every route, including pages and the SSE bus.
@@ -361,6 +391,26 @@ The core capabilities:
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
+Clipboard text reads and writes are capped at 1 MiB of UTF-8 bytes. A read
+above the cap returns `invalid_input` without sending clipboard contents to
+the page; it never silently truncates the user's text.
+
+Native window focus, title writes and frame writes refuse a window that closed
+before the operation reached the UI thread. On Windows, a destroyed window's
+nonzero native handle is not evidence that the window is still open. `Title()`
+retains its cached fallback when the native window is no longer available.
+Sidebar-width writes use the same closed-window refusal; they never change
+the cached width after close. `Native()` returns zero for a closed window.
+On macOS, closed-window calls return before scheduling native work, so a
+stopped UI loop cannot turn the refusal into an internal dispatch error.
+Title writes update their cached fallback only after reaching a live window.
+
+All three native shells return `desktop.ErrWindowClosed` (`not_found`,
+`"window is closed"`) for operations on a closed window. `Window.Close()` is
+idempotent: an already-closed window, including one closed while the close was
+queued for the UI thread, returns nil. Unrelated UI-dispatch failures still
+return their own error.
+
 The macOS, Linux and Windows shells check a dialog's input the same way
 (`desktop.CheckFileDialog`) and answer `invalid_input` instead of
 opening a dialog it was not asked for: a filter extension (`png` or
@@ -370,7 +420,13 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). The path must arrive in
+(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
+on the exact picked folder and nothing under the folder: no descendant
+`stat`, reads, or writes. It does not grant directory traversal or listing.
+`openFile` and `saveFile` grant only the exact returned file paths for
+`fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
+parent directory. All picks retain the same least-authority `AllowPath`
+grant; a folder pick does not create a prefix grant. The path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink
@@ -611,6 +667,11 @@ the menu bar after the main window closes; `HideDock` runs the app as
 an accessory (no Dock icon, menu bar only). `d.SetTrayTitle` and
 `__gofastr.desktop.tray.setTitle` change the bar title at runtime.
 
+Windows hides the main window on close only while its notification-area icon
+has registered successfully. If registration fails, close behaves normally.
+After Explorer restarts, the app re-registers the icon; if that fails while
+the main window is hidden, the app restores the window instead.
+
 Linux uses an app-owned local session-bus connection and the
 StatusNotifierItem/DBusMenu protocols. It requires a compatible status host
 (for example, a desktop panel with SNI support); it does not install a host,
@@ -690,7 +751,9 @@ type WindowStyle struct {
   needs something to be that surface; an unpainted transparent window
   shows the desktop.
 - `X` and `Y` position the window's top-left corner in screen points
-  on the primary screen, measured from its top-left. Set both or
+  on the primary screen, measured from its top-left. On macOS this uses
+  the same origin as remembered frames, even when a different-height
+  secondary screen holds the key window. Set both or
   neither: one alone is a configuration error (the bridge answers
   `invalid_input`; the Go side ignores it and centers).
 
@@ -854,7 +917,8 @@ d := native.New(desktop.Config{
   `NSAppKitVersionNumber` from the AppKit actually loaded.
 - `Config.SidebarWidth` (and `WindowSpec.SidebarWidth` for another
   window) is the initial sidebar zone in points, `0..MaxSidebarWidth`
-  (4096); 0 means no zone. The page reports later widths through
+  (4096); 0 means no zone. A later positive width creates the sidebar
+  zone when the window uses `MaterialSidebar`. The page reports widths through
   `__gofastr.desktop.window.setChrome({sidebarWidth})`, which applies
   to the calling window only; a ResizeObserver on the sidebar element
   is the intended caller. Go code calls `Window.SetSidebarWidth`.
@@ -889,7 +953,10 @@ WebKit has no CSS signal for window activity and implements no
 - `reduce_transparency {"on": bool}` goes to every window on each
   change of the system setting. When it is on, the shell hides the
   effect views and restores an opaque window background, the same
-  window `MaterialNone` gives. `Shell.Appearance()` answers the
+  window `MaterialNone` gives. Turning it off restores the material
+  around the same live web view, including `MaterialGlass`; repeated
+  toggles preserve the page rather than replacing or reloading it.
+  `Shell.Appearance()` answers the
   current state at any time, including before `Run`.
 - `desktop.BootstrapJS(windowID, reduceTransparency)` carries the
   state at load, so the first paint is right.
@@ -1056,7 +1123,8 @@ active and inactive:
   sidebar width (`SidebarWidthOf(id)`), fires the appearance callback
   from `SetReduceTransparency`, and fires the focus callbacks from
   `FocusWindow` and `BlurWindow` on a goroutine, the way the native
-  delegates do.
+  delegates do. `Window.Focus` also emits focus (and reveals a hidden
+  window); closing the main window to the tray emits blur.
 - `desktop.WindowState` reads the applied chrome back off the live
   window: `Material`, `TitlebarTransparent`, `TitleVisibility`,
   `ToolbarStyle`, `SidebarWidth`, the style mask, and `CGWindowID`
@@ -1766,9 +1834,19 @@ gofastr desktop keygen -o path
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
     --url https://example.com/notes/Notes-1.2.0.zip [-o dir]
-    writes manifest.json and manifest.json.sig into dir (-o defaults
+    merges this platform into an existing same-version manifest.json,
+    preserving other platforms and channels, then re-signs it. A different
+    existing version (including a missing version) is refused; use a fresh directory for a new release.
+    Writes manifest.json and manifest.json.sig into dir (-o defaults
     to .), computing sha256 and size from the archive file
 ```
+
+Retained channels must also have valid semantic versions; an invalid channel
+refuses the merge without changing the existing manifest or signature.
+On macOS, Linux, and Windows, feed writers sharing an output directory serialize
+the entire read/merge/sign/write operation with an OS file lock. Publish the
+completed pair after all jobs finish; live readers can still observe the interval
+between the manifest write and its signature write.
 
 `feed` refuses a version that is not semver, a platform key outside
 the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
@@ -1779,6 +1857,11 @@ publish). For a `windows-*` platform the directory is `<Name>/`
 instead. It must hold exactly `<Name>.exe` and `WebView2Loader.dll`,
 and the executable's `ProductVersion` must be `--version`. The version
 resource is read in pure Go, so the feed can be signed on any host.
+The numeric Windows file version uses only core version numbers: for
+`1.2.3-rc.1.2` it is `1.2.3.0`, while `ProductVersion` keeps the full
+pre-release string. A non-update Windows build may also retain semver
+build metadata in `ProductVersion`; metadata never contributes numeric
+file-version components.
 It also extracts the archive into a temporary directory with
 the updater's own extractor, so anything a client would refuse is
 refused at release time instead: a stray top-level file (`README.txt`,
@@ -1805,10 +1888,10 @@ native code.
 ## Remembering window state
 
 A desktop app remembers where its windows were. With
-`Config.RememberWindows: true` the battery persists every window's
-frame (position and size) and the main window's last path, so a user
-who drags a window to another monitor, resizes it, navigates to a
-screen, and quits finds all of it back on the next launch.
+`Config.RememberWindows: true` the battery persists the main and settings
+windows' frames (position and size) and the main window's last path.
+Those stable window identities restore their placement on the next launch;
+ordinary secondary ids (`w2`, `w3`, …) identify windows only within one run.
 
 ```go
 d := native.New(desktop.Config{
@@ -1848,13 +1931,29 @@ crash.
 
 ### What happens on relaunch
 
-- The main window opens at its remembered frame; a secondary window
-  opened under the same id ("settings", a widget) gets its remembered
-  frame through the same `WindowSpec.Frame` path. An explicit `Frame`
-  on the spec wins over the store.
+- The main window opens at its remembered frame; the settings window
+  gets its remembered frame through the same `WindowSpec.Frame` path.
+  Frames for transient secondary ids are discarded at startup, so a newly
+  assigned `w2` cannot inherit a different window's placement from an earlier
+  run. An explicit `Frame` on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
-  changed) is dropped and the window centers.
+  changed) is dropped and the window centers. Windows checks native
+  monitor work areas in physical pixels, retaining each monitor's effective
+  DPI (`GetDpiForMonitor` from `shcore.dll`, falling back to system DPI).
+  Saved origins convert to pixels with system DPI; saved dimensions and
+  the overlap threshold convert with each candidate monitor's DPI. The
+  centered physical placement converts back only at the saved-frame boundary:
+  system-DPI origins and monitor-DPI dimensions are not one geometric scale.
+  Linux checks GDK work areas, including
+  monitors with negative coordinates. These hosts also discard saved
+  sizes outside 1–32767 points, avoiding native integer truncation.
+  Windows preserves a valid saved size when centering, using the configured
+  size only when the saved dimensions are invalid. Linux centers at the
+  configured size. Both fit the fallback to the primary work area. Native
+  frame callbacks can persist that fallback over the remembered frame;
+  the old off-screen position is not retained for a later relaunch. If no
+  work area can be read, the shell uses its default placement.
 - The boot handshake's redirect goes to the main window's remembered
   path instead of `/`, validated against the navigate grammar both
   when the page reports it and when the redirect uses it. Any doubt
@@ -1883,7 +1982,8 @@ Window.SetFrame(Frame) error
 ```
 
 `OnWindowFrame` fires on a goroutine whenever the user moves or
-resizes a window, unthrottled; the battery debounces. On macOS the
+resizes the main window or a secondary window, including one opened
+after the shell starts, unthrottled; the battery debounces. On macOS the
 window delegate's `windowDidMove:` and `windowDidEndLiveResize:` (the
 resize reports once, at the end of the drag) feed it, and a
 programmatic `SetFrame` reports through the same path. The top-left to
@@ -2121,13 +2221,35 @@ bad menu. `New` also takes a defensive copy of the list (`Choices`,
 `Min`, `Max` included), so mutating the Config afterwards changes
 nothing.
 
+String defaults and every new string preference write refuse CR and LF
+line breaks. `Preferences.Set`, `preferences.set`, and the settings form
+validate this before storing any part of the update; errors identify the
+preference key, and the form returns a field error on 400.
+
 Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
 page keys to `page.`, so this entry is never reachable from the page.
+The complete encoded object must fit within the app state's 64 KiB value
+limit, including keys, JSON escaping and any retained undeclared values.
+Updates are validated in sorted key order against the merged object, with
+all replaced values removed first so a batch can shrink another key to fit.
+An overflow refuses the whole update before storage: `preferences.set`
+answers `invalid_input` naming the key that exceeds the budget, and the
+settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
+
+Compatibility exception: a stored string containing CR or LF from an older
+version remains readable verbatim through `String`, `All`, and
+`preferences.get`. The single-line settings field warns that it cannot
+display those line breaks. Saving another field leaves that stored string
+untouched: its browser-sanitized display value is omitted from the update.
+Trying to change the legacy field through that form refuses the whole Save
+with a keyed field error, even when the proposed replacement is single-line.
+To repair it intentionally, replace it with a single-line string through
+`Preferences.Set` or `preferences.set`, then reopen the screen.
 
 ### The typed reads
 
@@ -2366,6 +2488,9 @@ WKWebView through `desktoptest.NativeMain`.
 
 ## The `gofastr desktop` verbs
 
+`gofastr desktop run` removes its private build directory when its first
+build or launch fails, as well as on ordinary shutdown.
+
 | Verb | What it does |
 |---|---|
 | `build ...` on macOS | Cross-compiles for darwin/arm64 with `CGO_ENABLED=0` and writes `<o>/<Name>.app` (a `GOARCH` other than arm64 is refused; on an Intel Mac the build warns that the bundle will not launch there): Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
@@ -2373,7 +2498,7 @@ WKWebView through `desktoptest.NativeMain`.
 | `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
-| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
+| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. Its staging directory is removed on success and on build, run, decode, or output-write failure. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
 
@@ -2846,6 +2971,11 @@ func TestExport(t *testing.T) {
 `ClickMenu` and `ClickTray` match an item by its title phrase's
 English, so the same test passes on a machine set to any language.
 
+Closing and reopening a window ID creates a fresh fake window, just as
+the native shells do. Its title, navigation and evaluation records do not
+carry over. `Closed` and `IsClosed` both report the old instance's closed
+state; delayed close callbacks cannot remove its live replacement.
+
 `h.Stranger()` is a client with no session, for asserting that another
 local process on the port is refused. The harness quits the app in
 `t.Cleanup`; `h.Quit()` returns `Run`'s error when a test ends the app
@@ -2859,6 +2989,11 @@ stands in for the browser; every page-side step runs in the actual
 web view, and every native step goes through the shell's `NativeDriver`
 (`ClickMenu`, `ClickTray`, `OpenSettings`, `Answer`, `ClickPrompt`,
 `OpenURL`, `CloseWindow`, `WindowState`, `Notifications`).
+
+A clean shell exit before page readiness fails the binary instead of
+silently skipping native tests. Readiness has a 60-second deadline;
+exceeding it logs a diagnostic, quits the app, and fails the run. An
+unsupported native shell still skips native tests without failing.
 
 ```go
 func TestMain(m *testing.M) {

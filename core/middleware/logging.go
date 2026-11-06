@@ -188,6 +188,20 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 	return rw.ResponseWriter.Write(b)
 }
 
+// ReadFrom latches the implicit 200 only after bytes are copied, keeping the
+// connection's sendfile path: io.Copy and http.ServeContent probe the
+// writer they are handed for ReaderFrom, and Unwrap does not reach
+// them — without this, every file served behind Logging degrades to a
+// copied body.
+func (rw *responseWriter) ReadFrom(src io.Reader) (int64, error) {
+	copied, err := io.Copy(rw.ResponseWriter, src)
+	if copied > 0 && !rw.wroteHeader {
+		rw.statusCode = http.StatusOK
+		rw.wroteHeader = true
+	}
+	return copied, err
+}
+
 // Unwrap lets http.NewResponseController walk through this wrapper so
 // SetReadDeadline/SetWriteDeadline reach the real connection instead of
 // failing with a silent ErrNotSupported (a streaming handler that

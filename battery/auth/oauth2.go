@@ -560,7 +560,7 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
 			slog.Warn("oauth email refused: not in composed Unicode form",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
-			writeAuthError(w, r, http.StatusBadRequest, reasonComposedEmail)
+			writeAuthErrorFor(w, r, http.StatusBadRequest, err, reasonComposedEmail)
 			return
 		}
 		// The same bound the form paths apply: the address becomes a
@@ -727,24 +727,6 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			return
 		}
 
-		if linked {
-			p.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "oauth.linked",
-				UserID: user.GetID(),
-				Email:  info.Email,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"provider": providerName},
-			})
-		} else {
-			p.mgr.emitSecurity(r.Context(), SecurityEvent{
-				Kind:   "oauth.login",
-				UserID: user.GetID(),
-				Email:  info.Email,
-				Remote: remoteHost(r),
-				Meta:   map[string]string{"provider": providerName},
-			})
-		}
-
 		// Mint through the manager, not SessionStore().Create: MintSession
 		// is what applies the second-factor pending mark. Creating the
 		// session directly here left PendingTwoFactor=false for a
@@ -752,6 +734,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// fully-privileged session that could then disable the factor.
 		cfg := p.mgr.Config()
 		sess, pending, err := p.mgr.MintSession(r.Context(), user.GetID(), cfg.SessionTTL)
+		if errors.Is(err, ErrTwoFactorEnforcement) {
+			p.mgr.emitSecurity(r.Context(), SecurityEvent{
+				Kind: "login.failed", UserID: user.GetID(), Email: info.Email, Remote: remoteHost(r),
+				Meta: map[string]string{"reason": "twofa_failclosed", "via": "oauth", "provider": providerName},
+			})
+			writeAuthError(w, r, http.StatusInternalServerError, reasonTwoFactorUnavailable)
+			return
+		}
 		if err != nil {
 			writeAuthError(w, r, http.StatusInternalServerError, reasonSessionCreateFailed)
 			return
@@ -787,6 +777,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 			writeAuthError(w, r, http.StatusUnauthorized, reasonOauthLinkRemoved)
 			return
 		}
+		kind := "oauth.login"
+		if linked {
+			kind = "oauth.linked"
+		}
+		p.mgr.emitSecurity(r.Context(), SecurityEvent{
+			Kind: kind, UserID: user.GetID(), Email: info.Email, Remote: remoteHost(r),
+			Meta: map[string]string{"provider": providerName},
+		})
 		// Set the session cookie through the one mint helper:
 		// SameSite=Strict, the password-login mint's posture. The state
 		// cookie keeps its own Lax (it must ride the provider's

@@ -41,6 +41,7 @@
     };
 
     input.addEventListener('input', updateClearVisibility);
+    if (input.form) input.form.addEventListener('reset', () => requestAnimationFrame(updateClearVisibility));
     clearBtn.addEventListener('click', function () {
       clear();
       input.focus();
@@ -51,7 +52,7 @@
     // Mid-composition (CJK input) Escape cancels the conversion and
     // belongs to the IME.
     input.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape' || e.isComposing || !input.value) return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !input.value) return;
       e.preventDefault();
       e.stopPropagation();
       clear();

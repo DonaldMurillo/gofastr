@@ -131,6 +131,22 @@ func TestSettleStampQuietPostures(t *testing.T) {
 	}
 }
 
+// Quoted column names: a Set that spells its stamps with identifier
+// quotes writes them the same. Cutting the statement at the first
+// quote read the SET list as {status} alone — a false finding — and a
+// quoted status column was not tracked at all.
+func TestSettleStampQuotedColumns(t *testing.T) {
+	// The stamps are written under quotes: quiet, like the unquoted fix.
+	if hs := ssFixture(t, `UPDATE %s SET status='failed', "last_error"=$2, "updated_at"=now() WHERE id=$3`, nil); len(hs) != 0 {
+		t.Fatalf("quoted stamp columns are writes; want quiet, got %v", hs)
+	}
+	// A quoted status column is still a status transition: it skips the
+	// stamps, so it fires.
+	if hs := ssFixture(t, `UPDATE %s SET "status"='failed' WHERE id=$1`, nil); len(hs) != 1 {
+		t.Fatalf("a quoted status column skipping the stamps; want one finding, got %v", hs)
+	}
+}
+
 // No convention, no finding: when one sibling writes no stamp either,
 // the table has no rule to break.
 func TestSettleStampNeedsAConvention(t *testing.T) {

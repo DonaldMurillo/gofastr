@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/objc"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // The darwin/arm64 desktop.Shell: a real AppKit + WKWebView host on top of
@@ -32,6 +33,24 @@ const evalTimeout = 15 * time.Second
 
 // snapTimeout bounds one window snapshot.
 const snapTimeout = 30 * time.Second
+
+// deliverOnGoroutine launches a host callback on its own goroutine with
+// a recover, so a panicking app callback drops that one event instead
+// of the whole desktop process (deliverDeepLink's spelling).
+func deliverOnGoroutine(fn func()) {
+	go func() {
+		defer func() {
+			if v := recover(); v != nil {
+				if s := activeShell.Load(); s != nil && s.logger != nil {
+					s.logger.Error("desktop: callback panicked", "panic", textsafe.Recovered(v))
+				} else {
+					slog.Default().Error("desktop: callback panicked", "panic", textsafe.Recovered(v))
+				}
+			}
+		}()
+		fn()
+	}()
+}
 
 // ─── desktop.Window styles ───────────────────────────────────────────────────
 
@@ -105,6 +124,17 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 	return float64(*style.X), screenHeight - float64(*style.Y) - float64(height), true
 }
 
+type windowStylePlacement struct {
+	screens   func() []screenInfo
+	setOrigin func(objc.ID, float64, float64)
+}
+
+func nativeStylePlacement() windowStylePlacement {
+	return windowStylePlacement{screens: readScreens, setOrigin: func(window objc.ID, left, top float64) {
+		objc.SendF(window, objc.Sel("setFrameOrigin:"), nil, []float64{left, top})
+	}}
+}
+
 // applyWindowStyle runs every post-creation style setter. Call on the
 // main thread; the mask half of the style was applied at window
 // creation (windowStyleMask) and the panel class at alloc time.
@@ -114,7 +144,7 @@ func frameOrigin(style desktop.WindowStyle, height int, screenHeight float64) (x
 // re-verified against the SDK on this machine), so the value itself is
 // right; setting it after setToolbar: keeps it safe against an AppKit
 // release that lets attaching a toolbar reset the visibility.
-func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int) {
+func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height int, placement windowStylePlacement) {
 	if style.Chrome == desktop.ChromeHiddenTitle || style.Chrome == desktop.ChromeUnified {
 		objc.Send(win, objc.Sel("setTitlebarAppearsTransparent:"), 1)
 	}
@@ -147,22 +177,9 @@ func applyWindowStyle(win, webView objc.ID, style desktop.WindowStyle, height in
 	if style.AllSpaces {
 		objc.Send(win, objc.Sel("setCollectionBehavior:"), behaviorCanJoinAllSpaces)
 	}
-	if x, y, ok := frameOrigin(style, height, mainScreenHeight()); ok {
-		// setFrameOrigin: takes an NSPoint, two doubles.
-		objc.SendF(win, objc.Sel("setFrameOrigin:"), nil, []float64{x, y})
+	if x, y, ok := frameOrigin(style, height, screenFlipBase(placement.screens())); ok {
+		placement.setOrigin(win, x, y)
 	}
-}
-
-// mainScreenHeight reads the main screen's frame height, the base the
-// top-left Y flips against. 0 when there is no screen (headless); the
-// caller's frameOrigin answer is then still computed, which parks the
-// window below the visible area rather than crashing.
-func mainScreenHeight() float64 {
-	screen := objc.Send(objc.Class("NSScreen"), objc.Sel("mainScreen"))
-	if screen == 0 {
-		return 0
-	}
-	return objc.SendRectRet(objc.ID(screen), objc.Sel("frame")).H
 }
 
 // ─── desktop.Window frames ───────────────────────────────────────────────────
@@ -532,7 +549,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 	userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 		objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+		uintptr(objc.NSString(desktop.BootstrapJS(desktop.MainWindowID, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 	objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 	webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -558,7 +575,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 	objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 	objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 	objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
-	applyWindowStyle(window, webView, cfg.Style, cfg.Height)
+	applyWindowStyle(window, webView, cfg.Style, cfg.Height, nativeStylePlacement())
 	// The material goes in before the window fronts, so the first
 	// paint already has the effect under it.
 	mainChrome := applyWindowMaterial(window, webView, cfg.Style, cfg.SidebarWidth, s.reduceTransparency.Load(), s.logger)
@@ -612,6 +629,7 @@ func (s *darwinShell) Run(ctx context.Context, cfg desktop.WindowConfig, ready f
 
 	close(loopStopped)
 	s.mu.Lock()
+	//gofastr:allow(deferreset) the reset follows the process-lifetime AppKit run loop on the main thread; any panic between the set and this reset is an unrecovered crash that ends the process, so no later caller can observe the stale flag
 	s.running = false
 	s.mu.Unlock()
 
@@ -796,11 +814,6 @@ func (s *darwinShell) sendSnap(out snapOutcome) {
 // channel exists for the Debug log and the e2e seam.
 const bridgeMessageHandlerName = "gofastr"
 
-// errWindowClosed is the fixed refusal for desktop.Window methods before Run.
-func errWindowClosed() *desktop.Error {
-	return &desktop.Error{Code: desktop.CodeUnsupported, Message: "window is not open"}
-}
-
 // desktop.MainWindowID lives in shell.go: the test double and the portable
 // code need it on every GOOS/GOARCH, not only darwin/arm64.
 
@@ -857,6 +870,9 @@ func (w *darwinWindow) ids() (objc.ID, objc.ID) {
 
 // Navigate loads url in this window's web view.
 func (w *darwinWindow) Navigate(url string) error {
+	if _, webview := w.ids(); webview == 0 {
+		return errWindowClosed()
+	}
 	s := w.shell
 	var callErr error
 	err := s.onMain(func() {
@@ -1096,6 +1112,11 @@ func (s *darwinShell) drainSnap() {
 
 // Title reads the live NSWindow title (cached copy on hop failure).
 func (w *darwinWindow) Title() string {
+	if win, _ := w.ids(); win == 0 {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		return w.title
+	}
 	var title string
 	if err := w.shell.onMain(func() {
 		if win, _ := w.ids(); win != 0 {
@@ -1113,9 +1134,9 @@ func (w *darwinWindow) Title() string {
 
 // SetTitle changes this window's title.
 func (w *darwinWindow) SetTitle(title string) error {
-	w.mu.Lock()
-	w.title = title
-	w.mu.Unlock()
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
+	}
 	closed := false
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
@@ -1124,6 +1145,9 @@ func (w *darwinWindow) SetTitle(title string) error {
 			return
 		}
 		objc.Send(win, objc.Sel("setTitle:"), uintptr(objc.NSString(title)))
+		w.mu.Lock()
+		w.title = title
+		w.mu.Unlock()
 	})
 	if err != nil {
 		return &desktop.Error{Code: desktop.CodeInternal, Message: desktop.InternalErrorMsg}
@@ -1136,6 +1160,9 @@ func (w *darwinWindow) SetTitle(title string) error {
 
 // Focus brings this window to front and activates the app.
 func (w *darwinWindow) Focus() error {
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
+	}
 	s := w.shell
 	closed := false
 	err := s.onMain(func() {
@@ -1164,6 +1191,9 @@ func (w *darwinWindow) Native() uintptr {
 
 // Frame implements desktop.Window: the live frame, top-left screen points.
 func (w *darwinWindow) Frame() (desktop.Frame, error) {
+	if win, _ := w.ids(); win == 0 {
+		return desktop.Frame{}, errWindowClosed()
+	}
 	var f desktop.Frame
 	var ok bool
 	err := w.shell.onMain(func() { f, ok = w.readFrameOnMain() })
@@ -1185,6 +1215,9 @@ func (w *darwinWindow) Frame() (desktop.Frame, error) {
 func (w *darwinWindow) SetFrame(f desktop.Frame) error {
 	if f.Width <= 0 || f.Height <= 0 {
 		return &desktop.Error{Code: desktop.CodeInvalidInput, Message: "frame width and height must be positive"}
+	}
+	if win, _ := w.ids(); win == 0 {
+		return errWindowClosed()
 	}
 	closed := false
 	err := w.shell.onMain(func() {
@@ -1227,7 +1260,7 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 		return
 	}
 	if f, ok := w.readFrameOnMain(); ok {
-		go cb(w.id, f)
+		deliverOnGoroutine(func() { cb(w.id, f) })
 	}
 }
 
@@ -1241,6 +1274,9 @@ func (s *darwinShell) reportWindowFrame(w *darwinWindow) {
 // routing AppKit would, then close (which bypasses the delegate, as
 // always) tears the window down.
 func (w *darwinWindow) Close() error {
+	if win, _ := w.ids(); win == 0 {
+		return nil
+	}
 	err := w.shell.onMain(func() {
 		win, _ := w.ids()
 		if win == 0 {
@@ -1303,7 +1339,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(ucc, objc.Sel("addScriptMessageHandler:name:"), uintptr(bridge), uintptr(objc.NSString(bridgeMessageHandlerName)))
 		userScript := objc.Send(objc.ID(objc.Send(objc.Class("WKUserScript"), objc.Sel("alloc"))),
 			objc.Sel("initWithSource:injectionTime:forMainFrameOnly:"),
-			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 0 /* all frames */)
+			uintptr(objc.NSString(desktop.BootstrapJS(id, s.reduceTransparency.Load()))), 0 /* atDocumentStart */, 1 /* main frame only */)
 		objc.Send(ucc, objc.Sel("addUserScript:"), uintptr(userScript))
 
 		webView := objc.ID(objc.SendRect(objc.ID(objc.Send(objc.Class("WKWebView"), objc.Sel("alloc"))),
@@ -1326,7 +1362,7 @@ func (s *darwinShell) OpenWindow(id string, spec desktop.WindowSpec, url string)
 		objc.Send(window, objc.Sel("setContentView:"), uintptr(webView))
 		objc.Send(window, objc.Sel("setDelegate:"), uintptr(bridge))
 		objc.Send(webView, objc.Sel("setNavigationDelegate:"), uintptr(bridge))
-		applyWindowStyle(window, webView, spec.Style, height)
+		applyWindowStyle(window, webView, spec.Style, height, nativeStylePlacement())
 		// The material before the window fronts, like the main window.
 		chrome := applyWindowMaterial(window, webView, spec.Style, spec.SidebarWidth, s.reduceTransparency.Load(), s.logger)
 		// A remembered (or explicit) frame wins over the style origin;

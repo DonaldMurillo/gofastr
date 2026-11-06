@@ -105,7 +105,7 @@ func (f *Shell) OpenWindow(id string, spec desktop.WindowSpec, url string) (desk
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.openWindowCalls = append(f.openWindowCalls, OpenWindowCall{ID: id, Spec: spec, URL: url})
-	if w, ok := f.openWindows[id]; ok {
+	if w, ok := f.openWindows[id]; ok && !w.IsClosed() {
 		return w, nil
 	}
 	w := &Window{shell: f, id: id, title: spec.Title, sidebarWidth: spec.SidebarWidth}
@@ -132,6 +132,7 @@ func (f *Shell) MoveWindow(id string, fr desktop.Frame) {
 	}
 	w.setFrameUser(fr)
 	if cb != nil {
+		//gofastr:allow(recovercallback) test double simulating the OS: an app callback that panics must fail the test loudly, not be swallowed
 		go cb(id, fr)
 	}
 }
@@ -154,6 +155,7 @@ func (f *Shell) SetReduceTransparency(on bool) {
 	cb := f.runCfg.OnAppearance
 	f.mu.Unlock()
 	if cb != nil {
+		//gofastr:allow(recovercallback) test double simulating the OS: an app callback that panics must fail the test loudly, not be swallowed
 		go cb(ap)
 	}
 }
@@ -177,9 +179,11 @@ func (f *Shell) fireWindowActivity(id string, focus bool) {
 		return
 	}
 	if focus && focusCB != nil {
+		//gofastr:allow(recovercallback) test double simulating the OS: an app callback that panics must fail the test loudly, not be swallowed
 		go focusCB(id)
 	}
 	if !focus && blurCB != nil {
+		//gofastr:allow(recovercallback) test double simulating the OS: an app callback that panics must fail the test loudly, not be swallowed
 		go blurCB(id)
 	}
 }

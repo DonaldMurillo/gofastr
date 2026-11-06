@@ -16,6 +16,27 @@ import (
 
 const datepickerLoaded = `!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-datepicker'])`
 
+func TestDateRangeUsesGregorian(t *testing.T) {
+	for _, language := range []string{"th", "th-u-ca-buddhist", ""} {
+		t.Run(language, func(t *testing.T) {
+			ctx := datePickerServer(t, func(month string) DatePickerProps {
+				return DatePickerProps{ID: "stay", Label: "Stay", Month: "2026-11",
+					Range:  &DateRange{StartName: "arrival", EndName: "departure", Start: "2026-05-03"},
+					Island: Island{Endpoint: "/island/cal", Signal: "stay-cal"}}
+			})
+			dpRun(t, ctx, chromedp.Evaluate(fmt.Sprintf(`document.documentElement.lang = %q`, language), nil),
+				chromedp.Click(`[data-hui-date="2026-11-12"]`, chromedp.ByQuery))
+			if !pollTrue(ctx, `document.getElementById('stay-status').textContent.includes(
+				document.documentElement.lang ? new Date('2026-05-03T00:00:00Z').toLocaleDateString(
+				  document.documentElement.lang, {dateStyle:'full', timeZone:'UTC', calendar:'gregory'}) : '2026-05-03')`) {
+				var status string
+				dpRun(t, ctx, chromedp.Text(`#stay-status`, &status, chromedp.ByQuery))
+				t.Fatalf("range announcement uses another calendar or host locale: %q", status)
+			}
+		})
+	}
+}
+
 // datePickerServer serves a page whose host form holds the picker,
 // the island endpoint that answers DatePickerMonth for the asked
 // month, and the form's target, which echoes what it received.

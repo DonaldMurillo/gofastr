@@ -100,6 +100,18 @@ func TestStaleStyleSourceIgnoresMarker(t *testing.T) {
 	assertHas(t, ds, contracts.RuleStaleStyleSource)
 }
 
+// A sheet saved with a UTF-8 BOM: gen styles strips it before hashing
+// (GenerateFile), so a freshly generated pair must verify quiet — the
+// verifier has to hash the same BOM-less bytes.
+func TestStaleStyleSourceStripsBOM(t *testing.T) {
+	ds := fixture(t, map[string]string{
+		"ui/board.style.css":    "\xEF\xBB\xBF" + styleGenCSS,
+		"ui/ui.go":              "package ui\n",
+		"ui/board_style.gen.go": styleGenGolden(styleGenCSS),
+	})
+	assertNot(t, ds, contracts.RuleStaleStyleSource, "the generator hashed the sheet without its BOM")
+}
+
 // Ordinary stylesheets (not *.style.css) are not this rule's
 // business: they have no generated sibling by design.
 func TestStaleStyleSourceIgnoresPlainCSS(t *testing.T) {

@@ -135,20 +135,32 @@ func waitDelayHelpers(pass *analysis.Pass) map[types.Object]map[int]bool {
 				continue
 			}
 			var params []*ast.Ident
+			// Positions are counted across ALL parameters (the caller
+			// reads indexes over its whole argument list), not over the
+			// *exec.Cmd subset.
+			positions := map[*ast.Ident]int{}
+			i := 0
 			for _, field := range fn.Type.Params.List {
-				if !isExecCmd(pass, field.Type) {
+				if len(field.Names) == 0 {
+					i++
 					continue
 				}
-				params = append(params, field.Names...)
+				for _, name := range field.Names {
+					if isExecCmd(pass, field.Type) {
+						params = append(params, name)
+						positions[name] = i
+					}
+					i++
+				}
 			}
 			if len(params) == 0 {
 				continue
 			}
 			flagged := map[int]bool{}
-			for i, name := range params {
+			for _, name := range params {
 				obj, ok := pass.TypesInfo.Defs[name].(*types.Var)
 				if ok && assignsWaitDelayOn(pass, fn.Body, obj) {
-					flagged[i] = true
+					flagged[positions[name]] = true
 				}
 			}
 			if len(flagged) == 0 {

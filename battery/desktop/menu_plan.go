@@ -285,11 +285,28 @@ func itemTitle(ctx context.Context, it MenuItem) string {
 // tray Navigate/Handler row's Tag resolves through the same table
 // OnMenu dispatches on.
 func PlanTrayMenu(ctx context.Context, t *Tray, appTitle string, actionIDs *[]string) []MenuItemPlan {
-	if t == nil || t.Menu == nil {
+	if t == nil {
 		return nil
 	}
-	rows := planRows(ctx, t.Menu.Items, appTitle, actionIDs)
+	var items []MenuItem
+	if t.Menu != nil {
+		items = t.Menu.Items
+	}
+	rows := planRows(ctx, items, appTitle, actionIDs)
 	scratch := append([]string(nil), (*actionIDs)...)
-	withEnglish(rows, planRows(englishContext, t.Menu.Items, appTitle, &scratch))
+	withEnglish(rows, planRows(englishContext, items, appTitle, &scratch))
+	if t.CloseHidesWindow && !trayHasShow(rows) {
+		show := MenuItem{Role: RoleShow}
+		rows = append([]MenuItemPlan{{Role: RoleShow, Title: defaultRoleTitle(ctx, show, appTitle), English: defaultRoleTitle(englishContext, show, appTitle)}}, rows...)
+	}
 	return rows
+}
+
+func trayHasShow(rows []MenuItemPlan) bool {
+	for _, row := range rows {
+		if row.Role == RoleShow || trayHasShow(row.Submenu) {
+			return true
+		}
+	}
+	return false
 }

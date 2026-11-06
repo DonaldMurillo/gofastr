@@ -6,9 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // diagnostic/policy only: the codec and Frame type are symmetric, and a Peer
@@ -793,7 +797,7 @@ func (p *Peer) buildResponse(f *Frame) *Frame {
 	p.mu.Unlock()
 	defer p.retireCancel(id, slot)
 
-	result, err := runHandler(h, ctx, f.Params)
+	result, err := runHandler(h, ctx, f.Method, f.Params)
 	if err != nil {
 		// If the handler returned a *Error, echo its code and message —
 		// that is the deliberate caller-facing channel. A plain error is
@@ -829,9 +833,11 @@ var errHandlerPanicked = errors.New("moduleproto: handler panicked")
 // well-formed outcome (paired internal error for requests, a silent
 // drop for notifications), never an unrecovered panic in the serve
 // goroutine that takes down the whole process.
-func runHandler(h Handler, ctx context.Context, params json.RawMessage) (result any, err error) {
+func runHandler(h Handler, ctx context.Context, method string, params json.RawMessage) (result any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in module handler recovered", "operation", "handler",
+				"method", textsafe.SanitizeControlBytes(method), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			result = nil
 			err = errHandlerPanicked
 		}
@@ -859,7 +865,7 @@ func (p *Peer) serveNotification(f *Frame) {
 	defer cancel()
 	// Best-effort; errors are unobservable on the wire. A panicking
 	// handler is recovered here so it only drops the notification.
-	_, _ = runHandler(h, ctx, f.Params)
+	_, _ = runHandler(h, ctx, f.Method, f.Params)
 }
 
 // gate runs the serve gate for method. MethodCancel always passes. A
@@ -872,6 +878,8 @@ func (p *Peer) gate(method string) (refused *Error) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
+			slog.Error("panic in module serve gate recovered", "operation", "serve gate",
+				"method", textsafe.SanitizeControlBytes(method), "panic", textsafe.Recovered(r), "stack", string(debug.Stack()))
 			refused = &Error{Code: CodeInternalError, Message: "serve gate failed"}
 		}
 	}()

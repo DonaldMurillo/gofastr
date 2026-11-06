@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -52,7 +53,7 @@ func accessMiddleware(logger *slog.Logger, trustXFF bool) middleware.Middleware 
 			// actually sent.
 			method := textsafe.ScrubControlBytes(r.Method)
 			path := textsafe.Truncate(textsafe.ScrubControlBytes(r.URL.Path), maxPathLen)
-			forwardedRaw := textsafe.Truncate(textsafe.ScrubControlBytes(r.Header.Get("X-Forwarded-For")), maxPathLen)
+			forwardedRaw := textsafe.Truncate(textsafe.ScrubControlBytes(strings.Join(r.Header.Values("X-Forwarded-For"), ", ")), maxPathLen)
 			rw := &countingResponseWriter{ResponseWriter: w, status: http.StatusOK}
 			defer func() {
 				logger.LogAttrs(r.Context(), slog.LevelInfo, "http.access",
@@ -223,7 +224,7 @@ func (rw *countingResponseWriter) Unwrap() http.ResponseWriter { return rw.Respo
 // falls back to r.RemoteAddr; the raw header stays in `forwarded_for`.
 func remoteAddr(r *http.Request, trustXFF bool) string {
 	if trustXFF {
-		if r.Header.Get("X-Forwarded-For") != "" {
+		if len(r.Header.Values("X-Forwarded-For")) > 0 {
 			if ip, ok := clientip.Forwarded(r.Header, clientip.Proxies{}); ok {
 				return ip.String()
 			}

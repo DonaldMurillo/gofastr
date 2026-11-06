@@ -20,6 +20,7 @@ func TestRenderAppSpecBlockTypes(t *testing.T) {
 		{appspec.AppSpecBlock{Type: "h3", Text: "H"}, "Level: 3"},
 		{appspec.AppSpecBlock{Type: "h6", Text: "H"}, "Level: 6"},
 		{appspec.AppSpecBlock{Type: "link", Href: "/x", Text: "L"}, "ui.Link"},
+		{appspec.AppSpecBlock{Type: "link", Href: "/docs"}, `ui.Link(ui.LinkConfig{Href: "/docs", Text: "/docs", Class: ""})`},
 		{appspec.AppSpecBlock{Type: "section", Text: "S", Class: "c"}, "section"},
 		{appspec.AppSpecBlock{Type: "weird", Text: "D"}, "html.Div(html.DivConfig{Class: \"\"}, render.Text(\"D\"))"},
 		{appspec.AppSpecBlock{Type: "weird", Text: "D", Class: "k"}, "html.Div(html.DivConfig{Class: \"k\"}, render.Text(\"D\"))"},

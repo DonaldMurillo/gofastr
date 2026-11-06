@@ -139,8 +139,8 @@ type BatchResponse struct {
 // else is the generic "internal server error", with the error itself
 // only logged, so the per-item Error field cannot leak schema or
 // connection details.
-func classifyDoErr(ctx context.Context, index int, err error) batchResult {
-	f := crudRefusal(ctx, err)
+func classifyDoErr(ctx context.Context, index int, err error, wireKeys ...func(string) string) batchResult {
+	f := crudRefusal(ctx, err, wireKeys...)
 	return batchResult{Index: index, Error: f.text, Reason: f.reason, Fields: f.fields, FieldReasons: f.fieldReasons}
 }
 
@@ -193,6 +193,7 @@ type batchCreateRequest struct {
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		r = r.WithContext(withEventStamps(r.Context()))
 		// Per-caller rows, as on the single-row routes: never stored by a
 		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
@@ -245,7 +246,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 					hidden[i], err = ch.readScopeHidesRow(ctx, res)
 				}
 				if err != nil {
-					results[i] = classifyDoErr(ctx, i, err)
+					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
 					return errBatchAborted
 				}
 				results[i] = batchResult{Index: i, Data: res}
@@ -382,7 +383,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 					hidden[i], err = ch.readScopeHidesRow(ctx, res)
 				}
 				if err != nil {
-					results[i] = classifyDoErr(ctx, i, err)
+					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
 					return errBatchAborted
 				}
 				results[i] = batchResult{Index: i, Data: res}
@@ -487,7 +488,7 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 					return errBatchAborted
 				}
 				if err := ch.doDelete(ctx, r, id); err != nil {
-					results[i] = classifyDoErr(ctx, i, err)
+					results[i] = classifyDoErr(ctx, i, err, ch.convertKey)
 					return errBatchAborted
 				}
 				results[i] = batchResult{Index: i, Data: ch.keyPayload(id)}

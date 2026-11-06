@@ -66,6 +66,10 @@
 // name that continues past the verb ("type %sRepo struct {",
 // "var %sCount =") is the same declaration slot the bare
 // "type %s struct" already was.
+// The 2026-11-03 round added the const keyword (`const %s =`,
+// evidence '=' only — no slice or := constant exists) and the
+// positional verb `%[n]s`, whose explicit index picks its own
+// argument instead of the sequential count.
 // The rule is deliberately silent on:
 //   - format slots that are not identifier positions: plain %s/%q in
 //     string, argument, or message slots, `List%s(` spellings where the
@@ -124,6 +128,7 @@ import (
 	"go/token"
 	"go/types"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
@@ -483,7 +488,7 @@ func checkEmit(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 		return
 	}
 	for _, s := range scanSlots(format) {
-		argIndex := formatIndex + 1 + s.verbIndex
+		argIndex := formatIndex + 1 + s.argIndex
 		if argIndex >= len(call.Args) {
 			break
 		}
@@ -503,16 +508,18 @@ func checkEmit(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 
 // ---- format scanning ----------------------------------------------------
 
-// slot is one scanned verb occurrence: its index among ALL verbs of the
-// format (the positional-argument slot) and the slot text for the
-// diagnostic. quoted marks a %q verb in a grammar where quoting IS the
-// gate (SQL DDL and CSS string slots take double/single-quoted
-// identifiers; Go declaration slots do not — a quoted string in
-// identifier position is still not an identifier).
+// slot is one scanned verb occurrence: argIndex is its 0-based position
+// among the call's arguments AFTER the format string (an explicit
+// %[n] index picks its own; otherwise verbs consume arguments in
+// order), and the slot text is for the diagnostic. quoted marks a %q
+// verb in a grammar where quoting IS the gate (SQL DDL and CSS string
+// slots take double/single-quoted identifiers; Go declaration slots do
+// not — a quoted string in identifier position is still not an
+// identifier).
 type slot struct {
-	verbIndex int
-	text      string
-	quoted    bool
+	argIndex int
+	text     string
+	quoted   bool
 }
 
 const identChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
@@ -521,37 +528,66 @@ const identChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 // identifier slot of the emitted code.
 func scanSlots(format string) []slot {
 	var out []slot
-	verbs := 0
+	next := 0 // 0-based argument position the next verb consumes
 	for i := 0; i < len(format); i++ {
 		if format[i] != '%' {
 			continue
 		}
-		length := verbLen(format, i)
+		length, index, explicit := verbLen(format, i)
 		if length == 0 {
+			// `%%` is an escaped percent that renders a literal `%`,
+			// not a verb: consume the pair, or the second `%` is read
+			// as a verb start (the nested format('ALTER TABLE %%s …')
+			// of emitted SQL, foreign_key.go's DO block).
+			if i+1 < len(format) && format[i+1] == '%' {
+				i++
+			}
 			continue
+		}
+		cur := next
+		if explicit {
+			cur = index - 1
 		}
 		verb := format[i+length-1]
 		if verb == 's' || verb == 'q' {
 			if text, ok := identSlotText(format, i, verb == 'q'); ok {
-				out = append(out, slot{verbIndex: verbs, text: text, quoted: verb == 'q'})
+				out = append(out, slot{argIndex: cur, text: text, quoted: verb == 'q'})
 			}
 		}
-		verbs++
+		next = cur + 1
 		i += length - 1
 	}
 	return out
 }
 
-// verbLen is the length of the verb sequence starting at '%' (0 for %%).
-func verbLen(format string, i int) int {
+// verbLen is the length of the verb sequence starting at '%' (0 for
+// %%). A verb may open with an explicit argument index (`%[2]s`),
+// returned as its 1-based position; without one, verbs consume the
+// format arguments in order.
+func verbLen(format string, i int) (length, index int, explicit bool) {
 	j, n := i+1, len(format)
+	if j < n && format[j] == '[' {
+		if k := strings.IndexByte(format[j:], ']'); k > 0 {
+			if v, err := strconv.Atoi(format[j+1 : j+k]); err == nil && v > 0 {
+				index, explicit = v, true
+				j += k + 1
+			}
+		}
+	}
 	for j < n && strings.IndexByte("+-# 0123456789.", format[j]) >= 0 {
 		j++
 	}
 	if j < n && format[j] != '%' {
-		return j - i + 1
+		return j - i + 1, index, explicit
 	}
-	return 0
+	return 0, 0, false
+}
+
+// verbLenOnly is verbLen's length, for callers that do not read the
+// explicit argument index.
+func verbLenOnly(format string, i int) int {
+	length, _, _ := verbLen(format, i)
+	return length
 }
 
 // identSlotText reports whether the verb at byte offset i sits in an
@@ -562,7 +598,7 @@ func verbLen(format string, i int) int {
 // reports not-scanned.
 func identSlotText(format string, i int, quoted bool) (string, bool) {
 	lower := strings.ToLower(format)
-	after := i + verbLen(format, i)
+	after := i + verbLenOnly(format, i)
 
 	// b is the start of the emitted identifier token containing the verb.
 	b := i
@@ -583,13 +619,14 @@ func identSlotText(format string, i int, quoted bool) (string, bool) {
 		return format[b:min(j+2, len(format))], true
 	}
 
-	// Keyword declaration: func/type/var before the identifier containing
-	// the verb — `func %s(`, `type %s struct`, `var %s =`.
+	// Keyword declaration: func/type/var/const before the identifier
+	// containing the verb — `func %s(`, `type %s struct`, `var %s =`,
+	// `const %s =`.
 	pb := b
 	for pb > 0 && (format[pb-1] == ' ' || format[pb-1] == '\t') {
 		pb--
 	}
-	for _, kw := range []string{"func", "type", "var"} {
+	for _, kw := range []string{"func", "type", "var", "const"} {
 		kwStart := pb - len(kw)
 		if kwStart >= 0 && strings.HasSuffix(lower[:pb], kw) && (kwStart == 0 || !isIdentByte(lower[kwStart-1])) {
 			if kwStart == 0 {
@@ -770,7 +807,7 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 			b--
 		}
 		if onlyBlank(format[mw+len(kw) : b]) {
-			if r := i + verbLen(format, i); r < len(format) {
+			if r := i + verbLenOnly(format, i); r < len(format) {
 				r = skipIdent(format, r)
 				if jsDeclEvidence(format, r, kw) {
 					spelling := strings.Join(append(mods, kw), " ") + " %s"
@@ -798,7 +835,7 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 	for k < len(format) {
 		if k == i {
 			sawVerb = true
-			k += verbLen(format, i)
+			k += verbLenOnly(format, i)
 			continue
 		}
 		if isIdentByte(format[k]) {
@@ -806,7 +843,7 @@ func jsIdentSlotText(format string, i int) (string, bool) {
 			continue
 		}
 		if format[k] == '%' {
-			if l := verbLen(format, k); l > 0 {
+			if l := verbLenOnly(format, k); l > 0 {
 				k += l
 				continue
 			}
@@ -873,7 +910,7 @@ func jsDeclEvidence(format string, r int, kw string) bool {
 			return true
 		}
 		// One extends clause: `extends Base` (dots allowed), then '{'.
-		if strings.HasPrefix(format[s:], "extends") && !isIdentByte(format[s+7]) {
+		if strings.HasPrefix(format[s:], "extends") && (s+7 >= len(format) || !isIdentByte(format[s+7])) {
 			s += 7
 			for s < len(format) && (format[s] == ' ' || format[s] == '\t') {
 				s++
@@ -946,7 +983,7 @@ func declFollows(format string, after int, kw string) bool {
 		}
 		return strings.HasPrefix(rest, "(") &&
 			(strings.IndexByte(rest, '{') >= 0 || strings.IndexByte(rest, '\n') >= 0)
-	case "type", "var":
+	case "type", "var", "const":
 		typeKw := func(r string) bool {
 			for _, t := range []string{"struct", "interface", "map", "func", "chan"} {
 				if strings.HasPrefix(r, t) && (len(r) == len(t) || !isIdentByte(r[len(t)])) {
@@ -968,6 +1005,11 @@ func declFollows(format string, after int, kw string) bool {
 		}
 		if typeKw(rest) {
 			return true
+		}
+		if kw == "const" {
+			// `const %s = …` / `const %s Version = …`: no slice,
+			// pointer, or := spelling exists for a constant.
+			return strings.HasPrefix(rest, "=")
 		}
 		return strings.HasPrefix(rest, "=") || strings.HasPrefix(rest, "[") ||
 			strings.HasPrefix(rest, "*") || (kw == "var" && strings.HasPrefix(rest, ":="))
@@ -1251,7 +1293,7 @@ func numericOnlyVerbs(f string) bool {
 		if f[i] != '%' {
 			continue
 		}
-		length := verbLen(f, i)
+		length := verbLenOnly(f, i)
 		if length == 0 {
 			continue
 		}

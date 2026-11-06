@@ -23,6 +23,9 @@ import (
 // (AuthManager.SetUserRoles) is responsible for sourcing them from an
 // admin-gated context.
 func (s *EntityUserStore) UpdateRoles(ctx context.Context, userID string, roles []string) error {
+	if !storableText(userID) {
+		return ErrUserNotFound
+	}
 	// json.Marshal directly, do NOT use formatRoles, which defaults empty
 	// to ["user"]. An admin clearing a user's roles must produce an empty
 	// set, not a silent promotion to "user".

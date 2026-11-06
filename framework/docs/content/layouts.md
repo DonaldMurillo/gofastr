@@ -126,6 +126,10 @@ package with `Key.From`) reads `app.QueryFromContext` or
 
 ## Outlets and fills
 
+Back-cache snapshots of live outlets and areas remove transient RPC
+loading, disabled and busy marks, just like primary content. An RPC that
+settles after navigation cannot leave its replayed control disabled.
+
 **Use an outlet when** a region of the shell belongs to the route, not
 the shell — the page's own action buttons, a per-page context panel,
 the docs article's table of contents. One URL can fill several outlets;
@@ -316,14 +320,23 @@ var application *app.App
 ```go
 docs := app.NewScreenGroup("/docs", docsNav)
 docs.Screen(app.NewScreen("/docs/intro", &IntroScreen{}), nil)
-guides := docs.SubGroup("/docs/guides", guidesNav)
+guides := docs.SubGroup("guides", guidesNav)
 guides.Screen(app.NewScreen("/docs/guides/deploy", &DeployScreen{}), nil)
 application.Router.ScreenGroup(docs)
 ```
 
+Subgroup prefixes are relative to their parent, including prefixes with a
+leading slash. Repeated or trailing slashes are normalized, and an empty
+subgroup prefix reuses the parent's prefix.
+
 `/docs/guides/deploy` renders inside three layers: the app default
 (outermost, owns the single `<main>`), the docs layer, the guides
 layer. Rules that shape the chain:
+
+- A relative screen path is appended to the group's prefix. An absolute
+  path must be the group root or begin with its prefix at a segment
+  boundary; registration panics otherwise. Brace and colon parameter
+  spellings compare identically. Subgroup prefixes are relative to the parent.
 
 - A group's screens inherit the group layout; `group.Screen(s, other)`
   replaces it for that one screen. The group boundary is kept, but its
@@ -345,6 +358,11 @@ every project with ONE group, and the layer key embeds the resolved
 value — `g:/projects/billing/:project` — so navigating between one
 project's pages keeps the layer (the issue list, its filter state) and
 switching projects re-renders it:
+
+The key uses the captured parameter value, not its URL encoding. A URL segment
+`a%2Fb` contributes `a/b` to the layer key, `%25` contributes `%`, and an encoded
+literal such as `a%252Fb` contributes `a%2Fb`. Deferred outlet addresses use the
+same resolved layer key followed by `#<outlet-name>` on both client and server.
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -516,10 +534,17 @@ ships its loading content in place; the fill arrives as its own request
 (one per deferred outlet, visible in DevTools with its own body and
 timing) and lands when ready. First loads and static export ignore
 deferral and render the fill inline — nothing depends on JavaScript.
+If the envelope runtime chunk cannot load at boot, that inline content
+remains usable; the parts handoff consumes the failed load rather than
+raising an unhandled promise rejection.
 A deferred loader must be a read: the part request starts before the
 page answer says whether the page redirects. When the two disagree
 (session expired, a guard redirected), the part answers 409 and the
 runtime reloads the URL as a whole document, once.
+Parts also send the live runtime's `X-Gofastr-Markup` generation. A
+browser fetch with a stale or missing generation gets the same bodyless
+409 reset before any fill renders, even if the page came from cache.
+Requests without Fetch Metadata keep the ordinary part response.
 
 A part request that fails in transport (a proxy's 502, 503 or 429, a
 dropped connection) is sent once more after a short pause. When the
@@ -577,12 +602,26 @@ region, so the browser holds the bytes before the fetch starts. Past
 template in; a response faster than `After` paints nothing extra, and a
 failed navigation puts the parked nodes back as they were. So does a
 navigation a second click replaced: the newer one keeps the parked
-nodes, and a region its answer does not fill gets them back. Loading
+nodes, and a region its answer does not fill gets them back. Superseding
+an exit animation still completes the older navigation's cleanup within
+the exit timeout, even when its region no longer animates. Loading
 content is presentational: no `Load`, no DI, no params. A slow screen
 `Load` is the swap slot's loading case; a slow outlet fill is the
 outlet's (or a deferred part).
 
 ## Transitions
+
+Cached navigations retain the page answer's keyed transition, including on
+pages with outlets; revisiting a cached page uses the same transition pick
+as its fetched answer. Picks are recorded even when reduced motion is
+enabled or the browser cannot animate view transitions, so a later cache
+replay still has the destination's pick if animation becomes available.
+
+If a navigation's DOM update throws inside a view transition, the runtime
+uses the normal navigation failure path: it shows a failure toast, restores
+the prior URL, and clears loading state. Earlier DOM updates may already
+have applied; URL restoration does not roll them back. Skipping an animation
+alone remains silent; it does not report a failed navigation.
 
 **Use a transition when** a swap should read as motion — the
 master-detail slide, a crossfade that avoids a flash of identical
@@ -678,7 +717,9 @@ first paint's head, and on insertion after a client navigation.
 
 Rules the code enforces, each failing loudly instead of silently:
 
-- **Mount validation** (`NewLayout` panics): duplicate outlet name
+- **Mount validation** (`NewLayout` panics): layout, outlet and area names
+  outside ASCII letters, digits, `-` and `_` (empty names included);
+  duplicate area or outlet name
   in one layout; a handle bound to two layouts; `FallbackNotFound`
   beside a `Default`; an invalid view-transition name; both the static
   `Transition` and the per-request `Transitions` set. A mistyped outlet
@@ -872,7 +913,9 @@ its links scroll under it, the current page carries an accent dot, and
 the group holding it takes the accent. `Filter: true` adds a filter box
 above the list: typing hides the links that don't match, marks the
 match, shows "matches/total" in each group header, and Escape clears
-it. `FilterPlaceholder` and `FilterEmpty` set its text.
+it. Composition Escape (`isComposing` or keyCode 229) leaves the filter
+and its enclosing sheet alone. `FilterPlaceholder` and `FilterEmpty`
+set its text.
 Set `SwapAt` to the row's breakpoint too: the menu swaps its rail for a
 pill at 900px by default, while the row stacks at 48rem
 (`interactive.SwapMD`) or, with `Breakpoint: ui.StackBelowLG`,

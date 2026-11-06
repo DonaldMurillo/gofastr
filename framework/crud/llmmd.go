@@ -2,6 +2,7 @@ package crud
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -30,6 +31,9 @@ type LLMMDOptions struct {
 	// prefixes included ("/api/posts"). Empty means "/<table>", behind the
 	// entity's Version when it has one.
 	Path string
+	// JSONCase selects response and write-body keys; explicit field WireName
+	// values take precedence. The zero value uses camelCase.
+	JSONCase JSONCase
 }
 
 // EntityLLMMD generates an LLM-friendly markdown document describing all
@@ -60,6 +64,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	name := ent.GetName()
 	table := ent.GetTable()
 	fields := ent.GetFields()
+	wireKey := NewCrudHandler(ent, nil).WithJSONCase(opt.JSONCase).WireKey
 
 	fmt.Fprintf(&b, "# %s\n\n", name)
 	resourcePath := "/" + table
@@ -71,6 +76,10 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	}
 	fmt.Fprintf(&b, "Resource: `%s`\n\n", resourcePath)
 	keyCols := ent.KeyColumns()
+	wireKeyCols := make([]string, len(keyCols))
+	for index, column := range keyCols {
+		wireKeyCols[index] = wireKey(column)
+	}
 	recordPath := resourcePath + KeyPath(keyCols)
 	if len(keyCols) > 1 {
 		fmt.Fprintf(&b, "Records are keyed on (`%s`): a record's path takes one segment per key column, each value path-escaped, and a batch id joins the escaped values with `/`.\n\n", strings.Join(keyCols, "`, `"))
@@ -118,7 +127,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			notes += "not filterable/sortable"
 		}
 		if opt.ReadOnly {
-			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", f.Name, schema.FieldTypeLabel(f.Type, false), notes)
+			fmt.Fprintf(&b, "| `%s` | %s | %s |\n", wireKey(f.Name), schema.FieldTypeLabel(f.Type, false), notes)
 			continue
 		}
 		createCol := "—"
@@ -135,7 +144,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			createCol = "auto"
 			updateCol = "auto"
 		}
-		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", f.Name, schema.FieldTypeLabel(f.Type, false), createCol, updateCol, notes)
+		fmt.Fprintf(&b, "| `%s` | %s | %s | %s | %s |\n", wireKey(f.Name), schema.FieldTypeLabel(f.Type, false), createCol, updateCol, notes)
 	}
 	b.WriteString("\n")
 
@@ -285,7 +294,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 				b.WriteString(",\n")
 			}
 			first = false
-			fmt.Fprintf(&b, "  \"%s\": \"<value>\"", f.Name)
+			key, _ := json.Marshal(wireKey(f.Name))
+			fmt.Fprintf(&b, "  %s: \"<value>\"", key)
 		}
 		b.WriteString("\n}\n```\n")
 		b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")
@@ -309,7 +319,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		fmt.Fprintf(&b, "### DELETE %s\n\n", recordPath)
 		b.WriteString("Delete a record.\n\n")
 		if ent.Config.Scope.SoftDelete {
-			b.WriteString("**Note:** This entity uses soft-delete: sets `deleted_at` instead of removing the row.\n\n")
+			fmt.Fprintf(&b, "**Note:** This entity uses soft-delete: sets `%s` instead of removing the row.\n\n", wireKey("deleted_at"))
 		}
 		b.WriteString("**Response:** `204` No Content.\n")
 		b.WriteString("**Error:** `404` not found.\n\n")
@@ -321,10 +331,10 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString(fmt.Sprintf("Maximum %d items per batch.\n\n", MaxBatchSize))
 
 		fmt.Fprintf(&b, "### PATCH %s/_batch\n\n", resourcePath)
-		fmt.Fprintf(&b, "Batch update (atomic). Each item must include `%s` plus fields to update.\n\n", strings.Join(keyCols, "`, `"))
+		fmt.Fprintf(&b, "Batch update (atomic). Each item must include `%s` plus fields to update.\n\n", strings.Join(wireKeyCols, "`, `"))
 		itemKeys := make([]string, len(keyCols))
 		for i, c := range keyCols {
-			itemKeys[i] = fmt.Sprintf("%q: \"...\"", c)
+			itemKeys[i] = fmt.Sprintf("%q: \"...\"", wireKey(c))
 		}
 		fmt.Fprintf(&b, "```json\n{\n  \"items\": [ {%s, \"...\": \"...\"} ]\n}\n```\n\n", strings.Join(itemKeys, ", "))
 
@@ -347,7 +357,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		// no route and stay unlisted.
 		if st := ent.Config.States; st != nil && len(RoutableTransitions(st)) > 0 {
 			b.WriteString("## States\n\n")
-			fmt.Fprintf(&b, "`%s` starts at one of: %s.\n\n", st.Field, quoteValues(st.InitialValues(fields)))
+			fmt.Fprintf(&b, "`%s` starts at one of: %s.\n\n", wireKey(st.Field), quoteValues(st.InitialValues(fields)))
 			b.WriteString("| Move | Route | From → To | Stamp |\n")
 			b.WriteString("|------|-------|-----------|-------|\n")
 			for _, t := range RoutableTransitions(st) {
@@ -357,14 +367,14 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 				}
 				stamp := "—"
 				if t.Stamp != "" {
-					stamp = "`" + t.Stamp + "`"
+					stamp = "`" + wireKey(t.Stamp) + "`"
 				}
 				fmt.Fprintf(&b, "| %s | `POST %s/transitions/%s` | `%s` → `%s` | %s |\n",
 					move, recordPath, t.Key, strings.Join(t.From, "`, `"), t.To, stamp)
 			}
 			b.WriteString("\n")
 			if !st.Advisory {
-				fmt.Fprintf(&b, "`%s` and every stamp change only through these moves: a create may start at an initial value, and an update that sends the stored value back is not a change (any other write answers 422).\n\n", st.Field)
+				fmt.Fprintf(&b, "`%s` and every stamp change only through these moves: a create may start at an initial value, and an update that sends the stored value back is not a change (any other write answers 422).\n\n", wireKey(st.Field))
 			}
 		}
 	}
@@ -536,7 +546,7 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	b.WriteString("Use `?sort=field` (ascending) or `?sort=-field` (descending).\n\n")
 	b.WriteString("### Pagination\n")
 	b.WriteString("- **Offset:** `?page=1&limit=20`: returns `{data, total, page, perPage, totalPages}`\n")
-	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20`: returns `{data, cursor, hasMore, total}`\n\n")
+	b.WriteString("- **Cursor:** `?cursor=xxx&limit=20`: returns `{data, cursor, hasMore}`\n\n")
 	b.WriteString("### Includes\n")
 	b.WriteString("Eager-load relations: `?include=author,comments`\n")
 	b.WriteString("Nested includes: `?include=author.profile`\n")
@@ -577,7 +587,12 @@ func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
 // It reuses requireScope, so owner, tenant, baseline-session and RBAC all move
 // together with the read path instead of being restated here.
 func LLMMDHandlerFor(ch *CrudHandler, opts ...LLMMDOptions) http.Handler {
-	docs := LLMMDHandler(ch.Entity, opts...)
+	var options LLMMDOptions
+	if len(opts) > 0 {
+		options = opts[0]
+	}
+	options.JSONCase = ch.JSONCase
+	docs := LLMMDHandler(ch.Entity, options)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {

@@ -281,7 +281,7 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 		}
 		lines := p.Lines(f.Rel)
 		ast.Inspect(file, func(n ast.Node) bool {
-			recv, method, _, isCall := selectorCall(n)
+			recv, method, args, isCall := selectorCall(n)
 			if !isCall {
 				return true
 			}
@@ -295,7 +295,22 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 			if hasLegacyAnnotation(lines, pos.Line, "allow-skip:") {
 				return true
 			}
-			line := strings.ToLower(p.Line(f.Rel, pos.Line))
+			// The reason phrase can sit on any line of the call: gofmt
+			// breaks a long Skipf message onto its own line, so judging
+			// only the call's first line missed exactly those.
+			var messages []string
+			for _, argument := range args.Args {
+				ast.Inspect(argument, func(node ast.Node) bool {
+					if expression, ok := node.(ast.Expr); ok {
+						if message, ok := stringLit(expression); ok {
+							messages = append(messages, message)
+							return false
+						}
+					}
+					return true
+				})
+			}
+			line := strings.ToLower(strings.Join(messages, " "))
 			for _, phrase := range laneBoundaryPhrases {
 				if strings.Contains(line, phrase) {
 					return true
@@ -326,6 +341,20 @@ func disabledTests(p *contracts.Pass) []contracts.Diagnostic {
 		})
 	}
 	return out
+}
+
+// callSpan returns the source text of node n's whole line span, from
+// its first line through its last: gofmt breaks a long Skipf message
+// onto its own line, and a reason phrase there is part of the call.
+func callSpan(p *contracts.Pass, rel string, n ast.Node) string {
+	start := p.Position(n.Pos()).Line
+	end := p.Position(n.End()).Line
+	var b strings.Builder
+	for ln := start; ln <= end; ln++ {
+		b.WriteString(p.Line(rel, ln))
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func guardedByShort(lines []string, lineNo int) bool {

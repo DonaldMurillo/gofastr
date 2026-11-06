@@ -36,8 +36,10 @@ func TestContractDevToolsAreAbsentOutsideDevLoop(t *testing.T) {
 }
 
 func TestContractDevToolsRegisterInDevLoop(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "development")
+	t.Setenv("GOFASTR_DEV_MCP", "")
 	app := NewApp(WithMCP(), WithMCPIntrospection())
-	app.mcpIntrospectionDevImplied = true
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("InitPlugins: %v", err)
 	}

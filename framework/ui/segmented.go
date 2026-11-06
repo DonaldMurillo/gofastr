@@ -82,6 +82,9 @@ type SegmentedControlConfig struct {
 
 // SegmentedControl renders the radiogroup with a sliding indicator.
 func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
+	if cfg.RPCPath != "" {
+		checkRPCPath("SegmentedControl", "RPCPath", cfg.RPCPath)
+	}
 	if cfg.Name == "" {
 		panic("ui: SegmentedControl requires Name")
 	}
@@ -128,7 +131,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 			"name":  cfg.Name,
 			"value": o.Value,
 			"class": "fui-segmented__input",
-			"id":    cfg.Name + "--" + slug(o.Value),
+			"id":    cfg.Name + "--" + strconv.Itoa(i),
 		}
 		if o.Value == selected {
 			inputAttrs["checked"] = ""
@@ -153,7 +156,7 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		// subtree; its input/labelHTML children need no mark of their own.
 		labelAttrs := html.Attrs{
 			"class":             "fui-segmented__option",
-			"for":               cfg.Name + "--" + slug(o.Value),
+			"for":               cfg.Name + "--" + strconv.Itoa(i),
 			"data-position":     strconv.Itoa(i),
 			"data-cui-internal": "",
 		}

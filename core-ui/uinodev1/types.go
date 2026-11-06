@@ -385,6 +385,9 @@ func (it KeyValueItem) pair() (string, string) { return it.Key, it.Value }
 // replaces the two verbatim copies of this shape in
 // DetailListProps.validate and KeyValueProps.validate.
 func validatePairs[T labelValue](lim Limits, what string, items []T) error {
+	if err := checkPropItems(lim, what+".items", len(items)); err != nil {
+		return err
+	}
 	if len(items) == 0 {
 		return errRequired(what + ".items")
 	}
@@ -450,6 +453,12 @@ type DataTableProps struct {
 func (DataTableProps) propsMarker()             {}
 func (DataTableProps) childPolicy() childPolicy { return childPolicyNone }
 func (p DataTableProps) validate(lim Limits) error {
+	if err := checkPropItems(lim, "data-table.columns", len(p.Columns)); err != nil {
+		return err
+	}
+	if err := checkPropItems(lim, "data-table.rows", len(p.Rows)); err != nil {
+		return err
+	}
 	if len(p.Columns) == 0 {
 		return errRequired("data-table.columns")
 	}
@@ -462,6 +471,9 @@ func (p DataTableProps) validate(lim Limits) error {
 		}
 	}
 	for i, r := range p.Rows {
+		if err := checkPropItems(lim, "data-table.rows.cells", len(r.Cells)); err != nil {
+			return err
+		}
 		if len(r.Cells) == 0 {
 			return errRequiredIndex("data-table.rows.cells", i)
 		}

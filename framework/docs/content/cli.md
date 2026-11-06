@@ -50,7 +50,10 @@ scrubbed the same way.
   overwrites them, each through a temporary file renamed over the old
   one, so a crash or a full disk leaves the old file whole and a
   replaced file keeps its mode. An existing `.gitignore` is kept and gains the entries
-  it lacks. Every file `init` writes, and every file it reads to merge
+  it lacks. A hand-written `.agents/` detail file or an unsafe host-skill
+  path is refused before replacing any scaffold, settings, `.env` or signing
+  secret, including when `--force` is set.
+  Every file `init` writes, and every file it reads to merge
   into (`.gitignore`, `go.mod`), stays in the project: a symlink there,
   whether the file itself, a dangling one, or a directory on the way
   (`static/`, `migrations/`, `entities/`), is followed only while it
@@ -175,7 +178,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   `generate screen <name> --from-a11y=<file>` builds the screen from a
   Playwright aria snapshot ([app specs](app-spec.md)).
   `generate [--config=<settings file>]` runs the configurable codegen engine
-  ([codegen](codegen.md)); `generate --watch` re-runs on every change.
+  ([codegen](codegen.md)); `generate --watch` re-runs when an input changes.
+  A configured `styles` entry watches both `.style.css` and `.tokens.css`
+  files under its package patterns, including additions and removals;
+  generated Go siblings are outputs, not watch inputs.
 - `gofastr generate package [<name>]`: copy a canonical chrome package
   (`siteheader`, `sitefooter`, `docpage`) into the app as owned code.
   No name lists the packages with a one-line summary each. With a name,
@@ -277,7 +283,10 @@ directive for GoFastr, and the GoFastr module itself skip the check.
   (Alt+Shift+L outlines the page's layout and flags overflow), contract findings
   for what you changed (after the reload, never blocking it), and the dev
   MCP tools for your coding agent ([dev-livereload](dev-livereload.md)).
-  `--dir` sets the watch root, `--pkg` the main package under it,
+  `--dir` sets the watch root (a symlinked root is resolved on each scan;
+  retargeting it triggers a rebuild even when filenames and modification times
+  match, and linked source files use their target's modification time),
+  `--pkg` the main package under it,
   `--addr`/`-p` the port (not both); `--no-a11y` skips the accessibility
   lint on each rebuild. Each takes its value as `--addr=x` or `--addr x`;
   an unknown flag, or a flag whose value is missing, is an error, and so
@@ -502,7 +511,9 @@ Each matcher reads the code the way its language means it:
   attribute name (a trailing `-` is a prefix); `properties` a `--x`
   custom property; `match` a regex, the last resort.
 - `css`: `.css` files through the CSS tokenizer. `classes` matches a
-  class selector, `properties` a custom property, and `selectors` a
+  class selector, including `[class=…]` and `[class~=…]` with escaped,
+  quoted or unquoted values and the `i`/`s` case flags;
+  `properties` a custom property, and `selectors` a
   whole compound selector such as `.cui-pos-center > .cui-slot`
   (whitespace around combinators does not matter). `declarations`
   lists `properties` (standard names, never a `--x`) with a `value`
@@ -609,11 +620,27 @@ does not cover: a runtime browser scan, and the dependency report.
   `gofastr verify accessibility`.
 - `gofastr audit lint`: the original AI-mistake scanner. Superseded by
   `gofastr verify security data`, which covers the same rules with a
-  reason and a fix attached to each.
+  reason and a fix attached to each. The legacy scanner still reports
+  malformed test files, unannotated skips, and discarded Exec results
+  (including bare, deferred, and goroutine calls). Explicit test-lane
+  boundaries remain accepted. A `// safe-sql: <why>` comment suppresses
+  that line's SQL heuristic, and comments preserve diagnostic line numbers.
 - `gofastr audit deps`: list dependencies that perform init-time
   global registrations, then the [unmounted](unmount.md) packages.
 
+Static audit, sandbox, recursive CSP, behavior discovery, and provenance
+walkers skip build-output descendants (`dist`, `bin`, `build`, `tmp`) but
+scan an explicitly selected root with one of those names. Linked package
+directories are followed with cycle detection. Accessibility and sandbox
+checks tolerate source files disappearing during an editor save; a missing
+root or another I/O failure still fails the check.
+
 ## Extras
+
+The repository's `cmd/repolint` wiring gate catches a raw `data-cui-rpc`
+attribute both as an attribute-name string and inside emitted markup,
+including escaped Go strings. Sibling attributes such as `data-cui-rpc-body`
+are distinct and do not match that gate.
 
 - `gofastr semantic index|watch|query|stats|clear`: the local semantic
   index ([semantic search](semantic-search.md)).

@@ -342,10 +342,35 @@ func (w *metricsResponseWriter) Write(b []byte) (int, error) {
 // embedding http.ResponseWriter does not promote it. It latches the
 // implicit 200 the way Write does.
 func (w *metricsResponseWriter) ReadFrom(src io.Reader) (int64, error) {
-	if !w.wroteHeader {
-		w.WriteHeader(http.StatusOK)
+	return copyResponse(w, w.ResponseWriter, src)
+}
+
+func copyResponse(wrapped io.Writer, underlying http.ResponseWriter, source io.Reader) (int64, error) {
+	var first [1]byte
+	for {
+		count, readErr := source.Read(first[:])
+		var written int
+		if count > 0 {
+			var writeErr error
+			written, writeErr = wrapped.Write(first[:count])
+			if writeErr != nil {
+				return int64(written), writeErr
+			}
+			if written != count {
+				return int64(written), io.ErrShortWrite
+			}
+		}
+		if readErr != nil {
+			if readErr == io.EOF {
+				readErr = nil
+			}
+			return int64(written), readErr
+		}
+		if count > 0 {
+			copied, err := io.Copy(underlying, source)
+			return int64(written) + copied, err
+		}
 	}
-	return io.Copy(w.ResponseWriter, src)
 }
 
 // Flush forwards to the underlying ResponseWriter's Flusher if it has one.

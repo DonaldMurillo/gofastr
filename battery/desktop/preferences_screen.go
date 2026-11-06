@@ -144,7 +144,7 @@ func boolField(ctx context.Context, d Preference, v bool) render.HTML {
 	// core-ui/runtime/src/rpc.js).
 	return render.Join(
 		html.Input(html.InputConfig{Type: "hidden", Name: d.Key, Value: "false"}),
-		ui.Checkbox(ui.ToggleConfig{Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
+		ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: "true", Checked: v, Help: helpText(ctx, d)}),
 	)
 }
 
@@ -161,7 +161,7 @@ func intField(ctx context.Context, d Preference, v int) render.HTML {
 		f := float64(*d.Max)
 		max = &f
 	}
-	return ui.NumberField(ui.NumberFieldConfig{
+	return ui.NumberField(ui.NumberFieldConfig{Ctx: ctx,
 		Name: d.Key, Label: d.Label.Text(ctx), ID: id,
 		Value: strconv.Itoa(v), Min: min, Max: max,
 		Help: intHelp(ctx, d),
@@ -177,7 +177,7 @@ func choiceField(ctx context.Context, d Preference, cur string) render.HTML {
 	for _, c := range d.Choices {
 		opts = append(opts, ui.SelectOption{Value: c, Text: choiceLabel(c), Selected: c == cur})
 	}
-	return ui.Select(ui.SelectConfig{
+	return ui.Select(ui.SelectConfig{Ctx: ctx,
 		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Options: opts, Help: helpText(ctx, d),
 	})
 }
@@ -187,8 +187,15 @@ func choiceField(ctx context.Context, d Preference, cur string) render.HTML {
 // answers.
 func stringField(ctx context.Context, d Preference, text string) render.HTML {
 	id := "f-" + d.Key
-	return ui.TextField(ui.TextFieldConfig{
-		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: helpText(ctx, d),
+	help := helpText(ctx, d)
+	if strings.ContainsAny(text, "\r\n") {
+		if help != "" {
+			help += " "
+		}
+		help += hintPrefLegacyLines.Text(ctx)
+	}
+	return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: help,
 	})
 }
 
@@ -294,7 +301,7 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid, fieldErrs)
 			return
 		}
-		if _, err := p.setRaw(values); err != nil {
+		if _, err := p.setValues(values, true); err != nil {
 			var pe *preferenceError
 			if errors.As(err, &pe) {
 				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid,

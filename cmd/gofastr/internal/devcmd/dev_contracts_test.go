@@ -72,9 +72,8 @@ func TestDevSummaryCapsTheWall(t *testing.T) {
 	}
 }
 
-func TestDevWatchSkipsAnInFlightRun(t *testing.T) {
-	// A burst of saves must not stack analyses; the newer save supersedes
-	// the older one anyway.
+func TestDevWatchDoesNotOverlapRuns(t *testing.T) {
+	// Saves during an analysis must not start a concurrent pass.
 	w := NewDevContractWatch(t.TempDir())
 	w.mu.Lock()
 	w.running = true

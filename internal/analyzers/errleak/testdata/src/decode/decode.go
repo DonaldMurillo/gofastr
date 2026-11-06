@@ -81,6 +81,16 @@ func crossPackage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// fromJSONLit: a decoder bound to a func literal is the function's own
+// code, and its error is still encoding/json's own.
+func fromJSONLit(w http.ResponseWriter, body []byte) {
+	dec := func(b []byte, v any) error { return json.Unmarshal(b, v) }
+	var v struct{ IDs []string }
+	if err := dec(body, &v); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error()) // want `sends encoding/json's error text to the client`
+	}
+}
+
 // ---- JSON-RPC ------------------------------------------------------------
 
 const (

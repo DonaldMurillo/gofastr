@@ -40,8 +40,10 @@
 //     is used as a key — the parameter name is the only intent signal
 //     available — so a store naming it claim/name/id stays silent by
 //     declaration, not by oversight. A join that also reaches a map,
-//     map-literal key, or prefix scan in this package is reported
-//     regardless of the name.
+//     map-literal key, delete, or prefix scan in this package is
+//     reported regardless of the name (delete(m, k) joined the sink
+//     set 2026-11-03: the builtin resolves to no *types.Func, so the
+//     general call arm skipped it).
 //   - length-prefixed joins: any operand of the form strconv.Itoa(len(x))
 //     or fmt.Sprint(len(x)) with x also an operand pins the boundary and
 //     makes the join injective (the fixed idempotency shard).
@@ -226,6 +228,13 @@ func checkFile(pass *analysis.Pass, f *ast.File, helpers map[*types.Func]ast.Exp
 				}
 			}
 		case *ast.CallExpr:
+			// delete(m, k) is the keyed sink m[k]'s write-side twin;
+			// the builtin resolves to no *types.Func, so it needs its
+			// own arm.
+			if qualifiedCallee(pass, e.Fun) == "delete" && len(e.Args) == 2 && isKey(e.Args[1]) {
+				report(e.Args[1])
+				return true
+			}
 			if qualifiedCallee(pass, e.Fun) == "strings.HasPrefix" && len(e.Args) == 2 && isKey(e.Args[1]) {
 				report(e.Args[1])
 				return true

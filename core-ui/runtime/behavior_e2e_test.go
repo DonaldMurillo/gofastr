@@ -252,22 +252,28 @@ func TestBehaviorScannerRunsAfterNavigate(t *testing.T) {
 // LoadIdle defers the load through requestIdleCallback and the module
 // still attaches.
 func TestBehaviorLoadIdleAttaches(t *testing.T) {
-	registerProbe(t, registry.LoadIdle())
-	p := startProbeServer(t, inlineBehaviorsBlock(t), `<p data-probe>idle target</p>`, false)
-	ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
-
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(p.srv.URL+"/"),
-		chromedp.WaitVisible(`#ready`, chromedp.ByID),
-	); err != nil {
-		t.Fatalf("chromedp: %v", err)
-	}
-	// rIC (or the setTimeout fallback) fires within the poll budget.
-	if !pollTrue(ctx, attachedExpr) {
-		t.Fatal("idle behaviour never attached after the idle callback ran")
-	}
-	if n := p.hits.Load(); n != 1 {
-		t.Fatalf("module fetched %d times, want 1", n)
+	for _, fallback := range []bool{false, true} {
+		name, head := "idle", ""
+		if fallback {
+			name, head = "timeout", `<script>window.requestIdleCallback = undefined;</script>`
+		}
+		t.Run(name, func(t *testing.T) {
+			registerProbe(t, registry.LoadIdle())
+			p := startProbeServer(t, head+inlineBehaviorsBlock(t), `<p data-probe>idle target</p>`, false)
+			ctx := chromedptest.Context(t, chromedptest.Timeout(60*time.Second))
+			if err := chromedp.Run(ctx,
+				chromedp.Navigate(p.srv.URL+"/"),
+				chromedp.WaitVisible(`#ready`, chromedp.ByID),
+			); err != nil {
+				t.Fatalf("chromedp: %v", err)
+			}
+			if !pollTrue(ctx, attachedExpr) {
+				t.Fatal("idle behaviour never attached after the idle callback ran")
+			}
+			if n := p.hits.Load(); n != 1 {
+				t.Fatalf("module fetched %d times, want 1", n)
+			}
+		})
 	}
 }
 

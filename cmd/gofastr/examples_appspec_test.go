@@ -245,7 +245,9 @@ func restListStatus(t *testing.T, baseURL, table string) (int, string) {
 // contain the rows.
 func assertScreenServesNoRows(t *testing.T, name, baseURL, table string) {
 	t.Helper()
-	resp, err := bootProbeClient.Get(baseURL + "/" + table)
+	client := *bootProbeClient
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.Get(baseURL + "/" + table)
 	if err != nil {
 		t.Fatalf("%s: GET /%s failed: %v — a screen that cannot be reached is not evidence that it is safe", name, table, err)
 	}

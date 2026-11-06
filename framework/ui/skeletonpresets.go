@@ -269,6 +269,16 @@ var skeletonPresetsStyle = registry.RegisterStyle("ui-skeleton-presets", func(_ 
 // --ui-skeleton-line-max-width (12rem, the single-bar cap).
 
 const skeletonPresetsCSS = `
+[data-cui-comp="ui-skeleton-presets"] .fui-visually-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
 /* The one bar style every preset draws: the shimmer the retired
    core-ui pattern owned, moved here unchanged. */
 .fui-skeleton__line {
@@ -385,7 +395,7 @@ const skeletonPresetsCSS = `
    row's three text lines (grid-template-columns matches the real
    timeline's 16px rail + 1fr content columns). The visually-hidden
    announcement rides after the bars and is no grid item (the
-   primitive's sheet hides it). */
+   preset's own scoped visually-hidden rule hides it). */
 .fui-skeleton-timeline {
   display: grid;
   grid-template-columns: var(--spacing-lg, 16px) 1fr;

@@ -30,7 +30,9 @@ func main() {
 			{Name: "status", Type: schema.String, Default: "draft"},
 		},
 	})
-	app.Registry.Register(posts)
+	if err := app.Registry.Register(posts); err != nil {
+		log.Fatal(err)
+	}
 	if err := framework.AutoMigrate(db, app.Registry); err != nil {
 		log.Fatal(err)
 	}

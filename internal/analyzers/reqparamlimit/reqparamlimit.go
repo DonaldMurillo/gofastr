@@ -387,6 +387,12 @@ func (w *walker) rhsTaint(exprs []ast.Expr) (string, bool) {
 				if k, ok := w.extractKey(n2.X); ok && !found {
 					found, key = true, k
 				}
+			case *ast.IndexExpr:
+				// v := params["limit"]: the two-step read whose
+				// assertion comes later.
+				if k, ok := w.extractKey(n2); ok && !found {
+					found, key = true, k
+				}
 			}
 			return true
 		})
@@ -413,6 +419,10 @@ func (w *walker) argTaint(arg ast.Expr) (string, bool) {
 			}
 		case *ast.TypeAssertExpr:
 			if k, ok := w.extractKey(e.X); ok && !found {
+				found, key = true, k
+			}
+		case *ast.IndexExpr:
+			if k, ok := w.extractKey(e); ok && !found {
 				found, key = true, k
 			}
 		}

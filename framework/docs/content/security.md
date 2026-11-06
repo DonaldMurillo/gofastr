@@ -85,6 +85,13 @@ Everything else streams at the default level. A handler that panics
 after the response started cannot get a `500`: the connection is cut,
 so the client sees a truncated response. The encoding is gzip only:
 the standard library has no Brotli.
+An empty file copy or a source error before its first byte does not commit
+response headers, so the handler can still choose an error status.
+Source errors returned alongside the first bytes are preserved, including
+at the content-sniffing boundary.
+Identity responses preserve the underlying writer's direct file-copy
+path after reading the first byte and any required content sniffing. Compressed responses still
+use the same streaming or held-body encoding rules for file copies.
 
 A compressed page that reflects attacker input next to a secret leaks
 the secret through response sizes (BREACH), whether the app or a proxy
@@ -164,6 +171,8 @@ TLS-terminating proxy that sets `X-Forwarded-Proto: https` (the app
 sees plain HTTP there). Plain-HTTP local dev never receives it. Set
 `HSTSMaxAge: -1` to disable, a positive value to change the age, or
 `HSTSIncludeSub` / `HSTSPreload` to extend it.
+`Secure: true` forces HSTS even on plain HTTP. Its default, false, keeps
+TLS and proxy auto-detection; it is not an off switch.
 
 The CSP default works with the built-in UI runtime because its CSS and
 scripts are served from `/__gofastr/*`, with one exception the host
@@ -293,6 +302,10 @@ planned rotation without bouncing in-flight forms, list the previous
 secret(s) in `AdditionalKeys`; drain once the old tokens have
 expired.
 
+Client-side navigation refreshes the live CSRF meta token only when a network
+response supplies one. Page-owned metadata cleanup and cached back/forward
+navigation retain that live token, including after signing-key rotation.
+
 ### Masked tokens
 
 Render `middleware.MaskCSRFToken(token)` into a page, never the raw
@@ -304,6 +317,9 @@ token from scripts that read the cookie. `ui.Form`'s hidden field and
 the auth battery's `CSRFToken` / `CSRFTokenFromCtx` already return masked
 tokens, so a `<meta name="csrf-token">` rendered from them (the tag the
 runtime forwards as `X-CSRF-Token`) is masked too.
+Client-side navigation refreshes this meta token when the fetched document
+or partial head carrier supplies it, including after a signing-key rotation.
+An omitted token does not clear the current one.
 `middleware.TokenFromContext` stays raw: never render it.
 
 ### Re-dispatched writes

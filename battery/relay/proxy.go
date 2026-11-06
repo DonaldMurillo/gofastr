@@ -475,7 +475,8 @@ func (r *Relay) restrictContentType(rt *routeRuntime, resp *http.Response) {
 // refusal stands.
 func bodiless(resp *http.Response) bool {
 	if resp.StatusCode == http.StatusNoContent || resp.StatusCode == http.StatusNotModified ||
-		resp.ContentLength == 0 || resp.Body == nil {
+		resp.ContentLength == 0 || resp.Body == nil || resp.Body == http.NoBody ||
+		(resp.Request != nil && resp.Request.Method == http.MethodHead) {
 		return true
 	}
 	if resp.ContentLength > 0 {

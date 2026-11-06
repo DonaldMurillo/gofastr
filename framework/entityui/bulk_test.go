@@ -491,7 +491,8 @@ func (b *memBulk) Unenqueued(_ context.Context, before time.Time) ([]BulkJob, er
 	defer b.mu.Unlock()
 	var out []BulkJob
 	for _, id := range slices.Sorted(maps.Keys(b.jobs)) {
-		if j := b.jobs[id]; j.Status == BulkQueued && !b.enqueued[id] && b.created[id].Before(before) {
+		expired := !b.until[id].IsZero() && b.until[id].Before(before)
+		if j := b.jobs[id]; j.Status == BulkQueued && (!b.enqueued[id] || expired) && b.created[id].Before(before) {
 			out = append(out, j)
 		}
 	}

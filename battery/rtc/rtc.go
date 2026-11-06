@@ -488,7 +488,7 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.cfg.Authorize == nil {
 		panic("rtc: ServeHTTP: Config.Authorize is nil: the endpoint must decide who joins")
 	}
-	join, err := s.cfg.Authorize(r)
+	join, err := s.cfg.Authorize(r) //gofastr:allow(unrechecked) re-run per frame and on the idle ticker through the recheck closure serve's loop calls (peerHeld → Authorize(fresh)), a callback parameter the rule cannot follow
 	if err != nil {
 		var he *HTTPError
 		if errors.As(err, &he) {
@@ -503,7 +503,7 @@ func (s *Signaler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// a peer Authorize would now refuse, or would place in another room or
 	// role or under another user, is closed (see serve).
 	s.serve(w, r, join, func(fresh *http.Request) bool {
-		again, err := s.cfg.Authorize(fresh)
+		again, err := s.cfg.Authorize(fresh) //gofastr:allow(unrechecked) this IS the re-run the connect-time call above is judged against, inside the recheck closure handed to serve
 		return err == nil && again.Room == join.Room && again.User == join.User && again.Role == join.Role
 	})
 }

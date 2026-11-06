@@ -122,3 +122,17 @@ func TestPageRenderHasIDScope(t *testing.T) {
 		t.Errorf("want features|features-2 on the page; got: %s", body)
 	}
 }
+
+// A brace inside a literal segment is a static path to the router, so
+// PageHandler forces it like any other static screen.
+func TestPageHandlerForcesLiteralBracePath(t *testing.T) {
+	a := app.NewApp("pagehandler")
+	a.Register("/reports/rev{1}", &testHomeComp{}, nil)
+	ds := New(a)
+
+	rec := httptest.NewRecorder()
+	ds.PageHandler("/reports/rev{1}")(rec, httptest.NewRequest(http.MethodGet, "/elsewhere/", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Home") {
+		t.Fatalf("literal-brace screen not forced: status %d body %.200s", rec.Code, rec.Body.String())
+	}
+}

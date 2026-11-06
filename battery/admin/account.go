@@ -90,7 +90,7 @@ func (b *Battery) nameForm(ctx context.Context) render.HTML {
 		ID:          nameFormID,
 		SubmitLabel: i18nui.AdminSaveName.Text(ctx),
 		ExtraAttrs:  interactive.Post(action).OnSuccess(interactive.Navigate(b.cfg.PathPrefix + "/account")).Attrs(),
-	}, ui.TextField(ui.TextFieldConfig{
+	}, ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 		Name: "name", ID: nameFormID + "-name", Label: i18nui.AdminName.Text(ctx),
 		Value: b.userName(ctx), Help: i18nui.AdminNameHelp.Text(ctx),
 		AutoComplete: "name", MaxLength: auth.MaxNameRunes,

@@ -1,6 +1,7 @@
 package freeze_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/kiln/freeze"
@@ -112,5 +113,19 @@ func TestFreezeRefusesSeedsLiveRefuses(t *testing.T) {
 	// Guard: an ordinary seed for a real entity still graduates.
 	if _, err := freeze.AppSpecYAML(newWorld(&world.Seed{Entity: "posts", Rows: []map[string]any{{"title": "ok"}}})); err != nil {
 		t.Errorf("ordinary seed refused at graduation: %v", err)
+	}
+}
+
+// With start_url and scope both wrong, the error names start_url on
+// every run: the two used to be checked in map order.
+func TestFreezePWANamesStartURLFirst(t *testing.T) {
+	w := world.New()
+	w.App = world.AppConfig{Name: "pwa", Module: "example.com/pwa", DBDriver: "sqlite", DBURL: "pwa.db"}
+	w.App.PWA = world.PWAConfig{Enabled: true, Display: "standalone", StartURL: "app", Scope: "app"}
+	for range 32 {
+		_, err := freeze.AppSpecYAML(w)
+		if err == nil || !strings.Contains(err.Error(), "start_url") {
+			t.Fatalf("got %v, want the start_url error", err)
+		}
 	}
 }

@@ -3,6 +3,7 @@ package style
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -136,7 +137,9 @@ func (cs *ComponentSheet) MustBuild() string {
 func scopeRules(rules []cssRule, prefix string) error {
 	for i := range rules {
 		r := &rules[i]
-		if strings.HasPrefix(r.outerParent(), "@keyframes") {
+		if slices.ContainsFunc(r.parents, func(parent string) bool {
+			return strings.HasPrefix(parent, "@keyframes")
+		}) {
 			continue
 		}
 		if r.selector != "" {

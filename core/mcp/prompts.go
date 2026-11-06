@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime/debug"
 	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // PromptMessage is one message of a prompts/get result: the speaker role
@@ -304,6 +306,8 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 func (s *Server) getPromptMessages(ctx context.Context, p Prompt, args map[string]string) (out []PromptMessage, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP prompt handler recovered", "operation", "prompt handler",
+				"prompt", textsafe.SanitizeControlBytes(p.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			out = nil
 			err = &RPCError{Code: ErrInternalError, Message: "internal prompt error"}
 		}
@@ -341,6 +345,8 @@ func (s *Server) checkPromptGate(ctx context.Context, p Prompt) (err error) {
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP prompt gate recovered", "operation", "prompt gate",
+				"prompt", textsafe.SanitizeControlBytes(p.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			err = &RPCError{Code: ErrInternalError, Message: "internal prompt error"}
 		}
 	}()

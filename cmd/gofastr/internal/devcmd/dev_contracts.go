@@ -28,9 +28,10 @@ import (
 // reporting narrows.
 type devContractWatch struct {
 	root string
-	// mu guards running, so a burst of saves does not stack analyses.
+	// mu guards running and pending, so a burst queues only one trailing pass.
 	mu      sync.Mutex
 	running bool
+	pending bool
 	// lastSummary suppresses reprinting an unchanged report. Saving a
 	// file with the same findings should be quiet, or the loop trains you
 	// to ignore it.
@@ -42,11 +43,12 @@ func NewDevContractWatch(root string) *devContractWatch {
 }
 
 // Run analyses in the background and prints any findings. It returns
-// immediately; a run already in flight is skipped rather than queued,
-// because the newer save supersedes it anyway.
+// immediately; saves during an in-flight analysis coalesce into one
+// trailing pass over the latest source.
 func (w *devContractWatch) Run() {
 	w.mu.Lock()
 	if w.running {
+		w.pending = true
 		w.mu.Unlock()
 		return
 	}
@@ -54,20 +56,24 @@ func (w *devContractWatch) Run() {
 	w.mu.Unlock()
 
 	go func() {
-		defer func() {
+		for {
+			func() {
+				defer func() {
+					if rec := recover(); rec != nil {
+						cli.Warn("contracts: %s", textsafe.Recovered(rec))
+					}
+				}()
+				w.analyse()
+			}()
 			w.mu.Lock()
-			w.running = false
-			w.mu.Unlock()
-		}()
-		// A panic in an analyzer must never take the dev server with it.
-		defer func() {
-			if rec := recover(); rec != nil {
-				// textsafe.Recovered: the panicked-on bytes reach the log
-				// sink scrubbed of control/bidi characters and truncated.
-				cli.Warn("contracts: %s", textsafe.Recovered(rec))
+			if !w.pending {
+				w.running = false
+				w.mu.Unlock()
+				return
 			}
-		}()
-		w.analyse()
+			w.pending = false
+			w.mu.Unlock()
+		}
 	}()
 }
 

@@ -136,7 +136,9 @@ seated). Without the bound, `session/new` is a frame-cheap unbounded write
 into per-connection state that lives until the connection closes. A panic
 in any embedder hook — `Authenticate`, `NewSession`, `LoadSession`,
 `Prompt` — is recovered into an internal-error response for that one
-request; it never kills the process. An error `Prompt` returns is
+request; it never kills the process. Recovered callbacks and output-writer
+panics emit a server-side `slog` Error with the operation, scrubbed panic
+value and stack; none of those details cross the protocol. An error `Prompt` returns is
 answered `session/prompt: internal error`; its text stays on the server.
 
 ## Kiln's adapter (`kiln/acp`)

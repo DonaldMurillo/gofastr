@@ -155,7 +155,7 @@ func (b *ListBuilder) saveViewTool(ctx context.Context, s *listState) render.HTM
 			hiddenInput("key", s.key),
 			hiddenInput("filter", s.filterText),
 			hiddenInput("cols", strings.Join(s.columns, ",")),
-			ui.TextField(ui.TextFieldConfig{
+			ui.TextField(ui.TextFieldConfig{Ctx: ctx,
 				Name:     "name",
 				ID:       "eui-" + listIDSafe(s.key, m.name) + "-saveview",
 				Label:    i18nui.EntitySavedName.Text(ctx),

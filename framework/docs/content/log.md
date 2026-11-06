@@ -326,6 +326,12 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
 
 ## Common mistakes
 
+The access entry's `forwarded_for` includes every `X-Forwarded-For`
+field line, joined with commas, scrubbed and capped at 2 KiB. With
+`TrustForwardedFor`, client address selection reads that entire chain,
+including when the first field line is empty; the rightmost valid proxy
+hop wins, rather than the caller-controlled leftmost address.
+
 - **Pointing a sink at a high-volume webhook synchronously.** The
   webhook sink is already async and bounded. Never wrap it in your own
   blocking adapter, and don't set `QueueSize` so high that a downstream
@@ -346,10 +352,3 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
   headers.** The sink will POST your prod request log to whatever is
   on the other side. Always set `Headers["Authorization"]` (or the
   receiver's equivalent) before pointing the URL at a real endpoint.
-- **Expecting one access entry per request.** With default middleware
-  on, the framework emits a minimal `request` entry from
-  `middleware.LoggingFn(app.Logger)` and this plugin emits a richer
-  `http.access` entry from its own access middleware, and both flow
-  through the same sinks. Either pass `framework.WithoutDefaultMiddleware()`
-  and wire the rest of the chain manually, or filter on `msg` in the
-  consumer.

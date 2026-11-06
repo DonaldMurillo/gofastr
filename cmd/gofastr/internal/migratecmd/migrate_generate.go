@@ -64,7 +64,10 @@ func runMigrateGenerate(args []string) {
 			cli.Fail("entity %q: %v", decl.Name, err)
 			cli.OsExit(1)
 		}
-		reg.Register(framework.Define(decl.Name, cfg))
+		if err := reg.Register(framework.Define(decl.Name, cfg)); err != nil {
+			cli.Fail("entity %q: %v", decl.Name, err)
+			cli.OsExit(1)
+		}
 	}
 
 	// Both generation paths, this CLI and a host binary calling

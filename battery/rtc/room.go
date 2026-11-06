@@ -569,11 +569,7 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 	// later, finds the seat already in the remote view and says nothing,
 	// so the reconnect is announced here, as the join rtc.js reads as
 	// one. An older copy is the stale seat this socket replaced: silence.
-	if remote, held := s.remoteViewLocked(roomName, time.Now())[p.info.ID]; !held {
-		s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: p.info.ID})
-	} else if remote.Order > p.info.Order {
-		s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: remote})
-	}
+	s.publishDepartureLocked(roomName, rm, p)
 	s.mirrorLocked(roomName, fanoutMsg{Kind: evLeave, ID: p.info.ID})
 	// The seat frees with the socket: the FIFO never retains a departed
 	// peer, so the cap counts exactly the live ones.
@@ -585,6 +581,14 @@ func (s *Signaler) peerGone(roomName string, p *roomPeer) {
 	roomLog, peerLog := scrubLogField(roomName), scrubLogField(p.info.ID)
 	s.mu.Unlock()
 	s.logger.Debug("rtc: leave", "room", roomLog, "peer", peerLog)
+}
+
+func (s *Signaler) publishDepartureLocked(roomName string, rm *room, peer *roomPeer) {
+	if remote, held := s.remoteViewLocked(roomName, time.Now())[peer.info.ID]; !held {
+		s.publishLocked(rm, evLeave, roomEvent{kind: evLeave, id: peer.info.ID})
+	} else if remote.Order > peer.info.Order {
+		s.publishLocked(rm, evJoin, roomEvent{kind: evJoin, peer: remote})
+	}
 }
 
 // handleSignal validates one inbound signaling frame and delivers it

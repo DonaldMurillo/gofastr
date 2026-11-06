@@ -347,15 +347,18 @@ func Combobox(p ComboboxProps, s Classes) render.HTML {
 func ComboboxRows(listboxID string, opts []ComboboxOption, s Classes) render.HTML {
 	b := Parts{}.Box(s)
 	rows := make([]render.HTML, 0, len(opts))
+	ids := make([]string, 0, len(opts))
 	for i, o := range opts {
 		if o.ID == "" {
 			o.ID = listboxID + "-opt-" + strconv.Itoa(i)
 		}
 		checkFragmentID("Combobox option", "ID", o.ID)
+		ids = append(ids, o.ID)
 		// Each row is a root of the answer: its parts are the
 		// component's own.
 		rows = append(rows, comboboxOptionEl(b, o, true, true))
 	}
+	checkNoDuplicateIDs("ComboboxRows", ids)
 	return render.Join(rows...)
 }
 
@@ -374,18 +377,32 @@ func comboboxOptionEl(b Box, o ComboboxOption, labelled, root bool) render.HTML 
 	if o.Disabled {
 		attrs["aria-disabled"] = "true"
 	}
-	if href := urlsafe.Clean(o.Href, urlsafe.Anchor); href != "" {
+	href := urlsafe.Clean(o.Href, urlsafe.Anchor)
+	linked := href != "" && !o.Disabled
+	if linked {
 		// The module hands the pick to the SPA navigator; an unsafe
 		// href drops the navigation affordance entirely.
 		attrs["data-cui-push-state"] = href
+		attrs["href"] = href
+		attrs["tabindex"] = "-1"
 	}
 	var own html.Attrs
-	if root {
+	if root && !linked {
 		own = Internal(Attrs(map[string]string{}))
 	}
 	kids := []render.HTML{b.El("span", PartText, own, render.Text(scrubControlBytes(o.Label)))}
 	if o.Meta != "" {
 		kids = append(kids, b.El("span", PartComboboxMeta, own, render.Text(scrubControlBytes(o.Meta))))
+	}
+	if linked {
+		wrapperAttrs := Attrs(map[string]string{"role": "none"})
+		if root {
+			attrs = Internal(attrs)
+		} else {
+			wrapperAttrs = Internal(wrapperAttrs)
+		}
+		return render.Tag("li", wrapperAttrs,
+			b.El("a", PartComboboxOption, attrs, kids...))
 	}
 	return b.El("li", PartComboboxOption, attrs, kids...)
 }

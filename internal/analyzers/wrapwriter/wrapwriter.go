@@ -274,9 +274,22 @@ func checkTypes(pass *analysis.Pass, f *ast.File, rw *types.Interface, dispatche
 // writer argument anywhere in the package's non-test files: the
 // argument's own static type (`next.ServeHTTP(rec, r)` with rec a
 // *T), or, for an interface-typed variable, every T/*T value assigned
-// to it (`w = &T{...}; next.ServeHTTP(w, r)`).
+// to it (`w = &T{...}; next.ServeHTTP(w, r)`), or, when the argument
+// is a same-package helper call returning the writer interface, every
+// concrete type that helper returns (`next.ServeHTTP(reveal(wrapped),
+// r)`).
 func dispatchedTypes(pass *analysis.Pass) map[*types.Named]bool {
 	assigned := map[types.Object][]types.Type{}
+	decls := map[*types.Func]*ast.FuncDecl{}
+	for _, f := range pass.Files {
+		for _, d := range f.Decls {
+			if fd, ok := d.(*ast.FuncDecl); ok && fd.Body != nil {
+				if fn, ok := pass.TypesInfo.Defs[fd.Name].(*types.Func); ok {
+					decls[fn] = fd
+				}
+			}
+		}
+	}
 	var args []ast.Expr
 	for _, f := range pass.Files {
 		if pathflow.IsTestFile(pass, f) {
@@ -321,9 +334,29 @@ func dispatchedTypes(pass *analysis.Pass) map[*types.Named]bool {
 	}
 	for _, a := range args {
 		add(pass.TypesInfo.TypeOf(a))
-		if id, ok := ast.Unparen(a).(*ast.Ident); ok {
-			for _, t := range assigned[pass.TypesInfo.ObjectOf(id)] {
+		switch x := ast.Unparen(a).(type) {
+		case *ast.Ident:
+			for _, t := range assigned[pass.TypesInfo.ObjectOf(x)] {
 				add(t)
+			}
+		case *ast.CallExpr:
+			// A same-package helper returning the writer interface
+			// (`next.ServeHTTP(reveal(wrapped), r)`): the concrete
+			// type it returns is this chain's wrapper.
+			if fn, ok := astx.CalleeFunc(pass, x.Fun); ok {
+				if fd := decls[fn.Origin()]; fd != nil {
+					ast.Inspect(fd.Body, func(n ast.Node) bool {
+						if _, ok := n.(*ast.FuncLit); ok {
+							return false
+						}
+						if ret, ok := n.(*ast.ReturnStmt); ok {
+							for _, res := range ret.Results {
+								add(pass.TypesInfo.TypeOf(res))
+							}
+						}
+						return true
+					})
+				}
 			}
 		}
 	}

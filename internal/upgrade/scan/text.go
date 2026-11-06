@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"path"
 	"strings"
 )
@@ -40,6 +41,7 @@ func (e *engine) textFile(rel string, read func() ([]byte, bool)) {
 		return
 	}
 	skipLong := isScriptName(rel)
+	src = bom.TrimBytes(src)
 	for i, line := range strings.Split(string(src), "\n") {
 		if skipLong && len(line) > minifiedLineBytes {
 			continue

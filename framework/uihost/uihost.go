@@ -144,16 +144,17 @@ type UIHost struct {
 	pathLocales         *i18n.PathLocales                    // SetPathLocales: the app routes by locale prefix
 	robotsConfig        *RobotsConfig                        // when set, /robots.txt is served from this config
 	agentReady          *agentReadyConfig                    // when set, the agent-discovery surface (/llms.txt, agent card, Link headers, markdown negotiation) is served
-	pwaConfig           *PWAConfig                           // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
-	pwaSWOnce           sync.Once                            // guards the memoized service-worker body below
-	pwaSW               string                               // deployment-constant service worker, computed on first request
-	pwaSWErr            error                                // paired with pwaSW
-	strict              bool                                 // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
-	coreRouter          *router.Router                       // the framework router Mount received; strict mode reads its route table for the internal-links check
-	strictConfig        StrictConfig                         // per-check levels + route exemptions; zero value enforces everything
-	siteDescription     bool                                 // set by WithDescription; read by the strict site-surface check
-	embedHost           *fembed.Host                         // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
-	embedThemes         embedThemeState                      // per-surface cap on distinct customer theme variants
+	mcpManifestPath     string
+	pwaConfig           *PWAConfig      // when set, the installable-PWA surface (manifest, service worker, offline screen) is served
+	pwaSWOnce           sync.Once       // guards the memoized service-worker body below
+	pwaSW               string          // deployment-constant service worker, computed on first request
+	pwaSWErr            error           // paired with pwaSW
+	strict              bool            // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
+	coreRouter          *router.Router  // the framework router Mount received; strict mode reads its route table for the internal-links check
+	strictConfig        StrictConfig    // per-check levels + route exemptions; zero value enforces everything
+	siteDescription     bool            // set by WithDescription; read by the strict site-surface check
+	embedHost           *fembed.Host    // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
+	embedThemes         embedThemeState // per-surface cap on distinct customer theme variants
 
 	// Hot-path caches. The route table and the default-theme component catalog
 	// are static after wire time, so they are marshaled once and reused on every
@@ -2455,7 +2456,8 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	if bundle {
 		// Per-screen action scripts: only the compiled registries whose
 		// component ids actually appear on THIS page, each content-
-		// addressed and served immutable. The whole-app actions.js concat
+		// addressed and served private, no-cache so every use revalidates
+		// through the session gate. The whole-app actions.js concat
 		// re-shipped every screen's actions on every page uncached.
 		// Navigation to a screen whose actions aren't loaded yet is
 		// covered by the actionloader module reading __gofastr_actions.
@@ -3052,6 +3054,10 @@ func (ds *UIHost) serveErrorPartial(w http.ResponseWriter, r *http.Request, path
 // re-requests the part once before ever reloading.
 func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path, addr string) {
 	w.Header().Set("Cache-Control", "no-store")
+	if staleMarkupClient(r) {
+		ds.writePartReset(w, partResetAny)
+		return
+	}
 	// A dead session between the page request and its parts is the
 	// spec's reset case: the fill would render under a different
 	// identity than the page beside it. The reset names the reason
@@ -3864,7 +3870,7 @@ func (ds *UIHost) handleServerAction(w http.ResponseWriter, r *http.Request) {
 // module fetches the rest on navigation; lazy hydration keeps using it
 // too. Session-gated like the old whole-app concat was (this per-id
 // endpoint used to be LESS gated than the bundle it replaces), and
-// served private+immutable under its content hash.
+// served private, no-cache with its content hash as the revalidation ETag.
 func (ds *UIHost) handleWidgetJS(w http.ResponseWriter, r *http.Request) {
 	if !ds.requireSessionOrEmbedGrant(w, r) {
 		return
@@ -3924,6 +3930,7 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// group and the screen. Screens registered after Mount are caught
 	// at render (the render paths re-check, like fills).
 	ds.App.Router.ValidateRequires()
+	ds.App.Router.ValidateIntercepts()
 	// Refuse a server action on an embeddable surface at boot, before any
 	// route is served: G.serverAction is dead inside a frame, and finding out
 	// in a customer's page is the failure this exists to prevent. See
@@ -3995,8 +4002,11 @@ func (ds *UIHost) Mount(r *router.Router) {
 				// empty catalog rather than the whole one.
 				path = "\x00none"
 			}
+			// The catalog unescapes ?page= once, as the runtime sends it
+			// (encodeURIComponent of an escaped pathname); a surface path is
+			// a decoded route, so escape it to the same shape.
 			q := req.URL.Query()
-			q.Set("page", path)
+			q.Set("page", (&url.URL{Path: path}).EscapedPath())
 			scoped := req.Clone(req.Context())
 			scoped.URL.RawQuery = q.Encode()
 			widget.ServeWidgetList(w, scoped)
@@ -4738,14 +4748,12 @@ func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 }
 
 // isDynamicScreenPath reports whether path names a dynamic screen in
-// either spelling the router accepts: a "{name}" segment, or a
-// ":name" segment (the form the router stores in Screen.Path).
+// either spelling the router accepts: a whole "{name}" segment, or a
+// ":name" segment (the form the router stores in Screen.Path). A brace
+// inside a literal segment, "/reports/rev{1}", is a static path.
 func isDynamicScreenPath(path string) bool {
-	if strings.Contains(path, "{") {
-		return true
-	}
 	for _, seg := range strings.Split(path, "/") {
-		if strings.HasPrefix(seg, ":") {
+		if strings.HasPrefix(seg, ":") || (len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}') {
 			return true
 		}
 	}

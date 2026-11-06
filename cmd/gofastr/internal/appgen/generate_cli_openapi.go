@@ -29,19 +29,19 @@ import (
 func runGenerateCLIFromOpenAPI(opts CliOptions) {
 	doc, err := loadOpenAPIDoc(opts.FromOpenAPI)
 	if err != nil {
-		cli.Fail("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error()))
+		failGenerate(opts.json, fmt.Errorf("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error())))
 		cli.OsExit(1)
 		return
 	}
 	abs, err := filepath.Abs(".")
 	if err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 	modulePath, moduleRoot := project.FindEnclosingGoMod(abs)
 	if modulePath == "" {
-		cli.Fail("no enclosing go.mod: the generated CLI's internal client package needs a module path")
+		failGenerate(opts.json, fmt.Errorf("no enclosing go.mod: the generated CLI's internal client package needs a module path"))
 		cli.OsExit(1)
 		return
 	}
@@ -59,7 +59,7 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 
 	spec, err := BuildOpenAPICLISpec(doc, opts, clientImport)
 	if err != nil {
-		if opts.dryRun && opts.json {
+		if opts.json {
 			printGeneratedErrorsJSON(err)
 			cli.OsExit(1)
 			return
@@ -67,7 +67,7 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 		// The error quotes names from the spec, which --from-openapi may
 		// fetch from a URL: encode its control bytes rather than write
 		// them to the operator's terminal.
-		cli.Fail("%s", textsafe.ScrubControlBytes(err.Error()))
+		failGenerate(opts.json, fmt.Errorf("%s", textsafe.ScrubControlBytes(err.Error())))
 		cli.OsExit(1)
 		return
 	}
@@ -211,22 +211,15 @@ func oaResolve(root, node map[string]any) (map[string]any, error) {
 // unbounded recursion. A ref leaves the set once its subtree is merged:
 // two allOf members sharing a base (a diamond) are not a cycle.
 func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]any, error) {
-	var entered []string
-	defer func() {
-		for _, ref := range entered {
-			delete(active, ref)
-		}
-	}()
-	for node != nil {
-		ref, ok := node["$ref"].(string)
+	unions := map[string]any{}
+	if raw, has := node["$ref"]; has {
+		ref, ok := raw.(string)
 		if !ok {
-			break
+			return nil, fmt.Errorf("$ref: want a string, got %T", raw)
 		}
 		if active[ref] {
 			return nil, fmt.Errorf("$ref cycle through %q", ref)
 		}
-		active[ref] = true
-		entered = append(entered, ref)
 		if !strings.HasPrefix(ref, "#/") {
 			return nil, fmt.Errorf("external $ref %q is not supported (local #/... refs only)", ref)
 		}
@@ -242,9 +235,27 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 				return nil, fmt.Errorf("$ref %q: segment %q not found", ref, seg)
 			}
 		}
-		node, ok = cur.(map[string]any)
+		target, ok := cur.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("$ref %q does not resolve to an object", ref)
+		}
+		active[ref] = true
+		defer delete(active, ref)
+		resolved, err := oaResolveIn(root, target, active)
+		if err != nil {
+			return nil, err
+		}
+		siblings := node
+		node = maps.Clone(resolved)
+		for key, value := range siblings {
+			if key != "$ref" {
+				node[key] = value
+			}
+		}
+	}
+	for _, union := range []string{"oneOf", "anyOf"} {
+		if value, present := node[union]; present {
+			unions[union] = value
 		}
 	}
 	if raw, has := node["allOf"]; has {
@@ -277,6 +288,11 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 			if err != nil {
 				return nil, err
 			}
+			for _, union := range []string{"oneOf", "anyOf"} {
+				if value, present := pm[union]; present {
+					unions[union] = value
+				}
+			}
 			if _, has := pm["type"]; has {
 				typed = append(typed, pm)
 			}
@@ -291,13 +307,31 @@ func oaResolveIn(root, node map[string]any, active map[string]bool) (map[string]
 		}
 		if len(props) == 0 && len(typed) > 0 && typed[0]["type"] != "object" &&
 			!slices.ContainsFunc(typed, func(m map[string]any) bool { return fmt.Sprint(m["type"]) != fmt.Sprint(typed[0]["type"]) }) {
-			return typed[0], nil
+			node = typed[0]
+		} else {
+			merged["properties"] = props
+			if len(required) > 0 {
+				merged["required"] = required
+			}
+			node = merged
 		}
-		merged["properties"] = props
-		if len(required) > 0 {
-			merged["required"] = required
+	}
+	if len(unions) > 0 {
+		node = maps.Clone(node)
+		maps.Copy(node, unions)
+		for union, raw := range unions {
+			if branches, ok := raw.([]any); ok {
+				resolved := slices.Clone(branches)
+				for index, branch := range branches {
+					if member, ok := branch.(map[string]any); ok {
+						if value, err := oaResolveIn(root, member, active); err == nil {
+							resolved[index] = value
+						}
+					}
+				}
+				node[union] = resolved
+			}
 		}
-		return merged, nil
 	}
 	return node, nil
 }
@@ -337,9 +371,48 @@ func oaParamJoined(pm map[string]any, name, in string, repeated bool) (bool, err
 // oaGoType maps a scalar schema type to the CLI's flag Go type.
 // ok=false means the type has no flag representation. An OpenAPI 3.1
 // type list maps through its one non-null entry, [T, "null"] as T: an
-// unset flag already sends nothing. A list naming two value types has
-// no flag.
+// unset flag already sends nothing. Nullable oneOf/anyOf scalar branches
+// map the same way. A list or union naming two value types has no flag.
 func oaGoType(schema map[string]any) (goType string, repeated, ok bool) {
+	if _, unresolved := schema["$ref"]; unresolved {
+		return "", false, false
+	}
+	var unionType string
+	for _, union := range []string{"oneOf", "anyOf"} {
+		raw, present := schema[union]
+		if !present {
+			continue
+		}
+		branches, valid := raw.([]any)
+		if !valid {
+			return "", false, false
+		}
+		var nonNull map[string]any
+		for _, branch := range branches {
+			member, valid := branch.(map[string]any)
+			if !valid {
+				return "", false, false
+			}
+			if member["type"] == "null" {
+				continue
+			}
+			if nonNull != nil {
+				return "", false, false
+			}
+			nonNull = member
+		}
+		if nonNull == nil {
+			return "", false, false
+		}
+		valueType, valueRepeated, valid := oaGoType(nonNull)
+		if !valid || valueRepeated || unionType != "" && unionType != valueType {
+			return "", false, false
+		}
+		unionType = valueType
+	}
+	if unionType != "" {
+		return unionType, false, true
+	}
 	t, _ := schema["type"].(string)
 	if list, isList := schema["type"].([]any); isList {
 		var types []string
@@ -867,6 +940,11 @@ func oaBuildOp(root, opNode map[string]any, baseParams []any, method, path strin
 		}
 		goType, repeated, ok := oaGoType(orEmpty(schema))
 		if !ok {
+			for _, union := range []string{"oneOf", "anyOf"} {
+				if _, present := schema[union]; present {
+					return op, fmt.Errorf("parameter %q has an unsupported %s union; only one non-null scalar branch maps to a flag", name, union)
+				}
+			}
 			return op, fmt.Errorf("parameter %q has a non-scalar schema; only scalars and arrays of strings map to flags", name)
 		}
 		if repeated {

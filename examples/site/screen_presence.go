@@ -113,7 +113,7 @@ func (s *PresenceScreen) Render() render.HTML {
 			html.Paragraph(html.TextConfig{},
 				render.Text("The name under each avatar is SERVER-DERIVED. On an authenticated app it comes from the request-context user (battery/auth); this demo site has no auth, so each browser gets a stable pseudo-identity synthesized from its session id. A client can name a topic but can never claim another user's identity.")),
 			html.Paragraph(html.TextConfig{},
-				render.Text("Single-replica: the roster reflects only connections on THIS server. Cross-replica roster aggregation is future work.")),
+				render.Text("This demo configures no fanout, so its roster reflects only connections on this server. Configure framework.WithFanout in your app to aggregate presence rosters across replicas; see the Presence guide.")),
 		),
 	)
 }

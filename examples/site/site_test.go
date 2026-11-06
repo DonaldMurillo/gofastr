@@ -367,7 +367,7 @@ func TestComponentPackageLinks(t *testing.T) {
 	if got := componentPkg("modal"); got != "core-ui/widget/preset" {
 		t.Errorf("componentPkg(modal)=%q", got)
 	}
-	if got := componentPkg("pipelineimage"); got != "framework/image" {
+	if got := componentPkg("pipelineimage"); got != "framework/ui" {
 		t.Errorf("componentPkg(pipelineimage)=%q", got)
 	}
 	if !strings.Contains(body(t, "/components/modal"), "pkg.go.dev/github.com/DonaldMurillo/gofastr/core-ui/widget/preset") {

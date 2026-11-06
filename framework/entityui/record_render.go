@@ -36,8 +36,8 @@ func (b *RecordBuilder) render(ctx context.Context) (render.HTML, error) {
 		return "", err
 	}
 	// The app's translator rides the context: every chrome string the
-	// screen draws (and every string an extension tab draws through
-	// i18nui.T) resolves through it.
+	// screen draws (and every phrase an extension tab draws with
+	// Phrase.Text(ctx)) resolves through it.
 	ctx = i18n.WithTranslator(ctx, m.tr)
 	base := b.base
 	if base == "" {
@@ -549,7 +549,7 @@ func (b *RecordBuilder) tabbedBody(ctx context.Context, m *meta, row, raw map[st
 		return b.editTab(ctx, m, raw, row, masked, base), nil
 	}}
 	tabs := []tab{editTab}
-	if len(b.related) > 0 {
+	if b.hasRelatedTab(ctx, m, base) {
 		tabs = append(tabs, tab{key: "related", label: i18nui.EntityTabRelated.Text(ctx), count: b.relatedCount(ctx, m, base), build: func() (render.HTML, error) {
 			return b.relatedTab(ctx, m, base), nil
 		}})

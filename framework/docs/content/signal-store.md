@@ -134,6 +134,10 @@ A component of your own that renders its own `data-cui-signal` binding
 reads the same value with `slice.Value(ctx)`. `Default()` is the
 declaration and never sees a seed, so stamping it shows the wrong value
 on any request that seeded another.
+For text that must keep updating after hydration, render `slice.Bind(ctx,
+"span", nil)` rather than a one-time text node. The live-dashboard example
+binds both its Open and Acknowledged incident counts this way, so their
+labels stay consistent with the computed status pill after every click.
 
 ## Attribute bindings
 

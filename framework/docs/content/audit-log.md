@@ -142,6 +142,18 @@ transaction, so:
 
 - `AfterCreate` → `op = 'create'`, `diff = {"new": <record>}`
 - `AfterUpdate` → `op = 'update'`, `diff = {"old": <record>, "new": <record>}`
+- `UpsertOne` classifies hooks from a pre-read (inside its transaction
+  when the executor supports one):
+  an absent key selects `create`, an existing key selects `update` with
+  the pre-read's old image, and an existing key with no data selects no
+  audit row. This is not an atomic report of the SQL arm. On Postgres
+  at read-committed isolation, or an executor without a transaction,
+  a competing insert between the read and write can turn the intended
+  insert into an update or no-op while still auditing `create`. A competing
+  delete can turn an intended update into an insert audited as `update`
+  with a stale old image. Serialize conflicting-key writers externally,
+  or use explicit create/update operations when exact lifecycle auditing
+  is required; the portable upsert has no SQL-arm discriminator.
 - `AfterDelete` → `op = 'delete'`, `diff = {"old": <record>}`
 - a state move (`RunTransition`) → `op = 'transition:<key>'`, both images
   in `diff`, inside the move's transaction
@@ -243,6 +255,11 @@ deployments.
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`. |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
+
+OAuth sign-in success events are recorded only after session creation and
+the final provider-link recheck succeed. A fail-closed second-factor check
+records `login.failed` with `reason: twofa_failclosed` and `via: oauth`,
+never an OAuth login success event.
 
 Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
 when unknown, since the column is NOT NULL), and a `diff` JSON of

@@ -259,6 +259,8 @@ func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, erro
 }
 
 func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) {
+	ctx, cancel := context.WithTimeout(ctx, a.readinessTimeout())
+	defer cancel()
 	checks := a.readinessChecks()
 	// Force verbose=false regardless of App.readinessVerbose, /readyz
 	// and /mcp may have very different trust boundaries (e.g. /readyz on

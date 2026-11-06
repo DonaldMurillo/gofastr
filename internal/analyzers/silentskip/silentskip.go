@@ -23,9 +23,11 @@
 //
 // Shape: inside a for or range loop, an `if err != nil` (err of type
 // error, the bare comparison, no else) whose block ends in `continue`,
-// WAITS before it (time.Sleep, time.After, a timer or ticker, a select,
-// or a call to a local closure or a same-package function that does one
-// of those), and never reads err.
+// WAITS before it (time.Sleep, time.After, a receive from a timer or
+// ticker channel (<-t.C after t.Reset), a select, or a call to a local
+// closure — `wait := func()` or `var wait = func()` — or a
+// same-package function that does one of those, through any number of
+// hops), and never reads err.
 //
 // Silent postures, deliberately:
 //   - the block reads err in any way: logs it, wraps it, returns it,
@@ -63,6 +65,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/internal/analyzers/internal/astx"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/types/typeutil"
 )
@@ -75,11 +78,19 @@ var Analyzer = &analysis.Analyzer{
 
 type checker struct {
 	pass *analysis.Pass
-	// closures are the locals bound to a func literal
-	// (wait := func() bool { select { … } }).
+	// closures are the locals (or package vars) bound to a func literal
+	// (wait := func() bool { select { … } }, var wait = func() {…}).
 	closures map[types.Object]*ast.FuncLit
+	// funcs are the package's declared functions with bodies, judged
+	// for waiting in resolve.
+	funcs []waitCandidate
 	// waitFuncs are this package's declared functions whose bodies wait.
 	waitFuncs map[*types.Func]bool
+}
+
+type waitCandidate struct {
+	fn   *types.Func
+	body *ast.BlockStmt
 }
 
 func run(pass *analysis.Pass) (any, error) {
@@ -87,6 +98,7 @@ func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
 		c.index(f)
 	}
+	c.resolve()
 	for _, f := range pass.Files {
 		if strings.HasSuffix(pass.Fset.Position(f.Pos()).Filename, "_test.go") {
 			continue
@@ -109,9 +121,9 @@ func (c *checker) index(f *ast.File) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.FuncDecl:
-			if x.Body != nil && c.waitsIn(x.Body, false) {
+			if x.Body != nil {
 				if fn, ok := info.Defs[x.Name].(*types.Func); ok {
-					c.waitFuncs[fn] = true
+					c.funcs = append(c.funcs, waitCandidate{fn: fn, body: x.Body})
 				}
 			}
 		case *ast.AssignStmt:
@@ -129,9 +141,40 @@ func (c *checker) index(f *ast.File) {
 					}
 				}
 			}
+		case *ast.ValueSpec:
+			// var wait = func() {…}: the same closure, spelled as a
+			// declaration.
+			if len(x.Names) != len(x.Values) {
+				return true
+			}
+			for i, name := range x.Names {
+				if lit, ok := ast.Unparen(x.Values[i]).(*ast.FuncLit); ok {
+					if obj := info.ObjectOf(name); obj != nil {
+						c.closures[obj] = lit
+					}
+				}
+			}
 		}
 		return true
 	})
+}
+
+// resolve promotes waiting to a fixed point: a helper that waits only
+// through another helper (pollWait → backoff → time.After) waits, and
+// so does every caller up the chain.
+func (c *checker) resolve() {
+	for changed := true; changed; {
+		changed = false
+		for _, d := range c.funcs {
+			if c.waitFuncs[d.fn] {
+				continue
+			}
+			if c.waitsIn(d.body, true) {
+				c.waitFuncs[d.fn] = true
+				changed = true
+			}
+		}
+	}
 }
 
 // checkLoop reports, in a loop's own body (not nested loops or
@@ -255,8 +298,10 @@ func (c *checker) isLogCall(call *ast.CallExpr) bool {
 }
 
 // waitsIn reports whether body waits: a select, a time.Sleep / After /
-// Tick / NewTimer / NewTicker call, and (deep) a call to a local closure
-// or a same-package function that waits.
+// Tick / NewTimer / NewTicker call, a receive from a *time.Timer or
+// *time.Ticker channel (<-t.C, the Reset-then-receive backoff), and
+// (deep) a call to a local closure or a same-package function that
+// waits.
 func (c *checker) waitsIn(body *ast.BlockStmt, deep bool) bool {
 	found := false
 	ast.Inspect(body, func(n ast.Node) bool {
@@ -265,6 +310,10 @@ func (c *checker) waitsIn(body *ast.BlockStmt, deep bool) bool {
 			return false
 		case *ast.SelectStmt:
 			found = true
+		case *ast.UnaryExpr:
+			if c.waitsRecv(x) {
+				found = true
+			}
 		case *ast.CallExpr:
 			if c.waits(x) {
 				found = true
@@ -282,6 +331,27 @@ func (c *checker) waitsIn(body *ast.BlockStmt, deep bool) bool {
 		return !found
 	})
 	return found
+}
+
+// waitsRecv matches a receive from a *time.Timer or *time.Ticker
+// channel: <-t.C after t.Reset, the pre-created-timer backoff.
+func (c *checker) waitsRecv(e *ast.UnaryExpr) bool {
+	if e.Op != token.ARROW {
+		return false
+	}
+	sel, ok := ast.Unparen(e.X).(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "C" {
+		return false
+	}
+	t := c.pass.TypesInfo.TypeOf(sel.X)
+	if t == nil {
+		return false
+	}
+	named, ok := types.Unalias(astx.Deref(t)).(*types.Named)
+	if !ok || named.Obj().Pkg() == nil {
+		return false
+	}
+	return named.Obj().Pkg().Path() == "time" && (named.Obj().Name() == "Timer" || named.Obj().Name() == "Ticker")
 }
 
 // waits matches time.Sleep, time.After, time.Tick, time.NewTimer and

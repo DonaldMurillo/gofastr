@@ -760,7 +760,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	for _, e := range names {
 		decl, ok := entityMap[e]
-		if !ok || appSpecUnfillableRelation(decl) {
+		if !ok || appSpecUnfillableRelation(decl) || appSpecUnfillableConstraints(decl) {
 			continue
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
@@ -796,6 +796,18 @@ func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
 	keyCols := appspec.AppSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
 		if (f.Required || slices.Contains(keyCols, f.Name)) && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
+			return true
+		}
+	}
+	return false
+}
+
+func appSpecUnfillableConstraints(decl framework.EntityDeclaration) bool {
+	keyColumns := appspec.AppSpecKeyColNames(decl)
+	for _, field := range decl.Fields {
+		if (field.Required || slices.Contains(keyColumns, field.Name)) &&
+			!appspec.AppSpecFieldSystem(field.Name) && !field.Hidden &&
+			(field.Min != nil || field.Max != nil || field.Pattern != "") {
 			return true
 		}
 	}
@@ -1700,12 +1712,12 @@ import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var appExtensions = entityui.Extensions{}
 `
 
-// appSpecSiteDescription resolves the generated app's site-level meta
+// AppSpecSiteDescription resolves the generated app's site-level meta
 // description: the app spec's app.description when set, otherwise an
 // honest derivation from what the generator actually knows: the app
 // name and its entities. Never empty: uihost strict mode (which
 // generated apps ship with) requires a site description.
-func appSpecSiteDescription(bp appspec.AppSpec) string {
+func AppSpecSiteDescription(bp appspec.AppSpec) string {
 	if bp.App.Description != "" {
 		return bp.App.Description
 	}
@@ -1997,7 +2009,7 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	// every strict check, so a later screen that forgets its SEO (or
 	// its axe scan, in dev) fails boot with the guided finding list
 	// instead of shipping bare.
-	extraUIOpts := fmt.Sprintf(", uihost.WithDescription(%q)", appSpecSiteDescription(bp))
+	extraUIOpts := fmt.Sprintf(", uihost.WithDescription(%q)", AppSpecSiteDescription(bp))
 	extraUIOpts += ", uihost.WithAppIcon(appIconPNG())"
 	sitemapExclude := ""
 	robotsDisallow := `"/__gofastr/"`
@@ -3856,6 +3868,7 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		// entityui forms make.
 		label := fmt.Sprintf("i18nui.FieldLabel(ctx, nil, %q, %q, %q)", entity, field.Name, appspec.ToDisplayName(field.Name))
 		fieldID := "field-" + field.Name
+		inputName := appspec.WireKey(field.Name)
 		req := fmt.Sprintf("%t", field.Required)
 		var expr string
 		switch field.Type {
@@ -3866,16 +3879,16 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 				fmt.Fprintf(&opts, "{Value: %q, Text: i18nui.FieldValueLabel(ctx, nil, %q, %q, %q)},", v, entity, field.Name, v)
 			}
 			opts.WriteString("}")
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
-				field.Name, label, fieldID, opts.String(), req)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Options: %s, Required: %s})",
+				inputName, label, fieldID, opts.String(), req)
 		case "relation":
 			// The relation select keeps data-rel-entity: the generated
 			// mount hook populates it from the related entity's API.
-			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
-				field.Name, label, fieldID, req, field.To)
+			expr = fmt.Sprintf("ui.Select(ui.SelectConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Placeholder: i18nui.EntitySelect.Text(ctx), Required: %s, ExtraAttrs: html.Attrs{\"data-rel-entity\": %q}})",
+				inputName, label, fieldID, req, field.To)
 		case "text":
 			expr = fmt.Sprintf("ui.TextArea(ui.TextAreaConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
-				field.Name, label, fieldID, req)
+				inputName, label, fieldID, req)
 		case "bool", "boolean":
 			// entityui's pair: a checked box submits "true" (with no
 			// Value it posted "on", which the bool validator refuses),
@@ -3883,8 +3896,8 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 			// leaves, so unticked writes false rather than the declared
 			// default. The box starts as that default. Required stays off
 			// the checkbox: it would make unticked unsubmittable.
-			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
-				field.Name, field.Name, label, fieldID, fmt.Sprint(field.Default) == "true")
+			expr = fmt.Sprintf("render.Join(html.Input(html.InputConfig{Type: \"hidden\", Name: %q, Value: \"false\"}), ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Value: \"true\", Checked: %t}))",
+				inputName, inputName, label, fieldID, fmt.Sprint(field.Default) == "true")
 		case "int", "integer", "float", "decimal":
 			// The step admits what the column holds, as entityui's form
 			// does: at the browser's default of 1, native validation
@@ -3897,15 +3910,15 @@ func appSpecEntityFormExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 				step = "1"
 			}
 			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: \"number\", Name: %q, Step: %q}) }})",
-				label, fieldID, req, field.Name, step)
+				label, fieldID, req, inputName, step)
 		case "date":
-			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Name: %q, Label: %s, ID: %q, Required: %s})",
-				field.Name, label, fieldID, req)
+			expr = fmt.Sprintf("ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: %q, Label: %s, ID: %q, Required: %s})",
+				inputName, label, fieldID, req)
 		default:
 			// datetime-local, file, email and anything else the typed
 			// fields do not name: the styled native control.
 			expr = fmt.Sprintf("ui.FormField(ui.FormFieldConfig{Label: %s, For: %q, Required: %s, Input: func(c headless.FieldControl) render.HTML { return ui.Control(ui.ControlConfig{Field: c, Type: %q, Name: %q}) }})",
-				label, fieldID, req, appSpecFormInputType(field.Type), field.Name)
+				label, fieldID, req, appSpecFormInputType(field.Type), inputName)
 		}
 		fields = append(fields, expr)
 	}

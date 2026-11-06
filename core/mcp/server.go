@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -232,6 +234,7 @@ type Server struct {
 	// policy pops and removeSSESubscriber splices; it shadows sseSubs
 	// and is guarded by the same sseMu.
 	sseSeatCap      int
+	sseStreamLimit  int
 	sseSeatOverflow SeatOverflowPolicy
 	sseSeatOrder    map[string][]*sseSubscriber
 	// sseKeepAlive overrides sseKeepAliveEvery, the interval at which an
@@ -529,7 +532,9 @@ func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (ref
 		return false
 	}
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP listing gate recovered", "operation", "listing gate",
+				"panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			refused = true
 		}
 	}()
@@ -547,6 +552,8 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP tool gate recovered", "operation", "tool gate",
+				"tool", textsafe.SanitizeControlBytes(t.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			err = &RPCError{Code: ErrInternalError, Message: "internal tool error"}
 		}
 	}()
@@ -580,8 +587,9 @@ func runCallGate(gate func(toolName string) error, name string) (err error) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP call gate recovered",
 				slog.String("operation", "call gate"),
-				slog.String("tool", name),
-				slog.Any("panic", textsafe.Recovered(rec)))
+				slog.String("tool", textsafe.SanitizeControlBytes(name)),
+				slog.String("panic", textsafe.Recovered(rec)),
+				slog.String("stack", string(debug.Stack())))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -643,7 +651,8 @@ func (s *Server) checkServerGate(ctx context.Context) (err error) {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP server gate recovered",
 				slog.String("operation", "server gate"),
-				slog.Any("panic", textsafe.Recovered(rec)))
+				slog.String("panic", textsafe.Recovered(rec)),
+				slog.String("stack", string(debug.Stack())))
 			err = errors.New("internal tool error")
 		}
 	}()
@@ -731,12 +740,24 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 			return nil, rpcErr
 		}
+		if refusal, ok := errors.AsType[*handler.Error](err); ok && refusal.Code >= 400 && refusal.Code < 500 {
+			message := refusal.Message
+			data := map[string]any{"code": refusal.Code}
+			if !refusal.Reason.IsZero() {
+				message = refusal.Reason.Text(ctx, refusal.Params)
+				data["reason"] = refusal.Reason.Code()
+			}
+			if fields, reasons := handler.ViolationBodies(ctx, refusal.Violations); len(fields) > 0 {
+				data["fields"], data["field_reasons"] = fields, reasons
+			}
+			return nil, &RPCError{Code: ErrInvalidParams, Message: message, Data: data}
+		}
 		// A plain error is internal detail (filesystem paths, driver
 		// and DSN text, internal hostnames) and must not cross the
 		// transport — the same posture invokeHandler's panic path
 		// takes. Log it server-side and answer the generic message.
-		// The caller-visible failure channel a handler owns is
-		// mcp.ToolResult{IsError: true} or a deliberate *RPCError.
+		// Caller-visible failures use mcp.ToolResult{IsError: true},
+		// a deliberate *RPCError, or a typed 4xx *handler.Error.
 		slog.Error("mcp: tool handler failed",
 			slog.String("tool", name),
 			slog.String("err", err.Error()))
@@ -759,6 +780,8 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]any) (result any, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
+			slog.Error("panic in MCP tool handler recovered", "operation", "tool handler",
+				"tool", textsafe.SanitizeControlBytes(t.Name), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			result = nil
 			err = &RPCError{
 				Code:    ErrInternalError,

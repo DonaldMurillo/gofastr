@@ -235,6 +235,9 @@ func validVTWidth(w string) bool { return vtWidthRe.MatchString(w) }
 // renders, so the 404 can never fire; or the 404 fires and the
 // Default is dead weight).
 func NewLayout(name string, spec LayoutSpec, build LayoutFunc) *Layout {
+	if !validOutletName(name) {
+		panic(fmt.Sprintf("app: layout name %q is invalid (allowed: letters, digits, '-', '_')", name))
+	}
 	if spec.Style != nil {
 		scopedSheet(fmt.Sprintf("layout %q Style", name), spec.Style)
 	}
@@ -291,7 +294,15 @@ func NewLayout(name string, spec LayoutSpec, build LayoutFunc) *Layout {
 		}
 		validateTransitionSet("outlet "+o.Name(), o.Transition, o.Transitions, o.TransitionFor)
 	}
+	seenAreas := make(map[string]bool, len(spec.Areas))
 	for _, a := range spec.Areas {
+		if !validOutletName(a.Name) {
+			panic(fmt.Sprintf("app: layout %q area name %q is invalid (allowed: letters, digits, '-', '_')", name, a.Name))
+		}
+		if seenAreas[a.Name] {
+			panic(fmt.Sprintf("app: layout %q declares area %q twice: an address must name one region", name, a.Name))
+		}
+		seenAreas[a.Name] = true
 		if a.Transition.Name != "" && !validVTName(a.Transition.Name) {
 			bad("area "+a.Name, a.Transition.Name)
 		}

@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ import (
 func RunVerify(args []string) {
 	opts, err := parseVerifyArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
+		failRun(slices.Contains(args, "--json"), "%v", err)
 		cli.OsExit(2)
 		return
 	}
@@ -47,6 +48,11 @@ func RunVerify(args []string) {
 	}
 	if opts.list {
 		listRules(opts.json, opts.capabilities)
+		return
+	}
+	if opts.baselineWrite && opts.sarifPath != "" {
+		failRun(opts.json, "--baseline-write and --sarif cannot be combined; record the baseline and export SARIF in separate runs")
+		cli.OsExit(2)
 		return
 	}
 
@@ -103,7 +109,7 @@ func RunVerify(args []string) {
 			// build makes unreliable.
 			vet.Output = out
 			if opts.json {
-				emitVetFailureJSON(opts.root, cfg, vet)
+				emitVetFailureJSON(pass.Root, cfg, vet)
 			} else {
 				cli.Fail("go vet found issues: fix those first")
 			}
@@ -274,6 +280,7 @@ func RunVerify(args []string) {
 			data, marshalErr := json.Marshal(map[string]any{
 				"baselineWritten": baselineFile,
 				"accepted":        b.Total(),
+				"notices":         notices,
 			})
 			if marshalErr == nil {
 				cli.Println(string(data))
@@ -433,12 +440,15 @@ func runGoVet(root string, capture bool) (out, suiteSkipped string, ok bool) {
 	}
 	var suiteArgs, suiteEnv []string
 	if isFrameworkTree(root) {
-		tool, dir := buildRepoVettool(root)
+		tool, dir, buildErr := buildRepoVettool(root)
 		if dir != "" {
 			defer os.RemoveAll(dir)
 		}
 		if tool == "" {
 			note("gofastr verify: ./cmd/vettool does not build, so the analyzer pass cannot run")
+			if buildErr != nil {
+				note(buildErr.Error())
+			}
 			return strings.TrimSpace(buf.String()), "", false
 		}
 		suiteArgs = []string{"-vettool=" + tool}
@@ -499,21 +509,21 @@ func suiteSkipReason(moduleGo, builtWith string) string {
 // buildRepoVettool builds ./cmd/vettool from root into a private temp
 // dir. Empty bin (with the dir still returned for cleanup) when the
 // tree has no vettool or the build fails.
-func buildRepoVettool(root string) (bin, dir string) {
+func buildRepoVettool(root string) (bin, dir string, err error) {
 	if _, err := os.Stat(filepath.Join(root, "cmd", "vettool")); err != nil {
-		return "", ""
+		return "", "", err
 	}
-	dir, err := os.MkdirTemp("", "gofastr-verify-vettool-")
+	dir, err = os.MkdirTemp("", "gofastr-verify-vettool-")
 	if err != nil {
-		return "", ""
+		return "", "", err
 	}
 	bin = filepath.Join(dir, "vettool")
 	build := exec.Command("go", "build", "-o", bin, "./cmd/vettool")
 	build.Dir = root
-	if err := build.Run(); err != nil {
-		return "", dir
+	if output, err := build.CombinedOutput(); err != nil {
+		return "", dir, fmt.Errorf("build repo vettool: %w\n%s", err, output)
 	}
-	return bin, dir
+	return bin, dir, nil
 }
 
 // emitVetFailureJSON writes the document for a run that stopped at the
@@ -523,7 +533,7 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 	report := &contracts.Report{Root: root, ConfigPath: cfg.Path, FailOn: cfg.FailOn, Vet: vet}
 	data, err := contracts.FormatJSON(report)
 	if err != nil {
-		cli.Fail("render JSON: %v", err)
+		failRun(true, "render JSON: %v", err)
 		return
 	}
 	cli.Println(string(data))
@@ -532,18 +542,18 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 func explainRule(idOrSlug string, asJSON bool) {
 	rule, ok := contracts.LookupRule(idOrSlug)
 	if !ok {
-		cli.Fail("unknown rule %q", idOrSlug)
+		message := fmt.Sprintf("unknown rule %q", idOrSlug)
 		if near := contracts.SuggestRules(idOrSlug); len(near) > 0 {
-			cli.Info("did you mean: %s", strings.Join(near, ", "))
+			message += "; did you mean: " + strings.Join(near, ", ")
 		}
-		cli.Info("run `gofastr verify --list` for the catalog")
+		failRun(asJSON, "%s; run `gofastr verify --list` for the catalog", message)
 		cli.OsExit(2)
 		return
 	}
 	if asJSON {
 		data, err := contracts.FormatCatalogJSON([]contracts.Rule{rule})
 		if err != nil {
-			cli.Fail("%v", err)
+			failRun(asJSON, "%v", err)
 			cli.OsExit(2)
 			return
 		}
@@ -571,7 +581,7 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 	if asJSON {
 		data, err := contracts.FormatCatalogJSON(rules)
 		if err != nil {
-			cli.Fail("%v", err)
+			failRun(asJSON, "%v", err)
 			cli.OsExit(2)
 			return
 		}

@@ -80,11 +80,16 @@ with the same tags `handler.Bind` reads:
 
 - `path:"id" json:"-"`: a `{id}` segment of the path. Every `{name}` in the
   path needs one. Never a pointer: a path value is always present.
+  Hand-registered endpoints may also use `:id` segments; OpenAPI normalizes
+  them to `{id}` and keeps matching input fields out of the JSON body.
 - `query:"q" json:"-"`: a query-string value. Only `GET` and `DELETE` take
   them, and they take nothing else besides path values. `query:"q,empty"`
   keeps an explicit `?q=` (see below); it is the only option a query tag
   takes, and a path tag takes none.
 - `json:"amount"`: a JSON body key, for `POST`, `PUT` and `PATCH`.
+
+Hand-registered endpoint methods are case-insensitive in both routing and
+OpenAPI: `get` has the same no-body and SDK query-input behavior as `GET`.
 
 A pointer field is optional; any other field is required. The generated CLI
 refuses a call that leaves out a required flag before it sends anything.
@@ -95,6 +100,10 @@ CLI spell a path or query value as a plain scalar. A hand-registered handler get
 of `handler.Bind`, which also binds a `time.Time` or any other
 `encoding.TextUnmarshaler` from a query, path or header value (see
 [core packages](core-packages.md) → handler).
+
+The MCP twin refuses non-scalar path/query arguments using JSON type names
+(array, object, or null), never Go implementation types. These details use
+the same translatable JSON phrases as HTTP decoding errors.
 
 An empty query value (`?q=`) is the same as no value: the field stays at
 its zero value and a pointer field stays nil. Before this release `?q=`

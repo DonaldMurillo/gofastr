@@ -3,8 +3,8 @@ package i18nui
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
 // The admin back office (battery/admin): its shell, dashboard and ops
-// pages. The entity screens it draws use the entity*.go blocks; see
-// entity.go for how the blocks merge into Defaults and AllKeys.
+// pages. The entity screens it draws use the phrases in the entity*.go
+// files.
 
 // The shell: brand, sidebar, toolbar, palette and account menu.
 var (

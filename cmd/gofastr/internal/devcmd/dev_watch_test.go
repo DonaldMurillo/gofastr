@@ -23,6 +23,9 @@ func writeTree(t *testing.T, root string, files map[string]string) {
 }
 
 func watched(root string, w *Watch) []string {
+	if resolved, err := filepath.EvalSymlinks(root); err == nil {
+		root = resolved
+	}
 	var got []string
 	for p := range w.Scan() {
 		rel, _ := filepath.Rel(root, p)

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -77,7 +78,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		}
 		cells := map[string]render.HTML{"permission": ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name...)}
 		for i, role := range roles {
-			cell := ui.ToggleConfig{
+			cell := ui.ToggleConfig{Ctx: ctx,
 				Name:        "grant",
 				ID:          "admin-grant-" + strconv.Itoa(i) + "-" + strconv.Itoa(j),
 				LabelHidden: true,
@@ -146,7 +147,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
 				label: i18nui.AdminGrant.Text(ctx), variant: ui.ButtonSecondary,
 				body: []render.HTML{
-					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.AdminNewRole.Text(ctx), Required: true}),
+					ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "role", Label: i18nui.AdminNewRole.Text(ctx), Required: true}),
 					permissionInput(ctx, caps, ""),
 				},
 			})))
@@ -184,13 +185,13 @@ func permissionInput(ctx context.Context, caps []access.Permission, suffix strin
 		id += "-" + suffix
 	}
 	if len(caps) == 0 {
-		return ui.TextField(ui.TextFieldConfig{Name: "permission", Label: label, ID: id, Required: true})
+		return ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "permission", Label: label, ID: id, Required: true})
 	}
 	opts := make([]ui.SelectOption, len(caps))
 	for i, c := range caps {
 		opts[i] = ui.SelectOption{Value: string(c), Text: string(c)}
 	}
-	return ui.Select(ui.SelectConfig{Name: "permission", Label: label, ID: id, Options: opts, Required: true})
+	return ui.Select(ui.SelectConfig{Ctx: ctx, Name: "permission", Label: label, ID: id, Options: opts, Required: true})
 }
 
 // ----- user roles ---------------------------------------------------------------
@@ -304,7 +305,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
 	label := i18nui.AdminColRoles.Text(ctx)
 	if len(known) == 0 {
-		return ui.TextField(ui.TextFieldConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
+		return ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
 	}
 	all := slices.Clone(known)
 	for _, r := range direct {
@@ -406,6 +407,14 @@ func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok s
 	}
 	role := strings.TrimSpace(vals.Get("role"))
 	perm := access.Permission(strings.TrimSpace(vals.Get("permission")))
+	if !storableText(role) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "role")
+		return
+	}
+	if !storableText(string(perm)) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "permission")
+		return
+	}
 	if role == "" || perm == "" {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
@@ -431,7 +440,15 @@ func (b *Battery) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	roles, rolesOK := distinctTrimmed(vals["role"])
 	perms, permsOK := distinctTrimmed(vals["permission"])
-	if !rolesOK || !permsOK || len(roles) == 0 || len(perms) == 0 || len(roles) > maxGridCells/len(perms) {
+	if !rolesOK || len(roles) == 0 {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "role")
+		return
+	}
+	if !permsOK || len(perms) == 0 {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "permission")
+		return
+	}
+	if len(roles) > maxGridCells/len(perms) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
@@ -535,12 +552,16 @@ func distinctTrimmed(vals []string) ([]string, bool) {
 	out := make([]string, 0, len(vals))
 	for _, v := range vals {
 		v = strings.TrimSpace(v)
-		if v == "" || slices.Contains(out, v) {
+		if v == "" || !storableText(v) || slices.Contains(out, v) {
 			return nil, false
 		}
 		out = append(out, v)
 	}
 	return out, true
+}
+
+func storableText(value string) bool {
+	return utf8.ValidString(value) && strings.IndexByte(value, 0) < 0
 }
 
 // gridCell parses a grant value "i:j" against the grid's size.
@@ -571,13 +592,17 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	// The id is a key, used exactly: trimming " u1 " would edit "u1".
 	userID := vals.Get("user_id")
-	if strings.TrimSpace(userID) == "" {
-		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
+	if strings.TrimSpace(userID) == "" || !storableText(userID) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "user_id")
 		return
 	}
 	// One value per checkbox, or one comma-separated text field.
 	var roles []string
 	for _, v := range vals["roles"] {
+		if !storableText(v) {
+			b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "roles")
+			return
+		}
 		for role := range strings.SplitSeq(v, ",") {
 			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
 				roles = append(roles, role)

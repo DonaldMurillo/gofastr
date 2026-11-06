@@ -42,11 +42,14 @@
 //
 // Both arms read the error's text in every spelling that builds the
 // body string in place: err.Error(), "prefix: "+err.Error(),
-// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q) and the
-// error among its operands — fmt.Sprintf("query failed: %v", err) is a
-// built string, not a format handed to a helper. Until the 2026-11-02
-// guard bash the HTTP arm read only .Error(), and the JSON-RPC arm only
-// the bare "%v"/"%s" format.
+// fmt.Sprint(err), and fmt.Sprintf with a text verb (%v %s %q, with
+// any flags or an explicit [n] argument index) and the error among its
+// operands — fmt.Sprintf("query failed: %v", err) is a built string,
+// not a format handed to a helper; the format may be a named constant
+// (constString resolves it). Until the 2026-11-02 guard bash the HTTP
+// arm read only .Error(), and the JSON-RPC arm only the bare
+// "%v"/"%s" format; until the 2026-11-03 gap round an [n] index or a
+// constant format slipped both.
 //
 // Two arms from the 2026-11 bug bashes ask where the error came from;
 // their contract, sinks and silences are in origin.go. Decode
@@ -72,7 +75,6 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -247,15 +249,11 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 			if len(args) < 2 {
 				return true
 			}
-			lit, ok := args[0].(*ast.BasicLit)
-			if !ok || lit.Kind != token.STRING {
+			s, ok := constString(pass, args[0])
+			if !ok {
 				return true
 			}
-			s, e := strconv.Unquote(lit.Value)
-			if e != nil || !textVerb.MatchString(s) {
-				return true
-			}
-			args = args[1:]
+			args = formattedTextArgs(s, args[1:])
 		default:
 			return true
 		}
@@ -276,5 +274,51 @@ func findSprintfErr(pass *analysis.Pass, expr ast.Expr) (pos token.Pos, found bo
 
 var errorInterface = types.Universe.Lookup("error").Type().Underlying().(*types.Interface)
 
-// textVerb matches a format verb that renders its operand as text.
-var textVerb = regexp.MustCompile(`%[-+# 0-9.*]*[vsq]`)
+func formattedTextArgs(format string, args []ast.Expr) []ast.Expr {
+	var text []ast.Expr
+	argument := 0
+	reordered := false
+	for offset := 0; offset < len(format); offset++ {
+		if format[offset] != '%' {
+			continue
+		}
+	directive:
+		for offset++; offset < len(format); offset++ {
+			character := format[offset]
+			switch {
+			case character == '[':
+				reordered = true
+				end := strings.IndexByte(format[offset:], ']')
+				if end < 0 {
+					break directive
+				}
+				index, err := strconv.Atoi(format[offset+1 : offset+end])
+				if err != nil || index < 1 {
+					offset += end
+					break directive
+				}
+				argument = index - 1
+				offset += end
+			case character == '*':
+				if argument < len(args) {
+					argument++
+				}
+			case strings.ContainsRune("-+# .0123456789", rune(character)):
+			case character == '%':
+				break directive
+			default:
+				if strings.ContainsRune("vsq", rune(character)) && argument < len(args) {
+					text = append(text, args[argument])
+				}
+				if argument < len(args) {
+					argument++
+				}
+				break directive
+			}
+		}
+	}
+	if !reordered && argument < len(args) {
+		text = append(text, args[argument:]...)
+	}
+	return text
+}

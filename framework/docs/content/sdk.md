@@ -333,7 +333,10 @@ the entity.
 
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named
-by its column; `client.d.ts` types those fields `string | Blob`. A
+by its column; `client.d.ts` types those fields `string | Blob`. CRUD also
+accepts response wire keys, including explicit `WireName` overrides, for
+multipart values and file parts. Distinct names resolving to one column are
+refused before uploads are saved. A
 multipart body cannot carry `null`, so clear a field in a separate JSON
 patch. A file over 32 MiB, or a body over 64 MiB, throws before
 anything is sent. A batch goes as JSON, so `batchCreate` and
@@ -363,9 +366,16 @@ like every integer field (see below).
 ## The casing contract both SDKs encode
 
 Responses are camelCase (the server default). Request bodies accept snake
-or camel. **Filter/sort query parameters and validation-error `fields`
-keys are always the snake_case column names.** The generated READMEs
+or camel. **Filter/sort query parameters use snake_case column names;
+error `fields` and `field_reasons` keys use the response wire keys
+(camelCase by default, or an explicit `WireName`).** The generated READMEs
 repeat this so consumers stop guessing.
+
+Custom RPC forms must name their controls by the same wire keys as their
+handler's `fields` map. Inline errors match control names exactly; the runtime
+does not infer column names from camelCase. Entityui does this using the
+mounted handler's casing and overrides, and app-spec forms use the default
+camelCase wire keys (`address_line_1` becomes `addressLine1`).
 
 ## Flags and project configuration
 
@@ -380,6 +390,11 @@ gofastr generate sdk [--target=go,js] [--out=gen/sdk] [--name=<app>]
 over an unchanged schema rewrites every file byte for byte.
 `--stamp-time` adds `generatedAt`, and the reference page then shows the
 date beside the version.
+
+`gofastr generate sdk --json` writes one document to stdout on both success
+and failure. Source, validation and write errors return
+`{"files":[],"errors":[{"message":"..."}]}` with a nonzero exit status;
+prose diagnostics go to stderr and overwrite warnings are suppressed.
 
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named
@@ -429,6 +444,9 @@ download buttons, an auth guide (minting `gfsk_` tokens), an errors
 reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
+The quickstart lists records without an assumed sort column, so entities
+without timestamps work too. To sort, use a filterable/sortable column from
+that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
@@ -436,6 +454,7 @@ site := app.NewApp("My App")
 err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
     Registry:     fwApp.Registry,
     CRUDMounted:  fwApp.EntityCRUDMounted,
+    ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
     Artifacts:    os.DirFS("gen/sdk/dist"), // or an embed.FS for single-binary deploys
     BaseURL:      "https://your-app.example.com",
     APIPrefix:    "api",
@@ -449,9 +468,12 @@ alone cannot answer that: an app with no DB mounts no CRUD at all while
 every entity still reads `nil` ("auto"). Without the predicate the site
 publishes a reference page, and an SDK download, for paths that answer
 404. A columned view registered with `App.View` counts as mounted — it
-serves read routes, and read routes are what the site documents. Leaving
-the field nil keeps the older `Exposure`-only behaviour for callers that
-document a registry without an App.
+serves read routes. Also pass `ReadOnlyMounted: fwApp.EntityReadOnlyMounted`
+to omit create, update, delete, batch and state-move routes and create
+examples for those views. Explicit custom endpoints remain documented.
+Leaving `CRUDMounted` nil keeps the older `Exposure`-only behaviour for
+callers that document a registry without an App; leaving `ReadOnlyMounted`
+nil assumes writable routes.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles
@@ -468,8 +490,11 @@ fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
-`manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
-from the manifest hash, so stable URLs revalidate for free.
+`manifest.json`. Public responses carry `Cache-Control: no-cache`;
+with a `Policy`, they carry `private, no-cache` so shared caches cannot
+store policy-gated artifacts. Artifact ETags use the manifest's recorded
+hashes, so stable URLs revalidate for free. The cache policy also accompanies
+304 responses to conditional GET and HEAD requests.
 The downloads follow the same visibility as the pages: every route
 answers 404 unless each entity the manifest's `entities` list names is
 one the site documents, and a missing manifest refuses too. Each file
@@ -527,8 +552,8 @@ Files the export already produced (or the user static dir) always win.
   only API calls live under `APIPrefix` (`/api/posts`). The SDK
   `baseURL` must include the prefix; the download URLs must not.
 - **Filtering with camelCase names.** `?statusId_gte=` matches nothing:
-  filter/sort query params and validation-error `fields` keys are the
-  snake_case column names. The JS SDK exports `<entity>Fields`
+  filter/sort query params use snake_case column names, while error
+  `fields` keys use response wire keys. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
 - **Sending a bare key that reads two ways.** With fields `stage` and
   `stage_in`, `?stage_in=` is a 400: it could be `stage_in`'s equality

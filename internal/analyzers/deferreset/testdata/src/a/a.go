@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 )
 
 type Store interface {
@@ -22,7 +23,7 @@ func Idempotency(store Store, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 		finish := func(body []byte) { _ = store.Finish(context.Background(), "k", body) }
-		finish(nil) // want `deferreset: finish undoes Begin \(line 20\) after next\.ServeHTTP outside a defer`
+		finish(nil) // want `deferreset: finish undoes Begin \(line [0-9]+\) after next\.ServeHTTP outside a defer`
 	})
 }
 
@@ -60,7 +61,7 @@ func (tw *timeoutWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	tw.mu.Unlock()
 	conn, rw, err := http.NewResponseController(tw.w).Hijack()
 	tw.mu.Lock()
-	tw.hijacking = false // want `deferreset: tw\.hijacking undoes tw\.hijacking \(line 59\) after http\.NewResponseController\(tw\.w\)\.Hijack outside a defer`
+	tw.hijacking = false // want `deferreset: tw\.hijacking undoes tw\.hijacking \(line [0-9]+\) after http\.NewResponseController\(tw\.w\)\.Hijack outside a defer`
 	tw.hijackDone.Broadcast()
 	tw.mu.Unlock()
 	return conn, rw, err
@@ -89,7 +90,7 @@ type runner struct {
 func (r *runner) step(i int) error {
 	r.busy = true
 	err := r.OnStep(i)
-	r.busy = false // want `deferreset: r\.busy undoes r\.busy \(line 90\) after r\.OnStep outside a defer`
+	r.busy = false // want `deferreset: r\.busy undoes r\.busy \(line [0-9]+\) after r\.OnStep outside a defer`
 	return err
 }
 
@@ -104,7 +105,7 @@ func (p *pool) with(ctx context.Context, fn func() error) error {
 		return err
 	}
 	err := fn()
-	p.release() // want `deferreset: release undoes acquire \(line 103\) after fn outside a defer`
+	p.release() // want `deferreset: release undoes acquire \(line [0-9]+\) after fn outside a defer`
 	return err
 }
 
@@ -171,4 +172,93 @@ func (p *pool) withFixed(ctx context.Context, fn func() error) error {
 	}
 	defer p.release()
 	return fn()
+}
+
+// A defer inside a closure argument is armed only when its callee runs
+// the closure: it does not cover the panic path of the body that paid
+// for the Hijack, so the non-deferred clear still reports.
+func (tw *timeoutWriter) hijackViaCallback(onSlow func(func())) (net.Conn, *bufio.ReadWriter, error) {
+	tw.mu.Lock()
+	tw.hijacking = true
+	tw.mu.Unlock()
+	conn, rw, err := http.NewResponseController(tw.w).Hijack()
+	tw.mu.Lock()
+	tw.hijacking = false // want `deferreset: tw\.hijacking undoes tw\.hijacking \(line 18[0-9]\) after http\.NewResponseController\(tw\.w\)\.Hijack outside a defer`
+	tw.mu.Unlock()
+	onSlow(func() {
+		defer func() { tw.hijacking = false }()
+	})
+	return conn, rw, err
+}
+
+// A package-level function literal is a handler-table entry: the same
+// shape outside any declaration.
+var hijackViaVar = func(tw *timeoutWriter, w http.ResponseWriter) {
+	tw.mu.Lock()
+	tw.hijacking = true
+	tw.mu.Unlock()
+	http.NewResponseController(w).Hijack()
+	tw.mu.Lock()
+	tw.hijacking = false // want `deferreset: tw\.hijacking undoes tw\.hijacking \(line 19[0-9]\) after http\.NewResponseController\(w\)\.Hijack outside a defer`
+	tw.mu.Unlock()
+}
+
+// A deferred verb for another callee does not cover this reset: the
+// quiet posture is the deferred spelling of the SAME reset.
+type queue struct{}
+
+func (q *queue) claim()   {}
+func (q *queue) unclaim() {}
+
+func doneLog() {}
+
+func (q *queue) drain(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	q.claim()
+	defer doneLog()
+	next.ServeHTTP(w, r)
+	q.unclaim() // want `deferreset: unclaim undoes claim \(line 2[0-9][0-9]\) after next\.ServeHTTP outside a defer`
+}
+
+// The deferred spelling of the same reset keeps the body quiet, even
+// with a normal-path unclaim after the handler.
+func (q *queue) drainFixed(next http.Handler, w http.ResponseWriter, r *http.Request) {
+	q.claim()
+	defer q.unclaim()
+	next.ServeHTTP(w, r)
+	q.unclaim()
+}
+
+// A deferred reset verb with a DIFFERENT word on the same receiver
+// still covers the panic path: the abort undoes the begin the finish
+// completes.
+type journal struct{}
+
+func (j *journal) begin() error { return nil }
+func (j *journal) abort()       {}
+func (j *journal) finish()      {}
+
+type session struct {
+	w      *journal
+	OnSave func()
+}
+
+func (s *session) save() {
+	s.w.begin()
+	defer s.w.abort()
+	s.OnSave()
+	s.w.finish()
+}
+
+// ctx.Done is a channel getter, not the reset verb "done": neither the
+// deferred release for this owner nor anything else makes the receive
+// a reset, and the poll body stays quiet.
+func (q *queue) poll(ctx context.Context, next http.Handler, w http.ResponseWriter, r *http.Request) {
+	q.claim()
+	defer q.unclaim()
+	next.ServeHTTP(w, r)
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(time.Second):
+	}
 }

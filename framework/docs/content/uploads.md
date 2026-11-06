@@ -172,8 +172,8 @@ when the row lets them go:
 
 - a hard delete (`DELETE /{entity}/{id}`, batch delete, `DeleteOne`,
   `TypedQuery.DeleteAll`) or a purge of a soft-deleted row deletes them all;
-- an update or upsert that replaces or clears a file deletes the old key and
-  its renditions.
+- an update or upsert, including `TypedQuery.UpdateAll`, that replaces or
+  clears a file deletes the old key and its unreferenced renditions.
 
 The delete runs after the write's transaction commits; a rollback keeps the
 objects. A failed delete is logged, not returned, since the row change has
@@ -188,7 +188,9 @@ already committed. The objects stay when:
 
 A key that host code copied into a different entity's table is not checked:
 deleting the first row deletes the object the second still names.
-`TypedQuery.UpdateAll` does not delete what it replaces.
+`TypedQuery.UpdateAll` captures objects under the same tenant, owner,
+soft-delete, and query predicates as its update, inside the write transaction.
+It preserves objects and renditions still named by the updated rows.
 
 ## Field-name casing
 
@@ -274,6 +276,19 @@ The metadata lands in **sibling columns**, named for the image field:
 | `<field>_blurhash`     | `schema.String` | ~28-char BlurHash                           |
 | `<field>_placeholder`  | `schema.String` | LQIP `data:` URL (only if `Placeholder` set) |
 | `<field>_variants`     | `schema.JSON`   | `[{storage_ref, mime, width, height}, …]`, ascending by width |
+
+Changing or clearing an existing image through an update or an upsert conflict
+clears omitted derived siblings to SQL `NULL` in the same write. This includes
+read-only or hidden derived columns and works without a configured storage
+backend. Explicit writable replacement metadata is kept; an unchanged image
+keeps its metadata. A multipart pipeline that produces only some artifacts
+therefore cannot retain the previous image's other artifacts. Stored renditions
+that the new row no longer references are released after commit.
+
+Image updates compare the source read for that decision in the write's SQL
+predicate, including SQL `NULL`. If another writer changes the source before
+the update or upsert conflict, the stale write is refused without changing
+the current image or its metadata. Reload the row before retrying.
 
 **Columns you do not declare are skipped.** Nothing errors, nothing is
 lost; you adopt a column by adding it to the entity. So an entity with a
@@ -559,7 +574,8 @@ Behaviour worth knowing:
 - It runs before the image pipeline, so renditions and the BlurHash are
   derived from the stripped bytes, and `FileField.Size` reflects them.
 - It fails closed: a JPEG, PNG, or WebP whose structure cannot be
-  walked fails the upload rather than being stored unstripped.
+  walked fails the upload rather than being stored unstripped. A WebP RIFF
+  size that omits the form tag or leaves no chunks is refused before storage.
 
 ## Storage backends
 

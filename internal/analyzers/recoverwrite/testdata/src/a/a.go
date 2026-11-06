@@ -1,7 +1,9 @@
 package a
 
 import (
+	"bytes"
 	"encoding/json"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"time"
@@ -184,4 +186,43 @@ func Callback(w http.ResponseWriter, later func(func())) {
 // A deferred literal that writes but never recovers: no panic answered.
 func DeferredLiteralNoRecover(w http.ResponseWriter) {
 	defer func() { w.WriteHeader(http.StatusOK) }()
+}
+
+var started bool
+
+// The near miss: the deferred recover WRITES the state-named latch
+// (recording it for the log) and then answers unconditionally. Writing
+// the state is not reading it: no guard gates the write, so it reports.
+func LatchWrite(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				started = true
+				http.Error(w, "internal", http.StatusInternalServerError) // want `recoverwrite: a deferred recover writes a response with no check that the response had not started`
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+var errTmpl = template.Must(template.New("err").Parse("<p>{{.}}</p>"))
+
+// A deferred recover that renders the error page through a template:
+// Execute into the response writer is a response write.
+func TemplateRecover(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				_ = errTmpl.Execute(w, v) // want `recoverwrite: a deferred recover writes a response with no check that the response had not started`
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Execute into a buffer is not a response write: no splice.
+func templateToBuffer(v any) string {
+	var buf bytes.Buffer
+	_ = errTmpl.Execute(&buf, v)
+	return buf.String()
 }

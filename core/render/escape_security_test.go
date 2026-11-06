@@ -5,15 +5,6 @@ import (
 	"testing"
 )
 
-// TestFingerprintURL_NoPathTraversal verifies that FingerprintURL doesn't
-// allow path traversal through the file path. Attack: crafting a filePath
-// with ../ to break out of the static directory.
-func TestFingerprintURL_NoPathTraversal(t *testing.T) {
-	// This function is in core/static but we test the concept here
-	// since render also has path-handling code.
-	t.Logf("NOTE: [fingerprint] FingerprintURL should validate path inputs against traversal")
-}
-
 // TestEscape_AllFiveSpecialChars verifies that Escape handles all five
 // HTML special characters. Attack: incomplete escaping allows injection.
 func TestEscape_AllFiveSpecialChars(t *testing.T) {
@@ -45,19 +36,19 @@ func TestEscape_AmpersandFirst(t *testing.T) {
 	// Escape() should escape & first: & → &amp; then < → &lt;
 	input := "&lt;script&gt;"
 	got := Escape(input)
-	if strings.Contains(got, "&amp;lt;") && !strings.Contains(got, ";script") {
-		// Double-escaped: the & in &lt; was escaped first, which is correct
-		t.Logf("Correct: ampersand is escaped first, so &lt; becomes %q", got)
+	if got != "&amp;lt;script&amp;gt;" {
+		t.Fatalf("Escape(%q) = %q, want literal entities", input, got)
 	}
 }
 
 // TestTag_EmptyNameHandled verifies that Tag with an empty name doesn't
 // produce broken HTML. Attack: crafting HTML via empty tag name.
 func TestTag_EmptyNameHandled(t *testing.T) {
-	got := string(Tag("", nil, Text("content")))
-	// Empty tag name produces <>content</>
-	if strings.HasPrefix(got, "<>") {
-		t.Logf("NOTE: [xss] Tag with empty name produces %q — consider validating tag names", got)
+	for _, name := range []string{"", " ", "div onclick=alert(1)"} {
+		got := string(Tag(name, nil, Text("content")))
+		if got != "<span>content</span>" {
+			t.Errorf("Tag(%q) = %q, want neutral span", name, got)
+		}
 	}
 }
 

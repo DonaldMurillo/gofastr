@@ -17,6 +17,22 @@ gofastr verify
 
 ## What it checks
 
+Source discovery follows a symlinked analysis root and linked package
+directories, visiting each resolved directory once to stop cycles. Build
+outputs (`dist`, `bin`, `build`, `tmp`), dependencies, and hidden/underscore
+subtrees are skipped; explicitly selecting a root with one of those names
+still scans that root.
+
+An unreadable analysis root is a fatal discovery error. An unreadable
+subdirectory is skipped without stopping discovery of its readable siblings.
+Source files that cannot be read are recorded alongside parse failures in
+the report's `unparsed` count and its text footer. A run with no readable
+Go, CSS, or JavaScript source files fails with a discovery error instead of
+reporting a clean pass; a directory containing only configuration or excluded
+build output is not a successful analysis. `contracts.NewPass` still permits
+an empty pass for inspection, but `contracts.Run` refuses to analyze it, so
+both `gofastr verify` and the `gofastr build` contract gate reject it.
+
 Rules are grouped into capabilities, and each capability is also a filter:
 `gofastr verify routing security` runs two of them.
 
@@ -264,9 +280,30 @@ Path globs are slash-separated (`cmd/**`, `**/testdata/**`); a backslash
 is accepted as a separator too, so a path typed on Windows works rather
 than silently matching nothing.
 
+A leading `/` anchors a glob at the analyzed root: `/gen/**` exempts
+the root's generated subtree, not a nested `pkg/gen/` subtree. Coverage
+minimums must be finite percentages between 0 and 100; NaN and infinity
+are rejected, including quoted spellings.
+
 The app spec (`gofastr.yml`) is not read for this. Every relaxation is
 printed in the report footer: a run that passes because half of it was
 switched off says so.
+
+Footer explanations and analyzer errors are sanitized for terminal
+control characters, just like diagnostic messages and source snippets.
+
+The recursive CSP lints recognize `// check-csp:ignore-file` only as an
+actual standalone Go line comment. Directive-shaped text in a raw string
+or inside a block comment never suppresses inline-style or script findings.
+
+The response-mount lint follows `.then(this.render)` to the method in the
+enclosing JavaScript class. Same-named methods in unrelated classes never
+supply a mount or an OK gate for that chain.
+
+The required-JSON-array analyzer credits `append(value.Field, more...)`
+only when the base field is proven non-nil before the append. Merely
+marking the field `//gofastr:required-array` does not initialize it; a
+conditional initializer or a later possibly-nil write is not a proof.
 
 ## Adopting it on an existing codebase
 
@@ -284,6 +321,11 @@ gofastr verify --strict --baseline-write
 
 That records every current finding into
 `.gofastr-contracts-baseline.json` and commits it. It refuses to run
+with `--sarif`: record the baseline and export SARIF in separate runs.
+This refusal happens before analysis, fixes or either artifact is written.
+With `--json`, the baseline result also includes the run's `notices`,
+including degraded changed-file checks and unmounted-package warnings.
+It also refuses to run
 with `--rule` or a capability filter: a baseline recorded from a
 narrowed run would erase every other rule's accepted debt, and the next
 full `verify` or `build` would fail on findings the team had already
@@ -370,6 +412,9 @@ everyone else's commits as something it changed. Untracked files count as
 changed; a brand-new file full of findings is exactly what a pre-commit
 check should catch, and `git diff` alone never lists it.
 
+This includes untracked files with `--changed=<ref>`. Paths retain their
+exact spelling, including Unicode, whitespace, tabs, and newlines.
+
 A narrowed run says what it withheld:
 
 ```
@@ -388,7 +433,9 @@ never mention it. Without `--changed`, `--fix` still applies everywhere.
 ## In the dev loop
 
 `gofastr dev` reports contract findings after each reload, scoped to the
-files you changed:
+files you changed. Saves while analysis is running coalesce into one
+trailing pass, so the last save in a burst is checked without stacking
+concurrent analyses:
 
 ```
 ✓ Reloaded!
@@ -592,6 +639,12 @@ must notice.
 }
 ```
 
+With `--json`, stdout is exactly one JSON document on failures too,
+including invalid flags and unknown `--explain` rules. Operational errors
+carry an `error` string; human-readable error details go to stderr.
+Report `root` is the absolute analysed directory even when vet stops
+the run before contracts execute.
+
 `capabilities` appears when the run was scoped (`gofastr verify routing`),
 `config` when a config file was found, and `baselined`,
 `baselineFixed`, `outsideChange`, `analyzerErrors` and `timings` are
@@ -658,6 +711,9 @@ vet's own output attached). `--no-vet` records `{"ran": false, "skipped":
 must never read as "it was fine".
 
 ### The vet stage runs GoFastr's analyzers too
+
+A framework-tree vettool build failure includes the compiler/linker output
+in the failed vet stage, rather than only reporting that the build failed.
 
 The vet stage is two passes. Plain `go vet` runs first, then the
 type-aware analyzers the framework's own CI runs over its code: an

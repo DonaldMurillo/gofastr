@@ -661,7 +661,32 @@ const (
 	// the actionloader module fires inserted markup's mounts without
 	// repeating a navigation's, adds 8 (the firing itself is the
 	// module's).
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8
+	// TestNavigationRefreshesCSRFToken: live-token cleanup and replay guards
+	// measure 15951 bytes. They run in core navigation, so cannot demand-load;
+	// the level-6 line is that measured size plus two bytes.
+	// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979 bytes: the
+	// core navigator threads a separate CSRF replay guard without changing
+	// the navigate event's cached flag. This is core's own swap path and
+	// cannot demand-load. Retain two bytes of clearance.
+	// TestFullNavSessionClearsCache measures 16021 (+42): full-document
+	// session rollover must invalidate before copying the live stream meta.
+	// TestNavigateRespectsDocumentBase: identity is core navigation (+22 +1).
+	// TestSignalComboboxLinkNavigates: router ownership is core (+6).
+	// Both together compress 8 bytes worse than apart: 16058 measured + 2.
+	// TestFallbackToastUsesRoleOnly and TestSignalRolesAvoidDuplicateLive (+3):
+	// kernel live-region semantics cannot demand-load.
+	// TestCancelledComboboxLinkStaysPut (+2): signal prevention ownership is core.
+	// TestTrapSkipsUnfocusable (+84): the four demand traps share kernel eligibility.
+	// TestTrapWorksWithoutCheckVisibility (+22): the eligibility fallback is kernel state.
+	// TestInitialFocusSkipsHidden (+139): the fallback's visibility checks, native
+	// summaries and the shared first stop are kernel state.
+	// Layer 6 and layer 7 together compress 8 bytes better than apart: 16300 measured + 2.
+	// TestSignalRolesAvoidDuplicateLive: alert and status read as role tokens (+15); 16315 measured + 2.
+	// TestStaticActionsSkipRequests: kernel dispatch and boot mount guards (+51),
+	// with the role-only live regions (+3). TestBarePrimaryLoading: loading templates
+	// opt into the demand-loaded envelope scheduler (+11). Merged with layers 6
+	// and 7: 16378 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1146,7 +1171,24 @@ const (
 	// module (+59 in core before the carve), leaving only the mark the
 	// navigation pass must set. Two bytes of clearance, cliff fixture
 	// re-run.
-	coreCongestionWindowGZ = 18490
+	// After the page-direction merge, cached-navigation CSRF protection
+	// measured 18479 at level 1, not the earlier 18484. Re-measured at the
+	// final prefetch-replay tip (2026-11-05): 18522 at level 1.
+	// TestPrefetchReplayKeepsRotatedCSRFToken's separate replay guard
+	// cannot carve out of core navigation.
+	// Retain two bytes of clearance and re-prove the padded cliff fixture.
+	// TestFullNavSessionClearsCache (session invalidation), and
+	// TestNavigateRespectsDocumentBase plus TestSignalComboboxLinkNavigates
+	// (base-resolved identity, router click ownership), measured together:
+	// 18610 at level 1. The role-only live regions
+	// (TestFallbackToastUsesRoleOnly) bring it to 18603, plus 2.
+	// TestCancelledComboboxLinkStaysPut, TestTrapSkipsUnfocusable and
+	// TestTrapWorksWithoutCheckVisibility (trap eligibility and its fallback) and
+	// TestInitialFocusSkipsHidden with layer 7: 18876 measured + 2.
+	// The role-token check measures 18890 at level 1, plus 2.
+	// The static-action guards and the bare-primary loading handoff, merged with
+	// layers 6 and 7: 18945 measured + 2.
+	coreCongestionWindowGZ = 18947
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1259,6 +1301,38 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// Firing inserted markup's mounts in boot measured +59; the firing
 		// moved to the actionloader module and only this mark stayed.
 		"boot's mount pass marks the elements it fired (_cuiM)": 8, // (l1: 9)
+		// TestNavigationRefreshesCSRFToken measures 15951; line 15953.
+		"CSRF security state survives metadata cleanup and cached replay": 35,
+		// Measured 15958 with the page direction carried beside the CSRF
+		// token in the page-head template (TestStaticEnvelopeLoadsDirection,
+		// TestNavigationRefreshesCSRFToken); line 15960.
+		"page direction travels with the page head": 7,
+		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
+		"prefetch replay preserves live CSRF without changing cached events": 21,
+		"full-document session changes invalidate cached identities":         42,
+		"fallback toast and signal hydration use implicit live roles":        3,
+		// TestNavigateComparesFullDestination and TestComboboxPickWritesHistoryOnce
+		// measure 16001; line 16003. Destination identity belongs in the
+		// core navigator shared by links and programmatic picks.
+		"navigation deduplicates the resolved URL including query and fragment": 22,
+		// TestNavigateRespectsDocumentBase: 16001 -> 16002; line 16004.
+		"navigation identity resolves against the document base": 1,
+		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
+		"router marks its click ownership independently of signal prevention": 6,
+		// Session invalidation and click ownership together: 16058; line 16060.
+		"session invalidation and click ownership compress together":                        8,
+		"signal prevention preserves an earlier page click cancellation":                    2,
+		"all four demand traps share rendered and inert focus eligibility":                  84,
+		"trap eligibility falls back to client rects without checkVisibility":               22,
+		"focus eligibility without checkVisibility, native summaries, shared initial focus": 139,
+		// Merged with layer 7: 16300 measured; line 16302.
+		"trap eligibility and layer-7 navigation compress together": -8,
+		"signal role tokens (TestSignalRolesAvoidDuplicateLive)":    15,
+		"static-action guards (TestStaticActionsSkipRequests)":      51,
+		"static-action guards and role-only live regions together":  3,
+		"bare-primary loading handoff (TestBarePrimaryLoading)":     11,
+		// Merged with layers 6 and 7: 16378 measured.
+		"layer 8 and layers 6-7 compress together": -2,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1308,21 +1382,16 @@ func TestCoreBudgetRejectsCliffOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RuntimeJS: %v", err)
 	}
-	filler, ok := Module("rtc")
+	filler, ok := Module("envelope")
 	if !ok {
-		t.Fatal("rtc module not embedded")
+		t.Fatal("envelope module not embedded")
 	}
 
-	grown := core
-	// Fill the level-6 headroom as finely as it takes. A fixed 64-byte
-	// step loses the last chunk once the real core sits close enough
-	// to the goal (the sidebar scanner widening in #298 consumed
-	// exactly that margin): the fixture then stops short of the window
-	// and this self-test fails for no budget reason. Halving the step
-	// keeps the fixture sitting ON the goal; if even 4-byte chunks
-	// cannot push it past the window, the core has genuinely outgrown
-	// the line and the bracket comment on coreCongestionWindowGZ is
-	// the thing to revisit.
+	const replacedTailBytes = 8192
+	grown := core[:len(core)-replacedTailBytes]
+	// Replacing a tail gives the fixture enough level-6 headroom to
+	// build a level-1 cliff even when the real core sits two bytes
+	// below its goal. Both size assertions below remain mandatory.
 	const step = 64
 	chunk := step
 	for i := 0; i+chunk <= len(filler); {
@@ -1387,6 +1456,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// bytes the core shed to return to its pre-layout size. A page
 	// that never loads it never downloads it.
 	moduleOverrides := map[string]int{
+		// 1126 measured plus 2 clearance: TestSSERetriesBackOffWithJitter
+		// pins capped jittered retries, scan ownership and bfcache restoration.
+		"sse": 1128,
 		// envelope 7696 measured (7694 + 2 clearance; that measure
 		// already carries the seen-path tracking, the stable pane
 		// keys and the hash-carrying pending slot);
@@ -1466,7 +1538,18 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// route.* keys, and a deferred part's seed adds to it (#614,
 		// TestInvalidatedPageKeepsSeed, TestPartSeedKeepsPageSeed). The
 		// dead routeFold seam went.
-		"envelope": 8129,
+		// 8145 measured (8143 + 2) after a leave capture scrubs a live outlet's RPC
+		// snapshot (TestLeaveCaptureScrubsOutletRPC), a cache replay keeps
+		// its transition pick (transition_vocab_e2e_test.go), a failed list
+		// navigation cancels its pending panel (TestFailedPanelDoesNotReopen),
+		// an apply failure reaches the navigation catch
+		// (TestTransitionFailureRestoresURL), and decoded captured parameters
+		// match server layout and part addresses
+		// (TestDeferredParamUsesServerAddress).
+		// 8161 measured plus 2 clearance after prefetch replay threads a
+		// separate CSRF guard (TestPrefetchReplayKeepsRotatedCSRFToken).
+		// TestFullNavSessionClearsCache measures 8199 (+38), plus 2 clearance.
+		"envelope": 8201,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1528,8 +1611,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// module's own-property _widgets reads share one helper (own).
 		// 3467 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
+		// Re-measured 3466 at the final prefetch-replay tip (2026-11-05).
 		// Pinned at the measured size plus 2 clearance.
-		"widgets": 3469,
+		// 3603 measured: TestPaneCloseDismissesOwnedModals pins layer
+		// ownership, nested modals and delayed chrome cancellation.
+		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
+		// chrome and deep-link cancellation across a layer content refresh.
+		// TestTrapSkipsNegativeControls: 3670 measured + 2 for tabbable initial focus.
+		"widgets": 3672,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1582,8 +1671,39 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// pushed (R7-095, TestInterceptPageLinkDropsPaneEntries).
 		// 3569 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
+		// 3579 measured (2026-11-04) after URL writes inside a pane span
+		// count toward the walk back to the base entry
+		// (TestPaneURLWritesCloseToBase), a failed panel fetch opens the
+		// record page (TestPanelFetchFailureOpensPage), a failed list
+		// navigation cancels its pending panel
+		// (TestFailedPanelDoesNotReopen), and an apply failure reaches the
+		// navigation catch (TestTransitionFailureRestoresURL).
 		// Pinned at the measured size plus 2 clearance.
-		"intercept": 3571,
+		// 3646 measured (2026-11-04) after pane keyboard handling survives a
+		// browser that rejects the :modal selector and native modal
+		// dialogs own Tab and Escape (TestInterceptGuardsUnsupportedModal),
+		// and ordinary links declined by an open pane keep the captured
+		// history and transition wrapper
+		// (TestPaneDeclinedLinkKeepsForwardTransition).
+		// 3669 measured after declined closes and returns invalidate pending
+		// replies and close retries retain their captured layer
+		// (TestPaneDeclineDropsPendingReply, TestPaneRetryKeepsNewLayer).
+		// 3677 measured: TestPaneCloseDismissesOwnedModals pins teardown
+		// on direct close, Back, return and replacement.
+		// 3737 measured: TestReturnRefocusesFreshPane and
+		// TestHistoryRefocusesFreshPane pin post-refresh focus handoff.
+		// 3759 measured with both sets combined. Pinned at the measured
+		// size plus 2 clearance.
+		// 3777 measured: TestPaneCloseDismissesOwnedModals pins the
+		// content generation advanced by every pane swap.
+		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
+		// Escape guard on an intercepted drawer, including keyCode 229.
+		// 3796 measured with both. Pinned at the measured size plus 2.
+		// 3896 with session rollover and error-response rollover; 3897 with the
+		// DOM-order trap recovery. Both together measure 3998 + 2.
+		// TestOverlayRollsSessionAndCache pins the name-only SSE meta; measured 4006 + 2.
+		"intercept": 4008,
+
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler
 		// reads a marked region's data-cui-area beside its outlet and
@@ -1595,7 +1715,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// on a region the winning apply did not replace (2026-10-27 bug
 		// bash R2, TestSupersededNavKeepsPark,
 		// TestSweepRestoresUnfilledRegion).
-		"loading": 1384,
+		// 1386 measured: TestLoadingExitSurvivesSupersede keeps exit caps
+		// independent of the entry's pending-show timer, plus 2 clearance.
+		"loading": 1388,
 		// parts 1997 measured after the session-reset retry
 		// (2026-09-27, spike/layout-showcase): a `session` 409 waits
 		// for the page commit (whose Set-Cookie stores the re-minted
@@ -1618,7 +1740,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 2388 measured (2026-11-03) after its fetch goes through NS.fetch,
 		// the host transport slot (TestHostTransportCarriesRequests).
 		// Pinned at the measured size plus 2 clearance.
-		"parts": 2390,
+		// 2414 measured: TestDeferredParamUsesServerAddress pins the live
+		// markup generation on each deferred part request.
+		"parts": 2416,
 		// The transition module owns the whole view-transition
 		// machinery (the startViewTransition wrapper, the direction
 		// types, the gofastr:transition event, the reduced-motion

@@ -206,9 +206,9 @@ func (b *Battery) auditFilterForm(ctx context.Context, f auditFilter) render.HTM
 			{Name: "op", Label: i18nui.AdminColOperation.Text(ctx), Options: opOpts, Value: f.op},
 		},
 		Extra: []render.HTML{
-			ui.TextField(ui.TextFieldConfig{Name: "actor", Label: i18nui.AdminColActor.Text(ctx), Value: f.actor}),
-			ui.DateField(ui.DateFieldConfig{Name: "from", Label: i18nui.AdminAuditFrom.Text(ctx), Value: dayValue(f.hasFrom, f.from)}),
-			ui.DateField(ui.DateFieldConfig{Name: "to", Label: i18nui.AdminAuditTo.Text(ctx), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
+			ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "actor", Label: i18nui.AdminColActor.Text(ctx), Value: f.actor}),
+			ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: "from", Label: i18nui.AdminAuditFrom.Text(ctx), Value: dayValue(f.hasFrom, f.from)}),
+			ui.DateField(ui.DateFieldConfig{Ctx: ctx, Name: "to", Label: i18nui.AdminAuditTo.Text(ctx), Value: dayValue(f.hasTo, f.to.AddDate(0, 0, -1))}),
 		},
 		Applied: applied,
 		Ctx:     ctx,

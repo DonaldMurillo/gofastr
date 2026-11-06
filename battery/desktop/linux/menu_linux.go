@@ -111,7 +111,8 @@ func (a menuAction) activate() {
 		s.Quit()
 	case desktop.RoleSettings:
 		if s.cfg.OnSettings != nil {
-			go s.cfg.OnSettings(s.text())
+			onSettings, text := s.cfg.OnSettings, s.text()
+			deliverOnGoroutine(func() { onSettings(text) })
 		}
 	case desktop.RoleShow:
 		_ = w.Focus()
@@ -127,7 +128,8 @@ func (a menuAction) activate() {
 		call(gtk.Sym.GtkWidgetShowAll, dialog)
 	default:
 		if a.id != "" && s.cfg.OnMenu != nil {
-			go s.cfg.OnMenu(a.id)
+			onMenu, id := s.cfg.OnMenu, a.id
+			deliverOnGoroutine(func() { onMenu(id) })
 		}
 		if a.plan.FirstResponder != "" {
 			command := strings.TrimSuffix(a.plan.FirstResponder, ":")

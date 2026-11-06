@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -88,4 +89,61 @@ func bucketKey() string {
 func newSigningKey() string {
 	signingKey := fmt.Sprintf("sk-%d", time.Now().UnixNano()) // want "signingKey minted from wall-clock time is enumerable"
 	return signingKey
+}
+
+// sp1: the clock minted into a local first. The local on the RIGHT of
+// + (and bound bare below) never resolved, so the id stayed quiet.
+func localClockID() string {
+	ts := strconv.FormatInt(time.Now().UnixNano(), 10)
+	sessionID := "s-" + ts // want `sessionID minted from wall-clock time is enumerable`
+	return sessionID
+}
+
+func bareLocalToken() string {
+	ts := fmt.Sprintf("%d", time.Now().UnixNano())
+	apiToken := ts // want `apiToken minted from wall-clock time is enumerable`
+	return apiToken
+}
+
+// sp2: the clock reached through time-returning method chains —
+// .Add(x).UnixNano() and .UTC().Format(…) are the same reading.
+func chainedClockID() string {
+	sessionKey := fmt.Sprintf("sk-%d", time.Now().Add(time.Hour).UnixNano()) // want `sessionKey minted from wall-clock time is enumerable`
+	return sessionKey
+}
+
+func chainedFormatID() string {
+	capabilityID := "c-" + time.Now().UTC().Format("150405.000000000") // want `capabilityID minted from wall-clock time is enumerable`
+	return capabilityID
+}
+
+// sp3: a SLICE of the big buffer. Only the span the slice touches
+// counts: hex of b[:2] carries 2 bytes and must not silence the mint,
+// while b[:16] carries the full 16 and stays silent.
+func slicedRandID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b[:2])) // want `slicedRandID minted from wall-clock time is enumerable`
+}
+
+func slicedFullRandID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b[:16]))
+}
+
+// sp3b: the slice one level up, of the ENCODED string. The id carries
+// only the sliced span — hex.EncodeToString(b)[:4] is four hex
+// characters, two bytes of entropy — and must not silence the mint,
+// while [:32] carries the full sixteen and stays silent.
+func slicedEncodedID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b)[:4]) // want `slicedEncodedID minted from wall-clock time is enumerable`
+}
+
+func slicedEncodedFullID() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("s_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(b)[:32])
 }

@@ -271,7 +271,7 @@ func (s *Scheduler) acquireSafely(ctx context.Context, acquire func(context.Cont
 func (s *Scheduler) releaseSafely(release func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.reportError("(leader-election)", fmt.Errorf("panic in leader-election release: %v\n%s", r, debug.Stack()))
+			s.reportError("(leader-election)", fmt.Errorf("panic in leader-election release: %s\n%s", textsafe.Recovered(r), debug.Stack()))
 		}
 	}()
 	release()
@@ -392,7 +392,7 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.W
 			}
 			defer func() {
 				if r := recover(); r != nil {
-					s.reportError(j.Name, fmt.Errorf("panic: %v\n%s", r, debug.Stack()))
+					s.reportError(j.Name, fmt.Errorf("panic: %s\n%s", textsafe.Recovered(r), debug.Stack()))
 				}
 			}()
 			if err := j.Run(ctx); err != nil {
@@ -409,7 +409,7 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.W
 func (s *Scheduler) gateAllow(gate func(jobName string) bool, name string) (allow bool) {
 	defer func() {
 		if r := recover(); r != nil {
-			s.reportError(name, fmt.Errorf("panic in gate: %v\n%s", r, debug.Stack()))
+			s.reportError(name, fmt.Errorf("panic in gate: %s\n%s", textsafe.Recovered(r), debug.Stack()))
 			allow = false
 		}
 	}()

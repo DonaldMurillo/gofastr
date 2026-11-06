@@ -6,5 +6,6 @@ import "github.com/DonaldMurillo/gofastr/core/i18n"
 var (
 	reasonRuntimeUnavailable = i18n.Define("widget.runtime_unavailable", "runtime unavailable")
 	reasonInvalidChrome      = i18n.Define("widget.invalid_chrome", "invalid chrome context")
+	reasonInvalidPage        = i18n.Define("widget.invalid_page", "invalid widget page path")
 	reasonWidgetNeedsSession = i18n.Define("widget.session_required", "forbidden: widget requires a session")
 )

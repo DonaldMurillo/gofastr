@@ -327,13 +327,24 @@ func hookRequest(r *http.Request) *http.Request {
 	return r.WithContext(hookCtx(r.Context()))
 }
 
+func (ch *CrudHandler) applyAfterList(ctx context.Context, payload *hook.ListPayload) error {
+	rowCount := len(payload.Results)
+	if err := runHooks(ch.Hooks, ctx, hook.AfterList, payload); err != nil {
+		return err
+	}
+	if len(payload.Results) != rowCount {
+		return fmt.Errorf("AfterList changed row count from %d to %d; filter rows in BeforeList", rowCount, len(payload.Results))
+	}
+	return nil
+}
+
 // runAfterList applies the AfterList chain to an in-process result set.
 func (ch *CrudHandler) runAfterList(ctx context.Context, r *http.Request, results []map[string]any) ([]map[string]any, error) {
 	if ch.Hooks == nil || !readHooksEnabled(ctx) {
 		return results, nil
 	}
 	payload := &hook.ListPayload{Request: hookRequest(r), Results: results}
-	if err := runHooks(ch.Hooks, hookCtx(ctx), hook.AfterList, payload); err != nil {
+	if err := ch.applyAfterList(hookCtx(ctx), payload); err != nil {
 		return nil, fmt.Errorf("after-list hook: %w", err)
 	}
 	return payload.Results, nil
@@ -378,7 +389,7 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(nodes) == 0 || len(rows) == 0 {
 		return nil
 	}
-	for _, node := range nodes {
+	for _, node := range mergeHookRelations(nodes) {
 		if node == nil || node.Target == nil {
 			continue
 		}
@@ -458,6 +469,25 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 		}
 	}
 	return nil
+}
+
+func mergeHookRelations(nodes []*IncludeNode) []*IncludeNode {
+	var merged []*IncludeNode
+	byName := make(map[string]*IncludeNode)
+	for _, node := range nodes {
+		if node == nil || node.Target == nil {
+			continue
+		}
+		if prior := byName[node.Relation.Name]; prior != nil {
+			prior.Children = append(prior.Children, node.Children...)
+			continue
+		}
+		copyNode := *node
+		copyNode.Children = append([]*IncludeNode(nil), node.Children...)
+		byName[node.Relation.Name] = &copyNode
+		merged = append(merged, &copyNode)
+	}
+	return merged
 }
 
 // attachedRows collects the related rows attached under key across rows: a

@@ -99,6 +99,9 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	if err := checkIndexNames(ordered, all); err != nil {
 		return nil, err
 	}
+	if err := checkGeneratedPivotDeclarations(ordered, all, dialect); err != nil {
+		return nil, err
+	}
 
 	var out []SchemaChange
 	tables := make([]string, 0, len(ordered))
@@ -151,6 +154,25 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		out = append(out, changes...)
 	}
 	out = append(out, env.deferred...)
+	for ent, relation := range generatedPivots(ordered, all) {
+		if len(lookupTableCols(liveByTable, relation.Through)) == 0 {
+			continue
+		}
+		spec, err := buildPivotSpec(ent, relation, all, dialect)
+		if err != nil {
+			return nil, err
+		}
+		// A planned Postgres key change detaches and re-adds this pivot's
+		// foreign key, so the live one still names the old key columns.
+		for index, foreignKey := range spec.fks {
+			if liveCols, rewritten := env.keyChanged[strings.ToLower(foreignKey.refTable)]; rewritten {
+				spec.fks[index].refCols = liveCols
+			}
+		}
+		if err := checkLivePivotConstraints(ctx, db, spec, all, dialect); err != nil {
+			return nil, err
+		}
+	}
 
 	pivotChanges, err := diffPivotTables(ordered, all, dialect, liveByTable)
 	if err != nil {
@@ -165,12 +187,15 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, dialect Dialect, existingTables map[string]map[string]string) ([]SchemaChange, error) {
 	var out []SchemaChange
 	for ent, rel := range generatedPivots(ordered, all) {
-		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
-			continue
-		}
 		spec, err := buildPivotSpec(ent, rel, all, dialect)
 		if err != nil {
 			return nil, err
+		}
+		if cols := lookupTableCols(existingTables, rel.Through); len(cols) > 0 {
+			if err := checkPivotColumns(spec, cols, dialect); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		out = append(out, SchemaChange{
 			Summary: fmt.Sprintf("%s: create pivot table", rel.Through),
@@ -184,6 +209,16 @@ func diffPivotTables(ordered []*entity.Entity, all map[string]*entity.Entity, di
 		})
 	}
 	return out, nil
+}
+
+func checkPivotColumns(spec pivotSpec, live map[string]string, dialect Dialect) error {
+	for _, column := range slices.Sorted(maps.Keys(spec.Cols)) {
+		actual := lookupStringCase(live, column)
+		if actual == "" || !typesEquivalent(spec.Cols[column], actual, dialect) {
+			return fmt.Errorf("pivot table %q column %q: declared %s, stored %q; migrate the pivot explicitly before changing its relation", spec.Safe, column, spec.Cols[column], actual)
+		}
+	}
+	return nil
 }
 
 // ApplyOptions tunes ApplySchemaDiffWithOptions.
@@ -409,6 +444,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 
 	// ADD COLUMN for declared-but-missing fields.
 	added := map[string]string{} // column → type, for the rebuild below
+	deferredRequired := map[string]bool{}
 	for _, f := range ent.GetFields() {
 		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
@@ -434,6 +470,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 				nullable = " NOT NULL"
 			} else {
 				summary += " (NOT NULL deferred: no default for existing rows)"
+				deferredRequired[f.Name] = true
 			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
@@ -489,6 +526,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// see the post-rename/post-add/post-drop column set).
 	var sqliteRetypes []retypeCol
 	defaultOwned := map[string]bool{}
+	var previousConstraints map[string]colConstraint
+	if env != nil {
+		previousConstraints, _ = recordedConstraints(lookupStringCase(env.tableDDL, ent.GetTable()))
+	}
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -519,10 +560,14 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if isTextType(liveType) && isIntegerType(declaredType) {
 			defaultOwned[nameLow] = true // the USING form sets the declared default
 		}
+		source := nameLow
+		if old, renamed := renameOldByNew[nameLow]; renamed {
+			source = old
+		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
 			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType, ColumnDefaultClause(f, dialect)),
-			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, ""),
+			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, previousConstraints[source].dflt),
 			Destructive: true,
 		})
 	}
@@ -701,7 +746,15 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		// the table.
 		rebuildLive := maps.Clone(live)
 		maps.Copy(rebuildLive, added)
-		rebuild, err := sqliteRebuildChange(ent, all, dialect, rebuildLive, renameOldByNew, summary, false)
+		rebuildEntity := *ent
+		rebuildEntity.Config.Fields = slices.Clone(ent.Config.Fields)
+		for index := range rebuildEntity.Config.Fields {
+			field := &rebuildEntity.Config.Fields[index]
+			if deferredRequired[field.Name] {
+				field.Required = false
+			}
+		}
+		rebuild, err := sqliteRebuildChange(&rebuildEntity, all, dialect, rebuildLive, renameOldByNew, summary, false)
 		if err != nil {
 			return nil, err
 		}

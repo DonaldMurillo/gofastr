@@ -99,3 +99,16 @@ func scrubToSpace(s string) string {
 func normalizeSQL(s string) string {
 	return unquoteIdentRe.ReplaceAllString(s, "")
 }
+
+// A locally compiled pattern is as good as a package-level one: a
+// single-character removal through it cannot recombine.
+func scrubLocalSingle(s string) string {
+	re := regexp.MustCompile("\r")
+	return re.ReplaceAllString(s, "")
+}
+
+// A local multi-character pattern still reports.
+func stripLocalMulti(s string) string {
+	re := regexp.MustCompile("ab")
+	return re.ReplaceAllString(s, "") // want `sanitizefix: stripLocalMulti removes a multi-character match in one pass`
+}

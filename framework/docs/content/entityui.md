@@ -1,5 +1,10 @@
 # Entity screens (entityui)
 
+EntityUI reserves `POST _bulk`, `GET _export.csv` and `POST _pick` beneath
+each entity it owns. Custom endpoints at those method/path pairs are
+refused before publishing registry entries or routes, in either registration
+order. A corrected entity declaration can be retried after refusal.
+
 `framework/entityui` draws an entity's list, record and create screens from
 its schema, its `Display` config and its `States`. Generated apps draw
 through it, the admin battery composes it, and a hand-written app page can
@@ -34,6 +39,17 @@ panics there, and so does a view with no `Where`, since
 `Extensions.Entities` could not name the entity to register its filter.
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
+
+Generated form controls use the mounted CRUD handler's response wire key as
+their submitted name: an explicit `WireName`, or the column in the handler's
+configured JSON casing (camelCase by default). For example, `address_line_1`
+is named `addressLine1` under the default casing, not `address_line_1` or
+`address_line1`. This keeps CRUD's wire-keyed validation and constraint
+refusals attached to the right control without trying to reverse the casing.
+Conditional fields follow the same input names; schema names, IDs, display
+configuration, and relation-picker field parameters remain column-based.
+Multipart forms accept the same aliases, including file and checkbox inputs,
+and refuse distinct aliases for one column before saving any uploaded file.
 
 ## Mounting app-owned screens
 
@@ -192,7 +208,10 @@ keeps the UI unchanged; without a callback the default stays
   heads its actions with Copy link (out of the menu) and Open in panel:
   a link to the list at `Base` marked `data-cui-intercept-panel`, which
   loads the list in the page's place and opens the record over it as a
-  drawer, so Back from the drawer lands on the list. Turn it on only
+  drawer, so Back from the drawer lands on the list. A failed drawer
+  fetch opens the record as its own page instead. A failed list navigation
+  cancels the pending drawer; a later ordinary list visit never reopens
+  that old request. Turn it on only
   where the record's route opens as a drawer over `Base`
   (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
   with `Scope.SoftDelete` the confirm says the record can be restored.
@@ -211,7 +230,10 @@ keeps the UI unchanged; without a callback the default stays
   `PickerHandler` serves the search: POST only, JSON only, 4 KB body,
   no-store, refused cross-site, and gated by the host entity's read and
   the related entity's read and per-row Decider. `App.EntityUI` and the
-  admin mount it beside `_bulk`.
+  admin mount it beside `_bulk`. A failed related-record read answers a
+  structured 500 without exposing store or hook details, not a successful
+  empty list. The initial form displays the field's unavailable state when
+  its picker read fails.
   A `JSON` field is a mono text area checked as JSON in the browser as
   it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
   save before it is sent; the server still validates. The area, the
@@ -255,9 +277,10 @@ keeps the UI unchanged; without a callback the default stays
 - **Stats and charts**: `appUI.StatValue` (agg `count` or empty, or
   `sum` of an int, float or decimal field; `where` in the query DSL),
   `GroupBars`, `GroupSlices` and `LineChart` (rows per value of a field,
-  in value order, an enum's in its declared order). The database computes
-  each over every match (`crud.SumAll`, `GroupCountAll`), so a sum is
-  whole and rounded once, from the database's total. Any other agg
+  in value order, an enum's in its declared order). Aggregates cover
+  every match (`crud.SumAll`, `GroupCountAll`), so a sum is whole and
+  rounded once. Decimal sums use exact database arithmetic on Postgres
+  and exact addition of stored decimal values on SQLite. Any other agg
   prints "—". On an entity with `AfterList` hooks the stat totals the
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
@@ -293,8 +316,9 @@ meaning and every screen honours them first.
 
 A form input carries the field's own validators, so the browser refuses a
 bad value before the round trip: `Required` sets `required`; a string's
-`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
-rounds up) and a number's set `min` and `max`; `Pattern` sets
+`Min` and `Max` remain server-side rune-count checks, not native
+`minlength` / `maxlength` attributes (which count UTF-16 units and can
+truncate valid emoji text). A number's bounds set `min` and `max`; `Pattern` sets
 `pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
 server's check is an unanchored match and the browser anchors the
 attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)
@@ -348,6 +372,11 @@ page: the entity's `Display.PageSizes`, else 25, 50 and 100, each within
 the first page; the param rides every other link like `as`, and a size
 not on offer is ignored. A builder's `PageSize`, a preview (`Top`) and
 an embedded list offer none.
+
+An unset optional boolean draws the muted empty mark in table cells and
+bulk previews, not a No badge. Stored false and true draw No and Yes.
+Boolean link labels and card titles, subtitles and metadata use the same
+localized Yes/No words; unset values contribute no text.
 
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
@@ -587,17 +616,29 @@ JSON API applies live in the builders themselves:
   per relation column), the create form's relation picker, a relation
   facet's options, the Related tab's lists, the stats and charts — passes
   that entity's own gate first. A label, facet or picker also needs what
-  `?include=` needs (`CanReadRelatedScoped`): the related entity's CRUD
+  `?include=` needs (`CanReadRelatedScoped`), as do Related lists and
+  their count badges: the related entity's CRUD
   routes on (`Exposure.CRUD` not false), and a scope-restricted request
   (an API token or embed grant) holding `<table>:read`. So a posts
   screen shows no author names when the users entity has CRUD off, as
   `auth.UserEntityConfig()` declares. A related row a resource-aware
   Decider refuses by id is left out of labels, facets and the picker.
+  A refused Related list is omitted without an error callout; when every
+  related section is refused, the Related tab is omitted too. Unresolvable
+  entities, relations, or metadata still render the failed-slot callout.
+- Locked and key-column relation fields use the same related-read gate
+  as editable pickers, including CRUD exposure and token scopes.
 - A relation the caller may not read renders muted (an em dash), never
   the related record's name and never the raw foreign key. A refused
   relation facet draws no options, so the facet is absent. A refused
-  related list draws its notice, never its rows. A refused stat prints
+  related list is omitted without an access notice. A refused stat prints
   the em dash: an aggregate never announces an entity it cannot read.
+
+Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
+target, including queued runs; a row hidden only from single-record reads
+cannot be changed through a bulk selection.
+App-action callbacks receive the same read-hook-enabled context, including
+when they write through their action context's CRUD handler.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
@@ -728,8 +769,8 @@ _ = list.RenderCtx(ctx)
   tenant scope are the write route's own gates; a purge of a live row
   answers 409 and touches nothing. Before the write each handler reads
   the row through the caller's read hooks (`crud.WithReadHooks`), as the
-  trash view and the bulk restore do, so a row a `BeforeList` hook hides
-  answers 404 and is not restored or purged. A form-RPC caller gets a status and
+  trash view and the bulk restore do, so a row a `BeforeList` or `BeforeGet`
+  hook hides answers 404 and is not restored or purged. A form-RPC caller gets a status and
   a toast; a plain form post gets a 303 back to the Deleted view, along
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and
@@ -758,7 +799,9 @@ _ = list.RenderCtx(ctx)
   delete form post to `POST <write base>/_views` and
   `POST <write base>/_views/_delete?id=<id>`, served by
   `appUI.SavedViewsHandler(entity)`. The handler re-checks the filter
-  and columns against the entity's fields before storing anything;
+  and columns against the entity's fields before storing anything,
+  and answers 400 to a name or filter holding a NUL byte or invalid
+  UTF-8 (404 to such a delete id), text no store can bind;
   owner and tenant come only from the caller's context, which the
   store enforces. A list with a saved view open draws no Export link
   and offers no "every match" bulk scope: the saved narrowing is not
@@ -861,14 +904,16 @@ and so does an entity with no REST write routes.
   summary row counts every outcome the store holds (`BulkStore.Tally`),
   so a resumed run reports the whole job, and a queued run writes that
   row once, when it finishes.
-- **Queued runs are leased.** `RunBulkJob` claims the job for five
-  minutes before each chunk, and every outcome and the finish write are
+- **Queued runs are leased.** `RunBulkJob` claims the job for `BulkJobLease` (five
+  minutes) before each chunk, and every outcome and the finish write are
   fenced on that claim: a second worker handed the same job runs nothing
   while the lease is live (`ErrBulkJobBusy` asks its queue to retry), and
   a worker whose lease lapsed cannot write (`ErrBulkLeaseLost`). A worker
   that dies holding the lease blocks the job until it expires. A run
   can resume at the exact expiry timestamp; a released lease does not
-  require another wall-clock tick before a retry.
+  require another wall-clock tick before a retry. Queue runners delay busy
+  and lost-lease deliveries by at least `BulkJobLease`, without consuming
+  execution attempts just for contention (`admin.NewBulkJobs` does this).
   Delivery is at least once, so an app `Actions` callback reads
   `ActionContext.Run`, the job id, to make its own side effects
   idempotent.
@@ -879,7 +924,13 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Finished jobs older than `entityui.BulkRetention` (30 days)
+  instead, even if the confirming client disconnects. That settlement
+  preserves request values without its cancellation and has a bounded
+  timeout. Resume also adopts already-enqueued jobs whose non-null bulk
+  lease expired before the grace cutoff, preserving settled outcomes.
+  An enqueued job with no lease, a live lease, or a recently expired lease
+  is not adopted. Custom `BulkStore.Unenqueued` implementations must honor
+  this recovery rule too. Finished jobs older than `entityui.BulkRetention` (30 days)
   are deleted then too (`UI.PruneBulkJobs`). An app that runs for weeks
   schedules both, with cron or its queue.
 - **Export** is `GET <api>/<entity>/_export.csv` with the list's

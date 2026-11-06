@@ -72,6 +72,19 @@ func retested(b *strings.Builder, v string) {
 	}
 }
 
+// retestedLen pins the len spelling of the retest: the stripped result
+// is stored in a local that is len-tested before the write, so the
+// strip call is never itself a field write and the arm stays quiet.
+func retestedLen(b *strings.Builder, v string) {
+	if v != "" {
+		id := stripSSEControlChars(v)
+		if len(id) == 0 {
+			return
+		}
+		b.WriteString(id)
+	}
+}
+
 // Near misses.
 func nearMisses(b *strings.Builder, v, other string) string {
 	// An escaper never empties a non-empty value.

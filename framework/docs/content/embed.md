@@ -61,6 +61,12 @@ reportsRoutes := fwApp.Group("/reports")
 reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ```
 
+A surface must use a static screen route. `embed.New` refuses a route with a
+parameter segment, a `:name` or a whole `{name}` segment (for example,
+`/reports/:id` or `/teams/{team}`), at boot, naming the
+surface and route in its error. Register a dedicated static embed screen and
+resolve viewer-specific data inside its loader instead of passing a route pattern.
+
 ### What a grant may reach
 
 A grant reaches its surface's own route subtree (the path of the screen it
@@ -616,15 +622,20 @@ each sees a different slice; neither is total on its own:
   string text and regular-expression literals but reads a template
   literal's `${…}` as code, since the action compiler rewrites a call there
   too, and it counts `G.serverAction (` with whitespace or a comment before
-  the parenthesis as a call. The boot walk below reads ClientJS with the
+  the parenthesis as a call. Whitespace inside the member chain and optional
+  member/call operators (`G . serverAction`, `G?.serverAction`) count too.
+  The boot walk below reads ClientJS with the
   same scanner, so a mention in a comment never passes one gate and fails
   the other. Where it cannot follow, an interface-typed field, a
   component type from another package, a child built inside `Render` whose type
   lives elsewhere, ClientJS that is not a literal, it prints a note saying so
-  instead of passing in silence. Most notes are advisory; the boot walk below
-  covers the shape they describe. **One class fails the build**: a child built
-  inside `Render` whose type lives in another package, which neither gate can
-  see. Fix it by holding the child in a field rather than building it in
+  instead of passing in silence. Indirect options, including identifiers and
+  spread slices, also produce an unresolved note rather than a clean result.
+  Most notes are advisory; the boot walk below covers the shape they describe.
+  **Unverifiable Render-only children fail the build**, including same-package
+  children whose ClientJS or options cannot be resolved and children whose
+  types live in another package. Neither gate can clear those actions.
+  Fix it by holding the child in a field rather than building it in
   `Render`, or by moving its type into the surface's package. For a surface
   that genuinely cannot be analysed and has been checked by hand,
   `gofastr build --allow-unverified-embeds` keeps violations fatal and
@@ -642,7 +653,8 @@ child built in `Render` but not one whose `Actions()` body is in another
 package. The shapes they each miss are covered by the other, which is why an
 unresolved note is fatal rather than advisory: a note is the analyzer saying
 the boot walk is on its own here, and for a render-built child it is not
-there either.
+there either. The standalone `check-embed` command checks every supplied
+package pattern and refuses a pattern that matches no packages.
 
 They fail differently, and it is worth knowing which you are looking at. The
 analyzer reports a diagnostic and `gofastr build` exits non-zero; no stack

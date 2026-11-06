@@ -16,7 +16,7 @@
   if (!document.__fuiModalEsc) {
     document.__fuiModalEsc = true;
     document.addEventListener('keydown', function (e) {
-      if (e.key !== 'Escape') return;
+      if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229) return;
       // The newest layer owns Escape: the top popover when it opened
       // above the top modal (one opened before sits under the scrim),
       // else the top modal. A layer that refuses Escape still owns it,
@@ -45,16 +45,18 @@
         ? G._widgets[name]?.root
         : undefined;
       if (!root || foreign(root)) return;
-      const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(function (el) {
-        return el.offsetParent !== null || el === document.activeElement;
-      });
-      if (!nodes.length) return;
+      const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(G._isTabStop);
+      if (!nodes.length) { e.preventDefault(); return; }
       const first = nodes[0], last = nodes[nodes.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
+      const active = document.activeElement;
+      if (!nodes.includes(active)) {
+        const next = root.contains(active) && (e.shiftKey
+          ? nodes.findLast(el => el.compareDocumentPosition(active) & 4)
+          : nodes.find(el => el.compareDocumentPosition(active) & 2));
+        e.preventDefault(); (next || (e.shiftKey ? last : first)).focus();
+      } else if (e.shiftKey && active === first) {
         e.preventDefault(); last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault(); first.focus();
-      } else if (!root.contains(document.activeElement)) {
+      } else if (!e.shiftKey && active === last) {
         e.preventDefault(); first.focus();
       }
     }, true);

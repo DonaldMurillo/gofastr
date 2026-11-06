@@ -375,7 +375,7 @@ while read -r pkg floor filter; do
     if ! out=$(go test -cover "$pkg" 2>&1); then
       echo "$out"; echo "FAIL  $label — tests failed (no coverage measurement)"; fail=1; continue
     fi
-    cov=$(echo "$out" | grep -Eo 'coverage: [0-9.]+%' | tail -1 | grep -Eo '[0-9.]+')
+    cov=$(echo "$out" | grep -Eo 'coverage: [0-9.]+%' | tail -1 | grep -Eo '[0-9.]+') || true
   else
     # File-filtered bucket: compute from a cached coverprofile.
     if ! prof=$(profile_for "$pkg"); then

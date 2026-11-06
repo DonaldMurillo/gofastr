@@ -754,11 +754,7 @@ func setField(v reflect.Value, s string, fieldName string) error {
 			v.SetInt(int64(d))
 			return nil
 		}
-		n, err := strconv.ParseInt(s, 10, 64)
-		if err != nil {
-			return fmt.Errorf("config: field %s: %q is not a valid integer: %w", fieldName, s, err)
-		}
-		v.SetInt(n)
+		return setIntegerField(v, s, fieldName)
 	case reflect.Float64:
 		f, err := strconv.ParseFloat(s, 64)
 		if err != nil {
@@ -780,6 +776,15 @@ func setField(v reflect.Value, s string, fieldName string) error {
 	default:
 		return fmt.Errorf("config: field %s: unsupported type %s", fieldName, v.Kind())
 	}
+	return nil
+}
+
+func setIntegerField(value reflect.Value, text, fieldName string) error {
+	parsed, err := strconv.ParseInt(text, 10, value.Type().Bits())
+	if err != nil {
+		return fmt.Errorf("config: field %s: %q is not a valid integer: %w", fieldName, text, err)
+	}
+	value.SetInt(parsed)
 	return nil
 }
 

@@ -1,5 +1,8 @@
 # Cursor pagination
 
+Cursor responses contain `data`, `cursor`, and `hasMore`, not `total`.
+The registry `/api/llm.md` index and per-entity reference describe this same shape.
+
 Cursor (keyset) pagination is the default for high-volume entities and
 the only way to page consistently when rows are being inserted while
 the user pages.
@@ -38,7 +41,7 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 ## Defaults & caps
 
-- `DefaultPageSize = 25`
+- `DefaultPageSize = 20` (the shared entity list default)
 - `MaxPageSize = 100` (`limit` is clamped silently)
 - `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
   the entity's cap is clamped to it, same as the offset and streaming

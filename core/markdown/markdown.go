@@ -22,7 +22,7 @@ type Document struct {
 
 // Render parses Markdown source and returns the rendered Document.
 func Render(input string) Document {
-	fm, body := splitFrontmatter(input)
+	fm, body := splitFrontmatter(strings.TrimPrefix(input, "\ufeff"))
 	html, title := renderBody(body)
 	if title == "" {
 		title = fm["title"]

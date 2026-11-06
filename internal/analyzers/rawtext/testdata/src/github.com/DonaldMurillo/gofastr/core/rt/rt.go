@@ -214,6 +214,21 @@ func counts(ctx context.Context, n int, size int64, ratio float64, d seconds, tr
 	_ = reasonGone.Text(ctx, map[string]any{"n": digits}) // want `strconv.Itoa turns a number`
 	_ = render.Text("+" + digits)                         // want `strconv.Itoa writes a number into the page`
 	_ = map[string]string{"data-count": digits}
+	// The params map hoisted into a local reaches the phrase the same
+	// way; one a later write or reassignment replaces is not followed.
+	hoistedParams := map[string]any{"n": strconv.Itoa(n)}
+	_ = reasonGone.Text(ctx, hoistedParams) // want `strconv.Itoa turns a number`
+	mutatedParams := map[string]any{"n": strconv.Itoa(n)}
+	mutatedParams["n"] = i18n.Number(ctx, n)
+	_ = reasonGone.Text(ctx, mutatedParams)
+	replacedParams := map[string]any{"n": strconv.Itoa(n)}
+	replacedParams = map[string]any{"n": n}
+	_ = reasonGone.Text(ctx, replacedParams)
+	// A UI config built empty and filled by assignment ships the same
+	// English as the literal.
+	assigned := ui.ButtonConfig{}
+	assigned.Label = "Recent orders" // want `Label: "Recent orders" is English`
+	_ = assigned
 	// A local that a later assignment replaces with localized text is
 	// not number text: only a local every assignment fills with Go's
 	// digits is followed.

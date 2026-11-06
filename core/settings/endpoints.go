@@ -107,7 +107,11 @@ func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 			}
 		}
 		var e Endpoint
-		for key, dst := range map[string]*string{"name": &e.Name, "entity": &e.Entity, "method": &e.Method, "path": &e.Path, "handler": &e.Handler, "description": &e.Description} {
+		for _, entry := range []struct {
+			key string
+			val *string
+		}{{"name", &e.Name}, {"entity", &e.Entity}, {"method", &e.Method}, {"path", &e.Path}, {"handler", &e.Handler}, {"description", &e.Description}} {
+			key, dst := entry.key, entry.val
 			n := item.Map[key]
 			if n == nil {
 				if key == "description" {
@@ -121,7 +125,11 @@ func DecodeEndpoints(section *coreyaml.Node, at string) ([]Endpoint, error) {
 			}
 			*dst = s
 		}
-		for key, dst := range map[string]*bool{"mcp": &e.MCP, "public": &e.Public} {
+		for _, entry := range []struct {
+			key string
+			val *bool
+		}{{"mcp", &e.MCP}, {"public", &e.Public}} {
+			key, dst := entry.key, entry.val
 			if n := item.Map[key]; n != nil {
 				b, ok := n.Value.(bool)
 				if n.Kind != coreyaml.Scalar || !ok {

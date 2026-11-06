@@ -231,7 +231,12 @@ func bridgeScriptMessage(a *ffi.Args) uintptr {
 	if s == nil {
 		return 0
 	}
-	body := objc.ID(objc.Send(objc.ID(a.Int[3]), objc.Sel("body")))
+	message := objc.ID(a.Int[3])
+	frame := objc.ID(objc.Send(message, objc.Sel("frameInfo")))
+	if frame == 0 || objc.Send(frame, objc.Sel("isMainFrame"))&0xff == 0 {
+		return 0
+	}
+	body := objc.ID(objc.Send(message, objc.Sel("body")))
 	var text string
 	if objc.Send(body, objc.Sel("isKindOfClass:"), uintptr(objc.Class("NSString"))) != 0 {
 		text = objc.GoString(body)
@@ -349,7 +354,7 @@ func bridgeWindowShouldClose(a *ffi.Args) uintptr {
 	killPage(wv)
 	releaseSecondaryWindow(w)
 	if onClosed := s.onWindowClosedLocked(); onClosed != nil {
-		go onClosed(w.id)
+		deliverOnGoroutine(func() { onClosed(w.id) })
 	}
 	return 1
 }
@@ -484,7 +489,7 @@ func bridgeSettingsAction(a *ffi.Args) uintptr {
 			textCtx = context.Background()
 		}
 		if onSettings != nil {
-			go onSettings(textCtx)
+			deliverOnGoroutine(func() { onSettings(textCtx) })
 		}
 	}
 	return 0
@@ -520,7 +525,7 @@ func bridgeMenuAction(a *ffi.Args) uintptr {
 		return 0
 	}
 	id := ids[tag]
-	go onMenu(id)
+	deliverOnGoroutine(func() { onMenu(id) })
 	return 0
 }
 

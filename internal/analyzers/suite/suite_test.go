@@ -103,6 +103,7 @@ func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 	explained := comments.String()
 
 	declared := 0
+	declaredVars := map[string]map[string]bool{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -110,6 +111,10 @@ func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 		pkg := e.Name()
 		for _, a := range declaredAnalyzers(t, filepath.Join(dir, pkg)) {
 			declared++
+			if declaredVars[pkg] == nil {
+				declaredVars[pkg] = map[string]bool{}
+			}
+			declaredVars[pkg][a.varName] = true
 			switch {
 			case registered[pkg+"."+a.varName]:
 				if !imported[pkg] {
@@ -124,9 +129,55 @@ func TestEveryAnalyzerIsWiredOrExplained(t *testing.T) {
 			}
 		}
 	}
-	// Anti-vacuity: a walk that found nothing proves nothing.
+	// Anti-vacuity, package by package: comparing totals only let the
+	// explained-but-unregistered packages (fmtformat, testgap) pad the
+	// count while the walk skipped a registered package outright.
+	// Every registered pkg.Var must be a declaration the walk saw.
+	for ref := range registered {
+		pkg, varName, ok := strings.Cut(ref, ".")
+		if !ok || !declaredVars[pkg][varName] {
+			t.Errorf("registered %s has no declaration the gate's walk can see under internal/analyzers/%s: the walk is broken for that package", ref, pkg)
+		}
+	}
+	// Anti-vacuity on the totals: a walk that found nothing at all
+	// proves nothing.
 	if declared < len(repoAnalyzers) {
 		t.Fatalf("found %d declared analyzers under %s, fewer than the %d registered: the walk is broken", declared, dir, len(repoAnalyzers))
+	}
+}
+
+// TestConstructorAnalyzerDeclared: the gate's walk must see an
+// analyzer built by a constructor (`var Analyzer = newAnalyzer()`)
+// too, not only the &analysis.Analyzer{...} literal. Until 2026-11-03
+// the literal was the only shape collected, so a constructor-built
+// analyzer passed the gate unregistered (finding R8-AZ10-03).
+func TestConstructorAnalyzerDeclared(t *testing.T) {
+	dir := t.TempDir()
+	src := `package ctor
+
+import "golang.org/x/tools/go/analysis"
+
+var Analyzer = newAnalyzer()
+var Other = newAnalyzer()
+
+func newAnalyzer() *analysis.Analyzer {
+	return &analysis.Analyzer{Name: "ctor"}
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, "ctor.go"), []byte(src), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := declaredAnalyzers(t, dir)
+	if len(got) != 2 {
+		t.Fatalf("declaredAnalyzers found %d analyzers, want 2: %+v", len(got), got)
+	}
+	for _, a := range got {
+		if a.varName != "Analyzer" && a.varName != "Other" {
+			t.Errorf("unexpected var %q", a.varName)
+		}
+		if a.name != "ctor" {
+			t.Errorf("%s: analyzer name = %q, want ctor (read off the constructor's returned literal)", a.varName, a.name)
+		}
 	}
 }
 
@@ -144,18 +195,26 @@ type declaredAnalyzer struct {
 }
 
 // declaredAnalyzers returns every exported package-level variable in
-// dir's non-test Go files initialised to &analysis.Analyzer{...}. Every
-// file counts, not just <pkg>/<pkg>.go: unseated declares two of its
-// three analyzers in arms.go, and hygiene declares two analyzers and no
+// dir's non-test Go files that holds an *analysis.Analyzer: the
+// &analysis.Analyzer{...} literal, an explicit *analysis.Analyzer
+// declaration, or a constructor call `var Analyzer = newAnalyzer()`
+// whose same-package function returns *analysis.Analyzer (the
+// 2026-11-03 widening, R8-AZ10-03: the literal alone let a
+// constructor-built analyzer pass the gate unregistered). Every file
+// counts, not just <pkg>/<pkg>.go: unseated declares two of its three
+// analyzers in arms.go, and hygiene declares two analyzers and no
 // variable named Analyzer at all, which the old one-file, one-name
-// probe read as a helper package and skipped outright.
+// probe read as a helper package and skipped outright. A constructor's
+// analyzer name is read off the literal it returns; a bare explicit
+// type falls back to the variable's own name.
 func declaredAnalyzers(t *testing.T, dir string) []declaredAnalyzer {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join(dir, "*.go"))
 	if err != nil {
 		t.Fatalf("glob %s: %v", dir, err)
 	}
-	var out []declaredAnalyzer
+	parsed := make([]*ast.File, 0, len(files))
+	ctors := map[string]string{}
 	for _, path := range files {
 		if strings.HasSuffix(path, "_test.go") {
 			continue
@@ -168,6 +227,18 @@ func declaredAnalyzers(t *testing.T, dir string) []declaredAnalyzer {
 		if err != nil {
 			t.Fatalf("parse %s: %v", path, err)
 		}
+		parsed = append(parsed, f)
+		for _, d := range f.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if !ok || fd.Recv != nil || fd.Type == nil || fd.Type.Results == nil ||
+				len(fd.Type.Results.List) != 1 || !analyzerTypeName(fd.Type.Results.List[0].Type) {
+				continue
+			}
+			ctors[fd.Name.Name] = returnedAnalyzerName(fd, fd.Name.Name)
+		}
+	}
+	var out []declaredAnalyzer
+	for _, f := range parsed {
 		for _, d := range f.Decls {
 			gd, ok := d.(*ast.GenDecl)
 			if !ok || gd.Tok != token.VAR {
@@ -179,16 +250,75 @@ func declaredAnalyzers(t *testing.T, dir string) []declaredAnalyzer {
 					if !n.IsExported() || i >= len(vs.Values) {
 						continue
 					}
-					lit := analyzerLiteral(vs.Values[i])
-					if lit == nil {
+					if lit := analyzerLiteral(vs.Values[i]); lit != nil {
+						out = append(out, declaredAnalyzer{varName: n.Name, name: nameField(lit, filepath.Base(dir))})
 						continue
 					}
-					out = append(out, declaredAnalyzer{varName: n.Name, name: nameField(lit, filepath.Base(dir))})
+					if vs.Type != nil && analyzerTypeName(vs.Type) {
+						out = append(out, declaredAnalyzer{varName: n.Name, name: ctorName(vs.Values[i], ctors, n.Name)})
+						continue
+					}
+					if call, ok := vs.Values[i].(*ast.CallExpr); ok && len(call.Args) == 0 {
+						if id, ok := call.Fun.(*ast.Ident); ok {
+							if name, ok := ctors[id.Name]; ok {
+								out = append(out, declaredAnalyzer{varName: n.Name, name: name})
+							}
+						}
+					}
 				}
 			}
 		}
 	}
 	return out
+}
+
+// analyzerTypeName: e is spelled *analysis.Analyzer.
+func analyzerTypeName(e ast.Expr) bool {
+	star, ok := e.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	sel, ok := star.X.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Analyzer" {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && pkg.Name == "analysis"
+}
+
+// ctorName: the initializer's analyzer name when it calls a known
+// constructor, else fallback.
+func ctorName(e ast.Expr, ctors map[string]string, fallback string) string {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return fallback
+	}
+	id, ok := call.Fun.(*ast.Ident)
+	if !ok {
+		return fallback
+	}
+	if name, ok := ctors[id.Name]; ok {
+		return name
+	}
+	return fallback
+}
+
+// returnedAnalyzerName reads the analyzer name off the first literal
+// the constructor returns, falling back to its function name.
+func returnedAnalyzerName(fd *ast.FuncDecl, fallback string) string {
+	name := fallback
+	ast.Inspect(fd.Body, func(n ast.Node) bool {
+		ret, ok := n.(*ast.ReturnStmt)
+		if !ok || len(ret.Results) != 1 {
+			return true
+		}
+		if lit := analyzerLiteral(ret.Results[0]); lit != nil {
+			name = nameField(lit, fallback)
+			return false
+		}
+		return true
+	})
+	return name
 }
 
 // analyzerLiteral returns the composite literal of &analysis.Analyzer{...}.
