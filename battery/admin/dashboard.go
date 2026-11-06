@@ -36,7 +36,7 @@ const probeDeadline = time.Second
 // dashboardNew is the header's New button for Config.DashboardNew.
 func (b *Battery) dashboardNew(ctx context.Context) render.HTML {
 	e, ok := b.exposedNamed(b.cfg.DashboardNew)
-	if b.cfg.DashboardNew == "" || !ok {
+	if b.cfg.DashboardNew == "" || !ok || !b.canCreateEntity(ctx, e) {
 		return ""
 	}
 	return ui.LinkButton(ui.LinkButtonConfig{
@@ -152,21 +152,30 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	if n := navOf(e); n != nil {
 		icon = n.Icon
 	}
-	return ui.StatCard(ui.StatCardConfig{
-		Label: b.plural(ctx, e),
-		Value: count,
-		Trend: updated,
-		Href:  b.entityBase(e),
-		Icon:  icon,
-		Tile:  true,
-		Action: ui.LinkButton(ui.LinkButtonConfig{
+	var action render.HTML
+	if b.canCreateEntity(ctx, e) {
+		action = ui.LinkButton(ui.LinkButtonConfig{
 			Label:   i18nui.AdminCardNew.Text(ctx),
 			Href:    b.entityBase(e) + "/create",
 			Variant: ui.ButtonSecondary,
 			Size:    ui.ButtonSizeSmall,
 			Icon:    "plus",
-		}),
+		})
+	}
+	return ui.StatCard(ui.StatCardConfig{
+		Label:  b.plural(ctx, e),
+		Value:  count,
+		Trend:  updated,
+		Href:   b.entityBase(e),
+		Icon:   icon,
+		Tile:   true,
+		Action: action,
 	})
+}
+
+func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
+	handler, err := b.app.CrudHandlerForEntity(e)
+	return err == nil && handler.CanCreateScoped(ctx)
 }
 
 // failedJobs is Needs attention's failed jobs: the count, a link to

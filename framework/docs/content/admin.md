@@ -226,7 +226,10 @@ translating.
   ```
 - **DashboardNew** names an exposed entity whose New button heads the
   dashboard as its primary action (`DashboardNew: "customers"` draws
-  "New Customer"). `Init` refuses an entity the admin does not expose.
+  "New Customer"). It and each entity card's New action appear only when
+  the caller passes the entity's scoped create gate, including explicit
+  policy denials and the required owner identity. `Init` refuses an entity
+  the admin does not expose.
 - **Attention** is the Needs attention panel beside the recent activity.
   Each `Watch` names an entity and one of its declared list views
   (`View`); the panel previews the first `Rows` rows (5 by default, at
