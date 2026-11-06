@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -2512,10 +2514,26 @@ func printCodegenFilesJSON(files []codegen.GeneratedFile) {
 
 // jsonString quotes s as a JSON string. Go's %q is not JSON: it spells a
 // control byte \x1b or \a, which no JSON parser reads, and a caller's
-// --out directory or file name can carry one.
+// --out directory or file name can carry one. Every rune past ASCII is
+// written as a \u escape too: the CLI's printers drop terminal-unsafe
+// runes (a bidi override, NEL, a zero-width space), and an escape
+// survives them and decodes to the same path.
 func jsonString(s string) string {
 	quoted, _ := json.Marshal(s)
-	return string(quoted)
+	var b strings.Builder
+	b.Grow(len(quoted))
+	for _, r := range string(quoted) {
+		switch {
+		case r < utf8.RuneSelf && r != 0x7f:
+			b.WriteRune(r)
+		case r > 0xffff:
+			hi, lo := utf16.EncodeRune(r)
+			fmt.Fprintf(&b, `\u%04x\u%04x`, hi, lo)
+		default:
+			fmt.Fprintf(&b, `\u%04x`, r)
+		}
+	}
+	return b.String()
 }
 
 func printGeneratedErrorsJSON(errs ...error) {

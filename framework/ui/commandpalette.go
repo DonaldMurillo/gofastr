@@ -239,9 +239,9 @@ func CommandPaletteTrigger(ctx context.Context, cfg CommandPaletteConfig) render
 		}
 		triggerAttrs["class"] = "fui-cmd-trigger"
 		trigger = commandPaletteTriggerStyle.WrapHTML(render.Tag("a", triggerAttrs,
-			Icon("search", IconConfig{Class: "fui-cmd-trigger__icon"}),
-			html.Span(html.TextConfig{Class: "fui-cmd-trigger__text"}, render.Text(text)),
-			html.Kbd(html.TextConfig{Class: "fui-cmd-trigger__kbd", ExtraAttrs: html.Attrs{"aria-hidden": "true"}},
+			headless.Own(Icon("search", IconConfig{Class: "fui-cmd-trigger__icon"})),
+			html.Span(html.TextConfig{Class: "fui-cmd-trigger__text", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(text)),
+			html.Kbd(html.TextConfig{Class: "fui-cmd-trigger__kbd", ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""}},
 				render.Text(shortcutGlyphs(shortcut))),
 		))
 	default:

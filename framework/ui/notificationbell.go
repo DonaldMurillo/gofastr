@@ -132,7 +132,7 @@ func NotificationBellTrigger(ctx context.Context, cfg NotificationBellConfig) re
 	return notificationBellStyle.WrapHTML(headless.NotificationBell(headless.NotificationBellProps{
 		Href:        cfg.Href,
 		Label:       cfg.Label,
-		Icon:        render.HTML(bellIcon()),
+		Icon:        headless.Own(render.HTML(bellIcon())),
 		UnreadCount: cfg.UnreadCount,
 		UnreadBind:  unreadBind,
 		Opens:       cfg.Name,
