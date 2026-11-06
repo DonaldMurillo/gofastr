@@ -2221,6 +2221,11 @@ bad menu. `New` also takes a defensive copy of the list (`Choices`,
 `Min`, `Max` included), so mutating the Config afterwards changes
 nothing.
 
+String defaults and every new string preference write refuse CR and LF
+line breaks. `Preferences.Set`, `preferences.set`, and the settings form
+validate this before storing any part of the update; errors identify the
+preference key, and the form returns a field error on 400.
+
 Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
@@ -2235,6 +2240,16 @@ settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
+
+Compatibility exception: a stored string containing CR or LF from an older
+version remains readable verbatim through `String`, `All`, and
+`preferences.get`. The single-line settings field warns that it cannot
+display those line breaks. Saving another field leaves that stored string
+untouched: its browser-sanitized display value is omitted from the update.
+Trying to change the legacy field through that form refuses the whole Save
+with a keyed field error, even when the proposed replacement is single-line.
+To repair it intentionally, replace it with a single-line string through
+`Preferences.Set` or `preferences.set`, then reopen the screen.
 
 ### The typed reads
 
