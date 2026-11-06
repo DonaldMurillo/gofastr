@@ -50,6 +50,11 @@ func RunVerify(args []string) {
 		listRules(opts.json, opts.capabilities)
 		return
 	}
+	if opts.baselineWrite && opts.sarifPath != "" {
+		failRun(opts.json, "--baseline-write and --sarif cannot be combined; record the baseline and export SARIF in separate runs")
+		cli.OsExit(2)
+		return
+	}
 
 	// A baseline is "the debt this whole tree accepts". Recording it from
 	// a narrowed run would silently erase every other rule's entries, and
