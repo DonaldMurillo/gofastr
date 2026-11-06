@@ -362,6 +362,11 @@ Both standalone handlers, `app.ScreenLLMMDHandler` and
 `Vary: Cookie` without replacing existing Vary fields. Their policy- and
 locale-dependent bodies must not be retained by a shared cache.
 
+Inline code in markdown preserves the HTML's displayed code: entities
+decode once, so `&lt;div&gt;` becomes `<div>` inside an inert code span,
+while double-encoded `&amp;lt;` remains the literal text `&lt;`. Tag-shaped
+code and backticks cannot become live markup or terminate their span.
+
 Every markdown surface evaluates the screen's policy chain with the live
 request: a non-Allow decision, or a region guard (an outlet's, an area's,
 or a fill's policy) that redirects, serves a metadata-free "withheld" doc
