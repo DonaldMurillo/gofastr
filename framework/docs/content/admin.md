@@ -596,6 +596,11 @@ Edit roles dropdown holds the form that replaces them. It shows 50
 accounts a page (`?limit=`, up to 500), and the pager under the table
 turns pages through `?p=`.
 
+Role and permission names must be valid UTF-8 without NUL bytes. A grant,
+grid save or role assignment containing such text is refused before any
+change: form posts return `bad-input`, and RPCs answer 400 with a `fields`
+entry naming the submitted control.
+
 Every change writes an audit row (entity `access`, op `grant`, `revoke`
 or `assign-roles`), one per permission a save grants or revokes. A
 caller may grant or revoke only a permission its own roles hold (or the

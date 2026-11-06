@@ -754,13 +754,22 @@ func (b *Battery) done(w http.ResponseWriter, r *http.Request, page, name string
 // refuse answers a refused or failed ops post with status. A form RPC
 // gets {"error": message}, which the runtime shows as a toast; a plain
 // post gets a 303 back to page with ?result=name.
-func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, status int, name string) {
+func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, status int, name string, fields ...string) {
 	res := results[name]
 	if isRPC(r) {
+		message := res.key.Text(r.Context())
+		body := map[string]any{"error": message}
+		if len(fields) > 0 {
+			fieldErrors := make(map[string]string, len(fields))
+			for _, field := range fields {
+				fieldErrors[field] = message
+			}
+			body["fields"] = fieldErrors
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(map[string]string{"error": res.key.Text(r.Context())})
+		_ = json.NewEncoder(w).Encode(body)
 		return
 	}
 	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)

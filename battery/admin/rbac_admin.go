@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -406,6 +407,14 @@ func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok s
 	}
 	role := strings.TrimSpace(vals.Get("role"))
 	perm := access.Permission(strings.TrimSpace(vals.Get("permission")))
+	if !storableText(role) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "role")
+		return
+	}
+	if !storableText(string(perm)) {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "permission")
+		return
+	}
 	if role == "" || perm == "" {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
@@ -431,7 +440,15 @@ func (b *Battery) handlePermissions(w http.ResponseWriter, r *http.Request) {
 	}
 	roles, rolesOK := distinctTrimmed(vals["role"])
 	perms, permsOK := distinctTrimmed(vals["permission"])
-	if !rolesOK || !permsOK || len(roles) == 0 || len(perms) == 0 || len(roles) > maxGridCells/len(perms) {
+	if !rolesOK || len(roles) == 0 {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "role")
+		return
+	}
+	if !permsOK || len(perms) == 0 {
+		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "permission")
+		return
+	}
+	if len(roles) > maxGridCells/len(perms) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
@@ -535,12 +552,16 @@ func distinctTrimmed(vals []string) ([]string, bool) {
 	out := make([]string, 0, len(vals))
 	for _, v := range vals {
 		v = strings.TrimSpace(v)
-		if v == "" || slices.Contains(out, v) {
+		if v == "" || !storableText(v) || slices.Contains(out, v) {
 			return nil, false
 		}
 		out = append(out, v)
 	}
 	return out, true
+}
+
+func storableText(value string) bool {
+	return utf8.ValidString(value) && strings.IndexByte(value, 0) < 0
 }
 
 // gridCell parses a grant value "i:j" against the grid's size.
@@ -578,6 +599,10 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	// One value per checkbox, or one comma-separated text field.
 	var roles []string
 	for _, v := range vals["roles"] {
+		if !storableText(v) {
+			b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "roles")
+			return
+		}
 		for role := range strings.SplitSeq(v, ",") {
 			if role = strings.TrimSpace(role); role != "" && !slices.Contains(roles, role) {
 				roles = append(roles, role)
