@@ -1701,6 +1701,11 @@ answers **204** with the same `Allow`, and the screen's policy and
 `serveScreenMethodNotAllowed`). A route registered at the screen's
 path, including an explicit `host.PageHandler`, wins its method.
 
+`ui.FilterToolbar` namespaces its derived control IDs under `cfg.ID` when
+set, including search shortcut targets, pill labels, select facets and sort.
+Otherwise the controls share the request's ID scope. Form names never acquire
+the namespace: native GET submission keeps the same query keys.
+
 `ui.FilterToolbar` with `ClientNavigation: true` emits `data-cui-spa` on its GET form. With the runtime it
 uses the existing client navigator, preserving the document and shared layout.
 Without JavaScript it submits as an ordinary GET form. The form's successful

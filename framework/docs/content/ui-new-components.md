@@ -427,6 +427,12 @@ Three more knobs round out the contract surface:
 
 ## Filter toolbars: the URL-driven pattern
 
+Set a distinct `FilterToolbarConfig.ID` for each toolbar on the same page.
+That ID namespaces derived search, select, sort and pill IDs and their
+labels and shortcut targets, without changing submitted field names.
+Without an explicit toolbar ID, pass the page's shared `Ctx` ID scope to
+deduplicate controls across renders (`render.WithIDScope` for standalone hosts).
+
 `ui.FilterToolbar` is the control strip that sits above a `DataTable` or
 card grid on a list screen. It renders **one `<form method="GET">`** whose
 controls carry the current filter/sort/search state. Submitting it (Apply)
