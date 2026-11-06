@@ -185,6 +185,10 @@ of the viewport and marks the corresponding nav link
 "next steps" tail) the last section stays marked, and the pick runs
 again when a scroll settles, so a jump to the end lands on it too. The table of contents
 (`headless.TableOfContents`, `data-hui-toc`) shares the same observer.
+Initial selection and later scroll updates ignore sections hidden by `display:none`,
+the `hidden` attribute, or closed `<details>`, even when a hidden descendant
+still reports layout rectangles. If every section is hidden at initial selection,
+no entry is marked.
 On phones `AnchoredRailConfig.PhoneSheet` folds the rail into a pill
 that names the section in view and opens the rail as a bottom sheet,
 or with `PhoneSheetTop` into a bar under the sticky header that opens
