@@ -42,6 +42,7 @@
   // Scoped to one id so components whose registries were already live
   // (and whose mounts boot fired) don't fire twice.
   const fireMounts = (root, id) => {
+    if (document.__fuiStaticDispatch) return;
     for (const el of (root || document).querySelectorAll('[data-action-mount]')) {
       const owner = el.closest('[data-component],[data-widget]');
       const cid = owner && (owner.getAttribute('data-component') || owner.getAttribute('data-widget'));
@@ -93,7 +94,7 @@
   // script is still loading is fired again by fireMounts when it lands.
   (G._moduleScanners ||= {}).actionloader = (root) => {
     scan(root);
-    if (root === document || !root.querySelectorAll) return;
+    if (document.__fuiStaticDispatch || root === document || !root.querySelectorAll) return;
     for (const el of [root, ...root.querySelectorAll('[data-action-mount]')]) {
       const action = el.getAttribute('data-action-mount');
       if (!action || el._cuiM) continue;
