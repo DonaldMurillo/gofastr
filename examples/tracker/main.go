@@ -70,10 +70,6 @@ var (
 // per request like every framework refusal.
 var exporterDown = i18n.Define("tracker.exporter_down", "The CSV exporter is down for maintenance.")
 
-// bellTrigger is the notification bell's markup; the paired popover is
-// mounted once in buildApp.
-var bellTrigger render.HTML
-
 func main() {
 	// The slow aside fill is a DEFERRED outlet
 	// it arrives as its own part request beside the page, visible in
@@ -163,16 +159,19 @@ func buildApp() *framework.App {
 	return fwApp
 }
 
-// bellPopover is built beside its trigger at init.
-var bellPopover = func() *widget.Builder {
-	var pop *widget.Builder
-	bellTrigger, pop = ui.NotificationBell(ui.NotificationBellConfig{
+func bellConfig() ui.NotificationBellConfig {
+	return ui.NotificationBellConfig{
 		Name:        "tracker-bell",
 		Href:        "/inbox",
 		Label:       "Notifications",
 		UnreadCount: unreadNotificationCount(),
 		Items:       bellItems(),
-	})
+	}
+}
+
+// bellPopover mounts once; buildShell renders the trigger per request.
+var bellPopover = func() *widget.Builder {
+	_, pop := ui.NotificationBell(bellConfig())
 	return pop
 }()
 
@@ -395,7 +394,7 @@ func buildShell(ctx context.Context, l *uiapp.LayoutTree) render.HTML {
 			Href:   "/",
 			Search: ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: "tracker-search", Placeholder: "Search issues and projects"}),
 			Actions: ui.Cluster(ui.ClusterConfig{NoWrap: true},
-				bellTrigger, ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})),
+				ui.NotificationBellTrigger(ctx, bellConfig()), ui.ThemeToggle(ui.ThemeToggleConfig{Variant: ui.ThemeToggleIcon})),
 			// The sidebar's phone navigation is hosted here, so the
 			// nav column renders empty on phones and must not draw a
 			// separator (PhoneNavFlush below).

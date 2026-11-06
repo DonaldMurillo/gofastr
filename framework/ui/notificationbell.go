@@ -22,7 +22,7 @@ import (
 // Bell button + unread-count badge + paired preset.Popover that lists
 // the most recent items on click. Same compositional pattern as
 // Lightbox: caller mounts the Popover once at app startup, the trigger
-// HTML goes anywhere on the page.
+// HTML renders with NotificationBellTrigger(ctx, cfg) on each request.
 //
 // Dynamic feeds (unread count and item list arriving live via SSE):
 // the caller binds the badge to a signal via the SignalUnread option,
@@ -79,8 +79,9 @@ type NotificationBellConfig struct {
 	SignalList string
 	// Pages, when non-empty, scopes the popover mount to those routes.
 	Pages []string
-	// Ctx carries the per-request context used to resolve the
-	// empty-state text. When nil, English fallbacks apply.
+	// Ctx resolves the returned trigger's spoken unread count and live-update
+	// template. Nil uses English fallbacks. The mounted popover's default
+	// empty text uses its body's request context, not this field.
 	Ctx context.Context
 
 	ID    string
@@ -93,14 +94,12 @@ type NotificationBellConfig struct {
 	ExtraAttrs html.Attrs
 }
 
-// NotificationBell returns the bell-anchor trigger HTML and a
-// *widget.Builder for the paired Popover. Mount the popover once:
-//
-//	trigger, pop := ui.NotificationBell(ui.NotificationBellConfig{...})
-//	widget.Mount(r, pop.Build())
-//
-// Then render `trigger` in the page header / sidebar / wherever.
-func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder) {
+// NotificationBellTrigger renders the bell's trigger for ctx without
+// constructing a popover. It shares NotificationBell's markup and validation;
+// ctx, not cfg.Ctx, resolves the spoken unread count and live-update template.
+// Label is kept as supplied, including after signal updates. A nil ctx uses
+// English fallbacks. Keep Name consistent with the mounted popover.
+func NotificationBellTrigger(ctx context.Context, cfg NotificationBellConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: NotificationBell requires Name")
 	}
@@ -113,7 +112,6 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.Href == "#" {
 		panic("ui: NotificationBell Href '#' is not a destination — point it at the notifications page")
 	}
-	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -131,7 +129,7 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 	if cfg.SignalUnread != "" {
 		unreadBind = &headless.Bind{Signal: cfg.SignalUnread}
 	}
-	trigger := notificationBellStyle.WrapHTML(headless.NotificationBell(headless.NotificationBellProps{
+	return notificationBellStyle.WrapHTML(headless.NotificationBell(headless.NotificationBellProps{
 		Href:        cfg.Href,
 		Label:       cfg.Label,
 		Icon:        render.HTML(bellIcon()),
@@ -145,7 +143,18 @@ func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder)
 		Parts:   parts,
 		Strings: StringsFor(ctx),
 	}, notificationBellClasses))
+}
 
+// NotificationBell returns a trigger snapshot resolved with cfg.Ctx and a
+// builder for the paired Popover. Mount the popover once:
+//
+//	_, pop := ui.NotificationBell(cfg)
+//	widget.MountBuilder(router, pop)
+//
+// Render NotificationBellTrigger(ctx, cfg) in each request's page chrome.
+// The popover's default empty text resolves with its own request context.
+func NotificationBell(cfg NotificationBellConfig) (render.HTML, *widget.Builder) {
+	trigger := NotificationBellTrigger(cfg.Ctx, cfg)
 	// Popover slot. The popover is mounted once, so the default empty
 	// text is said in each request's locale, not the mount's.
 	slot := requestSlot{build: func(ctx context.Context) component.Component {

@@ -47,8 +47,8 @@ func main() {
 	if err := app.Batteries.Register(search); err != nil {
 		panic(err)
 	}
-	// trigger goes in the site header; the palette mounts as a widget.
-	trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+	// The palette mounts once; its trigger renders in each request's header.
+	paletteConfig := ui.CommandPaletteConfig{
 		Name:   "site-command-palette",
 		Search: true,
 		Commands: []ui.PaletteCommand{
@@ -59,11 +59,17 @@ func main() {
 		SearchPage: "/search",
 		// Where the trigger goes without script.
 		FallbackHref: "/search",
-	})
-	_ = trigger
+	}
+	_, palette := ui.CommandPalette(paletteConfig)
 	widget.MountBuilder(app.Router(), palette)
 }
 ```
+
+In the header's request render, use
+`ui.CommandPaletteTrigger(ctx, paletteConfig)` with that request's context
+and the same config. The trigger's default words then follow the reader's
+locale without constructing another modal. Translated command labels use
+`CommandPaletteFunc` and a config built for that same request.
 
 `Search: true` marks the palette's list with `data-search`, which loads the
 `sitesearch` runtime module. The palette opens on its `Commands`, the short

@@ -18,11 +18,15 @@ app.Batteries.Register(sitesearch.New(sitesearch.Config{
     Groups:  []sitesearch.Group{{Prefix: "/docs/", Label: "Docs"}},
     Exclude: []string{"/lab"},
 }))
-trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+paletteConfig := ui.CommandPaletteConfig{
     Name:     "site-command-palette",
     Search:   true,
     Commands: starterCommands, // shown before the first keystroke
-})
+    FallbackHref: "/search",
+}
+_, palette := ui.CommandPalette(paletteConfig) // mount once at startup
+// In each request's header:
+trigger := ui.CommandPaletteTrigger(ctx, paletteConfig)
 ```
 
 `gofastr export <dir>` writes the pages and the index together.

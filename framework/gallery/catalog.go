@@ -1229,7 +1229,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette, wired in nav (try it).", func() render.HTML {
 		return note(
-			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair: mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
+			render.Text("Mount CommandPalette's modal once at app startup, then render CommandPaletteTrigger(ctx, cfg) in each request's chrome so its labels follow the reader's locale. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
 	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {
@@ -1238,10 +1238,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"notificationbell", "NotificationBell", "Feedback", "Bell icon with unread badge + popover (trigger + widget).", func() render.HTML {
-		// NotificationBell returns (trigger, *widget.Builder). The widget
-		// must be mounted once at startup; the showcase renders only the
-		// trigger HTML, paired with a static caption.
-		trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{
+		// The context-free catalog shows an English trigger snapshot;
+		// a host renders the trigger with its request context.
+		trigger := ui.NotificationBellTrigger(context.Background(), ui.NotificationBellConfig{
 			Name:        "demo-bell",
 			Label:       "Notifications",
 			Href:        "/notifications",
@@ -1254,7 +1253,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return stack(
 			row(trigger),
 			note(
-				render.Text("NotificationBell returns a trigger HTML + a popover widget; mount the popover once at app startup via widget.Mount."),
+				render.Text("Mount NotificationBell's popover once at app startup, then render NotificationBellTrigger(ctx, cfg) in each request's header so the spoken unread count and its live-update template follow the reader's locale."),
 			),
 		)
 	}},
