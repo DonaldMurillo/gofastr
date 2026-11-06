@@ -65,8 +65,12 @@ func TestPaneCloseDismissesOwnedModals(t *testing.T) {
 				t.Fatal(err)
 			}
 			if !pending || pendingName == "nested" {
+				// Here the owned open is not stale: it mounts, then loads
+				// widgetlinks and writes its record. Wait for that write,
+				// or the record set below can land before it and be
+				// overwritten on a slow runner.
 				if err := chromedp.Run(ctx,
-					chromedp.Poll(`!!window.__gofastr._widgets.owned`, nil),
+					chromedp.Poll(`!!window.__gofastr._widgets.owned && window.__gofastr.getSignal('record') === 'obsolete'`, nil),
 					chromedp.Evaluate(`window.__gofastr.openWidget('nested', {btn: document.getElementById('owned-action')})`, nil, chromedp.EvalAsValue),
 				); err != nil {
 					t.Fatal(err)
