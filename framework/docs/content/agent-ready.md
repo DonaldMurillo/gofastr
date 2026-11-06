@@ -418,6 +418,9 @@ describes what the framework requires of the app's own code. Under
 the analyzers over the app's source and returns structured findings, and
 `contracts_fix` applies one rule's autofixes. Neither is registered
 outside the dev loop, since both touch local source files.
+Explicit `WithMCPIntrospection()` does not suppress these dev tools;
+generated apps receive them too. `GOFASTR_DEV_MCP=0` or a production
+environment keeps them off even when introspection was explicitly enabled.
 Calling `WithMCP` **and** manually mounting `/mcp`
 panics with a route conflict. Pick one. Generated apps ship with
 `WithMCP`, `WithMCPIntrospection` and `WithMCPTools(mcptools.Register)` wired.
