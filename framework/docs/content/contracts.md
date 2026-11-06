@@ -323,6 +323,8 @@ That records every current finding into
 `.gofastr-contracts-baseline.json` and commits it. It refuses to run
 with `--sarif`: record the baseline and export SARIF in separate runs.
 This refusal happens before analysis, fixes or either artifact is written.
+With `--json`, the baseline result also includes the run's `notices`,
+including degraded changed-file checks and unmounted-package warnings.
 It also refuses to run
 with `--rule` or a capability filter: a baseline recorded from a
 narrowed run would erase every other rule's accepted debt, and the next

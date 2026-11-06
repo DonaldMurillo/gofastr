@@ -280,6 +280,7 @@ func RunVerify(args []string) {
 			data, marshalErr := json.Marshal(map[string]any{
 				"baselineWritten": baselineFile,
 				"accepted":        b.Total(),
+				"notices":         notices,
 			})
 			if marshalErr == nil {
 				cli.Println(string(data))
