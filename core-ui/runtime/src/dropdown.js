@@ -64,10 +64,8 @@
     if (openWraps.length === 0) return;
 
     const active = document.activeElement;
-    const focusedWrap = openWraps.findLast((w) => {
-      const panel = w.querySelector('[data-cui-dropdown-panel]');
-      return panel && panel.contains(active);
-    });
+    // Innermost open wrap holding focus, on its trigger or in its panel.
+    const focusedWrap = openWraps.findLast((w) => w.contains(active));
     const wrap = focusedWrap || openWraps[openWraps.length - 1];
     const trigger = wrap.querySelector('[data-cui-dropdown]');
     const panel = wrap.querySelector('[data-cui-dropdown-panel]');

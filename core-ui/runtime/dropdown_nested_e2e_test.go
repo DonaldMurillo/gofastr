@@ -45,6 +45,19 @@ func TestNestedDropdownKeepsAncestors(t *testing.T) {
 	if state != "false|false|true|true|sibling" {
 		t.Fatalf("sibling opening or Escape dismissed an ancestor: %s", state)
 	}
+	// Focus on a nested trigger sits inside its ancestors' panels, not its
+	// own: Escape still closes the dropdown that trigger owns.
+	if err := chromedp.Run(ctx,
+		chromedp.Click(`#sibling`, chromedp.ByID),
+		chromedp.Focus(`#sibling`, chromedp.ByID),
+		chromedp.KeyEvent("\x1b"),
+		chromedp.Evaluate(`['outer','middle','sibling'].map(id => document.getElementById(id+'-panel').hidden).join('|')+'|'+document.activeElement.id`, &state),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if state != "false|false|true|sibling" {
+		t.Fatalf("Escape on a nested trigger closed the wrong dropdown: %s", state)
+	}
 	if err := chromedp.Run(ctx,
 		chromedp.Click(`#outside`, chromedp.ByID),
 		chromedp.Evaluate(`String(document.querySelectorAll('[data-cui-dropdown-open]').length)`, &state),
