@@ -352,8 +352,11 @@ fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
-`manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
-from the manifest hash, so stable URLs revalidate for free.
+`manifest.json`. Public responses carry `Cache-Control: no-cache`;
+with a `Policy`, they carry `private, no-cache` so shared caches cannot
+store policy-gated artifacts. Artifact ETags use the manifest's recorded
+hashes, so stable URLs revalidate for free. The cache policy also accompanies
+304 responses to conditional GET and HEAD requests.
 The downloads follow the same visibility as the pages: every route
 answers 404 unless each entity the manifest's `entities` list names is
 one the site documents, and a missing manifest refuses too. Each file

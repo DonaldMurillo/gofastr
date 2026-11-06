@@ -403,6 +403,9 @@ func stripWebP(data []byte) ([]byte, error) {
 		return nil, errors.New("webp: bad RIFF header")
 	}
 	riffEnd := 8 + int(uint32(binary.LittleEndian.Uint32(data[4:8])))
+	if riffEnd <= 12 {
+		return nil, fmt.Errorf("webp: RIFF size %d leaves no chunks", riffEnd)
+	}
 	if riffEnd > len(data) {
 		return nil, fmt.Errorf("webp: RIFF size %d exceeds the file", riffEnd)
 	}

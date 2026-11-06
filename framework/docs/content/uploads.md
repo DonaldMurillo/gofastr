@@ -574,7 +574,8 @@ Behaviour worth knowing:
 - It runs before the image pipeline, so renditions and the BlurHash are
   derived from the stripped bytes, and `FileField.Size` reflects them.
 - It fails closed: a JPEG, PNG, or WebP whose structure cannot be
-  walked fails the upload rather than being stored unstripped.
+  walked fails the upload rather than being stored unstripped. A WebP RIFF
+  size that omits the form tag or leaves no chunks is refused before storage.
 
 ## Storage backends
 

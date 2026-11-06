@@ -359,6 +359,10 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 
+		w.Header().Set("Cache-Control", "no-cache")
+		if s.cfg.Policy != nil {
+			w.Header().Set("Cache-Control", "private, no-cache")
+		}
 		if key != "" {
 			// The file must be the one the manifest records. A run
 			// with fewer targets rewrites the manifest but leaves an
@@ -379,7 +383,6 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			}
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "no-cache")
 		if file == sdk.GoArtifact {
 			// The zip downloads; client.js/client.d.ts serve inline so
 			// `import "<url>/client.js"` works straight off the app.

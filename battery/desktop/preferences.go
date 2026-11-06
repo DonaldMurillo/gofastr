@@ -355,6 +355,9 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 	if cur == nil {
 		cur = map[string]json.RawMessage{}
 	}
+	for key := range coerced {
+		delete(cur, key)
+	}
 	for _, key := range slices.Sorted(maps.Keys(coerced)) {
 		data, merr := json.Marshal(coerced[key])
 		if merr != nil {
@@ -362,6 +365,14 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 			return nil, &Error{Code: CodeInternal, Message: "encoding a preference failed"}
 		}
 		cur[key] = data
+		encoded, merr := json.Marshal(cur)
+		if merr != nil {
+			return nil, &Error{Code: CodeInternal, Message: reasonPrefsSaveFailed.Format(nil)}
+		}
+		if len(encoded) > appstate.MaxValueBytes {
+			return nil, &preferenceError{key: key, reason: reasonPrefStorageLimit,
+				params: map[string]any{"max": appstate.MaxValueBytes}}
+		}
 	}
 	if serr := s.Set(settingsStateKey, cur); serr != nil {
 		return nil, &Error{Code: CodeInternal, Message: "storing preferences failed"}

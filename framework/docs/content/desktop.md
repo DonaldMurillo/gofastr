@@ -260,8 +260,11 @@ a credential nothing else has:
 2. `Run` navigates the fresh window to
    `/__gofastr/desktop/enter?t=<token>`, single use, constant-time
    compared.
-3. The handler sets the `__gofastr_desktop` cookie (HttpOnly,
-   SameSite=Strict, session lifetime) and 302s to `/`.
+3. The handler sets the `__gofastr_desktop_<session value>` cookie
+   (HttpOnly, SameSite=Strict, session lifetime) and 302s to `/`.
+   Its name is unique to this running battery: WebView2 profiles share
+   cookies across loopback ports, so a second instance must not replace
+   the first instance's session cookie.
 4. A gate middleware, installed app-wide in `Init` and armed by `Run`
    before the listener opens, then requires the pinned `Host` header
    and that cookie for every route, including pages and the SSE bus.
@@ -373,6 +376,10 @@ The core capabilities:
 | `tray` | `setTitle` | none (the tray label is the app's own) |
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
+
+Clipboard text reads and writes are capped at 1 MiB of UTF-8 bytes. A read
+above the cap returns `invalid_input` without sending clipboard contents to
+the page; it never silently truncates the user's text.
 
 Native window focus, title writes and frame writes refuse a window that closed
 before the operation reached the UI thread. On Windows, a destroyed window's
@@ -1861,10 +1868,10 @@ native code.
 ## Remembering window state
 
 A desktop app remembers where its windows were. With
-`Config.RememberWindows: true` the battery persists every window's
-frame (position and size) and the main window's last path, so a user
-who drags a window to another monitor, resizes it, navigates to a
-screen, and quits finds all of it back on the next launch.
+`Config.RememberWindows: true` the battery persists the main and settings
+windows' frames (position and size) and the main window's last path.
+Those stable window identities restore their placement on the next launch;
+ordinary secondary ids (`w2`, `w3`, …) identify windows only within one run.
 
 ```go
 d := native.New(desktop.Config{
@@ -1904,10 +1911,11 @@ crash.
 
 ### What happens on relaunch
 
-- The main window opens at its remembered frame; a secondary window
-  opened under the same id ("settings", a widget) gets its remembered
-  frame through the same `WindowSpec.Frame` path. An explicit `Frame`
-  on the spec wins over the store.
+- The main window opens at its remembered frame; the settings window
+  gets its remembered frame through the same `WindowSpec.Frame` path.
+  Frames for transient secondary ids are discarded at startup, so a newly
+  assigned `w2` cannot inherit a different window's placement from an earlier
+  run. An explicit `Frame` on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
   changed) is dropped and the window centers. Windows checks native
@@ -2197,6 +2205,13 @@ Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
 page keys to `page.`, so this entry is never reachable from the page.
+The complete encoded object must fit within the app state's 64 KiB value
+limit, including keys, JSON escaping and any retained undeclared values.
+Updates are validated in sorted key order against the merged object, with
+all replaced values removed first so a batch can shrink another key to fit.
+An overflow refuses the whole update before storage: `preferences.set`
+answers `invalid_input` naming the key that exceeds the budget, and the
+settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
