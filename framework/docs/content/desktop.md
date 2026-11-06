@@ -420,7 +420,13 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). The path must arrive in
+(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
+on the exact picked folder and nothing under the folder: no descendant
+`stat`, reads, or writes. It does not grant directory traversal or listing.
+`openFile` and `saveFile` grant only the exact returned file paths for
+`fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
+parent directory. All picks retain the same least-authority `AllowPath`
+grant; a folder pick does not create a prefix grant. The path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink
