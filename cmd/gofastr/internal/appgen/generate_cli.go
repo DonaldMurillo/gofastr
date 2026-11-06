@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"maps"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -237,7 +238,7 @@ func RunGenerateCLI(args []string) {
 	}
 	used, err := ApplyCLIConfigDefaults(&opts)
 	if err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
@@ -255,26 +256,26 @@ func generateCLI(opts CliOptions) {
 
 	decls, err := ReadAppDecls(".")
 	if err != nil {
-		cli.Fail("read entities: %v", err)
+		failGenerate(opts.json, fmt.Errorf("read entities: %v", err))
 		cli.OsExit(1)
 		return
 	}
 	if len(decls) == 0 {
-		cli.Fail("no entities package found in the current directory")
-		cli.Info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
+		failGenerate(opts.json, fmt.Errorf("no entities package found in the current directory"))
+		cli.Fprintln(os.Stderr, "Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
 		cli.OsExit(1)
 		return
 	}
 
 	abs, err := filepath.Abs(".")
 	if err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 	modulePath, moduleRoot := project.FindEnclosingGoMod(abs)
 	if modulePath == "" {
-		cli.Fail("no enclosing go.mod: the generated CLI imports your entities/client package by module path")
+		failGenerate(opts.json, fmt.Errorf("no enclosing go.mod: the generated CLI imports your entities/client package by module path"))
 		cli.OsExit(1)
 		return
 	}
@@ -294,12 +295,7 @@ func generateCLI(opts CliOptions) {
 
 	spec, err := buildCLISpec(decls, opts, importBase+"/entities/client")
 	if err != nil {
-		if opts.dryRun && opts.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-			return
-		}
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
@@ -315,7 +311,7 @@ func emitCLIFiles(opts CliOptions, spec cliSpec) {
 		if opts.json {
 			printGeneratedErrorsJSON(err)
 		} else {
-			cli.Fail("%v", err)
+			failGenerate(opts.json, err)
 		}
 		cli.OsExit(1)
 	}

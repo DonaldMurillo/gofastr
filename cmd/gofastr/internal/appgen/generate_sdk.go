@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/format"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -178,44 +179,39 @@ func RunGenerateSDK(args []string) {
 		return
 	}
 	if err := ApplySDKConfigDefaults(&opts); err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 
 	decls, err := ReadAppDecls(".")
 	if err != nil {
-		cli.Fail("read entities: %v", err)
+		failGenerate(opts.json, fmt.Errorf("read entities: %v", err))
 		cli.OsExit(1)
 		return
 	}
 	if len(decls) == 0 {
-		cli.Fail("no entities package found in the current directory")
-		cli.Info("Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
+		failGenerate(opts.json, fmt.Errorf("no entities package found in the current directory"))
+		cli.Fprintln(os.Stderr, "Run from your app root (the directory holding entities/), or generate the app first: gofastr generate app <spec.yml>.")
 		cli.OsExit(1)
 		return
 	}
 
 	spec, err := buildSDKSpec(decls, &opts)
 	if err != nil {
-		if opts.dryRun && opts.json {
-			printGeneratedErrorsJSON(err)
-			cli.OsExit(1)
-			return
-		}
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 	if err := validateOutputDir(opts.OutDir); err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 
 	files, err := renderSDKFiles(spec, opts.targets, !opts.noArchive)
 	if err != nil {
-		cli.Fail("SDK generation failed: %v", err)
+		failGenerate(opts.json, fmt.Errorf("SDK generation failed: %v", err))
 		cli.OsExit(1)
 		return
 	}
@@ -241,7 +237,7 @@ func RunGenerateSDK(args []string) {
 	}
 	fileSet, err := FileSetFromGeneratedFiles(files, "sdk")
 	if err != nil {
-		cli.Fail("SDK generation failed: %v", err)
+		failGenerate(opts.json, fmt.Errorf("SDK generation failed: %v", err))
 		cli.OsExit(1)
 		return
 	}
@@ -251,7 +247,7 @@ func RunGenerateSDK(args []string) {
 		Conflict:     codegen.ConflictOverwrite,
 	}
 	if err := codegen.WriteFiles(fileSet, writeOpts); err != nil {
-		cli.Fail("Failed to write generated files: %v", err)
+		failGenerate(opts.json, fmt.Errorf("Failed to write generated files: %v", err))
 		cli.OsExit(1)
 		return
 	}

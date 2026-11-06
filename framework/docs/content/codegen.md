@@ -69,6 +69,12 @@ JSON runs send extension diagnostics to stderr and suppress overwrite
 warnings on stdout. An error diagnostic returns the error document and
 fails the run before generated files are written.
 
+Source, configuration, and write failures use the same error document in
+both dry runs and write runs. Plain generate emits its single success
+document only after endpoint and client rebuilds succeed; a late failure
+reports an error, not a second document after a success. Writes completed
+before an I/O failure are not rolled back; fix the error and rerun.
+
 ## Config shape
 
 ```yaml

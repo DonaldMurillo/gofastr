@@ -29,19 +29,19 @@ import (
 func runGenerateCLIFromOpenAPI(opts CliOptions) {
 	doc, err := loadOpenAPIDoc(opts.FromOpenAPI)
 	if err != nil {
-		cli.Fail("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error()))
+		failGenerate(opts.json, fmt.Errorf("read OpenAPI document: %s", textsafe.ScrubControlBytes(err.Error())))
 		cli.OsExit(1)
 		return
 	}
 	abs, err := filepath.Abs(".")
 	if err != nil {
-		cli.Fail("%v", err)
+		failGenerate(opts.json, err)
 		cli.OsExit(1)
 		return
 	}
 	modulePath, moduleRoot := project.FindEnclosingGoMod(abs)
 	if modulePath == "" {
-		cli.Fail("no enclosing go.mod: the generated CLI's internal client package needs a module path")
+		failGenerate(opts.json, fmt.Errorf("no enclosing go.mod: the generated CLI's internal client package needs a module path"))
 		cli.OsExit(1)
 		return
 	}
@@ -59,7 +59,7 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 
 	spec, err := BuildOpenAPICLISpec(doc, opts, clientImport)
 	if err != nil {
-		if opts.dryRun && opts.json {
+		if opts.json {
 			printGeneratedErrorsJSON(err)
 			cli.OsExit(1)
 			return
@@ -67,7 +67,7 @@ func runGenerateCLIFromOpenAPI(opts CliOptions) {
 		// The error quotes names from the spec, which --from-openapi may
 		// fetch from a URL: encode its control bytes rather than write
 		// them to the operator's terminal.
-		cli.Fail("%s", textsafe.ScrubControlBytes(err.Error()))
+		failGenerate(opts.json, fmt.Errorf("%s", textsafe.ScrubControlBytes(err.Error())))
 		cli.OsExit(1)
 		return
 	}

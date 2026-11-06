@@ -258,6 +258,11 @@ over an unchanged schema rewrites every file byte for byte.
 `--stamp-time` adds `generatedAt`, and the reference page then shows the
 date beside the version.
 
+`gofastr generate sdk --json` writes one document to stdout on both success
+and failure. Source, validation and write errors return
+`{"files":[],"errors":[{"message":"..."}]}` with a nonzero exit status;
+prose diagnostics go to stderr and overwrite warnings are suppressed.
+
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
