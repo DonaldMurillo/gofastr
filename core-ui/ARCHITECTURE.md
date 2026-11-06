@@ -2794,6 +2794,9 @@ programmatic focus target outside the sequential Tab order. From such a
 target inside a trap, Tab moves to the next tabbable control in DOM order
 and Shift+Tab to the previous one, wrapping within the trap at either end.
 With no tabbable controls, the trap consumes Tab without moving focus.
+An untrapped nested disclosure contributes its visible tabbable controls
+to the enclosing trap, including its first and last Tab boundaries.
+Its negative-tabindex targets use the same directional recovery.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
