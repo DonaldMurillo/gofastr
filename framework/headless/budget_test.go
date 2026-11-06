@@ -75,6 +75,8 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		{FeedbackBehaviorName, "feedback.js", 3072},
 		{CopyBehaviorName, "copy.js", 1024},
 		{DatePickerBehaviorName, "datepicker.js", 2944},
+		// TestCancelledComboboxLinkStaysPut pins click ownership: 2521 measured + 2.
+		{ComboboxBehaviorName, "combobox.js", 2523},
 	} {
 		got := behaviorGzipSize(t, tc.file)
 		t.Logf("%s (%s) gzip = %d bytes (budget %d)", tc.name, tc.file, got, tc.budget)
