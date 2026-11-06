@@ -374,6 +374,10 @@ The core capabilities:
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
+Clipboard text reads and writes are capped at 1 MiB of UTF-8 bytes. A read
+above the cap returns `invalid_input` without sending clipboard contents to
+the page; it never silently truncates the user's text.
+
 Native window focus, title writes and frame writes refuse a window that closed
 before the operation reached the UI thread. On Windows, a destroyed window's
 nonzero native handle is not evidence that the window is still open. `Title()`

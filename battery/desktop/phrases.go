@@ -2,6 +2,8 @@ package desktop
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
+var reasonClipboardTextLimit = i18n.Define("desktop.clipboard_text_limit", "text must be at most 1 MiB")
+
 // The refusals the preferences screen writes, under their catalog keys.
 var (
 	reasonPrefNull        = i18n.Define("desktop.pref_null", "must not be null")
