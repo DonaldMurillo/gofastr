@@ -59,8 +59,9 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates are 16,012 bytes at level 6 and
-18,577 bytes at level 1, including page-cancelled signal clicks, positive
+The core's gzip gates are 16,096 bytes at level 6 and
+18,673 bytes at level 1, including shared trap focus eligibility,
+page-cancelled signal clicks, positive
 router click ownership, document-base-resolved query/fragment destination identity
 and live CSRF token protection across cached navigation, prefetch replay, and
 page-head cleanup. Prefetched pages retain the
@@ -112,7 +113,7 @@ and both stylesheets together come to about 12 KB.
 After minification (typical end-user deploy):
 
 - `runtime.js`: `core-ui/runtime/budget_test.go` holds the gzip gates at
-  16,012 B (level 6) and 18,577 B (level 1). The
+  16,096 B (level 6) and 18,673 B (level 1). The
   level-1 gate sits 4,241 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test

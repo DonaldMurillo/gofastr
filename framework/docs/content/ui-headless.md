@@ -477,6 +477,11 @@ The parts the navigation members draw beyond the shared vocabulary:
   a trap with no Tab stops consumes Tab without moving focus.
   Visible tabbable controls inside an untrapped nested disclosure remain
   in the enclosing trap's Tab order, including at its wrap boundaries.
+  All four traps exclude controls that cannot receive focus: closed
+  disclosure content, hidden or visibility-hidden content, skipped
+  content-visibility regions, inert descendants and disabled controls.
+  A closed disclosure whose content CSS makes visible still contributes
+  its tabbable controls; closed state alone does not exclude them.
   Middle-click and modified clicks retain
   native link behavior. A plain primary click fills the input and closes
   the list while letting the link router own navigation exactly once;

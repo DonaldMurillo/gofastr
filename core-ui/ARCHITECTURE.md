@@ -2546,6 +2546,12 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
 
+Widget, intercept, disclosure and pane-host Tab traps share the kernel's
+focus-eligibility predicate. Candidates need a nonnegative tab index,
+rendered visibility and no inert ancestor or native disabled state.
+Closed disclosure content is excluded only while it is not rendered:
+CSS exposing `::details-content` preserves its nested Tab stops.
+
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
 Menu link rows activate on Space and prevent page scrolling, except while
