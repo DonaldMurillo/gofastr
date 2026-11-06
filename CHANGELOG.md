@@ -682,9 +682,13 @@ few lines, and link the PR or the docs page for the rest.
   site-search result, is now a real link kept out of the Tab order:
   Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
   plain click or keyboard pick navigates in-page once, so one Back
-  returns to where it started, fragment links included. Focus traps in
-  modals, drawers, disclosures and panes skip elements with a negative
-  `tabindex`, so Tab and Shift+Tab stay inside them. `ComboboxRows`
+  returns to where it started, fragment links included, and a link
+  option that also sets a signal still navigates. Focus traps in modals,
+  drawers, disclosures and panes skip elements with a negative
+  `tabindex`, so Tab and Shift+Tab stay inside them, including from a
+  focused negative-`tabindex` element. `navigate()` resolves a relative
+  destination against `<base href>` when deciding it is the current
+  page. `ComboboxRows`
   refuses duplicate option IDs, as `Combobox` does. The site-search palette
   closes when the query has no searchable terms left.
 - **Leave-guard Discard closes the pane that asked.** A declined close
