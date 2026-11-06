@@ -3086,7 +3086,7 @@ your need:
 | Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
 | Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
 | Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
-| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format. |
+| Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format; hunk ranges distinguish changed `---`/`+++` lines from the next file's headers. |
 | Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |
 | Image gallery | `framework/ui.Gallery` | Grid / strip / masonry layouts. Optional Lightbox or per-item Href click behaviour. |
 | Image lightbox | `framework/ui.Lightbox` | Overlay viewer with Prev/Next nav, gallery groups, arrow-key keyboard nav. |

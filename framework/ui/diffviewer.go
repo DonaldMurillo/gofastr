@@ -73,6 +73,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 	}
 
 	lines := strings.Split(cfg.Patch, "\n")
+	fileHeaders := diffFileHeaders(lines)
 	var sb strings.Builder
 
 	if cfg.Mode == DiffSplit {
@@ -102,7 +103,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 				i++
 				continue
 			}
-			if strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++") {
+			if fileHeaders[i] {
 				sb.WriteString(`<div class="fui-diff-viewer__file" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
@@ -113,7 +114,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 			var removed, added []string
 			for i < len(lines) {
 				cur := lines[i]
-				if strings.HasPrefix(cur, "@@") || strings.HasPrefix(cur, "---") || strings.HasPrefix(cur, "+++") {
+				if strings.HasPrefix(cur, "@@") || fileHeaders[i] {
 					break
 				}
 				if strings.HasPrefix(cur, "-") {
@@ -145,13 +146,13 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		}
 	} else {
 		// Unified mode.
-		for _, ln := range lines {
+		for index, ln := range lines {
 			switch {
 			case strings.HasPrefix(ln, "@@"):
 				sb.WriteString(`<div class="fui-diff-viewer__hunk" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
-			case strings.HasPrefix(ln, "---") || strings.HasPrefix(ln, "+++"):
+			case fileHeaders[index]:
 				sb.WriteString(`<div class="fui-diff-viewer__file" data-cui-internal="">`)
 				sb.WriteString(escapeXML(ln))
 				sb.WriteString(`</div>`)
@@ -184,6 +185,58 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	return diffViewerStyle.WrapHTML(render.Tag("div", attrs, render.HTML(sb.String())))
+}
+
+func diffFileHeaders(lines []string) []bool {
+	headers := make([]bool, len(lines))
+	inHunk := false
+	oldRemaining, newRemaining := 0, 0
+	for index, line := range lines {
+		if strings.HasPrefix(line, "diff ") || strings.HasPrefix(line, "Index: ") {
+			inHunk = false
+		}
+		if strings.HasPrefix(line, "@@") {
+			oldRemaining, newRemaining = -1, -1
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && strings.HasPrefix(fields[1], "-") && strings.HasPrefix(fields[2], "+") {
+				oldRemaining = diffHunkCount(fields[1])
+				newRemaining = diffHunkCount(fields[2])
+			}
+			inHunk = oldRemaining != 0 || newRemaining != 0
+			continue
+		}
+		if !inHunk {
+			headers[index] = strings.HasPrefix(line, "---") || strings.HasPrefix(line, "+++")
+			continue
+		}
+		switch {
+		case strings.HasPrefix(line, "-"):
+			oldRemaining--
+		case strings.HasPrefix(line, "+"):
+			newRemaining--
+		case strings.HasPrefix(line, "\\"):
+			continue
+		default:
+			oldRemaining--
+			newRemaining--
+		}
+		if oldRemaining == 0 && newRemaining == 0 {
+			inHunk = false
+		}
+	}
+	return headers
+}
+
+func diffHunkCount(field string) int {
+	_, count, found := strings.Cut(field, ",")
+	if !found {
+		return 1
+	}
+	value, err := strconv.Atoi(count)
+	if err != nil || value < 0 {
+		return -1
+	}
+	return value
 }
 
 func flushSplit(sb *strings.Builder, removed, added []string) {
