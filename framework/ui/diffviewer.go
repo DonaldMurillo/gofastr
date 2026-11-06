@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strconv"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // ─── DiffViewer ─────────────────────────────────────────────────────
@@ -31,6 +33,9 @@ const (
 
 // DiffViewerConfig configures a DiffViewer.
 type DiffViewerConfig struct {
+	// Ctx supplies the reader's locale for default column labels.
+	// Nil uses the English defaults; explicit labels are unchanged.
+	Ctx context.Context
 	// Patch is the raw unified-diff body (required). Lines prefixed
 	// "+" are additions, "-" are removals, " " (space) are context,
 	// "@@" lines are hunk headers, "---" / "+++" headers are
@@ -82,11 +87,11 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 	if cfg.Mode == DiffSplit {
 		left := cfg.LeftLabel
 		if left == "" {
-			left = "Old"
+			left = i18nui.DiffOld.Text(cfg.Ctx)
 		}
 		right := cfg.RightLabel
 		if right == "" {
-			right = "New"
+			right = i18nui.DiffNew.Text(cfg.Ctx)
 		}
 		sb.WriteString(`<div class="fui-diff-viewer__header" data-cui-internal=""><div class="fui-diff-viewer__header-cell">`)
 		sb.WriteString(escapeXML(left))
