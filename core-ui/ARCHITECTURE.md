@@ -2709,6 +2709,10 @@ for a host to concatenate.
 
 ### Component behaviour: the same seam
 
+Caller-built navigation in ColumnPicker, ActionList and SegmentedLinks uses
+the shared anchor URL policy. A refused destination renders a disabled span,
+never an actionable anchor; all column toggle, move and reset paths follow it.
+
 A component's behaviour registers the way its stylesheet does. The
 package that renders the markup embeds its module beside the Go and
 registers it with its markers:

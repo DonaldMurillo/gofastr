@@ -6,6 +6,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -53,7 +54,14 @@ func SegmentedLinks(cfg SegmentedLinksConfig) render.HTML {
 		if it.Href == "" || it.Text == "" {
 			panic("ui: SegmentedLinks item requires Text and Href")
 		}
-		attrs := map[string]string{"class": "fui-seglinks__item", "href": it.Href, "data-cui-internal": ""}
+		attrs := map[string]string{"class": "fui-seglinks__item", "data-cui-internal": ""}
+		tag := "span"
+		if href := urlsafe.CleanAnchor(it.Href); href != "" {
+			tag = "a"
+			attrs["href"] = href
+		} else {
+			attrs["aria-disabled"] = "true"
+		}
 		if it.Current {
 			attrs["aria-current"] = "true"
 		}
@@ -70,7 +78,7 @@ func SegmentedLinks(cfg SegmentedLinksConfig) render.HTML {
 				body = append(body, render.Tag("span", map[string]string{"class": "fui-seglinks__count"}, render.Text(it.Count)))
 			}
 		}
-		kids = append(kids, render.Tag("a", attrs, body...))
+		kids = append(kids, render.Tag(tag, attrs, body...))
 	}
 	root := map[string]string{}
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-label") {
