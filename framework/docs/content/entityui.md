@@ -373,6 +373,9 @@ the first page; the param rides every other link like `as`, and a size
 not on offer is ignored. A builder's `PageSize`, a preview (`Top`) and
 an embedded list offer none.
 
+An unset optional boolean draws the muted empty mark in table cells and
+bulk previews, not a No badge. Stored false and true draw No and Yes.
+
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
 none), `As("cards")`, `InlineEdit()` (a table's plain cells, an enum, a bool, a

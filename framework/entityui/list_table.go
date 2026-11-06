@@ -334,6 +334,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	switch f.Type {
 	case schema.Bool:
+		if val == "" {
+			return muted()
+		}
 		if truthy(val) {
 			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityYes.Text(ctx), Variant: ui.StatusSuccess})
 		}
