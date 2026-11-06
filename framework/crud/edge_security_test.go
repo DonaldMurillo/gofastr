@@ -773,23 +773,31 @@ func TestMCP_ToolCountDoesntLeak(t *testing.T) {
 	t.Parallel()
 	installSecurityOwnerExtractor(t)
 	ddl := `CREATE TABLE tenant_records (id TEXT PRIMARY KEY, tenant_id TEXT, user_id TEXT NOT NULL, val TEXT)`
-	cfg := entity.EntityConfig{Fields: []schema.Field{
+	cfg := entity.EntityConfig{Name: "tenant_records", Table: "tenant_records", Fields: []schema.Field{
 		{Name: "tenant_id", Type: schema.String},
 		{Name: "user_id", Type: schema.String, Required: true},
 		{Name: "val", Type: schema.String},
 	}, Scope: &entity.ScopeConfig{MultiTenant: true, OwnerField: "user_id"},
 	}.WithTimestamps(false)
-	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
+	ch, database := setupSecurityTestHandler(t, cfg, ddl)
+	seedRows(t, database, "tenant_records", []map[string]any{
+		{"id": "one", "tenant_id": "tenant-A", "user_id": "alice", "val": "first"},
+		{"id": "two", "tenant_id": "tenant-A", "user_id": "alice", "val": "second"},
+		{"id": "other-owner", "tenant_id": "tenant-A", "user_id": "bob", "val": "private"},
+		{"id": "other-tenant", "tenant_id": "tenant-B", "user_id": "alice", "val": "private"},
+	})
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET "+ch.mcpBase(), ch.List())
 	params := map[string]any{"page": 1, "limit": 1}
-	ctx := tenant.SetTenantID(context.Background(), "tenant-A")
-	ctx = withTestUserCtx("alice")
+	ctx := tenant.SetTenantID(withTestUserCtx("alice"), "tenant-A")
 	handler := ch.listTool(mux)
-	_, err := handler(ctx, params)
+	result, err := handler(ctx, params)
 	if err != nil {
-		if strings.Contains(err.Error(), "401") {
-			t.Logf("NOTE: [mcp] correctly rejected unauthenticated MCP count request")
-		}
+		t.Fatal(err)
+	}
+	response, ok := result.(map[string]any)
+	if !ok || fmt.Sprint(response["total"]) != "2" {
+		t.Fatalf("scoped MCP total = %#v, want 2", result)
 	}
 }
 
@@ -1240,11 +1248,18 @@ func TestHook_PanicInBeforeHook(t *testing.T) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				t.Logf("NOTE: [hook] panic in BeforeCreate was not caught by handler: %v. Consider adding recovery middleware.", r)
+				t.Fatalf("BeforeCreate panic escaped: %v", r)
 			}
 		}()
 		ch.Create()(rr, req)
 	}()
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("hook panic returned %d, want 500: %s", rr.Code, rr.Body.String())
+	}
+	var rows int
+	if err := db.QueryRow("SELECT COUNT(*) FROM hpanic").Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("panicking write persisted %d rows: %v", rows, err)
+	}
 	if rr.Code == http.StatusInternalServerError {
 		body := rr.Body.String()
 		forbidden := []string{"goroutine", "runtime.", "created by", "stack trace"}
