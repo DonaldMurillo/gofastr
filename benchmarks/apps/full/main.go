@@ -78,9 +78,15 @@ func main() {
 			// exercises the tenant-scoping path
 			MultiTenant: true}, Exposure: &framework.ExposureConfig{MCP: true},
 	})
-	fwApp.Registry.Register(authors)
-	fwApp.Registry.Register(posts)
-	fwApp.Registry.Register(comments)
+	if err := fwApp.Registry.Register(authors); err != nil {
+		log.Fatal(err)
+	}
+	if err := fwApp.Registry.Register(posts); err != nil {
+		log.Fatal(err)
+	}
+	if err := fwApp.Registry.Register(comments); err != nil {
+		log.Fatal(err)
+	}
 
 	if err := framework.AutoMigrate(db, fwApp.Registry); err != nil {
 		log.Fatal(err)

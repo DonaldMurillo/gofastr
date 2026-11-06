@@ -306,6 +306,8 @@ Three bench apps under `benchmarks/apps/<name>/`:
 | `full`    | Upper bound, every supported framework feature wired on: three related entities with relations, audit log, cron, MCP, UI host + one screen, file storage, in-memory search backend, RolePolicy + RequirePermission, multi-tenant scope, custom endpoints, plugin, OpenAPI + Swagger UI, lifecycle hooks. |
 
 Plus the two cmd binaries (`gofastr`, `kiln`) for build-only comparison.
+The entity-backed apps refuse invalid entity declarations at startup,
+before migration or serving, so a broken setup cannot yield measurements.
 
 Output is Markdown to stdout and `dist/bench/resources.md`:
 
