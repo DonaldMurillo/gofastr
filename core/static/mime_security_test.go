@@ -1,7 +1,10 @@
 package static
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"testing/fstest"
 )
 
 // TestMIME_DetectFromName verifies MIME type detection for common file
@@ -40,11 +43,13 @@ func TestMIME_HTMLNotServedAsImage(t *testing.T) {
 	}
 }
 
-// TestMIME_HiddenExtensionsDetected verifies that files with hidden
-// extensions get the correct MIME type. Attack: serving .env as text.
-func TestMIME_HiddenExtensionsDetected(t *testing.T) {
-	ct := DetectFromName(".env")
-	if ct == "" {
-		t.Logf("NOTE: [mime] .env has no specific MIME type (%q) — static handler should block dotfiles", ct)
+func TestHiddenFilesStayPrivate(t *testing.T) {
+	for _, name := range []string{".env", ".private/secret.txt", "public/.token"} {
+		files := fstest.MapFS{name: &fstest.MapFile{Data: []byte("private")}}
+		response := httptest.NewRecorder()
+		Handler(Config{FS: files}).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/"+name, nil))
+		if response.Code != http.StatusNotFound {
+			t.Errorf("GET /%s = %d, want 404", name, response.Code)
+		}
 	}
 }

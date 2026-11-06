@@ -6,7 +6,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
@@ -368,36 +367,46 @@ func TestMenu_ClassInjection(t *testing.T) {
 // rendered trigger doesn't leak XSS payloads via render.Text().
 func TestCommandPalette_ItemsXSS(t *testing.T) {
 	t.Parallel()
-	// CommandPalette doesn't accept Items. It uses RPC. Test via
-	// TriggerLabel which is rendered in the trigger button.
-	trigger := render.Tag("button", map[string]string{
-		"type":       "button",
-		"class":      "fui-visually-hidden",
-		"aria-label": `<script>alert("xss")</script>`,
-	}, render.Text(`<script>alert("xss")</script>`))
+	trigger, _ := CommandPalette(CommandPaletteConfig{
+		RPCPath: "/commands", FallbackHref: "/search",
+		TriggerLabel: `<script>alert("xss")</script>`,
+	})
 	h := string(trigger)
 	mustNotContainRaw(t, h, "<script>", "command-palette-items-xss")
+	if !strings.Contains(h, "&lt;script&gt;") {
+		t.Fatalf("trigger label is missing: %s", h)
+	}
 }
 
 // TestCommandPalette_PlaceholderXSS verifies that the placeholder text
 // in the combobox is escaped via render.Text().
 func TestCommandPalette_PlaceholderXSS(t *testing.T) {
 	t.Parallel()
-	h := string(render.Text(`<img src=x onerror="alert(1)">`))
+	_, palette := CommandPalette(CommandPaletteConfig{
+		RPCPath: "/commands", FallbackHref: "/search",
+		Placeholder: `<img src=x onerror="alert(1)">`,
+	})
+	h := string(palette.Definition().Slots[0].Component.Render())
 	mustNotContainRaw(t, h, "<img", "command-palette-placeholder-xss")
-	t.Logf("NOTE: [command-palette-placeholder-xss] combobox placeholder is render.Text-escaped")
+	if !strings.Contains(h, `placeholder="&lt;img src=x onerror=`) {
+		t.Fatalf("escaped placeholder is missing: %s", h)
+	}
 }
 
 // TestCommandPalette_ClassInjection verifies that the command palette
 // name (used as widget name and in IDs) cannot inject attributes.
 func TestCommandPalette_ClassInjection(t *testing.T) {
 	t.Parallel()
-	trigger := render.Tag("button", map[string]string{
-		"data-cui-open": `cmd"><script>alert(1)</script>`,
-		"aria-label":    "Open",
-	}, render.Text("Open"))
+	trigger, palette := CommandPalette(CommandPaletteConfig{
+		Name:    `cmd"><script>alert(1)</script>`,
+		RPCPath: "/commands", FallbackHref: "/search",
+	})
 	h := string(trigger)
+	h += string(palette.Definition().Slots[0].Component.Render())
 	mustNotContainRaw(t, h, "<script>", "command-palette-class-injection")
+	if !strings.Contains(h, "cmd&#34;&gt;&lt;script&gt;") && !strings.Contains(h, "cmd&quot;&gt;&lt;script&gt;") {
+		t.Fatalf("escaped palette name is missing: %s", h)
+	}
 }
 
 // TestDropdown_EmptyItemsHandled verifies that Menu panics with zero
@@ -646,13 +655,14 @@ func TestFileUpload_AcceptInjection(t *testing.T) {
 func TestDropzone_ActionXSS(t *testing.T) {
 	t.Parallel()
 	h := string(FileDropzone(FileDropzoneConfig{
-		Name:  `javascript:alert(1)`,
+		Name:  `drop" autofocus onfocus="alert(1)`,
 		Label: "Drop files",
 	}))
-	if strings.Contains(h, `href="javascript:`) {
-		t.Errorf("SECURITY: [dropzone-action-xss] javascript: leaked into href")
-	} else {
-		t.Logf("NOTE: [dropzone-action-xss] dropzone name is attr-escaped")
+	if strings.Contains(h, `" autofocus`) || strings.Contains(h, ` onfocus="`) {
+		t.Fatalf("dropzone field name escaped its attribute: %s", h)
+	}
+	if !strings.Contains(h, `name="drop&quot; autofocus onfocus=&quot;alert(1)"`) {
+		t.Fatalf("escaped field name is missing: %s", h)
 	}
 }
 

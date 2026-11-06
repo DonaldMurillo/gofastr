@@ -185,13 +185,13 @@ func TestSecurity_IslandID_NullBytes(t *testing.T) {
 // Tests 16-18: SSE signal injection
 // ===================================================================
 
-func TestSecurity_SSE_PushUpdateWithMaliciousHTML(t *testing.T) {
+func TestPushPreservesServerHTML(t *testing.T) {
 	t.Parallel()
 	// PushUpdate with script tags in HTML must pass through without sanitization
 	// at the transport layer, the framework trusts the server side.
 	// But the data must be structurally valid (correct island ID, correct session).
 	mgr := island.NewManager()
-	_, cancelSub4 := mgr.Subscribe("evil-sess")
+	updates, cancelSub4 := mgr.Subscribe("evil-sess")
 	defer cancelSub4()
 
 	mgr.PushUpdate(island.IslandUpdate{
@@ -199,9 +199,14 @@ func TestSecurity_SSE_PushUpdateWithMaliciousHTML(t *testing.T) {
 		HTML:     `<script>steal()</script>`,
 	}, "evil-sess")
 
-	// Verify the update arrived intact, framework does not sanitize server output.
-	// The security boundary is that only the server can call PushUpdate.
-	t.Logf("NOTE: Server-to-client transport does not sanitize HTML (trust boundary is server-side)")
+	select {
+	case update := <-updates:
+		if update.IslandID != "safe" || update.HTML != `<script>steal()</script>` {
+			t.Fatalf("pushed update changed: %+v", update)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("server HTML was not delivered")
+	}
 }
 
 func TestSecurity_SSE_MissingSessionReturnsError(t *testing.T) {
@@ -384,17 +389,24 @@ func TestSecurity_VeryLongIslandID_Render(t *testing.T) {
 	t.Logf("NOTE: Long ID renders without structural corruption (output len=%d)", len(out))
 }
 
-func TestSecurity_VeryLongIslandID_PushUpdate(t *testing.T) {
+func TestPushPreservesLongID(t *testing.T) {
 	t.Parallel()
 	// Push with a very long island ID should work without truncation.
 	mgr := island.NewManager()
 	longID := strings.Repeat("z", 4*1024)
 
-	_, cancelSub5 := mgr.Subscribe("sess")
+	updates, cancelSub5 := mgr.Subscribe("sess")
 	defer cancelSub5()
 	mgr.PushUpdate(island.IslandUpdate{IslandID: longID, HTML: "<p>push-long</p>"}, "sess")
 
-	t.Logf("NOTE: Push with 4KB island ID completed without error")
+	select {
+	case update := <-updates:
+		if update.IslandID != longID || update.HTML != "<p>push-long</p>" {
+			t.Fatalf("long-ID update changed: id bytes=%d, HTML=%q", len(update.IslandID), update.HTML)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("long-ID update was not delivered")
+	}
 }
 
 func TestSecurity_SpecialCharsIslandID_Render(t *testing.T) {

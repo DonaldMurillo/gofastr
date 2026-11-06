@@ -532,7 +532,7 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 	// kill the process.
 	defer func() {
 		if v := recover(); v != nil {
-			err = fmt.Errorf("redis queue: enqueue panicked: %v", v)
+			err = fmt.Errorf("redis queue: enqueue panicked: %s", textsafe.Recovered(v))
 		}
 	}()
 	if job.UniqueKey != "" {

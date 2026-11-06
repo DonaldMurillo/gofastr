@@ -370,7 +370,10 @@ events then go out once, on commit, and never on rollback.
 
 The same holds for a write in a `db.WithTx` context whose record carries
 no primary key: the framework cannot check it landed, so it is not
-announced. Each dropped event logs one warning per process.
+announced. One generic warning per process explains that this drop policy
+applies across all entity types and tables; it is not a per-event or
+per-table diagnostic. Carry and drain a `db.WithTxQueue` commit queue to
+preserve those events.
 
 ### Handling validation errors
 
