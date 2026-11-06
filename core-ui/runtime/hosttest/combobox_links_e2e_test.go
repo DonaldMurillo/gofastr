@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/input"
+	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 
@@ -84,9 +85,17 @@ func comboboxLinkSite(t *testing.T, rows, surface string, negative render.HTML) 
 	return server
 }
 
-func comboboxLinkPage(t *testing.T, server *httptest.Server, rows, surface string) context.Context {
+func comboboxLinkPage(t *testing.T, server *httptest.Server, rows, surface string, beforeBoot ...string) context.Context {
 	t.Helper()
 	ctx := chromedptest.Context(t, chromedptest.Timeout(45*time.Second))
+	for _, script := range beforeBoot {
+		if err := chromedp.Run(ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+			_, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)
+			return err
+		})); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := chromedp.Run(ctx, chromedp.EmulateViewport(390, 844), chromedp.Navigate(server.URL)); err != nil {
 		t.Fatal(err)
 	}

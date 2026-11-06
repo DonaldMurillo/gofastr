@@ -722,15 +722,16 @@ few lines, and link the PR or the docs page for the rest.
   new session, so the reopened stream is accepted. A superseded navigation's loading exit
   still finishes within its cap, so its cleanup and `aria-busy` reset
   run. BackToTop recomputes its threshold after a soft navigation or an
-  island update that removes links. A
+  island update that removes links, and counts a link again when it is put
+  back on the page. A
   wizard submit that never answered no longer moves focus on a later
   page.
 - **Toasts and the notification bell.** A server-rendered default or
   polite `Toast` row carries a live status role, while the stack around
   it stays non-live; the runtime's toast and sortable-list regions, the
   fallback toast drawn when the feedback module cannot load, and text
-  signal nodes given a status or alert role drop the redundant
-  `aria-live`. Dismissing or evicting a toast returns focus
+  signal nodes whose role list holds a status or alert token (padded
+  or behind a fallback role included) drop the redundant `aria-live`. Dismissing or evicting a toast returns focus
   to where it came from, unless focus has moved elsewhere since.
   `NotificationBell` keeps its label in the accessible name when the
   unread count updates.
@@ -751,7 +752,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`embed.New` refuses a dynamic screen route** (`/reports/:id`) at
   boot, naming the surface and route. Before, it rendered the pattern
   as a request path, so the parameter bound to the literal `:id` or a
-  sibling screen answered. Register a static screen for the embed.
+  sibling screen answered. Register a static screen for the embed. A brace
+  or colon inside a literal segment (`/reports/rev{1}`) is static and
+  still embeds.
 - **Docs corrections.** `SecurityHeadersConfig.Secure` and HSTS
   auto-detection; BackToTop's `ScrollTarget`, an element id with an
   optional `#` rather than a selector; and `OnWindowFrame`, which
@@ -767,10 +770,17 @@ few lines, and link the PR or the docs page for the rest.
   Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
   plain click or keyboard pick navigates in-page once, so one Back
   returns to where it started, fragment links included, and a link
-  option that also sets a signal still navigates. Focus traps in modals,
-  drawers, disclosures and panes skip elements with a negative
-  `tabindex`, so Tab and Shift+Tab stay inside them, including from a
-  focused negative-`tabindex` element. `navigate()` resolves a relative
+  option that also sets a signal still navigates. A click or Enter a
+  page listener cancels stays cancelled. Focus traps in modals, drawers,
+  disclosures and panes skip elements that cannot take focus: a negative
+  `tabindex`, a hidden or `inert` subtree, or a closed nested disclosure.
+  Tab and Shift+Tab stay inside the trap, including from a focused
+  negative-`tabindex` element and in browsers without
+  `checkVisibility()`; a nested disclosure's native `<summary>` stays a
+  stop, and an open nested disclosure's controls keep their place in the
+  trap's Tab order. A modal or intercepted page that opens moves focus to
+  its first drawn control, past hidden ones and a hidden `autofocus`
+  target. `navigate()` resolves a relative
   destination against `<base href>` when deciding it is the current
   page. `ComboboxRows`
   refuses duplicate option IDs, as `Combobox` does. The site-search palette

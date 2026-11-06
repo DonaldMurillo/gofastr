@@ -4748,14 +4748,12 @@ func (ds *UIHost) PageHandler(path string) http.HandlerFunc {
 }
 
 // isDynamicScreenPath reports whether path names a dynamic screen in
-// either spelling the router accepts: a "{name}" segment, or a
-// ":name" segment (the form the router stores in Screen.Path).
+// either spelling the router accepts: a whole "{name}" segment, or a
+// ":name" segment (the form the router stores in Screen.Path). A brace
+// inside a literal segment, "/reports/rev{1}", is a static path.
 func isDynamicScreenPath(path string) bool {
-	if strings.Contains(path, "{") {
-		return true
-	}
 	for _, seg := range strings.Split(path, "/") {
-		if strings.HasPrefix(seg, ":") {
+		if strings.HasPrefix(seg, ":") || (len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}') {
 			return true
 		}
 	}

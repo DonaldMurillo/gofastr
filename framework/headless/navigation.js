@@ -40,10 +40,18 @@
   let observer = null;
   const links = new Set();
 
+  // A link leaves the set when it leaves the page. Its armed marker goes
+  // with it, so the same node put back (a moved or re-inserted island)
+  // arms again when the insertion scan reaches it.
+  function forget(link) {
+    links.delete(link);
+    delete link.dataset.huiBttArmed;
+  }
+
   function updateThreshold() {
     let threshold = 0;
     for (const link of links) {
-      if (!link.isConnected) { links.delete(link); continue; }
+      if (!link.isConnected) { forget(link); continue; }
       threshold = Math.max(threshold, parseInt(link.getAttribute('data-hui-back-to-top-threshold'), 10) || 0);
     }
     if (sentinel) sentinel.style.height = threshold + 'px';
@@ -51,7 +59,7 @@
 
   function applyVisible(visible) {
     for (const link of Array.from(links)) {
-      if (!link.isConnected) { links.delete(link); continue; }
+      if (!link.isConnected) { forget(link); continue; }
       if (visible) link.setAttribute('data-hui-back-to-top-visible', '');
       else link.removeAttribute('data-hui-back-to-top-visible');
     }

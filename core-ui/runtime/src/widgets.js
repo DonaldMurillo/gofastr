@@ -347,14 +347,12 @@
         // Without this, focus races the demand-loaded position:fixed CSS and
         // scrolls the page to the element's transient in-flow position
         // (a tall drawer jumps the page by its own height on open).
+        // A drawn [autofocus] target wins; otherwise the first Tab
+        // stop, which skips hidden controls.
         const explicit = w.querySelector('[autofocus]');
-        if (explicit) {
-          explicit.removeAttribute('autofocus');
-          explicit.focus({ preventScroll: true });
-          return;
-        }
-        const first = Array.from(w.querySelectorAll(NS._focusSel)).find(el => el.tabIndex >= 0);
-        if (first) first.focus({ preventScroll: true });
+        const target = explicit && NS._rendered(explicit) ? explicit : NS._firstStop(w) || explicit;
+        if (explicit) explicit.removeAttribute('autofocus');
+        if (target) target.focus({ preventScroll: true });
       });
     }
     function dismiss() {
