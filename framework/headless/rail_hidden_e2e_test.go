@@ -8,7 +8,20 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
+// railPaths runs a rail test with the browser's checkVisibility() and
+// without it, the way Safari before 17.4 runs the rail.
+var railPaths = []struct{ name, prefix string }{
+	{"native", ""},
+	{"fallback", `<script>delete Element.prototype.checkVisibility</script>`},
+}
+
 func TestRailSkipsHiddenTargets(t *testing.T) {
+	for _, path := range railPaths {
+		t.Run(path.name, func(t *testing.T) { testRailSkipsHiddenTargets(t, path.prefix) })
+	}
+}
+
+func testRailSkipsHiddenTargets(t *testing.T, prefix string) {
 	for _, hidden := range []string{
 		`<section id="concealed" hidden>Hidden</section>`,
 		`<section id="concealed" style="display:none">Hidden</section>`,
@@ -19,7 +32,7 @@ func TestRailSkipsHiddenTargets(t *testing.T) {
 				Label: "Sections", ObserveSelector: "#region",
 				Items: []RailItem{{Anchor: "visible", Text: "Visible"}, {Anchor: "concealed", Text: "Hidden"}},
 			}, nil)
-			body := string(nav) + `<div style="height:120vh"></div><div id="region"><section id="visible" style="height:120vh">Visible</section>` + hidden + `</div><div style="height:200vh"></div>`
+			body := prefix + string(nav) + `<div style="height:120vh"></div><div id="region"><section id="visible" style="height:120vh">Visible</section>` + hidden + `</div><div style="height:200vh"></div>`
 			ctx := behaviorPage(t, startBehaviorServer(t, body))
 			if !pollTrue(ctx, controlsLoadedExpr("headless-rail")) {
 				t.Fatal("rail module did not load")
@@ -36,7 +49,7 @@ func TestRailSkipsHiddenTargets(t *testing.T) {
 				chromedp.Poll(railActiveExpr("[data-hui-rail]", "visible"), nil, chromedp.WithPollingTimeout(2*time.Second)),
 			); err != nil {
 				var state string
-				_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({scrollY, targets: ['visible', 'concealed'].map(id => { const target = document.getElementById(id); return {id, rect: target.getBoundingClientRect().toJSON(), rects: target.getClientRects().length, visible: target.checkVisibility(), active: document.querySelector('a.is-active')?.getAttribute('href')}; })})`, &state))
+				_ = chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({scrollY, targets: ['visible', 'concealed'].map(id => { const target = document.getElementById(id); return {id, rect: target.getBoundingClientRect().toJSON(), rects: target.getClientRects().length,  active: document.querySelector('a.is-active')?.getAttribute('href')}; })})`, &state))
 				t.Fatalf("rail must retain the last visible section, not the hidden target: %v; state: %s", err, state)
 			}
 		})
@@ -44,6 +57,12 @@ func TestRailSkipsHiddenTargets(t *testing.T) {
 }
 
 func TestRailBootSkipsHiddenTargets(t *testing.T) {
+	for _, path := range railPaths {
+		t.Run(path.name, func(t *testing.T) { testRailBootSkipsHiddenTargets(t, path.prefix) })
+	}
+}
+
+func testRailBootSkipsHiddenTargets(t *testing.T, prefix string) {
 	for _, scenario := range []struct {
 		name   string
 		body   string
@@ -59,7 +78,7 @@ func TestRailBootSkipsHiddenTargets(t *testing.T) {
 				Label: "Sections", ObserveSelector: "#region",
 				Items: []RailItem{{Anchor: "concealed", Text: "Hidden"}, {Anchor: "visible", Text: "Visible"}},
 			}, nil)
-			ctx := behaviorPage(t, startBehaviorServer(t, string(nav)+`<div style="height:120vh"></div><div id="region">`+scenario.body+`</div>`))
+			ctx := behaviorPage(t, startBehaviorServer(t, prefix+string(nav)+`<div style="height:120vh"></div><div id="region">`+scenario.body+`</div>`))
 			if !pollTrue(ctx, controlsLoadedExpr("headless-rail")) {
 				t.Fatal("rail module did not load")
 			}
