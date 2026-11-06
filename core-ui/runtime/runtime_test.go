@@ -546,8 +546,8 @@ func contains(s, substr string) bool {
 }
 
 // TestRuntimeSignalAriaLiveContract pins the source-level contract that
-// the runtime injects role="status" aria-live="polite" aria-atomic="true"
-// onto every [data-cui-signal] node. Two integration points must exist:
+// the runtime injects role="status" and aria-atomic="true" onto text-mode
+// [data-cui-signal] nodes, without redundant aria-live. Two integration points must exist:
 //  1. _initialPass (boot-time scan)
 //  2. gofastr:navigate handler (post-SPA-nav scan)
 //
@@ -570,7 +570,7 @@ func TestRuntimeSignalAriaLiveContract(t *testing.T) {
 	if !contains(js, `role":"status"`) && !contains(js, `role","status`) && !contains(js, `setAttribute('role','status'`) && !contains(js, `setAttribute("role","status"`) {
 		t.Error(`runtime missing setAttribute('role','status') in signal aria injection`)
 	}
-	// Must set aria-live="polite".
+	// Must set aria-live="polite" when an existing role has no live semantics.
 	if !contains(js, `aria-live`) {
 		t.Error(`runtime missing aria-live attribute in signal aria injection`)
 	}
