@@ -55,17 +55,15 @@ type Options struct {
 	// set as the content of about:blank, which has no response headers,
 	// so the print route's Content-Security-Policy does not reach it (the
 	// shell also emits the policy as an in-document meta). Without a
-	// resolver rule, a caller-supplied URL that reaches a URL attribute,
-	// ui.Avatar{Src} on a receipt, say, is fetched by a browser sitting
-	// inside the trust boundary, and the response is rendered into the
-	// downloaded PDF: a readable channel to 169.254.169.254, loopback
-	// admin panels, and RFC1918.
+	// resolver rule, any network request the document's CSP permits is
+	// fetched by a browser inside the trust boundary, potentially exposing
+	// 169.254.169.254, loopback admin panels, and RFC1918 in the PDF.
 	//
-	// A document whose CSS and images are inlined (what the shell
-	// produces) needs no network, so the default costs nothing. Name a
-	// host here only when a PDF genuinely must pull a remote asset, and
-	// note that an allowed host's DNS still decides which IP it reaches,
-	// so allow only hosts you control.
+	// The allow-list does not widen the document's CSP. Through battery/print,
+	// remote images and fonts remain blocked even for an allowed host; only
+	// the BaseURL stylesheet origin is added to the shell's style-src.
+	// A document with inlined assets needs no network. An allowed host's DNS
+	// still decides which IP it reaches, so allow only hosts you control.
 	//
 	// print.Config.BaseURL is one such case: the app.css link it makes
 	// absolute is fetched from BaseURL's host, so name that host here
