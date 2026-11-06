@@ -444,6 +444,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 
 	// ADD COLUMN for declared-but-missing fields.
 	added := map[string]string{} // column → type, for the rebuild below
+	deferredRequired := map[string]bool{}
 	for _, f := range ent.GetFields() {
 		if _, ok := liveLower[strings.ToLower(f.Name)]; ok {
 			continue
@@ -469,6 +470,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 				nullable = " NOT NULL"
 			} else {
 				summary += " (NOT NULL deferred: no default for existing rows)"
+				deferredRequired[f.Name] = true
 			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",
@@ -524,6 +526,10 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// see the post-rename/post-add/post-drop column set).
 	var sqliteRetypes []retypeCol
 	defaultOwned := map[string]bool{}
+	var previousConstraints map[string]colConstraint
+	if env != nil {
+		previousConstraints, _ = recordedConstraints(lookupStringCase(env.tableDDL, ent.GetTable()))
+	}
 	for _, f := range ent.GetFields() {
 		if f.RawType != "" {
 			continue // operator-supplied raw type (domains, arrays, custom types), not reliably diffable against the live DB type, which reports the underlying type
@@ -554,10 +560,14 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if isTextType(liveType) && isIntegerType(declaredType) {
 			defaultOwned[nameLow] = true // the USING form sets the declared default
 		}
+		source := nameLow
+		if old, renamed := renameOldByNew[nameLow]; renamed {
+			source = old
+		}
 		changes = append(changes, SchemaChange{
 			Summary:     fmt.Sprintf("%s: change column %s type %s → %s (destructive: data conversion may be required)", ent.GetName(), f.Name, liveType, declaredType),
 			SQL:         alterColumnTypeSQL(qtable, qcol, liveType, declaredType, ColumnDefaultClause(f, dialect)),
-			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, ""),
+			Down:        alterColumnTypeSQL(qtable, qcol, declaredType, liveType, previousConstraints[source].dflt),
 			Destructive: true,
 		})
 	}
@@ -736,7 +746,15 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		// the table.
 		rebuildLive := maps.Clone(live)
 		maps.Copy(rebuildLive, added)
-		rebuild, err := sqliteRebuildChange(ent, all, dialect, rebuildLive, renameOldByNew, summary, false)
+		rebuildEntity := *ent
+		rebuildEntity.Config.Fields = slices.Clone(ent.Config.Fields)
+		for index := range rebuildEntity.Config.Fields {
+			field := &rebuildEntity.Config.Fields[index]
+			if deferredRequired[field.Name] {
+				field.Required = false
+			}
+		}
+		rebuild, err := sqliteRebuildChange(&rebuildEntity, all, dialect, rebuildLive, renameOldByNew, summary, false)
 		if err != nil {
 			return nil, err
 		}

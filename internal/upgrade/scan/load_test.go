@@ -175,9 +175,9 @@ func TestSolveImpliedOSTags(t *testing.T) {
 		{"x_ios.go", "darwin", "ios"},
 		{"x_illumos.go", "solaris", "illumos"},
 	} {
-		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
-		if !ok || cfg.goos != c.goos {
-			t.Errorf("%s with //go:build %s: got %+v ok=%v, want GOOS=%s", c.name, c.tag, cfg, ok, c.goos)
+		cfg, err := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
+		if err != nil || cfg.goos != c.goos {
+			t.Errorf("%s with //go:build %s: got %+v err=%v, want GOOS=%s", c.name, c.tag, cfg, err, c.goos)
 		}
 	}
 }
@@ -191,9 +191,9 @@ func TestSolveOSPinsValidArch(t *testing.T) {
 		{"illumos", "amd64"},
 		{"aix", "ppc64"},
 	} {
-		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), "x.go")
-		if !ok || cfg.goos != c.tag || cfg.goarch != c.goarch {
-			t.Errorf("//go:build %s: got %+v ok=%v, want GOOS=%s GOARCH=%s", c.tag, cfg, ok, c.tag, c.goarch)
+		cfg, err := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), "x.go")
+		if err != nil || cfg.goos != c.tag || cfg.goarch != c.goarch {
+			t.Errorf("//go:build %s: got %+v err=%v, want GOOS=%s GOARCH=%s", c.tag, cfg, err, c.tag, c.goarch)
 		}
 	}
 }
@@ -201,16 +201,16 @@ func TestSolveOSPinsValidArch(t *testing.T) {
 // zos is a known GOOS no supported pair reaches: the _zos suffix still
 // constrains the file, and -tags satisfies the name on the host.
 func TestSolveUnpairableOSViaTags(t *testing.T) {
-	cfg, ok := solveFileConfig([]byte("package main\n"), "x_zos.go")
-	if !ok || cfg.goos != runtime.GOOS || cfg.goarch != runtime.GOARCH || !slices.Equal(cfg.tags, []string{"zos"}) {
-		t.Errorf("x_zos.go: got %+v ok=%v, want host platform with tags [zos]", cfg, ok)
+	cfg, err := solveFileConfig([]byte("package main\n"), "x_zos.go")
+	if err != nil || cfg.goos != runtime.GOOS || cfg.goarch != runtime.GOARCH || !slices.Equal(cfg.tags, []string{"zos"}) {
+		t.Errorf("x_zos.go: got %+v err=%v, want host platform with tags [zos]", cfg, err)
 	}
 }
 
 // go/build remaps boringcrypto to goexperiment.boringcrypto, which no
 // -tags value carries: no configuration in the solver's space exists.
 func TestSolveBoringcryptoNoConfig(t *testing.T) {
-	if _, ok := solveFileConfig([]byte("//go:build boringcrypto\n\npackage main\n"), "x.go"); ok {
+	if _, err := solveFileConfig([]byte("//go:build boringcrypto\n\npackage main\n"), "x.go"); err == nil {
 		t.Error("//go:build boringcrypto: got a configuration, want unsatisfiable")
 	}
 }
@@ -224,9 +224,9 @@ func TestSolveSuffixSatisfiedByImplyingOS(t *testing.T) {
 		{"x_linux.go", "android", "android"},
 		{"x_solaris.go", "illumos", "illumos"},
 	} {
-		cfg, ok := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
-		if !ok || cfg.goos != c.goos {
-			t.Errorf("%s with //go:build %s: got %+v ok=%v, want GOOS=%s", c.name, c.tag, cfg, ok, c.goos)
+		cfg, err := solveFileConfig([]byte("//go:build "+c.tag+"\n\npackage main\n"), c.name)
+		if err != nil || cfg.goos != c.goos {
+			t.Errorf("%s with //go:build %s: got %+v err=%v, want GOOS=%s", c.name, c.tag, cfg, err, c.goos)
 		}
 	}
 }
@@ -238,9 +238,9 @@ func TestSolveSuffixPicksOwnOS(t *testing.T) {
 	if runtime.GOOS == "linux" || runtime.GOOS == "android" {
 		t.Skipf("host %s satisfies _linux itself", runtime.GOOS)
 	}
-	cfg, ok := solveFileConfig([]byte("package main\n"), "x_linux.go")
-	if !ok || cfg.goos != "linux" || cfg.goarch != runtime.GOARCH {
-		t.Errorf("x_linux.go: got %+v ok=%v, want GOOS=linux GOARCH=%s", cfg, ok, runtime.GOARCH)
+	cfg, err := solveFileConfig([]byte("package main\n"), "x_linux.go")
+	if err != nil || cfg.goos != "linux" || cfg.goarch != runtime.GOARCH {
+		t.Errorf("x_linux.go: got %+v err=%v, want GOOS=linux GOARCH=%s", cfg, err, runtime.GOARCH)
 	}
 }
 

@@ -215,6 +215,12 @@ func TestRemoteAssistFlow(t *testing.T) {
 	pollExpr(t, support, `'' + window.__assist?.pcState`, "connected", 30*time.Second)
 	pollExpr(t, support, `'' + !!document.getElementById('assist-remote').srcObject`, "true", 15*time.Second)
 	pollExpr(t, support, `'' + !document.getElementById('assist-pill-media-on').hidden`, "true", 15*time.Second)
+	if err := chromedp.Run(support, chromedp.Reload()); err != nil {
+		t.Fatal(err)
+	}
+	pollExpr(t, support, `'' + window.__assist?.phase`, "hydrated", 15*time.Second)
+	pollExpr(t, support, `'' + window.__assist?.pcState`, "connected", 15*time.Second)
+	pollExpr(t, support, `'' + !!document.getElementById('assist-remote').srcObject`, "true", 15*time.Second)
 
 	// The microphone never exists: the operator's stream is video-only.
 	pollExpr(t, operator,

@@ -221,6 +221,8 @@ func (s *SMTPSender) Send(ctx context.Context, email Email) (sendErr error) {
 			if err := client.Auth(auth); err != nil {
 				return fmt.Errorf("%w: auth failed: %v", ErrSendFailed, err)
 			}
+		} else {
+			return fmt.Errorf("%w: server does not advertise AUTH", ErrSendFailed)
 		}
 	}
 

@@ -282,8 +282,8 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	if !pollJS(ctx, moduleLoaded("headless-bell")) {
 		t.Fatal("the bell marker never loaded headless-bell")
 	}
-	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "2 unread notifications" {
-		t.Fatalf("SSR aria-label = %q, want \"2 unread notifications\"", got)
+	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "Notifications: 2 unread notifications" {
+		t.Fatalf("SSR aria-label = %q, want \"Notifications: 2 unread notifications\"", got)
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('unread', '7')`, nil)); err != nil {
 		t.Fatal(err)
@@ -291,8 +291,8 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	if !pollJS(ctx, `document.querySelector('#bell [data-hui-notification-count]').textContent === '7'`) {
 		t.Fatal("the kernel never wrote 7 into the badge")
 	}
-	if !pollJS(ctx, `document.getElementById('bell').getAttribute('aria-label') === '7 unread notifications'`) {
-		t.Fatalf("after setSignal('unread','7') the bell says %q, want \"7 unread notifications\"",
+	if !pollJS(ctx, `document.getElementById('bell').getAttribute('aria-label') === 'Notifications: 7 unread notifications'`) {
+		t.Fatalf("after setSignal('unread','7') the bell says %q, want \"Notifications: 7 unread notifications\"",
 			evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`))
 	}
 	// A badge that is not a whole count ("12x") leaves the spoken
@@ -307,7 +307,7 @@ func TestBellLabelFollowsUnreadSignal(t *testing.T) {
 	if err := chromedp.Run(ctx, chromedp.Sleep(150*time.Millisecond)); err != nil {
 		t.Fatal(err)
 	}
-	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "7 unread notifications" {
+	if got := evalString(ctx, `document.getElementById('bell').getAttribute('aria-label')`); got != "Notifications: 7 unread notifications" {
 		t.Errorf("a badge of 12x changed the spoken count to %q, want the last whole count kept", got)
 	}
 	if got := evalString(ctx, `document.querySelector('#bell [data-hui-notification-count]').getAttribute('data-hui-notification-count')`); got != "7" {

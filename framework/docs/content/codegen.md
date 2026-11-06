@@ -59,7 +59,32 @@ CLI flags override config values where they overlap:
 - `--clean` and `--no-clean` override `codegen.clean`.
 
 Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
+With `--json`, invalid flags and missing arguments produce one error
+document on stdout (`files: []`, `errors: [{message: ...}]`); prose and
+usage hints go to stderr. The same error shape applies to every generate
+verb, including a verb that rejects `--json` as unsupported.
 Any other argument is an error.
+Watch mode also tracks the enclosing `go.mod`, including when the codegen
+config lives in a subdirectory, so module-path edits rebuild generated imports.
+With `--watch --json`, stdout is a stream of JSON documents, one per cycle
+(including failed cycles). Read it with a streaming JSON decoder such as
+`jq`; banners and cycle status go to stderr, and no terminal-clear escape
+is emitted. A failed cycle does not stop watching; repair the input and save
+to generate again.
+
+JSON runs send extension diagnostics to stderr and suppress overwrite
+warnings on stdout. An error diagnostic returns the error document and
+fails the run before generated files are written.
+
+Source, configuration, and write failures use the same error document in
+both dry runs and write runs. Plain generate emits its single success
+document only after endpoint and client rebuilds succeed; a late failure
+reports an error, not a second document after a success. Writes completed
+before an I/O failure are not rolled back; fix the error and rerun.
+
+Engine JSON `files[].path` includes `codegen.output` (or `--out`), just
+like the text report, in dry runs and write runs. Resolve relative paths
+from the discovered project's directory, where generation runs.
 
 ## Config shape
 
@@ -92,7 +117,8 @@ output as `gofastr generate sdk`; see the [sdk](sdk.md) doc. An entry named
 writes beside each sheet rather than under `codegen.output`, so it takes no
 `output` or `source`; its only config key is `patterns`, a list of Go
 package patterns (`./...` when absent). `--dry-run` skips it, and
-`--dry-run --json` refuses a config that lists it.
+`--json` refuses a config that lists it before any writes: styles has
+neither a dry run nor a JSON report. Run styles separately without `--json`.
 
 An entry named `cli` runs `gofastr generate cli` after the engine. It writes
 to its own `output` (default `cmd/<binary>`), not under `codegen.output`,

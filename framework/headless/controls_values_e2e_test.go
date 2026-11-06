@@ -5,37 +5,78 @@ package headless
 
 import (
 	"testing"
-	"time"
 
 	"github.com/chromedp/chromedp"
 )
 
-// A live update to a counter's signal during its arrival animation
-// stands: the animation is presentation and never owns the number. A
-// rescan of the same markup (an insertion elsewhere) is not a second
-// arrival and does not walk the number again.
+// A live update before the counter's first frame or between frames
+// stands, even when it matches the last painted number: the animation
+// is presentation and never owns the number. Holding the browser's
+// animation callbacks makes each ordering deterministic. A rescan of
+// the same markup is not a second arrival.
 func TestE2E_CounterAnimationDoesNotOverwriteALiveValue(t *testing.T) {
-	from := 0
-	c := Counter(CounterProps{Signal: "seats", Label: "Seats", Value: 10, AnimateFrom: &from, DurationMS: 1200}, nil)
-	b := startBehaviorServer(t, string(c))
-	ctx := behaviorPage(t, b)
-	if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
-		t.Fatal("module never loaded")
-	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('seats', 42)`, nil)); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(1800 * time.Millisecond)
-	read := `document.querySelector('[data-cui-signal="seats"]').textContent + '|' + window.__gofastr.getSignal('seats')`
-	if got := evalString(t, ctx, read); got != "42|42" {
-		t.Fatalf("after a live update to 42 mid-animation the counter shows|holds %q, want 42|42", got)
-	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr._moduleScanners['headless-controls'](document)`, nil)); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if got := evalString(t, ctx, read); got != "42|42" {
-		t.Fatalf("a rescan of the same counter re-ran its arrival walk: shows|holds %q, want 42|42", got)
+	for _, testCase := range []struct {
+		name       string
+		firstFrame bool
+		liveValue  string
+	}{
+		{name: "before-first-frame", liveValue: "42"},
+		{name: "between-frames", firstFrame: true, liveValue: "42"},
+		{name: "matching-painted-value", firstFrame: true, liveValue: "0"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			from := 0
+			counter := Counter(CounterProps{Signal: "seats", Label: "Seats", Value: 10, AnimateFrom: &from, DurationMS: 1200}, nil)
+			server := startBehaviorServer(t, `<script>
+window.__counterFrames = [];
+window.requestAnimationFrame = callback => window.__counterFrames.push({callback, requested: performance.now()});
+</script>`+string(counter))
+			ctx := behaviorPage(t, server)
+			if !pollTrue(ctx, controlsLoadedExpr(ControlsBehaviorName)) {
+				t.Fatal("module never loaded")
+			}
+			read := `document.querySelector('[data-cui-signal="seats"]').textContent + '|' + window.__gofastr.getSignal('seats')`
+			queued := `String(window.__counterFrames.length)`
+			if got := evalString(t, ctx, read); got != "10|10" {
+				t.Fatalf("before the first frame the counter shows|holds %q, want 10|10", got)
+			}
+			if got := evalString(t, ctx, queued); got != "1" {
+				t.Fatalf("module load queued %s animation frames, want 1", got)
+			}
+			t.Log("module loaded: shows|holds 10|10; first animation frame queued, not run")
+			if testCase.firstFrame {
+				if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__counterFrames.splice(0).forEach(frame => frame.callback(frame.requested))`, nil)); err != nil {
+					t.Fatal(err)
+				}
+				if got := evalString(t, ctx, read); got != "0|10" {
+					t.Fatalf("the first frame shows|holds %q, want 0|10", got)
+				}
+				t.Log("first animation frame: shows|holds 0|10")
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr.setSignal('seats', `+testCase.liveValue+`)`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			want := testCase.liveValue + "|" + testCase.liveValue
+			if got := evalString(t, ctx, read); got != want {
+				t.Fatalf("the live write shows|holds %q, want %s", got, want)
+			}
+			t.Logf("live write before queued frame: shows|holds %s", want)
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__counterFrames.splice(0).forEach(frame => frame.callback(frame.requested + 1200))`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			if got := evalString(t, ctx, read); got != want {
+				t.Fatalf("after the queued frame the counter shows|holds %q, want %s", got, want)
+			}
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`window.__gofastr._moduleScanners['headless-controls'](document)`, nil)); err != nil {
+				t.Fatal(err)
+			}
+			if got := evalString(t, ctx, queued); got != "0" {
+				t.Fatalf("a rescan queued %s animation frames, want 0", got)
+			}
+			if got := evalString(t, ctx, read); got != want {
+				t.Fatalf("a rescan of the same counter shows|holds %q, want %s", got, want)
+			}
+		})
 	}
 }
 

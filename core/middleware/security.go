@@ -37,9 +37,9 @@ type SecurityHeadersConfig struct {
 	HSTSIncludeSub bool
 	HSTSPreload    bool
 
-	// Secure indicates whether the connection is over HTTPS.
-	// When true AND HSTSMaxAge > 0, the Strict-Transport-Security header is added.
-	// Defaults to true.
+	// Secure forces HSTS on even for plain HTTP. False (the default)
+	// keeps HTTPS auto-detection via TLS or X-Forwarded-Proto: https;
+	// it does not disable HSTS. Set HSTSMaxAge: -1 to disable it.
 	Secure bool
 }
 

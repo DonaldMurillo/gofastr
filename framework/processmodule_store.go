@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // ProcessModuleStore is the SQL-backed coordination substrate for
@@ -462,7 +463,8 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	// approval does not cover them, so the migration coordinator must run
 	// again before the module may reach Ready.
 	unstamp := ""
-	if prev.ArtifactSHA256 != d.ArtifactSHA256 {
+	artifactChanged := asciicase.Lower(prev.ArtifactSHA256) != asciicase.Lower(d.ArtifactSHA256)
+	if artifactChanged {
 		unstamp = ", migrations_applied_at = NULL"
 	}
 	target := withoutRevoked(d.EffectiveGrants, prev.RevokedGrants)
@@ -491,7 +493,7 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 		upd = fmt.Sprintf(`UPDATE %s SET effective_grants = %s, artifact_sha256 = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
 			query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), unstamp, place(s.dialect, 3))
 		args = []any{string(grantsJSON), d.ArtifactSHA256, d.Module}
-	case prev.ArtifactSHA256 != d.ArtifactSHA256:
+	case artifactChanged:
 		res.Outcome = InstallArtifactChanged
 		upd = fmt.Sprintf(`UPDATE %s SET artifact_sha256 = %s, desired_generation = desired_generation + 1%s WHERE module = %s`,
 			query.QuoteFolded(desiredTable), place(s.dialect, 1), unstamp, place(s.dialect, 2))
@@ -777,7 +779,7 @@ func (s *SQLProcessModuleStore) SetMigrationsAppliedAt(ctx context.Context, modu
 // while the row still names artifactSHA256, in one UPDATE. It reports
 // false when the row names another artifact.
 func (s *SQLProcessModuleStore) setMigrationsAppliedFor(ctx context.Context, module, artifactSHA256 string, at time.Time) (bool, error) {
-	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s AND artifact_sha256 = %s`,
+	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s AND LOWER(artifact_sha256) = LOWER(%s)`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
 	res, err := s.db.ExecContext(ctx, q, timeToMillis(&at), module, artifactSHA256)
 	if err != nil {

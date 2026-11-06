@@ -123,8 +123,8 @@ func inProcess(r *http.Request) bool {
 
 // CreateOne runs the full Create pipeline (BeforeCreate hooks → INSERT →
 // AfterCreate hooks) inside a single transaction and emits entity.created on
-// commit. Returns the created row as a snake_cased map; convert to a typed
-// struct in your caller.
+// commit. Returns the created row keyed by wire key (camelCase by default);
+// convert to a typed struct in your caller.
 //
 // By default ReadOnly and Hidden fields in body are silently skipped
 // (matching the HTTP Create path). To persist them from trusted server
@@ -132,6 +132,7 @@ func inProcess(r *http.Request) bool {
 // remain context-stamped regardless. Hidden fields stay absent from the
 // returned map (visibleFields shapes the projection, not the write set).
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}
@@ -466,6 +467,7 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 // rolls back the whole batch, same semantics as the HTTP _batch endpoint.
 // Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
+	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
 	}

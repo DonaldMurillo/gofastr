@@ -16,8 +16,10 @@
 //	coreApp := app.NewApp("My App")
 //	// … screens, uihost.New, fwApp.Mount(host) …
 //	sdkdocs.Mount(coreApp, fwApp.Router(), sdkdocs.Config{
-//	    Registry:  fwApp.Registry,
-//	    Artifacts: os.DirFS("gen/sdk/dist"),
+//	    Registry:        fwApp.Registry,
+//	    CRUDMounted:     fwApp.EntityCRUDMounted,
+//	    ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
+//	    Artifacts:       os.DirFS("gen/sdk/dist"),
 //	})
 package sdkdocs
 
@@ -61,6 +63,11 @@ type Config struct {
 	// SDK for — paths that answer 404 (#266). Nil keeps the historical
 	// Exposure-only check for direct callers.
 	CRUDMounted func(*entity.Entity) bool
+
+	// ReadOnlyMounted reports whether mounted CRUD routes are read-only.
+	// Pass fwApp.EntityReadOnlyMounted alongside CRUDMounted to omit writes
+	// and state moves for App.View entities. Nil assumes writable routes.
+	ReadOnlyMounted func(*entity.Entity) bool
 
 	// Artifacts holds the pregenerated dist directory from
 	// `gofastr generate sdk` (os.DirFS("gen/sdk/dist") or an embed.FS
@@ -112,6 +119,10 @@ type site struct {
 	provenance   bool // true = manifest schema version unknown → "unknown provenance", not "stale"
 
 	undocumentedOnce sync.Once
+}
+
+func (s *site) readOnly(e *entity.Entity) bool {
+	return s.cfg.ReadOnlyMounted != nil && s.cfg.ReadOnlyMounted(e)
 }
 
 // Mount registers the docs screens on the core-ui app and the artifact
@@ -348,6 +359,10 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			return
 		}
 
+		w.Header().Set("Cache-Control", "no-cache")
+		if s.cfg.Policy != nil {
+			w.Header().Set("Cache-Control", "private, no-cache")
+		}
 		if key != "" {
 			// The file must be the one the manifest records. A run
 			// with fewer targets rewrites the manifest but leaves an
@@ -368,7 +383,6 @@ func (s *site) artifactHandler(key, file string) http.Handler {
 			}
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "no-cache")
 		if file == sdk.GoArtifact {
 			// The zip downloads; client.js/client.d.ts serve inline so
 			// `import "<url>/client.js"` works straight off the app.

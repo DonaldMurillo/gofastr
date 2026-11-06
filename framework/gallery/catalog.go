@@ -26,7 +26,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -121,29 +120,16 @@ var Catalog = []Entry{
 		)
 	}},
 	{"languagemenu", "LanguageMenu", "Buttons & links", "Links the current page in each of the app's languages, each named in itself.", func() render.HTML {
-		// The showcase routes by no locale, so the tile hands the menu a
-		// locale set of its own; in an app the request context carries it.
-		set := i18n.PathLocales{Default: "en", Prefixed: []string{"es", "pt-BR"}}
-		return row(
-			ui.LanguageMenu(ui.LanguageMenuConfig{Ctx: i18n.WithPathLocale(context.Background(), set, "en"), ID: "gallery-language"}),
-		)
+		return stack(ui.Menu(ui.MenuConfig{ID: "gallery-language", Label: "English", Items: []ui.MenuItem{
+			{Label: "English", Radio: "language", Checked: true, Disabled: true},
+			{Label: "Español", Radio: "language", Disabled: true},
+			{Label: "Português (Brasil)", Radio: "language", Disabled: true},
+		}}), note(render.Text("Static language preview: this site has no locale-prefixed routes. Register locale prefixes in your app to use LanguageMenu.")))
 	}},
 
 	// ---------- Tags & badges ----------
 	{"tag", "Tag", "Tags & badges", "Compact status pill, optionally dismissable.", func() render.HTML {
-		return row(
-			ui.Tag(ui.TagConfig{Label: "neutral"}),
-			ui.Tag(ui.TagConfig{Label: "success", Variant: ui.StatusSuccess}),
-			ui.Tag(ui.TagConfig{Label: "warning", Variant: ui.StatusWarning}),
-			ui.Tag(ui.TagConfig{Label: "danger", Variant: ui.StatusDanger}),
-			ui.Tag(ui.TagConfig{Label: "info", Variant: ui.StatusInfo}),
-			// Dismissable variant: a dismissal is an in-page state
-			// change, so the Island renders this strip again and the
-			// same anchor is the no-script destination.
-			ui.Tag(ui.TagConfig{Label: "beta", Dismiss: "/components/tag?dismissed=beta",
-				DismissLabel: "Remove beta",
-				Island:       headless.Island{Endpoint: "/components/tag", Signal: "tag-demo"}}),
-		)
+		return interactive.BindHTML(ui.Box(ui.BoxConfig{}, TagDemo(false)), "tag-demo")
 	}},
 	{"statusbadge", "StatusBadge", "Tags & badges", "Inline dot + label status indicator.", func() render.HTML {
 		return row(
@@ -540,7 +526,7 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		return ui.Form(ui.FormConfig{Action: "?", Method: "POST", SubmitLabel: "Sign in"},
+		return ui.Form(ui.FormConfig{Action: "/__site/toggle/noop", Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
@@ -721,18 +707,14 @@ var Catalog = []Entry{
 		})
 	}},
 	{"filterchipbar", "FilterChipBar", "Forms", "Active filter chip strip with per-chip dismiss RPC.", func() render.HTML {
-		// A chip dismissal is an in-page state change: the demo points
-		// the island at its own page, which is honest about there being
-		// no per-demo backend — the contract (link + island on the same
-		// control) is the thing on show.
-		return ui.FilterChipBar(ui.FilterChipBarConfig{
+		return stack(ui.FilterChipBar(ui.FilterChipBarConfig{
 			RPCSignal: "filter-chips",
 			Filters: []ui.FilterChip{
-				{Label: "Open", DismissPath: "/components/filterchipbar?dismissed=open", Variant: ui.StatusInfo},
-				{Label: "Mine", DismissPath: "/components/filterchipbar?dismissed=mine", Variant: ui.StatusNeutral},
+				{Label: "Open", DismissPath: "/__site/toggle/noop", Variant: ui.StatusInfo},
+				{Label: "Mine", DismissPath: "/__site/toggle/noop", Variant: ui.StatusNeutral},
 			},
-			ClearAllPath: "/components/filterchipbar?dismissed=all",
-		})
+			ClearAllPath: "/__site/toggle/noop",
+		}), note(render.Text("Static preview: dismiss and Clear all send a no-op POST; no filters are changed.")))
 	}},
 	{"inputgroup", "InputGroup", "Forms", "Input plus leading/trailing addon.", func() render.HTML {
 		input := render.Tag("input", map[string]string{
@@ -756,7 +738,7 @@ var Catalog = []Entry{
 		})
 	}},
 	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
-		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "?"},
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "/__site/toggle/noop"},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
 				Name:   "plan",
@@ -794,7 +776,7 @@ var Catalog = []Entry{
 		// The rows and their controls live in the caller's form: the
 		// add/remove controls are named submit buttons, so a plain
 		// POST walks the same path the island does.
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/formrepeater"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
 			ui.FormRepeater(ui.FormRepeaterConfig{
 				Name:  "links",
 				Items: [][]render.HTML{{row(0)}, {row(1)}},
@@ -808,7 +790,7 @@ var Catalog = []Entry{
 				Label: fmt.Sprintf("Guest %d", i+1),
 			})
 		}
-		return render.Tag("form", map[string]string{"method": "post", "action": "/components/repeater"},
+		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
 			ui.Repeater(ui.RepeaterConfig{
 				Name:     "guests",
 				Label:    "Guests",
@@ -1040,7 +1022,11 @@ const page = await api.posts.list({ limit: 25 });`},
 
 	// ---------- Media ----------
 	{"image", "OptimizedImage", "Media", "Image with width/height + lazy + srcset.", func() render.HTML {
-		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: "/__gofastr/app.css", Width: 320, Height: 180, Alt: "placeholder"})
+		source, err := demoMockup(320, 180).PNG().DataURL()
+		if err != nil {
+			return note(render.Text("Demo image could not be encoded."))
+		}
+		return ui.OptimizedImage(ui.OptimizedImageConfig{Src: source, Width: 320, Height: 180, Alt: "Demo dashboard"})
 	}},
 	{"icon", "Icon", "Media", "Search Feather and Lucide icons by name or category. Click an icon to copy its name.", iconDemo},
 	{"gallery", "Gallery", "Media", "Image grid with lightbox.", func() render.HTML {
@@ -1243,7 +1229,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette, wired in nav (try it).", func() render.HTML {
 		return note(
-			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair: mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
+			render.Text("Mount CommandPalette's modal once at app startup, then render CommandPaletteTrigger(ctx, cfg) in each request's chrome so its labels follow the reader's locale. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
 	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {
@@ -1252,10 +1238,9 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		)
 	}},
 	{"notificationbell", "NotificationBell", "Feedback", "Bell icon with unread badge + popover (trigger + widget).", func() render.HTML {
-		// NotificationBell returns (trigger, *widget.Builder). The widget
-		// must be mounted once at startup; the showcase renders only the
-		// trigger HTML, paired with a static caption.
-		trigger, _ := ui.NotificationBell(ui.NotificationBellConfig{
+		// The context-free catalog shows an English trigger snapshot;
+		// a host renders the trigger with its request context.
+		trigger := ui.NotificationBellTrigger(context.Background(), ui.NotificationBellConfig{
 			Name:        "demo-bell",
 			Label:       "Notifications",
 			Href:        "/notifications",
@@ -1268,7 +1253,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		return stack(
 			row(trigger),
 			note(
-				render.Text("NotificationBell returns a trigger HTML + a popover widget; mount the popover once at app startup via widget.Mount."),
+				render.Text("Mount NotificationBell's popover once at app startup, then render NotificationBellTrigger(ctx, cfg) in each request's header so the spoken unread count and its live-update template follow the reader's locale."),
 			),
 		)
 	}},
@@ -1931,11 +1916,9 @@ var noteOnlySlugs = map[string]bool{
 
 // PkgForSlug returns the Go source package for a component, used to link
 // the showcase header at its API docs on pkg.go.dev. Most live in
-// framework/ui; a few are core-ui patterns or the image pipeline.
+// framework/ui; a few are core-ui patterns.
 func PkgForSlug(slug string) string {
 	switch slug {
-	case "image", "pipelineimage":
-		return "framework/image"
 	case "section-menu", "dropdown", "scroll-reveal", "signal-animate":
 		return "core-ui/interactive"
 	case "modal", "drawer", "bottomsheet", "toast":

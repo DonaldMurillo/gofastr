@@ -111,6 +111,9 @@ func (c *Container) singleton(t reflect.Type) (any, bool, error) {
 // Provide registers a constructor or value. The constructor can be:
 //   - A function returning one value (used as singleton factory)
 //   - A direct value (stored as singleton)
+//
+// Registration fails once resolution of the type has started or its value
+// has been cached. An unresolved constructor may still be replaced.
 func (c *Container) Provide(constructor any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -156,6 +159,9 @@ func (c *Container) Provide(constructor any) error {
 // Resolve serves the cached value, so a later provider was ignored while
 // Provide returned nil. Caller holds c.mu.
 func (c *Container) refuseResolvedLocked(t reflect.Type) error {
+	if c.building[t] != nil {
+		return fmt.Errorf("di: %v is being built; Provide each type before its first use", t)
+	}
 	if c.resolved[t] {
 		return fmt.Errorf("di: %v already has a value; Provide each type once, before its first use", t)
 	}

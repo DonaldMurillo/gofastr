@@ -147,6 +147,9 @@ func RecordRoute(method, pattern string) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	mu.Lock()
 	defer mu.Unlock()
+	if current == nil || !enabled.Load() {
+		return
+	}
 	if addTo(current.Routes, normalizePattern(pattern), method) {
 		dirty = true
 	}
@@ -157,7 +160,7 @@ func RecordPermission(permission string) {
 	if !enabled.Load() {
 		return // current is nil until Enable ran; don't touch it
 	}
-	recordTrimmed(&current.Permissions, permission)
+	recordTrimmed(permission, func(manifest *Manifest) *[]string { return &manifest.Permissions })
 }
 
 // RecordEntityOp notes that an entity's CRUD operation ran. op is one of
@@ -168,6 +171,9 @@ func RecordEntityOp(entity, op string) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if current == nil || !enabled.Load() {
+		return
+	}
 	if addTo(current.Entities, strings.ToLower(entity), strings.ToLower(op)) {
 		dirty = true
 	}
@@ -178,7 +184,7 @@ func RecordRole(role string) {
 	if !enabled.Load() {
 		return // current is nil until Enable ran; don't touch it
 	}
-	recordTrimmed(&current.Roles, role)
+	recordTrimmed(role, func(manifest *Manifest) *[]string { return &manifest.Roles })
 }
 
 // RecordEvent notes that an event type was published on the bus.
@@ -186,22 +192,22 @@ func RecordEvent(eventType string) {
 	if !enabled.Load() {
 		return // current is nil until Enable ran; don't touch it
 	}
-	recordTrimmed(&current.Events, eventType)
+	recordTrimmed(eventType, func(manifest *Manifest) *[]string { return &manifest.Events })
 }
 
-// recordTrimmed records value (trimmed; blank dropped) as a unique sorted
-// entry of *dst under the recorder lock, marking the manifest dirty.
-// Callers must have checked enabled first: current is nil until Enable
-// ran, and taking &current.<Field> before that check would dereference
-// nil. It replaces the former duplicated gate-and-record bodies of
-// RecordPermission, RecordRole, and RecordEvent.
-func recordTrimmed(dst *[]string, value string) {
+// recordTrimmed selects a manifest field only while holding the recorder
+// lock, so Reset cannot invalidate it before the unique sorted insertion.
+func recordTrimmed(value string, field func(*Manifest) *[]string) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if current == nil || !enabled.Load() {
+		return
+	}
+	dst := field(current)
 	if !slices.Contains(*dst, value) {
 		*dst = append(*dst, value)
 		slices.Sort(*dst)
@@ -216,6 +222,9 @@ func RecordHook(entity, hookType string) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
+	if current == nil || !enabled.Load() {
+		return
+	}
 	if addTo(current.Hooks, strings.ToLower(entity), strings.ToLower(hookType)) {
 		dirty = true
 	}
@@ -370,7 +379,8 @@ func readFrom(root string) (*Manifest, error) {
 }
 
 // Reset clears in-process state. For tests of this package and of the
-// harness that drives it.
+// harness that drives it. Concurrent Record calls are safe; recording stays
+// off until Enable is called again.
 func Reset() {
 	mu.Lock()
 	defer mu.Unlock()

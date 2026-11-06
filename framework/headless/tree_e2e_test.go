@@ -226,11 +226,8 @@ func TestE2E_TreeLazyLoadFiresTheRpc(t *testing.T) {
 	}
 }
 
-// TestE2E_TreeMarkupArrivingAfterLoadArms proves the kernel's
-// insertion scan hands late tree markup to the module: a tree whose
-// nodes carry control bytes in labels still binds (the delegated
-// listeners need no per-root pass), and the module never writes a
-// string of its own.
+// The tree module moves focus and state without injecting English
+// loading or expansion announcements into server-rendered labels.
 func TestE2E_TreeSaysNothingInEnglishInTheDOM(t *testing.T) {
 	tree := Tree(TreeProps{ID: "quiet", Label: strings.Repeat(" ", 0) + "Quiet", Nodes: []TreeNode{
 		{ID: "a", Label: "a"},

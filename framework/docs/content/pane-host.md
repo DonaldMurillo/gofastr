@@ -184,7 +184,8 @@ the open pane to the right edge with a backdrop scrim (`::before`), and
 the module applies:
 
 - a **focus trap**: Tab cycles within the topmost open pane (the
-  kernel's shared `NS._focusSel` selector; it never touches the
+  kernel's shared `NS._focusSel` candidates, filtered by nonnegative
+  `tabIndex`; it never touches the
   widgets module's private `_modalStack`, and defers while a modal
   widget is open). Entering overlay mode moves focus to the drawer's
   first focusable when focus sits outside it, so a drawer the server

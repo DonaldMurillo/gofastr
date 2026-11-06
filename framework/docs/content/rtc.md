@@ -324,10 +324,12 @@ channels, state}`. The room handle adds:
 **Reconnects.** The signaling WebSocket reconnects with a new
 generation, like every `ws` consumer. On the snapshot after a
 reconnect, peers that are gone close (`onPeerLeave`), peers still
-`connected` or `connecting` keep their peer connection (no
+`connected` or `connecting` with `stable` signaling keep their peer connection (no
 renegotiation storm), anything else is torn down and rebuilt with the
-tracks and channels re-added, and the remembered status is resent. The
-other side saw you leave and rejoin and rebuilt its connection, so its
+tracks and channels re-added, and the remembered status is resent.
+An unanswered renegotiation offer therefore cannot pin an impolite peer
+on a connection that would ignore the remote peer's replacement offer.
+The other side saw you leave and rejoin and rebuilt its connection, so its
 next offer restarts ICE and DTLS on your kept one; media carries on,
 but the old data channel objects close with the old transport, and the
 module recreates them on the live connection. A status a peer already

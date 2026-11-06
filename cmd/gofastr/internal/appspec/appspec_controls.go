@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // The control catalog: app spec block kinds for plain form controls,
@@ -144,7 +145,7 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 			return nil
 		}
 		for _, ok := range values {
-			if strings.EqualFold(v, ok) {
+			if asciicase.Lower(v) == ok {
 				return nil
 			}
 		}
@@ -215,6 +216,32 @@ func validateAppSpecControlBlock(screenName, kind string, b AppSpecBlock) error 
 		return need("label")
 	}
 	return nil
+}
+
+func normalizeControlProps(kind string, props map[string]any) map[string]any {
+	defaults := map[string]string{}
+	switch kind {
+	case "action_button":
+		defaults = map[string]string{"variant": "primary", "type": "button"}
+	case "nav_links":
+		defaults = map[string]string{"gap": "md"}
+	default:
+		return props
+	}
+	for key, fallback := range defaults {
+		if value, ok := props[key].(string); ok {
+			value = asciicase.Lower(value)
+			if value == "" || value == fallback {
+				delete(props, key)
+			} else {
+				props[key] = value
+			}
+		}
+	}
+	if len(props) == 0 {
+		return nil
+	}
+	return props
 }
 
 // appSpecBlocksHaveCustomForm reports whether a custom_form sits anywhere

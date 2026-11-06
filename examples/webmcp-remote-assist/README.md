@@ -13,7 +13,11 @@ together:
   `ws` runtime module): one channel per session, per-role snapshots and
   events, reconnects that rehydrate instead of resurrecting.
 - **WebRTC with GoFastr signaling**: offer/answer/ICE relayed over the
-  session's WebSocket; media never crosses the Go server.
+session's WebSocket; media never crosses the Go server.
+
+After support rehydrates its socket, it sends an addressed readiness signal.
+An operator already sharing re-offers on a fresh peer connection, so a missed
+offer or a reloaded support console recovers without restarting the camera.
 
 ## Run it
 

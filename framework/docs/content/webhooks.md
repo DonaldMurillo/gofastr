@@ -93,6 +93,11 @@ other header, so a receiver that answers 3xx would otherwise hand the
 key to whatever host it names. The 3xx is recorded as a failed
 attempt.
 
+Bearer and API-key credentials refuse `Username` and `Password`, even
+when only one is set; those fields apply to Basic authentication only.
+Misconfigured credentials fail at `Subscribe`, rather than losing fields
+when the delivery is sent.
+
 The `SQLStore` seals `Auth` with the same codec as `Secret` (see
 [Secret encryption at rest](#secret-encryption-at-rest)). `Subscribe`
 replaces the whole subscriber, so re-subscribing an ID with a zero
@@ -102,6 +107,11 @@ go out without it.
 
 `Publish` returns the number of subscribers the event was queued for.
 The actual HTTP POST happens on the manager's worker goroutine.
+
+A pending delivery with a zero `NextAttemptAt` is immediately due in both
+`MemoryStore` and `SQLStore`, whether added or updated through `Store`.
+SQL `NULL` schedules follow that same rule, including existing rows.
+Future schedules remain delayed; dead and successful rows are not due.
 
 When the payload carries one user's data, publish with `PublishFor`:
 
@@ -340,7 +350,8 @@ mgr := webhook.New(store, webhook.Options{
 ```
 
 The worker survives a panicking store: every store call on the delivery
-loop runs under a recover guard that logs through `Options.Logger`, so a
+loop runs under a recover guard that logs the control-byte-scrubbed panic
+value through `Options.Logger`, so a
 custom `Store` implementation that panics costs the affected tick or
 attempt (due rows stay pending and retry, at-least-once) instead of the
 process. A subscriber row whose `events` column no longer parses as JSON

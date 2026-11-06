@@ -92,8 +92,7 @@ func RunGenerateClient(args []string) {
 		case "--json":
 			asJSON = true
 		default:
-			cli.Fail("unknown flag: %s", a)
-			cli.Info("Usage: gofastr generate client [--force] [--dry-run] [--json]")
+			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), "Usage: gofastr generate client [--force] [--dry-run] [--json]")
 			cli.OsExit(1)
 			return
 		}

@@ -1,6 +1,15 @@
 package component
 
-import "sync"
+import (
+	"cmp"
+	"fmt"
+	"log/slog"
+	"runtime/debug"
+	"slices"
+	"sync"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+)
 
 // ActionDef defines a single event handler within a component.
 type ActionDef struct {
@@ -64,12 +73,13 @@ func (r *ActionRegistry) Get(eventName string) (ActionDef, bool) {
 	return def, ok
 }
 
-// All returns all registered actions.
+// All returns all registered actions ordered by event name.
 func (r *ActionRegistry) All() []ActionDef {
 	out := make([]ActionDef, 0, len(r.actions))
 	for _, def := range r.actions {
 		out = append(out, def)
 	}
+	slices.SortFunc(out, func(left, right ActionDef) int { return cmp.Compare(left.Event, right.Event) })
 	return out
 }
 
@@ -111,13 +121,14 @@ func WithClientJS(js string) ActionOption {
 	}
 }
 
+var extractMu sync.Mutex
+
 // ExtractActions analyzes a component and extracts its action definitions.
 // It calls the Actions() method if the component implements InteractiveComponent,
 // collecting the registered actions into an ActionRegistry.
+// A panic logs the component, scrubbed value and stack and returns an empty registry.
 // Thread-safe: uses a mutex to protect the package-level registry.
-var extractMu sync.Mutex
-
-func ExtractActions(c Component) *ActionRegistry {
+func ExtractActions(c Component) (reg *ActionRegistry) {
 	ic, ok := c.(InteractiveComponent)
 	if !ok {
 		return NewActionRegistry()
@@ -125,13 +136,15 @@ func ExtractActions(c Component) *ActionRegistry {
 	extractMu.Lock()
 	defer extractMu.Unlock()
 
-	reg := NewActionRegistry()
+	reg = NewActionRegistry()
 	prev := currentRegistry
 	currentRegistry = reg
 	defer func() {
 		currentRegistry = prev
 		if r := recover(); r != nil {
-			// Actions() panicked, return empty registry, don't deadlock.
+			slog.Error("panic in component Actions recovered", "component", fmt.Sprintf("%T", c),
+				"panic", textsafe.Recovered(r), "stack", string(debug.Stack()))
+			reg = NewActionRegistry()
 		}
 	}()
 

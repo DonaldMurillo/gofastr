@@ -3,6 +3,7 @@
 package objc
 
 import (
+	"sync"
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
@@ -36,8 +37,10 @@ var blockDescriptorGlobal = blockDescriptor{size: blockSize}
 
 // blocks keeps every literal alive (and, because they are separately
 // allocated and never moved, at a stable address) for the process
-// lifetime. C code holds these pointers indefinitely.
+// lifetime. C code holds these pointers indefinitely. The mutex preserves
+// every anchor when the main thread and notification callers add blocks.
 var blocks []*blockLiteral
+var blocksMu sync.Mutex
 
 // CallBlock invokes a block that takes one word-sized argument, such as
 // WebKit's decisionHandler. Every block literal, global or on the heap,
@@ -64,6 +67,8 @@ func NewBlock(fn uintptr) uintptr {
 		invoke:     fn,
 		descriptor: uintptr(unsafe.Pointer(&blockDescriptorGlobal)),
 	}
+	blocksMu.Lock()
 	blocks = append(blocks, b)
+	blocksMu.Unlock()
 	return uintptr(unsafe.Pointer(b))
 }

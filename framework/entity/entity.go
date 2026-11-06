@@ -963,6 +963,10 @@ func (c EntityConfig) normalizeSubConfigs() EntityConfig {
 	c.Display = copyDisplayConfig(c.Display)
 	c.States = copyStatesConfig(c.States)
 	c.Fields = c.States.withStateDefault(c.Fields)
+	c.Relations = slices.Clone(c.Relations)
+	for index := range c.Relations {
+		c.Relations[index].ForeignKey = slices.Clone(c.Relations[index].ForeignKey)
+	}
 	return c
 }
 
@@ -1075,6 +1079,17 @@ func (e *Entity) Validate() error {
 
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)
+		}
+		if f.Type != schema.Relation {
+			for _, relation := range e.Config.Relations {
+				if relation.Name == f.Name {
+					if relation.Type == RelManyToOne && !relation.CascadeWrite &&
+						len(relation.ForeignKey) == 1 && relation.ForeignKey[0] == f.Name {
+						continue
+					}
+					return fmt.Errorf("entity %q: relation %q conflicts with scalar field %q", e.Config.Name, relation.Name, f.Name)
+				}
+			}
 		}
 		if f.Type == schema.Enum && len(f.Values) == 0 {
 			return fmt.Errorf("entity %q: enum field %q must specify non-empty Values", e.Config.Name, f.Name)

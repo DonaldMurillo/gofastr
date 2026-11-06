@@ -2,7 +2,9 @@ package a2a
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -42,6 +44,9 @@ func (m *MemoryStore) CreateTask(_ context.Context, rec *TaskRecord) error {
 	if rec == nil {
 		return errors.New("a2a: nil task record")
 	}
+	if _, err := json.Marshal(rec.Task); err != nil {
+		return fmt.Errorf("a2a: marshal task: %w", err)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := taskKey{rec.Owner, rec.Task.ID}
@@ -74,6 +79,9 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	if rec == nil {
 		return errors.New("a2a: nil task record")
 	}
+	if _, err := json.Marshal(rec.Task); err != nil {
+		return fmt.Errorf("a2a: marshal task: %w", err)
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := taskKey{rec.Owner, rec.Task.ID}
@@ -87,9 +95,10 @@ func (m *MemoryStore) UpdateTask(_ context.Context, rec *TaskRecord) error {
 	next := rec.Clone()
 	next.Version = stored.Version + 1
 	next.CreatedAt = stored.CreatedAt
-	// The tenant is fixed at creation, as in the SQL store, whose
-	// UPDATE never writes the column.
+	// Tenant and scope are fixed at creation, as in the SQL store,
+	// whose UPDATE never writes either column.
 	next.Tenant = stored.Tenant
+	next.Scope = stored.Scope
 	next.UpdatedAt = time.Now()
 	m.tasks[key] = next
 	// Hand back a fresh clone, never next itself: copying next's

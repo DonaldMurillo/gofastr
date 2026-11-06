@@ -59,8 +59,23 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates remain 15,918 bytes at level 6 and tighten to
-18,465 bytes at level 1. Ordinary-page form-helper discovery fits those
+The core's gzip gates are 16,380 bytes at level 6 and
+18,947 bytes at level 1, including static server-action refusal and skipped
+automatic mounts, full-document session cache invalidation,
+shared trap and initial focus eligibility, page-cancelled signal clicks,
+positive router click ownership, document-base-resolved query/fragment
+destination identity and live CSRF token protection across cached
+navigation, prefetch replay, and page-head cleanup. Prefetched pages retain the
+live CSRF token even after a session rotation, while `gofastr:navigate` still
+reports `cached: false` and other page metadata updates normally.
+Fallback toast rows and hydrated text signals use implicit status/alert
+live semantics without adding a second announcement through `aria-live`.
+Bare-primary loading adds only the navigation handoff to the existing
+demand-loaded envelope scheduler: 11 B at level 6 and 23 B at level 1,
+measuring 16,126 B and 18,694 B respectively, with 2 B clearance in each gate.
+Layouts without loading templates, outlets, or route areas still fetch
+neither the envelope nor the loading module.
+Ordinary-page form-helper discovery fits those
 gates by scheduling idle modules directly instead of building a batch
 queue. Browsers without `requestIdleCallback` still defer each idle load
 with `setTimeout`; helper-marked controls do not wait for a widget.
@@ -106,12 +121,23 @@ and both stylesheets together come to about 12 KB.
 After minification (typical end-user deploy):
 
 - `runtime.js`: `core-ui/runtime/budget_test.go` holds the gzip gates at
-  15,918 B (level 6) and 18,465 B (level 1). The
-  level-1 gate sits 4,129 B past the 14 KiB initial congestion window,
+  16,380 B (level 6) and 18,947 B (level 1). The
+  level-1 gate sits 4,611 B past the 14 KiB initial congestion window,
   so a cold first load of the core takes a second round trip; each
   byte over 14 KiB is a named entry in that test
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
   modules whose markers it renders
+
+The SSE module is pinned more tightly at 1,128 B gz (1,126 measured)
+and 2,605 B minified (2,603 measured). Those bytes include capped,
+jittered reconnect backoff, the pending-retry scan guard and bfcache restoration, exercised
+by `TestSSERetriesBackOffWithJitter`; they do not grow the core bundle.
+
+`headless-feedback` has a 3,146-byte ceiling (3,144 measured). Its
+focused-row detach observer restores the external origin after a
+server-rendered toast's Island dismissal without changing the kernel;
+`TestIslandToastReturnsFocus` pins that path and the pending-request
+focus guard. The observer runs only while a toast holds focus.
 
 Post-navigation cosmetics live in on-demand modules too: `activelink`
 (aria-current highlighting, idle-loaded), `preload` (route prefetch,

@@ -685,7 +685,7 @@ func decodeAppSpecApp(node *coreyaml.Node) (AppSpecApp, error) {
 	app := AppSpecApp{
 		Name:        stringValue(m["name"]),
 		Description: stringValue(m["description"]),
-		BaseURL:     stringValue(m["base_url"]),
+		BaseURL:     strings.TrimRight(stringValue(m["base_url"]), "/"),
 		Module:      stringValue(m["module"]),
 		StaticDir:   stringValue(m["static_dir"]),
 		OutputDir:   stringValue(m["output_dir"]),
@@ -2363,7 +2363,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 			Mode:      stringValue(m["mode"]),
 			Create:    boolValue(m["create"]),
 			Bulk:      boolValue(m["bulk"]),
-			Props:     mapValue(m["props"]),
+			Props:     normalizeControlProps(kind, mapValue(m["props"])),
 			Children:  children,
 			Actions:   actions,
 			Island:    stringValue(m["island"]),
@@ -2847,6 +2847,16 @@ func ValidateAppSpec(bp AppSpec) error {
 		if mount := screenRouteOnEntityAPI(bp, screen.Route); mount != "" {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
+		}
+		if bp.App.Auth.Enabled {
+			base := bp.App.Auth.BasePath
+			if base == "" {
+				base = "/auth"
+			}
+			if strings.TrimRight(screen.Route, "/") == base+"/me" {
+				errs.add(fmt.Errorf("app spec: screen %q route %q is the auth battery's GET %s/me route; move the screen", screen.Name, screen.Route, base))
+				continue
+			}
 		}
 		if routes[screen.Route] {
 			errs.add(fmt.Errorf("app spec: duplicate screen route %q", screen.Route))
@@ -3447,7 +3457,10 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if len(block.Fields) == 0 {
 			return fmt.Errorf("app spec: screen %q entity_list block fields are required", screenName)
 		}
-		validFields := map[string]bool{"id": true}
+		validFields := map[string]bool{}
+		if DeclKeyIsID(decl) {
+			validFields["id"] = true
+		}
 		for _, field := range decl.Fields {
 			validFields[field.Name] = true
 			validFields[ToCamelJSON(field.Name)] = true

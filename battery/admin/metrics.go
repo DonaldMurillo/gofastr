@@ -176,7 +176,7 @@ func (b *Battery) metricStat(ctx context.Context, m Metric) render.HTML {
 func (b *Battery) jobsFigure(ctx context.Context) render.HTML {
 	value, trend := "—", ""
 	if stats, err := b.cfg.Queue.Stats(ctx); err == nil {
-		value = strconv.Itoa(stats["failed"])
+		value = i18n.Number(ctx, stats["failed"])
 		if stats["failed"] > 0 {
 			trend = i18nui.AdminNeedsReplay.Text(ctx)
 		}

@@ -337,8 +337,12 @@ func rollbackPackageCopy(tgt packageTarget, files []GeneratedFile, existed map[s
 // [<name>]`: at most one positional (no name means list mode), plus
 // --out and --dry-run. --force, --add and --json are rejected (the
 // copy is one-shot and owns no machine-readable shape), and any extra
-// positional or unknown flag fails with usage guidance. ok is false
-// (after printing the failure) when the arguments are invalid.
+// positional or unknown flag fails with usage guidance. A refusal of
+// arguments that include --json prints the shared generate JSON error
+// document, as every generate verb does. ok is false (after printing
+// the failure) when the arguments are invalid.
+const packageUsage = "Usage: gofastr generate package <name> [--out=DIR] [--dry-run]"
+
 func parsePackageArgs(args []string) (name, outDir string, dryRun, ok bool) {
 	var positionals []string
 	for i := 0; i < len(args); i++ {
@@ -350,27 +354,23 @@ func parsePackageArgs(args []string) (name, outDir string, dryRun, ok bool) {
 			outDir = strings.TrimPrefix(arg, "--out=")
 		case arg == "--out":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				cli.Fail("--out requires a directory argument")
-				cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
+				failGenerateArgs(args, fmt.Errorf("--out requires a directory argument"), packageUsage)
 				return "", "", false, false
 			}
 			i++
 			outDir = args[i]
 		case arg == "--force", arg == "--add", arg == "--json":
-			cli.Fail("%q is not supported on `gofastr generate package`: the copy is one-shot (it refuses a non-empty target and never overwrites existing files)", arg)
-			cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
+			failGenerateArgs(args, fmt.Errorf("%q is not supported on `gofastr generate package`: the copy is one-shot (it refuses a non-empty target and never overwrites existing files)", arg), packageUsage)
 			return "", "", false, false
 		case strings.HasPrefix(arg, "--"):
-			cli.Fail("Unknown flag %q for `gofastr generate package`", arg)
-			cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
+			failGenerateArgs(args, fmt.Errorf("Unknown flag %q for `gofastr generate package`", arg), packageUsage)
 			return "", "", false, false
 		default:
 			positionals = append(positionals, arg)
 		}
 	}
 	if len(positionals) > 1 {
-		cli.Fail("`gofastr generate package` takes at most one name argument (none lists the available packages)")
-		cli.Info("Usage: gofastr generate package <name> [--out=DIR] [--dry-run]")
+		failGenerateArgs(args, fmt.Errorf("`gofastr generate package` takes at most one name argument (none lists the available packages)"), packageUsage)
 		return "", "", false, false
 	}
 	if len(positionals) == 1 {

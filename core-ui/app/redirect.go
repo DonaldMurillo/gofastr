@@ -152,7 +152,7 @@ func (r *Router) resolveRedirectOnce(path string) (string, bool) {
 	}
 	pathParts := strings.Split(strings.Trim(path, "/"), "/")
 	for _, pr := range r.patternRedir {
-		if params, ok := matchDynamic(pr.segments, pathParts); ok {
+		if params, ok := matchDynamicRouting(pr.segments, pathParts); ok {
 			t := substituteRedirect(pr.to, params)
 			// The registered target pattern was validated, but the
 			// substituted VALUES come from the request path: a catch-all
@@ -195,15 +195,11 @@ func hasControlByte(s string) bool {
 }
 
 // redirectQueryEscaper escapes the delimiters that would end a
-// substituted path value early; redirectRestEscaper also escapes "%",
-// for a catch-all value that arrives fully decoded.
-var (
-	redirectQueryEscaper = strings.NewReplacer("?", "%3F", "#", "%23")
-	redirectRestEscaper  = strings.NewReplacer("%", "%25", "?", "%3F", "#", "%23")
-)
+// substituted path value early.
+var redirectQueryEscaper = strings.NewReplacer("?", "%3F", "#", "%23")
 
 // substituteRedirect fills the target pattern's params from the matched
-// route params. Params present in the pattern but absent from the map are
+// routing-form params. Params present in the pattern but absent from the map are
 // left as-is (the from/to validation already guarantees every target
 // param was declared in from, so this only happens for malformed input).
 func substituteRedirect(toPattern string, params map[string]string) string {
@@ -215,14 +211,14 @@ func substituteRedirect(toPattern string, params map[string]string) string {
 		if v, ok := params[segParamName(seg)]; ok {
 			// A one-segment value goes back in routing form, so a
 			// carried "a/b" stays one segment of the target; a
-			// catch-all's decoded remainder keeps its "/" separators
-			// and escapes a literal "%". Either way "?" and "#" are
+			// catch-all's routing-form remainder keeps its separators
+			// distinct from encoded slashes. Either way "?" and "#" are
 			// escaped: written raw, the browser reads the rest of the
 			// value as a query or a fragment.
 			if isCatchAllSeg(seg) {
-				v = redirectRestEscaper.Replace(v)
+				v = redirectQueryEscaper.Replace(v)
 			} else {
-				v = redirectQueryEscaper.Replace(encodeRouteSeg(v))
+				v = redirectQueryEscaper.Replace(encodeRouteSeg(decodeRouteSeg(v)))
 			}
 			parts[i] = v
 		}

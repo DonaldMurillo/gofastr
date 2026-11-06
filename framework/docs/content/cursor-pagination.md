@@ -41,7 +41,7 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 ## Defaults & caps
 
-- `DefaultPageSize = 25`
+- `DefaultPageSize = 20` (the shared entity list default)
 - `MaxPageSize = 100` (`limit` is clamped silently)
 - `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
   the entity's cap is clamped to it, same as the offset and streaming

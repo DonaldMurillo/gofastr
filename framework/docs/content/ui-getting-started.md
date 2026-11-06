@@ -285,6 +285,8 @@ site.Register("/docs/{path...}", &DocScreen{}, nil)
 ```
 
 A catch-all must be the final segment; anything else panics at registration.
+A root catch-all such as `/{path...}` does not match `/`: its remainder
+must also be nonempty. Redirect patterns follow the same rule.
 Among dynamic routes, registration order decides which one wins (first match
 wins); there is no specificity ranking, so register the more specific
 pattern first.
@@ -345,8 +347,13 @@ open-redirect guard), and every parameter referenced in `to` must be
 declared in `from`. The `from` pattern obeys the same grammar as a route
 (constraints, trailing catch-all). A one-segment parameter holding `/`
 or `%` is written back as `%2F` or `%25`, so it stays one segment of
-the target. Substituted parameters arrive percent-decoded, so a
-resolved target holding a C0 control byte or DEL (tab, CR and LF
+the target. A catch-all passthrough preserves the source's segment
+boundaries too: `/docs/red%2Foak/leaves` redirected through
+`/docs/{rest...}` to `/help/{rest...}` becomes
+`/help/red%2Foak/leaves`, not `/help/red/oak/leaves`. Literal percent
+signs remain encoded exactly once. Matching still decodes segments for
+literal and constraint checks, so a resolved target holding a C0 control
+byte or DEL (tab, CR and LF
 included) is no redirect: the request falls through to the router, which
 answers 404 when no screen matches. A browser deletes tab, CR and LF from
 a `Location` before parsing it, so `/old/%09/evil.example` substituted
@@ -380,6 +387,14 @@ site.Register("/products/{id}", &ProductScreen{}, nil,
     app.InterceptFrom("/products", app.ScreenDrawer))   // or ScreenSheet
 ```
 
+Both `InterceptFrom` and the `Screen.Intercept` field accept brace or colon
+parameters in `From` and `AlsoFrom`, including typed parameters and catch-alls.
+All registration paths, including screen groups, normalize those origins.
+An empty or relative origin, or a presentation other than `ScreenDrawer` or
+`ScreenSheet`, panics at registration. At mount, every origin must name a
+registered screen pattern; a missing origin panics rather than silently
+falling back to a full page.
+
 `/products/42` stays an ordinary page. A hard load, a refresh, an external
 link, or a soft navigation from anywhere else renders it in full; the deep
 link remains the canonical render, and SSR-first is untouched. Only a
@@ -387,6 +402,10 @@ soft navigation that **started on `/products`** presents it as a drawer over
 the list, which stays mounted underneath. Back, Escape, and the backdrop all
 close it through one history entry, so returning to the list costs no
 refetch and keeps its scroll position.
+
+An open native modal dialog takes Escape and Tab before its surrounding drawer.
+When the browser does not support the `:modal` selector, the drawer still
+handles Escape and traps both forward and reverse Tab instead of throwing.
 
 One `RenderCtx` serves both presentations; the overlay is the same render
 with drawer scaffolding around it, so there is no second code path to keep in
@@ -427,6 +446,11 @@ opens over its list and over the customer whose Related tab adds to it:
 site.Register("/invoices/create", &CreateInvoice{}, nil,
     app.InterceptFrom("/invoices", app.ScreenDrawer, "/customers/{id}"))
 ```
+
+Origin patterns accept brace or colon parameters and are normalized like
+screen paths. Every origin must name a registered screen; the UI host
+refuses unknown origins at mount, after all screens are registered.
+Standalone hosts call `Router.ValidateIntercepts` before serving requests.
 
 Inside an overlay render, `app.OverlayOriginFromContext(ctx)` returns
 the path of the page the drawer opened over ("" on the full page). Make

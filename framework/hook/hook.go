@@ -27,7 +27,9 @@ const (
 
 // HookFunc is the signature for a lifecycle hook.
 // The data argument varies by hook type (e.g. map[string]any for create/update, string ID for delete).
-// Return an error to cancel the operation (for Before* hooks) or log the failure (for After* hooks).
+// An error stops the hook chain and fails the operation. CRUD write hooks,
+// including After* hooks, run before commit; their errors roll back the write
+// transaction. A read hook error fails the read rather than merely being logged.
 type HookFunc func(ctx context.Context, data any) error
 
 // HookRegistry stores lifecycle hooks grouped by hook type.

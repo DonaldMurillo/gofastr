@@ -92,6 +92,9 @@ func init() {
 
 An empty `PrimaryKey` means the table has no key and is read in one pass; a
 comma-joined value (`"provider,provider_id"`) is a composite key.
+Registration appends any missing primary-key columns to `Columns`, in key
+order, without changing the caller's slice. Both the manifest and exported
+rows include those columns, so an archive can be imported into the same app.
 `battery/auth` (users, sessions, 2FA enrolments, OAuth links, passkeys) and
 `battery/queue` (queue_jobs) register themselves this way; importing the battery == including its tables.
 A store whose table name is configurable registers from its constructor
@@ -423,7 +426,11 @@ log.Printf("erased %d rows for user_42", report.TotalErased())
    a job only when the producer set `Job.UserID` — see
    [the queue reference](queue.md). A job whose payload is personal data but
    which names no user is not erasable, and its payload column is exported
-   verbatim. The other stores, each under its configured table name:
+   verbatim. Job exports retain occurrence IDs, update timestamps, failure
+   text and claim tokens alongside payloads and queue state.
+   `NewDurableScheduler` also exports its schedules table under
+   the configured queue name, including payloads, user attribution and
+   scheduling watermarks. The other stores, each under its configured table name:
 
    | Store | Erased by | Mode |
    |---|---|---|

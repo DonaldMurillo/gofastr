@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -357,6 +358,9 @@ func (t *taskRun) mutate(build func(task *Task) (*StreamResponse, error)) error 
 	ev, err := build(&cand.Task)
 	if err != nil {
 		return err
+	}
+	if ev == nil && reflect.DeepEqual(cand.Task, cloneTask(t.rec.Task)) {
+		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeOpTimeout)
 	defer cancel()

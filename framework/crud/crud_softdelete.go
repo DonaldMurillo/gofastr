@@ -162,7 +162,7 @@ func (ch *CrudHandler) PurgeOne(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ch.EmitEvent(ctx, event.EntityDeleted, ch.keyPayload(id))
+	ch.EmitEvent(withAuditOperation(ctx, ch.Entity.GetName(), id, "purge"), event.EntityDeleted, ch.keyPayload(id))
 	return nil
 }
 

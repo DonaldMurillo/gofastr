@@ -155,6 +155,9 @@ Authorization: Bearer gfsk_…
 
 Artifact updates normalize nil `Parts` to an empty JSON array, including
 empty append deltas and stored artifacts whose earlier parts were nil.
+Both built-in task stores refuse tasks whose parts or metadata cannot be
+JSON-encoded, without changing the stored task or its version. Handler
+data must not contain non-finite numbers, functions, channels, or cycles.
 
 The tool result becomes one artifact named `<entity>.<operation>` with a
 data part. Failure mapping:
@@ -200,7 +203,8 @@ The server also drops another tier's task from a declaring store's page,
 so a store that declares it wrongly hands out no task, though its
 `totalSize` is then its own. The SQL store adds
 the `scope` column to an older table on open, and its rows read as a
-session's.
+session's. Both built-in stores keep the creation-time scope unchanged
+when updating a task, so its visibility and retention tier cannot move.
 
 A task also records the tenant the creating request acted in. With a
 tenant hook, a caller reads, lists, resumes, cancels and configures only
@@ -253,6 +257,10 @@ returns over `/mcp`.
 final task, unless `configuration.returnImmediately` is set, in which
 case the `SUBMITTED`/`WORKING` snapshot comes back at once and the work
 continues in the background.
+
+`Working` is idempotent once the task is working: repeated calls do not
+publish another status event, rewrite the stored task, or advance its
+version or update timestamp. Use artifacts for progress that changes.
 
 A handler pauses its task with `RequireInput` / `RequireAuth`
 (`TASK_STATE_INPUT_REQUIRED` / `TASK_STATE_AUTH_REQUIRED`). The next
@@ -454,6 +462,10 @@ in-process expecting the task row to act as a job table.
 not configured) for direct registration reads — but note skills the
 server runs are fixed at Start, from the same list
 `app.A2ASkills()` reports.
+
+Passing `app.A2ASkills()` into an agent card preserves each skill's input
+and output MIME modes. Entity skills advertise `application/json`, not
+the card's default `text/plain`; send their operation as a JSON data part.
 
 ## Common mistakes
 

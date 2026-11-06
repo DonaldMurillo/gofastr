@@ -17,6 +17,15 @@ import (
 // component. The loader marked the id loaded before the fetch and never
 // cleared it, so the component's controls stayed inert for the session.
 func TestActionScriptReloadsAfterAFailure(t *testing.T) {
+	testActionScriptRetry(t, false)
+}
+
+func TestSSRActionScriptRetries(t *testing.T) {
+	testActionScriptRetry(t, true)
+}
+
+func testActionScriptRetry(t *testing.T, ssr bool) {
+	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
@@ -46,8 +55,12 @@ func TestActionScriptReloadsAfterAFailure(t *testing.T) {
 		w.Write([]byte(`window.__cmpLoaded = (window.__cmpLoaded || 0) + 1;`))
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		seed := ""
+		if ssr {
+			seed = `<script defer src="/__gofastr/widget/cmp.js?v=h1"></script>`
+		}
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><head><title>loader</title></head><body>
+		fmt.Fprint(w, `<!doctype html><html><head><title>loader</title>`+seed+`</head><body>
   <main role="main"><span id="ready">ready</span><div data-component="cmp">x</div></main>
   <script>window.__gofastr_actions = { cmp: 'h1' };</script>
   <script src="/__gofastr/runtime.js"></script>
@@ -72,7 +85,7 @@ func TestActionScriptReloadsAfterAFailure(t *testing.T) {
 	for hits.Load() < 1 && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if hits.Load() != 1 {
+	if !ssr && hits.Load() != 1 {
 		t.Fatalf("the component script was fetched %d times on boot, want 1", hits.Load())
 	}
 	time.Sleep(300 * time.Millisecond)

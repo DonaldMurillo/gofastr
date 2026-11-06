@@ -389,7 +389,7 @@ func rebuildWithoutOwnerFK(ctx context.Context, conn *sql.Conn, s StaleOwnerFK) 
 	// with the CREATE TABLE and must not be replayed.
 	var replays []string
 	objRows, err := conn.QueryContext(ctx,
-		"SELECT sql FROM "+master+" WHERE tbl_name = ? AND type IN ('index','trigger') AND sql IS NOT NULL", stored)
+		"SELECT sql FROM "+master+" WHERE tbl_name = ? COLLATE NOCASE AND type IN ('index','trigger') AND sql IS NOT NULL", stored)
 	if err != nil {
 		return err
 	}

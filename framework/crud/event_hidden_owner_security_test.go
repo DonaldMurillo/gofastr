@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
@@ -49,7 +50,7 @@ func stampedOwners(t *testing.T, ch *CrudHandler) (bus chan string, ob *ownerOut
 	ob = &ownerOutbox{}
 	ch.Outbox = ob
 	bus = make(chan string, 8)
-	for _, typ := range []string{event.EntityUpdated, event.EntityDeleted} {
+	for _, typ := range []string{event.EntityCreated, event.EntityUpdated, event.EntityDeleted} {
 		t.Cleanup(b.Subscribe(typ, func(_ context.Context, e event.Event) error {
 			data, _ := e.Data.(map[string]any)
 			bus <- typ + ":" + fmt.Sprint(data[eventKeyOwnerID])
@@ -57,6 +58,102 @@ func stampedOwners(t *testing.T, ch *CrudHandler) (bus chan string, ob *ownerOut
 		}))
 	}
 	return bus, ob
+}
+
+func TestCreateStampsHiddenOwner(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, conn := hiddenOwnerLogs(t)
+	bus, outbox := stampedOwners(t, ch)
+	ctx := owner.AllowCrossOwner(context.Background())
+	if _, err := ch.CreateOne(ctx, map[string]any{"user_id": "bob", "notes": "single"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ch.BatchCreateMany(ctx, []map[string]any{
+		{"user_id": "carol", "notes": "batch one"},
+		{"user_id": "dave", "notes": "batch two"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM logs WHERE user_id IN ('bob', 'carol', 'dave')`).Scan(&count); err != nil || count != 3 {
+		t.Fatalf("persisted owners: count=%d err=%v", count, err)
+	}
+	want := []string{"entity.created:bob", "entity.created:carol", "entity.created:dave"}
+	if got := takeStamps(t, bus, 3); !slices.Equal(got, want) {
+		t.Errorf("bus stamps=%v, want %v", got, want)
+	}
+	if !slices.Equal(outbox.owners, []string{"bob", "carol", "dave"}) {
+		t.Errorf("outbox owners=%v", outbox.owners)
+	}
+}
+
+func TestCreateRoutesStampHookOwner(t *testing.T) {
+	installOwnerExtractor(t)
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%t", batch), func(t *testing.T) {
+			ch, conn := hiddenOwnerLogs(t)
+			bus, outbox := stampedOwners(t, ch)
+			ch.Hooks = hook.NewHookRegistry()
+			ch.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
+				body := data.(map[string]any)
+				body["user_id"] = body["notes"]
+				return nil
+			})
+			path, body, handle := "/logs", `{"notes":"bob"}`, ch.Create()
+			wantOwners := []string{"bob"}
+			wantEvents := []string{event.EntityCreated + ":bob"}
+			if batch {
+				path, body, handle = "/logs/_batch", `{"items":[{"notes":"bob"},{"notes":"carol"}]}`, ch.BatchCreate()
+				wantOwners = append(wantOwners, "carol")
+				wantEvents = append(wantEvents, event.EntityCreated+":carol")
+			}
+			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			request = request.WithContext(withTestUserCtx("alice"))
+			response := httptest.NewRecorder()
+			handle(response, request)
+			if response.Code/100 != 2 || (batch && !strings.Contains(response.Body.String(), `"committed":true`)) {
+				t.Fatalf("create: %d %s", response.Code, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), "user_id") {
+				t.Errorf("hidden owner reached the response: %s", response.Body.String())
+			}
+			var count int
+			if err := conn.QueryRow(`SELECT COUNT(*) FROM logs WHERE user_id = notes AND user_id != 'alice'`).Scan(&count); err != nil || count != len(wantOwners) {
+				t.Fatalf("persisted hook owners: count=%d err=%v", count, err)
+			}
+			if got := takeStamps(t, bus, len(wantEvents)); !slices.Equal(got, wantEvents) {
+				t.Errorf("bus stamps=%v, want %v", got, wantEvents)
+			}
+			if !slices.Equal(outbox.owners, wantOwners) {
+				t.Errorf("outbox owners=%v, want %v", outbox.owners, wantOwners)
+			}
+		})
+	}
+}
+
+func TestUpsertStampsHiddenHookOwner(t *testing.T) {
+	installOwnerExtractor(t)
+	ch, conn := hiddenOwnerLogs(t)
+	bus, outbox := stampedOwners(t, ch)
+	ch.Hooks = hook.NewHookRegistry()
+	ch.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
+		data.(map[string]any)["user_id"] = "bob"
+		return nil
+	})
+	if _, err := ch.UpsertOne(withTestUserCtx("alice"), map[string]any{"id": "hook-log", "notes": "upsert"}); err != nil {
+		t.Fatal(err)
+	}
+	var persistedOwner string
+	if err := conn.QueryRow(`SELECT user_id FROM logs WHERE id = 'hook-log'`).Scan(&persistedOwner); err != nil || persistedOwner != "bob" {
+		t.Fatalf("persisted owner=%q err=%v", persistedOwner, err)
+	}
+	if got := takeStamps(t, bus, 1); got[0] != event.EntityCreated+":bob" {
+		t.Errorf("bus stamps=%v, want bob", got)
+	}
+	if !slices.Equal(outbox.owners, []string{"bob"}) {
+		t.Errorf("outbox owners=%v, want [bob]", outbox.owners)
+	}
 }
 
 func takeStamps(t *testing.T, bus chan string, n int) []string {

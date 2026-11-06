@@ -167,9 +167,11 @@
   function nameOf(cal, d) {
     const b = cal && cal.querySelector('[data-hui-date="' + CSS.escape(d) + '"]');
     if (b && b.getAttribute('aria-label')) return b.getAttribute('aria-label');
+    const lang = document.documentElement.lang;
+    if (!lang) return d;
     try {
-      return new Date(parse(d)).toLocaleDateString(document.documentElement.lang || undefined,
-        { dateStyle: 'full', timeZone: 'UTC' });
+      return new Date(parse(d)).toLocaleDateString(lang,
+        { dateStyle: 'full', timeZone: 'UTC', calendar: 'gregory' });
     } catch (_) {
       return d;
     }

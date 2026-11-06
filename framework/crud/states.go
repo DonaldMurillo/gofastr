@@ -674,12 +674,16 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 
 // refusalState is the stored state and open moves a refusal of a write
 // to record id names: both, when the caller's read scope admits the
-// record, and neither (hidden) when it hides it or the check fails, so a
+// record and the state field is visible, and neither (hidden) when the
+// field or record is hidden or the check fails, so a
 // caller who may write but not read a record learns nothing of its state
 // from a 409 or 422. The read scope is the declared ReadScope and the
 // BeforeGet chain GET /<entity>/{id} runs (getScopeHidesRow); an in-process
 // write honours the hook only under WithReadHooks, as GetOne does.
 func (ch *CrudHandler) refusalState(ctx context.Context, r *http.Request, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
+	if ch.fieldByName(st.Field).Hidden {
+		return "", nil, true
+	}
 	if hidden, err := ch.readScopeHidesRow(ctx, ch.keyPayload(id)); hidden || err != nil {
 		return "", nil, true
 	}

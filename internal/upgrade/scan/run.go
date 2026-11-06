@@ -33,10 +33,6 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 	if err != nil {
 		return nil, err
 	}
-	pkgs, err := loadPackages(abs, moduleRoot)
-	if err != nil {
-		return nil, fmt.Errorf("scan: load %s: %w", abs, err)
-	}
 	appRoot, err := os.OpenRoot(abs)
 	if err != nil {
 		return nil, fmt.Errorf("scan: open root: %w", err)
@@ -61,7 +57,12 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 		objDefs:       map[types.Object]objRef{},
 	}
 	e.buildIndexes()
-	// Load everything before matching anything: the main module, every
+	e.gomodFiles()
+	pkgs, err := loadPackages(abs, moduleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("scan: load %s: %w", abs, err)
+	}
+	// Load all Go before matching Go: the main module, every
 	// nested module below root, then one load per build configuration
 	// the collected files owe. All of it flows through the same
 	// collect+index pass, so the cross-package matchers — sink
@@ -83,9 +84,6 @@ func Run(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*Result
 	}
 	e.fileMatchers()
 	e.configMatchers()
-	for _, dir := range e.moduleDirs {
-		e.gomodMatchers(dir)
-	}
 	return e.result(), nil
 }
 
@@ -454,6 +452,7 @@ func (e *engine) walkApp(visit func(rel string, read func() ([]byte, bool))) {
 func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)), skip func(string) bool) {
 	fs.WalkDir(e.appFS, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			e.noteUnscanned(path.Clean(p), "unreadable: "+err.Error())
 			return nil
 		}
 		if d.IsDir() {
@@ -464,7 +463,10 @@ func (e *engine) walkAppSkip(visit func(rel string, read func() ([]byte, bool)),
 		}
 		rel := path.Clean(p)
 		visit(rel, func() ([]byte, bool) {
-			b, err := e.appRoot.ReadFile(rel)
+			b, err := e.readFile(rel)
+			if err != nil {
+				e.noteUnscanned(rel, "unreadable: "+err.Error())
+			}
 			return b, err == nil
 		})
 		return nil

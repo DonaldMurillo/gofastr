@@ -235,6 +235,12 @@ func RunInit(args []string) {
 		cli.OsExit(1)
 	}
 	dirs := []string{"static"}
+	if err := agentscmd.CheckOnboardingFiles(name); err != nil {
+		cli.Fail("Cannot write AI-agent onboarding files: %v", err)
+		cli.Info("This invocation has not written any scaffold files.")
+		cli.OsExit(1)
+		return
+	}
 	if !noEntity {
 		dirs = append(dirs, "entities", "migrations")
 	}

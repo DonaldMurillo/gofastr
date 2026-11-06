@@ -95,6 +95,10 @@ CREATE INDEX IF NOT EXISTS idx_author_tags_tag_id ON author_tags (tag_id);
     ]
   },
   "primary_keys": {
+    "author_tags": [
+      "author_id",
+      "tag_id"
+    ],
     "authors": [
       "id"
     ],

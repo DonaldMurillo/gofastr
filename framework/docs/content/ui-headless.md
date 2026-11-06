@@ -11,6 +11,10 @@ controls are skipped. Recovery checks that a control actually received focus
 before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
 When no row control can receive focus, focus returns to Add.
 
+Native modal dialogs, including confirmation prompts, retain Escape and
+Tab while open above an intercepted pane. Dismissing the dialog keeps
+the underlying pane open; its own Escape handling resumes afterwards.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no
@@ -289,12 +293,16 @@ dismiss is a GET that writes its href to the URL unless
 sends `DismissBody` as its JSON body and writes no URL; a
 `StepWizard`'s Island is optional and, when set, the form keeps its
 plain POST shape and the module focuses the new step's heading or
-the error summary after the swap. A `ToastStack` is mounted once by
+the error summary after the swap. That focus/announcement record belongs
+to the island answer: a soft navigation clears it, so a pending or failed
+submit cannot focus a wizard on another page. A `ToastStack` is mounted once by
 the layout: it carries the framework's `data-cui-toast-stack` name
 beside its own `data-hui-toast-stack` (the kernel's response-header
 toast path resolves the first, the component module the second), the
-SSR rows inside it are visible with no script, and it is the live
-region toasts announce by arriving in. The rows the module builds at
+SSR rows inside it are visible with no script. Each server row carries
+`role="status"` by default (or for `LivePolite`), or `role="alert"` for
+`LiveAssertive`; the stack stays a non-live named region so arrivals
+are not announced twice. The rows the module builds at
 runtime wear no class of this package's: `ToastTemplate` renders an
 inert `<template>` the kit dresses with its own class map and
 registers under `preset.ToastTemplate` (`registry.RegisterTemplate`,
@@ -415,6 +423,9 @@ a branch without a link. Arrow-key expansion and lazy loading are unchanged.
 
 The parts the navigation members draw beyond the shared vocabulary:
 
+- **Menu keyboard**: Space activates an enabled link row without scrolling
+  the page. During an active type-ahead run, Space remains part of the
+  search prefix, so multiword labels can be matched without activation.
 - **Carousel**: `carousel-stage` (the overflow scroller the slides sit
   in), `carousel-track`, `carousel-slide`, `carousel-dot`,
   `carousel-prev`, `carousel-next`, and a `visually-hidden` live
@@ -423,6 +434,8 @@ The parts the navigation members draw beyond the shared vocabulary:
   carousel with `AutoRotateMS` rotates on its own (the APG carousel
   pattern), turned polite again whenever the rotation is paused. Its
   roledescriptions are `Strings.CarouselRole` / `CarouselSlideRole`.
+  Both the current slide and total use the page locale's digits, on
+  first render and after keyboard, button or automatic steps.
 - **Combobox**: `combobox-form` (the no-script GET form),
   `combobox-input`, `combobox-listbox`, `combobox-option`,
   `combobox-meta` (an option's `Meta` line, its own part so the
@@ -439,10 +452,63 @@ The parts the navigation members draw beyond the shared vocabulary:
   combobox stays open; `Inline` (`data-hui-combobox-inline`) marks a
   listbox that is the surface's own content, the command palette's
   result list, whose Escape goes on to close the dialog in one press.
-  `ComboboxRows` renders an island answer's rows. With script, Enter
+  `ComboboxRows` renders an island answer's rows and refuses duplicate
+  option IDs, including collisions between explicit and derived IDs.
+  With script, Enter
   commits only a highlighted option; with no active option, a closed
   list, or no results it does nothing and never submits the no-script
   GET form. The GET fallback remains available without JavaScript.
+  ArrowUp in an open list with no active option selects the last
+  enabled, visible option, just as it does when opening a closed list.
+  A second Escape clears a nonempty query and notifies input listeners
+  without reopening the list or retaining an active option.
+  IME composition owns its Escape key, including Safari's keyCode 229
+  event after `isComposing` becomes false; both the popup and any
+  enclosing disclosure, widget or intercepted drawer remain open,
+  even when the listbox is already closed. Escape consumers ignore
+  either composition indicator without clearing text or preventing
+  the input method's default action.
+  Pointer picks consume only unmodified primary clicks. Modified and
+  non-primary clicks are left alone. An enabled option with a safe `Href`
+  renders `<li role="none"><a role="option" href="…" tabindex="-1">…</a></li>`:
+  the anchor owns the option ID, value, classes and active state while
+  staying out of the Tab order, including inside a modal, intercepted
+  drawer, trap disclosure or responsive pane. Tab and Shift+Tab wrap
+  between tabbable controls, never through option links; closing the
+  list cannot strand focus on a hidden option. From a programmatically
+  focused negative-tabindex target, either direction moves to the next
+  tabbable control in DOM order, wrapping inside the trap when necessary;
+  a trap with no Tab stops consumes Tab without moving focus.
+  Visible tabbable controls inside an untrapped nested disclosure remain
+  in the enclosing trap's Tab order, including at its wrap boundaries.
+  All four traps exclude controls that cannot receive focus: closed
+  disclosure content, hidden or visibility-hidden content, skipped
+  content-visibility regions, inert descendants and disabled controls.
+  A closed disclosure whose content CSS makes visible still contributes
+  its tabbable controls; closed state alone does not exclude them.
+  Middle-click and modified clicks retain
+  native link behavior. A plain primary click fills the input and closes
+  the list while letting the link router own navigation exactly once;
+  an already-claimed or cancelled click is not retried by the picker.
+  Such a click never calls the programmatic navigator as a fallback,
+  even when URL deduplication would suppress a second history write.
+  Setting a client signal on the link does not itself claim navigation:
+  an absolute same-origin option still commits the signal and selection
+  and navigates once when the link router declines its absolute `href`.
+  A page listener cancelling the option click before the runtime's signal
+  and routing delegates run suppresses navigation and history writes,
+  even on a signal-bearing option; the signal delegate's own default
+  prevention is distinct.
+  A keyboard pick uses the SPA navigator once. An Enter keydown cancelled
+  before the combobox's document delegate runs leaves the selection, open
+  list and history unchanged. Input listeners run before that delegate;
+  document listeners must be registered earlier. A later listener cannot
+  undo a pick or navigation the runtime has already handled. Disabled or
+  unsafe destinations have no native link.
+  Programmatic navigation resolves relative destinations against the
+  document's base URL, including a `<base href>` when present, before
+  deciding whether the complete destination is already current.
+  `ComboboxRows` and the site-search palette use the same link contract.
 - **DatePicker**: `datepicker-inputs` and `datepicker-input` (the
   native `<input type=date>`, or a `Range`'s two, which are the value),
   `datepicker-calendar` (the island region), `datepicker-month` (one
@@ -642,7 +708,11 @@ families:
 - **headless-feedback** (`[data-hui-copy]`, `[data-hui-toast-stack]`
   and `[data-cui-toast-stack]`, `[data-hui-network-retry]`; the copy
   wrapper is a marker so a copy that toasts finds the module loaded):
-  the toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
+  runtime rows announce through `role="status"` (info/success) or
+  `role="alert"` (warning/danger), without redundant `aria-live`.
+  The kernel fallback uses the same role-only announcement when the module
+  cannot load or a page has no toast stack.
+  The toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is
   this module now; a row is cloned from the stack's `ToastTemplate` and
@@ -650,11 +720,23 @@ families:
   page it returns `null` and the kernel's fallback region takes the
   toast) and the offline banner's retry link. With `headless-copy` it
   replaced the retired `copy`, `toasts` and `networkretrybanner`
-  runtime modules.
+  runtime modules. Dismissing a focused runtime row moves focus to the
+  next available row control, then a previous row, then the last
+  connected control focused outside the stack (including a programmatic
+  `tabindex="-1"` origin). Capacity eviction uses
+  the same recovery. Background expiry never moves external focus,
+  and the exit timer does not reclaim focus moved elsewhere.
+  Server-rendered rows keep their Island dismissal link: when its response
+  removes the focused row, focus returns to the last connected external
+  control. A reader who moved focus elsewhere while the request was pending
+  keeps that focus, and an unsuccessful dismissal leaves the row alone.
 - **headless-bell** (`[data-hui-notification-bell]`): the bell's spoken
   count re-said when a signal changes it (the module watches the
   badge's text, which the `UnreadBind` signal writes, and re-formats
-  the anchor's `aria-label` from it).
+  the anchor's `aria-label` from it). The required `Label` remains the
+  name's prefix on the server and after every update, followed by the
+  localized count sentence. `data-hui-notification-label` carries that
+  label separately so a literal `{{n}}` in it is never substituted.
 - **headless-selection-copy** (`[data-hui-selection-copy]`): a
   selection's Copy control fetches its same-origin URL with one `_id`
   per checked row and writes the CSV answer to the clipboard, then
@@ -666,6 +748,12 @@ families:
   group (persisted through the same storage key the bootstrap reads,
   so the scheme never flashes). It replaced the retired `backtotop`
   and `themeswitch` runtime modules.
+
+  The sentinel follows the largest threshold among currently connected
+  links. Soft navigation or an island replacement can lower that threshold;
+  links removed from the document no longer contribute, even when a signal
+  empties its HTML region without inserting any replacement nodes. Removing
+  the final link resets the sentinel to zero.
 
 The navigation-behaviour families ship as their own modules, each
 registered the same way:

@@ -1,5 +1,10 @@
 # Entity screens (entityui)
 
+EntityUI reserves `POST _bulk`, `GET _export.csv` and `POST _pick` beneath
+each entity it owns. Custom endpoints at those method/path pairs are
+refused before publishing registry entries or routes, in either registration
+order. A corrected entity declaration can be retried after refusal.
+
 `framework/entityui` draws an entity's list, record and create screens from
 its schema, its `Display` config and its `States`. Generated apps draw
 through it, the admin battery composes it, and a hand-written app page can
@@ -225,7 +230,10 @@ keeps the UI unchanged; without a callback the default stays
   `PickerHandler` serves the search: POST only, JSON only, 4 KB body,
   no-store, refused cross-site, and gated by the host entity's read and
   the related entity's read and per-row Decider. `App.EntityUI` and the
-  admin mount it beside `_bulk`.
+  admin mount it beside `_bulk`. A failed related-record read answers a
+  structured 500 without exposing store or hook details, not a successful
+  empty list. The initial form displays the field's unavailable state when
+  its picker read fails.
   A `JSON` field is a mono text area checked as JSON in the browser as
   it is typed (`ui.TextAreaConfig.JSON`): an invalid value stops the
   save before it is sent; the server still validates. The area, the
@@ -269,9 +277,10 @@ keeps the UI unchanged; without a callback the default stays
 - **Stats and charts**: `appUI.StatValue` (agg `count` or empty, or
   `sum` of an int, float or decimal field; `where` in the query DSL),
   `GroupBars`, `GroupSlices` and `LineChart` (rows per value of a field,
-  in value order, an enum's in its declared order). The database computes
-  each over every match (`crud.SumAll`, `GroupCountAll`), so a sum is
-  whole and rounded once, from the database's total. Any other agg
+  in value order, an enum's in its declared order). Aggregates cover
+  every match (`crud.SumAll`, `GroupCountAll`), so a sum is whole and
+  rounded once. Decimal sums use exact database arithmetic on Postgres
+  and exact addition of stored decimal values on SQLite. Any other agg
   prints "—". On an entity with `AfterList` hooks the stat totals the
   masked rows instead, and past 100,000 rows prints "—" rather than part
   of them; a field with more than 100 values draws no chart. Each logs
@@ -363,6 +372,11 @@ page: the entity's `Display.PageSizes`, else 25, 50 and 100, each within
 the first page; the param rides every other link like `as`, and a size
 not on offer is ignored. A builder's `PageSize`, a preview (`Top`) and
 an embedded list offer none.
+
+An unset optional boolean draws the muted empty mark in table cells and
+bulk previews, not a No badge. Stored false and true draw No and Yes.
+Boolean link labels and card titles, subtitles and metadata use the same
+localized Yes/No words; unset values contribute no text.
 
 The list builder also takes `Key` (namespaces its query params when two
 lists share a page), `View` (the view that opens when the URL names
@@ -755,8 +769,8 @@ _ = list.RenderCtx(ctx)
   tenant scope are the write route's own gates; a purge of a live row
   answers 409 and touches nothing. Before the write each handler reads
   the row through the caller's read hooks (`crud.WithReadHooks`), as the
-  trash view and the bulk restore do, so a row a `BeforeList` hook hides
-  answers 404 and is not restored or purged. A form-RPC caller gets a status and
+  trash view and the bulk restore do, so a row a `BeforeList` or `BeforeGet`
+  hook hides answers 404 and is not restored or purged. A form-RPC caller gets a status and
   a toast; a plain form post gets a 303 back to the Deleted view, along
   a same-origin relative return path the form carried — never an
   absolute URL. Cross-site posts are refused, the body is capped and
@@ -910,7 +924,9 @@ and so does an entity with no REST write routes.
   the runner (the process died in between, or `Enqueue` failed) is
   handed over again at `App.Start` once it is a minute old
   (`UI.ResumeBulkJobs`); a refused `Enqueue` marks the job stopped
-  instead. Resume also adopts already-enqueued jobs whose non-null bulk
+  instead, even if the confirming client disconnects. That settlement
+  preserves request values without its cancellation and has a bounded
+  timeout. Resume also adopts already-enqueued jobs whose non-null bulk
   lease expired before the grace cutoff, preserving settled outcomes.
   An enqueued job with no lease, a live lease, or a recently expired lease
   is not adopted. Custom `BulkStore.Unenqueued` implementations must honor

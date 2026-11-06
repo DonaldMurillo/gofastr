@@ -24,8 +24,8 @@ func TestEntityEndpointsJoinRegistration(t *testing.T) {
 	if len(ent.Config.Endpoints) != 1 || ent.Config.Endpoints[0].Name != "revoke_license" {
 		t.Fatalf("registry config lacks the endpoint: %+v", ent.Config.Endpoints)
 	}
-	if len(app.pendingEndpoints) != 0 {
-		t.Fatal("a registered entity's endpoints are still queued; Start would refuse")
+	if err := app.checkQueuedEndpointsClaimed(); err != nil {
+		t.Fatalf("a registered entity's queue is unclaimed; Start would refuse: %v", err)
 	}
 }
 

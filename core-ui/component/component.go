@@ -68,7 +68,7 @@ type ComponentBase struct {
 // RenderComponent calls the Render method of any Component and returns its HTML.
 // This is a convenience function for composing components.
 func RenderComponent(c Component) render.HTML {
-	return c.Render()
+	return RenderComponentCtx(context.Background(), c)
 }
 
 // RenderComponentCtx renders a component with a request context, preferring
@@ -132,11 +132,16 @@ func SlugifyWidgetID(id string) string {
 // Output: <div data-widget="{id}">{component.Render()}</div>, plus
 // data-behavior when the component has actions.
 func (w *Widget) Render() render.HTML {
+	return w.RenderCtx(context.Background())
+}
+
+// RenderCtx renders the widget and passes the request context to its component.
+func (w *Widget) RenderCtx(ctx context.Context) render.HTML {
 	attrs := map[string]string{"data-widget": w.ID}
 	if w.IsInteractive() {
 		attrs["data-behavior"] = "/__gofastr/widget/" + w.ID + ".js"
 	}
-	return render.Tag("div", attrs, w.Component.Render())
+	return render.Tag("div", attrs, RenderComponentCtx(ctx, w.Component))
 }
 
 // IsInteractive returns true if the widget's component has actions.
@@ -194,7 +199,7 @@ func SafeRenderCtx(ctx context.Context, c Component) (html render.HTML, err erro
 func ComponentList(components ...Component) render.HTML {
 	var parts []render.HTML
 	for _, c := range components {
-		parts = append(parts, c.Render())
+		parts = append(parts, RenderComponent(c))
 	}
 	return render.Join(parts...)
 }

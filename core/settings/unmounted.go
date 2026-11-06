@@ -267,7 +267,7 @@ func withoutSection(doc, name, header string) string {
 		top := isTop(line)
 		if top && strings.HasPrefix(line, name+":") {
 			in = true
-			if n := len(out); n > 0 && out[n-1] == header+"\n" {
+			if n := len(out); n > 0 && strings.TrimRight(out[n-1], "\r\n") == header {
 				out = out[:n-1]
 			}
 			continue

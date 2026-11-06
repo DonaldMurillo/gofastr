@@ -193,7 +193,7 @@ func TestFillResolutionOrder(t *testing.T) {
 		if outerFill != nil {
 			outer.Fill(aside, outerFill)
 		}
-		inner := outer.SubGroup("/a/b", nil)
+		inner := outer.SubGroup("b", nil)
 		if innerFill != nil {
 			inner.Fill(aside, innerFill)
 		}

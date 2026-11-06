@@ -47,8 +47,8 @@ func main() {
 	if err := app.Batteries.Register(search); err != nil {
 		panic(err)
 	}
-	// trigger goes in the site header; the palette mounts as a widget.
-	trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+	// The palette mounts once; its trigger renders in each request's header.
+	paletteConfig := ui.CommandPaletteConfig{
 		Name:   "site-command-palette",
 		Search: true,
 		Commands: []ui.PaletteCommand{
@@ -59,11 +59,17 @@ func main() {
 		SearchPage: "/search",
 		// Where the trigger goes without script.
 		FallbackHref: "/search",
-	})
-	_ = trigger
+	}
+	_, palette := ui.CommandPalette(paletteConfig)
 	widget.MountBuilder(app.Router(), palette)
 }
 ```
+
+In the header's request render, use
+`ui.CommandPaletteTrigger(ctx, paletteConfig)` with that request's context
+and the same config. The trigger's default words then follow the reader's
+locale without constructing another modal. Translated command labels use
+`CommandPaletteFunc` and a config built for that same request.
 
 `Search: true` marks the palette's list with `data-search`, which loads the
 `sitesearch` runtime module. The palette opens on its `Commands`, the short
@@ -72,6 +78,10 @@ add result rows below the commands that match. A query still loading
 after 150 ms shows a disabled "Loading…" row, and one that matches
 nothing shows "No matches" (both localized: `ui.combobox.loading`,
 `ui.combobox.noResults`).
+Queries without a searchable term (at least two letters or digits) clear
+search results and the active option. With no visible palette commands,
+the list closes and clears its announcement instead of saying no matches
+for a search that did not run. Matching commands remain available.
 
 ## What gets indexed
 
@@ -171,6 +181,11 @@ first whole-word hit, and hits are wrapped in `<mark>`. With `SearchPage`
 set, the rows end with "See all results for “…”" (`ui.searchResults.all`),
 which opens the search page for the query.
 
+Block elements separate indexed words even when the rendered HTML has no
+whitespace between them. This includes adjacent addresses, forms,
+fieldsets, legends, captions, and page grouping elements. Inline elements
+preserve words split across emphasis or other inline markup.
+
 ## Search page
 
 `sitesearch.Screen(b)` is a page of every result, 20 at a time. Mount it
@@ -203,6 +218,15 @@ renders) updates the page in place as the reader types:
   way the client router fetches a partial, and swaps in the status line,
   the list and the pager. The input is never replaced, so focus and caret
   stay put. Pager links are ordinary links the router follows.
+  Only the current query's response may update the stream session; a
+  session rollover also clears the router's page caches so pages from a
+  previous identity cannot replay. Late responses are ignored.
+  Live requests advertise only the markup generation the loaded kernel
+  supports. An older kernel without that value sends no generation,
+  leaving the server's version-skew guard in charge.
+  Policy redirects follow the router's response contract: same-document
+  destinations navigate in place, while document destinations leave the
+  current document. Redirected pages are never parsed as search results.
 - In a static export there is no server to render the page, so the module
   ranks with `sitesearch-static` and draws the same markup itself. A query
   in the address (`/search?q=table`) runs on load. Instead of page links it
@@ -211,6 +235,13 @@ renders) updates the page in place as the reader types:
 Either way the address follows the query (`?q=`) with `replaceState`, so
 typing adds no history entries and a reload or a shared link shows the same
 results. Submitting the form runs the query at once instead of reloading.
+
+If a live request fails, or an export cannot load its search module,
+manifest, shard, or result page, the current query clears the previous
+results and pager and announces `sitesearch.unavailable` ("search index
+unavailable") in the reader's language. This includes a failed "More
+results" request. A late failure from an older query leaves the current
+results intact; typing or submitting again retries the search.
 
 ## Static export
 

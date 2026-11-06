@@ -41,6 +41,22 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 	// outside core qualifies: it ships in a binary only when its
 	// package is imported, and on a page only when asked for.
 	behaviorOverrides := map[string]int{
+		// TestIslandToastReturnsFocus: focused-row detach observation and
+		// origin recovery share the toast lifecycle, 3144 measured + 2.
+		"framework/headless/feedback.js": 3146,
+		// framework/headless's disclosure and sortable list, each at the
+		// walk's line before the 2026-11-05 IME Escape fix: an Escape or
+		// key handler ignores a composition event (`isComposing` or
+		// keyCode 229, Safari's), so the key that ends composition never
+		// closes a disclosure or moves a sortable row. sortablelist 3089
+		// measured (2 clearance), pinned by TestIMEKeepsEscapeConsumers.
+		// The disclosure trap also skips negative-tabindex controls
+		// (TestTrapSkipsNegativeControls): 3094 measured with both, plus
+		// 2. Each is one module loaded only on a page carrying that
+		// pattern.
+		// TestTrapKeepsNestedTabOrder retains nested stops: 3174 + 2.
+		"framework/headless/disclosure.js":   3176,
+		"framework/headless/sortablelist.js": 3091,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed

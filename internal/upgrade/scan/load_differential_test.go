@@ -110,8 +110,8 @@ func TestDifferentialSolverMatchesGoList(t *testing.T) {
 		writeWorkspaceFile(t, root, dir+"/"+f.name, f.src)
 		label := fixtureLabel(f.name, f.src)
 		impPath := "example.com/fx/" + dir
-		cfg, ok := solveFileConfig([]byte(f.src), f.name)
-		if ok {
+		cfg, err := solveFileConfig([]byte(f.src), f.name)
+		if err == nil {
 			claims = append(claims, claim{label, impPath, f.name, cfg, true})
 			continue
 		}

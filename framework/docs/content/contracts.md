@@ -321,6 +321,11 @@ gofastr verify --strict --baseline-write
 
 That records every current finding into
 `.gofastr-contracts-baseline.json` and commits it. It refuses to run
+with `--sarif`: record the baseline and export SARIF in separate runs.
+This refusal happens before analysis, fixes or either artifact is written.
+With `--json`, the baseline result also includes the run's `notices`,
+including degraded changed-file checks and unmounted-package warnings.
+It also refuses to run
 with `--rule` or a capability filter: a baseline recorded from a
 narrowed run would erase every other rule's accepted debt, and the next
 full `verify` or `build` would fail on findings the team had already
@@ -428,7 +433,9 @@ never mention it. Without `--changed`, `--fix` still applies everywhere.
 ## In the dev loop
 
 `gofastr dev` reports contract findings after each reload, scoped to the
-files you changed:
+files you changed. Saves while analysis is running coalesce into one
+trailing pass, so the last save in a burst is checked without stacking
+concurrent analyses:
 
 ```
 ✓ Reloaded!
@@ -631,6 +638,12 @@ must notice.
   "durationMs": 705.3
 }
 ```
+
+With `--json`, stdout is exactly one JSON document on failures too,
+including invalid flags and unknown `--explain` rules. Operational errors
+carry an `error` string; human-readable error details go to stderr.
+Report `root` is the absolute analysed directory even when vet stops
+the run before contracts execute.
 
 `capabilities` appears when the run was scoped (`gofastr verify routing`),
 `config` when a config file was found, and `baselined`,

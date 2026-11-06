@@ -59,6 +59,9 @@ func (r *Router) Screen(screen *Screen, layout *Layout) {
 	}
 
 	screen.Path = normalizeRoutePath(screen.Path)
+	if screen.Intercept != nil {
+		screen.Intercept = normalizeIntercept(screen.Intercept)
+	}
 	RefuseRetiredScreenMethods("screen "+screen.Path, screen.Component)
 
 	if !strings.Contains(screen.Path, ":") {
@@ -190,13 +193,20 @@ func (r *Router) Resolve(path string) (*Screen, map[string]string, bool) {
 // routing-form segments; each is decoded before it is compared or bound,
 // so a param value may hold "/" ("/files/a%2Fb" binds name "a/b").
 func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
+	params, ok := matchDynamicRouting(segments, pathParts)
+	for name, value := range params {
+		params[name] = decodeRouteSeg(value)
+	}
+	return params, ok
+}
+
+func matchDynamicRouting(segments, pathParts []string) (map[string]string, bool) {
 	lastIdx := len(segments) - 1
 	catchAll := lastIdx >= 0 && isCatchAllSeg(segments[lastIdx])
 	parts := make([]string, len(pathParts))
 	for i, p := range pathParts {
 		parts[i] = decodeRouteSeg(p)
 	}
-	pathParts = parts
 
 	if !catchAll {
 		if len(segments) != len(pathParts) {
@@ -205,14 +215,14 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 		params := make(map[string]string)
 		for i, seg := range segments {
 			if isParamSeg(seg) {
-				if pathParts[i] == "" {
+				if parts[i] == "" {
 					return nil, false
 				}
-				if !constraintOK(seg, pathParts[i]) {
+				if !constraintOK(seg, parts[i]) {
 					return nil, false
 				}
 				params[segParamName(seg)] = pathParts[i]
-			} else if seg != pathParts[i] {
+			} else if seg != parts[i] {
 				return nil, false
 			}
 		}
@@ -229,18 +239,22 @@ func matchDynamic(segments, pathParts []string) (map[string]string, bool) {
 	for i := range lastIdx {
 		seg := segments[i]
 		if isParamSeg(seg) {
-			if pathParts[i] == "" {
+			if parts[i] == "" {
 				return nil, false
 			}
-			if !constraintOK(seg, pathParts[i]) {
+			if !constraintOK(seg, parts[i]) {
 				return nil, false
 			}
 			params[segParamName(seg)] = pathParts[i]
-		} else if seg != pathParts[i] {
+		} else if seg != parts[i] {
 			return nil, false
 		}
 	}
-	params[segParamName(segments[lastIdx])] = strings.Join(pathParts[lastIdx:], "/")
+	remainder := strings.Join(pathParts[lastIdx:], "/")
+	if remainder == "" {
+		return nil, false
+	}
+	params[segParamName(segments[lastIdx])] = remainder
 	return params, true
 }
 

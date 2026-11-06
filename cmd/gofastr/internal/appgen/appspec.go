@@ -760,7 +760,7 @@ func appSpecE2EWritableTarget(bp appspec.AppSpec) (appSpecCRUDTarget, bool) {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	for _, e := range names {
 		decl, ok := entityMap[e]
-		if !ok || appSpecUnfillableRelation(decl) {
+		if !ok || appSpecUnfillableRelation(decl) || appSpecUnfillableConstraints(decl) {
 			continue
 		}
 		createJSON, updateJSON, probe := appSpecE2ECreateBody(decl)
@@ -796,6 +796,18 @@ func appSpecUnfillableRelation(decl framework.EntityDeclaration) bool {
 	keyCols := appspec.AppSpecKeyColNames(decl)
 	for _, f := range decl.Fields {
 		if (f.Required || slices.Contains(keyCols, f.Name)) && strings.EqualFold(strings.TrimSpace(f.Type), "relation") {
+			return true
+		}
+	}
+	return false
+}
+
+func appSpecUnfillableConstraints(decl framework.EntityDeclaration) bool {
+	keyColumns := appspec.AppSpecKeyColNames(decl)
+	for _, field := range decl.Fields {
+		if (field.Required || slices.Contains(keyColumns, field.Name)) &&
+			!appspec.AppSpecFieldSystem(field.Name) && !field.Hidden &&
+			(field.Min != nil || field.Max != nil || field.Pattern != "") {
 			return true
 		}
 	}
@@ -1700,12 +1712,12 @@ import "github.com/DonaldMurillo/gofastr/framework/entityui"
 var appExtensions = entityui.Extensions{}
 `
 
-// appSpecSiteDescription resolves the generated app's site-level meta
+// AppSpecSiteDescription resolves the generated app's site-level meta
 // description: the app spec's app.description when set, otherwise an
 // honest derivation from what the generator actually knows: the app
 // name and its entities. Never empty: uihost strict mode (which
 // generated apps ship with) requires a site description.
-func appSpecSiteDescription(bp appspec.AppSpec) string {
+func AppSpecSiteDescription(bp appspec.AppSpec) string {
 	if bp.App.Description != "" {
 		return bp.App.Description
 	}
@@ -1997,7 +2009,7 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	// every strict check, so a later screen that forgets its SEO (or
 	// its axe scan, in dev) fails boot with the guided finding list
 	// instead of shipping bare.
-	extraUIOpts := fmt.Sprintf(", uihost.WithDescription(%q)", appSpecSiteDescription(bp))
+	extraUIOpts := fmt.Sprintf(", uihost.WithDescription(%q)", AppSpecSiteDescription(bp))
 	extraUIOpts += ", uihost.WithAppIcon(appIconPNG())"
 	sitemapExclude := ""
 	robotsDisallow := `"/__gofastr/"`

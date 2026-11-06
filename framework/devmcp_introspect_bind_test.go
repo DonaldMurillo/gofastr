@@ -23,6 +23,9 @@ func devIntrospectionTools(a *App) []string {
 // live to any TCP client that sets Host: localhost. They go the way the
 // log read tools go, unless GOFASTR_DEV_MCP_EXPOSE accepts the risk.
 func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "1")
+	t.Setenv("GOFASTR_ENV", "development")
+	t.Setenv("GOFASTR_DEV_MCP", "")
 	devApp := func(t *testing.T, guardFirst bool, addr string) *App {
 		t.Helper()
 		a := NewApp()
@@ -57,6 +60,7 @@ func TestDevIntrospectionWithdrawnOnExposed(t *testing.T) {
 	t.Setenv("GOFASTR_DEV_MCP_EXPOSE", "")
 
 	// An explicit WithMCPIntrospection is a production choice, not dev's.
+	t.Setenv("GOFASTR_DEV", "0")
 	explicit := NewApp(WithMCPIntrospection())
 	explicit.guardDevMCPBind("0.0.0.0:8080", "tcp")
 	if err := explicit.InitPlugins(); err != nil {

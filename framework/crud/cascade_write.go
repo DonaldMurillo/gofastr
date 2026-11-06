@@ -470,7 +470,11 @@ func prefixValidationErrors(prefix string, fields map[string][]schema.Violation)
 	return out
 }
 
-func (ch *CrudHandler) findCascadeValue(body map[string]any, relName string) (any, bool) {
+func (ch *CrudHandler) findCascadeValue(body map[string]any, relation entity.Relation) (any, bool) {
+	if !relation.CascadeWrite {
+		return nil, false
+	}
+	relName := relation.Name
 	if val, ok := body[relName]; ok && val != nil {
 		return val, true
 	}
@@ -497,14 +501,27 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 		return false
 	}
 	for _, rel := range ch.Entity.Config.Relations {
-		if !rel.CascadeWrite {
-			continue
-		}
-		if _, ok := ch.findCascadeValue(body, rel.Name); ok {
+		if _, ok := ch.findCascadeValue(body, rel); ok {
 			return true
 		}
 	}
 	return false
+}
+
+func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
+	if ch.Entity == nil {
+		return nil
+	}
+	fields := make(map[string][]schema.Violation)
+	for _, relation := range ch.Entity.Config.Relations {
+		if _, present := ch.findCascadeValue(body, relation); present {
+			fields[relation.Name] = []schema.Violation{{Reason: reasonCascadeUpsert}}
+		}
+	}
+	if len(fields) != 0 {
+		return &ValidationError{fields: fields}
+	}
+	return nil
 }
 
 // childColumns names a cascade child's keys the way its parent's body was
@@ -544,10 +561,10 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
-		if !rel.CascadeWrite || rel.Type != entity.RelManyToOne {
+		if rel.Type != entity.RelManyToOne {
 			continue
 		}
-		rawVal, ok := ch.findCascadeValue(body, rel.Name)
+		rawVal, ok := ch.findCascadeValue(body, rel)
 		if !ok {
 			continue
 		}
@@ -569,7 +586,7 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 		// tenant column) would leave the parent on its old reference while
 		// the child is written and handed back as attached, so the
 		// cascade is refused before any child is written.
-		if fk := oneFK(rel); ch.declaresField(fk) && !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
+		if fk := oneFK(rel); !ch.declaresField(fk) || !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
 			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
 				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
 			}}}}
@@ -670,10 +687,10 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 		// Belongs-to cascades ran before the parent was written and
 		// need only the target's key; the parent's own key, which the
 		// dependent arms read below, may span several columns.
-		if !rel.CascadeWrite || rel.Type == entity.RelManyToOne {
+		if rel.Type == entity.RelManyToOne {
 			continue
 		}
-		rawVal, ok := ch.findCascadeValue(body, rel.Name)
+		rawVal, ok := ch.findCascadeValue(body, rel)
 		if !ok || rawVal == nil {
 			continue
 		}

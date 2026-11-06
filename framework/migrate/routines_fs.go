@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/DonaldMurillo/gofastr/internal/bom"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 )
@@ -47,6 +48,11 @@ const (
 // directories are errors: the framework screams rather than silently
 // no-op'ing, the same posture as a misconfigured entity.
 //
+// A plain name (no dialect tag) cannot contain dots: "audit.log_fn.sql"
+// reads ".log_fn" as an unknown dialect suffix and is refused, which is
+// what catches a typo like "foo.mysql.sql". A dotted name loads with a
+// dialect tag ("audit.log_fn.pg.sql").
+//
 // Only top-level files in dir are considered. Sub-directories, dotfiles,
 // and non-`.sql` files are ignored (README.md, etc.). Routines come back in
 // deterministic name-sorted order so the boot plan and generated migrations
@@ -61,12 +67,12 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", dir, err)
 	}
 
-	type upFile struct {
+	type routineFile struct {
 		body    string
 		dialect Dialect
 	}
-	ups := make(map[string]upFile, len(entries))
-	downs := make(map[string]string, len(entries))
+	ups := make(map[string]routineFile, len(entries))
+	downs := make(map[string]routineFile, len(entries))
 
 	// Single source-of-truth: classify each .sql file at the top level of dir.
 	for _, e := range entries {
@@ -87,11 +93,11 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		base := strings.TrimSuffix(name, sqlExt) // "foo" | "foo.down" | "foo.pg" | "foo.pg.down" | "foo.sqlite.down"
 
 		// Split dialect + down markers off the base. The grammar is
-		// [<dialect>][.down] trailing the routine name, but the routine name
-		// itself may legally contain dots (e.g. "audit.log_fn"). We resolve
-		// right-to-left: if the last segment is "down", it's a Down file; if
-		// the segment before that (or the last one, when not Down) is a known
-		// dialect suffix, it scopes the Up.
+		// [<dialect>][.down] trailing the routine name, resolved right to
+		// left: if the last segment is "down", it's a Down file; if the
+		// segment before that (or the last one, when not Down) is a known
+		// dialect suffix, it scopes the routine. Any other trailing segment
+		// is refused below, so only a dialect-tagged name may contain dots.
 		isDown := false
 		if strings.HasSuffix(base, downPart) {
 			isDown = true
@@ -99,6 +105,9 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		}
 
 		routineName, dialect, dsuffix := splitDialectSuffix(base)
+		if strings.HasSuffix(routineName, downPart) {
+			return nil, fmt.Errorf("migrate.RoutinesFS: %q: .down must follow the dialect suffix, immediately before .sql", name)
+		}
 		if dsuffix != "" && dialect == "" {
 			// Unknown dialect suffix: reject loud rather than silently
 			// treating "foo.mysql.sql" as a name called "foo.mysql".
@@ -106,7 +115,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 				name, dsuffix, dialectPostgres, dialectSQLite)
 		}
 
-		body, err := fs.ReadFile(fsys, dir+"/"+name)
+		body, err := fs.ReadFile(fsys, path.Join(dir, name))
 		if err != nil {
 			return nil, fmt.Errorf("migrate.RoutinesFS: read %q: %w", name, err)
 		}
@@ -120,7 +129,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 			if _, exists := downs[routineName]; exists {
 				return nil, fmt.Errorf("migrate.RoutinesFS: routine %q has more than one down file", routineName)
 			}
-			downs[routineName] = trimmed
+			downs[routineName] = routineFile{body: trimmed, dialect: dialect}
 			continue
 		}
 
@@ -139,7 +148,7 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 				routineName, dialectPostgres, sqlExt, dialectSQLite, sqlExt)
 		}
 		_ = existing
-		ups[routineName] = upFile{body: trimmed, dialect: dialect}
+		ups[routineName] = routineFile{body: trimmed, dialect: dialect}
 	}
 
 	if len(ups) == 0 {
@@ -168,7 +177,10 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 		u := ups[n]
 		r := Routine{Name: n, Up: u.body, Dialect: u.dialect}
 		if d, ok := downs[n]; ok {
-			r.Down = d
+			if d.dialect != "" && d.dialect != u.dialect {
+				return nil, fmt.Errorf("migrate.RoutinesFS: routine %q: down dialect %q does not match up dialect %q", n, d.dialect, u.dialect)
+			}
+			r.Down = d.body
 		}
 		out = append(out, r)
 	}
@@ -180,10 +192,10 @@ func RoutinesFS(fsys fs.FS, dir string) ([]Routine, error) {
 // base ends in a dot-segment that isn't a known dialect, suffixMatched is the
 // trailing segment (so the caller can decide whether to reject).
 //
-// The routine name is everything before the dialect suffix. A name may itself
-// contain dots ("audit.log_fn"). We only strip a known suffix, so
-// "audit.log_fn.pg" → ("audit.log_fn", DialectPostgres, ".pg") and
-// "audit.log_fn.else" → ("audit.log_fn.else", "", ".else") (rejected upstream).
+// The routine name is everything before the dialect suffix. Only a known
+// suffix is stripped, so "audit.log_fn.pg" → ("audit.log_fn",
+// DialectPostgres, ".pg"), while "audit.log_fn" → ("audit.log_fn", "",
+// ".log_fn"), which RoutinesFS refuses as an unknown dialect suffix.
 func splitDialectSuffix(base string) (name string, dialect Dialect, suffix string) {
 	switch {
 	case strings.HasSuffix(base, dialectPostgres):

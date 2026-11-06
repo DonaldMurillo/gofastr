@@ -168,6 +168,11 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if err != nil {
 		return nil, fmt.Errorf("insert: %w", err)
 	}
+	if id, ok := ch.rowID(result); ok {
+		if err := ch.stampRow(ctx, id); err != nil {
+			return nil, err
+		}
+	}
 
 	// A dependent cascade joins on one parent key column; a composite
 	// parent has none, and processDependentCascadeWrites refuses it.

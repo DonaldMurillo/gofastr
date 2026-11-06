@@ -1,6 +1,7 @@
 package scan
 
 import (
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,35 +11,71 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+func (e *engine) gomodFiles() {
+	if len(e.gomodNotes) == 0 {
+		return
+	}
+	e.gomodMatchers(e.moduleRoot)
+	fs.WalkDir(e.appFS, ".", func(rel string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			e.noteUnscanned(rel, "unreadable: "+err.Error())
+			return nil
+		}
+		if entry.IsDir() {
+			if rel != "." && nestedModuleSkip(entry.Name()) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "go.mod" {
+			directory := filepath.Join(e.root, filepath.FromSlash(path.Dir(rel)))
+			if directory != e.moduleRoot {
+				e.gomodMatchers(directory)
+			}
+		}
+		return nil
+	})
+}
+
 // gomodMatchers reads the app's go.mod go directive and reports notes
 // whose go_below it undercuts. The toolchain line never rescues it.
 func (e *engine) gomodMatchers(moduleRoot string) {
 	if len(e.gomodNotes) == 0 {
 		return
 	}
+	rel := "go.mod"
+	if rp, err := filepath.Rel(e.root, moduleRoot); err == nil && rp != "." {
+		rel = path.Join(filepath.ToSlash(rp), "go.mod")
+	}
 	r, err := os.OpenRoot(moduleRoot)
 	if err != nil {
+		e.noteUnscanned(rel, "unreadable: "+err.Error())
 		return
 	}
 	defer r.Close()
 	data, err := r.ReadFile("go.mod")
 	if err != nil {
+		e.noteUnscanned(rel, "unreadable: "+err.Error())
 		return
 	}
 	f, err := modfile.Parse("go.mod", data, nil)
-	if err != nil || f.Go == nil || f.Go.Syntax == nil {
+	if err != nil {
+		e.noteUnscanned(rel, "did not parse: "+err.Error())
 		return
 	}
-	rel := "go.mod"
-	if rp, err := filepath.Rel(e.root, moduleRoot); err == nil && rp != "." {
-		rel = path.Join(filepath.ToSlash(rp), "go.mod")
+	version, line := "1.16", 1
+	if f.Go != nil {
+		version = f.Go.Version
+		if f.Go.Syntax != nil {
+			line = f.Go.Syntax.Start.Line
+		}
 	}
 	for _, n := range e.gomodNotes {
 		below := n.Find.GoMod.GoBelow
-		if !goVersionLess(f.Go.Version, below) {
+		if !goVersionLess(version, below) {
 			continue
 		}
-		e.add(n, Hit{File: rel, Line: f.Go.Syntax.Start.Line, Why: "gomod go " + f.Go.Version + " < " + below})
+		e.add(n, Hit{File: rel, Line: line, Why: "gomod go " + version + " < " + below})
 	}
 }
 

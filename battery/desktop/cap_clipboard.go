@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 )
 
+const clipboardTextLimit = 1 << 20
+
 // clipboardCapability: the OS clipboard, gated clipboard:read /
 // clipboard:write.
 func (b *Battery) clipboardCapability() Capability {
@@ -23,6 +25,9 @@ func (b *Battery) clipboardCapability() Capability {
 					if err != nil {
 						return nil, err
 					}
+					if len(text) > clipboardTextLimit {
+						return nil, &Error{Code: CodeInvalidInput, Message: reasonClipboardTextLimit.Text(ctx)}
+					}
 					return clipboardTextOutput{Text: text}, nil
 				},
 			},
@@ -38,8 +43,8 @@ func (b *Battery) clipboardCapability() Capability {
 					if err := decodeInput(in, &req); err != nil {
 						return nil, err
 					}
-					if len(req.Text) > 1<<20 {
-						return nil, &Error{Code: CodeInvalidInput, Message: "text must be at most 1 MiB"}
+					if len(req.Text) > clipboardTextLimit {
+						return nil, &Error{Code: CodeInvalidInput, Message: reasonClipboardTextLimit.Text(ctx)}
 					}
 					if err := b.shell.Clipboard().WriteText(ctx, req.Text); err != nil {
 						return nil, err

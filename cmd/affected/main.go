@@ -4,6 +4,9 @@
 // `make test`, the git hooks, the red and coverage sweeps, and CI's
 // pull-request run; `scripts/test-all.sh` and GOFASTR_TEST_ALL=1 are the
 // explicit "test everything" spellings.
+// Git filenames are read verbatim, including whitespace and non-ASCII names.
+// A filename containing a line break widens the wrapped command's environment
+// to GOFASTR_TEST_ALL=1 instead of exporting an ambiguous newline-delimited list.
 //
 // A package is affected when any of these hold:
 //
@@ -327,8 +330,8 @@ func changeEnv(env, changed []string, stderr io.Writer) []string {
 		return append(env, "GOFASTR_TEST_ALL=1")
 	}
 	list := strings.Join(changed, "\n")
-	if len(list) > maxChangedEnv {
-		fmt.Fprintf(stderr, "affected: %d changed files are too many to hand the command in %s; it runs as GOFASTR_TEST_ALL=1\n", len(changed), changedFilesEnv)
+	if len(list) > maxChangedEnv || slices.ContainsFunc(changed, func(path string) bool { return strings.ContainsAny(path, "\r\n") }) {
+		fmt.Fprintf(stderr, "affected: %d changed files are too many or contain line breaks for %s; it runs as GOFASTR_TEST_ALL=1\n", len(changed), changedFilesEnv)
 		return append(env, "GOFASTR_TEST_ALL=1")
 	}
 	return append(env, changedFilesEnv+"="+list)
@@ -841,15 +844,15 @@ func changedFiles(o options) ([]string, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	diff, err := gitOutput(o.root, "diff", "--name-only", "--no-renames", base)
+	diff, err := gitOutput(o.root, "diff", "--name-only", "-z", "--no-renames", base)
 	if err != nil {
 		return nil, "", fmt.Errorf("git diff against %s: %w", base, err)
 	}
-	untracked, err := gitOutput(o.root, "ls-files", "--others", "--exclude-standard")
+	untracked, err := gitOutput(o.root, "ls-files", "-z", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, "", fmt.Errorf("git ls-files: %w", err)
 	}
-	files := append(splitLines(diff), splitLines(untracked)...)
+	files := strings.FieldsFunc(diff+untracked, func(char rune) bool { return char == '\x00' })
 	sort.Strings(files)
 	return slices.Compact(files), base, nil
 }

@@ -175,7 +175,7 @@ func (f *Factory) CreateMany(ctx context.Context, n int, perIndex func(i int) ma
 // ----- registry -------------------------------------------------------------
 
 // Registry is the optional collection of named factories shared
-// across a test suite. Use [Suite] as the entry point in tests.
+// across a test suite.
 type Registry struct {
 	mu        sync.RWMutex
 	factories map[string]*Factory

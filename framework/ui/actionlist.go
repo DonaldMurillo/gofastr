@@ -8,6 +8,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/interactive"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
@@ -75,7 +76,11 @@ func ActionList(cfg ActionListConfig) render.HTML {
 		}
 		var row render.HTML
 		if it.Href != "" {
-			row = render.Tag("a", html.Attrs{"class": class, "href": it.Href}, body...)
+			if href := urlsafe.CleanAnchor(it.Href); href != "" {
+				row = render.Tag("a", html.Attrs{"class": class, "href": href}, body...)
+			} else {
+				row = render.Tag("span", html.Attrs{"class": class, "aria-disabled": "true"}, body...)
+			}
 		} else {
 			attrs := html.Attrs{}
 			for k, v := range it.Do.Attrs() {

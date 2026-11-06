@@ -258,6 +258,11 @@ over an unchanged schema rewrites every file byte for byte.
 `--stamp-time` adds `generatedAt`, and the reference page then shows the
 date beside the version.
 
+`gofastr generate sdk --json` writes one document to stdout on both success
+and failure. Source, validation and write errors return
+`{"files":[],"errors":[{"message":"..."}]}` with a nonzero exit status;
+prose diagnostics go to stderr and overwrite warnings are suppressed.
+
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named
 `sdk` (flags win). The same entry runs under `gofastr generate --config`
@@ -306,6 +311,9 @@ download buttons, an auth guide (minting `gfsk_` tokens), an errors
 reference, and one live reference page per entity: fields, endpoints,
 query params, and examples rendered **from the live registry on every
 request**, so the reference cannot drift from the running API.
+The quickstart lists records without an assumed sort column, so entities
+without timestamps work too. To sort, use a filterable/sortable column from
+that entity's fields table; hidden and `NoQuery` columns cannot be sorted.
 
 ```go
 site := app.NewApp("My App")
@@ -313,6 +321,7 @@ site := app.NewApp("My App")
 err := sdkdocs.Mount(site, fwApp.Router(), sdkdocs.Config{
     Registry:     fwApp.Registry,
     CRUDMounted:  fwApp.EntityCRUDMounted,
+    ReadOnlyMounted: fwApp.EntityReadOnlyMounted,
     Artifacts:    os.DirFS("gen/sdk/dist"), // or an embed.FS for single-binary deploys
     BaseURL:      "https://your-app.example.com",
     APIPrefix:    "api",
@@ -326,9 +335,12 @@ alone cannot answer that: an app with no DB mounts no CRUD at all while
 every entity still reads `nil` ("auto"). Without the predicate the site
 publishes a reference page, and an SDK download, for paths that answer
 404. A columned view registered with `App.View` counts as mounted — it
-serves read routes, and read routes are what the site documents. Leaving
-the field nil keeps the older `Exposure`-only behaviour for callers that
-document a registry without an App.
+serves read routes. Also pass `ReadOnlyMounted: fwApp.EntityReadOnlyMounted`
+to omit create, update, delete, batch and state-move routes and create
+examples for those views. Explicit custom endpoints remain documented.
+Leaving `CRUDMounted` nil keeps the older `Exposure`-only behaviour for
+callers that document a registry without an App; leaving `ReadOnlyMounted`
+nil assumes writable routes.
 
 It is deliberately not a `uihost` option: the screens compose
 `framework/ui`, which uihost must never import (its always-on styles
@@ -345,8 +357,11 @@ fields never render.
 
 Download routes live under `<BasePath>/sdk/`: `go.zip` (attachment),
 `client.js` (inline: importable from the URL), `client.d.ts`, and
-`manifest.json`. Responses carry `Cache-Control: no-cache` plus an ETag
-from the manifest hash, so stable URLs revalidate for free.
+`manifest.json`. Public responses carry `Cache-Control: no-cache`;
+with a `Policy`, they carry `private, no-cache` so shared caches cannot
+store policy-gated artifacts. Artifact ETags use the manifest's recorded
+hashes, so stable URLs revalidate for free. The cache policy also accompanies
+304 responses to conditional GET and HEAD requests.
 The downloads follow the same visibility as the pages: every route
 answers 404 unless each entity the manifest's `entities` list names is
 one the site documents, and a missing manifest refuses too. Each file

@@ -18,6 +18,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/framework/access"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Runner is the seam a process module's spawn path plugs into (design §6,
@@ -271,7 +272,7 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		_ = artifact.Close()
 		return nil, fmt.Errorf("processmodule: hash %s: %w", d.ArtifactPath, err)
 	}
-	if got != d.ArtifactSHA256 {
+	if got != asciicase.Lower(d.ArtifactSHA256) {
 		_ = artifact.Close()
 		return nil, &ExecutableSHAMismatchError{
 			Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,
@@ -408,7 +409,7 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 			releasePrepFDs(prep)
 			return nil, fmt.Errorf("processmodule: re-hash %s: %w", d.ArtifactPath, err)
 		}
-		if got != d.ArtifactSHA256 {
+		if got != asciicase.Lower(d.ArtifactSHA256) {
 			releasePrepFDs(prep)
 			return nil, &ExecutableSHAMismatchError{
 				Path: d.ArtifactPath, Expected: d.ArtifactSHA256, Actual: got,

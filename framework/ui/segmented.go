@@ -82,6 +82,9 @@ type SegmentedControlConfig struct {
 
 // SegmentedControl renders the radiogroup with a sliding indicator.
 func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
+	if cfg.RPCPath != "" {
+		checkRPCPath("SegmentedControl", "RPCPath", cfg.RPCPath)
+	}
 	if cfg.Name == "" {
 		panic("ui: SegmentedControl requires Name")
 	}

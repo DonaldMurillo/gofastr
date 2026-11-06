@@ -190,7 +190,7 @@ func (b *Battery) queueFilter(ctx context.Context, current string, stats queue.J
 		if stats == nil {
 			return ""
 		}
-		return strconv.Itoa(n)
+		return i18n.Number(ctx, n)
 	}
 	items := []ui.SegmentLink{{Text: i18nui.AdminQueueAll.Text(ctx), Count: count(queueTotal(stats, "")), Href: href(""), Current: current == ""}}
 	for _, st := range queueStatuses {

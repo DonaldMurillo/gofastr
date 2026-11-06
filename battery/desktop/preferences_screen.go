@@ -187,8 +187,15 @@ func choiceField(ctx context.Context, d Preference, cur string) render.HTML {
 // answers.
 func stringField(ctx context.Context, d Preference, text string) render.HTML {
 	id := "f-" + d.Key
+	help := helpText(ctx, d)
+	if strings.ContainsAny(text, "\r\n") {
+		if help != "" {
+			help += " "
+		}
+		help += hintPrefLegacyLines.Text(ctx)
+	}
 	return ui.TextField(ui.TextFieldConfig{Ctx: ctx,
-		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: helpText(ctx, d),
+		Name: d.Key, Label: d.Label.Text(ctx), ID: id, Value: text, Help: help,
 	})
 }
 
@@ -294,7 +301,7 @@ func (b *Battery) handlePreferencesForm() http.HandlerFunc {
 			writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid, fieldErrs)
 			return
 		}
-		if _, err := p.setRaw(values); err != nil {
+		if _, err := p.setValues(values, true); err != nil {
 			var pe *preferenceError
 			if errors.As(err, &pe) {
 				writePreferencesEnvelope(w, r, http.StatusBadRequest, reasonPrefsInvalid,

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"fmt"
+	"io"
 	"math"
 	"mime"
 	"net"
@@ -283,6 +284,37 @@ func (w *compressWriter) Write(p []byte) (int, error) {
 		return len(p), nil
 	}
 	return w.zw.Write(p)
+}
+
+func (w *compressWriter) ReadFrom(source io.Reader) (int64, error) {
+	if w.hijacked {
+		return 0, http.ErrHijacked
+	}
+	var copied int64
+	if !w.decided {
+		firstChunk := int64(1)
+		if w.needsSniff() {
+			firstChunk = int64(sniffLen - w.buf.Len())
+		}
+		var err error
+		copied, err = io.Copy(struct{ io.Writer }{w}, io.LimitReader(source, firstChunk))
+		if err != nil || copied < firstChunk {
+			return copied, err
+		}
+	}
+	if !w.decided && (!w.accepts || !w.eligible()) {
+		if err := w.decide(false); err != nil {
+			return copied, err
+		}
+	}
+	var rest int64
+	var err error
+	if w.passthrough {
+		rest, err = io.Copy(w.rw, source)
+	} else {
+		rest, err = io.Copy(struct{ io.Writer }{w}, source)
+	}
+	return copied + rest, err
 }
 
 // sniffLen is how much body net/http's DetectContentType reads.

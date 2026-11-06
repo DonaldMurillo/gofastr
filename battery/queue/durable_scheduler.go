@@ -134,6 +134,16 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 	// its payload and fires it again on every tick. The jobs it fired carry
 	// the same user_id, which the queue_jobs eraser matches.
 	table := q.schedulerName("_scheduler_schedules")
+	datexport.Register(datexport.DataExporter{
+		Name:       datexport.ScopedName("queue_scheduler_schedules", table),
+		Source:     "queue",
+		Table:      table,
+		PrimaryKey: "id",
+		Columns: []string{
+			"id", "job_type", "payload", "interval_ns", "cron_spec", "tz",
+			"lane", "priority", "max_attempts", "user_id", "next_run", "updated_at", "version",
+		},
+	})
 	datexport.RegisterEraser(datexport.DataEraser{
 		Name:   datexport.ScopedName("queue_scheduler_schedules", table),
 		Source: "queue",

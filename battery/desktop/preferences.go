@@ -115,8 +115,12 @@ func validatePreferences(decls []Preference) error {
 				}
 			}
 		case PreferenceString:
-			if _, ok := p.Default.(string); !ok {
+			text, ok := p.Default.(string)
+			if !ok {
 				return fmt.Errorf("desktop: preference %q of kind string needs a string Default", p.Key)
+			}
+			if strings.ContainsAny(text, "\r\n") {
+				return fmt.Errorf("desktop: preference %q string Default must not contain CR or LF line breaks", p.Key)
 			}
 		case PreferenceChoice:
 			if len(p.Choices) == 0 {
@@ -310,12 +314,16 @@ func refusePreference(key string, cerr error) *preferenceError {
 // stored under settingsStateKey and preferences_changed carries the
 // applied keys to every open window. keys is sorted.
 func (p *Preferences) setRaw(values map[string]json.RawMessage) (keys []string, err error) {
+	return p.setValues(values, false)
+}
+
+func (p *Preferences) setValues(values map[string]json.RawMessage, form bool) (keys []string, err error) {
 	s := p.b.stateStore()
 	if s == nil {
 		return nil, &Error{Code: CodeUnsupported, Message: "the app state store is not open yet"}
 	}
 	p.mu.Lock()
-	applied, err := p.applyLocked(s, values)
+	applied, err := p.applyLocked(s, values, form)
 	p.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -331,7 +339,11 @@ func (p *Preferences) setRaw(values map[string]json.RawMessage) (keys []string, 
 // applyLocked validates every entry and merges it into the stored
 // settings entry; the caller holds mu so two writers cannot lose one's
 // keys to the other's read-modify-write.
-func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawMessage) ([]string, error) {
+func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawMessage, form bool) ([]string, error) {
+	var cur map[string]json.RawMessage
+	if _, gerr := s.Get(settingsStateKey, &cur); gerr != nil || cur == nil {
+		cur = map[string]json.RawMessage{}
+	}
 	coerced := make(map[string]any, len(values))
 	for _, key := range slices.Sorted(maps.Keys(values)) {
 		i, ok := p.index[key]
@@ -342,18 +354,27 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 		if cerr != nil {
 			return nil, refusePreference(key, cerr)
 		}
+		if p.decls[i].Kind == PreferenceString {
+			text := v.(string)
+			if strings.ContainsAny(text, "\r\n") {
+				return nil, &preferenceError{key: key, reason: reasonPrefLineBreaks}
+			}
+			var stored string
+			if form && json.Unmarshal(cur[key], &stored) == nil && strings.ContainsAny(stored, "\r\n") {
+				if text == strings.NewReplacer("\r", "", "\n", "").Replace(stored) {
+					continue
+				}
+				return nil, &preferenceError{key: key, reason: reasonPrefLegacyLines}
+			}
+		}
 		coerced[key] = v
 	}
 
 	// Read-modify-write of the one settings entry: an undeclared key
 	// already in the file (an app that removed a preference) is left
 	// in place and simply never read.
-	var cur map[string]json.RawMessage
-	if _, gerr := s.Get(settingsStateKey, &cur); gerr != nil {
-		cur = map[string]json.RawMessage{}
-	}
-	if cur == nil {
-		cur = map[string]json.RawMessage{}
+	for key := range coerced {
+		delete(cur, key)
 	}
 	for _, key := range slices.Sorted(maps.Keys(coerced)) {
 		data, merr := json.Marshal(coerced[key])
@@ -362,6 +383,14 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 			return nil, &Error{Code: CodeInternal, Message: "encoding a preference failed"}
 		}
 		cur[key] = data
+		encoded, merr := json.Marshal(cur)
+		if merr != nil {
+			return nil, &Error{Code: CodeInternal, Message: reasonPrefsSaveFailed.Format(nil)}
+		}
+		if len(encoded) > appstate.MaxValueBytes {
+			return nil, &preferenceError{key: key, reason: reasonPrefStorageLimit,
+				params: map[string]any{"max": appstate.MaxValueBytes}}
+		}
 	}
 	if serr := s.Set(settingsStateKey, cur); serr != nil {
 		return nil, &Error{Code: CodeInternal, Message: "storing preferences failed"}
@@ -373,7 +402,8 @@ func (p *Preferences) applyLocked(s *appstate.Store, values map[string]json.RawM
 // JSON forms of the kind's Go type (bool, whole number, string) plus
 // the string spellings the runtime's form serializer produces ("true",
 // "30"): app code passes the typed value, the form path passes the
-// string. Range and choice rules apply; a refusal is a *preferenceError
+// string. String values must not contain CR or LF. Range and choice
+// rules apply; a refusal is a *preferenceError
 // and before Run (no store) it is *Error CodeUnsupported.
 func (p *Preferences) Set(key string, v any) error {
 	raw, err := json.Marshal(v)

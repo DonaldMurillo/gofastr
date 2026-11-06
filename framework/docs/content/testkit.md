@@ -31,6 +31,11 @@ ta.Post("/invoices", body).AssertStatus(t, http.StatusCreated)
   and stamp on insert. A non-string value only reaches code that reads the
   tenant object itself.
 
+Request body encoding failures are retained on the response: every assertion
+helper reports a request-creation test failure instead of panicking, and
+`TestResponse.JSON` returns the original creation error without decoding.
+This applies to both direct request helpers and `TestRequest.WithBody`.
+
 ## Render failures
 
 `framework.TestHarness(t, app)` fails `t` when a component or layout

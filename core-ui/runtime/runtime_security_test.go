@@ -606,7 +606,7 @@ func TestResponseHTMLMountedOnlyAfterOK(t *testing.T) {
 		// Both refetches mount through swap, fed only by fetchOverlay,
 		// whose !r.ok arm answers null before any text is read.
 		{"src/intercept.js", "fetchOverlay(path, t.fromURL)", "swap(t, res)", "intercept pane query refetch"},
-		{"src/intercept.js", "fetchOverlay(u, lay.fromURL)", "swap(lay, res)", "intercept history refetch"},
+		{"src/intercept.js", "fetchOverlay(u, lay.fromURL)", "refresh(lay, res, focus)", "intercept history refetch"},
 	}
 
 	for _, s := range surfaces {

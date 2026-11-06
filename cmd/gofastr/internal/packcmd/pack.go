@@ -1504,6 +1504,12 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 					app.Admin.Enabled = true
 					app.Admin.Path = appspec.AstString(cv["PathPrefix"])
 					app.Admin.Role = appspec.AstString(cv["AdminRole"])
+					if app.Admin.Path == "/admin" {
+						app.Admin.Path = ""
+					}
+					if app.Admin.Role == "admin" {
+						app.Admin.Role = ""
+					}
 					app.Admin.LoginPath = appspec.AstString(cv["LoginPath"])
 				case "PWAConfig":
 					cv := appspec.FieldVals(t)
@@ -1519,6 +1525,19 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 				}
 			case *ast.CallExpr:
 				switch astSelLast(t.Fun) {
+				case "WithPublicOpenAPI":
+					app.PublicOpenAPI = true
+				case "WithDescription":
+					if len(t.Args) == 1 {
+						app.Description = appspec.AstString(t.Args[0])
+					}
+				case "getEnv":
+					if len(t.Args) == 2 && appspec.AstString(t.Args[0]) == "APP_BASE_URL" {
+						app.BaseURL = appspec.AstString(t.Args[1])
+						if app.BaseURL == "http://localhost:8080" {
+							app.BaseURL = ""
+						}
+					}
 				case "WithPublicLLMMD":
 					app.LLMMD = true
 				case "WithLocalePrefixes":
@@ -2245,6 +2264,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	if b, ok := reverseEntityResource(call, helpers); ok {
 		return b, true
 	}
+	if control, ok := reverseControlBlock(call, helpers); ok {
+		return control, true
+	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
@@ -2286,6 +2308,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.LinkButton":
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", appspec.AstString(c["Label"]), "href", appspec.AstString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
+	case "ui.Link":
+		config := cfgOf(call, 0)
+		return appspec.AppSpecBlock{Type: "link", Href: appspec.AstString(config["Href"]), Text: appspec.AstString(config["Text"]), Class: appspec.AstString(config["Class"])}, true
 	case "ui.Stack":
 		return reverseLayoutBlock("stack", call, helpers), true
 	case "ui.Cluster":
@@ -2951,6 +2976,11 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Entities, err = appgen.PackReadEntities(dir); err != nil {
 		return bp, err
 	}
+	withoutDescription := bp
+	withoutDescription.App.Description = ""
+	if bp.App.Description == appgen.AppSpecSiteDescription(withoutDescription) {
+		bp.App.Description = ""
+	}
 	if bp.Screens, err = packReadScreens(dir); err != nil {
 		return bp, err
 	}
@@ -3041,7 +3071,7 @@ func RunPack(args []string) {
 		case "-o", "--out":
 			// A missing value or an unknown flag would print the YAML to
 			// stdout and exit 0 while the caller expected a file.
-			if i+1 >= len(args) {
+			if i+1 >= len(args) || args[i+1] == "" || strings.HasPrefix(args[i+1], "-") {
 				packFail(true, "pack: %s needs a file name", args[i])
 				return
 			}

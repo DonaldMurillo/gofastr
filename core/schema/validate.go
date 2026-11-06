@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"math/big"
 	"regexp"
@@ -65,6 +67,9 @@ func validateString(f Field, value any) error {
 	s, ok := toString(value)
 	if !ok {
 		return violate(ReasonNotString, nil)
+	}
+	if !utf8.ValidString(s) || strings.IndexByte(s, 0) >= 0 {
+		return violate(ReasonInvalidText, nil)
 	}
 	if f.Required && s == "" {
 		return violate(ReasonRequired, nil)
@@ -328,22 +333,43 @@ func validateDate(value any) error {
 // --- JSON ---
 
 func validateJSON(value any) error {
+	var encoded []byte
 	switch v := value.(type) {
 	case string:
-		if !json.Valid([]byte(v)) {
-			return violate(ReasonNotJSON, nil)
-		}
-		return nil
+		encoded = []byte(v)
+	case []byte:
+		// Byte slices bind as JSON text (crud's marshalJSONColumn), so
+		// they are checked as text, not as the base64 string
+		// json.Marshal would make of them.
+		encoded = v
+	case json.RawMessage:
+		encoded = v
 	default:
-		// try marshaling and re-checking
-		b, err := json.Marshal(v)
+		var err error
+		encoded, err = json.Marshal(v)
 		if err != nil {
 			return violate(ReasonNotJSON, nil)
 		}
-		if !json.Valid(b) {
+	}
+	if !json.Valid(encoded) {
+		return violate(ReasonNotJSON, nil)
+	}
+	if !utf8.Valid(encoded) {
+		return violate(ReasonInvalidText, nil)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
 			return violate(ReasonNotJSON, nil)
 		}
-		return nil
+		if text, ok := token.(string); ok && strings.IndexByte(text, 0) >= 0 {
+			return violate(ReasonInvalidText, nil)
+		}
 	}
 }
 

@@ -97,6 +97,11 @@
     }, { passive: true });
   }
 
+  // Whether the browser draws a target. checkVisibility() where it
+  // exists; Safari before 17.4 lacks it, and there a closed details'
+  // content keeps its boxes, so the fallback rules that out too.
+  const drawn = t => t.checkVisibility ? t.checkVisibility()
+    : t.getClientRects().length > 0 && !t.closest('details:not([open])>:not(summary)');
   function within(root, sel) {
     const out = [];
     if (root.matches && root.matches(sel)) out.push(root);
@@ -208,6 +213,7 @@
       const bandBottom = innerHeight * 0.3;
       let passed = null;
       for (const t of targets) {
+        if (!drawn(t)) continue;
         const r = t.getBoundingClientRect();
         if (r.bottom - bandTop >= 1 && bandBottom - r.top >= 1) { markActive(t.id); return; }
         if (r.bottom - bandTop < 1) passed = t;
@@ -253,12 +259,13 @@
       const midY = window.innerHeight * 0.5;
       let picked = null;
       for (const t of targets) {
+        if (!drawn(t)) continue;
         const r = t.getBoundingClientRect();
         if (r.top <= midY) picked = t;
         else break;
       }
-      if (!picked) picked = targets[0];
-      markActive(picked.id);
+      if (!picked) picked = targets.find(drawn);
+      if (picked) markActive(picked.id);
     });
   }
   NS._huiRailWatch = watch;

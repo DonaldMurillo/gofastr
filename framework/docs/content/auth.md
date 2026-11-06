@@ -941,6 +941,13 @@ lowercase. Custom `UserStore` implementations therefore always receive
 canonical input; a host that accepts emails on its own surfaces should
 call `auth.CanonicalEmail` too so its lookups agree with the battery's.
 
+Every email ingestion path refuses NUL bytes and malformed UTF-8 with 400
+`invalid_email` before lookup, registration, or token creation. This storage
+invariant is checked before normalization and on both the input and output
+of `AuthConfig.CanonicalizeEmail`; an override cannot silently repair or
+introduce unstorable bytes. Other override errors retain the composed-email
+fallback, unless the error carries its own localized phrase.
+
 **Invisible characters**: NFC cannot fold zero-width and bidi codepoints,
 so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
 right-to-left override inside the local part would otherwise register as
@@ -1115,7 +1122,8 @@ app.RegisterBattery(mgr)
 
 The preset makes login cookie-only (no JWT in the JSON response), forces the
 session and CSRF cookies to `Secure`, installs `SessionMiddleware` and CSRF,
-and rejects non-allowlisted `Origin` values under `/api`. Browser preflights
+and rejects non-allowlisted `Origin` values under the configured API prefix
+(`/api` in this example). Browser preflights
 receive credentialed CORS headers only for an exact allowed origin. Bearer JWTs
 are rejected on that API surface; `gfsk_` API tokens remain available for
 explicit non-browser automation.
@@ -1129,9 +1137,13 @@ Other bearer credentials remain refused by the BFF guard.
 
 `AllowedOrigins` requires exact `http://` or `https://` origins and rejects
 wildcards. The protected prefix comes from `framework.AppConfig.APIPrefix`
-(default `/api`), so `WithAPIPrefix` and `WithBFFPosture` may appear in either
-option order without duplicating configuration. Because cookies are always
-`Secure`, run this posture behind HTTPS, even if `AuthConfig.DevMode` is true.
+so `WithAPIPrefix` and `WithBFFPosture` may appear in either option order
+without duplicating configuration. With no `APIPrefix`, CRUD mounts at the
+root and the guard covers the whole app, not only `/api`: include the app's
+own origin in `AllowedOrigins` for Origin-carrying browser requests.
+Requests without an Origin still pass the origin check. Because cookies are
+always `Secure`, run this posture behind HTTPS, even if `AuthConfig.DevMode`
+is true.
 
 `framework/ui.SignOut` remains compatible with this preset. Its static logout
 form is exempt from the generic CSRF token check only at the configured auth
@@ -1345,6 +1357,12 @@ The identity mutations are covered too: a successful `GET
 `AuthManager.SetUserRoles` emits `roles.updated` (Meta: the new roles) —
 so a role change driven from a script or future surface leaves the same
 trail the admin back-office writes.
+
+`EntityUserStore.FindByID`, `EntityUserStore.UpdateRoles` and
+`AuthManager.SetUserRoles` treat a user ID containing NUL or malformed UTF-8
+as `auth.ErrUserNotFound` before querying or mutating storage. A refused
+role update emits no success audit. Valid IDs keep their exact bytes,
+including any leading or trailing whitespace.
 
 ## The 2FA flow
 

@@ -136,7 +136,9 @@ hides it from: gate that caller with `Access` permissions instead, or
 stop hiding the row.
 
 `AfterList` and `AfterGet` see the fetched rows on the payload and
-may mutate them in place; handy for redaction. The rows are keyed by
+may mutate them in place; handy for redaction. `AfterList` must preserve the row
+count; filter visibility in `BeforeList`, not by adding or removing results.
+The rows are keyed by
 the response's wire names, the handler's `JSONCase` (camelCase by
 default) or a field's `WireName`, not by column names: the
 `password_hash` column is `"passwordHash"` here, and deleting
@@ -319,7 +321,10 @@ owner drains the held emissions right after a successful commit (a
 If you open a transaction YOURSELF and wrap it with bare `db.WithTx`,
 the framework cannot see your commit, so it learns the outcome by
 polling the live `*sql.Tx` (a `SELECT 1` every few milliseconds until it
-reports done) and then re-checking the row. That poll shares the
+reports done) and then re-checking the row. A committed soft
+delete is confirmed by `deleted_at IS NOT NULL`; a hard delete or purge
+requires the row to be absent. A rollback publishes neither kind of delete.
+That poll shares the
 transaction's single connection with your own statements. The wait is
 capped at two minutes, counted from the write, a statement of yours that
 holds the connection included; past that the event is dropped and
@@ -365,7 +370,10 @@ events then go out once, on commit, and never on rollback.
 
 The same holds for a write in a `db.WithTx` context whose record carries
 no primary key: the framework cannot check it landed, so it is not
-announced. Each dropped event logs one warning per process.
+announced. One generic warning per process explains that this drop policy
+applies across all entity types and tables; it is not a per-event or
+per-table diagnostic. Carry and drain a `db.WithTxQueue` commit queue to
+preserve those events.
 
 ### Handling validation errors
 
@@ -482,6 +490,16 @@ in-process Go API still returns stored values unless the caller passes
 lookups and aggregates correct, and generated screens opt in.
 The same opt-in applies a `BeforeList`/`BeforeGet` scope, so a row the
 HTTP route hides is hidden from a rendered screen too.
+`AfterList` must preserve the number of fetched rows. Dropping or adding rows
+fails the HTTP list (offset or cursor) with 500 and logs the `after-list` hook
+phase and row-count mismatch; it never returns a partial success. In-process
+`ListAll` and `TypedQuery.Find` with `crud.WithReadHooks` return an error and no
+rows, and entityui/admin hooked readers refuse the result too. Redacting fields,
+replacing rows with projections and reordering are still allowed when the count
+stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
+`CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
+run `AfterList`; an unhooked in-process read still returns stored values.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers
@@ -542,10 +560,11 @@ Available helpers for write operations:
 
 `OnBeforeCreate[T]`/`OnBeforeUpdate[T]` mutations flow into the pending
 INSERT/UPDATE body. `OnAfterCreate[T]`/`OnAfterUpdate[T]` mutations cannot
-change the stored row (Create/Update has already committed it) but DO redact
+change the stored row (the INSERT/UPDATE has already run) but DO redact
 the response body: the hook payload is the live record the crud layer
 serialises, so `p.Secret = ""` masks it from the caller just like the untyped
-path. See "Redaction implication" below for the surfaces this covers.
+path. They run inside the write transaction, before commit; an error rolls
+the write back. See "Redaction implication" below for the surfaces this covers.
 
 `T` may tag its fields in camelCase (`json:"isAdmin"`, what generated
 models use) or snake_case (`json:"is_admin"`): the payload is offered
@@ -695,6 +714,7 @@ does).
   clearing a field there redacts it from what the caller reads; this is the
   supported way to mask a create/update response, and it behaves identically
   for typed hooks (`OnAfterCreate[T]`/`OnAfterUpdate[T]`) and untyped ones.
-  Create/Update have already committed the row, though, so the mutation cannot
-  change what is stored; if you need to alter the stored value, do it in a
+  The INSERT/UPDATE has already run, so mutating the payload cannot change
+  what is stored. The hook still runs inside the transaction, before commit;
+  an error rolls the write back. To alter the stored value, use a
   `BeforeCreate`/`BeforeUpdate` hook before the INSERT/UPDATE runs.

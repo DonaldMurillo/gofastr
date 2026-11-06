@@ -204,7 +204,8 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 	base := startE2EServer(t)
 	ctx := newE2EBrowserCtx(t)
 
-	var title, role, live string
+	var title, role string
+	var hasLive bool
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(base+"/components/toast"),
 		pageReady(),
@@ -212,7 +213,7 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 		waitFor(`document.querySelector('.fui-notification__title')?.textContent === 'Test alert'`),
 		chromedp.Evaluate(`document.querySelector('.fui-notification__title')?.textContent`, &title),
 		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('role')`, &role),
-		chromedp.Evaluate(`document.querySelector('.fui-notification')?.getAttribute('aria-live')`, &live),
+		chromedp.Evaluate(`document.querySelector('.fui-notification')?.hasAttribute('aria-live')`, &hasLive),
 	); err != nil {
 		t.Fatalf("toast client: %v", err)
 	}
@@ -222,8 +223,8 @@ func TestE2E_Toast_ClientJSAPIFiresToast(t *testing.T) {
 	if role != "alert" {
 		t.Errorf("danger variant should use role=alert; got %q", role)
 	}
-	if live != "assertive" {
-		t.Errorf("danger variant should use aria-live=assertive; got %q", live)
+	if hasLive {
+		t.Error("danger variant should announce through role=alert without redundant aria-live")
 	}
 }
 

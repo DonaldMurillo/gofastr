@@ -100,11 +100,16 @@ func (b *Battery) paletteCommands(ctx context.Context, q string) []ui.PaletteCom
 	for _, e := range b.ents {
 		plural := b.plural(ctx, e)
 		add(ui.PaletteCommand{Label: plural, Href: b.entityBase(e), Meta: i18nui.AdminEntities.Text(ctx)})
-		add(ui.PaletteCommand{
-			Label: i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)}),
-			Href:  b.entityBase(e) + "/create",
-			Meta:  plural,
-		})
+		if handler, err := b.app.CrudHandlerForEntity(e); err == nil && b.authorized(ctx) {
+			elevated := b.elevate(ctx)
+			if handler.CanReadScoped(elevated) && handler.CanCreateScoped(elevated) {
+				add(ui.PaletteCommand{
+					Label: i18nui.AdminPaletteNew.Text(ctx, map[string]any{"entity": b.singular(ctx, e)}),
+					Href:  b.entityBase(e) + "/create",
+					Meta:  plural,
+				})
+			}
+		}
 	}
 	for _, c := range b.cfg.Commands {
 		add(c)

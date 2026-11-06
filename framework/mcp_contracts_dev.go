@@ -96,8 +96,8 @@ func (a *App) registerContractDevTools() error {
 	for _, t := range tools {
 		// contracts_fix WRITES TO DISK and contracts_verify hands out the
 		// source tree's lint findings (file paths, line numbers, code),
-		// and this pair registers only under the dev-implied
-		// introspection flag with no gate (there is no auth to satisfy
+		// and this pair registers only under the dev-loop
+		// feature gate with no role gate (there is no auth to satisfy
 		// in the dev loop). Both are marked dev-implied so the bind guard
 		// withdraws them on a non-loopback listener, the same set the
 		// entity write tools and battery/log's read tools belong to.

@@ -29,7 +29,8 @@ type WhereClause struct {
 // Hooks call AddWhere() to attach scope filters.
 //
 // AfterList: Request and Results are non-nil, Where is no longer applied.
-// Hooks may mutate Results in place (redact fields, drop rows, etc.).
+// Hooks may redact, transform or reorder Results, but must preserve the row
+// count. Visibility filtering belongs in BeforeList so counts and pages agree.
 //
 // REDACTION: masking a field here changes what the caller reads, not what
 // the database filtered and sorted on. The stored value is still a live
@@ -46,10 +47,10 @@ type WhereClause struct {
 // GET /child/{id} route does.
 //
 // The in-process Go API returns stored values unless the caller passes
-// crud.WithReadHooks, so read-modify-write still works. On an ?include=
-// payload a hook may not change the row count, each row is already keyed to
-// its parent, though sorting Results is harmless there (rows are matched by
-// primary key, so order is free; keep the id when projecting).
+// crud.WithReadHooks, so read-modify-write still works. Every path that runs
+// AfterList refuses a row-count change. On an ?include= payload each row is
+// already keyed to its parent, though sorting Results is harmless there (rows
+// are matched by primary key, so order is free; keep the id when projecting).
 // ?stream=true refuses rather than bypass.
 // A value that must never leave the server raw belongs in a Hidden field,
 // which is enforced in the projection. See the hook-skip matrix in

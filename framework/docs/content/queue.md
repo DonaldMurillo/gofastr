@@ -17,7 +17,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Auto-reclaim crashed workers | — | Yes (lease expiry in SQL) | Yes (visibility timeout + `Start`) |
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
 | Unique jobs (`UniqueKey`) | Yes | Yes (partial unique index) | No (`ErrUniqueUnsupported`) |
-| `Browsable` | Yes | Yes | Yes (dead-letter only) |
+| `Browsable` | Yes (dead-letter only) | Yes | Yes (dead-letter only) |
 | `Replayable` | Yes | Yes | Yes |
 | Scheduler integration | Yes | Yes | Yes |
 
@@ -434,7 +434,9 @@ fmt.Printf("reclaimed %d jobs\n", n)
 
 RedisQueue's `Enqueue` runs under a recover guard, so a panicking
 host-supplied `RedisClient` implementation surfaces as an ordinary error
-instead of unwinding the scheduler/dispatch loops. Claim fencing on the
+with a control-byte-scrubbed panic value, instead of unwinding the
+scheduler/dispatch loops. This applies to immediate and scheduled jobs.
+Claim fencing on the
 Redis backend compares `ClaimToken` values in constant time
 (`subtle.ConstantTimeCompare`), so match status is not leaked through
 timing.
@@ -735,8 +737,11 @@ q.RegisterHandler("resize-image", func(ctx context.Context, job queue.Job) error
 ```
 
 A handler panic is recovered and treated as an error; the job follows the
-normal retry path and the worker goroutine is respawned, so a poison
-message cannot drain the worker pool.
+normal retry path, so a poison message cannot drain the worker pool. If a
+panic escapes `DBQueue`'s per-job guard (for example in claim or settlement
+plumbing), the worker logs an Error through its configured `slog.Logger`
+with its lane, scrubbed panic value and stack, then respawns after 100 ms.
+Queue shutdown or context cancellation interrupts that respawn delay.
 
 Each handler call on `MemoryQueue` and `DBQueue` runs under an
 OpenTelemetry consumer span named `process <job type>`, carried by the

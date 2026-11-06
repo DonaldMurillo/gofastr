@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -108,6 +109,9 @@ func AdminStep(m *auth.AuthManager, db *sql.DB, usersTable string) (Step, func(c
 // otherwise. An address that canonicalizes to nothing (whitespace or
 // invisible runes only) is refused like an empty one.
 func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
+	if err := validateAdminEmail(raw); err != nil {
+		return "", err
+	}
 	canonicalize := m.Config().CanonicalizeEmail
 	if canonicalize == nil {
 		canonicalize = auth.CanonicalEmail
@@ -124,6 +128,9 @@ func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
 
 // validateAdminEmail refuses an empty admin address.
 func validateAdminEmail(v string) error {
+	if !utf8.ValidString(v) || strings.IndexByte(v, 0) >= 0 {
+		return i18n.NewError(reasonEmailInvalid)
+	}
 	if v == "" {
 		return i18n.NewError(reasonEmailRequired)
 	}

@@ -192,6 +192,7 @@
     : null;
   const armVisible = () => {
     if (!io) return;
+    io.disconnect();
     for (const a of document.querySelectorAll('a[href]')) {
       const [mode] = modeFor(a.getAttribute('href'));
       if (mode === 'visible') io.observe(a);

@@ -32,6 +32,7 @@ func registerJobsTable(table string) {
 		PrimaryKey: "id",
 		Columns: []string{
 			"id",
+			"occurrence_id",
 			"type",
 			"payload",
 			"priority",
@@ -42,8 +43,11 @@ func registerJobsTable(table string) {
 			"scheduled_at",
 			"status",
 			"claimed_at",
+			"claim_token",
 			"user_id",
 			"unique_key",
+			"updated_at",
+			"last_error",
 		},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{

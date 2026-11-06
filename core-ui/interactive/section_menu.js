@@ -64,7 +64,7 @@
       const hit = shown > 0;
       g.hidden = !hit;
       const count = g.querySelector('.cui-section-menu__count');
-      if (count) count.textContent = q ? shown + '/' + total : String(total);
+      if (count) count.textContent = q ? NS.formatNumber(shown) + '/' + NS.formatNumber(total) : NS.formatNumber(total);
       if (q) {
         if (!opened.has(g)) opened.set(g, g.open);
         if (hit) g.open = true;
@@ -154,7 +154,7 @@
       // Escape clears a non-empty filter and stops there, so the sheet
       // stays open; the next Escape closes it.
       input.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape' || !input.value) return;
+        if (e.key !== 'Escape' || e.isComposing || e.keyCode === 229 || !input.value) return;
         e.preventDefault();
         e.stopPropagation();
         input.value = '';

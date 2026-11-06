@@ -47,9 +47,10 @@
   // (formatNumber), so the SSR text is never parsed: "4,820" reads as 4.
   // Reduced motion, or a non-numeric either end, leaves the SSR text
   // untouched. The animation never owns the number: a live write to
-  // the signal (setSignal, a poll, a swap) that lands mid-walk changes
-  // the text from the frame last written, and the walk stops there
-  // instead of painting over it. A root animates once: a rescan of the
+  // the signal (setSignal, a poll, a swap) before the first frame or
+  // mid-walk stops it instead of painting over it. Read the signal
+  // too: a live value can match the number the last frame painted.
+  // A root animates once: a rescan of the
   // same markup (an insertion elsewhere, a navigation that kept it) is
   // not an arrival.
   const animated = new WeakSet();
@@ -60,15 +61,18 @@
     const to = parseFloat(root.getAttribute('data-hui-counter-to'));
     const value = root.querySelector('[data-cui-signal]');
     if (!value || !Number.isFinite(from)) return;
+    const signal = value.getAttribute('data-cui-signal');
     if (!Number.isFinite(to) || to === from) return;
     if (REDUCED && REDUCED.matches) return;
     let ms = parseFloat(root.getAttribute('data-hui-counter-ms'));
     if (!Number.isFinite(ms) || ms <= 0) ms = 800;
     const t0 = performance.now();
-    let written = null;
+    let written = value.textContent;
     function frame(now) {
       if (!value.isConnected) return;
-      if (written !== null && value.textContent !== written) return;
+      if (value.textContent !== written) return;
+      const current = NS.getSignal(signal);
+      if (current !== undefined && current !== to) return;
       const k = Math.min(1, (now - t0) / ms);
       const eased = 1 - Math.pow(1 - k, 3);
       written = formatNumber(k < 1 ? Math.round(from + (to - from) * eased) : to);

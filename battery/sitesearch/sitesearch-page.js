@@ -18,6 +18,7 @@
   // (core-ui ARCHITECTURE.md "Host transport"); read at call time, since
   // the kernel may replace the namespace after this script ran.
   const hostFetch = (u, i) => ((window.__gofastr && window.__gofastr.fetch) || fetch)(u, i);
+  const say = function (key, english) { return typeof NS.say === 'function' ? NS.say(key, english) : english; };
   if (NS.loadedModules && Object.prototype.hasOwnProperty.call(NS.loadedModules, NAME)) return;
   NS.loadedModules = NS.loadedModules || {};
   NS.loadedModules[NAME] = true;
@@ -60,23 +61,29 @@
 
   // live swaps in the server's render of the page for q. The answer is
   // a navigation answer, so it is read the way the router reads one: a
-  // session rollover lands on the stream meta before anything else (the
-  // cookie already moved), and a policy redirect goes to the router.
+  // only the current answer may roll the session forward and invalidate
+  // cached identities; a policy redirect then goes to the router.
   async function live(sec, q, n) {
     const url = location.pathname + (q ? '?q=' + encodeURIComponent(q) : '');
+    const headers = { 'X-Gofastr-Navigate': '1', 'X-Gofastr-From': location.pathname };
+    if (NS._markup) headers['X-Gofastr-Markup'] = NS._markup;
     const r = await hostFetch(url, {
       credentials: 'same-origin',
-      headers: { 'X-Gofastr-Navigate': '1', 'X-Gofastr-Markup': NS._markup || '2', 'X-Gofastr-From': location.pathname },
+      headers,
     });
+    if (!current(sec, n)) return;
     const rs = r.headers.get('X-Gofastr-Session'), meta = rs && document.querySelector('meta[name="gofastr-sse"]');
     if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, function (_, p) { return p + rs; }));
-    if (!current(sec, n)) return;
-    const to = r.headers.get('X-Gofastr-Location');
+    if (rs && NS.invalidate) NS.invalidate('*');
+    const followed = NS._followed(r, url);
+    if (followed === null) return;
+    const to = r.headers.get('X-Gofastr-Location') || followed;
     if (to) return NS.navigate(to, { replace: true });
     if (!r.ok) throw new Error('sitesearch-page: ' + r.status);
     const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
     const fresh = doc.querySelector('[data-search-page]');
-    if (!fresh || !current(sec, n)) return;
+    if (!current(sec, n)) return;
+    if (!fresh) throw new Error('sitesearch-page: missing results');
     part(sec, 'status').textContent = part(fresh, 'status').textContent;
     part(sec, 'list').replaceChildren(...Array.from(part(fresh, 'list').childNodes, function (c) { return document.adoptNode(c); }));
     const pager = part(sec, 'pager'), next = part(fresh, 'pager');
@@ -146,7 +153,7 @@
       more.addEventListener('click', function () {
         const m = (seq.get(sec) || 0) + 1;
         seq.set(sec, m);
-        statics(sec, q, m, found.results.length).catch(warn);
+        statics(sec, q, m, found.results.length).catch(function (err) { failed(sec, q, m, err); });
       });
       wrap.append(more);
       sec.append(wrap);
@@ -160,6 +167,14 @@
 
   function warn(err) { if (window.console) console.warn('sitesearch-page:', err); }
 
+  function failed(sec, query, sequence, err) {
+    warn(err);
+    if (!current(sec, sequence)) return;
+    clear(sec);
+    part(sec, 'status').textContent = say('sitesearch.unavailable', 'search index unavailable');
+    sec.setAttribute('data-search-page-query', query);
+  }
+
   // current: n is still the latest query and the page is still on
   // screen. A navigation away detaches the section, and its pending
   // work must not write the new page's address or list.
@@ -171,7 +186,7 @@
     const n = (seq.get(sec) || 0) + 1;
     seq.set(sec, n);
     moveURL(q);
-    (STATIC ? (q ? statics(sec, q, n, 0) : Promise.resolve(clear(sec))) : live(sec, q, n)).catch(warn);
+    (STATIC ? (q ? statics(sec, q, n, 0) : Promise.resolve(clear(sec))) : live(sec, q, n)).catch(function (err) { failed(sec, q, n, err); });
   }
 
   function clear(sec) {

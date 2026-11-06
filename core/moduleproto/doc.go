@@ -3,6 +3,9 @@
 // (design §4). It is the single source of truth for framing, the bidirectional
 // Frame envelope, request/response correlation, version negotiation, and the
 // method catalog's typed value shapes.
+// Recovered handler and serve-gate panics emit server-side slog Error
+// diagnostics with the method, scrubbed panic value and stack. Requests
+// retain generic errors; notification handler failures have no wire response.
 //
 // The package is deliberately transport- and policy-neutral. It carries wire
 // mechanics only:

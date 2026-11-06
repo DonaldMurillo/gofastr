@@ -253,6 +253,20 @@ extractor as its own and keeps its local identity
 
 ## How the window authenticates
 
+The native bootstrap and generated typed bridge are top-frame-only in
+every main and secondary window. Same-origin and foreign iframes receive
+no `window.__gofastr_desktop` marker or typed bridge. macOS also refuses
+child-frame native script messages; Windows listens only to WebView2's
+top-level `WebMessageReceived` event, not frame message events. WebView2
+runs document-created scripts in child frames too, so the shared bootstrap
+checks `window === window.top` before publishing its marker. Linux installs
+its bootstrap with WebKitGTK's `TOP_FRAME` scope.
+
+This is an injection contract, not isolation from trusted same-origin
+JavaScript: a same-origin child can still access its parent's objects and
+authenticated HTTP endpoints. Do not embed untrusted content on the app's
+own origin.
+
 Any local process can find the loopback port, so the page must present
 a credential nothing else has:
 
@@ -260,8 +274,11 @@ a credential nothing else has:
 2. `Run` navigates the fresh window to
    `/__gofastr/desktop/enter?t=<token>`, single use, constant-time
    compared.
-3. The handler sets the `__gofastr_desktop` cookie (HttpOnly,
-   SameSite=Strict, session lifetime) and 302s to `/`.
+3. The handler sets the `__gofastr_desktop_<session value>` cookie
+   (HttpOnly, SameSite=Strict, session lifetime) and 302s to `/`.
+   Its name is unique to this running battery: WebView2 profiles share
+   cookies across loopback ports, so a second instance must not replace
+   the first instance's session cookie.
 4. A gate middleware, installed app-wide in `Init` and armed by `Run`
    before the listener opens, then requires the pinned `Host` header
    and that cookie for every route, including pages and the SSE bus.
@@ -374,6 +391,26 @@ The core capabilities:
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
 
+Clipboard text reads and writes are capped at 1 MiB of UTF-8 bytes. A read
+above the cap returns `invalid_input` without sending clipboard contents to
+the page; it never silently truncates the user's text.
+
+Native window focus, title writes and frame writes refuse a window that closed
+before the operation reached the UI thread. On Windows, a destroyed window's
+nonzero native handle is not evidence that the window is still open. `Title()`
+retains its cached fallback when the native window is no longer available.
+Sidebar-width writes use the same closed-window refusal; they never change
+the cached width after close. `Native()` returns zero for a closed window.
+On macOS, closed-window calls return before scheduling native work, so a
+stopped UI loop cannot turn the refusal into an internal dispatch error.
+Title writes update their cached fallback only after reaching a live window.
+
+All three native shells return `desktop.ErrWindowClosed` (`not_found`,
+`"window is closed"`) for operations on a closed window. `Window.Close()` is
+idempotent: an already-closed window, including one closed while the close was
+queued for the UI thread, returns nil. Unrelated UI-dispatch failures still
+return their own error.
+
 The macOS, Linux and Windows shells check a dialog's input the same way
 (`desktop.CheckFileDialog`) and answer `invalid_input` instead of
 opening a dialog it was not asked for: a filter extension (`png` or
@@ -383,7 +420,13 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). The path must arrive in
+(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
+on the exact picked folder and nothing under the folder: no descendant
+`stat`, reads, or writes. It does not grant directory traversal or listing.
+`openFile` and `saveFile` grant only the exact returned file paths for
+`fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
+parent directory. All picks retain the same least-authority `AllowPath`
+grant; a folder pick does not create a prefix grant. The path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink
@@ -874,7 +917,8 @@ d := native.New(desktop.Config{
   `NSAppKitVersionNumber` from the AppKit actually loaded.
 - `Config.SidebarWidth` (and `WindowSpec.SidebarWidth` for another
   window) is the initial sidebar zone in points, `0..MaxSidebarWidth`
-  (4096); 0 means no zone. The page reports later widths through
+  (4096); 0 means no zone. A later positive width creates the sidebar
+  zone when the window uses `MaterialSidebar`. The page reports widths through
   `__gofastr.desktop.window.setChrome({sidebarWidth})`, which applies
   to the calling window only; a ResizeObserver on the sidebar element
   is the intended caller. Go code calls `Window.SetSidebarWidth`.
@@ -1079,7 +1123,8 @@ active and inactive:
   sidebar width (`SidebarWidthOf(id)`), fires the appearance callback
   from `SetReduceTransparency`, and fires the focus callbacks from
   `FocusWindow` and `BlurWindow` on a goroutine, the way the native
-  delegates do.
+  delegates do. `Window.Focus` also emits focus (and reveals a hidden
+  window); closing the main window to the tray emits blur.
 - `desktop.WindowState` reads the applied chrome back off the live
   window: `Material`, `TitlebarTransparent`, `TitleVisibility`,
   `ToolbarStyle`, `SidebarWidth`, the style mask, and `CGWindowID`
@@ -1812,6 +1857,11 @@ publish). For a `windows-*` platform the directory is `<Name>/`
 instead. It must hold exactly `<Name>.exe` and `WebView2Loader.dll`,
 and the executable's `ProductVersion` must be `--version`. The version
 resource is read in pure Go, so the feed can be signed on any host.
+The numeric Windows file version uses only core version numbers: for
+`1.2.3-rc.1.2` it is `1.2.3.0`, while `ProductVersion` keeps the full
+pre-release string. A non-update Windows build may also retain semver
+build metadata in `ProductVersion`; metadata never contributes numeric
+file-version components.
 It also extracts the archive into a temporary directory with
 the updater's own extractor, so anything a client would refuse is
 refused at release time instead: a stray top-level file (`README.txt`,
@@ -1838,10 +1888,10 @@ native code.
 ## Remembering window state
 
 A desktop app remembers where its windows were. With
-`Config.RememberWindows: true` the battery persists every window's
-frame (position and size) and the main window's last path, so a user
-who drags a window to another monitor, resizes it, navigates to a
-screen, and quits finds all of it back on the next launch.
+`Config.RememberWindows: true` the battery persists the main and settings
+windows' frames (position and size) and the main window's last path.
+Those stable window identities restore their placement on the next launch;
+ordinary secondary ids (`w2`, `w3`, …) identify windows only within one run.
 
 ```go
 d := native.New(desktop.Config{
@@ -1881,10 +1931,11 @@ crash.
 
 ### What happens on relaunch
 
-- The main window opens at its remembered frame; a secondary window
-  opened under the same id ("settings", a widget) gets its remembered
-  frame through the same `WindowSpec.Frame` path. An explicit `Frame`
-  on the spec wins over the store.
+- The main window opens at its remembered frame; the settings window
+  gets its remembered frame through the same `WindowSpec.Frame` path.
+  Frames for transient secondary ids are discarded at startup, so a newly
+  assigned `w2` cannot inherit a different window's placement from an earlier
+  run. An explicit `Frame` on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
   changed) is dropped and the window centers. Windows checks native
@@ -1931,7 +1982,8 @@ Window.SetFrame(Frame) error
 ```
 
 `OnWindowFrame` fires on a goroutine whenever the user moves or
-resizes a window, unthrottled; the battery debounces. On macOS the
+resizes the main window or a secondary window, including one opened
+after the shell starts, unthrottled; the battery debounces. On macOS the
 window delegate's `windowDidMove:` and `windowDidEndLiveResize:` (the
 resize reports once, at the end of the drag) feed it, and a
 programmatic `SetFrame` reports through the same path. The top-left to
@@ -2169,13 +2221,35 @@ bad menu. `New` also takes a defensive copy of the list (`Choices`,
 `Min`, `Max` included), so mutating the Config afterwards changes
 nothing.
 
+String defaults and every new string preference write refuse CR and LF
+line breaks. `Preferences.Set`, `preferences.set`, and the settings form
+validate this before storing any part of the update; errors identify the
+preference key, and the form returns a field error on 400.
+
 Storage is one entry in the app state store: key `settings`, value one
 JSON object mapping preference keys to typed values
 (`{"work_minutes":50,"sound":"bell"}`). The state capability confines
 page keys to `page.`, so this entry is never reachable from the page.
+The complete encoded object must fit within the app state's 64 KiB value
+limit, including keys, JSON escaping and any retained undeclared values.
+Updates are validated in sorted key order against the merged object, with
+all replaced values removed first so a batch can shrink another key to fit.
+An overflow refuses the whole update before storage: `preferences.set`
+answers `invalid_input` naming the key that exceeds the budget, and the
+settings form answers 400 with that key's field error.
 A stored key the app no longer declares is left in the file and simply
 never read; a stored value that fails its own declaration (a
 hand-edited `state.json`) falls back to the default with a Warn.
+
+Compatibility exception: a stored string containing CR or LF from an older
+version remains readable verbatim through `String`, `All`, and
+`preferences.get`. The single-line settings field warns that it cannot
+display those line breaks. Saving another field leaves that stored string
+untouched: its browser-sanitized display value is omitted from the update.
+Trying to change the legacy field through that form refuses the whole Save
+with a keyed field error, even when the proposed replacement is single-line.
+To repair it intentionally, replace it with a single-line string through
+`Preferences.Set` or `preferences.set`, then reopen the screen.
 
 ### The typed reads
 
@@ -2897,6 +2971,11 @@ func TestExport(t *testing.T) {
 `ClickMenu` and `ClickTray` match an item by its title phrase's
 English, so the same test passes on a machine set to any language.
 
+Closing and reopening a window ID creates a fresh fake window, just as
+the native shells do. Its title, navigation and evaluation records do not
+carry over. `Closed` and `IsClosed` both report the old instance's closed
+state; delayed close callbacks cannot remove its live replacement.
+
 `h.Stranger()` is a client with no session, for asserting that another
 local process on the port is refused. The harness quits the app in
 `t.Cleanup`; `h.Quit()` returns `Run`'s error when a test ends the app
@@ -2910,6 +2989,11 @@ stands in for the browser; every page-side step runs in the actual
 web view, and every native step goes through the shell's `NativeDriver`
 (`ClickMenu`, `ClickTray`, `OpenSettings`, `Answer`, `ClickPrompt`,
 `OpenURL`, `CloseWindow`, `WindowState`, `Notifications`).
+
+A clean shell exit before page readiness fails the binary instead of
+silently skipping native tests. Readiness has a 60-second deadline;
+exceeding it logs a diagnostic, quits the app, and fails the run. An
+unsupported native shell still skips native tests without failing.
 
 ```go
 func TestMain(m *testing.M) {

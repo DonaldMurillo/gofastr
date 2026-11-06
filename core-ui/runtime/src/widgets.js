@@ -78,7 +78,12 @@
   // A registry read as an own property: an attribute-borne name like
   // "constructor" must not resolve to an Object.prototype member.
   const own = n => Object.prototype.hasOwnProperty.call(NS._widgets, n) ? NS._widgets[n] : null;
-  const stamp = (name, e) => { const r = own(name); if (r) r.ep = e; };
+  const stamp = (name, e, layer) => { const r = own(name); if (r) { r.ep = e; r.layer = layer; } };
+  const layerCurrent = (layer, generation) => !layer || layer.isConnected && layer._cuiGen === generation;
+
+  NS._closeInterceptWidgets = (layer) => {
+    for (const name of [...NS._modalStack].reverse()) if (own(name)?.layer === layer) NS.closeWidget(name);
+  };
 
   const catalogEntry = name => NS._widgetCatalog && Object.prototype.hasOwnProperty.call(NS._widgetCatalog, name) ? NS._widgetCatalog[name] : null;
 
@@ -95,6 +100,9 @@
       return;
     }
     const o = opts || {};
+    const origin = o.btn || document.activeElement;
+    const layer = origin?.closest('[data-cui-intercept-as]') || Object.values(NS._widgets).find((w) => w.root?.contains(origin))?.layer;
+    const generation = layer?._cuiGen;
     // #321: the open trigger may carry context (data-cui-ctx). It is
     // opaque to the runtime: forwarded on the chrome fetch and keyed in
     // the client cache, never parsed. The chrome render authorises it
@@ -110,18 +118,21 @@
     const epoch = NS._navEpoch;
     const m = here();
     pend.set(name, m);
-    await NS._mountByName(name, ctx);
+    await NS._mountByName(name, ctx, layer);
+    if (!layerCurrent(layer, generation)) return;
     if (!left(epoch) && ((cfg.deepLinkParams || []).length || o.pushUrl && cfg.deepLinkKey && cfg.deepLinkValue)) {
       if (!NS._deepLinkOpen) await NS.loadModule('widgetlinks');
       // The module load is a second wait the reader can navigate during.
-      if (!left(epoch)) NS._deepLinkOpen(cfg, o);
+      if (!left(epoch) && layerCurrent(layer, generation)) NS._deepLinkOpen(cfg, o);
     }
     // A later open of the same name owns the entry. One left behind by a
     // throw is harmless: the next navigation or URL change voids it.
     if (pend.get(name) === m) pend.delete(name);
   };
 
-  NS._mountByName = async function (name, ctx) {
+  NS._mountByName = async function (name, ctx, layer) {
+    if (layer && !layer.isConnected) return;
+    const generation = layer?._cuiGen;
     const entry = catalogEntry(name);
     if (!entry) return;
     const m = own(name);
@@ -152,7 +163,7 @@
       // click on a catalog-gated widget. So whatever is still in the DOM
       // here is un-mounted chrome nobody is looking at.
       if (ctx) existing.remove();
-      else { NS.mountWidget(cfg, null, existing); stamp(name, epoch); return; }
+      else { NS.mountWidget(cfg, null, existing); stamp(name, epoch, layer); return; }
     }
     const path = cfg.chromePath || ('/core-ui/widget/' + name + '/chrome');
     // #321: key by (name, ctx) so triggers carrying different contexts
@@ -224,7 +235,7 @@
     // it on. The cached branch awaits a promise too, so both are
     // covered.
     try { html = await NS._chromeCache[key]; } catch (_) {}
-    if (html && !left(epoch) && entry.tok === tok) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch); }
+    if (html && !left(epoch) && entry.tok === tok && layerCurrent(layer, generation)) { NS.mountWidget(cfg, html, null, ctx); stamp(name, epoch, layer); }
   };
 
   NS.closeWidget = function (name) {
@@ -336,14 +347,12 @@
         // Without this, focus races the demand-loaded position:fixed CSS and
         // scrolls the page to the element's transient in-flow position
         // (a tall drawer jumps the page by its own height on open).
+        // A drawn [autofocus] target wins; otherwise the first Tab
+        // stop, which skips hidden controls.
         const explicit = w.querySelector('[autofocus]');
-        if (explicit) {
-          explicit.removeAttribute('autofocus');
-          explicit.focus({ preventScroll: true });
-          return;
-        }
-        const focusables = w.querySelectorAll(NS._focusSel);
-        if (focusables.length > 0) focusables[0].focus({ preventScroll: true });
+        const target = explicit && NS._rendered(explicit) ? explicit : NS._firstStop(w) || explicit;
+        if (explicit) explicit.removeAttribute('autofocus');
+        if (target) target.focus({ preventScroll: true });
       });
     }
     function dismiss() {
@@ -413,8 +422,7 @@
     reg.dismiss = dismiss;
 
     // Initial state hydration, only when the widget declared signals.
-    if (cfg.statePath) {
-      if (!NS._originOK?.(cfg.statePath)) return;
+    if (cfg.statePath && NS._originOK?.(cfg.statePath)) {
       NS.fetch(NS._lp?.(cfg.statePath) ?? cfg.statePath, { headers: { 'X-FUI-Widget': cfg.name } })
         // A followed 3xx answered for another URL: no state to apply.
         .then((r) => (r.ok && !r.redirected ? r.json() : {}))

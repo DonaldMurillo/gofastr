@@ -334,6 +334,9 @@ func (u *UI) cellHTML(ctx context.Context, s *listState, labels labelResolver, f
 	}
 	switch f.Type {
 	case schema.Bool:
+		if val == "" {
+			return muted()
+		}
 		if truthy(val) {
 			return ui.StatusBadge(ui.StatusBadgeConfig{Label: i18nui.EntityYes.Text(ctx), Variant: ui.StatusSuccess})
 		}
@@ -395,6 +398,14 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 		return val
 	}
 	switch f.Type {
+	case schema.Bool:
+		if val == "" {
+			return ""
+		}
+		if truthy(val) {
+			return i18nui.EntityYes.Text(ctx)
+		}
+		return i18nui.EntityNo.Text(ctx)
 	case schema.Enum:
 		if val == "" {
 			return ""

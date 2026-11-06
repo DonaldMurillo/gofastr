@@ -38,6 +38,19 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	if a.entityUI != nil {
 		panic("framework: EntityUI was already called on this app; its bulk and export routes belong to that UI, so pass the *entityui.UI it returned instead of building a second")
 	}
+	held := newMuxReplay(a.router.Routes())
+	for _, ent := range a.Registry.AllSorted() {
+		if !a.entityUIOwns(ent) {
+			continue
+		}
+		if mount, ok := a.crudMounts[ent]; ok {
+			for _, pattern := range entityUIRoutePatterns(mount.full) {
+				if conflict, refused := held.add(pattern, "an EntityUI route"); refused {
+					panic(fmt.Sprintf("framework: EntityUI route %s overlaps %s, %s", pattern, conflict.pattern, conflict.owner))
+				}
+			}
+		}
+	}
 	host := entityUIHost{a: a}
 	if ext.Jobs != nil {
 		if a.DB == nil {
@@ -83,6 +96,22 @@ func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
 	if _, err := u.PruneBulkJobs(ctx, entityui.BulkRetention); err != nil {
 		slog.ErrorContext(ctx, "framework: EntityUI: prune bulk jobs", "error", err)
 	}
+}
+
+func entityUIRoutePatterns(path string) []string {
+	return []string{"POST " + path + "/_bulk", "GET " + path + "/_export.csv", "POST " + path + "/_pick"}
+}
+
+func (a *App) entityUIWouldOwn(ent *entity.Entity) bool {
+	if ent.Version == "" {
+		return true
+	}
+	for _, existing := range a.Registry.AllSorted() {
+		if existing.GetName() == ent.GetName() {
+			return false
+		}
+	}
+	return true
 }
 
 // mountEntityUIRoutes mounts e's bulk, export and picker routes once EntityUI has

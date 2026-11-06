@@ -11,6 +11,8 @@
 //	go run ./cmd/bench-resources -load=200      # 200 warmup requests per app
 //	go run ./cmd/bench-resources -apps=minimal,crud   # subset
 //
+// Unknown or empty names in -apps are refused before any benchmark runs.
+//
 // RAM-during-build is measured via the build subprocess's
 // syscall.Rusage.Maxrss; bytes on Darwin, kilobytes on Linux. Both
 // normalised to bytes here. Idle and loaded RAM come from `ps -o rss=`
@@ -94,7 +96,16 @@ func main() {
 		for _, a := range apps {
 			if want[a.Name] {
 				selection = append(selection, a)
+				delete(want, a.Name)
 			}
+		}
+		if len(want) > 0 {
+			unknown := make([]string, 0, len(want))
+			for name := range want {
+				unknown = append(unknown, name)
+			}
+			sort.Strings(unknown)
+			fail("unknown app names: %q", unknown)
 		}
 	}
 

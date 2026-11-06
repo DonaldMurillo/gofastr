@@ -78,7 +78,9 @@ The app spec (`gofastr.yml`) describes the app, not the tools. A `codegen:`,
 ## The unmounted section
 
 `gofastr unmount` and `gofastr remount` own this section and rewrite it
-whole; the rest of the file keeps its bytes and comments. Each entry has
+whole; the rest of the file keeps its bytes and comments. Its generated
+header is replaced with the section for both LF and CRLF line endings,
+and removed with the last entry. Each entry has
 exactly four string fields:
 
 - `source`: the import path the copy came from.
