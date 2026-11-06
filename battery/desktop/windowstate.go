@@ -53,9 +53,23 @@ type windowStore struct {
 	mu sync.Mutex
 }
 
-// newWindowStore wraps the battery's app state store.
+// newWindowStore wraps the battery's app state store, retaining only
+// stable window identities from an earlier run.
 func newWindowStore(s *appstate.Store, logger *slog.Logger) *windowStore {
-	return &windowStore{state: s, logger: logger}
+	store := &windowStore{state: s, logger: logger}
+	windows := store.windows()
+	changed := false
+	for id := range windows {
+		if id == MainWindowID || id == "settings" {
+			continue
+		}
+		delete(windows, id)
+		changed = true
+	}
+	if changed {
+		store.save(windows)
+	}
+	return store
 }
 
 // windows returns the remembered windows: nil when nothing is stored
@@ -118,7 +132,7 @@ func (s *windowStore) setFrame(id string, f Frame) {
 }
 
 // forget drops a window's remembered frame. Secondary window ids are
-// minted fresh for every open (w2, w3, ...) and never reused, so a
+// minted fresh for every open within a run (w2, w3, ...), so a
 // frame kept past its window's close is a leak that grows the entry
 // by one frame per open until it passes the appstate value cap, after
 // which every later write, the main window's frame and path included,

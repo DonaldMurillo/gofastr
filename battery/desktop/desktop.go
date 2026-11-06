@@ -658,8 +658,8 @@ func (b *Battery) OpenWindow(spec WindowSpec) (Window, error) {
 	id := b.nextWindowIDLocked(spec.Path)
 	b.windowMu.Unlock()
 
-	// A remembered frame for this window id replaces a nil Frame, so a
-	// secondary window ("settings", a widget) reopens where the user
+	// A stable window id can restore a saved frame when Frame is nil.
+	// Transient ids from earlier runs were discarded when the store opened.
 	if s := b.winStore.Load(); s != nil && spec.Frame == nil {
 		spec.Frame = s.frameFor(id)
 	}

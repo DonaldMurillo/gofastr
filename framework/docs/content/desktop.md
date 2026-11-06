@@ -1865,10 +1865,10 @@ native code.
 ## Remembering window state
 
 A desktop app remembers where its windows were. With
-`Config.RememberWindows: true` the battery persists every window's
-frame (position and size) and the main window's last path, so a user
-who drags a window to another monitor, resizes it, navigates to a
-screen, and quits finds all of it back on the next launch.
+`Config.RememberWindows: true` the battery persists the main and settings
+windows' frames (position and size) and the main window's last path.
+Those stable window identities restore their placement on the next launch;
+ordinary secondary ids (`w2`, `w3`, …) identify windows only within one run.
 
 ```go
 d := native.New(desktop.Config{
@@ -1908,10 +1908,11 @@ crash.
 
 ### What happens on relaunch
 
-- The main window opens at its remembered frame; a secondary window
-  opened under the same id ("settings", a widget) gets its remembered
-  frame through the same `WindowSpec.Frame` path. An explicit `Frame`
-  on the spec wins over the store.
+- The main window opens at its remembered frame; the settings window
+  gets its remembered frame through the same `WindowSpec.Frame` path.
+  Frames for transient secondary ids are discarded at startup, so a newly
+  assigned `w2` cannot inherit a different window's placement from an earlier
+  run. An explicit `Frame` on the spec wins over the store.
 - A remembered frame that no longer overlaps any screen's visible area
   by at least 100x50 points (the monitor was unplugged, the resolution
   changed) is dropped and the window centers. Windows checks native
