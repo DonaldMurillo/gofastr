@@ -122,7 +122,7 @@
     hidden.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
-  function pickOption(input, lb, opt) {
+  function pickOption(input, lb, opt, navigationClaimed) {
     if (!opt) return;
     const hidden = pickValueOf(input);
     if (hidden) {
@@ -135,6 +135,7 @@
     input.value = val;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     closeListbox(input, lb);
+    if (navigationClaimed) return;
     // A picked option's destination rides data-cui-push-state (or the
     // anchor's own href): a same-origin pick navigates through the SPA
     // navigator, closing any enclosing widget first so the navigation
@@ -263,8 +264,8 @@
     if (!lb || !lb.id) return;
     const input = inputOf(lb);
     if (!input) return;
+    pickOption(input, lb, opt, e._cuiNav);
     e.preventDefault();
-    pickOption(input, lb, opt);
   });
 
   // Focus auto-open: a refocused input whose listbox already holds

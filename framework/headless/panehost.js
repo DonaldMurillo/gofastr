@@ -241,7 +241,7 @@
 
   // The pane's tabbables, over the kernel's shared focus selector.
   function tabbables(pane) {
-    return pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+    return Array.from(pane.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')).filter(el => el.tabIndex >= 0);
   }
   function focusIn(pane, last) {
     const items = tabbables(pane);
@@ -353,7 +353,12 @@
     const a = document.activeElement, first = items[0], last = items[items.length - 1];
     // Focus outside the drawer (the body, background nav) re-enters it
     // at the end Tab moves toward, never the page behind the scrim.
-    if (!pane.contains(a)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+    if (!items.includes(a)) {
+      const next = pane.contains(a) && (e.shiftKey
+        ? items.findLast(el => el.compareDocumentPosition(a) & 4)
+        : items.find(el => el.compareDocumentPosition(a) & 2));
+      e.preventDefault(); (next || (e.shiftKey ? last : first)).focus();
+    }
     else if (e.shiftKey && a === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && a === last) { e.preventDefault(); first.focus(); }
   });

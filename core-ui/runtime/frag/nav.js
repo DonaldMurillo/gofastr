@@ -1000,12 +1000,13 @@
       // Already there (or on the way: a repeat click while the page
       // loads). A fragment is the browser's own in-page jump; anything
       // else no-ops, the browser would reload the whole document.
-      if (!navHash) e.preventDefault();
+      if (!navHash) { e._cuiNav = 1; e.preventDefault(); }
       return;
     }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
+    e._cuiNav = 1;
     e.preventDefault();
     // gofastr:beforenavigate: cancellable hook fired on the anchor
     // (bubbles, cancelable) only for clicks the router is about to
@@ -1146,7 +1147,6 @@
         the path is the current page and bypasses the screen cache,
         use it after a mutation so the destination reflects new state. */
     navigate(path, { replace = false, force = false } = {}) {
-      if (path === currentPath && !force) return;
       // Security: reject attacker-controllable schemes BEFORE
       // touching the URL bar. Server-rendered data-cui-push-state
       // attributes (e.g. on a combobox option) and signal-bound
@@ -1154,6 +1154,8 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
+      const same = new URL(path, document.baseURI).href === location.href;
+      if (same && !force) return;
       // Document boundary: load a real document instead of swapping.
       // assign/replace keep the push/replace shape the caller asked for.
       if (crossesDocBoundary(path)) {
@@ -1163,7 +1165,7 @@
       }
       const origin = currentPath;
       _navRing = void 0; // programmatic: the browser's heuristic decides
-      _pushPub(path, { replace: replace || path === currentPath });
+      _pushPub(path, { replace: replace || same });
       loadPage(path, { bypassCache: force, from: origin });
     },
 

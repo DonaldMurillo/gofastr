@@ -670,7 +670,10 @@ const (
 	// cannot demand-load. Retain two bytes of clearance.
 	// TestFullNavSessionClearsCache measures 16021 (+42): full-document
 	// session rollover must invalidate before copying the live stream meta.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42
+	// TestNavigateRespectsDocumentBase: identity is core navigation (+22 +1).
+	// TestSignalComboboxLinkNavigates: router ownership is core (+6).
+	// Both together compress 8 bytes worse than apart: 16058 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1161,8 +1164,11 @@ const (
 	// TestPrefetchReplayKeepsRotatedCSRFToken's separate replay guard
 	// cannot carve out of core navigation.
 	// Retain two bytes of clearance and re-prove the padded cliff fixture.
-	// TestFullNavSessionClearsCache measures 18570 at level 1 (+48).
-	coreCongestionWindowGZ = 18572
+	// TestFullNavSessionClearsCache (session invalidation), and
+	// TestNavigateRespectsDocumentBase plus TestSignalComboboxLinkNavigates
+	// (base-resolved identity, router click ownership), measured together:
+	// 18610 at level 1, plus 2.
+	coreCongestionWindowGZ = 18612
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1284,6 +1290,16 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
 		"prefetch replay preserves live CSRF without changing cached events": 21,
 		"full-document session changes invalidate cached identities":         42,
+		// TestNavigateComparesFullDestination and TestComboboxPickWritesHistoryOnce
+		// measure 16001; line 16003. Destination identity belongs in the
+		// core navigator shared by links and programmatic picks.
+		"navigation deduplicates the resolved URL including query and fragment": 22,
+		// TestNavigateRespectsDocumentBase: 16001 -> 16002; line 16004.
+		"navigation identity resolves against the document base": 1,
+		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
+		"router marks its click ownership independently of signal prevention": 6,
+		// Session invalidation and click ownership together: 16058; line 16060.
+		"session invalidation and click ownership compress together": 8,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1565,7 +1581,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// ownership, nested modals and delayed chrome cancellation.
 		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
 		// chrome and deep-link cancellation across a layer content refresh.
-		"widgets": 3658,
+		// TestTrapSkipsNegativeControls: 3670 measured + 2 for tabbable initial focus.
+		"widgets": 3672,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1646,11 +1663,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3778 measured: TestComboboxIMEKeepsSurfaces pins the IME
 		// Escape guard on an intercepted drawer, including keyCode 229.
 		// 3796 measured with both. Pinned at the measured size plus 2.
-		// 3862 measured alone: TestOverlayRollsSessionAndCache pins session
-		// rollover and identity-cache eviction.
-		// 3896 measured with all three. Pinned at the measured size plus 2.
-		// TestOverlayRollsSessionAndCache pins error-response rollover; measured 3894 + 2.
-		"intercept": 3896,
+		// 3896 with session rollover and error-response rollover; 3897 with the
+		// DOM-order trap recovery. Both together measure 3998 + 2.
+		"intercept": 4000,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

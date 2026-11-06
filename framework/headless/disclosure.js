@@ -366,13 +366,19 @@
     const d = traps[traps.length - 1];
     const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
     const nodes = Array.from(d.querySelectorAll(sel)).filter(function (el) {
-      return (el.offsetParent !== null || el === document.activeElement) && el.closest(HOOK) === d;
+      return el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement) && el.closest(HOOK) === d;
     });
-    if (nodes.length === 0) return;
+    if (nodes.length === 0) { e.preventDefault(); return; }
     const first = nodes[0], last = nodes[nodes.length - 1];
-    if (e.shiftKey && (document.activeElement === first || !d.contains(document.activeElement))) {
+    const active = document.activeElement;
+    if (!nodes.includes(active)) {
+      const next = d.contains(active) && (e.shiftKey
+        ? nodes.findLast(el => el.compareDocumentPosition(active) & 4)
+        : nodes.find(el => el.compareDocumentPosition(active) & 2));
+      e.preventDefault(); (next || (e.shiftKey ? last : first)).focus();
+    } else if (e.shiftKey && active === first) {
       e.preventDefault(); last.focus();
-    } else if (!e.shiftKey && (document.activeElement === last || !d.contains(document.activeElement))) {
+    } else if (!e.shiftKey && active === last) {
       e.preventDefault(); first.focus();
     }
   });

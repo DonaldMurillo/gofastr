@@ -353,8 +353,8 @@
           explicit.focus({ preventScroll: true });
           return;
         }
-        const focusables = w.querySelectorAll(NS._focusSel);
-        if (focusables.length > 0) focusables[0].focus({ preventScroll: true });
+        const first = Array.from(w.querySelectorAll(NS._focusSel)).find(el => el.tabIndex >= 0);
+        if (first) first.focus({ preventScroll: true });
       });
     }
     function dismiss() {

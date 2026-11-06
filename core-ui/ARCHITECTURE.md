@@ -1062,7 +1062,7 @@ AND a pane is open, the registered `headless-panehost` module sets
 `data-hui-pane-mode="overlay"` on the host. CSS repositions the open
 pane as a fixed right-edge drawer with a backdrop scrim (`::before`);
 the module applies a focus trap (Tab cycles within the pane, reusing
-`NS._focusSel`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
+`NS._focusSel` candidates filtered by `tabIndex >= 0`), a refcounted scroll lock (`doc.lockScroll('panehost:<id>')`),
 and ESC / backdrop-click-to-close. Widening the viewport or closing the
 pane clears overlay mode and releases the lock. The 768px breakpoint
 literal MUST stay in sync between this module and the `ui-pane-host`
@@ -2612,8 +2612,20 @@ Menu link rows activate on Space and prevent page scrolling, except while
 Space extends an active type-ahead prefix.
 Navigable combobox options are anchors with `role="option"` and
 `tabindex="-1"`, inside presentational list items. Their IDs and classes
-stay on the anchors: keyboard picks and plain clicks use the SPA
-navigator, while modified clicks follow the native `href`.
+stay on the anchors: keyboard picks use the SPA navigator, while plain
+clicks commit the value and close the list without repeating navigation
+already claimed by the link router (including a cancelled navigation).
+The router marks the click event when it takes ownership, before firing
+the cancellable navigation hook. A signal delegate preventing default
+does not claim navigation: a link the router declines still uses the
+picker's programmatic navigator while committing its signal and value.
+Router ownership excludes even a redundant call to the programmatic
+navigator; URL deduplication is not a substitute for a single owner.
+Modified clicks follow the native `href`. The programmatic navigator's
+same-destination guard resolves against `document.baseURI`, matching
+history writes and fetches, and compares the complete URL, including query
+and fragment; changing or removing a fragment is a navigation, while
+forcing an identical destination re-fetches with a replacement entry.
 Escape keydown consumers ignore both `isComposing` and keyCode 229,
 including enclosing disclosures, widgets and intercept panes: an IME
 key left alone by a nested control must not dismiss its parent or clear
@@ -2830,6 +2842,18 @@ every other), and group members that leave the document are pruned on
 that navigated away.
 
 ### What about widgets?
+
+Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
+every focusable candidate. Every consumer of the kernel's `_focusSel`
+checks the browser-normalized `tabIndex >= 0`: negative values exclude
+links, buttons, inputs and arbitrary elements alike, including values
+other than `-1` and whitespace-padded negative integers. This applies to
+widget initial focus, modal traps, intercept handoff and traps, disclosures
+and responsive pane hosts. Explicit `autofocus` may still select a
+programmatic focus target outside the sequential Tab order. From such a
+target inside a trap, Tab moves to the next tabbable control in DOM order
+and Shift+Tab to the previous one, wrapping within the trap at either end.
+With no tabbable controls, the trap consumes Tab without moving focus.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
