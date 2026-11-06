@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ import (
 func RunVerify(args []string) {
 	opts, err := parseVerifyArgs(args)
 	if err != nil {
-		cli.Fail("%v", err)
+		failRun(slices.Contains(args, "--json"), "%v", err)
 		cli.OsExit(2)
 		return
 	}
@@ -526,7 +527,7 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 	report := &contracts.Report{Root: root, ConfigPath: cfg.Path, FailOn: cfg.FailOn, Vet: vet}
 	data, err := contracts.FormatJSON(report)
 	if err != nil {
-		cli.Fail("render JSON: %v", err)
+		failRun(true, "render JSON: %v", err)
 		return
 	}
 	cli.Println(string(data))
@@ -535,18 +536,18 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 func explainRule(idOrSlug string, asJSON bool) {
 	rule, ok := contracts.LookupRule(idOrSlug)
 	if !ok {
-		cli.Fail("unknown rule %q", idOrSlug)
+		message := fmt.Sprintf("unknown rule %q", idOrSlug)
 		if near := contracts.SuggestRules(idOrSlug); len(near) > 0 {
-			cli.Info("did you mean: %s", strings.Join(near, ", "))
+			message += "; did you mean: " + strings.Join(near, ", ")
 		}
-		cli.Info("run `gofastr verify --list` for the catalog")
+		failRun(asJSON, "%s; run `gofastr verify --list` for the catalog", message)
 		cli.OsExit(2)
 		return
 	}
 	if asJSON {
 		data, err := contracts.FormatCatalogJSON([]contracts.Rule{rule})
 		if err != nil {
-			cli.Fail("%v", err)
+			failRun(asJSON, "%v", err)
 			cli.OsExit(2)
 			return
 		}
@@ -574,7 +575,7 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 	if asJSON {
 		data, err := contracts.FormatCatalogJSON(rules)
 		if err != nil {
-			cli.Fail("%v", err)
+			failRun(asJSON, "%v", err)
 			cli.OsExit(2)
 			return
 		}
