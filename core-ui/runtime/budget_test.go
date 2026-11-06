@@ -670,7 +670,9 @@ const (
 	// cannot demand-load. Retain two bytes of clearance.
 	// TestFullNavSessionClearsCache measures 16021 (+42): full-document
 	// session rollover must invalidate before copying the live stream meta.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42
+	// TestFallbackToastUsesRoleOnly and TestSignalRolesAvoidDuplicateLive
+	// measure 16024 (+3): kernel live-region semantics cannot demand-load.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 3
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1284,6 +1286,7 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestPrefetchReplayKeepsRotatedCSRFToken measures 15979; line 15981.
 		"prefetch replay preserves live CSRF without changing cached events": 21,
 		"full-document session changes invalidate cached identities":         42,
+		"fallback toast and signal hydration use implicit live roles":        3,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

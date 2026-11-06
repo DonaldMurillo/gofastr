@@ -752,7 +752,6 @@
       };
       const item = mk('div', 'background:#1f2937;color:#fff;padding:12px 16px;border-radius:6px;font:.9rem system-ui;display:flex;gap:12px');
       item.setAttribute('role', isAssertive ? 'alert' : 'status');
-      item.setAttribute('aria-live', isAssertive ? 'assertive' : 'polite');
       const text = mk('div', 'flex:1');
       text.appendChild(mk('strong', 'display:block', cfg.title));
       if (cfg.body) {

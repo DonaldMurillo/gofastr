@@ -677,6 +677,8 @@ families:
   wrapper is a marker so a copy that toasts finds the module loaded):
   runtime rows announce through `role="status"` (info/success) or
   `role="alert"` (warning/danger), without redundant `aria-live`.
+  The kernel fallback uses the same role-only announcement when the module
+  cannot load or a page has no toast stack.
   The toast stack runtime (`NS.toast`, `_initToasts`, `_dismissToast`,
   `_toastTimers`, `_toastSeq` — the API the kernel's `X-Gofastr-Toast`
   dispatch and `ToastSlot` speak; the kernel's `loadModule` target is

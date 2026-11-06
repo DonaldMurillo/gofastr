@@ -72,6 +72,7 @@ boot	6	names
 boot	6	node
 boot	6	o
 boot	6	reqs
+boot	6	role
 boot	6	script
 boot	6	sub
 boot	6	target

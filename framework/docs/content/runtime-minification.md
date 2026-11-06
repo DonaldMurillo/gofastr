@@ -59,12 +59,14 @@ selected at process startup. The minified output is still a valid
 ES2020+ IIFE; no source maps are emitted, but the code remains
 human-readable enough to set breakpoints in.
 
-The core's gzip gates are 16,023 bytes at level 6 and
+The core's gzip gates are 16,026 bytes at level 6 and
 18,572 bytes at level 1, including full-document session cache invalidation
 and live CSRF token protection across cached
 navigation, prefetch replay, and page-head cleanup. Prefetched pages retain the
 live CSRF token even after a session rotation, while `gofastr:navigate` still
 reports `cached: false` and other page metadata updates normally.
+Fallback toast rows and hydrated text signals use implicit status/alert
+live semantics without adding a second announcement through `aria-live`.
 Ordinary-page form-helper discovery fits those
 gates by scheduling idle modules directly instead of building a batch
 queue. Browsers without `requestIdleCallback` still defer each idle load
