@@ -2546,6 +2546,12 @@ The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
 
 ### The headless layer (`framework/headless`)
 
+Widget, intercept, disclosure and pane-host Tab traps share the kernel's
+focus-eligibility predicate. Candidates need a nonnegative tab index,
+rendered visibility and no inert ancestor or native disabled state.
+Closed disclosure content is excluded only while it is not rendered:
+CSS exposing `::details-content` preserves its nested Tab stops.
+
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
 Menu link rows activate on Space and prevent page scrolling, except while
@@ -2561,9 +2567,14 @@ does not claim navigation: a link the router declines still uses the
 picker's programmatic navigator while committing its signal and value.
 Router ownership excludes even a redundant call to the programmatic
 navigator; URL deduplication is not a substitute for a single owner.
-An earlier page listener's click cancellation also suppresses picker
-navigation. The signal delegate marks only its own default prevention,
+Page click cancellation before the runtime's signal and routing delegates
+suppresses picker navigation. The signal delegate marks only its own default prevention,
 so adding a signal mutation cannot erase that earlier cancellation.
+Enter picks likewise honor default prevention already set when the
+combobox's document keydown delegate runs, including input listeners and
+document listeners installed before boot. A cancelled Enter does not
+commit selection or close the list. Listeners running after the relevant
+runtime delegate cannot undo a pick or navigation already handled.
 Modified clicks follow the native `href`. The programmatic navigator's
 same-destination guard resolves against `document.baseURI`, matching
 history writes and fetches, and compares the complete URL, including query
