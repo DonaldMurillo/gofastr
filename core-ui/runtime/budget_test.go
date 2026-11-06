@@ -673,7 +673,7 @@ const (
 	// TestCancelledComboboxLinkStaysPut: 16010 measured + 2; signal prevention ownership is core.
 	// TestTrapSkipsUnfocusable: 16094 measured + 2; the four demand traps share kernel eligibility.
 	// TestTrapWorksWithoutCheckVisibility: 16116 measured + 2; the eligibility fallback is kernel state.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22 + 1 + 6 + 2 + 84 + 22
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22 + 1 + 6 + 2 + 84 + 22 + 131
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1171,7 +1171,7 @@ const (
 	// TestCancelledComboboxLinkStaysPut: 18575 measured + 2; signal prevention ownership is core.
 	// TestTrapSkipsUnfocusable: 18671 measured + 2; shared focus eligibility is kernel state.
 	// TestTrapWorksWithoutCheckVisibility: 18682 measured + 2; the eligibility fallback is kernel state.
-	coreCongestionWindowGZ = 18684
+	coreCongestionWindowGZ = 18828
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1299,10 +1299,11 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestNavigateRespectsDocumentBase: 16001 -> 16002; line 16004.
 		"navigation identity resolves against the document base": 1,
 		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
-		"router marks its click ownership independently of signal prevention": 6,
-		"signal prevention preserves an earlier page click cancellation":      2,
-		"all four demand traps share rendered and inert focus eligibility":    84,
-		"trap eligibility falls back to client rects without checkVisibility": 22,
+		"router marks its click ownership independently of signal prevention":               6,
+		"signal prevention preserves an earlier page click cancellation":                    2,
+		"all four demand traps share rendered and inert focus eligibility":                  84,
+		"trap eligibility falls back to client rects without checkVisibility":               22,
+		"focus eligibility without checkVisibility, native summaries, shared initial focus": 131,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

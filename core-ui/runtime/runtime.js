@@ -644,10 +644,25 @@
         first call wins, all callers await the same fetch. */
     loadModule,
 
-    /** Focus candidates for initial focus and Tab containment. Consumers
-        require tabIndex >= 0 before using a candidate as a Tab stop. */
-    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
-    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert]') && (el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : el.getClientRects().length > 0),
+    /** Focus candidates for initial focus and Tab containment, a
+        native <summary> included. Consumers require _isTabStop before
+        using a candidate as a Tab stop. */
+    _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex="-1"])',
+    /** Whether el is drawn where focus can land: no inert ancestor and
+        visible. Without checkVisibility (WebKit before Safari 17.4) it
+        asks the same questions itself: client rects, computed
+        visibility, a closed <details> outside its summary, and a
+        content-visibility:hidden ancestor. */
+    _rendered: el => {
+      if (el.closest('[inert]')) return false;
+      if (el.checkVisibility) return el.checkVisibility({ visibilityProperty: true });
+      if (!el.getClientRects().length || getComputedStyle(el).visibility !== 'visible' || el.closest('details:not([open])>:not(summary)')) return false;
+      for (let a = el.parentElement; a; a = a.parentElement) if (getComputedStyle(a).contentVisibility === 'hidden') return false;
+      return true;
+    },
+    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && window.__gofastr._rendered(el),
+    /** The first Tab stop under root, for initial focus. */
+    _firstStop: root => Array.from(root.querySelectorAll(window.__gofastr._focusSel)).find(window.__gofastr._isTabStop),
 
     /** The layout demand modules' seam table (src/envelope.js,
         src/loading.js, src/parts.js, src/transition.js). The navigator
