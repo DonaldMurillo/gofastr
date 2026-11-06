@@ -2561,6 +2561,9 @@ does not claim navigation: a link the router declines still uses the
 picker's programmatic navigator while committing its signal and value.
 Router ownership excludes even a redundant call to the programmatic
 navigator; URL deduplication is not a substitute for a single owner.
+An earlier page listener's click cancellation also suppresses picker
+navigation. The signal delegate marks only its own default prevention,
+so adding a signal mutation cannot erase that earlier cancellation.
 Modified clicks follow the native `href`. The programmatic navigator's
 same-destination guard resolves against `document.baseURI`, matching
 history writes and fetches, and compares the complete URL, including query
@@ -2794,6 +2797,9 @@ programmatic focus target outside the sequential Tab order. From such a
 target inside a trap, Tab moves to the next tabbable control in DOM order
 and Shift+Tab to the previous one, wrapping within the trap at either end.
 With no tabbable controls, the trap consumes Tab without moving focus.
+An untrapped nested disclosure contributes its visible tabbable controls
+to the enclosing trap, including its first and last Tab boundaries.
+Its negative-tabindex targets use the same directional recovery.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path

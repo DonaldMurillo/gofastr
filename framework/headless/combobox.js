@@ -264,7 +264,7 @@
     if (!lb || !lb.id) return;
     const input = inputOf(lb);
     if (!input) return;
-    pickOption(input, lb, opt, e._cuiNav);
+    pickOption(input, lb, opt, e._cuiNav || (e.defaultPrevented && !e._cuiSig));
     e.preventDefault();
   });
 

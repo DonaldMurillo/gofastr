@@ -475,6 +475,8 @@ The parts the navigation members draw beyond the shared vocabulary:
   focused negative-tabindex target, either direction moves to the next
   tabbable control in DOM order, wrapping inside the trap when necessary;
   a trap with no Tab stops consumes Tab without moving focus.
+  Visible tabbable controls inside an untrapped nested disclosure remain
+  in the enclosing trap's Tab order, including at its wrap boundaries.
   Middle-click and modified clicks retain
   native link behavior. A plain primary click fills the input and closes
   the list while letting the link router own navigation exactly once;
@@ -484,6 +486,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   Setting a client signal on the link does not itself claim navigation:
   an absolute same-origin option still commits the signal and selection
   and navigates once when the link router declines its absolute `href`.
+  A page listener cancelling the option click before the runtime handles
+  it suppresses navigation and history writes, even on a signal-bearing
+  option; the signal delegate's own default prevention is distinct.
   A keyboard pick uses the SPA navigator once. Disabled or unsafe
   destinations have no native link.
   Programmatic navigation resolves relative destinations against the

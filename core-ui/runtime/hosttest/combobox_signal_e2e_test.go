@@ -37,6 +37,17 @@ func TestSignalComboboxLinkNavigates(t *testing.T) {
 			if err := chromedp.Run(ctx, chromedp.Poll(`navEvents === 1 && !!document.getElementById('leaves')`, nil)); err != nil {
 				t.Fatal(err)
 			}
+			var programmatic int
+			if err := chromedp.Run(ctx, chromedp.Evaluate(`programmaticPicks`, &programmatic)); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if absolute {
+				want = 1
+			}
+			if programmatic != want {
+				t.Errorf("signal pick invoked programmatic navigation %d times, want %d", programmatic, want)
+			}
 		})
 	}
 }
