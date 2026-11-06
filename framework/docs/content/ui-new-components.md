@@ -233,6 +233,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
   Axes and `FitHeight` remain finite for finite readings, including subnormal values and values near the float64 limit. When padded headroom cannot be represented, the axis uses the data maximum.
 - **linechart**: `framework/ui.LineChart`, multi-series time-series chart with area + legend. Edge x-axis labels anchor inward so the first/last tick don't clip against the SVG boundary.
   Small `Height` values expand to fit the label and legend gutters plus at least an 8px plot, rather than clipping the plot above the viewBox.
+  Legend entries wrap at `Width`, count Unicode runes rather than UTF-8 bytes, and reserve a row of height for each line.
 - **codeblock**: `framework/ui.CodeBlock`, styled `<pre><code>` sample block; the `HighlightLines` *func* pre-tokenizes lines for syntax highlighting, and the `HighlightLines []LineRange` *field* (fence `{1,3-5}`), `Diff`, `HighlightWords`, and `Wrap` add line bands, diff marking, word marks, and soft wrapping — see [CodeBlock: line highlighting, diffs, wrapping](#codeblock-line-highlighting-diffs-wrapping)
 - **codetabs**: `framework/ui.CodeTabs`, the same snippet in several languages (Go / TypeScript / curl …) behind a zero-JS tab strip; pure composition of `headless.Tabs` + `CodeBlock` with copy buttons. Selection is per-tabset, not a page-wide language preference. The SDK docs site (`framework/sdkdocs`) is the flagship consumer.
 - **counter**: `framework/ui.Counter`, numeric counter with +/− buttons mutating a client-side signal

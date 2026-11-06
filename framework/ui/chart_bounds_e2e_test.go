@@ -80,3 +80,38 @@ func TestLineChartTinyHeightKeepsPlot(t *testing.T) {
 		t.Fatal(strings.Join(failures, "; "))
 	}
 }
+
+func TestLineChartLegendWrapsByRunes(t *testing.T) {
+	var markup strings.Builder
+	for index, names := range [][]string{
+		{"Northern region", "Southern region", "Eastern markets", "Western markets"},
+		{strings.Repeat("é", 12), strings.Repeat("à", 12), strings.Repeat("ü", 12)},
+	} {
+		cfg := LineChartConfig{ShowLegend: true, Height: 30, Width: 360}
+		if index == 1 {
+			cfg.Width = 220
+		}
+		for _, name := range names {
+			cfg.Series = append(cfg.Series, LineSeries{Name: name, Values: []float64{2, 8}})
+		}
+		markup.WriteString(string(LineChart(cfg)))
+	}
+	ctx := chartBoundsPage(t, markup.String())
+	var failures []string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`Array.from(document.querySelectorAll('svg')).flatMap((svg, index) => {
+		const labels = Array.from(svg.querySelectorAll('.fui-line-chart__legend'));
+		const rows = new Set(labels.map(label => label.getAttribute('y')));
+		const failures = rows.size < 2 ? ['chart '+index+' did not wrap'] : [];
+		if (index === 1 && labels[0].getAttribute('y') !== labels[1].getAttribute('y')) failures.push('UTF-8 labels were measured in bytes');
+		for (const label of labels) {
+			const box = label.getBBox();
+			if (box.x < 0 || box.x + box.width > svg.viewBox.baseVal.width || box.y < 0 || box.y + box.height > svg.viewBox.baseVal.height) failures.push('chart '+index+' clips '+label.textContent);
+		}
+		return failures;
+	})`, &failures)); err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) > 0 {
+		t.Fatal(strings.Join(failures, "; "))
+	}
+}

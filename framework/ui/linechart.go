@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -92,9 +93,23 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	if len(cfg.Labels) > 0 {
 		bottomGutter = 16
 	}
+	type legendSlot struct {
+		x    float64
+		line int
+	}
+	legendSlots := make([]legendSlot, len(cfg.Series))
 	legendGutter := 0
 	if cfg.ShowLegend {
-		legendGutter = 22
+		x, line := 0.0, 0
+		for index, series := range cfg.Series {
+			width := 12 + float64(utf8.RuneCountInString(series.Name))*7
+			if x > 0 && x+width > float64(w) {
+				x, line = 0, line+1
+			}
+			legendSlots[index] = legendSlot{x: x, line: line}
+			x += width + 12
+		}
+		legendGutter = (line + 1) * 22
 	}
 	h = max(h, bottomGutter+legendGutter+8)
 	plotW := float64(w)
@@ -274,9 +289,9 @@ func LineChart(cfg LineChartConfig) render.HTML {
 
 	// Legend.
 	if cfg.ShowLegend {
-		legY := plotH + float64(bottomGutter) + 14
-		x := 0.0
 		for i, s := range cfg.Series {
+			x := legendSlots[i].x
+			legY := plotH + float64(bottomGutter) + 14 + float64(legendSlots[i].line)*22
 			color := s.Color
 			isPalette := slices.Contains(chartPalette, color)
 			if color == "" {
@@ -307,7 +322,6 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			sb.WriteString(`" class="fui-line-chart__legend">`)
 			sb.WriteString(escapeXML(s.Name))
 			sb.WriteString(`</text>`)
-			x += float64(len(s.Name))*7 + 24
 		}
 	}
 
