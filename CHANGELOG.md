@@ -722,7 +722,8 @@ few lines, and link the PR or the docs page for the rest.
   new session, so the reopened stream is accepted. A superseded navigation's loading exit
   still finishes within its cap, so its cleanup and `aria-busy` reset
   run. BackToTop recomputes its threshold after a soft navigation or an
-  island update that removes links. A
+  island update that removes links, and counts a link again when it is put
+  back on the page. A
   wizard submit that never answered no longer moves focus on a later
   page.
 - **Toasts and the notification bell.** A server-rendered default or
@@ -751,7 +752,9 @@ few lines, and link the PR or the docs page for the rest.
 - **`embed.New` refuses a dynamic screen route** (`/reports/:id`) at
   boot, naming the surface and route. Before, it rendered the pattern
   as a request path, so the parameter bound to the literal `:id` or a
-  sibling screen answered. Register a static screen for the embed.
+  sibling screen answered. Register a static screen for the embed. A brace
+  or colon inside a literal segment (`/reports/rev{1}`) is static and
+  still embeds.
 - **Docs corrections.** `SecurityHeadersConfig.Secure` and HSTS
   auto-detection; BackToTop's `ScrollTarget`, an element id with an
   optional `#` rather than a selector; and `OnWindowFrame`, which
