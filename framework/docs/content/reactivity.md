@@ -321,7 +321,8 @@ issued by one replica verifies on every other replica that shares the secret.
   one recovers on its next navigation, whose answer carries the fresh id.
   Ordinary and intercepted navigation apply that `X-Gofastr-Session` rollover
   before checking response success, including 404s and policy refusals: the SSE
-  meta moves to the new token and all cached screens from the old identity are
+  `meta[name="gofastr-sse"]` moves to the new token (no element id is needed)
+  and all cached screens from the old identity are
   discarded. No application-side retry or cache reset is needed.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:

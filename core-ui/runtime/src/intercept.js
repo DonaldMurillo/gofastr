@@ -211,7 +211,7 @@
       // An intercepted response can invalidate regular screens even
       // though the overlay itself is never cached.
       const session = r.headers.get('X-Gofastr-Session');
-      const meta = session && document.querySelector('meta#gofastr-sse');
+      const meta = session && document.querySelector('meta[name="gofastr-sse"]');
       if (meta) meta.setAttribute('content', meta.getAttribute('content').replace(/([?&]session=)[^&]*/, (_, prefix) => prefix + session));
       if (session) NS.invalidate('*');
       if (r.ok) {

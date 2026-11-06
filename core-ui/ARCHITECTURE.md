@@ -955,7 +955,8 @@ module only when some entry has one, and the UI host injects
 Intercepted HTML never enters the screen cache. The cache is keyed by
 path and holds canonical page renders, so storing an overlay variant
 would poison a later direct visit. An intercepted response carrying
-`X-Gofastr-Session` refreshes the SSE meta token and invalidates every
+`X-Gofastr-Session` refreshes the token in `meta[name="gofastr-sse"]`
+(the UI host emits a name, not an id) and invalidates every
 cached canonical screen before checking response success, including on 404 and
 policy refusals, just like ordinary navigation: an earlier identity's pages must
 not replay after the session changes. Closing routes through

@@ -1650,7 +1650,8 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// rollover and identity-cache eviction.
 		// 3896 measured with all three. Pinned at the measured size plus 2.
 		// TestOverlayRollsSessionAndCache pins error-response rollover; measured 3894 + 2.
-		"intercept": 3896,
+		// TestOverlayRollsSessionAndCache pins the name-only SSE meta; measured 3903 + 2.
+		"intercept": 3905,
 
 		// loading 1367 measured after the area-address lookup
 		// (2026-09-26, "Areas take loading content"): the scheduler

@@ -14,7 +14,7 @@ import (
 )
 
 func TestOverlayRollsSessionAndCache(t *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusForbidden} {
+	for _, status := range []int{http.StatusOK, http.StatusCreated, http.StatusNotFound, http.StatusForbidden} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			testOverlaySession(t, status)
 		})
@@ -60,7 +60,7 @@ func testOverlaySession(t *testing.T, status int) {
 	t.Cleanup(server.Close)
 	ctx := chromedptest.Context(t)
 	settled := `document.getElementById('pane') !== null`
-	if status != http.StatusOK {
+	if status >= http.StatusBadRequest {
 		settled = `document.getElementById('path').textContent === '/rec/a'`
 	}
 	if err := chromedp.Run(ctx,
@@ -72,7 +72,7 @@ func testOverlaySession(t *testing.T, status int) {
 		chromedp.Poll(`document.getElementById('path').textContent === '/list'`, nil),
 		chromedp.Evaluate(`(() => {
 			const meta = document.createElement('meta');
-			meta.id = 'gofastr-sse'; meta.content = '/__gofastr/sse?session=dead-token&lane=events';
+			meta.name = 'gofastr-sse'; meta.content = '/__gofastr/sse?session=dead-token&lane=events';
 			document.head.appendChild(meta);
 		})()`, nil),
 		chromedp.Click(`#open`, chromedp.ByID),
@@ -81,7 +81,7 @@ func testOverlaySession(t *testing.T, status int) {
 		t.Fatal(err)
 	}
 	var session string
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('gofastr-sse').content`, &session)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('meta[name="gofastr-sse"]').content`, &session)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(session, "session=new-token&lane=events") {
