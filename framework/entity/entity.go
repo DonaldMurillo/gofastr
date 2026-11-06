@@ -1083,6 +1083,10 @@ func (e *Entity) Validate() error {
 		if f.Type != schema.Relation {
 			for _, relation := range e.Config.Relations {
 				if relation.Name == f.Name {
+					if relation.Type == RelManyToOne && !relation.CascadeWrite &&
+						len(relation.ForeignKey) == 1 && relation.ForeignKey[0] == f.Name {
+						continue
+					}
 					return fmt.Errorf("entity %q: relation %q conflicts with scalar field %q", e.Config.Name, relation.Name, f.Name)
 				}
 			}
