@@ -66,6 +66,11 @@ verb, including a verb that rejects `--json` as unsupported.
 Any other argument is an error.
 Watch mode also tracks the enclosing `go.mod`, including when the codegen
 config lives in a subdirectory, so module-path edits rebuild generated imports.
+With `--watch --json`, stdout is a stream of JSON documents, one per cycle
+(including failed cycles). Read it with a streaming JSON decoder such as
+`jq`; banners and cycle status go to stderr, and no terminal-clear escape
+is emitted. A failed cycle does not stop watching; repair the input and save
+to generate again.
 
 JSON runs send extension diagnostics to stderr and suppress overwrite
 warnings on stdout. An error diagnostic returns the error document and

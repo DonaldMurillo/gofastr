@@ -2,11 +2,13 @@ package generatecmd
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -30,11 +32,16 @@ import (
 func runGenerateWatch(args []string) {
 	options, err := appgen.ParseGenerateOptions(args)
 	if err != nil {
-		cli.Fail("%v", err)
+		appgen.ReportGenerateFailure(args, err)
 		cli.OsExit(1)
 		return
 	}
-	cli.Info("Watching generator inputs: Ctrl-C to stop.")
+	asJSON := slices.Contains(args, "--json")
+	if asJSON {
+		cli.Fprintln(os.Stderr, "Watching generator inputs: Ctrl-C to stop.")
+	} else {
+		cli.Info("Watching generator inputs: Ctrl-C to stop.")
+	}
 
 	// Initial pass.
 	runOnce(args)
@@ -49,8 +56,12 @@ func runGenerateWatch(args []string) {
 			continue
 		}
 		lastHash = h
-		fmt.Printf("\033[2J\033[H") // clear terminal
-		cli.Info("Detected codegen input change: regenerating...")
+		if asJSON {
+			cli.Fprintln(os.Stderr, "Detected codegen input change: regenerating...")
+		} else {
+			fmt.Printf("\033[2J\033[H") // clear terminal
+			cli.Info("Detected codegen input change: regenerating...")
+		}
 		runOnce(args)
 	}
 }
@@ -67,7 +78,7 @@ func runOnce(args []string) {
 	}
 	exe, err := os.Executable()
 	if err != nil {
-		cli.Fail("generate failed: %v", err)
+		appgen.ReportGenerateFailure(args, fmt.Errorf("generate failed: %w", err))
 		return
 	}
 	cmd := exec.Command(exe, append([]string{"generate"}, filtered...)...)
@@ -75,7 +86,12 @@ func runOnce(args []string) {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 	if err := cmd.Run(); err != nil {
-		cli.Fail("generate failed: %v", err)
+		var exited *exec.ExitError
+		if slices.Contains(args, "--json") && errors.As(err, &exited) {
+			cli.Fprintf(os.Stderr, "generate failed: %v\n", err)
+		} else {
+			appgen.ReportGenerateFailure(args, fmt.Errorf("generate failed: %w", err))
+		}
 	}
 }
 
