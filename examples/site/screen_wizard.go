@@ -97,7 +97,7 @@ func WizardDemoHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
 				return
 			}
-			http.Error(w, "parse form: "+err.Error(), http.StatusBadRequest)
+			http.Error(w, "invalid form", http.StatusBadRequest)
 			return
 		}
 		for _, name := range wizardDemoFields {
