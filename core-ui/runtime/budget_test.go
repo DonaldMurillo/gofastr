@@ -669,7 +669,8 @@ const (
 	// the navigate event's cached flag. This is core's own swap path and
 	// cannot demand-load. Retain two bytes of clearance.
 	// TestNavigateRespectsDocumentBase: 16002 measured + 2; identity is core navigation.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22 + 1
+	// TestSignalComboboxLinkNavigates: 16008 measured + 2; router ownership is core.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 22 + 1 + 6
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1164,7 +1165,8 @@ const (
 	// measure 18542 at level 1 with resolved query/fragment identity in
 	// the core navigator. Two bytes of clearance; cliff fixture re-run.
 	// TestNavigateRespectsDocumentBase: 18562 measured + 2; identity is core navigation.
-	coreCongestionWindowGZ = 18564
+	// TestSignalComboboxLinkNavigates: 18569 measured + 2; router ownership is core.
+	coreCongestionWindowGZ = 18571
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1291,6 +1293,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"navigation deduplicates the resolved URL including query and fragment": 22,
 		// TestNavigateRespectsDocumentBase: 16001 -> 16002; line 16004.
 		"navigation identity resolves against the document base": 1,
+		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
+		"router marks its click ownership independently of signal prevention": 6,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

@@ -479,6 +479,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   native link behavior. A plain primary click fills the input and closes
   the list while letting the link router own navigation exactly once;
   an already-claimed or cancelled click is not retried by the picker.
+  Setting a client signal on the link does not itself claim navigation:
+  an absolute same-origin option still commits the signal and selection
+  and navigates once when the link router declines its absolute `href`.
   A keyboard pick uses the SPA navigator once. Disabled or unsafe
   destinations have no native link.
   Programmatic navigation resolves relative destinations against the

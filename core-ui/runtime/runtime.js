@@ -2026,12 +2026,13 @@
       // Already there (or on the way: a repeat click while the page
       // loads). A fragment is the browser's own in-page jump; anything
       // else no-ops, the browser would reload the whole document.
-      if (!navHash) e.preventDefault();
+      if (!navHash) { e._cuiNav = 1; e.preventDefault(); }
       return;
     }
     // Suppress the browser default up front: with or without a
     // cancellation below, an intercepted click never becomes a hard
     // page load.
+    e._cuiNav = 1;
     e.preventDefault();
     // gofastr:beforenavigate: cancellable hook fired on the anchor
     // (bubbles, cancelable) only for clicks the router is about to

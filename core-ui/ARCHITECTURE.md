@@ -2555,6 +2555,10 @@ Navigable combobox options are anchors with `role="option"` and
 stay on the anchors: keyboard picks use the SPA navigator, while plain
 clicks commit the value and close the list without repeating navigation
 already claimed by the link router (including a cancelled navigation).
+The router marks the click event when it takes ownership, before firing
+the cancellable navigation hook. A signal delegate preventing default
+does not claim navigation: a link the router declines still uses the
+picker's programmatic navigator while committing its signal and value.
 Modified clicks follow the native `href`. The programmatic navigator's
 same-destination guard resolves against `document.baseURI`, matching
 history writes and fetches, and compares the complete URL, including query
