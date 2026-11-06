@@ -45,9 +45,7 @@
         ? G._widgets[name]?.root
         : undefined;
       if (!root || foreign(root)) return;
-      const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(function (el) {
-        return el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement);
-      });
+      const nodes = Array.from(root.querySelectorAll(G._focusSel)).filter(G._isTabStop);
       if (!nodes.length) { e.preventDefault(); return; }
       const first = nodes[0], last = nodes[nodes.length - 1];
       const active = document.activeElement;

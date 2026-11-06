@@ -647,6 +647,7 @@
     /** Focus candidates for initial focus and Tab containment. Consumers
         require tabIndex >= 0 before using a candidate as a Tab stop. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert]') && (el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : el.getClientRects().length > 0),
 
     /** The layout demand modules' seam table (src/envelope.js,
         src/loading.js, src/parts.js, src/transition.js). The navigator
@@ -978,10 +979,10 @@
   document.addEventListener('click', (e) => {
     const node = e.target.closest('[data-cui-signal-set],[data-cui-signal-inc],[data-cui-signal-toggle]');
     if (!node) return;
-    // Tagged: this prevent is the runtime's own, not a page listener's,
-    // so a link that also sets a signal still navigates (nav.js).
+    // Tag only prevention this delegate initiates; an earlier page
+    // listener's cancellation still owns a signal-bearing link.
+    e._cuiSig = !e.defaultPrevented;
     e.preventDefault();
-    e._cuiSig = 1;
     const G = window.__gofastr;
 
     const set = node.getAttribute('data-cui-signal-set');

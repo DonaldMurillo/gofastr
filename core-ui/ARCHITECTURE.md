@@ -2610,7 +2610,14 @@ who focused another control while waiting keeps that focus.
 BackToTop recalculates its connected links' maximum threshold on arrival
 and on child-list changes after its first sentinel is armed. Removal-only
 HTML signal updates lower the threshold without waiting for a scroll or
-an inserted element; removing every link resets it to zero.
+an inserted element; removing every link resets it to zero. A link
+removed and put back is armed again by the insertion scan.
+
+Widget, intercept, disclosure and pane-host Tab traps share the kernel's
+focus-eligibility predicate. Candidates need a nonnegative tab index,
+rendered visibility and no inert ancestor or native disabled state.
+Closed disclosure content is excluded only while it is not rendered:
+CSS exposing `::details-content` preserves its nested Tab stops.
 
 Carousel status announcements format both the active index and total in
 the page locale, including updates after the server's first render.
@@ -2627,6 +2634,14 @@ does not claim navigation: a link the router declines still uses the
 picker's programmatic navigator while committing its signal and value.
 Router ownership excludes even a redundant call to the programmatic
 navigator; URL deduplication is not a substitute for a single owner.
+Page click cancellation before the runtime's signal and routing delegates
+suppresses picker navigation. The signal delegate marks only its own default prevention,
+so adding a signal mutation cannot erase that earlier cancellation.
+Enter picks likewise honor default prevention already set when the
+combobox's document keydown delegate runs, including input listeners and
+document listeners installed before boot. A cancelled Enter does not
+commit selection or close the list. Listeners running after the relevant
+runtime delegate cannot undo a pick or navigation already handled.
 Modified clicks follow the native `href`. The programmatic navigator's
 same-destination guard resolves against `document.baseURI`, matching
 history writes and fetches, and compares the complete URL, including query
@@ -2860,6 +2875,9 @@ programmatic focus target outside the sequential Tab order. From such a
 target inside a trap, Tab moves to the next tabbable control in DOM order
 and Shift+Tab to the previous one, wrapping within the trap at either end.
 With no tabbable controls, the trap consumes Tab without moving focus.
+An untrapped nested disclosure contributes its visible tabbable controls
+to the enclosing trap, including its first and last Tab boundaries.
+Its negative-tabindex targets use the same directional recovery.
 
 The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path

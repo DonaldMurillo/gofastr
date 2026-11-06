@@ -675,7 +675,11 @@ const (
 	// Both together compress 8 bytes worse than apart: 16058 measured + 2.
 	// TestFallbackToastUsesRoleOnly and TestSignalRolesAvoidDuplicateLive (+3):
 	// kernel live-region semantics cannot demand-load.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3
+	// TestCancelledComboboxLinkStaysPut (+2): signal prevention ownership is core.
+	// TestTrapSkipsUnfocusable (+84): the four demand traps share kernel eligibility.
+	// TestTrapWorksWithoutCheckVisibility (+22): the eligibility fallback is kernel state.
+	// Layer 6 and layer 7 together compress 11 bytes better than apart: 16158 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 - 11
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1171,7 +1175,9 @@ const (
 	// (base-resolved identity, router click ownership), measured together:
 	// 18610 at level 1. The role-only live regions
 	// (TestFallbackToastUsesRoleOnly) bring it to 18603, plus 2.
-	coreCongestionWindowGZ = 18605
+	// TestCancelledComboboxLinkStaysPut, TestTrapSkipsUnfocusable and
+	// TestTrapWorksWithoutCheckVisibility (trap eligibility and its fallback) with layer 7: 18728 measured + 2.
+	coreCongestionWindowGZ = 18730
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1303,7 +1309,12 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestSignalComboboxLinkNavigates: 16002 -> 16008; line 16010.
 		"router marks its click ownership independently of signal prevention": 6,
 		// Session invalidation and click ownership together: 16058; line 16060.
-		"session invalidation and click ownership compress together": 8,
+		"session invalidation and click ownership compress together":          8,
+		"signal prevention preserves an earlier page click cancellation":      2,
+		"all four demand traps share rendered and inert focus eligibility":    84,
+		"trap eligibility falls back to client rects without checkVisibility": 22,
+		// Merged with layer 7: 16158 measured; line 16160.
+		"trap eligibility and layer-7 navigation compress together": -11,
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

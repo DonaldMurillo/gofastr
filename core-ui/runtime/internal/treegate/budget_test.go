@@ -54,8 +54,8 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// (TestTrapSkipsNegativeControls): 3094 measured with both, plus
 		// 2. Each is one module loaded only on a page carrying that
 		// pattern.
-		// TestTrapKeepsProgrammaticFocus pins DOM-order recovery: 3178 + 2.
-		"framework/headless/disclosure.js":   3180,
+		// TestTrapKeepsNestedTabOrder retains nested stops: 3174 + 2.
+		"framework/headless/disclosure.js":   3176,
 		"framework/headless/sortablelist.js": 3091,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added

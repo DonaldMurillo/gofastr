@@ -365,9 +365,7 @@
     if (traps.length === 0) return;
     const d = traps[traps.length - 1];
     const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const nodes = Array.from(d.querySelectorAll(sel)).filter(function (el) {
-      return el.tabIndex >= 0 && (el.offsetParent !== null || el === document.activeElement) && el.closest(HOOK) === d;
-    });
+    const nodes = Array.from(d.querySelectorAll(sel)).filter(NS._isTabStop);
     if (nodes.length === 0) { e.preventDefault(); return; }
     const first = nodes[0], last = nodes[nodes.length - 1];
     const active = document.activeElement;

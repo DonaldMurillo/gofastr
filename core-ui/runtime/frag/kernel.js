@@ -639,6 +639,7 @@
     /** Focus candidates for initial focus and Tab containment. Consumers
         require tabIndex >= 0 before using a candidate as a Tab stop. */
     _focusSel: 'a[href],button:not([disabled]):not([aria-disabled="true"]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+    _isTabStop: el => el.tabIndex >= 0 && !el.matches(':disabled') && !el.closest('[inert]') && (el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : el.getClientRects().length > 0),
 
     /** The layout demand modules' seam table (src/envelope.js,
         src/loading.js, src/parts.js, src/transition.js). The navigator
