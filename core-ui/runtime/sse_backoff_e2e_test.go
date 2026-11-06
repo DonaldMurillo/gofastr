@@ -49,7 +49,10 @@ func TestSSERetriesBackOffWithJitter(t *testing.T) {
 			if (G.sseStatus.retryCount !== 0) failures.push('open did not reset retries');
 			const reset = fail(0);
 			if (reset.delay !== 1500) failures.push('retry after open did not reset its delay');
-			reset.callback();
+			const beforeRestore = window.__streams.length;
+			window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted: true}));
+			window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}));
+			if (window.__streams.length !== beforeRestore + 1) failures.push('bfcache restore kept a cancelled retry pending');
 			window.__streams.at(-1).onopen();
 			return failures;
 		})()`, &failures),

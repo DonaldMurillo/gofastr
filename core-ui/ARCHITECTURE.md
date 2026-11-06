@@ -1346,6 +1346,8 @@ first delay is 1.5–3 seconds, doubling to a ceiling of 30–60 seconds per
 attempt. A successful open or deliberate close resets the backoff. DOM
 rescans do not bypass a pending retry. Session re-minting remains best-effort
 on every second failure and shares the same increasingly spaced attempts.
+Hiding the page cancels the retry and clears its ownership, so a bfcache
+restore reconnects immediately instead of waiting for a cancelled timer.
 
 Connect/disconnect transitions also dispatch
 `document.dispatchEvent(new CustomEvent('gofastr:sse-status', { detail: sseStatus }))`.

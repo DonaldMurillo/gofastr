@@ -328,7 +328,8 @@ issued by one replica verifies on every other replica that shares the secret.
   doubling to a cap of 30–60 seconds per attempt. A successful stream open
   resets the backoff. DOM insertions cannot bypass a pending retry, so a
   permanent failure does not hammer the stream and session endpoints every
-  few seconds.
+  few seconds. A bfcache restore reconnects immediately: hiding the page
+  cancels the timer and clears the pending-retry marker together.
 - **Multi-replica.** Set a shared secret so every replica verifies the same
   tokens. Two ways to set it:
   - `framework.WithSecret(secret)` in code, or

@@ -230,10 +230,10 @@ func TestRuntimeModule_SSE(t *testing.T) {
 			t.Errorf("sse module missing %q", want)
 		}
 	}
-	// TestSSERetriesBackOffWithJitter pins the retry policy and scan guard:
-	// 2590 minified bytes plus 2 bytes of clearance.
-	if size := ModuleSize("sse"); size > 2592 {
-		t.Errorf("sse module is %d bytes — budget is 2592", size)
+	// TestSSERetriesBackOffWithJitter pins retry policy, ownership and restore:
+	// 2603 minified bytes plus 2 bytes of clearance.
+	if size := ModuleSize("sse"); size > 2605 {
+		t.Errorf("sse module is %d bytes — budget is 2605", size)
 	}
 }
 

@@ -213,6 +213,7 @@
   // can't fire on restore alongside pageshow's own demand.
   addEventListener('pagehide', () => {
     clearTimeout(retryTimer);
+    retryTimer = 0;
     if (source) {
       source.close();
       source = null;
