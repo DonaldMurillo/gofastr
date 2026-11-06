@@ -140,11 +140,11 @@ type Config struct {
 	// (see DeepLinkConfig).
 	DeepLink *DeepLinkConfig
 
-	// RememberWindows persists every window's frame (position and
-	// size, screen points) and the main window's last path under the
+	// RememberWindows persists the main and settings windows' frames
+	// (position and size, screen points) and the main window's last path under the
 	// "windows" key of the app state store (state.json in the data dir,
-	// 0600), and restores them on the next launch: the main window and
-	// each secondary window reopen where the user left them, and the
+	// 0600), and restores them on the next launch. Frames for transient
+	// secondary ids are discarded at startup to avoid reusing unrelated placements. The
 	// boot handshake redirects to the main window's last path instead
 	// of "/". A remembered frame that no longer intersects any screen
 	// (the monitor was unplugged) is dropped and the window centers.
