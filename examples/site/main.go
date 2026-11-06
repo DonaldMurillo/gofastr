@@ -643,49 +643,7 @@ func setupServer() *framework.App {
 		Slot("body", app.NewStaticComponent(modalBody)).
 		Hidden())
 
-	// Overlay widgets backing the /components/{modal,drawer,bottomsheet,toast}
-	// showcase pages. Each is mounted once here; the catalog demos render a
-	// trigger button (data-cui-open / data-cui-toast) that opens them. Modal +
-	// drawer are Hidden (lazy-fetched on open); the toast stack is auto-mount
-	// (always inlined) so a toast has somewhere to land on any page.
-	demoModalBody := ui.Stack(ui.StackConfig{},
-		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-modal-heading"}, render.Text("Edit user")),
-		html.Paragraph(html.TextConfig{}, render.Text("Center-mounted dialog with a backdrop, focus trap, and Escape-to-close. Open a deeplinked variant and the URL gains ?modal=user-edit&user_id=42. Refresh re-opens it.")),
-	)
-	widget.MountBuilder(fwApp.Router(), preset.Modal("site-demo-modal").
-		LabelledBy("site-demo-modal-heading").
-		DeepLink("modal", "user-edit").
-		DeepLinkParam("user_id").
-		Slot("body", app.NewStaticComponent(demoModalBody)).
-		Hidden())
-
-	demoDrawerBody := ui.Stack(ui.StackConfig{},
-		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-drawer-heading"}, render.Text("Filters")),
-		html.Paragraph(html.TextConfig{}, render.Text("Side-mounted sliding panel. Same dismiss affordances as Modal: backdrop, Escape, focus trap, scroll lock.")),
-	)
-	widget.MountBuilder(fwApp.Router(), preset.Drawer("site-demo-drawer").
-		LabelledBy("site-demo-drawer-heading").
-		Slot("body", app.NewStaticComponent(demoDrawerBody)).
-		Hidden())
-
-	demoSheetBody := ui.Stack(ui.StackConfig{},
-		html.Heading(html.HeadingConfig{Level: 3, ID: "site-demo-sheet-heading"}, render.Text("Share")),
-		html.Paragraph(html.TextConfig{}, render.Text("Bottom-anchored sibling of Drawer. Drag the handle down past ~80px to dismiss; Escape and backdrop click also close it.")),
-	)
-	widget.MountBuilder(fwApp.Router(), preset.BottomSheet("site-demo-bottomsheet").
-		LabelledBy("site-demo-sheet-heading").
-		Slot("body", app.NewStaticComponent(demoSheetBody)).
-		Hidden())
-
-	// /components/sidebar showcase: mount the < 900px nav drawer the Sidebar's
-	// hamburger opens. Without this the hamburger silently no-ops. Shares
-	// sidebarShowcaseConfig with the inline render so DrawerName ("ui-sidebar-
-	// drawer", the ui.Sidebar default) + nav content match. Page-scoped to the
-	// one showcase route.
-	widget.MountBuilder(fwApp.Router(), preset.Drawer("ui-sidebar-drawer").
-		Slot("body", app.NewStaticComponent(ui.SidebarBody(sidebarShowcaseConfig))).
-		Hidden().
-		Pages("/components/sidebar", "/components/sidebardrawertrigger"))
+	gallery.MountDemoWidgets(fwApp.Router(), "/components/sidebar", "/components/sidebardrawertrigger")
 
 	// Toast stack anchored top-right; auto-mount so every page can fire one.
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))

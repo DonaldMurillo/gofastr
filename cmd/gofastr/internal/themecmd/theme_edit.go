@@ -30,11 +30,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/middleware"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/framework/dev"
 	"github.com/DonaldMurillo/gofastr/framework/gallery"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	uitheme "github.com/DonaldMurillo/gofastr/framework/ui/theme"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
 // maxThemeEditBody caps an inbound body: one token key and its value. Past this, the
@@ -293,7 +297,9 @@ type ThemeEditServer struct {
 	// previewKey is the variant the preview iframe should load, the WORKING
 	// theme's, so a refresh mid-session does not silently drop back to the app
 	// palette while the controls show edited values.
-	previewKey string
+	previewKey     string
+	previewOnce    sync.Once
+	previewHandler http.Handler
 }
 
 // ServeHTTP routes between the editor chrome + API and the UIHost's
@@ -313,7 +319,15 @@ func (s *ThemeEditServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Strip the frame-blocking headers so /preview can live inside the
 		// controls page's <iframe>. Loopback binding already defeats the
 		// clickjacking threat X-Frame-Options: DENY exists for.
-		(&frameFriendlyWriter{rw: w}).serveHost(s.Host, r)
+		s.previewOnce.Do(func() {
+			routes := router.New()
+			routes.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
+			routes.Use(retired.Middleware(dev.Enabled))
+			gallery.MountDemoWidgets(routes, "/preview")
+			s.Host.Mount(routes)
+			s.previewHandler = routes
+		})
+		(&frameFriendlyWriter{rw: w}).serveHost(s.previewHandler, r)
 	}
 }
 

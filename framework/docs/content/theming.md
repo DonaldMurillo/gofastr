@@ -411,6 +411,10 @@ path and copy across what you want.
 The preview renders the `framework/gallery` catalog, every design-system
 component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
+Modal, drawer, bottom-sheet and mobile sidebar triggers open their real
+widgets in the preview. Other gallery hosts call
+`gallery.MountDemoWidgets(router, sidebarPages...)` once before mounting
+the UIHost; the optional paths scope the sidebar demo's drawer.
 
 The controls pane groups tokens — Colors first, then **Component
 options**, then the rest. Component options (density, the button
