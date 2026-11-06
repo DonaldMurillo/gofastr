@@ -1043,7 +1043,7 @@
 // data-cui-open anchor guard) and two seams the demand modules own —
 // the commit seam (_swapCommit delegates to the transition module so a
 // plain page declaring a transition gets one) and the opt-in
-// stand-down (a document holding an outlet or area marker hands its
+// stand-down (a document holding an outlet, area, or loading template hands its
 // navigations to the envelope module: the pending path rides a
 // one-field slot, the module load starts, and this navigator stands
 // down; the module carries its own navigator, cache and tail). The
@@ -1606,7 +1606,7 @@
   const loadPage = (path, opts) => {
     if (!window.__gofastr._originOK(path)) return;
     if (crossesDocBoundary(path)) { location.assign(path); return; }
-    // The opt-in hand-off: a document holding an outlet or area marker
+    // The opt-in hand-off: a document holding an outlet, area, or loading template
     // hands its navigations to the envelope module. Warm, the
     // delegation above runs them; cold, the load starts now and the
     // module's navigator takes this one when it lands (the click has
@@ -1617,7 +1617,7 @@
     // to a whole-document load of the destination.
     const G0 = window.__gofastr;
     const N = G0._navHooks.envelope?.nav;
-    if (N || document.querySelector('[data-cui-outlet],[data-cui-area]')) {
+    if (N || document.querySelector('[data-cui-outlet],[data-cui-area],template[data-cui-loading]')) {
       // The pointer modality core recorded for THIS navigation rides
       // the opts: the module demand-loads beside the FIRST fetch,
       // after the click, so a listener of its own would miss that
