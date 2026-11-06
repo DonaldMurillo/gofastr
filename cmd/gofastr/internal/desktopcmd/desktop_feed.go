@@ -5,7 +5,6 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
-	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 )
 
 // desktopFeedFlags carries `desktop feed` flags.
@@ -23,35 +22,19 @@ type desktopFeedFlags struct {
 // default: every value is a release decision.
 func parseDesktopFeedFlags(args []string) desktopFeedFlags {
 	var f desktopFeedFlags
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := devcmd.SplitFlagEqual(args[i])
-		if !hasValue && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
-			value = args[i+1]
-			hasValue = true
-			i++
-		}
-		switch name {
-		case "--key":
-			f.key = value
-		case "--version":
-			f.version = value
-		case "--notes":
-			f.notes = value
-		case "--platform":
-			f.platform = value
-		case "--archive":
-			f.archive = value
-		case "--url":
-			f.url = value
-		case "-o", "--o", "-out", "--out":
-			f.out = value
-		case "--help", "-h":
-			printDesktopUsage()
-			cli.OsExit(0)
-		default:
-			cli.Fail("Unknown feed flag: %s", args[i])
-			cli.OsExit(1)
-		}
+	var help bool
+	if _, err := cli.ParseFlags(args, map[string]*string{
+		"--key": &f.key, "--version": &f.version, "--notes": &f.notes,
+		"--platform": &f.platform, "--archive": &f.archive, "--url": &f.url,
+		"-o": &f.out, "--o": &f.out, "-out": &f.out, "--out": &f.out,
+	}, map[string]*bool{"--help": &help, "-h": &help}); err != nil {
+		cli.Fail("feed: %v", err)
+		cli.OsExit(1)
+		return f
+	}
+	if help {
+		printDesktopUsage()
+		cli.OsExit(0)
 	}
 	if f.out == "" {
 		f.out = "."

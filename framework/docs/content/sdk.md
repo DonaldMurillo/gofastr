@@ -200,7 +200,10 @@ the entity.
 
 A `Blob` (a `File` is one) as the value of an Image or File field sends
 that create, update or patch as multipart/form-data, every part named
-by its column; `client.d.ts` types those fields `string | Blob`. A
+by its column; `client.d.ts` types those fields `string | Blob`. CRUD also
+accepts response wire keys, including explicit `WireName` overrides, for
+multipart values and file parts. Distinct names resolving to one column are
+refused before uploads are saved. A
 multipart body cannot carry `null`, so clear a field in a separate JSON
 patch. A file over 32 MiB, or a body over 64 MiB, throws before
 anything is sent. A batch goes as JSON, so `batchCreate` and
@@ -230,9 +233,16 @@ like every integer field (see below).
 ## The casing contract both SDKs encode
 
 Responses are camelCase (the server default). Request bodies accept snake
-or camel. **Filter/sort query parameters and validation-error `fields`
-keys are always the snake_case column names.** The generated READMEs
+or camel. **Filter/sort query parameters use snake_case column names;
+error `fields` and `field_reasons` keys use the response wire keys
+(camelCase by default, or an explicit `WireName`).** The generated READMEs
 repeat this so consumers stop guessing.
+
+Custom RPC forms must name their controls by the same wire keys as their
+handler's `fields` map. Inline errors match control names exactly; the runtime
+does not infer column names from camelCase. Entityui does this using the
+mounted handler's casing and overrides, and app-spec forms use the default
+camelCase wire keys (`address_line_1` becomes `addressLine1`).
 
 ## Flags and project configuration
 
@@ -394,8 +404,8 @@ Files the export already produced (or the user static dir) always win.
   only API calls live under `APIPrefix` (`/api/posts`). The SDK
   `baseURL` must include the prefix; the download URLs must not.
 - **Filtering with camelCase names.** `?statusId_gte=` matches nothing:
-  filter/sort query params and validation-error `fields` keys are the
-  snake_case column names. The JS SDK exports `<entity>Fields`
+  filter/sort query params use snake_case column names, while error
+  `fields` keys use response wire keys. The JS SDK exports `<entity>Fields`
   constants; the Go README shows the same rule.
 - **Sending a bare key that reads two ways.** With fields `stage` and
   `stage_in`, `?stage_in=` is a 400: it could be `stage_in`'s equality

@@ -77,7 +77,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 		}
 		cells := map[string]render.HTML{"permission": ui.Cluster(ui.ClusterConfig{Gap: ui.GapXS, Align: ui.AlignCenter}, name...)}
 		for i, role := range roles {
-			cell := ui.ToggleConfig{
+			cell := ui.ToggleConfig{Ctx: ctx,
 				Name:        "grant",
 				ID:          "admin-grant-" + strconv.Itoa(i) + "-" + strconv.Itoa(j),
 				LabelHidden: true,
@@ -146,7 +146,7 @@ func (b *Battery) renderRoles(ctx context.Context, _ map[string]string) render.H
 				path: b.cfg.PathPrefix + "/rbac/_grant", page: page,
 				label: i18nui.AdminGrant.Text(ctx), variant: ui.ButtonSecondary,
 				body: []render.HTML{
-					ui.TextField(ui.TextFieldConfig{Name: "role", Label: i18nui.AdminNewRole.Text(ctx), Required: true}),
+					ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "role", Label: i18nui.AdminNewRole.Text(ctx), Required: true}),
 					permissionInput(ctx, caps, ""),
 				},
 			})))
@@ -184,13 +184,13 @@ func permissionInput(ctx context.Context, caps []access.Permission, suffix strin
 		id += "-" + suffix
 	}
 	if len(caps) == 0 {
-		return ui.TextField(ui.TextFieldConfig{Name: "permission", Label: label, ID: id, Required: true})
+		return ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "permission", Label: label, ID: id, Required: true})
 	}
 	opts := make([]ui.SelectOption, len(caps))
 	for i, c := range caps {
 		opts[i] = ui.SelectOption{Value: string(c), Text: string(c)}
 	}
-	return ui.Select(ui.SelectConfig{Name: "permission", Label: label, ID: id, Options: opts, Required: true})
+	return ui.Select(ui.SelectConfig{Ctx: ctx, Name: "permission", Label: label, ID: id, Options: opts, Required: true})
 }
 
 // ----- user roles ---------------------------------------------------------------
@@ -304,7 +304,7 @@ func (b *Battery) renderUsers(ctx context.Context, _ map[string]string) render.H
 func rolesInput(ctx context.Context, userID string, direct, known []string) render.HTML {
 	label := i18nui.AdminColRoles.Text(ctx)
 	if len(known) == 0 {
-		return ui.TextField(ui.TextFieldConfig{Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
+		return ui.TextField(ui.TextFieldConfig{Ctx: ctx, Name: "roles", Label: label, ID: "admin-roles-" + userID, Value: strings.Join(direct, ", ")})
 	}
 	all := slices.Clone(known)
 	for _, r := range direct {

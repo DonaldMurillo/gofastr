@@ -10,10 +10,8 @@
 // The direction is a function of the language, so any carrier whose
 // data-cui-lang matches <html lang> (which the core has already set by
 // the time gofastr:navigate fires) names the right direction, a stale
-// outer layer included. A carrier the core built itself (the cached
-// first page's) names only the language; then the direction comes from
-// the language's likely script, the CLDR rule the server's i18n.Dir
-// applies.
+// outer layer included. If no carrier names a direction, it comes from
+// the language's likely script, the CLDR rule the server's i18n.Dir applies.
 (function () {
   'use strict';
   const NAME = 'doc-dir';

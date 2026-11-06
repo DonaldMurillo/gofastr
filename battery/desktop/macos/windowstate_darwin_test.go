@@ -59,8 +59,6 @@ func TestFrameFlipUsesPrimaryNotMainScreen(t *testing.T) {
 	if rect.Y != 900-300-250 {
 		t.Fatalf("secondary-screen frame flipped against the wrong base: rect.Y = %v, want %v", rect.Y, 900-300-250)
 	}
-	// With no screens at all (headless) the base falls back to
-	// mainScreenHeight; the math still produces a value, never a panic.
 	_ = frameToRect(f, nil)
 }
 
@@ -103,8 +101,6 @@ func TestScreenFlipBase(t *testing.T) {
 	if got := screenFlipBase(twoScreens()); got != 900 {
 		t.Fatalf("flip base = %v, want the primary screen's 900", got)
 	}
-	// No screens: zero, and no AppKit call (the unit suite runs before
-	// any framework loads; mainScreenHeight would panic here).
 	if got := screenFlipBase(nil); got != 0 {
 		t.Fatalf("empty fallback = %v, want 0", got)
 	}

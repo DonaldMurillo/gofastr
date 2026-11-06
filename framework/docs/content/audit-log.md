@@ -256,6 +256,11 @@ deployments.
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
 | `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
 
+OAuth sign-in success events are recorded only after session creation and
+the final provider-link recheck succeed. A fail-closed second-factor check
+records `login.failed` with `reason: twofa_failclosed` and `via: oauth`,
+never an OAuth login success event.
+
 Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
 when unknown, since the column is NOT NULL), and a `diff` JSON of
 `{email, remote, …meta}`. `remote` is the host part of `r.RemoteAddr`;

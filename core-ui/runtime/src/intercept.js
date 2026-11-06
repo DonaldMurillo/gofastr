@@ -74,8 +74,6 @@
   let clicked = null;
   window.addEventListener('click', (e) => { clicked = e.target.closest?.('a') || null; }, true);
 
-  const routes = () => (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []);
-
   // Match a resolved path against the manifest's route patterns. Static
   // segments must match exactly; ':param' and '{param}' match one
   // segment; a trailing catch-all matches the remainder.
@@ -84,10 +82,9 @@
     const s = path.split('/').filter(Boolean);
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
-      const dyn = seg[0] === ':' || seg[0] === '{';
-      if (dyn && (seg.endsWith('...') || seg.endsWith('*') || seg.endsWith('...}'))) return true;
-      if (i >= s.length) return false;
-      if (!dyn && seg !== s[i]) return false;
+      const dyn = /^[:{]/.test(seg);
+      if (dyn && /(?:\.\.\.\}?|\*)$/.test(seg)) return true;
+      if (!s[i] || (!dyn && seg !== s[i])) return false;
     }
     return segs.length === s.length;
   }
@@ -95,13 +92,13 @@
   // Routes register unprefixed: /es/pricing matches /pricing.
   const routeFor = (path) => {
     const p = NS._unlocalize?.(path) ?? path;
-    return routes().find((r) => r.path && matchRoute(r.path, p));
+    return (Array.isArray(window.__gofastr_routes) ? window.__gofastr_routes : []).find((r) => r.path && matchRoute(r.path, p));
   };
-  const pathOf = (u) => u.split('?')[0].split('#')[0];
-  const top = () => layers[layers.length - 1];
+  const pathOf = (u) => u.split(/[?#]/)[0];
+  const top = () => layers.at(-1);
   // Does the route's intercept open over the origin route o? Its from
   // pattern, or any of its also patterns.
-  const fromOK = (target, o) => o.path === target.intercept.from || (target.intercept.also || []).includes(o.path);
+  const fromOK = (target, o) => o.path === target.intercept.from || target.intercept.also?.includes(o.path);
 
   // Every history write here is a RAW pushState on purpose: currentPath
   // must stay on the page UNDER the stack, so popstate diffs inside the
@@ -109,7 +106,20 @@
   // The entry is tagged {s: stack, k: layer, i: index in the layer}, so
   // popstate resolves the entry it landed on exactly (one URL can recur
   // in a pane's history) and knows how far the move went.
-  function rawPush(t) { history.pushState({ cui: { s: stackId, k: t.key, i: t.cur } }, '', t.url); }
+  function rawPush(t, replace, url = t.url, cur = t.cur) {
+    history[replace ? 'replaceState' : 'pushState']({ cui: { s: stackId, k: t.key, i: cur } }, '', url);
+    t.cur = cur; t.url = location.pathname + location.search + location.hash;
+  }
+
+  const pushURL = NS._pushURL;
+  let pagePush = false;
+  NS._pushURL = (url, opts = {}) => {
+    const t = top();
+    const page = pagePush;
+    pagePush = false;
+    if (!t || page) return pushURL(url, opts);
+    try { rawPush(t, opts.replace, url, t.cur + !opts.replace); } catch (_) {}
+  };
 
   // A fresh render of a layer, wearing the presentation the server
   // chose for it. Each layer carries its own: a stack can mix them. The
@@ -118,9 +128,9 @@
   function swap(t, res) {
     t.el.innerHTML = res.html;
     // The pane's page signals, as an in-page navigation seeds them.
-    if (NS._mergeSeed) NS._mergeSeed(t.el);
+    NS._mergeSeed?.(t.el);
     t.el.setAttribute('data-cui-intercept-as', res.as);
-    if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(t.el);
+    NS.scanAndLoadCSS?.(t.el);
   }
 
   function overlayHost() {
@@ -134,9 +144,9 @@
   }
 
   function setStacking() {
-    for (let i = 0; i < layers.length; i++) {
-      const el = layers[i].el;
-      if (i === layers.length - 1) {
+    for (const layer of layers) {
+      const el = layer.el;
+      if (layer === top()) {
         el.removeAttribute('inert');
         el.removeAttribute('aria-hidden');
       } else {
@@ -151,14 +161,12 @@
     const first = el.querySelector(sel);
     const target = first || el.firstElementChild;
     if (!target) return;
-    if (!first && target.setAttribute) target.setAttribute('tabindex', '-1');
-    try { target.focus({ preventScroll: true }); } catch (_) { /* not focusable */ }
+    if (!first) target.setAttribute('tabindex', '-1');
+    refocus(target);
   }
 
   function refocus(el) {
-    if (el && typeof el.focus === 'function') {
-      try { el.focus({ preventScroll: true }); } catch (_) { el.focus(); }
-    }
+    try { el?.focus?.({ preventScroll: true }); } catch (_) { el.focus(); }
   }
 
   // The leave guard hook (headless-leaveguard, loaded when a
@@ -168,7 +176,7 @@
   // dialog after. A declined history move's retry goes the same
   // distance again: the dialog answers after the undo has landed.
   function guardOK(scope, retry) {
-    return !NS._leaveGuard || NS._leaveGuard.ok(scope, retry);
+    return NS._leaveGuard?.ok(scope, retry) ?? true;
   }
 
   // fetchOverlay asks the server for the overlay variant of path,
@@ -204,7 +212,7 @@
       // A redirect, signalled or followed, falls back to the navigator,
       // which takes it.
       if (!r.ok || !as || r.redirected || r.headers.get('X-Gofastr-Location')) return null;
-      return r.text().then((html) => Promise.resolve(NS._cssReady && NS._cssReady(html)).then(() => ({ html, as })));
+      return r.text().then(async (html) => { await NS._cssReady?.(html); return { html, as }; });
     }).then((v) => n === NS._navEpoch ? v : new Promise(() => {}), (err) => {
       if (n !== NS._navEpoch) return new Promise(() => {});
       throw err;
@@ -217,12 +225,12 @@
       // The page under the stack is entry 0 of the new stack.
       underPath = location.pathname + location.search;
       stackId = RUN + ++seq;
-      try { history.replaceState(Object.assign({}, history.state, { cui: { s: stackId } }), '', location.href); } catch (_) {}
+      try { history.replaceState({ ...history.state, cui: { s: stackId } }, '', location.href); } catch (_) {}
     }
     const t = { el: document.createElement('div'), key: RUN + ++seq, p0: below ? below.p0 + below.cur + 1 : 1, cur: 0, url: path + (hash || ''), fromURL, restoreFocus: trigger };
     swap(t, res);
     overlayHost().appendChild(t.el);
-    if (NS.doc) NS.doc.lockScroll('intercept');
+    NS.doc?.lockScroll('intercept');
     layers.push(t);
     setStacking();
     rawPush(t);
@@ -247,7 +255,7 @@
         swap(t, res);
         // The push drops the entries ahead of this one, the same as the
         // browser does: the layer now ends here.
-        if (u !== t.url) { t.cur++; t.url = u; rawPush(t); }
+        if (u !== t.url) NS._pushURL(u);
         focusFirst(t.el);
       })
       .catch(() => { if (e === epoch) fallbackNav(path, hash); });
@@ -259,8 +267,7 @@
   // move. The popstate that follows finds the stack already settled.
   function closeTopDirect() {
     const t = top();
-    if (!t) return;
-    if (!guardOK(t.el, closeTopDirect)) return;
+    if (!t || !guardOK(t.el, closeTopDirect)) return;
     epoch++;
     layers.pop();
     t.el.remove();
@@ -274,9 +281,7 @@
     epoch++;
     if (!layers.length) return;
     layers.length = 0;
-    const el = document.getElementById(OVERLAY_ID);
-    if (el) el.remove();
-    if (NS.doc) NS.doc.unlockScroll('intercept');
+    settleAfterDrop();
   }
 
   // After dropping layer(s): expose the new top (or nothing), restore
@@ -285,9 +290,8 @@
     if (layers.length) {
       setStacking();
     } else {
-      const el = document.getElementById(OVERLAY_ID);
-      if (el) el.remove();
-      if (NS.doc) NS.doc.unlockScroll('intercept');
+      document.getElementById(OVERLAY_ID)?.remove();
+      NS.doc?.unlockScroll('intercept');
     }
     refocus(focus);
   }
@@ -325,13 +329,13 @@
       // in the pane, one history entry of the layer.
       if (inPane && (pathOf(path) === pathOf(t.url) || (anchor.hasAttribute('data-cui-intercept-swap') && NS._originOK?.(path)))) return { kind: 'query' };
       const origin = inPane ? t.url : underPath;
-      if (!target || !target.intercept) return null;
+      if (!target?.intercept) return null;
       const o = routeFor(pathOf(origin));
       if (!o || !fromOK(target, o)) return null;
       if (!NS._originOK?.(path)) return null;
       return { kind: layers.length >= MAX_LAYERS ? 'refuse' : 'open', origin };
     }
-    if (!target || !target.intercept) return null;
+    if (!target?.intercept) return null;
     const o = routeFor(location.pathname);
     if (!o || !fromOK(target, o)) return null;
     if (!NS._originOK?.(path)) return null;
@@ -361,7 +365,7 @@
     clicked = null;
     if (claimPanel(anchor, path, hash)) return true;
     const d = decide(path, anchor);
-    if (!d) return false;
+    if (!d) { pagePush = true; return false; }
     if (d.kind === 'query') {
       claimQuery(path, hash);
       return true;
@@ -405,12 +409,13 @@
   // when the record's route does not open over that page, the link is
   // a plain navigation to the list.
   let panel = null;
+  NS._cancelPanel = () => { panel = null; };
   function claimPanel(anchor, path, hash) {
-    const rec = !layers.length && anchor && anchor.getAttribute('data-cui-intercept-panel');
+    const rec = !layers.length && anchor?.getAttribute('data-cui-intercept-panel');
     if (!rec) return false;
     const target = routeFor(pathOf(rec));
     const o = routeFor(pathOf(path));
-    if (!target || !target.intercept || !o || !fromOK(target, o) || !NS._originOK?.(rec)) return false;
+    if (!target?.intercept || !o || !fromOK(target, o) || !NS._originOK?.(rec)) return false;
     panel = { rec, under: path };
     history.replaceState(null, '', path + (hash || ''));
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -469,7 +474,7 @@
   // the router stands down; false = no claim, load as usual (which
   // includes the no-op diff back to the page underneath).
   NS._interceptPopstate = function () {
-    const tag = (history.state && history.state.cui) || {};
+    const tag = history.state?.cui || {};
     if (repair) {
       const r = repair;
       repair = null;
@@ -561,14 +566,13 @@
         if (res) mountLayer(res, p.rec, '', p.under, null);
         else fallbackNav(p.rec, '');
       })
-      .catch(() => {});
+      .catch(() => { if (e === epoch) fallbackNav(p.rec, ''); });
   });
 
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Escape') return;
+    if (!layers.length || e.key !== 'Escape' || NS._modalStack?.length) return;
     // Surfaces inside the layer that own Escape themselves consume it:
     // a modal widget, an open dropdown, an overlay-mode pane host.
-    if (NS._modalStack && NS._modalStack.length) return;
     if (document.querySelector('[data-cui-dropdown-open], [data-hui-pane-mode="overlay"]')) return;
     e.preventDefault();
     closeTopDirect();
@@ -580,24 +584,24 @@
   // focus module's trap; a modal widget opened inside the layer keeps
   // its own trap, so defer to it.
   document.addEventListener('keydown', (e) => {
-    if (!layers.length || e.key !== 'Tab') return;
-    if (NS._modalStack && NS._modalStack.length) return;
-    const items = Array.from(top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')).filter((el) => el.offsetParent !== null || el === document.activeElement);
+    if (!layers.length || e.key !== 'Tab' || NS._modalStack?.length) return;
+    const items = [...top().el.querySelectorAll(NS._focusSel || 'a[href],button:not([disabled])')].filter((el) => el.offsetParent !== null || el === document.activeElement);
     if (!items.length) { e.preventDefault(); return; }
-    const first = items[0], last = items[items.length - 1];
-    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    const first = items[0], last = items.at(-1);
+    if (document.activeElement === (e.shiftKey ? first : last)) {
+      e.preventDefault(); (e.shiftKey ? last : first).focus();
+    }
   }, true);
 
   document.addEventListener('click', (e) => {
     if (!layers.length) return;
     const el = document.getElementById(OVERLAY_ID);
     if (el && e.target === el) closeTopDirect();  // backdrop
-    if (e.target.closest && e.target.closest('[data-cui-intercept-close]')) {
+    if (e.target.closest?.('[data-cui-intercept-close]')) {
       e.preventDefault();
       closeTopDirect();
     }
   });
 
-  (NS.loadedModules = NS.loadedModules || {}).intercept = true;
+  (NS.loadedModules ||= {}).intercept = true;
 })();

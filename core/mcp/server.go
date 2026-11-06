@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
@@ -732,12 +733,24 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 			return nil, rpcErr
 		}
+		if refusal, ok := errors.AsType[*handler.Error](err); ok && refusal.Code >= 400 && refusal.Code < 500 {
+			message := refusal.Message
+			data := map[string]any{"code": refusal.Code}
+			if !refusal.Reason.IsZero() {
+				message = refusal.Reason.Text(ctx, refusal.Params)
+				data["reason"] = refusal.Reason.Code()
+			}
+			if fields, reasons := handler.ViolationBodies(ctx, refusal.Violations); len(fields) > 0 {
+				data["fields"], data["field_reasons"] = fields, reasons
+			}
+			return nil, &RPCError{Code: ErrInvalidParams, Message: message, Data: data}
+		}
 		// A plain error is internal detail (filesystem paths, driver
 		// and DSN text, internal hostnames) and must not cross the
 		// transport — the same posture invokeHandler's panic path
 		// takes. Log it server-side and answer the generic message.
-		// The caller-visible failure channel a handler owns is
-		// mcp.ToolResult{IsError: true} or a deliberate *RPCError.
+		// Caller-visible failures use mcp.ToolResult{IsError: true},
+		// a deliberate *RPCError, or a typed 4xx *handler.Error.
 		slog.Error("mcp: tool handler failed",
 			slog.String("tool", name),
 			slog.String("err", err.Error()))

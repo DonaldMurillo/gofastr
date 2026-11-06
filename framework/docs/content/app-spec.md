@@ -1,5 +1,25 @@
 # App specs
 
+HTML block props use HTML boolean semantics: `false` omits presence attributes
+such as `disabled`, `checked`, `required`, and `multiple`; `true` emits them.
+ARIA and data booleans remain string values.
+
+A link block renders its `text` before its child blocks; declaring text does
+not discard child markup.
+
+Prop names for renderer-owned attributes are case-sensitive. Case-variant
+extras such as `ID` or `Class` cannot override the canonical `id` or `class`.
+
+Generation rejects image blocks without `src`, fieldsets without `legend`,
+text-only labels without `for`, and node-rendered links without text,
+children, or a nonblank `aria-label` or `aria-labelledby` prop. A plain
+`{type: link, href: /docs}` block uses its href as the label; adding `kind`,
+props, actions, an island, or a widget selects the node renderer and requires
+content or one of those accessible-name props. The low-level node renderer
+degrades incomplete nodes instead of panicking:
+an image is omitted, an empty-legend fieldset stays a fieldset, a label may
+remain unassociated, and a link without `href` becomes text content.
+
 A `gofastr.yml` app spec is an optional way to scaffold a GoFastr app:
 declare your entities, screens, nav, seed data, and endpoint/middleware
 stubs in one file, then generate owned Go from it. The app spec is not
@@ -877,6 +897,10 @@ partial and keeps the shell).
   select stays empty; a number input steps by 1 for `int`, 0.0001 for
   `decimal` and `any` for `float`) for forms not bound to one entity. The record form on
   the entityui screens is drawn from the entity's `display: form:`.
+  Submitted control names use the default camelCase API wire keys
+  (`address_line_1` becomes `addressLine1`) so field refusals land on the
+  matching input. Control IDs, label lookups and relationship targets keep
+  their declaration names.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs

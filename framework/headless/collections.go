@@ -256,7 +256,7 @@ type RepeaterProps struct {
 	// AddName and AddValue name the add control as a submit control
 	// (a FormRepeater's "<Name>_add=1"); RemoveName names the remove
 	// controls, whose value is the row's 0-based index. Empty names
-	// render plain buttons the surrounding form does not carry.
+	// default to Name+"_add" and Name+"_remove"; AddValue defaults to "1".
 	AddName    string
 	AddValue   string
 	RemoveName string
@@ -298,6 +298,9 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Repeater requires Name — the group's identity and its controls' names derive from it")
 	}
+	p.AddName = orDefault(p.AddName, p.Name+"_add")
+	p.RemoveName = orDefault(p.RemoveName, p.Name+"_remove")
+	p.AddValue = orDefault(p.AddValue, "1")
 	if p.MinItems < 0 {
 		panic("headless: Repeater MinItems " + strconv.Itoa(p.MinItems) + " is negative — a floor below zero is no floor")
 	}

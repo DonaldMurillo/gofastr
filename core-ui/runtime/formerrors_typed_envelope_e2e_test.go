@@ -19,13 +19,17 @@ import (
 // "field_reasons","success"}), and /rpc/plain with a WriteError that
 // names no field.
 // The page records every toast the runtime asks for in window.__toasts.
-func typedRefusalServer(t *testing.T, body string) string {
+func typedRefusalServer(t *testing.T, body string, names ...string) string {
 	t.Helper()
 	js, err := RuntimeJS()
 	if err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
+	fieldName := "title"
+	if len(names) > 0 {
+		fieldName = names[0]
+	}
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Write([]byte(js))
@@ -33,7 +37,7 @@ func typedRefusalServer(t *testing.T, body string) string {
 	handleRuntimeModules(t, mux)
 	mux.HandleFunc("/rpc/fields", func(w http.ResponseWriter, r *http.Request) {
 		handler.WriteError(w, r, handler.ValidationError(map[string][]schema.Violation{
-			"title": {{Reason: schema.ReasonRequired}},
+			fieldName: {{Reason: schema.ReasonRequired}},
 		}))
 	})
 	mux.HandleFunc("/rpc/plain", func(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +54,29 @@ func typedRefusalServer(t *testing.T, body string) string {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv.URL + "/"
+}
+
+func TestWireErrorsMatchNamesExactly(t *testing.T) {
+	for _, name := range []string{"addressLine1", "address_line1"} {
+		t.Run(name, func(t *testing.T) {
+			body := fmt.Sprintf(`<form data-cui-rpc="/rpc/fields" data-cui-rpc-method="POST"><div data-hui-field><label for="author">Author</label><input id="author" name="%s"></div><button id="save" type="submit">Save</button></form>`, name)
+			url := typedRefusalServer(t, body, "addressLine1")
+			ctx := chromedptest.Context(t)
+			var invalid string
+			var toasts int
+			if err := chromedp.Run(ctx, chromedp.Navigate(url), chromedp.Click(`#save`, chromedp.ByID),
+				chromedp.Poll(`!!window.__gofastr.loadedModules.formerrors && (!!document.getElementById('author').getAttribute('aria-invalid') || window.__toasts.length>0)`, nil),
+				chromedp.Evaluate(`document.getElementById('author').getAttribute('aria-invalid') || ''`, &invalid),
+				chromedp.Evaluate(`window.__toasts.length`, &toasts),
+			); err != nil {
+				t.Fatal(err)
+			}
+			matched := name == "addressLine1"
+			if (invalid == "true") != matched || (toasts == 0) != matched {
+				t.Fatalf("field name %q: aria-invalid=%q toasts=%d; want an inline error only for an exact wire-key match", name, invalid, toasts)
+			}
+		})
+	}
 }
 
 // A typed handler's refusal reaches the form. handler.WriteError used

@@ -1,5 +1,10 @@
 # MCP server
 
+Entity list tools advertise the entity's effective `Pagination.MaxListLimit`,
+capped at 1000 and defaulting to 100, matching HTTP list pagination.
+Entity create and update tools omit owner and tenant columns from their
+write schemas: the server controls these scope values, not the caller.
+
 `core/mcp` is the Model Context Protocol server behind `/mcp`: a JSON-RPC 2.0
 dispatcher with registries for tools, resources, resource templates, and
 prompts, per-caller gates over all of them, and stdio plus HTTP/SSE transports.
@@ -161,8 +166,19 @@ A `ToolHandler` returns `any`, normalized by type:
 | `string` | One text block |
 | anything else | JSON-marshaled into one text block |
 
-A non-nil error becomes a JSON-RPC error, but only a deliberate
-`*RPCError` keeps its message verbatim — a plain error is logged
+For a typed `handler.ToolAdapter`, query- and path-tagged parameters accept
+strings, booleans, and numbers, including native Go numeric values passed to
+`CallTool`. Nulls (including typed-nil values), arrays, and objects are refused
+with their JSON type named in the parameter error.
+
+A non-nil error becomes a JSON-RPC error. A deliberate `*RPCError` keeps its
+message verbatim. A typed `*handler.Error` with a
+4xx status (including a wrapped refusal from `handler.ToolAdapter`)
+becomes `-32602` with its HTTP `code` and any `fields` / `field_reasons` in
+`data`. When `Reason` is set, its public message is translated and its stable
+code is included as `reason`; otherwise `Message` is sent as written and
+`reason` is omitted. Its wrapped internal cause is never included.
+A plain error or typed 5xx is logged
 server-side and answered with the generic "internal tool error", so
 handler text (filesystem paths, driver messages) never crosses the
 transport. For a failure the caller should see as tool output rather

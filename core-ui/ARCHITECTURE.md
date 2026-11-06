@@ -1,5 +1,37 @@
 # GoFastr UI architecture
 
+After a repeater row removal, focus recovery tries remaining row controls
+in order and verifies that each focus attempt succeeded. Invisible controls
+must not strand focus on the document body; Add is the final fallback.
+
+Entity-form string bounds stay server-side, where length counts Unicode
+code points; native UTF-16 length attributes must not truncate valid text.
+
+Live navigation snapshots scrub transient RPC state from both primary
+content and every kept-layer outlet or area; fetched fill bytes remain
+untouched, and outlet captures never carry document metadata.
+
+The deferred-parts boot handoff consumes envelope-module load failures.
+A missing chunk leaves inline server-rendered content usable without an
+unhandled promise rejection.
+
+A deferred-route cache replay marks loading regions only for part
+addresses it actually requests. Inline boot and leave snapshots with no
+part record retain their rendered outlets; already-armed loading entries
+for unrequested addresses are restored and their timers cancelled.
+
+Typed text/number/date/datetime fields, native Select, and FormRepeater
+take the render context through `Ctx`. Name-derived IDs claim a scoped
+family (hint/error or repeater items), while explicit IDs reserve that
+family unchanged. Sibling controls with the same field name therefore
+keep their own labels and descriptions when rendered with a page scope.
+
+Radio and checkbox groups claim their group, description and indexed
+leaf IDs as one scoped family. Leaf identity is the option index, never
+the value's lossy slug. Standalone radio, checkbox and switch configs
+carry `Ctx` too; a Switch allocates its control ID once and reuses it for
+its message, even when another switch has the same submitted name.
+
 The seven form-helper markers demand-load `widgethelpers` on ordinary
 pages, at boot and after insertion; widgets are not a loading prerequisite.
 The demand scanner schedules idle modules directly, without a batching
@@ -880,6 +912,20 @@ these moves discard its edits, and only then: opening a related record
 over a changed one discards nothing and does not ask; a declined Back
 is repaired with a re-push that restores the URL and history.length.
 
+URL-only writes through the shared `_pushURL` helper (pagination and
+deep-linked widgets included) belong to the top intercept pane's history
+span. Replace rewrites its current entry; push extends the span. Closing
+consumes the whole span without changing the router's underlying path.
+A refused history write changes neither the pane's URL nor its span.
+Successful writes retain the browser-resolved path, query and fragment,
+so query-only, hash-only and same-origin absolute URLs keep subsequent
+query links inside the pane.
+
+When the leave guard declines a link, it invalidates the shared navigation
+epoch immediately. An older overlay response cannot mount behind the
+confirmation dialog and change what the guarded retry would discard.
+Cancel retains the dirty pane; Discard replays against the same stack.
+
 **More than one origin.** `Intercept.AlsoFrom` names more patterns the
 overlay opens over, beside `From`: a create screen opens over its list
 and over each related record whose Related tab adds to it. The manifest
@@ -1355,6 +1401,14 @@ server-side error (a `data-hui-field-error` node inside the
 `data-hui-choice` label) and never by a kit class, and toasts the
 `error` text when no field matched. It has no DOM marker and owns no
 attribute of its own; the happy path never loads it.
+
+CRUD refusal `fields` and `field_reasons` use the response wire keys,
+including explicit `WireName` overrides. Formerrors matches each key to
+the control's exact submitted name; it never guesses a database column
+by reversing the lossy casing transform. Entityui uses the mounted CRUD
+handler's wire keys for every generated control and conditional dependency,
+and app-spec forms use the default camelCase wire keys. Schema lookups,
+relationship parameters, labels and control IDs remain column-based.
 
 ### Host transport (`__gofastr_transport`)
 

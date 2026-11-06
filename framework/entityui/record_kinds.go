@@ -49,7 +49,6 @@ func builtinKind(name string) Kind {
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{
 						Field: c, Type: t, Name: ic.Name, Value: ic.Value, Placeholder: ic.Placeholder,
-						MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
 						ExtraAttrs: patternAttr(ic.Field.Pattern),
 					})
 				},
@@ -61,8 +60,7 @@ func builtinKind(name string) Kind {
 				Ctx:  ic.Ctx,
 				Name: ic.Name, Label: ic.Label, ID: ic.Control.ID, Value: ic.Value,
 				Rows: 8, Placeholder: ic.Placeholder, Help: ic.Help, Monospace: true,
-				Required:  ic.Control.Required,
-				MinLength: minLength(ic.Field.Min), MaxLength: maxLength(ic.Field.Max),
+				Required: ic.Control.Required,
 			})
 		}}
 	default:

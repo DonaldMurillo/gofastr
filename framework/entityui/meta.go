@@ -246,6 +246,10 @@ func (m *meta) field(name string) (schema.Field, bool) {
 
 func (m *meta) hint(field string) entity.FieldDisplay { return m.d.Fields[field] }
 
+func (m *meta) inputName(column string) string {
+	return m.ch.WireKey(column)
+}
+
 func (m *meta) singular(ctx context.Context) string {
 	return i18nui.EntitySingular(ctx, m.tr, m.name, m.d.Singular)
 }

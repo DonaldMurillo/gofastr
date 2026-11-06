@@ -48,17 +48,15 @@ func tagFor(t *testing.T, body, name string) string {
 
 // The record form's inputs carry what the schema checks, so the
 // browser refuses a bad value before the round trip: required, the
-// length bounds (a fractional minimum rounds up, as the server's rune
-// count compares), the number bounds, the email kind's type, and the
+// number bounds, the email kind's type, and the
 // pattern wrapped to match anywhere, the way the server's unanchored
 // regexp.MatchString does. A pattern in Go-only syntax stays off.
 func TestRecordFormCarriesSchemaValidation(t *testing.T) {
 	x := newTestUI(t, contactEntities(), nil, withAPI(map[string]string{"contacts": "/api/contacts"}))
 	body := string(x.ui.Create("contacts").Base("/rec/contacts").RenderCtx(x.userCtx("/rec/contacts/create", "", "u1")))
 	for name, wants := range map[string][]string{
-		"code":  {`required`, `minlength="2"`, `maxlength="10"`, `pattern="[\s\S]*(?:[A-Z]{2})[\s\S]*"`},
-		"bio":   {`minlength="11"`, `maxlength="500"`},
-		"email": {`type="email"`, `required`, `maxlength="120"`},
+		"code":  {`required`, `pattern="[\s\S]*(?:[A-Z]{2})[\s\S]*"`},
+		"email": {`type="email"`, `required`},
 		"age":   {`min="0"`, `max="130"`},
 	} {
 		tag := tagFor(t, body, name)
@@ -66,6 +64,12 @@ func TestRecordFormCarriesSchemaValidation(t *testing.T) {
 			if !strings.Contains(tag, want) {
 				t.Errorf("%s lacks %s: %s", name, want, tag)
 			}
+		}
+	}
+	for _, name := range []string{"code", "bio", "email"} {
+		tag := tagFor(t, body, name)
+		if strings.Contains(tag, "minlength=") || strings.Contains(tag, "maxlength=") {
+			t.Errorf("%s carries UTF-16 length limits: %s", name, tag)
 		}
 	}
 	if tag := tagFor(t, body, "site"); strings.Contains(tag, "pattern=") {

@@ -1,5 +1,18 @@
 # Desktop host (experimental)
 
+`desktop keygen` and `desktop feed` reject valued flags without a value,
+including an output flag followed by another flag. Use `--out=<path>`
+when the intended path itself starts with a dash.
+
+A tray that enables `CloseHidesWindow` always has a Show menu action, even
+when no menu was supplied. An existing Show action, including a nested one,
+is preserved without adding a duplicate.
+
+A macOS build recreates the destination `.app` tree before writing the new
+bundle. Old signatures and resources do not survive `--no-sign` rebuilds.
+The previous bundle is removed before compilation; preserve a separate copy
+if it must remain available when a build fails.
+
 `battery/desktop` runs a GoFastr app as a local-first desktop
 application inside the operating system's own WebView: WKWebView on
 macOS, WebView2 on Windows, and WebKitGTK on Linux. The shell builds with `CGO_ENABLED=0`.
@@ -611,6 +624,11 @@ the menu bar after the main window closes; `HideDock` runs the app as
 an accessory (no Dock icon, menu bar only). `d.SetTrayTitle` and
 `__gofastr.desktop.tray.setTitle` change the bar title at runtime.
 
+Windows hides the main window on close only while its notification-area icon
+has registered successfully. If registration fails, close behaves normally.
+After Explorer restarts, the app re-registers the icon; if that fails while
+the main window is hidden, the app restores the window instead.
+
 Linux uses an app-owned local session-bus connection and the
 StatusNotifierItem/DBusMenu protocols. It requires a compatible status host
 (for example, a desktop panel with SNI support); it does not install a host,
@@ -690,7 +708,9 @@ type WindowStyle struct {
   needs something to be that surface; an unpainted transparent window
   shows the desktop.
 - `X` and `Y` position the window's top-left corner in screen points
-  on the primary screen, measured from its top-left. Set both or
+  on the primary screen, measured from its top-left. On macOS this uses
+  the same origin as remembered frames, even when a different-height
+  secondary screen holds the key window. Set both or
   neither: one alone is a configuration error (the bridge answers
   `invalid_input`; the Go side ignores it and centers).
 
@@ -1769,9 +1789,19 @@ gofastr desktop keygen -o path
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
     --url https://example.com/notes/Notes-1.2.0.zip [-o dir]
-    writes manifest.json and manifest.json.sig into dir (-o defaults
+    merges this platform into an existing same-version manifest.json,
+    preserving other platforms and channels, then re-signs it. A different
+    existing version (including a missing version) is refused; use a fresh directory for a new release.
+    Writes manifest.json and manifest.json.sig into dir (-o defaults
     to .), computing sha256 and size from the archive file
 ```
+
+Retained channels must also have valid semantic versions; an invalid channel
+refuses the merge without changing the existing manifest or signature.
+On macOS, Linux, and Windows, feed writers sharing an output directory serialize
+the entire read/merge/sign/write operation with an OS file lock. Publish the
+completed pair after all jobs finish; live readers can still observe the interval
+between the manifest write and its signature write.
 
 `feed` refuses a version that is not semver, a platform key outside
 the `GOOS-GOARCH` grammar, a non-https archive URL, an archive
@@ -2384,6 +2414,9 @@ WKWebView through `desktoptest.NativeMain`.
 
 ## The `gofastr desktop` verbs
 
+`gofastr desktop run` removes its private build directory when its first
+build or launch fails, as well as on ordinary shutdown.
+
 | Verb | What it does |
 |---|---|
 | `build ...` on macOS | Cross-compiles for darwin/arm64 with `CGO_ENABLED=0` and writes `<o>/<Name>.app` (a `GOARCH` other than arm64 is refused; on an Intel Mac the build warns that the bundle will not launch there): Info.plist, the binary, PkgInfo, and an icon.icns built in pure Go from the PNG. Signing is ad-hoc by default when `codesign` is on PATH; `--sign` selects an identity, and `--no-sign` skips signing. `--notarize` submits and staples the bundle. `--scheme` writes the URL scheme to Info.plist. |
@@ -2391,7 +2424,7 @@ WKWebView through `desktoptest.NativeMain`.
 | `build ...` on Linux/amd64 or Linux/arm64 | Writes a plain ELF executable by default. `--format=tar.gz` opts into a release archive with an icon, launcher, desktop-entry template, runtime README and checksum manifest. `--scheme` embeds command-line/session-bus activation, not an OS handler. It does not install the app or bundle system libraries. |
 | `install --bundle=<extracted-directory>` on Linux | Validates and installs a bundle for the current user, including a desktop entry and any embedded URL handler. No default-handler or autostart preference changes. |
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
-| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. |
+| `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. Its staging directory is removed on success and on build, run, decode, or output-write failure. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
 | `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
 

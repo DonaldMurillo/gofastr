@@ -788,8 +788,11 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	// its lease expired, and this tick re-claimed the row): dead-letter
 	// it without sending. schedule only checks the budget after a failed
 	// send, so without this a MaxAttempts 1 delivery was sent once per
-	// crash. No request is made, so no attempt is counted.
+	// crash. No request is made, but processing the dead letter still
+	// counts as one failed delivery in the metrics.
 	if d.Attempts > m.opts.MaxAttempts {
+		m.deliveriesTotal.Add(1)
+		m.failuresTotal.Add(1)
 		d.Status = StatusDead
 		d.LastError = fmt.Sprintf("attempt budget exhausted: claimed %d times, max %d (a worker died between claim and settle)",
 			d.Attempts, m.opts.MaxAttempts)

@@ -92,14 +92,14 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 		hiddenInput("key", s.key),
 		hiddenInput("query", s.carry().Encode()),
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignEnd},
-			ui.Select(ui.SelectConfig{
+			ui.Select(ui.SelectConfig{Ctx: ctx,
 				Name:        "action",
 				ID:          lb.form + "-action",
 				Label:       i18nui.EntityBulkAction.Text(ctx),
 				LabelHidden: floating,
 				Options:     actionOpts,
 			}),
-			ui.Select(ui.SelectConfig{
+			ui.Select(ui.SelectConfig{Ctx: ctx,
 				Name:        "scope",
 				ID:          lb.form + "-scope",
 				Label:       i18nui.EntityBulkScope.Text(ctx),
@@ -136,7 +136,7 @@ func (b *ListBuilder) bulkBar(ctx context.Context, s *listState, lb *listBulk, r
 // selectCell is one row's checkbox in the select column, a control of
 // the bulk bar's form named by the row's title.
 func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]any, i int) render.HTML {
-	return ui.Checkbox(ui.ToggleConfig{
+	return ui.Checkbox(ui.ToggleConfig{Ctx: ctx,
 		Name:        "ids",
 		ID:          lb.form + "-sel-" + strconv.Itoa(i),
 		Value:       s.m.rowID(row),

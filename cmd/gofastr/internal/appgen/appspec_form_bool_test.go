@@ -30,7 +30,7 @@ func TestEntityFormBoolPostsTrue(t *testing.T) {
 	)
 	for _, tc := range []struct{ name, checked string }{{"active", "true"}, {"archived", "false"}} {
 		hidden := `html.Input(html.InputConfig{Type: "hidden", Name: "` + tc.name + `", Value: "false"})`
-		box := `ui.Checkbox(ui.ToggleConfig{Name: "` + tc.name + `", Label: i18nui.FieldLabel(ctx, nil, "products", "` + tc.name + `", `
+		box := `ui.Checkbox(ui.ToggleConfig{Ctx: ctx, Name: "` + tc.name + `", Label: i18nui.FieldLabel(ctx, nil, "products", "` + tc.name + `", `
 		h, b := strings.Index(expr, hidden), strings.Index(expr, box)
 		if h < 0 || b < 0 || h > b {
 			t.Fatalf("%s: want the hidden false before the checkbox:\n%s", tc.name, expr)

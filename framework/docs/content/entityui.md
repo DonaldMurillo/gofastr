@@ -35,6 +35,17 @@ panics there, and so does a view with no `Where`, since
 Builders are components: return them from a
 screen, or call `RenderCtx(ctx)` to place one inside another component.
 
+Generated form controls use the mounted CRUD handler's response wire key as
+their submitted name: an explicit `WireName`, or the column in the handler's
+configured JSON casing (camelCase by default). For example, `address_line_1`
+is named `addressLine1` under the default casing, not `address_line_1` or
+`address_line1`. This keeps CRUD's wire-keyed validation and constraint
+refusals attached to the right control without trying to reverse the casing.
+Conditional fields follow the same input names; schema names, IDs, display
+configuration, and relation-picker field parameters remain column-based.
+Multipart forms accept the same aliases, including file and checkbox inputs,
+and refuse distinct aliases for one column before saving any uploaded file.
+
 ## Mounting app-owned screens
 
 The builders draw components; your app registers their screen routes.
@@ -192,7 +203,10 @@ keeps the UI unchanged; without a callback the default stays
   heads its actions with Copy link (out of the menu) and Open in panel:
   a link to the list at `Base` marked `data-cui-intercept-panel`, which
   loads the list in the page's place and opens the record over it as a
-  drawer, so Back from the drawer lands on the list. Turn it on only
+  drawer, so Back from the drawer lands on the list. A failed drawer
+  fetch opens the record as its own page instead. A failed list navigation
+  cancels the pending drawer; a later ordinary list visit never reopens
+  that old request. Turn it on only
   where the record's route opens as a drawer over `Base`
   (`app.InterceptFrom`); elsewhere the link is a plain move to the list. Delete asks first, and on an entity
   with `Scope.SoftDelete` the confirm says the record can be restored.
@@ -293,8 +307,9 @@ meaning and every screen honours them first.
 
 A form input carries the field's own validators, so the browser refuses a
 bad value before the round trip: `Required` sets `required`; a string's
-`Min` and `Max` set `minlength` and `maxlength` (a fractional minimum
-rounds up) and a number's set `min` and `max`; `Pattern` sets
+`Min` and `Max` remain server-side rune-count checks, not native
+`minlength` / `maxlength` attributes (which count UTF-16 units and can
+truncate valid emoji text). A number's bounds set `min` and `max`; `Pattern` sets
 `pattern`, wrapped as `[\s\S]*(?:<pattern>)[\s\S]*` because the
 server's check is an unanchored match and the browser anchors the
 attribute. A pattern using Go-only syntax (inline flags such as `(?i)`)

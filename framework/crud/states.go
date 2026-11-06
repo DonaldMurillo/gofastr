@@ -736,7 +736,7 @@ func (ch *CrudHandler) Transition() http.HandlerFunc {
 		// state of a row the caller's BeforeGet hides (refusalState).
 		result, err := ch.RunTransition(withRealRequest(WithAuditRequest(r.Context(), r), r), id, key)
 		if err != nil {
-			writeCRUDError(w, r, err)
+			writeCRUDError(w, r, err, ch.convertKey)
 			return
 		}
 		// The move is committed; a read-scope probe that fails hides the

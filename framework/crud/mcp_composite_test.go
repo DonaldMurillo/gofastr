@@ -92,7 +92,7 @@ func TestLLMMDBatchItemNamesKey(t *testing.T) {
 		PrimaryKey: []string{"student_id", "course_id"},
 	}.WithTimestamps(false))
 	doc := EntityLLMMD(ent)
-	want := `"items": [ {"student_id": "...", "course_id": "...", "...": "..."} ]`
+	want := `"items": [ {"studentId": "...", "courseId": "...", "...": "..."} ]`
 	if !strings.Contains(doc, want) || strings.Contains(doc, `{"id": "..."`) {
 		t.Errorf("batch-update example lacks %s:\n%s", want, doc)
 	}

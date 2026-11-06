@@ -1076,6 +1076,9 @@ func (e *Entity) Validate() error {
 		if f.Type == schema.Relation && f.To == "" {
 			return fmt.Errorf("entity %q: relation field %q must specify To", e.Config.Name, f.Name)
 		}
+		if f.Type == schema.Enum && len(f.Values) == 0 {
+			return fmt.Errorf("entity %q: enum field %q must specify non-empty Values", e.Config.Name, f.Name)
+		}
 
 		// A Default is the value crud.doCreate substitutes for a field the
 		// request body omitted. It reaches the driver through the same column

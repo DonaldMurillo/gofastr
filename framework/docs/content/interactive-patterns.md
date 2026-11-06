@@ -464,6 +464,13 @@ that know the canonical URL ahead of time (e.g. pagination).
 The server-supplied `X-Gofastr-Push-State` response header takes precedence
 when both are present.
 
+Inside an intercepted pane, the write belongs to that pane's history span;
+closing the pane returns to the page underneath. Query-only (`?p=2`),
+fragment-only (`#details`) and same-origin absolute URLs resolve against
+the current browser URL. Subsequent query links stay inside the pane when
+the write keeps the pane's route; a same-origin absolute URL naming an
+unrelated route does not provide that guarantee.
+
 ```go
 interactive.OnClick(page2Btn,
     interactive.Post("/islands/items/page").OnSuccess(

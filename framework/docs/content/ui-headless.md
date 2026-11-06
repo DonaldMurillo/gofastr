@@ -1,5 +1,16 @@
 # Headless components
 
+Repeater submit controls default to `Name+"_add"` with value `"1"` and
+`Name+"_remove"` with the zero-based row index. Explicit `AddName`,
+`AddValue`, and `RemoveName` override these no-script operation markers.
+
+After an Island swap removes a repeater row, focus returns to the next row's
+first enabled input, select, textarea, or button that can receive focus, or to
+the preceding row when the last row was removed. Hidden, inert, and unrendered
+controls are skipped. Recovery checks that a control actually received focus
+before stopping; CSS transparency (`opacity: 0`) does not itself prevent focus.
+When no row control can receive focus, focus returns to Add.
+
 `framework/headless` is the structure half of a design system. A
 component there renders tags, roles, labelling relationships, state
 attributes and the hooks a runtime binds to, and nothing else: no

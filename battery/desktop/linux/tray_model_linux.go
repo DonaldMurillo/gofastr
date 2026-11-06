@@ -88,7 +88,9 @@ func newTrayModel(ctx context.Context, cfg desktop.WindowConfig) (*trayModel, er
 		return nil, err
 	}
 	var ids, recoveryIDs []string
-	rows := desktop.PlanTrayMenu(ctx, cfg.Tray, cfg.Title, &ids)
+	configured := *cfg.Tray
+	configured.CloseHidesWindow = false
+	rows := desktop.PlanTrayMenu(ctx, &configured, cfg.Title, &ids)
 	// Recovery actions are always top-level, even when the app put its own
 	// Show/Quit inside a submenu. An empty menu must never strand a window.
 	standard := &desktop.Tray{Menu: &desktop.Menu{Items: []desktop.MenuItem{{Role: desktop.RoleShow}, {Role: desktop.RoleQuit}}}}

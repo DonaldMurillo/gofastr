@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strconv"
@@ -17,6 +18,8 @@ import (
 // datetime-local, file, tel, url, search) use ui.Control inside a
 // FormField builder.
 type TextFieldConfig struct {
+	// Ctx carries the render ID scope for this field and its descriptions.
+	Ctx          context.Context
 	Name         string
 	Label        string
 	ID           string
@@ -45,7 +48,7 @@ type TextFieldConfig struct {
 
 // TextField renders a FormField containing an input[type=text].
 func TextField(cfg TextFieldConfig) render.HTML {
-	id := fieldID("TextField", cfg.Name, cfg.Label, cfg.ID)
+	id := fieldID(cfg.Ctx, "TextField", cfg.Name, cfg.Label, cfg.ID)
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"type", "name", "value", "placeholder", "autocomplete", "minlength", "maxlength",
 		"required", "disabled", "aria-invalid", "aria-describedby")
@@ -68,6 +71,8 @@ func TextField(cfg TextFieldConfig) render.HTML {
 // NumberFieldConfig configures a labelled native number field. Pointer bounds
 // distinguish an explicit zero from an omitted constraint.
 type NumberFieldConfig struct {
+	// Ctx carries the render ID scope for this field and its descriptions.
+	Ctx         context.Context
 	Name        string
 	Label       string
 	ID          string
@@ -96,7 +101,7 @@ type NumberFieldConfig struct {
 // NumberField renders a FormField containing an input[type=number]. For the
 // larger touch-friendly +/- control, use NumberInput instead.
 func NumberField(cfg NumberFieldConfig) render.HTML {
-	id := fieldID("NumberField", cfg.Name, cfg.Label, cfg.ID)
+	id := fieldID(cfg.Ctx, "NumberField", cfg.Name, cfg.Label, cfg.ID)
 	owned := html.Attrs{}
 	for name, value := range map[string]*float64{"min": cfg.Min, "max": cfg.Max, "step": cfg.Step} {
 		if value != nil {
@@ -113,6 +118,8 @@ func NumberField(cfg NumberFieldConfig) render.HTML {
 // DateFieldConfig configures a labelled native date field. Min, Max, and Value
 // use the HTML date format (YYYY-MM-DD); browsers enforce the concrete value.
 type DateFieldConfig struct {
+	// Ctx carries the render ID scope for this field and its descriptions.
+	Ctx         context.Context
 	Name        string
 	Label       string
 	ID          string
@@ -139,7 +146,7 @@ type DateFieldConfig struct {
 
 // DateField renders a FormField containing an input[type=date].
 func DateField(cfg DateFieldConfig) render.HTML {
-	id := fieldID("DateField", cfg.Name, cfg.Label, cfg.ID)
+	id := fieldID(cfg.Ctx, "DateField", cfg.Name, cfg.Label, cfg.ID)
 	owned := html.Attrs{}
 	if cfg.Min != "" {
 		owned["min"] = cfg.Min
@@ -158,6 +165,8 @@ func DateField(cfg DateFieldConfig) render.HTML {
 // a time of day in one value, in the HTML local date-time format
 // (2026-07-22T09:30).
 type DateTimeFieldConfig struct {
+	// Ctx carries the render ID scope for this field and its descriptions.
+	Ctx         context.Context
 	Name        string
 	Label       string
 	ID          string
@@ -189,7 +198,7 @@ type DateTimeFieldConfig struct {
 // owns the label, the touch target and the focus ring, as DateField
 // and TimePicker do.
 func DateTimeField(cfg DateTimeFieldConfig) render.HTML {
-	id := fieldID("DateTimeField", cfg.Name, cfg.Label, cfg.ID)
+	id := fieldID(cfg.Ctx, "DateTimeField", cfg.Name, cfg.Label, cfg.ID)
 	owned := html.Attrs{}
 	if cfg.Min != "" {
 		owned["min"] = cfg.Min
@@ -213,17 +222,22 @@ func labelHiddenClass(hidden bool, class string) string {
 	return strings.TrimSpace(modifierClass("fui-field--label-hidden", hidden) + " " + class)
 }
 
-func fieldID(api, name, label, id string) string {
+func fieldID(ctx context.Context, api, name, label, id string) string {
 	if name == "" {
 		panic(fmt.Sprintf("ui: %s requires Name", api))
 	}
 	if label == "" {
 		panic(fmt.Sprintf("ui: %s requires Label", api))
 	}
-	if id == "" {
-		return name
+	return scopedControlID(ctx, id, name, "-hint", "-error")
+}
+
+func scopedControlID(ctx context.Context, explicit, derived string, family ...string) string {
+	if explicit != "" {
+		render.ReserveID(ctx, explicit, family...)
+		return explicit
 	}
-	return id
+	return render.UniqueID(ctx, derived, family...)
 }
 
 // typedFormField renders one labelled input through FormField's builder:

@@ -22,8 +22,8 @@ import (
 // TestGeneratedJSSDK_BrowserRoundTrip executes the generated client.js in a
 // real Chrome against a live framework server on the same origin, covering
 // both the syntax check (Node is not in CI; the browser is the repo-standard
-// JS runtime) and the behavioral contract: camelCase responses, snake_case
-// filter params and validation-error keys, presence-faithful PATCH ({views:0}
+// JS runtime) and the behavioral contract: camelCase responses and error keys,
+// snake_case filter params, presence-faithful PATCH ({views:0}
 // must set zero), batch rollback surfaced as a result, and the SSE watch.
 func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
 	if testing.Short() {
@@ -148,7 +148,7 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
     r.valStatus = e.status;
     r.valFields = e.fields ? Object.keys(e.fields).join(',') : 'none';
     r.valReason = e.reason;
-    r.valFieldReasons = e.fieldReasons ? (e.fieldReasons.author_name || []).join(',') : 'none';
+    r.valFieldReasons = e.fieldReasons ? (e.fieldReasons.authorName || []).join(',') : 'none';
   }
 
   for (const [key, path] of [['gate', '/posts/gated'], ['typed', '/posts/typed']]) {
@@ -164,7 +164,7 @@ func TestGeneratedJSSDK_BrowserRoundTrip(t *testing.T) {
   r.rbCommitted = rb.committed;
   r.rbLen = rb.results.length;
   const rbBad = rb.results.find((x) => x.index === 1) || {};
-  r.rbFieldReasons = rbBad.field_reasons ? (rbBad.field_reasons.author_name || []).join(',') : 'none';
+  r.rbFieldReasons = rbBad.field_reasons ? (rbBad.field_reasons.authorName || []).join(',') : 'none';
 
   let resolveEvt;
   const evtP = new Promise((res) => { resolveEvt = res; });
@@ -221,8 +221,8 @@ true`
 	if r["valIsApiError"] != true || r["valStatus"] != float64(400) {
 		t.Errorf("validation error shape broken: %+v", r)
 	}
-	if fields, _ := r["valFields"].(string); !strings.Contains(fields, "author_name") {
-		t.Errorf("validation fields must use snake_case keys, got %v", r["valFields"])
+	if fields, _ := r["valFields"].(string); !strings.Contains(fields, "authorName") {
+		t.Errorf("validation fields must use wire keys, got %v", r["valFields"])
 	}
 	if r["valReason"] != "validation_failed" || r["valFieldReasons"] != "required" {
 		t.Errorf("ApiError must carry the codes: reason=%v fieldReasons=%v", r["valReason"], r["valFieldReasons"])

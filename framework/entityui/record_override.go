@@ -122,7 +122,7 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 			Attrs(),
 	},
 		hiddenInput("back", back),
-		ui.Select(ui.SelectConfig{
+		ui.Select(ui.SelectConfig{Ctx: ctx,
 			Name:     overrideStateField,
 			Label:    i18nui.EntityOverrideState.Text(ctx),
 			Options:  opts,

@@ -77,7 +77,7 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **checkboxgroup**: `framework/ui.CheckboxGroup` / `RadioGroup`, `headless.Group` fieldset of checkboxes / radios; the group's message (error, else hint) belongs to the group, never to each leaf
 - **changelist**: `framework/ui.ChangeList`, what an edit changed, one row per field: the field's label, the old value struck in a `<del>`, an arrow, the new value in an `<ins>`; screen readers hear "from" and "to" (`i18nui.ChangeFrom` / `ChangeTo`) in place of the arrow, and an empty side reads as `EmptyValue`. Values are `render.HTML`, so a caller passes the same cell markup its table draws. `ui.Ago(ctx, now, t)` beside it says a past time the way an activity feed does ("just now", "5m ago", "2h ago", "3d ago"), through `i18nui.AgoNow`, `AgoMinutes`, `AgoHours` and `AgoDays`
 - **colorfield**: `framework/ui.ColorField`, colour swatch beside a text input holding the same value, as one control (`headless.Color`'s affix shell); the text input is the source of truth and requires a `Name`, so values the native picker cannot represent (`transparent`, `var(--x)`) survive and mark the shell instead of degrading — the swatch falls back to black; the headless module keeps the swatch and the text one value for every value the picker can show (the short `#abc` form expands for the swatch and is pickable, not an error). Use `ColorPicker` when a swatch + label is enough
-- **segmented**: `framework/ui.SegmentedControl`, radio-group styled as a sliding pill bar; an empty `Selected` checks the first segment, and a `Selected` no option lists checks none (the pill hides), so the group submits nothing rather than a value nobody chose
+- **segmented**: `framework/ui.SegmentedControl`, radio-group styled as a sliding pill bar; an empty `Selected` checks the first segment, and a `Selected` no option lists checks none (the pill hides), so the group submits nothing rather than a value nobody chose. Labels target option-indexed input IDs, so values such as `C++` and `C#` remain independently selectable.
 - **counter**: `framework/ui.Counter`, signal-driven numeric counter with +/− buttons
 - **signaltoggle**: `framework/ui.SignalToggle`, `role="switch"` button bound to a boolean signal
 - **toggleaction**: `framework/ui.ToggleAction`, three-state commit/untoggle button (idle → pending → committed) with optional mutex groups; a toggle button whose accessible name is `IdleLabel` in both states (`aria-pressed` carries the state, only the visible label flips), so keep the idle label's words in `CommittedLabel`
@@ -113,6 +113,21 @@ raw (enumerated in `framework/ui/extraattrs_contract_test.go`). See
 - **stepwizard**: `framework/ui.StepWizard`, multi-step form with a progress indicator bar
 
 ### Selection & input composition
+
+Pass the page or island render context as `Ctx` to `TextField`,
+`NumberField`, `DateField`, `DateTimeField`, `Select`, and `FormRepeater`.
+Their derived IDs then share the render ID scope, so same-named controls
+keep distinct labels and hint/error targets. Explicit `ID` values remain
+caller-owned and reserve their dependent IDs; callers must keep explicit
+IDs unique. Without an ID scope, the original name-derived spelling stays.
+
+`ToggleConfig.Ctx`, `RadioGroupConfig.Ctx`, and `CheckboxGroupConfig.Ctx`
+claim the same scoped ID families. Group leaf IDs use the option index,
+not the value's slug, so `C`, `C++`, and `C#` remain distinct. Submit
+values are unchanged. Explicit group IDs reserve both descriptions and
+all indexed leaf IDs; standalone radio IDs disambiguate within `Ctx`.
+Generated entity-form checkboxes forward the same render context, including
+when an explicit control ID is supplied.
 
 - **combobox**: `framework/ui.Combobox`, typed combobox over the headless primitive: a labelled input with `role=combobox` wiring, a GET-form no-script fallback to the same endpoint, an RPC-driven listbox whose options are real links, and a status region the module announces results through; `core-ui/patterns/combobox` is retired
 - **inline edit**: `framework/ui.InlineEdit`, a value edited where it is shown (a table cell): the value is the trigger of a dismissable `<details>` editor laid over it: the caller's `Control` (give it a hidden label, `LabelHidden`, since the cell names it) and Save on one line of a `ui.Form`. Saving sends it to `Action` over the runtime's form RPC (`PUT`, or `PATCH` with `Method`), toasts Saved and navigates to `Return`, so the server redraws the page with the stored value; Escape or a press outside closes it unsaved. `Label` is the trigger's accessible name. The value tints on hover and shows a focus ring.
