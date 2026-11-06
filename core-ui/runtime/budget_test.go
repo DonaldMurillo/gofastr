@@ -1427,6 +1427,9 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 	// bytes the core shed to return to its pre-layout size. A page
 	// that never loads it never downloads it.
 	moduleOverrides := map[string]int{
+		// 1129 measured plus 2 clearance: TestSSERetriesBackOffWithJitter
+		// pins capped jittered retries and prevents scans bypassing their timer.
+		"sse": 1131,
 		// envelope 7696 measured (7694 + 2 clearance; that measure
 		// already carries the seen-path tracking, the stable pane
 		// keys and the hash-carrying pending slot);

@@ -121,6 +121,11 @@ After minification (typical end-user deploy):
 - Every on-demand module: ≤ 3 KB gz each; a page only fetches the
   modules whose markers it renders
 
+The SSE module is pinned more tightly at 1,131 B gz (1,129 measured)
+and 2,592 B minified (2,590 measured). Those bytes include capped,
+jittered reconnect backoff and the pending-retry scan guard, exercised
+by `TestSSERetriesBackOffWithJitter`; they do not grow the core bundle.
+
 `headless-feedback` has a 3,146-byte ceiling (3,144 measured). Its
 focused-row detach observer restores the external origin after a
 server-rendered toast's Island dismissal without changing the kernel;
