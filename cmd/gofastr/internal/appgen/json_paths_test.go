@@ -16,6 +16,9 @@ func TestCodegenJSONPathsIncludeOutput(t *testing.T) {
 		// A control byte in a valid POSIX directory name: Go's %q spells it
 		// \x1b, which no JSON parser reads.
 		outputDirs = append(outputDirs, "generated/report\x1b")
+		// Runes the terminal scrubber drops (a bidi override, NEL, a
+		// zero-width space): left literal, the printed path loses them.
+		outputDirs = append(outputDirs, "generated/report\u202e", "generated/report\u0085", "generated/report\u200b")
 	}
 	for _, outputDir := range outputDirs {
 		for _, dryRun := range []bool{false, true} {
