@@ -73,6 +73,9 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 	}
 
 	lines := strings.Split(strings.TrimSuffix(cfg.Patch, "\n"), "\n")
+	for index := range lines {
+		lines[index] = strings.TrimSuffix(lines[index], "\r")
+	}
 	fileHeaders := diffFileHeaders(lines)
 	var sb strings.Builder
 
