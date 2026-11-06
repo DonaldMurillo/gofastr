@@ -160,8 +160,9 @@ The status field still distinguishes `"ok"`, `"error"`, and
 
 ## Timeouts and ctx-ignoring checks
 
-`/readyz` applies an overall deadline (default 5 seconds; override
-with `WithReadinessTimeout`). Each check runs in its own goroutine
+`/readyz` and the `app_readiness` MCP tool apply the same overall deadline
+(default 5 seconds; override with `WithReadinessTimeout`). An earlier
+request or tool-call deadline still wins. Each check runs in its own goroutine
 under `recover()`, so a panicking check marks that row as
 `"error"` without taking the process down. A check that ignores
 `ctx.Done()` and runs past the deadline is reported as
