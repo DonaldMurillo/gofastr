@@ -31,7 +31,7 @@ type WatchOptions struct {
 	// {".git", "node_modules", "dist", ".gofastr", "vendor"}.
 	ExcludeDirs []string
 	// PollInterval is how often the watcher re-scans roots after the
-	// initial walk. Defaults to 2 seconds. Set to <= 0 to disable
+	// initial walk. 0 means 2 seconds; a negative value disables
 	// polling (initial walk only).
 	PollInterval time.Duration
 	// MaxFileSize skips files larger than this. 0 means 1 MiB. Negative

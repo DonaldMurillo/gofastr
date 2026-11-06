@@ -13,8 +13,8 @@
 // of pre-canned demos is the opposite of a host's job.
 //
 // Layering: the package imports only framework/ui, core-ui/*, and
-// core/render. It does not import the framework root facade, framework/crud,
-// framework/entity, or anything higher up the L1–L5 diagram in
+// core rendering, routing and localization. It does not import the framework
+// root facade, framework/crud, framework/entity, or anything higher up the L1–L5 diagram in
 // framework/ARCHITECTURE.md, so it introduces no cycle and is safely
 // importable from cmd/gofastr, examples/site, and host apps alike.
 //
@@ -25,6 +25,8 @@
 // realistic render out of the box; hosts that wire live session state
 // (like examples/site) call the render helpers in demos.go directly from
 // their own request-bearing SSR path, bypassing the Demo closure.
+// Hosts also call MountDemoWidgets once before mounting the UIHost to back
+// the catalog's modal, drawer, bottom-sheet and sidebar triggers.
 package gallery
 
 import "github.com/DonaldMurillo/gofastr/core/render"

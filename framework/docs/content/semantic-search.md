@@ -152,6 +152,10 @@ A deleted file's document is removed on the next scan; if `Remove` fails, the sc
 
 The first scan after a watcher starts also removes the documents it indexed in an earlier run for files under its roots that are gone, so a file deleted while the app was down leaves the index. Only documents whose ID is the watcher's own for that path are touched; documents the app added itself, and files under another watcher's roots, stay. An index that is not the one `Open` returns is not reconciled.
 
+`WatchOptions.PollInterval` defaults to 2 seconds when it is zero. A negative
+value disables polling after the initial walk; use `ScanOnce` when you only
+need an explicit one-shot scan.
+
 `Watcher` is polling-based on purpose: no third-party deps, deterministic behaviour, and the dev-time cost on a tree of a few thousand files is well under the embedding cost of any actual file edit. For very large trees, swap the implementation for fsnotify-backed without changing the public API.
 
 `Index.Add` is replace-by-doc, so a re-emit of the same `Document.ID` cleanly replaces prior chunks. The watcher derives stable doc IDs from path hashes, so renames look like delete + add and bursty edits collapse into the next poll cycle.

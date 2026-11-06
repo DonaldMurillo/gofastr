@@ -7,6 +7,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 )
 
+// ReportGenerateFailure prints a generator failure using the requested
+// output format without exiting, so watch mode can continue after a failure.
+func ReportGenerateFailure(args []string, err error) {
+	failGenerateArgs(args, err)
+}
+
 func failGenerateArgs(args []string, err error, hints ...string) {
 	failGenerate(slices.Contains(args, "--json"), err, hints...)
 }

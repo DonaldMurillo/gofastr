@@ -3125,10 +3125,10 @@ func (a *App) InitPlugins() (err error) {
 			a.Logger().Warn("dev MCP contract tools partially skipped", "error", err)
 		}
 		// contracts_verify / contracts_fix read (and fix WRITES) the source
-		// tree, so they ride the dev-implied flag rather than introspection
+		// tree, so they ride the dev-loop gate rather than introspection
 		// itself: an explicit WithMCPIntrospection() in production must not
 		// hand an MCP client a file-writing tool. See mcp_contracts_dev.go.
-		if a.mcpIntrospectionDevImplied {
+		if dev.DevMCPEnabled() {
 			if err := a.registerContractDevTools(); err != nil {
 				a.Logger().Warn("dev MCP contract source tools partially skipped", "error", err)
 			}

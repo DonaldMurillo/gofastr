@@ -411,6 +411,10 @@ path and copy across what you want.
 The preview renders the `framework/gallery` catalog, every design-system
 component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
+Modal, drawer, bottom-sheet and mobile sidebar triggers open their real
+widgets in the preview. Other gallery hosts call
+`gallery.MountDemoWidgets(router, sidebarPages...)` once before mounting
+the UIHost; the optional paths scope the sidebar demo's drawer.
 
 The controls pane groups tokens — Colors first, then **Component
 options**, then the rest. Component options (density, the button
@@ -442,10 +446,14 @@ target directory, calls `fsync`, and renames it over the destination. Each
 click re-checks the destination and refuses to replace a **hand-edited** file
 unless the editor started with `--force`. A file this session already wrote is
 its own to rewrite, so iterating on a palette is one Write per change rather
-than one Write per process. If the directory already contains a Go file,
+than one Write per process. A failed disk write preserves that permission
+and the previous file; repair the disk or file permissions, then retry
+without restarting the editor. If the directory already contains a Go file,
 the generated file uses that package name; otherwise it uses the sanitized
 directory name. The editor regenerates the file whole, so confirm before
 replacing hand-edited values.
+Startup applies the same overwrite check to existing files and dangling
+output symlinks: choose another `--out` or explicitly pass `--force`.
 
 The tool binds loopback, pins the Host header (DNS-rebinding defence), and
 mints a per-process bearer token delivered in a `<meta>` tag, the same
