@@ -683,12 +683,14 @@ few lines, and link the PR or the docs page for the rest.
   Ctrl-, Cmd-, Shift- and middle-clicks open it the browser's way, and a
   plain click or keyboard pick navigates in-page once, so one Back
   returns to where it started, fragment links included, and a link
-  option that also sets a signal still navigates. A click a page
-  listener cancels stays cancelled. Focus traps in modals, drawers,
-  disclosures and panes skip elements with a negative `tabindex`, so Tab
-  and Shift+Tab stay inside them, including from a focused
-  negative-`tabindex` element, and an open nested disclosure's controls
-  keep their place in the trap's Tab order. `navigate()` resolves a relative
+  option that also sets a signal still navigates. A click or Enter a
+  page listener cancels stays cancelled. Focus traps in modals, drawers,
+  disclosures and panes skip elements that cannot take focus: a negative
+  `tabindex`, a hidden or `inert` subtree, or a closed nested disclosure.
+  Tab and Shift+Tab stay inside the trap, including from a focused
+  negative-`tabindex` element and in browsers without
+  `checkVisibility()`, and an open nested disclosure's controls keep
+  their place in the trap's Tab order. `navigate()` resolves a relative
   destination against `<base href>` when deciding it is the current
   page. `ComboboxRows`
   refuses duplicate option IDs, as `Combobox` does. The site-search palette
