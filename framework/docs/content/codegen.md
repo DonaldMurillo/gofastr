@@ -65,6 +65,10 @@ usage hints go to stderr. The same error shape applies to every generate
 verb, including a verb that rejects `--json` as unsupported.
 Any other argument is an error.
 
+JSON runs send extension diagnostics to stderr and suppress overwrite
+warnings on stdout. An error diagnostic returns the error document and
+fails the run before generated files are written.
+
 ## Config shape
 
 ```yaml
@@ -96,7 +100,8 @@ output as `gofastr generate sdk`; see the [sdk](sdk.md) doc. An entry named
 writes beside each sheet rather than under `codegen.output`, so it takes no
 `output` or `source`; its only config key is `patterns`, a list of Go
 package patterns (`./...` when absent). `--dry-run` skips it, and
-`--dry-run --json` refuses a config that lists it.
+`--json` refuses a config that lists it before any writes: styles has
+neither a dry run nor a JSON report. Run styles separately without `--json`.
 
 An entry named `cli` runs `gofastr generate cli` after the engine. It writes
 to its own `output` (default `cmd/<binary>`), not under `codegen.output`,

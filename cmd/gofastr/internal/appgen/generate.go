@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"golang.org/x/mod/modfile"
 )
 
@@ -448,8 +449,9 @@ func generateFromCodegenConfig(options GenerateOptions, discovery codegen.Discov
 		failConfig(err)
 		return
 	}
-	if stylePatterns != nil && options.dryRun && options.json {
-		failConfig(fmt.Errorf("the styles generator has no dry run, so --dry-run --json cannot report it; run `gofastr generate --dry-run --json` from a config without it, or drop --json"))
+	if stylePatterns != nil && options.json {
+		failGenerate(true, fmt.Errorf("the styles generator has no dry run or JSON report; run a config without it, or drop --json"))
+		cli.OsExit(1)
 		return
 	}
 	// Decode against the full list so an error names the entry's own index.
@@ -534,8 +536,12 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 		cli.Fail("Code generation failed: %v", err)
 		cli.OsExit(1)
 	}
-	if reportCodegenDiagnostics(genCtx.Diagnostics) {
+	if reportCodegenDiagnostics(genCtx.Diagnostics, options.json) {
+		if options.json {
+			printGeneratedErrorsJSON(fmt.Errorf("code generation failed: an extension reported an error diagnostic"))
+		}
 		cli.OsExit(1)
+		return
 	}
 	files := genCtx.Files.All()
 	if options.dryRun {
@@ -549,7 +555,9 @@ func runCodegenEngine(options GenerateOptions, cfg codegen.Config, discovery cod
 		}
 		return
 	}
-	warnEditedOutputs(cfg.Codegen, files)
+	if !options.json {
+		warnEditedOutputs(cfg.Codegen, files)
+	}
 	if discovery.Path == "" && codegen.CleanEnabled(cfg.Codegen) {
 		if err := safeCleanOutputDir(cfg.Codegen.Output); err != nil {
 			cli.Fail("Failed to clean %s: %v", cfg.Codegen.Output, err)
@@ -1150,7 +1158,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// --force skips the conflict check by design, but silently
 		// discarding hand edits is how a scaffolded app drifts into an
 		// unregenerable one without anyone noticing (issue #131).
-		warnForceOverwrite(editedTargets(toWrite, writeRoot, outDir))
+		if !options.json {
+			warnForceOverwrite(editedTargets(toWrite, writeRoot, outDir))
+		}
 	}
 	writeOpts := codegen.WriteOptions{
 		OutputRoot:   writeRoot,
@@ -1351,22 +1361,26 @@ func removeRetiredAppSpecFiles(writeRoot string) error {
 // child's stderr does; an extension does not get to drive the operator's
 // terminal through a JSON field either. The cli helpers scrub every
 // argument (cli.ScrubTerminalOutput), so the message goes to them as is.
-func reportCodegenDiagnostics(diags []codegen.Diagnostic) bool {
+func reportCodegenDiagnostics(diags []codegen.Diagnostic, jsonMode ...bool) bool {
 	failed := false
+	output := os.Stdout
+	if len(jsonMode) > 0 && jsonMode[0] {
+		output = os.Stderr
+	}
 	for _, d := range diags {
 		message := d.Message
-		switch strings.ToLower(strings.TrimSpace(d.Severity)) {
+		switch asciicase.Lower(strings.TrimSpace(d.Severity)) {
 		case "error":
-			cli.Fail("%s", message)
+			cli.Fprintf(output, "  ✗ %s\n", message)
 			failed = true
 		case "warning", "warn":
-			cli.Warn("%s", message)
+			cli.Fprintf(output, "  ⚠ %s\n", message)
 		default:
-			cli.Info("%s", message)
+			cli.Fprintf(output, "  → %s\n", message)
 		}
 	}
 	if failed {
-		cli.Fail("Code generation failed: an extension reported an error diagnostic")
+		cli.Fprintf(output, "  ✗ Code generation failed: an extension reported an error diagnostic\n")
 	}
 	return failed
 }

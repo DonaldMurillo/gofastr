@@ -232,9 +232,11 @@ func RunGenerateSDK(args []string) {
 		return
 	}
 
-	for _, f := range files {
-		if existing, rerr := readFileUnder(opts.OutDir, f.Name); rerr == nil {
-			warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), "the entity declarations")
+	if !opts.json {
+		for _, f := range files {
+			if existing, rerr := readFileUnder(opts.OutDir, f.Name); rerr == nil {
+				warnDerivedEdit("sdk", filepath.Join(opts.OutDir, f.Name), string(existing), "the entity declarations")
+			}
 		}
 	}
 	fileSet, err := FileSetFromGeneratedFiles(files, "sdk")
