@@ -702,9 +702,10 @@ func (ch *CrudHandler) emitAfterAmbientTx(ctx context.Context, tx *sql.Tx, event
 		// queue on the context (db.WithTxQueue) and drains it after
 		// Commit, which the branch above serves.
 		unconfirmedWarnOnce.Do(func() {
-			logf("crud: dropping %s for %s: the write runs in a caller-owned transaction with no commit queue "+
-				"and no way to confirm it landed; carry the transaction with db.WithTxQueue and drain the queue "+
-				"after Commit (see hooks-and-transactions docs)", eventType, ch.Entity.GetTable())
+			logf("crud: dropping unconfirmed events across all entity types and tables: writes in caller-owned transactions " +
+				"with no commit queue " +
+				"and no way to confirm they landed; carry the transaction with db.WithTxQueue and drain the queue " +
+				"after Commit (see hooks-and-transactions docs)")
 		})
 		return
 	}
