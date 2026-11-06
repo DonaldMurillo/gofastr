@@ -776,8 +776,11 @@ few lines, and link the PR or the docs page for the rest.
   `tabindex`, a hidden or `inert` subtree, or a closed nested disclosure.
   Tab and Shift+Tab stay inside the trap, including from a focused
   negative-`tabindex` element and in browsers without
-  `checkVisibility()`, and an open nested disclosure's controls keep
-  their place in the trap's Tab order. `navigate()` resolves a relative
+  `checkVisibility()`; a nested disclosure's native `<summary>` stays a
+  stop, and an open nested disclosure's controls keep their place in the
+  trap's Tab order. A modal or intercepted page that opens moves focus to
+  its first drawn control, past hidden ones and a hidden `autofocus`
+  target. `navigate()` resolves a relative
   destination against `<base href>` when deciding it is the current
   page. `ComboboxRows`
   refuses duplicate option IDs, as `Combobox` does. The site-search palette

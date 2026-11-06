@@ -40,15 +40,29 @@ func TestTrapSkipsUnfocusable(t *testing.T) {
 			`, nil)); err != nil {
 				t.Fatal(err)
 			}
-			for _, mode := range []string{"closed", "visibility-hidden", "content-visibility-hidden", "inert", "hidden", "display-none", "closed-css-visible", "visible", "disabled-fieldset", "disabled-tabindex"} {
-				for _, position := range []string{"first", "last"} {
-					t.Run(mode+"/"+position, func(t *testing.T) {
-						if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`{
+			// The native pass uses Element.checkVisibility; the fallback
+			// pass deletes it, as WebKit before Safari 17.4 has none.
+			for _, path := range []string{"native", "fallback"} {
+				if path == "fallback" {
+					if err := chromedp.Run(ctx, chromedp.Evaluate(`delete Element.prototype.checkVisibility`, nil)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				for _, mode := range []string{"closed", "closed-summary", "visibility-hidden", "content-visibility-hidden", "inert", "hidden", "display-none", "closed-css-visible", "visible", "disabled-fieldset", "disabled-tabindex"} {
+					// ::details-content arrived after checkVisibility in every
+					// engine, so no browser on the fallback path can show it.
+					if path == "fallback" && mode == "closed-css-visible" {
+						continue
+					}
+					for _, position := range []string{"first", "last"} {
+						t.Run(path+"/"+mode+"/"+position, func(t *testing.T) {
+							if err := chromedp.Run(ctx, chromedp.Evaluate(fmt.Sprintf(`{
 							document.getElementById('nested')?.remove(); document.getElementById('nested-style')?.remove();
 							trapRoot.insertAdjacentHTML(%q === 'first' ? 'afterbegin' : 'beforeend', %q);
 							const nested = document.getElementById('nested'), panel = nested.querySelector('summary').nextElementSibling;
 							const mode = %q;
 							if (mode.startsWith('closed')) nested.open = false;
+							if (mode === 'closed-summary') { const summary = nested.querySelector('summary'); summary.removeAttribute('tabindex'); summary.id = 'nested-summary'; }
 							if (mode === 'visibility-hidden') panel.style.visibility = 'hidden';
 							if (mode === 'content-visibility-hidden') panel.style.contentVisibility = 'hidden';
 							if (mode === 'inert') panel.inert = true;
@@ -64,37 +78,45 @@ func TestTrapSkipsUnfocusable(t *testing.T) {
 							}
 							if (mode === 'disabled-tabindex') panel.querySelectorAll('input,button').forEach(control => { control.disabled = true; control.tabIndex = 0; });
 						}`, position, nested, mode), nil)); err != nil {
-							t.Fatal(err)
-						}
-						first, last := "outer-first", "outer-last"
-						if mode == "visible" || mode == "closed-css-visible" {
-							if position == "first" {
-								first = "nested-first"
-							} else {
-								last = "nested-last"
-							}
-						}
-						for _, reverse := range []bool{true, false} {
-							start, want, modifiers := last, first, input.ModifierNone
-							if reverse {
-								start, want, modifiers = first, last, input.ModifierShift
-							}
-							var state struct {
-								Focused string
-								Trusted bool
-							}
-							if err := chromedp.Run(ctx,
-								chromedp.Evaluate(fmt.Sprintf(`document.getElementById(%q).focus()`, start), nil),
-								chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(modifiers)),
-								chromedp.Evaluate(`({Focused: document.activeElement.id || document.activeElement.tagName, Trusted: trapTabTrusted})`, &state),
-							); err != nil {
 								t.Fatal(err)
 							}
-							if state.Focused != want || !state.Trusted {
-								t.Errorf("Tab from %s reverse=%t: %+v, want trusted focus on %s", start, reverse, state, want)
+							first, last := "outer-first", "outer-last"
+							if mode == "visible" || mode == "closed-css-visible" {
+								if position == "first" {
+									first = "nested-first"
+								} else {
+									last = "nested-last"
+								}
 							}
-						}
-					})
+							if mode == "closed-summary" {
+								if position == "first" {
+									first = "nested-summary"
+								} else {
+									last = "nested-summary"
+								}
+							}
+							for _, reverse := range []bool{true, false} {
+								start, want, modifiers := last, first, input.ModifierNone
+								if reverse {
+									start, want, modifiers = first, last, input.ModifierShift
+								}
+								var state struct {
+									Focused string
+									Trusted bool
+								}
+								if err := chromedp.Run(ctx,
+									chromedp.Evaluate(fmt.Sprintf(`document.getElementById(%q).focus()`, start), nil),
+									chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(modifiers)),
+									chromedp.Evaluate(`({Focused: document.activeElement.id || document.activeElement.tagName, Trusted: trapTabTrusted})`, &state),
+								); err != nil {
+									t.Fatal(err)
+								}
+								if state.Focused != want || !state.Trusted {
+									t.Errorf("Tab from %s reverse=%t: %+v, want trusted focus on %s", start, reverse, state, want)
+								}
+							}
+						})
+					}
 				}
 			}
 		})

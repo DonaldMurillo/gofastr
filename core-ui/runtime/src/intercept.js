@@ -166,8 +166,7 @@
   }
 
   function focusFirst(el) {
-    const sel = NS._focusSel || 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled])';
-    const first = Array.from(el.querySelectorAll(sel)).find(el => el.tabIndex >= 0);
+    const first = NS._firstStop(el);
     const target = first || el.firstElementChild;
     if (!target) return;
     if (!first) target.setAttribute('tabindex', '-1');
