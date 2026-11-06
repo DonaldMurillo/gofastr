@@ -2373,11 +2373,6 @@ instead (`FormConfig.ExtraAttrs`, a new theme token). See
 
 ### The model in one paragraph
 
-Each component sheet owns the visually-hidden rules its anatomy needs.
-The `ui-skeleton-presets` sheet hides its single accessible loading
-announcement within the preset root without relying on a host app.css
-floor or a headless stylesheet; headless primitives ship structure only.
-
 A component declares its CSS by calling
 `registry.RegisterStyle(name, fn)` in a package var; the handle's
 `.Render(c)` wraps the component's output and injects
@@ -2408,6 +2403,11 @@ under `immutable` headers in prod, content-addressed by a hash of
 the sheet as served (minified outside dev), so a deploy that changes
 the bytes, a source edit or a minifier change, busts the URL
 automatically.
+
+A sheet scopes every rule its own markup needs, visually-hidden text
+included (`[data-cui-comp="<name>"] .fui-visually-hidden`): a component
+rendered alone on a page cannot lean on another component's sheet or on
+the app's stylesheet for it.
 
 A client navigation does not paint the new page before its sheets
 arrive. Each page links only the sheets it renders, so nearly every
