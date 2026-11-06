@@ -13,6 +13,8 @@ var (
 // unfinished pages.
 var (
 	pageTitle             = i18n.Define("setup.title", "Setup")
+	pageUnavailable       = i18n.Define("setup.unavailable", "Service is in first-run setup mode.")
+	pageUnavailableHelp   = i18n.Define("setup.unavailable_help", "Complete setup at /setup to enable this service.")
 	pageStepFailed        = i18n.Define("setup.step_failed", "Step failed")
 	pageForceTitle        = i18n.Define("setup.force_title", "Setup already completed")
 	pageForceBody         = i18n.Define("setup.force_body", "You are in rescue mode (GOFASTR_SETUP=force). Re-running setup steps.")

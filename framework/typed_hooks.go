@@ -57,7 +57,8 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 // Mutations are reflected back into the response body: the hook payload is
 // the live result map the crud layer serialises into the HTTP response, so
 // clearing a field here (e.g. redacting a secret) changes what the caller
-// reads. The stored row is unaffected. Create has already committed it.
+// reads. These mutations do not change the stored row. The callback runs
+// inside the write transaction, before commit; an error rolls back the write.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T

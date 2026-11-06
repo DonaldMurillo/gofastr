@@ -175,6 +175,8 @@ The wizard runs in front of the router, and the app negotiates the
 reader's locale ahead of it, so its pages, the built-in steps and the
 page title (`Config.Title`, `setup.title` when zero) follow
 `Accept-Language` and any `WithLocaleResolver` cookie.
+The 503 response on non-setup paths uses the same locale through
+`setup.unavailable` and `setup.unavailable_help`; it keeps `Retry-After: 60`.
 
 Fields with `Secret: true` render as password inputs and are never
 prefilled or logged. `setup.HealthStep(app)` runs the app's registered

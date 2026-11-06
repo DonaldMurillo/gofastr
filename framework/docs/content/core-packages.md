@@ -526,6 +526,9 @@ choices. A rule `Load` cannot apply (an unknown rule, a bound on a bool)
 fails `Load`. An empty value (`KEY=`) leaves the field as it was, without
 the `default:` tag, and the rules still check it. Recursive configuration
 struct shapes are rejected.
+Integer values must fit the destination field: `int` uses the target
+architecture's width (32 or 64 bits), while `int64` always accepts the
+64-bit range. Out-of-range values fail `Load` rather than truncating.
 
 A named struct field (`DB DBConfig`) reads its keys under `DB_`. An
 embedded struct does not: its fields are promoted the way
