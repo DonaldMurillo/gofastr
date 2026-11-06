@@ -55,3 +55,28 @@ func TestBarChartExtremeScaleStaysFinite(t *testing.T) {
 		t.Fatal(strings.Join(failures, "; "))
 	}
 }
+
+func TestLineChartTinyHeightKeepsPlot(t *testing.T) {
+	var markup strings.Builder
+	for _, height := range []int{30, 1, -7} {
+		markup.WriteString(string(LineChart(LineChartConfig{
+			Height: height, Labels: []string{"First", "Last"}, ShowLegend: true,
+			Series: []LineSeries{{Name: "Readings", Values: []float64{2, 9}, Area: true}},
+		})))
+	}
+	ctx := chartBoundsPage(t, markup.String())
+	var failures []string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`Array.from(document.querySelectorAll('svg')).flatMap((svg, index) => {
+		const height = svg.viewBox.baseVal.height;
+		return Array.from(svg.querySelectorAll('line,path,circle,text')).flatMap(node => {
+			const box = node.getBBox();
+			return box.y < 0 || box.y + box.height > height
+				? ['chart '+index+' clips '+node.tagName+' at '+box.y+' within '+height] : [];
+		});
+	})`, &failures)); err != nil {
+		t.Fatal(err)
+	}
+	if len(failures) > 0 {
+		t.Fatal(strings.Join(failures, "; "))
+	}
+}

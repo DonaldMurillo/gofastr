@@ -96,6 +96,7 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	if cfg.ShowLegend {
 		legendGutter = 22
 	}
+	h = max(h, bottomGutter+legendGutter+8)
 	plotW := float64(w)
 	plotH := float64(h - bottomGutter - legendGutter)
 
