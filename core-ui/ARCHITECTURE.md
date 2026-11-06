@@ -2559,6 +2559,8 @@ The router marks the click event when it takes ownership, before firing
 the cancellable navigation hook. A signal delegate preventing default
 does not claim navigation: a link the router declines still uses the
 picker's programmatic navigator while committing its signal and value.
+Router ownership excludes even a redundant call to the programmatic
+navigator; URL deduplication is not a substitute for a single owner.
 Modified clicks follow the native `href`. The programmatic navigator's
 same-destination guard resolves against `document.baseURI`, matching
 history writes and fetches, and compares the complete URL, including query

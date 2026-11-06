@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 
@@ -110,7 +111,12 @@ func comboboxLinkPage(t *testing.T, server *httptest.Server, rows, surface strin
 			t.Fatal(err)
 		}
 	}
-	if err := chromedp.Run(ctx, chromedp.Evaluate(`window.trapInitialFocus = document.activeElement.id || document.activeElement.tagName`, nil)); err != nil {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`
+		window.trapInitialFocus = document.activeElement.id || document.activeElement.tagName;
+		document.addEventListener('keydown', event => {
+			if (event.key === 'Tab') window.trapReverse = event.shiftKey;
+		}, true);
+	`, nil)); err != nil {
 		t.Fatal(err)
 	}
 	if err := chromedp.Run(ctx, chromedp.Click(`#links`)); err != nil {
@@ -144,18 +150,27 @@ func TestComboboxLinksStayOutOfTrap(t *testing.T) {
 				server := comboboxLinkSite(t, rows, surface, "")
 				ctx := comboboxLinkPage(t, server, rows, surface)
 				for _, tabindex := range []string{"-1", "-7", " -12 "} {
-					for _, key := range []string{kb.Shift + kb.Tab, kb.Tab} {
+					for _, reverse := range []bool{true, false} {
 						var focused string
+						var observedReverse bool
+						modifiers := input.ModifierNone
+						if reverse {
+							modifiers = input.ModifierShift
+						}
 						if err := chromedp.Run(ctx,
 							chromedp.Click(`#links`),
 							chromedp.Evaluate(fmt.Sprintf(`document.querySelectorAll('#links-listbox a').forEach(option => option.setAttribute('tabindex', %q))`, tabindex), nil),
-							chromedp.KeyEvent(key),
+							chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(modifiers)),
+							chromedp.Evaluate(`window.trapReverse`, &observedReverse),
 							chromedp.Evaluate(`document.activeElement.id || document.activeElement.tagName`, &focused),
 						); err != nil {
 							t.Fatal(err)
 						}
 						if focused != "links" {
 							t.Fatalf("Tab with tabindex=%q focused %q, want links", tabindex, focused)
+						}
+						if observedReverse != reverse {
+							t.Fatalf("Tab modifier reverse=%t, want %t", observedReverse, reverse)
 						}
 					}
 				}
@@ -179,13 +194,26 @@ func TestTrapSkipsNegativeControls(t *testing.T) {
 					t.Errorf("initial focus=%q, want first tabbable links", initial)
 				}
 			}
-			for _, key := range []string{kb.Shift + kb.Tab, kb.Tab} {
+			for _, reverse := range []bool{true, false} {
 				var focused string
-				if err := chromedp.Run(ctx, chromedp.KeyEvent(key), chromedp.Evaluate(`document.activeElement.id || document.activeElement.tagName`, &focused)); err != nil {
+				var observedReverse bool
+				modifiers := input.ModifierNone
+				if reverse {
+					modifiers = input.ModifierShift
+				}
+				if err := chromedp.Run(ctx,
+					chromedp.Evaluate(fmt.Sprintf(`(() => { const targets = document.querySelectorAll('button[tabindex="-2"]'); targets[%t ? 0 : targets.length - 1].focus(); })()`, reverse), nil),
+					chromedp.KeyEvent(kb.Tab, chromedp.KeyModifiers(modifiers)),
+					chromedp.Evaluate(`window.trapReverse`, &observedReverse),
+					chromedp.Evaluate(`document.activeElement.id || document.activeElement.tagName`, &focused),
+				); err != nil {
 					t.Fatal(err)
 				}
 				if focused != "links" {
 					t.Fatalf("negative-tabindex control became a trap boundary: focus=%q", focused)
+				}
+				if observedReverse != reverse {
+					t.Fatalf("Tab modifier reverse=%t, want %t", observedReverse, reverse)
 				}
 			}
 		})
