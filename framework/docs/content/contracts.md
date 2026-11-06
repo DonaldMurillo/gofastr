@@ -433,7 +433,9 @@ never mention it. Without `--changed`, `--fix` still applies everywhere.
 ## In the dev loop
 
 `gofastr dev` reports contract findings after each reload, scoped to the
-files you changed:
+files you changed. Saves while analysis is running coalesce into one
+trailing pass, so the last save in a burst is checked without stacking
+concurrent analyses:
 
 ```
 ✓ Reloaded!
