@@ -1229,7 +1229,7 @@ ui.OptimisticAction(ui.OptimisticActionConfig{
 		}},
 	{"commandpalette", "CommandPalette", "Navigation", "⌘K modal palette, wired in nav (try it).", func() render.HTML {
 		return note(
-			render.Text("CommandPalette returns a (trigger, *widget.Builder) pair: mount the modal once at app startup. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
+			render.Text("Mount CommandPalette's modal once at app startup, then render CommandPaletteTrigger(ctx, cfg) in each request's chrome so its labels follow the reader's locale. Hit ⌘K (or click Search in the nav) to see the wired-up instance."),
 		)
 	}},
 	{"globalsearch", "GlobalSearch", "Navigation", "Inline persistent search bar.", func() render.HTML {

@@ -200,7 +200,7 @@ func (b *Battery) layout() *appui.Layout {
 		crumbs := l.RouteArea("crumbs", func(ctx context.Context, m appui.Match) render.HTML {
 			return b.crumbs(ctx, m)
 		})
-		trigger, _ := ui.CommandPalette(b.paletteConfig(ctx))
+		trigger := ui.CommandPaletteTrigger(ctx, b.paletteConfig(ctx))
 		keys, _ := ui.ShortcutSheet(b.keysConfig(ctx))
 		toolbar := ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, Align: ui.AlignCenter, NoWrap: true},
 			ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter, NoWrap: true, Shrink: true},

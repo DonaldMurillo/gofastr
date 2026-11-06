@@ -888,10 +888,15 @@ On a phone or tablet the footer drops its keyboard hints and keeps the
 close button.
 
 ```go
-trigger, palette := ui.CommandPalette(ui.CommandPaletteConfig{
+paletteConfig := ui.CommandPaletteConfig{
     Name: "admin-palette", RPCPath: "/admin/_palette",
     FallbackHref: "/admin/search", Trigger: ui.PaletteTriggerField,
-})
+}
+_, palette := ui.CommandPalette(paletteConfig)
+widget.MountBuilder(app.Router(), palette) // once at startup
+
+// In the page chrome, on every request:
+trigger := ui.CommandPaletteTrigger(r.Context(), paletteConfig)
 
 func search(w http.ResponseWriter, r *http.Request) {
     r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
@@ -904,6 +909,15 @@ func search(w http.ResponseWriter, r *http.Request) {
     w.Write([]byte(ui.PaletteResults(r.Context(), "admin-palette", cmds, "")))
 }
 ```
+
+`CommandPalette`'s returned trigger is a snapshot of `cfg.Ctx`, not a
+request slot. `CommandPaletteTrigger(ctx, cfg)` renders the same markup
+without rebuilding the modal; its explicit `ctx` resolves the default
+accessible label and field placeholder even when `cfg.Ctx` differs.
+Explicit `TriggerLabel`, `TriggerText` and `Placeholder` still win. A nil
+context uses English fallbacks. Keep the name and shortcut consistent with
+the mounted body. For translated commands, mount `CommandPaletteFunc` and
+pass the request-built config to `CommandPaletteTrigger`.
 
 ---
 

@@ -107,9 +107,9 @@ type CommandPaletteConfig struct {
 	// and cross-origin values are refused at render.
 	FallbackHref string
 
-	// Ctx carries the per-request context used to resolve i18n labels
-	// (placeholder, trigger + dialog titles, hint chips). When nil,
-	// English fallbacks apply.
+	// Ctx resolves the trigger returned by CommandPalette. When nil,
+	// English fallbacks apply. The mounted body uses its request context;
+	// CommandPaletteTrigger takes the trigger's request context directly.
 	Ctx context.Context
 
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
@@ -141,8 +141,9 @@ const (
 )
 
 // CommandPalette returns the trigger button and a Modal preset for
-// the palette. Mount the preset once at startup; render the trigger
-// in your global chrome (Sidebar, top nav, etc). The palette's own
+// the palette. Mount the preset once at startup; render
+// CommandPaletteTrigger(ctx, cfg) in your global chrome on each request.
+// The returned trigger is a snapshot resolved with cfg.Ctx. The body's own
 // words (its title, hint chips, loading and empty rows, the default
 // placeholder) follow the reader's locale on each request; the strings
 // a config sets are said as given, so a palette with words of its own
@@ -155,7 +156,7 @@ func CommandPalette(cfg CommandPaletteConfig) (render.HTML, *widget.Builder) {
 // the palette's body calls build with each request's context, so its
 // placeholder and commands are the reader's. Mount the returned preset
 // once, and render the trigger in the chrome with
-// CommandPalette(build(r.Context())). The widget's identity (Name,
+// CommandPaletteTrigger(r.Context(), build(r.Context())). The widget's identity (Name,
 // Shortcut) comes from build(context.Background()).
 func CommandPaletteFunc(build func(ctx context.Context) CommandPaletteConfig) *widget.Builder {
 	if build == nil {
@@ -194,9 +195,12 @@ func checkCommandPalette(cfg CommandPaletteConfig) {
 	}
 }
 
-func commandPalette(cfg CommandPaletteConfig, build func(context.Context) CommandPaletteConfig) (render.HTML, *widget.Builder) {
+// CommandPaletteTrigger renders the palette's trigger for ctx without
+// constructing a modal. It uses the same config and markup as CommandPalette;
+// ctx, not cfg.Ctx, resolves default labels and visible field text. A nil ctx
+// uses English fallbacks. Keep Name and Shortcut consistent with the mount.
+func CommandPaletteTrigger(ctx context.Context, cfg CommandPaletteConfig) render.HTML {
 	checkCommandPalette(cfg)
-	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -243,7 +247,15 @@ func commandPalette(cfg CommandPaletteConfig, build func(context.Context) Comman
 	default:
 		panic("ui: CommandPalette unknown Trigger " + strconv.Quote(string(cfg.Trigger)) + "; use PaletteTriggerHidden or PaletteTriggerField")
 	}
+	return trigger
+}
 
+func commandPalette(cfg CommandPaletteConfig, build func(context.Context) CommandPaletteConfig) (render.HTML, *widget.Builder) {
+	trigger := CommandPaletteTrigger(cfg.Ctx, cfg)
+	name := cfg.Name
+	if name == "" {
+		name = "command-palette"
+	}
 	slot := requestSlot{build: func(ctx context.Context) component.Component {
 		c := cfg
 		if build != nil {
@@ -392,16 +404,16 @@ func (s *commandPaletteSlot) Render() render.HTML {
 	titleID := s.widgetName + "-title"
 	signalName := s.widgetName + "-results"
 	inputID := s.widgetName + "-input"
-	// title is resolved at CommandPalette() call time and stashed on
-	// the slot. Slots constructed directly (e.g. in tests) may leave it
+	// title is resolved for the request and stashed on the slot.
+	// Slots constructed directly (e.g. in tests) may leave it
 	// empty: fall back to the localized default so combobox.Render's
 	// non-empty Label contract holds.
 	title := s.title
 	if title == "" {
 		title = i18nui.CommandPaletteTitle.Text(context.Background())
 	}
-	// closeLabel is resolved alongside title at CommandPalette() call
-	// time; same direct-construction fallback for slots built in tests.
+	// closeLabel is resolved alongside title for the request;
+	// same direct-construction fallback for slots built in tests.
 	escKey := s.escKey
 	if escKey == "" {
 		escKey = i18nui.KeyEsc.Text(context.Background())

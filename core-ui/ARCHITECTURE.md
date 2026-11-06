@@ -2872,6 +2872,15 @@ that navigated away.
 
 ### What about widgets?
 
+`ui.CommandPalette` returns a trigger snapshot resolved from `cfg.Ctx` and
+a body builder to mount once. Render `ui.CommandPaletteTrigger(ctx, cfg)`
+in each request's chrome: the explicit request context resolves the default
+accessible label and visible field text, while the mounted body's own
+request context resolves its title, placeholder and hints. Explicit caller
+strings remain unchanged. Trigger rendering shares the constructor's
+markup and validation without constructing another body or mount; keep
+the widget name and shortcut consistent with the mounted builder.
+
 Initial-focus handoff and Tab-trap boundaries use tabbable controls, not
 every focusable candidate. Every consumer of the kernel's `_focusSel`
 checks the browser-normalized `tabIndex >= 0`: negative values exclude
