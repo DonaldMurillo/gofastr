@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"sync"
@@ -1188,6 +1189,18 @@ func (q *DBQueue) superviseWorker(ctx context.Context, lane string, done chan<- 
 		}
 		// Abnormal exit (panic that escaped the per-job guard): loop and
 		// respawn rather than leaking a worker slot.
+		timer := time.NewTimer(100 * time.Millisecond)
+		select {
+		case <-q.stop:
+			timer.Stop()
+			done <- struct{}{}
+			return
+		case <-ctx.Done():
+			timer.Stop()
+			done <- struct{}{}
+			return
+		case <-timer.C:
+		}
 	}
 }
 
@@ -1197,6 +1210,8 @@ func (q *DBQueue) superviseWorker(ctx context.Context, lane string, done chan<- 
 func (q *DBQueue) runWorker(ctx context.Context, lane string) (clean bool) {
 	defer func() {
 		if r := recover(); r != nil {
+			q.logger.Error("queue: worker panic recovered; respawning after backoff",
+				"lane", textsafe.SanitizeControlBytes(lane), "panic", textsafe.Recovered(r), "stack", string(debug.Stack()))
 			clean = false
 		}
 	}()

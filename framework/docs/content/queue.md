@@ -735,8 +735,11 @@ q.RegisterHandler("resize-image", func(ctx context.Context, job queue.Job) error
 ```
 
 A handler panic is recovered and treated as an error; the job follows the
-normal retry path and the worker goroutine is respawned, so a poison
-message cannot drain the worker pool.
+normal retry path, so a poison message cannot drain the worker pool. If a
+panic escapes `DBQueue`'s per-job guard (for example in claim or settlement
+plumbing), the worker logs an Error through its configured `slog.Logger`
+with its lane, scrubbed panic value and stack, then respawns after 100 ms.
+Queue shutdown or context cancellation interrupts that respawn delay.
 
 Each handler call on `MemoryQueue` and `DBQueue` runs under an
 OpenTelemetry consumer span named `process <job type>`, carried by the
