@@ -491,11 +491,16 @@ The parts the navigation members draw beyond the shared vocabulary:
   Setting a client signal on the link does not itself claim navigation:
   an absolute same-origin option still commits the signal and selection
   and navigates once when the link router declines its absolute `href`.
-  A page listener cancelling the option click before the runtime handles
-  it suppresses navigation and history writes, even on a signal-bearing
-  option; the signal delegate's own default prevention is distinct.
-  A keyboard pick uses the SPA navigator once. Disabled or unsafe
-  destinations have no native link.
+  A page listener cancelling the option click before the runtime's signal
+  and routing delegates run suppresses navigation and history writes,
+  even on a signal-bearing option; the signal delegate's own default
+  prevention is distinct.
+  A keyboard pick uses the SPA navigator once. An Enter keydown cancelled
+  before the combobox's document delegate runs leaves the selection, open
+  list and history unchanged. Input listeners run before that delegate;
+  document listeners must be registered earlier. A later listener cannot
+  undo a pick or navigation the runtime has already handled. Disabled or
+  unsafe destinations have no native link.
   Programmatic navigation resolves relative destinations against the
   document's base URL, including a `<base href>` when present, before
   deciding whether the complete destination is already current.
