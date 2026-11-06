@@ -357,6 +357,11 @@ only when that locale's URLs have one. The standalone
 locale is attached; without either or a locale prefix, it reuses its
 background-context document.
 
+Both standalone handlers, `app.ScreenLLMMDHandler` and
+`app.AppLLMMDHandler`, send `Cache-Control: private, no-store` and add
+`Vary: Cookie` without replacing existing Vary fields. Their policy- and
+locale-dependent bodies must not be retained by a shared cache.
+
 Every markdown surface evaluates the screen's policy chain with the live
 request: a non-Allow decision, or a region guard (an outlet's, an area's,
 or a fill's policy) that redirects, serves a metadata-free "withheld" doc
