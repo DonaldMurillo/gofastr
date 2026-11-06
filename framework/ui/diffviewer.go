@@ -72,7 +72,7 @@ func DiffViewer(cfg DiffViewerConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	lines := strings.Split(cfg.Patch, "\n")
+	lines := strings.Split(strings.TrimSuffix(cfg.Patch, "\n"), "\n")
 	fileHeaders := diffFileHeaders(lines)
 	var sb strings.Builder
 
