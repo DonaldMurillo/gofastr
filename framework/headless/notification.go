@@ -459,9 +459,10 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	// boundary moves to the marker (the count is always the
 	// component's own); with the default bell there is no slot in the
 	// glyph span at all, so the boundary sits on the span itself and
-	// the marker is left unmarked to avoid a repeat.
+	// the marker is left unmarked to avoid a repeat. An Icon marked
+	// with Own is the kit's glyph, not a slot, so it keeps the default.
 	iconOwn, markerOwn := Internal(nil), html.Attrs(nil)
-	if p.Icon != "" {
+	if p.Icon != "" && !ownedSlot(p.Icon) {
 		iconOwn, markerOwn = nil, Internal(nil)
 	}
 	iconKids := []render.HTML{orDefaultHTML(p.Icon, render.Text("🔔"))}
