@@ -21,6 +21,7 @@ func TestGenerateFlagsAreJSON(t *testing.T) {
 		{"client", RunGenerateClient},
 		{"endpoints", runGenerateEndpoints},
 		{"styles", runGenerateStyles},
+		{"package", runGeneratePackage},
 	} {
 		t.Run(command.name, func(t *testing.T) {
 			for _, args := range [][]string{{"--json", "--bogus"}, {"--invalid=1", "--json"}} {
@@ -35,6 +36,12 @@ func TestGenerateMissingArgsAreJSON(t *testing.T) {
 		for _, args := range [][]string{{"--out", "--json"}, {"--json"}, {"--from-a11y=", "--json"}} {
 			assertGenerateJSONError(t, func() { run(args) })
 		}
+	}
+}
+
+func TestPackageArgErrorsAreJSON(t *testing.T) {
+	for _, args := range [][]string{{"--json"}, {"siteheader", "--json"}, {"--out", "--json"}} {
+		assertGenerateJSONError(t, func() { runGeneratePackage(args) })
 	}
 }
 
