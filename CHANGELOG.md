@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`ui.CommandPaletteTrigger`, `ui.ShortcutSheetTrigger` and
+  `ui.NotificationBellTrigger`** render a trigger for each request, in
+  that request's locale, from the same config whose body is mounted once.
+  The trigger used to be built beside the mounted body, so every reader
+  got the startup locale's label, placeholder and spoken unread count.
+  The admin, gallery, docs and tracker examples render their triggers
+  this way.
 - **`mcp.Server.SetSSEStreamLimit(n)`** bounds the SSE notification
   streams a server holds across every caller (default 1024; a connect
   past it gets `429`). The per-caller seat cap never bounded the total:
@@ -679,6 +686,71 @@ few lines, and link the PR or the docs page for the rest.
 
 
 ### Fixed
+- **Desktop shells.** Clipboard reads refuse text over 1 MiB, the write
+  limit. A preference update over the size limit returns keyed
+  validation errors before anything is stored, and a failed batch writes
+  nothing. String preferences refuse CR and LF with a keyed error, and
+  saving the settings screen keeps an older multiline value instead of
+  stripping its line breaks. A remembered window no longer takes another
+  launch's secondary-window frame. The bootstrap script and typed bridge
+  run only in top-level frames on every shell, and macOS refuses native
+  posts from child frames. The picker docs say what a picked folder
+  grants (a stat of that path, never its contents), and the desktop auth
+  docs name the per-run boot cookie.
+- **Charts, diffs and timelines.** Bar charts keep finite geometry for
+  extreme and subnormal values. Small line charts no longer draw above
+  the SVG viewBox, and line-chart legends wrap across rows and measure
+  names in runes. `PieChart` shows its empty state when finite slice
+  values overflow their total. `DiffViewer` keeps removed comment and
+  separator lines as changed code, drops the phantom last context row of
+  a newline-terminated patch, strips CRLF line endings and localizes its
+  split-column headings. `ui.Timeline` carries a machine-readable
+  timestamp beside the displayed one. Skeleton loading announcements
+  stay visually hidden on hosts that load only the preset stylesheet.
+- **Component links and IDs.** `ColumnPicker`, `ActionList` and
+  `SegmentedLinks` disable a refused caller link through the shared
+  anchor URL policy, and `FilterChipBar`'s clear-all and
+  `SegmentedControl`'s RPC path refuse unsafe values before rendering.
+  `FilterToolbar` scopes every derived control ID, label and shortcut
+  target to its toolbar, so two toolbars on one page no longer share
+  IDs. Submitted field names do not change.
+- **Runtime.** Enter-to-submit works for a textarea inserted into a form
+  already wired. Nested dropdowns keep their ancestor panels open, and
+  Escape closes the innermost menu. A failed SSE connection retries with
+  capped, jittered backoff, and a DOM scan no longer starts a connection
+  while a retry is pending. Rail scroll-spy skips sections that are not
+  drawn, with or without `checkVisibility()`. A layout first reached by
+  client navigation shows its loading content on later navigations, and
+  a layout declaring `PrimaryConfig.Loading` with no outlet or route
+  area shows it during a client navigation too.
+- **Static export.** A server action on an exported page shows the
+  localized needs-server notice instead of sending a request, and mount
+  actions are skipped on hydration, navigation and inserted content.
+  Client-only actions still run.
+- **Markdown handlers.** Standalone screen and app markdown handlers
+  send `Cache-Control: private, no-store` and add `Vary: Cookie` without
+  replacing an existing `Vary`. Inline code decodes entities once and
+  keeps its angle brackets visible and inert.
+- **SDK downloads behind a policy** send `Cache-Control: private,
+  no-cache`, on 304 responses too. Public downloads keep `no-cache`.
+- **WebP metadata stripping** refuses a RIFF container it cannot walk to
+  the end, instead of storing a truncated 8 to 12 byte upload.
+- **JSON output from `gofastr verify`, `generate` and `semantic`.**
+  `verify --json` stays machine-readable for invalid flags and unknown
+  `--explain` rules, reports the canonical absolute root when vet fails,
+  keeps run notices under `--baseline-write`, and refuses
+  `--baseline-write` with `--sarif` before writing anything. Every
+  `generate` verb returns a JSON error for bad arguments, keeps
+  diagnostics off stdout, refuses `--styles` with `--json` before
+  writing, prints one JSON result after the endpoint and client rebuilds
+  finish, and includes the output directory in its file paths.
+  `semantic query` and `semantic stats` return one JSON error document,
+  and malformed remote stats JSON is refused.
+- **Test helpers and repo tools.** `TestResponse` header, body and JSON
+  assertions report a request-construction error instead of panicking.
+  Unmount and remount settings rewrites recognize CRLF headers.
+  `scripts/coverage-floors.sh` names a package with no coverage figure,
+  keeps checking the rest and still exits nonzero.
 - **Screen routing refusals.** `uihost.Mount` normalizes intercept
   origin patterns and refuses, at boot, an origin no registered screen
   matches; a custom host calls `Router.ValidateIntercepts` after
