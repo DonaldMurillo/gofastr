@@ -2363,6 +2363,11 @@ instead (`FormConfig.ExtraAttrs`, a new theme token). See
 
 ### The model in one paragraph
 
+Each component sheet owns the visually-hidden rules its anatomy needs.
+The `ui-skeleton-presets` sheet hides its single accessible loading
+announcement within the preset root without relying on a host app.css
+floor or a headless stylesheet; headless primitives ship structure only.
+
 A component declares its CSS by calling
 `registry.RegisterStyle(name, fn)` in a package var; the handle's
 `.Render(c)` wraps the component's output and injects
