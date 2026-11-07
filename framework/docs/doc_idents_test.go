@@ -564,6 +564,20 @@ func repoDocSkipDir(rel, name string) bool {
 	return false
 }
 
+// TestRepoDocWalkSkipsClaudeProjects pins the per-machine skip: a stale
+// local file under .claude/projects failed the walk on one machine
+// while CI, which never has the directory, passed.
+func TestRepoDocWalkSkipsClaudeProjects(t *testing.T) {
+	if !repoDocSkipDir(".claude/projects", "projects") {
+		t.Error(".claude/projects must be skipped")
+	}
+	for _, rel := range []string{".claude", ".claude/skills"} {
+		if repoDocSkipDir(rel, filepath.Base(rel)) {
+			t.Errorf("%s must stay in the walk", rel)
+		}
+	}
+}
+
 // repoDocSkipFile are histories: they name what a release removed.
 var repoDocSkipFile = map[string]bool{
 	"CHANGELOG.md": true,
