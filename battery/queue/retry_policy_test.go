@@ -227,6 +227,47 @@ func TestMaxAgeGivesUp(t *testing.T) {
 	}
 }
 
+// A handler's Retry-After is held to MaxAge too: a receiver answering
+// Retry-After: 2h must not keep a 1h job alive.
+func TestMaxAgeBoundsRetryAfter(t *testing.T) {
+	q, _ := openPolicyQueue(t, WithRetrySchedule(time.Second))
+	if err := q.Enqueue(context.Background(), Job{ID: "j1", Type: "deliver", MaxAttempts: 25, MaxAge: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	claimAndFail(t, q, RetryAfter(2*time.Hour, errors.New("429")))
+	got := stored(t, q, "j1")
+	if got.Status != "failed" {
+		t.Fatalf("status %q, want failed: Retry-After lands past MaxAge", got.Status)
+	}
+	if !strings.Contains(got.LastError, "429") {
+		t.Fatalf("last_error %q lost the handler's error", got.LastError)
+	}
+}
+
+// A settle carrying a claim token the row no longer holds changes nothing.
+func TestSettleStaleClaimIsNoop(t *testing.T) {
+	q, _ := openPolicyQueue(t)
+	ctx := context.Background()
+	if err := q.Enqueue(ctx, Job{ID: "j1", Type: "deliver", MaxAttempts: 1}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := q.Dequeue(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := stored(t, q, "j1")
+	stale := job
+	stale.ClaimToken = job.ClaimToken + "-stale"
+	dead, err := q.settleFailure(ctx, stale, errors.New("boom"))
+	if err != nil || dead {
+		t.Fatalf("settle = (%v, %v), want (false, nil)", dead, err)
+	}
+	got := stored(t, q, "j1")
+	if got.Status != "claimed" || got.Attempts != before.Attempts || got.LastError != before.LastError {
+		t.Fatalf("stale settle changed the row: %+v, was %+v", got, before)
+	}
+}
+
 func TestMaxAgeRoundTrips(t *testing.T) {
 	q, _ := openPolicyQueue(t)
 	ctx := context.Background()
