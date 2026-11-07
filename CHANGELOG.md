@@ -24,6 +24,46 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Added
+- **`DBQueue` retries can follow a delivery policy**
+  ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
+  `WithRetrySchedule(steps...)` sets each wait from a list (the last step
+  repeats), and `WithRetryJitter(fraction)` spreads every backoff or
+  schedule wait by up to ±fraction of itself. A handler can return
+  `queue.RetryAfter(d, err)` to set the next wait itself, for a
+  receiver's `Retry-After`, or wrap its error with `queue.Permanent` (or
+  `%w` of `queue.ErrPermanent`) to dead-letter the job at once. Both work
+  in the `MemoryQueue` worker loop too. `Job.MaxAge` stops the retries
+  once the next one would fall past `CreatedAt + MaxAge`, on every
+  backend. `core/backoff.Jitter` is the shared jitter.
+- **`Job.SequenceKey` runs the jobs that share it one at a time, in
+  order** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
+  On `DBQueue`, a keyed job waits while any job with its key runs or an
+  older one is pending, retries included; a dead-lettered job frees the
+  key, and a job whose worker died is reclaimed once its lease runs out.
+  A unique partial index allows one claimed job per key.
+  `MemoryQueue` and `RedisQueue` refuse the job with
+  `queue.ErrSequenceUnsupported`. `DBQueue` adds the `max_age_ns` and
+  `sequence_key` columns and two partial indexes to an existing table on
+  boot.
+
+### Changed
+- **A shutdown that lands during a `DBQueue` handler no longer spends
+  the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
+  When the context passed to `Start` is cancelled mid-run and the handler
+  fails, the job goes back to pending with the attempt refunded, as a job
+  claimed just before shutdown already did, so a deploy no longer
+  dead-letters a `MaxAttempts: 1` job it interrupted.
+- **`a2a.NewServer` refuses a store whose trim methods would never run**
+  ([#653](https://github.com/DonaldMurillo/gofastr/issues/653)). A store
+  with `TrimTerminalTasks` or `TrimPushConfigs` that does not implement
+  `RetentionTrimmer` (a custom store still on the pre-v0.96.0
+  `TrimTerminalTasks(ctx, owner, keep)`) used to compile and then never
+  be trimmed. The error names the wanted signatures; a store that keeps
+  its own retention sets `TerminalTaskRetention` and
+  `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
+  already flags the old method.
+
 ## [0.96.0] - 2026-11-06
 
 ### Added

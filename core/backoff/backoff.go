@@ -61,3 +61,28 @@ func At(table []time.Duration, attempts int) time.Duration {
 	}
 	return table[attempts-1]
 }
+
+// Jitter spreads d across d×(1-fraction) to d×(1+fraction), so retries
+// that failed together do not all come back at once. r picks the point:
+// 0 is the bottom of the range, 0.5 is d itself, and values toward 1 the
+// top; a caller passes a uniform random number in [0, 1), and an r
+// outside that range is clamped into it. fraction is clamped to [0, 1],
+// with NaN read as 0. The result never exceeds the largest Duration.
+func Jitter(d time.Duration, fraction, r float64) time.Duration {
+	if d <= 0 || !(fraction > 0) {
+		return d
+	}
+	fraction = min(fraction, 1)
+	if !(r >= 0) {
+		r = 0
+	}
+	r = min(r, 1)
+	f := float64(d) * (1 + fraction*(2*r-1))
+	if f >= float64(1<<63-1) {
+		return time.Duration(1<<63 - 1)
+	}
+	if f <= 0 {
+		return 0
+	}
+	return time.Duration(f)
+}

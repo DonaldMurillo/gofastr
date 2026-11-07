@@ -48,6 +48,8 @@ func registerJobsTable(table string) {
 			"unique_key",
 			"updated_at",
 			"last_error",
+			"max_age_ns",
+			"sequence_key",
 		},
 	})
 	datexport.RegisterEraser(datexport.DataEraser{

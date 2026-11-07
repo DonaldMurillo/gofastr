@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"math/rand/v2"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -75,6 +77,16 @@ type DBQueue struct {
 	doneRetention time.Duration
 	lastPrune     time.Time
 	backoffMax    time.Duration
+
+	// retrySchedule, when set by WithRetrySchedule, replaces the
+	// exponential backoff with fixed steps; scheduleSet records that the
+	// option ran, so an empty call is refused rather than read as unset.
+	retrySchedule []time.Duration
+	scheduleSet   bool
+	// jitter spreads every policy delay by ±jitter (WithRetryJitter);
+	// jitterRand is its random source, a seam tests replace.
+	jitter     float64
+	jitterRand func() float64
 
 	// claimFailing is set while claims fail with anything but ErrNoJob,
 	// so the worker loop logs an outage's onset and recovery once each.
@@ -203,6 +215,73 @@ func WithBackoff(base, max time.Duration) DBQueueOption {
 	}
 }
 
+// WithRetrySchedule sets the wait after each failed attempt from a fixed
+// list instead of doubling: the first failure waits steps[0], the second
+// steps[1], and the last step repeats once the list runs out. For a
+// receiver's delivery policy such as 30s, 2m, 10m, 1h, then every 6h:
+//
+//	queue.WithRetrySchedule(30*time.Second, 2*time.Minute, 10*time.Minute, time.Hour, 6*time.Hour)
+//
+// NewDBQueue refuses an empty list, a negative step, and the option
+// beside a WithBackoff with a positive base. A handler's [RetryAfter]
+// overrides the step for that attempt.
+func WithRetrySchedule(steps ...time.Duration) DBQueueOption {
+	return func(q *DBQueue) {
+		q.retrySchedule = append([]time.Duration(nil), steps...)
+		q.scheduleSet = true
+	}
+}
+
+// WithRetryJitter spreads each backoff or retry-schedule delay across
+// ±fraction of itself (0.2 turns a 10-minute step into 8 to 12 minutes),
+// so jobs that failed together do not all retry at once. It does not
+// touch a handler's [RetryAfter] delay. NewDBQueue refuses a fraction
+// outside [0, 1].
+func WithRetryJitter(fraction float64) DBQueueOption {
+	return func(q *DBQueue) { q.jitter = fraction }
+}
+
+// validateRetryPolicy refuses retry options that contradict each other or
+// cannot be applied.
+func (q *DBQueue) validateRetryPolicy() error {
+	if q.scheduleSet {
+		if len(q.retrySchedule) == 0 {
+			return errors.New("queue: WithRetrySchedule needs at least one step")
+		}
+		for i, d := range q.retrySchedule {
+			if d < 0 {
+				return fmt.Errorf("queue: WithRetrySchedule step %d is negative (%s)", i, d)
+			}
+		}
+		if q.backoffBase > 0 {
+			return errors.New("queue: WithRetrySchedule and WithBackoff both set the retry delay; pick one")
+		}
+	}
+	if math.IsNaN(q.jitter) || q.jitter < 0 || q.jitter > 1 {
+		return fmt.Errorf("queue: WithRetryJitter fraction must be in [0, 1] (got %v)", q.jitter)
+	}
+	return nil
+}
+
+// retryDelay is the queue's own wait after the attempts-th failure: the
+// retry schedule's step or the exponential backoff, jittered.
+func (q *DBQueue) retryDelay(attempts int) time.Duration {
+	var d time.Duration
+	switch {
+	case len(q.retrySchedule) > 0:
+		d = backoff.At(q.retrySchedule, attempts)
+	case q.backoffBase > 0:
+		d = backoff.Exponential(q.backoffBase, q.backoffMax, attempts)
+	default:
+		return 0
+	}
+	if q.jitter > 0 {
+		//gofastr:allow(recovercallback) package-test seam; production holds math/rand/v2.Float64, which cannot panic
+		d = backoff.Jitter(d, q.jitter, q.jitterRand())
+	}
+	return d
+}
+
 // WithDoneRetention keeps an acked job as status "done" for d instead of
 // deleting it, so an admin can list what ran; the claim loop deletes done
 // jobs older than d, at most once a minute. Zero (the default) deletes
@@ -233,11 +312,15 @@ func NewDBQueue(db *sql.DB, opts ...DBQueueOption) (*DBQueue, error) {
 		stop:        make(chan struct{}),
 		stopped:     make(chan struct{}),
 		now:         time.Now,
+		jitterRand:  rand.Float64,
 	}
 	for _, opt := range opts {
 		opt(q)
 	}
 	if err := leaseCoversBudget(q.lease, q.handlerTimeout); err != nil {
+		return nil, err
+	}
+	if err := q.validateRetryPolicy(); err != nil {
 		return nil, err
 	}
 	// Validate table name once at construction time.
@@ -299,8 +382,10 @@ func (q *DBQueue) ensureTable() error {
 		user_id       TEXT NOT NULL DEFAULT '',
 		unique_key    TEXT NOT NULL DEFAULT '',
 		updated_at    %s,
-		last_error    TEXT NOT NULL DEFAULT ''
-	)`, q.qt(), tsType, tsType, tsType, tsType)
+		last_error    TEXT NOT NULL DEFAULT '',
+		max_age_ns    %s NOT NULL DEFAULT 0,
+		sequence_key  TEXT NOT NULL DEFAULT ''
+	)`, q.qt(), tsType, tsType, tsType, tsType, q.intType())
 	if _, err := q.db.Exec(stmt); err != nil {
 		return err
 	}
@@ -339,13 +424,22 @@ func (q *DBQueue) ensureTable() error {
 	if err := q.addTextColumn("unique_key"); err != nil {
 		return err
 	}
+	if err := q.addTextColumn("sequence_key"); err != nil {
+		return err
+	}
+	if err := q.addColumn("max_age_ns", q.intType()+" NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	// Index supports the dequeue ORDER BY and the WHERE filter together. The
 	// shared-worker claim (any lane) is served by (status, scheduled_at,
 	// priority); the lane-filtered claim used by dedicated lane workers is
 	// served by (lane, status, scheduled_at, priority).
+	// The sequence index serves the claim's "no older live job holds this
+	// key" probe; rows with no key sit outside it.
 	for _, ix := range []struct{ name, cols string }{
 		{q.indexName("_dequeue_idx"), "(status, scheduled_at, priority)"},
 		{q.indexName("_lane_idx"), "(lane, status, scheduled_at, priority)"},
+		{q.indexName("_sequence_idx"), "(sequence_key, status, created_at) WHERE sequence_key <> ''"},
 	} {
 		safeIdx, err := query.SafeIdent(ix.name)
 		if err != nil {
@@ -364,8 +458,21 @@ func (q *DBQueue) ensureTable() error {
 	if err != nil {
 		return fmt.Errorf("queue: invalid index name: %w", err)
 	}
-	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (type, unique_key) WHERE %s",
-		query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), liveUniqueKey))
+	if _, err := q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (type, unique_key) WHERE %s",
+		query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(safeIdx), q.qt()), liveUniqueKey)); err != nil {
+		return err
+	}
+	// One claim per SequenceKey. The claim's sequenceClear probe reads a
+	// statement snapshot, and on Postgres READ COMMITTED a claim racing a
+	// Replay (or an Enqueue dated earlier) can read the key as free while
+	// another claim of it commits. The index refuses the second claim, and
+	// dequeue retries it against fresh rows.
+	seqIdx, err := query.SafeIdent(q.indexName("_sequence_claim_idx"))
+	if err != nil {
+		return fmt.Errorf("queue: invalid index name: %w", err)
+	}
+	_, err = q.db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS %s (sequence_key) WHERE sequence_key <> '' AND status = 'claimed'",
+		query.IndexOn(q.dialect == dialectSQLite, query.QuoteIndexName(seqIdx), q.qt())))
 	return err
 }
 
@@ -410,21 +517,36 @@ func isUniqueViolation(err error) bool {
 // migrateClaimTokenColumn, migrateUserIDColumn, and
 // migrateOccurrenceIDColumn, which differed only in the column name.
 func (q *DBQueue) addTextColumn(column string) error {
+	return q.addColumn(column, "TEXT NOT NULL DEFAULT ''")
+}
+
+// addColumn adds column with the constant definition def, idempotently,
+// as addTextColumn does. def is always a literal from this file.
+func (q *DBQueue) addColumn(column, def string) error {
 	ident, err := query.SafeIdent(column)
 	if err != nil {
 		return fmt.Errorf("queue: add column %q: %w", column, err)
 	}
 	if q.dialect == dialectPostgres {
 		_, err := q.db.Exec(fmt.Sprintf(
-			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s TEXT NOT NULL DEFAULT ''", q.qt(), ident))
+			"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s %s", q.qt(), ident, def))
 		return err
 	}
 	_, err = q.db.Exec(fmt.Sprintf(
-		"ALTER TABLE %s ADD COLUMN %s TEXT NOT NULL DEFAULT ''", q.qt(), ident))
+		"ALTER TABLE %s ADD COLUMN %s %s", q.qt(), ident, def))
 	if err != nil && isDuplicateColumnErr(err) {
 		return nil
 	}
 	return err
+}
+
+// intType is the dialect's 64-bit integer column type: Postgres INTEGER
+// is 32 bits, too narrow for a duration in nanoseconds.
+func (q *DBQueue) intType() string {
+	if q.dialect == dialectPostgres {
+		return "BIGINT"
+	}
+	return "INTEGER"
 }
 
 // isDuplicateColumnErr reports whether err is the "column already exists"
@@ -617,13 +739,27 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 	if err := q.pruneDone(ctx); err != nil {
 		return Job{}, err
 	}
-	switch q.dialect {
-	case dialectPostgres:
-		return q.dequeuePostgres(ctx, lane, types)
-	default:
-		return q.dequeueSQLite(ctx, lane, types)
+	// A claim the one-claim-per-key index refuses lost a race for its
+	// SequenceKey; the next pick reads the winner's claim and passes over
+	// the key. The bound keeps a key under constant churn from spinning.
+	for range claimRetries {
+		var job Job
+		var err error
+		switch q.dialect {
+		case dialectPostgres:
+			job, err = q.dequeuePostgres(ctx, lane, types)
+		default:
+			job, err = q.dequeueSQLite(ctx, lane, types)
+		}
+		if !isUniqueViolation(err) {
+			return job, err
+		}
 	}
+	return Job{}, ErrNoJob
 }
+
+// claimRetries bounds how many sequence-key races one dequeue retries.
+const claimRetries = 3
 
 // deadLetterExpiredFinalClaims moves rows whose lease expired on their final
 // permitted attempt from 'claimed' to 'failed'. It runs before every claim
@@ -722,13 +858,13 @@ func (q *DBQueue) dequeuePostgres(ctx context.Context, lane string, types []stri
 	// it instead of blocking.
 	sqlStr := fmt.Sprintf(`UPDATE %s SET status='claimed', claimed_at=$1, updated_at=$1, claim_token=$2, attempts = attempts + 1
 		WHERE id = (
-			SELECT id FROM %s
+			SELECT id FROM %s AS cand
 			WHERE %s
 			ORDER BY priority DESC, created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
-		RETURNING id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id, unique_key`,
+		RETURNING `+jobColumns,
 		q.qt(), q.qt(), where)
 	row := q.db.QueryRowContext(ctx, sqlStr, claimArgs...)
 	job, err := scanJob(row)
@@ -779,8 +915,8 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	tx := sqliteConnTx{conn: conn}
 
 	where, args := q.eligibleWhere(types, 1, lane)
-	pickSQL := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id, unique_key
-		FROM %s WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
+	pickSQL := fmt.Sprintf(`SELECT `+jobColumns+`
+		FROM %s AS cand WHERE %s ORDER BY priority DESC, created_at ASC LIMIT 1`, q.qt(), where)
 	row := tx.QueryRowContext(ctx, pickSQL, args...)
 	job, err := scanJob(row)
 	if err != nil {
@@ -850,7 +986,7 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 		"(status='pending' OR (status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $%d AND attempts < max_attempts))",
 		leaseIdx,
 	)
-	parts := []string{status, "scheduled_at <= $" + itoa(schedIdx)}
+	parts := []string{status, "scheduled_at <= $" + itoa(schedIdx), q.sequenceClear()}
 
 	if lane != "" {
 		parts = append(parts, "lane = $"+itoa(idx))
@@ -868,6 +1004,26 @@ func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (stri
 		parts = append(parts, "type IN ("+strings.Join(placeholders, ", ")+")")
 	}
 	return strings.Join(parts, " AND "), args
+}
+
+// sequenceClear is the claim's SequenceKey rule, against the candidate row
+// aliased cand: a keyed job is claimable only while no other job with its
+// key is claimed (running, or a lease that expired and awaits reclaim) and,
+// for a pending candidate, none older is pending. Dead-lettered and done
+// rows do not hold the key. id breaks a created_at tie the way the claim's
+// ORDER BY does not need to: two jobs enqueued in the same instant still
+// run one at a time.
+//
+// An expired claim already holds its key, so an older pending job does not
+// block its reclaim. Without that, replaying an older job while a newer
+// one ran, then losing the newer one's worker, left each waiting on the
+// other for good.
+func (q *DBQueue) sequenceClear() string {
+	return fmt.Sprintf(`(cand.sequence_key = '' OR NOT EXISTS (
+		SELECT 1 FROM %s AS seq
+		WHERE seq.sequence_key = cand.sequence_key AND seq.id <> cand.id
+		AND (seq.status = 'claimed' OR (cand.status = 'pending' AND seq.status = 'pending'
+			AND (seq.created_at < cand.created_at OR (seq.created_at = cand.created_at AND seq.id < cand.id))))))`, q.qt())
 }
 
 // Ack permanently removes the job, work is done, no replay needed. The
@@ -906,9 +1062,10 @@ func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 // has attempts left; on the final permitted attempt (attempts >=
 // max_attempts) it dead-letters the row to status='failed' instead, where
 // it stays visible to Stats, ListJobs("failed"), and Replay until replayed.
-// When backoff is enabled (see WithBackoff), a requeued job's scheduled_at
-// is pushed into the future so a flapping handler can't burn through every
-// attempt in a tight loop.
+// When backoff or a retry schedule is set (WithBackoff, WithRetrySchedule),
+// a requeued job's scheduled_at is pushed into the future so a flapping
+// handler can't burn through every attempt in a tight loop. A job whose
+// next attempt would fall past its MaxAge is dead-lettered instead.
 // Every arm is fenced on claim_token. The lease-expiry clause in
 // eligibleWhere deliberately re-claims a row whose worker is still running,
 // so a stale claimant is a designed state on this backend, and an unfenced
@@ -923,62 +1080,76 @@ func (q *DBQueue) Ack(ctx context.Context, job Job) error {
 // and re-queued completed work, and after the dead-letter sweep or a Replay
 // it rewrote a row its claim no longer held.
 func (q *DBQueue) Nack(ctx context.Context, job Job) error {
-	return q.nack(ctx, job, "")
+	_, err := q.settleFailure(ctx, job, nil)
+	return err
 }
 
-// fail is the worker's Nack: it also keeps why the attempt failed, as the
-// job's LastError.
-func (q *DBQueue) fail(ctx context.Context, job Job, reason error) error {
-	msg := ""
-	if reason != nil {
-		msg = textsafe.ScrubControlBytes(reason.Error())
-		if r := []rune(msg); len(r) > maxLastError {
-			msg = string(r[:maxLastError-1]) + "…"
-		}
+// lastErrorText is the LastError a failed attempt keeps: the handler
+// error's text, control bytes scrubbed, at most maxLastError runes.
+func lastErrorText(reason error) string {
+	if reason == nil {
+		return ""
 	}
-	return q.nack(ctx, job, msg)
+	msg := textsafe.ScrubControlBytes(reason.Error())
+	if r := []rune(msg); len(r) > maxLastError {
+		msg = string(r[:maxLastError-1]) + "…"
+	}
+	return msg
 }
 
-// nack settles a failed claim; lastError, when set, replaces the kept
-// error.
-func (q *DBQueue) nack(ctx context.Context, job Job, lastError string) error {
+// settleFailure settles a failed claim and reports whether it
+// dead-lettered the job. reason is the handler's error (nil from Nack):
+// its text replaces the kept LastError, an ErrPermanent in its chain
+// dead-letters at once, and a RetryAfterError sets the next attempt's
+// delay in place of the queue's policy. A job out of attempts, or whose
+// next attempt would fall past its MaxAge, is dead-lettered. The row is
+// read and written under the claim's fence, so a stale claimant changes
+// nothing.
+func (q *DBQueue) settleFailure(ctx context.Context, job Job, reason error) (dead bool, err error) {
 	now := q.now().UTC()
-	if q.backoffBase <= 0 {
-		// No backoff: one round-trip. A CASE expression decides between
-		// requeue and dead-letter based on attempts vs max_attempts.
-		stmt := fmt.Sprintf(`UPDATE %s
-			SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
-			updated_at = $1, last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
-			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
-		return err
-	}
-
-	// Backoff path: read attempts/max_attempts to decide requeue vs
-	// dead-letter and to compute the next scheduled_at.
-	var attempts, maxAttempts int
+	lastError := lastErrorText(reason)
+	var stored Job
+	var createdAt any
 	row := q.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT attempts, max_attempts FROM %s WHERE id = $1 AND claim_token = $2", q.qt()),
+		fmt.Sprintf("SELECT attempts, max_attempts, max_age_ns, created_at FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2", q.qt()),
 		job.ID, job.ClaimToken)
-	if err := row.Scan(&attempts, &maxAttempts); err != nil {
-		if err == sql.ErrNoRows {
-			return nil // already acked/removed; nothing to do
+	if err := row.Scan(&stored.Attempts, &stored.MaxAttempts, &stored.MaxAge, &createdAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil // settled or re-claimed meanwhile; nothing to do
 		}
-		return err
+		return false, err
 	}
-	if attempts >= maxAttempts {
+	if stored.CreatedAt, err = query.ParseDBTime(createdAt); err != nil {
+		return false, fmt.Errorf("queue: decode job %q created_at: %w", job.ID, err)
+	}
+	dead = stored.Attempts >= stored.MaxAttempts || errors.Is(reason, ErrPermanent)
+	next := now
+	if !dead {
+		if d, ok := retryDelayFrom(reason); ok {
+			next = now.Add(d)
+		} else {
+			next = now.Add(q.retryDelay(stored.Attempts))
+		}
+		dead = pastMaxAge(stored, next)
+	}
+	if dead {
 		stmt := fmt.Sprintf(`UPDATE %s SET status='failed', updated_at = $1,
 			last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
 			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt())
-		_, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
-		return err
+		res, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
+		if err != nil {
+			return false, err
+		}
+		// A claim re-taken since the read matches no row: nothing was
+		// dead-lettered, so nothing is reported.
+		n, err := res.RowsAffected()
+		return n > 0, err
 	}
-	next := now.Add(backoff.Exponential(q.backoffBase, q.backoffMax, attempts))
 	stmt := fmt.Sprintf(`UPDATE %s SET status='pending', scheduled_at=$1, updated_at = $2,
 		last_error = CASE WHEN $3 = '' THEN last_error ELSE $3 END
 		WHERE id = $4 AND status='claimed' AND claim_token = $5`, q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
-	return err
+	_, err = q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
+	return false, err
 }
 
 // Replay implements [Replayable]: it resets a terminally-failed job to pending
@@ -1007,7 +1178,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	}
 	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
-		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key FROM %s`, q.qt())
+		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key, max_age_ns, sequence_key FROM %s`, q.qt())
 	args := []any{}
 	if status != "" && status != "all" {
 		base += " WHERE status = $1"
@@ -1028,7 +1199,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
-			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey); err != nil {
+			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey, &j.MaxAge, &j.SequenceKey); err != nil {
 			return nil, err
 		}
 		j.CreatedAt, err = query.ParseDBTime(createdAt)
@@ -1308,17 +1479,27 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			return
 		}
 		if err := q.runHandler(ctx, h, job); err != nil {
-			// job.Attempts was bumped by Dequeue before the handler ran, so it
-			// already equals the DB value Nack consults (attempts >=
-			// max_attempts), this is the exact terminal predicate, not an
-			// off-by-one estimate.
+			if ctx.Err() != nil && !errors.Is(err, ErrPermanent) {
+				// A shutdown cancelled the handler mid-run. The attempt
+				// says nothing about the job, so it is handed back with
+				// the attempt refunded, as an unstarted claim is above.
+				q.logger.Info("queue: shutdown interrupted a handler; job handed back",
+					"job_id", job.ID, "job_type", job.Type, "err", err)
+				q.handBack(ctx, job)
+				return
+			}
 			q.logger.Warn("queue: handler failed",
 				"job_id", job.ID,
 				"job_type", job.Type,
 				"attempt", job.Attempts,
 				"max_attempts", job.MaxAttempts,
 				"err", err)
-			if job.Attempts >= job.MaxAttempts {
+			settleCtx, cancel := settleContext(ctx)
+			dead, serr := q.settleFailure(settleCtx, job, err)
+			cancel()
+			if serr != nil {
+				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", serr)
+			} else if dead {
 				q.logger.Error("queue: job dead-lettered",
 					"job_id", job.ID,
 					"job_type", job.Type,
@@ -1326,11 +1507,6 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 					"max_attempts", job.MaxAttempts,
 					"err", err)
 			}
-			settleCtx, cancel := settleContext(ctx)
-			if err := q.fail(settleCtx, job, err); err != nil {
-				q.logger.Warn("queue: nack failed", "job_id", job.ID, "err", err)
-			}
-			cancel()
 			continue
 		}
 		settleCtx, cancel := settleContext(ctx)
@@ -1439,8 +1615,10 @@ func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
-// scanJob materialises a Job from a row that selects every column in the
-// canonical order used by Dequeue (lane included).
+// jobColumns is the column list a claim returns, in scanJob's order.
+const jobColumns = "id, occurrence_id, type, payload, priority, lane, attempts, max_attempts, created_at, scheduled_at, user_id, unique_key, max_age_ns, sequence_key"
+
+// scanJob materialises a Job from a row that selects jobColumns.
 func scanJob(row interface {
 	Scan(dest ...any) error
 }) (Job, error) {
@@ -1453,6 +1631,7 @@ func scanJob(row interface {
 		&job.ID, &job.OccurrenceID, &job.Type, &payload,
 		&job.Priority, &lane, &job.Attempts, &job.MaxAttempts,
 		&createdAt, &scheduledAt, &userID, &job.UniqueKey,
+		&job.MaxAge, &job.SequenceKey,
 	); err != nil {
 		if err == sql.ErrNoRows {
 			return Job{}, ErrNoJob

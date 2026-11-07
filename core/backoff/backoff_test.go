@@ -103,3 +103,27 @@ func TestAt(t *testing.T) {
 		}
 	}
 }
+
+func TestJitterBounds(t *testing.T) {
+	for _, tc := range []struct {
+		d        time.Duration
+		fraction float64
+		r        float64
+		want     time.Duration
+	}{
+		{100 * time.Second, 0.2, 0, 80 * time.Second},
+		{100 * time.Second, 0.2, 0.5, 100 * time.Second},
+		{100 * time.Second, 0.2, 0.75, 110 * time.Second},
+		{100 * time.Second, 0, 0.9, 100 * time.Second},
+		{100 * time.Second, 1, 0, 0},
+		{0, 0.5, 0.9, 0},
+		// r out of [0,1) is clamped into it.
+		{100 * time.Second, 0.2, -3, 80 * time.Second},
+		// The top of the range never overflows past the largest duration.
+		{time.Duration(1<<63 - 1), 0.5, 0.999999, time.Duration(1<<63 - 1)},
+	} {
+		if got := Jitter(tc.d, tc.fraction, tc.r); got != tc.want {
+			t.Errorf("Jitter(%v, %v, %v) = %v, want %v", tc.d, tc.fraction, tc.r, got, tc.want)
+		}
+	}
+}

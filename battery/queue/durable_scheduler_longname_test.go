@@ -49,7 +49,9 @@ func TestPG_SchedulerLongTableName(t *testing.T) {
 			}
 			if err := db.QueryRow(`SELECT COUNT(*) FROM pg_indexes
 				WHERE schemaname = current_schema() AND tablename = $1`,
-				pgCut(table+"_scheduler_occurrences")).Scan(&indexes); err != nil {
+				// The name the queue gives the table: at 63 bytes the
+				// plain cut is the queue table itself.
+				q.schedulerName("_scheduler_occurrences")).Scan(&indexes); err != nil {
 				t.Fatal(err)
 			}
 			// The primary key, the UNIQUE(schedule_id, scheduled_tick)

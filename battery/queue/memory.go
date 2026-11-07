@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -564,7 +565,18 @@ func (q *MemoryQueue) processJob(rj *runningJob) {
 			"attempt", job.Attempts,
 			"max_attempts", job.MaxAttempts,
 			"err", err)
-		if job.Attempts < job.MaxAttempts {
+		retry := job.Attempts < job.MaxAttempts && !errors.Is(err, ErrPermanent)
+		if retry {
+			// A handler's RetryAfter delays the next attempt; with none
+			// the job is due at once, as before.
+			next := q.now()
+			if d, ok := retryDelayFrom(err); ok {
+				next = next.Add(d)
+				job.ScheduledAt = next
+			}
+			retry = !pastMaxAge(job, next)
+		}
+		if retry {
 			// Re-enqueue for retry on a FRESH context. `ctx` is the
 			// per-attempt one that just timed out / was cancelled; using
 			// it here made Enqueue fail on the very jobs retries exist for
@@ -579,8 +591,9 @@ func (q *MemoryQueue) processJob(rj *runningJob) {
 				q.retainDead(job)
 			}
 		} else {
-			// Retries exhausted, retain as terminally-failed for inspection
-			// and replay instead of dropping it.
+			// Retries exhausted, a permanent failure, or past MaxAge:
+			// retain as terminally-failed for inspection and replay
+			// instead of dropping it.
 			q.logger.Error("queue: job dead-lettered",
 				"job_id", job.ID,
 				"job_type", job.Type,
@@ -642,6 +655,12 @@ func (q *MemoryQueue) enqueue(ctx context.Context, job Job, acquire bool) error 
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
+	}
+	if job.SequenceKey != "" {
+		return ErrSequenceUnsupported
+	}
+	if job.MaxAge < 0 {
+		return errNegativeMaxAge
 	}
 	if job.ID == "" {
 		job.ID = randomID()
@@ -804,7 +823,7 @@ func (q *MemoryQueue) Nack(ctx context.Context, job Job) error {
 		return nil
 	}
 	stored.Attempts++
-	if stored.MaxAttempts > 0 && stored.Attempts >= stored.MaxAttempts {
+	if (stored.MaxAttempts > 0 && stored.Attempts >= stored.MaxAttempts) || pastMaxAge(stored, q.now()) {
 		// Retries exhausted, retain as terminally-failed (inspectable via
 		// ListJobs/Stats and re-queuable via Replay) rather than dropping it.
 		q.retainDead(stored)

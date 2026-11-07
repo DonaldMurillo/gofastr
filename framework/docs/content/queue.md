@@ -17,6 +17,10 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Auto-reclaim crashed workers | — | Yes (lease expiry in SQL) | Yes (visibility timeout + `Start`) |
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
 | Unique jobs (`UniqueKey`) | Yes | Yes (partial unique index) | No (`ErrUniqueUnsupported`) |
+| Ordered jobs (`SequenceKey`) | No (`ErrSequenceUnsupported`) | Yes | No (`ErrSequenceUnsupported`) |
+| Age limit (`MaxAge`) | Yes | Yes | Yes (checked in `Nack`) |
+| Handler retry errors (`Permanent`, `RetryAfter`) | Yes | Yes | No worker loop |
+| Retry schedule and jitter | No (retries at once) | Yes | No |
 | `Browsable` | Yes (dead-letter only) | Yes | Yes (dead-letter only) |
 | `Replayable` | Yes | Yes | Yes |
 | Scheduler integration | Yes | Yes | Yes |
@@ -143,6 +147,8 @@ type Job struct {
     ClaimToken  string          // minted by Dequeue; fences this claim's Ack/Nack
     UserID      string          // who the payload is about; makes the row erasable
     UniqueKey   string          // at most one live job per (Type, UniqueKey); see Unique jobs
+    MaxAge      time.Duration   // stop retrying once the next try is past CreatedAt+MaxAge; 0 = no limit
+    SequenceKey string          // jobs sharing it run one at a time, oldest first; see Ordered jobs
 }
 ```
 
@@ -244,6 +250,43 @@ Uniqueness is about enqueueing. A job still runs at least once, and a
 handler that a lease expiry re-runs is the duplicate the at-least-once
 contract already covers.
 
+## Ordered jobs
+
+`SequenceKey` makes the jobs that share it run one at a time, in
+`CreatedAt` order, across every job type. Use it when changes to one
+record must reach a receiver in the order they happened:
+
+<!-- gofastr:compile
+import "context"
+import "encoding/json"
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+var q *queue.DBQueue
+var ctx context.Context
+var payload json.RawMessage
+-->
+```go
+_ = q.Enqueue(ctx, queue.Job{
+    Type:        "deliver-webhook",
+    Payload:     payload,
+    SequenceKey: "order:42", // every change to order 42, in order
+})
+```
+
+A keyed job is not claimed while any job with its key is running, or
+while an older job with its key is pending, including one waiting out a
+retry delay. Jobs with other keys, and jobs with no key, run beside it as
+usual. A dead-lettered job does not hold its key: the jobs behind it go
+on, and replaying it runs it after whichever of them is running. A job
+whose worker died keeps its key until its lease runs out, and is then
+reclaimed ahead of any older pending job, since it already held the key.
+A unique index allows one claimed job per key, so two workers claiming
+the same key at once (on Postgres, a claim racing a `Replay`) cannot both
+win: the loser's claim moves on to other work. The key spans lanes and
+types, so a key whose current job is in a lane or of a type no running
+worker serves waits until one does. Only `DBQueue` holds a
+sequence; `MemoryQueue` and `RedisQueue` refuse the job with
+`ErrSequenceUnsupported`.
+
 ## Lanes
 
 A **lane** is a capacity-reservation tag on a job (`Job.Lane`; empty string
@@ -313,6 +356,108 @@ Nacks on attempt 1 waits `~5s`; attempt 2 waits `~10s`; attempt 3 waits
 
 Once `Attempts >= MaxAttempts`, the job moves to the dead-letter state
 instead of being retried.
+
+### Retry schedules and jitter
+
+`WithRetrySchedule` sets each wait from a list instead of doubling. The
+last step repeats once the list runs out. `WithRetryJitter` spreads each
+wait by a fraction of itself, so jobs that failed together do not retry
+together:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "time"
+-->
+```go
+// 30s, 2m, 10m, 1h, then every 6h, each ±20%.
+queue.WithRetrySchedule(30*time.Second, 2*time.Minute, 10*time.Minute, time.Hour, 6*time.Hour)
+queue.WithRetryJitter(0.2)
+```
+
+`NewDBQueue` refuses an empty schedule, a negative step, a schedule
+beside `WithBackoff` with a positive base, and a jitter fraction outside
+0 to 1. Jitter applies to `WithBackoff` delays too.
+
+### Giving up by age
+
+`Job.MaxAge` stops the retries once the next one would fall past
+`CreatedAt + MaxAge`, whatever attempts are left. Combined with
+`MaxAttempts`, a job gives up at 25 attempts or 4 days, whichever comes
+first:
+
+<!-- gofastr:compile
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+import "time"
+-->
+```go
+_ = queue.Job{Type: "deliver-webhook", MaxAttempts: 25, MaxAge: 96 * time.Hour}
+```
+
+The age is checked when an attempt fails, so a job that waited in a
+backlog still runs once. `Enqueue` refuses a negative `MaxAge`. `Replay`
+keeps `CreatedAt`, so a replayed job past its age gets the one attempt
+the replay asked for.
+
+### What the handler's error says
+
+The `MemoryQueue` and `DBQueue` worker loops read two errors in the
+handler's error chain:
+
+- `queue.ErrPermanent` dead-letters the job at once, for a failure a
+  retry cannot fix, such as a 400 or 404 from a receiver. Wrap it with
+  `queue.Permanent(err)` or `fmt.Errorf("...: %w", queue.ErrPermanent)`.
+  The job's `LastError` keeps the handler's text.
+- `queue.RetryAfter(d, err)` sets the wait before the next attempt in
+  place of the backoff or schedule, for a receiver's `Retry-After`
+  header. Jitter does not apply to it, and a negative `d` means retry now.
+  The job still dead-letters when its attempts run out or the wait would
+  pass its `MaxAge`.
+
+`ErrPermanent` wins when both are in the chain.
+
+<!-- gofastr:compile
+import "context"
+import "fmt"
+import "net/http"
+import "strconv"
+import "time"
+import "github.com/DonaldMurillo/gofastr/battery/queue"
+func deliver(ctx context.Context, job queue.Job) (*http.Response, error) { return nil, nil }
+-->
+```go
+func handle(ctx context.Context, job queue.Job) error {
+    resp, err := deliver(ctx, job)
+    if err != nil {
+        return err // network failure: retry on the schedule
+    }
+    defer resp.Body.Close()
+    switch {
+    case resp.StatusCode < 300:
+        return nil
+    case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable:
+        failure := fmt.Errorf("receiver answered %d", resp.StatusCode)
+        if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs >= 0 && secs <= 6*3600 {
+            return queue.RetryAfter(time.Duration(secs)*time.Second, failure)
+        }
+        return failure
+    case resp.StatusCode >= 400 && resp.StatusCode < 500:
+        return queue.Permanent(fmt.Errorf("receiver answered %d", resp.StatusCode))
+    default:
+        return fmt.Errorf("receiver answered %d", resp.StatusCode)
+    }
+}
+```
+
+The handler bounds the header value before it multiplies it.
+
+### Shutdown during a handler
+
+When the context passed to `Start` is cancelled while a `DBQueue` handler
+runs and the handler returns an error, the job goes back to pending with
+the attempt refunded, the way a job claimed just before shutdown is
+handed back unstarted. A handler that returns nil is acked as usual, and
+an `ErrPermanent` still dead-letters. A handler budget that runs out
+(`WithDBHandlerTimeout`) is a failed attempt, not a shutdown.
 
 ## Dead-letter and replay
 
@@ -933,6 +1078,8 @@ queue.ErrNoJob       // Dequeue: nothing ready right now
 queue.ErrQueueClosed // Enqueue: queue was already closed
 queue.ErrDuplicateJob // Enqueue, Replay: a live job of the same type holds the UniqueKey
 queue.ErrUniqueUnsupported // Enqueue: the backend cannot hold a UniqueKey (RedisQueue)
+queue.ErrSequenceUnsupported // Enqueue: the backend cannot order a SequenceKey (MemoryQueue, RedisQueue)
+queue.ErrPermanent   // returned by a handler: dead-letter now, no retry
 queue.ErrRedisEmpty  // RedisClient.RPop: the list is empty (adapters MUST
                      // map their driver's nil-sentinel onto this)
 ```

@@ -839,6 +839,9 @@ type contextExecer interface {
 }
 
 func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) error {
+	if job.MaxAge < 0 {
+		return errNegativeMaxAge
+	}
 	if job.ID == "" {
 		job.ID = randomID()
 	}
@@ -870,10 +873,12 @@ func (q *DBQueue) enqueueWith(ctx context.Context, exec contextExecer, job Job) 
 	res, err := exec.ExecContext(ctx,
 		fmt.Sprintf(`INSERT INTO %s
 			(id, occurrence_id, type, payload, priority, lane, attempts,
-			 max_attempts, created_at, scheduled_at, status, user_id, updated_at, unique_key)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,$12,$13)%s`, q.qt(), onConflict),
+			 max_attempts, created_at, scheduled_at, status, user_id, updated_at, unique_key,
+			 max_age_ns, sequence_key)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'pending',$11,$12,$13,$14,$15)%s`, q.qt(), onConflict),
 		job.ID, job.OccurrenceID, job.Type, payload, job.Priority, job.Lane,
 		job.Attempts, job.MaxAttempts, job.CreatedAt, job.ScheduledAt, job.UserID, now, job.UniqueKey,
+		int64(job.MaxAge), job.SequenceKey,
 	)
 	if err != nil || job.UniqueKey == "" {
 		return err

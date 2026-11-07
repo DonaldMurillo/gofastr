@@ -328,7 +328,14 @@ retention). The terminal and push-config bounds go through the optional
 `a2a.RetentionTrimmer` Store interface both built-in stores implement
 (`TrimTerminalTasks(ctx, owner, tier, keep)` trims only rows whose
 tenant and scope equal the tier's); the paused bound cancels through
-`UpdateTask`, so it holds on any Store.
+`UpdateTask`, so it holds on any Store. A store with neither trim method
+keeps its own retention. `NewServer` refuses a store that has
+`TrimTerminalTasks` or `TrimPushConfigs` but does not implement
+`RetentionTrimmer`, such as a custom store still on the pre-v0.96.0
+`TrimTerminalTasks(ctx, owner, keep)`: the server would never call it,
+and its rows would grow without bound. The error names the signatures
+it wants. A store that keeps its own retention on purpose sets
+`TerminalTaskRetention` and `MaxPushConfigsPerTask` to -1.
 
 Skill-handler runs are bounded per owner too:
 `Config.MaxConcurrentRunsPerOwner` caps how many runs one owner may
