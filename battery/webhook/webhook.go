@@ -12,6 +12,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -304,6 +305,12 @@ type Options struct {
 	SignatureTolerance time.Duration
 	LeasePeriod        time.Duration
 
+	// Signature signs deliveries in a receiver's existing scheme: its
+	// header names, value prefix and signed string. Nil keeps the GoFastr
+	// format (X-GoFastr-Signature over the timestamp, event, delivery id and
+	// body). New panics on a format SignatureFormat.Validate refuses.
+	Signature *SignatureFormat
+
 	// ResponseBodyLimit is how many bytes of each receiver response are
 	// kept on the delivery (Delivery.ResponseBody) for diagnosing a
 	// refusal. Zero means 1024. A negative value keeps none. It never
@@ -344,6 +351,9 @@ type Options struct {
 type Manager struct {
 	store Store
 	opts  Options
+	// sig is the format deliveries are signed in: opts.Signature, or the
+	// GoFastr format.
+	sig SignatureFormat
 	// credClient is opts.HTTPClient with redirects refused, for a
 	// delivery that carries Subscriber.Auth. Built by New.
 	credClient *http.Client
@@ -373,8 +383,16 @@ type Manager struct {
 	failuresTotal   atomic.Uint64
 }
 
-// New constructs a Manager with defaults applied.
+// New constructs a Manager with defaults applied. It panics when
+// opts.Signature is set and SignatureFormat.Validate refuses it.
 func New(s Store, opts Options) *Manager {
+	sig := defaultSignatureFormat
+	if opts.Signature != nil {
+		if err := opts.Signature.Validate(); err != nil {
+			panic(err.Error())
+		}
+		sig = *opts.Signature
+	}
 	if opts.MaxAttempts <= 0 {
 		opts.MaxAttempts = 6
 	}
@@ -441,6 +459,7 @@ func New(s Store, opts Options) *Manager {
 	noRedirect.CheckRedirect = refuseRedirect
 	return &Manager{
 		credClient: &noRedirect,
+		sig:        sig,
 		store:      s,
 		opts:       opts,
 		stopCh:     make(chan struct{}),
@@ -491,6 +510,9 @@ func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, erro
 	}
 	if m.plaintextAuth(s) {
 		return Subscriber{}, errPlaintextAuth
+	}
+	if m.authOnSignatureHeader(s) {
+		return Subscriber{}, errAuthOnSignatureHeader
 	}
 	if err := validateSubscriberURL(s.URL, m.opts.AllowPrivateNetworks); err != nil {
 		return Subscriber{}, err
@@ -858,18 +880,23 @@ func (m *Manager) attempt(ctx context.Context, d Delivery) {
 	ts := m.nowFn().Unix()
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "GoFastr-Webhook/1")
-	req.Header.Set(EventHeader, d.Event)
-	req.Header.Set(DeliveryIDHeader, d.ID)
-	req.Header.Set("X-GoFastr-Timestamp", fmt.Sprintf("%d", ts))
-	req.Header.Set(SignatureHeader, SignWithTimestamp(sub.Secret, ts, d.Event, d.ID, d.Payload))
+	m.sig.setHeaders(req.Header, sub.Secret, ts, d.Event, d.ID, d.Payload)
 	client := m.opts.HTTPClient
-	if m.plaintextAuth(*sub) {
-		// A subscriber stored past Subscribe (or before this check
-		// existed): fail the attempt rather than send the credential in
-		// clear text. It stays failed until the URL or the option changes.
+	// A subscriber stored past Subscribe (or before these checks existed,
+	// or before Options.Signature changed): fail the attempt rather than
+	// send the credential in clear text or let it overwrite the signature.
+	// It stays failed until the subscriber or the option changes.
+	refusal := error(nil)
+	switch {
+	case m.plaintextAuth(*sub):
+		refusal = errPlaintextAuth
+	case m.authOnSignatureHeader(*sub):
+		refusal = errAuthOnSignatureHeader
+	}
+	if refusal != nil {
 		m.failuresTotal.Add(1)
 		d.Status = StatusFailed
-		d.LastError = errPlaintextAuth.Error()
+		d.LastError = refusal.Error()
 		d.ResponseStatus, d.ResponseBody = 0, ""
 		m.schedule(&d)
 		m.saveDelivery(d)
@@ -925,6 +952,20 @@ func (m *Manager) plaintextAuth(sub Subscriber) bool {
 	}
 	u, err := url.Parse(sub.URL)
 	return err != nil || !strings.EqualFold(u.Scheme, "https")
+}
+
+// errAuthOnSignatureHeader refuses a Subscriber.Auth whose header is one the
+// signature format writes: the credential would overwrite the signature, or
+// the signature the credential.
+var errAuthOnSignatureHeader = errors.New("webhook: Subscriber.Auth header is one the signature format writes")
+
+// authOnSignatureHeader reports whether sub's credential header is one of
+// the headers m's signature format sets.
+func (m *Manager) authOnSignatureHeader(sub Subscriber) bool {
+	if sub.Auth.Kind == AuthNone {
+		return false
+	}
+	return slices.Contains(m.sig.headers(), http.CanonicalHeaderKey(sub.Auth.headerName()))
 }
 
 // defaultResponseBodyLimit is Options.ResponseBodyLimit's zero value.

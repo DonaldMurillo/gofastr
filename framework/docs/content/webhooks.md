@@ -208,6 +208,56 @@ ok = hmac.compare_digest(expected, v1) and abs(time.time() - t) <= 300
 The body is whatever you passed to `Publish`; `application/json`
 isn't required, but the header advertises it.
 
+### Signing in a receiver's existing format
+
+A receiver that already verifies its own scheme doesn't have to change.
+Set `Options.Signature` to a `SignatureFormat` naming its headers, the
+value prefix and the signed string:
+
+```go
+mgr := webhook.New(store, webhook.Options{
+    Signature: &webhook.SignatureFormat{
+        Header:          "X-Acme-Signature",
+        TimestampHeader: "X-Acme-Timestamp",
+        Prefix:          "sha256=",
+        Signed:          "{timestamp}.{body}",
+    },
+})
+```
+
+Each delivery then carries `X-Acme-Timestamp: <unix>` and
+`X-Acme-Signature: sha256=<hex HMAC-SHA256(secret, "<unix>.<body>")>`,
+and no `X-GoFastr-Signature` or `X-GoFastr-Timestamp`. The rules:
+
+- `Signed` holds `{body}` exactly once and `{timestamp}` at least once;
+  `{event}` and `{delivery_id}` are optional. Every other byte is
+  literal. A format with no timestamp is refused, because its signature
+  never expires.
+- `Prefix` may hold `{timestamp}` once, for a header such as
+  `t={timestamp},v1=`. Then `TimestampHeader` may be empty; otherwise
+  it is required, so the receiver can read the signed timestamp.
+- `EventHeader` and `DeliveryIDHeader` rename the event and delivery id
+  headers; empty keeps `X-GoFastr-Event` and `X-GoFastr-Delivery-ID`.
+  Both are sent whether or not `Signed` covers them.
+- The MAC is always HMAC-SHA256 with `Subscriber.Secret` as the key,
+  hex-encoded.
+- Header names must be valid, distinct, and not ones the delivery or the
+  transport sets (`Content-Type`, `User-Agent`, `Host` and the like).
+  `New` panics on a format `SignatureFormat.Validate` refuses.
+- `Subscribe` refuses a subscriber whose `Auth` header is one the format
+  writes, and a stored subscriber in that state fails each attempt
+  without sending.
+
+The default format joins its parts with a newline because event names
+carry dots. If `Signed` covers `{event}`, pick a separator the event
+can't contain, or one event and body can verify as another.
+
+`SignatureFormat.Sign` returns the header value for one delivery,
+`Verify` checks a request against the format (the timestamp read from
+the prefix or from `TimestampHeader`, the whole value compared with
+`hmac.Equal`), and `Verifier(secret, tolerance)` wraps `Verify` as an
+`InboundVerifier` for an app on the receiving end.
+
 No `traceparent` header is sent. The default delivery client records an
 OpenTelemetry client span per attempt (`HTTP POST`, URL without its query
 string) but does not pass trace context to the subscriber, whose server
@@ -403,6 +453,11 @@ Two stores are bundled:
 `NewSQLStore` fails closed: given neither option it returns an error
 rather than silently storing subscriber secrets in cleartext.
 
+An app that already keeps deliveries in its own table, with clients
+reading it, implements `Store` (and `LeasedStore`, for more than one
+worker) over that table instead of moving to the bundled ones. The
+`Manager` reads and writes deliveries only through the interface.
+
 Both bundled stores implement the optional `LeasedStore` interface:
 
 ```go
@@ -590,6 +645,9 @@ Two are bundled:
   delivery id from their headers. The timestamp, event and id are bound
   into the signed material, so a captured request can't replay past
   `tolerance` or be re-sent under another event or id. **Preferred whenever the sender supports it.**
+- `SignatureFormat.Verifier(secret, tolerance)`: a sender that signs
+  in a format of its own (see
+  [Signing in a receiver's existing format](#signing-in-a-receivers-existing-format)).
 - `HMACSHA256Verifier(header, prefix, secret)`: GitHub-style
   `<prefix><hex-hmac-sha256-of-body>` (e.g. header
   `X-Hub-Signature-256`, prefix `sha256=`). Uses `hmac.Equal`, but note
