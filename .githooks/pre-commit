@@ -18,6 +18,14 @@
 # Emergency bypass:      git commit --no-verify   (CI still gates)
 # Skip only the slow test sweep (e.g. docs-only commit):
 #   GOFASTR_SKIP_COMMIT_TESTS=1 git commit ...    (pre-push re-runs it)
+#
+# The model review (.claude/skills/review-gate) runs three Codex reviews of
+# the staged change beside the test sweep and fails the commit only when
+# all three request changes. No Codex, no Python or an incomplete review
+# warns and lets the commit through, and so does a run past
+# GOFASTR_COMMIT_REVIEW_TIMEOUT seconds (default 600). To overrule a
+# block you read and rejected (say why in the commit message):
+#   GOFASTR_SKIP_COMMIT_REVIEW=1 git commit ...
 
 set -e
 
@@ -33,6 +41,44 @@ NC='\033[0m'
 pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
+
+# The index this commit is built from. `git commit <paths>` builds it in a
+# temporary file that git names in GIT_INDEX_FILE, and the unset below
+# clears that variable, after which `git diff --cached` reads the real
+# index: the secret scan then checked what was staged there instead of
+# what is being committed. Every "what is staged" read goes through
+# staged_git.
+commit_index=${GIT_INDEX_FILE:-}
+case "$commit_index" in
+  ""|/*|[A-Za-z]:*) ;;
+  *) commit_index="$(pwd)/$commit_index" ;;
+esac
+staged_git() {
+  if [ -n "$commit_index" ]; then
+    GIT_INDEX_FILE=$commit_index git "$@"
+  else
+    git "$@"
+  fi
+}
+
+# Temp files and the background review, cleaned up however the hook exits.
+# One quoted variable per path: a list expanded unquoted would split a
+# TMPDIR with a space in it and hand rm -rf the pieces.
+vettool_dir=""
+coverprofile=""
+review_out=""
+scan_blob=""
+review_pid=""
+cleanup() {
+  if [ -n "$review_pid" ]; then
+    kill "$review_pid" 2>/dev/null || true
+    wait "$review_pid" 2>/dev/null || true
+  fi
+  for path in "$vettool_dir" "$coverprofile" "$review_out" "$scan_blob"; do
+    if [ -n "$path" ]; then rm -rf "$path"; fi
+  done
+}
+trap cleanup EXIT
 
 # Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
 # pointing at THIS repo, and they inherit into every child process. The
@@ -71,7 +117,7 @@ echo ""
 echo "  Scanning for secrets..."
 
 # Get staged files only (what's about to be committed)
-staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v '^vendor/' || true)
+staged_files=$(staged_git diff --cached --name-only --diff-filter=ACM | grep -v '^vendor/' || true)
 
 if [ -n "$staged_files" ]; then
   # Patterns that look like secrets
@@ -96,12 +142,15 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
 "
 
   found_secrets=""
+  scan_blob=$(mktemp)
   for file in $staged_files; do
-    if [ ! -f "$file" ]; then continue; fi
-    # Skip binary files
-    if file "$file" | grep -q "binary\|image\|data"; then continue; fi
     # Skip go.sum (hashes look like secrets) and hook scripts (contain detection patterns)
     case "$file" in go.sum|*.lock|.githooks/*|Makefile) continue ;; esac
+    # Scan the staged blob, not the working-tree file: an unstaged edit
+    # can remove a secret the commit still carries.
+    staged_git show ":$file" >"$scan_blob" 2>/dev/null || continue
+    # Skip binary files
+    if file -b "$scan_blob" | grep -q "binary\|image\|data"; then continue; fi
 
     for pattern in $secret_patterns; do
       [ -z "$pattern" ] && continue
@@ -112,7 +161,7 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
       # fixtures). The annotation lives in the diff, so every
       # exemption is visible to review, unlike --no-verify, which
       # skips every check invisibly and is banned.
-      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
+      matches=$(grep -n -i -E "$pattern" "$scan_blob" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
       if [ -n "$matches" ]; then
         found_secrets="$found_secrets\n  $file:\n$matches"
       fi
@@ -161,12 +210,51 @@ pass "go vet clean"
 # vetted with that branch's analyzer set. The dir is outside the worktree
 # so cmd/affected never sees it as a change.
 vettool_dir=$(mktemp -d "${TMPDIR:-/tmp}/gofastr-vettool.XXXXXX")
-trap 'rm -rf "$vettool_dir"' EXIT
 go build -o "$vettool_dir/vettool" ./cmd/vettool
 go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool="$vettool_dir/vettool"
 rm -rf "$vettool_dir"
-trap - EXIT
+vettool_dir=""
 pass "repo analyzers clean"
+
+# ---- 5c. Model review of the staged change (background) ----
+# Started once the cheap checks pass, so a commit that fails gofmt or vet
+# spends no reviews, and run beside the test sweep, which takes longer
+# than the review. The result is read in step 8. The checkout's own
+# review3.py, so a worktree reviews with its branch's copy.
+echo ""
+review_note=""
+review_script="$(git rev-parse --show-toplevel)/.claude/skills/review-gate/review3.py"
+if [ "${GOFASTR_SKIP_COMMIT_REVIEW:-}" = "1" ]; then
+  review_note="skipped (GOFASTR_SKIP_COMMIT_REVIEW=1)"
+elif [ ! -f "$review_script" ]; then
+  review_note="skipped: no .claude/skills/review-gate in this checkout"
+elif [ -f "$(git rev-parse --git-path MERGE_HEAD)" ] || [ -f "$(git rev-parse --git-path CHERRY_PICK_HEAD)" ] || [ -f "$(git rev-parse --git-path REVERT_HEAD)" ]; then
+  review_note="skipped: merge, cherry-pick or revert commit"
+elif [ -z "$(staged_git diff --cached --name-only | grep -v '\.md$' || true)" ]; then
+  review_note="skipped: only Markdown staged"
+else
+  review_py=$(command -v python3 || command -v python || true)
+  if [ -z "$review_py" ]; then
+    review_note="skipped: no python3 on PATH"
+  elif ! review_check=$("$review_py" "$review_script" --check 2>&1); then
+    review_note="skipped: $review_check"
+  else
+    review_out=$(mktemp)
+    # A stalled run counts as unusable (warn, no block) after ten minutes,
+    # not review3.py's own fifteen.
+    review_timeout=${GOFASTR_COMMIT_REVIEW_TIMEOUT:-600}
+    if [ -n "$commit_index" ]; then
+      GIT_INDEX_FILE=$commit_index "$review_py" "$review_script" --staged --timeout "$review_timeout" >"$review_out" 2>&1 &
+    else
+      "$review_py" "$review_script" --staged --timeout "$review_timeout" >"$review_out" 2>&1 &
+    fi
+    review_pid=$!
+    echo "  → Model review started (three Codex runs, result at the end)"
+  fi
+fi
+if [ -n "$review_note" ]; then
+  warn "model review $review_note"
+fi
 
 # ---- 6. Deterministic test sweep + coverage floors (CI-identical) ----
 echo ""
@@ -180,7 +268,6 @@ else
   # chromedp suites that run isolated in browser-e2e. The merged
   # coverprofile feeds the floors check below, so the suites run once.
   coverprofile=$(mktemp)
-  trap 'rm -f "$coverprofile"' EXIT
   go run ./cmd/affected \
     -exclude 'gofastr/(examples/site|examples/meridian|examples/tracker|examples/layoutlab|kiln/integration|core-ui/runtime(/hosttest)?|core-ui/widget|evals/ui-quality/internal/evalrunner|framework/headless)$' \
     -- go test -timeout=20m -coverprofile="$coverprofile" \
@@ -215,6 +302,38 @@ echo "  → Contracts on the uncommitted change..."
 GOFASTR_AXE_COVERAGE_DIR=$(go run ./cmd/affected -coverage-dir) \
   go run ./cmd/gofastr verify --no-vet --strict --changed
 pass "No new contract findings"
+
+# ---- 8. Model review result ----
+# Exit codes from review3.py: 0 approve, 1 all three runs request changes,
+# 2 fewer than three usable answers, 3 no Codex. Only 1 blocks: a usage
+# limit or a network failure must not stop every commit.
+if [ -n "$review_pid" ]; then
+  echo ""
+  echo "  → Waiting for the model review..."
+  if wait "$review_pid"; then review_rc=0; else review_rc=$?; fi
+  review_pid=""
+  case $review_rc in
+    0)
+      pass "Model review approved"
+      sed 's/^/    /' "$review_out"
+      ;;
+    1)
+      fail "Model review: all three runs request changes"
+      echo ""
+      sed 's/^/    /' "$review_out"
+      echo ""
+      echo "  Fix the findings and commit again. If you read a finding and it is"
+      echo "  wrong, commit with GOFASTR_SKIP_COMMIT_REVIEW=1 and say in the"
+      echo "  commit message which finding you rejected and why. Do NOT use --no-verify."
+      echo ""
+      exit 1
+      ;;
+    *)
+      warn "model review incomplete (exit $review_rc), not blocking:"
+      sed 's/^/    /' "$review_out"
+      ;;
+  esac
+fi
 
 echo ""
 pass "All pre-commit checks passed"

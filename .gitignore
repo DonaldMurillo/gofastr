@@ -192,3 +192,6 @@ worktrees/
 # Canonical build output is dist/; these are stray local builds.
 # (examples/*/site also covers the examples/site/site artifact scrubbed on main.)
 examples/*/site
+
+# Python bytecode (.claude/skills scripts)
+__pycache__/
