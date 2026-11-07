@@ -181,6 +181,10 @@ def run_one(n, codex, model, prompt, timeout, workdir):
             _signal_tree(proc, KILL)
             proc.communicate()
             return {"run": n, "error": f"timed out after {timeout}s"}
+    if proc.returncode != 0:
+        # codex exits 0 when the run finished; an answer left by a run
+        # that then failed is not a vote.
+        return {"run": n, "error": f"codex exited {proc.returncode}; see {log_file}"}
     try:
         with open(out_file, encoding="utf-8") as f:
             answer = parse(f.read())

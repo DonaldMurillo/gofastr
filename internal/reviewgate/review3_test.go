@@ -149,6 +149,17 @@ func TestFailuresNeverExitOne(t *testing.T) {
 			t.Fatalf("exit %d, want 2\n%s", got, out)
 		}
 	})
+	t.Run("codex exits nonzero", func(t *testing.T) {
+		// A run that wrote an answer and then failed is not a vote.
+		script, codex, repo := setup(t, [3]string{block, block, block})
+		failing := strings.Replace(stubCodex, `> "$out"`, `> "$out"; exit 1`, 1)
+		if err := os.WriteFile(codex, []byte(failing), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if got, out := run(t, script, codex, repo); got != 2 {
+			t.Fatalf("exit %d, want 2\n%s", got, out)
+		}
+	})
 	t.Run("git fails", func(t *testing.T) {
 		script, codex, _ := setup(t, [3]string{block, block, block})
 		notRepo := t.TempDir()
