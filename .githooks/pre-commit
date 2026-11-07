@@ -34,6 +34,25 @@ pass() { printf "  ${GREEN}✓${NC} %s\n" "$1"; }
 warn() { printf "  ${YELLOW}!${NC} %s\n" "$1"; }
 fail() { printf "  ${RED}✗${NC} %s\n" "$1"; }
 
+# The index this commit is built from. `git commit <paths>` builds it in a
+# temporary file that git names in GIT_INDEX_FILE, and the unset below
+# clears that variable, after which `git diff --cached` reads the real
+# index: the secret scan then checked what was staged there instead of
+# what is being committed. Every "what is staged" read goes through
+# staged_git.
+commit_index=${GIT_INDEX_FILE:-}
+case "$commit_index" in
+  ""|/*|[A-Za-z]:*) ;;
+  *) commit_index="$(pwd)/$commit_index" ;;
+esac
+staged_git() {
+  if [ -n "$commit_index" ]; then
+    GIT_INDEX_FILE=$commit_index git "$@"
+  else
+    git "$@"
+  fi
+}
+
 # Git runs hooks with GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE (etc.)
 # pointing at THIS repo, and they inherit into every child process. The
 # test sweep shells out to `git init` / `git status` in temp dirs
@@ -71,7 +90,7 @@ echo ""
 echo "  Scanning for secrets..."
 
 # Get staged files only (what's about to be committed)
-staged_files=$(git diff --cached --name-only --diff-filter=ACM | grep -v '^vendor/' || true)
+staged_files=$(staged_git diff --cached --name-only --diff-filter=ACM | grep -v '^vendor/' || true)
 
 if [ -n "$staged_files" ]; then
   # Patterns that look like secrets
