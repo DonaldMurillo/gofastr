@@ -6,7 +6,8 @@ Usage:
              [--codex PATH] [--json] [--check] [--timeout SECONDS]
 
 Exit codes: 0 approve, 1 block (all three runs request changes),
-2 fewer than three usable answers, 3 Codex not found (--check or a run).
+2 fewer than three usable answers or any other failure (a git error, a
+crash), 3 Codex not found (--check or a run). Only a vote exits 1.
 
 The repo's pre-commit hook runs it with --staged in the background
 while its test sweep runs; see .githooks/pre-commit.
@@ -31,7 +32,9 @@ DIFF_CAP = 120_000  # characters of diff pasted into the prompt
 # Live codex processes, so a SIGTERM (the hook giving up) stops them
 # instead of leaving them to run out their reviews.
 _children = []
-_children_lock = threading.Lock()
+# Reentrant: the signal handler takes it on the main thread, and a second
+# signal can arrive while the first handler holds it.
+_children_lock = threading.RLock()
 _stopping = False
 KILL = getattr(signal, "SIGKILL", signal.SIGTERM)
 
@@ -52,6 +55,8 @@ def _signal_tree(p, sig):
 
 def _stop(signum, _frame):
     global _stopping
+    if _stopping:
+        return  # the first handler is already stopping the runs
     with _children_lock:
         _stopping = True
         live = list(_children)
@@ -69,11 +74,17 @@ def _stop(signum, _frame):
     os._exit(128 + signum)
 
 
+def fail(msg):
+    """Exit 2 with msg on stderr: a failure is never a vote to block."""
+    print(f"review-gate: {msg}", file=sys.stderr)
+    sys.exit(2)
+
+
 def git(*args, check=True):
     out = subprocess.run(["git", *args], capture_output=True, text=True,
                          encoding="utf-8", errors="replace")
     if check and out.returncode != 0:
-        sys.exit(f"review-gate: git {' '.join(args)} failed: {out.stderr.strip()}")
+        fail(f"git {' '.join(args)} failed: {out.stderr.strip()}")
     return out.stdout if out.returncode == 0 else None
 
 
@@ -153,10 +164,13 @@ def run_one(n, codex, model, prompt, timeout, workdir):
     out_file = os.path.join(workdir, f"run{n}.txt")
     log_file = os.path.join(workdir, f"run{n}.log")
     with open(log_file, "w", encoding="utf-8") as log:
-        proc = subprocess.Popen(command(codex, model, out_file), stdin=subprocess.PIPE,
-                                stdout=log, stderr=subprocess.STDOUT,
-                                text=True, encoding="utf-8",
-                                start_new_session=os.name == "posix")
+        try:
+            proc = subprocess.Popen(command(codex, model, out_file), stdin=subprocess.PIPE,
+                                    stdout=log, stderr=subprocess.STDOUT,
+                                    text=True, encoding="utf-8",
+                                    start_new_session=os.name == "posix")
+        except OSError as exc:
+            return {"run": n, "error": f"could not start codex: {exc}"}
         with _children_lock:
             _children.append(proc)
             if _stopping:
@@ -174,7 +188,20 @@ def run_one(n, codex, model, prompt, timeout, workdir):
         answer = None
     if answer is None:
         return {"run": n, "error": f"no usable answer; see {log_file}"}
-    return {"run": n, "decision": answer["decision"], "findings": answer.get("findings") or []}
+    findings = answer.get("findings")
+    return {"run": n, "decision": answer["decision"],
+            "findings": findings if isinstance(findings, list) else []}
+
+
+def line_number(v):
+    """A finding's line as an int, or None: models write 42, "42" or null."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    return None
 
 
 def merge(results):
@@ -184,7 +211,7 @@ def merge(results):
         for f in r.get("findings", []):
             if not isinstance(f, dict) or not f.get("blocking", True):
                 continue
-            key = (str(f.get("path", "")), f.get("line"))
+            key = (str(f.get("path", "")), line_number(f.get("line")))
             entry = merged.setdefault(key, {"path": key[0], "line": key[1], "runs": [], "issues": []})
             entry["runs"].append(r["run"])
             entry["issues"].append(str(f.get("issue", "")).strip())
@@ -214,7 +241,7 @@ def main():
     mode = "staged" if a.staged else "uncommitted" if a.uncommitted else "range"
     rng = a.range or (default_range() if mode == "range" else None)
     if not rng and mode == "range":
-        sys.exit("review-gate: no upstream or origin/HEAD; pass --range, --staged or --uncommitted")
+        fail("no upstream or origin/HEAD; pass --range, --staged or --uncommitted")
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, _stop)
     prompt, rng = build_prompt(rng, mode)
@@ -257,4 +284,18 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        code = main()
+    except SystemExit as exc:
+        # argparse and fail() exit with an int; a bare string would exit 1,
+        # which the hook reads as a block.
+        if not isinstance(exc.code, int):
+            print(exc.code, file=sys.stderr)
+            code = 2
+        else:
+            code = exc.code
+    except Exception:  # noqa: BLE001 - a crash must not read as a block
+        import traceback
+        traceback.print_exc()
+        code = 2
+    sys.exit(code)

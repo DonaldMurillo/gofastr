@@ -33,9 +33,11 @@ It looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`.
    medium effort, web search off, user config ignored, nothing saved.
 3. It prints the decision, the vote and every blocking finding with the
    runs that raised it. `--json` prints the same as JSON.
-4. Exit codes: 0 approve, 1 block, 2 fewer than three usable answers,
-   3 no Codex. On 2, read the run logs it names, then rerun or fall back
-   to subagent mode. Never count a failed run as a vote either way.
+4. Exit codes: 0 approve, 1 block, 2 fewer than three usable answers or
+   any other failure (a git error, a codex that will not start, a crash),
+   3 no Codex. Only the vote exits 1. On 2, read the run logs it names,
+   then rerun or fall back to subagent mode. Never count a failed run as
+   a vote either way.
 
 ## In the pre-commit hook
 
