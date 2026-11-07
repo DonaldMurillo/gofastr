@@ -544,7 +544,9 @@ func TestRepoDocsNameRealIdentifiers(t *testing.T) {
 
 // repoDocSkipDir leaves out the embedded corpus (the test above owns it),
 // the changelog archive (history names what each release removed),
-// generated and vendored trees, and the experimental and kiln trees.
+// generated and vendored trees, the experimental and kiln trees, and
+// Claude Code's local worktrees and per-machine project state, which are
+// gitignored and never reach a checkout.
 func repoDocSkipDir(rel, name string) bool {
 	if rel == "." {
 		return false
@@ -556,10 +558,24 @@ func repoDocSkipDir(rel, name string) bool {
 		return true
 	}
 	switch rel {
-	case "framework/docs/content", "changelog", "kiln", "framework/experimental", ".claude/worktrees":
+	case "framework/docs/content", "changelog", "kiln", "framework/experimental", ".claude/worktrees", ".claude/projects":
 		return true
 	}
 	return false
+}
+
+// TestRepoDocWalkSkipsClaudeProjects pins the per-machine skip: a stale
+// local file under .claude/projects failed the walk on one machine
+// while CI, which never has the directory, passed.
+func TestRepoDocWalkSkipsClaudeProjects(t *testing.T) {
+	if !repoDocSkipDir(".claude/projects", "projects") {
+		t.Error(".claude/projects must be skipped")
+	}
+	for _, rel := range []string{".claude", ".claude/skills"} {
+		if repoDocSkipDir(rel, filepath.Base(rel)) {
+			t.Errorf("%s must stay in the walk", rel)
+		}
+	}
 }
 
 // repoDocSkipFile are histories: they name what a release removed.

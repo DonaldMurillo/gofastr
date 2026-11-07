@@ -1,5 +1,5 @@
 version: v0.96.0
-title: unreleased
+title: Apps run under any host, one error envelope, Windows signing and auto-update
 notes:
   - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
     breaking: true

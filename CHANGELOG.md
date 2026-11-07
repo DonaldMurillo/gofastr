@@ -24,6 +24,8 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+## [0.96.0] - 2026-11-06
+
 ### Added
 - **`App.Run(ctx, host)` runs an App under any host, and
   `framework.ServicesHost()` runs it with no transport.** One lifecycle
@@ -304,6 +306,21 @@ few lines, and link the PR or the docs page for the rest.
   on X11, and `data-cui-window-drag` moves the window. CI now drives
   the real GTK file choosers, including the overwrite confirmation.
   See [desktop](framework/docs/content/desktop.md#host-support).
+- **Linux desktop: release archives, per-user install, URL activation,
+  persistent profiles and a tray (#613, #622, #626).**
+  `gofastr desktop build --format=tar.gz` writes an archive holding the
+  executable, a launcher, an icon, a desktop-entry template and a
+  checksum manifest; a plain ELF stays the default. `--scheme` embeds URL
+  activation: a second launch on the same session bus hands its URL to
+  the running app. `gofastr desktop install --bundle=<dir>` installs an
+  extracted archive under the user's XDG directories with a launcher and
+  a desktop entry, and `desktop uninstall --id=<id>` removes it, refusing
+  changed files and keeping app data. `desktop.Config.PersistentProfile`
+  keeps the WebKit profile (cookies, local storage) across launches; the
+  default stays ephemeral. The tray runs under a StatusNotifierItem host,
+  and hidden windows come back when the tray host goes away.
+  Notifications send plain text to a daemon that does not render markup.
+  See [desktop](framework/docs/content/desktop.md#per-user-linux-installation).
 - **Gaps from building on v0.95.0 (#635).**
   `service.Config.OpenPrefixes` and `desktop.Config.OpenPrefixes` skip
   the browser sign-in on the paths they name, for a client with no
