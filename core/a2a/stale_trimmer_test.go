@@ -77,6 +77,15 @@ func TestStaleTrimmerRefusedWithPushBoundOn(t *testing.T) {
 	}
 }
 
+// The mirror case: the push-config bound off, task retention still on.
+func TestStaleTrimmerRefusedWithTaskBoundOn(t *testing.T) {
+	cfg := staleCfg(staleTrimStore{NewMemoryStore()})
+	cfg.MaxPushConfigsPerTask = -1
+	if _, err := NewServer(cfg); err == nil {
+		t.Fatal("NewServer accepted a stale store while TerminalTaskRetention is on")
+	}
+}
+
 // A store wrapper that implements the current RetentionTrimmer passes.
 type currentTrimStore struct{ *MemoryStore }
 
