@@ -279,3 +279,15 @@ func TestPrefixTimestampAtPrefixEnd(t *testing.T) {
 	}
 	t.Fatal("no MAC starting with a digit found")
 }
+
+func TestPrefixDigitAfterTimestamp(t *testing.T) {
+	f := SignatureFormat{Header: "X-Sig", TimestampHeader: "X-Ts", Prefix: "t={timestamp}0,", Signed: "{timestamp}.{body}"}
+	if err := f.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	h := http.Header{}
+	f.setHeaders(h, formatSecret, time.Now().Unix(), "ping", "d1", []byte(`{}`))
+	if !f.Verify(formatSecret, h, []byte(`{}`), time.Minute) {
+		t.Fatalf("genuine signature %q refused", h.Get("X-Sig"))
+	}
+}
