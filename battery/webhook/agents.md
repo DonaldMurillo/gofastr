@@ -46,6 +46,10 @@ stop and use `Manager` instead:
 dead-letter parking. Receiver verification uses
 `webhook.VerifyTimestamped(secret, sigHeader, eventHeader, deliveryIDHeader, body, 5*time.Minute)`
 (returns `bool`); the event and delivery id are part of the signature.
+A receiver that already checks its own scheme (say
+`X-Acme-Signature: sha256=<hex HMAC of "<ts>.<body>">`) gets it through
+`Options.Signature: &webhook.SignatureFormat{...}`; don't sign by hand
+in a custom transport.
 
 **Security:**
 - Leave `AllowPrivateNetworks: false`. Setting it true allows

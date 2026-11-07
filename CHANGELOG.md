@@ -47,6 +47,17 @@ few lines, and link the PR or the docs page for the rest.
   `sequence_key` columns and two partial indexes to an existing table on
   boot.
 
+- **`battery/webhook` signs deliveries in a receiver's existing format**
+  ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
+  `Options.Signature` takes a `SignatureFormat`: the signature and
+  timestamp header names, a value prefix such as `sha256=`, and the
+  signed string with `{timestamp}`, `{event}`, `{delivery_id}` and
+  `{body}` placeholders. A format with no timestamp is refused, and `New`
+  panics on an invalid one. `Subscribe` refuses a credential header the
+  format writes. `SignatureFormat.Verifier` checks the same format on
+  the receiving side. See
+  [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
+
 ### Changed
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
