@@ -67,13 +67,14 @@ staged_git() {
 vettool_dir=""
 coverprofile=""
 review_out=""
+scan_blob=""
 review_pid=""
 cleanup() {
   if [ -n "$review_pid" ]; then
     kill "$review_pid" 2>/dev/null || true
     wait "$review_pid" 2>/dev/null || true
   fi
-  for path in "$vettool_dir" "$coverprofile" "$review_out"; do
+  for path in "$vettool_dir" "$coverprofile" "$review_out" "$scan_blob"; do
     if [ -n "$path" ]; then rm -rf "$path"; fi
   done
 }
@@ -141,12 +142,15 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
 "
 
   found_secrets=""
+  scan_blob=$(mktemp)
   for file in $staged_files; do
-    if [ ! -f "$file" ]; then continue; fi
-    # Skip binary files
-    if file "$file" | grep -q "binary\|image\|data"; then continue; fi
     # Skip go.sum (hashes look like secrets) and hook scripts (contain detection patterns)
     case "$file" in go.sum|*.lock|.githooks/*|Makefile) continue ;; esac
+    # Scan the staged blob, not the working-tree file: an unstaged edit
+    # can remove a secret the commit still carries.
+    staged_git show ":$file" >"$scan_blob" 2>/dev/null || continue
+    # Skip binary files
+    if file -b "$scan_blob" | grep -q "binary\|image\|data"; then continue; fi
 
     for pattern in $secret_patterns; do
       [ -z "$pattern" ] && continue
@@ -157,7 +161,7 @@ eyJ[a-zA-Z0-9]{20,}\.eyJ[a-zA-Z0-9]{20,}\.[a-zA-Z0-9]{10,}
       # fixtures). The annotation lives in the diff, so every
       # exemption is visible to review, unlike --no-verify, which
       # skips every check invisibly and is banned.
-      matches=$(grep -n -i -E "$pattern" "$file" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
+      matches=$(grep -n -i -E "$pattern" "$scan_blob" 2>/dev/null | grep -v -E "not-a-secret:|nosecret:" || true)
       if [ -n "$matches" ]; then
         found_secrets="$found_secrets\n  $file:\n$matches"
       fi
