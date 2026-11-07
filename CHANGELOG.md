@@ -24,6 +24,17 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+- **`a2a.NewServer` refuses a store whose trim methods would never run**
+  ([#653](https://github.com/DonaldMurillo/gofastr/issues/653)). A store
+  with `TrimTerminalTasks` or `TrimPushConfigs` that does not implement
+  `RetentionTrimmer` (a custom store still on the pre-v0.96.0
+  `TrimTerminalTasks(ctx, owner, keep)`) used to compile and then never
+  be trimmed. The error names the wanted signatures; a store that keeps
+  its own retention sets `TerminalTaskRetention` and
+  `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
+  already flags the old method.
+
 ## [0.96.0] - 2026-11-06
 
 ### Added

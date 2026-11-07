@@ -11,6 +11,7 @@ import (
 	"mime"
 	"net/http"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -299,6 +300,9 @@ func NewServer(cfg Config) (*Server, error) {
 	maxPush := cfg.MaxPushConfigsPerTask
 	if maxPush == 0 {
 		maxPush = defaultMaxPushConfigsPerTask
+	}
+	if err := refuseUnwiredTrimmer(store, maxTerminal, maxPush); err != nil {
+		return nil, err
 	}
 	maxConcurrentRuns := cfg.MaxConcurrentRunsPerOwner
 	if maxConcurrentRuns == 0 {
@@ -1264,6 +1268,34 @@ func (s *Server) trimTerminalTasks(owner string, tier RetentionTier) {
 	if err := rt.TrimTerminalTasks(ctx, owner, tier, s.maxTerminalTasks); err != nil {
 		s.log.Error("a2a: trim terminal tasks", "owner", owner, "err", err)
 	}
+}
+
+// refuseUnwiredTrimmer refuses a store that has a trim method but does
+// not implement RetentionTrimmer, while a retention bound that relies on
+// it is on. Such a store still compiles (a custom store still on the
+// pre-v0.96.0 TrimTerminalTasks(ctx, owner, keep), or one missing
+// TrimPushConfigs), the server never calls it, and its task rows grow
+// without bound with nothing said. A store with neither method keeps
+// its own retention, as the RetentionTrimmer doc allows.
+func refuseUnwiredTrimmer(store Store, maxTerminal, maxPush int) error {
+	if _, ok := store.(RetentionTrimmer); ok || (maxTerminal < 0 && maxPush < 0) {
+		return nil
+	}
+	t := reflect.TypeOf(store)
+	var found []string
+	for _, name := range []string{"TrimTerminalTasks", "TrimPushConfigs"} {
+		if _, ok := t.MethodByName(name); ok {
+			found = append(found, name)
+		}
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	return fmt.Errorf("a2a: Config.Store %T has %s but does not implement RetentionTrimmer, so the server would never trim it and its task rows would grow without bound; "+
+		"RetentionTrimmer wants TrimTerminalTasks(ctx context.Context, owner string, tier RetentionTier, keep int) error "+
+		"and TrimPushConfigs(ctx context.Context, owner, taskID string, keep int) error (the tier argument arrived in v0.96.0); "+
+		"a store that keeps its own retention sets TerminalTaskRetention and MaxPushConfigsPerTask to -1",
+		store, strings.Join(found, " and "))
 }
 
 // pausedTrimBatch is how many paused rows past the bound one trim reads
