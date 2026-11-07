@@ -135,7 +135,7 @@ def build_prompt(rng, mode):
 
 def command(codex, model, out_file):
     cmd = [codex, "exec", "-s", "read-only", "-m", model,
-           "-c", 'model_reasoning_effort="medium"',
+           "-c", 'model_reasoning_effort="high"',
            "-c", 'web_search="disabled"',
            "--ephemeral", "--ignore-user-config",
            "-o", out_file, "-"]

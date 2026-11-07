@@ -30,7 +30,7 @@ It looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`.
    `git diff HEAD`.
 2. It starts three `codex exec` sessions in parallel: read-only sandbox,
    model `gpt-6-luna` (`--model` or `PUSH_REVIEW_MODEL` to change),
-   medium effort, web search off, user config ignored, nothing saved.
+   high effort, web search off, user config ignored, nothing saved.
 3. It prints the decision, the vote and every blocking finding with the
    runs that raised it. `--json` prints the same as JSON.
 4. Exit codes: 0 approve, 1 block, 2 fewer than three usable answers or
