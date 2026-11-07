@@ -273,20 +273,20 @@ func (f SignatureFormat) Verify(secret string, h http.Header, body []byte, toler
 
 // timestampFrom reads the signed timestamp's digits.
 func (f SignatureFormat) timestampFrom(sig string, h http.Header) (string, bool) {
-	before, _, inPrefix := strings.Cut(f.Prefix, placeTimestamp)
+	before, after, inPrefix := strings.Cut(f.Prefix, placeTimestamp)
 	if !inPrefix {
 		v := h.Get(f.TimestampHeader)
 		return v, v != ""
 	}
-	if !strings.HasPrefix(sig, before) {
+	// The value is before, the timestamp, after, then a fixed-length hex
+	// MAC, so the timestamp is what lies between before and after+MAC. A
+	// digit scan would run into a MAC that starts with a digit when after
+	// is empty.
+	end := len(sig) - hex.EncodedLen(sha256.Size) - len(after)
+	if !strings.HasPrefix(sig, before) || end <= len(before) || sig[end:end+len(after)] != after {
 		return "", false
 	}
-	digits := sig[len(before):]
-	n := 0
-	for n < len(digits) && n < 19 && digits[n] >= '0' && digits[n] <= '9' {
-		n++
-	}
-	ts := digits[:n]
+	ts := sig[len(before):end]
 	if f.TimestampHeader != "" && h.Get(f.TimestampHeader) != ts {
 		return "", false
 	}

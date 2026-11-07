@@ -257,3 +257,25 @@ func TestStoredAuthOnSigHeaderFails(t *testing.T) {
 		t.Error("the receiver was sent a delivery whose credential overwrote a signature header")
 	}
 }
+
+func TestPrefixTimestampAtPrefixEnd(t *testing.T) {
+	f := SignatureFormat{Header: "X-Sig", Prefix: "v1,{timestamp}", Signed: "{timestamp}.{body}"}
+	body := []byte(`{}`)
+	now := time.Now().Unix()
+	// Find a timestamp whose MAC starts with a digit, the case a greedy
+	// digit scan misreads.
+	for i := int64(0); i < 64; i++ {
+		h := http.Header{}
+		f.setHeaders(h, formatSecret, now+i%3, "ping", "d1", body)
+		mac := h.Get("X-Sig")[len("v1,")+len(strconv.FormatInt(now+i%3, 10)):]
+		if mac[0] < '0' || mac[0] > '9' {
+			body = append(body, ' ')
+			continue
+		}
+		if !f.Verify(formatSecret, h, body, time.Minute) {
+			t.Fatalf("genuine signature %q refused", h.Get("X-Sig"))
+		}
+		return
+	}
+	t.Fatal("no MAC starting with a digit found")
+}
