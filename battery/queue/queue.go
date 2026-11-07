@@ -55,6 +55,27 @@ type Job struct {
 	// with ErrUniqueUnsupported.
 	UniqueKey string `json:"unique_key,omitempty"`
 
+	// MaxAge bounds how long a failing job keeps retrying, measured from
+	// CreatedAt: once a failed attempt's next retry would fall past
+	// CreatedAt+MaxAge, the job is dead-lettered instead, whatever
+	// attempts it has left. It is checked when an attempt fails, so a job
+	// that waited in a backlog still runs once. Zero means no age limit;
+	// a negative MaxAge is refused at Enqueue. A Replay keeps CreatedAt,
+	// so a replayed job past its age gets the one attempt the replay
+	// asked for.
+	MaxAge time.Duration `json:"max_age,omitempty"`
+
+	// SequenceKey makes the jobs that share it run one at a time, oldest
+	// CreatedAt first, across every job type: a job is not claimed while
+	// an older job with its key is pending (including one waiting on a
+	// retry) or while any job with its key is running. Use it for changes
+	// to one record that must reach a receiver in the order they happened.
+	// A dead-lettered job does not hold the key, so the jobs behind it
+	// run; replaying it runs it after whichever of them is running.
+	// DBQueue only: MemoryQueue and RedisQueue refuse it with
+	// ErrSequenceUnsupported.
+	SequenceKey string `json:"sequence_key,omitempty"`
+
 	// Status, UpdatedAt and LastError are what a browsing backend
 	// (DBQueue's ListJobs) reports about a stored job: its state
 	// ("pending", "claimed", "failed", or "done" under
@@ -67,7 +88,79 @@ type Job struct {
 }
 
 // Handler processes a job. Return a non-nil error to trigger a retry.
+// The worker loops of MemoryQueue and DBQueue read two errors in the
+// returned chain: one that is [ErrPermanent] dead-letters the job at once,
+// and a [*RetryAfterError] (from [RetryAfter]) sets the delay before the
+// next attempt.
 type Handler func(ctx context.Context, job Job) error
+
+// ErrPermanent marks a handler error that retrying cannot fix, such as a
+// 400 or 404 from a receiver: a worker loop that sees it anywhere in the
+// returned chain dead-letters the job at once instead of spending its
+// remaining attempts. Wrap it with [Permanent] or fmt.Errorf's %w. It
+// takes precedence over a [RetryAfter] in the same chain.
+var ErrPermanent = errors.New("queue: permanent failure")
+
+// Permanent wraps err so the worker loop dead-letters the job at once.
+// The job's LastError keeps err's text.
+func Permanent(err error) error {
+	if err == nil {
+		return ErrPermanent
+	}
+	return &permanentError{err: err}
+}
+
+type permanentError struct{ err error }
+
+func (e *permanentError) Error() string   { return ErrPermanent.Error() + ": " + e.err.Error() }
+func (e *permanentError) Unwrap() []error { return []error{ErrPermanent, e.err} }
+
+// RetryAfterError is a handler error that sets the delay before the job's
+// next attempt, overriding the queue's backoff or retry schedule, for a
+// receiver's Retry-After header or a handler's own schedule. Jitter does
+// not apply to it. The job still dead-letters when its attempts run out
+// or the next attempt would fall past its MaxAge.
+type RetryAfterError struct {
+	// Delay is the wait before the next attempt; a negative Delay reads
+	// as zero (retry now).
+	Delay time.Duration
+	// Err is the attempt's failure, kept as the job's LastError.
+	Err error
+}
+
+func (e *RetryAfterError) Error() string {
+	if e.Err == nil {
+		return "queue: retry after " + e.Delay.String()
+	}
+	return e.Err.Error()
+}
+
+func (e *RetryAfterError) Unwrap() error { return e.Err }
+
+// RetryAfter returns err as a [*RetryAfterError]: the job's next attempt
+// waits d. A handler that reads a Retry-After header bounds the value
+// before calling it; MaxAge is the queue's own bound.
+func RetryAfter(d time.Duration, err error) error {
+	return &RetryAfterError{Delay: max(d, 0), Err: err}
+}
+
+// retryDelayFrom reports the delay a handler error asked for, if any.
+func retryDelayFrom(err error) (time.Duration, bool) {
+	var ra *RetryAfterError
+	if errors.As(err, &ra) {
+		return max(ra.Delay, 0), true
+	}
+	return 0, false
+}
+
+// pastMaxAge reports whether a retry at next falls past the job's age
+// limit.
+func pastMaxAge(job Job, next time.Time) bool {
+	return job.MaxAge > 0 && next.After(job.CreatedAt.Add(job.MaxAge))
+}
+
+// errNegativeMaxAge refuses a job whose MaxAge is negative.
+var errNegativeMaxAge = errors.New("queue: Job.MaxAge must not be negative")
 
 // Queue is the interface that every queue backend must implement.
 type Queue interface {
@@ -134,4 +227,9 @@ var (
 	// ErrUniqueUnsupported is returned by a backend that cannot hold a
 	// UniqueKey (RedisQueue). The job is not enqueued.
 	ErrUniqueUnsupported = errors.New("queue: this backend does not support unique keys")
+
+	// ErrSequenceUnsupported is returned by a backend that cannot run the
+	// jobs of a SequenceKey in order (MemoryQueue, RedisQueue). The job is
+	// not enqueued.
+	ErrSequenceUnsupported = errors.New("queue: this backend does not support sequence keys")
 )

@@ -146,8 +146,9 @@ func TestDBUniqueKeyKeepsTxUsable(t *testing.T) {
 	}
 }
 
-// A table name near Postgres's 63-byte cap still gets three distinct
-// indexes, so the unique index is not skipped as an existing name.
+// A table name near Postgres's 63-byte cap still gets five distinct
+// indexes (dequeue, lane, sequence, sequence claim, unique), so none of
+// them is skipped as an existing name.
 func TestDBUniqueKeyLongTableName(t *testing.T) {
 	db := pgtest.DB(t)
 	table := strings.Repeat("q", 62)
@@ -168,8 +169,8 @@ func TestDBUniqueKeyLongTableName(t *testing.T) {
 		 WHERE schemaname = current_schema() AND tablename = $1 AND indexname LIKE '%\_idx'`, table).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
-	if n != 3 {
-		t.Errorf("indexes = %d, want 3", n)
+	if n != 5 {
+		t.Errorf("indexes = %d, want 5", n)
 	}
 }
 

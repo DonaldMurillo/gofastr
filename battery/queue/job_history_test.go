@@ -77,7 +77,7 @@ func TestDBListJobsCarriesStatusUpdatedAndLastError(t *testing.T) {
 	}
 	clock = clock.Add(time.Minute)
 	reason := errors.New("smtp: 451\x1b[31m greylisted " + strings.Repeat("x", 2000))
-	if err := q.fail(ctx, job, reason); err != nil {
+	if _, err := q.settleFailure(ctx, job, reason); err != nil {
 		t.Fatal(err)
 	}
 	j := onlyJob(t, q, "failed")

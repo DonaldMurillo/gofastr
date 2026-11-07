@@ -540,6 +540,14 @@ func (q *RedisQueue) Enqueue(ctx context.Context, job Job) (err error) {
 		// with, and a job enqueued without it would run as a duplicate.
 		return ErrUniqueUnsupported
 	}
+	if job.SequenceKey != "" {
+		// Lists hand out jobs in push order with no view of what else
+		// is claimed, so nothing can hold a key's later jobs back.
+		return ErrSequenceUnsupported
+	}
+	if job.MaxAge < 0 {
+		return errNegativeMaxAge
+	}
 	if job.ID == "" {
 		job.ID = redisRandomID()
 	}
@@ -1072,7 +1080,7 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 	// dead-letter. Bumping here too would double-count and let a poison
 	// message that only ever crashes before Nack evade MaxAttempts.
 	dest := q.queueName
-	if job.Attempts >= job.MaxAttempts {
+	if job.Attempts >= job.MaxAttempts || pastMaxAge(job, q.now()) {
 		dest = q.deadLetterQueue
 	}
 
