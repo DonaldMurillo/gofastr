@@ -381,6 +381,35 @@ func TestShutdownMidHandlerRefunds(t *testing.T) {
 	}
 }
 
+// TestShutdownKeepsPermanentFailure: a handler that answers a shutdown
+// with a permanent error is dead-lettered, not handed back.
+func TestShutdownKeepsPermanentFailure(t *testing.T) {
+	db := openSQLiteDB(t)
+	q, err := NewDBQueue(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	q.RegisterHandler("deliver", func(ctx context.Context, _ Job) error {
+		close(started)
+		<-ctx.Done()
+		return Permanent(errors.New("410 gone"))
+	})
+	if err := q.Enqueue(context.Background(), Job{ID: "j1", Type: "deliver", MaxAttempts: 3}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	q.Start(ctx)
+	<-started
+	cancel()
+	if err := q.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stored(t, q, "j1"); got.Status != "failed" {
+		t.Fatalf("status %q attempts %d, want failed", got.Status, got.Attempts)
+	}
+}
+
 // TestWorkerLoopHonorsPolicyErrors runs the worker loop, not the settle
 // helper, so the loop's wiring is what is checked.
 func TestWorkerLoopHonorsPolicyErrors(t *testing.T) {
