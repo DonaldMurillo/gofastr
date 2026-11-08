@@ -117,6 +117,9 @@ func (a *App) registerIntrospectionTools() error {
 		opts = append(opts, mcp.WithDevImplied())
 	}
 	for _, t := range tools {
+		if a.skipDevEntityMCPCollision(t.name) {
+			continue
+		}
 		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
 		}

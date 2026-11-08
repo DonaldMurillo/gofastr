@@ -760,6 +760,11 @@ the catalog over MCP through `contracts_list`, `contracts_explain`,
 and `contracts_capabilities`, so an agent can read what the framework expects
 *before* writing code rather than after a build rejects it.
 
+In development, a built-in MCP tool whose name is occupied by a dev-implied
+entity tool is skipped with a warning; other built-in tools still register.
+This applies even with explicit introspection or control enabled. Explicit
+host-tool and explicit entity-MCP collisions remain initialization errors.
+
 Under `gofastr dev`, two more tools turn the catalog from reference into
 a working loop: `contracts_verify` runs the analyzers over the app's own
 source tree and returns the findings as structured diagnostics, and
