@@ -13,3 +13,10 @@ notes:
     breaking: true
     nodetect: "the Go compiler reports every such comparison or map key at build time, by file and line"
     guidance: "Compare the fields that matter (a.Name == b.Name), or key the map by field name."
+  - change: "BREAKING - core/static.Refuses no longer refuses a segment shaped like a Windows 8.3 short name (\"~\" then a digit); the new core/static.RefusesIn(fsys, path) does, and only when the segment's directory has no entry of exactly that name"
+    breaking: true
+    hits: review
+    guidance: "Refuses judges a spelling alone, which is right for a tree you walked: a walk yields real names. Code that serves a requested path calls RefusesIn with the filesystem it opens from, so WEB~1.CON stays refused while a real photo~1.png is served."
+    find:
+      uses:
+        - gofastr/core/static.Refuses

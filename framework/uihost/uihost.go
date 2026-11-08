@@ -4316,13 +4316,19 @@ func staticRel(urlPath string) string {
 	return strings.TrimPrefix(path.Clean("/"+urlPath), "/")
 }
 
-// staticServable reports whether rel, a slash path below the static
-// directory or FS, may be served: not one core/static refuses (a dot
-// segment such as .env or .git/config, or a server config file), except
-// that a leading .well-known/ is the public namespace RFC 8615 reserves,
-// so the files under it are served unless they are dotfiles themselves.
-func staticServable(rel string) bool {
-	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+// staticServable reports whether rel, a slash path below fsys (the
+// static directory's root or the static FS), may be served: not one
+// core/static refuses (a dot segment such as .env or .git/config, a
+// server config file, a Windows alias spelling, or an 8.3 short name no
+// entry of its directory carries), except that a leading .well-known/ is
+// the public namespace RFC 8615 reserves, so the files under it are
+// served unless they are dotfiles themselves.
+func staticServable(fsys fs.FS, rel string) bool {
+	if sub, ok := strings.CutPrefix(rel, ".well-known/"); ok {
+		wk, err := fs.Sub(fsys, ".well-known")
+		return err == nil && !corestatic.RefusesIn(wk, sub)
+	}
+	return !corestatic.RefusesIn(fsys, rel)
 }
 
 // resolvesStaticOrScreen reports whether serveOrRender would produce
@@ -4340,7 +4346,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" && staticServable(rel) {
+			if rel := staticRel(path); rel != "" && staticServable(root.FS(), rel) {
 				if info, err := root.Stat(filepath.FromSlash(rel)); err == nil && !info.IsDir() {
 					return true
 				}
@@ -4348,7 +4354,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" && staticServable(cleanPath) {
+			if cleanPath != "" && staticServable(ds.staticFS, cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					f.Close()
@@ -4571,7 +4577,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" && staticServable(rel) {
+			if rel := staticRel(path); rel != "" && staticServable(root.FS(), rel) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
@@ -4585,7 +4591,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" && staticServable(cleanPath) {
+			if cleanPath != "" && staticServable(ds.staticFS, cleanPath) {
 				// A directory is no static file: it falls through to the
 				// screens, as the static-dir branch above does. Handed to
 				// http.ServeFileFS it answered a 301 to "docs/", whose

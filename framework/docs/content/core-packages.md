@@ -497,18 +497,27 @@ its own; any other dot is part of the route.
 `NotFoundFile` answers a miss with a
 file from the same `FS` under status 404 (a static export's
 `404.html`; `gofastr docs serve` uses it). For a handler that serves
-its own bytes, `Refuses(path)` reports whether the handler would refuse
-a path for a dot segment, a config file name or an 8.3 short name (the UI host's static
-dir and the static export use it). Both read a path the way Windows
-opens it, on every OS: `\` separates segments, and a config name
-matches with trailing dots or spaces or an `::$DATA` stream suffix, so
-`/assets%5C..%5C.env` and `/web.config.` are refused. On every OS a file
-whose name holds a backslash is judged by the pieces it splits into:
-`a\b.txt` is served, `a\.env` and `x\web.config` are refused. A segment
-holding `~` followed by a digit is refused too, on every OS: it is the
-shape of an NTFS 8.3 short name, and a Windows volume that generates
-them opens `WEB~1.CON` as `web.config` and `ENV~1` as `.env`. A name
-like `a~b.txt` or `notes.txt~` is served.
+its own bytes, `RefusesIn(fsys, path)` reports whether the handler
+would refuse a requested path (the UI host's static dir uses it), and
+`Refuses(path)` judges the spelling alone, for a tree the caller walked
+(the static export uses it). Both read a path the way Windows opens it,
+on every OS: `\` separates segments, so `/assets%5C..%5C.env` is
+refused. A segment that ends in a dot or a space, or holds a colon, is
+refused on every OS whatever it names, because Windows opens `app.css.`
+and `app.css::$DATA` as `app.css` and `web.config.` as `web.config`; in
+SPA mode such a path is a miss and a client route still gets the index.
+On every OS a file whose name holds a backslash is judged by the pieces
+it splits into: `a\b.txt` is served, `a\.env` and `x\web.config` are
+refused. A segment holding `~` followed by a digit has the shape of an
+NTFS 8.3 short name, which a Windows volume that generates them opens
+under its long name (`WEB~1.CON` as `web.config`, `ENV~1` as `.env`).
+The handler lists the segment's directory and refuses the name unless
+an entry carries exactly that name, on every OS: a real `photo~1.png` is
+served, and `PHOTO~1.PNG`, which a case-insensitive volume would open
+as it, is refused. An `embed.FS` cannot hold an alias, so its names are
+opened without a listing. `Refuses` skips the short-name check: a walk
+yields each entry's real name. A name like `a~b.txt` or `notes.txt~` is
+served.
 `IfNoneMatch(r, etag)`
 checks an `If-None-Match` list the RFC 9110 way: comma lists, `*`, and weak
 comparison. Start at `core/static/static.go`: `Handler`.

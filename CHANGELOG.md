@@ -85,6 +85,17 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **`core/static` serves a real `~digit` file name**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [core packages](framework/docs/content/core-packages.md)). A segment
+  with `~` followed by a digit, the shape of an NTFS 8.3 short name, is
+  refused only when its directory has no entry with exactly that name, so
+  `photo~1.png` is served again while `WEB~1.CON` and `PHOTO~1.PNG` (when
+  only `photo~1.png` exists) still answer 404 on every OS. An `embed.FS`
+  is not listed. The new `static.RefusesIn(fsys, path)` runs the check for
+  code that serves a requested path; `static.Refuses(path)` no longer
+  refuses short names, since a tree walk yields only real names, so a
+  static export now publishes a `~digit` file.
 - **BREAKING: `schema.Field` is no longer comparable**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It holds
   the `Mask` func now, so `a == b` on two fields, or a field as a map key,
@@ -124,6 +135,15 @@ few lines, and link the PR or the docs page for the rest.
   the upsert's checks read it.
 
 ### Security
+- **`core/static` refuses Windows alias spellings of any file**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A path
+  segment that ends in a dot or a space, or holds a colon, is never
+  opened, on every OS: Windows opens `app.css.` and `app.css::$DATA` as
+  `app.css`. The config-file refusal covered these spellings of
+  `web.config` only. In SPA mode such a path is a miss, so a client route
+  still gets the index. `static.Refuses` and the UI host's static
+  directory refuse the same names, and the static export skips such
+  files.
 - **`App.ImportData` restores the bytes it checked**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
   each archive file on one read and parsed the rows from a second, so a

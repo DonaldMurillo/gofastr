@@ -14,7 +14,8 @@ import (
 // The app's static directory and static FS refuse what core/static
 // refuses, a dot segment or a server config file, and still serve
 // /.well-known/, the public namespace RFC 8615 reserves. serveOrRender
-// opened whatever path.Clean left, so GET /.env returned the file.
+// opened whatever path.Clean left, so GET /.env returned the file. A
+// "~digit" name is served when its directory lists that exact name.
 func TestStaticRefusesDotfiles(t *testing.T) {
 	files := map[string]string{
 		".env":                     "SECRET=1", // not-a-secret: fixture body
@@ -24,9 +25,13 @@ func TestStaticRefusesDotfiles(t *testing.T) {
 		".well-known/.hidden":      "hidden",
 		".well-known/security.txt": "Contact: mailto:security@example.com",
 		"nav.js":                   "console.log('nav')",
+		"photo~1.png":              "png",
+		".well-known/k~1.txt":      "key",
 	}
-	refused := []string{"/.env", "/.git/config", "/assets/.htpasswd", "/Web.Config", "/.well-known/.hidden"}
-	served := []string{"/.well-known/security.txt", "/nav.js"}
+	// PHOTO~1.PNG is no entry's exact name: on a case-insensitive volume
+	// it opens photo~1.png, the way an 8.3 alias opens its long name.
+	refused := []string{"/.env", "/.git/config", "/assets/.htpasswd", "/Web.Config", "/.well-known/.hidden", "/PHOTO~1.PNG", "/.well-known/K~1.TXT"}
+	served := []string{"/.well-known/security.txt", "/nav.js", "/photo~1.png", "/.well-known/k~1.txt"}
 
 	dir := t.TempDir()
 	mapFS := fstest.MapFS{}
