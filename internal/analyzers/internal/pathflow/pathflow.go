@@ -958,9 +958,14 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 	}
 	resolved := map[types.Object]bool{obj: true}
 	// The tie runs through the binding chain: `real := x` after
-	// `x, err := EvalSymlinks(p)` resolves to the same call.
+	// `x, err := EvalSymlinks(p)` resolves to the same call. An alias
+	// counts only when it is assigned once, after that call: bound
+	// holds each local's last binding, so `checked := real` before
+	// `real, err = EvalSymlinks(other)` would otherwise pass for the
+	// second resolution while it holds the first.
+	assigns := assignCounts(pass, body)
 	for o, b := range bound {
-		if Resolve(pass, b, bound, 0) == call {
+		if o != obj && assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call {
 			resolved[o] = true
 		}
 	}
@@ -971,8 +976,9 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 // root before sink so that an outside path cannot reach it. The test
 // runs after the resolution at `after` and is filepath.Rel(root, real)
 // or strings.HasPrefix/CutPrefix(real, root+sep), where real is one of
-// objs (directly or through a local bound to it), root is neither a
-// constant nor built from real, and sep is the target's separator. It
+// objs itself (not an expression built from it), root is neither a
+// constant (directly or through a local) nor built from real, and sep
+// is the target's separator. It
 // decides an if that dominates sink in the right direction. Three
 // shapes count:
 //
@@ -1001,7 +1007,14 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// built from the resolved path itself (HasPrefix(real,
 	// filepath.Dir(real)+sep) holds for nearly every path).
 	rootOperand := func(e ast.Expr) bool {
-		return !isConst(e) && !mentionsObj(pass, e, bound, objs, 0)
+		return !isConst(Resolve(pass, e, bound, 0)) && !mentionsObj(pass, e, bound, objs, 0)
+	}
+	// target reports whether e is the resolved path itself: one of objs,
+	// not an expression built from it. HasPrefix(Join(root,
+	// Base(real)), root+sep) holds while real points anywhere.
+	target := func(e ast.Expr) bool {
+		id, ok := ast.Unparen(e).(*ast.Ident)
+		return ok && objs[pass.TypesInfo.ObjectOf(id)]
 	}
 	// isContain reports whether c is a containment test of the
 	// resolved path, made after it was resolved: a check of p before
@@ -1016,9 +1029,9 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		switch QualifiedFunc(pass, c.Fun) {
 		case "path/filepath.Rel":
-			return rootOperand(c.Args[0]) && mentionsObj(pass, c.Args[1], bound, objs, 0)
+			return rootOperand(c.Args[0]) && target(c.Args[1])
 		case "strings.HasPrefix", "strings.CutPrefix":
-			if !mentionsObj(pass, c.Args[0], bound, objs, 0) {
+			if !target(c.Args[0]) {
 				return false
 			}
 			add, ok := ast.Unparen(Resolve(pass, c.Args[1], bound, 0)).(*ast.BinaryExpr)

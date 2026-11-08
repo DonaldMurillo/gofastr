@@ -95,10 +95,12 @@ few lines, and link the PR or the docs page for the rest.
   or a resolved path that is then used for the read or write, after a
   `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
   test made after the resolution, in an `if` that refuses an outside
-  path or writes only on the inside branch. The root can't be a
-  constant such as `"/"` or built from the path itself, and the
-  separator after it is required: without it `/srv/app-backup` passes
-  a test against `/srv/app`. A path joined in steps (`dir := filepath.Join(root, id)`,
+  path or writes only on the inside branch. The tested string must be
+  the resolved path itself (or a copy made once, after the
+  resolution), not a path rebuilt from it. The root can't be a
+  constant such as `"/"`, a local holding one, or built from the path,
+  and the separator after it is required: without it `/srv/app-backup`
+  passes a test against `/srv/app`. A path joined in steps (`dir := filepath.Join(root, id)`,
   then `filepath.Join(dir, "x")`) and a path rebound in place
   (`p = filepath.Join(p, x)`) are now checked like a single join.
   `tightenshared` no longer exempts an `os.Stat`

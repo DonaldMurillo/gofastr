@@ -267,7 +267,8 @@ expose them to agents connected to a live app.**
   var-declared first result), or a contained resolution: the sink
   uses an EvalSymlinks result, and after that resolution a
   `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
-  test (root neither a constant nor built from real) runs before the
+  test (real the resolved local itself, root neither a constant nor
+  built from real) runs before the
   sink in an if that refuses an outside path (or holds the sink on
   the inside branch). os.Mkdir/MkdirAll may also go through
   `Join(dir, filepath.Base(p))` on a contained `dir`: mkdir refuses an

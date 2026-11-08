@@ -820,3 +820,100 @@ func relUnresolved(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// transformedPrefix tests a path rebuilt from the resolved one: the
+// Base of a link's target, joined under the root, passes wherever the
+// link points.
+func transformedPrefix(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(filepath.Join(baseDir, filepath.Base(real)), baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// transformedRel is the same rebuild under filepath.Rel.
+func transformedRel(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(baseDir, filepath.Join(baseDir, filepath.Base(real)))
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// staleAlias checks a copy of the first resolution and writes the
+// second.
+func staleAlias(baseDir, safeName, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, safeName))
+	if err != nil {
+		return err
+	}
+	checked := real
+	real, err = filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(checked, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// aliasAfter copies the resolved path once, after the resolution, and
+// checks the copy. Quiet.
+func aliasAfter(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	checked := real
+	if !strings.HasPrefix(checked, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// constantAliasRoot hides an empty root in a local: "" + sep is "/",
+// which every absolute path starts with.
+func constantAliasRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	root := ""
+	if !strings.HasPrefix(real, root+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// aliasMaybe points the alias at the resolution only on one branch:
+// on the other it still holds the safe name's resolution.
+func aliasMaybe(baseDir, safeName, name string, data []byte, swap bool) error {
+	checked, err := filepath.EvalSymlinks(filepath.Join(baseDir, safeName))
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if swap {
+		checked = real
+	}
+	if !strings.HasPrefix(checked, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
