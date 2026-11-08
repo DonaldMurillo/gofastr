@@ -439,3 +439,155 @@ func insideOnlyWhenFlag(baseDir, name string, data []byte, strict bool) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// relLongPrefix tests a prefix longer than "..": "../outside" passes.
+func relLongPrefix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || strings.HasPrefix(rel, "..blocked") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relParentOnly misses rel == "..", the root's parent itself.
+func relParentOnly(baseDir, name string) (*os.File, error) {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return nil, err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || strings.HasPrefix(rel, "../") {
+		return nil, errEscape
+	}
+	return os.CreateTemp(real, "upload-*") // want `write under a root with lexical containment only`
+}
+
+// relDotDotPrefix refuses every rel starting with "..". Quiet.
+func relDotDotPrefix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// relIsLocal refuses a rel that is not local. Quiet.
+func relIsLocal(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// gotoWrite jumps straight to the write when the path is outside.
+func gotoWrite(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		goto write
+	}
+write:
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// continueSkips skips an outside name and writes the inside ones.
+// Quiet.
+func continueSkips(baseDir string, names []string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+			continue
+		}
+		if err := os.WriteFile(real, data, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// breakOutToWrite breaks out of the loop and writes after it: the
+// break reaches the write.
+func breakOutToWrite(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	for {
+		if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+			break
+		}
+		break
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// breakSwitchInLoop breaks out of the switch, not the loop: the write
+// after the switch still runs for an outside name.
+func breakSwitchInLoop(baseDir string, names []string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	for _, name := range names {
+		real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+		if err != nil {
+			return err
+		}
+		switch {
+		default:
+			if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+				break
+			}
+		}
+		if err := os.WriteFile(real, data, 0o600); err != nil { // want `write under a root with lexical containment only`
+			return err
+		}
+	}
+	return nil
+}

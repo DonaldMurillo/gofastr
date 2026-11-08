@@ -1010,10 +1010,32 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		fn := QualifiedFunc(pass, c.Fun)
 		return fn == "strings.HasPrefix" || fn == "strings.CutPrefix"
 	}
-	// leafOutside reports, for a leaf of the condition, whether an
-	// outside path forces it true (+1) or false (-1), or neither (0).
-	// HasPrefix(real, root) is false outside; HasPrefix(rel, "..") on
-	// rel := Rel(root, real) is true outside.
+	// rel := filepath.Rel(root, real) on a contained root: an outside
+	// real gives a rel that is exactly ".." or starts with "../".
+	isRel := func(e ast.Expr) bool {
+		r, ok := Resolve(pass, e, bound, 0).(*ast.CallExpr)
+		return ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0)
+	}
+	strConst := func(e ast.Expr) (string, bool) {
+		tv, ok := pass.TypesInfo.Types[e]
+		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+			return "", false
+		}
+		return constant.StringVal(tv.Value), true
+	}
+	// outsideForces reports what an outside path makes a condition:
+	// forced true (forceTrue), forced false (forceFalse), neither (0),
+	// or, for a test of a Rel result, true on only part of the outside
+	// spellings: relDotDot (rel == "..") or relParent (rel under "../").
+	// A disjunction covering both parts is forced true; a part alone
+	// is not: `HasPrefix(rel, "../")` misses rel == "..", the root's
+	// parent itself.
+	const (
+		forceFalse = -1
+		forceTrue  = 1
+		relDotDot  = 2
+		relParent  = 4
+	)
 	var outsideForces func(e ast.Expr, depth int) int
 	outsideForces = func(e ast.Expr, depth int) int {
 		if depth > 6 {
@@ -1022,26 +1044,52 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		switch x := ast.Unparen(e).(type) {
 		case *ast.UnaryExpr:
 			if x.Op == token.NOT {
-				return -outsideForces(x.X, depth+1)
+				switch outsideForces(x.X, depth+1) {
+				case forceTrue:
+					return forceFalse
+				case forceFalse:
+					return forceTrue
+				}
 			}
 		case *ast.BinaryExpr:
+			if x.Op == token.EQL {
+				// rel == ".."
+				for _, pair := range [][2]ast.Expr{{x.X, x.Y}, {x.Y, x.X}} {
+					if c, ok := strConst(pair[1]); ok && c == ".." && isRel(pair[0]) && dominates(x, sink, body) {
+						return relDotDot
+					}
+				}
+				return 0
+			}
 			l, r := outsideForces(x.X, depth+1), outsideForces(x.Y, depth+1)
 			switch x.Op {
 			case token.LOR:
 				// true if either side is forced true; false only
 				// when both are forced false.
-				if l > 0 || r > 0 {
-					return 1
+				if l == forceTrue || r == forceTrue {
+					return forceTrue
 				}
-				if l < 0 && r < 0 {
-					return -1
+				parts := 0
+				for _, v := range []int{l, r} {
+					if v > forceTrue {
+						parts |= v
+					}
+				}
+				if parts == relDotDot|relParent {
+					return forceTrue
+				}
+				if parts != 0 {
+					return parts
+				}
+				if l == forceFalse && r == forceFalse {
+					return forceFalse
 				}
 			case token.LAND:
-				if l < 0 || r < 0 {
-					return -1
+				if l == forceFalse || r == forceFalse {
+					return forceFalse
 				}
-				if l > 0 && r > 0 {
-					return 1
+				if l == forceTrue && r == forceTrue {
+					return forceTrue
 				}
 			}
 		case *ast.Ident:
@@ -1056,23 +1104,28 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 			}
 			if r, ok := Resolve(pass, x, bound, 0).(*ast.CallExpr); ok && isPrefix(r) && isContain(r) &&
 				dominates(r, sink, body) && mentionsObj(pass, r, bound, objs, 0) {
-				return -1
+				return forceFalse
 			}
 		case *ast.CallExpr:
 			if !dominates(x, sink, body) {
 				return 0
 			}
 			if isPrefix(x) && isContain(x) && mentionsObj(pass, x, bound, objs, 0) {
-				return -1 // HasPrefix(real, root): false outside
+				return forceFalse // HasPrefix(real, root): false outside
 			}
-			// HasPrefix(rel, "..") reads rel, bound to
-			// filepath.Rel(root, real): true outside.
-			if isPrefix(x) && len(x.Args) == 2 {
-				if r, ok := Resolve(pass, x.Args[0], bound, 0).(*ast.CallExpr); ok &&
-					QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0) {
-					if tv, ok := pass.TypesInfo.Types[x.Args[1]]; ok && tv.Value != nil && strings.HasPrefix(constant.StringVal(tv.Value), "..") {
-						return 1
-					}
+			// filepath.IsLocal(rel) is false for ".." and "../x".
+			if QualifiedFunc(pass, x.Fun) == "path/filepath.IsLocal" && len(x.Args) == 1 && isRel(x.Args[0]) {
+				return forceFalse
+			}
+			// HasPrefix(rel, ...) on rel := Rel(root, real): ".."
+			// covers every outside rel, "../" only those below the
+			// parent, and anything longer ("..blocked") neither.
+			if isPrefix(x) && len(x.Args) == 2 && isRel(x.Args[0]) {
+				switch c, _ := strConst(x.Args[1]); c {
+				case "..":
+					return forceTrue
+				case "../", `..\`:
+					return relParent
 				}
 			}
 		}
@@ -1089,11 +1142,11 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		f := outsideForces(ifs.Cond, 0)
 		switch {
-		case f > 0 && refuses(ifs.Body) && !holds(ifs.Body):
+		case f == forceTrue && refuses(ifs.Body) && !holds(ifs.Body):
 			found = true
-		case f < 0 && holds(ifs.Body):
+		case f == forceFalse && holds(ifs.Body):
 			found = true
-		case f < 0 && !holds(ifs.Body) && !holds(ifs.Else):
+		case f == forceFalse && !holds(ifs.Body) && !holds(ifs.Else):
 			if eb, ok := ifs.Else.(*ast.BlockStmt); ok && refuses(eb) {
 				found = true
 			}
@@ -1616,15 +1669,21 @@ func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) 
 	}
 }
 
-// refuses reports whether a block's last statement leaves it: a return,
-// a branch (break, continue, goto) or a panic call.
+// refuses reports whether a block's last statement keeps control from
+// the sink: a return, a panic call, or an unlabelled break or continue.
+// A goto or a labelled branch can land on the sink itself. An
+// unlabelled break or continue needs no target check here: the if it
+// ends dominates the sink, so it sits in a statement list ahead of the
+// sink, and the loop or switch it leaves encloses the sink too.
 func refuses(b *ast.BlockStmt) bool {
 	if b == nil || len(b.List) == 0 {
 		return false
 	}
 	switch st := b.List[len(b.List)-1].(type) {
-	case *ast.ReturnStmt, *ast.BranchStmt:
+	case *ast.ReturnStmt:
 		return true
+	case *ast.BranchStmt:
+		return st.Label == nil && (st.Tok == token.BREAK || st.Tok == token.CONTINUE)
 	case *ast.ExprStmt:
 		if c, ok := st.X.(*ast.CallExpr); ok {
 			if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "panic" {
