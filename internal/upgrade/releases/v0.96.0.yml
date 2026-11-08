@@ -1482,6 +1482,22 @@ notes:
     breaking: true
     guidance: "Nothing refused a second start before. Build a new App to run again, over the same database or data directory if the data should survive; a test that restarts an App builds one per run."
     nodetect: "whether one App value is started twice is a runtime flow; the Start, Serve or Run call that does it has no spelling of its own"
-  - change: "migrate generate now emits the NOT NULL tightening for a required-no-default column it earlier added nullable; backfill the rows before applying it"
-    guidance: "The snapshot used to record the column as NOT NULL even though the migration added it nullable, so the tightening never generated. If a schema.snapshot.json in the repo was written with such a column pending, the next gofastr migrate generate emits the tightening (ALTER COLUMN ... SET NOT NULL on Postgres, a table rebuild on SQLite). It fails while any row still holds NULL: backfill the column in the generated file or before applying."
+  - change: "migrate generate now records a deferred NOT NULL column as the nullable state it applied, so the tightening generates on the next run; a snapshot written by an older gofastr still records NOT NULL and needs a hand edit"
+    guidance: "A required-no-default column is added nullable, but the snapshot used to record the declared NOT NULL, so the tightening never generated. Deferrals generated from this version on are recorded correctly. A repo whose committed schema.snapshot.json already carries such a column records NOT NULL with no history of the deferral: edit its table_ddl entry to drop the NOT NULL on that column (the state the migration actually applied), and the next gofastr migrate generate emits the tightening (ALTER COLUMN ... SET NOT NULL on Postgres, a table rebuild on SQLite). It fails while any row still holds NULL: backfill first."
     nodetect: "whether a deferred NOT NULL column is pending lives in the committed schema.snapshot.json, not in app source"
+  - change: "BREAKING for an app with WithIdempotency whose store reports an in-flight TTL at or below the enforced request deadline (RequestTimeout, or the 30s default when unset) - Start now fails naming both values; the default store is sized from that deadline plus 10s"
+    breaking: true
+    hits: review
+    guidance: "An in-flight claim that expires while its handler still runs lets a retry execute the handler again, so the pairing is now refused at startup. The budget is the deadline the default middleware chain actually enforces: the configured RequestTimeout, or the framework's 30s default when none is set. The App's own default store is sized from that budget plus slack and always passes. A custom store opts into the check with the optional middleware.InFlightTTLStore interface (InFlightTTL() time.Duration); a store without the method logs a startup warning instead, and so does DisableRequestTimeout. Raise the store's in-flight TTL (WithSQLIdempotencyInFlightTTL, WithMemoryIdempotencyInFlightTTL) or set RequestTimeout."
+    find:
+      uses:
+        - gofastr/core/middleware.WithSQLIdempotencyInFlightTTL
+        - gofastr/core/middleware.NewSQLIdempotencyStore
+  - change: "BREAKING for an app whose explicit HTTPServerTimeouts.WriteTimeout sits below the enforced request deadline - Start now refuses the pair; the deadline is RequestTimeout, or the 30s default when unset"
+    breaking: true
+    hits: review
+    guidance: "A response the timeout middleware finishes after the write cut (its own 503 included) is never delivered, so the pairing is refused at startup. The budget is the deadline the default chain actually enforces: the configured RequestTimeout, or the framework's 30s default when none is set. Raise WriteTimeout above the deadline, set it to 0 to disable the write deadline, or configure RequestTimeout explicitly."
+    find:
+      uses:
+        - gofastr/framework.HTTPServerTimeoutsConfig
+        - gofastr/framework.WithHTTPServerTimeouts

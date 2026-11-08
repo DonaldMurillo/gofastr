@@ -170,7 +170,40 @@ few lines, and link the PR or the docs page for the rest.
   shared table a second manager may also claim; a store that is not a
   `LeasedStore` has no claim path that reads the lease, so the raise
   and its log line are skipped there and single-instance deployments
-  stop logging about a lease nothing claims under.
+- **The log battery surfaces historical read errors and owns only its
+  own backups.** `log_filter` with `historical=true` no longer swallows
+  a failed file read — an unreadable or symlinked log path returns the
+  error to the tool caller instead of an empty history. The file sink's
+  rotation parses backup indexes exactly: `server.log.01`, a
+  zero-padded index another tool (logrotate) owns, is no longer read as
+- **A late cron tick fires the minutes it slept through.** A tick that
+  arrived minutes late — the process slept, a GC pause, a slow leader
+  acquire — ran only its own minute, so a fixed-time job whose minute
+  fell inside the gap never fired, most visibly across a DST change
+  where the gap swallows the repeated or skipped hour. The tick loop
+  now walks every missed minute boundary, oldest first, capped at two
+  hours; under leader election each walked minute is claimed in order,
+  so a replica that kept ticking refuses the late claims and nothing
+- **The idempotency in-flight TTL is sized and checked against the
+  enforced request deadline.** The optional `middleware.InFlightTTLStore`
+  interface (`InFlightTTL() time.Duration`, separate from
+  `IdempotencyStore`, so custom stores still compile) is implemented by
+  both built-in stores; the memory store gains
+  `WithMemoryIdempotencyInFlightTTL`. The budget is the deadline the
+  default chain actually enforces — `RequestTimeout`, or its 30s
+  default when unset. The App's default store sizes its in-flight TTL
+  from that budget plus 10s of slack, and `Start` fails naming both
+  values when a store reports a TTL at or below the budget (the
+  `WriteTimeout`-vs-`RequestTimeout` shape). A store without the
+  method, or `DisableRequestTimeout`, logs a startup warning.
+- **An explicit `WriteTimeout` is refused below the enforced request
+  deadline, not just a configured `RequestTimeout`.** The deadline the
+  default chain's timeout middleware actually enforces — the configured
+  `RequestTimeout`, or its 30s default when unset — now pairs with the
+  server's write cut: a `WriteTimeout` below it fails `Start`, because
+  a response the middleware finishes after the write cut (its own 503
+  included) is never delivered. Set `WriteTimeout` above the deadline,
+  set it to 0, or configure `RequestTimeout` explicitly.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

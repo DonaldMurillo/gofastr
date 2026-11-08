@@ -43,12 +43,16 @@ func TestHTTPServerTimeoutsDefault(t *testing.T) {
 // TestHTTPServerTimeoutsOverride sets every field and confirms each lands on
 // the underlying http.Server. All four are set so any wiring miss surfaces.
 func TestHTTPServerTimeoutsOverride(t *testing.T) {
-	app := NewApp(WithHTTPServerTimeouts(HTTPServerTimeoutsConfig{
-		ReadHeaderTimeout: new(3 * time.Second),
-		ReadTimeout:       new(7 * time.Second),
-		WriteTimeout:      new(8 * time.Second),
-		IdleTimeout:       new(9 * time.Second),
-	}))
+	app := NewApp(
+		// The write cut must sit past the enforced request deadline
+		// (30s when RequestTimeout is unset) or Start refuses the pair.
+		WithConfig(AppConfig{RequestTimeout: 5 * time.Second}),
+		WithHTTPServerTimeouts(HTTPServerTimeoutsConfig{
+			ReadHeaderTimeout: new(3 * time.Second),
+			ReadTimeout:       new(7 * time.Second),
+			WriteTimeout:      new(8 * time.Second),
+			IdleTimeout:       new(9 * time.Second),
+		}))
 	_, stop := startOnRandomPort(t, app)
 	defer stop()
 
