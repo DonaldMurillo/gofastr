@@ -85,11 +85,6 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
-- **BREAKING: `schema.Field` is no longer comparable**
-  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It holds
-  the `Mask` func now, so `a == b` on two fields, or a field as a map key,
-  no longer compiles. Compare the fields you care about, `a.Name ==
-  b.Name`, or key the map by name.
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left

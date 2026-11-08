@@ -9,7 +9,3 @@ notes:
     breaking: true
     nodetect: "a fact of the request and the database: a key declared without AutoGenerate is ordinary, and only a write that sends no key value changes answer"
     guidance: "Send the key, or declare it generated (AutoGenerate: schema.AutoUUID). Rows already stored under a NULL key cannot be read, updated or deleted through the CRUD routes: find them with SELECT ... WHERE <key> IS NULL and give them a key or delete them."
-  - change: "BREAKING - schema.Field holds a Mask func, so it is no longer comparable: == on two fields, or a schema.Field map key, no longer compiles"
-    breaking: true
-    nodetect: "the Go compiler reports every such comparison or map key at build time, by file and line"
-    guidance: "Compare the fields that matter (a.Name == b.Name), or key the map by field name."
