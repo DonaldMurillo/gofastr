@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=50a139a59707e52a
+//gofastr:generated generator=app kind=scaffold version=dev sum=0e0648f322e03976
 
 package entities
 
@@ -15,9 +15,9 @@ type Reviews struct {
 	ProductId  string    `json:"productId,omitempty"`
 	AuthorName string    `json:"authorName,omitempty"`
 	Rating     int       `json:"rating,omitempty"`
-	Title      string    `json:"title,omitempty"`
-	Body       string    `json:"body,omitempty"`
-	Verified   bool      `json:"verified,omitempty"`
+	Title      *string   `json:"title,omitempty"`
+	Body       *string   `json:"body,omitempty"`
+	Verified   *bool     `json:"verified,omitempty"`
 	Product    *Products `json:"product,omitempty"`
 }
 

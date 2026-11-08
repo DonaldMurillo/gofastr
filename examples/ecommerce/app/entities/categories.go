@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=021c0024d7b4f0ad
+//gofastr:generated generator=app kind=scaffold version=dev sum=9094771a4177c1e0
 
 package entities
 
@@ -14,10 +14,10 @@ type Categories struct {
 	ID          string      `json:"id"`
 	Name        string      `json:"name,omitempty"`
 	Slug        string      `json:"slug,omitempty"`
-	Description string      `json:"description,omitempty"`
-	Image       string      `json:"image,omitempty"`
-	SortOrder   int         `json:"sortOrder,omitempty"`
-	Active      bool        `json:"active,omitempty"`
+	Description *string     `json:"description,omitempty"`
+	Image       *string     `json:"image,omitempty"`
+	SortOrder   *int        `json:"sortOrder,omitempty"`
+	Active      *bool       `json:"active,omitempty"`
 	Products    []*Products `json:"products,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=f12546ff6b98eddb
+//gofastr:generated generator=app kind=scaffold version=dev sum=7902eeef1e4645a7
 
 package entities
 
@@ -11,14 +11,14 @@ import (
 )
 
 type Customers struct {
-	ID      string               `json:"id"`
-	Name    string               `json:"name,omitempty"`
-	Email   string               `json:"email,omitempty"`
-	Company string               `json:"company,omitempty"`
-	Status  CustomersStatusValue `json:"status,omitempty"`
-	Mrr     string               `json:"mrr,omitempty"`
-	Logo    string               `json:"logo,omitempty"`
-	UserId  string               `json:"userId,omitempty"`
+	ID      string                `json:"id"`
+	Name    string                `json:"name,omitempty"`
+	Email   string                `json:"email,omitempty"`
+	Company *string               `json:"company,omitempty"`
+	Status  *CustomersStatusValue `json:"status,omitempty"`
+	Mrr     *string               `json:"mrr,omitempty"`
+	Logo    *string               `json:"logo,omitempty"`
+	UserId  *string               `json:"userId,omitempty"`
 }
 
 // CustomersStatusValue is one value of the customers field status.

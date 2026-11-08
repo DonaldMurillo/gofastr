@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=b6248c00911adb1c
+//gofastr:generated generator=app kind=scaffold version=dev sum=0c4f7e2996160e6f
 
 package entities
 
@@ -11,15 +11,15 @@ import (
 )
 
 type Payments struct {
-	ID         string              `json:"id"`
-	InvoiceId  string              `json:"invoiceId,omitempty"`
-	CustomerId string              `json:"customerId,omitempty"`
-	Amount     string              `json:"amount,omitempty"`
-	Method     PaymentsMethodValue `json:"method,omitempty"`
-	Status     PaymentsStatusValue `json:"status,omitempty"`
-	UserId     string              `json:"userId,omitempty"`
-	Invoice    *Invoices           `json:"invoice,omitempty"`
-	Customer   *Customers          `json:"customer,omitempty"`
+	ID         string               `json:"id"`
+	InvoiceId  string               `json:"invoiceId,omitempty"`
+	CustomerId string               `json:"customerId,omitempty"`
+	Amount     string               `json:"amount,omitempty"`
+	Method     *PaymentsMethodValue `json:"method,omitempty"`
+	Status     *PaymentsStatusValue `json:"status,omitempty"`
+	UserId     *string              `json:"userId,omitempty"`
+	Invoice    *Invoices            `json:"invoice,omitempty"`
+	Customer   *Customers           `json:"customer,omitempty"`
 }
 
 // PaymentsMethodValue is one value of the payments field method.

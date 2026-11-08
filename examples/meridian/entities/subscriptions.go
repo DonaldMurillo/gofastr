@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=d85c4c7e4048f148
+//gofastr:generated generator=app kind=scaffold version=dev sum=e5e9d382cec94266
 
 package entities
 
@@ -11,16 +11,16 @@ import (
 )
 
 type Subscriptions struct {
-	ID         string                   `json:"id"`
-	CustomerId string                   `json:"customerId,omitempty"`
-	PlanId     string                   `json:"planId,omitempty"`
-	Status     SubscriptionsStatusValue `json:"status,omitempty"`
-	Mrr        string                   `json:"mrr,omitempty"`
-	StartedOn  string                   `json:"startedOn,omitempty"`
-	RenewsOn   string                   `json:"renewsOn,omitempty"`
-	UserId     string                   `json:"userId,omitempty"`
-	Customer   *Customers               `json:"customer,omitempty"`
-	Plan       *Plans                   `json:"plan,omitempty"`
+	ID         string                    `json:"id"`
+	CustomerId string                    `json:"customerId,omitempty"`
+	PlanId     string                    `json:"planId,omitempty"`
+	Status     *SubscriptionsStatusValue `json:"status,omitempty"`
+	Mrr        *string                   `json:"mrr,omitempty"`
+	StartedOn  *string                   `json:"startedOn,omitempty"`
+	RenewsOn   *string                   `json:"renewsOn,omitempty"`
+	UserId     *string                   `json:"userId,omitempty"`
+	Customer   *Customers                `json:"customer,omitempty"`
+	Plan       *Plans                    `json:"plan,omitempty"`
 }
 
 // SubscriptionsStatusValue is one value of the subscriptions field status.

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=2859f84676308a56
+//gofastr:generated generator=app kind=scaffold version=dev sum=9710dbeb9bb3cd49
 
 package entities
 
@@ -11,23 +11,23 @@ import (
 )
 
 type Orders struct {
-	ID              string            `json:"id"`
-	UserId          string            `json:"userId,omitempty"`
-	OrderNumber     string            `json:"orderNumber,omitempty"`
-	Status          OrdersStatusValue `json:"status,omitempty"`
-	CustomerName    string            `json:"customerName,omitempty"`
-	CustomerEmail   string            `json:"customerEmail,omitempty"`
-	CustomerPhone   string            `json:"customerPhone,omitempty"`
-	ShippingAddress any               `json:"shippingAddress,omitempty"`
-	BillingAddress  any               `json:"billingAddress,omitempty"`
-	Subtotal        string            `json:"subtotal,omitempty"`
-	Tax             string            `json:"tax,omitempty"`
-	ShippingCost    string            `json:"shippingCost,omitempty"`
-	Total           string            `json:"total,omitempty"`
-	Notes           string            `json:"notes,omitempty"`
-	ShippedAt       string            `json:"shippedAt,omitempty"`
-	DeliveredAt     string            `json:"deliveredAt,omitempty"`
-	Items           []*OrderItems     `json:"items,omitempty"`
+	ID              string             `json:"id"`
+	UserId          *string            `json:"userId,omitempty"`
+	OrderNumber     string             `json:"orderNumber,omitempty"`
+	Status          *OrdersStatusValue `json:"status,omitempty"`
+	CustomerName    string             `json:"customerName,omitempty"`
+	CustomerEmail   string             `json:"customerEmail,omitempty"`
+	CustomerPhone   *string            `json:"customerPhone,omitempty"`
+	ShippingAddress any                `json:"shippingAddress,omitempty"`
+	BillingAddress  any                `json:"billingAddress,omitempty"`
+	Subtotal        string             `json:"subtotal,omitempty"`
+	Tax             *string            `json:"tax,omitempty"`
+	ShippingCost    *string            `json:"shippingCost,omitempty"`
+	Total           string             `json:"total,omitempty"`
+	Notes           *string            `json:"notes,omitempty"`
+	ShippedAt       *string            `json:"shippedAt,omitempty"`
+	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
+	Items           []*OrderItems      `json:"items,omitempty"`
 }
 
 // OrdersStatusValue is one value of the orders field status.

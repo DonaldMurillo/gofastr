@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a71be27a21720bdc
+//gofastr:generated generator=app kind=scaffold version=dev sum=294b9ea7a1ef1bd5
 
 package entities
 
@@ -11,12 +11,12 @@ import (
 )
 
 type Plans struct {
-	ID       string             `json:"id"`
-	Name     string             `json:"name,omitempty"`
-	Slug     string             `json:"slug,omitempty"`
-	Price    string             `json:"price,omitempty"`
-	Interval PlansIntervalValue `json:"interval,omitempty"`
-	Active   bool               `json:"active,omitempty"`
+	ID       string              `json:"id"`
+	Name     string              `json:"name,omitempty"`
+	Slug     string              `json:"slug,omitempty"`
+	Price    string              `json:"price,omitempty"`
+	Interval *PlansIntervalValue `json:"interval,omitempty"`
+	Active   *bool               `json:"active,omitempty"`
 }
 
 // PlansIntervalValue is one value of the plans field interval.

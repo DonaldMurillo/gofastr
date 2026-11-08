@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=b3a058198b572478
+//gofastr:generated generator=app kind=scaffold version=dev sum=3d85def0707bb534
 
 package entities
 
@@ -12,7 +12,7 @@ import (
 
 type OrderItems struct {
 	ID          string    `json:"id"`
-	UserId      string    `json:"userId,omitempty"`
+	UserId      *string   `json:"userId,omitempty"`
 	OrderId     string    `json:"orderId,omitempty"`
 	ProductId   string    `json:"productId,omitempty"`
 	ProductName string    `json:"productName,omitempty"`

@@ -88,6 +88,17 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING: generated read shapes carry optional scalars as
+  pointers** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  In the generated entities model struct and the generated Go client's read
+  struct, every scalar the schema does not force — not `required:`,
+  not a primary key, not auto-generated (timestamps included) — reads
+  as `*T` (enums as `*<Entity><Field>Value`), so a null on the wire is
+  a nil pointer instead of an authored-looking zero. `json` fields
+  stay `any`. App code that read such a field directly
+  (`sub.Mrr`, `inv.DueOn`) stops compiling: dereference, and nil is
+  the honest "absent" it was silently losing before. Write shapes are
+  unchanged.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler

@@ -183,7 +183,7 @@ func TestRepositoryParity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if first.Title != "first-created" || first.Body != "masked" {
+			if first.Title != "first-created" || first.Body == nil || *first.Body != "masked" {
 				t.Fatalf("create hooks: %+v", first)
 			}
 			t.Run("OwnerScope", func(t *testing.T) {
@@ -207,13 +207,13 @@ func TestRepositoryParity(t *testing.T) {
 			})
 			t.Run("ListOptions", func(t *testing.T) {
 				page, err := repo.List(ctx, url.Values{"sort": {"-score"}, "page": {"2"}, "limit": {"1"}, "score_gte": {"10"}})
-				if err != nil || page.Total != 2 || page.Page != 2 || page.PerPage != 1 || page.TotalPages != 2 || len(page.Data) != 1 || page.Data[0].ID != first.ID || page.Data[0].Body != "masked" {
+				if err != nil || page.Total != 2 || page.Page != 2 || page.PerPage != 1 || page.TotalPages != 2 || len(page.Data) != 1 || page.Data[0].ID != first.ID || page.Data[0].Body == nil || *page.Data[0].Body != "masked" {
 					t.Fatalf("list options or read hooks: %+v, %v", page, err)
 				}
 			})
 			t.Run("ReadHooks", func(t *testing.T) {
 				row, err := repo.Get(ctx, first.ID)
-				if err != nil || row.Body != "masked" {
+				if err != nil || row.Body == nil || *row.Body != "masked" {
 					t.Fatalf("get hook: %+v, %v", row, err)
 				}
 				_, err = repo.Get(ctx, blocked.ID)
@@ -249,12 +249,12 @@ func TestRepositoryParity(t *testing.T) {
 			})
 			t.Run("Writes", func(t *testing.T) {
 				row, err := repo.Update(ctx, first.ID, client.NotesInput{Title: "updated", Score: pointer(9)})
-				if err != nil || row.Title != "updated" || row.Body != "masked" {
+				if err != nil || row.Title != "updated" || row.Body == nil || *row.Body != "masked" {
 					t.Fatalf("update: %+v, %v", row, err)
 				}
 				zero := 0
 				row, err = repo.Patch(ctx, first.ID, client.NotesPatch{Score: &zero})
-				if err != nil || row.Score != 0 || row.Title != "updated" || row.Body != "masked" {
+				if err != nil || row.Score == nil || *row.Score != 0 || row.Title != "updated" || row.Body == nil || *row.Body != "masked" {
 					t.Fatalf("patch: %+v, %v", row, err)
 				}
 				if err := repo.Delete(ctx, first.ID); err != nil {

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=1ed2a81a1737f7ca
+//gofastr:generated generator=app kind=scaffold version=dev sum=47e7f536788e270f
 
 package entities
 
@@ -11,16 +11,16 @@ import (
 )
 
 type Invoices struct {
-	ID         string              `json:"id"`
-	CustomerId string              `json:"customerId,omitempty"`
-	Number     string              `json:"number,omitempty"`
-	Amount     string              `json:"amount,omitempty"`
-	Status     InvoicesStatusValue `json:"status,omitempty"`
-	IssuedOn   string              `json:"issuedOn,omitempty"`
-	DueOn      string              `json:"dueOn,omitempty"`
-	PaidOn     string              `json:"paidOn,omitempty"`
-	UserId     string              `json:"userId,omitempty"`
-	Customer   *Customers          `json:"customer,omitempty"`
+	ID         string               `json:"id"`
+	CustomerId string               `json:"customerId,omitempty"`
+	Number     string               `json:"number,omitempty"`
+	Amount     string               `json:"amount,omitempty"`
+	Status     *InvoicesStatusValue `json:"status,omitempty"`
+	IssuedOn   *string              `json:"issuedOn,omitempty"`
+	DueOn      *string              `json:"dueOn,omitempty"`
+	PaidOn     *string              `json:"paidOn,omitempty"`
+	UserId     *string              `json:"userId,omitempty"`
+	Customer   *Customers           `json:"customer,omitempty"`
 }
 
 // InvoicesStatusValue is one value of the invoices field status.
