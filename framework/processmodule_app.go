@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // App-level wiring for process-isolated third-party modules (#37). Kept in a
@@ -58,6 +59,9 @@ func (a *App) RegisterProcessModule(desc ProcessModuleDescriptor, approved Appro
 			Store:         store,
 			Broker:        broker,
 			ToolRegistrar: tools,
+			Logf: func(format string, args ...any) {
+				a.Logger().Warn(textsafe.ScrubControlBytes(fmt.Sprintf(format, args...)))
+			},
 		})
 		if err != nil {
 			panic(fmt.Sprintf("framework: RegisterProcessModule supervisor: %v", err))

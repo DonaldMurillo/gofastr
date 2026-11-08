@@ -32,7 +32,7 @@ What the server sends to the client during a turn:
 | `session/update` (`plan`) | notify | Replaces the session's execution plan (complete entry list every time). |
 | `session/update` (`tool_call`) | notify | Reports a tool invocation starting (`pending`). |
 | `session/update` (`tool_call_update`) | notify | Patches a tool call: `in_progress`, then `completed`/`failed` with content. |
-| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). An answer that carries neither a valid selection nor a cancellation is treated as cancelled — a malformed approval never reads as approval. An answer without `"jsonrpc": "2.0"` is not a JSON-RPC response; it settles the request as an error. |
+| `session/request_permission` | request | Asks the user to approve an operation (allow once / reject once …). An answer that carries neither a valid selection nor a cancellation is treated as cancelled — a malformed approval never reads as approval. JSON-RPC error answers may include optional `data`; they settle the permission request as an error. An answer without `"jsonrpc": "2.0"` is not a JSON-RPC response; it settles the request as an error. |
 
 ## What is deliberately not implemented
 

@@ -404,7 +404,12 @@ JSON-RPC + GET Server-Sent Events), replacing the manual
 are reachable at the canonical endpoint the agent card advertises:
 `app_routes`, `app_plugins`, `app_batteries`, `app_modules`, `app_config`,
 `app_readiness`, `app_goroutine_leaks`, `app_routines`, `app_unmounted`
-(the [unmounted](unmount.md) copies the binary was built with). The embedded
+(the [unmounted](unmount.md) copies the binary was built with).
+
+During shutdown's readiness grace, `app_readiness` returns `ready: false`
+and `reason: "draining"` without running readiness checks, matching `/readyz`.
+
+The embedded
 framework docs are a separate option, `framework.WithMCPTools(mcptools.Register)` from
 `framework/docs/mcptools`, which adds `framework_docs_list`,
 `framework_docs_get` and `framework_docs_search`; package framework does not

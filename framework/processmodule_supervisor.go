@@ -1408,11 +1408,12 @@ func (sl *moduleSlot) failSpawn(seq uint64, reason string, terminal bool) bool {
 	} else {
 		sl.markCrashedLocked(reason)
 	}
+	stderr := sl.stderr
 	sl.mu.Unlock()
 	if terminal {
-		sl.reportFailed(reason)
+		sl.reportFailed(reason, stderr)
 	} else {
-		sl.reportCrashed(reason)
+		sl.reportCrashed(reason, stderr)
 	}
 	return true
 }
@@ -1441,6 +1442,13 @@ var errSpawnSuperseded = errors.New("spawn aborted: superseded by a drain or a n
 func (sl *moduleSlot) spawnOnce(ctx context.Context, seq uint64, desired DesiredState) error {
 	instanceID := mintInstanceID()
 	stderr := moduleproto.NewRingSink(moduleproto.DefaultRingSinkBytes)
+	sl.mu.Lock()
+	if sl.spawnSeq != seq {
+		sl.mu.Unlock()
+		return errSpawnSuperseded
+	}
+	sl.stderr = stderr
+	sl.mu.Unlock()
 	spec := ChildSpec{
 		Descriptor:      sl.desc,
 		InstanceID:      instanceID,
@@ -1621,6 +1629,7 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 		// then marked Crashed.
 		sl.state = StateCrashed
 	}
+	stderr := sl.stderr
 	sl.mu.Unlock()
 	if expected {
 		// Drained exit: no restart, no charge.
@@ -1628,6 +1637,7 @@ func (sl *moduleSlot) watchExit(child RunningChild, instanceID string) {
 		return
 	}
 	sup.logf("processmodule: %s UNEXPECTED exit in %s: %v", sl.name, curState, waitErr)
+	sup.logChildStderr(sl.name, stderr)
 	// The supervise loop picks the crash up.
 	select {
 	case sl.wake <- struct{}{}:
@@ -1898,7 +1908,8 @@ func (sl *moduleSlot) markCrashedLocked(reason string) {
 
 // reportCrashed logs a Crashed transition and wakes the supervise loop.
 // Called with sl.mu released.
-func (sl *moduleSlot) reportCrashed(reason string) {
+func (sl *moduleSlot) reportCrashed(reason string, stderr *moduleproto.RingSink) {
+	sl.sup.logChildStderr(sl.name, stderr)
 	sl.sup.logf("processmodule: %s spawn failed: %s", sl.name, reason)
 	select {
 	case sl.wake <- struct{}{}:
@@ -1915,7 +1926,8 @@ func (sl *moduleSlot) markFailedLocked(reason string) {
 }
 
 // reportFailed logs a Failed transition. Called with sl.mu released.
-func (sl *moduleSlot) reportFailed(reason string) {
+func (sl *moduleSlot) reportFailed(reason string, stderr *moduleproto.RingSink) {
+	sl.sup.logChildStderr(sl.name, stderr)
 	sl.sup.logf("processmodule: %s FAILED (terminal): %s", sl.name, reason)
 }
 
@@ -2030,4 +2042,16 @@ func exitLabel(waitErr error, expected bool) string {
 		return "exited-cleanly-unexpected"
 	}
 	return "crashed: " + waitErr.Error()
+}
+
+// Snapshot and scrub before the host log callback. The sink is bounded,
+// and it belongs to the failing child even if a replacement already runs.
+func (s *ProcessModuleSupervisor) logChildStderr(name string, stderr *moduleproto.RingSink) {
+	if stderr == nil {
+		return
+	}
+	tail := textsafe.ScrubControlBytes(string(stderr.Tail()))
+	if tail != "" {
+		s.logf("processmodule: %s stderr tail: %s", textsafe.ScrubControlBytes(name), tail)
+	}
 }

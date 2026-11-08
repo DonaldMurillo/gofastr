@@ -117,6 +117,9 @@ func (a *App) registerIntrospectionTools() error {
 		opts = append(opts, mcp.WithDevImplied())
 	}
 	for _, t := range tools {
+		if a.skipDevEntityMCPCollision(t.name) {
+			continue
+		}
 		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP tool %q: %w", t.name, err)
 		}
@@ -259,6 +262,9 @@ func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, erro
 }
 
 func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) {
+	if a.draining.Load() {
+		return map[string]any{"ready": false, "reason": "draining", "checks": []map[string]any{}}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, a.readinessTimeout())
 	defer cancel()
 	checks := a.readinessChecks()

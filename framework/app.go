@@ -541,6 +541,7 @@ type App struct {
 	// warning; explicit ones keep their documented panic/error.
 	mcpMountDevImplied         bool
 	mcpIntrospectionDevImplied bool
+	devEntityMCPTools          sync.Map
 	mcpControlDevImplied       bool
 	// mcpAutoMount exposes the MCP server at /mcp (Streamable HTTP:
 	// POST JSON-RPC + GET SSE) without the host hand-wiring the route.
@@ -1781,6 +1782,7 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
 		}
+		a.rememberDevEntityMCPTools(e, groupMount(g, e))
 	}
 
 	// Custom endpoints
@@ -2123,6 +2125,9 @@ func NewApp(opts ...AppOption) *App {
 		return a.modules.routeAllowed(key)
 	})
 	a.MCP.SetRegisterHook(func(toolName string) {
+		// A host may replace a dev tool before init. Its explicit replacement
+		// must not inherit the old registration's collision exemption.
+		a.devEntityMCPTools.Delete(toolName)
 		a.modules.recordTool(toolName)
 	})
 	a.MCP.SetCallGate(func(toolName string) error {
@@ -2421,6 +2426,7 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
 		}
+		a.rememberDevEntityMCPTools(e, a.plainMount(e))
 	}
 
 	if len(config.Endpoints) > 0 {
@@ -2882,12 +2888,8 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 		// The flat "<entity>_<action>" tool names are a documented-stable
 		// public surface (see crud.RegisterEntityMCPTools), which is what
 		// lets us pre-compute them here without reaching into crud.
-		for _, action := range []string{"list", "get", "create", "update", "delete"} {
-			claimed[m.entityTool(ent.GetName(), action)] = true
-		}
-		// Each non-system move is a tool named by its key, beside them.
-		for _, t := range crud.RoutableTransitions(ent.Config.States) {
-			claimed[m.entityTool(ent.GetName(), t.Key)] = true
+		for _, name := range entityMCPToolNames(ent, m) {
+			claimed[name] = true
 		}
 	}
 	for _, endpoint := range endpoints {

@@ -133,8 +133,9 @@ type wireRequest struct {
 }
 
 type wireRespError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
 }
 
 type wireResponse struct {

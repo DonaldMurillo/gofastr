@@ -259,6 +259,9 @@ type ModuleManager struct {
 	// Disable route them through the coordinator, so the route gate, the
 	// module-tool gate and the supervisor all read one value.
 	process map[string]bool
+
+	// auditToggle is installed at app initialization when audit logging is enabled.
+	auditToggle func(context.Context, string, bool)
 }
 
 // NewModuleManager creates a manager backed by the appropriate store.
@@ -478,7 +481,14 @@ func (mm *ModuleManager) dependents(name string) []string {
 // the module's DependsOn is disabled. The check-then-act sequence
 // (dependency check → store write → cache flip) is serialized by
 // toggleMu so concurrent toggles cannot interleave to a forbidden state.
-func (mm *ModuleManager) Enable(ctx context.Context, name string) error {
+func (mm *ModuleManager) Enable(ctx context.Context, name string) (err error) {
+	// Registered before the unlock defer: the audit callback runs after
+	// the toggle lock is released and only for a committed toggle.
+	defer func() {
+		if err == nil && mm.auditToggle != nil {
+			mm.auditToggle(ctx, name, true)
+		}
+	}()
 	mm.toggleMu.Lock()
 	defer mm.toggleMu.Unlock()
 
@@ -529,7 +539,14 @@ func (mm *ModuleManager) setEnabled(ctx context.Context, name string, enabled bo
 // Disable persists the new state and flips the cache. Refuses (fail
 // closed) if any currently-enabled module lists name in DependsOn, no
 // cascade. Serialized by toggleMu alongside Enable.
-func (mm *ModuleManager) Disable(ctx context.Context, name string) error {
+func (mm *ModuleManager) Disable(ctx context.Context, name string) (err error) {
+	// Registered before the unlock defer: the audit callback runs after
+	// the toggle lock is released and only for a committed toggle.
+	defer func() {
+		if err == nil && mm.auditToggle != nil {
+			mm.auditToggle(ctx, name, false)
+		}
+	}()
 	mm.toggleMu.Lock()
 	defer mm.toggleMu.Unlock()
 

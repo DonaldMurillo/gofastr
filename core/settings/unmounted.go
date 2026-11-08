@@ -14,6 +14,7 @@ import (
 	"time"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"golang.org/x/mod/module"
 )
 
@@ -176,6 +177,17 @@ func SetUnmounted(p string, entries []Unmounted) error {
 // p with body, written under header; an empty body removes the section.
 // check reads the result back before it is written.
 func setSection(p, name, header, body string, check func(File) error) error {
+	// Keep the sidecar inode: removing it after unlock would let a new
+	// writer lock a different file while a waiting writer holds this one.
+	lock, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := filelock.Lock(lock); err != nil {
+		return err
+	}
+
 	if info, err := os.Lstat(p); err == nil && info.Mode()&fs.ModeSymlink != 0 {
 		return fmt.Errorf("%s is a symlink: gofastr writes the %s section into the file itself, so put the file there instead of the link", p, name)
 	}
