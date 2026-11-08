@@ -1142,10 +1142,14 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// write through another alias of the struct is out of reach.
 	assigns := assignCounts(pass, body)
 	w := writeSitesIn(pass, body)
+	// before counts the writes that can run before the read at `at`:
+	// those earlier in the source, and those later in the source but
+	// inside a loop that also holds the read, which run on one iteration
+	// and reach the read on the next.
 	before := func(sites []token.Pos, at token.Pos) int {
 		n := 0
 		for _, p := range sites {
-			if p < at {
+			if p < at || w.sameLoop(p, at) {
 				n++
 			}
 		}
@@ -2036,12 +2040,25 @@ func relErrRefused(pass *analysis.Pass, body *ast.BlockStmt, r *ast.CallExpr, si
 
 // writeSites records where body writes a value: each local's binding
 // sites (assignments, var specs, range clauses), each field spelling's
-// assignments, and the locals and fields whose address is taken.
+// assignments, the locals and fields whose address is taken (a `_ =
+// &x` that drops the pointer aside), and the loops, whose back-edges
+// let a write later in the source run before an earlier read.
 type writeSites struct {
 	local   map[types.Object][]token.Pos
 	sel     map[string][]token.Pos
 	addr    map[types.Object]bool
 	addrSel map[string]bool
+	loops   []ast.Node
+}
+
+// sameLoop reports whether a for or range statement holds both a and b.
+func (w *writeSites) sameLoop(a, b token.Pos) bool {
+	for _, l := range w.loops {
+		if l.Pos() <= a && a < l.End() && l.Pos() <= b && b < l.End() {
+			return true
+		}
+	}
+	return false
 }
 
 func writeSitesIn(pass *analysis.Pass, body *ast.BlockStmt) *writeSites {
@@ -2068,11 +2085,22 @@ func writeSitesIn(pass *analysis.Pass, body *ast.BlockStmt) *writeSites {
 			for _, e := range st.Lhs {
 				lhs(e, st.Pos())
 			}
+			// `_ = &x` drops the pointer: nothing can write through it.
+			if len(st.Lhs) == 1 && len(st.Rhs) == 1 {
+				if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name == "_" {
+					if u, ok := ast.Unparen(st.Rhs[0]).(*ast.UnaryExpr); ok && u.Op == token.AND {
+						return false
+					}
+				}
+			}
 		case *ast.ValueSpec:
 			for _, name := range st.Names {
 				lhs(name, st.Pos())
 			}
+		case *ast.ForStmt:
+			w.loops = append(w.loops, st)
 		case *ast.RangeStmt:
+			w.loops = append(w.loops, st)
 			if st.Key != nil {
 				lhs(st.Key, st.Pos())
 			}

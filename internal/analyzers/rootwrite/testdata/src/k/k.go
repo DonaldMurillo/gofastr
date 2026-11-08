@@ -1561,3 +1561,89 @@ func frozenBeforeJoin(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600)
 }
+
+// loopRoot clears the root on the first iteration, after the check in
+// the source, and checks against "" on the second.
+func loopRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	for iteration := 0; iteration < 2; iteration++ {
+		if iteration > 0 {
+			if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+				return errEscape
+			}
+			return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+		}
+		baseDir = ""
+	}
+	return nil
+}
+
+// loopField is loopRoot with a field root.
+func loopField(settings *rootConfig, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(settings.RootDir, name))
+	if err != nil {
+		return err
+	}
+	for iteration := 0; iteration < 2; iteration++ {
+		if iteration > 0 {
+			if !strings.HasPrefix(real, settings.RootDir+string(filepath.Separator)) {
+				return errEscape
+			}
+			return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+		}
+		settings.RootDir = ""
+	}
+	return nil
+}
+
+// closureAfterCheck defines the widening closure after the check in
+// the source and calls it before the check on the next iteration.
+func closureAfterCheck(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	var widen func()
+	for iteration := 0; iteration < 2; iteration++ {
+		if iteration > 0 {
+			widen()
+			if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+				return errEscape
+			}
+			return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+		}
+		widen = func() { baseDir = "" }
+	}
+	return nil
+}
+
+// checkThenRebind rebinds the root after the check, outside any loop.
+// Quiet.
+func checkThenRebind(baseDir, name, nextDir string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	baseDir = nextDir
+	_ = baseDir
+	return os.WriteFile(real, data, 0o600)
+}
+
+// benignAddress takes real's address and drops it. Quiet.
+func benignAddress(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	_ = &real
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
