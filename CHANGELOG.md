@@ -221,6 +221,14 @@ few lines, and link the PR or the docs page for the rest.
   are documented with the semantics the route applies (the offset
   ceiling, limit-wins-over-per_page, stream's refusals), beside the
   `?limit=` description that already names the entity's real cap.
+- **llm.md and the MCP tools close their doc gaps**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Enum
+  values in llm.md's field table escape the cell pipe (`a\|b`), a long
+  default truncates on a rune boundary, the multi-tenancy note names the
+  configured tenant column (wire key), and the list parameters document
+  `per_page` and `offset`. The MCP record-key arguments are typed from
+  the key column — an integer key offers an integer `id` prop — and the
+  list tool forwards and documents `per_page` and `offset`.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
