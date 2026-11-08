@@ -189,10 +189,10 @@
 ## 2026-11-07 - Check Decimal guards against SQLite storage, not digit proxies
 - Scope: core/schema/decimal.go, framework/crud/decimal_sqlite.go
 - Trigger: a numeric-affinity write rejects exact signed-int64 values but accepts nonzero 1e-400 as zero.
-- Approach: compare real POST/GET results and SQLite typeof/CAST storage with direct bound-string inserts; include 18/19-digit and TEXT-affinity controls.
-- Evidence: [C12 fix](reviews/2026-11-07-fixes-data.md); coordinator passed full schema/CRUD suites and public write/read storage-boundary regressions. Plain int64 digits pass; point/exponent precision and underflow refusals remain distinct.
+- Approach: compare real POST/GET results and SQLite typeof/CAST storage with direct bound-string inserts; include NUMERIC, REAL/FLOAT/DOUBLE, and TEXT controls plus affinity-precedence names (`FLOATING POINT`, `REAL TEXT`).
+- Evidence: [C12 fix and PR #688 follow-up](reviews/2026-11-07-fixes-data.md); plain int64 digits pass only for INTEGER/NUMERIC affinity. Independent review caught REAL columns silently rounding; schema and CRUD regressions failed before the correction.
 - Boundary: the `1e-307` magnitude floor is conservative and also refuses some normal doubles SQLite could retain; TEXT-backed Decimal and Postgres behavior are unchanged.
-- Next time: probe signed-int64 limits and magnitude/underflow boundaries independently of significant-digit counts; do not trust a test expectation that contradicts measured storage.
+- Next time: verify SQLite affinity precedence before admitting int64 literals; probe integer, floating-point, and underflow boundaries independently of significant-digit counts.
 - Status: active
 
 ## 2026-11-07 - Distinguish seed ledgers from per-boot hooks

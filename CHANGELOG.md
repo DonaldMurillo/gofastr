@@ -146,7 +146,9 @@ few lines, and link the PR or the docs page for the rest.
   this does not extend to DSL/typed-query/read-scope or nested-relation
   comparisons. See [entity declarations](framework/docs/content/entity-declarations.md).
 - **SQLite Decimal admission follows integer storage and rejects underflow.**
-  Whole-digit literals within int64 now pass, including both bounds.
+  Whole-digit literals within int64 now pass for INTEGER/NUMERIC affinity,
+  including both bounds. REAL/FLOAT/DOUBLE columns retain the float precision
+  checks even for integer literals, refusing writes that would lose digits.
   Fractional/exponent spellings retain the 15-significant-digit limit;
   nonzero magnitudes below the conservative `1e-307` floor now return
   `decimal_underflow` instead of being rounded into subnormal values or zero.

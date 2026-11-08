@@ -695,14 +695,19 @@ smallest unit, or give the field `RawType: "TEXT"`, which SQLite keeps
 as written (and which then sorts and compares as text).
 
 A custom `RawType` such as `NUMERIC(30,0)` follows the same SQLite rule.
-Plain digits that fit a signed 64-bit integer are stored as that
-integer, so `"9223372036854775807"` and `"-9223372036854775808"` read
+With INTEGER or NUMERIC affinity, plain digits that fit a signed 64-bit
+integer are stored as that integer, so `"9223372036854775807"` and `"-9223372036854775808"` read
 back as sent. Anything written with a point or an exponent goes through
 the float, even a whole value: `"123456789012345678.0"` would store
 123456789012345680, so it gets the same `decimal_significant_digits`
 400. A nonzero value smaller than `1e-307` in size (`"1e-400"`,
 `"1e-320"`) is refused with `decimal_underflow`, because the float
 would hold it as 0 or with digits gone. A TEXT column takes both.
+REAL-affinity types (`REAL`, `FLOAT`, `DOUBLE PRECISION`) always use the
+float checks, including for integer literals: `"9223372036854775807"`
+and `"9007199254740993"` are refused with `decimal_significant_digits`.
+SQLite's affinity precedence still applies: `FLOATING POINT` has INTEGER
+affinity because it contains `INT`, while `REAL TEXT` has TEXT affinity.
 `schema.SQLiteDecimalRefusal` returns the reason and
 `schema.DecimalExactOnSQLite` the yes/no.
 

@@ -29,7 +29,7 @@ func decimalStorageRoutes(t *testing.T) (*router.Router, *sql.DB) {
 	}
 	database.SetMaxOpenConns(1)
 	t.Cleanup(func() { database.Close() })
-	if _, err := database.Exec(`CREATE TABLE decimal_storage (id TEXT PRIMARY KEY, units NUMERIC(30,0), tiny NUMERIC, memo TEXT, amount DECIMAL(19,4))`); err != nil {
+	if _, err := database.Exec(`CREATE TABLE decimal_storage (id TEXT PRIMARY KEY, units NUMERIC(30,0), tiny NUMERIC, memo TEXT, amount DECIMAL(19,4), real_value REAL, float_value FLOAT, double_value DOUBLE PRECISION, point_value "FLOATING POINT", text_value "REAL TEXT")`); err != nil {
 		t.Fatal(err)
 	}
 	definition := entity.Define("decimal_storage", entity.EntityConfig{
@@ -40,6 +40,11 @@ func decimalStorageRoutes(t *testing.T) (*router.Router, *sql.DB) {
 			{Name: "tiny", Type: schema.Decimal, RawType: "NUMERIC"},
 			{Name: "memo", Type: schema.Decimal, RawType: "TEXT"},
 			{Name: "amount", Type: schema.Decimal},
+			{Name: "real_value", Type: schema.Decimal, RawType: "REAL"},
+			{Name: "float_value", Type: schema.Decimal, RawType: "FLOAT"},
+			{Name: "double_value", Type: schema.Decimal, RawType: "DOUBLE PRECISION"},
+			{Name: "point_value", Type: schema.Decimal, RawType: "FLOATING POINT"},
+			{Name: "text_value", Type: schema.Decimal, RawType: "REAL TEXT"},
 		},
 	}.WithTimestamps(false))
 	definition.SetDB(database)
@@ -96,6 +101,11 @@ func TestDecimalSQLiteStorageBoundaries(t *testing.T) {
 		{"tiny", "0e-400"},
 		{"memo", "1e-400"},
 		{"amount", "123456789012345"},
+		{"real_value", "123456789012345"},
+		{"float_value", "123456789012345"},
+		{"double_value", "123456789012345"},
+		{"point_value", "9223372036854775807"},
+		{"text_value", "9223372036854775807"},
 	} {
 		created := sendDecimalRequest(routes, http.MethodPost, "/decimal_storage", fmt.Sprintf(`{%q:%q}`, sample.field, sample.literal))
 		if created.Code != http.StatusCreated {
@@ -126,6 +136,10 @@ func TestDecimalSQLiteStorageBoundaries(t *testing.T) {
 		{"tiny", "1e-400", "decimal_underflow"},
 		{"tiny", "-1e-320", "decimal_underflow"},
 		{"amount", "1234567890123456789", "decimal_integer_digits"},
+		{"real_value", "9223372036854775807", "decimal_significant_digits"},
+		{"real_value", "1234567890123456789", "decimal_significant_digits"},
+		{"float_value", "9007199254740993", "decimal_significant_digits"},
+		{"double_value", "9007199254740993", "decimal_significant_digits"},
 	} {
 		refused := sendDecimalRequest(routes, http.MethodPost, "/decimal_storage", fmt.Sprintf(`{%q:%q}`, sample.field, sample.literal))
 		if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), sample.code) {

@@ -2,11 +2,9 @@ package schema
 
 import "testing"
 
-// DecimalExactOnSQLite follows SQLite's NUMERIC affinity: TEXT and BLOB
-// columns keep the text, literal digits that fit a signed 64-bit integer
-// are stored as that integer, and everything else goes through a 64-bit
-// float, which keeps 15 significant digits of a value no smaller than
-// 1e-307.
+// DecimalExactOnSQLite follows SQLite's affinity precedence: TEXT and BLOB
+// keep text, INTEGER and NUMERIC keep signed-int64 literals, and REAL
+// always uses a float with the precision and magnitude guards.
 func TestDecimalExactOnSQLite(t *testing.T) {
 	for _, sample := range []struct {
 		column, literal string
@@ -28,6 +26,18 @@ func TestDecimalExactOnSQLite(t *testing.T) {
 		{"NUMERIC(30,0)", "1234567890123456789.0", false},
 		{"NUMERIC(30,0)", "123456789012345678.0", false},
 		{"NUMERIC(30,0)", "1e18", true},
+		{"REAL", "9223372036854775807", false},
+		{"REAL", "-9223372036854775808", false},
+		{"REAL", "1234567890123456789", false},
+		{"float", "9007199254740993", false},
+		{"DOUBLE PRECISION", "9007199254740993", false},
+		{"REAL", "123456789012345", true},
+		{"REAL", "1e-400", false},
+		{"REAL", "0e-400", true},
+		{"FLOATING POINT", "9223372036854775807", true},
+		{"REALINT", "9223372036854775807", true},
+		{"REAL TEXT", "9223372036854775807", true},
+		{"BLOB REAL", "9223372036854775807", true},
 		{"", "-1.00000000000000", true},
 		{"", "1.2e-3", true},
 		{"NUMERIC", "1e-400", false},

@@ -94,11 +94,12 @@ func DecimalExactOnSQLite(colType, literal string) bool {
 
 // SQLiteDecimalRefusal reports why a SQLite column of type colType (a
 // Decimal field's RawType, or [DecimalColumnType] when it has none) would
-// not store the decimal literal as sent, following SQLite's NUMERIC
+// not store the decimal literal as sent, following SQLite's type
 // affinity (datatype3.html, 3.1 and 3.2). A column with TEXT or BLOB
-// affinity stores the text as sent. Any other column stores literal
-// digits, with no point or exponent, that fit a signed 64-bit integer as
-// that integer, so "-9223372036854775808" is exact. Everything else goes
+// affinity stores the text as sent. INTEGER and NUMERIC affinity store
+// literal digits, with no point or exponent, that fit a signed 64-bit
+// integer as that integer, so "-9223372036854775808" is exact. REAL
+// affinity always uses a 64-bit float. Everything else also goes
 // through a 64-bit float, even a whole value: "123456789012345678.0" was
 // stored as 123456789012345680. That float keeps [SQLiteDecimalDigits]
 // significant digits ([ReasonDecimalSignificantDigits]) of a nonzero value
@@ -109,11 +110,15 @@ func SQLiteDecimalRefusal(colType, literal string) (Violation, bool) {
 		colType = DecimalColumnType
 	}
 	upper := strings.ToUpper(colType)
-	if !strings.Contains(upper, "INT") && (strings.Contains(upper, "CHAR") || strings.Contains(upper, "CLOB") || strings.Contains(upper, "TEXT") || strings.Contains(upper, "BLOB")) {
+	integerAffinity := strings.Contains(upper, "INT")
+	if !integerAffinity && (strings.Contains(upper, "CHAR") || strings.Contains(upper, "CLOB") || strings.Contains(upper, "TEXT") || strings.Contains(upper, "BLOB")) {
 		return Violation{}, false
 	}
-	if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
-		return Violation{}, false
+	realAffinity := !integerAffinity && (strings.Contains(upper, "REAL") || strings.Contains(upper, "FLOA") || strings.Contains(upper, "DOUB"))
+	if !realAffinity {
+		if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
+			return Violation{}, false
+		}
 	}
 	significant := decimalSignificant(literal)
 	if significant == 0 {

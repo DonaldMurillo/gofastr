@@ -112,7 +112,8 @@ the old 18-digit rule let through. `1e-400` stored INTEGER 0, and
 
 - `schema.SQLiteDecimalRefusal(colType, literal) (Violation, bool)` is
   the rule. TEXT, CHAR, CLOB and BLOB affinity always pass. Literals
-  that `strconv.ParseInt(…, 10, 64)` accepts pass. Zero passes. More
+  that `strconv.ParseInt(…, 10, 64)` accepts pass only with INTEGER or
+  NUMERIC affinity; REAL affinity always uses the float checks. Zero passes. More
   than 15 significant digits gets `decimal_significant_digits`. A
   nonzero magnitude below `schema.SQLiteDecimalMinMagnitude` (1e-307,
   just above the smallest normal double) gets the new
@@ -147,3 +148,18 @@ removed.
 Limit: the 1e-307 floor refuses normal doubles in
 [2.2250738585072014e-308, 1e-307) that SQLite would keep. That keeps the
 threshold one clean decimal.
+
+### PR #688 independent review follow-up (2026-11-08)
+
+The initial int64 shortcut also admitted REAL/FLOAT/DOUBLE columns, which
+SQLite stores as floating-point even for integer literals. The correction
+preserves SQLite affinity precedence and reserves that shortcut for INTEGER
+and NUMERIC affinity. REAL-like columns retain the existing significant-digit
+and underflow checks. NUMERIC int64 limits, `FLOATING POINT` (INTEGER),
+`REAL TEXT` (TEXT), and ordinary 15-digit REAL values remain accepted.
+
+Before the correction, the expanded schema test failed five REAL-like cases,
+and the real CRUD storage test admitted four writes that it must refuse,
+including `9223372036854775807` read back as `9223372036854776000`.
+Evidence: `/tmp/gofastr-pr688-affinity-red.log`. The same targeted tests pass
+after the correction; no production dependencies were added.
