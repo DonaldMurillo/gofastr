@@ -49,3 +49,17 @@ func TestSectionWritersKeepBothSections(t *testing.T) {
 		t.Fatalf("concurrent writer lost a section: %s", data)
 	}
 }
+
+func TestSectionLockStaysInStateDir(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "gofastr.settings.yml")
+	if err := setSection(p, "endpoints", "# endpoints", "endpoints: []\n", func(File) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p + ".lock"); !os.IsNotExist(err) {
+		t.Errorf("lock file beside the settings file: stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".gofastr", "gofastr.settings.yml.lock")); err != nil {
+		t.Errorf("lock file not under .gofastr/: %v", err)
+	}
+}

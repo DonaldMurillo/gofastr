@@ -2,6 +2,7 @@ package settings
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -177,9 +178,15 @@ func SetUnmounted(p string, entries []Unmounted) error {
 // p with body, written under header; an empty body removes the section.
 // check reads the result back before it is written.
 func setSection(p, name, header, body string, check func(File) error) error {
-	// Keep the sidecar inode: removing it after unlock would let a new
-	// writer lock a different file while a waiting writer holds this one.
-	lock, err := os.OpenFile(p+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	// The lock lives in the project's .gofastr/ state directory, which
+	// generated apps ignore, so it never shows up beside the committed
+	// settings file. Keep its inode: removing it after unlock would let a
+	// new writer lock a different file while a waiting writer holds this one.
+	stateDir := filepath.Join(filepath.Dir(p), ".gofastr")
+	if err := os.Mkdir(stateDir, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	lock, err := os.OpenFile(filepath.Join(stateDir, filepath.Base(p)+".lock"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
