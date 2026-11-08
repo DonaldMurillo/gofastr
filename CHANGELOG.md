@@ -85,6 +85,15 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **The static export keeps its prune list beside `OutDir`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [static export](framework/docs/content/static-export.md)).
+  `.gofastr-pages`, the list of pages a build wrote, was published with
+  the site. It now sits next to the export directory: `OutDir`
+  `dist/site` keeps it in `dist/.site.gofastr-pages`. The first build
+  on this release finds no list there and removes no stale page; delete
+  the old `<OutDir>/.gofastr-pages` and, if a page went private since
+  the last build, clear `OutDir` once.
 - **`core/static` serves a real `~digit` file name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [core packages](framework/docs/content/core-packages.md)). A segment

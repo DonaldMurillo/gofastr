@@ -20,3 +20,7 @@ notes:
     find:
       uses:
         - gofastr/core/static.Refuses
+  - change: "The static export keeps its prune list beside OutDir instead of in it: OutDir dist/site keeps it in dist/.site.gofastr-pages, and <OutDir>/.gofastr-pages is no longer written or read"
+    breaking: false
+    guidance: "Delete <OutDir>/.gofastr-pages; a host that published it keeps serving the old copy until it goes. The first build on this release finds no list beside OutDir and removes no stale page, so a page gated or dropped since the last build stays in the tree: clear OutDir once if that matters. An OutDir with no parent directory (a filesystem root) now fails the build."
+    nodetect: "the old file is build output in the export directory, not app source"

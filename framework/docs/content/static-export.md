@@ -139,8 +139,12 @@ go build -o site ./examples/site/
   so a screen that reads the request works in both. A page's doc is the
   one the live host serves, SEO front matter included: the builder
   writes it through `UIHost.LLMMDWithSEO`.
-- `.gofastr-pages`: the list of page and `llm.md` files this build
-  wrote. The next build into the same `OutDir` removes any listed file
+- Beside `OutDir`, never in it: `.<name>.gofastr-pages`, the list of
+  page and `llm.md` files this build wrote (`OutDir` `dist/site` keeps
+  it in `dist/.site.gofastr-pages`). A static host serves every file in
+  the export tree, and the builder's own state is not one of them; an
+  `OutDir` with no parent directory fails the build. The next build into
+  the same `OutDir` removes any listed file
   it no longer writes, such as a page that became gated or a route that
   was dropped, so the static host stops serving it with a 200. A file
   the builder never listed, and anything this build wrote or copied,
