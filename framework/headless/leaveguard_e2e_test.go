@@ -10,7 +10,10 @@ package headless
 // kit's dialog.
 
 import (
+	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core-ui/runtime"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"net/http"
 	"testing"
 	"time"
@@ -815,5 +818,37 @@ func TestLeaveGuardDeclinedBackTwoKeepsStack(t *testing.T) {
 	}
 	if !pollTrue(ctx, `location.pathname === '/rec/1' && document.querySelectorAll('#cui-intercept > *').length === 1`) {
 		t.Error("after the declined move, Back must close just the related layer")
+	}
+}
+
+func TestLeaveGuardUsesRuntimePhrase(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "headless.leave_guard", i18n.Message{Text: "Cambios sin guardar."})
+	reader := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "es"}), i18n.NewTranslator(cat, "en"))
+	body := `<script type="application/json" id="gofastr-strings">` + string(runtime.StringsJSON(reader)) + `</script>` +
+		leaveGuardBody(`<form id="gf" data-hui-leave-guard><input id="gf-name" name="name"></form>`)
+	ctx := behaviorPage(t, startBehaviorServer(t, body))
+	var got string
+	if err := chromedp.Run(ctx,
+		leaveGuardEdit(`#gf-name`, "changed"),
+		chromedp.Evaluate(leaveGuardStub+`window.__gofastr._leaveGuard.ok(document); window.__asked = window.__confirms[0];`, nil),
+		chromedp.Evaluate(`window.__asked`, &got),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if got != "Cambios sin guardar." {
+		t.Fatalf("question = %q, want translated fallback", got)
+	}
+}
+
+func TestLeaveDialogUsesRuntimePhrase(t *testing.T) {
+	body := `<script type="application/json" id="gofastr-strings">{"headless.leave_guard":"Cambios sin guardar."}</script>` +
+		leaveGuardBody(`<form id="gf" data-hui-leave-guard><input id="gf-name" name="name"></form>`) + leaveDialogTemplate
+	ctx := behaviorPage(t, startBehaviorServer(t, body))
+	if err := chromedp.Run(ctx, leaveGuardEdit(`#gf-name`, "changed"), chromedp.Click(`#go`, chromedp.ByID)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `document.querySelector('body > dialog[open] [data-cui-confirm-part="message"]')?.textContent === 'Cambios sin guardar.'`) {
+		t.Fatal("dialog did not ask translated fallback")
 	}
 }

@@ -1471,6 +1471,9 @@ The kernel's `say(key, english, params)`, exported as
 `window.__gofastr.say`, reads the block once, falls back to the English
 argument on a miss, and fills `{{name}}` placeholders from `params`.
 Fragments call `say(...)`; modules and behaviours call `NS.say(...)`.
+The headless leave guard’s default question uses `headless.leave_guard`;
+a form’s explicit message still takes precedence. Browser dialogs and
+`askWords` options are reader-facing prose sinks, covered by the same lint.
 Never write prose straight into a toast, `textContent`, `aria-label` or
 `title`, nor a unit glued to a value (`ms + 'ms'`):
 `core-ui/check.LintRuntimeProse` refuses it, and

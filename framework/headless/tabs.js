@@ -140,17 +140,23 @@
     if (!tab) return;
     const wrapper = tab.closest('[data-hui-tabs]');
     if (!wrapper) return;
-    const tabs = own(wrapper, '[role="tab"]').filter(function (t) {
+    const all = own(wrapper, '[role="tab"]');
+    const tabs = all.filter(function (t) {
       return t.getAttribute('aria-disabled') !== 'true';
     });
     if (tabs.length === 0) return;
-    const idx = tabs.indexOf(tab);
+    const idx = all.indexOf(tab);
     const rtl = getComputedStyle(tab).direction === 'rtl';
 
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
       const forward = (e.key === 'ArrowRight') !== rtl;
       e.preventDefault();
-      const next = tabs[(idx + (forward ? 1 : -1) + tabs.length) % tabs.length];
+      // Walk DOM order before skipping disabled entries. The focused tab
+      // may itself be disabled (server selection or a live state change).
+      let i = idx;
+      do { i = (i + (forward ? 1 : -1) + all.length) % all.length; }
+      while (all[i].getAttribute('aria-disabled') === 'true');
+      const next = all[i];
       next.focus();
       next.click();
       return;

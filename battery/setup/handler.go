@@ -241,7 +241,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	if len(fieldErrors) > 0 {
-		r.renderStepWithErrors(w, req, stepIdx, fieldErrors)
+		r.renderStepWithErrors(w, req, stepIdx, fieldErrors, values)
 		return
 	}
 
@@ -250,7 +250,7 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	// re-run it between the run and the advance.
 	if err := r.runStepSerialized(req.Context(), stepIdx, step, values); err != nil {
 		msg, _ := i18n.ErrorText(req.Context(), err, i18n.Phrase{})
-		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": msg})
+		r.renderStepWithErrors(w, req, stepIdx, map[string]string{"_step": msg}, values)
 		return
 	}
 
