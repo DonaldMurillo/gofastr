@@ -252,16 +252,12 @@ func (s *Server) handlePromptsGet(ctx context.Context, req Request) Response {
 	// discloses the argument names of a prompt they cannot access - exactly
 	// what prompts/list withholds from them.
 	if gErr := s.checkPromptGate(ctx, p); gErr != nil {
-		if rpcErr, ok := gErr.(*RPCError); ok {
-			return Response{JSONRPC: "2.0", ID: req.ID, Error: rpcErr}
-		}
-		// A plain gate refusal is a deliberate caller-facing channel —
-		// checkToolGate's contract: it crosses verbatim on invalid-params,
-		// never re-classified as an internal error whose text must stay
-		// server-side.
-		return Response{JSONRPC: "2.0", ID: req.ID, Error: &RPCError{
-			Code: ErrInvalidParams, Message: gErr.Error(),
-		}}
+		// An unmarked refusal answers exactly as an unknown name, so the
+		// call cannot confirm a gated prompt exists; ShowRefusal opts a
+		// gate's message back across.
+		return Response{JSONRPC: "2.0", ID: req.ID, Error: maskedRefusalRPC(gErr, &RPCError{
+			Code: ErrInvalidParams, Message: fmt.Sprintf("prompt %q not found", params.Name),
+		})}
 	}
 
 	// Argument values are strings; a number or an array already failed

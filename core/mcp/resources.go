@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
@@ -208,6 +209,15 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 
 	contents, err := s.readResourceContents(ctx, res)
 	if err != nil {
+		var gated *gateRefusalError
+		if errors.As(err, &gated) {
+			// An unmarked refusal answers exactly as an unknown uri, so
+			// the read cannot confirm a gated resource exists;
+			// ShowRefusal opts a gate's message back across.
+			return Response{JSONRPC: "2.0", ID: req.ID, Error: maskedRefusalRPC(gated.err, &RPCError{
+				Code: ErrMethodNotFound, Message: fmt.Sprintf("resource %q not found", params.URI),
+			})}
+		}
 		return handlerErrorResponse(req, err, "mcp: resource contents func failed", "internal resource error",
 			slog.String("uri", res.URI))
 	}
@@ -229,28 +239,34 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 // mirroring invokeHandler so a panic in app-supplied code becomes a
 // well-formed error instead of unwinding the transport (critical for stdio).
 func (s *Server) readResourceContents(ctx context.Context, res Resource) (out ResourceContents, err error) {
+	inGate := false
 	defer func() {
 		if rec := recover(); rec != nil {
 			slog.Error("panic in MCP resource callback recovered", "operation", "resource callback",
 				"resource", textsafe.SanitizeControlBytes(res.URI), "panic", textsafe.Recovered(rec), "stack", string(debug.Stack()))
 			out = ResourceContents{}
+			if inGate {
+				// A panicking gate fails closed AND masks: an internal
+				// error differs from the unknown-uri answer and would
+				// confirm the gated resource exists.
+				err = &gateRefusalError{err: errGatePanicked}
+				return
+			}
 			err = &RPCError{Code: ErrInternalError, Message: "internal resource error"}
 		}
 	}()
 	// Auth gate (WithResourceGate) runs before the contents func: the
 	// resource-side analogue of mcp.Gated. Inside the recover guard so a
-	// panicking gate becomes a well-formed error, not a transport crash. A
-	// refusal propagates the gate's error to the caller.
+	// panicking gate becomes a well-formed error, not a transport crash.
+	// The refusal leaves as a gateRefusalError so handleResourcesRead
+	// can answer it as an unknown uri unless it carries ShowRefusal —
+	// the same masking every item gate applies.
 	if res.gate != nil {
-		if gErr := res.gate(ctx); gErr != nil {
-			// A gate refusal is a deliberate caller-facing channel —
-			// checkToolGate's contract: it crosses verbatim on
-			// invalid-params, never classified as internal (whose text
-			// must stay server-side).
-			if rpcErr, ok := gErr.(*RPCError); ok {
-				return ResourceContents{}, rpcErr
-			}
-			return ResourceContents{}, &RPCError{Code: ErrInvalidParams, Message: gErr.Error()}
+		inGate = true
+		gErr := res.gate(ctx)
+		inGate = false
+		if gErr != nil {
+			return ResourceContents{}, &gateRefusalError{err: gErr}
 		}
 	}
 	return res.contents(ctx)

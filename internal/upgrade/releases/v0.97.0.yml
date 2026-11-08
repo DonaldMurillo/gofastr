@@ -8,3 +8,14 @@ notes:
       uses:
         - gofastr/battery/auth.NewMagicLinkPlugin
         - gofastr/battery/auth.NewPasswordResetPlugin
+
+  - change: "BREAKING - an MCP item gate's refusal on tools/call, resources/read and prompts/get answers exactly as an unknown name does, instead of crossing with the gate's message; a direct call can no longer confirm a gated tool, resource or prompt exists"
+    breaking: true
+    hits: edit
+    guidance: "A gate whose message the caller must read (an upgrade-your-plan refusal) wraps its error with mcp.ShowRefusal(err) before returning it; only then does the message cross, and a gate returning its own *mcp.RPCError keeps its code. Tests that assert a gated call's error message now see the unknown-name not-found answer. The server-wide SetGate is unchanged."
+    find:
+      uses:
+        - mcp.WithToolGate
+        - mcp.WithResourceGate
+        - mcp.WithPromptGate
+        - mcp.Gated

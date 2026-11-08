@@ -229,18 +229,19 @@ func TestPromptsGetPanicBecomesError(t *testing.T) {
 		func(context.Context, map[string]string) ([]PromptMessage, error) { return nil, nil },
 		WithPromptGate(func(context.Context) error { panic("gate boom") }))
 
-	for _, name := range []string{"boom", "boom_gate"} {
-		resp := callPromptsGet(t, s, context.Background(), `{"name":"`+name+`"}`)
-		if resp.Error == nil {
-			t.Errorf("%s: panic became a success response", name)
-			continue
-		}
-		if resp.Error.Code != ErrInternalError {
-			t.Errorf("%s: error code = %d, want %d (internal)", name, resp.Error.Code, ErrInternalError)
-		}
-		if resp.Error.Message != "internal prompt error" {
-			t.Errorf("%s: panic value leaked to the caller: %q", name, resp.Error.Message)
-		}
+	// A panicking handler stays a well-formed internal error; a
+	// panicking gate fails closed AND answers as an unknown prompt, the
+	// same masked refusal a gate's error gets (an internal error would
+	// still confirm the prompt exists).
+	if resp := callPromptsGet(t, s, context.Background(), `{"name":"boom"}`); resp.Error == nil || resp.Error.Code != ErrInternalError || resp.Error.Message != "internal prompt error" {
+		t.Errorf("boom: panic = %+v, want the internal prompt error", resp.Error)
+	}
+	resp := callPromptsGet(t, s, context.Background(), `{"name":"boom_gate"}`)
+	if resp.Error == nil {
+		t.Fatal("boom_gate: panic became a success response")
+	}
+	if resp.Error.Code != ErrInvalidParams || resp.Error.Message != `prompt "boom_gate" not found` {
+		t.Errorf("boom_gate: panic = {%d %q}, want the unknown-prompt answer", resp.Error.Code, resp.Error.Message)
 	}
 }
 

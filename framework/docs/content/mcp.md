@@ -261,12 +261,14 @@ Options:
 | `WithResourceMeta(meta)` | Attaches `_meta`, serialized verbatim in `resources/list`. MCP Apps ride `csp`/`permissions` on `_meta.ui`. |
 | `WithResourceGate(gate)` | Hides the resource from callers the gate refuses and refuses their reads; see below. |
 
-`WithResourceGate` runs before the contents func on every read and refuses the
-read on error. It also guards the listing: a caller the gate refuses does not
-see the resource in `resources/list`, and pagination walks the post-filter
-set. The resource's uri, name, and description are the disclosure, the same
-way a template's uriTemplate and description are, so the rule matches
-`WithResourceTemplateGate`, `WithToolGate` and `WithPromptGate`.
+`WithResourceGate` runs before the contents func on every read and
+refuses the read on error, answering exactly as an unknown `uri` does
+unless the refusal carries `ShowRefusal`. It also guards the listing: a
+caller the gate refuses does not see the resource in `resources/list`,
+and pagination walks the post-filter set. The resource's uri, name, and
+description are the disclosure, the same way a template's uriTemplate
+and description are, so the rule matches `WithResourceTemplateGate`,
+`WithToolGate` and `WithPromptGate`.
 
 <!-- gofastr:compile
 import (
@@ -410,13 +412,15 @@ srv.RegisterResourceTemplate("help://docs/{topic}", "Internal doc by topic", "te
 srv.SetGate(auth.MCPUser())
 ```
 
-`mcp.Gated(gate, handler)` wraps a tool handler with the same gate signature.
-It only ever reaches `tools/call`: the listing never consulted it, so a caller
-who could not invoke the tool still saw its full `inputSchema`, which for
-entity CRUD tools is built from live entity definitions. Prefer
-`WithToolGate`, which applies the same predicate on both the listing and the
-call. `Gated` remains for wrapping a handler before passing it somewhere that
-takes only a `ToolHandler`.
+`mcp.Gated(gate, handler)` wraps a tool handler with the same gate
+signature. It only ever reaches `tools/call`: the listing never consulted
+it, so a caller who could not invoke the tool still saw its full
+`inputSchema`, which for entity CRUD tools is built from live entity
+definitions. Prefer `WithToolGate`, which applies the same predicate on
+both the listing and the call. `Gated` remains for wrapping a handler
+before passing it somewhere that takes only a `ToolHandler`; its
+refusals mask as an unknown tool exactly like an item gate's, unless
+the error carries `ShowRefusal`.
 
 `SetGate` installs one server-wide precondition over the data methods
 (`tools/list`, `tools/call`, `resources/list`, `resources/read`,
@@ -433,14 +437,23 @@ client implements. In a framework app,
 
 On `tools/call` the checks run in order: resolve the tool (unknown name:
 method-not-found), the framework call gate (disabled module: a generic
-internal error), the tool's own gate (invalid-params carrying the gate's
-error), then the handler. Every gate (`SetGate`, `WithToolGate`,
-`Gated`, `WithResourceGate`, `WithPromptGate`) answers the same way: a
-plain error is invalid-params carrying its message, and a gate that
-returns its own `*RPCError` keeps that error's code and message. The handler runs under a recover guard, so a panic
-in handler code becomes an internal error with no detail echoed, instead of
-unwinding the transport loop; the same guard covers resource contents funcs
-and prompt handlers. Recovered callback and gate panics log a server-side
+internal error), the tool's own gate, then the handler. An item gate's
+refusal answers EXACTLY as an unknown name does — the same code, the
+same message — on `tools/call`, `resources/read` and `prompts/get`, so
+a direct call can never confirm a gated item exists (the listings
+already hide it). A panicking gate fails closed the same way, after
+logging the panic server-side.
+
+A gate whose words the caller must read — "upgrade your plan", "link
+your account first" — wraps its error with `mcp.ShowRefusal(err)`, and
+only then does the message cross: a plain error answers invalid-params
+carrying its text, and a gate that returns its own `*RPCError` keeps
+that error's code and message. The server-wide gate (`SetGate`) is not
+an item gate: it gates the endpoint, and its refusals always cross.
+The handler runs under a recover guard, so a panic in handler code
+becomes an internal error with no detail echoed, instead of unwinding
+the transport loop; the same guard covers resource contents funcs and
+prompt handlers. Recovered callback and gate panics log a server-side
 `slog` Error diagnostic with the operation, available tool/prompt/resource
 identity, control-byte-scrubbed panic value and stack. Client errors remain
 generic; listing and notification gate panics still fail closed.

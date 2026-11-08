@@ -348,8 +348,9 @@ func TestBearerPosture_RoleAgent_NoCredentialRefusedByCSRF(t *testing.T) {
 
 // Without CSRF (the generated-app posture for JSON/MCP-first apps), a
 // credential-free request passes the middleware and is refused by the
-// tool gate instead: the handler never runs, the JSON-RPC error names the
-// missing credential, and the bearer counterpart still works.
+// tool gate instead: the handler never runs, the JSON-RPC error answers
+// exactly as an unknown tool (a gated item must not be confirmed to
+// exist), and the bearer counterpart still works.
 func TestBearerPosture_RoleAgent_NoCredentialRefusedByToolGate(t *testing.T) {
 	e := newBearerPostureEnv(t, framework.RoleAgent, false)
 
@@ -357,8 +358,8 @@ func TestBearerPosture_RoleAgent_NoCredentialRefusedByToolGate(t *testing.T) {
 	if code >= 500 {
 		t.Fatalf("credential-free tools/call must be a clean refusal, got %d body %s", code, body)
 	}
-	if msg := rpcErrorMessage(t, body); !strings.Contains(msg, "authenticated caller") {
-		t.Fatalf("credential-free tools/call must be refused by the gate, got: %s", body)
+	if msg := rpcErrorMessage(t, body); !strings.Contains(msg, "not found") {
+		t.Fatalf("credential-free tools/call must be refused as an unknown tool, got: %s", body)
 	}
 
 	code, body = e.postMCP(t, e.bearer, postureWhoami)

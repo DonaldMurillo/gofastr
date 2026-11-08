@@ -592,18 +592,17 @@ func TestWithResourceGate_BlocksAndAllows(t *testing.T) {
 
 func TestWithResourceGate_PanicRecovers(t *testing.T) {
 	// A panicking gate must become a well-formed error, not crash the
-	// transport (the gate runs inside the same recover guard as contents).
+	// transport, and it fails closed AND masks: an internal-error answer
+	// differs from the unknown-uri answer and would confirm the gated
+	// resource exists.
 	s := NewServer()
 	_ = s.RegisterResource("boom://g", "G", "text/plain", func(context.Context) (ResourceContents, error) {
 		return ResourceContents{Text: "x"}, nil
 	}, WithResourceGate(func(context.Context) error { panic("gate boom") }))
 	p, _ := json.Marshal(map[string]any{"uri": "boom://g"})
 	resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
-	if resp.Error == nil || resp.Error.Code != ErrInternalError {
-		t.Fatalf("panicking gate should become internal error, got %v", resp.Error)
-	}
-	if resp.Error.Message == "gate boom" {
-		t.Error("panic value leaked to caller")
+	if resp.Error == nil || resp.Error.Code != ErrMethodNotFound || resp.Error.Message != `resource "boom://g" not found` {
+		t.Fatalf("panicking gate should answer as an unknown uri, got %v", resp.Error)
 	}
 }
 

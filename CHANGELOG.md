@@ -103,6 +103,19 @@ few lines, and link the PR or the docs page for the rest.
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
   already were.
+- **BREAKING: an MCP item gate answers exactly as an unknown name**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #656). `tools/call`, `resources/read` and `prompts/get` answered an
+  item the caller is gated out of with the gate's message, but an
+  unknown one with not-found — a direct call was an existence oracle
+  over items the listings already hide. An unmarked gate refusal (and a
+  panicking gate) now answers byte-identically to an unknown name, on
+  every item gate (`WithToolGate`, `WithResourceGate`,
+  `WithPromptGate`, `Gated`) and the entity-tool gates. A gate whose
+  words the caller must read ("upgrade your plan") wraps its error with
+  the new `mcp.ShowRefusal(err)`, and only then does the message cross,
+  keeping its `*RPCError` code when it returns one. The server-wide
+  `SetGate` is endpoint-level and still crosses.
 - **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
   ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
   `Report.Apply` checked the symlink-resolved path against the project
