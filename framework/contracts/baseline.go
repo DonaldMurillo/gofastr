@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
 // BaselineFileName is the conventional location for a recorded baseline.
@@ -101,7 +103,7 @@ func WriteBaseline(path string, b *Baseline) error {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+	if err := atomicfile.WriteFile(path, append(data, '\n'), atomicfile.Mode(0o644)); err != nil {
 		return fmt.Errorf("write baseline: %w", err)
 	}
 	return nil
@@ -110,7 +112,7 @@ func WriteBaseline(path string, b *Baseline) error {
 // ReadBaseline loads a baseline. A missing file returns (nil, nil). No
 // baseline is the normal state, not an error.
 func ReadBaseline(path string) (*Baseline, error) {
-	data, err := os.ReadFile(path)
+	data, err := atomicfile.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil

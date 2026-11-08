@@ -319,6 +319,9 @@ added:
 gofastr verify --strict --baseline-write
 ```
 
+Baseline writes replace the file atomically after syncing the new contents.
+A concurrent verify, build or dev reader sees a complete old or new baseline.
+
 That records every current finding into
 `.gofastr-contracts-baseline.json` and commits it. It refuses to run
 with `--sarif`: record the baseline and export SARIF in separate runs.
