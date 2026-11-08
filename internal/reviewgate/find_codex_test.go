@@ -269,4 +269,14 @@ staged_git() { git "$@"; }
 	if code != 0 || !strings.Contains(out, "WARN model review skipped") || !strings.Contains(out, "REACHED-STEP-6") {
 		t.Fatalf("skip: exit %d, want 0 and a warning\n%s", code, out)
 	}
+	// A --check that crashes is a review that could not run: the commit
+	// goes through with a warning, unlike a missing codex (exit 3).
+	crash := "import sys\nprint('boom')\nsys.exit(1)\n"
+	if err := os.WriteFile(filepath.Join(skill, "review3.py"), []byte(crash), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out = hook()
+	if code != 0 || !strings.Contains(out, "WARN model review skipped: review3.py --check exited 1: boom") || !strings.Contains(out, "REACHED-STEP-6") {
+		t.Fatalf("crashed check: exit %d, want 0 and a warning\n%s", code, out)
+	}
 }
