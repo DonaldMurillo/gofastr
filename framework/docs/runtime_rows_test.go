@@ -45,6 +45,14 @@ func TestRailDocsDescribeObservedRegions(t *testing.T) {
 	}
 	for _, doc := range contractDocs(t) {
 		t.Run(doc.name, func(t *testing.T) {
+			toc := attributeRow(t, doc.text, "data-hui-toc")
+			if !strings.Contains(toc, `Requires("headless-rail")`) {
+				t.Error("TOC must load the shared rail observer before tracking entries")
+			}
+			rail := attributeRow(t, doc.text, "data-hui-rail")
+			if strings.Contains(rail, `Requires("headless-toc")`) {
+				t.Error("rail has no dependency on the TOC module")
+			}
 			for _, attr := range []string{"data-hui-rail-target", "data-hui-toc-target"} {
 				row := attributeRow(t, doc.text, attr)
 				if !strings.Contains(row, string(m[1])) {
