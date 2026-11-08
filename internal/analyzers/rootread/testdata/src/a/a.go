@@ -134,8 +134,8 @@ func (w *warehouse) dropViaHelper(ref string) error {
 	return dropFile(filepath.Join(w.shelfRoot, ref)) // want `read under a root with lexical containment only`
 }
 
-// fetchPageResolved resolves inside the helper: the fix posture, its
-// callers stay quiet.
+// fetchPageResolved reads the resolved path with no containment check
+// (#665): its callers fire.
 func fetchPageResolved(src string) ([]byte, error) {
 	real, err := filepath.EvalSymlinks(src)
 	if err != nil {
@@ -145,7 +145,7 @@ func fetchPageResolved(src string) ([]byte, error) {
 }
 
 func (w *warehouse) loadViaResolvedReadHelper(ref string) ([]byte, error) {
-	return fetchPageResolved(filepath.Join(w.shelfRoot, ref))
+	return fetchPageResolved(filepath.Join(w.shelfRoot, ref)) // want `read under a root with lexical containment only`
 }
 
 // manifestViaHelper: a helper called with nothing caller-controlled
@@ -154,8 +154,8 @@ func (w *warehouse) manifestViaHelper() ([]byte, error) {
 	return fetchPage(filepath.Join(w.shelfRoot, "manifest.json"))
 }
 
-// loadFixed resolves the directory chain before opening — the fix
-// posture, sanitizer and all.
+// loadFixed checks the resolved directory, then opens the original
+// path: a link swapped in after the check wins (#665).
 func (w *warehouse) loadFixed(ref string) (*os.File, error) {
 	safe, err := scrubRef(ref)
 	if err != nil {
@@ -173,11 +173,11 @@ func (w *warehouse) loadFixed(ref string) (*os.File, error) {
 	if !strings.HasPrefix(realDir, realRoot+string(os.PathSeparator)) {
 		return nil, errors.New("escapes through symlink")
 	}
-	return os.Open(full)
+	return os.Open(full) // want `read under a root with lexical containment only`
 }
 
-// resolveResolved is the fix posture at the helper: everything that
-// flows through it was resolved before the caller touches it.
+// resolveResolved checks the resolved path but returns the original
+// spelling (#665).
 func (w *warehouse) resolveResolved(ref string) (string, error) {
 	safe, err := scrubRef(ref)
 	if err != nil {
@@ -194,14 +194,13 @@ func (w *warehouse) resolveResolved(ref string) (string, error) {
 	return p, nil
 }
 
-// loadViaResolvedHelper reads a helper-produced path whose chain the
-// helper already resolved.
+// loadViaResolvedHelper reads resolveResolved's unpinned spelling.
 func (w *warehouse) loadViaResolvedHelper(ref string) ([]byte, error) {
 	p, err := w.resolveResolved(ref)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(p)
+	return os.ReadFile(p) // want `read under a root with lexical containment only`
 }
 
 // dropChecked Lstats the target and refuses a symlinked leaf before

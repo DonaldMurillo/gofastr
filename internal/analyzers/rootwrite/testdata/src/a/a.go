@@ -54,8 +54,9 @@ func (r *Report) Apply(rel string, out []byte) error {
 	return nil
 }
 
-// containedPathFixed is the fix posture: resolve symlinks on both sides
-// before comparing.
+// containedPathFixed resolves both sides and compares them, then hands
+// back the ORIGINAL path: the caller writes through a spelling a link
+// swapped in after the check still redirects (#665).
 func containedPathFixed(root, rel string) (string, error) {
 	if filepath.IsAbs(rel) {
 		return "", fmt.Errorf("apply fixes to %s: absolute paths are not applied", rel)
@@ -79,13 +80,14 @@ func containedPathFixed(root, rel string) (string, error) {
 	return abs, nil
 }
 
-// ApplyFixed writes through the symlink-resolving containment check.
-func (r *Report) ApplyFixed(rel string, out []byte) error { // want ApplyFixed:"symlinkGuard"
+// ApplyFixed writes through the unresolved path containedPathFixed
+// returns: the check confined nothing (#665).
+func (r *Report) ApplyFixed(rel string, out []byte) error {
 	abs, err := containedPathFixed(r.Root, rel)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(abs, out, 0o644)
+	return os.WriteFile(abs, out, 0o644) // want `write under a root with lexical containment only`
 }
 
 // readUnderRoot is a read: containment is not a write-safety property

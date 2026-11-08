@@ -327,32 +327,26 @@ func (r *Report) OnlyFiles(files map[string]bool) *Report {
 	return out
 }
 
-// containedPath resolves rel against root and refuses anything that lands
-// outside it. Returns the absolute path to write. Containment is checked
-// BOTH lexically and on the symlink-resolved paths: a file inside the
-// tree that is a symlink pointing outside passes the lexical check, and
-// writing through it would edit the target instead.
-func containedPath(root, rel string) (string, error) {
-	if filepath.IsAbs(rel) {
+// localPath turns a diagnostic's slash-separated file into a path
+// relative to the report root, refusing an absolute path and any path
+// that climbs out of the root lexically. Symlinks are the os.Root's
+// business: Apply opens, stats and writes through it, so a file or a
+// directory on the way that links outside the root is refused by the
+// kernel at the moment of each call. Until #665 a resolve-and-compare
+// check ran first and the write went through the unresolved path, so a
+// link swapped in between the two still won.
+func localPath(rel string) (string, error) {
+	name := filepath.FromSlash(rel)
+	if filepath.IsAbs(name) || strings.HasPrefix(rel, "/") {
 		return "", fmt.Errorf("apply fixes to %s: absolute paths are not applied", rel)
 	}
-	abs := filepath.Join(root, filepath.FromSlash(rel))
-	base := filepath.Clean(root)
-	if abs != base && !strings.HasPrefix(abs, base+string(filepath.Separator)) {
+	if !filepath.IsLocal(name) {
 		return "", fmt.Errorf("apply fixes to %s: resolves outside the project root", rel)
 	}
-	realAbs, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("apply fixes to %s: %w", rel, err)
-	}
-	realRoot, err := filepath.EvalSymlinks(base)
-	if err != nil {
-		return "", fmt.Errorf("apply fixes: resolve root: %w", err)
-	}
-	if realAbs != realRoot && !strings.HasPrefix(realAbs, realRoot+string(filepath.Separator)) {
-		return "", fmt.Errorf("apply fixes to %s: symlink resolves outside the project root", rel)
-	}
-	return abs, nil
+	// os.Root does not clean its names: "other/../a.go" fails there
+	// when other is missing, while the join Apply used before cleaned
+	// it away.
+	return filepath.Clean(name), nil
 }
 
 // Apply writes every suggested fix in the report to disk and returns the
@@ -376,6 +370,14 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 	sort.Strings(files)
 
 	var applied []Diagnostic
+	if len(files) == 0 {
+		return applied, nil
+	}
+	rt, err := os.OpenRoot(r.Root)
+	if err != nil {
+		return applied, fmt.Errorf("apply fixes: open root: %w", err)
+	}
+	defer rt.Close()
 	for _, rel := range files {
 		// filepath.Join cleans `..` segments away, so a diagnostic whose
 		// File escaped the root would be written to silently. Every path
@@ -383,11 +385,11 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 		// function in the package that writes to disk, and since
 		// contracts_fix exposes it over MCP, containment is checked here
 		// rather than trusted from the caller.
-		abs, err := containedPath(r.Root, rel)
+		name, err := localPath(rel)
 		if err != nil {
 			return applied, err
 		}
-		body, err := os.ReadFile(abs)
+		body, err := rt.ReadFile(name)
 		if err != nil {
 			return applied, fmt.Errorf("apply fixes to %s: %w", rel, err)
 		}
@@ -450,12 +452,12 @@ func (r *Report) Apply() ([]Diagnostic, error) {
 			// the tree may be mid-refactor, and silently discarding the
 			// fix would be worse than leaving it unformatted.
 		}
-		info, err := os.Stat(abs)
+		info, err := rt.Stat(name)
 		mode := os.FileMode(0o644)
 		if err == nil {
 			mode = info.Mode().Perm()
 		}
-		if err := os.WriteFile(abs, out, mode); err != nil {
+		if err := rt.WriteFile(name, out, mode); err != nil {
 			return applied, fmt.Errorf("write %s: %w", rel, err)
 		}
 		applied = append(applied, owners...)

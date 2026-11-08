@@ -85,9 +85,9 @@ func (d *depot) putViaGuardOther(slug, other string, payload []byte) error {
 	return os.WriteFile(dst, payload, 0o600) // want `write under a root with lexical containment only`
 }
 
-// locateInlineResolved resolves the very join it returns, written
-// inline rather than through a local: the tie is on the path, not the
-// spelling. Quiet.
+// locateInlineResolved resolves the join it returns and throws the
+// answer away: nothing compares it with the vault, and the caller gets
+// the unresolved spelling (#665).
 func (d *depot) locateInlineResolved(slug string) (string, error) {
 	if _, err := filepath.EvalSymlinks(filepath.Join(d.vaultDir, slug)); err != nil {
 		return "", err
@@ -95,13 +95,14 @@ func (d *depot) locateInlineResolved(slug string) (string, error) {
 	return filepath.Join(d.vaultDir, slug), nil
 }
 
-// putViaInlineResolved writes through it: quiet.
+// putViaInlineResolved writes through it: vault/link pointing outside
+// overwrote the outside file in the #665 replay.
 func (d *depot) putViaInlineResolved(slug string, payload []byte) error {
 	dst, err := d.locateInlineResolved(slug)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(dst, payload, 0o600)
+	return os.WriteFile(dst, payload, 0o600) // want `write under a root with lexical containment only`
 }
 
 // put is the Save shape: MkdirAll on the Dir of the helper-returned
@@ -158,8 +159,9 @@ func materialize(d *depot, slug, origin string) error {
 	return os.Symlink(origin, alias) // want `write under a root with lexical containment only`
 }
 
-// locateResolved is the fix posture at the helper: its body resolves
-// the directory chain, so every caller of it stays quiet.
+// locateResolved checks the resolved directory against the vault but
+// returns the unresolved path, so its callers write through a spelling
+// the check did not pin (#665).
 func (d *depot) locateResolved(slug string) (string, error) {
 	if err := rejectBadSlug(slug); err != nil {
 		return "", err
@@ -175,18 +177,18 @@ func (d *depot) locateResolved(slug string) (string, error) {
 	return p, nil
 }
 
-// putFixed renames into a resolved destination: the write's own chain
-// was checked, not just the slug format.
+// putFixed creates and renames through locateResolved's unresolved
+// path: every sink fires (#665).
 func (d *depot) putFixed(slug string, payload []byte) error {
 	dst, err := d.locateResolved(slug)
 	if err != nil {
 		return err
 	}
 	dir := filepath.Dir(dst)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil { // want `write under a root with lexical containment only`
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".staging-*")
+	tmp, err := os.CreateTemp(dir, ".staging-*") // want `write under a root with lexical containment only`
 	if err != nil {
 		return err
 	}
@@ -199,11 +201,12 @@ func (d *depot) putFixed(slug string, payload []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, dst)
+	return os.Rename(tmpPath, dst) // want `write under a root with lexical containment only`
 }
 
 // purgeFixed unlinks a leaf that was Lstat-checked to not be a
-// symlink, under a resolved directory chain.
+// symlink; the Lstat covers the leaf, and the directory chain above it
+// is locateResolved's unpinned spelling (#665).
 func (d *depot) purgeFixed(slug string) error {
 	target, err := d.locateResolved(slug)
 	if err != nil {

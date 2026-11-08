@@ -2,8 +2,9 @@
 // analyzers (rootwrite, rootread) share: local-binding resolution, the
 // root/base/dir-named root tests, the lexical Join/concat containment
 // shapes — including the one-hop same-package helper that RETURNS a
-// root-joined path — and the EvalSymlinks-on-the-chain judgement that
-// separates the fix posture from a resolution on an unrelated path,
+// root-joined path — and the contained-resolution judgement (an
+// EvalSymlinks result the sink uses, checked against the root before
+// the sink; #665),
 // plus the verified symlink guards (SymlinkGuards, GuardsPath): a
 // function counts as a guard by what its body does, never by its name,
 // and a guard call gates only the path it was handed. Every resolution
@@ -22,6 +23,7 @@ package pathflow
 import (
 	"go/ast"
 	"go/build"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"path/filepath"
@@ -74,6 +76,89 @@ func FuncsWithBodies(pass *analysis.Pass) []*ast.FuncDecl {
 	return out
 }
 
+// Derived follows a path back through the spellings that keep it the
+// same path's business: local bindings, filepath.Dir (the parent of a
+// root-joined path is still under the root), filepath.EvalSymlinks
+// (where it points), and Join(x, filepath.Base(y)) (y's leaf re-joined
+// under its resolved parent). Until #665 the walk stopped at the
+// EvalSymlinks result and at the re-join, so a write through a resolved
+// path that pointed outside the root was never a candidate at all.
+func Derived(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr) ast.Expr {
+	budget := 6
+	return derived(pass, e, bound, &budget)
+}
+
+// derived is Derived with one step budget shared by the loop and the
+// Join arm's recursion: `p = Join(p, Base(name))` resolves p back to
+// the same call, and a per-call budget recursed until the stack ran out.
+func derived(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, budget *int) ast.Expr {
+	e = Resolve(pass, e, bound, 0)
+	for ; *budget > 0; *budget-- {
+		call, ok := e.(*ast.CallExpr)
+		if !ok {
+			return e
+		}
+		switch QualifiedFunc(pass, call.Fun) {
+		case "path/filepath.Dir", "path/filepath.EvalSymlinks":
+			if len(call.Args) != 1 {
+				return e
+			}
+			e = Resolve(pass, call.Args[0], bound, 0)
+		case "path/filepath.Join":
+			// Join(x, Base(y)) is y's business only when x is y's own
+			// parent (resolved or not): Join(EvalSymlinks(Dir(p)),
+			// Base(p)). Join(baseDir, Base(name)) on a raw parameter is
+			// a fresh root join and stays one, or the root drops out
+			// and the write is never a candidate.
+			base := baseArg(pass, call, bound)
+			if base == nil {
+				return e
+			}
+			yd := Resolve(pass, base, bound, 0)
+			*budget--
+			xd := derived(pass, call.Args[0], bound, budget)
+			if xd != yd && types.ExprString(xd) != types.ExprString(yd) {
+				return e
+			}
+			e = yd
+		default:
+			return e
+		}
+	}
+	return e
+}
+
+func unrollsSelf(fn string) bool {
+	return fn == "path/filepath.Join" || fn == "path/filepath.EvalSymlinks"
+}
+
+// flattenJoin spreads a nested first argument: Join(Join(root, k), x)
+// is Join(root, k, x), the shape `p = filepath.Join(p, x)` leaves once
+// PathBindings unrolls it.
+func flattenJoin(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) []ast.Expr {
+	args := call.Args
+	for depth := 0; depth < 8 && len(args) > 0; depth++ {
+		inner, ok := Resolve(pass, args[0], bound, 0).(*ast.CallExpr)
+		if !ok || QualifiedFunc(pass, inner.Fun) != "path/filepath.Join" || len(inner.Args) == 0 {
+			break
+		}
+		args = append(append([]ast.Expr{}, inner.Args...), args[1:]...)
+	}
+	return args
+}
+
+// baseArg returns y when call is filepath.Join(x, filepath.Base(y)).
+func baseArg(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) ast.Expr {
+	if len(call.Args) != 2 {
+		return nil
+	}
+	b, ok := Resolve(pass, call.Args[1], bound, 0).(*ast.CallExpr)
+	if !ok || QualifiedFunc(pass, b.Fun) != "path/filepath.Base" || len(b.Args) != 1 {
+		return nil
+	}
+	return b.Args[0]
+}
+
 // JoinsUnderRooty reports whether e resolves — directly, through
 // locals, through a filepath.Dir wrapper, or through one same-package
 // helper call — to a path built under a root/base/dir-named parameter
@@ -90,12 +175,7 @@ func FuncsWithBodies(pass *analysis.Pass) []*ast.FuncDecl {
 // 2026-09-04 rootwrite blind spot: the Join lives in the helper and
 // the caller only sees its result).
 func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool, pkgFuncs map[string][]*ast.FuncDecl, isGuard GuardFunc) bool {
-	e = Resolve(pass, e, bound, 0)
-	// A Dir of a root-joined path is that path's parent: still under
-	// the root.
-	if call, ok := e.(*ast.CallExpr); ok && QualifiedFunc(pass, call.Fun) == "path/filepath.Dir" && len(call.Args) == 1 {
-		e = Resolve(pass, call.Args[0], bound, 0)
-	}
+	e = Derived(pass, e, bound)
 	if be, ok := e.(*ast.BinaryExpr); ok && be.Op == token.ADD {
 		return concatUnderRooty(pass, be, bound, params)
 	}
@@ -104,10 +184,11 @@ func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 		return false
 	}
 	if QualifiedFunc(pass, call.Fun) == "path/filepath.Join" {
-		if len(call.Args) < 2 {
+		args := flattenJoin(pass, call, bound)
+		if len(args) < 2 {
 			return false
 		}
-		root := RootyRoot(pass, call.Args[0], bound, params)
+		root := RootyRoot(pass, args[0], bound, params)
 		if root == nil {
 			return false
 		}
@@ -117,7 +198,7 @@ func JoinsUnderRooty(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast
 		// Narrowed 2026-09-02: a component the caller controls is what
 		// makes the write an escape risk; formatted timestamps, counters,
 		// and literal manifest names are not.
-		for _, a := range call.Args[1:] {
+		for _, a := range args[1:] {
 			if MentionsParam(pass, a, bound, params, 0) {
 				return true
 			}
@@ -186,7 +267,7 @@ func helperJoinsRootyRoot(pass *analysis.Pass, decl *ast.FuncDecl) bool {
 // body made every caller quiet, even one that resolved a different
 // value — rootwrite's per-path rule, applied at the hop.
 func helperResolvesReturn(pass *analysis.Pass, decl *ast.FuncDecl, isGuard GuardFunc) bool {
-	helperBound := Bindings(pass, decl.Body)
+	helperBound := PathBindings(pass, decl.Body)
 	evals := EvalSymlinkCalls(pass, decl.Body)
 	found := false
 	ast.Inspect(decl.Body, func(n ast.Node) bool {
@@ -300,7 +381,7 @@ func RootyParamIndex(decl *ast.FuncDecl, rootParam string) int {
 // RootyParamOrField returns the root expression when e is a parameter
 // or struct field whose name says root/base/dir.
 func RootyParamOrField(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool) ast.Expr {
-	switch x := e.(type) {
+	switch x := ast.Unparen(e).(type) {
 	case *ast.Ident:
 		obj := pass.TypesInfo.ObjectOf(x)
 		v, ok := obj.(*types.Var)
@@ -606,6 +687,75 @@ func Bindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Exp
 	return bound
 }
 
+// PathBindings is Bindings with self-rebinding Join and EvalSymlinks
+// calls unrolled: after `p := Join(root, k)` (or `var p = ...`) and
+// `p, err = EvalSymlinks(p)`, p resolves to EvalSymlinks(Join(root, k))
+// rather than to a call whose argument is p itself, a loop that hid the
+// Join and kept the most common spelling of #665's class (a resolved
+// path nobody compared with the root) out of the candidates.
+// `p = Join(p, x)` unrolls the same way. The unrolled call is
+// synthetic: it keeps the original Fun node, so QualifiedFunc still
+// names it.
+func PathBindings(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]ast.Expr {
+	bound := Bindings(pass, body)
+	if body == nil {
+		return bound
+	}
+	cur := map[types.Object]ast.Expr{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		// `var p = Join(root, k)` seeds p's prior value the way
+		// `p := Join(root, k)` does.
+		if vs, ok := n.(*ast.ValueSpec); ok && len(vs.Values) == 1 {
+			for _, name := range vs.Names {
+				if obj := pass.TypesInfo.ObjectOf(name); obj != nil && name.Name != "_" {
+					cur[obj] = vs.Values[0]
+				}
+			}
+			return true
+		}
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Rhs) != 1 {
+			return true
+		}
+		rhs := st.Rhs[0]
+		for _, lhs := range st.Lhs {
+			id, ok := lhs.(*ast.Ident)
+			if !ok || id.Name == "_" {
+				continue
+			}
+			obj := pass.TypesInfo.ObjectOf(id)
+			if obj == nil {
+				continue
+			}
+			next := rhs
+			prior, seeded := cur[obj]
+			// Join and EvalSymlinks only: `dir = filepath.Dir(dir)` is an
+			// upward walk that leaves the directory on purpose, with no
+			// root to contain.
+			if call, ok := rhs.(*ast.CallExpr); ok && seeded && unrollsSelf(QualifiedFunc(pass, call.Fun)) {
+				args := make([]ast.Expr, len(call.Args))
+				self := false
+				for i, a := range call.Args {
+					args[i] = a
+					if id, ok := ast.Unparen(a).(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj {
+						args[i] = prior
+						self = true
+					}
+				}
+				if self {
+					next = &ast.CallExpr{Fun: call.Fun, Lparen: call.Lparen, Args: args, Rparen: call.Rparen}
+					if bound[obj] == rhs {
+						bound[obj] = next
+					}
+				}
+			}
+			cur[obj] = next
+		}
+		return true
+	})
+	return bound
+}
+
 // ParamObjects collects the function's parameter variables.
 func ParamObjects(pass *analysis.Pass, fn *ast.FuncDecl) map[types.Object]bool {
 	params := map[types.Object]bool{}
@@ -626,10 +776,7 @@ func ParamObjects(pass *analysis.Pass, fn *ast.FuncDecl) map[types.Object]bool {
 // helper-hop machinery rootwrite and rootread share (I4 and its 2026-11
 // read-side port).
 func SinkParam(pass *analysis.Pass, p ast.Expr, bound map[types.Object]ast.Expr, idx map[types.Object]int) (int, bool) {
-	r := Resolve(pass, p, bound, 0)
-	if call, ok := r.(*ast.CallExpr); ok && QualifiedFunc(pass, call.Fun) == "path/filepath.Dir" && len(call.Args) == 1 {
-		r = Resolve(pass, call.Args[0], bound, 0)
-	}
+	r := Derived(pass, p, bound)
 	id, ok := r.(*ast.Ident)
 	if !ok {
 		return 0, false
@@ -698,7 +845,7 @@ func HelperSinkParams(
 			if len(idx) == 0 {
 				continue
 			}
-			bound := Bindings(pass, decl.Body)
+			bound := PathBindings(pass, decl.Body)
 			evals := EvalSymlinkCalls(pass, decl.Body)
 			ast.Inspect(decl.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
@@ -759,38 +906,558 @@ func EvalSymlinkCalls(pass *analysis.Pass, body *ast.BlockStmt) []*ast.CallExpr 
 	return out
 }
 
-// SymlinkResolved reports whether the path is resolved against
-// symlinks ON THE CHAIN, by a resolution that DOMINATES the sink: the
-// path itself is an EvalSymlinks result, a resolved local feeds it, or
-// an EvalSymlinks ran on this path expression before the sink —
-// directly, through a local, or on its Dir, which resolves the
-// directory chain above the leaf (the core/upload Save posture). An
-// EvalSymlinks on an unrelated path resolves nothing, and one that
-// runs after the sink (a verification read-back) resolves nothing for
-// it either; sink may be nil for callers without a position, which
-// keeps the unordered posture.
+// SymlinkResolved reports whether the sink's path is a CONTAINED
+// resolution: the path is a local bound to a filepath.EvalSymlinks
+// result, and a containment check of that local (filepath.Rel,
+// strings.HasPrefix or strings.CutPrefix in the condition of an if that
+// returns or holds the sink,
+// directly or through a local bound to one) dominates the sink. The
+// write or read then goes through the resolved path, and the resolved
+// path is known to sit under the root.
+//
+// Issue #665 (2026-11) narrowed this from "an EvalSymlinks touched the
+// chain". EvalSymlinks says where a path points; it confines nothing.
+// Replays of the old quiet fixtures escaped three ways: the resolved
+// path pointed outside the root and nothing compared it with the root;
+// the root alone was resolved and a symlinked component of the key
+// joined under it still led out; and the check resolved the path while
+// the sink used the original spelling, so a link swapped in between
+// (TOCTOU) won. Kernel confinement (os.Root) is the fix of first
+// resort; this posture is the fallback for a path that already exists.
+// sink may be nil for callers without a position, which keeps the
+// unordered posture.
 func SymlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, body *ast.BlockStmt, sink ast.Node) bool {
-	isEval := func(c *ast.CallExpr) bool {
-		return QualifiedFunc(pass, c.Fun) == "path/filepath.EvalSymlinks"
+	return resolvedContained(pass, pathArg, bound, body, sink)
+}
+
+// ContainedParent reports whether the sink's path is
+// filepath.Join(dir, filepath.Base(x)) where dir is a contained
+// resolution (SymlinkResolved's posture). It is a fix only for
+// os.Mkdir, which refuses an existing leaf, symlink or not. os.MkdirAll
+// stats the leaf, follows a link to a directory and returns nil, so a
+// later write through it lands outside. A sink that opens or clobbers
+// an existing leaf follows a symlinked one, and os.CreateTemp's
+// argument is a directory it enters,
+// so the leaf postures (O_NOFOLLOW, an Lstat check) or os.Root are
+// their fixes.
+func ContainedParent(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, body *ast.BlockStmt, sink ast.Node) bool {
+	call, ok := Resolve(pass, pathArg, bound, 0).(*ast.CallExpr)
+	if !ok || QualifiedFunc(pass, call.Fun) != "path/filepath.Join" || baseArg(pass, call, bound) == nil {
+		return false
 	}
-	r := Resolve(pass, pathArg, bound, 0)
-	if call, ok := r.(*ast.CallExpr); ok && isEval(call) {
-		return true
+	return resolvedContained(pass, call.Args[0], bound, body, sink)
+}
+
+func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, body *ast.BlockStmt, sink ast.Node) bool {
+	id, ok := ast.Unparen(pathArg).(*ast.Ident)
+	if !ok {
+		return false
 	}
-	if MentionsCall(pass, pathArg, bound, isEval, 0) {
-		return true
+	obj := pass.TypesInfo.ObjectOf(id)
+	call, ok := Resolve(pass, id, bound, 0).(*ast.CallExpr)
+	if obj == nil || !ok || QualifiedFunc(pass, call.Fun) != "path/filepath.EvalSymlinks" {
+		return false
 	}
-	for _, ev := range evals {
-		if !dominates(ev, sink, body) {
-			continue
-		}
-		for _, a := range ev.Args {
-			if ArgTouchesPath(pass, a, bound, r) {
+	// The resolution must run on every path to the sink: after
+	// `if resolve { p, err = EvalSymlinks(p) }` the other branch writes
+	// the unresolved p, and the check it passed was lexical.
+	if !dominates(call, sink, body) {
+		return false
+	}
+	// A local holds this resolution when it is bound to the call
+	// itself (`real, err := EvalSymlinks(p)`, or the `p, err =
+	// EvalSymlinks(p)` rebind), or is a copy of one, every copy on the
+	// chain assigned once, after the call. bound holds each local's
+	// last binding, so a copy made earlier, `out := real` before `real,
+	// err = EvalSymlinks(other)`, resolves to the second call while it
+	// holds the first, and `stale := real` taken then and copied again
+	// after the second call holds it too. A local whose address is
+	// taken can change through the pointer, which no binding shows. The
+	// sink's own path is held to the same rule.
+	w := writeSitesIn(pass, body)
+	holdsCall := func(o types.Object) bool {
+		cur := o
+		for i := 0; i < 8; i++ {
+			if w.addr[cur] {
+				return false
+			}
+			b, ok := bound[cur]
+			if !ok {
+				return false
+			}
+			b = ast.Unparen(b)
+			if b == call {
 				return true
+			}
+			id, ok := b.(*ast.Ident)
+			if !ok || len(w.local[cur]) != 1 || b.Pos() < call.End() {
+				return false
+			}
+			cur = pass.TypesInfo.ObjectOf(id)
+		}
+		return false
+	}
+	if !holdsCall(obj) {
+		return false
+	}
+	resolved := map[types.Object]bool{obj: true}
+	for o := range bound {
+		if holdsCall(o) {
+			resolved[o] = true
+		}
+	}
+	roots, joinObjs := joinRoots(pass, call, bound)
+	return ContainmentChecked(pass, body, bound, resolved, roots, joinObjs, call.End(), sink)
+}
+
+// rootKey spells the root e names, looking through locals and the
+// calls that keep a path's identity (EvalSymlinks, Abs, Clean), so
+// `realRoot := EvalSymlinks(baseDir)` and baseDir compare equal.
+func rootKey(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr) string {
+	for i := 0; i < 8; i++ {
+		e = ast.Unparen(Resolve(pass, e, bound, 0))
+		c, ok := e.(*ast.CallExpr)
+		if !ok || len(c.Args) != 1 {
+			break
+		}
+		q := QualifiedFunc(pass, c.Fun)
+		if q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean" {
+			break
+		}
+		e = c.Args[0]
+	}
+	return types.ExprString(e)
+}
+
+// joinRoots collects the roots the path resolved by call was joined
+// under: the first argument of every Join on its chain that appends a
+// non-constant element, and the leftmost operand of a concatenation
+// (`root + sep + name`) (`dir := Join(root, id)` then `Join(dir, name)`
+// names both dir and root). A Join of constants only, such as
+// Join(home, ".app"), is the root itself and the walk stops there. A
+// containment test against any other root, such as the root's
+// filepath.Dir, says nothing about this one.
+func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) (map[string]bool, map[types.Object]bool) {
+	roots := map[string]bool{}
+	objs := map[types.Object]bool{}
+	if len(call.Args) != 1 {
+		return roots, objs
+	}
+	note := func(e ast.Expr) {
+		roots[rootKey(pass, e, bound)] = true
+		if id, ok := ast.Unparen(e).(*ast.Ident); ok {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				objs[obj] = true
 			}
 		}
 	}
-	return false
+	isConst := func(a ast.Expr) bool {
+		tv, ok := pass.TypesInfo.Types[a]
+		return ok && tv.Value != nil
+	}
+	e := call.Args[0]
+	for i := 0; i < 8; i++ {
+		e = ast.Unparen(Resolve(pass, e, bound, 0))
+		// root + sep + name: the leftmost operand is the root. (Only a
+		// concatenation that appends caller data reaches here: one of
+		// constants is no root-joined path.)
+		if add, ok := e.(*ast.BinaryExpr); ok && add.Op == token.ADD {
+			first := ast.Expr(add)
+			for {
+				b, ok := ast.Unparen(first).(*ast.BinaryExpr)
+				if !ok || b.Op != token.ADD {
+					break
+				}
+				first = b.X
+			}
+			e = first
+			note(e)
+			continue
+		}
+		c, ok := e.(*ast.CallExpr)
+		if !ok {
+			break
+		}
+		q := QualifiedFunc(pass, c.Fun)
+		if len(c.Args) == 1 && (q == "path/filepath.Dir" || q == "path/filepath.EvalSymlinks" || q == "path/filepath.Abs" || q == "path/filepath.Clean") {
+			e = c.Args[0]
+			continue
+		}
+		if q != "path/filepath.Join" || len(c.Args) < 2 {
+			break
+		}
+		appends := false
+		for _, a := range c.Args[1:] {
+			appends = appends || !isConst(a)
+		}
+		if !appends {
+			break
+		}
+		e = c.Args[0]
+		note(e)
+	}
+	return roots, objs
+}
+
+// ContainmentChecked reports whether body tests one of objs against a
+// root before sink so that an outside path cannot reach it. The test
+// runs after the resolution at `after` and is filepath.Rel(root, real)
+// or strings.HasPrefix/CutPrefix(real, root+sep), where real is one of
+// objs itself (not an expression built from it), root is the root the
+// path was joined under (roots, keyed by rootKey) and holds one value
+// (each local on its chain assigned once, a parameter never
+// reassigned), and sep is the target's separator. It
+// decides an if that dominates sink in the right direction. Three
+// shapes count:
+//
+//   - the then-branch refuses (returns, panics or branches away) and an
+//     outside path makes the condition true: `if !HasPrefix(real, rootSep)`,
+//     `if err != nil || HasPrefix(rel, "..")`;
+//   - the sink sits in the then-branch and an outside path makes the
+//     condition false: `if HasPrefix(real, rootSep) { write }`;
+//   - the else-branch refuses and an outside path makes the condition
+//     false: `if HasPrefix(real, rootSep) {} else { return }`.
+//
+// A ".." test of a Rel result also needs Rel's error refused
+// (relErrRefused): a failed Rel returns "". IsLocal(rel) does not, as
+// IsLocal("") is false.
+//
+// A Rel whose result nobody reads, a prefix test whose answer only
+// logs, and `if HasPrefix(real, root) { return nil }` before the write
+// (the inside path refuses, the outside one writes) confine nothing.
+func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, roots map[string]bool, joinObjs map[types.Object]bool, after token.Pos, sink ast.Node) bool {
+	if body == nil {
+		return false
+	}
+	sep := targetSeparator(pass)
+	// rootOperand reports whether e names the root the path was joined
+	// under (roots, keyed by rootKey) and holds one value. The join-root
+	// match also refuses a constant (HasPrefix(real, "/") holds for every
+	// absolute path, and a constant root joins no candidate path), a root
+	// built from the resolved path itself (HasPrefix(real,
+	// filepath.Dir(real)+sep) holds for nearly every path) and some other
+	// directory such as the root's parent: none of them keys as the join
+	// root.
+	// stable reports whether e holds one root at the check (at) on
+	// every path: each local on its chain, through EvalSymlinks/Abs/
+	// Clean and parentheses, is assigned once before the point it is
+	// read (a parameter, never), so `if widen { root = "" } else { root
+	// = baseDir }` cannot hide its "" behind the last binding. A copy
+	// moves the point to the copy, or to the resolution when the copy
+	// came first: `frozen := baseDir` after the join holds baseDir's
+	// value then, and a later `baseDir = next` changes neither string. A
+	// local whose address is taken, and a field assigned (or whose
+	// address is taken) before the read, are refused: a write through
+	// the pointer or the field changes the root no binding shows. A
+	// write through another alias of the struct is out of reach.
+	assigns := assignCounts(pass, body)
+	w := writeSitesIn(pass, body)
+	// before counts the writes that can run before the read at `at`:
+	// those earlier in the source, and those later in the source but
+	// inside a loop that also holds the read (and not the resolution),
+	// which run on one iteration and reach the read on the next.
+	before := func(sites []token.Pos, at token.Pos) int {
+		n := 0
+		for _, p := range sites {
+			if p < at || w.loopCarried(p, at, after-1) {
+				n++
+			}
+		}
+		return n
+	}
+	identStable := func(obj types.Object, at token.Pos) (outer, ok bool) {
+		if obj == nil || w.addr[obj] {
+			return false, false
+		}
+		outer = obj.Pos() < body.Pos() || obj.Pos() > body.End()
+		values := before(w.local[obj], at)
+		if outer {
+			values++ // a parameter or outer variable has its own value too
+		}
+		return outer, values <= 1
+	}
+	stable := func(e ast.Expr, at token.Pos) bool {
+		for i := 0; i < 8; i++ {
+			e = ast.Unparen(e)
+			switch x := e.(type) {
+			case *ast.Ident:
+				obj := pass.TypesInfo.ObjectOf(x)
+				outer, ok := identStable(obj, at)
+				if !ok {
+					return false
+				}
+				if b, ok := bound[obj]; ok && b.Pos() < at {
+					// The copy holds its source's value at the copy, and
+					// that must be the value the path was joined under:
+					// after `frozen := baseDir; baseDir = next` and a join
+					// under baseDir, frozen names the old root. Count the
+					// source's writes up to the later of the copy and the
+					// resolution, unless the join read the copy itself
+					// (`Join(frozen, name)`).
+					e, at = b, b.Pos()
+					if after > at && !joinObjs[obj] {
+						at = after
+					}
+					continue
+				}
+				// No binding before the read: a parameter's own value,
+				// or a local whose value came from one bound is blind to.
+				return outer
+			case *ast.SelectorExpr:
+				key := types.ExprString(x)
+				if w.addrSel[key] || before(w.sel[key], at) > 0 {
+					return false
+				}
+				if base, ok := ast.Unparen(x.X).(*ast.Ident); ok {
+					if _, ok := identStable(pass.TypesInfo.ObjectOf(base), at); !ok {
+						return false
+					}
+				}
+				return true
+			case *ast.CallExpr:
+				q := QualifiedFunc(pass, x.Fun)
+				if len(x.Args) != 1 || (q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean") {
+					return true
+				}
+				e = x.Args[0]
+			default:
+				return true
+			}
+		}
+		return true
+	}
+	rootOperand := func(e ast.Expr, at token.Pos) bool {
+		return stable(e, at) && roots[rootKey(pass, e, bound)]
+	}
+	// target reports whether e is the resolved path itself: one of objs,
+	// not an expression built from it. HasPrefix(Join(root,
+	// Base(real)), root+sep) holds while real points anywhere.
+	target := func(e ast.Expr) bool {
+		id, ok := ast.Unparen(e).(*ast.Ident)
+		return ok && objs[pass.TypesInfo.ObjectOf(id)]
+	}
+	// isContain reports whether c is a containment test of the
+	// resolved path, made after it was resolved: a check of p before
+	// `p, err = EvalSymlinks(p)` tested the unresolved spelling.
+	//   - filepath.Rel(root, real);
+	//   - strings.HasPrefix/CutPrefix(real, root + sep): the separator
+	//     is the boundary, without it /srv/app-backup passes a test
+	//     against /srv/app.
+	isContain := func(c *ast.CallExpr) bool {
+		if c.Pos() < after || len(c.Args) != 2 {
+			return false
+		}
+		switch QualifiedFunc(pass, c.Fun) {
+		case "path/filepath.Rel":
+			return rootOperand(c.Args[0], c.Pos()) && target(c.Args[1])
+		case "strings.HasPrefix", "strings.CutPrefix":
+			// The operand holds one value too: after `rootSep := ""` and
+			// `if strict { rootSep = root + sep }`, HasPrefix(real,
+			// rootSep) is true for every path when strict is false.
+			if !target(c.Args[0]) || !stable(c.Args[1], c.Pos()) {
+				return false
+			}
+			add, ok := ast.Unparen(Resolve(pass, c.Args[1], bound, 0)).(*ast.BinaryExpr)
+			if !ok || add.Op != token.ADD || !rootOperand(add.X, c.Pos()) {
+				return false
+			}
+			tv, ok := pass.TypesInfo.Types[add.Y]
+			return ok && tv.Value != nil && tv.Value.Kind() == constant.String && constant.StringVal(tv.Value) == sep
+		}
+		return false
+	}
+	isPrefix := func(c *ast.CallExpr) bool {
+		fn := QualifiedFunc(pass, c.Fun)
+		return fn == "strings.HasPrefix" || fn == "strings.CutPrefix"
+	}
+	// rel := filepath.Rel(root, real) on a contained root: an outside
+	// real gives a rel that is exactly ".." or starts with ".." plus
+	// the target's separator. relOf returns the Rel call, so parts
+	// checked on two different Rel results never combine.
+	//
+	// Resolve follows each local's last binding, so a local assigned
+	// twice breaks the chain: after `alias := rel` and
+	// `rel, _ = filepath.Rel(root, real)`, alias still holds the first
+	// Rel's answer but resolves to the second. No credit through one.
+	relOf := func(e ast.Expr) *ast.CallExpr {
+		for depth := 0; depth < 8; depth++ {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			if !ok {
+				break
+			}
+			obj := pass.TypesInfo.ObjectOf(id)
+			b, ok := bound[obj]
+			if !ok || assigns[obj] > 1 {
+				return nil
+			}
+			e = b
+		}
+		r, ok := ast.Unparen(e).(*ast.CallExpr)
+		if ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) {
+			return r
+		}
+		return nil
+	}
+	strConst := func(e ast.Expr) (string, bool) {
+		tv, ok := pass.TypesInfo.Types[e]
+		if !ok || tv.Value == nil || tv.Value.Kind() != constant.String {
+			return "", false
+		}
+		return constant.StringVal(tv.Value), true
+	}
+	parentPrefix := ".." + sep
+	// cover is what an outside path makes a condition: forced true,
+	// forced false, neither, or, for tests of a Rel result, true on
+	// only part of the outside spellings, kept per Rel call: dotdot
+	// (rel == "..") or parent (rel under ".." plus separator). A
+	// disjunction covering both parts of one Rel is forced true; a part
+	// alone is not: HasPrefix(rel, "../") misses rel == "..", the
+	// root's parent itself.
+	const (
+		forceFalse = -1
+		forceTrue  = 1
+		dotdot     = 1
+		parent     = 2
+	)
+	type cover struct {
+		force int
+		parts map[*ast.CallExpr]int
+	}
+	part := func(r *ast.CallExpr, bit int) cover {
+		return cover{parts: map[*ast.CallExpr]int{r: bit}}
+	}
+	// settle turns a cover into its force: Rel parts covering both
+	// ".." and ".." plus separator force the condition true, but only
+	// when Rel's own error is refused (relErrRefused). A failed Rel
+	// leaves rel == "", which no ".." test catches.
+	settle := func(c cover) int {
+		if c.force != 0 {
+			return c.force
+		}
+		for call, bits := range c.parts {
+			if bits == dotdot|parent && relErrRefused(pass, body, call, sink) {
+				return forceTrue
+			}
+		}
+		return 0
+	}
+	var outsideForces func(e ast.Expr, depth int) cover
+	outsideForces = func(e ast.Expr, depth int) cover {
+		if depth > 6 {
+			return cover{}
+		}
+		switch x := ast.Unparen(e).(type) {
+		case *ast.UnaryExpr:
+			if x.Op == token.NOT {
+				return cover{force: -settle(outsideForces(x.X, depth+1))}
+			}
+		case *ast.BinaryExpr:
+			if x.Op == token.EQL {
+				// rel == ".."
+				for _, pair := range [][2]ast.Expr{{x.X, x.Y}, {x.Y, x.X}} {
+					if c, ok := strConst(pair[1]); ok && c == ".." && dominates(x, sink, body) {
+						if r := relOf(pair[0]); r != nil {
+							return part(r, dotdot)
+						}
+					}
+				}
+				return cover{}
+			}
+			l, r := outsideForces(x.X, depth+1), outsideForces(x.Y, depth+1)
+			switch x.Op {
+			case token.LOR:
+				// true if either side is forced true; false only
+				// when both are forced false.
+				if l.force == forceTrue || r.force == forceTrue {
+					return cover{force: forceTrue}
+				}
+				parts := map[*ast.CallExpr]int{}
+				for _, side := range []cover{l, r} {
+					for call, bits := range side.parts {
+						parts[call] |= bits
+					}
+				}
+				if len(parts) > 0 {
+					return cover{parts: parts}
+				}
+				if l.force == forceFalse && r.force == forceFalse {
+					return cover{force: forceFalse}
+				}
+			case token.LAND:
+				lf, rf := settle(l), settle(r)
+				if lf == forceFalse || rf == forceFalse {
+					return cover{force: forceFalse}
+				}
+				if lf == forceTrue && rf == forceTrue {
+					return cover{force: forceTrue}
+				}
+			}
+		case *ast.Ident:
+			// `inside := HasPrefix(real, root)`, or CutPrefix's found
+			// result. Only a bool counts: the err beside Rel's result
+			// says nothing about containment. The read must dominate:
+			// `if check { if !inside { return } }` refuses only when
+			// check is set.
+			obj := pass.TypesInfo.ObjectOf(x)
+			if obj == nil || !types.Identical(obj.Type(), types.Typ[types.Bool]) || !dominates(x, sink, body) {
+				return cover{}
+			}
+			if r, ok := Resolve(pass, x, bound, 0).(*ast.CallExpr); ok && isPrefix(r) && isContain(r) &&
+				dominates(r, sink, body) {
+				return cover{force: forceFalse}
+			}
+		case *ast.CallExpr:
+			if !dominates(x, sink, body) {
+				return cover{}
+			}
+			if isPrefix(x) && isContain(x) {
+				return cover{force: forceFalse} // HasPrefix(real, root): false outside
+			}
+			// filepath.IsLocal(rel) is false for ".." and "../x".
+			if QualifiedFunc(pass, x.Fun) == "path/filepath.IsLocal" && len(x.Args) == 1 && relOf(x.Args[0]) != nil {
+				return cover{force: forceFalse}
+			}
+			// HasPrefix(rel, ...) on rel := Rel(root, real): ".."
+			// covers every outside rel, ".." plus the target's
+			// separator only those below the parent, and anything
+			// else ("..blocked", the other platform's separator)
+			// neither.
+			if isPrefix(x) && len(x.Args) == 2 {
+				if r := relOf(x.Args[0]); r != nil {
+					switch c, _ := strConst(x.Args[1]); c {
+					case "..":
+						return part(r, dotdot|parent)
+					case parentPrefix:
+						return part(r, parent)
+					}
+				}
+			}
+		}
+		return cover{}
+	}
+	holds := func(b ast.Node) bool {
+		return b != nil && sink != nil && b.Pos() <= sink.Pos() && sink.End() <= b.End()
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		ifs, ok := n.(*ast.IfStmt)
+		if !ok || found {
+			return !found
+		}
+		f := settle(outsideForces(ifs.Cond, 0))
+		switch {
+		case f == forceTrue && refuses(ifs.Body) && !holds(ifs.Body):
+			found = true
+		case f == forceFalse && holds(ifs.Body):
+			found = true
+		case f == forceFalse && !holds(ifs.Body) && !holds(ifs.Else):
+			if eb, ok := ifs.Else.(*ast.BlockStmt); ok && refuses(eb) {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // ArgTouchesPath reports whether an EvalSymlinks argument mentions a
@@ -899,9 +1566,10 @@ func SymlinkGuards(pass *analysis.Pass, newFact func() analysis.Fact) GuardFunc 
 }
 
 // ResolvesSymlinks reports whether body performs a real resolution
-// posture: filepath.EvalSymlinks, an O_NOFOLLOW flag, an os.Lstat
-// whose FileInfo result a ModeSymlink test READS, or a call to a
-// verified guard. It judges a guard's body; whether the guard touched
+// posture: an O_NOFOLLOW flag, an os.Lstat whose FileInfo result a
+// ModeSymlink test READS, or a call to a verified guard. A bare
+// filepath.EvalSymlinks is no guard since #665: it says where a path
+// points, and the guard's caller goes on to use the unresolved one. It judges a guard's body; whether the guard touched
 // the right path is GuardsPath's question. (os.Root needs no guard:
 // its methods are no os.* sink, so a write or read through one is
 // quiet by construction.) Until the 2026-11 round the Lstat arm read
@@ -914,8 +1582,6 @@ func ResolvesSymlinks(pass *analysis.Pass, body *ast.BlockStmt, isGuard GuardFun
 		switch v := n.(type) {
 		case *ast.CallExpr:
 			switch QualifiedFunc(pass, v.Fun) {
-			case "path/filepath.EvalSymlinks":
-				found = true
 			case "os.Lstat":
 				lstat = true
 			}
@@ -1259,4 +1925,306 @@ func ArgAt(call *ast.CallExpr, i int) ast.Expr {
 		return call.Args[i]
 	}
 	return nil
+}
+
+// AddRangeVars marks the key and value variables of every range loop in
+// body whose range expression carries caller data as caller data too:
+// `for _, n := range names` hands each element of the names parameter
+// to the loop body. Issue #665: resolveBeforeLoop joined each n under a
+// resolved root and wrote it, and n was not caller data, so the write
+// stayed quiet once the root's EvalSymlinks stopped counting. Only a
+// range DIRECTLY over a parameter (or a field of one) counts: a range
+// over a directory listing, a search path or a config table built from
+// a parameter yields values this code computed, and counting them made
+// every such loop variable both a root and caller data.
+func AddRangeVars(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, params map[types.Object]bool) {
+	if body == nil {
+		return
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		rs, ok := n.(*ast.RangeStmt)
+		if !ok || !rangesParam(pass, rs.X, params) {
+			return true
+		}
+		for _, e := range []ast.Expr{rs.Key, rs.Value} {
+			if id, ok := e.(*ast.Ident); ok && id.Name != "_" {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					params[obj] = true
+				}
+			}
+		}
+		return true
+	})
+}
+
+// rangesParam reports whether e is a text-carrying parameter, or a
+// selector chain rooted at one (req.Names).
+func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) bool {
+	for {
+		switch x := ast.Unparen(e).(type) {
+		case *ast.Ident:
+			obj := pass.TypesInfo.ObjectOf(x)
+			return obj != nil && params[obj]
+		case *ast.SelectorExpr:
+			e = x.X
+		default:
+			return false
+		}
+	}
+}
+
+// relErrRefused reports whether the error beside the Rel result r is
+// refused before sink: an if that dominates sink, whose condition has
+// `err != nil` as a disjunct and whose then-branch refuses, with err
+// still holding r's error there. `rel, _ := filepath.Rel(...)` has no
+// such if: a failed Rel gives rel == "", which passes every ".." test.
+func relErrRefused(pass *analysis.Pass, body *ast.BlockStmt, r *ast.CallExpr, sink ast.Node) bool {
+	var errObj types.Object
+	var at token.Pos
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Rhs) != 1 || len(st.Lhs) != 2 || ast.Unparen(st.Rhs[0]) != r {
+			return errObj == nil
+		}
+		if id, ok := st.Lhs[1].(*ast.Ident); ok && id.Name != "_" {
+			errObj, at = pass.TypesInfo.ObjectOf(id), st.End()
+		}
+		return false
+	})
+	if errObj == nil {
+		return false
+	}
+	// reassigned reports whether errObj is assigned in (at, before).
+	reassigned := func(before token.Pos) bool {
+		found := false
+		ast.Inspect(body, func(n ast.Node) bool {
+			st, ok := n.(*ast.AssignStmt)
+			if found || !ok {
+				return !found
+			}
+			for _, lhs := range st.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == errObj && st.Pos() >= at && st.Pos() < before {
+					found = true
+				}
+			}
+			return !found
+		})
+		return found
+	}
+	var hasErrNil func(e ast.Expr) bool
+	hasErrNil = func(e ast.Expr) bool {
+		x, ok := ast.Unparen(e).(*ast.BinaryExpr)
+		if !ok {
+			return false
+		}
+		if x.Op == token.LOR {
+			return hasErrNil(x.X) || hasErrNil(x.Y)
+		}
+		if x.Op != token.NEQ {
+			return false
+		}
+		isErr := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && pass.TypesInfo.ObjectOf(id) == errObj
+		}
+		isNil := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && id.Name == "nil"
+		}
+		return (isErr(x.X) && isNil(x.Y)) || (isNil(x.X) && isErr(x.Y))
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		ifs, ok := n.(*ast.IfStmt)
+		if found || !ok {
+			return !found
+		}
+		if ifs.Cond.Pos() > at && hasErrNil(ifs.Cond) && refuses(ifs.Body) &&
+			!(ifs.Body.Pos() <= sink.Pos() && sink.End() <= ifs.Body.End()) &&
+			dominates(ifs.Cond, sink, body) && !reassigned(ifs.Cond.Pos()) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// writeSites records where body writes a value: each local's binding
+// sites (assignments, var specs, range clauses), each field spelling's
+// assignments, the locals and fields whose address is taken (a `_ =
+// &x` that drops the pointer aside), and the loops, whose back-edges
+// let a write later in the source run before an earlier read.
+type writeSites struct {
+	local   map[types.Object][]token.Pos
+	sel     map[string][]token.Pos
+	addr    map[types.Object]bool
+	addrSel map[string]bool
+	loops   []ast.Node
+}
+
+// loopCarried reports whether a for or range statement holds both a
+// and b but not the resolution at call: a write at a then runs on one
+// iteration and reaches b on the next with the path resolved before the
+// loop. A loop that also holds the resolution rebuilds the path under
+// the new value first.
+func (w *writeSites) loopCarried(a, b, call token.Pos) bool {
+	for _, l := range w.loops {
+		in := func(p token.Pos) bool { return l.Pos() <= p && p < l.End() }
+		if in(a) && in(b) && !in(call) {
+			return true
+		}
+	}
+	return false
+}
+
+// plainOperand reports whether e is an identifier or a field selector
+// on one: an operand that evaluates nothing.
+func plainOperand(e ast.Expr) bool {
+	switch x := ast.Unparen(e).(type) {
+	case *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return plainOperand(x.X)
+	}
+	return false
+}
+
+func writeSitesIn(pass *analysis.Pass, body *ast.BlockStmt) *writeSites {
+	w := &writeSites{
+		local:   map[types.Object][]token.Pos{},
+		sel:     map[string][]token.Pos{},
+		addr:    map[types.Object]bool{},
+		addrSel: map[string]bool{},
+	}
+	lhs := func(e ast.Expr, at token.Pos) {
+		switch x := ast.Unparen(e).(type) {
+		case *ast.Ident:
+			if obj := pass.TypesInfo.ObjectOf(x); obj != nil && x.Name != "_" {
+				w.local[obj] = append(w.local[obj], at)
+			}
+		case *ast.SelectorExpr:
+			key := types.ExprString(x)
+			w.sel[key] = append(w.sel[key], at)
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			for _, e := range st.Lhs {
+				lhs(e, st.Pos())
+			}
+			// `_ = &x` (or `_ = &x.f`) drops the pointer: nothing can
+			// write through it. An operand that evaluates anything, such
+			// as `_ = &T{f(&real)}`, is inspected as usual.
+			if len(st.Lhs) == 1 && len(st.Rhs) == 1 {
+				if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name == "_" {
+					if u, ok := ast.Unparen(st.Rhs[0]).(*ast.UnaryExpr); ok && u.Op == token.AND && plainOperand(u.X) {
+						return false
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, name := range st.Names {
+				lhs(name, st.Pos())
+			}
+		case *ast.ForStmt:
+			w.loops = append(w.loops, st)
+		case *ast.RangeStmt:
+			w.loops = append(w.loops, st)
+			if st.Key != nil {
+				lhs(st.Key, st.Pos())
+			}
+			if st.Value != nil {
+				lhs(st.Value, st.Pos())
+			}
+		case *ast.UnaryExpr:
+			if st.Op != token.AND {
+				return true
+			}
+			switch x := ast.Unparen(st.X).(type) {
+			case *ast.Ident:
+				if obj := pass.TypesInfo.ObjectOf(x); obj != nil {
+					w.addr[obj] = true
+				}
+			case *ast.SelectorExpr:
+				w.addrSel[types.ExprString(x)] = true
+			}
+		}
+		return true
+	})
+	return w
+}
+
+// assignCounts counts the assignments and var-spec initializers that
+// bind each local in body.
+func assignCounts(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]int {
+	counts := map[types.Object]int{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range st.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+						counts[obj]++
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, name := range st.Names {
+				if obj := pass.TypesInfo.ObjectOf(name); obj != nil && name.Name != "_" {
+					counts[obj]++
+				}
+			}
+		case *ast.IncDecStmt:
+			if id, ok := st.X.(*ast.Ident); ok {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					counts[obj]++
+				}
+			}
+		}
+		return true
+	})
+	return counts
+}
+
+// targetSeparator is filepath.Separator as the package was type-checked
+// for: the vettool runs on the host, and `make analyze` vets each
+// package for linux, windows and darwin.
+func targetSeparator(pass *analysis.Pass) string {
+	for _, imp := range pass.Pkg.Imports() {
+		if imp.Path() != "path/filepath" {
+			continue
+		}
+		if c, ok := imp.Scope().Lookup("Separator").(*types.Const); ok {
+			if v, ok := constant.Int64Val(c.Val()); ok {
+				return string(rune(v))
+			}
+		}
+	}
+	return "/"
+}
+
+// refuses reports whether a block's last statement keeps control from
+// the sink: a return, a panic call, or an unlabelled break or continue.
+// A goto or a labelled branch can land on the sink itself. An
+// unlabelled break or continue needs no target check here: the if it
+// ends dominates the sink, so it sits in a statement list ahead of the
+// sink, and the loop or switch it leaves encloses the sink too.
+func refuses(b *ast.BlockStmt) bool {
+	if b == nil || len(b.List) == 0 {
+		return false
+	}
+	switch st := b.List[len(b.List)-1].(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.BranchStmt:
+		return st.Label == nil && (st.Tok == token.BREAK || st.Tok == token.CONTINUE)
+	case *ast.ExprStmt:
+		if c, ok := st.X.(*ast.CallExpr); ok {
+			if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "panic" {
+				return true
+			}
+		}
+	}
+	return false
 }

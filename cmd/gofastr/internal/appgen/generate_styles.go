@@ -339,6 +339,11 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 			dirs = append(dirs, dir)
 		}
 	}
+	// Every pattern is read through an os.Root on base: a directory on a
+	// pattern's path that links outside the working directory is refused
+	// by the kernel, not followed. Until #665 an EvalSymlinks proved only
+	// that the path existed, and the stat and walk went wherever it led.
+	var rt *os.Root
 	for _, pat := range patterns {
 		if filepath.IsAbs(pat) {
 			return nil, fmt.Errorf("generate styles: %s: package patterns are relative to the working directory", pat)
@@ -350,29 +355,33 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 			root, recursive = rest, true
 		}
 		root = filepath.Clean(root)
-		if root == ".." || strings.HasPrefix(root, ".."+string(filepath.Separator)) {
+		if !filepath.IsLocal(root) {
 			return nil, fmt.Errorf("generate styles: %s: package patterns must stay under the working directory", pat)
 		}
-		root = filepath.Join(base, root)
-		if _, err := filepath.EvalSymlinks(root); err != nil {
-			return nil, fmt.Errorf("generate styles: resolve %s: %w", root, err)
+		if rt == nil {
+			var err error
+			if rt, err = os.OpenRoot(base); err != nil {
+				return nil, fmt.Errorf("generate styles: open %s: %w", base, err)
+			}
+			defer rt.Close()
 		}
 		if !recursive {
-			info, serr := os.Stat(root)
+			info, serr := rt.Stat(root)
 			if serr != nil || !info.IsDir() {
 				return nil, fmt.Errorf("generate styles: %s: not a directory", pat)
 			}
-			add(root)
+			add(filepath.Join(base, root))
 			continue
 		}
-		werr := filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
+		start := filepath.ToSlash(root)
+		werr := fs.WalkDir(rt.FS(), start, func(path string, d fs.DirEntry, werr error) error {
 			if werr != nil {
 				return werr
 			}
 			if !d.IsDir() {
 				return nil
 			}
-			if path != root {
+			if path != start {
 				switch d.Name() {
 				case "vendor", "testdata", "node_modules":
 					return fs.SkipDir
@@ -381,11 +390,11 @@ func stylePatternDirsAt(base string, patterns []string) ([]string, error) {
 					return fs.SkipDir
 				}
 			}
-			add(path)
+			add(filepath.Join(base, filepath.FromSlash(path)))
 			return nil
 		})
 		if werr != nil {
-			return nil, fmt.Errorf("generate styles: walk %s: %w", root, werr)
+			return nil, fmt.Errorf("generate styles: walk %s: %w", filepath.Join(base, root), werr)
 		}
 	}
 	slices.Sort(dirs)

@@ -105,17 +105,17 @@ func (c *cellar) decantResolved(ref string, payload []byte) error {
 	if !strings.HasPrefix(realDir, realVault+string(os.PathSeparator)) && realDir != realVault {
 		return errors.New("escapes through a symlink")
 	}
-	if err := os.WriteFile(full, payload, 0o600); err != nil {
-		_ = os.Remove(full) // resolved chain: the cleanup spell is quiet too
+	if err := os.WriteFile(full, payload, 0o600); err != nil { // want `write under a root with lexical containment only`
+		_ = os.Remove(full) // want `write under a root with lexical containment only`
 		return err
 	}
 	return nil
 }
 
-// decantOrdered is the ordering the 2026-11 round demands: resolve the
-// existing chain BEFORE creating anything under it, so a planted
-// symlink is refused before a directory can land outside the vault —
-// refuse-before-plant, the c682f7462 posture.
+// decantOrdered resolves and checks the existing chain before creating
+// anything, then creates and writes through the unresolved spelling:
+// ref link/new/file created the directory and file outside the vault in
+// the #665 replay. os.Root (decantViaRoot) is the fix.
 func (c *cellar) decantOrdered(ref string, payload []byte) error {
 	safe, err := filterRef(ref)
 	if err != nil {
