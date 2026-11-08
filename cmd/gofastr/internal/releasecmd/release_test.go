@@ -125,6 +125,10 @@ func TestDefaultNameSkipsMajorSuffix(t *testing.T) {
 	for in, want := range map[string]string{
 		"example.com/app":            "app",
 		"example.com/app/v2":         "app",
+		"example.com/app/v10":        "app",
+		"example.com/app/v1":         "v1",
+		"example.com/app/v0":         "v0",
+		"example.com/app/v02":        "v02",
 		"example.com/app/cmd/server": "server",
 	} {
 		if got := defaultName(in); got != want {
@@ -137,7 +141,9 @@ func TestDefaultNameSkipsMajorSuffix(t *testing.T) {
 func writeModule(t *testing.T, files map[string]string) string {
 	t.Helper()
 	dir := t.TempDir()
-	files["go.mod"] = "module example.com/hello\n\ngo 1.24\n"
+	if _, ok := files["go.mod"]; !ok {
+		files["go.mod"] = "module example.com/hello\n\ngo 1.24\n"
+	}
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -221,6 +227,30 @@ func TestIncludeRefusesNonRegularOrOddName(t *testing.T) {
 	}
 	if _, err := resolveIncludes(dir, []string{"main.go"}, "hello", false); err != nil {
 		t.Errorf("a plain file was refused: %v", err)
+	}
+}
+
+func TestReleaseRefusesUnusableDefaultName(t *testing.T) {
+	dir := writeModule(t, map[string]string{"main.go": helloMain, "go.mod": "module example.com/9lives\n\ngo 1.24\n"})
+	opts, _ := parseOptions([]string{"--version=1.0.0", "--targets=linux/amd64", "-o", t.TempDir()})
+	if _, err := release(dir, opts, io.Discard); err == nil || !strings.Contains(err.Error(), "pass --name") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// --service needs battery/service on every target; one target without it
+// is enough to refuse. A warning fires when any target imports it.
+func TestServiceNeedsEveryTarget(t *testing.T) {
+	both := pkgInfo{usesService: true, importsService: true}
+	none := pkgInfo{}
+	if got := mergeTargetInfo(both, none); got.usesService || !got.importsService {
+		t.Errorf("service on one target only: %+v", got)
+	}
+	if got := mergeTargetInfo(none, pkgInfo{importsDesktop: true}); !got.importsDesktop {
+		t.Errorf("desktop on one target was dropped: %+v", got)
+	}
+	if got := mergeTargetInfo(both, both); !got.usesService {
+		t.Errorf("service on every target: %+v", got)
 	}
 }
 

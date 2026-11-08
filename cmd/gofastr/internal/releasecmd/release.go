@@ -218,11 +218,19 @@ func inspectPackage(dir, pkg string, targets []target) (pkgInfo, error) {
 			info = ti
 			continue
 		}
-		info.usesService = info.usesService && ti.usesService
-		info.importsService = info.importsService || ti.importsService
-		info.importsDesktop = info.importsDesktop || ti.importsDesktop
+		info = mergeTargetInfo(info, ti)
 	}
 	return info, nil
+}
+
+// mergeTargetInfo folds one more target's answers into info: the
+// package uses battery/service only if every target does, and imports
+// it (or battery/desktop) if any target does.
+func mergeTargetInfo(info, t pkgInfo) pkgInfo {
+	info.usesService = info.usesService && t.usesService
+	info.importsService = info.importsService || t.importsService
+	info.importsDesktop = info.importsDesktop || t.importsDesktop
+	return info
 }
 
 func inspectTarget(dir, pkg string, t target) (pkgInfo, error) {
@@ -257,8 +265,9 @@ func buildEnv(t target) []string {
 }
 
 // majorSuffixRe matches the /vN element `go build` skips when it names a
-// binary after its import path.
-var majorSuffixRe = regexp.MustCompile(`^v[0-9]+$`)
+// binary after its import path: v2 and up, with no leading zero. v0 and
+// v1 are never a major suffix (cmd/go's isVersionElement).
+var majorSuffixRe = regexp.MustCompile(`^v([2-9]|[1-9][0-9]+)$`)
 
 // defaultName is the binary name `go build` gives the package.
 func defaultName(importPath string) string {
