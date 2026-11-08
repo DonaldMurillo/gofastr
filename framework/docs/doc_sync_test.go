@@ -24,18 +24,26 @@ import (
 // token, so a family row is matched as a family.
 var attrToken = regexp.MustCompile(`data-[a-z0-9]+(?:-[a-z0-9]+)*(?:-?\*)?`)
 
+// An enum value may contain an escaped Markdown pipe. Splitting on every
+// pipe drops the rest of that cell, including any later attributes.
+var attrFirstCell = regexp.MustCompile(`^\| ((?:\\.|[^|\\])*)\|`)
+
+func attrCell(line string) string {
+	if !strings.HasPrefix(line, "| `data-") {
+		return ""
+	}
+	m := attrFirstCell.FindStringSubmatch(line)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
+
 // rowAttrs returns the attribute names leading each attribute-table row.
 func rowAttrs(doc string) []string {
 	var out []string
 	for ln := range strings.SplitSeq(doc, "\n") {
-		if !strings.HasPrefix(ln, "| `data-") {
-			continue
-		}
-		cells := strings.SplitN(ln, "|", 3)
-		if len(cells) < 3 {
-			continue
-		}
-		out = append(out, attrToken.FindAllString(cells[1], -1)...)
+		out = append(out, attrToken.FindAllString(attrCell(ln), -1)...)
 	}
 	return out
 }

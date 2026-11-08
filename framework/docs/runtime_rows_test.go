@@ -20,11 +20,7 @@ func contractDocs(t *testing.T) []struct{ name, text string } {
 func attributeRow(t *testing.T, doc, attr string) string {
 	t.Helper()
 	for line := range strings.SplitSeq(doc, "\n") {
-		if !strings.HasPrefix(line, "| `data-") {
-			continue
-		}
-		cells := strings.SplitN(line, "|", 3)
-		if len(cells) == 3 && mentions(cells[1], attr) {
+		if mentions(attrCell(line), attr) {
 			return line
 		}
 	}
@@ -196,5 +192,41 @@ func TestRPCCarrierDocsMatch(t *testing.T) {
 	}
 	if !strings.Contains(arch, "any element") || !strings.Contains(arch, "named, enabled controls") {
 		t.Error("RPC carrier row must cover non-form serialization")
+	}
+}
+
+// Explicit rows must survive prefix collisions and every attribute family.
+func TestAttrSyncMatchesWholeNames(t *testing.T) {
+	for _, attr := range []string{"data-cui-compute", "data-hui-combobox*", "data-search-all-label", "data-custom-ready"} {
+		src := "| `" + attr + "` | contract |"
+		if got := missingFrom(src, "`"+attr+"d`"); len(got) != 1 || got[0] != attr {
+			t.Errorf("%s incorrectly matched a longer name: %v", attr, got)
+		}
+		if got := missingFrom(src, "`"+attr+"` "); len(got) != 0 {
+			t.Errorf("%s failed an exact match: %v", attr, got)
+		}
+	}
+}
+
+func TestAttrSyncKeepsEscapedPipeCells(t *testing.T) {
+	src := "| `data-hui-step-wizard-action=\"next\\|back\"` / `data-hui-step-wizard-status` | No `data-body-mention` row. |"
+	want := []string{"data-hui-step-wizard-action", "data-hui-step-wizard-status"}
+	if got := rowAttrs(src); !slices.Equal(got, want) {
+		t.Errorf("row attributes = %v; want %v", got, want)
+	}
+	if got := missingFrom(src, "`data-hui-step-wizard-action`"); !slices.Equal(got, want[1:]) {
+		t.Errorf("missing attributes = %v; want %v", got, want[1:])
+	}
+}
+
+//gofastr:test-reads core-ui/ARCHITECTURE.md
+func TestSortableDocsMatch(t *testing.T) {
+	arch := attributeRow(t, readArchitecture(t), "data-hui-sortable")
+	extract := attributeRow(t, readRuntimeContract(t), "data-hui-sortable")
+	if arch != extract {
+		t.Error("sortable rows disagree between the references")
+	}
+	if !strings.Contains(arch, "last order the server confirmed") {
+		t.Error("sortable rollback must document the confirmed server order")
 	}
 }
