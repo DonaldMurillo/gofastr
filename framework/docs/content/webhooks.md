@@ -133,6 +133,10 @@ persisted row through an event name.
 
 ## SSRF guard
 
+`Subscribe` refuses invalid UTF-8 or NUL in a subscriber URL, secret, or
+caller-supplied ID before calling the store; `Unsubscribe` applies the
+same rule to its ID. This also covers plaintext SQL secret storage.
+
 By default, `Subscribe` rejects URLs that target internal
 infrastructure: RFC1918 (`10.*`, `192.168.*`, `172.16-31.*`), loopback
 (`127.0.0.0/8`, `::1`), link-local (`169.254.0.0/16`, including the

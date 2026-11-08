@@ -502,6 +502,12 @@ func (m *Manager) logf(format string, args ...any) {
 // "register and start delivering"). To register a paused subscriber,
 // set Paused=true and Active will be forced false.
 func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, error) {
+	if !storableText(s.Secret) {
+		return Subscriber{}, errors.New("webhook: subscriber Secret must be valid UTF-8 without NUL")
+	}
+	if !storableText(s.ID) {
+		return Subscriber{}, errors.New("webhook: subscriber ID must be valid UTF-8 without NUL")
+	}
 	if s.Secret == "" {
 		return Subscriber{}, errors.New("webhook: subscriber Secret required")
 	}
@@ -547,6 +553,9 @@ func (m *Manager) Subscribe(ctx context.Context, s Subscriber) (Subscriber, erro
 
 // Unsubscribe removes a Subscriber. Missing IDs are not an error.
 func (m *Manager) Unsubscribe(ctx context.Context, id string) error {
+	if !storableText(id) {
+		return errors.New("webhook: subscriber ID must be valid UTF-8 without NUL")
+	}
 	return m.store.DeleteSubscriber(ctx, id)
 }
 
