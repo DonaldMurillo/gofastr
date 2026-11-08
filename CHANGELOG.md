@@ -188,6 +188,21 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`CallWithID` no longer reports an id for a request that cannot be
+  sent** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  was #656). `moduleproto.Peer` marshaled the params after `onID`
+  reported the frame id, so a call whose params failed to marshal armed
+  the supervisor's `module.cancel` for a frame that never crossed the
+  wire. Params now marshal first; `onID` fires only once the request is
+  sendable.
+- **An A2A skill always serializes its required keys**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #659). The A2A AgentSkill schema marks `description` and `tags`
+  required, but `uihost.AgentSkill` carried `omitempty` on both, so a
+  skill with no description and no tags serialized without the keys and
+  failed schema validation downstream. Both keys now always serialize —
+  an unset description as `""`, an unset tags list as `[]`, never
+  `null`.
 - **Navigation fetches bypass the page cache**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #657). `cache.CacheMiddleware`'s key ignored `X-Gofastr-Navigate`,

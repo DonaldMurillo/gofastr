@@ -116,6 +116,10 @@ update(id, due_at, total, ...)
 delete(id)
 ```
 
+The A2A AgentSkill schema marks `description` and `tags` required, so a
+skill always serializes both keys — an unset description as `""`, an
+unset tags list as `[]`, never omitted and never `null`.
+
 ### The data-part contract
 
 One data part carries `skill`, `operation` (one of the five actions),

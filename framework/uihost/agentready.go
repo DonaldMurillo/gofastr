@@ -186,14 +186,28 @@ type AgentCardConfig struct {
 }
 
 // AgentSkill is one A2A AgentSkill.
+//
+// The A2A AgentSkill schema marks description and tags REQUIRED, so
+// neither key is omitted: an unset description serializes as "" and an
+// unset tags list as [] (MarshalJSON below keeps a nil slice from
+// serializing as null, which the schema also refuses).
 type AgentSkill struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
 	Examples    []string `json:"examples,omitempty"`
 	InputModes  []string `json:"inputModes,omitempty"`
 	OutputModes []string `json:"outputModes,omitempty"`
+}
+
+// MarshalJSON serializes tags as [] when nil instead of null.
+func (s AgentSkill) MarshalJSON() ([]byte, error) {
+	type plain AgentSkill
+	if s.Tags == nil {
+		s.Tags = []string{}
+	}
+	return json.Marshal(plain(s))
 }
 
 // AgentSecurityScheme is an OpenAPI-style security scheme emitted in the
