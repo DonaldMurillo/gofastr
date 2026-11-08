@@ -184,7 +184,10 @@ expose them to agents connected to a live app.**
   and the merge queue always run everything in CI.
 - **Repo analyzers (type-aware invariants as vet checks)**: `make
   analyze` builds `cmd/vettool` and runs it over the tree; it also runs
-  in the pre-commit hook and CI's vet step. Registered: `mapwriter`
+  in the pre-commit hook and CI's vet step. `make analyze` and CI vet
+  each affected package three times, under linux, windows and darwin,
+  so `_windows.go` and `_darwin.go` files are checked; the pre-commit
+  hook covers the host OS only. Registered: `mapwriter`
   (never range a map while writing output — iterate
   `slices.Sorted(maps.Keys(m))`, so SSR/email/prompt bytes are
   deterministic), `unboundedbody`, `errleak`, `fieldtypeswitch`,
