@@ -138,6 +138,13 @@ Supported within each field:
   guarding against overlap (e.g. via a `sync.Mutex` or a DB lock).
 - **No persistence.** Pending firings are not durable. If the process
   restarts mid-minute, that minute's jobs are skipped.
+- **Late ticks catch up.** A tick that arrives minutes late — the
+  process slept, a GC pause, a slow leader acquire — walks every minute
+  boundary it missed, oldest first, capped at two hours: a fixed-time
+  job whose minute fell inside the gap still fires, and a laptop that
+  slept longer does not queue hours of firings on wake. Under leader
+  election the walk claims each minute in order, so a replica that kept
+  ticking refuses the late claims and nothing fires twice.
 - **Daylight-saving changes behave like vixie cron.** Ticks are read in
   the host's local zone (`TZ`; a container is usually UTC, where nothing
   changes). A fixed-time job, one whose minute and hour fields both name

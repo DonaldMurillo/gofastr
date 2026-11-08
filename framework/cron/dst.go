@@ -10,7 +10,8 @@ import "time"
 //     hour (a fall-back) runs in the first pass only.
 //   - A fixed-time schedule whose time a spring-forward skipped runs once,
 //     at the first minute after the jump. prev is what tells FiresAt a jump
-//     happened: the in-process Scheduler passes the minute before t.
+//     happened: the in-process Scheduler walks each minute boundary in
+//     order, so prev is the minute before t.
 //   - Every other schedule fires by the wall clock as it runs, so a
 //     wildcard minute or hour keeps real elapsed time across a change.
 //
