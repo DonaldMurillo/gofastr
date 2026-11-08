@@ -96,6 +96,12 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **`App.ImportData` restores the bytes it checked**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
+  each archive file on one read and parsed the rows from a second, so a
+  file swapped between the two was restored unchecked. Each file is now
+  read once, in the import's transaction, and a checksum mismatch rolls
+  every source back.
 - **The query DSL refuses `include()` of a hidden relation**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
