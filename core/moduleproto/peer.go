@@ -340,11 +340,13 @@ func (p *Peer) Call(ctx context.Context, method string, params any) (json.RawMes
 
 // CallWithID originates a request exactly like [Peer.Call] and additionally
 // reports the frame id this Peer assigned to onID. onID is invoked
-// synchronously, exactly once, after the id is allocated and the pending
-// entry registered but BEFORE the request frame is written; it must not
-// block (arm a goroutine if the observer needs to wait on anything). It is
-// not invoked when no id was allocated (peer closed, empty method, ctx
-// already done, inflight cap).
+// synchronously, exactly once, only once the request is sendable —
+// params marshaled, ctx live, id allocated, pending entry registered —
+// and BEFORE the request frame is written; it must not block (arm a
+// goroutine if the observer needs to wait on anything). It is not
+// invoked when the request cannot become sendable (peer closed, empty
+// method, ctx already done, params that fail to marshal, inflight cap):
+// an id whose frame can never be sent must not arm a cancel.
 //
 // This is the seam origination-side cancellation needs: module.cancel names
 // the INBOUND frame id on the serving peer, so a supervisor that wants to
@@ -369,7 +371,36 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		return nil, err
 	}
 
-	// Inflight cap. Call-local error, not a protocol fault.
+	// Prompt cap refusal: a peer already at capacity answers
+	// ErrInflightCap without paying a params marshal (a custom
+	// Marshaler could block). The authoritative increment comes after
+	// the marshal; this early check only preserves the prompt answer.
+	p.mu.Lock()
+	atCap := p.inflight >= p.maxInflight
+	p.mu.Unlock()
+	if atCap {
+		return nil, ErrInflightCap
+	}
+
+	// Marshal BEFORE anything is allocated (#669, was #656), for two
+	// reasons. onID arms the supervisor's module.cancel for the frame
+	// id, so an id whose params cannot marshal — a frame that will never
+	// cross the wire — must never be reported; and a failed marshal must
+	// not consume an inflight slot or tombstone an id the counterparty
+	// never sees (review finding: garbage tombstones evict real ones).
+	paramsRaw, err := marshalParams(params)
+	if err != nil {
+		return nil, fmt.Errorf("moduleproto: marshal params: %w", err)
+	}
+	// A ctx that ended during the marshal likewise allocates nothing:
+	// the write below would refuse it, so onID must not fire either.
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
+	// Inflight cap, the authoritative increment. Call-local error, not a
+	// protocol fault. (The pre-marshal check above answers the at-cap
+	// case promptly; this one holds under races.)
 	p.mu.Lock()
 	if p.inflight >= p.maxInflight {
 		p.mu.Unlock()
@@ -388,14 +419,13 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 	p.pending[id] = ch
 	p.mu.Unlock()
 
-	if onID != nil {
-		onID(id)
-	}
-
 	// writing is the pending request write, nil once it returned.
 	var writing chan error
 
-	// Cleanup on all return paths.
+	// Cleanup on all return paths — installed BEFORE the marshal return
+	// below so a failed marshal releases the pending entry and the
+	// inflight slot too (review finding: the early return leaked both,
+	// and repeated bad calls exhausted the cap).
 	defer func() {
 		p.mu.Lock()
 		// If the response was delivered, the entry is already gone and
@@ -424,10 +454,10 @@ func (p *Peer) call(ctx context.Context, method string, params any, onID func(id
 		}
 	}()
 
-	paramsRaw, err := marshalParams(params)
-	if err != nil {
-		return nil, fmt.Errorf("moduleproto: marshal params: %w", err)
+	if onID != nil {
+		onID(id)
 	}
+
 	idCopy := id
 	frame := &Frame{
 		JSONRPC: "2.0",
