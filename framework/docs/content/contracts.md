@@ -503,7 +503,9 @@ expose rather than by importing the recorder (the router's
 `access.SetObserver`, `hook.SetObserver`, `event.SetObserver`), so
 `core/router`, `framework/access`, `framework/hook`, and `framework/event`
 stay dependency-free leaves and a production binary pays one atomic load
-per check:
+per check. A panicking observer is recovered and logged where it runs
+(the hook firing, the event emission): coverage tooling must not be able
+to take down the operation it observes.
 
 | Dimension | Recorded when | Rule |
 |---|---|---|

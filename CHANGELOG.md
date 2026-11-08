@@ -188,6 +188,23 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`Retry-After` never reads 0 while the caller is still limited**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). The generic rate-limit middleware and the auth battery's
+  limiters (login, magic-link send, forgot-password, password reset,
+  2FA, password change) formatted the header with `%.0f`, which rounds
+  to nearest, so a block with under half a second left answered
+  `Retry-After: 0` — telling a still-blocked client to retry at once.
+  All sites now format through the new exported
+  `ratelimit.RetryAfterSeconds` (rounds up, floors at 1 while a wait
+  remains).
+- **A panicking `hook.SetObserver` / `event.SetObserver` callback no
+  longer takes down the operation it observes**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). The observers ran inline on the hook-firing and event-emission
+  paths with no recover, so a fault in coverage tooling tore down the
+  request goroutine. Both dispatch sites now recover and log the fault;
+  the hooks and subscribers still run.
 - **An endpoint's MCP twin accepts what its route accepts, catch-all
   included** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   R8-HD-03). Where the framework registers an endpoint's MCP twin it
