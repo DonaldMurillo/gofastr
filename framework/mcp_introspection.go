@@ -259,6 +259,9 @@ func (a *App) toolGoroutineLeaks(_ context.Context, _ map[string]any) (any, erro
 }
 
 func (a *App) toolReadiness(ctx context.Context, _ map[string]any) (any, error) {
+	if a.draining.Load() {
+		return map[string]any{"ready": false, "reason": "draining", "checks": []map[string]any{}}, nil
+	}
 	ctx, cancel := context.WithTimeout(ctx, a.readinessTimeout())
 	defer cancel()
 	checks := a.readinessChecks()
