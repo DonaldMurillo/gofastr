@@ -60,8 +60,8 @@ type StrictConfig struct {
 	// implements [ScreenSEO] (a zero-value return is the documented
 	// per-page opt-out).
 	ScreenDescriptions StrictLevel
-	// SiteDescription: a site description, from [WithDescription] with a
-	// non-empty value or a description tag in [WithHeadHTML].
+	// SiteDescription: a site description with text in it, from
+	// [WithDescription] or a description tag in [WithHeadHTML].
 	SiteDescription StrictLevel
 	// SiteIcon: [WithAppIcon] or [WithFavicon] configured.
 	SiteIcon StrictLevel
@@ -341,7 +341,7 @@ func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 // never ship without.
 func (ds *UIHost) strictSiteFindings() []strictFinding {
 	var out []strictFinding
-	if ds.siteDescriptionTag() == "" {
+	if ds.siteDescriptionText() == "" {
 		out = append(out, strictFinding{strictCheckSiteDescription, "site: no description: add uihost.WithDescription"})
 	}
 	if ds.faviconURL == "" && len(ds.appIcons) == 0 {

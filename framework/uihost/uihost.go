@@ -1991,6 +1991,22 @@ func (ds *UIHost) siteDescriptionTag() string {
 	return ""
 }
 
+// siteDescriptionText returns the trimmed text of the site description
+// (siteDescriptionTag), "" when there is none or it holds no text: what
+// strict mode's SiteDescription check reads.
+func (ds *UIHost) siteDescriptionText() string {
+	z := xhtml.NewTokenizer(strings.NewReader(ds.siteDescriptionTag()))
+	if tt := z.Next(); tt != xhtml.StartTagToken && tt != xhtml.SelfClosingTagToken {
+		return ""
+	}
+	for _, a := range z.Token().Attr {
+		if a.Key == "content" {
+			return strings.TrimSpace(a.Val)
+		}
+	}
+	return ""
+}
+
 // screenHeadHTML returns the per-page head content: the screen's own
 // tags (screenOwnHead) with any description after the first dropped,
 // led by the site-level description (siteDescriptionTag) when they

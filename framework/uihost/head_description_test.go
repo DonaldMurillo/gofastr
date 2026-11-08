@@ -127,12 +127,24 @@ func (c *describedHeadComp) HeadHTML() string {
 }
 
 // Strict mode's site-description check reads the same site description
-// the page does, so a description in WithHeadHTML satisfies it.
+// the page does, so a description in WithHeadHTML satisfies it, and one
+// with no text does not.
 func TestStrictTakesHostHeadDescription(t *testing.T) {
-	ds := New(app.NewApp("Test App"), WithHeadHTML(`<meta name="description" content="From WithHeadHTML">`))
-	for _, f := range ds.strictSiteFindings() {
-		if f.check == strictCheckSiteDescription {
-			t.Fatalf("strict reports %q for a site whose WithHeadHTML carries its description", f.msg)
+	for _, tc := range []struct {
+		head string
+		want bool // a SiteDescription finding
+	}{
+		{`<meta name="description" content="From WithHeadHTML">`, false},
+		{`<meta name="description" content="  ">`, true},
+		{`<meta name="description">`, true},
+	} {
+		ds := New(app.NewApp("Test App"), WithHeadHTML(tc.head))
+		got := false
+		for _, f := range ds.strictSiteFindings() {
+			got = got || f.check == strictCheckSiteDescription
+		}
+		if got != tc.want {
+			t.Errorf("WithHeadHTML(%s): SiteDescription finding = %v, want %v", tc.head, got, tc.want)
 		}
 	}
 }
