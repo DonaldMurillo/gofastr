@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -627,9 +628,18 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	committed := false
 	defer func() {
 		if !committed {
-			// best-effort: the claim already failed with the error the caller gets; a failed rollback means a broken connection the pool discards on its own.
+			// Nowhere to return this: the claim already failed with the
+			// error the caller gets. Since SQLite 3.7.11 ROLLBACK aborts
+			// pending reads instead of failing, an error from it means no
+			// transaction is left active — nothing holds the write lock, so
+			// the connection needs no retiring (and the pool would not
+			// discard it on its own; modernc drops only interrupted
+			// connections) — but it is still unexpected, so it is logged,
+			// the way the queue and outbox claims log theirs.
 			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
-			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
+				slog.Default().Warn("webhook: rolling back an abandoned claim", "err", err)
+			}
 		}
 	}()
 	commit := func() error {

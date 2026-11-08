@@ -160,6 +160,17 @@ few lines, and link the PR or the docs page for the rest.
   prints a warning naming each one. An undeclared rename generates as a
   drop plus a create and loses every row; the warning says so and points
   at the entity's `renames:` declaration.
+- **A failed rollback of an abandoned webhook claim is logged.**
+  `claimSqlite` deferred the `ROLLBACK` for a claim it could not use and
+  dropped the error, so a stuck row that could not hand its claim back
+  left no trace. The rollback error now logs a warning, the way the
+  queue and outbox paths already do.
+- **The webhook manager raises a short `LeasePeriod` only for a leased
+  store.** The raise to twice the HTTP client timeout exists for a
+  shared table a second manager may also claim; a store that is not a
+  `LeasedStore` has no claim path that reads the lease, so the raise
+  and its log line are skipped there and single-instance deployments
+  stop logging about a lease nothing claims under.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
