@@ -17,7 +17,7 @@ import (
 // field named after it) took nested writes: ?include= and the DSL refuse
 // it as not found, yet a POST carrying its key created or linked rows
 // through it (#669). The nested write is refused before any row is
-// written, on create and update; WithServerWrites still writes
+// written, on create, update and upsert; WithServerWrites still writes
 // through it, as it writes a Hidden field.
 func TestCascadeRefusesHiddenRelation(t *testing.T) {
 	cases := []struct {
@@ -83,6 +83,17 @@ func TestCascadeRefusesHiddenRelation(t *testing.T) {
 			}
 			if after := cascadeCounts(t, database); after != before || title != "t" {
 				t.Errorf("refused update changed rows %v -> %v, title %q", before, after, title)
+			}
+
+			// So is an upsert, on either arm.
+			for _, id := range []string{"p2", "p3"} {
+				_, err := handler.UpsertOne(context.Background(), map[string]any{"id": id, "title": "moved", rel.Name: nested})
+				if !hasViolation(err, rel.Name, "validation.cascade_relation_hidden") {
+					t.Errorf("upsert %s through a hidden relation = %v, want cascade_relation_hidden", id, err)
+				}
+			}
+			if after := cascadeCounts(t, database); after != before {
+				t.Errorf("refused upsert changed rows %v -> %v", before, after)
 			}
 		})
 	}

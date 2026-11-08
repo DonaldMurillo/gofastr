@@ -94,6 +94,13 @@ few lines, and link the PR or the docs page for the rest.
   its own retention sets `TerminalTaskRetention` and
   `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
   already flags the old method.
+- **`UpsertOne` runs nested writes**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It used to
+  refuse a cascade-write relation value with
+  `validation.cascade_upsert_unsupported`; that refusal is gone. The insert
+  arm now writes nested relations as `CreateOne` does and the conflict arm
+  as `UpdateOne` does, in the upsert's transaction, and a nested write
+  through a hidden relation is refused as on create and update.
 
 ### Security
 - **`App.ImportData` restores the bytes it checked**

@@ -508,18 +508,40 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 	return false
 }
 
-func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
+// cascadeSetKeys names the foreign keys the belongs_to cascades in body
+// will set. UpsertOne validates the parent before it knows which arm it
+// takes, and the cascade, which fills these keys, runs once it does, so
+// the first validation does not require them.
+func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	if ch.Entity == nil {
 		return nil
 	}
-	fields := make(map[string][]schema.Violation)
-	for _, relation := range ch.Entity.Config.Relations {
-		if _, present := ch.findCascadeValue(body, relation); present {
-			fields[relation.Name] = []schema.Violation{{Reason: reasonCascadeUpsert}}
+	keys := map[string]bool{}
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); ok && v != nil {
+			keys[oneFK(rel)] = true
 		}
 	}
-	if len(fields) != 0 {
-		return &ValidationError{fields: fields}
+	return keys
+}
+
+// cascadeParentID is the key a dependent cascade links its children to:
+// the written row's key column, else the body's. A composite parent has
+// no single key, and processDependentCascadeWrites refuses it.
+func (ch *CrudHandler) cascadeParentID(result, body map[string]any) any {
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return nil
+	}
+	for _, m := range []map[string]any{result, body} {
+		for _, k := range []string{parentPK, ch.convertKey(parentPK)} {
+			if v, ok := m[k]; ok && v != nil {
+				return v
+			}
+		}
 	}
 	return nil
 }
