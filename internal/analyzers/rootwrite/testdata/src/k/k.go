@@ -1647,3 +1647,77 @@ func benignAddress(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600)
 }
+
+// eraseDir clears the directory its argument points at.
+func eraseDir(value *string) bool {
+	*value = ""
+	return true
+}
+
+// replacePath points its argument at another path.
+func replacePath(value *string, replacement string) bool {
+	*value = replacement
+	return true
+}
+
+// discardNestedAddress drops a pointer to a literal whose initializer
+// clears the root through &baseDir.
+func discardNestedAddress(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	_ = &struct{ value bool }{eraseDir(&baseDir)}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// discardNestedReal replaces the checked path the same way.
+func discardNestedReal(baseDir, name, arbitraryPath string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	_ = &struct{ value bool }{replacePath(&real, arbitraryPath)}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// joinFrozenAfterRebind joins under the copy and checks the copy: the
+// rebind of its source changes neither. Quiet.
+func joinFrozenAfterRebind(baseDir, name, nextDir string, data []byte) error {
+	frozen := baseDir
+	baseDir = nextDir
+	real, err := filepath.EvalSymlinks(filepath.Join(frozen, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, frozen+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// perIteration rebuilds and checks the path on every iteration, so the
+// rebind at the end of one reaches the next only through a new join.
+// Quiet.
+func perIteration(baseDir, name, nextDir string, data []byte) error {
+	for iteration := 0; iteration < 2; iteration++ {
+		real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+		if err != nil {
+			return err
+		}
+		if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+			return errEscape
+		}
+		if err := os.WriteFile(real, data, 0o600); err != nil {
+			return err
+		}
+		baseDir = nextDir
+	}
+	return nil
+}

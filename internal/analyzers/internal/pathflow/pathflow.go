@@ -1006,7 +1006,8 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 			resolved[o] = true
 		}
 	}
-	return ContainmentChecked(pass, body, bound, resolved, joinRoots(pass, call, bound), call.End(), sink)
+	roots, joinObjs := joinRoots(pass, call, bound)
+	return ContainmentChecked(pass, body, bound, resolved, roots, joinObjs, call.End(), sink)
 }
 
 // rootKey spells the root e names, looking through locals and the
@@ -1036,10 +1037,19 @@ func rootKey(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr) s
 // Join(home, ".app"), is the root itself and the walk stops there. A
 // containment test against any other root, such as the root's
 // filepath.Dir, says nothing about this one.
-func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) map[string]bool {
+func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) (map[string]bool, map[types.Object]bool) {
 	roots := map[string]bool{}
+	objs := map[types.Object]bool{}
 	if len(call.Args) != 1 {
-		return roots
+		return roots, objs
+	}
+	note := func(e ast.Expr) {
+		roots[rootKey(pass, e, bound)] = true
+		if id, ok := ast.Unparen(e).(*ast.Ident); ok {
+			if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+				objs[obj] = true
+			}
+		}
 	}
 	isConst := func(a ast.Expr) bool {
 		tv, ok := pass.TypesInfo.Types[a]
@@ -1061,7 +1071,7 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 				first = b.X
 			}
 			e = first
-			roots[rootKey(pass, e, bound)] = true
+			note(e)
 			continue
 		}
 		c, ok := e.(*ast.CallExpr)
@@ -1084,9 +1094,9 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 			break
 		}
 		e = c.Args[0]
-		roots[rootKey(pass, e, bound)] = true
+		note(e)
 	}
-	return roots
+	return roots, objs
 }
 
 // ContainmentChecked reports whether body tests one of objs against a
@@ -1115,7 +1125,7 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 // A Rel whose result nobody reads, a prefix test whose answer only
 // logs, and `if HasPrefix(real, root) { return nil }` before the write
 // (the inside path refuses, the outside one writes) confine nothing.
-func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, roots map[string]bool, after token.Pos, sink ast.Node) bool {
+func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, roots map[string]bool, joinObjs map[types.Object]bool, after token.Pos, sink ast.Node) bool {
 	if body == nil {
 		return false
 	}
@@ -1144,12 +1154,12 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	w := writeSitesIn(pass, body)
 	// before counts the writes that can run before the read at `at`:
 	// those earlier in the source, and those later in the source but
-	// inside a loop that also holds the read, which run on one iteration
-	// and reach the read on the next.
+	// inside a loop that also holds the read (and not the resolution),
+	// which run on one iteration and reach the read on the next.
 	before := func(sites []token.Pos, at token.Pos) int {
 		n := 0
 		for _, p := range sites {
-			if p < at || w.sameLoop(p, at) {
+			if p < at || w.loopCarried(p, at, after-1) {
 				n++
 			}
 		}
@@ -1182,9 +1192,10 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 					// after `frozen := baseDir; baseDir = next` and a join
 					// under baseDir, frozen names the old root. Count the
 					// source's writes up to the later of the copy and the
-					// resolution.
+					// resolution, unless the join read the copy itself
+					// (`Join(frozen, name)`).
 					e, at = b, b.Pos()
-					if after > at {
+					if after > at && !joinObjs[obj] {
 						at = after
 					}
 					continue
@@ -2051,12 +2062,29 @@ type writeSites struct {
 	loops   []ast.Node
 }
 
-// sameLoop reports whether a for or range statement holds both a and b.
-func (w *writeSites) sameLoop(a, b token.Pos) bool {
+// loopCarried reports whether a for or range statement holds both a
+// and b but not the resolution at call: a write at a then runs on one
+// iteration and reaches b on the next with the path resolved before the
+// loop. A loop that also holds the resolution rebuilds the path under
+// the new value first.
+func (w *writeSites) loopCarried(a, b, call token.Pos) bool {
 	for _, l := range w.loops {
-		if l.Pos() <= a && a < l.End() && l.Pos() <= b && b < l.End() {
+		in := func(p token.Pos) bool { return l.Pos() <= p && p < l.End() }
+		if in(a) && in(b) && !in(call) {
 			return true
 		}
+	}
+	return false
+}
+
+// plainOperand reports whether e is an identifier or a field selector
+// on one: an operand that evaluates nothing.
+func plainOperand(e ast.Expr) bool {
+	switch x := ast.Unparen(e).(type) {
+	case *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return plainOperand(x.X)
 	}
 	return false
 }
@@ -2085,10 +2113,12 @@ func writeSitesIn(pass *analysis.Pass, body *ast.BlockStmt) *writeSites {
 			for _, e := range st.Lhs {
 				lhs(e, st.Pos())
 			}
-			// `_ = &x` drops the pointer: nothing can write through it.
+			// `_ = &x` (or `_ = &x.f`) drops the pointer: nothing can
+			// write through it. An operand that evaluates anything, such
+			// as `_ = &T{f(&real)}`, is inspected as usual.
 			if len(st.Lhs) == 1 && len(st.Rhs) == 1 {
 				if id, ok := st.Lhs[0].(*ast.Ident); ok && id.Name == "_" {
-					if u, ok := ast.Unparen(st.Rhs[0]).(*ast.UnaryExpr); ok && u.Op == token.AND {
+					if u, ok := ast.Unparen(st.Rhs[0]).(*ast.UnaryExpr); ok && u.Op == token.AND && plainOperand(u.X) {
 						return false
 					}
 				}

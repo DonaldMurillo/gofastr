@@ -107,12 +107,14 @@ few lines, and link the PR or the docs page for the rest.
   can't be a constant such as `"/"`, a local holding one, or built from
   the path. It must hold one value at the test: a local assigned once
   before it, a parameter not reassigned before it (a write later in
-  the source but in a loop around the test counts as before it), so
+  the source counts too when a loop holds it and the test but not the
+  resolution), so
   `if widen { root = "/" }` before the test does not pass, and neither
   does a `rootSep` local bound to `root + sep` on one branch only. A
   copy holds the value it was made from (`frozen := baseDir` after the
   join stays good when `baseDir` changes later; made before a rebind
-  and the join, it names the old root and doesn't count). A root whose address is taken,
+  and a join under `baseDir`, it names the old root and doesn't count,
+  while a join under the copy itself does). A root whose address is taken,
   and a field root assigned before the test, don't count. The separator after it is required: without it
   `/srv/app-backup` passes a test against `/srv/app`. A resolved
   parent joined with `filepath.Base` counts only for `os.Mkdir`:
