@@ -524,6 +524,37 @@ func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
 	return nil
 }
 
+// refuseHiddenCascade refuses a nested write through a relation the
+// entity hides (entity.HidesRelation). The relation is not on the wire:
+// reads leave it out and ?include= refuses it, so a client that writes
+// through it would create rows it can never see, and the attached child
+// came back in the response. Server code writes through it under
+// WithServerWrites, as it writes Hidden fields.
+func (ch *CrudHandler) refuseHiddenCascade(ctx context.Context, rel entity.Relation) error {
+	if serverWrites(ctx) || !ch.Entity.HidesRelation(rel) {
+		return nil
+	}
+	return &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonCascadeHidden}}}}
+}
+
+// refuseHiddenDependents runs refuseHiddenCascade over the has-one,
+// has-many and many-to-many cascades in body. Those run after the parent
+// is written, so the refusal comes first, before any row is touched.
+func (ch *CrudHandler) refuseHiddenDependents(ctx context.Context, body map[string]any) error {
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type == entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); !ok || v == nil {
+			continue
+		}
+		if err := ch.refuseHiddenCascade(ctx, rel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // childColumns names a cascade child's keys the way its parent's body was
 // named. An in-process write runs bodyColumns, which also reads the key
 // MarshalEntity derives (line2 for line_2); the HTTP rule left that key
@@ -559,6 +590,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 	if ch.Entity == nil || len(ch.Entity.Config.Relations) == 0 {
 		return nil, nil
 	}
+	if err := ch.refuseHiddenDependents(ctx, body); err != nil {
+		return nil, err
+	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
 		if rel.Type != entity.RelManyToOne {
@@ -590,6 +624,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
 				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
 			}}}}
+		}
+		if err := ch.refuseHiddenCascade(ctx, rel); err != nil {
+			return nil, err
 		}
 
 		childHandler := ch.childHandlerFor(target)

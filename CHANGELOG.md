@@ -107,6 +107,14 @@ few lines, and link the PR or the docs page for the rest.
   `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
   marked `Relation.Hidden`; it now answers relation-not-found, as
   `?include=` does.
+- **A nested write through a hidden relation is refused**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  `cascade_write` relation marked `Relation.Hidden`, or behind a `Hidden`
+  field of its name, took nested creates and links from a client body and
+  returned the written child, though reads and `?include=` never show it.
+  Create and update now answer 400 `validation.cascade_relation_hidden`
+  before any row is written; server code still writes through it under
+  `crud.WithServerWrites`.
 - **BREAKING: `cache.CacheMiddlewareWithLimit` panics on a negative
   `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A negative cap read as no cap and buffered every response whole; `0`

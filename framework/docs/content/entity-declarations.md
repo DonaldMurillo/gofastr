@@ -535,7 +535,7 @@ field) declare how entities associate with one another:
 - `foreign_key_target`: for `many_to_many`, the column referencing the target entity in the pivot table.
 - `on_delete`: optional foreign key referential integrity action (`no_action`, `restrict`, `cascade`, `set_null`).
 - `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
-- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`).
+- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`). A hidden relation also takes no nested write: a create or update body carrying its key is refused with 400 `validation.cascade_relation_hidden` before any row is written. The same holds for a relation behind a Hidden field of its name or a Hidden `belongs_to` foreign key (that one answers `validation.cascade_key_not_writable`, below). Server code writes through it under `crud.WithServerWrites`.
 
 A Go `belongs_to` relation can share the name of its own single scalar
 foreign-key column when cascade writes are disabled. For example,

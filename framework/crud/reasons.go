@@ -91,6 +91,7 @@ var (
 
 	reasonCascadeKeyFixed = i18n.Define("validation.cascade_key_not_writable", "links through {{column}}, which this write cannot set")
 	reasonCascadeUpsert   = i18n.Define("validation.cascade_upsert_unsupported", "nested writes require CreateOne or UpdateOne, not UpsertOne")
+	reasonCascadeHidden   = i18n.Define("validation.cascade_relation_hidden", "is hidden and takes no nested write")
 	reasonNotObject       = i18n.Define("validation.not_object", "must be an object")
 	reasonKeysFold        = i18n.Define("validation.keys_fold", "keys {{first}} and {{second}} both name the field {{column}}")
 	reasonNotArray        = i18n.Define("validation.not_array", "must be an array")
