@@ -965,27 +965,6 @@ func TestNoMetaWithoutDescriber(t *testing.T) {
 	}
 }
 
-func TestPerPageMetaWinsOverGlobal(t *testing.T) {
-	// Per-page description must come BEFORE WithDescription so crawlers
-	// (first-match parsers) pick the per-page text rather than the global
-	// sitewide default.
-	application := app.NewApp("Test App")
-	application.Register("/", &describedHomeComp{}, nil)
-	ds := New(application, WithDescription("Global site description"))
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	ds.ServeHTTP(w, req)
-	body := withoutPageMetadataMarkers(w.Body.String())
-	gIdx := strings.Index(body, "Global site description")
-	pIdx := strings.Index(body, "Welcome to the test site")
-	if gIdx < 0 || pIdx < 0 {
-		t.Fatalf("expected both meta tags present; global=%d per-page=%d", gIdx, pIdx)
-	}
-	if pIdx >= gIdx {
-		t.Errorf("expected per-screen meta BEFORE global meta, got per-page=%d global=%d", pIdx, gIdx)
-	}
-}
-
 // withoutPageMetadataMarkers leaves authored metadata byte-comparable while
 // the navigation ownership marker remains covered by the transport tests.
 func withoutPageMetadataMarkers(s string) string {

@@ -242,6 +242,19 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A page carries one `<meta name="description">`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [SEO](framework/docs/content/seo.md)). `WithDescription` added its tag
+  to every page, so a screen with its own description shipped two and
+  left the choice between them to each crawler. The site description
+  (a description tag in `WithHeadHTML`, else the `WithDescription`
+  text) is now the fallback, and a screen description or a description
+  tag in `SEOScreen.HeadHTML` replaces it; a screen with both keeps the
+  typed one. It rides the page metadata a client navigation swaps, so
+  leaving a described page restores the site description instead of
+  keeping the last page's. Head HTML is read with the HTML tokenizer,
+  so a tag inside a comment does not count and a screen head holding
+  several keeps the first.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

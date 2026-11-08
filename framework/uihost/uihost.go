@@ -61,6 +61,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
+	xhtml "golang.org/x/net/html"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -152,7 +153,7 @@ type UIHost struct {
 	strict              bool            // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
 	coreRouter          *router.Router  // the framework router Mount received; strict mode reads its route table for the internal-links check
 	strictConfig        StrictConfig    // per-check levels + route exemptions; zero value enforces everything
-	siteDescription     bool            // set by WithDescription; read by the strict site-surface check
+	siteDescription     string          // WithDescription's text: the description of a page that names none of its own; the strict site-surface check reads it too
 	embedHost           *fembed.Host    // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
 	embedThemes         embedThemeState // per-surface cap on distinct customer theme variants
 
@@ -467,6 +468,10 @@ func WithExtraScripts(urls ...string) Option {
 // For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
+//
+// A <meta name="description"> tag in html is the site description, as
+// with WithDescription: it moves into the per-page head and gives way to
+// a screen's own description, so a page never carries two.
 func WithHeadHTML(html string) Option {
 	return func(ds *UIHost) {
 		ds.headHTML = html
@@ -583,11 +588,15 @@ func WithThemeColor(color string) Option {
 	}
 }
 
-// WithDescription adds a <meta name="description"> tag to <head>.
+// WithDescription sets the site's <meta name="description">: the one a
+// page carries when it names no description of its own. A screen
+// description (ScreenDescriber, ScreenSEO.Description) or a description
+// tag in SEOScreen.HeadHTML replaces it, so a page never carries two. A
+// description tag in WithHeadHTML is site-level too and takes
+// precedence over this one.
 func WithDescription(desc string) Option {
 	return func(ds *UIHost) {
-		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(desc)))
-		ds.siteDescription = desc != ""
+		ds.siteDescription = desc
 	}
 }
 
@@ -1924,23 +1933,106 @@ func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID
 	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
-// screenHeadHTML returns per-screen head content. It composes from
+// scanDescriptions reads html with the HTML tokenizer, so a tag is what
+// the browser takes it for: comments and raw text hold none, a quoted
+// value may hold '>', and the name may be spelled with character
+// references. It returns html with every <meta name="description"> tag
+// after the first keep dropped (the rest of html byte for byte), and the
+// first such tag ("" when there is none).
+func scanDescriptions(html string, keep int) (out, first string) {
+	if !strings.Contains(html, "<") {
+		return html, ""
+	}
+	var b strings.Builder
+	seen := 0
+	z := xhtml.NewTokenizer(strings.NewReader(html))
+	for {
+		tt := z.Next()
+		raw := z.Raw()
+		if tt == xhtml.ErrorToken {
+			b.Write(raw) // an unterminated tail, kept as written
+			return b.String(), first
+		}
+		if tt == xhtml.StartTagToken || tt == xhtml.SelfClosingTagToken {
+			if tok := z.Token(); tok.Data == "meta" && isDescriptionMeta(tok.Attr) {
+				if seen == 0 {
+					first = string(raw)
+				}
+				seen++
+				if seen > keep {
+					continue
+				}
+			}
+		}
+		b.Write(raw)
+	}
+}
+
+// isDescriptionMeta reports whether a <meta> tag's attributes (decoded
+// by the tokenizer) name it a description.
+func isDescriptionMeta(attrs []xhtml.Attribute) bool {
+	for _, a := range attrs {
+		if a.Key == "name" {
+			return strings.EqualFold(strings.TrimSpace(a.Val), "description")
+		}
+	}
+	return false
+}
+
+// siteDescriptionTag returns the site-level description tag: the first
+// one in WithHeadHTML, else WithDescription's, else "".
+func (ds *UIHost) siteDescriptionTag() string {
+	if _, tag := scanDescriptions(stripInlineScripts(ds.headHTML), 0); tag != "" {
+		return tag
+	}
+	if ds.siteDescription != "" {
+		return fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(ds.siteDescription))
+	}
+	return ""
+}
+
+// screenHeadHTML returns the per-page head content: the screen's own
+// tags (screenOwnHead) with any description after the first dropped,
+// led by the site-level description (siteDescriptionTag) when they
+// carry none. The site description rides
+// here, in the page metadata a client navigation swaps, and never in
+// the fixed head (the head assembly drops it from WithHeadHTML), so a
+// page carries exactly one description and leaving a described page
+// restores the site's.
+func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
+	head, own := scanDescriptions(ds.screenOwnHead(ctx, pagePath, comp), 1)
+	if own != "" {
+		return head
+	}
+	site := ds.siteDescriptionTag()
+	if site == "" {
+		return head
+	}
+	if head == "" {
+		return site
+	}
+	return site + "\n" + head
+}
+
+// screenOwnHead returns per-screen head content. It composes from
 // two sources:
 //
 //   - ScreenDescriber: when the screen has a non-empty Description
 //     (set automatically at Register time from the ScreenDescriber
-//     interface), a `<meta name="description">` tag is emitted. Per-
-//     page descriptions appear AFTER the global WithDescription tag,
+//     interface), a `<meta name="description">` tag is emitted, in
+//     place of the site's WithDescription one.
 //
 //   - SEOScreen.HeadHTML(): the explicit escape hatch for screens
-//     that need to declare canonical, OG, JSON-LD, etc. inline.
+//     that need to declare canonical, OG, JSON-LD, etc. inline. A
+//     description tag in it is dropped when the screen has a typed
+//     description.
 //
 // pagePath is the route path used to resolve the screen.
 //
 // The per-concern SEO fields are resolved first via resolveScreenSEO
 // (the shared resolution path also used to render the per-screen
 // llm.md front-matter), then rendered to HTML.
-func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
+func (ds *UIHost) screenOwnHead(ctx context.Context, pagePath string, comp component.Component) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
 	}
@@ -2000,7 +2092,13 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 	}
 	if seoScreen, ok := src.(SEOScreen); ok {
 		if h := seoScreen.HeadHTML(); h != "" {
-			parts = append(parts, stripInlineScripts(h))
+			h = stripInlineScripts(h)
+			// The typed description above wins over a tag here, so the
+			// page carries one.
+			if resolved.Description != "" {
+				h, _ = scanDescriptions(h, 0)
+			}
+			parts = append(parts, h)
 		}
 	}
 	return strings.Join(parts, "\n")
@@ -2257,9 +2355,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// per-page og:title / og:description / og:image is the one they pick.
 	// If the page provides no OG data, the global fallback still fires.
 	//
-	// Typed helpers (WithOpenGraph, WithDescription, …) are set at New()
-	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
-	// per-request.
+	// Typed helpers (WithOpenGraph, …) are set at New() time and serve
+	// as sitewide fallbacks. Per-screen SEOScreen data is per-request,
+	// and so is the site description: screenHeadHTML emits it only for
+	// a page that names no description of its own.
 	var headParts []string
 	if screenHead := ds.screenHeadHTML(ctx, pagePath, comp); screenHead != "" {
 		headParts = append(headParts, markScreenHead(screenHead))
@@ -2271,8 +2370,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// SEOScreen.HeadHTML() is scrubbed inside screenHeadHTML so we
 	// preserve the auto-generated JSON-LD <script type="application/
 	// ld+json"> blocks emitted by seo.Render.
-	if ds.headHTML != "" {
-		headParts = append(headParts, stripInlineScripts(ds.headHTML))
+	// Its description tag, if any, is the site description and rides
+	// the per-page head above instead (siteDescriptionTag).
+	if host, _ := scanDescriptions(stripInlineScripts(ds.headHTML), 0); host != "" {
+		headParts = append(headParts, host)
 	}
 	if ds.pwaConfig != nil {
 		headParts = append(headParts, pwaManifestLink(ctx))

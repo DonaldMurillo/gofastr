@@ -13,6 +13,12 @@ Two declaration levels compose:
 - **Per-screen values**: optional interfaces on the screen component.
   Per-screen tags are injected *before* the sitewide ones, so
   first-match crawlers (Open Graph scrapers) see the specific value.
+  The description is the exception: a page carries exactly one. The
+  site description, a description tag in `WithHeadHTML` or else the
+  `WithDescription` text, appears only on a page that names none of its
+  own through `ScreenDescription`, `SEO.Description` or a description
+  tag in `HeadHTML`; a screen with a typed description and a tag in
+  `HeadHTML` keeps the typed one.
 
 ## Sitewide options
 
@@ -30,7 +36,7 @@ host := uihost.New(site,
 
 | Option | Emits |
 |--------|-------|
-| `WithDescription` | `<meta name="description">` |
+| `WithDescription` | `<meta name="description">` on every page that names no description of its own |
 | `WithOpenGraph(OG{…})` | `og:title/description/image/url/type` metas |
 | `WithTwitterCard(TwitterCard{…})` | `twitter:card/title/description/image/site` metas |
 | `WithCanonicalURL` | `<link rel="canonical">`, usually wrong sitewide; prefer the per-screen interface |

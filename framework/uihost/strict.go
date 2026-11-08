@@ -340,7 +340,7 @@ func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 // never ship without.
 func (ds *UIHost) strictSiteFindings() []strictFinding {
 	var out []strictFinding
-	if !ds.siteDescription {
+	if ds.siteDescription == "" {
 		out = append(out, strictFinding{strictCheckSiteDescription, "site: no description: add uihost.WithDescription"})
 	}
 	if ds.faviconURL == "" && len(ds.appIcons) == 0 {
