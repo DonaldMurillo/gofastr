@@ -1,5 +1,7 @@
 package schema
 
+import "context"
+
 // FieldType enumerates all supported field types in a GoFastr entity schema.
 type FieldType int
 
@@ -38,11 +40,12 @@ const (
 // bars it from filters, sorting, and search.
 //
 // NoQuery exists for values the caller may see only in transformed form,
-// a card masked to last-4 by an AfterGet/AfterList hook, say. Without it the
-// stored value is still a live column in WHERE and ORDER BY, so a caller
-// recovers it a character at a time (?card_like=4111) while every response
-// reads "****1111". Mark such a field NoQuery and the query surface refuses
-// it. See framework/crud/redaction_oracle_security_test.go.
+// a card read back as its last four digits, say. Without it the stored
+// value is still a live column in WHERE and ORDER BY, so a caller recovers
+// it a character at a time (?card_like=4111) while every response reads
+// "****1111". Declare the transform as Mask and the field is NoQuery too;
+// a field an AfterGet/AfterList hook masks is marked NoQuery by hand. See
+// framework/crud/redaction_oracle_security_test.go.
 //
 // Hidden implies NoQuery; setting both is redundant but harmless.
 type Field struct {
@@ -73,6 +76,17 @@ type Field struct {
 	// JSONCase default) or as a custom "writer" (WireName), while v1 keeps
 	// the bare column shape. Both read and write the same column.
 	WireName string
+
+	// Mask rewrites the value a read returns; the stored value stays as
+	// written. CRUD runs it on every read path (a get, a list or cursor
+	// page, a streamed list, an included row, a write's response, an SSE
+	// event record, and the in-process reads under crud.WithReadHooks)
+	// before the app's AfterGet/AfterList hooks, which see the masked
+	// value. A NULL is not passed to it. entity.Define marks a field with a
+	// Mask NoQuery, so no filter, sort or search reads the stored value.
+	// Return a placeholder for a value it cannot read: a Mask that panics
+	// reads as null, and the panic is logged.
+	Mask func(ctx context.Context, v any) any
 }
 
 // Schema is an ordered collection of Fields with convenience helpers.

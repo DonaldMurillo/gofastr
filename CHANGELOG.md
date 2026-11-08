@@ -25,6 +25,19 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **A field can declare its own mask**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [entity declarations](framework/docs/content/entity-declarations.md)).
+  `schema.Field.Mask` takes the stored value and returns what a read hands
+  back, a card number as its last four digits, say. CRUD runs it in one
+  place on every path that returns the row: get, list and cursor pages,
+  `?stream=true`, `?include=` children, create and update responses,
+  `_events`, the MCP tools, and the in-process reads under
+  `crud.WithReadHooks`. The stored value is untouched, a NULL is not
+  masked, and the entity's `AfterGet`/`AfterList` hooks see the masked
+  value. A field with a `Mask` is `NoQuery` without saying so, and an
+  aggregate over it under `WithReadHooks` returns
+  `crud.ErrAggregateMasked`.
 - **`gofastr release` builds the downloads for a CLI or service binary**
   ([release](framework/docs/content/release.md)). It cross-builds the
   main package for macOS, Linux and Windows on amd64 and arm64 with
@@ -72,6 +85,11 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING: `schema.Field` is no longer comparable**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It holds
+  the `Mask` func now, so `a == b` on two fields, or a field as a map key,
+  no longer compiles. Compare the fields you care about, `a.Name ==
+  b.Name`, or key the map by name.
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left

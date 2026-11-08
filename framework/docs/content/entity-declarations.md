@@ -436,7 +436,7 @@ Each entry under `fields:` accepts:
 | `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). A Hidden relation field, or a Hidden foreign key under a `belongs_to`, makes that relation unincludable: `?include=` and nested filters on it answer as for a relation that does not exist ([includes](includes.md)). |
-| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. |
+| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. A field with a Go `Mask` is `no_query` without saying so. |
 | `to` | string | For `type: relation`, the target entity. |
 
 ### Defaults are validated at registration
@@ -479,12 +479,29 @@ column's DDL `DEFAULT`.
 
 ### Masked fields
 
-An `AfterGet` / `AfterList` hook can rewrite a field on the way out: a
-card number to its last four digits, a note redacted for non-owners.
-That changes what the caller reads. It does not change what the database
-filtered and sorted on.
+Declare the rewrite on the field. `Mask` takes the stored value and
+returns what a read hands back; the database keeps what was written:
 
-Left alone, the stored value is still a live column, so a caller
+```go
+{Name: "number", Type: schema.String, Mask: func(_ context.Context, v any) any {
+	s, _ := v.(string)
+	return "****" + s[max(len(s)-4, 0):]
+}},
+```
+
+CRUD runs it on every path that returns the row: a get, a list or cursor
+page, `?stream=true`, an `?include=` child, a create or update response,
+an `_events` delivery, and the MCP tools. In-process reads (`GetOne`,
+`ListAll`, `TypedQuery`) mask under `crud.WithReadHooks`, the opt-in that
+runs read hooks, and return the stored value without it. The context it
+gets carries the caller, so a mask may depend on who reads. A NULL stays
+null and `Mask` is not called for it. It runs before the entity's
+`AfterGet`/`AfterList` hooks, which see the masked value. Return a
+placeholder for a value it cannot read: a `Mask` that panics reads as
+null, and the panic is logged.
+
+A masked field is `no_query` too; `entity.Define` sets it. Left
+queryable, the stored value is still a live column, and a caller
 recovers it a character at a time from which rows come back:
 
 ```
@@ -492,8 +509,20 @@ GET /cards?number_like=4111    → 1 row   ┐ every response still
 GET /cards?number_like=4112    → 0 rows  ┘ reads "****1111"
 ```
 
-`no_query` closes that. The field stays in the response and the query
-surface refuses it:
+With `no_query` the query surface refuses it:
+
+```
+GET /cards?number_like=4111    → 400 field "number" cannot be filtered
+```
+
+For the same reason an aggregate under `crud.WithReadHooks` (`SumAll`,
+`GroupCountAll` and the rest) refuses a masked field with
+`crud.ErrAggregateMasked`: a total the database computes never passes
+through the mask.
+
+`Mask` is Go only. An app spec masks with an `AfterGet` / `AfterList`
+hook instead, and marks the field `no_query` by hand, since a hook
+rewrites the value but leaves the query surface open:
 
 ```yaml
 fields:
@@ -502,27 +531,23 @@ fields:
     no_query: true    # masked by a hook; never filterable or sortable
 ```
 
-```
-GET /cards?number_like=4111    → 400 field "number" cannot be filtered
-```
+Register such a hook on `AfterGet` **and** `AfterList`; each response
+path runs the one matching the shape it serves.
 
 Use `hidden` instead when the caller should not see the value at all:
 `hidden` also removes the field from responses, and hides the fact that
-the column exists. `no_query` is for when they must see *something*.
+the column exists. A mask is for when they must see *something*.
 
-`no_query` refuses the query surface; it does not mask anything by
-itself. The hook is what rewrites the value, so declare both, and
-register the hook on `AfterGet` **and** `AfterList`; each response path
-runs the one matching the shape it serves.
-
-The admin's edit form reads the row twice and treats any column the hook
-rewrites as write-only: rendered empty (or with an explicit
-"— unchanged —" option on a checkbox, enum, or relation picker), left
-alone unless you supply a value. It compares the two reads rather than
-looking at `no_query`, so a hook that *transforms* rather than masks,
-normalising a phone number or rounding a currency, also makes its columns
-write-only in the admin. Do that work in `BeforeCreate`/`BeforeUpdate`
-if the column should stay editable.
+The admin's edit form reads the row twice, stored and masked, and
+treats any column the two reads disagree on as write-only: rendered
+empty (or with an explicit "— unchanged —" option on a checkbox, enum,
+or relation picker), left alone unless you supply a value. A mask that
+hands one caller the stored value leaves the column editable for them.
+It compares the reads rather than looking at `Mask` or `no_query`, so a
+hook that *transforms* rather than masks, normalising a phone number or
+rounding a currency, also makes its columns write-only in the admin. Do
+that work in `BeforeCreate`/`BeforeUpdate` if the column should stay
+editable.
 
 Relation *blocks* (the `relations:` list, distinct from a `relation`
 field) declare how entities associate with one another:

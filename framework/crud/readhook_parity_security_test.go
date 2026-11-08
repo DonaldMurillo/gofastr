@@ -40,7 +40,8 @@ import (
 // opt-in, the way a screen calls it.
 //
 // The fixture: notes, whose hooks hide every team-b row (BeforeList and
-// BeforeGet) and mask the stored body (AfterGet and AfterList);
+// BeforeGet) and mask the stored body, by AfterGet and AfterList hooks in
+// the "hooks" mode and by the field's declared Mask in the "mask" mode;
 // projects, which has many notes; comments, which belong to a note. A
 // hidden row's every value carries "HIDDEN" and every stored body
 // "STORED-SECRET", so a response holding either served what the hooks
@@ -59,7 +60,16 @@ type parityFixture struct {
 	mcp      *mcp.Server
 }
 
-func parityCrud(t *testing.T) *parityFixture {
+// parityMask is the notes body's Mask in the "mask" mode, the same
+// rewrite the "hooks" mode's AfterGet/AfterList hooks make.
+func parityMask(_ context.Context, v any) any {
+	if s, _ := v.(string); s != "" {
+		return "****"
+	}
+	return v
+}
+
+func parityCrud(t *testing.T, mode string) *parityFixture {
 	t.Helper()
 	db := setupDB(t,
 		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT)`,
@@ -67,6 +77,10 @@ func parityCrud(t *testing.T) *parityFixture {
 		`CREATE TABLE comments (id TEXT PRIMARY KEY, note_id TEXT, text TEXT)`,
 	)
 	public := &entity.ExposureConfig{Public: true}
+	body := schema.Field{Name: "body", Type: schema.String}
+	if mode == "mask" {
+		body.Mask = parityMask
+	}
 	projEnt := entity.Define("projects", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String},
@@ -81,7 +95,7 @@ func parityCrud(t *testing.T) *parityFixture {
 			{Name: "project_id", Type: schema.String},
 			{Name: "team_id", Type: schema.String},
 			{Name: "label", Type: schema.String},
-			{Name: "body", Type: schema.String},
+			body,
 			{Name: "status", Type: schema.Enum, Values: []string{"open", "closed"}, Default: "open"},
 			{Name: "amount", Type: schema.Int},
 		},
@@ -112,16 +126,18 @@ func parityCrud(t *testing.T) *parityFixture {
 			row["body"] = "****"
 		}
 	}
-	hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
-		mask(data.(*hook.GetPayload).Result)
-		return nil
-	})
-	hooks.RegisterHook(hook.AfterList, func(_ context.Context, data any) error {
-		for _, row := range data.(*hook.ListPayload).Results {
-			mask(row)
-		}
-		return nil
-	})
+	if mode == "hooks" {
+		hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
+			mask(data.(*hook.GetPayload).Result)
+			return nil
+		})
+		hooks.RegisterHook(hook.AfterList, func(_ context.Context, data any) error {
+			for _, row := range data.(*hook.ListPayload).Results {
+				mask(row)
+			}
+			return nil
+		})
+	}
 
 	reg := stubRegistry{byName: map[string]*entity.Entity{"projects": projEnt, "notes": noteEnt, "comments": commentEnt}}
 	child := func(name string) *hook.HookRegistry {
@@ -223,6 +239,7 @@ func TestReadHookParityCrud(t *testing.T) {
 		{"GET list total", httpRead("/notes"), `"total":1`, nil},
 		{"GET list search", httpRead("/notes?q=label"), "visible-label", nil},
 		{"GET list sorted on the masked field", httpRead("/notes?sort=body"), "visible-label", nil},
+		{"GET list filtered on the masked field", httpRead("/notes?body_like=VIS"), "", nil},
 		{"GET list filtered to the hidden row", httpRead("/notes?label=HIDDEN-LABEL"), `"total":0`, nil},
 		{"GET trash", httpRead("/notes?trashed=true"), "visible-label", nil},
 		{"GET cursor page", httpRead("/notes?cursor="), "visible-label", nil},
@@ -333,15 +350,27 @@ func TestReadHookParityCrud(t *testing.T) {
 			return jsonOf(map[string]any{"count": n}, err)
 		}, `"count":1`, nil},
 	}
-	for _, c := range reads {
-		t.Run("read/"+c.name, func(t *testing.T) {
-			f := parityCrud(t)
-			body := c.read(t, f)
-			parityCheck(t, c.name, body, c.forbid...)
-			if c.want != "" && !strings.Contains(body, c.want) {
-				t.Errorf("%s answered without %q, so the check above proves nothing:\n%s", c.name, c.want, body)
-			}
-		})
+	// In the "mask" mode the body is NoQuery, as a Mask makes it, and the
+	// query surface refuses it.
+	maskWants := map[string]string{
+		"GET list sorted on the masked field":   `"reason":"not_sortable"`,
+		"GET list filtered on the masked field": `"reason":"not_filterable"`,
+	}
+	for _, mode := range []string{"hooks", "mask"} {
+		for _, c := range reads {
+			t.Run(mode+"/read/"+c.name, func(t *testing.T) {
+				f := parityCrud(t, mode)
+				body := c.read(t, f)
+				parityCheck(t, c.name, body, c.forbid...)
+				want := c.want
+				if w, ok := maskWants[c.name]; ok && mode == "mask" {
+					want = w
+				}
+				if want != "" && !strings.Contains(body, want) {
+					t.Errorf("%s answered without %q, so the check above proves nothing:\n%s", c.name, want, body)
+				}
+			})
+		}
 	}
 
 	// Acts on a row: the hidden row answers as a missing one does and
@@ -394,7 +423,7 @@ func TestReadHookParityCrud(t *testing.T) {
 	}
 	for _, a := range acts {
 		t.Run("act/"+a.name, func(t *testing.T) {
-			f := parityCrud(t)
+			f := parityCrud(t, "hooks")
 			before := f.noteRow(t, a.hidden)
 			body := a.act(f, a.hidden)
 			parityCheck(t, a.name, body)

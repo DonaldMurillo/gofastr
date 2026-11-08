@@ -500,6 +500,10 @@ stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
 `CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
 run `AfterList`; an unhooked in-process read still returns stored values.
 
+A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
+on the same paths, in-process ones under the same opt-in, before these
+hooks and without registering one.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers
@@ -525,7 +529,7 @@ the query never produced, or returning one row more often than the query
 did, fails for the same reason.
 
 `?stream=true` still refuses when an `AfterList` hook is registered
-rather than bypassing it. The durable outbox row stores the unredacted
+rather than bypassing it; a declared `Mask` runs on each streamed row. The durable outbox row stores the unredacted
 record, since it is server-side state used for replay; redaction happens
 on the way out. `webhook.Bridge` POSTs to third-party URLs and has no
 handler to redact through, so pass `webhook.WithBridgeRedactor` if masked
@@ -533,8 +537,9 @@ fields must not leave that way.
 
 If a value must never leave the server in raw form at all, mark it
 `Hidden`: that is enforced in the SQL projection, so no path can return
-it. Reserve `AfterGet`/`AfterList` masking plus `NoQuery` for values that
-may be shown in a reduced form on the paths listed above.
+it. Reserve masking (a field's `Mask`, or `AfterGet`/`AfterList` hooks
+plus `NoQuery`) for values that may be shown in a reduced form on the
+paths listed above.
 
 Keep this matrix in mind when writing bulk operations or tests that
 assert side-effect counts.

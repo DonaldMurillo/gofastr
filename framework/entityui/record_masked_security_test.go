@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -211,6 +212,39 @@ func TestMaskedTextSurvivesUnrelatedSave(t *testing.T) {
 	}
 	if !strings.Contains(body, i18nui.EntitySet.English()) {
 		t.Fatalf("a set masked field says so:\n%s", body)
+	}
+}
+
+// A field's declared Mask makes it write-only on the record form, as a
+// masking hook does: the form reads the stored row and the masked one,
+// and the two disagree on the column.
+func TestDeclaredMaskIsWriteOnly(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = slices.Clone(inv.Fields)
+	for i := range inv.Fields {
+		if inv.Fields[i].Name == "token" {
+			inv.Fields[i].Mask = func(_ context.Context, v any) any { return "****" }
+		}
+	}
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{
+		"invoices": "/api/invoices", "payments": "/api/payments", "customers": "/api/customers",
+	}))
+	body := renderRecord(t, x, "inv-1", nil)
+	if strings.Contains(body, "tok-secret") {
+		t.Fatalf("SECURITY: the masked field rendered its stored value:\n%s", body)
+	}
+	fields := formFields(body, "eui-invoices-form")
+	if _, ok := fields["token"]; ok {
+		t.Fatalf("SECURITY: the record form submits the masked field: %v", fields)
+	}
+	fields["number"] = "INV-1b"
+	if code := putInvoice(t, x, fields); code != http.StatusOK {
+		t.Fatalf("save = %d", code)
+	}
+	if got := storedToken(t, x); got != "tok-secret" {
+		t.Fatalf("SECURITY: an unrelated save rewrote the masked field to %q", got)
 	}
 }
 

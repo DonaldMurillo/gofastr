@@ -13,10 +13,11 @@ import (
 )
 
 // ErrAggregateMasked refuses an aggregate read under WithReadHooks on an
-// entity with AfterList hooks. Those hooks mask rows after the query; a
-// total the database computes never passes through them, so it could
-// count what they hide. Read the rows through ListAll instead.
-var ErrAggregateMasked = errors.New("crud: an aggregate cannot pass through AfterList hooks")
+// entity with AfterList hooks, or over a field with a Mask. Hooks and
+// masks rewrite rows after the query; a total or group the database
+// computes never passes through them, so it could count or name what
+// they hide. Read the rows through ListAll instead.
+var ErrAggregateMasked = errors.New("crud: an aggregate cannot pass through AfterList hooks or a field Mask")
 
 // GroupCount is one group GroupCountAll returns: a stored value of the
 // field (nil for NULL) and how many rows hold it.
@@ -168,6 +169,9 @@ func (ch *CrudHandler) aggregateField(ctx context.Context, op, field string, opt
 		}
 		if f.Hidden {
 			break
+		}
+		if f.Mask != nil && readHooksEnabled(ctx) {
+			return schema.Field{}, fmt.Errorf("%s: %w", op, ErrAggregateMasked)
 		}
 		if !ok(f.Type) {
 			return schema.Field{}, fmt.Errorf("%s: field %q cannot be aggregated this way", op, field)
