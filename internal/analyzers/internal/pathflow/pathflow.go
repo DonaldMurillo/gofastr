@@ -1079,9 +1079,9 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 // runs after the resolution at `after` and is filepath.Rel(root, real)
 // or strings.HasPrefix/CutPrefix(real, root+sep), where real is one of
 // objs itself (not an expression built from it), root is the root the
-// path was joined under (roots, keyed by rootKey) and neither a
-// constant (directly or through a local) nor built from real, and sep
-// is the target's separator. It
+// path was joined under (roots, keyed by rootKey) and holds one value
+// (each local on its chain assigned once, a parameter never
+// reassigned), and sep is the target's separator. It
 // decides an if that dominates sink in the right direction. Three
 // shapes count:
 //
@@ -1105,17 +1105,50 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		return false
 	}
 	sep := targetSeparator(pass)
-	isConst := func(e ast.Expr) bool {
-		tv, ok := pass.TypesInfo.Types[e]
-		return ok && tv.Value != nil
-	}
 	// rootOperand reports whether e names the root the path was joined
-	// under (roots): not a constant (HasPrefix(real, "/") holds for
-	// every absolute path), not built from the resolved path itself
-	// (HasPrefix(real, filepath.Dir(real)+sep) holds for nearly every
-	// path), and not some other directory such as the root's parent.
+	// under (roots, keyed by rootKey) and holds one value. The join-root
+	// match also refuses a constant (HasPrefix(real, "/") holds for every
+	// absolute path, and a constant root joins no candidate path), a root
+	// built from the resolved path itself (HasPrefix(real,
+	// filepath.Dir(real)+sep) holds for nearly every path) and some other
+	// directory such as the root's parent: none of them keys as the join
+	// root.
+	// stable reports whether e holds one root on every path: each local
+	// on its chain, through EvalSymlinks/Abs/Clean, is assigned once (a
+	// parameter, never), so `if widen { root = "" } else { root =
+	// baseDir }` cannot hide its "" behind the last binding.
+	assigns := assignCounts(pass, body)
+	stable := func(e ast.Expr) bool {
+		for i := 0; i < 8; i++ {
+			if id, ok := e.(*ast.Ident); ok {
+				obj := pass.TypesInfo.ObjectOf(id)
+				values := assigns[obj]
+				if obj != nil && (obj.Pos() < body.Pos() || obj.Pos() > body.End()) {
+					values++ // a parameter or outer variable has its own value too
+				}
+				if values > 1 {
+					return false
+				}
+				if b, ok := bound[obj]; ok {
+					e = b
+					continue
+				}
+				return true
+			}
+			c, ok := e.(*ast.CallExpr)
+			if !ok || len(c.Args) != 1 {
+				return true
+			}
+			q := QualifiedFunc(pass, c.Fun)
+			if q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean" {
+				return true
+			}
+			e = c.Args[0]
+		}
+		return true
+	}
 	rootOperand := func(e ast.Expr) bool {
-		return !isConst(Resolve(pass, e, bound, 0)) && !mentionsObj(pass, e, bound, objs, 0) && roots[rootKey(pass, e, bound)]
+		return stable(e) && roots[rootKey(pass, e, bound)]
 	}
 	// target reports whether e is the resolved path itself: one of objs,
 	// not an expression built from it. HasPrefix(Join(root,
@@ -1164,7 +1197,6 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// twice breaks the chain: after `alias := rel` and
 	// `rel, _ = filepath.Rel(root, real)`, alias still holds the first
 	// Rel's answer but resolves to the second. No credit through one.
-	assigns := assignCounts(pass, body)
 	relOf := func(e ast.Expr) *ast.CallExpr {
 		for depth := 0; depth < 8; depth++ {
 			id, ok := ast.Unparen(e).(*ast.Ident)

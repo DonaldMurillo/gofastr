@@ -1201,3 +1201,102 @@ func staleCopySink(baseDir, name, other string, data []byte) error {
 	}
 	return os.WriteFile(out, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// sinkReassigned checks the first resolution and writes another one
+// copied into the same local after the check.
+func sinkReassigned(baseDir, safeName, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, safeName))
+	if err != nil {
+		return err
+	}
+	other, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	real = other
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// branchRoot empties the root on one branch: "" + sep is "/".
+func branchRoot(baseDir, name string, data []byte, widen bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	root := baseDir
+	if widen {
+		root = ""
+	} else {
+		root = baseDir
+	}
+	if !strings.HasPrefix(real, root+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// paramRootWidened joins under baseDir, then widens baseDir to its
+// parent on one branch before the check.
+func paramRootWidened(baseDir, name string, data []byte, widen bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if widen {
+		baseDir = filepath.Dir(baseDir)
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// parenConstRoot hides an empty root behind parentheses.
+func parenConstRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	root := ""
+	if !strings.HasPrefix(real, (root)+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// checkedSourceAliasSink checks the resolution and writes a copy made
+// once, after it. Quiet.
+func checkedSourceAliasSink(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	alias := real
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(alias, data, 0o600)
+}
+
+// branchResolvedRoot resolves the two-valued root before the test.
+func branchResolvedRoot(baseDir, name string, data []byte, widen bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	root := "/"
+	if !widen {
+		root = baseDir
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}

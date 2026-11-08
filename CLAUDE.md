@@ -268,7 +268,8 @@ expose them to agents connected to a live app.**
   uses an EvalSymlinks result, and after that resolution a
   `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
   test (real the resolved local itself, root neither a constant nor
-  built from real) runs before the
+  built from real, and holding one value: a local assigned once, a
+  parameter never reassigned) runs before the
   sink in an if that refuses an outside path (or holds the sink on
   the inside branch); the root is the one the path was joined under,
   the resolution dominates the sink, and a `".."` test of a Rel
