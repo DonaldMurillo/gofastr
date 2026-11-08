@@ -10,7 +10,7 @@ import (
 )
 
 func TestTokenTextRejectedBeforeStore(t *testing.T) {
-	_, store, _ := newTokenTestDB(t)
+	db, store, _ := newTokenTestDB(t)
 	for _, invalid := range []string{"a\x00b", "other\xff", "short\xe2\x82", strings.Repeat("x", 257)} {
 		_, _, err := IssueToken(context.Background(), store, TokenSpec{Name: invalid, OwnerKind: OwnerKindUser, OwnerID: "alice"})
 		if !errors.Is(err, ErrInvalidTokenSpec) {
@@ -23,9 +23,11 @@ func TestTokenTextRejectedBeforeStore(t *testing.T) {
 			t.Errorf("owner %q: got %v", invalid, err)
 		}
 	}
-	rows, err := store.List(context.Background(), OwnerKindUser, "alice")
-	if err != nil || len(rows) != 0 {
-		t.Fatalf("invalid names wrote rows: %d, %v", len(rows), err)
+	// Count every row: a token stored under the invalid owner ID would not
+	// list under "alice".
+	var count int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM auth_api_tokens`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("invalid token text wrote %d rows: %v", count, err)
 	}
 	for _, name := range []string{strings.Repeat("x", 256), strings.Repeat("é", 128)} {
 		if _, _, err := IssueToken(context.Background(), store, TokenSpec{Name: name, OwnerKind: OwnerKindUser, OwnerID: "alice"}); err != nil {
