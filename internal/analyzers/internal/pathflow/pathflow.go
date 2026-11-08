@@ -1133,7 +1133,8 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// Clean and parentheses, is assigned once before the point it is
 	// read (a parameter, never), so `if widen { root = "" } else { root
 	// = baseDir }` cannot hide its "" behind the last binding. A copy
-	// moves the point to the copy: `frozen := baseDir` holds baseDir's
+	// moves the point to the copy, or to the resolution when the copy
+	// came first: `frozen := baseDir` after the join holds baseDir's
 	// value then, and a later `baseDir = next` changes neither string. A
 	// local whose address is taken, and a field assigned (or whose
 	// address is taken) before the read, are refused: a write through
@@ -1172,7 +1173,16 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 					return false
 				}
 				if b, ok := bound[obj]; ok && b.Pos() < at {
+					// The copy holds its source's value at the copy, and
+					// that must be the value the path was joined under:
+					// after `frozen := baseDir; baseDir = next` and a join
+					// under baseDir, frozen names the old root. Count the
+					// source's writes up to the later of the copy and the
+					// resolution.
 					e, at = b, b.Pos()
+					if after > at {
+						at = after
+					}
 					continue
 				}
 				// No binding before the read: a parameter's own value,

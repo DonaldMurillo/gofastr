@@ -109,8 +109,9 @@ few lines, and link the PR or the docs page for the rest.
   before it, a parameter not reassigned before it, so
   `if widen { root = "/" }` before the test does not pass, and neither
   does a `rootSep` local bound to `root + sep` on one branch only. A
-  copy holds the value it was made from (`frozen := baseDir` stays
-  good when `baseDir` changes later). A root whose address is taken,
+  copy holds the value it was made from (`frozen := baseDir` after the
+  join stays good when `baseDir` changes later; made before a rebind
+  and the join, it names the old root and doesn't count). A root whose address is taken,
   and a field root assigned before the test, don't count. The separator after it is required: without it
   `/srv/app-backup` passes a test against `/srv/app`. A resolved
   parent joined with `filepath.Base` counts only for `os.Mkdir`:

@@ -1532,3 +1532,32 @@ func zeroLocalRoot(baseDir, name string, data []byte) error {
 	_ = root
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// frozenBeforeRebind copies the root, rebinds it, and joins under the
+// new value: the check tests the old root.
+func frozenBeforeRebind(baseDir, name, nextDir string, data []byte) error {
+	frozen := baseDir
+	baseDir = nextDir
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, frozen+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// frozenBeforeJoin copies the root before the join, and nothing
+// rebinds it. Quiet.
+func frozenBeforeJoin(baseDir, name string, data []byte) error {
+	frozen := baseDir
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, frozen+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
