@@ -188,6 +188,14 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Navigation fetches bypass the page cache**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). `cache.CacheMiddleware`'s key ignored `X-Gofastr-Navigate`,
+  so a cookieless client-side navigation could be answered with the
+  cached full page, and a navigation's partial could be stored under
+  the full page's key and replayed to the next plain GET. Navigation
+  fetches now pass through uncached with `X-Cache: BYPASS`, like Range
+  requests: a navigation is a user action expecting current state.
 - **`Retry-After` never reads 0 while the caller is still limited**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #657). The generic rate-limit middleware and the auth battery's
