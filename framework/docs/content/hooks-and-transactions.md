@@ -500,6 +500,12 @@ stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
 `CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
 run `AfterList`; an unhooked in-process read still returns stored values.
 
+`ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
+or `BeforeGet` hooks append any clause for a read of `id` (a hook error
+answers true). A screen asks it about a record that is no longer stored,
+before it prints a stored copy of the record's values: the admin audit
+log does, the rule the `_events` feed applies to a hard delete.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers

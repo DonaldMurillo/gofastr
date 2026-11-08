@@ -419,11 +419,16 @@ Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
 
 **Hidden records stay hidden.** The Audit log page and the dashboard's
-activity feed show only the id and operation of a record that is still
-stored (live or in the trash) but hidden from the admin by its
+activity feed show only the id, operation and time of a record that is
+still stored (live or in the trash) but hidden from the admin by its
 `BeforeGet`/`BeforeList` hooks (`entityui.UI.RecordHidden`): its title
 and changed values stay out of the page, the answer the owner-scope check
-already gave.
+already gave. A record that is no longer stored (hard-deleted or purged)
+has no row left to check, so it follows the `_events` rule for a hard
+delete: its title and changes show only when the viewer's `BeforeGet`
+and `BeforeList` hooks append no clause
+(`crud.CrudHandler.ReadHooksRestrict`). A viewer the hooks restrict, or
+a hook that fails, gets the id, operation and time.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a

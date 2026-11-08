@@ -89,6 +89,15 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **Audit rows for purged or hard-deleted records follow the read hooks**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `entityui.UI.RecordHidden` answered "not hidden" once no stored row was
+  left, so the admin audit log printed a purged record's stored title and
+  changes to a viewer its `BeforeGet`/`BeforeList` hooks restrict. Such a
+  row now shows its title and changes only when the viewer's hooks append
+  no clause, the rule `_events` applies to a hard delete; otherwise it
+  shows the id, operation and time. A hook error or a failed read hides
+  the record. `crud.CrudHandler.ReadHooksRestrict` is the new check.
 - **The status override writes under the read hooks**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `UI.OverrideHandler` checked the record against the caller's
