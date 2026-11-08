@@ -204,6 +204,14 @@ few lines, and link the PR or the docs page for the rest.
   a response the middleware finishes after the write cut (its own 503
   included) is never delivered. Set `WriteTimeout` above the deadline,
   set it to 0, or configure `RequestTimeout` explicitly.
+- **Queue and outbox settles retry `SQLITE_BUSY`.** On a contended
+  SQLite file, a nack or ack whose write met the database lock after
+  `busy_timeout` failed and left the job `claimed` until its lease
+  expired. The settle writes in `DBQueue` (`Ack`, `Nack`, the gate
+  hand-back) and the outbox delivery settles now retry a busy database
+  for about two seconds before falling back to lease recovery; every
+  settle stays fenced on its claim, so a late retry that lost the race
+  changes nothing.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
