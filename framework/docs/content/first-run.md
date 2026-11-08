@@ -182,8 +182,9 @@ page title (`Config.Title`, `setup.title` when zero) follow
 The 503 response on non-setup paths uses the same locale through
 `setup.unavailable` and `setup.unavailable_help`; it keeps `Retry-After: 60`.
 
-Fields with `Secret: true` render as password inputs and are never
-prefilled or logged. `setup.HealthStep(app)` runs the app's registered
+Rejected validation and step execution preserve submitted non-secret values,
+including empty values, ahead of environment defaults. Fields with
+`Secret: true` render as password inputs and are never prefilled or logged. `setup.HealthStep(app)` runs the app's registered
 readiness checks (the same ones `/readyz` serves) and fails with a
 per-adapter, actionable error list. DB, storage, and email
 verification come free if those batteries registered checks.
