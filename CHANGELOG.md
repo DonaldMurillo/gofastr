@@ -146,11 +146,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ### Fixed
 - **More unstorable text is refused before it reaches SQL.** A2A task,
-  push-config and context IDs, API-token names and owner IDs, and webhook
-  subscriber URLs, secrets and IDs that hold a NUL or invalid UTF-8 now
-  get a keyed refusal instead of a Postgres 500 (A2A answers
-  invalid-params, not internal error). API-token names are limited to 256
-  bytes. Audit text fields replace invalid UTF-8, so a state override
+  push-config and context IDs and API-token names and owner IDs that hold
+  a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
+  a Postgres 500 (A2A answers invalid-params, not internal error).
+  API-token names are limited to 256 bytes. `webhook.Manager.Subscribe`
+  and `Unsubscribe` return an error for such a URL, secret or ID before
+  the store sees it. Audit text fields replace invalid UTF-8, so a state override
   with such a reason is kept instead of rolled back.
 - **The HTTP cache middleware follows the origin's freshness.** A response
   is kept no longer than its `s-maxage` (preferred) or `max-age` allows
