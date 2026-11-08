@@ -71,6 +71,7 @@ func setup(t *testing.T, answers [3]string) (script, codex, repo string) {
 		}
 		cmd := exec.Command("git", args...)
 		cmd.Dir = repo
+		cmd.Env = gitless(os.Environ())
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
@@ -78,12 +79,29 @@ func setup(t *testing.T, answers [3]string) (script, codex, repo string) {
 	return filepath.Join(dir, "review3.py"), codex, repo
 }
 
+// gitless drops git's per-repo variables from env. Under a git hook, or a
+// reviewer started by one, GIT_INDEX_FILE names the commit's index, and a
+// fixture's git add would write into it.
+func gitless(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		switch name {
+		case "GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX":
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // run runs review3.py --staged in dir and returns its exit code and output.
 func run(t *testing.T, script, codex, dir string) (int, string) {
 	t.Helper()
 	cmd := exec.Command("python3", script, "--staged", "--codex", codex, "--timeout", "60")
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1")
+	cmd.Env = append(gitless(os.Environ()), "GIT_CONFIG_NOSYSTEM=1")
 	out, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
 	switch {
@@ -165,11 +183,36 @@ func TestFailuresNeverExitOne(t *testing.T) {
 		notRepo := t.TempDir()
 		cmd := exec.Command("python3", script, "--staged", "--codex", codex)
 		cmd.Dir = notRepo
-		cmd.Env = append(os.Environ(), "GIT_CEILING_DIRECTORIES="+filepath.Dir(notRepo))
+		cmd.Env = append(gitless(os.Environ()), "GIT_CEILING_DIRECTORIES="+filepath.Dir(notRepo))
 		out, err := cmd.CombinedOutput()
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) || exit.ExitCode() != 2 {
 			t.Fatalf("err %v, want exit 2\n%s", err, out)
 		}
 	})
+}
+
+func TestCodexRunsWithoutGitEnv(t *testing.T) {
+	// The hook passes the commit's index in GIT_INDEX_FILE. review3.py
+	// reads the diff through it, and must not hand it to codex.
+	script, codex, repo := setup(t, [3]string{approve, approve, approve})
+	recording := strings.Replace(stubCodex, "cat >/dev/null\n",
+		"cat >/dev/null\nenv > \"$(dirname \"$0\")/env.txt\"\n", 1)
+	if err := os.WriteFile(codex, []byte(recording), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("python3", script, "--staged", "--codex", codex, "--timeout", "60")
+	cmd.Dir = repo
+	cmd.Env = append(gitless(os.Environ()), "GIT_CONFIG_NOSYSTEM=1",
+		"GIT_INDEX_FILE="+filepath.Join(repo, ".git", "index"))
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("review3.py: %v\n%s", err, out)
+	}
+	env, err := os.ReadFile(filepath.Join(filepath.Dir(codex), "env.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(env), "GIT_INDEX_FILE=") {
+		t.Fatalf("codex ran with GIT_INDEX_FILE:\n%s", env)
+	}
 }

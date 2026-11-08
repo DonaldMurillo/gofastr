@@ -14,6 +14,7 @@ while its test sweep runs; see .githooks/pre-commit.
 """
 
 import argparse
+import glob
 import json
 import os
 import shutil
@@ -28,6 +29,7 @@ from concurrent.futures import ThreadPoolExecutor
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = 3
 DIFF_CAP = 120_000  # characters of diff pasted into the prompt
+MAC_APPS = "/Applications"  # a module name, so the tests can move it
 
 # Live codex processes, so a SIGTERM (the hook giving up) stops them
 # instead of leaving them to run out their reviews.
@@ -88,11 +90,70 @@ def git(*args, check=True):
     return out.stdout if out.returncode == 0 else None
 
 
+def _version_key(path, depth):
+    """Sort key for the version directory depth levels above path:
+    v22.10.0 after v22.9.1, a name with no digits first."""
+    d = path
+    for _ in range(depth):
+        d = os.path.dirname(d)
+    name = os.path.basename(d).lstrip("v")
+    return tuple(int(p) if p.isdigit() else -1 for p in name.split("."))
+
+
+def codex_install_globs():
+    """Where codex is usually installed when PATH does not reach it, in
+    the order tried, as (glob, depth) pairs: depth is how many levels
+    above a match its version directory sits, 0 for a fixed path. On
+    macOS the ChatGPT app's own codex CLI comes first: it updates with the
+    app and needs no node. nvm keeps one global bin per node version, so a
+    codex installed under an older node drops off PATH when the default
+    moves to a newer one; every installed version is tried, newest first."""
+    home = os.path.expanduser("~")
+    spots = []
+    if sys.platform == "darwin":
+        for apps in (MAC_APPS, os.path.join(home, "Applications")):
+            spots.append((os.path.join(apps, "ChatGPT.app", "Contents", "Resources",
+                                       "codex-cli", "bin", "codex"), 0))
+    nvm = os.environ.get("NVM_DIR") or os.path.join(home, ".nvm")
+    spots.append((os.path.join(nvm, "versions", "node", "*", "bin", "codex"), 2))
+    if os.name == "nt":
+        if os.environ.get("NVM_HOME"):
+            spots.append((os.path.join(os.environ["NVM_HOME"], "v*", "codex.cmd"), 1))
+        if os.environ.get("APPDATA"):
+            spots.append((os.path.join(os.environ["APPDATA"], "npm", "codex.cmd"), 0))
+    return spots
+
+
+def codex_install_spots():
+    """The files codex_install_globs matches, newest version first."""
+    found = []
+    for pattern, depth in codex_install_globs():
+        if depth:
+            found += sorted(glob.glob(pattern), key=lambda p, d=depth: _version_key(p, d),
+                            reverse=True)
+        else:
+            found.append(pattern)
+    return found
+
+
 def find_codex(explicit):
+    """--codex, then CODEX_BIN, then PATH, then codex_install_spots."""
     for cand in (explicit, os.environ.get("CODEX_BIN")):
         if cand and os.path.isfile(cand):
             return cand
-    return shutil.which("codex")
+    found = shutil.which("codex")
+    if found:
+        return found
+    for cand in codex_install_spots():
+        if os.path.isfile(cand) and (os.name == "nt" or os.access(cand, os.X_OK)):
+            return cand
+    return None
+
+
+def codex_missing():
+    """The not-found message, naming every place that was tried."""
+    tried = ["--codex", "CODEX_BIN", "PATH"] + [g for g, _ in codex_install_globs()]
+    return "codex not found (tried " + ", ".join(tried) + "): set CODEX_BIN or pass --codex"
 
 
 def default_range():
@@ -133,6 +194,19 @@ def build_prompt(rng, mode):
     return text, rng
 
 
+def codex_env():
+    """The environment for a codex run, without git's per-repo variables.
+    The hook hands review3.py the commit's index in GIT_INDEX_FILE so
+    --staged reads it; a reviewer that ran git, or a test that runs git,
+    in any repository would read and write that index instead of its own.
+    A review on 2026-11-08 ran this package's tests, and their `git add`
+    in a temp repo left an entry with no object in the commit's index."""
+    names = set((git("rev-parse", "--local-env-vars", check=False) or "").split())
+    names |= {"GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE", "GIT_OBJECT_DIRECTORY",
+              "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_PREFIX"}
+    return {k: v for k, v in os.environ.items() if k not in names}
+
+
 def command(codex, model, out_file):
     cmd = [codex, "exec", "-s", "read-only", "-m", model,
            "-c", 'model_reasoning_effort="high"',
@@ -160,13 +234,13 @@ def parse(text):
     return found
 
 
-def run_one(n, codex, model, prompt, timeout, workdir):
+def run_one(n, codex, model, prompt, timeout, workdir, env):
     out_file = os.path.join(workdir, f"run{n}.txt")
     log_file = os.path.join(workdir, f"run{n}.log")
     with open(log_file, "w", encoding="utf-8") as log:
         try:
             proc = subprocess.Popen(command(codex, model, out_file), stdin=subprocess.PIPE,
-                                    stdout=log, stderr=subprocess.STDOUT,
+                                    stdout=log, stderr=subprocess.STDOUT, env=env,
                                     text=True, encoding="utf-8",
                                     start_new_session=os.name == "posix")
         except OSError as exc:
@@ -236,10 +310,10 @@ def main():
 
     codex = find_codex(a.codex)
     if a.check:
-        print(codex or "codex not found: set CODEX_BIN or pass --codex")
+        print(codex or codex_missing())
         return 0 if codex else 3
     if not codex:
-        print("review-gate: codex not found: set CODEX_BIN or pass --codex", file=sys.stderr)
+        print("review-gate: " + codex_missing(), file=sys.stderr)
         return 3
 
     mode = "staged" if a.staged else "uncommitted" if a.uncommitted else "range"
@@ -255,7 +329,8 @@ def main():
 
     workdir = tempfile.mkdtemp(prefix="review-gate-")
     with ThreadPoolExecutor(RUNS) as pool:
-        results = list(pool.map(lambda n: run_one(n, codex, a.model, prompt, a.timeout, workdir),
+        env = codex_env()
+        results = list(pool.map(lambda n: run_one(n, codex, a.model, prompt, a.timeout, workdir, env),
                                 range(1, RUNS + 1)))
 
     usable = [r for r in results if "decision" in r]

@@ -30,7 +30,17 @@ layout: if your module is public, customers can install directly with
 go install your.module/path/cmd/myapp@latest
 ```
 
-For closed-source apps, distribute the cross-compiled binaries.
+For customers without Go, or for closed-source apps, build the
+downloads with `gofastr release` ([release](release.md)): one archive
+per OS and CPU, `checksums.txt`, and `install.sh` / `install.ps1`
+scripts that fetch, verify and install the right build. It stamps the
+version with `-X main.version`, which `myapp version` prints (a plain
+`go build` prints `dev`):
+
+```bash
+gofastr release --version=1.2.0 --pkg=./cmd/myapp \
+  --url=https://github.com/me/myapp/releases/download/v1.2.0
+```
 
 ## What your customers get
 
@@ -56,7 +66,9 @@ Help is built in at every level, always exiting 0: bare `myapp` (or
 verb prints its full flag reference, a verb that takes a record key or a
 path value included (`myapp posts patch --help` needs no id). An unknown
 subcommand prints the
-group usage and exits 2. `version` prints the binary name.
+group usage and exits 2. `version` prints the binary name and the
+version it was built as (`dev` unless `gofastr release` or
+`-ldflags "-X main.version=…"` set one).
 
 Per verb:
 

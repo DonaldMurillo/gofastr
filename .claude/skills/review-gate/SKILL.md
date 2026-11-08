@@ -13,7 +13,13 @@ blocking findings from every run, not just the ones they agree on.
 
 Run `python3 .claude/skills/review-gate/review3.py --check` (on Windows,
 `python`). It prints the Codex binary it found and exits 0, or exits 3.
-It looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`.
+It looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`, then the
+usual install spots: on macOS the ChatGPT app's own CLI
+(`ChatGPT.app/Contents/Resources/codex-cli/bin/codex` under
+`/Applications` or `~/Applications`), then every nvm node version newest
+first (`$NVM_DIR/versions/node/*/bin/codex`), and on Windows nvm-windows
+(`%NVM_HOME%\v*\codex.cmd`) and npm's global dir
+(`%APPDATA%\npm\codex.cmd`). The exit-3 message names each place tried.
 
 - **Exit 0: script mode.** Use it.
 - **Exit 3, or you cannot run commands or Python: subagent mode.**
@@ -48,9 +54,12 @@ an agent that commits gets the review without asking for it:
   test sweep, so it adds little to the hook's time. Its result prints
   last.
 - 3 of 3 request changes fails the commit and prints the findings.
-  Anything else lets the commit through: an approve, an incomplete
-  review, no Python, or no Codex (on a machine where `codex` is not on
-  `PATH`, set `CODEX_BIN`).
+- No Codex fails the commit too, before the test sweep, and names the
+  places it looked. Install the Codex CLI or set `CODEX_BIN`; to commit
+  without the review, use `GOFASTR_SKIP_COMMIT_REVIEW=1` and say why in
+  the commit message.
+- Anything else lets the commit through: an approve, an incomplete
+  review, or no Python.
 - A run that takes longer than ten minutes counts as incomplete
   (`GOFASTR_COMMIT_REVIEW_TIMEOUT` sets the seconds). If the hook exits
   early, it stops the review and the commands its runs started.
@@ -58,6 +67,9 @@ an agent that commits gets the review without asking for it:
   only Markdown.
 - It reviews the index the commit is built from, so `git commit <paths>`
   is reviewed as committed.
+- The codex runs start without git's per-repo variables
+  (`GIT_INDEX_FILE`, `GIT_DIR` and the rest): a reviewer that runs git or
+  the tests must not write into the commit's index.
 
 When it blocks: fix the findings and commit again. If you read a finding
 and it is wrong, commit with `GOFASTR_SKIP_COMMIT_REVIEW=1` and say in the
