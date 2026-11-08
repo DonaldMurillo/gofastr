@@ -660,11 +660,18 @@ func TestSubscribeRejectsOversizedURI(t *testing.T) {
 // The distinct-uri cap bounds the retained subscription map. Refcounts
 // do not count toward it: re-subscribing an existing uri must keep
 // working at the cap, a refused subscribe pins nothing, and
-// unsubscribing a uri to zero frees a slot.
+// unsubscribing a uri to zero frees a slot. The subscriptions are
+// spread across callers because each caller also holds its own
+// per-caller cap (maxResourceSubscriptionsPerCaller).
 func TestSubscribeCapsDistinctURIs(t *testing.T) {
 	s := NewServer()
+	callerCtx := func(i int) context.Context {
+		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
+		r.RemoteAddr = fmt.Sprintf("[2001:db8:%x::1]:4000", i%4)
+		return WithRequest(context.Background(), r)
+	}
 	for i := range maxResourceSubscriptions {
-		resp := s.HandleRequest(context.Background(), Request{
+		resp := s.HandleRequest(callerCtx(i), Request{
 			JSONRPC: "2.0", ID: i, Method: "resources/subscribe",
 			Params: json.RawMessage(fmt.Sprintf(`{"uri":"x://%d"}`, i)),
 		})
@@ -672,32 +679,32 @@ func TestSubscribeCapsDistinctURIs(t *testing.T) {
 			t.Fatalf("subscribe %d under the cap failed: %v", i, resp.Error)
 		}
 	}
-	subscribe := func(uri string, id int) Response {
-		return s.HandleRequest(context.Background(), Request{
+	subscribe := func(uri string, id, caller int) Response {
+		return s.HandleRequest(callerCtx(caller), Request{
 			JSONRPC: "2.0", ID: id, Method: "resources/subscribe",
 			Params: json.RawMessage(`{"uri":"` + uri + `"}`),
 		})
 	}
-	if resp := subscribe("x://0", maxResourceSubscriptions+1); resp.Error != nil {
+	if resp := subscribe("x://0", maxResourceSubscriptions+1, 0); resp.Error != nil {
 		t.Errorf("re-subscribe to an existing uri refused at the cap: %v", resp.Error)
 	}
-	if resp := subscribe("x://extra", maxResourceSubscriptions+2); resp.Error == nil {
+	if resp := subscribe("x://extra", maxResourceSubscriptions+2, 0); resp.Error == nil {
 		t.Error("SECURITY: [resource-exhaustion] distinct-uri cap not enforced")
 	}
 	if _, ok := resourceSubsSnapshot(s)["x://extra"]; ok {
 		t.Error("refused subscribe pinned state anyway")
 	}
-	// x://0 holds two counts (initial + re-subscribe): release both to
-	// free the entry.
+	// x://0 holds two counts (initial + re-subscribe), both from caller
+	// 0: release both to free the entry.
 	for id := range 2 {
-		if resp := s.HandleRequest(context.Background(), Request{
+		if resp := s.HandleRequest(callerCtx(0), Request{
 			JSONRPC: "2.0", ID: maxResourceSubscriptions + 10 + id, Method: "resources/unsubscribe",
 			Params: json.RawMessage(`{"uri":"x://0"}`),
 		}); resp.Error != nil {
 			t.Fatalf("unsubscribe errored: %v", resp.Error)
 		}
 	}
-	if resp := subscribe("x://freed", maxResourceSubscriptions+20); resp.Error != nil {
+	if resp := subscribe("x://freed", maxResourceSubscriptions+20, 0); resp.Error != nil {
 		t.Errorf("subscribe after unsubscribe refused (slot not freed): %v", resp.Error)
 	}
 }

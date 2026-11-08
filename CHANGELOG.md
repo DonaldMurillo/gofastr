@@ -116,6 +116,14 @@ few lines, and link the PR or the docs page for the rest.
   the new `mcp.ShowRefusal(err)`, and only then does the message cross,
   keeping its `*RPCError` code when it returns one. The server-wide
   `SetGate` is endpoint-level and still crosses.
+- **One MCP caller cannot fill the resource-subscription cap**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #656). `resources/subscribe` now bounds each caller to 256 distinct
+  uris, a quarter of the shared 1024 cap, so one caller can no longer
+  take every slot and refuse everyone else's subscribe; re-subscribing
+  a held uri is not growth and always works. An anonymous caller is its
+  TCP peer's IPv6 /64 (the grouping the rate limiters use), so rotating
+  hosts inside one prefix does not draw a fresh budget.
 - **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
   ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
   `Report.Apply` checked the symlink-resolved path against the project

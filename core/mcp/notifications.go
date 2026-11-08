@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"runtime/debug"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -33,6 +35,14 @@ const maxResourceURIBytes = 2048
 // than growing the map; unsubscribing or the idle expiry
 // (expireResourceSubsIfIdleLocked) frees room.
 const maxResourceSubscriptions = 1024
+
+// maxResourceSubscriptionsPerCaller caps how many distinct uris ONE
+// caller may hold. The shared cap is a commons: one caller could
+// subscribe to every uri under maxResourceSubscriptions and refuse
+// everyone else's subscribe. A quarter of the shared cap leaves room
+// for several fully-subscribed callers, and re-subscribing a held uri
+// is not growth.
+const maxResourceSubscriptionsPerCaller = maxResourceSubscriptions / 4
 
 // defaultSSEStreamLimit bounds every caller's notification streams
 // together. The per-caller seat cap cannot: anonymous callers are keyed
@@ -180,10 +190,25 @@ type resourceSubKey struct{ caller, uri string }
 
 // subscriptionCaller is the identity a resources/subscribe is recorded
 // under: the seat key, so the resolved user's id when middleware put
-// one in the context, else the TCP peer's host.
+// one in the context, else the TCP peer's host. An IPv6 peer host is
+// grouped into its /64 first: addresses inside one prefix are one
+// client for the per-caller subscription cap, the same grouping the
+// rate limiters use — without it, rotating hosts inside a prefix drew
+// a fresh per-caller budget and the shared cap was fillable again.
 func subscriptionCaller(ctx context.Context) string {
 	r, _ := RequestFromContext(ctx)
-	return sseSeatKey(ctx, r)
+	caller := sseSeatKey(ctx, r)
+	const peer = "peer:"
+	if !strings.HasPrefix(caller, peer) {
+		return caller
+	}
+	host := strings.TrimPrefix(caller, peer)
+	ip := net.ParseIP(host)
+	if ip == nil || ip.To4() != nil || ip.To16() == nil {
+		return caller
+	}
+	mask := net.CIDRMask(64, 128)
+	return peer + ip.Mask(mask).String()
 }
 
 // notifySubscribers fans a notification out to every live subscriber.
@@ -396,10 +421,27 @@ func (s *Server) handleResourcesSubscribe(ctx context.Context, req Request) Resp
 	// peer host when anonymous, and addresses are cheap. Counted in
 	// pairs, so a caller re-subscribing to a uri it holds is not growth.
 	key := resourceSubKey{caller: subscriptionCaller(ctx), uri: params.URI}
-	if _, exists := s.resourceSubsBy[key]; !exists && len(s.resourceSubsBy) >= maxResourceSubscriptionPairs {
-		s.sseMu.Unlock()
-		return newErrorResponse(req.ID, ErrInvalidParams,
-			fmt.Sprintf("too many resource subscriptions (max %d)", maxResourceSubscriptionPairs))
+	if _, exists := s.resourceSubsBy[key]; !exists {
+		if len(s.resourceSubsBy) >= maxResourceSubscriptionPairs {
+			s.sseMu.Unlock()
+			return newErrorResponse(req.ID, ErrInvalidParams,
+				fmt.Sprintf("too many resource subscriptions (max %d)", maxResourceSubscriptionPairs))
+		}
+		// One caller cannot refuse everyone else's subscribe: the shared
+		// cap is a commons, so a caller's own distinct uris are bounded
+		// under it. Counting the caller's pairs is counting its distinct
+		// uris, and the record is bounded, so the scan is too.
+		n := 0
+		for k := range s.resourceSubsBy {
+			if k.caller == key.caller {
+				n++
+			}
+		}
+		if n >= maxResourceSubscriptionsPerCaller {
+			s.sseMu.Unlock()
+			return newErrorResponse(req.ID, ErrInvalidParams,
+				fmt.Sprintf("too many distinct subscribed resource uris for this caller (max %d)", maxResourceSubscriptionsPerCaller))
+		}
 	}
 	s.resourceSubs[params.URI]++
 	s.resourceSubsBy[key]++

@@ -482,9 +482,11 @@ and delivery stops only when the count for that `uri` reaches zero. An
 unsubscribe for a `uri` the caller never subscribed to is a no-op, even
 when other callers did. A `uri` longer than 2048 bytes is refused, the server retains at
 most 1024 distinct subscribed uris and 4096 caller/`uri` subscriptions
-across all callers (a `resources/subscribe` that would add one past
-either bound fails; re-subscribing to a `uri` the caller already holds
-always works), and when the last stream disconnects the retained
+across all callers, and one caller holds at most 256 distinct uris —
+the shared cap is a commons, so no single caller can fill it and
+refuse everyone else's subscribe (a `resources/subscribe` that would
+add one past any bound fails; re-subscribing to a `uri` the caller
+already holds always works), and when the last stream disconnects the retained
 subscriptions are dropped — with no stream there is nobody to deliver
 to. Raising one from server code:
 
