@@ -50,11 +50,21 @@
 		$zip = Join-Path $tmp $archive
 		Write-Host "Downloading $name $version for windows/$arch"
 		Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$archive" -OutFile $zip
-		$got = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+		# The hash and the unzip call .NET, not Get-FileHash and
+		# Expand-Archive: those live in script modules that Windows
+		# PowerShell cannot load when started from PowerShell 7, whose
+		# PSModulePath it inherits.
+		$stream = [IO.File]::OpenRead($zip)
+		try {
+			$got = -join ([Security.Cryptography.SHA256]::Create().ComputeHash($stream) | ForEach-Object { $_.ToString('x2') })
+		} finally {
+			$stream.Dispose()
+		}
 		if ($got -ne $sum) { throw "$name install: checksum mismatch for ${archive}: expected $sum, got $got. Nothing was installed" }
 
 		$unpacked = Join-Path $tmp 'x'
-		Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+		Add-Type -AssemblyName System.IO.Compression.FileSystem
+		[IO.Compression.ZipFile]::ExtractToDirectory($zip, $unpacked)
 		$exe = Join-Path $unpacked "$name.exe"
 		if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "$name install: $archive does not hold $name.exe" }
 

@@ -103,7 +103,9 @@ PowerShell 7):
    to `PROCESSOR_ARCHITEW6432` and `PROCESSOR_ARCHITECTURE` where .NET
    does not report it.
 2. Downloads it with `Invoke-WebRequest`, with TLS 1.2 turned on for
-   Windows PowerShell 5.1, and checks it with `Get-FileHash`.
+   Windows PowerShell 5.1, and checks its SHA-256 and unzips it through
+   .NET, so it also runs in a Windows PowerShell started from
+   PowerShell 7.
 3. Installs `<name>.exe` into `%LOCALAPPDATA%\Programs\<name>` (or
    `$env:<NAME>_INSTALL_DIR`). A running `.exe` cannot be overwritten but
    can be renamed, so the old copy is moved aside first and put back if
