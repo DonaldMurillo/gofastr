@@ -131,6 +131,8 @@ var (
 	reasonTryAgainShortly                = i18n.Define("auth.try_again_shortly", "try again shortly")
 	reasonTwoFactorUnavailable           = i18n.Define("auth.two_factor_unavailable", "two-factor enforcement unavailable")
 	reasonNotBase64URL                   = i18n.Define("auth.not_base64url", "{{field}} must be unpadded base64url")
+	reasonInvalidTokenName               = i18n.Define("auth.invalid_token_name", "token name must be valid UTF-8 without NUL and at most {{max}} bytes")
+	reasonInvalidTokenOwnerID            = i18n.Define("auth.invalid_token_owner_id", "token owner_id must be valid UTF-8 without NUL")
 	reasonTokenNameRequired              = i18n.Define("auth.token_name_required", "token name is required")
 	reasonInvalidOwnerKind               = i18n.Define("auth.invalid_owner_kind", "invalid owner_kind {{kind}} (want \"user\" or \"service\")")
 	reasonOwnerIDRequired                = i18n.Define("auth.owner_id_required", "owner_id is required")
