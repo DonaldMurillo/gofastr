@@ -170,9 +170,15 @@ func (p *Plugin) toolFilter(_ context.Context, params map[string]any) (any, erro
 	if historical && p.resolvedFilePath != "" {
 		// Tail the file for older entries beyond the ring window. Dedup
 		// against the ring on (time, msg, request_id) so the steady-state
-		// case (file overlaps ring) doesn't double-count.
+		// case (file overlaps ring) doesn't double-count. A read that
+		// fails is surfaced, not swallowed: an agent asking for history
+		// must not get an empty answer with no sign the file was
+		// unreadable.
 		extra, err := tailFile(p.resolvedFilePath, limit*4)
-		if err == nil && len(extra) > 0 {
+		if err != nil {
+			return nil, fmt.Errorf("historical read: %w", err)
+		}
+		if len(extra) > 0 {
 			seen := make(map[string]struct{}, len(pool))
 			key := func(e map[string]any) string {
 				t, _ := e["time"].(string)
