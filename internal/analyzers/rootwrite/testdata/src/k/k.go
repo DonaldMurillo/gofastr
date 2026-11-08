@@ -591,3 +591,40 @@ func breakSwitchInLoop(baseDir string, names []string, data []byte) error {
 	}
 	return nil
 }
+
+// relWrongSeparator tests the other platform's separator: on Unix
+// "../outside" is neither ".." nor under `..\`.
+func relWrongSeparator(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, `..\`) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relMixed checks each part on a different Rel result: /safe/sibling
+// is outside /safe/root and passes both.
+func relMixed(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, _ := filepath.Rel(realRoot, real)
+	otherRel, _ := filepath.Rel(filepath.Dir(realRoot), real)
+	if rel == ".." || strings.HasPrefix(otherRel, "../") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}

@@ -1011,10 +1011,15 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		return fn == "strings.HasPrefix" || fn == "strings.CutPrefix"
 	}
 	// rel := filepath.Rel(root, real) on a contained root: an outside
-	// real gives a rel that is exactly ".." or starts with "../".
-	isRel := func(e ast.Expr) bool {
+	// real gives a rel that is exactly ".." or starts with ".." plus
+	// the target's separator. relOf returns the Rel call, so parts
+	// checked on two different Rel results never combine.
+	relOf := func(e ast.Expr) *ast.CallExpr {
 		r, ok := Resolve(pass, e, bound, 0).(*ast.CallExpr)
-		return ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0)
+		if ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0) {
+			return r
+		}
+		return nil
 	}
 	strConst := func(e ast.Expr) (string, bool) {
 		tv, ok := pass.TypesInfo.Types[e]
@@ -1023,73 +1028,78 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		return constant.StringVal(tv.Value), true
 	}
-	// outsideForces reports what an outside path makes a condition:
-	// forced true (forceTrue), forced false (forceFalse), neither (0),
-	// or, for a test of a Rel result, true on only part of the outside
-	// spellings: relDotDot (rel == "..") or relParent (rel under "../").
-	// A disjunction covering both parts is forced true; a part alone
-	// is not: `HasPrefix(rel, "../")` misses rel == "..", the root's
-	// parent itself.
+	parentPrefix := ".." + targetSeparator(pass)
+	// cover is what an outside path makes a condition: forced true,
+	// forced false, neither, or, for tests of a Rel result, true on
+	// only part of the outside spellings, kept per Rel call: dotdot
+	// (rel == "..") or parent (rel under ".." plus separator). A
+	// disjunction covering both parts of one Rel is forced true; a part
+	// alone is not: HasPrefix(rel, "../") misses rel == "..", the
+	// root's parent itself.
 	const (
 		forceFalse = -1
 		forceTrue  = 1
-		relDotDot  = 2
-		relParent  = 4
+		dotdot     = 1
+		parent     = 2
 	)
-	var outsideForces func(e ast.Expr, depth int) int
-	outsideForces = func(e ast.Expr, depth int) int {
+	type cover struct {
+		force int
+		parts map[*ast.CallExpr]int
+	}
+	part := func(r *ast.CallExpr, bit int) cover {
+		return cover{parts: map[*ast.CallExpr]int{r: bit}}
+	}
+	var outsideForces func(e ast.Expr, depth int) cover
+	outsideForces = func(e ast.Expr, depth int) cover {
 		if depth > 6 {
-			return 0
+			return cover{}
 		}
 		switch x := ast.Unparen(e).(type) {
 		case *ast.UnaryExpr:
 			if x.Op == token.NOT {
-				switch outsideForces(x.X, depth+1) {
-				case forceTrue:
-					return forceFalse
-				case forceFalse:
-					return forceTrue
-				}
+				return cover{force: -outsideForces(x.X, depth+1).force}
 			}
 		case *ast.BinaryExpr:
 			if x.Op == token.EQL {
 				// rel == ".."
 				for _, pair := range [][2]ast.Expr{{x.X, x.Y}, {x.Y, x.X}} {
-					if c, ok := strConst(pair[1]); ok && c == ".." && isRel(pair[0]) && dominates(x, sink, body) {
-						return relDotDot
+					if c, ok := strConst(pair[1]); ok && c == ".." && dominates(x, sink, body) {
+						if r := relOf(pair[0]); r != nil {
+							return part(r, dotdot)
+						}
 					}
 				}
-				return 0
+				return cover{}
 			}
 			l, r := outsideForces(x.X, depth+1), outsideForces(x.Y, depth+1)
 			switch x.Op {
 			case token.LOR:
 				// true if either side is forced true; false only
 				// when both are forced false.
-				if l == forceTrue || r == forceTrue {
-					return forceTrue
+				if l.force == forceTrue || r.force == forceTrue {
+					return cover{force: forceTrue}
 				}
-				parts := 0
-				for _, v := range []int{l, r} {
-					if v > forceTrue {
-						parts |= v
+				parts := map[*ast.CallExpr]int{}
+				for _, side := range []cover{l, r} {
+					for call, bits := range side.parts {
+						parts[call] |= bits
+						if parts[call] == dotdot|parent {
+							return cover{force: forceTrue}
+						}
 					}
 				}
-				if parts == relDotDot|relParent {
-					return forceTrue
+				if len(parts) > 0 {
+					return cover{parts: parts}
 				}
-				if parts != 0 {
-					return parts
-				}
-				if l == forceFalse && r == forceFalse {
-					return forceFalse
+				if l.force == forceFalse && r.force == forceFalse {
+					return cover{force: forceFalse}
 				}
 			case token.LAND:
-				if l == forceFalse || r == forceFalse {
-					return forceFalse
+				if l.force == forceFalse || r.force == forceFalse {
+					return cover{force: forceFalse}
 				}
-				if l == forceTrue && r == forceTrue {
-					return forceTrue
+				if l.force == forceTrue && r.force == forceTrue {
+					return cover{force: forceTrue}
 				}
 			}
 		case *ast.Ident:
@@ -1100,36 +1110,40 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 			// check is set.
 			obj := pass.TypesInfo.ObjectOf(x)
 			if obj == nil || !types.Identical(obj.Type(), types.Typ[types.Bool]) || !dominates(x, sink, body) {
-				return 0
+				return cover{}
 			}
 			if r, ok := Resolve(pass, x, bound, 0).(*ast.CallExpr); ok && isPrefix(r) && isContain(r) &&
 				dominates(r, sink, body) && mentionsObj(pass, r, bound, objs, 0) {
-				return forceFalse
+				return cover{force: forceFalse}
 			}
 		case *ast.CallExpr:
 			if !dominates(x, sink, body) {
-				return 0
+				return cover{}
 			}
 			if isPrefix(x) && isContain(x) && mentionsObj(pass, x, bound, objs, 0) {
-				return forceFalse // HasPrefix(real, root): false outside
+				return cover{force: forceFalse} // HasPrefix(real, root): false outside
 			}
 			// filepath.IsLocal(rel) is false for ".." and "../x".
-			if QualifiedFunc(pass, x.Fun) == "path/filepath.IsLocal" && len(x.Args) == 1 && isRel(x.Args[0]) {
-				return forceFalse
+			if QualifiedFunc(pass, x.Fun) == "path/filepath.IsLocal" && len(x.Args) == 1 && relOf(x.Args[0]) != nil {
+				return cover{force: forceFalse}
 			}
 			// HasPrefix(rel, ...) on rel := Rel(root, real): ".."
-			// covers every outside rel, "../" only those below the
-			// parent, and anything longer ("..blocked") neither.
-			if isPrefix(x) && len(x.Args) == 2 && isRel(x.Args[0]) {
-				switch c, _ := strConst(x.Args[1]); c {
-				case "..":
-					return forceTrue
-				case "../", `..\`:
-					return relParent
+			// covers every outside rel, ".." plus the target's
+			// separator only those below the parent, and anything
+			// else ("..blocked", the other platform's separator)
+			// neither.
+			if isPrefix(x) && len(x.Args) == 2 {
+				if r := relOf(x.Args[0]); r != nil {
+					switch c, _ := strConst(x.Args[1]); c {
+					case "..":
+						return cover{force: forceTrue}
+					case parentPrefix:
+						return part(r, parent)
+					}
 				}
 			}
 		}
-		return 0
+		return cover{}
 	}
 	holds := func(b ast.Node) bool {
 		return b != nil && sink != nil && b.Pos() <= sink.Pos() && sink.End() <= b.End()
@@ -1140,7 +1154,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		if !ok || found {
 			return !found
 		}
-		f := outsideForces(ifs.Cond, 0)
+		f := outsideForces(ifs.Cond, 0).force
 		switch {
 		case f == forceTrue && refuses(ifs.Body) && !holds(ifs.Body):
 			found = true
@@ -1667,6 +1681,23 @@ func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) 
 			return false
 		}
 	}
+}
+
+// targetSeparator is filepath.Separator as the package was type-checked
+// for: the vettool runs on the host, and `make analyze` vets each
+// package for linux, windows and darwin.
+func targetSeparator(pass *analysis.Pass) string {
+	for _, imp := range pass.Pkg.Imports() {
+		if imp.Path() != "path/filepath" {
+			continue
+		}
+		if c, ok := imp.Scope().Lookup("Separator").(*types.Const); ok {
+			if v, ok := constant.Int64Val(c.Val()); ok {
+				return string(rune(v))
+			}
+		}
+	}
+	return "/"
 }
 
 // refuses reports whether a block's last statement keeps control from
