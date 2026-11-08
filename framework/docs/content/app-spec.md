@@ -1978,14 +1978,16 @@ portability rules are built into that template:
   the bare `"app"` the old template produced cannot be exec'd there.
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   app spec boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
-  `postgres` app spec links only `lib/pq`, which cannot open that file DSN,
-  so the test instead carves a disposable database from the env-provided
+  `postgres` app spec declares the engine the spec ships against, so the
+  test carves a disposable database from the env-provided
   `TEST_POSTGRES_DSN` admin DSN and points the child at it
   (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
   Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
   green-by-skip instead of timing out with a misleading "server did not become
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
+  (The generated `main.go` links both drivers, so switching `DB_DRIVER`
+  between `sqlite` and `postgres` at boot works whatever the spec declares.)
 
 With gated screens and a seeded admin, the test signs in as that admin and
 then requires each gated screen to answer 200. The admin is seeded with the

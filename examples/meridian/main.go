@@ -21,6 +21,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/sdkdocs"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	// Both engines: openDB switches on DB_DRIVER, so the undeclared one
+	// must be linked too or the switch answers `sql: unknown driver`.
+	_ "github.com/lib/pq"
 
 	"github.com/DonaldMurillo/gofastr/examples/meridian/entities"
 )

@@ -38,6 +38,12 @@ few lines, and link the PR or the docs page for the rest.
   now has `var version` in `main`, which `release` stamps and
   `myapp version` prints (`dev` from a plain `go build`). gofastr's own
   releases now carry its prebuilt binaries and install scripts.
+- **Generated apps link both database drivers, so `DB_DRIVER` can switch
+  engines** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated `main.go` blank-imports the SQLite and Postgres drivers
+  whatever `app.db.driver` declares. The `openDB` switch has always
+  accepted both engines, but only the declared driver was linked, so
+  switching `DB_DRIVER` at boot answered `sql: unknown driver`.
 - **`DBQueue` retries can follow a delivery policy**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `WithRetrySchedule(steps...)` sets each wait from a list (the last step
@@ -145,6 +151,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **The generated typed repositories chain `WithJSONCase` after
+  `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
+  the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
+  assigning the `JSONCase` field. Assigning still works (crud's field
+  cache rekeys when the case differs); the template now reads the way
+  the framework does. Meridian and ecommerce are regenerated.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

@@ -1208,10 +1208,11 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	adminSeeded := bp.App.Auth.Enabled && adminEmail != "" && adminPass != ""
 	target, hasTarget := appSpecE2EWritableTarget(bp)
 	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
-	// The generated e2e test boots against the app spec's declared driver.
-	// A postgres app spec links only lib/pq, so it cannot open a SQLite
-	// file DSN. Provision a throwaway Postgres database instead, and skip
-	// when Postgres is unreachable so driverless CI stays green-by-skip.
+	// The generated e2e test boots against the app spec's declared driver,
+	// so a postgres spec provisions a throwaway Postgres database (skips
+	// when Postgres is unreachable so driverless CI stays green-by-skip):
+	// the declared engine is the one the spec ships against, even though
+	// the generated app now links both drivers and DB_DRIVER can switch.
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -1841,8 +1842,14 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	sb.WriteString("\tfwimage \"github.com/DonaldMurillo/gofastr/framework/image\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/isolation\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
-	if imp := appSpecDriverImport(driver); imp != "" {
-		sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
+	if driver != "" || dbURL != "" {
+		// Both engines, not just the declared one: openDB switches on
+		// DB_DRIVER, and a spec whose driver is the only import linked
+		// answers the switch for the other engine with `sql: unknown
+		// driver`.
+		for _, imp := range appSpecDriverImports(driver) {
+			sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
+		}
 	}
 	// Unconditional: the entities seam ships even with zero entities, so a
 	// later `--add`/scaffold entity registers without editing this owned file.
@@ -2214,14 +2221,19 @@ func isHexRGB(s string) bool {
 	return true
 }
 
-func appSpecDriverImport(driver string) string {
+// appSpecDriverImports is the blank-import set a generated app with a
+// database links: BOTH engines, whatever the spec declares. openDB
+// switches on DB_DRIVER at boot — the reason D-07 keeps refusing
+// Postgres-only reserved words for SQLite app specs too — so linking
+// only the declared driver left that switch dead for the other engine
+// (`sql: unknown driver`). An unknown driver returns nil;
+// validateAppSpec is the loud gate for it.
+func appSpecDriverImports(driver string) []string {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
-	case "", "sqlite", "sqlite3":
-		return "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-	case "postgres", "postgresql":
-		return "github.com/lib/pq"
+	case "", "sqlite", "sqlite3", "postgres", "postgresql":
+		return []string{"github.com/DonaldMurillo/gofastr/sqlite/stdlib", "github.com/lib/pq"}
 	default:
-		return ""
+		return nil
 	}
 }
 

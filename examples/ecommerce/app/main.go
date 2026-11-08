@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=6f962477915732b6
+//gofastr:generated generator=app kind=scaffold version=dev sum=75b458f5f78eeeb8
 
 package main
 
@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
+	_ "github.com/lib/pq"
 
 	"github.com/DonaldMurillo/gofastr/examples/ecommerce/app/entities"
 )
