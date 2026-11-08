@@ -85,6 +85,7 @@ var docIntents = []docIntent{
 			{"settings", "Project settings", "gofastr.settings.yml: the one committed file that configures generate, verify and isolation for a project."},
 			{"unmount", "Unmounting a package", "gofastr unmount copies a gofastr package into your app to change its code; gofastr remount goes back."},
 			{"app-cli", "Ship your API as a CLI", "gofastr generate cli: a branded terminal client for your customers, with scoped API-token auth."},
+			{"release", "Release downloads", "gofastr release: cross-built archives, checksums.txt, and install.sh / install.ps1 that verify and install a CLI or service binary."},
 			{"sdk", "Ship your API as SDKs", "gofastr generate sdk: a downloadable Go module + JS/TS client, hosted by the app behind a live docs site."},
 		},
 	},

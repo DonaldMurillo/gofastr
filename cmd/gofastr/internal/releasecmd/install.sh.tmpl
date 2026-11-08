@@ -1,0 +1,111 @@
+#!/bin/sh
+# Installs {{.Name}} {{.Version}} for the current user on macOS or Linux.
+#
+#   curl -fsSL {{.BaseURL}}/install.sh | sh
+#
+# Written by `gofastr release`. The SHA-256 of every archive is part of
+# this script, so a download that does not match the build is refused.
+#
+# {{.EnvPrefix}}_INSTALL_DIR   where the binary goes (default ~/.local/bin)
+{{- if .Service}}
+# {{.EnvPrefix}}_NO_SERVICE=1  install the binary only; skip `{{.Name}} service install`
+{{- end}}
+set -eu
+
+name='{{.Name}}'
+version='{{.Version}}'
+base_url='{{.BaseURL}}'
+install_dir="{{"${"}}{{.EnvPrefix}}_INSTALL_DIR:-$HOME/.local/bin}"
+
+fail() {
+	printf '%s install: %s\n' "$name" "$1" >&2
+	exit 1
+}
+
+case "$(uname -s)" in
+Darwin) os=darwin ;;
+Linux) os=linux ;;
+*) fail "this script supports macOS and Linux, not $(uname -s); on Windows run install.ps1" ;;
+esac
+case "$(uname -m)" in
+x86_64 | amd64) arch=amd64 ;;
+arm64 | aarch64) arch=arm64 ;;
+*) fail "no build for CPU $(uname -m)" ;;
+esac
+{{- if .DarwinArm64}}
+# A shell running under Rosetta on Apple silicon reports x86_64; install
+# the native build.
+if [ "$os/$arch" = darwin/amd64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || true)" = 1 ]; then
+	arch=arm64
+fi
+{{- end}}
+
+case "$os/$arch" in
+{{- range .Unix}}
+{{.Platform}})
+	archive='{{.File}}'
+	sum='{{.SHA256}}'
+	;;
+{{- end}}
+*) fail "this release has no build for $os/$arch" ;;
+esac
+
+tmp=$(mktemp -d 2>/dev/null || mktemp -d -t "$name-install")
+staged=
+cleanup() {
+	rm -rf "$tmp"
+	if [ -n "$staged" ]; then rm -f "$staged"; fi
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
+url="$base_url/$archive"
+printf 'Downloading %s %s for %s/%s\n' "$name" "$version" "$os" "$arch"
+# The checksum below is what makes the download trustworthy, so wget is
+# called without --https-only, which BusyBox's wget lacks.
+if command -v curl >/dev/null 2>&1; then
+	curl -fsSL --proto '=https' --proto-redir '=https' -o "$tmp/$archive" "$url" || fail "could not download $url"
+elif command -v wget >/dev/null 2>&1; then
+	wget -q -O "$tmp/$archive" "$url" || fail "could not download $url"
+else
+	fail "needs curl or wget to download $url"
+fi
+
+if command -v sha256sum >/dev/null 2>&1; then
+	got=$(sha256sum "$tmp/$archive" | cut -d ' ' -f 1)
+elif command -v shasum >/dev/null 2>&1; then
+	got=$(shasum -a 256 "$tmp/$archive" | cut -d ' ' -f 1)
+elif command -v openssl >/dev/null 2>&1; then
+	got=$(openssl dgst -sha256 -r "$tmp/$archive" | cut -d ' ' -f 1)
+else
+	fail "needs sha256sum, shasum or openssl to check the download"
+fi
+[ "$got" = "$sum" ] || fail "checksum mismatch for $archive: expected $sum, got $got. Nothing was installed"
+
+mkdir "$tmp/x"
+tar -xzf "$tmp/$archive" -C "$tmp/x" || fail "could not unpack $archive"
+[ -f "$tmp/x/$name" ] || fail "$archive does not hold $name"
+
+mkdir -p "$install_dir" || fail "could not create $install_dir"
+# Copy beside the destination, then rename over it: the rename is atomic,
+# and it works while an old copy of the binary is running.
+staged="$install_dir/.$name.install.$$"
+cp "$tmp/x/$name" "$staged" || fail "could not write to $install_dir"
+chmod 0755 "$staged"
+mv -f "$staged" "$install_dir/$name" || fail "could not replace $install_dir/$name"
+staged=
+printf 'Installed %s %s to %s\n' "$name" "$version" "$install_dir/$name"
+
+case ":$PATH:" in
+*":$install_dir:"*) ;;
+*)
+	# shellcheck disable=SC2016 # $PATH is printed for the user to paste, not expanded
+	printf '%s is not on your PATH. Add this line to your shell profile:\n  export PATH="%s:$PATH"\n' "$install_dir" "$install_dir"
+	;;
+esac
+{{- if .Service}}
+
+if [ "{{"${"}}{{.EnvPrefix}}_NO_SERVICE:-}" != 1 ]; then
+	"$install_dir/$name" service install || fail "the binary is installed, but \`$name service install\` failed"
+fi
+{{- end}}

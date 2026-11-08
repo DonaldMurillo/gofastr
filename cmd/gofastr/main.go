@@ -25,6 +25,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/newcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/packcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/releasecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/semanticcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/testcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/themecmd"
@@ -97,6 +98,9 @@ func printHelp() {
   desktop run|build|types  Build/run a GoFastr app as a desktop window (experimental):
                         run  build + launch with dev tools; build  .app on macOS or
                         .exe + WebView2Loader.dll on Windows/amd64; types  desktop.d.ts
+  release --version=<v>  Cross-build a CLI or service binary for macOS, Linux and
+                        Windows; write archives, checksums.txt and (with --url)
+                        install.sh + install.ps1. See "gofastr docs release"
   docs (doc) [topic]    Browse framework docs (auto-versioned with this binary)
                         --list  list every topic; --grep <term> search across docs
   verify [capability]   Check the app against the GoFastr contract: routing, permissions,
@@ -185,6 +189,7 @@ var ownsHelp = map[string]bool{
 	"agents":   true,
 	"desktop":  true,
 	"export":   true,
+	"release":  true,
 }
 
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching
@@ -279,6 +284,8 @@ func dispatch(args []string) {
 		unmountcmd.RunRemount(cmdArgs)
 	case "desktop":
 		desktopcmd.RunDesktop(cmdArgs)
+	case "release":
+		releasecmd.RunRelease(cmdArgs)
 	case "version":
 		cli.Println(project.VersionLine())
 	default:
@@ -297,7 +304,7 @@ func dispatch(args []string) {
 
 // suggestions are the command names an unknown command is matched
 // against (aliases left out).
-var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
+var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
 
 // knownCommand reports whether name is a command dispatch runs, an
 // alias included.
@@ -314,7 +321,7 @@ var versionCheckedCommands = map[string]bool{
 	"theme": true, "generate": true, "gen": true, "g": true, "pack": true, "validate": true,
 	"build": true, "dev": true, "export": true, "new": true, "migrate": true, "m": true,
 	"test": true, "t": true, "semantic": true, "harness": true, "agents": true, "audit": true,
-	"verify": true, "unmount": true, "remount": true, "desktop": true,
+	"verify": true, "unmount": true, "remount": true, "desktop": true, "release": true,
 }
 
 // versionCheckApplies reports whether warnVersionMismatch speaks for

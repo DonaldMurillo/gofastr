@@ -1,0 +1,116 @@
+# Installs {{.Name}} {{.Version}} for the current user on Windows 10 or later.
+#
+#   irm {{.BaseURL}}/install.ps1 | iex
+#
+# Written by `gofastr release`. The SHA-256 of every archive is part of
+# this script, so a download that does not match the build is refused.
+# Nothing here needs an administrator.
+#
+# $env:{{.EnvPrefix}}_INSTALL_DIR      where the binary goes (default %LOCALAPPDATA%\Programs\{{.Name}})
+# $env:{{.EnvPrefix}}_NO_MODIFY_PATH=1  leave the user's Path alone
+{{- if .Service}}
+# $env:{{.EnvPrefix}}_NO_SERVICE=1     install the binary only; skip `{{.Name}} service install`
+{{- end}}
+
+# The script block keeps these variables out of the caller's session
+# when the script runs through iex.
+& {
+	$ErrorActionPreference = 'Stop'
+	$ProgressPreference = 'SilentlyContinue'
+
+	$name = '{{.Name}}'
+	$version = '{{.Version}}'
+	$baseUrl = '{{.BaseURL}}'
+	$builds = @{
+{{- range .Windows}}
+		'{{.Arch}}' = @('{{.File}}', '{{.SHA256}}')
+{{- end}}
+	}
+
+	$installDir = $env:{{.EnvPrefix}}_INSTALL_DIR
+	if (-not $installDir) { $installDir = Join-Path $env:LOCALAPPDATA "Programs\$name" }
+
+	$cpu = $null
+	try { $cpu = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString() } catch { }
+	if (-not $cpu) {
+		$cpu = $env:PROCESSOR_ARCHITECTURE
+		if ($env:PROCESSOR_ARCHITEW6432) { $cpu = $env:PROCESSOR_ARCHITEW6432 }
+	}
+	$arch = switch ($cpu) { 'X64' { 'amd64' } 'AMD64' { 'amd64' } 'Arm64' { 'arm64' } default { $null } }
+	if (-not $arch) { throw "$name install: no build for CPU $cpu" }
+	if (-not $builds.ContainsKey($arch)) { throw "$name install: this release has no build for windows/$arch" }
+	$archive, $sum = $builds[$arch]
+
+	# Windows PowerShell 5.1 may not offer TLS 1.2 by default.
+	[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+	$tmp = Join-Path ([IO.Path]::GetTempPath()) ([IO.Path]::GetRandomFileName())
+	New-Item -ItemType Directory -Path $tmp | Out-Null
+	try {
+		$zip = Join-Path $tmp $archive
+		Write-Host "Downloading $name $version for windows/$arch"
+		Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$archive" -OutFile $zip
+		$got = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+		if ($got -ne $sum) { throw "$name install: checksum mismatch for ${archive}: expected $sum, got $got. Nothing was installed" }
+
+		$unpacked = Join-Path $tmp 'x'
+		Expand-Archive -LiteralPath $zip -DestinationPath $unpacked
+		$exe = Join-Path $unpacked "$name.exe"
+		if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "$name install: $archive does not hold $name.exe" }
+
+		New-Item -ItemType Directory -Force -Path $installDir | Out-Null
+		$dest = Join-Path $installDir "$name.exe"
+		$old = "$dest.old"
+		# A running .exe cannot be overwritten, but it can be renamed:
+		# move the old copy aside, then put the new one in its place.
+		Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+		$moved = $false
+		if (Test-Path -LiteralPath $dest) {
+			Move-Item -LiteralPath $dest -Destination $old -Force
+			$moved = $true
+		}
+		try {
+			Copy-Item -LiteralPath $exe -Destination $dest
+		} catch {
+			if ($moved) { Move-Item -LiteralPath $old -Destination $dest -Force }
+			throw
+		}
+		Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+	} finally {
+		Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+	}
+	Write-Host "Installed $name $version to $dest"
+
+	# Add the directory to the user's Path. The value is read and written
+	# unexpanded, as REG_EXPAND_SZ, so entries like %USERPROFILE%\bin
+	# survive; [Environment]::SetEnvironmentVariable would expand them.
+	if ($env:{{.EnvPrefix}}_NO_MODIFY_PATH -eq '1') {
+		Write-Host "Leaving your Path alone; $installDir holds $name.exe."
+	} else {
+		$key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+		try {
+			$raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+			$entries = @($raw -split ';' | Where-Object { $_ -ne '' })
+			$want = $installDir.TrimEnd('\')
+			$present = $entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ieq $want }
+			if (-not $present) {
+				$key.SetValue('Path', (@($entries) + $installDir) -join ';', [Microsoft.Win32.RegistryValueKind]::ExpandString)
+				# Setting and clearing a user variable through .NET broadcasts
+				# WM_SETTINGCHANGE, so terminals opened from now on see the new Path.
+				[Environment]::SetEnvironmentVariable('{{.EnvPrefix}}_INSTALL_PATH_REFRESH', '1', 'User')
+				[Environment]::SetEnvironmentVariable('{{.EnvPrefix}}_INSTALL_PATH_REFRESH', $null, 'User')
+				$env:Path = "$env:Path;$installDir"
+				Write-Host "Added $installDir to your Path. Open a new terminal to use $name."
+			}
+		} finally {
+			$key.Close()
+		}
+	}
+{{- if .Service}}
+
+	if ($env:{{.EnvPrefix}}_NO_SERVICE -ne '1') {
+		& $dest service install
+		if ($LASTEXITCODE -ne 0) { throw "$name install: the binary is installed, but ``$name service install`` failed" }
+	}
+{{- end}}
+}

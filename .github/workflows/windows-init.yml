@@ -39,3 +39,8 @@ jobs:
           go test ./cmd/gofastr ./cmd/gofastr/internal/initcmd
           -run '^(TestInitFreshDirectory|TestInitWindowsShells|TestInitGoDirectives|TestProjectNameWindowsDevices|TestInitKeepsHigherExistingGoRequirements|TestInitKeepsGoAboveFloor|TestInitRaisesGoBelowFloor|TestScaffoldGoRequirementsToolchainMeetsHigherMinimum)$'
           -count=1 -v
+      # The generated install.ps1, run for real: download over HTTPS,
+      # checksum, install, an in-place upgrade, the user Path edit (the
+      # test puts the old value back), and a tampered archive refused.
+      - name: Release install script
+        run: go test ./cmd/gofastr/internal/releasecmd -run '^TestInstallPs1InstallsVerifiedBuild$' -count=1 -v
