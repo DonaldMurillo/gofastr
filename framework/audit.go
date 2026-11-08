@@ -430,8 +430,10 @@ func requestUserID(ctx context.Context) string {
 // from fields that land in the audit row's TEXT columns. Those columns
 // are queried and emitted verbatim by forensics tools, so an injected
 // `\n` or `\x00` would let a malicious actor or redact callback forge
-// log lines / split records. Drop everything below 0x20 plus DEL.
+// log lines / split records. Replace invalid UTF-8 so SQL text binds are
+// portable, then drop everything below 0x20 plus DEL.
 func sanitizeAuditField(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	if s == "" {
 		return s
 	}

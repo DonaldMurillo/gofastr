@@ -105,7 +105,9 @@ write transaction; callers that invoke hooks directly without CRUD may have a
 null old image.
 
 `record_id` is the record's id, the same string its URL carries, with
-control bytes stripped. The CRUD handler reads it from its own key
+control bytes stripped and invalid UTF-8 replaced by U+FFFD. The same
+scrub applies to audit text fields, including a state-override reason,
+so malformed bytes cannot roll back a write on PostgreSQL. The CRUD handler reads it from its own key
 columns and puts it on the AfterCreate/AfterUpdate hook context; a hook
 of your own reads it with `crud.AuditRecordIDFor(ctx, entityName)`.
 That holds where the row cannot say which key is the key: two API
