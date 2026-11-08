@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -196,5 +197,32 @@ func TestMaskPanicReadsAsNull(t *testing.T) {
 	code, body := f.get("/cards/c1")
 	if code != http.StatusOK || !strings.Contains(body, `"number":null`) || strings.Contains(body, "4111") {
 		t.Errorf("GET with a panicking Mask = %d %s, want 200 and the number null", code, body)
+	}
+}
+
+// A masked field is NoQuery before Define checks the cursor columns, so a
+// masked key or cursor field is refused there: its stored value would
+// otherwise ride out in the cursor token, or in a delete event's key stub.
+func TestMaskRefusesKeyAndCursorField(t *testing.T) {
+	mask := func(context.Context, any) any { return "x" }
+	cases := map[string]entity.EntityConfig{
+		"key": {Fields: []schema.Field{{Name: "id", Type: schema.String, Mask: mask}}},
+		"cursor": {
+			Fields: []schema.Field{
+				{Name: "id", Type: schema.String},
+				{Name: "rank", Type: schema.Int, Mask: mask},
+			},
+			Pagination: &entity.PaginationConfig{CursorFields: []string{"rank"}},
+		},
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if rec := recover(); rec == nil || !strings.Contains(fmt.Sprint(rec), "NoQuery") {
+					t.Errorf("Define with a masked %s field = %v, want a NoQuery refusal", name, rec)
+				}
+			}()
+			entity.Define("masked_"+name, cfg.WithTimestamps(false))
+		})
 	}
 }
