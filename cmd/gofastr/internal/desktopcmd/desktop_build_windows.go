@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
@@ -28,7 +29,7 @@ const (
 )
 
 func buildWindowsDesktop(f desktopBuildFlags, name string) error {
-	if !validWindowsArtifactName(name) {
+	if !project.ValidWindowsFileName(name) {
 		return fmt.Errorf("--name %q cannot be used as a Windows executable name", name)
 	}
 	if _, err := windowsVersionParts(f.version); err != nil {

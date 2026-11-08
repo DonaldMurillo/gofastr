@@ -172,9 +172,10 @@ more than a local tweak.
 The pre-commit hook also runs a model review of the staged change when the
 Codex CLI is installed (`codex` on `PATH`, or `CODEX_BIN`): three
 independent reviews, and the commit fails only when all three request
-changes. Without Codex it warns and moves on. To overrule a block after
-reading it, commit with `GOFASTR_SKIP_COMMIT_REVIEW=1` and say why in the
-commit message. `.claude/skills/review-gate/SKILL.md` covers the rest.
+changes. Without Codex the commit fails and the hook names the places it
+looked. To commit without the review, or to overrule a block after reading
+it, commit with `GOFASTR_SKIP_COMMIT_REVIEW=1` and say why in the commit
+message. `.claude/skills/review-gate/SKILL.md` covers the rest.
 
 ## Commit style
 

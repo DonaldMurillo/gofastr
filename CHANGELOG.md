@@ -25,6 +25,19 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`gofastr release` builds the downloads for a CLI or service binary**
+  ([release](framework/docs/content/release.md)). It cross-builds the
+  main package for macOS, Linux and Windows on amd64 and arm64 with
+  `CGO_ENABLED=0`, packs each build as a byte-reproducible `.tar.gz` or
+  `.zip`, and writes `checksums.txt`. With `--url` it also writes
+  `install.sh` (any POSIX `sh`, BusyBox included) and `install.ps1`
+  (Windows 10 and later), which carry every archive's SHA-256, refuse a
+  download that does not match, and install the binary for the current
+  user with no root or administrator. `--service` makes them run
+  `<name> service install` afterwards. A CLI from `gofastr generate cli`
+  now has `var version` in `main`, which `release` stamps and
+  `myapp version` prints (`dev` from a plain `go build`). gofastr's own
+  releases now carry its prebuilt binaries and install scripts.
 - **`DBQueue` retries can follow a delivery policy**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `WithRetrySchedule(steps...)` sets each wait from a list (the last step
