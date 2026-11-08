@@ -277,6 +277,11 @@ cancel that lands before the handler has started (a streaming client
 knows the task id from the first snapshot) means the handler never
 runs at all; the task settles as `TASK_STATE_CANCELED`.
 
+Caller-supplied task IDs, push-configuration IDs, and context IDs must
+be valid UTF-8 without NUL. Invalid text gets JSON-RPC invalid params
+(`-32602`), with the wire field named in `error.data.fields`, before
+any store call or new task is written.
+
 One handler run is bounded by `A2AConfig.TaskTimeout` (default 5
 minutes); a run that exceeds it fails with `task timed out`. Past the
 deadline every `TaskContext` mutation (`Working`, `Artifact`,
