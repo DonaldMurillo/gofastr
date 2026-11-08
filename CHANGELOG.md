@@ -141,7 +141,10 @@ few lines, and link the PR or the docs page for the rest.
   `os.DirFS` extra directory was read as it is, so a link inside it
   published the file it pointed at anywhere on disk. It is now read
   through `os.Root`, like the static dir and `UIHost.SetStaticFS`: a link
-  that leaves the directory is skipped and logged.
+  that leaves the directory is skipped and logged. A symlink in any
+  other filesystem, an extra dir or static FS such as
+  `fs.Sub(os.DirFS(dir), "docs")` included, is skipped wherever it
+  points, since nothing holds such a link inside its directory.
 - **`core/static` refuses Windows alias spellings of any file**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A path
   segment that ends in a dot or a space, or holds a colon, is never

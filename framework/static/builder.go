@@ -67,7 +67,8 @@ type Builder struct {
 	// build (or the user static dir) already produced win: extra files
 	// are written only when absent, matching the SEO/PWA precedence.
 	// An os.DirFS value is read through os.Root, so a symlink out of
-	// its directory is skipped; any other FS must not follow symlinks.
+	// its directory is skipped. A symlink in any other FS, a wrapped
+	// os.DirFS (fs.Sub) included, is skipped wherever it points.
 	ExtraDirs map[string]fs.FS
 	// ExcludeRoutes skips routes whose pattern (or a prefix segment of
 	// it) matches an entry, e.g. ExcludeRoutes: []string{"/broken"}
@@ -2111,8 +2112,9 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 
 // walkStatic walks a static tree the way the UI host serves it, calling
 // fn for every entry that is not a directory, slash-separated and
-// relative to the tree's root. fsys is an os.Root view (or an embed.FS,
-// which holds no links), so a symlink resolves only inside the tree.
+// relative to the tree's root. In an os.Root view a symlink resolves
+// only inside the tree; any other FS (an embed.FS holds no links) gets
+// no directory link walked, since nothing holds that walk inside it.
 // fs.WalkDir does not descend a symlinked directory, and the live host
 // serves static/images/logo.svg through static/images -> img all the
 // same: the export dropped every asset under such a link and the
@@ -2143,7 +2145,10 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 				if sub, err = e.Info(); err != nil {
 					return err
 				}
-			case e.Type()&fs.ModeSymlink != 0:
+			case e.Type()&fs.ModeSymlink != 0 && rootfs.Confined(fsys):
+				// Only an os.Root view holds a linked directory's walk
+				// inside the root. Elsewhere the link goes to fn, whose
+				// skipSymlink drops it.
 				if fi, err := fs.Stat(fsys, rel); err == nil && fi.IsDir() {
 					sub = fi
 				}
@@ -2201,6 +2206,13 @@ func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, stri
 func skipSymlink(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...any)) bool {
 	if d.Type()&fs.ModeSymlink == 0 {
 		return false
+	}
+	// Only an os.Root view keeps the link's target inside the directory.
+	// Any other FS, fs.Sub(os.DirFS(dir), ".") among them, follows it
+	// anywhere on disk, and nothing here can tell where it lands.
+	if !rootfs.Confined(fsys) {
+		log("skipped %s (symlink in a filesystem os.Root does not confine)", rel)
+		return true
 	}
 	fi, err := fs.Stat(fsys, rel)
 	if err != nil {

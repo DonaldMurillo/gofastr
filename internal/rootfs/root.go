@@ -88,6 +88,23 @@ func (r *Root) ReadFile(name string) ([]byte, error) {
 
 func (r *Root) FS() fs.FS { return fileSystem{r} }
 
+// Confined reports whether fsys is a [Root.FS] or an os.Root.FS view,
+// whose opens the kernel holds inside the directory, symlinks included.
+// A caller that walks an arbitrary fs.FS asks it before trusting a
+// symlink entry: os.DirFS, and any wrapper around one such as fs.Sub,
+// follow a link anywhere on disk.
+func Confined(fsys fs.FS) bool {
+	if _, ok := fsys.(fileSystem); ok {
+		return true
+	}
+	return fsys != nil && reflect.TypeOf(fsys) == osRootFSType
+}
+
+// osRootFSType is the dynamic type os.Root.FS returns (the unexported
+// *os.rootFS). FS only converts its receiver, so a nil *os.Root yields
+// the type without opening anything.
+var osRootFSType = reflect.TypeOf((*os.Root)(nil).FS())
+
 type fileSystem struct{ root *Root }
 
 func (f fileSystem) Open(name string) (fs.File, error) {

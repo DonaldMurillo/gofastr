@@ -59,3 +59,57 @@ func TestExtraDirsRefuseEscapingSymlinks(t *testing.T) {
 		}
 	}
 }
+
+// TestExtraDirsSkipLinksInWrappedDirFS: only an os.DirFS value is
+// re-rooted. fs.Sub(os.DirFS(dir), "sub") is another FS type, which
+// follows a link anywhere on disk, so every symlink in it is skipped,
+// a linked directory included, wherever it points.
+func TestExtraDirsSkipLinksInWrappedDirFS(t *testing.T) {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("SECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "dir", "inner.txt"), []byte("INNER"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	extra := filepath.Join(parent, "sub")
+	if err := os.Mkdir(extra, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extra, "ok.txt"), []byte("ok"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for link, target := range map[string]string{
+		"leak.txt": filepath.Join(outside, "secret.txt"),
+		"leakdir":  filepath.Join(outside, "dir"),
+		"same.txt": "ok.txt",
+	} {
+		if err := os.Symlink(target, filepath.Join(extra, link)); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+	}
+	wrapped, err := fs.Sub(os.DirFS(parent), "sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	a := coreapp.NewApp("extra-wrapped")
+	a.Register("/", &homeScreen{}, nil)
+	out := t.TempDir()
+	b := &Builder{Host: uihost.New(a), OutDir: out, ExtraDirs: map[string]fs.FS{"/files": wrapped}}
+	if _, err := b.Build(context.Background()); err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	for _, rel := range []string{"files/leak.txt", "files/leakdir/inner.txt", "files/same.txt"} {
+		if data, err := os.ReadFile(filepath.Join(out, filepath.FromSlash(rel))); err == nil {
+			t.Errorf("SECURITY: [static] the export published %s, a symlink in a wrapped os.DirFS (%q)", rel, data)
+		}
+	}
+	if got := readOut(t, out, "files/ok.txt"); got != "ok" {
+		t.Errorf("files/ok.txt = %q, want ok", got)
+	}
+}

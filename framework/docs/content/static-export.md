@@ -225,8 +225,10 @@ go build -o site ./examples/site/
   directory is read through `os.Root`, the way the static dir is: a
   symlink whose target leaves the directory, or is not a regular file,
   is skipped and logged, and a symlinked directory inside it is walked.
-  Another `fs.FS` is read as it is, so it must not follow symlinks
-  itself (`os.Root.FS()` does not). A page or asset
+  A symlink in any other `fs.FS`, a wrapped `os.DirFS` such as
+  `fs.Sub(os.DirFS(dir), "docs")` included, is skipped and logged
+  wherever it points: such an FS follows a link anywhere on disk. Pass
+  the `os.DirFS` itself to keep links inside it. A page or asset
   the build wrote, in any case (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. An extra file spelled in another case than an asset the
