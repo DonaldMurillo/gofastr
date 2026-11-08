@@ -1,6 +1,7 @@
 package uihost
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -48,4 +49,35 @@ func TestPrefetchCarriesSessionExpiry(t *testing.T) {
 	if h := get(false).Header().Get("X-Gofastr-Session-Expires-In"); h != "" {
 		t.Errorf("a navigation partial carries X-Gofastr-Session-Expires-In %q, want none", h)
 	}
+}
+
+// The seconds left are counted when the page is rendered, not when the
+// request arrived: a loader that takes 1.5 s of a session with 61 s
+// left must not report 60.
+func TestPrefetchExpiryCountsAfterRender(t *testing.T) {
+	application := app.NewApp("t")
+	application.Register("/slow", &slowLoadComp{}, nil)
+	ds := New(application)
+	token, _, err := sessiontoken.Mint(ds.sessionKey, time.Now().Add(-sessionMaxAge+61*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/slow", nil)
+	req.Header.Set("X-Gofastr-Navigate", "1")
+	req.Header.Set("X-Gofastr-Prefetch", "1")
+	req.AddCookie(&http.Cookie{Name: sessionCookieSecureName, Value: token})
+	rec := httptest.NewRecorder()
+	ds.ServeHTTP(rec, req)
+	left, err := strconv.Atoi(rec.Header().Get("X-Gofastr-Session-Expires-In"))
+	if rec.Code != http.StatusOK || err != nil || left > 59 {
+		t.Fatalf("status %d, X-Gofastr-Session-Expires-In = %q; want 200 and at most 59 after a 1.5 s render",
+			rec.Code, rec.Header().Get("X-Gofastr-Session-Expires-In"))
+	}
+}
+
+type slowLoadComp struct{ testHomeComp }
+
+func (c *slowLoadComp) Load(context.Context) error {
+	time.Sleep(1500 * time.Millisecond)
+	return nil
 }

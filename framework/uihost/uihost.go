@@ -3231,6 +3231,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// The fresh bare id travels in X-Gofastr-Session so the runtime
 	// rewires the SSE meta; the signed token rides Set-Cookie only.
 	token := readSessionCookie(r)
+	var sessionMinted time.Time // a live session's signing time, on a prefetch
 	if _, live := ds.verifySessionToken(token); !live {
 		// A prefetch with a dead session gets 204 and no mint: the client
 		// never caches a non-partial response, so the eventual real click
@@ -3249,13 +3250,9 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	} else if r.Header.Get("X-Gofastr-Prefetch") == "1" {
 		// A live session still ends: a prefetched entry kept past that
 		// point would paint with no server contact, and its islands,
-		// actions and SSE would answer 401. The whole seconds the token
-		// has left let preload.js drop the entry then if it comes before
-		// the TTL. Relative, so the browser's clock does not matter.
-		if minted, ok := sessiontoken.MintedAt(token); ok {
-			left := max(time.Until(minted.Add(sessionMaxAge)), 0)
-			w.Header().Set("X-Gofastr-Session-Expires-In", strconv.FormatInt(int64(left/time.Second), 10))
-		}
+		// actions and SSE would answer 401. The page's write below says
+		// how long the token has left.
+		sessionMinted, _ = sessiontoken.MintedAt(token)
 	}
 	// Declarative redirect on the SPA path: hand the runtime the target
 	// via X-Gofastr-Location so it pushState's and loads the partial
@@ -3372,6 +3369,14 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
+	// The whole seconds the session has left, counted after the render
+	// so a slow loader does not stretch it, let preload.js drop the entry
+	// then if it comes before the TTL. Relative, so the browser's clock
+	// does not matter.
+	if !sessionMinted.IsZero() {
+		left := max(time.Until(sessionMinted.Add(sessionMaxAge)), 0)
+		w.Header().Set("X-Gofastr-Session-Expires-In", strconv.FormatInt(int64(left/time.Second), 10))
+	}
 	ds.writePartialResult(w, r, ctx, path, res, overlay, pageStatus(res, recorded()))
 }
 
