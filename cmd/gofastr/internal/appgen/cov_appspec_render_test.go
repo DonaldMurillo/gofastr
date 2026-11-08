@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -79,24 +80,34 @@ func TestRenderAppSpecNodeOnlyScreenBuilds(t *testing.T) {
 	}
 }
 
-func TestAppSpecDriverImport(t *testing.T) {
-	cases := map[string]string{
-		"": "github.com/DonaldMurillo/gofastr/sqlite/stdlib", "sqlite": "github.com/DonaldMurillo/gofastr/sqlite/stdlib",
-		"sqlite3": "github.com/DonaldMurillo/gofastr/sqlite/stdlib", "postgres": "github.com/lib/pq",
-		"postgresql": "github.com/lib/pq", "mysql": "",
-	}
-	for in, want := range cases {
-		if got := appSpecDriverImport(in); got != want {
-			t.Errorf("appSpecDriverImport(%q)=%q want %q", in, got, want)
+func TestAppSpecDriverImports(t *testing.T) {
+	// Every engine the generated openDB switch accepts is linked on every
+	// app that opens a database, whatever the spec declares: DB_DRIVER
+	// can switch engines at boot (the reason D-07 keeps refusing
+	// Postgres-only reserved words for SQLite app specs too), and the
+	// declared-driver-only import left that switch dead for the other
+	// engine (`sql: unknown driver`).
+	for _, declared := range []string{"", "sqlite", "sqlite3", "postgres", "postgresql"} {
+		got := appSpecDriverImports(declared)
+		want := []string{"github.com/DonaldMurillo/gofastr/sqlite/stdlib", "github.com/lib/pq"}
+		if !slices.Equal(got, want) {
+			t.Errorf("appSpecDriverImports(%q)=%v want %v (both engines linked)", declared, got, want)
 		}
+	}
+	if got := appSpecDriverImports("mysql"); got != nil {
+		t.Errorf("appSpecDriverImports(\"mysql\")=%v want nil (unknown driver is validateAppSpec's refusal)", got)
 	}
 }
 
 func TestRenderAppSpecMainSqliteDefault(t *testing.T) {
 	bp := appspec.AppSpec{App: appspec.AppSpecApp{Name: "S", Module: "ex.com/s"}, Entities: []framework.EntityDeclaration{{Name: "x", Fields: []framework.FieldDeclaration{{Name: "n", Type: "string"}}}}}
 	out := RenderAppSpecMain(bp)
-	if !strings.Contains(out, "github.com/DonaldMurillo/gofastr/sqlite/stdlib") {
-		t.Fatalf("default sqlite driver expected:\n%s", out)
+	if !strings.Contains(out, `"_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"`) &&
+		!strings.Contains(out, "_ \"github.com/DonaldMurillo/gofastr/sqlite/stdlib\"") {
+		t.Fatalf("sqlite driver expected:\n%s", out)
+	}
+	if !strings.Contains(out, "_ \"github.com/lib/pq\"") {
+		t.Fatalf("a sqlite app links the postgres driver too, so DB_DRIVER can switch engines:\n%s", out)
 	}
 }
 

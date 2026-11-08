@@ -898,12 +898,22 @@ partial and keeps the shell).
   `.Columns(...)`, `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
   `mode: cards` (or `table`) → `.As(...)`, `create: false` → `.NoCreate()`,
   `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
-  refused on any other block kind), and a `text:` heading (level 2 when a block ahead of it on the screen
+  refused on any other block kind), `filter: field=value` →
+  `.Where(field, value)` (stat_card's filter spelling: one pinned
+  equality, validated against the entity's fields and refused on a
+  hidden or `no_query` column) and a `text:` heading (level 2 when a block ahead of it on the screen
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
   params stay apart, and two blocks for the same entity on one screen are
   refused at validate time. `fields: [id]` requires an actual `id` column:
   natural and composite keys do not add one unless explicitly declared.
+
+  A list's `filter:` pins `field = value` on every read inside the
+  caller's scope (the same `ListBuilder.Where` a tab listing one
+  invoice's payments uses): it works with search, sort, facets and
+  paging, the pinned field drops from the facets, and New carries it as
+  `?prefill_<field>=<value>`. It is one equality — anything richer is
+  the entity's `display: views:` or a hand-written screen.
 - An entity listed on several screens has one **home list**: the list
   screen its detail screen sits under, else the first one with
   `create: true`, else the first one declared. A list on any other screen
@@ -1387,6 +1397,17 @@ system/auto-generated columns alone. For entities with a **required** relation,
 use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
+
+The recipe survives `gofastr pack`. The generated `stubs.go` carries it
+beside the rows: `seedEntity` gains `Count`, `Weights` and `Authored`
+(the number of leading rows you wrote), while `Rows` still holds every
+row, so seeding itself does not change. Pack keeps the authored rows and
+the recipe, regenerates the rest to check them, and a generated row you
+hand-edited turns the whole entry back into explicit rows — the edit
+survives, the recipe is dropped. Without the recipe in `stubs.go`, two
+specs whose weights differ but whose rows expand the same (count: 7 with
+`open: 5` vs `open: 10` on a two-value enum) packed to the same file and
+pack could not tell them apart.
 
 Generated rows never repeat a `primary_key`: an integer key column counts
 up from 1001, or, when the column sets bounds, from `min` but never below
@@ -1978,14 +1999,16 @@ portability rules are built into that template:
   the bare `"app"` the old template produced cannot be exec'd there.
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   app spec boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
-  `postgres` app spec links only `lib/pq`, which cannot open that file DSN,
-  so the test instead carves a disposable database from the env-provided
+  `postgres` app spec declares the engine the spec ships against, so the
+  test carves a disposable database from the env-provided
   `TEST_POSTGRES_DSN` admin DSN and points the child at it
   (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
   Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
   green-by-skip instead of timing out with a misleading "server did not become
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
+  (The generated `main.go` links both drivers, so switching `DB_DRIVER`
+  between `sqlite` and `postgres` at boot works whatever the spec declares.)
 
 With gated screens and a seeded admin, the test signs in as that admin and
 then requires each gated screen to answer 200. The admin is seeded with the

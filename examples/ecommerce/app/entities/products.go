@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=2b2be50b0c0329f7
+//gofastr:generated generator=app kind=scaffold version=dev sum=baff9e9c2215ea96
 
 package entities
 
@@ -11,24 +11,24 @@ import (
 )
 
 type Products struct {
-	ID             string              `json:"id"`
-	Name           string              `json:"name,omitempty"`
-	Slug           string              `json:"slug,omitempty"`
-	Sku            string              `json:"sku,omitempty"`
-	Description    string              `json:"description,omitempty"`
-	Price          string              `json:"price,omitempty"`
-	CompareAtPrice string              `json:"compareAtPrice,omitempty"`
-	Cost           string              `json:"cost,omitempty"`
-	Stock          int                 `json:"stock,omitempty"`
-	CategoryId     string              `json:"categoryId,omitempty"`
-	Status         ProductsStatusValue `json:"status,omitempty"`
-	Featured       bool                `json:"featured,omitempty"`
-	Weight         float64             `json:"weight,omitempty"`
-	Image          string              `json:"image,omitempty"`
-	Tags           any                 `json:"tags,omitempty"`
-	Category       *Categories         `json:"category,omitempty"`
-	Reviews        []*Reviews          `json:"reviews,omitempty"`
-	OrderItems     []*OrderItems       `json:"orderItems,omitempty"`
+	ID             string               `json:"id"`
+	Name           string               `json:"name,omitempty"`
+	Slug           string               `json:"slug,omitempty"`
+	Sku            *string              `json:"sku,omitempty"`
+	Description    *string              `json:"description,omitempty"`
+	Price          string               `json:"price,omitempty"`
+	CompareAtPrice *string              `json:"compareAtPrice,omitempty"`
+	Cost           *string              `json:"cost,omitempty"`
+	Stock          int                  `json:"stock,omitempty"`
+	CategoryId     *string              `json:"categoryId,omitempty"`
+	Status         *ProductsStatusValue `json:"status,omitempty"`
+	Featured       *bool                `json:"featured,omitempty"`
+	Weight         *float64             `json:"weight,omitempty"`
+	Image          *string              `json:"image,omitempty"`
+	Tags           any                  `json:"tags,omitempty"`
+	Category       *Categories          `json:"category,omitempty"`
+	Reviews        []*Reviews           `json:"reviews,omitempty"`
+	OrderItems     []*OrderItems        `json:"orderItems,omitempty"`
 }
 
 // ProductsStatusValue is one value of the products field status.
@@ -121,8 +121,11 @@ func NewProductsRepo(app *framework.App) *ProductsRepo {
 	if err != nil {
 		panic("entities: products not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("products")
 	h.Storage = app.Storage
 	h.Events = app.Events()

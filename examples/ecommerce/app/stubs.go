@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=eecac0a417a86cf4
+//gofastr:generated generator=app kind=scaffold version=dev sum=8a3ccba9dcf961a2
 
 package main
 
@@ -55,27 +55,36 @@ func recomputeOrderFromItemDeleteHook(ctx context.Context, data any) error {
 }
 
 // seedEntity is one entity's ordered seed rows.
+// Rows holds every row: the Authored leading rows the
+// author wrote, then the Count rows the recipe generated.
+// Count, Weights and Authored carry that recipe, so
+// `gofastr pack` can tell two recipes that expand to the
+// same rows apart and keep count:/weights: in the packed
+// app spec instead of flattening it to explicit rows.
 type seedEntity struct {
-	Entity string
-	Rows   []map[string]any
+	Entity   string
+	Rows     []map[string]any
+	Count    int
+	Authored int
+	Weights  map[string]map[string]int
 }
 
 // seedData returns the initial seed data in declared
 // order (so entities that reference others are inserted after them).
 func seedData() []seedEntity {
 	return []seedEntity{
-		{Entity: "categories", Rows: []map[string]any{
+		{Entity: "categories", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"active": true, "description": "Gadgets, devices, and tech accessories", "name": "Electronics", "slug": "electronics", "sort_order": 1},
 			{"active": true, "description": "Apparel and fashion", "name": "Clothing", "slug": "clothing", "sort_order": 2},
 			{"active": true, "description": "Everything for your home", "name": "Home & Garden", "slug": "home-garden", "sort_order": 3},
 		}},
-		{Entity: "products", Rows: []map[string]any{
+		{Entity: "products", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"category_id": "@categories.slug=electronics", "description": "Premium noise-cancelling wireless headphones with 30-hour battery life.", "featured": true, "name": "Wireless Headphones", "price": "79.99", "sku": "WH-001", "slug": "wireless-headphones", "status": "active", "stock": 150},
 			{"category_id": "@categories.slug=electronics", "description": "7-in-1 USB-C hub with HDMI, USB 3.0, SD card reader, and PD charging.", "name": "USB-C Hub", "price": "49.99", "sku": "UCH-002", "slug": "usb-c-hub", "status": "active", "stock": 200},
 			{"category_id": "@categories.slug=home-garden", "description": "Hot-swappable mechanical keyboard with RGB backlighting.", "featured": true, "name": "Mechanical Keyboard", "price": "129.99", "sku": "MK-003", "slug": "mechanical-keyboard", "status": "active", "stock": 75},
 			{"category_id": "@categories.slug=clothing", "compare_at_price": "59.99", "description": "1080p HD webcam with auto-focus and built-in microphone.", "name": "Webcam HD", "price": "39.99", "sku": "WC-004", "slug": "webcam-hd", "status": "draft", "stock": 300},
 		}},
-		{Entity: "reviews", Rows: []map[string]any{
+		{Entity: "reviews", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"author_name": "Sarah M.", "body": "The noise cancellation is incredible. Battery lasts forever.", "product_id": "@products.slug=wireless-headphones", "rating": 5, "title": "Best headphones I ever owned", "verified": true},
 			{"author_name": "Mike T.", "body": "Solid build quality for the price. Wish the case was included.", "product_id": "@products.slug=mechanical-keyboard", "rating": 4, "title": "Great value", "verified": true},
 		}},

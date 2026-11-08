@@ -368,6 +368,7 @@ screens:
             entity: projects
             fields: [title, category, status]
             limit: 3
+            filter: featured=true
             empty_text: Projects coming soon.
 
   - name: blog

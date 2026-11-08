@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a6be2545f18046bf
+//gofastr:generated generator=app kind=scaffold version=dev sum=effc95d48b582c3a
 
 package entities
 
@@ -11,16 +11,16 @@ import (
 )
 
 type Subscriptions struct {
-	ID         string                   `json:"id"`
-	CustomerId string                   `json:"customerId,omitempty"`
-	PlanId     string                   `json:"planId,omitempty"`
-	Status     SubscriptionsStatusValue `json:"status,omitempty"`
-	Mrr        string                   `json:"mrr,omitempty"`
-	StartedOn  string                   `json:"startedOn,omitempty"`
-	RenewsOn   string                   `json:"renewsOn,omitempty"`
-	UserId     string                   `json:"userId,omitempty"`
-	Customer   *Customers               `json:"customer,omitempty"`
-	Plan       *Plans                   `json:"plan,omitempty"`
+	ID         string                    `json:"id"`
+	CustomerId string                    `json:"customerId,omitempty"`
+	PlanId     string                    `json:"planId,omitempty"`
+	Status     *SubscriptionsStatusValue `json:"status,omitempty"`
+	Mrr        *string                   `json:"mrr,omitempty"`
+	StartedOn  *string                   `json:"startedOn,omitempty"`
+	RenewsOn   *string                   `json:"renewsOn,omitempty"`
+	UserId     *string                   `json:"userId,omitempty"`
+	Customer   *Customers                `json:"customer,omitempty"`
+	Plan       *Plans                    `json:"plan,omitempty"`
 }
 
 // SubscriptionsStatusValue is one value of the subscriptions field status.
@@ -37,8 +37,9 @@ const (
 type SubscriptionsMove string
 
 const (
-	SubscriptionsMoveActivate SubscriptionsMove = "activate"
-	SubscriptionsMoveCancel   SubscriptionsMove = "cancel"
+	SubscriptionsMoveActivate    SubscriptionsMove = "activate"
+	SubscriptionsMoveMarkPastDue SubscriptionsMove = "mark_past_due"
+	SubscriptionsMoveCancel      SubscriptionsMove = "cancel"
 )
 
 // SubscriptionsInput is the create payload for SubscriptionsRepo. A required field with no
@@ -59,12 +60,11 @@ type SubscriptionsInput struct {
 // float, string or text field. "" for any other type is a blank: it
 // clears an optional field and fails validation on a required one.
 type SubscriptionsPatch struct {
-	CustomerId *string                   `json:"customerId,omitempty"`
-	PlanId     *string                   `json:"planId,omitempty"`
-	Status     *SubscriptionsStatusValue `json:"status,omitempty"`
-	Mrr        *string                   `json:"mrr,omitempty"`
-	StartedOn  *string                   `json:"startedOn,omitempty"`
-	RenewsOn   *string                   `json:"renewsOn,omitempty"`
+	CustomerId *string `json:"customerId,omitempty"`
+	PlanId     *string `json:"planId,omitempty"`
+	Mrr        *string `json:"mrr,omitempty"`
+	StartedOn  *string `json:"startedOn,omitempty"`
+	RenewsOn   *string `json:"renewsOn,omitempty"`
 }
 
 // ====== Subscriptions column references ======
@@ -99,8 +99,11 @@ func NewSubscriptionsRepo(app *framework.App) *SubscriptionsRepo {
 	if err != nil {
 		panic("entities: subscriptions not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("subscriptions")
 	h.Storage = app.Storage
 	h.Events = app.Events()
@@ -318,7 +321,7 @@ func registerSubscriptions(app *framework.App) {
 			CRUD: boolPtr(true),
 			MCP:  true,
 		},
-		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "activate", Label: "Activate", From: []string{"trialing", "past_due"}, To: "active", Variant: "primary"}, {Key: "cancel", Label: "Cancel", From: []string{"trialing", "active", "past_due"}, To: "canceled", Variant: "danger"}}, Advisory: true},
+		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "activate", Label: "Activate", From: []string{"trialing", "past_due"}, To: "active", Variant: "primary"}, {Key: "mark_past_due", Label: "Mark past due", From: []string{"active"}, To: "past_due", Variant: "danger"}, {Key: "cancel", Label: "Cancel", From: []string{"trialing", "active", "past_due"}, To: "canceled", Variant: "danger"}}},
 		Display:    &framework.DisplayConfig{TitleFields: []string{"customer_id", "plan_id"}, Description: "Who is on which plan, and what they bring in.", Nav: &framework.EntityNav{Group: "billing", Icon: "repeat", Order: 2}, Views: []framework.ListView{{Key: "active", Label: "Active", Where: "status = \"active\""}, {Key: "trialing", Label: "Trialing", Where: "status = \"trialing\""}, {Key: "past_due", Label: "Past due", Where: "status = \"past_due\""}}, Facets: []string{"status"}, Fields: map[string]framework.FieldDisplay{"mrr": {Label: "MRR", Input: "money"}}},
 		Properties: map[string]any{"label": "Subscriptions"},
 	})

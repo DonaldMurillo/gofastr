@@ -118,7 +118,7 @@ func TestIntIDRepo(t *testing.T) {
 		t.Fatalf("cascade update tag: %v", err)
 	}
 	tags := entities.NewTicketTagsRepo(app)
-	if got, err := tags.Get(ctx, "c1"); err != nil || got.Label != "one edited" {
+	if got, err := tags.Get(ctx, "c1"); err != nil || got.Label == nil || *got.Label != "one edited" {
 		t.Fatalf("tag after cascade update = %+v, %v", got, err)
 	}
 

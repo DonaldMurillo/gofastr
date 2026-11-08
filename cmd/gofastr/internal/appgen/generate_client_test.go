@@ -40,8 +40,8 @@ func TestRenderClient_StructsAndMethods(t *testing.T) {
 		"func (c *Client) PatchPosts(",
 		"func (c *Client) DeletePosts(",
 		`Title string `,
-		`Views int `,
-		`Published bool `,
+		`Views *int `, // optional in the read shape
+		`Published *bool `,
 		`/posts`, // route path
 	}
 	for _, w := range wants {
@@ -96,8 +96,9 @@ func TestRenderClient_PatchStructUsesPointers(t *testing.T) {
 			t.Errorf("renderClient missing %q\n--- output:\n%s", w, out)
 		}
 	}
-	// The create/update Input stays value-typed and unchanged.
-	if !strings.Contains(out, "Title string ") || !strings.Contains(out, "Views int ") {
+	// The create/update Input keeps the required field as a value; the
+	// optional one is a pointer there too (omitted takes the default).
+	if !strings.Contains(out, "Title string ") || !strings.Contains(out, "Views *int ") {
 		t.Errorf("PostsInput should keep value-typed fields:\n%s", out)
 	}
 }
@@ -676,8 +677,14 @@ func TestRelationDecode(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &list); err != nil {
 		t.Fatal(err)
 	}
-	got := []string{list.Data[0].AuthorId, list.Data[1].AuthorId, list.Data[2].AuthorId, list.Data[3].AuthorId}
-	if strings.Join(got, ",") != "o1,o1,,7" || list.Data[1].Title != "b" {
+	deref := func(s *string) string {
+		if s == nil {
+			return ""
+		}
+		return *s
+	}
+	got := []string{deref(list.Data[0].AuthorId), deref(list.Data[1].AuthorId), deref(list.Data[2].AuthorId), deref(list.Data[3].AuthorId)}
+	if strings.Join(got, ",") != "o1,o1,,7" || list.Data[2].AuthorId != nil || *list.Data[1].Title != "b" {
 		t.Fatalf("authorId = %q, rows %+v", got, list.Data)
 	}
 	if rec := string(list.Data[1].Included["authorId"]); !strings.Contains(rec, "a@example.com") {
@@ -689,6 +696,18 @@ func TestRelationDecode(t *testing.T) {
 	out, err := json.Marshal(list.Data[1])
 	if err != nil || !strings.Contains(string(out), ` + "`" + `"authorId":"o1"` + "`" + `) {
 		t.Errorf("re-encoded row = %s, %v", out, err)
+	}
+	// An explicit null into a reused struct clears what the previous
+	// decode left: the row must not keep a relation the server removed.
+	fresh := list.Data[1]
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"n2","authorId":null,"title":"b"}` + "`" + `), &fresh); err != nil {
+		t.Fatal(err)
+	}
+	if fresh.AuthorId != nil {
+		t.Errorf("an explicit null kept the previous relation key: %v", *fresh.AuthorId)
+	}
+	if fresh.Included["authorId"] != nil {
+		t.Errorf("an explicit null kept the previous included record: %s", fresh.Included["authorId"])
 	}
 }
 `

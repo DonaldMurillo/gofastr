@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=cda3ebd5f986832f
+//gofastr:generated generator=app kind=scaffold version=dev sum=0c4f7e2996160e6f
 
 package entities
 
@@ -11,15 +11,15 @@ import (
 )
 
 type Payments struct {
-	ID         string              `json:"id"`
-	InvoiceId  string              `json:"invoiceId,omitempty"`
-	CustomerId string              `json:"customerId,omitempty"`
-	Amount     string              `json:"amount,omitempty"`
-	Method     PaymentsMethodValue `json:"method,omitempty"`
-	Status     PaymentsStatusValue `json:"status,omitempty"`
-	UserId     string              `json:"userId,omitempty"`
-	Invoice    *Invoices           `json:"invoice,omitempty"`
-	Customer   *Customers          `json:"customer,omitempty"`
+	ID         string               `json:"id"`
+	InvoiceId  string               `json:"invoiceId,omitempty"`
+	CustomerId string               `json:"customerId,omitempty"`
+	Amount     string               `json:"amount,omitempty"`
+	Method     *PaymentsMethodValue `json:"method,omitempty"`
+	Status     *PaymentsStatusValue `json:"status,omitempty"`
+	UserId     *string              `json:"userId,omitempty"`
+	Invoice    *Invoices            `json:"invoice,omitempty"`
+	Customer   *Customers           `json:"customer,omitempty"`
 }
 
 // PaymentsMethodValue is one value of the payments field method.
@@ -95,8 +95,11 @@ func NewPaymentsRepo(app *framework.App) *PaymentsRepo {
 	if err != nil {
 		panic("entities: payments not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("payments")
 	h.Storage = app.Storage
 	h.Events = app.Events()

@@ -2278,7 +2278,13 @@ func renderEntityModel(decl framework.EntityDeclaration) string {
 		if keyIsID && field.Name == "id" {
 			continue
 		}
-		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), entityFieldGoType(structName, field), appspec.WireKey(field.Name)))
+		typ := entityFieldGoType(structName, field)
+		// Optional scalars read as pointers: null on the wire stays nil,
+		// addressable, instead of collapsing into an authored-looking zero.
+		if !readFieldTakesValue(decl, field) {
+			typ = "*" + typ
+		}
+		sb.WriteString(fmt.Sprintf("\t%s %s `json:\"%s,omitempty\"`\n", appspec.ToCamelCase(field.Name), typ, appspec.WireKey(field.Name)))
 	}
 	// Relation fields: populated by TypedQuery.Include() and Repo.Get(...,
 	// includes...). Singular relations (HasOne/BelongsTo) get *Target;

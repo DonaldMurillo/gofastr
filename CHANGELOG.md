@@ -51,6 +51,22 @@ few lines, and link the PR or the docs page for the rest.
   now has `var version` in `main`, which `release` stamps and
   `myapp version` prints (`dev` from a plain `go build`). gofastr's own
   releases now carry its prebuilt binaries and install scripts.
+- **Generated apps link both database drivers, so `DB_DRIVER` can switch
+  engines** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated `main.go` blank-imports the SQLite and Postgres drivers
+  whatever `app.db.driver` declares. The `openDB` switch has always
+  accepted both engines, but only the declared driver was linked, so
+  switching `DB_DRIVER` at boot answered `sql: unknown driver`.
+- **Seed recipes survive `gofastr pack`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated `seedEntity` carries `Count`, `Weights` and `Authored`
+  beside `Rows` (which still holds every row, the authored ones first, so
+  seeding does not change). Pack keeps the authored rows and the recipe,
+  regenerates the rest to check them, and a generated row that was
+  hand-edited packs as explicit rows with the recipe dropped, so the edit
+  survives. Before, two recipes that expanded to the same rows (count 7
+  with `open: 5` vs `open: 10`) packed byte-identically and the recipe
+  was lost.
 - **`DBQueue` retries can follow a delivery policy**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `WithRetrySchedule(steps...)` sets each wait from a list (the last step
@@ -92,6 +108,27 @@ few lines, and link the PR or the docs page for the rest.
   rowid fills, including the integer part of a composite key) answers
   `400` with the key `required`, as Postgres does, and is rolled back.
   SQLite stored such a row, and no route could read, update or delete it.
+- **BREAKING: generated read shapes carry optional scalars as
+  pointers** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  In the generated entities model struct and the generated Go client's read
+  struct, every scalar the schema does not force (not `required:`,
+  not a primary key, not auto-generated, timestamps included) reads
+  as `*T` (enums as `*<Entity><Field>Value`), so a null on the wire is
+  a nil pointer instead of an authored-looking zero. `json` fields
+  stay `any`. App code that read such a field directly
+  (`sub.Mrr`, `inv.DueOn`) stops compiling: dereference, and nil
+  means the value is absent, which a zero value used to hide. Write shapes are
+  unchanged.
+- **Meridian's billing lifecycles are enforced, not advised**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Invoices gain `issue` (draft→open) and `mark_past_due`
+  (open→past_due), and `mark_paid` no longer pays a draft: an
+  invoice must be issued before it can be paid. Subscriptions
+  gain `mark_past_due` (active→past_due). Both states blocks drop
+  `advisory:`, so the CRUD layer also refuses a create or update that
+  writes the status directly; the seed runs under
+  `framework.WithStateOverride(ctx, "seed")`, which the audit log
+  records.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler
@@ -198,6 +235,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **The generated typed repositories chain `WithJSONCase` after
+  `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
+  the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
+  assigning the `JSONCase` field. Assigning still works (crud's field
+  cache rekeys when the case differs); the template now reads the way
+  the framework does. Meridian and ecommerce are regenerated.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
