@@ -68,8 +68,8 @@ func write(ctx context.Context, m *meta, id string) {
 	_, _ = m.ch.BatchCreateMany(ctx, nil)                                                // want `CrudHandler.BatchCreateMany writes without the read hooks`
 	_, _ = m.ch.BatchUpdateMany(ctx, nil, nil)                                           // want `CrudHandler.BatchUpdateMany writes without the read hooks`
 	_, _ = m.ch.BatchDeleteMany(ctx, nil)                                                // want `CrudHandler.BatchDeleteMany writes without the read hooks`
-	_, _ = crud.NewTypedQuery[note](m.ch).UpdateAll(ctx, nil)                            // want `TypedQuery.UpdateAll writes without the read hooks`
-	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)                                 // want `TypedQuery.DeleteAll writes without the read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).UpdateAll(ctx, nil)                            // want `TypedQuery.UpdateAll writes every matching row with no read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)                                 // want `TypedQuery.DeleteAll writes every matching row with no read hooks`
 	_, _ = m.ch.UpdateOne(crud.WithStateOverride(crud.WithReadHooks(ctx), "r"), id, nil) // want `CrudHandler.UpdateOne writes without the read hooks`
 }
 
@@ -79,7 +79,14 @@ func hookedWrite(ctx context.Context, m *meta, id string) {
 	_, _ = m.ch.UpdateOne(crud.WithReadHooks(crud.WithStateOverride(ctx, "r")), id, nil)
 	ctx = crud.WithReadHooks(ctx)
 	_ = m.ch.DeleteOne(ctx, id)
-	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)
+}
+
+// UpdateAll and DeleteAll apply no read hooks under any context, so the
+// opt-in does not silence them.
+func hooklessWrite(ctx context.Context, m *meta) {
+	ctx = crud.WithReadHooks(ctx)
+	_, _ = crud.NewTypedQuery[note](m.ch).UpdateAll(crud.WithReadHooks(ctx), nil) // want `TypedQuery.UpdateAll writes every matching row with no read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)                          // want `TypedQuery.DeleteAll writes every matching row with no read hooks`
 }
 
 // A write gets no *Unhooked exemption: no screen writes a row its caller

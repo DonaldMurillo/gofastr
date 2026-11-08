@@ -664,7 +664,9 @@ expose them to agents connected to a live app.**
   the screens read through the hooked `meta` readers `getRow`/`listRows`/…,
   a stored-value read lives in a function named `*Unhooked`, and every
   write (UpdateOne, RestoreOne, PurgeOne, RunTransition, …) carries the
-  opt-in so crud refuses a row a BeforeGet hook hides); the
+  opt-in so crud refuses a row a BeforeGet hook hides; TypedQuery
+  UpdateAll/DeleteAll never consult BeforeGet, so the screens may not
+  call them at all); the
   read-hook invariant itself, fixed five times piecemeal, is held by the
   parity matrices `TestReadHookParityCrud` and `TestReadHookParityAdmin`,
   where a new surface adds its case. Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,

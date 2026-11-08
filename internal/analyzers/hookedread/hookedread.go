@@ -17,12 +17,14 @@
 //
 // The writes hold it too. The crud write API (CreateOne, UpdateOne,
 // DeleteOne, UpsertOne, RestoreOne, PurgeOne, RunTransition, the
-// Batch*Many calls, TypedQuery UpdateAll/DeleteAll) refuses a row the
-// caller's BeforeGet hooks hide with the 404 a missing row gets, but in
-// process only under crud.WithReadHooks: without it a screen's bulk edit,
-// trash restore or status override wrote a row GET answered 404 for
-// (owner decision on #645, 2026-11-08: every admin write runs under the
-// read hooks).
+// Batch*Many calls) refuses a row the caller's BeforeGet hooks hide with
+// the 404 a missing row gets, but in process only under
+// crud.WithReadHooks: without it a screen's bulk edit, trash restore or
+// status override wrote a row GET answered 404 for (owner decision on
+// #645, 2026-11-08: every admin write runs under the read hooks).
+// TypedQuery UpdateAll and DeleteAll are one UPDATE or DELETE over every
+// matching row with write scopes only: no context makes them consult a
+// BeforeGet hook, so a screen never calls them at all.
 //
 // Fires, in framework/entityui and battery/admin only (the packages
 // that draw entity rows to an end user), on a call to one of the read
@@ -38,7 +40,8 @@
 //     stored). A write gets no such exemption: no screen writes a row
 //     its caller cannot read;
 //   - a context argument that is crud.WithReadHooks(...), or an
-//     identifier assigned exactly once from one;
+//     identifier assigned exactly once from one (never for UpdateAll
+//     and DeleteAll, which the opt-in does not reach);
 //   - every other package: crud's own internal reads (write pre-images,
 //     preflights, media objects, scope probes) are scoped one by one and
 //     guarded by TestReadHookParityCrud, and in-process Go callers
@@ -47,7 +50,8 @@
 //
 // The fix: read through the hooked reader (getRow, listRows, ...), or,
 // for one of the three stored-value jobs, through an *Unhooked reader;
-// write with crud.WithReadHooks as the outermost context option.
+// write with crud.WithReadHooks as the outermost context option, record
+// by record.
 package hookedread
 
 import (
@@ -84,6 +88,11 @@ var writeMethods = map[string]map[string]bool{
 		"RestoreOne": true, "PurgeOne": true, "RunTransition": true,
 		"BatchCreateMany": true, "BatchUpdateMany": true, "BatchDeleteMany": true,
 	},
+}
+
+// hooklessWrites are the write methods that apply no read hooks under
+// any context: a screen does not call them.
+var hooklessWrites = map[string]map[string]bool{
 	"TypedQuery": {"UpdateAll": true, "DeleteAll": true},
 }
 
@@ -118,6 +127,11 @@ func run(pass *analysis.Pass) (any, error) {
 				}
 				name, write, ok := crudMethod(pass, call)
 				if !ok || (unhooked && !write) {
+					return true
+				}
+				if hooklessWrite(name) {
+					pass.Reportf(call.Pos(), "%s writes every matching row with no read hooks, even under crud.WithReadHooks: "+
+						"a screen writes record by record (UpdateOne, DeleteOne), which refuses a row a BeforeGet hook hides", name)
 					return true
 				}
 				if isWithReadHooks(pass, call.Args[0]) {
@@ -171,10 +185,17 @@ func crudMethod(pass *analysis.Pass, call *ast.CallExpr) (string, bool, bool) {
 	switch {
 	case readMethods[obj.Name()][fn.Name()]:
 		return name, false, true
-	case writeMethods[obj.Name()][fn.Name()]:
+	case writeMethods[obj.Name()][fn.Name()], hooklessWrites[obj.Name()][fn.Name()]:
 		return name, true, true
 	}
 	return "", false, false
+}
+
+// hooklessWrite reports whether name ("TypedQuery.UpdateAll") is one of
+// hooklessWrites.
+func hooklessWrite(name string) bool {
+	recv, method, _ := strings.Cut(name, ".")
+	return hooklessWrites[recv][method]
 }
 
 // isWithReadHooks reports whether e is a call of crud.WithReadHooks.

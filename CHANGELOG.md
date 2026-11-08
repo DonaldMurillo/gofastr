@@ -98,9 +98,11 @@ few lines, and link the PR or the docs page for the rest.
   bulk edits, trash restore and purge, and the JSON write routes do. The
   `hookedread` analyzer now covers the crud write API (`UpdateOne`,
   `DeleteOne`, `RestoreOne`, `PurgeOne`, `RunTransition`, `CreateOne`,
-  `UpsertOne`, the `Batch*Many` calls, `TypedQuery.UpdateAll` and
-  `DeleteAll`) in framework/entityui and battery/admin, and
-  `TypedQuery.Exists` among the reads.
+  `UpsertOne`, the `Batch*Many` calls) in framework/entityui and
+  battery/admin, and `TypedQuery.Exists` among the reads. It refuses
+  `TypedQuery.UpdateAll` and `DeleteAll` there under any context: they
+  apply write scopes only and never consult `BeforeGet`, so a screen
+  writes record by record.
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses

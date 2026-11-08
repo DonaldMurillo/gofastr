@@ -509,6 +509,9 @@ entityui and battery/admin to that. The rule covers their writes too:
 an in-process write (`UpdateOne`, `DeleteOne`, `RestoreOne`, `PurgeOne`,
 `RunTransition`, …) refuses a row the caller's `BeforeGet` hooks hide
 only under `crud.WithReadHooks`, so every screen write passes it.
+`TypedQuery.UpdateAll` and `DeleteAll` apply write scopes only and never
+consult `BeforeGet`, whatever the context, so the analyzer refuses them
+in the screens: a screen writes record by record.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. Sorting
