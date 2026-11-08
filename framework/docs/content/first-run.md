@@ -38,8 +38,12 @@ app.SetSetup(runner)
 
 `Complete` decides whether the app boots into setup: while it reports
 false, the app is in setup. It is **derived state**, "at least one user
-exists" for `AdminStep`, never a marker file, so a crash mid-setup
-simply re-enters setup on the next boot.
+exists" for `AdminStep`, never a marker file. A crash re-enters setup on
+the next boot only while `Complete` remains false (before the admin exists
+with `AdminStep`). Once it becomes true, a restart boots the full app even
+if the wizard had remaining steps. Step progress lives in memory; it is
+not a durable checkpoint. Make `Complete` cover every required step's
+persisted effects, or run mandatory readiness checks on every boot.
 
 `AdminStep` stores the admin under the address login looks up: the
 auth battery's canonical form (`auth.CanonicalEmail`, or the host's
@@ -204,9 +208,10 @@ that header (every mainstream proxy does by default).
   the wizard tells you so instead of showing the completion page. Pass
   the table your auth store actually writes to.
 - **Writing a marker file to record completion.** Completion is
-  derived state on purpose: a marker file survives a crash mid-setup
-  and would boot a half-bootstrapped app straight into serving. Derive
-  it from the data the steps create.
+  derived state on purpose: a marker file can disagree with the data
+  the steps create. Derive `Complete` from every required persisted
+  effect; a predicate that becomes true before later steps finish does
+  not resume those steps after a restart.
 - **Sharing the setup URL with the token in it.** The token is
   single-use: the first visit exchanges it for a cookie and
   invalidates the URL form. A second person following the same link
