@@ -33,6 +33,10 @@ func TestWithMaxOffsetBoundsList(t *testing.T) {
 	}{
 		{"/api/reddocs?offset=1&limit=1", http.StatusOK},
 		{"/api/reddocs?offset=2&limit=1", http.StatusBadRequest},
+		// The offset ceiling is checked before cursor mode is chosen, so
+		// an over-limit ?offset= is refused even alongside ?cursor= (the
+		// spec's ?offset= description says so).
+		{"/api/reddocs?cursor=&offset=2&limit=1", http.StatusBadRequest},
 		{"/api/reddocs?page=3&limit=1", http.StatusBadRequest},
 	} {
 		rec := httptest.NewRecorder()

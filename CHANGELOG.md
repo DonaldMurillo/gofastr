@@ -211,6 +211,16 @@ few lines, and link the PR or the docs page for the rest.
   projected response that dropped them failed the spec it was documented
   by; the `?fields=` description says so now. Generated typed clients keep
   binding required fields to non-optional types on every response.
+- **`/openapi.json` types the list envelopes and documents every list
+  parameter** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Each entity's list route now answers in its own
+  `<Entity>ListResponse`/`<Entity>CursorPage` envelopes whose `data`
+  items `$ref` the entity's schema, so a typed client generated from the
+  spec reads List() as typed rows, not untyped objects; the shared
+  untyped envelopes are gone. `?offset=`, `?per_page=` and `?stream=`
+  are documented with the semantics the route applies (the offset
+  ceiling, limit-wins-over-per_page, stream's refusals), beside the
+  `?limit=` description that already names the entity's real cap.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

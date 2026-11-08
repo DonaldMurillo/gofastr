@@ -131,6 +131,50 @@ func objectSchemaWith(props map[string]any) map[string]any {
 	return map[string]any{"type": "object", "properties": props}
 }
 
+// listEnvelopes registers the two list-route envelopes for one entity,
+// named after its schema component ("<name>ListResponse", "<name>CursorPage"),
+// with data.items a $ref to that component, and returns their refs. The
+// rows a list serves are the same records the get route serves; leaving
+// them a bare object (the old shared envelopes) handed a typed client
+// untyped maps for exactly the reads it does most (#669).
+//
+// schemaNames holds every entity's own component name. An entity
+// literally named "postsListResponse" (a legal name) owns that
+// component, so the envelope the posts entity derives would collide
+// with it; AddSchema panics on duplicates by design, and the build
+// order must not decide whose spec build dies. A colliding envelope
+// degrades to an inline schema instead: the spec stays valid and
+// typed, it just stops reusing a component that name cannot give it.
+func listEnvelopes(s *openapi.Spec, schemaName string, entityRef map[string]any, schemaNames map[string]bool) (listRef, cursorRef map[string]any) {
+	listResponse := objectSchemaWith(map[string]any{
+		"data":       map[string]any{"type": "array", "items": entityRef},
+		"total":      map[string]any{"type": "integer"},
+		"page":       map[string]any{"type": "integer"},
+		"perPage":    map[string]any{"type": "integer"},
+		"totalPages": map[string]any{"type": "integer"},
+	})
+	listResponse["required"] = []string{"data", "total", "page", "perPage", "totalPages"}
+
+	// Cursor-mode list envelope (returned when ?cursor= is present). The
+	// cursor path never counts rows and omits total, so it is optional.
+	cursorPage := objectSchemaWith(map[string]any{
+		"data":    map[string]any{"type": "array", "items": entityRef},
+		"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
+		"hasMore": map[string]any{"type": "boolean"},
+		"total":   map[string]any{"type": "integer"},
+	})
+	cursorPage["required"] = []string{"data", "cursor", "hasMore"}
+
+	register := func(name string, component map[string]any) map[string]any {
+		if schemaNames[name] {
+			return component
+		}
+		s.AddSchema(name, component)
+		return map[string]any{"$ref": "#/components/schemas/" + name}
+	}
+	return register(schemaName+"ListResponse", listResponse), register(schemaName+"CursorPage", cursorPage)
+}
+
 // entityOpenAPI is EntityOpenAPI's builder: keep, when non-nil, filters
 // which registered entities reach the document.
 func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity) bool) *openapi.Spec {
@@ -154,32 +198,13 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		"field_reasons": map[string]any{"type": "object", "description": "Stable code per entry of fields, in the same order.", "additionalProperties": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}},
 	}))
 
-	// The list route answers with one of the two envelopes below, as a
-	// oneOf. oneOf needs exactly one match, and both envelopes stay open
-	// to extra keys, so each requires the keys the other never writes:
-	// page/perPage/totalPages, or cursor/hasMore.
-
-	// Offset-mode list envelope
-	listResponse := objectSchemaWith(map[string]any{
-		"data":       map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-		"total":      map[string]any{"type": "integer"},
-		"page":       map[string]any{"type": "integer"},
-		"perPage":    map[string]any{"type": "integer"},
-		"totalPages": map[string]any{"type": "integer"},
-	})
-	listResponse["required"] = []string{"data", "total", "page", "perPage", "totalPages"}
-	s.AddSchema("ListResponse", listResponse)
-
-	// Cursor-mode list envelope (returned when ?cursor= is present). The
-	// cursor path never counts rows and omits total, so it is optional.
-	cursorPage := objectSchemaWith(map[string]any{
-		"data":    map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
-		"cursor":  map[string]any{"type": "string", "description": "Opaque cursor for the next page; empty when there are no more results."},
-		"hasMore": map[string]any{"type": "boolean"},
-		"total":   map[string]any{"type": "integer"},
-	})
-	cursorPage["required"] = []string{"data", "cursor", "hasMore"}
-	s.AddSchema("CursorPage", cursorPage)
+	// The list route answers with one of two envelopes, as a oneOf. oneOf
+	// needs exactly one match, and both envelopes stay open to extra
+	// keys, so each requires the keys the other never writes:
+	// page/perPage/totalPages, or cursor/hasMore. Each entity gets its
+	// own pair (listEnvelopes) so data.items $refs its schema, the typed
+	// surface a generated client reads off a list matches the one it
+	// reads off a get.
 
 	// Per-item shape inside a _batch response
 	s.AddSchema("BatchResult", objectSchemaWith(map[string]any{
@@ -229,11 +254,15 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 	// emitted names the component of every entity this document emits,
 	// versioned or not, so a relation can reference the record it loads.
 	emitted := map[*entity.Entity]string{}
+	// schemaNames is the same names as a set: the component namespace an
+	// entity owns, which the per-entity list envelopes must not steal.
+	schemaNames := map[string]bool{}
 	for _, ent := range registry.AllSorted() {
 		if keep != nil && !keep(ent) {
 			continue
 		}
 		emitted[ent] = componentName(ent)
+		schemaNames[componentName(ent)] = true
 		if ent.Version == "" {
 			components[ent.GetName()] = true
 		}
@@ -365,8 +394,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 				"data": entityRef,
 			},
 		}
-		listRef := map[string]any{"$ref": "#/components/schemas/ListResponse"}
-		cursorRef := map[string]any{"$ref": "#/components/schemas/CursorPage"}
+		listRef, cursorRef := listEnvelopes(s, schemaName, entityRef, schemaNames)
 		errorRef := map[string]any{"$ref": "#/components/schemas/Error"}
 		conflictRef := map[string]any{"$ref": "#/components/schemas/TransitionConflict"}
 		stateErrRef := map[string]any{"$ref": "#/components/schemas/StateError"}
@@ -454,6 +482,18 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		// schema maximum a strict client would refuse to send.
 		defLimit, maxLimit := crud.ListLimits(ent.Config.Pagination.MaxListLimit)
 		listOp.AddParameter("limit", "query", fmt.Sprintf("Items per page (max %d; a larger limit is cut to it)", maxLimit), false, map[string]any{"type": "integer", "default": defLimit})
+		// ?per_page= is the alias the route accepts for ?limit= (the
+		// common REST convention); ?limit wins when both are sent, and
+		// the clamp parsePaginationValues applies is the same.
+		listOp.AddParameter("per_page", "query", "Alias for limit (items per page); limit wins when both are sent, and the same max applies.", false, map[string]any{"type": "integer", "default": defLimit})
+		// ?offset= skips rows directly. The ceiling is the handler's
+		// MaxOffset when the host sets one, else this entity's page cap
+		// × 1000; past it the route answers 400.
+		listOp.AddParameter("offset", "query", fmt.Sprintf("Rows to skip, replacing the page-derived skip (offset mode; with ?cursor the skip itself is ignored, but the ceiling is still enforced before cursor mode is chosen). Refused with 400 past the offset ceiling (max %d rows, or the handler's MaxOffset).", maxLimit*1000), false, map[string]any{"type": "integer", "minimum": 0})
+		// ?stream=true answers the offset page as a chunked stream; the
+		// route refuses it (400) when the request carries ?include= or
+		// the entity an AfterList hook, which streaming cannot honour.
+		listOp.AddParameter("stream", "query", "Stream the response (chunked) instead of buffering it; refused with 400 when combined with ?include= or an AfterList hook.", false, map[string]any{"type": "boolean", "default": false})
 		listOp.AddParameter("sort", "query", "Sort field (offset mode only; ignored when ?cursor is present)", false, map[string]any{"type": "string"})
 		listOp.AddParameter("cursor", "query", "Opaque cursor; presence (even empty) switches the response to CursorPage shape and uses keyset pagination by primary key.", false, map[string]any{"type": "string"})
 		listOp.AddParameter("direction", "query", "Cursor walk direction: forward (default) or backward.", false, map[string]any{"type": "string", "enum": []string{"forward", "backward"}, "default": "forward"})
