@@ -2,6 +2,8 @@ package acp_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +82,37 @@ func TestRequestPermissionFailClosed(t *testing.T) {
 				}
 			case <-time.After(3 * time.Second):
 				t.Fatal("setup: permission outcome never delivered to the session")
+			}
+		})
+	}
+}
+
+func TestPermissionErrorDataSettles(t *testing.T) {
+	for _, data := range []any{map[string]any{"reason": "user"}, []any{"denied", 7}, "cancelled", nil} {
+		t.Run(fmt.Sprint(data), func(t *testing.T) {
+			done := make(chan error, 1)
+			agent := &fakeAgent{newFn: func(context.Context, string) (acp.Session, error) {
+				return &fakeSession{id: "s1", promptFn: func(ctx context.Context, _ []acp.ContentBlock, out *acp.Client) (string, error) {
+					_, err := out.RequestPermission(ctx, acp.ToolCallUpdate{ToolCallID: "c1"}, nil)
+					done <- err
+					return acp.StopEndTurn, nil
+				}}, nil
+			}}
+			d := startDialog(t, agent, nil)
+			id := d.newSession("/tmp/p")
+			d.request(5, "session/prompt", map[string]any{"sessionId": id, "prompt": []any{map[string]any{"type": "text", "text": "go"}}})
+			ask := d.frame()
+			if ask["method"] != "session/request_permission" {
+				t.Fatalf("expected permission request, got %v", ask)
+			}
+			d.send(map[string]any{"jsonrpc": "2.0", "id": ask["id"], "error": map[string]any{"code": -32800, "message": "cancelled", "data": data}})
+			select {
+			case err := <-done:
+				if err == nil || !strings.Contains(err.Error(), "error -32800: cancelled") {
+					t.Fatalf("permission error = %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("permission error with data never settled")
 			}
 		})
 	}
