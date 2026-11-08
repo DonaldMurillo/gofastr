@@ -964,22 +964,30 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 	if !dominates(call, sink, body) {
 		return false
 	}
-	resolved := map[types.Object]bool{obj: true}
-	// The tie runs through the binding chain: `real := x` after
-	// `x, err := EvalSymlinks(p)` resolves to the same call. An alias
-	// counts only when it is assigned once, after that call: bound
-	// holds each local's last binding, so `checked := real` before
-	// `real, err = EvalSymlinks(other)` would otherwise pass for the
-	// second resolution while it holds the first.
+	// A local holds this resolution when it is bound to the call
+	// itself (`real, err := EvalSymlinks(p)`, or the `p, err =
+	// EvalSymlinks(p)` rebind), or is a copy of one assigned once,
+	// after the call. bound holds each local's last binding, so a copy
+	// made earlier, `out := real` before `real, err =
+	// EvalSymlinks(other)`, resolves to the second call while it holds
+	// the first. The sink's own path is held to the same rule.
 	assigns := assignCounts(pass, body)
-	for o, b := range bound {
-		switch {
-		case o == obj:
-		case ast.Unparen(b) == call:
-			// The result itself, when the sink writes a copy of it:
-			// `real, err := EvalSymlinks(p)` then `out := real`.
-			resolved[o] = true
-		case assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call:
+	holdsCall := func(o types.Object) bool {
+		b, ok := bound[o]
+		if !ok {
+			return false
+		}
+		if ast.Unparen(b) == call {
+			return true
+		}
+		return assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call
+	}
+	if !holdsCall(obj) {
+		return false
+	}
+	resolved := map[types.Object]bool{obj: true}
+	for o := range bound {
+		if holdsCall(o) {
 			resolved[o] = true
 		}
 	}

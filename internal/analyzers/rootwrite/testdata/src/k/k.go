@@ -1179,3 +1179,25 @@ func concatParent(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// staleCopySink writes a copy made before real was resolved again: the
+// check reads the second resolution, the write holds the first.
+func staleCopySink(baseDir, name, other string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	out := real
+	real, err = filepath.EvalSymlinks(filepath.Join(baseDir, other))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(out, data, 0o600) // want `write under a root with lexical containment only`
+}
