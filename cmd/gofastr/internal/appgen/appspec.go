@@ -2917,6 +2917,14 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		}
 		expr += ".Columns(" + strings.Join(args, ", ") + ")"
 	}
+	// The pinned filter (filter: field=value) rides the builder as Where:
+	// entityui pins field = value on every read inside the caller's scope
+	// and drops the field from the facets. The column's declared name, not
+	// the author's spelling (camelJSON resolves), because the builder
+	// resolves byName.
+	if field, value, ok := appSpecEntityListFilterParts(bp, entity, block.Filter); ok {
+		expr += fmt.Sprintf(".Where(%q, %q)", field, value)
+	}
 	if mode := strings.ToLower(strings.TrimSpace(block.Mode)); mode != "" {
 		expr += fmt.Sprintf(".As(%q)", mode)
 	}
@@ -2960,6 +2968,33 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	}
 	// The builder is a component; the screen's stack takes HTML.
 	return expr + ".RenderCtx(ctx)"
+}
+
+// appSpecEntityListFilterParts splits an entity_list's pinned filter into
+// the column to pin and the value, resolving the author's spelling (the
+// declared name or its camelJSON form) to the declared column name. ok is
+// false for no filter or a filter that does not name a field —
+// validateAppSpec is the loud gate for both; the emitter serves
+// unvalidated renders and never emits a non-column.
+func appSpecEntityListFilterParts(bp appspec.AppSpec, entity, filter string) (field, value string, ok bool) {
+	if filter == "" || strings.Count(filter, "=") != 1 {
+		return "", "", false
+	}
+	f, v, _ := strings.Cut(filter, "=")
+	if f == "" || v == "" {
+		return "", "", false
+	}
+	for _, decl := range bp.Entities {
+		if decl.Name != entity {
+			continue
+		}
+		for _, fd := range decl.Fields {
+			if fd.Name == f || appspec.ToCamelJSON(fd.Name) == f {
+				return fd.Name, v, true
+			}
+		}
+	}
+	return "", "", false
 }
 
 // countEntityListBlocks counts the entity_list blocks on a screen at any

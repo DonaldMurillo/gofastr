@@ -443,6 +443,7 @@ func blockToMap(b appspec.AppSpecBlock) map[string]any {
 	putInt(m, "limit", b.Limit)
 	putBool(m, "create", b.Create)
 	putBool(m, "bulk", b.Bulk)
+	putStr(m, "filter", b.Filter)
 	putStr(m, "empty_text", b.EmptyText)
 	putStr(m, "class", b.Class)
 	putStr(m, "href", b.Href)
@@ -1063,7 +1064,7 @@ var (
 	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
+	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "filter", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
 	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write", "hidden"}
 	indexOrder     = []string{"name", "columns", "unique"}
 	navOrder       = []string{"label", "href", "icon", "role", "items"}
@@ -2697,7 +2698,7 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 		return appspec.AppSpecBlock{}, false
 	}
 	b := appspec.AppSpecBlock{}
-	noCreate, deletes := false, false
+	noCreate, deletes, wheres := false, false, 0
 	var omit []string
 	node := ast.Expr(call)
 	hops := 0
@@ -2768,6 +2769,15 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			noCreate = true
 		case "Bulk":
 			b.Bulk = true
+		case "Where":
+			// The pinned filter: one equality is the app spec's whole
+			// filter, so a second pin makes the chain irreversible (pack
+			// reports the screen instead of dropping a pin silently).
+			wheres++
+			if wheres > 1 || len(c.Args) != 2 {
+				return appspec.AppSpecBlock{}, false
+			}
+			b.Filter = appspec.AstString(c.Args[0]) + "=" + appspec.AstString(c.Args[1])
 		case "Heading":
 			if len(c.Args) >= 1 {
 				b.Text = appspec.AstString(c.Args[0])

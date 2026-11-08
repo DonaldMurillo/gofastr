@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"strings"
@@ -24,6 +25,31 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	clitest.VariantBuild(t, "examples/portfolio/gofastr.yml")
 	bin, appDir := exampleTree(t, "../../examples/portfolio/gofastr.yml", "portfolio")
 	baseURL, _, _ := bootGeneratedApp(t, "portfolio", bin, appDir)
+	page := func(path string) string {
+		t.Helper()
+		resp, err := http.Get(baseURL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("GET %s = %d, want 200", path, resp.StatusCode)
+		}
+		return string(body)
+	}
+	// The home list's pinned filter (filter: featured=true): the
+	// unfeatured Analytics Dashboard project is absent from the "Featured
+	// Work" section but present on /projects, whose list has no pin.
+	if home := page("/"); strings.Contains(home, "Analytics Dashboard") {
+		t.Error("the home page's featured list shows the unfeatured project: the pinned filter did not reach the builder")
+	}
+	if all := page("/projects"); !strings.Contains(all, "Analytics Dashboard") {
+		t.Error("/projects lost the unfeatured project: the home list's pin leaked into the unpinned list")
+	}
 
 	anon := func(table string) []map[string]any {
 		t.Helper()

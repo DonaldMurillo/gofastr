@@ -703,6 +703,9 @@ screens:
         text: Recent invoices
         fields: [number, amount, status, due_on]
         limit: 8
+        # A pinned filter: this list shows open invoices only, whatever
+        # the stat cards above it count.
+        filter: status=open
         empty_text: No invoices yet.
   - name: invoices
     route: /app/invoices

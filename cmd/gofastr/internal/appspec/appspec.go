@@ -210,6 +210,7 @@ type AppSpecBlock struct {
 	Mode      string // "create", "edit" for entity_form; "table", "cards" for entity_list
 	Create    bool   // entity_list: show "New" + mount a create screen at <list>/create
 	Bulk      bool   // entity_list: row selection, the bulk bar and Export CSV
+	Filter    string // entity_list: a pinned `field=value` equality (stat_card's filter spelling), emitted as ListBuilder.Where
 	Props     map[string]any
 	Children  []AppSpecBlock
 	Actions   []AppSpecAction
@@ -2348,7 +2349,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 		if err := refuseReplacedBlockKeys(m, kind, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "filter": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -2374,6 +2375,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 			Mode:      stringValue(m["mode"]),
 			Create:    boolValue(m["create"]),
 			Bulk:      boolValue(m["bulk"]),
+			Filter:    stringValue(m["filter"]),
 			Props:     normalizeControlProps(kind, mapValue(m["props"])),
 			Children:  children,
 			Actions:   actions,
@@ -3405,6 +3407,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
 		return fmt.Errorf("app spec: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
 	}
+	if block.Filter != "" && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
+		return fmt.Errorf("app spec: screen %q filter applies only to an entity_list block, not %q", screenName, kind)
+	}
 	requiredProp := ""
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "label":
@@ -3480,6 +3485,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			if !validFields[field] {
 				return fmt.Errorf("app spec: screen %q entity_list field %q is not defined on entity %q", screenName, field, block.Entity)
 			}
+		}
+		if err := validateEntityListFilter(screenName, decl, block.Filter); err != nil {
+			return err
 		}
 		if block.Limit < 0 {
 			return fmt.Errorf("app spec: screen %q entity_list limit must be >= 0", screenName)
@@ -3680,6 +3688,41 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		}
 	}
 	return nil
+}
+
+// validateEntityListFilter guards an entity_list's pinned filter
+// (`filter: field=value`, stat_card's spelling): exactly one `=`, both
+// sides non-empty bare words, the field defined on the entity (its camel
+// JSON spelling resolves to the column) and neither hidden nor no_query.
+// The pin lands on entityui's ListBuilder.Where, which pins field =
+// value on every read inside the caller's scope — the same one-bit
+// oracle the stat_card filter guard closes, so the same columns are
+// barred here.
+func validateEntityListFilter(screenName string, decl framework.EntityDeclaration, filter string) error {
+	if filter == "" {
+		return nil
+	}
+	if strings.Contains(filter, " ") || strings.Count(filter, "=") != 1 {
+		return fmt.Errorf("app spec: screen %q entity_list filter %q is not the pinned spelling; use field=value", screenName, filter)
+	}
+	field, value, _ := strings.Cut(filter, "=")
+	if field == "" || value == "" || !statFilterWord.MatchString(field) || !statFilterWord.MatchString(value) {
+		return fmt.Errorf("app spec: screen %q entity_list filter %q is not the pinned spelling; use field=value", screenName, filter)
+	}
+	for i := range decl.Fields {
+		f := decl.Fields[i]
+		if f.Name != field && ToCamelJSON(f.Name) != field {
+			continue
+		}
+		if f.Hidden {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q is hidden (the pinned list would disclose its values)", screenName, f.Name)
+		}
+		if f.NoQuery {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q is no_query (the pinned list would match on the stored value)", screenName, f.Name)
+		}
+		return nil
+	}
+	return fmt.Errorf("app spec: screen %q entity_list filter column %q is not defined on entity %q", screenName, field, decl.Name)
 }
 
 // appSpecCatalogUnderNode returns the first catalog kind among blocks the
