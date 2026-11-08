@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=805d6577a79c0e84
+//gofastr:generated generator=app kind=scaffold version=dev sum=a71be27a21720bdc
 
 package entities
 
@@ -74,8 +74,11 @@ func NewPlansRepo(app *framework.App) *PlansRepo {
 	if err != nil {
 		panic("entities: plans not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("plans")
 	h.Storage = app.Storage
 	h.Events = app.Events()

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=a6be2545f18046bf
+//gofastr:generated generator=app kind=scaffold version=dev sum=d85c4c7e4048f148
 
 package entities
 
@@ -99,8 +99,11 @@ func NewSubscriptionsRepo(app *framework.App) *SubscriptionsRepo {
 	if err != nil {
 		panic("entities: subscriptions not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("subscriptions")
 	h.Storage = app.Storage
 	h.Events = app.Events()
