@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -3229,7 +3230,8 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// leaves this SPA's islands and SSE 401ing until a hard reload.
 	// The fresh bare id travels in X-Gofastr-Session so the runtime
 	// rewires the SSE meta; the signed token rides Set-Cookie only.
-	if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
+	token := readSessionCookie(r)
+	if _, live := ds.verifySessionToken(token); !live {
 		// A prefetch with a dead session gets 204 and no mint: the client
 		// never caches a non-partial response, so the eventual real click
 		// runs the full rollover below. Serving the prefetch instead would
@@ -3243,6 +3245,16 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		if sess := ds.CreateSession(); sess.Token != "" {
 			setSessionCookie(w, r, sess.Token)
 			w.Header().Set("X-Gofastr-Session", sess.ID)
+		}
+	} else if r.Header.Get("X-Gofastr-Prefetch") == "1" {
+		// A live session still ends: a prefetched entry kept past that
+		// point would paint with no server contact, and its islands,
+		// actions and SSE would answer 401. The whole seconds the token
+		// has left let preload.js drop the entry then if it comes before
+		// the TTL. Relative, so the browser's clock does not matter.
+		if minted, ok := sessiontoken.MintedAt(token); ok {
+			left := max(time.Until(minted.Add(sessionMaxAge)), 0)
+			w.Header().Set("X-Gofastr-Session-Expires-In", strconv.FormatInt(int64(left/time.Second), 10))
 		}
 	}
 	// Declarative redirect on the SPA path: hand the runtime the target

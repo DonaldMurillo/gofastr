@@ -242,6 +242,16 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A prefetched page ends with its session**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [layouts](framework/docs/content/layouts.md)). A page prefetched in
+  the last 30 seconds of a session still painted after the session
+  expired, with no server contact, and its islands, actions and SSE
+  then answered 401 until the next network navigation. A prefetch
+  answer now carries `X-Gofastr-Session-Expires-In`, the seconds the
+  session has left, and the preload cache drops the entry at that point
+  when it comes before the TTL, so the click fetches the page and gets a
+  fresh session.
 - **A page carries one `<meta name="description">`**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [SEO](framework/docs/content/seo.md)). `WithDescription` added its tag

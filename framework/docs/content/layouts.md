@@ -1045,7 +1045,12 @@ The prefetched response lives in a small 30-second
 cache the router checks before fetching; `ui.InvalidateScreens`
 selectors evict it like the screen cache. Prefetch requests carry
 `X-Gofastr-Prefetch: 1`, skip session side effects, and are never used
-for routes that would open as overlays. Declare it on cheap,
+for routes that would open as overlays. An entry also ends with the
+session it was rendered for: the answer carries
+`X-Gofastr-Session-Expires-In`, the whole seconds the session has
+left, and a click after that fetches the page instead of painting one
+whose islands and actions would answer 401. A prefetch with no live
+session gets a 204 and caches nothing. Declare it on cheap,
 frequently-next routes; a prefetched page with deferred outlets
 fetches the page only.
 

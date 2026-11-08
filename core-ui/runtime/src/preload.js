@@ -45,7 +45,7 @@
   };
 
   const MAX = 4;
-  const store = new Map(); // path → { html, title, layer, at }
+  const store = new Map(); // path → { html, title, layer, at, until }
   const ttl = () => NS._preloadTTLms || 30000;
 
   const put = (path, entry) => {
@@ -56,12 +56,14 @@
 
   // Consulted by loadPage before it fetches. Entries are single-use and
   // TTL-bounded: prefetched-then-first-viewed content has a tighter
-  // freshness bar than back-nav history.
+  // freshness bar than back-nav history. An entry also ends with the
+  // session it was rendered for (until), when that comes first.
   NS._takePrefetched = function (path) {
     const e = store.get(path);
     if (!e) return null;
     store.delete(path);
-    if (Date.now() - e.at > ttl()) return null;
+    const now = Date.now();
+    if (now - e.at > ttl() || now >= e.until) return null;
     return e;
   };
 
@@ -80,6 +82,13 @@
       for (const k of store.keys()) if (hit(s, k)) store.delete(k);
       for (const k of inFlight) if (hit(s, k)) stale.add(k);
     }
+  };
+
+  // When an entry's session ends: X-Gofastr-Session-Expires-In whole
+  // seconds from now, or never when the header is absent or malformed.
+  const untilFor = (r) => {
+    const v = r.headers.get('X-Gofastr-Session-Expires-In');
+    return v && /^\d+$/.test(v) ? Date.now() + Number(v) * 1000 : Infinity;
   };
 
   const inFlight = new Set();
@@ -131,6 +140,9 @@
         // decode stays as sent. Raw, it never matched a live slot.
         let layer = r.headers.get('X-Gofastr-Swap') || '';
         try { layer = decodeURIComponent(layer); } catch (_) {}
+        // Counted from the headers, so the body's transfer time does
+        // not stretch the session past its end.
+        const until = untilFor(r);
         return r.text().then((html) => ({
           html,
           title: NS._title(r),
@@ -139,6 +151,9 @@
           // parser); the flag tells it which shape it holds.
           envelope: r.headers.get('X-Gofastr-Envelope') === '2',
           at: Date.now(),
+          // The seconds the session has left (uihost); painted after
+          // that, the page's islands and actions would answer 401.
+          until,
         }));
       })
       // A hover entry's component sheets start now too, so the click
