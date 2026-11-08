@@ -108,7 +108,10 @@ Agents get the same controls over MCP: `framework.WithMCPControl()`
 registers `app_module_enable` / `app_module_disable` (and the dev loop
 implies the option; see [agent-ready](agent-ready.md)). The tools call
 the exact methods above, so persistence and the fail-closed dependency
-rules apply identically.
+rules apply identically. With `App.WithAuditLog`, successful module-manager
+and MCP toggles append `module_enable` / `module_disable` audit rows under
+entity `module`, attributed to the configured audit actor. Audit failure is
+logged after the toggle commits; it does not undo the toggle.
 
 - **Disabled → 404, not 403.** A disabled module's routes return a plain
   `http.NotFound`. The middleware chain does not run, so auth, logging,
