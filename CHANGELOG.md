@@ -100,13 +100,18 @@ few lines, and link the PR or the docs page for the rest.
   only when Rel's error is refused too (a failed Rel returns `""`);
   `filepath.IsLocal(rel)` needs no such check. The tested string must be
   the resolved path itself (or a copy made once, after the
-  resolution), not a path rebuilt from it. The root must be the one
+  resolution, through copies made the same way), not a path rebuilt
+  from it, and a path whose address is taken never counts: a write
+  through the pointer replaces it unseen. The root must be the one
   the path was joined under, not its parent or another directory, and
   can't be a constant such as `"/"`, a local holding one, or built from
-  the path. It must hold one value: a local assigned once, a parameter
-  never reassigned, so `if widen { root = "/" }` before the test does
-  not pass, and neither does a `rootSep` local bound to `root + sep` on
-  one branch only. The separator after it is required: without it
+  the path. It must hold one value at the test: a local assigned once
+  before it, a parameter not reassigned before it, so
+  `if widen { root = "/" }` before the test does not pass, and neither
+  does a `rootSep` local bound to `root + sep` on one branch only. A
+  copy holds the value it was made from (`frozen := baseDir` stays
+  good when `baseDir` changes later). A root whose address is taken,
+  and a field root assigned before the test, don't count. The separator after it is required: without it
   `/srv/app-backup` passes a test against `/srv/app`. A resolved
   parent joined with `filepath.Base` counts only for `os.Mkdir`:
   `os.MkdirAll` follows a linked leaf and returns nil. A path joined in

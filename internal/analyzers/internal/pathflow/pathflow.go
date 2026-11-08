@@ -381,7 +381,7 @@ func RootyParamIndex(decl *ast.FuncDecl, rootParam string) int {
 // RootyParamOrField returns the root expression when e is a parameter
 // or struct field whose name says root/base/dir.
 func RootyParamOrField(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr, params map[types.Object]bool) ast.Expr {
-	switch x := e.(type) {
+	switch x := ast.Unparen(e).(type) {
 	case *ast.Ident:
 		obj := pass.TypesInfo.ObjectOf(x)
 		v, ok := obj.(*types.Var)
@@ -966,21 +966,36 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 	}
 	// A local holds this resolution when it is bound to the call
 	// itself (`real, err := EvalSymlinks(p)`, or the `p, err =
-	// EvalSymlinks(p)` rebind), or is a copy of one assigned once,
-	// after the call. bound holds each local's last binding, so a copy
-	// made earlier, `out := real` before `real, err =
-	// EvalSymlinks(other)`, resolves to the second call while it holds
-	// the first. The sink's own path is held to the same rule.
-	assigns := assignCounts(pass, body)
+	// EvalSymlinks(p)` rebind), or is a copy of one, every copy on the
+	// chain assigned once, after the call. bound holds each local's
+	// last binding, so a copy made earlier, `out := real` before `real,
+	// err = EvalSymlinks(other)`, resolves to the second call while it
+	// holds the first, and `stale := real` taken then and copied again
+	// after the second call holds it too. A local whose address is
+	// taken can change through the pointer, which no binding shows. The
+	// sink's own path is held to the same rule.
+	w := writeSitesIn(pass, body)
 	holdsCall := func(o types.Object) bool {
-		b, ok := bound[o]
-		if !ok {
-			return false
+		cur := o
+		for i := 0; i < 8; i++ {
+			if w.addr[cur] {
+				return false
+			}
+			b, ok := bound[cur]
+			if !ok {
+				return false
+			}
+			b = ast.Unparen(b)
+			if b == call {
+				return true
+			}
+			id, ok := b.(*ast.Ident)
+			if !ok || len(w.local[cur]) != 1 || b.Pos() < call.End() {
+				return false
+			}
+			cur = pass.TypesInfo.ObjectOf(id)
 		}
-		if ast.Unparen(b) == call {
-			return true
-		}
-		return assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call
+		return false
 	}
 	if !holdsCall(obj) {
 		return false
@@ -1113,42 +1128,81 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// filepath.Dir(real)+sep) holds for nearly every path) and some other
 	// directory such as the root's parent: none of them keys as the join
 	// root.
-	// stable reports whether e holds one root on every path: each local
-	// on its chain, through EvalSymlinks/Abs/Clean, is assigned once (a
-	// parameter, never), so `if widen { root = "" } else { root =
-	// baseDir }` cannot hide its "" behind the last binding.
+	// stable reports whether e holds one root at the check (at) on
+	// every path: each local on its chain, through EvalSymlinks/Abs/
+	// Clean and parentheses, is assigned once before the point it is
+	// read (a parameter, never), so `if widen { root = "" } else { root
+	// = baseDir }` cannot hide its "" behind the last binding. A copy
+	// moves the point to the copy: `frozen := baseDir` holds baseDir's
+	// value then, and a later `baseDir = next` changes neither string. A
+	// local whose address is taken, and a field assigned (or whose
+	// address is taken) before the read, are refused: a write through
+	// the pointer or the field changes the root no binding shows. A
+	// write through another alias of the struct is out of reach.
 	assigns := assignCounts(pass, body)
-	stable := func(e ast.Expr) bool {
+	w := writeSitesIn(pass, body)
+	before := func(sites []token.Pos, at token.Pos) int {
+		n := 0
+		for _, p := range sites {
+			if p < at {
+				n++
+			}
+		}
+		return n
+	}
+	identStable := func(obj types.Object, at token.Pos) (outer, ok bool) {
+		if obj == nil || w.addr[obj] {
+			return false, false
+		}
+		outer = obj.Pos() < body.Pos() || obj.Pos() > body.End()
+		values := before(w.local[obj], at)
+		if outer {
+			values++ // a parameter or outer variable has its own value too
+		}
+		return outer, values <= 1
+	}
+	stable := func(e ast.Expr, at token.Pos) bool {
 		for i := 0; i < 8; i++ {
-			if id, ok := e.(*ast.Ident); ok {
-				obj := pass.TypesInfo.ObjectOf(id)
-				values := assigns[obj]
-				if obj != nil && (obj.Pos() < body.Pos() || obj.Pos() > body.End()) {
-					values++ // a parameter or outer variable has its own value too
-				}
-				if values > 1 {
+			e = ast.Unparen(e)
+			switch x := e.(type) {
+			case *ast.Ident:
+				obj := pass.TypesInfo.ObjectOf(x)
+				outer, ok := identStable(obj, at)
+				if !ok {
 					return false
 				}
-				if b, ok := bound[obj]; ok {
-					e = b
+				if b, ok := bound[obj]; ok && b.Pos() < at {
+					e, at = b, b.Pos()
 					continue
 				}
+				// No binding before the read: a parameter's own value,
+				// or a local whose value came from one bound is blind to.
+				return outer
+			case *ast.SelectorExpr:
+				key := types.ExprString(x)
+				if w.addrSel[key] || before(w.sel[key], at) > 0 {
+					return false
+				}
+				if base, ok := ast.Unparen(x.X).(*ast.Ident); ok {
+					if _, ok := identStable(pass.TypesInfo.ObjectOf(base), at); !ok {
+						return false
+					}
+				}
+				return true
+			case *ast.CallExpr:
+				q := QualifiedFunc(pass, x.Fun)
+				if len(x.Args) != 1 || (q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean") {
+					return true
+				}
+				e = x.Args[0]
+			default:
 				return true
 			}
-			c, ok := e.(*ast.CallExpr)
-			if !ok || len(c.Args) != 1 {
-				return true
-			}
-			q := QualifiedFunc(pass, c.Fun)
-			if q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean" {
-				return true
-			}
-			e = c.Args[0]
 		}
 		return true
 	}
-	rootOperand := func(e ast.Expr) bool {
-		return stable(e) && roots[rootKey(pass, e, bound)]
+	rootOperand := func(e ast.Expr, at token.Pos) bool {
+		return stable(e, at) && roots[rootKey(pass, e, bound)]
 	}
 	// target reports whether e is the resolved path itself: one of objs,
 	// not an expression built from it. HasPrefix(Join(root,
@@ -1170,16 +1224,16 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		switch QualifiedFunc(pass, c.Fun) {
 		case "path/filepath.Rel":
-			return rootOperand(c.Args[0]) && target(c.Args[1])
+			return rootOperand(c.Args[0], c.Pos()) && target(c.Args[1])
 		case "strings.HasPrefix", "strings.CutPrefix":
 			// The operand holds one value too: after `rootSep := ""` and
 			// `if strict { rootSep = root + sep }`, HasPrefix(real,
 			// rootSep) is true for every path when strict is false.
-			if !target(c.Args[0]) || !stable(c.Args[1]) {
+			if !target(c.Args[0]) || !stable(c.Args[1], c.Pos()) {
 				return false
 			}
 			add, ok := ast.Unparen(Resolve(pass, c.Args[1], bound, 0)).(*ast.BinaryExpr)
-			if !ok || add.Op != token.ADD || !rootOperand(add.X) {
+			if !ok || add.Op != token.ADD || !rootOperand(add.X, c.Pos()) {
 				return false
 			}
 			tv, ok := pass.TypesInfo.Types[add.Y]
@@ -1968,6 +2022,69 @@ func relErrRefused(pass *analysis.Pass, body *ast.BlockStmt, r *ast.CallExpr, si
 		return !found
 	})
 	return found
+}
+
+// writeSites records where body writes a value: each local's binding
+// sites (assignments, var specs, range clauses), each field spelling's
+// assignments, and the locals and fields whose address is taken.
+type writeSites struct {
+	local   map[types.Object][]token.Pos
+	sel     map[string][]token.Pos
+	addr    map[types.Object]bool
+	addrSel map[string]bool
+}
+
+func writeSitesIn(pass *analysis.Pass, body *ast.BlockStmt) *writeSites {
+	w := &writeSites{
+		local:   map[types.Object][]token.Pos{},
+		sel:     map[string][]token.Pos{},
+		addr:    map[types.Object]bool{},
+		addrSel: map[string]bool{},
+	}
+	lhs := func(e ast.Expr, at token.Pos) {
+		switch x := ast.Unparen(e).(type) {
+		case *ast.Ident:
+			if obj := pass.TypesInfo.ObjectOf(x); obj != nil && x.Name != "_" {
+				w.local[obj] = append(w.local[obj], at)
+			}
+		case *ast.SelectorExpr:
+			key := types.ExprString(x)
+			w.sel[key] = append(w.sel[key], at)
+		}
+	}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			for _, e := range st.Lhs {
+				lhs(e, st.Pos())
+			}
+		case *ast.ValueSpec:
+			for _, name := range st.Names {
+				lhs(name, st.Pos())
+			}
+		case *ast.RangeStmt:
+			if st.Key != nil {
+				lhs(st.Key, st.Pos())
+			}
+			if st.Value != nil {
+				lhs(st.Value, st.Pos())
+			}
+		case *ast.UnaryExpr:
+			if st.Op != token.AND {
+				return true
+			}
+			switch x := ast.Unparen(st.X).(type) {
+			case *ast.Ident:
+				if obj := pass.TypesInfo.ObjectOf(x); obj != nil {
+					w.addr[obj] = true
+				}
+			case *ast.SelectorExpr:
+				w.addrSel[types.ExprString(x)] = true
+			}
+		}
+		return true
+	})
+	return w
 }
 
 // assignCounts counts the assignments and var-spec initializers that

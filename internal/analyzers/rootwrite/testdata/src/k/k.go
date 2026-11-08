@@ -1330,3 +1330,205 @@ func boundRootSep(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600)
 }
+
+// rootConfig carries a field root for fieldRoot and safeField.
+type rootConfig struct{ RootDir string }
+
+// fieldRoot clears the field root between the join and the check: the
+// prefix becomes the separator alone.
+func fieldRoot(settings *rootConfig, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(settings.RootDir, name))
+	if err != nil {
+		return err
+	}
+	settings.RootDir = ""
+	if !strings.HasPrefix(real, settings.RootDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// safeField checks against the same field, never written. Quiet.
+func safeField(settings *rootConfig, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(settings.RootDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, settings.RootDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// pointerRoot clears the root through a pointer, which no binding shows.
+func pointerRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rootPointer := &baseDir
+	*rootPointer = ""
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// closureRoot clears the root inside a closure called before the check.
+func closureRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	widen := func() { baseDir = "" }
+	widen()
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// parenthesizedRoot parenthesizes the root at the join and the check,
+// so both key as the parameter, and widens it on one branch.
+func parenthesizedRoot(baseDir, name string, data []byte, widen bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join((baseDir), name))
+	if err != nil {
+		return err
+	}
+	if widen {
+		baseDir = ""
+	}
+	if !strings.HasPrefix(real, (baseDir)+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// pointerSink checks real, then replaces it through a pointer with an
+// unchecked resolution.
+func pointerSink(baseDir, safeName, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, safeName))
+	if err != nil {
+		return err
+	}
+	other, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	destination := &real
+	*destination = other
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// frozenRoot checks against a copy of the root; the root changes only
+// after the check, which changes neither string. Quiet.
+func frozenRoot(baseDir, name, nextDir string, data []byte, unused bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	frozen := baseDir
+	if !strings.HasPrefix(real, frozen+string(filepath.Separator)) {
+		return errEscape
+	}
+	if unused {
+		baseDir = nextDir
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// staleIntermediate copies the first resolution, resolves again, then
+// copies the stale copy after the second call: out holds the first.
+func staleIntermediate(baseDir, safeName, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	stale := real
+	real, err = filepath.EvalSymlinks(filepath.Join(baseDir, safeName))
+	if err != nil {
+		return err
+	}
+	out := stale
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(out, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// frozenBeforeWiden copies the root, then widens the source before the
+// check: the copy still holds the root the path was joined under. Quiet.
+func frozenBeforeWiden(baseDir, name string, data []byte, widen bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	frozen := baseDir
+	if widen {
+		baseDir = ""
+	}
+	if !strings.HasPrefix(real, frozen+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// fieldPointerRoot clears the field root through a pointer to it.
+func fieldPointerRoot(settings *rootConfig, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(settings.RootDir, name))
+	if err != nil {
+		return err
+	}
+	p := &settings.RootDir
+	*p = ""
+	if !strings.HasPrefix(real, settings.RootDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// fieldBaseSwapped points the struct at another config before the check.
+func fieldBaseSwapped(settings, other *rootConfig, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(settings.RootDir, name))
+	if err != nil {
+		return err
+	}
+	settings = other
+	if !strings.HasPrefix(real, settings.RootDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// rangeRoot rebinds the root in a range clause before the check.
+func rangeRoot(baseDir, name string, alts []string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	for _, baseDir = range alts {
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// zeroLocalRoot checks against a local that is still "" at the check;
+// it is bound to the root only afterwards.
+func zeroLocalRoot(baseDir, name string, data []byte) error {
+	var root string
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, root+string(filepath.Separator)) {
+		return errEscape
+	}
+	root = baseDir
+	_ = root
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
