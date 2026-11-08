@@ -25,6 +25,19 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **A field can declare its own mask**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [entity declarations](framework/docs/content/entity-declarations.md)).
+  `schema.Field.Mask` takes the stored value and returns what a read hands
+  back, a card number as its last four digits, say. CRUD runs it in one
+  place on every path that returns the row: get, list and cursor pages,
+  `?stream=true`, `?include=` children, create and update responses,
+  `_events`, the MCP tools, and the in-process reads under
+  `crud.WithReadHooks`. The stored value is untouched, a NULL is not
+  masked, and the entity's `AfterGet`/`AfterList` hooks see the masked
+  value. A field with a `Mask` is `NoQuery` without saying so, and an
+  aggregate over it under `WithReadHooks` returns
+  `crud.ErrAggregateMasked`.
 - **`gofastr release` builds the downloads for a CLI or service binary**
   ([release](framework/docs/content/release.md)). It cross-builds the
   main package for macOS, Linux and Windows on amd64 and arm64 with
@@ -72,6 +85,18 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING: `schema.Field` is no longer comparable**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It holds
+  the `Mask` func now, so `a == b` on two fields, or a field as a map key,
+  no longer compiles. Compare the fields you care about, `a.Name ==
+  b.Name`, or key the map by name.
+- **BREAKING (SQLite): an insert with no key value is refused**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
+  batch create or upsert whose row would hold a NULL key part (a key left
+  out or sent as null that no column `DEFAULT`, declared `Default` or
+  rowid fills, including the integer part of a composite key) answers
+  `400` with the key `required`, as Postgres does, and is rolled back.
+  SQLite stored such a row, and no route could read, update or delete it.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler
@@ -87,8 +112,41 @@ few lines, and link the PR or the docs page for the rest.
   its own retention sets `TerminalTaskRetention` and
   `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
   already flags the old method.
+- **`UpsertOne` runs nested writes**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It used to
+  refuse a cascade-write relation value with
+  `validation.cascade_upsert_unsupported`; that refusal is gone. The insert
+  arm now writes nested relations as `CreateOne` does and the conflict arm
+  as `UpdateOne` does, in the upsert's transaction, and a nested write
+  through a hidden relation is refused as on create and update. A
+  `belongs_to` cascade that would fill the entity's own key is refused
+  with `validation.cascade_upsert_key`; the key goes in the body, where
+  the upsert's checks read it.
 
 ### Security
+- **`App.ImportData` restores the bytes it checked**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
+  each archive file on one read and parsed the rows from a second, so a
+  file swapped between the two was restored unchecked. Each file is now
+  read once, in the import's transaction, and a checksum mismatch rolls
+  every source back.
+- **The query DSL refuses `include()` of a hidden relation**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
+  marked `Relation.Hidden`; it now answers relation-not-found, as
+  `?include=` does.
+- **A nested write through a hidden relation is refused**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  `cascade_write` relation marked `Relation.Hidden`, or behind a `Hidden`
+  field of its name, took nested creates and links from a client body and
+  returned the written child, though reads and `?include=` never show it.
+  Create and update now answer 400 `validation.cascade_relation_hidden`
+  before any row is written; server code still writes through it under
+  `crud.WithServerWrites`.
+- **BREAKING: `cache.CacheMiddlewareWithLimit` panics on a negative
+  `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A negative cap read as no cap and buffered every response whole; `0`
+  still means unbounded.
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
@@ -151,6 +209,9 @@ few lines, and link the PR or the docs page for the rest.
   a Postgres 500 (A2A answers invalid-params, not internal error). An
   A2A request body that is not valid UTF-8 gets a parse error, so a
   malformed byte is never stored as U+FFFD.
+  A `Relation`, `Image` or `File` value with a NUL or invalid UTF-8 is
+  refused with `invalid_text`, as `String` and `Text` are, so SQLite no
+  longer stores what Postgres refuses (#669).
   API-token names are limited to 256 bytes. `webhook.Manager.Subscribe`
   and `Unsubscribe` return an error for such a URL, secret or ID before
   the store sees it. Audit text fields replace invalid UTF-8, so a state override

@@ -844,6 +844,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		ch.maskOwn(ctx, results...)
 		// AfterList may redact or transform rows; visibility belongs in BeforeList.
 		if ch.Hooks != nil {
 			listPayload.Results = results
@@ -1035,6 +1036,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
+		ch.maskOwn(ctx, result)
 		if ch.Hooks != nil {
 			getPayload.Result = result
 			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {

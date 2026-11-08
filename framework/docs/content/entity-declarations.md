@@ -215,11 +215,16 @@ holds the key and as an update does when one does. A blank in a key
 column is never dropped, so an `Int` key part still refuses it, and a
 `""` in any caller-chosen key column, a one-column key included, is
 refused with `400` (`is required`): no route could name that row again.
+So is a write whose row would store a NULL key part, which SQLite
+allows: a key the body left out or sent as null, unless the database
+fills it (a column `DEFAULT`, the field's declared `Default`, or the
+rowid of a one-column `INTEGER PRIMARY KEY`).
 Empty
 text stays an
 empty string, since that is a value a user can mean.
 
-`String` and `Text` values must be valid UTF-8 without NUL bytes. Unstorable
+`String`, `Text`, `Relation`, `Image` and `File` values must be valid UTF-8
+without NUL bytes. Unstorable
 text is a validation 400 with code `invalid_text` keyed by the field's wire
 name, before any database write. This applies to create, update and upsert,
 including form and multipart input. JSON fields also refuse NUL in decoded
@@ -431,7 +436,7 @@ Each entry under `fields:` accepts:
 | `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). A Hidden relation field, or a Hidden foreign key under a `belongs_to`, makes that relation unincludable: `?include=` and nested filters on it answer as for a relation that does not exist ([includes](includes.md)). |
-| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. |
+| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. A field with a Go `Mask` is `no_query` without saying so. |
 | `to` | string | For `type: relation`, the target entity. |
 
 ### Defaults are validated at registration
@@ -474,12 +479,29 @@ column's DDL `DEFAULT`.
 
 ### Masked fields
 
-An `AfterGet` / `AfterList` hook can rewrite a field on the way out: a
-card number to its last four digits, a note redacted for non-owners.
-That changes what the caller reads. It does not change what the database
-filtered and sorted on.
+Declare the rewrite on the field. `Mask` takes the stored value and
+returns what a read hands back; the database keeps what was written:
 
-Left alone, the stored value is still a live column, so a caller
+```go
+{Name: "number", Type: schema.String, Mask: func(_ context.Context, v any) any {
+	s, _ := v.(string)
+	return "****" + s[max(len(s)-4, 0):]
+}},
+```
+
+CRUD runs it on every path that returns the row: a get, a list or cursor
+page, `?stream=true`, an `?include=` child, a create or update response,
+an `_events` delivery, and the MCP tools. In-process reads (`GetOne`,
+`ListAll`, `TypedQuery`) mask under `crud.WithReadHooks`, the opt-in that
+runs read hooks, and return the stored value without it. The context it
+gets carries the caller, so a mask may depend on who reads. A NULL stays
+null and `Mask` is not called for it. It runs before the entity's
+`AfterGet`/`AfterList` hooks, which see the masked value. Return a
+placeholder for a value it cannot read: a `Mask` that panics reads as
+null, and the panic is logged.
+
+A masked field is `no_query` too; `entity.Define` sets it. Left
+queryable, the stored value is still a live column, and a caller
 recovers it a character at a time from which rows come back:
 
 ```
@@ -487,8 +509,20 @@ GET /cards?number_like=4111    → 1 row   ┐ every response still
 GET /cards?number_like=4112    → 0 rows  ┘ reads "****1111"
 ```
 
-`no_query` closes that. The field stays in the response and the query
-surface refuses it:
+With `no_query` the query surface refuses it:
+
+```
+GET /cards?number_like=4111    → 400 field "number" cannot be filtered
+```
+
+For the same reason an aggregate under `crud.WithReadHooks` (`SumAll`,
+`GroupCountAll` and the rest) refuses a masked field with
+`crud.ErrAggregateMasked`: a total the database computes never passes
+through the mask.
+
+`Mask` is Go only. An app spec masks with an `AfterGet` / `AfterList`
+hook instead, and marks the field `no_query` by hand, since a hook
+rewrites the value but leaves the query surface open:
 
 ```yaml
 fields:
@@ -497,27 +531,23 @@ fields:
     no_query: true    # masked by a hook; never filterable or sortable
 ```
 
-```
-GET /cards?number_like=4111    → 400 field "number" cannot be filtered
-```
+Register such a hook on `AfterGet` **and** `AfterList`; each response
+path runs the one matching the shape it serves.
 
 Use `hidden` instead when the caller should not see the value at all:
 `hidden` also removes the field from responses, and hides the fact that
-the column exists. `no_query` is for when they must see *something*.
+the column exists. A mask is for when they must see *something*.
 
-`no_query` refuses the query surface; it does not mask anything by
-itself. The hook is what rewrites the value, so declare both, and
-register the hook on `AfterGet` **and** `AfterList`; each response path
-runs the one matching the shape it serves.
-
-The admin's edit form reads the row twice and treats any column the hook
-rewrites as write-only: rendered empty (or with an explicit
-"— unchanged —" option on a checkbox, enum, or relation picker), left
-alone unless you supply a value. It compares the two reads rather than
-looking at `no_query`, so a hook that *transforms* rather than masks,
-normalising a phone number or rounding a currency, also makes its columns
-write-only in the admin. Do that work in `BeforeCreate`/`BeforeUpdate`
-if the column should stay editable.
+The admin's edit form reads the row twice, stored and masked, and
+treats any column the two reads disagree on as write-only: rendered
+empty (or with an explicit "— unchanged —" option on a checkbox, enum,
+or relation picker), left alone unless you supply a value. A mask that
+hands one caller the stored value leaves the column editable for them.
+It compares the reads rather than looking at `Mask` or `no_query`, so a
+hook that *transforms* rather than masks, normalising a phone number or
+rounding a currency, also makes its columns write-only in the admin. Do
+that work in `BeforeCreate`/`BeforeUpdate` if the column should stay
+editable.
 
 Relation *blocks* (the `relations:` list, distinct from a `relation`
 field) declare how entities associate with one another:
@@ -530,7 +560,7 @@ field) declare how entities associate with one another:
 - `foreign_key_target`: for `many_to_many`, the column referencing the target entity in the pivot table.
 - `on_delete`: optional foreign key referential integrity action (`no_action`, `restrict`, `cascade`, `set_null`).
 - `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
-- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`).
+- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`). A hidden relation also takes no nested write: a create, update or upsert body carrying its key is refused with 400 `validation.cascade_relation_hidden` before any row is written. The same holds for a relation behind a Hidden field of its name or a Hidden `belongs_to` foreign key (that one answers `validation.cascade_key_not_writable`, below). Server code writes through it under `crud.WithServerWrites`.
 
 A Go `belongs_to` relation can share the name of its own single scalar
 foreign-key column when cascade writes are disabled. For example,
@@ -546,7 +576,7 @@ declare a `schema.Relation` field when the column itself is the relation.
 ### Cascade Writes & Atomic Nested Mutations
 When `cascade_write: true` (or `.WithCascadeWrite(true)`) is enabled, nested child maps or slices can be sent directly inside parent `POST` and `PUT`/`PATCH` payloads.
 All writes execute inside the parent's database transaction (`inTx`). If any child validation or constraint check fails, the transaction is completely rolled back, leaving zero orphaned rows.
-- **Upsert refuses nested writes**: `UpsertOne` returns a `ValidationError` naming every supplied cascade-write relation, with reason `validation.cascade_upsert_unsupported`, before running hooks or writing either the insert or conflict arm. This covers all four relation kinds and the same relation-key spellings accepted by create/update, after resolving field aliases to columns with the same precedence. A scalar field's wire alias is not a cascade merely because its input spelling also matches a relation alias: `tag_label` with `WireName: "tags"` remains scalar beside relation `_tags`. Registration rejects an exact scalar-field/cascade-write relation name collision, including hidden and auto-generated fields, but Go declarations can still have a column named `profileRow` beside relation `profile_row`. A wire key resolving to that column is a cascade under camelCase, just as on create/update. A field with `WireName: "_tags"` also remains reachable through relation `_tags`'s own wire-key lookup and is treated as a cascade. Normalized keys and auto-generated values are checked even without hooks; a generated non-null `profileRow` therefore refuses the upsert too. Empty objects, empty arrays, and other non-null values are refused too; a null or omitted relation is not a nested write. A `BeforeCreate` hook that adds a cascade value is refused before the upsert writes. Use `CreateOne` or `UpdateOne` for nested writes instead.
+- **Upsert runs nested writes under its arm's rules**: `UpsertOne` writes cascade-write relations in the same transaction as the parent, under the rules of the arm it takes. The insert arm writes them as `CreateOne` does: a `belongs_to` child is created and its key set on the parent, and `has_one`/`has_many` children are created against the new row. The conflict arm writes them as `UpdateOne` does: a child that carries its id is updated in place and must already belong to the parent, and a body carrying only nested values is still an update, so `AfterUpdate` runs and the update event fires. A `Required` foreign key that a `belongs_to` cascade fills is not reported missing. A `belongs_to` cascade that would fill a column of the entity's own key is refused with `validation.cascade_upsert_key`: the upsert chooses its arm and runs its ownership, soft-delete and hidden-row checks on the key in the body, before any cascade runs, so send the key in the body. Relation keys resolve with the same spellings and alias precedence as on create and update, and a value a `BeforeCreate` hook adds is written too. A generated non-null value under a key that names a relation (a column `profileRow` beside relation `profile_row`) is a cascade value on either arm, so a non-object one is refused with `validation.not_object`.
 - **`belongs_to`**: The child is validated and created/updated before the parent, and the resulting child ID is automatically injected into the parent foreign key. An undeclared foreign key, or one this write cannot set (`ReadOnly`, `Hidden`, or the owner column on an update), refuses the nested write with 400 `validation.cascade_key_not_writable` before any child is written, since the parent could not point at the child.
 - **`has_one`**: The child is created or updated after the parent. If an ID is provided or an existing child is found, it is updated in-place (with ownership verification); otherwise it is created.
 - **`has_many`**: An array of child objects is processed. Items carrying an ID belonging to the parent are updated; items without an ID are inserted.

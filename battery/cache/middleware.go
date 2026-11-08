@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"sort"
@@ -120,7 +121,12 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 // response size that may be buffered for caching. A response exceeding
 // maxBodyBytes is streamed to the client and never stored. Pass 0 for
 // unbounded buffering (the pre-cap behaviour, not recommended in production).
+// A negative maxBodyBytes panics: it used to read as 0 and buffer every
+// response whole.
 func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
+	if maxBodyBytes < 0 {
+		panic(fmt.Sprintf("cache: CacheMiddlewareWithLimit: maxBodyBytes %d is negative (0 means unbounded)", maxBodyBytes))
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only cache GET requests. An unsafe method invalidates the

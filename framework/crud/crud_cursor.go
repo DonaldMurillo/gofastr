@@ -239,6 +239,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// It runs AFTER buildCursorPage on purpose: the continue-cursor has to be
 	// derived from the stored keyset values, so a hook that masks the keyset
 	// column must not be allowed to corrupt paging.
+	ch.maskOwn(ctx, page.Data...)
 	if ch.Hooks != nil {
 		// Carry extraWhere through so an AfterList hook sees the same payload
 		// shape on both paths. The offset path hands over the clauses

@@ -447,6 +447,13 @@ func Define(name string, config EntityConfig) *Entity {
 		}
 	}
 	config.Fields = config.systemFields()
+	// A masked field's stored value must stay out of filters, sorts and
+	// search, or a caller recovers it from which rows match.
+	for i := range config.Fields {
+		if config.Fields[i].Mask != nil {
+			config.Fields[i].NoQuery = true
+		}
+	}
 
 	// CrossOwnerRead lifts owner scoping for reads only, so it only makes
 	// sense on an entity that is owner-scoped to begin with. Catch the

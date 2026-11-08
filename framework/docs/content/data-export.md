@@ -50,8 +50,8 @@ Export streams. Each page is written to its `.ndjson` file, and hashed on
 the way, before the next page is read, so `WithExportPageSize` (1000 rows
 by default) bounds how many rows an export holds at once. A table with no
 key is read in one statement and still reaches the file row by row.
-Import reads each file whole before it writes, because it validates the
-entire archive first.
+Import reads each file once, whole, inside its transaction, and checks the
+file's checksum on the bytes it restores.
 
 Timestamps keep the spelling a filter or cursor matches. SQLite compares a
 time column as text, so the export reads a column declared `DATE`,
@@ -224,7 +224,7 @@ provenance, not an authority.)
 
 ## Staged import (validate before write)
 
-Import validates the **whole** archive before writing a single row, then
+Import validates the archive's shape before writing a single row, then
 writes every source inside one transaction (rollback on any error). Each of
 these is rejected up front, leaving the database untouched:
 
@@ -238,13 +238,16 @@ these is rejected up front, leaving the database untouched:
 - an archive column absent from the live schema (incompatible column set);
 - a source whose archive columns leave out a primary-key column (a keyless
   raw table has none to leave out);
-- a per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt/tampered).
+- a missing `.ndjson` file.
 
-A row whose primary-key value is null or missing is refused too, in the
-write phase, and the transaction rolls back. Without these two checks a key
-column was written NULL, which SQLite accepts in a non-integer key (the
-restored rows can never be read by key), or Postgres minted new ids that no
-reference pointed at.
+A per-file `sha256` that doesn't match the `.ndjson` bytes (corrupt or
+tampered) is refused in the write phase, which reads each file once and
+checks the checksum on the bytes it restores, so a file swapped after the
+up-front checks is caught too; the transaction rolls back. A row whose
+primary-key value is null or missing is refused there as well. Without
+that check and the key-column check above, a key column was written NULL,
+which SQLite accepts in a non-integer key (the restored rows can never be
+read by key), or Postgres minted new ids that no reference pointed at.
 
 Restore into an empty (or freshly migrated) database. Import uses plain
 `INSERT` and will fail loud on a primary-key conflict if a row already exists,
@@ -388,8 +391,8 @@ the app:
   batteries register exporters; a custom raw table needs its own
   `datexport.Register` to be in the archive.
 - **Editing an archive by hand.** The manifest carries a SHA-256 per file;
-  a hand-edited NDJSON fails the checksum and the whole import is rejected
-  before any write.
+  a hand-edited NDJSON fails the checksum and the whole import rolls
+  back.
 
 ## Data erasure
 
