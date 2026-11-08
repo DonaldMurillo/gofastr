@@ -21,7 +21,8 @@ func (v *vault) store(token string, data []byte) error {
 	return os.WriteFile(filepath.Join(v.root, token), data, 0o600) // want `write under a root with lexical containment only`
 }
 
-// storeSafe is the fix posture: resolve symlinks before the write.
+// storeSafe checks the resolved parent, then writes the original path:
+// a link swapped in after the check wins (#665).
 func (v *vault) storeSafe(token string, data []byte) error {
 	realRoot, err := filepath.EvalSymlinks(v.root)
 	if err != nil {
@@ -35,10 +36,11 @@ func (v *vault) storeSafe(token string, data []byte) error {
 	if real != realRoot && !strings.HasPrefix(real, realRoot+string(os.PathSeparator)) {
 		return errEscape
 	}
-	return os.WriteFile(p, data, 0o600)
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
 }
 
-// mkdirAllSafe resolves once for the whole tree it is about to create.
+// mkdirAllSafe creates the resolved path after checking that path is
+// under the resolved root: the contained-resolution posture. Quiet.
 func (v *vault) mkdirAllSafe(rel string) error {
 	realRoot, err := filepath.EvalSymlinks(v.root)
 	if err != nil {

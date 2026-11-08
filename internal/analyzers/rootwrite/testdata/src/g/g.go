@@ -2,10 +2,10 @@
 // pathflow.CallsSymlinkNamed (pathflow.go:633-655) accepted any call
 // whose NAME contains "symlink" as a guard, with no look at the body
 // and no tie to the path being written. A guard counts now only when
-// its body really resolves or refuses symlinks (EvalSymlinks, an
-// Lstat consulted with ModeSymlink, O_NOFOLLOW, or a call to such a
-// guard) AND its argument is the sink's own path, its Dir,
-// or a local bound to either.
+// its body really refuses symlinks (an Lstat consulted with
+// ModeSymlink, O_NOFOLLOW, or a call to such a guard; a bare
+// EvalSymlinks stopped counting with #665) AND its argument is the
+// sink's own path, its Dir, or a local bound to either.
 package g
 
 import (
@@ -151,8 +151,9 @@ func (s *store) lstatOnly(name string, data []byte) error {
 	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
 }
 
-// confirmInside resolves the parent chain and refuses an escape: a
-// guard by its body, whatever its name says. Quiet.
+// confirmInside resolves the parent chain and refuses an escape, but
+// the caller writes the original path afterwards: an EvalSymlinks check
+// is no guard (#665), so evalGuard fires.
 func confirmInside(root, p string) error {
 	real, err := filepath.EvalSymlinks(filepath.Dir(p))
 	if err != nil {
@@ -169,7 +170,7 @@ func (s *store) evalGuard(name string, data []byte) error {
 	if err := confirmInside(s.baseDir, p); err != nil {
 		return err
 	}
-	return os.WriteFile(p, data, 0o600)
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
 }
 
 // chmodFirst: os.Chmod carries O_NOFOLLOW-shaped code inside the

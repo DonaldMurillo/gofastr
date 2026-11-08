@@ -4,7 +4,7 @@
 // os.OpenFile on a path built under a root (filepath.Join or flat
 // concatenation) — directly or one same-package read helper deep
 // (readPage(src): os.ReadFile(src), the I4 hop ported 2026-11) — with
-// no filepath.EvalSymlinks on the path's chain and no O_NOFOLLOW or
+// no confinement (os.Root, a contained resolution) and no O_NOFOLLOW or
 // Lstat+ModeSymlink leaf check — plus the fs.FS-mediated spelling:
 // `.Open(name)` / `fs.ReadFile(fsys, name)` / `fs.Stat(fsys, name)`
 // / `fs.ReadDir(fsys, name)` where the fs value is a CALLER-SUPPLIED
@@ -50,14 +50,24 @@
 //     between check and use. Root methods are no os.* sink and no
 //     fs.FS value here, so the rule is quiet by construction (the
 //     loadViaRoot fixture keeps it that way);
-//   - the path (or a component, or the Join's root) is bound to an
-//     EvalSymlinks result, or an EvalSymlinks ran on this path or on
-//     its Dir — resolution on the chain (core/upload Save resolves
-//     the storage root and the destination's parent before creating,
-//     and its error-path os.Remove calls read as resolved too);
+//   - a contained resolution: the path is a local bound to a
+//     filepath.EvalSymlinks result AND a containment check of that
+//     resolved local against the root (filepath.Rel, strings.HasPrefix
+//     or strings.CutPrefix, in the condition of an if that returns or
+//     holds the sink) dominates the
+//     sink, so the sink goes through the resolved path and the
+//     resolved path is known to be under the root. Issue #665 (2026-11)
+//     narrowed this from "an EvalSymlinks ran on the chain": that says
+//     where a path points and confines nothing. Replays of six quiet
+//     fixtures escaped — a resolved path that nobody compared with the
+//     root, a resolved root with a symlinked key component joined
+//     under it, and a check on the resolved path followed by a sink on
+//     the original spelling (a link swapped in between wins). An
+//     EvalSymlinks call in a guard's body no longer makes it a guard
+//     either;
 //   - a call to a VERIFIED guard on the read's own path, its Dir, or a
 //     local bound to either (pathflow.SymlinkGuards: a body that runs
-//     EvalSymlinks, an O_NOFOLLOW open, an Lstat consulted with
+//     an O_NOFOLLOW open, an Lstat consulted with
 //     ModeSymlink, or another verified guard; cross-package guards
 //     travel as a symlinkGuard fact). Until bug bash 2026-10-27 I13 any call whose NAME
 //     contained "symlink" gated every read in the function, whatever
@@ -70,9 +80,9 @@
 //   - roots that are not parameters or root/base/dir-named fields
 //     (constants name no caller-controlled boundary), literal-only
 //     non-root components, and temp roots (os.MkdirTemp / t.TempDir);
-//   - a same-package helper that resolves the RETURNED path's own
-//     chain (an EvalSymlinks or a verified guard tied to what it
-//     hands back, before the return) is the fix posture at the helper
+//   - a same-package helper that confines the RETURNED path (a
+//     contained resolution it hands back, or a verified guard tied to
+//     what it hands back, before the return) is the fix posture at the helper
 //     hop — a resolution on any other value in its body gates
 //     nothing; one called with literal-only non-root arguments
 //     appends nothing caller-controlled;
@@ -100,7 +110,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name:      "rootread",
-	Doc:       "forbids reads under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or resolve with filepath.EvalSymlinks, or an O_NOFOLLOW/Lstat leaf check",
+	Doc:       "forbids reads under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or read the filepath.EvalSymlinks result after checking it is under the resolved root, or an O_NOFOLLOW/Lstat leaf check",
 	Run:       run,
 	FactTypes: []analysis.Fact{new(symlinkGuard)},
 }
@@ -113,7 +123,7 @@ type symlinkGuard struct{}
 func (*symlinkGuard) AFact()         {}
 func (*symlinkGuard) String() string { return "symlinkGuard" }
 
-const readMsg = "read under a root with lexical containment only: a symlinked directory component escapes the root undetected; resolve with filepath.EvalSymlinks, or an O_NOFOLLOW/Lstat leaf check, before reading"
+const readMsg = "read under a root with lexical containment only: a symlinked directory component escapes the root undetected; read through os.OpenRoot, or read the filepath.EvalSymlinks result after checking it is under the resolved root, or add an O_NOFOLLOW/Lstat leaf check"
 
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := pathflow.CollectFuncs(pass)
@@ -166,9 +176,10 @@ func readHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGua
 	return pathflow.HelperSinkParams(pass, pkgFuncs, readSinksOf, resolvedReadHere, isGuard)
 }
 
-// resolvedReadHere reports whether body resolves the sink's path
-// before reading it: a verified guard on it, EvalSymlinks on its
-// chain, or — for the Remove leaf — an Lstat+ModeSymlink check.
+// resolvedReadHere reports whether body confines the sink's path
+// before reading it: a verified guard on it, a read of the
+// EvalSymlinks result after a containment check against the resolved
+// root, or — for the Remove leaf — an Lstat+ModeSymlink check.
 func resolvedReadHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkArg, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, isGuard pathflow.GuardFunc, sink ast.Node) bool {
 	return pathflow.GuardsPath(pass, body, s.Path, bound, isGuard, sink) ||
 		pathflow.SymlinkResolved(pass, s.Path, bound, evals, body, sink) ||
@@ -176,7 +187,7 @@ func resolvedReadHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkA
 }
 
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc, helpers map[*ast.FuncDecl]map[int]bool) {
-	bound := pathflow.Bindings(pass, fn.Body)
+	bound := pathflow.PathBindings(pass, fn.Body)
 	evals := pathflow.EvalSymlinkCalls(pass, fn.Body)
 	parents := dominance.Parents(fn.Body)
 
@@ -191,7 +202,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 		// plus the declaration's own. A handler factory's closure
 		// (func h(assets fs.FS) http.HandlerFunc) sees the factory's
 		// fs and its own request alike.
-		params, httpServing := scopeOf(pass, call, parents, fn)
+		params, httpServing := scopeOf(pass, call, parents, fn, bound)
 
 		// String-path reads: os.* on a disk path built under a root,
 		// direct or one same-package read helper deep. One report per
@@ -227,7 +238,7 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast
 // innermost out, plus the declaration itself — the 2026-11 closure
 // fix; until then the fs.FS arm saw only the declaring function's own
 // parameters, and a handler factory returning a closure was invisible.
-func scopeOf(pass *analysis.Pass, call ast.Node, parents map[ast.Node]ast.Node, fn *ast.FuncDecl) (map[types.Object]bool, bool) {
+func scopeOf(pass *analysis.Pass, call ast.Node, parents map[ast.Node]ast.Node, fn *ast.FuncDecl, bound map[types.Object]ast.Expr) (map[types.Object]bool, bool) {
 	params := map[types.Object]bool{}
 	serving := false
 	for cur := ast.Node(call); cur != nil; {
@@ -245,6 +256,7 @@ func scopeOf(pass *analysis.Pass, call ast.Node, parents map[ast.Node]ast.Node, 
 		cur = p
 	}
 	collectParams(pass, fn.Type.Params, params)
+	pathflow.AddRangeVars(pass, fn.Body, bound, params)
 	if hasHTTPParam(pass, fn) {
 		serving = true
 	}

@@ -26,10 +26,13 @@
 // on the first tightening.
 //
 // Silent postures, deliberately:
-//   - a CONSULTED os.Stat or os.Lstat of X before the creating call —
-//     its result bound to a read variable or compared in a controlling
-//     expression; a bare call or an all-blank discard proved nothing
-//     (2026-11);
+//   - a tightening in the then-branch of `if err == nil` on the
+//     tolerated os.Mkdir's own error (or a local bound to that test):
+//     the Mkdir's success is the one proof this call made X. Until
+//     #665 a consulted os.Stat of X before the creating call exempted
+//     the tightening too, and it lost the race: another process's
+//     mkdir lands between the Stat and the create, the tolerated
+//     EEXIST continues, and the chmod rewrites their directory;
 //   - a directory this code names itself: joined under a receiver
 //     field, an environment value, os.UserConfigDir or a temp root
 //     (the isolation runtime's .gofastr/isolation/<id>, the desktop
@@ -93,7 +96,6 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 	})
 	made := map[string]*ast.CallExpr{} // first MkdirAll per directory
 	mkdirs := map[string]mkdirArm{}    // first Mkdir per directory, awaiting its ErrExist verdict
-	statted := map[string]bool{}       // consulted Stat/Lstat before the creating call
 	reported := map[string]bool{}
 	for _, c := range calls {
 		if len(c.Args) == 0 {
@@ -101,13 +103,6 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 		}
 		k := key(c.Args[0])
 		switch q := pathflow.QualifiedFunc(pass, c.Fun); {
-		case q == "os.Stat" || q == "os.Lstat":
-			// The existence check counts only when its result is
-			// CONSULTED: a bare call or an all-blank discard (2026-11,
-			// AZ12-03) proved nothing about the directory.
-			if made[k] == nil && mkdirs[k] == (mkdirArm{}) && resultConsulted(c, parents) {
-				statted[k] = true
-			}
 		case q == "os.MkdirAll":
 			if made[k] == nil {
 				made[k] = c
@@ -121,18 +116,21 @@ func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl) {
 			// does (2026-11, AZ12-04): the EEXIST path continues past
 			// an existing directory, so the tightening still reaches
 			// one this call did not create.
+			// A tightening inside `if err == nil` on that Mkdir's own
+			// error is the fix: the Mkdir's success says this call made
+			// the directory (#665).
 			armed := made[k] != nil
 			if !armed {
-				if m, ok := mkdirs[k]; ok && errExistTolerated(pass, m, c.Pos(), fn.Body) {
+				if m, ok := mkdirs[k]; ok && errExistTolerated(pass, m, c.Pos(), fn.Body) && !createdGuard(pass, m, c, parents, bound, fn.Body) {
 					armed = true
 				}
 			}
-			if !armed || statted[k] || reported[k] || !callerNamed(pass, c.Args[0], bound, params, 0) {
+			if !armed || reported[k] || !callerNamed(pass, c.Args[0], bound, params, 0) {
 				continue
 			}
 			reported[k] = true
 			pass.Reportf(c.Pos(),
-				"tightenshared: %s tightens the caller-named directory %s after os.MkdirAll, which leaves an existing directory in place: a shared parent (/var/log) loses its group access, or the call fails on a directory another user owns; tighten only a directory this call created (os.Stat first) and refuse an existing one that is too open",
+				"tightenshared: %s tightens the caller-named directory %s after os.MkdirAll, which leaves an existing directory in place: a shared parent (/var/log) loses its group access, or the call fails on a directory another user owns; tighten only a directory this call created (os.Mkdir, and tighten when its error is nil) and refuse an existing one that is too open",
 				shortName(q), types.ExprString(c.Args[0]))
 		}
 	}
@@ -145,24 +143,56 @@ type mkdirArm struct {
 	errObj types.Object
 }
 
-// resultConsulted reports whether a call's results reach a name the
-// function reads: an assignment with a non-blank left side (the
-// compiler forces a later read), or a controlling expression of an
-// if/for/switch, where the result is compared directly. A bare call
-// statement or an all-blank discard consults nothing.
-func resultConsulted(call *ast.CallExpr, parents map[ast.Node]ast.Node) bool {
-	switch p := parents[call].(type) {
-	case *ast.AssignStmt:
-		if len(p.Rhs) == 1 && p.Rhs[0] == call {
-			for _, lhs := range p.Lhs {
-				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
-					return true
-				}
-			}
-		}
+// createdGuard reports whether the tightening c sits in the then-branch
+// of an if whose condition is `err == nil` on the Mkdir's own error
+// variable, directly or through a local bound to that comparison
+// (`created := err == nil`). The Mkdir succeeding is the only proof
+// that this call made the directory: an os.Stat that said "missing"
+// before it loses the race to another process's Mkdir, whose EEXIST
+// the tolerated arm then waves through (#665).
+func createdGuard(pass *analysis.Pass, m mkdirArm, c *ast.CallExpr, parents map[ast.Node]ast.Node, bound map[types.Object]ast.Expr, body *ast.BlockStmt) bool {
+	if m.errObj == nil {
 		return false
-	case *ast.IfStmt, *ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt:
-		return true
+	}
+	for cur := ast.Node(c); cur != nil; cur = parents[cur] {
+		ifs, ok := parents[cur].(*ast.IfStmt)
+		if !ok || cur != ifs.Body || ifs.Pos() < m.call.End() {
+			continue
+		}
+		// The error must still be the Mkdir's: `_, err = os.Stat(dir)`
+		// in between, or in the if's own initializer, makes err nil on
+		// the EEXIST path too.
+		if isErrNil(pass, ifs.Cond, m.errObj, bound, 0) && !assignedBetween(pass, body, m.errObj, m.call.End(), ifs.Cond.Pos()) {
+			return true
+		}
+	}
+	return false
+}
+
+// isErrNil reports whether e is `obj == nil` (either side), or a local
+// bound to one.
+func isErrNil(pass *analysis.Pass, e ast.Expr, obj types.Object, bound map[types.Object]ast.Expr, depth int) bool {
+	if depth > 4 {
+		return false
+	}
+	switch x := ast.Unparen(e).(type) {
+	case *ast.Ident:
+		if b, ok := bound[pass.TypesInfo.ObjectOf(x)]; ok {
+			return isErrNil(pass, b, obj, bound, depth+1)
+		}
+	case *ast.BinaryExpr:
+		if x.Op != token.EQL {
+			return false
+		}
+		isObj := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && pass.TypesInfo.ObjectOf(id) == obj
+		}
+		isNil := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && id.Name == "nil"
+		}
+		return (isObj(x.X) && isNil(x.Y)) || (isNil(x.X) && isObj(x.Y))
 	}
 	return false
 }
@@ -299,4 +329,23 @@ func shortName(q string) string {
 		return q[i+1:]
 	}
 	return q
+}
+
+// assignedBetween reports whether obj is assigned anywhere in body
+// between the positions from and to.
+func assignedBetween(pass *analysis.Pass, body *ast.BlockStmt, obj types.Object, from, to token.Pos) bool {
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || found || st.Pos() < from || st.Pos() >= to {
+			return !found
+		}
+		for _, lhs := range st.Lhs {
+			if id, ok := lhs.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == obj {
+				found = true
+			}
+		}
+		return !found
+	})
+	return found
 }

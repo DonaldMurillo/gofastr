@@ -33,17 +33,18 @@ func markVerified(workdir, id string) error {
 	return f.Close()
 }
 
-// installPluginFixed resolves both sides before creating anything.
+// installPluginFixed resolves only the base: a symlinked component of
+// name joined under the resolved base still leads out (#665).
 func installPluginFixed(baseDir, name string) error {
 	realBase, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
 		return err
 	}
 	target := filepath.Join(realBase, "plugins", name)
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	if err := os.MkdirAll(target, 0o755); err != nil { // want `write under a root with lexical containment only`
 		return err
 	}
-	f, err := os.Create(filepath.Join(target, "binary"))
+	f, err := os.Create(filepath.Join(target, "binary")) // want `write under a root with lexical containment only`
 	if err != nil {
 		return err
 	}

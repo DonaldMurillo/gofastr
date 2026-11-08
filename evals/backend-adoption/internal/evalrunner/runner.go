@@ -186,12 +186,14 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	id := fmt.Sprintf("%s-run-%d", framework, repetition)
 	cellDir := filepath.Join(runDir, "trials", id)
 	workspace := filepath.Join(cellDir, "workspace")
+	//gofastr:allow(rootwrite) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 	if err := os.MkdirAll(workspace, 0o700); err != nil {
 		return TrialResult{}, err
 	}
 	if err := setupWorkspace(ctx, cfg, framework, workspace, cliPath); err != nil {
 		return TrialResult{}, fmt.Errorf("%s setup: %w", id, err)
 	}
+	//gofastr:allow(rootwrite) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 	if err := copyFile(filepath.Join(cfg.RepoRoot, "evals", "backend-adoption", "TASK.md"),
 		filepath.Join(workspace, "EVAL_TASK.md")); err != nil {
 		return TrialResult{}, err
@@ -204,6 +206,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	initialLog := filepath.Join(cellDir, "initial-builder.log")
 	trial.BuilderLog = initialLog
 	started := time.Now()
+	//gofastr:allow(rootwrite) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 	agentErr := runCodex(ctx, cfg, workspace, initialLog,
 		filepath.Join(cellDir, "initial-final.md"), framework, false)
 	initial := Grade(ctx, workspace, cellDir, false)
@@ -212,6 +215,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	if agentErr != nil {
 		initial.AgentError = agentErr.Error()
 	}
+	//gofastr:allow(rootread) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 	if log, err := os.ReadFile(initialLog); err == nil {
 		initial.Tokens = ParseTokenUsage(log)
 	}
@@ -221,12 +225,14 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 	}
 
 	if initial.BuildOK {
+		//gofastr:allow(rootwrite) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 		if err := copyFile(filepath.Join(cfg.RepoRoot, "evals", "backend-adoption", "MAINTENANCE_TASK.md"),
 			filepath.Join(workspace, "EVAL_TASK.md")); err != nil {
 			return TrialResult{}, err
 		}
 		maintenanceLog := filepath.Join(cellDir, "maintenance-builder.log")
 		maintenanceStarted := time.Now()
+		//gofastr:allow(rootwrite) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 		maintenanceErr := runCodex(ctx, cfg, workspace, maintenanceLog,
 			filepath.Join(cellDir, "maintenance-final.md"), framework, true)
 		maintenance := Grade(ctx, workspace, cellDir, true)
@@ -235,6 +241,7 @@ func runTrial(ctx context.Context, cfg Config, runDir, cliPath, codexVersion, fr
 		if maintenanceErr != nil {
 			maintenance.AgentError = maintenanceErr.Error()
 		}
+		//gofastr:allow(rootread) the eval run tree is operator-owned and framework is one of the fixed names validate accepts
 		if log, err := os.ReadFile(maintenanceLog); err == nil {
 			maintenance.Tokens = ParseTokenUsage(log)
 		}

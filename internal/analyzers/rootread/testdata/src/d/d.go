@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func refuseEscape(p string) error {
@@ -47,12 +48,48 @@ func guardAfterStat(baseDir, name string) (os.FileInfo, error) {
 	return fi, nil
 }
 
-// resolveBeforeRead is the fix posture: quiet.
+// resolveBeforeRead reads the resolved path with no containment
+// check: it returned an outside file's bytes in the #665 replay.
 func resolveBeforeRead(baseDir, name string) ([]byte, error) {
 	p := filepath.Join(baseDir, "inbox", name)
 	real, err := filepath.EvalSymlinks(p)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(real)
+	return os.ReadFile(real) // want `read under a root with lexical containment only`
+}
+
+// walkUpward stats name in workingDir and each parent: the walk leaves
+// the directory on purpose, and `dir = filepath.Dir(dir)` is not the
+// self-rebind PathBindings unrolls. Quiet.
+func walkUpward(workingDir, name string) []string {
+	var out []string
+	dir := workingDir
+	for {
+		p := filepath.Join(dir, name)
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
+		}
+		if dir == filepath.Dir(dir) {
+			return out
+		}
+		dir = filepath.Dir(dir)
+	}
+}
+
+// readBackwards returns early on an inside path and reads the outside
+// one.
+func readBackwards(baseDir, name string) ([]byte, error) {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return nil, nil
+	}
+	return os.ReadFile(real) // want `read under a root with lexical containment only`
 }

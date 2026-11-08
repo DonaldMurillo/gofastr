@@ -79,24 +79,24 @@ func guardAfterSink(workDir, id string, data []byte) error {
 	return refuseEscape(p)
 }
 
-// resolveInIfInit runs the EvalSymlinks in the if's Init, the write in
-// its then-branch: the Init always ran first. Quiet.
+// resolveInIfInit writes the resolved path with no containment check:
+// a link under inbox pointing outside wins (#665).
 func resolveInIfInit(baseDir, name string, data []byte) error {
 	if real, err := filepath.EvalSymlinks(filepath.Join(baseDir, "inbox", name)); err == nil {
-		return os.WriteFile(real, data, 0o600)
+		return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 	}
 	return nil
 }
 
-// resolveBeforeLoop resolves once, then writes inside the loop: the
-// resolution dominates every iteration. Quiet.
+// resolveBeforeLoop resolves the root once, then joins each caller
+// name under it: a symlinked component of n still leads out (#665).
 func resolveBeforeLoop(baseDir string, names []string, data []byte) error {
 	root, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
 		return err
 	}
 	for _, n := range names {
-		if err := os.WriteFile(filepath.Join(root, n), data, 0o600); err != nil {
+		if err := os.WriteFile(filepath.Join(root, n), data, 0o600); err != nil { // want `write under a root with lexical containment only`
 			return err
 		}
 	}
