@@ -99,6 +99,16 @@ few lines, and link the PR or the docs page for the rest.
   (`sub.Mrr`, `inv.DueOn`) stops compiling: dereference, and nil is
   the honest "absent" it was silently losing before. Write shapes are
   unchanged.
+- **Meridian's billing lifecycles are enforced, not advised**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Invoices gain `issue` (draft→open) and `mark_past_due`
+  (open→past_due), and `mark_paid` no longer pays a draft — an
+  invoice must be issued before it can collect money. Subscriptions
+  gain `mark_past_due` (active→past_due). Both states blocks drop
+  `advisory:`, so the CRUD layer also refuses a create or update that
+  writes the status directly; the seed runs under
+  `framework.WithStateOverride(ctx, "seed")`, which the audit log
+  records.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler

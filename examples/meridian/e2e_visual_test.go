@@ -96,7 +96,9 @@ func seedVisualRecords(t *testing.T, ctx context.Context) string {
 			return j.id ?? j.data?.id;
 		};
 		const customer = await post("/api/customers", {name: "Ada Lovelace", email: "ada+" + Date.now() + "@example.com", company: "Analytical"});
-		const invoice = await post("/api/invoices", {customer_id: customer, number: "INV-V" + Date.now(), amount: "1200.00", status: "open"});
+		const invoice = await post("/api/invoices", {customer_id: customer, number: "INV-V" + Date.now(), amount: "1200.00"});
+		const mv = await fetch("/api/invoices/" + invoice + "/transitions/issue", {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+		if (mv.status >= 300) throw new Error("issue invoice = " + mv.status + " " + await mv.text());
 		await post("/api/payments", {invoice_id: invoice, customer_id: customer, amount: "600.00"});
 		const binned = await post("/api/payments", {invoice_id: invoice, customer_id: customer, amount: "75.00", method: "wire"});
 		const d = await fetch("/api/payments/" + binned, {method: "DELETE"});

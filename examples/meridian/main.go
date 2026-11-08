@@ -81,6 +81,11 @@ func main() {
 		if u, _, err := auth.NewEntityUserStore(db, "auth_users").FindByEmail(ctx, "admin@meridian.dev"); err == nil && u != nil {
 			ctx = handler.SetUser(ctx, u)
 		}
+		// The billing statuses are enforced lifecycles now: a seeded
+		// row starts wherever the demo data says (a paid invoice, an
+		// active subscription). The override is the audited way in —
+		// the audit log records "seed" as the reason on every write.
+		ctx = framework.WithStateOverride(ctx, "seed")
 		for _, s := range seedData() {
 			ch, err := fwApp.CrudHandler(s.Entity)
 			if err != nil {
