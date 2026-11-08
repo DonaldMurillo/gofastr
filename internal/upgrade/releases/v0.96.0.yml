@@ -1482,3 +1482,6 @@ notes:
     breaking: true
     guidance: "Nothing refused a second start before. Build a new App to run again, over the same database or data directory if the data should survive; a test that restarts an App builds one per run."
     nodetect: "whether one App value is started twice is a runtime flow; the Start, Serve or Run call that does it has no spelling of its own"
+  - change: "migrate generate now emits the NOT NULL tightening for a required-no-default column it earlier added nullable; backfill the rows before applying it"
+    guidance: "The snapshot used to record the column as NOT NULL even though the migration added it nullable, so the tightening never generated. If a schema.snapshot.json in the repo was written with such a column pending, the next gofastr migrate generate emits the tightening (ALTER COLUMN ... SET NOT NULL on Postgres, a table rebuild on SQLite). It fails while any row still holds NULL: backfill the column in the generated file or before applying."
+    nodetect: "whether a deferred NOT NULL column is pending lives in the committed schema.snapshot.json, not in app source"

@@ -145,6 +145,16 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A deferred `NOT NULL` is tightened by a later migration.** A
+  required field with no default used to be added nullable (so existing
+  rows would not violate the constraint) while the snapshot recorded it
+  as `NOT NULL`, so the tightening was never generated and a later
+  SQLite table rebuild copied NULL rows into a `NOT NULL` column with
+  no change ever naming it. The snapshot now records the column as it
+  was applied, so the next `migrate generate` emits the tightening
+  (`ALTER COLUMN … SET NOT NULL` on Postgres, a named constraint change
+  on the SQLite rebuild). Backfill the rows first: the tightening fails
+  while any row still holds NULL.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

@@ -375,9 +375,14 @@ auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
 *nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing
 rows fails on a populated table, so the constraint is deferred (the
-change summary notes this); backfill the rows and tighten it in a later
-migration. A required field that has a default keeps `NOT NULL`, since
-every existing row gets the default. Type changes are DETECTED and surfaced
+change summary notes this). The snapshot records the column as it was
+applied — nullable — so the *next* `migrate generate` emits the
+tightening (`ALTER COLUMN … SET NOT NULL` on Postgres, a named
+constraint change on the SQLite rebuild); backfill the rows first,
+because the tightening fails while any row holds NULL. A required field
+that has a default keeps `NOT NULL`, since every existing row gets the
+default.
+Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
 Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so

@@ -262,6 +262,13 @@ type fkDiffEnv struct {
 	tables     map[string]map[string]string
 	keyChanged map[string][]string
 	deferred   []SchemaChange
+	// deferredNotNull records, per table, the columns this change set
+	// added WITHOUT their declared NOT NULL (a Required field with no
+	// default goes on nullable, or every existing row would violate the
+	// constraint). The snapshot writer reads it so the recorded CREATE
+	// TABLE says what was applied, and the next generation emits the
+	// tightening instead of believing it already happened.
+	deferredNotNull map[string][]string
 	// uniques is the snapshot's unique columns per table (snapshotUniques);
 	// nil (the live diff) or a missing table skips the comparison.
 	uniques map[string][]string
