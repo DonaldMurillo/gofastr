@@ -572,14 +572,19 @@ func dslCondition(field schema.Field, op, raw string) (string, []any, error) {
 	}
 }
 
+// hasRelation reports whether name is a relation of ent a caller may
+// include. A relation behind a Hidden field (entity.HidesRelation), or a
+// Hidden relation field, is not one, the answer crud's relationByName
+// gives: its include would put the related record, and the hidden key,
+// in the result.
 func hasRelation(ent *entity.Entity, name string) bool {
 	for _, relation := range ent.Config.Relations {
 		if relation.Name == name {
-			return true
+			return !ent.HidesRelation(relation)
 		}
 	}
 	for _, field := range ent.GetFields() {
-		if field.Type == schema.Relation && relationNameFromField(field.Name) == name {
+		if field.Type == schema.Relation && !field.Hidden && relationNameFromField(field.Name) == name {
 			return true
 		}
 	}

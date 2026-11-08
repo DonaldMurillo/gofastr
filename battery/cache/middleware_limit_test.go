@@ -68,3 +68,16 @@ func TestCacheMiddleware_UnderCapStillCaches(t *testing.T) {
 		t.Errorf("origin hits = %d, want 1 (second served from cache)", hits)
 	}
 }
+
+// TestCacheLimitRefusesNegative pins the construction guard: a negative
+// cap used to read as "no cap" and buffered every response whole.
+func TestCacheLimitRefusesNegative(t *testing.T) {
+	defer func() {
+		r := recover()
+		msg, _ := r.(string)
+		if !strings.Contains(msg, "maxBodyBytes -1") {
+			t.Fatalf("recover() = %v, want a panic naming maxBodyBytes -1", r)
+		}
+	}()
+	CacheMiddlewareWithLimit(NewMemoryCache(), time.Minute, -1)
+}

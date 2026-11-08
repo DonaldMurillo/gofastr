@@ -89,6 +89,15 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **The query DSL refuses `include()` of a hidden relation**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
+  marked `Relation.Hidden`; it now answers relation-not-found, as
+  `?include=` does.
+- **`cache.CacheMiddlewareWithLimit` panics on a negative
+  `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A negative cap read as no cap and buffered every response whole; `0`
+  still means unbounded.
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
