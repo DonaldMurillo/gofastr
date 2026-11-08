@@ -382,6 +382,13 @@ constraint change on the SQLite rebuild); backfill the rows first,
 because the tightening fails while any row holds NULL. A required field
 that has a default keeps `NOT NULL`, since every existing row gets the
 default.
+
+`gofastr migrate generate` warns on its own output when the Up section
+runs any `DROP TABLE` or `DROP COLUMN`, naming each one. A rename is
+indistinguishable from a removal, so an undeclared rename generates as a
+drop plus a create and loses every row; if the drop is a rename in
+disguise, declare it (`renames:` on the entity) and regenerate instead.
+
 Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
 Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer

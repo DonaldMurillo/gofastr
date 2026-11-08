@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
@@ -94,11 +95,162 @@ func runMigrateGenerate(args []string) {
 	}
 
 	cli.Success("Generated %s", path)
+	if body, err := os.ReadFile(path); err == nil {
+		if drops := destructiveDrops(string(body)); len(drops) > 0 {
+			cli.Warn("Destructive: `gofastr migrate up` will run %s.", strings.Join(drops, ", "))
+			cli.Info("Dropped tables and columns lose their rows; the Down restores the shape, not the data. Declare a rename (entity renames: in the app spec) instead of dropping and re-adding.")
+		}
+	}
 	cli.Info("Review it, commit it, then run `gofastr migrate up`.")
 	if body, err := os.ReadFile(path); err == nil &&
 		!strings.Contains(string(body), "-- +migrate Down") {
 		cli.Info("Note: this migration has no Down section (no safe inverse): it is not reversible.")
 	}
+}
+
+// destructiveDrops names every DROP TABLE and DROP COLUMN a rendered
+// migration's Up section runs. A drop loses rows the Down cannot restore,
+// and an undeclared rename generates as DROP + CREATE, so the reviewer
+// gets one loud line naming each loss before the file is committed. Only
+// the Up counts: the Down of an additive migration drops what it added,
+// which is the rollback, not a loss. Statements are split with string
+// literals, quoted identifiers and comments respected, so a DEFAULT
+// carrying the words DROP TABLE is not a drop.
+func destructiveDrops(content string) []string {
+	up, ok := upSection(content)
+	if !ok {
+		return nil
+	}
+	var drops []string
+	for _, stmt := range splitSQLStatements(up) {
+		stmt = strings.TrimSpace(stmt)
+		if t, ok := dropTableTarget(stmt); ok {
+			drops = append(drops, "DROP TABLE "+t)
+			continue
+		}
+		if t, c, ok := dropColumnTarget(stmt); ok {
+			drops = append(drops, "DROP COLUMN "+t+"."+c)
+		}
+	}
+	return drops
+}
+
+// upSection returns the body between the "-- +migrate Up" directive and
+// the next directive (or EOF), the statements `migrate up` runs.
+func upSection(content string) (string, bool) {
+	var b strings.Builder
+	in := false
+	for line := range strings.SplitSeq(content, "\n") {
+		if strings.HasPrefix(line, "-- +migrate") {
+			if in {
+				break
+			}
+			in = strings.HasPrefix(line, "-- +migrate Up")
+			continue
+		}
+		if in {
+			b.WriteString(line)
+			b.WriteString("\n")
+		}
+	}
+	return b.String(), in
+}
+
+// splitSQLStatements splits SQL on ";" outside single-quoted strings,
+// double-quoted identifiers, line comments and block comments.
+func splitSQLStatements(sql string) []string {
+	var stmts []string
+	var cur []byte
+	var quote byte
+	for i := 0; i < len(sql); i++ {
+		c := sql[i]
+		switch {
+		case quote == '\'':
+			cur = append(cur, c)
+			if c == '\'' {
+				if i+1 < len(sql) && sql[i+1] == '\'' { // escaped ''
+					cur = append(cur, '\'')
+					i++
+				} else {
+					quote = 0
+				}
+			}
+		case quote == '"':
+			cur = append(cur, c)
+			if c == '"' {
+				if i+1 < len(sql) && sql[i+1] == '"' { // escaped ""
+					cur = append(cur, '"')
+					i++
+				} else {
+					quote = 0
+				}
+			}
+		case c == '\'' || c == '"':
+			quote = c
+			cur = append(cur, c)
+		case c == '-' && i+1 < len(sql) && sql[i+1] == '-':
+			for ; i < len(sql) && sql[i] != '\n'; i++ {
+				cur = append(cur, sql[i])
+			}
+		case c == '/' && i+1 < len(sql) && sql[i+1] == '*':
+			for ; i+1 < len(sql); i++ {
+				cur = append(cur, sql[i])
+				if sql[i] == '*' && sql[i+1] == '/' {
+					cur = append(cur, '/')
+					i++
+					break
+				}
+			}
+		case c == ';':
+			stmts = append(stmts, string(cur))
+			cur = cur[:0]
+		default:
+			cur = append(cur, c)
+		}
+	}
+	if s := strings.TrimSpace(string(cur)); s != "" {
+		stmts = append(stmts, string(cur))
+	}
+	return stmts
+}
+
+// identPart and qualName match the spellings query.QuoteKeyword emits:
+// a part is bare unless it is a keyword, and a schema-qualified table
+// (`archive.posts`, `posts."order"`) is parts joined by dots.
+const (
+	identPart = `(?:\"[^\"]+\"|[A-Za-z_][A-Za-z0-9_$]*)`
+	qualName  = identPart + `(?:\.` + identPart + `)*`
+)
+
+var (
+	dropTableRe  = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
+	dropColumnRe = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
+)
+
+func dropTableTarget(stmt string) (string, bool) {
+	m := dropTableRe.FindStringSubmatch(stmt)
+	if m == nil {
+		return "", false
+	}
+	return unquoteIdent(m[1]), true
+}
+
+func dropColumnTarget(stmt string) (table, column string, ok bool) {
+	m := dropColumnRe.FindStringSubmatch(stmt)
+	if m == nil {
+		return "", "", false
+	}
+	return unquoteIdent(m[1]), unquoteIdent(m[2]), true
+}
+
+// unquoteIdent strips each part's keyword quotes, keeping the dots of a
+// schema-qualified name.
+func unquoteIdent(s string) string {
+	parts := strings.Split(s, ".")
+	for i, p := range parts {
+		parts[i] = strings.Trim(p, `"`)
+	}
+	return strings.Join(parts, ".")
 }
 
 // generateDialect is the DDL dialect for a --db/--driver value. The

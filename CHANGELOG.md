@@ -155,6 +155,11 @@ few lines, and link the PR or the docs page for the rest.
   (`ALTER COLUMN … SET NOT NULL` on Postgres, a named constraint change
   on the SQLite rebuild). Backfill the rows first: the tightening fails
   while any row still holds NULL.
+- **`gofastr migrate generate` warns when its output drops data.** A
+  generated Up section running any `DROP TABLE` or `DROP COLUMN` now
+  prints a warning naming each one. An undeclared rename generates as a
+  drop plus a create and loses every row; the warning says so and points
+  at the entity's `renames:` declaration.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
