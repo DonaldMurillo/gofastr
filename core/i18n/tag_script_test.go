@@ -60,3 +60,28 @@ func TestTraditionalTextSkipsSimplified(t *testing.T) {
 		t.Errorf("T under zh-tw = %q, want the zh-hant text", got)
 	}
 }
+
+func TestDeprecatedTagsFindModernCatalog(t *testing.T) {
+	for _, pair := range [][2]string{{"iw", "he"}, {"in", "id"}, {"ji", "yi"}, {"tl", "fil"}, {"mo", "ro"}} {
+		for _, suffix := range []string{"", "-IL"} {
+			tag := pair[0] + suffix
+			cat := NewMapCatalog()
+			cat.Set("en", "hi", Message{Text: "English"})
+			cat.Set(pair[1], "hi", Message{Text: "modern"})
+			tr := NewTranslator(cat, "en")
+			req := httptest.NewRequest("GET", "/", nil)
+			req.Header.Set("Accept-Language", tag)
+			if got := Negotiate(tr, req).Tag; got != pair[1] {
+				t.Errorf("%s negotiated %s, want %s", tag, got, pair[1])
+			}
+			ctx := WithContext(context.Background(), Locale{Tag: tag})
+			if got := tr.T(ctx, "hi"); got != "modern" {
+				t.Errorf("%s text = %q, want modern", tag, got)
+			}
+			cat.Set(pair[0], "hi", Message{Text: "original"})
+			if got := tr.T(ctx, "hi"); got != "original" {
+				t.Errorf("%s lost original catalog priority: %q", tag, got)
+			}
+		}
+	}
+}
