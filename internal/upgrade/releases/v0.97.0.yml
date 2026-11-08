@@ -19,3 +19,11 @@ notes:
         - mcp.WithResourceGate
         - mcp.WithPromptGate
         - mcp.Gated
+
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of the framework well-known documents' URLs (MCP server card, /.well-known/mcp.json, api-catalog, /auth.md, agent extras) unless the TCP peer is listed in the new AppConfig.TrustedProxies, and the new AppConfig.BaseURL pins the origin outright"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8) or set AppConfig.BaseURL to the canonical https origin; otherwise the documents advertise http:// URLs. Apps not behind a proxy, or with an explicit BaseURL, are unaffected."
+    find:
+      uses:
+        - gofastr.NewApp

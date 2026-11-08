@@ -21,50 +21,72 @@ import (
 )
 
 // resolveWellKnownBase returns the canonical origin for absolute URLs in
-// well-known docs. These docs live at the framework layer, which has no
-// sitemap base to fall back on, so the request is the source of truth.
+// well-known docs.
 //
-// X-Forwarded-Host is NOT honored. It is a plain request header, so any
-// client sets it, and the value ends up in the `Link: rel="service"`
-// header naming the MCP endpoint. Reflecting an arbitrary origin there,
-// with no Vary, is a cache-poisoning primitive that redirects a later
-// visitor's agent at an attacker's server. That is the same reasoning
-// battery/print already documents for its BaseURL ("deliberately NOT
-// derived from the request Host header, which is client-controlled").
+// AppConfig.BaseURL wins outright when set: a configured origin is the
+// one the operator publishes, and it varies with no request input.
 //
-// r.Host is used instead: still client-supplied, but it is the authority
-// the request was actually addressed to, and varyWellKnown below keeps
-// caches from serving one caller's value to another.
+// Without one, the request is the source of truth, under two rules:
 //
-// X-Forwarded-Proto IS honored, a TLS-terminating proxy is the normal
-// deployment — but only as an exact "http"/"https". The raw value is
-// request-controlled and this origin is reflected into the well-known
-// document's absolute URLs, so a forged "https://evil.example/p" would
-// paint an attacker-named origin into cacheable output, and "https,http"
-// (a two-hop proxy chain) is not a scheme at all. Vary narrows who
-// receives a poisoned entry; it does not clean the value. Same enum as
-// framework/uihost/agentready.go and framework/pluginhost/assets.go.
-func resolveWellKnownBase(r *http.Request) string {
+//   - X-Forwarded-Host is NOT honored. It is a plain request header, so
+//     any client sets it, and the value ends up in the `Link:
+//     rel="service"` header naming the MCP endpoint. Reflecting an
+//     arbitrary origin there, with no Vary, is a cache-poisoning
+//     primitive that redirects a later visitor's agent at an attacker's
+//     server. That is the same reasoning battery/print already documents
+//     for its BaseURL ("deliberately NOT derived from the request Host
+//     header, which is client-controlled").
+//
+//   - r.Host is used: still client-supplied, but it is the authority the
+//     request was actually addressed to, and varyWellKnown below keeps
+//     caches from serving one caller's value to another.
+//
+//   - X-Forwarded-Proto is honored ONLY from a configured trusted proxy
+//     (AppConfig.TrustedProxies), as an exact "http"/"https". The raw
+//     value is request-controlled and this origin is reflected into the
+//     well-known document's absolute URLs, so a forged
+//     "https://evil.example/p" would paint an attacker-named origin into
+//     cacheable output, and "https,http" (a two-hop proxy chain) is not a
+//     scheme at all. Vary narrows who receives a poisoned entry; it does
+//     not clean the value. Same enum as framework/uihost/agentready.go
+//     and framework/pluginhost/assets.go, same trust list the rate
+//     limiters apply to X-Forwarded-For (internal/clientip).
+func (a *App) resolveWellKnownBase(r *http.Request) string {
+	if base := strings.TrimRight(a.Config.BaseURL, "/"); base != "" {
+		return base
+	}
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	if u := r.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
-		scheme = u
+	if a.trustedProxies.ContainsAddr(r.RemoteAddr) {
+		if u := r.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
+			scheme = u
+		}
 	}
 	return strings.TrimRight(scheme+"://"+r.Host, "/")
 }
 
+// wellKnownVaries reports whether the well-known documents' bodies vary
+// on request inputs (true unless AppConfig.BaseURL pins the origin).
+func (a *App) wellKnownVaries() bool {
+	return strings.TrimRight(a.Config.BaseURL, "/") == ""
+}
+
 // varyWellKnown declares the request inputs the response body depends
 // on, so a shared cache keys on them instead of serving the first
-// caller's absolute URLs to everyone behind it.
-func varyWellKnown(w http.ResponseWriter) {
+// caller's absolute URLs to everyone behind it. A configured BaseURL
+// removes the dependency, and the Vary with it.
+func (a *App) varyWellKnown(w http.ResponseWriter) {
+	if !a.wellKnownVaries() {
+		return
+	}
 	w.Header().Add("Vary", "Host")
 	w.Header().Add("Vary", "X-Forwarded-Proto")
 }
 
-func writeWellKnownJSON(w http.ResponseWriter, doc any) {
-	varyWellKnown(w)
+func (a *App) writeWellKnownJSON(w http.ResponseWriter, doc any) {
+	a.varyWellKnown(w)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)
@@ -78,9 +100,9 @@ func writeWellKnownJSON(w http.ResponseWriter, doc any) {
 // (service-desc) + Swagger docs (service-doc) + status. Served when the
 // app has entities (i.e. /openapi.json is mounted).
 func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
-	base := resolveWellKnownBase(r)
+	base := a.resolveWellKnownBase(r)
 	prefix := a.apiPrefix() // "" or "/api"
-	writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, map[string]any{
 		"linkset": []map[string]any{{
 			"anchor": base + "/",
 			"service-desc": []map[string]any{{
@@ -115,7 +137,7 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 	// Same Vary discipline as every sibling well-known document: the
 	// card body embeds remotes[].url built from r.Host and
 	// X-Forwarded-Proto, so a shared cache must key on those inputs.
-	varyWellKnown(w)
+	a.varyWellKnown(w)
 	w.Header().Set("Content-Type", "application/mcp-server-card+json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	enc := json.NewEncoder(w)
@@ -126,8 +148,8 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 // handleMCPCatalog serves /.well-known/mcp/catalog.json, the spec-
 // recommended well-known that points at the server card.
 func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
-	base := resolveWellKnownBase(r)
-	writeWellKnownJSON(w, map[string]any{
+	base := a.resolveWellKnownBase(r)
+	a.writeWellKnownJSON(w, map[string]any{
 		"specVersion": "draft",
 		"entries": []map[string]any{{
 			"identifier":  "urn:air:" + a.mcpCardName(),
@@ -140,7 +162,7 @@ func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 
 // buildMCPServerCard assembles the spec-shaped server card.
 func (a *App) buildMCPServerCard(r *http.Request) map[string]any {
-	base := resolveWellKnownBase(r)
+	base := a.resolveWellKnownBase(r)
 	_, version := a.MCP.ServerInfo()
 	return map[string]any{
 		"$schema":     "https://static.modelcontextprotocol.io/schemas/v1/server-card.schema.json",
@@ -224,7 +246,7 @@ func (a *App) handleAgentSkillsIndex(w http.ResponseWriter, r *http.Request) {
 			skills[i].Type = "skill-md"
 		}
 	}
-	writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, map[string]any{
 		"$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
 		"skills":  skills,
 	})
@@ -290,5 +312,5 @@ func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Requ
 	if ab := a.agentAuthBlock(r); ab != nil {
 		doc["agent_auth"] = ab
 	}
-	writeWellKnownJSON(w, doc)
+	a.writeWellKnownJSON(w, doc)
 }

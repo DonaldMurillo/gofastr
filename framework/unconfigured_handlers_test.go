@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // Each of these discovery/manifest handlers guards on "the host never
@@ -61,24 +62,35 @@ func TestMCPRequireUserAcceptsResolvedUser(t *testing.T) {
 // weighs the forged-header risk, so both branches deserve to be pinned rather
 // than inferred.
 func TestResolveWellKnownBaseScheme(t *testing.T) {
+	app := NewApp()
 	plain := httptest.NewRequest("GET", "http://app.example/x", nil)
-	if got := resolveWellKnownBase(plain); got != "http://app.example" {
+	if got := app.resolveWellKnownBase(plain); got != "http://app.example" {
 		t.Errorf("plain request base = %q", got)
 	}
 
 	tls := httptest.NewRequest("GET", "https://app.example/x", nil)
 	tls.TLS = &tlsConnState
-	if got := resolveWellKnownBase(tls); got != "https://app.example" {
+	if got := app.resolveWellKnownBase(tls); got != "https://app.example" {
 		t.Errorf("TLS request base = %q, want https", got)
 	}
 
 	// A terminating proxy speaks for the scheme; the host is NOT taken from a
-	// forwarded header (that was closed in v0.45.0).
+	// forwarded header (that was closed in v0.45.0). And the proxy speaks
+	// only when it is a configured TrustedProxies peer (#669): a client
+	// forging X-Forwarded-Proto itself changes nothing.
 	fwd := httptest.NewRequest("GET", "http://app.example/x", nil)
 	fwd.Header.Set("X-Forwarded-Proto", "https")
 	fwd.Header.Set("X-Forwarded-Host", "evil.example")
-	if got := resolveWellKnownBase(fwd); got != "https://app.example" {
-		t.Errorf("forwarded-proto base = %q, want https on the real host", got)
+	fwd.RemoteAddr = "203.0.113.9:4444"
+	if got := app.resolveWellKnownBase(fwd); got != "http://app.example" {
+		t.Errorf("untrusted forwarded-proto base = %q, want http on the real host", got)
+	}
+
+	app.Config.TrustedProxies = []string{"10.0.0.0/8"}
+	app.trustedProxies = clientip.ParseProxies(app.Config.TrustedProxies)
+	fwd.RemoteAddr = "10.1.2.3:4444"
+	if got := app.resolveWellKnownBase(fwd); got != "https://app.example" {
+		t.Errorf("trusted forwarded-proto base = %q, want https on the real host", got)
 	}
 }
 

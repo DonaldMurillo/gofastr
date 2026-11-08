@@ -1,6 +1,9 @@
 package framework
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 // WithConfig replaces the whole AppConfig. An earlier granular option's field
 // does NOT survive a later WithConfig: fields WithConfig leaves at the zero
@@ -52,6 +55,8 @@ func TestWithConfigCopiesEveryField(t *testing.T) {
 		NoLLMMD:               true,
 		PublicOpenAPI:         true,
 		APIPrefix:             "/api",
+		BaseURL:               "https://base.example",
+		TrustedProxies:        []string{"10.0.0.0/8"},
 		RequestTimeout:        7,
 		DisableRequestTimeout: true,
 		ShutdownTimeout:       9,
@@ -59,7 +64,7 @@ func TestWithConfigCopiesEveryField(t *testing.T) {
 	}
 	app := NewApp(WithConfig(cfg))
 	got := app.Config
-	if got != cfg {
+	if !reflect.DeepEqual(got, cfg) {
 		t.Fatalf("WithConfig did not copy AppConfig verbatim:\n got=%+v\nwant=%+v", got, cfg)
 	}
 }

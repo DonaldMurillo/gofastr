@@ -103,6 +103,18 @@ few lines, and link the PR or the docs page for the rest.
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
   already were.
+- **BREAKING: the well-known documents no longer take their origin
+  from an arbitrary client** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was #657).
+  The MCP server card, `/.well-known/mcp.json`, the api-catalog,
+  `/auth.md` and the agent extras built their absolute URLs from the
+  request Host and an `X-Forwarded-Proto` header any client could set,
+  painting an attacker-named origin into cacheable discovery documents.
+  New `AppConfig.BaseURL` pins the origin outright (and the documents
+  stop varying on Host/`X-Forwarded-Proto`); without it,
+  `X-Forwarded-Proto` is honored only from a peer listed in the new
+  `AppConfig.TrustedProxies`, the same trust rule the rate limiters
+  apply to `X-Forwarded-For`. Behind a TLS-terminating proxy, list the
+  proxy or set `BaseURL`, or the documents advertise `http://` origins.
 - **BREAKING: an MCP item gate answers exactly as an unknown name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #656). `tools/call`, `resources/read` and `prompts/get` answered an

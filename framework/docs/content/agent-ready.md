@@ -749,12 +749,21 @@ payment backend), WebMCP (client-side browser API), ap2 (server-only).
 All absolute discovery URLs (agent card `url`, `Link` header targets) use one
 canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
 `WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
-Set one origin and every artifact stays consistent. Behind a proxy,
-`X-Forwarded-Proto` is honored for the scheme, but `X-Forwarded-Host` is
-deliberately **not**: it is client-settable and reflecting it into the
-`Link: rel="service"` header would be a cache-poisoning primitive, so the
-addressed `Host` is used instead. Set `BaseURL` explicitly when your proxy
-rewrites the host.
+Behind a proxy, `X-Forwarded-Proto` is honored for the scheme, but
+`X-Forwarded-Host` is deliberately **not**: it is client-settable and
+reflecting it into the `Link: rel="service"` header would be a
+cache-poisoning primitive, so the addressed `Host` is used instead. Set
+`BaseURL` explicitly when your proxy rewrites the host.
+
+The framework layer's own well-known documents (the MCP server card,
+`/.well-known/mcp.json`, `/.well-known/api-catalog`, `/auth.md`, the
+agent extras) resolve their origin the same way, from `AppConfig`:
+`BaseURL` wins outright when set, and without it the scheme comes from
+the TLS state, with `X-Forwarded-Proto` honored only from a peer listed
+in `AppConfig.TrustedProxies` — the same trust rule the rate limiters
+apply to `X-Forwarded-For`. An empty `TrustedProxies` trusts nobody:
+behind a TLS-terminating proxy that forwards the header, list the proxy
+or set `BaseURL`, or the documents advertise `http://` origins.
 
 Signed cards are the exception to the per-request fallback: with
 `SigningKeys` set, an explicit `BaseURL` is **required** and the host

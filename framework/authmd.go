@@ -73,7 +73,7 @@ func (a *App) agentAuthBlock(r *http.Request) map[string]any {
 	b := a.authMD.AgentAuth
 	skill := b.Skill
 	if skill == "" {
-		skill = resolveWellKnownBase(r) + "/auth.md"
+		skill = a.resolveWellKnownBase(r) + "/auth.md"
 	}
 	types := b.IdentityTypesSupported
 	if len(types) == 0 {

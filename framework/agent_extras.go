@@ -86,7 +86,7 @@ func (a *App) handleWebBotAuthDirectory(w http.ResponseWriter, _ *http.Request) 
 	if keys == nil {
 		keys = []map[string]any{}
 	}
-	writeWellKnownJSON(w, map[string]any{"keys": keys})
+	a.writeWellKnownJSON(w, map[string]any{"keys": keys})
 }
 
 // VerifiedAgent returns the identity established by a verified Web Bot
@@ -160,7 +160,7 @@ func (a *App) handleUCP(w http.ResponseWriter, _ *http.Request) {
 	if len(cfg.SpecURLs) > 0 {
 		doc["specs"] = cfg.SpecURLs
 	}
-	writeWellKnownJSON(w, doc)
+	a.writeWellKnownJSON(w, doc)
 }
 
 // ── Agentic Commerce Protocol (/.well-known/acp.json) ──────────────
@@ -186,7 +186,7 @@ func (a *App) handleACP(w http.ResponseWriter, r *http.Request) {
 	cfg := a.acp
 	apiBase := cfg.APIBaseURL
 	if apiBase == "" {
-		apiBase = resolveWellKnownBase(r)
+		apiBase = a.resolveWellKnownBase(r)
 	}
 	transports := cfg.Transports
 	if transports == nil {
@@ -196,7 +196,7 @@ func (a *App) handleACP(w http.ResponseWriter, r *http.Request) {
 	if services == nil {
 		services = []map[string]any{}
 	}
-	writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, map[string]any{
 		"protocol":     map[string]string{"name": "acp", "version": cfg.ProtocolVersion},
 		"api_base_url": apiBase,
 		"transports":   transports,
