@@ -44,12 +44,16 @@ func Settle(dest any) error {
 	return walk(reflect.ValueOf(dest), Lossless, map[uintptr]bool{})
 }
 
-// Lossless is n as a float64 when the float64 holds it exactly, the type
-// json.Unmarshal has always given an interface, and n itself otherwise.
-// An integer past 2^53 (9007199254740993) stays a json.Number, which
-// marshals back with the same digits; code reading a float64 sees what it
-// always did for every value json.Unmarshal did not round. A literal out
-// of float64's range (1e400) is an error, as json.Unmarshal reports it.
+// Lossless is n as a float64 when its magnitude is under 2^53, the type
+// json.Unmarshal has always given an interface, and n itself, a
+// json.Number, for any magnitude of 2^53 or more. The cut is by size,
+// not by exactness: 2^53 and 1e300 stay json.Number although a float64
+// holds both exactly, and a fraction under 2^53 (0.1) becomes the
+// float64 json.Unmarshal rounds it to. Under 2^53 every integer has an
+// exact float64, so code reading a float64 sees what it always did; at
+// or past it a json.Number marshals back with the same digits. A literal
+// out of float64's range (1e400) is an error, as json.Unmarshal reports
+// it.
 func Lossless(n json.Number) (any, error) {
 	f, err := n.Float64()
 	if err != nil {
