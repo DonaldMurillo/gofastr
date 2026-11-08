@@ -38,6 +38,10 @@ Requires Go 1.27.3+. Install the CLI:
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@latest
 ```
 
+Releases built with `gofastr release` also carry prebuilt binaries and
+install scripts (`curl -fsSL https://github.com/DonaldMurillo/gofastr/releases/latest/download/install.sh | sh`,
+or `install.ps1` on Windows); see [cli](framework/docs/content/cli.md).
+
 Three complete programs, smallest to fullest, the same three the
 site's homepage shows (`examples/site`): plain `core/`, one `framework`
 entity, and the full app shape. CI extracts all three from this README,
@@ -290,6 +294,7 @@ app.Entity("posts", framework.EntityConfig{
 | Custom routes    | `EntityConfig.Endpoints` with optional MCP exposure                             |
 | Client SDKs      | `gofastr generate sdk`: a Go module with typed Local/Remote repositories + JS/TS clients, with a live docs site ([sdk](framework/docs/content/sdk.md)) |
 | Customer CLI     | `gofastr generate cli`: a branded terminal client for your customers, scoped API-token auth |
+| Release downloads | `gofastr release`: cross-built archives, `checksums.txt`, and `install.sh` / `install.ps1` that verify and install a CLI or service binary ([release](framework/docs/content/release.md)) |
 
 Try all of it against a running server: [`examples/api-tour`](examples/api-tour/README.md)
 is the curl tour, covering eager loading, cursor paging, atomic batch, SSE,

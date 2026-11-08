@@ -4,6 +4,17 @@
 go install github.com/DonaldMurillo/gofastr/cmd/gofastr@vX.Y.Z
 ```
 
+Without a Go toolchain, each release (from the first one built with
+`gofastr release`) carries install scripts for the prebuilt binaries:
+
+```bash
+curl -fsSL https://github.com/DonaldMurillo/gofastr/releases/latest/download/install.sh | sh
+```
+
+```powershell
+irm https://github.com/DonaldMurillo/gofastr/releases/latest/download/install.ps1 | iex
+```
+
 One binary. `gofastr <command> --help` (or `gofastr help <command>`)
 prints every flag; `gofastr help` is the command overview. This page maps
 each command to the doc that covers it.
@@ -344,6 +355,13 @@ directive for GoFastr, and the GoFastr module itself skip the check.
 - `gofastr generate cli`: a customer-facing terminal client for your
   API, with scoped API-token auth. Derived: every run rebuilds its
   `*.gen.go` files and keeps `custom.go` ([app-cli](app-cli.md)).
+- `gofastr release --version=<semver> [--pkg ./cmd/myapp] [--url <https-url>]`:
+  cross-build a CLI or service binary for macOS, Linux and Windows
+  (amd64 and arm64), pack each build as a `.tar.gz` or `.zip`, write
+  `checksums.txt`, and with `--url` write `install.sh` and `install.ps1`,
+  which download, verify and install the build for the machine they
+  run on. `--service` makes them run `<name> service install` too
+  ([release](release.md)).
 - `gofastr generate client [--force] [--dry-run] [--json]`: rebuild
   `entities/client/client.go`, the app's typed Go client, from
   `entities/*.go`. Plain `gofastr generate` and `gofastr build` run it
