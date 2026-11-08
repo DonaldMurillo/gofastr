@@ -10,8 +10,9 @@ import (
 // LintRuntimeProse fires when English prose written in a JS string
 // literal reaches a reader: a toast (NS.toast, NS._toastOrFallback,
 // NS._fallbackToast, _showNavToast), the browser's own dialogs (alert,
-// confirm, prompt), askWords dialog options, a text node (createTextNode, or a literal argument
-// of append, prepend, replaceChildren, before, after or replaceWith,
+// confirm, prompt), askWords dialog options, a text node
+// (createTextNode, or a literal argument of append, prepend,
+// replaceChildren, before, after or replaceWith,
 // which make one; an append(name, value) whose first literal is a bare
 // field name is the Headers / FormData / URLSearchParams method and
 // stays quiet), an element's textContent, innerText, title,
