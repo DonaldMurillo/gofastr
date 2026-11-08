@@ -487,6 +487,33 @@ func matchCatalog(tag string, available map[string]struct{}) string {
 	return ""
 }
 
+// canonicalAlias returns the canonical spelling of a deprecated language
+// code ("iw-il" → "he-il"), or "" when tag's base is already canonical.
+// base is tag's last fallback, its bare language.
+func canonicalAlias(tag, base string) string {
+	if len(tag) > maxCLDRTag {
+		return ""
+	}
+	canonical, err := language.Parse(tag)
+	if err != nil {
+		return ""
+	}
+	b, _, _ := canonical.Raw()
+	alias := asciicase.Lower(canonical.String())
+	if b.String() == base || alias == tag {
+		return ""
+	}
+	return alias
+}
+
+// baseOf returns tag's language subtag, the last entry tagFallbacks yields.
+func baseOf(tag string) string {
+	if i := strings.IndexByte(tag, '-'); i > 0 {
+		return tag[:i]
+	}
+	return tag
+}
+
 // matchAccepted is matchCatalog for an Accept-Language entry: a
 // fallback the header refused with q=0 is skipped, so "en-GB" does not
 // truncate to a refused "en".
@@ -732,7 +759,12 @@ func parseAcceptLanguage(header string) (tags, refused []string) {
 			}
 		}
 		if q == 0 {
+			// Refusing a deprecated code refuses the language it names,
+			// which tagFallbacks reaches through the canonical alias.
 			refused = append(refused, tag)
+			if alias := canonicalAlias(tag, baseOf(tag)); alias != "" {
+				refused = append(refused, alias)
+			}
 			continue
 		}
 		out = append(out, entry{tag: tag, q: q})
@@ -771,13 +803,8 @@ func tagFallbacks(tag string) []string {
 	// Preserve explicitly named catalogs before trying canonical aliases.
 	// Use the canonical tag's own script/region chain so an alias cannot
 	// fall back into a catalog written in another script.
-	if len(tag) <= maxCLDRTag {
-		if canonical, err := language.Parse(tag); err == nil {
-			base, _, _ := canonical.Raw()
-			if base.String() != out[len(out)-1] && asciicase.Lower(canonical.String()) != tag {
-				return append(out, tagFallbacks(canonical.String())...)
-			}
-		}
+	if alias := canonicalAlias(tag, out[len(out)-1]); alias != "" {
+		return append(out, tagFallbacks(alias)...)
 	}
 	form, keepBase := scriptFallback(tag, out[len(out)-1])
 	if form == "" {
