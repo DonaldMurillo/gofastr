@@ -568,8 +568,9 @@ Direct: call `config.Load(&cfg)` at startup. Start at
 
 The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
-IPv4-mapped IPv6 first,
-with a `Reason` helper. Tiny: two exported funcs. Indirect:
+IPv4-mapped IPv6 first and checking IPv4 addresses carried by NAT64,
+6to4, IPv4-compatible IPv6, and Teredo. Teredo is refused if either
+its server or its decoded client IPv4 is internal, with a `Reason` helper. Tiny: two exported funcs. Indirect:
 outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
 the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:
