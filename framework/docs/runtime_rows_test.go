@@ -230,3 +230,20 @@ func TestSortableDocsMatch(t *testing.T) {
 		t.Error("sortable rollback must document the confirmed server order")
 	}
 }
+
+// A backdrop is resolved by widget identity; presence alone is inert.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md
+func TestBackdropDocsRequireWidgetName(t *testing.T) {
+	for _, doc := range contractDocs(t) {
+		row := attributeRow(t, doc.text, "data-cui-backdrop")
+		for _, want := range []string{`data-cui-backdrop="<widget-name>"`, "Definition.Backdrop", "Definition.CloseOnClickOutside", "creates"} {
+			if !strings.Contains(row, want) {
+				t.Errorf("%s backdrop row must include %q", doc.name, want)
+			}
+		}
+		if strings.Contains(row, "Pairs with `data-cui-open`") {
+			t.Errorf("%s gives presence-based dismissal instead of the widget's configured flags", doc.name)
+		}
+	}
+}
