@@ -1,21 +1,32 @@
+//gofastr:generated generator=app kind=scaffold version=dev sum=40c8d85d84c263ac
+
 package main
 
 // seedEntity is one entity's ordered seed rows.
+// Rows holds every row: the Authored leading rows the
+// author wrote, then the Count rows the recipe generated.
+// Count, Weights and Authored carry that recipe, so
+// `gofastr pack` can tell two recipes that expand to the
+// same rows apart and keep count:/weights: in the packed
+// app spec instead of flattening it to explicit rows.
 type seedEntity struct {
-	Entity string
-	Rows   []map[string]any
+	Entity   string
+	Rows     []map[string]any
+	Count    int
+	Authored int
+	Weights  map[string]map[string]int
 }
 
 // seedData returns the initial seed data in declared
 // order (so entities that reference others are inserted after them).
 func seedData() []seedEntity {
 	return []seedEntity{
-		{Entity: "plans", Rows: []map[string]any{
+		{Entity: "plans", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"active": true, "interval": "month", "name": "Starter", "price": "29", "slug": "starter"},
 			{"active": true, "interval": "month", "name": "Pro", "price": "99", "slug": "pro"},
 			{"active": true, "interval": "month", "name": "Scale", "price": "299", "slug": "scale"},
 		}},
-		{Entity: "customers", Rows: []map[string]any{
+		{Entity: "customers", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"company": "Acme Inc", "email": "ada@acme.io", "mrr": "99", "name": "Ada Lovelace", "status": "active"},
 			{"company": "Globex", "email": "grace@globex.com", "mrr": "299", "name": "Grace Hopper", "status": "active"},
 			{"company": "Initech", "email": "alan@initech.io", "mrr": "29", "name": "Alan Turing", "status": "past_due"},
@@ -27,7 +38,7 @@ func seedData() []seedEntity {
 			{"company": "W3C", "email": "tbl@w3.org", "mrr": "29", "name": "Tim Berners-Lee", "status": "past_due"},
 			{"company": "Stanford", "email": "knuth@stanford.edu", "mrr": "299", "name": "Donald Knuth", "status": "active"},
 		}},
-		{Entity: "subscriptions", Rows: []map[string]any{
+		{Entity: "subscriptions", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"customer_id": "@customers.email=ada@acme.io", "mrr": "99", "plan_id": "@plans.slug=pro", "renews_on": "2026-07-04", "started_on": "2025-09-04", "status": "active"},
 			{"customer_id": "@customers.email=grace@globex.com", "mrr": "299", "plan_id": "@plans.slug=scale", "renews_on": "2026-06-12", "started_on": "2025-06-12", "status": "active"},
 			{"customer_id": "@customers.email=alan@initech.io", "mrr": "29", "plan_id": "@plans.slug=starter", "renews_on": "2026-05-20", "started_on": "2025-11-20", "status": "past_due"},
@@ -39,7 +50,7 @@ func seedData() []seedEntity {
 			{"customer_id": "@customers.email=tbl@w3.org", "mrr": "29", "plan_id": "@plans.slug=starter", "renews_on": "2026-06-02", "started_on": "2025-12-02", "status": "past_due"},
 			{"customer_id": "@customers.email=knuth@stanford.edu", "mrr": "299", "plan_id": "@plans.slug=scale", "renews_on": "2026-06-18", "started_on": "2025-05-18", "status": "active"},
 		}},
-		{Entity: "invoices", Rows: []map[string]any{
+		{Entity: "invoices", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"amount": "99", "customer_id": "@customers.email=ada@acme.io", "due_on": "2026-05-18", "issued_on": "2026-05-04", "number": "INV-1001", "paid_on": "2026-05-06", "status": "paid"},
 			{"amount": "299", "customer_id": "@customers.email=grace@globex.com", "due_on": "2026-05-26", "issued_on": "2026-05-12", "number": "INV-1002", "paid_on": "2026-05-13", "status": "paid"},
 			{"amount": "29", "customer_id": "@customers.email=alan@initech.io", "due_on": "2026-05-04", "issued_on": "2026-04-20", "number": "INV-1003", "status": "past_due"},
@@ -53,9 +64,7 @@ func seedData() []seedEntity {
 			{"amount": "299", "customer_id": "@customers.email=knuth@stanford.edu", "due_on": "2026-05-02", "issued_on": "2026-04-18", "number": "INV-1011", "paid_on": "2026-04-20", "status": "paid"},
 			{"amount": "99", "customer_id": "@customers.email=kj@umbrella.co", "due_on": "2026-04-29", "issued_on": "2026-04-15", "number": "INV-1012", "status": "past_due"},
 		}},
-		// A payment for each paid invoice, and the failed attempts on two
-		// that went past due.
-		{Entity: "payments", Rows: []map[string]any{
+		{Entity: "payments", Count: 0, Authored: 0, Rows: []map[string]any{
 			{"amount": "99", "customer_id": "@customers.email=ada@acme.io", "invoice_id": "@invoices.number=INV-1001", "method": "card", "status": "succeeded"},
 			{"amount": "299", "customer_id": "@customers.email=grace@globex.com", "invoice_id": "@invoices.number=INV-1002", "method": "card", "status": "succeeded"},
 			{"amount": "99", "customer_id": "@customers.email=kj@umbrella.co", "invoice_id": "@invoices.number=INV-1004", "method": "ach", "status": "succeeded"},

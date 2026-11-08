@@ -177,12 +177,15 @@ func appSpecHasOwnerScopedEntity(bp appspec.AppSpec) bool {
 	return false
 }
 
-// appSpecExpandSeed appends Count auto-generated demo rows to each seed
-// entity that declares one. Generation is deterministic (no runtime
-// randomness), so regeneration is stable and the diff never churns. Enum
-// columns get a weighted or deterministically-skewed distribution so demo data
-// never reads as a flat 1/N-per-value round-robin.
-func appSpecExpandSeed(bp appspec.AppSpec) appspec.AppSpec {
+// ExpandAppSpecSeed appends Count auto-generated demo rows to each seed
+// entity that declares one and records how many rows were authored (the
+// leading rows the author wrote), so the stub emitter can carry the
+// recipe beside the rows and pack can tell them apart again. Generation
+// is deterministic (no runtime randomness), so regeneration is stable and
+// the diff never churns. Enum columns get a weighted or
+// deterministically-skewed distribution so demo data never reads as a
+// flat 1/N-per-value round-robin.
+func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
@@ -196,6 +199,7 @@ func appSpecExpandSeed(bp appspec.AppSpec) appspec.AppSpec {
 		if !ok {
 			continue
 		}
+		s.Authored = len(s.Rows)
 		s.Rows = append(s.Rows, appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
 	}
 	return bp
@@ -222,7 +226,7 @@ func RenderAppSpecCode(bp appspec.AppSpec) ([]GeneratedFile, error) {
 
 func renderAppSpec(bp appspec.AppSpec, entityOrderOffset, screenOrderOffset int, fonts bool) ([]GeneratedFile, error) {
 	bp = appspec.AppSpecSynthesizeCRUDScreens(bp)
-	bp = appSpecExpandSeed(bp)
+	bp = ExpandAppSpecSeed(bp)
 	var files []GeneratedFile
 	if bp.App.Module != "" {
 		files = append(files, GeneratedFile{Name: "main.go", Content: RenderAppSpecMain(bp)})
@@ -4139,13 +4143,29 @@ func RenderAppSpecStubs(bp appspec.AppSpec) string {
 	}
 	if len(bp.Seed) > 0 {
 		sb.WriteString("// seedEntity is one entity's ordered seed rows.\n")
-		sb.WriteString("type seedEntity struct {\n\tEntity string\n\tRows   []map[string]any\n}\n\n")
+		sb.WriteString("// Rows holds every row: the Authored leading rows the\n")
+		sb.WriteString("// author wrote, then the Count rows the recipe generated.\n")
+		sb.WriteString("// Count, Weights and Authored carry that recipe, so\n")
+		sb.WriteString("// `gofastr pack` can tell two recipes that expand to the\n")
+		sb.WriteString("// same rows apart and keep count:/weights: in the packed\n")
+		sb.WriteString("// app spec instead of flattening it to explicit rows.\n")
+		sb.WriteString("type seedEntity struct {\n")
+		sb.WriteString("\tEntity   string\n")
+		sb.WriteString("\tRows     []map[string]any\n")
+		sb.WriteString("\tCount    int\n")
+		sb.WriteString("\tAuthored int\n")
+		sb.WriteString("\tWeights  map[string]map[string]int\n")
+		sb.WriteString("}\n\n")
 		sb.WriteString("// seedData returns the initial seed data in declared\n")
 		sb.WriteString("// order (so entities that reference others are inserted after them).\n")
 		sb.WriteString("func seedData() []seedEntity {\n")
 		sb.WriteString("\treturn []seedEntity{\n")
 		for _, seed := range bp.Seed {
-			sb.WriteString(fmt.Sprintf("\t\t{Entity: %q, Rows: []map[string]any{\n", seed.Entity))
+			sb.WriteString(fmt.Sprintf("\t\t{Entity: %q, Count: %d, Authored: %d,", seed.Entity, seed.Count, seed.Authored))
+			if len(seed.Weights) > 0 {
+				sb.WriteString(" Weights: " + appSpecSeedWeightsLiteral(seed.Weights) + ",")
+			}
+			sb.WriteString(" Rows: []map[string]any{\n")
 			for _, row := range seed.Rows {
 				sb.WriteString("\t\t\t{")
 				// Emit keys in sorted order so regeneration is deterministic
@@ -4236,6 +4256,21 @@ func appSpecSeedGoLiteral(v any) string {
 	default:
 		return fmt.Sprintf("nil // unsupported type %T", val)
 	}
+}
+
+// appSpecSeedWeightsLiteral renders a seed recipe's enum weights as a Go
+// map literal, keys sorted at both levels so regeneration is
+// deterministic.
+func appSpecSeedWeightsLiteral(w map[string]map[string]int) string {
+	var parts []string
+	for _, col := range slices.Sorted(maps.Keys(w)) {
+		var vals []string
+		for _, v := range slices.Sorted(maps.Keys(w[col])) {
+			vals = append(vals, fmt.Sprintf("%q: %d", v, w[col][v]))
+		}
+		parts = append(parts, fmt.Sprintf("%q: {%s}", col, strings.Join(vals, ", ")))
+	}
+	return "map[string]map[string]int{" + strings.Join(parts, ", ") + "}"
 }
 
 func RenderAppSpecApp(bp appspec.AppSpec) string {

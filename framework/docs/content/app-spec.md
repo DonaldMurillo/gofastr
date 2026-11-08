@@ -1388,6 +1388,17 @@ use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
 
+The recipe survives `gofastr pack`. The generated `stubs.go` carries it
+beside the rows: `seedEntity` gains `Count`, `Weights` and `Authored`
+(the number of leading rows you wrote), while `Rows` still holds every
+row, so seeding itself does not change. Pack keeps the authored rows and
+the recipe, regenerates the rest to check them, and a generated row you
+hand-edited turns the whole entry back into explicit rows — the edit
+survives, the recipe is dropped. Without the recipe in `stubs.go`, two
+specs whose weights differ but whose rows expand the same (count: 7 with
+`open: 5` vs `open: 10` on a two-value enum) packed to the same file and
+pack could not tell them apart.
+
 Generated rows never repeat a `primary_key`: an integer key column counts
 up from 1001, or, when the column sets bounds, from `min` but never below
 2 (the generated e2e test creates 1), and a uuid key takes one value per

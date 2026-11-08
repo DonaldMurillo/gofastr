@@ -1338,8 +1338,16 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	return nil
 }
 
-// packReadSeed reconstructs seed data from stubs.go seedData().
-func packReadSeed(dir string) ([]appspec.AppSpecSeedEntity, error) {
+// packReadSeed reconstructs seed data from stubs.go seedData(). The
+// emitted seedEntity carries the recipe beside the rows: Count generated
+// rows after Authored authored ones, shaped by Weights. Pack keeps the
+// authored rows and the recipe, and regenerates the rest to check them:
+// two recipes that expand to the same rows stay apart in the packed spec.
+// A generated row that was hand-edited no longer matches what the recipe
+// regenerates, so pack keeps every row as explicit data and drops the
+// recipe — the edit survives; regenerating from the packed spec keeps the
+// edited rows as authored ones.
+func packReadSeed(dir string, entities map[string]framework.EntityDeclaration) ([]appspec.AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
@@ -1356,16 +1364,111 @@ func packReadSeed(dir string) ([]appspec.AppSpecSeedEntity, error) {
 	for _, el := range lit.Elts {
 		sv := appspec.FieldVals(el)
 		se := appspec.AppSpecSeedEntity{Entity: appspec.AstString(sv["Entity"])}
+		count, _ := appspec.AstInt(sv["Count"])
+		authored, _ := appspec.AstInt(sv["Authored"])
+		weights := packReadSeedWeights(sv["Weights"])
+		var rows []map[string]any
 		if rowsLit, ok := sv["Rows"].(*ast.CompositeLit); ok {
 			for _, rowEl := range rowsLit.Elts {
 				if m, ok := appspec.AstAny(rowEl).(map[string]any); ok {
-					se.Rows = append(se.Rows, m)
+					rows = append(rows, m)
 				}
 			}
 		}
+		se.Rows, se.Count, se.Weights = packSeedRecipeOrRows(se.Entity, rows, count, authored, weights, entities)
 		out = append(out, se)
 	}
 	return out, nil
+}
+
+// packSeedRecipeOrRows decides what one seedEntity's data means: a
+// verifiable recipe (authored rows + count + weights, the generated rows
+// regenerated and checked) or every row as explicit data with no recipe.
+// The recipe is dropped when it cannot be checked (no entity
+// declaration), does not line up with the rows (wrong count, rows beyond
+// the recipe), or a generated row was hand-edited.
+func packSeedRecipeOrRows(entity string, rows []map[string]any, count, authored int, weights map[string]map[string]int, entities map[string]framework.EntityDeclaration) ([]map[string]any, int, map[string]map[string]int) {
+	if count <= 0 || authored < 0 || authored > len(rows) || authored+count != len(rows) {
+		return rows, 0, nil
+	}
+	decl, known := entities[entity]
+	if !known {
+		return rows, 0, nil
+	}
+	want := appspec.AppSpecGenerateSeedRows(decl, count, weights)
+	for i, w := range want {
+		if !packSeedRowEqual(w, rows[authored+i]) {
+			return rows, 0, nil
+		}
+	}
+	return rows[:authored], count, weights
+}
+
+// packSeedRowEqual compares a regenerated row against the one read back
+// from stubs.go. The emitter writes ints as int literals and decimals as
+// strings; AstAny reads numbers back as int64/float64, so compare by the
+// value's canonical text, which is stable across both spellings.
+func packSeedRowEqual(want, got map[string]any) bool {
+	if len(want) != len(got) {
+		return false
+	}
+	for k, v := range want {
+		have, ok := got[k]
+		if !ok || fmt.Sprint(v) != fmt.Sprint(normalizeSeedNumber(have)) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeSeedNumber renders int64 and float64 the emitter's %d/%%v
+// spellings would have produced, so a decoded 7 (int64) equals a
+// generated 7 (int).
+func normalizeSeedNumber(v any) any {
+	switch n := v.(type) {
+	case int64:
+		return int(n)
+	case float64:
+		if n == float64(int64(n)) {
+			return int64(n)
+		}
+	}
+	return v
+}
+
+// packReadSeedWeights reads the Weights map literal the emitter writes
+// (map[string]map[string]int, keys sorted). Anything else reads as nil.
+func packReadSeedWeights(e ast.Expr) map[string]map[string]int {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	out := map[string]map[string]int{}
+	for _, colEl := range lit.Elts {
+		kv, ok := colEl.(*ast.KeyValueExpr)
+		if !ok {
+			return nil
+		}
+		col := appspec.AstString(kv.Key)
+		valsLit, ok := kv.Value.(*ast.CompositeLit)
+		if !ok {
+			return nil
+		}
+		vals := map[string]int{}
+		for _, valEl := range valsLit.Elts {
+			vkv, ok := valEl.(*ast.KeyValueExpr)
+			if !ok {
+				return nil
+			}
+			w, ok := appspec.AstInt(vkv.Value)
+			if !ok {
+				return nil
+			}
+			vals[appspec.AstString(vkv.Key)] = w
+		}
+		out[col] = vals
+	}
+	return out
 }
 
 // packReadNav reconstructs the sidebar nav from app.go
@@ -3015,7 +3118,11 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Nav, err = packReadNav(dir); err != nil {
 		return bp, err
 	}
-	if bp.Seed, err = packReadSeed(dir); err != nil {
+	seedEntities := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	for _, d := range bp.Entities {
+		seedEntities[d.Name] = d
+	}
+	if bp.Seed, err = packReadSeed(dir, seedEntities); err != nil {
 		return bp, err
 	}
 	if err = packReadStubs(dir, &bp); err != nil {

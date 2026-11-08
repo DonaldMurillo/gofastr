@@ -93,6 +93,12 @@ type AppSpecSeedEntity struct {
 	// column with no weights entry gets a deterministic skew seeded from the
 	// entity name so demos never read as a flat round-robin.
 	Weights map[string]map[string]int
+	// Authored is the number of leading Rows the author wrote; the
+	// generator sets it when it expands Count (ExpandAppSpecSeed) so the
+	// stub emitter and pack know where the authored rows end. It is not an
+	// app-spec key, and pack never writes it back: a packed spec carries
+	// the recipe (count/weights) plus the authored rows only.
+	Authored int
 }
 
 // AppSpecNavItem describes a navigation entry: a link to a screen or URL.

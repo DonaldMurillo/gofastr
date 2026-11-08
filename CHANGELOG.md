@@ -44,6 +44,16 @@ few lines, and link the PR or the docs page for the rest.
   whatever `app.db.driver` declares. The `openDB` switch has always
   accepted both engines, but only the declared driver was linked, so
   switching `DB_DRIVER` at boot answered `sql: unknown driver`.
+- **Seed recipes survive `gofastr pack`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated `seedEntity` carries `Count`, `Weights` and `Authored`
+  beside `Rows` (which still holds every row, the authored ones first, so
+  seeding does not change). Pack keeps the authored rows and the recipe,
+  regenerates the rest to check them, and a generated row that was
+  hand-edited packs as explicit rows with the recipe dropped, so the edit
+  survives. Before, two recipes that expanded to the same rows (count 7
+  with `open: 5` vs `open: 10`) packed byte-identically and the recipe
+  was lost.
 - **`DBQueue` retries can follow a delivery policy**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `WithRetrySchedule(steps...)` sets each wait from a list (the last step

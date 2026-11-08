@@ -1,0 +1,6 @@
+version: v0.97.0
+title: Pending notes for the release after v0.96.0
+notes:
+  - change: "the generated seedEntity (stubs.go) gains Count, Weights and Authored beside Rows; Rows still holds every row, the Authored leading rows first, so seeding itself does not change"
+    guidance: "Regenerate to pick the fields up (gofastr generate app gofastr.yml --force, or copy entities/ from a scratch regeneration for an app that hand-maintains its root). Nothing must change: the new fields are additive and seeding reads Rows only. gofastr pack now reads the seed recipe back instead of flattening a count:/weights: entry to explicit rows, and a generated row that was hand-edited packs as explicit rows with the recipe dropped."
+    nodetect: "additive fields on a generated struct; no source spelling differs"

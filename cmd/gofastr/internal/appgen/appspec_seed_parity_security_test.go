@@ -153,7 +153,7 @@ func TestCountSeedRefusesUnfillableRequired(t *testing.T) {
 	}
 	err := appspec.ValidateAppSpec(bp)
 	if err == nil {
-		expanded := appSpecExpandSeed(bp)
+		expanded := ExpandAppSpecSeed(bp)
 		t.Fatalf("SECURITY: [seed] count-seed on an entity with a required relation accepted; every expanded row lacks post_id and the shipped app aborts at boot. Expanded rows: %+v", expanded.Seed[0].Rows)
 	}
 	// Control: count on the scalar entity is the documented use.

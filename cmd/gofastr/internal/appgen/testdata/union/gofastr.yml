@@ -884,7 +884,16 @@ seed:
         price: 30
         active: false
         specs: [oak, pine]
+  # count:/weights: is the seed recipe. The generated stubs.go carries it
+  # beside the rows (Count, Authored, Weights on seedEntity) so `gofastr
+  # pack` reads it back instead of flattening the entry to explicit rows.
   - entity: invoices
+    count: 6
+    weights:
+      status:
+        draft: 1
+        open: 3
+        paid: 2
     rows:
       - number: INV-1
         amount: "120"
