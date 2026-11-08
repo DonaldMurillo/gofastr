@@ -554,6 +554,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   space as `%20`), and the viewer's `src` passes the image-source
   policy the thumbnail does.
 
+Tab arrow keys skip disabled tabs in DOM order, even when focus starts
+on a disabled selected tab; direction follows the strip’s LTR or RTL.
+
 ## The behaviour module
 
 The runtime module that binds the `data-hui-*` hooks ships in this
