@@ -221,7 +221,12 @@ go build -o site ./examples/site/
   (`_HEADERS`) is refused: no host reads it, and on a case-insensitive
   filesystem it would replace the generated file.
 - `Builder.ExtraDirs` files under their mount path, minus the dotfiles
-  and config files the static dir also skips. A page or asset
+  and config files the static dir also skips. An `os.DirFS` extra
+  directory is read through `os.Root`, the way the static dir is: a
+  symlink whose target leaves the directory, or is not a regular file,
+  is skipped and logged, and a symlinked directory inside it is walked.
+  Another `fs.FS` is read as it is, so it must not follow symlinks
+  itself (`os.Root.FS()` does not). A page or asset
   the build wrote, in any case (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. An extra file spelled in another case than an asset the

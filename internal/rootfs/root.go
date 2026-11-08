@@ -2,10 +2,12 @@
 package rootfs
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 )
 
 // Root remembers a directory's identity and reopens it for each operation.
@@ -94,3 +96,34 @@ func (f fileSystem) Open(name string) (fs.File, error) {
 	}
 	return f.root.Open(filepath.FromSlash(name))
 }
+
+// dirFSType is the dynamic type os.DirFS returns (the unexported
+// os.dirFS, a string type holding the directory), captured by
+// constructing one so reflect can recognize the shape without naming
+// the unexported type.
+var dirFSType = reflect.TypeOf(os.DirFS(""))
+
+// ConfineDirFS returns fsys unchanged unless it is an os.DirFS value, in
+// which case it returns the kernel-contained [Root.FS] view over the
+// same directory: a symlink inside the directory pointing outside it is
+// refused at open instead of followed. When the directory cannot be
+// opened as a root it returns an FS whose every open fails with the
+// reason, since reads from a directory that could not be verified are
+// the worse failure. embed.FS and every other fs.FS pass through.
+func ConfineDirFS(fsys fs.FS) fs.FS {
+	if fsys == nil || reflect.TypeOf(fsys) != dirFSType {
+		return fsys
+	}
+	dir := reflect.ValueOf(fsys).String()
+	root, err := Open(dir)
+	if err != nil {
+		return failClosedFS{err: fmt.Errorf("directory FS rooted at an unopenable directory: %w", err)}
+	}
+	return root.FS()
+}
+
+// failClosedFS is ConfineDirFS's answer for an os.DirFS whose directory
+// cannot be opened as a root.
+type failClosedFS struct{ err error }
+
+func (m failClosedFS) Open(string) (fs.File, error) { return nil, m.err }

@@ -135,6 +135,13 @@ few lines, and link the PR or the docs page for the rest.
   the upsert's checks read it.
 
 ### Security
+- **The static export no longer follows a symlink out of an `ExtraDirs`
+  directory** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [static export](framework/docs/content/static-export.md)). An
+  `os.DirFS` extra directory was read as it is, so a link inside it
+  published the file it pointed at anywhere on disk. It is now read
+  through `os.Root`, like the static dir and `UIHost.SetStaticFS`: a link
+  that leaves the directory is skipped and logged.
 - **`core/static` refuses Windows alias spellings of any file**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A path
   segment that ends in a dot or a space, or holds a colon, is never

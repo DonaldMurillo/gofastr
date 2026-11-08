@@ -716,37 +716,8 @@ func (ds *UIHost) StaticDir() string {
 // served: a directory falls through to the screens, as under
 // WithStaticDir.
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
-	ds.staticFS = reRootDirFS(fsys)
+	ds.staticFS = rootfs.ConfineDirFS(fsys)
 }
-
-// dirFSType is the dynamic type os.DirFS returns (the unexported
-// os.dirFS, a string type holding the directory), captured by
-// constructing one so reflect can recognize the shape without naming
-// the unexported type.
-var dirFSType = reflect.TypeOf(os.DirFS(""))
-
-// reRootDirFS returns fsys unchanged unless it is an os.DirFS value, in
-// which case it returns the kernel-contained os.Root.FS() view over the
-// same directory (or a fail-closed FS when the root cannot be opened).
-func reRootDirFS(fsys fs.FS) fs.FS {
-	if fsys == nil || reflect.TypeOf(fsys) != dirFSType {
-		return fsys
-	}
-	dir := reflect.ValueOf(fsys).String()
-	root, err := rootfs.Open(dir)
-	if err != nil {
-		return failClosedFS{err: fmt.Errorf("static FS rooted at an unopenable directory: %w", err)}
-	}
-	return root.FS()
-}
-
-// failClosedFS is what SetStaticFS installs when an os.DirFS-backed
-// filesystem's directory cannot be opened as a root: every open fails
-// with the reason rather than following symlinks out of a directory
-// that was not verifiable at installation time.
-type failClosedFS struct{ err error }
-
-func (m failClosedFS) Open(string) (fs.File, error) { return nil, m.err }
 
 // HasStaticFS reports whether an embedded static FS is configured.
 func (ds *UIHost) HasStaticFS() bool {
