@@ -108,7 +108,7 @@ type SidebarProps struct {
 	// button as data-hui-sidebar-collapse-label / -expand-label: the
 	// module re-says them after a client-side toggle and carries no
 	// sentence of its own. Empty falls back to NavLabel for the
-	// button's initial aria-label.
+	// button at render and after every client-side toggle.
 	CollapseLabel string
 	ExpandLabel   string
 	// ToggleIcon is the collapse toggle's mark (decorative; the button
@@ -225,20 +225,24 @@ func Sidebar(p SidebarProps, s Classes) render.HTML {
 	inline := append([]render.HTML{}, regionChildren...)
 	if hasToggle {
 		collapsed := p.ServerCollapsed != nil && *p.ServerCollapsed
-		label := p.CollapseLabel
-		if collapsed && p.ExpandLabel != "" {
-			label = p.ExpandLabel
+		collapseLabel, expandLabel := p.CollapseLabel, p.ExpandLabel
+		if collapseLabel == "" {
+			collapseLabel = p.NavLabel
 		}
-		if label == "" {
-			label = p.NavLabel
+		if expandLabel == "" {
+			expandLabel = p.NavLabel
+		}
+		label := collapseLabel
+		if collapsed {
+			label = expandLabel
 		}
 		toggleAttrs := Attrs(map[string]string{
 			"type":                            "button",
 			"aria-controls":                   inlineID,
 			"aria-expanded":                   boolWord(!collapsed),
 			"aria-label":                      scrubControlBytes(label),
-			"data-hui-sidebar-collapse-label": scrubControlBytes(p.CollapseLabel),
-			"data-hui-sidebar-expand-label":   scrubControlBytes(p.ExpandLabel),
+			"data-hui-sidebar-collapse-label": scrubControlBytes(collapseLabel),
+			"data-hui-sidebar-expand-label":   scrubControlBytes(expandLabel),
 		})
 		Mark(toggleAttrs, "data-hui-sidebar-toggle")
 		if hasContent {

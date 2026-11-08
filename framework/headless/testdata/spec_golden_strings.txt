@@ -588,7 +588,7 @@ every leaf is a real link and every group a native details, so the whole navigat
 
 === Sidebar / collapsible with storage ===
 the collapse state is opt-in to storage through the key — without one the state is the server's, and the module never writes
-<div data-hui-sidebar="" data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="nav.side" data-hui-sidebar-variant="collapsible"><button aria-label="Open navigation" data-cui-internal="" data-cui-open="nav-drawer" type="button"><span aria-hidden="true">☰</span></button><div data-cui-internal="" id="nav-drawer-inline"><nav aria-label="Primary"><ul><li><a data-cui-activelink="" href="/one"><span>One</span></a></li></ul></nav><button aria-controls="nav-drawer-inline" aria-expanded="true" aria-label="Primary" data-hui-sidebar-toggle="" type="button"><span aria-hidden="true">‹</span></button></div></div>
+<div data-hui-sidebar="" data-hui-sidebar-collapse="auto" data-hui-sidebar-storage="nav.side" data-hui-sidebar-variant="collapsible"><button aria-label="Open navigation" data-cui-internal="" data-cui-open="nav-drawer" type="button"><span aria-hidden="true">☰</span></button><div data-cui-internal="" id="nav-drawer-inline"><nav aria-label="Primary"><ul><li><a data-cui-activelink="" href="/one"><span>One</span></a></li></ul></nav><button aria-controls="nav-drawer-inline" aria-expanded="true" aria-label="Primary" data-hui-sidebar-collapse-label="Primary" data-hui-sidebar-expand-label="Primary" data-hui-sidebar-toggle="" type="button"><span aria-hidden="true">‹</span></button></div></div>
 
 === Sidebar / a server-collapsed sidebar with button groups ===
 the collapsed state ships in the SSR bytes and the module never writes storage for it, and the button dialect is the shape host contracts pin

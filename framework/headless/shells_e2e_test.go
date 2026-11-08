@@ -110,3 +110,31 @@ func TestE2E_SidebarStorageContract(t *testing.T) {
 		t.Fatal("the keyless sidebar wrote storage, or the keyed one lost its single entry")
 	}
 }
+
+func TestSidebarMissingLabelUsesNav(t *testing.T) {
+	for _, expandOnly := range []bool{false, true} {
+		p := SidebarProps{NavLabel: "Navigation", Variant: "collapsible", Items: []SidebarItem{{Label: "Start", Href: "/start"}}}
+		wantExpanded, wantCollapsed := "Fold menu", "Navigation"
+		p.CollapseLabel = wantExpanded
+		if expandOnly {
+			p.CollapseLabel, p.ExpandLabel = "", "Unfold menu"
+			wantExpanded, wantCollapsed = "Navigation", "Unfold menu"
+		}
+		ctx := behaviorPage(t, startBehaviorServer(t, string(Sidebar(p, nil))))
+		if !pollTrue(ctx, sidebarLoaded) {
+			t.Fatal("sidebar module did not load")
+		}
+		for _, want := range []string{wantCollapsed, wantExpanded, wantCollapsed} {
+			var label string
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.querySelector('[data-hui-sidebar-toggle]').click()`, nil),
+				chromedp.Evaluate(`document.querySelector('[data-hui-sidebar-toggle]').getAttribute('aria-label')`, &label),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if label != want {
+				t.Errorf("expandOnly=%v: label %q, want %q", expandOnly, label, want)
+			}
+		}
+	}
+}
