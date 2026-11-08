@@ -85,11 +85,12 @@
 //     the original spelling (a link swapped in between wins). An
 //     EvalSymlinks call in a guard's body no longer makes it a guard
 //     either;
-//   - a contained parent for os.Mkdir / os.MkdirAll:
+//   - a contained parent for os.Mkdir:
 //     Join(dir, filepath.Base(p)) where dir is a contained resolution.
-//     mkdir refuses an existing leaf, symlink or not; a leaf write, and
+//     Mkdir refuses an existing leaf, symlink or not; MkdirAll follows
+//     a link to a directory and returns nil, and a leaf write and
 //     os.CreateTemp (whose argument is the directory the file lands
-//     in), would follow one, so they get no such credit;
+//     in) follow one too, so they get no such credit;
 //   - a call to a VERIFIED guard on the write's own path, its Dir, or
 //     a local bound to either: a function whose body runs an
 //     O_NOFOLLOW open, an Lstat consulted with ModeSymlink, or calls
@@ -222,8 +223,8 @@ func writeHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGu
 }
 
 // resolvedHere reports whether body confines the sink's path before
-// writing it: a contained resolution, a contained parent for a
-// Mkdir/MkdirAll, a verified guard on it, or — for a leaf sink
+// writing it: a contained resolution, a contained parent for an
+// os.Mkdir, a verified guard on it, or — for a leaf sink
 // — an Lstat+ModeSymlink check of it. Each must
 // DOMINATE the write (pathflow): a posture after the sink gates
 // nothing.
@@ -234,17 +235,18 @@ func resolvedHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkArg, 
 		(s.Leaf && pathflow.LstatLeafCheck(pass, body, s.Path, bound, sink))
 }
 
-// makesDir reports whether sink is a direct os.Mkdir / os.MkdirAll
-// call: the only sinks that refuse an existing leaf, symlink or not.
-// os.CreateTemp gets no contained-parent credit: its argument is the
-// directory the file lands in, and a linked one leads it out.
+// makesDir reports whether sink is a direct os.Mkdir call: the only
+// sink that refuses an existing leaf, symlink or not. os.MkdirAll
+// stats the leaf, follows a link to a directory and returns nil, and
+// os.CreateTemp's argument is the directory the file lands in; a
+// linked one leads either out, so neither gets contained-parent credit.
 func makesDir(pass *analysis.Pass, sink ast.Node) bool {
 	call, ok := sink.(*ast.CallExpr)
 	if !ok {
 		return false
 	}
 	q := pathflow.QualifiedFunc(pass, call.Fun)
-	return q == "os.Mkdir" || q == "os.MkdirAll"
+	return q == "os.Mkdir"
 }
 
 // callerParams is fn's parameters plus those of every function literal

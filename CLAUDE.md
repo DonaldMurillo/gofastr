@@ -270,9 +270,10 @@ expose them to agents connected to a live app.**
   test (real the resolved local itself, root neither a constant nor
   built from real) runs before the
   sink in an if that refuses an outside path (or holds the sink on
-  the inside branch). os.Mkdir/MkdirAll may also go through
-  `Join(dir, filepath.Base(p))` on a contained `dir`: mkdir refuses an
-  existing leaf. An
+  the inside branch); the root is the one the path was joined under.
+  os.Mkdir may also go through `Join(dir, filepath.Base(p))` on a
+  contained `dir`: Mkdir refuses an existing leaf, while MkdirAll
+  follows a linked one and gets no such credit. An
   EvalSymlinks alone is no gate and no guard (#665, 2026-11): it says
   where a path points, and six quiet fixtures escaped when replayed —
   a resolved path nobody compared with the root, a resolved root

@@ -933,9 +933,11 @@ func SymlinkResolved(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Obje
 // ContainedParent reports whether the sink's path is
 // filepath.Join(dir, filepath.Base(x)) where dir is a contained
 // resolution (SymlinkResolved's posture). It is a fix only for
-// os.Mkdir / os.MkdirAll, which refuse an existing leaf, symlink or
-// not. A sink that opens or clobbers an existing leaf follows a
-// symlinked one, and os.CreateTemp's argument is a directory it enters,
+// os.Mkdir, which refuses an existing leaf, symlink or not. os.MkdirAll
+// stats the leaf, follows a link to a directory and returns nil, so a
+// later write through it lands outside. A sink that opens or clobbers
+// an existing leaf follows a symlinked one, and os.CreateTemp's
+// argument is a directory it enters,
 // so the leaf postures (O_NOFOLLOW, an Lstat check) or os.Root are
 // their fixes.
 func ContainedParent(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Object]ast.Expr, body *ast.BlockStmt, sink ast.Node) bool {
@@ -969,14 +971,75 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 			resolved[o] = true
 		}
 	}
-	return ContainmentChecked(pass, body, bound, resolved, call.End(), sink)
+	return ContainmentChecked(pass, body, bound, resolved, joinRoots(pass, call, bound), call.End(), sink)
+}
+
+// rootKey spells the root e names, looking through locals and the
+// calls that keep a path's identity (EvalSymlinks, Abs, Clean), so
+// `realRoot := EvalSymlinks(baseDir)` and baseDir compare equal.
+func rootKey(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr) string {
+	for i := 0; i < 8; i++ {
+		e = ast.Unparen(Resolve(pass, e, bound, 0))
+		c, ok := e.(*ast.CallExpr)
+		if !ok || len(c.Args) != 1 {
+			break
+		}
+		q := QualifiedFunc(pass, c.Fun)
+		if q != "path/filepath.EvalSymlinks" && q != "path/filepath.Abs" && q != "path/filepath.Clean" {
+			break
+		}
+		e = c.Args[0]
+	}
+	return types.ExprString(e)
+}
+
+// joinRoots collects the roots the path resolved by call was joined
+// under: the first argument of every Join on its chain that appends a
+// non-constant element (`dir := Join(root, id)` then `Join(dir, name)`
+// names both dir and root). A Join of constants only, such as
+// Join(home, ".app"), is the root itself and the walk stops there. A
+// containment test against any other root, such as the root's
+// filepath.Dir, says nothing about this one.
+func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]ast.Expr) map[string]bool {
+	roots := map[string]bool{}
+	if len(call.Args) != 1 {
+		return roots
+	}
+	e := call.Args[0]
+	for i := 0; i < 8; i++ {
+		c, ok := ast.Unparen(Resolve(pass, e, bound, 0)).(*ast.CallExpr)
+		if !ok {
+			break
+		}
+		q := QualifiedFunc(pass, c.Fun)
+		if len(c.Args) == 1 && (q == "path/filepath.Dir" || q == "path/filepath.EvalSymlinks" || q == "path/filepath.Abs" || q == "path/filepath.Clean") {
+			e = c.Args[0]
+			continue
+		}
+		if q != "path/filepath.Join" || len(c.Args) < 2 {
+			break
+		}
+		appends := false
+		for _, a := range c.Args[1:] {
+			if tv, ok := pass.TypesInfo.Types[a]; !ok || tv.Value == nil {
+				appends = true
+			}
+		}
+		if !appends {
+			break
+		}
+		e = c.Args[0]
+		roots[rootKey(pass, e, bound)] = true
+	}
+	return roots
 }
 
 // ContainmentChecked reports whether body tests one of objs against a
 // root before sink so that an outside path cannot reach it. The test
 // runs after the resolution at `after` and is filepath.Rel(root, real)
 // or strings.HasPrefix/CutPrefix(real, root+sep), where real is one of
-// objs itself (not an expression built from it), root is neither a
+// objs itself (not an expression built from it), root is the root the
+// path was joined under (roots, keyed by rootKey) and neither a
 // constant (directly or through a local) nor built from real, and sep
 // is the target's separator. It
 // decides an if that dominates sink in the right direction. Three
@@ -993,7 +1056,7 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 // A Rel whose result nobody reads, a prefix test whose answer only
 // logs, and `if HasPrefix(real, root) { return nil }` before the write
 // (the inside path refuses, the outside one writes) confine nothing.
-func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, after token.Pos, sink ast.Node) bool {
+func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, roots map[string]bool, after token.Pos, sink ast.Node) bool {
 	if body == nil {
 		return false
 	}
@@ -1002,12 +1065,13 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		tv, ok := pass.TypesInfo.Types[e]
 		return ok && tv.Value != nil
 	}
-	// rootOperand reports whether e can name the root: not a constant
-	// (HasPrefix(real, "/") holds for every absolute path) and not
-	// built from the resolved path itself (HasPrefix(real,
-	// filepath.Dir(real)+sep) holds for nearly every path).
+	// rootOperand reports whether e names the root the path was joined
+	// under (roots): not a constant (HasPrefix(real, "/") holds for
+	// every absolute path), not built from the resolved path itself
+	// (HasPrefix(real, filepath.Dir(real)+sep) holds for nearly every
+	// path), and not some other directory such as the root's parent.
 	rootOperand := func(e ast.Expr) bool {
-		return !isConst(Resolve(pass, e, bound, 0)) && !mentionsObj(pass, e, bound, objs, 0)
+		return !isConst(Resolve(pass, e, bound, 0)) && !mentionsObj(pass, e, bound, objs, 0) && roots[rootKey(pass, e, bound)]
 	}
 	// target reports whether e is the resolved path itself: one of objs,
 	// not an expression built from it. HasPrefix(Join(root,

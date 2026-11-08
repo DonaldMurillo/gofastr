@@ -917,3 +917,105 @@ func aliasMaybe(baseDir, safeName, name string, data []byte, swap bool) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// relParentRoot tests against the root's parent: a sibling of the root
+// passes.
+func relParentRoot(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(filepath.Dir(realRoot), real)
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// prefixParentRoot is the same widening through a prefix.
+func prefixParentRoot(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, filepath.Dir(baseDir)+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// otherRoot tests against a directory the path was not joined under.
+func otherRoot(baseDir, elsewhere, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, elsewhere+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// nestedJoinRoot joins in steps and tests against the outer root.
+// Quiet.
+func nestedJoinRoot(baseDir, id, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(baseDir, id)
+	real, err := filepath.EvalSymlinks(filepath.Join(dir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// parentThenMkdirAll is parentThenMkdir through MkdirAll, which stats
+// a linked leaf, finds a directory and returns nil: the later write
+// lands outside.
+func parentThenMkdirAll(baseDir, name string) error {
+	p := filepath.Join(baseDir, name)
+	dir, err := filepath.EvalSymlinks(filepath.Dir(p))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(dir, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.MkdirAll(filepath.Join(dir, filepath.Base(p)), 0o700) // want `write under a root with lexical containment only`
+}
+
+// constJoinHome names the root as Join(baseDir, ".app") and tests
+// against baseDir: anything else under baseDir passes.
+func constJoinHome(baseDir, name string, data []byte) error {
+	root := filepath.Join(baseDir, ".app")
+	real, err := filepath.EvalSymlinks(filepath.Join(root, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// constJoinRoot tests the same path against the root itself. Quiet.
+func constJoinRoot(baseDir, name string, data []byte) error {
+	root := filepath.Join(baseDir, ".app")
+	real, err := filepath.EvalSymlinks(filepath.Join(root, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, root+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
