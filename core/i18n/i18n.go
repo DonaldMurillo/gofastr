@@ -34,6 +34,8 @@ import (
 	"sync"
 
 	"golang.org/x/text/language"
+
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // Locale is a BCP 47 language tag (lower-cased base + optional region:
@@ -771,8 +773,8 @@ func tagFallbacks(tag string) []string {
 	// fall back into a catalog written in another script.
 	if len(tag) <= maxCLDRTag {
 		if canonical, err := language.Parse(tag); err == nil {
-			base, _ := canonical.Base()
-			if base.String() != out[len(out)-1] {
+			base, _, _ := canonical.Raw()
+			if base.String() != out[len(out)-1] && asciicase.Lower(canonical.String()) != tag {
 				return append(out, tagFallbacks(canonical.String())...)
 			}
 		}
