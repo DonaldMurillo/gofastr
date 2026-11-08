@@ -390,6 +390,17 @@ func TestMethodNotAllowed(t *testing.T) {
 	}
 }
 
+func TestRefusedMethodsAdvertiseAllow(t *testing.T) {
+	handler := Handler(Config{FS: testSubFS(), Prefix: "/static"})
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(method, "/hello.html", nil))
+		if response.Code != http.StatusMethodNotAllowed || response.Header().Get("Allow") != "GET, HEAD" {
+			t.Errorf("%s: got status %d, Allow %q", method, response.Code, response.Header().Get("Allow"))
+		}
+	}
+}
+
 func TestRootPathServesIndex(t *testing.T) {
 	handler := Handler(Config{
 		FS:     testSubFS(),

@@ -470,7 +470,8 @@ the configured root the same way write sinks elsewhere in the repo
 are, including a root directory created after `Handler` was built,
 which the handler binds on the first request that finds it; `embed.FS`
 cannot carry symlinks and is unaffected. Direct: call
-`Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
+`Mount` (or `Handler`) to serve embedded CSS/JS/images; methods other
+than GET and HEAD receive 405 with `Allow: GET, HEAD`. The framework
 uses it for its own assets too. `Prefix` is `/static`, `static` or
 `/static/` alike; `Mount` serves `/static/...` and redirects a bare
 `/static`. The handler strips the prefix on a segment boundary only
