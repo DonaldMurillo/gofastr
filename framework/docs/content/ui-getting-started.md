@@ -482,7 +482,8 @@ form stays where it was, edits included. The form cleans itself on
 a successful submit or a reset. The question opens in the kit's
 confirm dialog: Cancel keeps the edits, Discard drops them and makes
 the move. `data-hui-leave-guard-message` carries its words (the
-default is "You have unsaved changes."), and
+default is the translated `headless.leave_guard` phrase,
+"You have unsaved changes." in English), and
 `data-hui-leave-guard-title` and `data-hui-leave-guard-accept` its
 title and accept label (`ui.FormConfig.LeaveGuard`, `LeaveGuardTitle`
 and `LeaveGuardAccept` write all three). A page without the kit's

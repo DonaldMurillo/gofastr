@@ -10,7 +10,7 @@ import (
 // LintRuntimeProse fires when English prose written in a JS string
 // literal reaches a reader: a toast (NS.toast, NS._toastOrFallback,
 // NS._fallbackToast, _showNavToast), the browser's own dialogs (alert,
-// confirm, prompt), a text node (createTextNode, or a literal argument
+// confirm, prompt), askWords dialog options, a text node (createTextNode, or a literal argument
 // of append, prepend, replaceChildren, before, after or replaceWith,
 // which make one; an append(name, value) whose first literal is a bare
 // field name is the Headers / FormData / URLSearchParams method and
@@ -77,7 +77,7 @@ func LintRuntimeProse(roots ...string) (*Result, error) {
 // lone capitalised word may end in a colon: signals.js wrote 'Error: '
 // past both.
 var (
-	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode|alert|confirm|prompt)\s*(?:\?\.\s*)?\(`)
+	reToastSink = regexp.MustCompile(`\b(?:toast|_toastOrFallback|_fallbackToast|_showNavToast|createTextNode|alert|confirm|prompt|askWords)\s*(?:\?\.\s*)?\(`)
 	reTextSink  = regexp.MustCompile(`\.(?:textContent|innerText|title|placeholder|ariaLabel|ariaDescription|ariaValueText|ariaRoleDescription|ariaPlaceholder|alt|nodeValue)\s*\+?=[^=]`)
 	reAttrSink  = regexp.MustCompile(`\bsetAttribute\s*\(`)
 	reLabelAttr = regexp.MustCompile(`^\s*['"](?:aria-label|aria-description|aria-valuetext|aria-roledescription|aria-placeholder|title|placeholder|alt)['"]\s*,`)

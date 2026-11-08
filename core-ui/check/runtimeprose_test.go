@@ -182,3 +182,15 @@ func TestRuntimeProseSkipsRegexQuotes(t *testing.T) {
 		t.Fatalf("expected 1 finding on line 4 (the toast prose), got:\n%s", res.Error())
 	}
 }
+
+func TestAskWordsProseNeedsPhrase(t *testing.T) {
+	dir := t.TempDir()
+	writeJS(t, dir, "ask.js", `window.confirm('Discard changes?');
+NS.askWords({message: 'Discard unsaved edits'});
+NS.askWords({message: NS.say('headless.leave_guard', 'You have unsaved changes.')});`)
+	res, err := LintRuntimeProse(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertLines(t, res, []int{1, 2})
+}
