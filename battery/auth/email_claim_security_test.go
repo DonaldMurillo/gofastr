@@ -102,6 +102,10 @@ func newClaimRig(t *testing.T, wrap ...func(*EntityUserStore) UserStore) *claimR
 		SessionTTL:          24 * time.Hour,
 		UserStore:           users,
 		AllowInMemoryStores: true,
+		// The rig drives forgot-password and magic-link send for one
+		// address in one flow; the shared per-address mail cooldown is
+		// not what these tests measure.
+		MailAddressRateLimit: &RateLimiterConfig{MaxAttempts: 100, Window: time.Minute},
 	})
 	rig.mgr.Use(NewCorePlugin())
 	tokens, err := NewSQLAPITokenStore(db)

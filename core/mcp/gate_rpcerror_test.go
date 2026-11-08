@@ -15,7 +15,11 @@ import (
 // saw -32602 on exactly the two gates hosts reach for first.
 func TestGateRPCErrorKeepsCode(t *testing.T) {
 	const code = -32001
-	refuse := func(context.Context) error { return &RPCError{Code: code, Message: "sign in first"} }
+	// Item gates answer as unknown names now, so a gate that wants its
+	// own code and message to cross marks the refusal with ShowRefusal.
+	// The server-wide gate (SetGate, CallToolFor) is endpoint-level, not
+	// an item gate, and always crosses.
+	refuse := func(context.Context) error { return ShowRefusal(&RPCError{Code: code, Message: "sign in first"}) }
 	noop := func(context.Context, map[string]any) (any, error) { return "ok", nil }
 
 	check := func(t *testing.T, surface string, got *RPCError) {

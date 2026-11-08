@@ -59,7 +59,9 @@ func TestGatedCustomToolOverTheWire(t *testing.T) {
 		return rec.Code, rec.Body.String()
 	}
 
-	// Anonymous: refused, handler untouched.
+	// Anonymous: refused, handler untouched. The refusal answers exactly
+	// as an unknown tool — a gated tool must not be confirmed to exist
+	// by a direct call — so the gate's words do not cross.
 	_, body := call("")
 	var resp struct {
 		Error *struct {
@@ -69,8 +71,8 @@ func TestGatedCustomToolOverTheWire(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		t.Fatalf("decode: %v\n%s", err, body)
 	}
-	if resp.Error == nil || !strings.Contains(resp.Error.Message, "authenticated caller") {
-		t.Fatalf("anonymous call must return the gate error, got: %s", body)
+	if resp.Error == nil || !strings.Contains(resp.Error.Message, "not found") {
+		t.Fatalf("anonymous call must answer as an unknown tool, got: %s", body)
 	}
 	if ran {
 		t.Fatal("handler ran for anonymous caller")

@@ -14,9 +14,9 @@ import "net/http"
 // truth the server already implements (core/mcp/transport.go: JSON-RPC POST
 // + text/event-stream responses, i.e. streamable HTTP).
 func (a *App) handleMCPManifest(w http.ResponseWriter, r *http.Request) {
-	base := resolveWellKnownBase(r)
+	base := a.resolveWellKnownBase(r)
 	name := a.mcpDisplayName()
-	writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, map[string]any{
 		"name":        name,
 		"description": a.mcpCardDescription(),
 		"endpoint":    base + "/mcp",

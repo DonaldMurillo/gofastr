@@ -60,6 +60,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
@@ -98,6 +99,26 @@ type AppConfig struct {
 	// GroupEntity routes are unaffected. A group owns its own prefix. MCP
 	// tool names are unchanged.
 	APIPrefix string
+
+	// BaseURL is the canonical origin (scheme://host) the well-known
+	// discovery documents build their absolute URLs from: the server
+	// card, the MCP manifest, the API catalog, /auth.md and the agent
+	// extras. Empty (default) derives the origin from the request (the
+	// Host it was addressed to, and X-Forwarded-Proto from a
+	// TrustedProxies peer). Set it when the app is reachable under one
+	// fixed origin: it wins over every request input, and the documents
+	// stop varying on Host and X-Forwarded-Proto, so a spoofed Host can
+	// no longer paint an attacker-named origin into cacheable output.
+	BaseURL string
+
+	// TrustedProxies lists the TCP peer addresses (IPs and CIDR ranges)
+	// X-Forwarded-Proto is honored from, the same trust rule the rate
+	// limiters apply to X-Forwarded-For. A client that is not a listed
+	// peer cannot change the scheme of the well-known documents' URLs.
+	// Empty (default) honors X-Forwarded-Proto from nobody, so behind a
+	// TLS-terminating proxy that forwards it you must list the proxy or
+	// set BaseURL.
+	TrustedProxies []string
 
 	// RequestTimeout caps the per-request wall-clock budget enforced by
 	// the default middleware chain. Zero (default) installs a 30s cap.
@@ -306,6 +327,9 @@ type App struct {
 	// middleware) and the path on it. EntityUI mounts the bulk and export
 	// routes on the same router, and its screens post to the full path.
 	crudMounts map[*entity.Entity]crudMount
+	// trustedProxies is AppConfig.TrustedProxies parsed once: the peers
+	// X-Forwarded-Proto is honored from in the well-known documents.
+	trustedProxies clientip.Proxies
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -1824,7 +1848,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(g.Prefix()+path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2006,6 +2030,9 @@ func NewApp(opts ...AppOption) *App {
 	for _, opt := range opts {
 		opt(a)
 	}
+	// Parsed after the options ran: a config set by any option is in
+	// place (the well-known documents read this on every request).
+	a.trustedProxies = clientip.ParseProxies(a.Config.TrustedProxies)
 	// The gate goes on whichever server the options left in a.MCP.
 	if a.mcpGate != nil && a.MCP != nil {
 		a.MCP.SetGate(a.mcpGate)
@@ -2951,7 +2978,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -3018,6 +3045,19 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		}
 		return nil
 	})}
+}
+
+// endpointMCPTwin wraps an Endpoint's MCPHandler so the tool's call
+// context carries the HTTP route pattern it is the twin of. The twin's
+// path parameters are then sanitized with the route's own catch-all
+// flags (handler.WithRoutePattern), so a {path...} route's tool accepts
+// a slash-bearing value the route accepts, dot-dot and empty segments
+// and control bytes still refused. A tool registered by hand keeps
+// every path parameter strict.
+func endpointMCPTwin(pattern string, h mcp.ToolHandler) mcp.ToolHandler {
+	return func(ctx context.Context, params map[string]any) (any, error) {
+		return h(handler.WithRoutePattern(ctx, pattern), params)
+	}
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to

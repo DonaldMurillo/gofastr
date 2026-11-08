@@ -96,6 +96,22 @@ type AuthConfig struct {
 	// with a huge MaxAttempts.
 	RegisterRateLimit *RateLimiterConfig
 
+	// MailAddressRateLimit limits the two endpoints that mail a link to
+	// whatever address they are given (/auth/magic-link/send and
+	// /auth/forgot-password) per email address, however many IPs ask:
+	// without it a rotating proxy mails a victim an unbounded stream of
+	// sign-in and reset links. Both endpoints spend the one budget the
+	// auth manager owns: a mail from either starts the cooldown for
+	// both, so an address gets at most one mail per window across the
+	// endpoints. nil does NOT mean unlimited: New installs one mail per
+	// address every two minutes (see defaultMailAddressRateLimit for why
+	// that is a cooldown, not an hourly budget). Past it the request
+	// gets the same 200 as any other and nothing is minted or sent, so
+	// the limit tells a caller nothing about the address. The key is a
+	// SHA-256 digest of the canonical address, never the address.
+	// Loosen by passing a config with a large MaxAttempts.
+	MailAddressRateLimit *RateLimiterConfig
+
 	// DevMode loosens the cookie defaults for local HTTP development.
 	// When true: SessionSecure=false, SessionCookie="session_id".
 	// When false (production default): SessionSecure=true, cookie name
@@ -223,6 +239,9 @@ func (c *AuthConfig) defaults() {
 			BlockDuration: 15 * time.Minute,
 		}
 	}
+	if c.MailAddressRateLimit == nil {
+		c.MailAddressRateLimit = defaultMailAddressRateLimit()
+	}
 	if c.DevMode {
 		if c.SessionCookie == "" {
 			c.SessionCookie = "session_id"
@@ -263,6 +282,27 @@ func randomDevJWTSecret() (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(buf[:]), nil
+}
+
+// defaultMailAddressRateLimit is the per-address floor on the two
+// endpoints that mail a link to whatever address they are given
+// (magic-link send, forgot-password), one budget shared by both: one
+// mail every two minutes, no longer block.
+//
+// It is a cooldown on purpose, not an hourly budget. Anyone can spend an
+// address's budget, and the first version (5 an hour, then an hour's
+// block) let a stranger send six requests and stop every link to the
+// victim for the next hour: for a passwordless app, no sign-in at all.
+// With a two-minute cooldown the mails a stranger triggers still reach
+// the victim's inbox, and each link lives longer than the cooldown, so
+// the owner always holds a working one, while a flood is held to about
+// thirty mails an hour.
+func defaultMailAddressRateLimit() *RateLimiterConfig {
+	return &RateLimiterConfig{
+		MaxAttempts:   1,
+		Window:        2 * time.Minute,
+		BlockDuration: 2 * time.Minute,
+	}
 }
 
 // UserStore is the interface auth needs to look up and manage users.
@@ -354,6 +394,10 @@ type AuthManager struct {
 	userStore    UserStore
 	sessionStore SessionStore
 	jwtAuth      *JWTAuth
+	// mailAddressLimit is the one per-address mail budget
+	// (AuthConfig.MailAddressRateLimit) magic-link send and
+	// forgot-password both spend from.
+	mailAddressLimit *RateLimiter
 
 	mu      sync.RWMutex
 	started bool
@@ -420,6 +464,10 @@ func New(config AuthConfig) *AuthManager {
 	} else {
 		mgr.sessionStore = NewMemorySessionStore()
 	}
+	// The shared per-address mail budget is built here, not in the
+	// plugins' Init, so both mail endpoints spend the same limiter
+	// however late a plugin registers.
+	mgr.mailAddressLimit = newScopedRateLimiter(*config.MailAddressRateLimit, "mail_address")
 	// Built here, not in Init: the usual wiring calls
 	// RequireAuth(mgr.JWT()) before App.Start runs Init, and a JWTAuth that
 	// only appeared at Init left that middleware holding nil. Every bearer
@@ -463,6 +511,15 @@ func PluginAs[T AuthPlugin](m *AuthManager, name string) (T, error) {
 		return zero, fmt.Errorf("auth: plugin %q is not %T", name, zero)
 	}
 	return typed, nil
+}
+
+// allowMailAddress spends one unit of the shared per-address mail budget
+// (AuthConfig.MailAddressRateLimit) and reports whether one was left.
+// Magic-link send and forgot-password both spend here, so a mail from
+// either endpoint starts the cooldown for both. A nil limiter allows
+// everything.
+func (m *AuthManager) allowMailAddress(ctx context.Context, email string) bool {
+	return allowAddress(ctx, m.mailAddressLimit, email)
 }
 
 // canonicalizeEmail applies AuthConfig.CanonicalizeEmail when set and

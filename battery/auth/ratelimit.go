@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
@@ -64,7 +63,7 @@ func (rl *RateLimiter) Middleware() func(http.Handler) http.Handler {
 func (rl *RateLimiter) guard(w http.ResponseWriter, r *http.Request) bool {
 	allowed, retry := rl.AllowContext(r.Context(), rl.clientIP(r))
 	if !allowed {
-		w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+		w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 		writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 		return false
 	}

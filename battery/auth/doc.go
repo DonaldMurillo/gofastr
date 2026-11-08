@@ -39,9 +39,11 @@
 // Rate limiting is on by default. [AuthConfig.LoginRateLimit] (per IP)
 // and [AuthConfig.LoginRateLimitPerAccount] (per canonical email) get
 // default throttles when nil, in DevMode too, and so do the per-plugin
-// RateLimit fields; magic-link send and forgot-password also limit each
-// address (AddressRateLimit). To loosen one, pass a config with a large
-// MaxAttempts; to share a budget across replicas, give it a
+// RateLimit fields; magic-link send and forgot-password also share one
+// per-address limit ([AuthConfig.MailAddressRateLimit], default one
+// mail per address every two minutes, so a mail from either endpoint
+// starts the cooldown for both). To loosen one, pass a config with a
+// large MaxAttempts; to share a budget across replicas, give it a
 // [SQLRateLimitStore].
 //
 // X-Forwarded-For is NOT trusted by default. Set

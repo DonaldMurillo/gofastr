@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 	"log"
 	"log/slog"
 	"net/http"
@@ -160,7 +161,7 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 	if allowed {
 		return true
 	}
-	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+	w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 	if isFormRequest(r) {
 		writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 	} else {
@@ -268,7 +269,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			key := "account:" + email
 			allowed, retry := c.loginLimitAccount.AllowContext(r.Context(), key)
 			if !allowed {
-				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+				w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 				if isForm {
 					writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				} else {

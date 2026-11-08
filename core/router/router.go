@@ -294,7 +294,7 @@ func Param(r *http.Request, name string) string {
 	if r.Pattern != "" && !declaresWildcard(r.Pattern, name) {
 		panic(fmt.Sprintf("router.Param: route %q has no {%s} wildcard", r.Pattern, name))
 	}
-	return SanitizePathParam(r.PathValue(name), isCatchAll(r.Pattern, name))
+	return SanitizePathParam(r.PathValue(name), IsCatchAllParam(r.Pattern, name))
 }
 
 // declaresWildcard reports whether pattern has a {name} or {name...}
@@ -304,9 +304,12 @@ func declaresWildcard(pattern, name string) bool {
 	return declared
 }
 
-// isCatchAll reports whether pattern declares name as a {name...}
-// multi-segment wildcard rather than a single-segment {name}.
-func isCatchAll(pattern, name string) bool {
+// IsCatchAllParam reports whether pattern declares name as a {name...}
+// multi-segment wildcard rather than a single-segment {name}. Readers
+// that hold a route pattern and a parameter name without the matched
+// *http.Request — an MCP tool twin binding its path params — use it to
+// pick the catch-all flag for [SanitizePathParam].
+func IsCatchAllParam(pattern, name string) bool {
 	return wildcards(pattern)[name]
 }
 

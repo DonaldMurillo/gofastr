@@ -23,14 +23,20 @@ import (
 // `query:"q"` or `path:"id"` reads params["q"] or params["id"], and the
 // remaining params decode strictly, the way Bind decodes a JSON body:
 // an unknown or duplicate key is an error. As in Bind, the body applies
-// last. A path value no route could match (a "/", a ".." segment, a
-// control byte) is refused, where the router would have cut it short.
+// last. A path value no route could match (a ".." segment, a control
+// byte, a "/" outside a catch-all) is refused, where the router would
+// have cut it short.
 // No two keys anywhere in params may fold to one name ("q" and "Q"), and
 // a tagged param given as "" is absent unless its tag carries `,empty`,
 // the rules Bind applies to a query string.
 //
 // The handler's context carries no *http.Request: RequestFromContext
-// returns nil on this path. Header-tagged fields stay zero.
+// returns nil on this path. Header-tagged fields stay zero. Where the
+// framework registers an endpoint's MCP twin it wraps the handler with
+// [WithRoutePattern], and a `path`-tagged param is then sanitized with
+// the route's own catch-all flags: a {name...} wildcard's twin accepts
+// a slash-bearing value the route accepts. A tool registered without a
+// route keeps every path parameter strict.
 func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map[string]any) (any, error) {
 	return func(ctx context.Context, params map[string]any) (result any, err error) {
 		defer func() {
@@ -43,7 +49,7 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 			}
 		}()
 		var in I
-		if err := bindToolParams(params, &in); err != nil {
+		if err := bindToolParams(ctx, params, &in); err != nil {
 			return nil, err
 		}
 		return h(ctx, in)
@@ -63,7 +69,7 @@ func ToolAdapter[I, O any](h Handler[I, O]) func(ctx context.Context, params map
 //
 // An empty tagged value ("") is absence, as an empty query value is in
 // Bind, unless the tag carries `,empty`.
-func bindToolParams(params map[string]any, dst any) error {
+func bindToolParams(ctx context.Context, params map[string]any, dst any) error {
 	whole, err := json.Marshal(params)
 	if err != nil {
 		return Fail(400, ReasonInvalidParams, map[string]any{"detail": JSONErrorDetail(err)})
@@ -71,6 +77,9 @@ func bindToolParams(params map[string]any, dst any) error {
 	if err := CheckObjectKeys(whole, FoldJSONKey); err != nil {
 		return err
 	}
+	// The HTTP route pattern the tool is the twin of, when the framework
+	// registered it (WithRoutePattern); empty for a hand-registered tool.
+	pattern, _ := ctx.Value(routePatternKey{}).(string)
 	rest := maps.Clone(params)
 	// A pointer-typed input (Handler[*T, O]) reads T's tags; settableField
 	// allocates the pointer when a tagged param arrives.
@@ -94,7 +103,10 @@ func bindToolParams(params map[string]any, dst any) error {
 				}
 				clean := sanitizeQueryParam(s)
 				if source == "path" {
-					clean = router.SanitizePathParam(s, false)
+					// Sanitize with the route's own catch-all flag, so
+					// the twin accepts what its HTTP route accepts.
+					// Without a route every path parameter stays strict.
+					clean = router.SanitizePathParam(s, pattern != "" && router.IsCatchAllParam(pattern, tag))
 				}
 				if clean != s {
 					return Fail(400, ReasonParameterControlByte, map[string]any{"source": source, "name": strconv.Quote(tag)})
@@ -165,4 +177,17 @@ func toolParamString(v any) (string, error) {
 		}
 		return "", i18n.NewError(jsonUnexpectedTypeRoot, map[string]any{"got": i18n.NewError(got)})
 	}
+}
+
+// routePatternKey is the context key for the HTTP route pattern an MCP
+// tool is the twin of, set by WithRoutePattern.
+type routePatternKey struct{}
+
+// WithRoutePattern returns a context carrying pattern, the HTTP route
+// whose MCP twin the tool serves. The framework sets it where it
+// registers an endpoint's twin; bindToolParams sanitizes `path`-tagged
+// params with the route's own catch-all flags. An empty pattern leaves
+// every path parameter strict.
+func WithRoutePattern(ctx context.Context, pattern string) context.Context {
+	return context.WithValue(ctx, routePatternKey{}, pattern)
 }

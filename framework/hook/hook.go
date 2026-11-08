@@ -80,7 +80,20 @@ func (hr *HookRegistry) ExecuteHooks(ctx context.Context, hookType HookType, dat
 		return nil
 	}
 	if fn := observer.Load(); fn != nil {
-		(*fn)(Firing{Entity: label, Type: hookType})
+		// The observer is host-installed code; a fault in it must not
+		// tear down the operation that fired the hook (the same
+		// posture runHookSafely gives the hooks themselves).
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Default().ErrorContext(ctx, "hook: observer panicked; ignored",
+						"panic", textsafe.Recovered(r),
+						"stack", string(debug.Stack()),
+					)
+				}
+			}()
+			(*fn)(Firing{Entity: label, Type: hookType})
+		}()
 	}
 	for _, fn := range fns {
 		if err := runHookSafely(ctx, fn, data); err != nil {

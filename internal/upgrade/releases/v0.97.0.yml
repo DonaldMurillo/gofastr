@@ -16,3 +16,30 @@ notes:
     breaking: true
     guidance: "A null on the wire (a PATCH to null, a row from before the column existed) was silently decoded into a zero value that read as authored data. Dereference where app code read such a field directly (sub.Mrr, inv.DueOn): the nil pointer is the honest absent. Regenerate with gofastr generate app gofastr.yml --force (or copy entities/ from a scratch regeneration for an app that hand-maintains its root) and let the compiler walk you to every read."
     nodetect: "the pointer types live in generated trees; a read of the old value-typed field is any selector on the entity struct, which no source shape separates from a dereference"
+  - change: "BREAKING - the AddressRateLimit fields on auth.MagicLinkConfig and auth.PasswordResetConfig are gone; magic-link send and forgot-password now spend one shared per-address mail budget (auth.AuthConfig.MailAddressRateLimit, default one mail per address every two minutes), so a mail from either endpoint starts the cooldown for both"
+    breaking: true
+    hits: edit
+    guidance: "Move any explicit AddressRateLimit setting to AuthConfig.MailAddressRateLimit on the auth.New call. A request inside the cooldown still gets the usual 200 and nothing is mailed; an end-to-end test that asks twice for one address passes MailAddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to AuthConfig."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
+
+  - change: "BREAKING - an MCP item gate's refusal on tools/call, resources/read and prompts/get answers exactly as an unknown name does, instead of crossing with the gate's message; a direct call can no longer confirm a gated tool, resource or prompt exists"
+    breaking: true
+    hits: edit
+    guidance: "A gate whose message the caller must read (an upgrade-your-plan refusal) wraps its error with mcp.ShowRefusal(err) before returning it; only then does the message cross, and a gate returning its own *mcp.RPCError keeps its code. Tests that assert a gated call's error message now see the unknown-name not-found answer. The server-wide SetGate is unchanged."
+    find:
+      uses:
+        - mcp.WithToolGate
+        - mcp.WithResourceGate
+        - mcp.WithPromptGate
+        - mcp.Gated
+
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of the framework well-known documents' URLs (MCP server card, /.well-known/mcp.json, api-catalog, /auth.md, agent extras) unless the TCP peer is listed in the new AppConfig.TrustedProxies, and the new AppConfig.BaseURL pins the origin outright"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8) or set AppConfig.BaseURL to the canonical https origin; otherwise the documents advertise http:// URLs. Apps not behind a proxy, or with an explicit BaseURL, are unaffected."
+    find:
+      uses:
+        - gofastr.NewApp

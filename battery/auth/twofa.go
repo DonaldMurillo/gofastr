@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 	"log/slog"
 	"math/big"
 	"net/http"
@@ -664,7 +665,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		allowed, retry, err := p.sessionGuesses.Admit(r.Context(), sha256hex(sess.Token))
 		if err != nil {
 			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
-			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+			w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 			writeAuthError(w, r, http.StatusServiceUnavailable, reasonTryAgainShortly)
 			return
 		}

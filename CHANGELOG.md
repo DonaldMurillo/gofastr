@@ -155,6 +155,16 @@ few lines, and link the PR or the docs page for the rest.
   with `validation.cascade_upsert_key`; the key goes in the body, where
   the upsert's checks read it.
 
+- **BREAKING: magic-link send and forgot-password share one per-address
+  mail budget** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-AU-03). `AuthConfig.MailAddressRateLimit` (default: one mail per
+  address every two minutes) sets the single budget both endpoints spend
+  from, so a mail from either starts the cooldown for both — an address
+  can no longer draw two mails per window by alternating endpoints. The
+  `AddressRateLimit` fields on `MagicLinkConfig` and
+  `PasswordResetConfig` are removed; move any explicit setting to
+  `AuthConfig.MailAddressRateLimit`.
+
 ### Security
 - **`App.ImportData` restores the bytes it checked**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
@@ -183,6 +193,39 @@ few lines, and link the PR or the docs page for the rest.
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
   already were.
+- **BREAKING: the well-known documents no longer take their origin
+  from an arbitrary client** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was #657).
+  The MCP server card, `/.well-known/mcp.json`, the api-catalog,
+  `/auth.md` and the agent extras built their absolute URLs from the
+  request Host and an `X-Forwarded-Proto` header any client could set,
+  painting an attacker-named origin into cacheable discovery documents.
+  New `AppConfig.BaseURL` pins the origin outright (and the documents
+  stop varying on Host/`X-Forwarded-Proto`); without it,
+  `X-Forwarded-Proto` is honored only from a peer listed in the new
+  `AppConfig.TrustedProxies`, the same trust rule the rate limiters
+  apply to `X-Forwarded-For`. Behind a TLS-terminating proxy, list the
+  proxy or set `BaseURL`, or the documents advertise `http://` origins.
+- **BREAKING: an MCP item gate answers exactly as an unknown name**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #656). `tools/call`, `resources/read` and `prompts/get` answered an
+  item the caller is gated out of with the gate's message, but an
+  unknown one with not-found — a direct call was an existence oracle
+  over items the listings already hide. An unmarked gate refusal (and a
+  panicking gate) now answers byte-identically to an unknown name, on
+  every item gate (`WithToolGate`, `WithResourceGate`,
+  `WithPromptGate`, `Gated`) and the entity-tool gates. A gate whose
+  words the caller must read ("upgrade your plan") wraps its error with
+  the new `mcp.ShowRefusal(err)`, and only then does the message cross,
+  keeping its `*RPCError` code when it returns one. The server-wide
+  `SetGate` is endpoint-level and still crosses.
+- **One MCP caller cannot fill the resource-subscription cap**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #656). `resources/subscribe` now bounds each caller to 256 distinct
+  uris, a quarter of the shared 1024 cap, so one caller can no longer
+  take every slot and refuse everyone else's subscribe; re-subscribing
+  a held uri is not growth and always works. An anonymous caller is its
+  TCP peer's IPv6 /64 (the grouping the rate limiters use), so rotating
+  hosts inside one prefix does not draw a fresh budget.
 - **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
   ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
   `Report.Apply` checked the symlink-resolved path against the project
@@ -241,6 +284,55 @@ few lines, and link the PR or the docs page for the rest.
   assigning the `JSONCase` field. Assigning still works (crud's field
   cache rekeys when the case differs); the template now reads the way
   the framework does. Meridian and ecommerce are regenerated.
+- **`CallWithID` no longer reports an id for a request that cannot be
+  sent** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  was #656). `moduleproto.Peer` marshaled the params after `onID`
+  reported the frame id, so a call whose params failed to marshal armed
+  the supervisor's `module.cancel` for a frame that never crossed the
+  wire. Params now marshal first; `onID` fires only once the request is
+  sendable.
+- **An A2A skill always serializes its required keys**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #659). The A2A AgentSkill schema marks `description` and `tags`
+  required, but `uihost.AgentSkill` carried `omitempty` on both, so a
+  skill with no description and no tags serialized without the keys and
+  failed schema validation downstream. Both keys now always serialize —
+  an unset description as `""`, an unset tags list as `[]`, never
+  `null`.
+- **Navigation fetches bypass the page cache**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). `cache.CacheMiddleware`'s key ignored `X-Gofastr-Navigate`,
+  so a cookieless client-side navigation could be answered with the
+  cached full page, and a navigation's partial could be stored under
+  the full page's key and replayed to the next plain GET. Navigation
+  fetches now pass through uncached with `X-Cache: BYPASS`, like Range
+  requests: a navigation is a user action expecting current state.
+- **`Retry-After` never reads 0 while the caller is still limited**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). The generic rate-limit middleware and the auth battery's
+  limiters (login, magic-link send, forgot-password, password reset,
+  2FA, password change) formatted the header with `%.0f`, which rounds
+  to nearest, so a block with under half a second left answered
+  `Retry-After: 0` — telling a still-blocked client to retry at once.
+  All sites now format through the new exported
+  `ratelimit.RetryAfterSeconds` (rounds up, floors at 1 while a wait
+  remains).
+- **A panicking `hook.SetObserver` / `event.SetObserver` callback no
+  longer takes down the operation it observes**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
+  #657). The observers ran inline on the hook-firing and event-emission
+  paths with no recover, so a fault in coverage tooling tore down the
+  request goroutine. Both dispatch sites now recover and log the fault;
+  the hooks and subscribers still run.
+- **An endpoint's MCP twin accepts what its route accepts, catch-all
+  included** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-HD-03). Where the framework registers an endpoint's MCP twin it
+  now puts the route pattern on the tool's call context, and a
+  `path`-tagged parameter is sanitized with the route's own catch-all
+  flag: a `/files/{path...}` route's tool takes a slash-bearing value.
+  `..` segments, empty segments and control bytes stay refused, and a
+  tool registered by hand (no route) keeps every path parameter strict.
+  New: `router.IsCatchAllParam`, `handler.WithRoutePattern`.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

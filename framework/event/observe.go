@@ -1,6 +1,12 @@
 package event
 
-import "sync/atomic"
+import (
+	"log/slog"
+	"runtime/debug"
+	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
+)
 
 // Emission is one event that was published on a bus.
 //
@@ -39,9 +45,23 @@ func SetObserver(fn func(Emission)) {
 	observer.Store(&fn)
 }
 
-// observeEmission reports a publication to the installed observer.
+// observeEmission reports a publication to the installed observer. The
+// observer is host-installed code running inline on the publish path
+// (including the request path when the bus is wired into an
+// AfterCreate hook), so a panicking observer is recovered and logged,
+// never allowed to take the emission with it.
 func observeEmission(eventType string, subscribers int) {
 	if fn := observer.Load(); fn != nil {
-		(*fn)(Emission{Type: eventType, Subscribers: subscribers})
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Default().Error("event: observer panicked; ignored",
+						"panic", textsafe.Recovered(r),
+						"stack", string(debug.Stack()),
+					)
+				}
+			}()
+			(*fn)(Emission{Type: eventType, Subscribers: subscribers})
+		}()
 	}
 }

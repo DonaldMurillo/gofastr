@@ -121,7 +121,10 @@ func TestListToolsExcludesGated(t *testing.T) {
 }
 
 // TestCallGateGenericRefusalMessage verifies the RPC error for a gated
-// tool does not leak module identity (L4).
+// tool does not leak module identity (L4) and answers exactly as an
+// unknown tool: a distinct "unavailable" confirmed the tool exists, the
+// two-layer module gate's rule being that disabled is indistinguishable
+// from uninstalled.
 func TestCallGateGenericRefusalMessage(t *testing.T) {
 	s := NewServer()
 	s.SetCallGate(func(name string) error {
@@ -138,13 +141,16 @@ func TestCallGateGenericRefusalMessage(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for gated tool")
 	}
-	// The message must be generic: no module name, no "disabled" state.
-	msg := err.Error()
-	if msg != "tool unavailable" && !strings.Contains(msg, "tool unavailable") {
-		t.Fatalf("expected generic 'tool unavailable', got %q", msg)
+	rpcErr, ok := err.(*RPCError)
+	if !ok {
+		t.Fatalf("want *RPCError, got %T", err)
 	}
-	if strings.Contains(msg, "module") || strings.Contains(msg, "disabled") {
-		t.Fatalf("refusal message leaks module identity: %q", msg)
+	if rpcErr.Code != ErrMethodNotFound || rpcErr.Message != `tool "blocked" not found` {
+		t.Fatalf("want the unknown-tool answer, got %q", err.Error())
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "module") || strings.Contains(msg, "disabled") || strings.Contains(msg, "unavailable") {
+		t.Fatalf("refusal message leaks the gate: %q", msg)
 	}
 }
 

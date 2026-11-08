@@ -612,8 +612,8 @@ func TestPanickingGateFailsClosedEverywhere(t *testing.T) {
 		}
 		p, _ := json.Marshal(map[string]any{"uri": "gate://x"})
 		resp := s.HandleRequest(context.Background(), Request{JSONRPC: "2.0", ID: 1, Method: "resources/read", Params: p})
-		if resp.Error == nil || resp.Error.Code != ErrInternalError {
-			t.Fatalf("panicking resource gate must become an internal-error response, got %+v", resp)
+		if resp.Error == nil || resp.Error.Code != ErrMethodNotFound || resp.Error.Message != `resource "gate://x" not found` {
+			t.Fatalf("panicking resource gate must answer as an unknown uri (fail closed without confirming it), got %+v", resp)
 		}
 		if ran {
 			t.Error("contents func ran behind a panicking gate")
@@ -672,8 +672,11 @@ func TestToolGatePanicBecomesInternalError(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatalf("SECURITY: [gate-panic] panicking tool gate came back as a success response: %+v", resp.Result)
 	}
-	if resp.Error.Code != ErrInternalError {
-		t.Fatalf("SECURITY: [gate-panic] error code = %d, want %d (internal error, mirroring checkPromptGate)", resp.Error.Code, ErrInternalError)
+	// A panicking gate fails closed AND answers as an unknown tool: an
+	// internal error would still confirm the tool exists, the existence
+	// oracle the masked refusal closes.
+	if resp.Error.Code != ErrMethodNotFound {
+		t.Fatalf("SECURITY: [gate-panic] error code = %d, want %d (not found: a broken gate fails closed without confirming the tool)", resp.Error.Code, ErrMethodNotFound)
 	}
 	if strings.Contains(resp.Error.Message, panicSecret) {
 		t.Fatalf("SECURITY: [gate-panic] panic value leaked to the caller: %q", resp.Error.Message)
