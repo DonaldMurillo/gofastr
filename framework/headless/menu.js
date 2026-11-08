@@ -118,16 +118,16 @@
   let typeBuf = '', typeAt = 0;
 
   document.addEventListener('keydown', (e) => {
-    // Tab from a caller-owned trigger closes its menu before focus
-    // moves on: menuitems are tabindex=-1, so Tab would otherwise jump
-    // past the panel and strand the menu open.
+    // Tab from a trigger closes its menu before focus moves on: a
+    // caller-owned trigger's wrapper names its menu, and the native
+    // summary is its menu's own child. Menuitems are tabindex=-1, so
+    // Tab would otherwise jump past the panel and strand the menu
+    // open; focus stays on the summary when every row is disabled.
     if (e.key === 'Tab') {
       const t = e.target;
       const w = t && t.closest && t.closest(TRIGGER_WRAP);
-      if (w) {
-        const d = detailsOfTrigger(w);
-        if (d) closeChain(d);
-      }
+      const d = w ? detailsOfTrigger(w) : t && t.matches && t.matches('details[data-hui-menu] > summary') && t.parentElement;
+      if (d) closeChain(d);
     }
     // Space activates a native <button> but not an <a>; an anchor
     // trigger must still open on Space, and the page must not scroll.

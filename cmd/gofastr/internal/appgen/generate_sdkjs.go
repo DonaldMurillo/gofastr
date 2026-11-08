@@ -37,7 +37,7 @@ func renderSDKJSFiles(spec sdkSpec) []GeneratedFile {
 	var resourceProps []string
 	for i, ent := range spec.Entities {
 		decl := spec.Decls[i]
-		writeJSEntity(&js, &dts, decl, ent)
+		writeJSEntity(&js, &dts, decl, ent, spec.Decls)
 		// this[%q], not this.%s. See the note on the field-key emission in
 		// writeJSEntity. `this.<name> = …` is a JS STATEMENT position, so an
 		// unquoted name there is the sharper of the two sites: a `;` in it ends
@@ -201,8 +201,9 @@ var jsClientMembers = []string{"baseURL", "token", "_fetch", "do", "_readBody", 
 // writeJSEntity emits one entity's typed surface into both builders: the
 // d.ts interfaces (walking the declaration exactly like renderClientEntity,
 // so Go and TS types describe the same wire shape) and the snake_case
-// field-name constant both languages use for filter/sort params.
-func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, ent cliEntity) {
+// field-name constant both languages use for filter/sort params. decls
+// resolves the key type a relation field carries.
+func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, ent cliEntity, decls []framework.EntityDeclaration) {
 	// d.ts: output interface. Responses are camelCase; every visible field
 	// except id may be omitted by the server's omitempty handling.
 	// A declared key's fields are always present, like id.
@@ -211,7 +212,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 	if keyIsID {
 		fmt.Fprintf(dts, "  id: %s;\n", tsKeyType(decl))
 	}
-	for _, fd := range decl.Fields {
+	for _, fd := range responseFields(decl) {
 		if (keyIsID && fd.Name == "id") || fd.Hidden {
 			continue
 		}
@@ -219,7 +220,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if slices.Contains(decl.PrimaryKey, fd.Name) {
 			opt = ""
 		}
-		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, tsTypeForField(fd.Type, fd.Values)+dtsNull(decl, fd))
+		fmt.Fprintf(dts, "  %s%s: %s;\n", appspec.WireKey(fd.Name), opt, tsFieldType(fd, decls)+dtsNull(decl, fd))
 	}
 	dts.WriteString("}\n\n")
 
@@ -242,7 +243,7 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		if inputTakesValue(fd) {
 			opt = ""
 		}
-		typ := tsTypeForField(fd.Type, fd.Values) + dtsNull(decl, fd)
+		typ := tsFieldType(fd, decls) + dtsNull(decl, fd)
 		if slices.ContainsFunc(uploadFields(decl), func(u framework.FieldDeclaration) bool { return u.Name == fd.Name }) {
 			// A Blob (a File is one) is uploaded; a string is a stored URL.
 			typ += " | Blob"
@@ -289,6 +290,10 @@ func writeJSEntity(js, dts *strings.Builder, decl framework.EntityDeclaration, e
 		// never executed, so the worst case there is a tsc error in the
 		// consumer rather than code running.
 		fmt.Fprintf(dts, "  %s: %q;\n", f.Wire, f.Snake)
+	}
+	for _, stamp := range injectedTimestamps(decl) {
+		fmt.Fprintf(js, "  %q: %q,\n", appspec.WireKey(stamp.Name), stamp.Name)
+		fmt.Fprintf(dts, "  %q: %q;\n", appspec.WireKey(stamp.Name), stamp.Name)
 	}
 	js.WriteString("});\n\n")
 	dts.WriteString("}>;\n\n")
@@ -380,6 +385,21 @@ func stampNote(stamp string) string {
 		return ""
 	}
 	return ", stamps " + stamp
+}
+
+// tsFieldType is tsTypeForField with a relation resolved to the key type of
+// the entity it names, matched the way relationKeyField matches it: an
+// integer-key target sends a number, which a relation typed string denied.
+// A target outside decls, or one keyed by several columns, stays string.
+func tsFieldType(fd framework.FieldDeclaration, decls []framework.EntityDeclaration) string {
+	if strings.EqualFold(fd.Type, "relation") && fd.To != "" && !fd.Many {
+		for _, target := range decls {
+			if (target.Name == fd.To || target.Table == fd.To) && len(declKeyCols(target)) == 1 {
+				return tsKeyType(target)
+			}
+		}
+	}
+	return tsTypeForField(fd.Type, fd.Values)
 }
 
 // tsTypeForField mirrors goTypeForField for TypeScript. Decimal stays a

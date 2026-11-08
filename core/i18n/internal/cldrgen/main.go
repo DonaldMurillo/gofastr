@@ -2,12 +2,14 @@
 // Unicode CLDR JSON release named by cldrVersion: for every locale CLDR
 // rates "modern", its date and time patterns, month, weekday, era and
 // day-period names, the flexible day periods a "B" pattern reads, GMT
-// formats, list patterns, number symbols and patterns, and its cardinal
-// plural rules; plus the plural rules of the languages CLDR has rules
-// for but no modern locale. golang.org/x/text carries currency symbols
-// and rounding, but no date or list data, and its number and plural
-// data predate CLDR 47 (Arabic digits for ar, grouping "1.234" for es,
-// French's million read as "other"), so this table holds the rest. It
+// formats, list patterns, number symbols (NaN included) and patterns, and
+// its cardinal plural rules; plus the plural rules of the languages CLDR
+// has rules for but no modern locale, each currency's standard fraction
+// digits, and each region's first day of the week. golang.org/x/text
+// carries currency symbols, but no date or list data, and its number,
+// plural and currency-digit data predate CLDR 47 (Arabic digits for ar,
+// grouping "1.234" for es, French's million read as "other", no fraction
+// digits for AMD), so this table holds the rest. It
 // also writes every plural rule's CLDR samples into
 // cldr_plural_samples_test.go, which checks the rules against them.
 //
@@ -156,6 +158,7 @@ type record struct {
 	numbering            string
 	decimal, group       string
 	minus, percentSign   string
+	nan                  string
 	minGrouping          int
 	decimalPattern       string
 	percentPattern       string
@@ -261,11 +264,13 @@ func load(cache, loc string) (record, error) {
 		Group       string `json:"group"`
 		MinusSign   string `json:"minusSign"`
 		PercentSign string `json:"percentSign"`
+		NaN         string `json:"nan"`
 	}
 	if err := json.Unmarshal(n["symbols-numberSystem-"+r.numbering], &sym); err != nil {
 		return r, fmt.Errorf("%s: symbols: %w", loc, err)
 	}
 	r.decimal, r.group, r.minus, r.percentSign = sym.Decimal, sym.Group, sym.MinusSign, sym.PercentSign
+	r.nan = sym.NaN
 	var standard struct {
 		Standard string `json:"standard"`
 	}
@@ -329,6 +334,7 @@ func (r *record) fields() []field {
 		{"group", r.group},
 		{"minus", r.minus},
 		{"percentSign", r.percentSign},
+		{"nan", r.nan},
 		{"minGrouping", r.minGrouping},
 		{"decimalPattern", r.decimalPattern},
 		{"percentPattern", r.percentPattern},
@@ -339,7 +345,8 @@ func (r *record) fields() []field {
 }
 
 // supplemental is the locale-independent CLDR data: plural rules by
-// CLDR id, the parent locale map, and the day-period rule sets.
+// CLDR id, the parent locale map, the day-period rule sets, currency
+// fraction digits and week data.
 type supplemental struct {
 	rules   map[string]pluralRules // lower-cased id → rules
 	ids     []string               // the rule ids, as CLDR spells them
@@ -349,6 +356,15 @@ type supplemental struct {
 		From   string `json:"_from"`
 		Before string `json:"_before"`
 	}
+	// currencyDigits is each currency CLDR lists a fraction for, by ISO
+	// 4217 code; defaultDigits is every other code's.
+	currencyDigits map[string]int
+	defaultDigits  int
+	// firstDay is each region whose week starts on another day than
+	// worldFirstDay, CLDR's world default (region 001); both are indexes
+	// into weekdays.
+	firstDay      map[string]int
+	worldFirstDay int
 }
 
 // pluralRules is one id's rule set: each category's condition, and
@@ -432,7 +448,110 @@ func loadSupplemental(cache string) (*supplemental, error) {
 	for k, v := range periods.Supplemental.RuleSet {
 		sup.periods[strings.ToLower(strings.ReplaceAll(k, "_", "-"))] = v
 	}
+	if err := sup.loadCurrencyDigits(cache); err != nil {
+		return nil, err
+	}
+	if err := sup.loadFirstDays(cache); err != nil {
+		return nil, err
+	}
 	return sup, nil
+}
+
+// maxCurrencyDigits bounds a currency's fraction digits; CLDR's most is
+// four (CLF, UYW), and core/i18n caps fraction digits at 20.
+const maxCurrencyDigits = 20
+
+// loadCurrencyDigits reads CLDR's currencyData fractions: the standard
+// digits of each currency it lists, and DEFAULT's for every other code.
+// Cash digits are not read; Currency writes standard amounts.
+func (s *supplemental) loadCurrencyDigits(cache string) error {
+	var data struct {
+		Supplemental struct {
+			CurrencyData struct {
+				Fractions map[string]struct {
+					Digits string `json:"_digits"`
+				} `json:"fractions"`
+			} `json:"currencyData"`
+		} `json:"supplemental"`
+	}
+	if err := fetchJSON(cache, "cldr-core/supplemental/currencyData.json", &data); err != nil {
+		return err
+	}
+	fractions := data.Supplemental.CurrencyData.Fractions
+	fallback, ok := fractions["DEFAULT"]
+	if !ok {
+		return errors.New("currencyData: no DEFAULT fraction")
+	}
+	var err error
+	if s.defaultDigits, err = currencyDigits("DEFAULT", fallback.Digits); err != nil {
+		return err
+	}
+	s.currencyDigits = map[string]int{}
+	for code, fraction := range fractions {
+		if code == "DEFAULT" {
+			continue
+		}
+		if !upperLetters(code, 3) {
+			return fmt.Errorf("currencyData: code %q", code)
+		}
+		if s.currencyDigits[code], err = currencyDigits(code, fraction.Digits); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func currencyDigits(code, digits string) (int, error) {
+	count, err := strconv.Atoi(digits)
+	if err != nil || count < 0 || count > maxCurrencyDigits {
+		return 0, fmt.Errorf("currencyData %s: digits %q", code, digits)
+	}
+	return count, nil
+}
+
+// upperLetters reports whether s is exactly size ASCII capital letters:
+// an ISO 4217 code at 3, an ISO 3166 region at 2.
+func upperLetters(s string, size int) bool {
+	return len(s) == size && strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
+}
+
+// loadFirstDays reads CLDR's weekData firstDay. A key with an -alt-
+// suffix (GB-alt-variant) is a variant no plain region asks for, and
+// is skipped.
+func (s *supplemental) loadFirstDays(cache string) error {
+	var data struct {
+		Supplemental struct {
+			WeekData struct {
+				FirstDay map[string]string `json:"firstDay"`
+			} `json:"weekData"`
+		} `json:"supplemental"`
+	}
+	if err := fetchJSON(cache, "cldr-core/supplemental/weekData.json", &data); err != nil {
+		return err
+	}
+	days := data.Supplemental.WeekData.FirstDay
+	world := slices.Index(weekdays, days["001"])
+	if world < 0 {
+		return fmt.Errorf("weekData: world firstDay %q", days["001"])
+	}
+	s.worldFirstDay = world
+	s.firstDay = map[string]int{}
+	for region, day := range days {
+		if region == "001" || strings.Contains(region, "-alt-") {
+			continue
+		}
+		if !upperLetters(region, 2) {
+			return fmt.Errorf("weekData: region %q", region)
+		}
+		index := slices.Index(weekdays, day)
+		if index < 0 {
+			return fmt.Errorf("weekData %s: firstDay %q", region, day)
+		}
+		if index != world {
+			s.firstDay[region] = index
+		}
+	}
+	return nil
 }
 
 // chain is loc and its ancestors, most specific first: CLDR's explicit
@@ -679,7 +798,7 @@ func render(locales []string, records []record, sup *supplemental, modern map[st
 	var uniq []record
 	index := map[string]int{}
 	var b bytes.Buffer
-	fmt.Fprintf(&b, "// Code generated by core/i18n/internal/cldrgen from CLDR %s; DO NOT EDIT.\n\npackage i18n\n\n", cldrVersion)
+	fmt.Fprintf(&b, "// Code generated by core/i18n/internal/cldrgen from CLDR %s; DO NOT EDIT.\n\npackage i18n\n\nimport \"time\"\n\n", cldrVersion)
 	fmt.Fprintf(&b, "// cldrVersion is the CLDR release cldrLocales was generated from.\nconst cldrVersion = %q\n\n", cldrVersion)
 	b.WriteString("// cldrLocaleIndex maps a lower-cased CLDR locale id to its entry in\n// cldrLocales.\nvar cldrLocaleIndex = map[string]uint16{\n")
 	for i, loc := range locales {
@@ -731,8 +850,30 @@ func render(locales []string, records []record, sup *supplemental, modern map[st
 		pr := sup.rules[low]
 		fmt.Fprintf(&b, "\t%q: %s,\n", low, strs(pr.conds[:]))
 	}
+	b.WriteString("}\n\n")
+	fmt.Fprintf(&b, "// cldrCurrencyDefaultDigits is the standard fraction digits of a\n"+
+		"// currency cldrCurrencyDigits does not list.\nconst cldrCurrencyDefaultDigits = %d\n\n", sup.defaultDigits)
+	b.WriteString("// cldrCurrencyDigits is CLDR's standard fraction digits by ISO 4217\n" +
+		"// code, for the currencies CLDR lists.\nvar cldrCurrencyDigits = map[string]int{\n")
+	for _, code := range slices.Sorted(maps.Keys(sup.currencyDigits)) {
+		fmt.Fprintf(&b, "\t%q: %d,\n", code, sup.currencyDigits[code])
+	}
+	b.WriteString("}\n\n")
+	fmt.Fprintf(&b, "// cldrWorldFirstDay is the first day of the week in a region\n"+
+		"// cldrFirstDay does not list: CLDR's world default.\nconst cldrWorldFirstDay = %s\n\n", weekdayConst(sup.worldFirstDay))
+	b.WriteString("// cldrFirstDay is CLDR's weekData firstDay for each region whose week\n" +
+		"// does not start on cldrWorldFirstDay.\nvar cldrFirstDay = map[string]time.Weekday{\n")
+	for _, region := range slices.Sorted(maps.Keys(sup.firstDay)) {
+		fmt.Fprintf(&b, "\t%q: %s,\n", region, weekdayConst(sup.firstDay[region]))
+	}
 	b.WriteString("}\n")
 	return format.Source(b.Bytes())
+}
+
+// weekdayConst spells an index into weekdays (Sunday first, as
+// time.Weekday counts) as its time constant.
+func weekdayConst(index int) string {
+	return "time." + time.Weekday(index).String()
 }
 
 // renderSamples writes every rule set's CLDR samples, by lower-cased id,

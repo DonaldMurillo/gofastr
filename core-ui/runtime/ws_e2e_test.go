@@ -665,3 +665,57 @@ func TestWS5xxRefusalRetries(t *testing.T) {
 		t.Fatalf("server saw %d dials, want a retry", n)
 	}
 }
+
+// A 45xx close is "not now" even when the closing handshake completes.
+// The server here reads the client's close frame before it hangs up, so
+// the browser reports wasClean, and the class read 'closed': a server
+// saying "try again" looked like a deliberate goodbye while the module
+// redialed. The class is 'error' and the retry still runs.
+func TestWS5xxCleanCloseReadsError(t *testing.T) {
+	mux := http.NewServeMux()
+	handleRuntimeModules(t, mux)
+	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := wsHandshake(w, r)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write(wsCloseReason(4503, "try again"))
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		reply := make([]byte, 64)
+		_, _ = conn.Read(reply)
+	})
+	script := `
+    window.__clean = [];
+    const NativeWebSocket = window.WebSocket;
+    window.WebSocket = function (url) {
+      const sock = new NativeWebSocket(url);
+      sock.addEventListener('close', (ev) => window.__clean.push(ev.wasClean));
+      return sock;
+    };
+    window.__classes = [];
+    __gofastr.loadModule('ws').then(() => {
+      window.__ws = __gofastr.connectWebSocket('ws://' + location.host + '/ws', {
+        onGenerationEnd: (info) => window.__classes.push(info.reasonClass),
+      });
+      window.__ready = true;
+    });
+  `
+	base := wsTestPage(t, mux, script)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.WaitVisible(`#ready`, chromedp.ByID),
+		chromedp.Poll(`window.__ready === true`, nil, chromedp.WithPollingTimeout(10*time.Second)),
+		chromedp.Poll(`window.__ws.status.generation >= 2`, nil, chromedp.WithPollingTimeout(10*time.Second), chromedp.WithPollingInterval(100*time.Millisecond)),
+	); err != nil {
+		t.Fatalf("chromedp: a clean 4503 close was not retried: %v", err)
+	}
+	var got string
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`JSON.stringify({clean: window.__clean[0], class: window.__classes[0], refused: window.__ws.status.refused})`, &got)); err != nil {
+		t.Fatalf("probe: %v", err)
+	}
+	if got != `{"clean":true,"class":"error","refused":0}` {
+		t.Fatalf("first generation = %s, want a clean close read as error, not a refusal", got)
+	}
+}

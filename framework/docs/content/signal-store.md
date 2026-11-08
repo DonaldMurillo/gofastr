@@ -63,6 +63,9 @@ different default panics; declaring it identically is idempotent.
   slice. Reset to the page's value on every navigation.
 - **App-global** (`.Global()`): seeded on every page and **preserved across
   client-side navigation**; a value the user mutated (cart count) survives.
+  Every swap, including Back or Forward to a cached page, renders the kept
+  value into the bindings it brings, so the new page's badge shows the
+  stored count rather than the one its markup carried.
 
 The host emits one inert `<script type="application/json" id="gofastr-signals">`
 island; the runtime seeds `_signals` before hydration. SPA-nav partials carry a

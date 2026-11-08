@@ -41,8 +41,8 @@ func envelopeSeedServer(t *testing.T) *httptest.Server {
 			`<div data-cui-outlet="l:site#side" id="side">SIDE</div>` +
 			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main></div>`
 	}
-	home := `<p id="screen-home"><span data-cui-signal="quantity">1</span></p>`
-	screenA := `<p id="screen-a"><span data-cui-signal="quantity">10</span></p>`
+	home := `<p id="screen-home"><span data-cui-signal="quantity">1</span><span id="home-cart" data-cui-signal="cart">0</span></p>`
+	screenA := `<p id="screen-a"><span data-cui-signal="quantity">10</span><span id="a-cart" data-cui-signal="cart">0</span></p>`
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -163,6 +163,42 @@ func TestEnvelopeReplayRestoresPageSignals(t *testing.T) {
 	}
 	if cart != "3" {
 		t.Errorf("global cart = %s after the replays, want the user's 3", cart)
+	}
+}
+
+// A fill and a cache replay through the envelope navigator paint the
+// stored global into the markup they bring. The store kept the cart the
+// reader set while the filled /a and the replayed boot page showed the
+// server's 0.
+func TestEnvelopeSwapShowsStoredGlobal(t *testing.T) {
+	srv := envelopeSeedServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var onA, back string
+	var soft bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.__softMark = 1; __gofastr.setSignal('cart', 3); true`, nil),
+		chromedp.Click(`#goA`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Text(`#a-cart`, &onA, chromedp.ByID),
+		chromedp.Evaluate(`__gofastr.setSignal('cart', 4); history.back(); true`, nil),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Text(`#home-cart`, &back, chromedp.ByID),
+		chromedp.Evaluate(`window.__softMark === 1`, &soft),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !soft {
+		t.Fatal("a navigation reloaded the document; the test needs soft swaps")
+	}
+	if onA != "3" {
+		t.Errorf("cart badge filled into /a = %s, want the stored 3", onA)
+	}
+	if back != "4" {
+		t.Errorf("cart badge after Back to the boot page = %s, want the stored 4", back)
 	}
 }
 

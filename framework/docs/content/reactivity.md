@@ -127,8 +127,10 @@ panel := preset.FloatingPanel("ops-panel").
 ```
 
 On each interval the runtime re-fetches the widget's `/state` endpoint and
-re-applies the signals that changed. No SSE binding, no event name, no
-per-widget push channel.
+re-applies the signals that changed. A value equal to the stored one is
+skipped (an object or array compares by its JSON), so an unchanged response
+does not rewrite a bound node or replay its `data-cui-flash-on-update`. No SSE
+binding, no event name, no per-widget push channel.
 
 **Why prefer polling.** Any replica can answer the fetch from the DB. You do
 not need `WithFanout`, you do not need sticky routing, and the page works the
@@ -253,7 +255,8 @@ applied the snapshot, via `handle.hydrated(sequence)`), and
 credential in any log. `refused` is a server that accepted the
 handshake only to close with 4000 + a 4xx status (kept on
 `status.refused`); it is final and not retried, where a 4000 + 5xx
-close is an `error` and retried. Hooks are idempotent per generation. A new
+close is an `error` and retried, even when the closing handshake
+completed cleanly. Hooks are idempotent per generation. A new
 generation invalidates only generation-bound work; which state survives
 (a healthy peer, the session) is the application's call, and so is
 marking the protocol caught-up with `handle.resyncComplete()`.

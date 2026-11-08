@@ -151,7 +151,10 @@ app.Router().Handle("GET", "/metrics", logp.MetricsHandler())
 ```
 
 The handler is stateless and safe to mount under any access-controlled
-prefix you use for ops endpoints.
+prefix you use for ops endpoints. `Metrics` and `MetricsHandler` work
+before the plugin's `Init` too: every counter reads 0 until the sinks
+exist, and a handler built from `log.New(...)` before registration
+reports the live counters once `Init` has run.
 
 ## Error reporting
 

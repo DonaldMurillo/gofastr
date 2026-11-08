@@ -210,7 +210,20 @@ The middleware is RFC 9111-compliant by default:
   as an empty-body `HIT` (RFC 9111 §4.3.1).
 - `Vary` headers are respected, including ones middleware outside the
   cache set (`WithI18n` adds `Vary: Accept-Language, X-Locale`, so each
-  language gets its own entry); `Vary: *` disables caching.
+  language gets its own entry); `Vary: *` disables caching. Each
+  variant is a separate entry with the middleware's TTL, so a light and
+  a dark page both stay stored, and the URL's key holds a small index
+  naming the headers it varies on. Request header values reach the
+  variant's key only as a SHA-256 digest. An unsafe request drops the
+  index, which retires the existing variant generation, though those
+  entries hold their slots until their TTLs.
+  A `MemoryCache` sized with `WithMaxEntries` spends one entry on the
+  index. Invalidation is not synchronized with in-flight GET stores:
+  a GET already fetching or storing a response can repopulate the
+  cache after an unsafe request, including an older generation.
+  Applications requiring atomic read/write invalidation need additional
+  coordination; the middleware does not provide it for plain or varying
+  responses.
 - Under `WithLocalePrefixes` the router strips `/es` before middleware
   runs, so the key carries the URL's locale: `/es/pricing` and
   `/pricing` are separate entries.

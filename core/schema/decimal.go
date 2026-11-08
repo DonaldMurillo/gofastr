@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,44 +71,76 @@ func DecimalColumn(f Field) (precision, scale int, bounded bool) {
 }
 
 // SQLiteDecimalDigits is how many significant digits a SQLite column keeps
-// of a decimal with a fraction. SQLite has no exact decimal type: a
-// DECIMAL or NUMERIC column stores such a value as a 64-bit float, which
-// holds any 15 significant digits exactly and not every 16.
+// of a decimal it stores as a float. SQLite has no exact decimal type: a
+// DECIMAL or NUMERIC column stores a value with a fraction or an exponent
+// as a 64-bit float, which holds any 15 significant digits exactly and
+// not every 16.
 const SQLiteDecimalDigits = 15
+
+// SQLiteDecimalMinMagnitude is the smallest nonzero magnitude a SQLite
+// numeric column keeps as sent. Below the smallest normal 64-bit float
+// (about 2.2e-308) the float is subnormal or zero: "1e-320" read back as
+// 9.99988671826831e-321 and "1e-400" was stored as the integer 0.
+const SQLiteDecimalMinMagnitude = 1e-307
 
 // DecimalExactOnSQLite reports whether a SQLite column of type colType
 // (a Decimal field's RawType, or [DecimalColumnType] when it has none)
-// stores the decimal literal s exactly. A column with TEXT or BLOB
-// affinity stores the text as sent. Any other affinity stores a whole
-// number that fits 64 bits as an integer, and anything else as a 64-bit
-// float, which keeps [SQLiteDecimalDigits] significant digits. s is a
-// literal the Decimal validator accepted.
-func DecimalExactOnSQLite(colType, s string) bool {
+// stores the decimal literal exactly. It is [SQLiteDecimalRefusal]
+// answering no refusal.
+func DecimalExactOnSQLite(colType, literal string) bool {
+	_, refused := SQLiteDecimalRefusal(colType, literal)
+	return !refused
+}
+
+// SQLiteDecimalRefusal reports why a SQLite column of type colType (a
+// Decimal field's RawType, or [DecimalColumnType] when it has none) would
+// not store the decimal literal as sent, following SQLite's NUMERIC
+// affinity (datatype3.html, 3.1 and 3.2). A column with TEXT or BLOB
+// affinity stores the text as sent. Any other column stores literal
+// digits, with no point or exponent, that fit a signed 64-bit integer as
+// that integer, so "-9223372036854775808" is exact. Everything else goes
+// through a 64-bit float, even a whole value: "123456789012345678.0" was
+// stored as 123456789012345680. That float keeps [SQLiteDecimalDigits]
+// significant digits ([ReasonDecimalSignificantDigits]) of a nonzero value
+// no smaller than [SQLiteDecimalMinMagnitude] ([ReasonDecimalUnderflow]).
+// literal is one the Decimal validator accepted.
+func SQLiteDecimalRefusal(colType, literal string) (Violation, bool) {
 	if colType == "" {
 		colType = DecimalColumnType
 	}
-	// SQLite's affinity rules, in its own order (datatype3.html, 3.1).
-	t := strings.ToUpper(colType)
-	if !strings.Contains(t, "INT") && (strings.Contains(t, "CHAR") || strings.Contains(t, "CLOB") || strings.Contains(t, "TEXT") || strings.Contains(t, "BLOB")) {
-		return true
+	upper := strings.ToUpper(colType)
+	if !strings.Contains(upper, "INT") && (strings.Contains(upper, "CHAR") || strings.Contains(upper, "CLOB") || strings.Contains(upper, "TEXT") || strings.Contains(upper, "BLOB")) {
+		return Violation{}, false
 	}
-	sig, intDigits, fracDigits := decimalSignificant(s)
-	if fracDigits == 0 && intDigits <= 18 {
-		return true
+	if _, err := strconv.ParseInt(literal, 10, 64); err == nil {
+		return Violation{}, false
 	}
-	return sig <= SQLiteDecimalDigits
+	significant := decimalSignificant(literal)
+	if significant == 0 {
+		return Violation{}, false
+	}
+	if significant > SQLiteDecimalDigits {
+		return Violation{Reason: ReasonDecimalSignificantDigits, Params: map[string]any{"max": SQLiteDecimalDigits}}, true
+	}
+	magnitude, err := strconv.ParseFloat(literal, 64)
+	if err != nil || math.IsInf(magnitude, 0) {
+		return Violation{Reason: ReasonNotFiniteDecimal}, true
+	}
+	if math.Abs(magnitude) < SQLiteDecimalMinMagnitude {
+		return Violation{Reason: ReasonDecimalUnderflow, Params: map[string]any{"min": strconv.FormatFloat(SQLiteDecimalMinMagnitude, 'g', -1, 64)}}, true
+	}
+	return Violation{}, false
 }
 
-// decimalSignificant is decimalDigits plus the count of significant
-// digits, from the first non-zero digit to the last.
-func decimalSignificant(s string) (sig, intDigits, fracDigits int) {
-	intDigits, fracDigits = decimalDigits(s)
-	s = strings.TrimLeft(s, "+-")
-	if i := strings.IndexAny(s, "eE"); i >= 0 {
-		s = s[:i]
+// decimalSignificant counts the significant digits of a decimal literal,
+// from the first non-zero digit to the last. Zero has none.
+func decimalSignificant(literal string) int {
+	mantissa := strings.TrimLeft(literal, "+-")
+	if exponentAt := strings.IndexAny(mantissa, "eE"); exponentAt >= 0 {
+		mantissa = mantissa[:exponentAt]
 	}
-	digits := strings.Replace(s, ".", "", 1)
-	return len(strings.Trim(digits, "0")), intDigits, fracDigits
+	digits := strings.Replace(mantissa, ".", "", 1)
+	return len(strings.Trim(digits, "0"))
 }
 
 // decimalDigits counts the digits a decimal literal (one decimalRe

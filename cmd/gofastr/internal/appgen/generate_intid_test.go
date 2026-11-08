@@ -2,6 +2,7 @@ package appgen
 
 import (
 	"go/format"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -27,8 +28,10 @@ func TestClientTypesIntID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !regexp.MustCompile("\tID +int +`json:\"id\"`").Match(src) {
+		t.Errorf("client does not type the id int:\n%s", src)
+	}
 	for _, want := range []string{
-		"ID    int    `json:\"id\"`",
 		"func (c *Client) GetCounters(ctx context.Context, id int) (Counters, error)",
 		"func (c *Client) DeleteCounters(ctx context.Context, id int) error",
 		`"/counters/"+strconv.Itoa(id)`,

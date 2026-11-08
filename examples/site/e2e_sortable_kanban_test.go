@@ -75,3 +75,53 @@ func TestE2E_SortableKanbanDragPersist(t *testing.T) {
 	// Clean up: reset the board so other tests aren't affected.
 	resetKanbanBoard()
 }
+
+// TestE2E_SortableKanbanThreeMoves drives three sequential keyboard
+// moves on the flagship board, a reorder, a crossing and a reorder in
+// the destination, each waited out before the next. Every 204 renews
+// the board's token on every column, so each move saves and a reload
+// shows all three.
+func TestE2E_SortableKanbanThreeMoves(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: -short")
+	}
+	resetKanbanBoard()
+	t.Cleanup(resetKanbanBoard)
+	base := startE2EServer(t)
+	ctx := newE2EBrowserCtx(t)
+	move := func(key, arrow string) chromedp.Action {
+		return chromedp.Evaluate(`(function(){
+			var item = document.querySelector('[data-hui-sort-key="`+key+`"]');
+			item.focus();
+			[' ', '`+arrow+`', ' '].forEach(function (key) {
+				item.dispatchEvent(new KeyboardEvent('keydown', {key: key, bubbles: true, cancelable: true}));
+			});
+		})()`, nil)
+	}
+	settled := func(token string) chromedp.Action {
+		return waitFor(`Array.from(document.querySelectorAll('[data-hui-sortable]')).every(function (list) {
+			return !list.__huiN && list.getAttribute('data-hui-sortable-version') === '` + token + `';
+		})`)
+	}
+	columns := `Array.from(document.querySelectorAll('[data-hui-sortable-container]')).map(function (list) {
+		return list.getAttribute('data-hui-sortable-container') + ':' + Array.from(list.querySelectorAll('[data-hui-sort-key]')).map(function (row) { return row.getAttribute('data-hui-sort-key'); }).join(',');
+	}).join(' ')`
+	var after, reloaded string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/components/sortablelist"),
+		pageReady(),
+		waitModule(`!!(window.__gofastr && window.__gofastr.loadedModules && window.__gofastr.loadedModules['headless-sortablelist'])`),
+		move("k1", "ArrowDown"), settled("v2"),
+		move("k1", "ArrowRight"), settled("v3"),
+		move("k3", "ArrowDown"), settled("v4"),
+		chromedp.Evaluate(columns, &after),
+		chromedp.Navigate(base+"/components/sortablelist"),
+		pageReady(),
+		chromedp.Evaluate(columns, &reloaded),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if want := "todo:k2 doing:k1,k3 done:k4"; after != want || reloaded != want {
+		t.Fatalf("after three moves the board shows %q and reloads as %q, want %q", after, reloaded, want)
+	}
+}

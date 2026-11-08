@@ -772,7 +772,7 @@ func (fb *formBuilder) typedInput(ctx context.Context, f schema.Field, label, he
 		)
 	case schema.Enum:
 		stale := val != "" && !slices.Contains(f.Values, val)
-		if len(f.Values) <= 4 && required && !fb.compact && !stale {
+		if len(f.Values) >= 2 && len(f.Values) <= 4 && required && !fb.compact && !stale {
 			return ui.SegmentedControl(ui.SegmentedControlConfig{
 				Name: fb.m.inputName(f.Name), ID: id, Label: label,
 				Options:  enumSegments(ctx, fb.m, f),

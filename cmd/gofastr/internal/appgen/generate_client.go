@@ -517,6 +517,30 @@ func writeShapeDrops(decl framework.EntityDeclaration) (create, update func(fram
 	return create, update
 }
 
+// injectedTimestamps are the created_at and updated_at columns Define adds
+// to an entity with timestamps on (the default) that does not declare them
+// itself. Every response carries them and the filter and sort parser reads
+// them, but they are read-only, so they join the response shapes and the
+// field constants and stay out of every write payload.
+func injectedTimestamps(decl framework.EntityDeclaration) []framework.FieldDeclaration {
+	if decl.Timestamps != nil && !*decl.Timestamps {
+		return nil
+	}
+	var injected []framework.FieldDeclaration
+	for _, name := range []string{"created_at", "updated_at"} {
+		if !slices.ContainsFunc(decl.Fields, func(field framework.FieldDeclaration) bool { return field.Name == name }) {
+			injected = append(injected, framework.FieldDeclaration{Name: name, Type: "timestamp", AutoGenerate: "timestamp", ReadOnly: true})
+		}
+	}
+	return injected
+}
+
+// responseFields is every field a response may carry: the declared ones,
+// then injectedTimestamps in the order Define adds them.
+func responseFields(decl framework.EntityDeclaration) []framework.FieldDeclaration {
+	return append(slices.Clone(decl.Fields), injectedTimestamps(decl)...)
+}
+
 // inputTakesValue reports whether a create payload carries the field as a
 // value, always sent. Only a required field with no default does: a
 // required field with a default may be left out, and sending its zero
@@ -561,7 +585,7 @@ func renderClientEntity(decl framework.EntityDeclaration, decls []framework.Enti
 	if keyIsID {
 		sb.WriteString("\tID " + goIDType(decl) + " `json:\"id\"`\n")
 	}
-	for _, field := range decl.Fields {
+	for _, field := range responseFields(decl) {
 		if (keyIsID && field.Name == "id") || field.Hidden {
 			continue
 		}

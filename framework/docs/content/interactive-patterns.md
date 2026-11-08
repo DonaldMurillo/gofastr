@@ -630,6 +630,15 @@ path** instead of a blanket rollback:
    column to zero items, #82). The source list is restored from its
    snapshot. If `ConflictRPC` is absent, the runtime falls back to
    rollback + a `console.warn`.
+4. The token renews from the `X-Gofastr-Sortable-Version` response
+   header, which `ui.RenewSortableVersion(w, version)` writes. Call it on
+   the 2xx that accepts a move: every list of the move's `Group` still
+   holding the token the move sent takes the new version. Call it on the
+   conflict endpoint's response with the version its rows were read at:
+   the refreshed list takes it with its rows. Lists holding another token
+   keep theirs and conflict on their next move. Without the renewal the
+   second move sends the first move's token and conflicts. Linked lists
+   share one token, the board's.
 
 ```json
 {"error": "Cannot move ORB-12 to Done because ORB-9 is incomplete.", "code": 409, "reason": "transition_blocked", "success": false}

@@ -17,9 +17,10 @@ func (discardSink) Close() error       { return nil }
 // hasConsoleSink reports whether the plugin's fanout includes a
 // *consoleSink. Reads under the handler's lock.
 func hasConsoleSink(p *Plugin) bool {
-	p.handler.mu.Lock()
-	defer p.handler.mu.Unlock()
-	for _, s := range p.handler.sinks {
+	handler := p.handler.Load()
+	handler.mu.Lock()
+	defer handler.mu.Unlock()
+	for _, s := range handler.sinks {
 		if _, ok := s.(*consoleSink); ok {
 			return true
 		}

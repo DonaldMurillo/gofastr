@@ -926,7 +926,7 @@
   const mergeSeedFromDOM = (root) => {
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
-    if (!el) return;
+    if (!el) return paintGlobals(root);
     const data = _json(el.textContent);
     el.remove();
     if (!data) return;
@@ -955,8 +955,24 @@
       if (!own(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
       if (!own(store, k)) store[k] = { value: glob[k], listeners: [] };
+      store[k].global = true;
     }
+    paintGlobals(root);
   };
+  // A global's slot is marked global (the boot seed's keys
+  // #gofastr-signals-page leaves out, all of them when the host omits
+  // it, and each seed's g). A swap keeps a global the reader changed (a
+  // cart count), but its markup shows the server's value: paintGlobals
+  // renders the stored one into root.
+  const paintGlobals = (root) => {
+    const store = window.__gofastr._signals;
+    root.querySelectorAll('[data-cui-signal]').forEach((node) => {
+      const name = node.getAttribute('data-cui-signal');
+      const slot = own(store, name) && store[name];
+      if (slot?.global) window.__gofastr._renderSignal(node, slot, slot.value);
+    });
+  };
+  window.__gofastr._paintGlobals = paintGlobals;
   // The intercept module's pane swap applies its answer's seed too.
   window.__gofastr._mergeSeed = mergeSeedFromDOM;
 

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -17,8 +18,9 @@ import (
 // the keyboard (Space grabs, arrows move, Space drops, Escape cancels)
 // and whose commit is the server round trip the pattern shipped — the
 // browser previews the move, the server confirms with 2xx or the DOM
-// reverts, linked columns share a Group, and a versioned 409 refetches
-// the server's own rows through SortableListItems. The registered
+// reverts, linked columns share a Group, a versioned 409 refetches
+// the server's own rows through SortableListItems, and the server
+// renews a versioned list's token with RenewSortableVersion. The registered
 // headless-sortablelist module binds it; the no-script fallback is the
 // plain ordered list of rows.
 
@@ -42,11 +44,15 @@ type SortableListConfig struct {
 	Group string
 	// Container is the per-column id that routes the write.
 	Container string
-	// Version is an optional optimistic-concurrency token; a 409 then
-	// fires the conflict path instead of a rollback.
+	// Version is an optional optimistic-concurrency token, the version
+	// the rows were rendered at; a 409 then fires the conflict path
+	// instead of a rollback. Linked columns share the board's token.
+	// The move handler's 2xx and the ConflictRPC response renew it
+	// with RenewSortableVersion.
 	Version string
 	// ConflictRPC is GET-fetched on a versioned 409; its response
-	// (fresh rows, e.g. from SortableListItems) replaces the list.
+	// (fresh rows, e.g. from SortableListItems) replaces the list, and
+	// its renewed version replaces the list's token.
 	ConflictRPC string
 
 	ID    string
@@ -111,6 +117,15 @@ func SortableListItems(cfg SortableListConfig) render.HTML {
 		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "aria-label"),
 		Strings:     StringsFor(cfg.Ctx),
 	}, classes)
+}
+
+// RenewSortableVersion tells a versioned list the version the server
+// holds now: call it on the 2xx that accepts a move (every column of
+// the board still holding the token the move sent takes the new one)
+// and on the ConflictRPC response (the refreshed column takes the
+// version its rows were read at). See headless.RenewSortableVersion.
+func RenewSortableVersion(w http.ResponseWriter, version string) {
+	headless.RenewSortableVersion(w, version)
 }
 
 var sortablelistStyle = registry.RegisterStyle("ui-sortablelist", sortablelistCSS)

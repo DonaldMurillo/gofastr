@@ -38,6 +38,14 @@
   // and re-arms, so an ultra-long poll simply fires a little early).
   const MAX_DELAY = 2147483647;
   const arm = (fn, ms) => setTimeout(fn, Math.min(Math.max(0, ms), MAX_DELAY));
+  // sameValue: every response decodes a structured value into a fresh
+  // object, so an unchanged one is compared by its JSON, the form it
+  // arrived in. A value JSON cannot encode reads as changed.
+  const sameValue = (prev, next) => {
+    if (prev === next) return true;
+    if (!prev || !next || typeof prev !== 'object' || typeof next !== 'object') return false;
+    try { return JSON.stringify(prev) === JSON.stringify(next); } catch (_) { return false; }
+  };
   const stateByEl = new WeakMap();
   const active = new Set();
 
@@ -266,7 +274,7 @@
             if (!Object.prototype.hasOwnProperty.call(state, k)) continue;
             const prev = NS._signals[k];
             const next = state[k];
-            if (prev && prev.value === next) continue; // skip no-op write
+            if (prev && sameValue(prev.value, next)) continue; // skip no-op write
             NS.setSignal(k, next);
           }
           pollTicked();

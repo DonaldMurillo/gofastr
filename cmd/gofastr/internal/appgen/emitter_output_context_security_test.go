@@ -370,7 +370,7 @@ func TestClientJSQuotesEmittedNames(t *testing.T) {
 		t.Skipf("buildCLIEntity rejected the fixture upstream (also fine): %v", err)
 	}
 	var js, dts strings.Builder
-	writeJSEntity(&js, &dts, decl, ent)
+	writeJSEntity(&js, &dts, decl, ent, []framework.EntityDeclaration{decl})
 	got := js.String()
 	// Every emitted name must sit inside a string literal. A bare one shows up
 	// as `  <name>:` at the head of a line.

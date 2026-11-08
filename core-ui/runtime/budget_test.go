@@ -702,8 +702,15 @@ const (
 	// the origin, base and document checks, and the choke point telling it
 	// when the browser refused the write. Those three were measured on the
 	// pre-layer-6 core; merged onto layers 6-8 they compress 16 bytes
-	// better than apart: 16568 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16
+	// better than apart: 16568 measured + 2. The 2026-11-07 runtime fixes
+	// add three, each in the code that must run before any module could:
+	// the fallback toast reads a string as its title (+16,
+	// TestStringActionMessageFallsBack), say() fills a placeholder by
+	// i18n.Fill's name grammar (+27, TestRuntimeSayFillsLikeGo), and a
+	// swap renders a kept global into its fresh bindings (+160,
+	// TestSwappedGlobalBindingShowsStore), which the swap itself runs:
+	// 16771 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1213,7 +1220,12 @@ const (
 	// is written, before any module could load, and replaceURL answers
 	// synchronously, so none carves; the guard engine is the navguard
 	// module. Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 19162
+	// The 2026-11-07 runtime fixes (the fallback toast's string title, say()'s
+	// placeholder grammar, and a swap rendering kept globals into its fresh
+	// bindings; see coreGoalGZ) measure 19418 at level 1 (+258). Each runs
+	// in the kernel or the swap before a module could load. Two bytes of
+	// clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19420
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1375,6 +1387,10 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"__gofastr.replaceURL": 50,
 		// Merged onto layers 6-8: 16378 → 16568 measured (+190).
 		"navigation guards and layers 6-8 compress together": -16,
+		// Measured 16568 → 16584 → 16611 → 16771 (2026-11-07), in this order.
+		"fallback toast reads a string message as its title":   16,  // (l1: 29)
+		"say() fills placeholders by i18n.Fill's name grammar": 27,  // (l1: 21)
+		"a swap renders kept globals into its fresh bindings":  160, // (l1: 208)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1591,7 +1607,10 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 8161 measured plus 2 clearance after prefetch replay threads a
 		// separate CSRF guard (TestPrefetchReplayKeepsRotatedCSRFToken).
 		// TestFullNavSessionClearsCache measures 8199 (+38), plus 2 clearance.
-		"envelope": 8201,
+		// 8228 measured (+37 from 8191) after its swaps and fills render
+		// kept globals into fresh bindings (TestSwappedGlobalBindingShowsStore),
+		// plus 2 clearance.
+		"envelope": 8230,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
