@@ -199,12 +199,11 @@ func TestWidgetDocument_EscapesDataFields(t *testing.T) {
 // ── The round trip ──────────────────────────────────────────────────
 
 // Register an app whose HTML comes from the builder, read the ui://
-// resource back over resources/read, and assert the document the WIRE
-// serves references exactly the script URL the server mounts — the drift
-// this test exists to catch is a one-character typo in the baked-in URL,
-// which in production is a widget that renders and silently never
-// receives anything. Then call the linking tool, because a ui:// resource
-// no tool points at is unreachable for the model.
+// resource back over resources/read, and assert the served document
+// carries the widget client verbatim inline with no script URL. A linked
+// client would resolve against the chat host's origin and leave a widget
+// that renders but never receives anything. Then call the linking tool,
+// because a ui:// resource no tool points at is unreachable for the model.
 func TestWidgetDocument_RoundTrip(t *testing.T) {
 	doc := WidgetDocument{
 		Title:  "Studio",
