@@ -108,7 +108,15 @@ func devMCPExposureWarning(addr string) string {
 // log_set_level stayed live on an exposed bind while the control tools
 // were dropped.
 func (a *App) guardDevMCPBind(addr, network string) {
-	if bindIsLocal(addr, network) || devMCPExposeAllowed() {
+	if bindIsLocal(addr, network) {
+		return
+	}
+	if devMCPExposeAllowed() {
+		// The explicit network opt-in must accept the real remote Host too.
+		// Local binds retain their DNS-rebinding pin even with the opt-in set.
+		if a.MCP != nil {
+			a.MCP.SetRequireLoopbackHost(false)
+		}
 		return
 	}
 	withdrew := false
