@@ -478,6 +478,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err != nil {
 			return fmt.Errorf("upsert: %w", err)
 		}
+		if err := ch.refuseNullKey(res); err != nil {
+			return err
+		}
 		result = res
 		if wrote {
 			if id, ok := ch.rowID(result); ok {

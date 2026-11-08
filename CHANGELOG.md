@@ -72,6 +72,13 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING (SQLite): an insert with no key value is refused**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
+  batch create or upsert whose row would hold a NULL key part (a key left
+  out or sent as null that no column `DEFAULT`, declared `Default` or
+  rowid fills, including the integer part of a composite key) answers
+  `400` with the key `required`, as Postgres does, and is rolled back.
+  SQLite stored such a row, and no route could read, update or delete it.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler
@@ -94,7 +101,7 @@ few lines, and link the PR or the docs page for the rest.
   `BuildDSLQuery` accepted a relation behind a `Hidden` field, or one
   marked `Relation.Hidden`; it now answers relation-not-found, as
   `?include=` does.
-- **`cache.CacheMiddlewareWithLimit` panics on a negative
+- **BREAKING: `cache.CacheMiddlewareWithLimit` panics on a negative
   `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A negative cap read as no cap and buffered every response whole; `0`
   still means unbounded.

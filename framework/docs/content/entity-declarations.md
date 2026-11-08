@@ -215,6 +215,10 @@ holds the key and as an update does when one does. A blank in a key
 column is never dropped, so an `Int` key part still refuses it, and a
 `""` in any caller-chosen key column, a one-column key included, is
 refused with `400` (`is required`): no route could name that row again.
+So is a write whose row would store a NULL key part, which SQLite
+allows: a key the body left out or sent as null, unless the database
+fills it (a column `DEFAULT`, the field's declared `Default`, or the
+rowid of a one-column `INTEGER PRIMARY KEY`).
 Empty
 text stays an
 empty string, since that is a value a user can mean.

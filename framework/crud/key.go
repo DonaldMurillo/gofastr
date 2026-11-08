@@ -47,6 +47,38 @@ func (ch *CrudHandler) refuseBlankKeyParts(body map[string]any) error {
 	return nil
 }
 
+// refuseNullKey refuses a written row whose key reads back NULL. row is
+// the INSERT's RETURNING row, read inside the write's transaction, so the
+// refusal rolls the row back. Postgres refuses a NULL key at the write, a
+// 400 naming the field (the NOT NULL mapping in conflict_fields.go);
+// SQLite stores NULL in any key column but a one-column INTEGER PRIMARY
+// KEY, so a caller-chosen key the body left out or sent as null stored a
+// row no route could name. The row is read rather than the INSERT's
+// values: a database DEFAULT, SQLite's rowid and a key the insert omits
+// for its declared default all fill the key there. Every key column is
+// in the row: each is a cursor column, and entity.Define refuses a cursor
+// column that is Hidden or undeclared.
+func (ch *CrudHandler) refuseNullKey(row map[string]any) error {
+	var fields map[string][]schema.Violation
+	for _, c := range ch.keyCols() {
+		v, ok := row[c]
+		if !ok {
+			v, ok = row[ch.convertKey(c)]
+		}
+		if !ok || v != nil {
+			continue
+		}
+		if fields == nil {
+			fields = map[string][]schema.Violation{}
+		}
+		fields[c] = []schema.Violation{{Reason: schema.ReasonRequired}}
+	}
+	if fields != nil {
+		return &ValidationError{fields: fields}
+	}
+	return nil
+}
+
 // withKeyTiebreak returns sorts followed by every key column it does not
 // already sort on, ascending. An offset page is only well defined over a
 // total order: sorted on a non-unique column (or not sorted at all) the
