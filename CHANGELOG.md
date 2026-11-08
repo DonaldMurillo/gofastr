@@ -148,7 +148,9 @@ few lines, and link the PR or the docs page for the rest.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
-  a Postgres 500 (A2A answers invalid-params, not internal error).
+  a Postgres 500 (A2A answers invalid-params, not internal error). An
+  A2A request body that is not valid UTF-8 gets a parse error, so a
+  malformed byte is never stored as U+FFFD.
   API-token names are limited to 256 bytes. `webhook.Manager.Subscribe`
   and `Unsubscribe` return an error for such a URL, secret or ID before
   the store sees it. Audit text fields replace invalid UTF-8, so a state override

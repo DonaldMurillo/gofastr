@@ -2,6 +2,9 @@ package a2a
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -86,5 +89,43 @@ func TestInboundRefusesInvalidUTF8IDs(t *testing.T) {
 				t.Errorf("invalid inbound id accepted: %+v", message)
 			}
 		}
+	}
+}
+
+// encoding/json turns invalid UTF-8 into U+FFFD, so a raw \xff in an id
+// would store a different id than the client sent. The transport refuses
+// a body that is not UTF-8; a real U+FFFD still goes through.
+func TestRawInvalidUTF8BodyRefused(t *testing.T) {
+	h := newHarness(t, func(c *Config) { c.Push.AllowPrivate = true })
+	task := h.send("alice")
+	store := &textBindStore{Store: h.srv.store}
+	h.srv.store = store
+	post := func(id string) (int, []byte) {
+		body := `{"jsonrpc":"2.0","id":"call-1","method":"` + MethodCreateTaskPushNotificationConfig +
+			`","params":{"taskId":"` + task.ID + `","id":"` + id + `","url":"https://8.8.8.8/hook"}}`
+		req, err := http.NewRequest(http.MethodPost, h.ts.URL, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Owner", "alice")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		raw, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp.StatusCode, raw
+	}
+	code, raw := post("p\xff")
+	if code != http.StatusBadRequest || !strings.Contains(string(raw), `"code":-32700`) || store.calls.Load() != 0 {
+		t.Fatalf("raw \\xff: %d %s, store calls %d", code, raw, store.calls.Load())
+	}
+	code, raw = post("p�")
+	if code != http.StatusOK || strings.Contains(string(raw), `"error"`) {
+		t.Fatalf("real U+FFFD refused: %d %s", code, raw)
 	}
 }

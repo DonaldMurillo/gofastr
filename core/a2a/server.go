@@ -437,6 +437,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "read body: %v", err))
 		return
 	}
+	// JSON text is UTF-8 (RFC 8259). encoding/json would replace a
+	// malformed byte with U+FFFD, so a stored id or text would differ
+	// from what the client sent; refuse the body instead.
+	if !utf8.Valid(raw) {
+		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "request body is not valid UTF-8"))
+		return
+	}
 	trimmed := strings.TrimLeft(string(raw), " \t\r\n")
 	if strings.HasPrefix(trimmed, "[") {
 		// A batch has no single id to answer; refuse at the transport
