@@ -1007,7 +1007,8 @@ func rootKey(pass *analysis.Pass, e ast.Expr, bound map[types.Object]ast.Expr) s
 
 // joinRoots collects the roots the path resolved by call was joined
 // under: the first argument of every Join on its chain that appends a
-// non-constant element (`dir := Join(root, id)` then `Join(dir, name)`
+// non-constant element, and the leftmost operand of a concatenation
+// (`root + sep + name`) (`dir := Join(root, id)` then `Join(dir, name)`
 // names both dir and root). A Join of constants only, such as
 // Join(home, ".app"), is the root itself and the walk stops there. A
 // containment test against any other root, such as the root's
@@ -1017,9 +1018,30 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 	if len(call.Args) != 1 {
 		return roots
 	}
+	isConst := func(a ast.Expr) bool {
+		tv, ok := pass.TypesInfo.Types[a]
+		return ok && tv.Value != nil
+	}
 	e := call.Args[0]
 	for i := 0; i < 8; i++ {
-		c, ok := ast.Unparen(Resolve(pass, e, bound, 0)).(*ast.CallExpr)
+		e = ast.Unparen(Resolve(pass, e, bound, 0))
+		// root + sep + name: the leftmost operand is the root. (Only a
+		// concatenation that appends caller data reaches here: one of
+		// constants is no root-joined path.)
+		if add, ok := e.(*ast.BinaryExpr); ok && add.Op == token.ADD {
+			first := ast.Expr(add)
+			for {
+				b, ok := ast.Unparen(first).(*ast.BinaryExpr)
+				if !ok || b.Op != token.ADD {
+					break
+				}
+				first = b.X
+			}
+			e = first
+			roots[rootKey(pass, e, bound)] = true
+			continue
+		}
+		c, ok := e.(*ast.CallExpr)
 		if !ok {
 			break
 		}
@@ -1033,9 +1055,7 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 		}
 		appends := false
 		for _, a := range c.Args[1:] {
-			if tv, ok := pass.TypesInfo.Types[a]; !ok || tv.Value == nil {
-				appends = true
-			}
+			appends = appends || !isConst(a)
 		}
 		if !appends {
 			break

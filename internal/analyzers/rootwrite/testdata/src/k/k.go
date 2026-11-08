@@ -1150,3 +1150,32 @@ func maybeResolved(baseDir, name string, data []byte, resolve bool) error {
 	}
 	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// concatJoin builds the path by concatenation and checks it against
+// the root it was built under. Quiet.
+func concatJoin(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(baseDir + string(filepath.Separator) + name)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// concatParent is the same build checked against the root's parent.
+func concatParent(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(baseDir + string(filepath.Separator) + name)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, filepath.Dir(baseDir)+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
