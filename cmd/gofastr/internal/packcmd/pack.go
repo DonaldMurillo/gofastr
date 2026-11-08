@@ -2772,12 +2772,19 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 		case "Where":
 			// The pinned filter: one equality is the app spec's whole
 			// filter, so a second pin makes the chain irreversible (pack
-			// reports the screen instead of dropping a pin silently).
+			// reports the screen instead of dropping a pin silently). Both
+			// arguments must be string literals — the spec's filter is an
+			// authored literal, and a pin by variable has no spelling.
 			wheres++
 			if wheres > 1 || len(c.Args) != 2 {
 				return appspec.AppSpecBlock{}, false
 			}
-			b.Filter = appspec.AstString(c.Args[0]) + "=" + appspec.AstString(c.Args[1])
+			field, fieldOK := c.Args[0].(*ast.BasicLit)
+			value, valueOK := c.Args[1].(*ast.BasicLit)
+			if !fieldOK || !valueOK || field.Kind != token.STRING || value.Kind != token.STRING {
+				return appspec.AppSpecBlock{}, false
+			}
+			b.Filter = appspec.AstString(field) + "=" + appspec.AstString(value)
 		case "Heading":
 			if len(c.Args) >= 1 {
 				b.Text = appspec.AstString(c.Args[0])

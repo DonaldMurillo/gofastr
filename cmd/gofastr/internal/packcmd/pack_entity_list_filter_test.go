@@ -57,3 +57,19 @@ func TestReverseEntityUIRefusesTwoWherePins(t *testing.T) {
 		t.Fatalf("a chain with two Where pins reversed to %+v; one equality is the app spec's whole filter", b)
 	}
 }
+
+// TestReverseEntityUIRefusesNonLiteralWhere: the app spec's filter is an
+// authored literal; a builder pinning by variable (hand-written app code)
+// has no spec spelling, and AstString reads a non-literal as "", so the
+// pin must make the chain irreversible rather than reverse as "filter:
+// =".
+func TestReverseEntityUIRefusesNonLiteralWhere(t *testing.T) {
+	src := `appUI.List("projects").Where(col, val).RenderCtx(ctx)`
+	e, err := parser.ParseExpr(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, ok := reverseEntityUI(e.(*ast.CallExpr), nil); ok {
+		t.Fatalf("a Where pinned by variables reversed to filter=%q; a pin the spec cannot spell must stay irreversible", b.Filter)
+	}
+}
