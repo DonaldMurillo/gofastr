@@ -148,6 +148,11 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := checkExportCSP(b.policy()); err != nil {
 		return Result{}, err
 	}
+	// The page manifest lives beside OutDir; an OutDir with no parent is
+	// refused here, before anything is written into it.
+	if _, _, err := b.pageManifest(); err != nil {
+		return Result{}, err
+	}
 	if err := os.MkdirAll(b.OutDir, 0o755); err != nil {
 		return Result{}, fmt.Errorf("static: create out dir: %w", err)
 	}

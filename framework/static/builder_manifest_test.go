@@ -2,6 +2,7 @@ package static
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -56,4 +57,34 @@ func TestManifestRefusesRootOutDir(t *testing.T) {
 	if err != nil || name != ".site.gofastr-pages" || filepath.Base(filepath.Join(dir, "site")) != "site" {
 		t.Fatalf("pageManifest = %q, %q, %v; want the parent dir and .site.gofastr-pages", dir, name, err)
 	}
+}
+
+// The refusal comes before the build writes anything: a filesystem-root
+// OutDir must not get pages and assets copied into it first. The
+// contributor stops any build that gets past setup, so even a build
+// missing the refusal writes no page into the root.
+func TestRootOutDirFailsBeforeWriting(t *testing.T) {
+	a := coreapp.NewApp("t")
+	a.Register("/", &homeScreen{}, nil)
+	root := filepath.VolumeName(os.TempDir()) + string(filepath.Separator)
+	stop := &stopContributor{}
+	b := &Builder{Host: uihost.New(a), OutDir: root, Contributors: []Contributor{stop}}
+	_, err := b.Build(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "filesystem root") {
+		t.Fatalf("Build(OutDir %q) = %v; want the filesystem-root refusal", root, err)
+	}
+	if stop.started {
+		t.Error("Build reached its contributors before refusing the filesystem-root OutDir")
+	}
+}
+
+type stopContributor struct{ started bool }
+
+func (c *stopContributor) ExportStart(context.Context) error {
+	c.started = true
+	return errors.New("stop")
+}
+func (c *stopContributor) ExportPage(string, string) error { return nil }
+func (c *stopContributor) ExportFiles(context.Context) (map[string][]byte, error) {
+	return nil, nil
 }
