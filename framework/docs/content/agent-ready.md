@@ -443,9 +443,10 @@ caller without the role. The role is read from the user's
 `GetRoles() []string` (battery/auth's `User` has it) or from the roles
 access middleware put on the context, the same rule `/.debug` uses. Make
 sure the app's session/JWT middleware runs on the `/mcp` route, or every
-call comes back asking for a caller. An identity alone was the old gate,
-and on an app with open sign-up it let any account turn a module off for
-everyone. When your operators hold another role, replace the gate:
+call answers as if the tool did not exist (a gated item answers exactly
+as an unknown name). An identity alone was the old gate, and on an app
+with open sign-up it let any account turn a module off for everyone.
+When your operators hold another role, replace the gate:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -549,6 +550,15 @@ entity.Endpoint{
     MCPGate:    auth.MCPRole("editor"),   // else: any authenticated caller
 }
 ```
+
+A twin built with `handler.ToolAdapter` binds its `path`-tagged
+parameters with the endpoint's own route pattern, which the framework
+puts on the call context at registration: a `{path...}` catch-all
+route's twin accepts a slash-bearing value the route accepts, while a
+`..` segment, an empty segment and a control byte are refused exactly
+as the router refuses them. A tool registered by hand with
+`app.MCP.RegisterTool` has no route, so every path parameter stays
+strict — a `/` in one is refused.
 
 For your own `RegisterTool` calls, gate them per-caller with
 `mcp.WithToolGate` + battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)`

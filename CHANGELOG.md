@@ -155,6 +155,15 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **An endpoint's MCP twin accepts what its route accepts, catch-all
+  included** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-HD-03). Where the framework registers an endpoint's MCP twin it
+  now puts the route pattern on the tool's call context, and a
+  `path`-tagged parameter is sanitized with the route's own catch-all
+  flag: a `/files/{path...}` route's tool takes a slash-bearing value.
+  `..` segments, empty segments and control bytes stay refused, and a
+  tool registered by hand (no route) keeps every path parameter strict.
+  New: `router.IsCatchAllParam`, `handler.WithRoutePattern`.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

@@ -1824,7 +1824,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(g.Prefix()+path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2951,7 +2951,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -3018,6 +3018,19 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		}
 		return nil
 	})}
+}
+
+// endpointMCPTwin wraps an Endpoint's MCPHandler so the tool's call
+// context carries the HTTP route pattern it is the twin of. The twin's
+// path parameters are then sanitized with the route's own catch-all
+// flags (handler.WithRoutePattern), so a {path...} route's tool accepts
+// a slash-bearing value the route accepts, dot-dot and empty segments
+// and control bytes still refused. A tool registered by hand keeps
+// every path parameter strict.
+func endpointMCPTwin(pattern string, h mcp.ToolHandler) mcp.ToolHandler {
+	return func(ctx context.Context, params map[string]any) (any, error) {
+		return h(handler.WithRoutePattern(ctx, pattern), params)
+	}
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to
