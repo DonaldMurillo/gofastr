@@ -206,7 +206,8 @@ and `down`, `generate` and `force` take one: an extra one (`migrate up 3`,
 - `--create-db` (`up` only): create the target database before applying
   migrations if it does not exist (via `migrate.EnsureDatabase`). Intended
   for fresh deploys where the database named in the DSN has not been created
-  yet; a no-op when it already exists. The `migrations/` directory and
+  yet; a no-op when it already exists. If another replica creates it after
+  the existence check, the losing creator continues with migrations too. The `migrations/` directory and
   the database URL are checked first, so a refused run creates nothing.
 - `--not-applied` (`force` only): remove the version from the tracking
   table (treat as pending) instead of marking it applied.
