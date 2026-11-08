@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/pem"
@@ -494,6 +495,21 @@ func powershell(t *testing.T, env []string, command string) ([]byte, error) {
 
 const userPathCmd = `(Get-Item 'HKCU:\Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')`
 
+// ps1TrustCert trusts the certificate with DER bytes der, and only it,
+// for one PowerShell process. The callback is compiled C#: a PowerShell
+// scriptblock callback runs on a .NET thread with no runspace and fails
+// the handshake ("An unexpected error occurred on a send").
+func ps1TrustCert(der []byte) string {
+	sum := sha1.Sum(der)
+	return `Add-Type -TypeDefinition 'public static class TestTrust { public static string Hash; public static bool Check(object s, System.Security.Cryptography.X509Certificates.X509Certificate c, System.Security.Cryptography.X509Certificates.X509Chain ch, System.Net.Security.SslPolicyErrors e) { return c != null && c.GetCertHashString() == Hash; } }'; ` +
+		`[TestTrust]::Hash = '` + strings.ToUpper(hex.EncodeToString(sum[:])) + `'; ` +
+		`[Net.ServicePointManager]::ServerCertificateValidationCallback = [Delegate]::CreateDelegate([Net.Security.RemoteCertificateValidationCallback], [TestTrust].GetMethod('Check')); `
+}
+
+// ps1ErrorChain prints a caught exception and every inner one, so a
+// failed download names its cause instead of only the outer message.
+const ps1ErrorChain = `$e = $_.Exception; while ($e) { [Console]::Error.WriteLine($e.GetType().FullName + ': ' + $e.Message); $e = $e.InnerException }`
+
 func TestInstallPs1InstallsVerifiedBuild(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("install.ps1 is for Windows")
@@ -514,8 +530,7 @@ func TestInstallPs1InstallsVerifiedBuild(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Trust the test server's certificate for this PowerShell process only.
-	run := "[Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }; & '" + filepath.Join(res.out, "install.ps1") + "'"
+	run := ps1TrustCert(srv.Certificate().Raw) + "try { & '" + filepath.Join(res.out, "install.ps1") + "' } catch { " + ps1ErrorChain + "; exit 1 }"
 
 	installDir := filepath.Join(t.TempDir(), "bin")
 	env := []string{"HELLO_INSTALL_DIR=" + installDir, "HELLO_NO_MODIFY_PATH=1"}
