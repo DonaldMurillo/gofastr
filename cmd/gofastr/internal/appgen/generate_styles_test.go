@@ -487,3 +487,33 @@ func TestGenStylesRefusesSymlinkEscape(t *testing.T) {
 		t.Error("a symlinked source sheet pulled an outside file into generated Go")
 	}
 }
+
+// A package pattern whose directory links outside the working directory
+// is refused, single or recursive (#665): it used to pass an
+// EvalSymlinks existence check and be walked wherever it led.
+func TestStylePatternLinkedDirRefused(t *testing.T) {
+	base := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(outside, "pkg"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(base, "out")); err != nil {
+		t.Skipf("symlink creation refused: %v", err)
+	}
+	for _, pat := range []string{"out", "out/pkg", "out/...", "out/pkg/..."} {
+		if dirs, err := stylePatternDirsAt(base, []string{pat}); err == nil {
+			t.Errorf("pattern %q followed the link outside: %v", pat, dirs)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(base, "in", "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	dirs, err := stylePatternDirsAt(base, []string{"in/..."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{filepath.Join(base, "in"), filepath.Join(base, "in", "sub")}
+	if strings.Join(dirs, "|") != strings.Join(want, "|") {
+		t.Errorf("dirs = %v, want %v", dirs, want)
+	}
+}

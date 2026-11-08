@@ -75,6 +75,18 @@ few lines, and link the PR or the docs page for the rest.
   `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
   already flags the old method.
 
+### Security
+- **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
+  ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
+  `Report.Apply` checked the symlink-resolved path against the project
+  root, then read and wrote the unresolved one, so a link swapped in
+  between the check and the write sent the fix outside the root. Every
+  read, stat and write now goes through an `os.Root` on the report
+  root. `gofastr gen styles` reads its package patterns the same way: a
+  pattern directory that links outside the working directory is
+  refused instead of walked. `os.Root` also refuses an absolute
+  symlink, even one that points back inside the project: make such a
+  link relative.
 ## [0.96.0] - 2026-11-06
 
 ### Added

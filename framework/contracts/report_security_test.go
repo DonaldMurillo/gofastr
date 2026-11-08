@@ -44,9 +44,10 @@ func TestReportTextFreeOfControlBytes(t *testing.T) {
 }
 
 // Apply is the one function in the package that writes to disk, and
-// contracts_fix exposes it over MCP. containedPath is lexical only: a
-// symlink inside the analysed tree that points outside the root passes
-// it, and the fix is written through to the target.
+// contracts_fix exposes it over MCP. A symlink inside the analysed tree
+// that points outside the root passes a lexical check, and the fix is
+// written through to the target. Apply reads and writes through an
+// os.Root, which refuses the link at each call (#665).
 func TestApplyRefusesSymlinkEscape(t *testing.T) {
 	outside := t.TempDir()
 	victim := filepath.Join(outside, "victim.go")
@@ -70,6 +71,65 @@ func TestApplyRefusesSymlinkEscape(t *testing.T) {
 	body, readErr := os.ReadFile(victim)
 	if err == nil && readErr == nil && string(body) != orig {
 		t.Fatalf("SECURITY: [path-escape] Apply wrote through root/stale.go to %s outside the analysed root", victim)
+	}
+}
+
+// A symlinked DIRECTORY on the way out of the root is refused the same
+// way as a symlinked leaf.
+func TestApplyRefusesLinkedDirEscape(t *testing.T) {
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "victim.go")
+	const orig = "//gofastr:allow(GOFASTR1403) stale\npackage a\n"
+	if err := os.WriteFile(victim, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "sub")); err != nil {
+		t.Skipf("symlink creation refused: %v", err)
+	}
+	rep := &Report{Root: root, Diagnostics: []Diagnostic{{
+		RuleID: RuleSuppressionStale, File: "sub/victim.go", Line: 1,
+		Fix: &SuggestedFix{
+			Description: "delete stale directive",
+			Edits:       []TextEdit{{Start: 0, End: len(orig), Old: orig, New: ""}},
+		},
+	}}}
+	if _, err := rep.Apply(); err == nil {
+		t.Fatal("SECURITY: [path-escape] Apply accepted sub/victim.go through a linked directory")
+	}
+	if body, _ := os.ReadFile(victim); string(body) != orig {
+		t.Fatalf("SECURITY: [path-escape] Apply wrote %s outside the analysed root", victim)
+	}
+}
+
+// A local path spelled with a doubled slash, a dot or an inner ".."
+// through a missing directory still applies: os.Root does not clean
+// names, so Apply cleans them.
+func TestApplyCleansLocalSpellings(t *testing.T) {
+	const orig = "//gofastr:allow(GOFASTR1403) stale\npackage a\n"
+	for _, rel := range []string{"sub//a.go", "sub/./a.go", "other/../sub/a.go"} {
+		root := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(root, "sub"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		target := filepath.Join(root, "sub", "a.go")
+		if err := os.WriteFile(target, []byte(orig), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rep := &Report{Root: root, Diagnostics: []Diagnostic{{
+			RuleID: RuleSuppressionStale, File: rel, Line: 1,
+			Fix: &SuggestedFix{
+				Description: "delete stale directive",
+				Edits:       []TextEdit{{Start: 0, End: len(orig), Old: orig, New: ""}},
+			},
+		}}}
+		if _, err := rep.Apply(); err != nil {
+			t.Errorf("Apply(%q): %v", rel, err)
+			continue
+		}
+		if body, _ := os.ReadFile(target); len(body) != 0 {
+			t.Errorf("Apply(%q) left %q", rel, body)
+		}
 	}
 }
 
