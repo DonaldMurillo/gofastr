@@ -44,7 +44,7 @@ func TestOptionsDefaults(t *testing.T) {
 }
 
 func TestOptionsAcceptSemverPrerelease(t *testing.T) {
-	for _, v := range []string{"1.2.3-rc-1", "1.2.3-0.alpha", "v1.2.3-x.7.z-9"} {
+	for _, v := range []string{"1.2.3-rc-1", "1.2.3-0.alpha", "v1.2.3-x.7.z-9", "1.2.3-" + strings.Repeat("a", 58)} {
 		if _, err := parseOptions([]string{"--version=" + v}); err != nil {
 			t.Errorf("%s: %v", v, err)
 		}
@@ -57,6 +57,8 @@ func TestOptionsRefuseBadValues(t *testing.T) {
 		{"--version=01.2.0"},
 		{"--version=1.2.0+build"},
 		{"--version=1.2.3-01"},
+		{"--version=1.2.3-" + strings.Repeat("a", 59)}, // 65 bytes
+		{"--version=1.2.0", "--name=a" + strings.Repeat("b", 64)},
 		{"--version=1.2.0", "--name=my app"},
 		{"--version=1.2.0", "--name=-x"},
 		{"--version=1.2.0", "--targets=plan9/amd64"},
