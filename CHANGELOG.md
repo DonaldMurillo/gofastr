@@ -203,6 +203,14 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`?fields=` projections keep required keys**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The projection parser (`crud.projectFromRequestQ`) now includes every
+  required column beside the primary key, on list, cursor and get routes
+  alike. The OpenAPI response schema marks those keys required, so a
+  projected response that dropped them failed the spec it was documented
+  by; the `?fields=` description says so now. Generated typed clients keep
+  binding required fields to non-optional types on every response.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

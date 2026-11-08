@@ -194,10 +194,15 @@ func TestListAllFieldsProjectsColumns(t *testing.T) {
 	if row["id"] != "a1" {
 		t.Fatalf("id must always be included: %v", row)
 	}
-	for _, absent := range []string{"amount", "note", "user_id"} {
+	for _, absent := range []string{"amount", "note"} {
 		if _, ok := row[absent]; ok {
 			t.Errorf("unasked column %q came back: %v", absent, row)
 		}
+	}
+	// user_id is required, and a projection keeps every required
+	// column beside the key (#669).
+	if row["user_id"] != "alice" {
+		t.Fatalf("the required user_id must stay in a projection: %v", row)
 	}
 }
 

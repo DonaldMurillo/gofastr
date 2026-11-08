@@ -437,7 +437,7 @@ func entityOpenAPI(registry entity.Registry, o Options, keep func(*entity.Entity
 		for _, f := range visibleFields {
 			fieldNames = append(fieldNames, wireKeyOf(f, jc))
 		}
-		fieldsDesc := "Comma-separated list of fields to return (projection); the primary key is always included."
+		fieldsDesc := "Comma-separated list of optional fields to return (projection); the primary key and required fields are always included."
 		if len(fieldNames) > 0 {
 			fieldsDesc += " Available: " + strings.Join(fieldNames, ", ") + "."
 		}

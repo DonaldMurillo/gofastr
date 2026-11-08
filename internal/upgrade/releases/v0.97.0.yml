@@ -13,3 +13,6 @@ notes:
     breaking: true
     nodetect: "the Go compiler reports every such comparison or map key at build time, by file and line"
     guidance: "Compare the fields that matter (a.Name == b.Name), or key the map by field name."
+  - change: "?fields= projections now return every required column beside the primary key, on list, cursor and get responses alike"
+    nodetect: "a response-shape fact of the CRUD routes; no app spelling differs, and only a caller that asserts the exact key set of a projected row changes answer"
+    guidance: "Required fields stay in a projection because the OpenAPI response schema holds them required; a client that needs slimmer rows reads the keys it names and ignores the rest."
