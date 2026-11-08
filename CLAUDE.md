@@ -265,10 +265,11 @@ expose them to agents connected to a live app.**
   `rootwrite` too: in EITHER twin only confinement gates — `os.Root`,
   an O_NOFOLLOW flag, an Lstat+ModeSymlink leaf check (including a
   var-declared first result), or a contained resolution: the sink
-  uses an EvalSymlinks result, and a filepath.Rel/strings.HasPrefix
-  test of that result against a non-constant root runs before it in
-  an if that refuses an outside path (or holds the sink on the inside
-  branch). os.Mkdir/MkdirAll may also go through
+  uses an EvalSymlinks result, and after that resolution a
+  `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
+  test (root neither a constant nor built from real) runs before the
+  sink in an if that refuses an outside path (or holds the sink on
+  the inside branch). os.Mkdir/MkdirAll may also go through
   `Join(dir, filepath.Base(p))` on a contained `dir`: mkdir refuses an
   existing leaf. An
   EvalSymlinks alone is no gate and no guard (#665, 2026-11): it says

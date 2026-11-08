@@ -648,3 +648,175 @@ func relReassigned(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// checkBeforeResolve tests the path before EvalSymlinks rebinds it:
+// the check read the unresolved spelling, so a link under the root
+// passes it and the resolved path leads out.
+func checkBeforeResolve(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(realRoot, name)
+	if !strings.HasPrefix(p, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	p, err = filepath.EvalSymlinks(p)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// boolBeforeResolve keeps that early answer in a bool and reads it
+// after the resolution: it still describes the unresolved spelling.
+func boolBeforeResolve(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(realRoot, name)
+	inside := strings.HasPrefix(p, realRoot+string(filepath.Separator))
+	p, err = filepath.EvalSymlinks(p)
+	if err != nil {
+		return err
+	}
+	if !inside {
+		return errEscape
+	}
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// siblingPrefix has no separator after the root: /srv/app-backup
+// passes a test against /srv/app.
+func siblingPrefix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// selfPrefix tests the resolved path against its own parent: true for
+// nearly every path, wherever it points.
+func selfPrefix(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, filepath.Dir(real)+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// swappedPrefix passes the operands the wrong way round: it asks
+// whether the root starts with the target.
+func swappedPrefix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(realRoot+string(filepath.Separator), real) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// swappedRel computes Rel(real, root): the path from the target back
+// to the root, which says nothing about containment.
+func swappedRel(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(real, realRoot)
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// boundPrefix keeps root+separator in a local first. Quiet.
+func boundPrefix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	rootSep := realRoot + string(filepath.Separator)
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, rootSep) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// rootPrefixOnly tests the root against itself and writes the target:
+// the check names no path the write uses.
+func rootPrefixOnly(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(baseDir, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// prefixWrongSuffix puts a constant other than the separator after the
+// root: /srv/app_x passes a test against /srv/app + "_".
+func prefixWrongSuffix(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+"_") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relUnresolved runs Rel on the unresolved join and writes the
+// resolved path: the check never saw where the link points.
+func relUnresolved(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, filepath.Join(realRoot, name))
+	if err != nil || !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}

@@ -296,3 +296,31 @@ func mkdirErrReusedInInit(dir string) error {
 	}
 	return nil
 }
+
+// mkdirFailedFlag binds the FAILURE to a local and tightens on it: the
+// EEXIST path, a directory this call did not make.
+func mkdirFailedFlag(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	failed := err != nil
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	if failed {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+	return nil
+}
+
+// mkdirOtherFlag binds a different error's success to the local.
+func mkdirOtherFlag(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	_, statErr := os.Stat(dir)
+	created := statErr == nil
+	if created {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+	return nil
+}

@@ -964,47 +964,71 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 			resolved[o] = true
 		}
 	}
-	return ContainmentChecked(pass, body, bound, resolved, sink)
+	return ContainmentChecked(pass, body, bound, resolved, call.End(), sink)
 }
 
 // ContainmentChecked reports whether body tests one of objs against a
-// root before sink so that an outside path cannot reach it: a
-// filepath.Rel, strings.HasPrefix or strings.CutPrefix call that
-// mentions one of objs (directly or through a local bound to it), with
-// a non-constant root operand, decides an if that dominates sink in
-// the right direction. Three shapes count:
+// root before sink so that an outside path cannot reach it. The test
+// runs after the resolution at `after` and is filepath.Rel(root, real)
+// or strings.HasPrefix/CutPrefix(real, root+sep), where real is one of
+// objs (directly or through a local bound to it), root is neither a
+// constant nor built from real, and sep is the target's separator. It
+// decides an if that dominates sink in the right direction. Three
+// shapes count:
 //
 //   - the then-branch refuses (returns, panics or branches away) and an
-//     outside path makes the condition true: `if !HasPrefix(real, root)`,
+//     outside path makes the condition true: `if !HasPrefix(real, rootSep)`,
 //     `if err != nil || HasPrefix(rel, "..")`;
 //   - the sink sits in the then-branch and an outside path makes the
-//     condition false: `if HasPrefix(real, root) { write }`;
+//     condition false: `if HasPrefix(real, rootSep) { write }`;
 //   - the else-branch refuses and an outside path makes the condition
-//     false: `if HasPrefix(real, root) {} else { return }`.
+//     false: `if HasPrefix(real, rootSep) {} else { return }`.
 //
 // A Rel whose result nobody reads, a prefix test whose answer only
 // logs, and `if HasPrefix(real, root) { return nil }` before the write
 // (the inside path refuses, the outside one writes) confine nothing.
-func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, sink ast.Node) bool {
+func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[types.Object]ast.Expr, objs map[types.Object]bool, after token.Pos, sink ast.Node) bool {
 	if body == nil {
 		return false
 	}
-	// The root operand (Rel's base, HasPrefix/CutPrefix's prefix) must
-	// not be a constant: HasPrefix(real, "/") holds for every absolute
-	// path and names no root.
+	sep := targetSeparator(pass)
+	isConst := func(e ast.Expr) bool {
+		tv, ok := pass.TypesInfo.Types[e]
+		return ok && tv.Value != nil
+	}
+	// rootOperand reports whether e can name the root: not a constant
+	// (HasPrefix(real, "/") holds for every absolute path) and not
+	// built from the resolved path itself (HasPrefix(real,
+	// filepath.Dir(real)+sep) holds for nearly every path).
+	rootOperand := func(e ast.Expr) bool {
+		return !isConst(e) && !mentionsObj(pass, e, bound, objs, 0)
+	}
+	// isContain reports whether c is a containment test of the
+	// resolved path, made after it was resolved: a check of p before
+	// `p, err = EvalSymlinks(p)` tested the unresolved spelling.
+	//   - filepath.Rel(root, real);
+	//   - strings.HasPrefix/CutPrefix(real, root + sep): the separator
+	//     is the boundary, without it /srv/app-backup passes a test
+	//     against /srv/app.
 	isContain := func(c *ast.CallExpr) bool {
-		root := -1
-		switch QualifiedFunc(pass, c.Fun) {
-		case "path/filepath.Rel":
-			root = 0
-		case "strings.HasPrefix", "strings.CutPrefix":
-			root = 1
-		}
-		if root < 0 || len(c.Args) <= root {
+		if c.Pos() < after || len(c.Args) != 2 {
 			return false
 		}
-		tv, ok := pass.TypesInfo.Types[c.Args[root]]
-		return !ok || tv.Value == nil
+		switch QualifiedFunc(pass, c.Fun) {
+		case "path/filepath.Rel":
+			return rootOperand(c.Args[0]) && mentionsObj(pass, c.Args[1], bound, objs, 0)
+		case "strings.HasPrefix", "strings.CutPrefix":
+			if !mentionsObj(pass, c.Args[0], bound, objs, 0) {
+				return false
+			}
+			add, ok := ast.Unparen(Resolve(pass, c.Args[1], bound, 0)).(*ast.BinaryExpr)
+			if !ok || add.Op != token.ADD || !rootOperand(add.X) {
+				return false
+			}
+			tv, ok := pass.TypesInfo.Types[add.Y]
+			return ok && tv.Value != nil && tv.Value.Kind() == constant.String && constant.StringVal(tv.Value) == sep
+		}
+		return false
 	}
 	isPrefix := func(c *ast.CallExpr) bool {
 		fn := QualifiedFunc(pass, c.Fun)
@@ -1034,7 +1058,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 			e = b
 		}
 		r, ok := ast.Unparen(e).(*ast.CallExpr)
-		if ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0) {
+		if ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) {
 			return r
 		}
 		return nil
@@ -1046,7 +1070,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		}
 		return constant.StringVal(tv.Value), true
 	}
-	parentPrefix := ".." + targetSeparator(pass)
+	parentPrefix := ".." + sep
 	// cover is what an outside path makes a condition: forced true,
 	// forced false, neither, or, for tests of a Rel result, true on
 	// only part of the outside spellings, kept per Rel call: dotdot
@@ -1131,14 +1155,14 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 				return cover{}
 			}
 			if r, ok := Resolve(pass, x, bound, 0).(*ast.CallExpr); ok && isPrefix(r) && isContain(r) &&
-				dominates(r, sink, body) && mentionsObj(pass, r, bound, objs, 0) {
+				dominates(r, sink, body) {
 				return cover{force: forceFalse}
 			}
 		case *ast.CallExpr:
 			if !dominates(x, sink, body) {
 				return cover{}
 			}
-			if isPrefix(x) && isContain(x) && mentionsObj(pass, x, bound, objs, 0) {
+			if isPrefix(x) && isContain(x) {
 				return cover{force: forceFalse} // HasPrefix(real, root): false outside
 			}
 			// filepath.IsLocal(rel) is false for ".." and "../x".
