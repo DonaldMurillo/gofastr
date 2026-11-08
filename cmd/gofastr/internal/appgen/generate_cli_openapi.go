@@ -593,7 +593,7 @@ func BuildOpenAPICLISpec(doc map[string]any, opts CliOptions, clientImport strin
 	opts.Binary = binary
 	spec := cliSpec{
 		Binary:       opts.Binary,
-		EnvPrefix:    cliEnvPrefix(opts.Binary),
+		EnvPrefix:    CLIEnvPrefix(opts.Binary),
 		ClientImport: clientImport,
 		SelfClient:   true,
 		TokenHeader:  "Authorization",

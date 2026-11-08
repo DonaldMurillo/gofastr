@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 )
 
 //go:embed install.sh.tmpl
@@ -46,20 +48,11 @@ type scriptValues struct {
 	Windows     []scriptBuild
 }
 
-// envPrefix is the binary name as an environment-variable prefix:
-// upper case, with every character other than a letter or digit turned
-// into "_". The generated CLI's <BINARY>_URL uses the same prefix.
-func envPrefix(name string) string {
-	var b strings.Builder
-	for _, r := range strings.ToUpper(name) {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		} else {
-			b.WriteByte('_')
-		}
-	}
-	return b.String()
-}
+// envPrefix is the binary name as an environment-variable prefix,
+// the one a generated CLI uses for <BINARY>_URL: upper case, every
+// character other than a letter or digit turned into "_", outer "_"
+// trimmed.
+func envPrefix(name string) string { return appgen.CLIEnvPrefix(name) }
 
 func scriptData(res result, opts options) scriptValues {
 	v := scriptValues{

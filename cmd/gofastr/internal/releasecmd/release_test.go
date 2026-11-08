@@ -73,6 +73,9 @@ func TestURLRefusesUnquotableText(t *testing.T) {
 		"https://user:pw@example.com/x",
 		"https://example.com/x?y=1",
 		"https://example.com/x#y",
+		"https://example.com/x?",
+		"https://example.com/x#",
+		"HTTPS://example.com/x",
 		"https:///x",
 		"ftp://example.com/x",
 	} {
@@ -99,7 +102,7 @@ func TestEmitterRefusesQuoteInURL(t *testing.T) {
 }
 
 func TestEnvPrefixFromName(t *testing.T) {
-	for in, want := range map[string]string{"myapp": "MYAPP", "my-app": "MY_APP", "my.app_2": "MY_APP_2"} {
+	for in, want := range map[string]string{"myapp": "MYAPP", "my-app": "MY_APP", "my.app_2": "MY_APP_2", "myapp-": "MYAPP"} {
 		if got := envPrefix(in); got != want {
 			t.Errorf("envPrefix(%q) = %q, want %q", in, got, want)
 		}
@@ -449,8 +452,8 @@ func TestInstallPs1InstallsVerifiedBuild(t *testing.T) {
 	if err != nil || string(got) != "hello 2.0.1\n" {
 		t.Fatalf("installed binary printed %q, %v", got, err)
 	}
-	if _, err := os.Stat(filepath.Join(installDir, "hello.exe.old")); !os.IsNotExist(err) {
-		t.Errorf("the moved-aside copy was left behind (stat err %v)", err)
+	if left, _ := filepath.Glob(filepath.Join(installDir, "hello.exe.*")); len(left) > 0 {
+		t.Errorf("the moved-aside copy was left behind: %v", left)
 	}
 
 	// On a CI runner, also let the script add the directory to the user's

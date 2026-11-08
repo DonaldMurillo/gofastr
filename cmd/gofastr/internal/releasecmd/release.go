@@ -130,14 +130,20 @@ func checkBaseURL(raw string) (string, error) {
 	if !urlCharsRe.MatchString(raw) {
 		return "", fmt.Errorf("release: --url %q holds a character the install scripts cannot quote (quotes, $, `, spaces and non-ASCII are refused; percent-encode them)", raw)
 	}
+	// The raw text is what the scripts embed, so the scheme, query and
+	// fragment are checked on it: url.Parse lower-cases "HTTPS://" and
+	// drops a bare trailing "?" or "#".
+	if !strings.HasPrefix(raw, "https://") {
+		return "", fmt.Errorf("release: --url %q must be an https:// URL", raw)
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("release: --url: %v", err)
 	}
-	if u.Scheme != "https" || u.Host == "" {
+	if u.Host == "" {
 		return "", fmt.Errorf("release: --url %q must be an https:// URL", raw)
 	}
-	if u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+	if u.User != nil || strings.ContainsAny(raw, "?#") {
 		return "", fmt.Errorf("release: --url %q must be a plain directory URL, with no credentials, query or fragment", raw)
 	}
 	return strings.TrimRight(raw, "/"), nil
@@ -239,11 +245,6 @@ func RunRelease(args []string) {
 	opts, err := parseOptions(args)
 	if err != nil {
 		cli.Fail("%v", err)
-		cli.OsExit(1)
-		return
-	}
-	if err := project.ValidateBuildTarget(opts.pkg); err != nil {
-		cli.Fail("Release target %q is invalid: %v", opts.pkg, err)
 		cli.OsExit(1)
 		return
 	}

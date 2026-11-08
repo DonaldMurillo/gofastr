@@ -60,10 +60,13 @@
 
 		New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 		$dest = Join-Path $installDir "$name.exe"
-		$old = "$dest.old"
 		# A running .exe cannot be overwritten, but it can be renamed:
-		# move the old copy aside, then put the new one in its place.
-		Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+		# move the old copy aside, then put the new one in its place. Each
+		# install picks a fresh name, because a copy set aside by an earlier
+		# upgrade may still be running; those are removed once they are not.
+		Get-ChildItem -LiteralPath $installDir -Filter "$name.exe.*.old" -ErrorAction SilentlyContinue |
+			Remove-Item -Force -ErrorAction SilentlyContinue
+		$old = "$dest.$([IO.Path]::GetRandomFileName()).old"
 		$moved = $false
 		if (Test-Path -LiteralPath $dest) {
 			Move-Item -LiteralPath $dest -Destination $old -Force

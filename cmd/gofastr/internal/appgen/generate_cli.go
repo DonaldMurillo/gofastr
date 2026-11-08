@@ -686,7 +686,7 @@ func buildCLISpec(decls []framework.EntityDeclaration, opts CliOptions, clientIm
 
 	spec := cliSpec{
 		Binary:       binary,
-		EnvPrefix:    cliEnvPrefix(binary),
+		EnvPrefix:    CLIEnvPrefix(binary),
 		APIPrefix:    apiPrefix,
 		ClientImport: clientImport,
 	}
@@ -1011,9 +1011,9 @@ func validateDeclarationStates(decl framework.EntityDeclaration) error {
 	return entity.ValidateStates(decl.Name, cfg)
 }
 
-// cliEnvPrefix turns a binary name into the UPPER_SNAKE env-var prefix:
+// CLIEnvPrefix turns a binary name into the UPPER_SNAKE env-var prefix:
 // "my-app" → "MY_APP".
-func cliEnvPrefix(binary string) string {
+func CLIEnvPrefix(binary string) string {
 	var sb strings.Builder
 	for _, r := range strings.ToUpper(binary) {
 		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
