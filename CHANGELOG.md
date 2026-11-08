@@ -105,7 +105,8 @@ few lines, and link the PR or the docs page for the rest.
   can't be a constant such as `"/"`, a local holding one, or built from
   the path. It must hold one value: a local assigned once, a parameter
   never reassigned, so `if widen { root = "/" }` before the test does
-  not pass. The separator after it is required: without it
+  not pass, and neither does a `rootSep` local bound to `root + sep` on
+  one branch only. The separator after it is required: without it
   `/srv/app-backup` passes a test against `/srv/app`. A resolved
   parent joined with `filepath.Base` counts only for `os.Mkdir`:
   `os.MkdirAll` follows a linked leaf and returns nil. A path joined in

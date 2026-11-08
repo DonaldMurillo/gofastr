@@ -1172,7 +1172,10 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		case "path/filepath.Rel":
 			return rootOperand(c.Args[0]) && target(c.Args[1])
 		case "strings.HasPrefix", "strings.CutPrefix":
-			if !target(c.Args[0]) {
+			// The operand holds one value too: after `rootSep := ""` and
+			// `if strict { rootSep = root + sep }`, HasPrefix(real,
+			// rootSep) is true for every path when strict is false.
+			if !target(c.Args[0]) || !stable(c.Args[1]) {
 				return false
 			}
 			add, ok := ast.Unparen(Resolve(pass, c.Args[1], bound, 0)).(*ast.BinaryExpr)

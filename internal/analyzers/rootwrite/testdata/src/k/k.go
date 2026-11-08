@@ -1300,3 +1300,33 @@ func branchResolvedRoot(baseDir, name string, data []byte, widen bool) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// condRootSep binds root+sep on one branch only: otherwise the prefix
+// is "", and HasPrefix(real, "") holds for every path.
+func condRootSep(baseDir, name string, data []byte, strict bool) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rootSep := ""
+	if strict {
+		rootSep = baseDir + string(filepath.Separator)
+	}
+	if !strings.HasPrefix(real, rootSep) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// boundRootSep binds root+sep once. Quiet.
+func boundRootSep(baseDir, name string, data []byte) error {
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rootSep := baseDir + string(filepath.Separator)
+	if !strings.HasPrefix(real, rootSep) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
