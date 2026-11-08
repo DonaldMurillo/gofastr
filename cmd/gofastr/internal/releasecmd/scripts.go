@@ -85,7 +85,7 @@ var (
 // on its own.
 func checkScriptValues(v scriptValues) error {
 	ok := nameRe.MatchString(v.Name) &&
-		versionRe.MatchString(v.Version) &&
+		validVersion(v.Version) &&
 		urlCharsRe.MatchString(v.BaseURL) && strings.HasPrefix(v.BaseURL, "https://") &&
 		envPrefixRe.MatchString(v.EnvPrefix)
 	for _, b := range append(append([]scriptBuild{}, v.Unix...), v.Windows...) {
@@ -101,7 +101,7 @@ func checkScriptValues(v scriptValues) error {
 // writeScripts writes install.sh (when the release has a macOS or Linux
 // build) and install.ps1 (when it has a Windows build) and returns the
 // names written.
-func writeScripts(root *os.Root, v scriptValues) ([]string, error) {
+func writeScripts(root *outDir, v scriptValues) ([]string, error) {
 	if err := checkScriptValues(v); err != nil {
 		return nil, err
 	}

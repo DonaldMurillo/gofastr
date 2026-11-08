@@ -64,9 +64,9 @@ func printSummary(res result, opts options) {
 	}
 	cli.Printf("\n  Upload every file to %s, then install with:\n", opts.baseURL)
 	if slices.Contains(res.scripts, "install.sh") {
-		cli.Printf("    curl -fsSL %s/install.sh | sh\n", opts.baseURL)
+		cli.Printf("    curl -fsSL '%s/install.sh' | sh\n", opts.baseURL)
 	}
 	if slices.Contains(res.scripts, "install.ps1") {
-		cli.Printf("    irm %s/install.ps1 | iex\n", opts.baseURL)
+		cli.Printf("    irm '%s/install.ps1' | iex\n", opts.baseURL)
 	}
 }

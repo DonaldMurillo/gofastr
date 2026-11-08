@@ -30,7 +30,9 @@ linker flags `-s -w -X main.version=<version>`, so a package with
 `var version = "dev"` in `main` reports the release it was built as.
 The CLI `gofastr generate cli` writes has that variable. `--version-var`
 names another variable, and the linker ignores `-X` for a variable that
-does not exist.
+does not exist. The package is listed and built with each target's
+`GOOS` and `GOARCH`, so a main package whose files only build for Linux
+releases from a Mac.
 
 The output directory (default `dist/release/<version>`) must be new or
 empty, so archives from an older build never sit beside a newer
@@ -53,12 +55,12 @@ fixed order, so two releases of the same tree are byte-identical.
 |------|---------|
 | `--version` | Required. Semver such as `1.2.0` or `1.2.0-rc.1`; a leading `v` is dropped from file names and from the stamped value. Build metadata (`+…`) is refused |
 | `--pkg` | The main package (default `.`). Anything else is refused |
-| `--name` | The binary name. Default: the name `go build` gives the package (the last import path element, skipping a `/vN` suffix). It must start with a letter and hold only letters, digits, `.`, `_` and `-` |
+| `--name` | The binary name. Default: the name `go build` gives the package (the last import path element, skipping a `/vN` suffix). It must start with a letter and hold only letters, digits, `.`, `_` and `-`. When Windows is a target, a name Windows reserves (`con`, `aux`, `nul`, `com1`…) is refused |
 | `-o`, `--out` | Output directory (default `dist/release/<version>`) |
 | `--url` | The https URL the files will be downloaded from. Without it no install scripts are written |
 | `--targets` | Comma-separated `GOOS/GOARCH` pairs. Default and maximum: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`, `windows/arm64` |
-| `--service` | The app uses `battery/service`: the scripts run `<name> service install` once the binary is in place. Refused for a package that does not use it |
-| `--include` | Comma-separated files added to every archive at its root, for example `README.md,LICENSE`. Each must be a regular file; a symlink is refused |
+| `--service` | The app uses `battery/service`: the scripts run `<name> service install` once the binary is in place. Refused unless the package uses it on every target |
+| `--include` | Comma-separated files added to every archive at its root, for example `README.md,LICENSE`. Each must be a regular file (a symlink is refused) whose name is ASCII letters, digits, `.`, `_`, `+` and `-`. Names must differ from each other and from the binary ignoring case, because macOS and Windows unpack onto case-insensitive file systems: `--include=HELLO` would overwrite `hello` |
 | `--version-var` | The variable `-X` sets (default `main.version`) |
 | `--ldflags` | Extra linker flags, appended to the defaults |
 

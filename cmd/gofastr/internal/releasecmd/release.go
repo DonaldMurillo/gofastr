@@ -14,6 +14,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/internal/semver"
 )
 
 // target is one GOOS/GOARCH pair a release builds.
@@ -47,9 +48,13 @@ type options struct {
 // environment-variable prefix from: ASCII, starting with a letter.
 var nameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,63}$`)
 
-// versionRe is semver without build metadata; a leading "v" is dropped
-// before the match.
-var versionRe = regexp.MustCompile(`^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z-]+)*)?$`)
+// validVersion reports whether v (with its leading "v" dropped) is a
+// full semver version without build metadata, at most 64 bytes. Semver
+// allows only ASCII letters, digits, "." and "-", so the install scripts
+// can quote it.
+func validVersion(v string) bool {
+	return len(v) <= 64 && !strings.ContainsRune(v, '+') && semver.Validate("v"+v) == nil
+}
 
 // urlCharsRe is the set of characters a base URL may hold. It leaves out
 // every character that means something inside a single-quoted sh or
@@ -92,7 +97,7 @@ func parseOptions(args []string) (options, error) {
 		versionVar: versionVar,
 		service:    service,
 	}
-	if !versionRe.MatchString(opts.version) || len(opts.version) > 64 {
+	if !validVersion(opts.version) {
 		return options{}, fmt.Errorf("release: --version %q must be semver, like 1.2.0 or 1.2.0-rc.1 (a leading v is allowed)", version)
 	}
 	if opts.name != "" && !nameRe.MatchString(opts.name) {
@@ -196,15 +201,38 @@ const (
 	desktopPkg = project.GofastrModule + "/battery/desktop"
 )
 
-// inspectPackage runs `go list` in dir and refuses anything but one main
-// package.
-func inspectPackage(dir, pkg string) (pkgInfo, error) {
+// inspectPackage runs `go list` in dir for every target, in the same
+// environment the build uses, so a package that only builds for its
+// targets (main_linux.go) can be released from any host. It refuses
+// anything but one main package. The service and desktop answers can
+// differ by platform: --service needs battery/service on every target,
+// and a warning fires when any target imports either.
+func inspectPackage(dir, pkg string, targets []target) (pkgInfo, error) {
+	var info pkgInfo
+	for i, t := range targets {
+		ti, err := inspectTarget(dir, pkg, t)
+		if err != nil {
+			return pkgInfo{}, err
+		}
+		if i == 0 {
+			info = ti
+			continue
+		}
+		info.usesService = info.usesService && ti.usesService
+		info.importsService = info.importsService || ti.importsService
+		info.importsDesktop = info.importsDesktop || ti.importsDesktop
+	}
+	return info, nil
+}
+
+func inspectTarget(dir, pkg string, t target) (pkgInfo, error) {
 	cmd := exec.Command("go", "list", "-f", "{{.Name}}\t{{.ImportPath}}\t{{join .Imports \" \"}}\t{{join .Deps \" \"}}", "--", pkg)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), buildEnv(t)...)
 	cmd.Stderr = os.Stderr
 	raw, err := cmd.Output()
 	if err != nil {
-		return pkgInfo{}, fmt.Errorf("release: go list %s: %v", pkg, err)
+		return pkgInfo{}, fmt.Errorf("release: go list %s for %s: %v", pkg, t, err)
 	}
 	line := strings.TrimSuffix(string(raw), "\n")
 	fields := strings.Split(line, "\t")
@@ -221,6 +249,11 @@ func inspectPackage(dir, pkg string) (pkgInfo, error) {
 		importsService: slices.Contains(imports, servicePkg),
 		importsDesktop: slices.Contains(imports, desktopPkg),
 	}, nil
+}
+
+// buildEnv is the environment go list and go build run under for t.
+func buildEnv(t target) []string {
+	return []string{"CGO_ENABLED=0", "GOOS=" + t.goos, "GOARCH=" + t.goarch}
 }
 
 // majorSuffixRe matches the /vN element `go build` skips when it names a

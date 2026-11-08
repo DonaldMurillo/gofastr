@@ -9,9 +9,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
+
+// includeNameRe is an --include file's name inside the archives.
+var includeNameRe = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
 
 // artifact is one archive the release wrote.
 type artifact struct {
@@ -43,7 +50,7 @@ func archiveName(name, version string, t target) string {
 // the archives, the install scripts and checksums.txt into opts.out.
 // Progress lines go to log.
 func release(dir string, opts options, log io.Writer) (_ result, err error) {
-	info, err := inspectPackage(dir, opts.pkg)
+	info, err := inspectPackage(dir, opts.pkg, opts.targets)
 	if err != nil {
 		return result{}, err
 	}
@@ -56,14 +63,18 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	}
 	switch {
 	case opts.service && !info.usesService:
-		return result{}, fmt.Errorf("release: --service runs `%s service install` after the install, but %s does not use battery/service", res.name, info.importPath)
+		return result{}, fmt.Errorf("release: --service runs `%s service install` after the install, but %s does not use battery/service on every target", res.name, info.importPath)
 	case !opts.service && info.importsService && opts.baseURL != "":
 		res.warnings = append(res.warnings, fmt.Sprintf("%s uses battery/service; pass --service so the install scripts also run `%s service install`", info.importPath, res.name))
 	}
 	if info.importsDesktop {
 		res.warnings = append(res.warnings, info.importPath+" uses battery/desktop; build its window app with `gofastr desktop build`, which signs and bundles it. These archives hold the plain binary")
 	}
-	includes, err := resolveIncludes(dir, opts.includes, res.name)
+	windows := slices.ContainsFunc(opts.targets, func(t target) bool { return t.goos == "windows" })
+	if windows && !project.ValidWindowsFileName(res.name) {
+		return result{}, fmt.Errorf("release: %s.exe is a reserved name on Windows; pass another --name", res.name)
+	}
+	includes, err := resolveIncludes(dir, opts.includes, res.name, windows)
 	if err != nil {
 		return result{}, err
 	}
@@ -76,17 +87,18 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	if err := prepareOut(res.out); err != nil {
 		return result{}, err
 	}
-	root, err := os.OpenRoot(res.out)
+	r, err := os.OpenRoot(res.out)
 	if err != nil {
 		return result{}, fmt.Errorf("release: %v", err)
 	}
-	defer func() { _ = root.Close() }()
-	// The directory was empty, so on failure everything in it is this
-	// run's: remove it, and the next run does not trip over a partial
-	// release.
+	defer func() { _ = r.Close() }()
+	root := &outDir{root: r}
+	// On failure, remove the files this run created, so the next run does
+	// not trip over a partial release. Only those: another release writing
+	// into the same directory keeps its files.
 	defer func() {
 		if err != nil {
-			removeWritten(root, res.out)
+			root.removeCreated()
 		}
 	}()
 
@@ -119,8 +131,13 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 // resolveIncludes checks the --include files: regular files (a symlink
 // is refused), with base names distinct from each other and from the
 // binary.
-func resolveIncludes(dir string, names []string, bin string) ([]archiveFile, error) {
-	taken := map[string]bool{bin: true, bin + ".exe": true}
+// Names are compared case-folded, because the archives unpack onto
+// case-insensitive file systems on macOS and Windows, where an include
+// named HELLO would overwrite the binary hello. A name is held to ASCII
+// so the fold is exact, and to the Windows rules when a Windows target
+// is built.
+func resolveIncludes(dir string, names []string, bin string, windows bool) ([]archiveFile, error) {
+	taken := map[string]bool{asciicase.Lower(bin): true, asciicase.Lower(bin + ".exe"): true}
 	var files []archiveFile
 	for _, n := range names {
 		p := n
@@ -135,10 +152,14 @@ func resolveIncludes(dir string, names []string, bin string) ([]archiveFile, err
 			return nil, fmt.Errorf("release: --include %s must be a regular file, not a symlink or directory", n)
 		}
 		base := filepath.Base(p)
-		if taken[base] {
-			return nil, fmt.Errorf("release: --include %s: an archive already holds a file named %s", n, base)
+		if !includeNameRe.MatchString(base) || windows && !project.ValidWindowsFileName(base) {
+			return nil, fmt.Errorf("release: --include %s: the archived name %q must be ASCII letters, digits, '.', '_', '+' and '-', and a valid Windows file name when Windows is a target", n, base)
 		}
-		taken[base] = true
+		key := asciicase.Lower(base)
+		if taken[key] {
+			return nil, fmt.Errorf("release: --include %s: an archive already holds a file named %s, ignoring case", n, base)
+		}
+		taken[key] = true
 		files = append(files, archiveFile{name: base, src: p, mode: 0o644})
 	}
 	return files, nil
@@ -164,7 +185,7 @@ func prepareOut(out string) error {
 
 // buildTarget cross-compiles one target into staging and writes its
 // archive into root.
-func buildTarget(dir, staging string, root *os.Root, opts options, name string, t target, includes []archiveFile) (artifact, error) {
+func buildTarget(dir, staging string, root *outDir, opts options, name string, t target, includes []archiveFile) (artifact, error) {
 	bin := name
 	if t.goos == "windows" {
 		bin += ".exe"
@@ -176,7 +197,7 @@ func buildTarget(dir, staging string, root *os.Root, opts options, name string, 
 	}
 	cmd := exec.Command("go", "build", "-trimpath", "-ldflags="+ldflags, "-o", binPath, opts.pkg)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS="+t.goos, "GOARCH="+t.goarch)
+	cmd.Env = append(os.Environ(), buildEnv(t)...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Run(); err != nil {
 		return artifact{}, fmt.Errorf("release: go build for %s: %v", t, err)
@@ -185,7 +206,7 @@ func buildTarget(dir, staging string, root *os.Root, opts options, name string, 
 	files := append([]archiveFile{{name: bin, src: binPath, mode: 0o755}}, includes...)
 	a := artifact{target: t, file: archiveName(name, opts.version, t)}
 	//gofastr:allow(worldreadable) a release archive is a public download, holds no state or secret
-	f, err := root.OpenFile(a.file, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+	f, err := root.create(a.file, 0o644)
 	if err != nil {
 		return artifact{}, fmt.Errorf("release: %v", err)
 	}
@@ -209,7 +230,7 @@ func buildTarget(dir, staging string, root *os.Root, opts options, name string, 
 // writeChecksums writes checksums.txt in the `sha256sum` format, one
 // line per archive and script, sorted by name, so `sha256sum -c
 // checksums.txt` checks a downloaded set.
-func writeChecksums(root *os.Root, res result) error {
+func writeChecksums(root *outDir, res result) error {
 	lines := make([]string, 0, len(res.artifacts)+len(res.scripts))
 	for _, a := range res.artifacts {
 		lines = append(lines, a.sha256+"  "+a.file)
@@ -225,8 +246,8 @@ func writeChecksums(root *os.Root, res result) error {
 	return writeNew(root, "checksums.txt", []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 
-func fileSHA256(root *os.Root, name string) (string, error) {
-	data, err := root.ReadFile(name)
+func fileSHA256(root *outDir, name string) (string, error) {
+	data, err := root.root.ReadFile(name)
 	if err != nil {
 		return "", fmt.Errorf("release: %v", err)
 	}
@@ -235,10 +256,10 @@ func fileSHA256(root *os.Root, name string) (string, error) {
 }
 
 // writeNew creates name under root; an existing file is an error.
-func writeNew(root *os.Root, name string, data []byte, mode fs.FileMode) error {
-	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
+func writeNew(root *outDir, name string, data []byte, mode fs.FileMode) error {
+	f, err := root.create(name, mode)
 	if err != nil {
-		return fmt.Errorf("release: %v", err)
+		return err
 	}
 	_, err = f.Write(data)
 	if cerr := f.Close(); err == nil {
@@ -250,13 +271,26 @@ func writeNew(root *os.Root, name string, data []byte, mode fs.FileMode) error {
 	return nil
 }
 
-// removeWritten deletes the files a failed release left in out.
-func removeWritten(root *os.Root, out string) {
-	entries, err := os.ReadDir(out)
+// outDir is the output directory, recording the files this run created.
+type outDir struct {
+	root    *os.Root
+	created []string
+}
+
+// create makes name under the directory; an existing file is an error,
+// so a file this run did not create is never recorded as its own.
+func (o *outDir) create(name string, mode fs.FileMode) (*os.File, error) {
+	f, err := o.root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
 	if err != nil {
-		return
+		return nil, fmt.Errorf("release: %v", err)
 	}
-	for _, e := range entries {
-		_ = root.Remove(e.Name())
+	o.created = append(o.created, name)
+	return f, nil
+}
+
+// removeCreated deletes the files this run created.
+func (o *outDir) removeCreated() {
+	for _, name := range o.created {
+		_ = o.root.Remove(name)
 	}
 }

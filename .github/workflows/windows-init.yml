@@ -7,6 +7,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
+      # install.ps1 is an embedded template, not Go source.
+      - 'cmd/gofastr/internal/releasecmd/**'
   push:
     branches: [main]
     paths:
@@ -14,6 +16,8 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/windows-init.yml'
+      # install.ps1 is an embedded template, not Go source.
+      - 'cmd/gofastr/internal/releasecmd/**'
 
 permissions:
   contents: read

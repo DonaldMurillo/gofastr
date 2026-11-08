@@ -42,11 +42,20 @@ func TestOptionsDefaults(t *testing.T) {
 	}
 }
 
+func TestOptionsAcceptSemverPrerelease(t *testing.T) {
+	for _, v := range []string{"1.2.3-rc-1", "1.2.3-0.alpha", "v1.2.3-x.7.z-9"} {
+		if _, err := parseOptions([]string{"--version=" + v}); err != nil {
+			t.Errorf("%s: %v", v, err)
+		}
+	}
+}
+
 func TestOptionsRefuseBadValues(t *testing.T) {
 	for _, args := range [][]string{
 		{"--version=1.2"},
 		{"--version=01.2.0"},
 		{"--version=1.2.0+build"},
+		{"--version=1.2.3-01"},
 		{"--version=1.2.0", "--name=my app"},
 		{"--version=1.2.0", "--name=-x"},
 		{"--version=1.2.0", "--targets=plan9/amd64"},
@@ -171,6 +180,73 @@ func TestReleaseRefusesServiceWithoutBattery(t *testing.T) {
 	opts, _ := parseOptions([]string{"--version=1.0.0", "--service", "--targets=linux/amd64", "-o", t.TempDir()})
 	if _, err := release(dir, opts, io.Discard); err == nil || !strings.Contains(err.Error(), "does not use battery/service") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// The archives unpack onto case-insensitive file systems, where an
+// include named HELLO overwrites the binary hello.
+func TestIncludeCannotAliasBinary(t *testing.T) {
+	dir := writeModule(t, map[string]string{"main.go": helloMain, "HELLO": "x", "HELLO.EXE": "x", "readme.md": "x", "README.md": "x", "aux.txt": "x"})
+	for _, c := range []struct{ include, targets string }{
+		{"HELLO", "darwin/arm64"},
+		{"HELLO.EXE", "windows/amd64"},
+		{"readme.md,README.md", "linux/amd64"},
+		{"aux.txt", "windows/amd64"},
+	} {
+		opts, err := parseOptions([]string{"--version=1.0.0", "--name=hello", "--targets=" + c.targets, "--include=" + c.include, "-o", t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := release(dir, opts, io.Discard); err == nil || !strings.Contains(err.Error(), "--include") {
+			t.Errorf("--include=%s for %s: err = %v", c.include, c.targets, err)
+		}
+	}
+}
+
+func TestReleaseRefusesWindowsDeviceName(t *testing.T) {
+	dir := writeModule(t, map[string]string{"main.go": helloMain})
+	opts, _ := parseOptions([]string{"--version=1.0.0", "--name=aux", "--targets=windows/amd64", "-o", t.TempDir()})
+	if _, err := release(dir, opts, io.Discard); err == nil || !strings.Contains(err.Error(), "reserved name on Windows") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// A package whose only file builds for its target releases from any host.
+func TestReleaseBuildsForAnotherOS(t *testing.T) {
+	other := target{"linux", "amd64"}
+	if runtime.GOOS == "linux" {
+		other = target{"darwin", "arm64"}
+	}
+	dir := writeModule(t, map[string]string{"main_" + other.goos + ".go": helloMain})
+	opts, _ := parseOptions([]string{"--version=1.0.0", "--targets=" + other.String(), "-o", t.TempDir()})
+	if _, err := release(dir, opts, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A failed run removes only what it created: a second release writing
+// into the same directory keeps its files.
+func TestCleanupKeepsOtherFiles(t *testing.T) {
+	dir := t.TempDir()
+	r, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	o := &outDir{root: r}
+	if err := writeNew(o, "mine.tar.gz", []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "theirs.tar.gz"), []byte("y"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeNew(o, "theirs.tar.gz", []byte("x"), 0o600); err == nil {
+		t.Fatal("overwrote a file this run did not create")
+	}
+	o.removeCreated()
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || entries[0].Name() != "theirs.tar.gz" {
+		t.Fatalf("left %v; want only theirs.tar.gz", entries)
 	}
 }
 
