@@ -84,6 +84,8 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		}
 	}
 	cols = append(slices.Clip(cols), unprojected...)
+	textKeys := ch.storedTimestampKeys(ctx, fields)
+	cols = append(cols, storedTextColumns(fields, textKeys)...)
 	qb := query.Select(cols...)
 	qb.From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
@@ -128,13 +130,16 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 				continue
 			}
 			v, err := filter.CoerceValue(f, ch.queryField(f).Type, raw)
+			if _, stored := textKeys[f]; stored {
+				v, err = storedTimestampText(f, raw)
+			}
 			if err != nil {
 				writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, err), i18n.Phrase{})
 				return
 			}
 			carried[f] = v
 		}
-		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, hookWhere, isDate)
+		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, hookWhere, isDate, textKeys)
 		if errors.Is(err, errCursorAnchorGone) {
 			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, i18n.NewError(reasonCursorAnchorGone, nil)), i18n.Phrase{})
 			return
@@ -191,7 +196,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	// the true last row of the keyset window. Only AFTER that do we flip a
 	// backward page back into ascending order so a "prev" page reads the same
 	// way a "next" page does.
-	page, err := buildCursorPage(results, fields, keys, ch.convertKey, isDate, limit)
+	page, err := buildCursorPage(results, fields, keys, ch.convertKey, isDate, textKeys, limit)
 	if errors.Is(err, errCursorKeyTooLong) {
 		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
 		writeJSONError(w, r, http.StatusInternalServerError, reasonCursorKeyTooLong)
@@ -206,6 +211,11 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		k := ch.convertKey(f)
 		for _, row := range page.Data {
 			delete(row, k)
+		}
+	}
+	for _, textKey := range textKeys {
+		for _, row := range page.Data {
+			delete(row, textKey)
 		}
 	}
 
@@ -339,8 +349,9 @@ var errCursorAnchorGone = errors.New("cursor anchor row not found")
 // a readable row still marks a position, so an anchor edited out of the
 // search keeps paging the way a plain ?field= filter always did. A gone anchor is errCursorAnchorGone: the caller
 // restarts from the first page rather than reading a page from a position
-// nobody can name.
-func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool) ([]any, error) {
+// nobody can name. textKeys is storedTimestampKeys: the Timestamp fields
+// it names are read and bound as the row stores them.
+func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool, textKeys map[string]string) ([]any, error) {
 	args := make([]any, len(fields))
 	lookup := false
 	for i, f := range fields {
@@ -353,7 +364,8 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	if !lookup {
 		return args, nil
 	}
-	qb := query.Select(fields...)
+	selected := append(slices.Clip(fields), storedTextColumns(fields, textKeys)...)
+	qb := query.Select(selected...)
 	qb.From(ch.Entity.GetTable())
 	for _, k := range keys {
 		qb.Where(query.QuoteKeyword(k)+" = $1", carried[k])
@@ -372,14 +384,14 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 		return nil, err
 	}
 	defer rows.Close()
-	found, err := ch.scanMany(rows, fields)
+	found, err := ch.scanMany(rows, selected)
 	if err != nil {
 		return nil, err
 	}
 	if len(found) == 0 {
 		return nil, errCursorAnchorGone
 	}
-	vals, err := keysetValues(found[0], fields, ch.convertKey, isDate)
+	vals, err := keysetValues(found[0], fields, ch.convertKey, isDate, textKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -388,6 +400,9 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	// layout on SQLite.
 	for i, f := range fields {
 		v, err := filter.CoerceValue(f, ch.queryField(f).Type, pagination.KeysetString(vals[f]))
+		if _, stored := textKeys[f]; stored {
+			v, err = storedTimestampText(f, pagination.KeysetString(vals[f]))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("anchor value of %q: %w", f, err)
 		}
@@ -407,10 +422,17 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 // isDate names the schema.Date fields. Both drivers read DATE as a
 // time.Time, which would carry a full timestamp that the Date check
 // refuses; the value is the date instead.
-func keysetValues(row map[string]any, fields []string, convertKey func(string) string, isDate func(string) bool) (map[string]any, error) {
+//
+// textKeys maps a field to the row key of its stored text
+// (storedTimestampKeys), read in place of the scanned value.
+func keysetValues(row map[string]any, fields []string, convertKey func(string) string, isDate func(string) bool, textKeys map[string]string) (map[string]any, error) {
 	out := map[string]any{}
 	for _, f := range fields {
-		v, ok := row[convertKey(f)]
+		key := convertKey(f)
+		if textKey, stored := textKeys[f]; stored {
+			key = textKey
+		}
+		v, ok := row[key]
 		if !ok {
 			continue
 		}
@@ -429,7 +451,7 @@ func keysetValues(row map[string]any, fields []string, convertKey func(string) s
 // the last row's cursor fields when that token fits the decoder's cap,
 // else its key columns alone (decodeCursorFor reads both). One column
 // uses the compact EncodeCursor shape, several the multi-field encoding.
-func buildCursorPage(data []map[string]any, fields, keys []string, convertKey func(string) string, isDate func(string) bool, limit int) (pagination.CursorPage, error) {
+func buildCursorPage(data []map[string]any, fields, keys []string, convertKey func(string) string, isDate func(string) bool, textKeys map[string]string, limit int) (pagination.CursorPage, error) {
 	hasMore := len(data) > limit
 	if hasMore {
 		data = data[:limit]
@@ -438,7 +460,7 @@ func buildCursorPage(data []map[string]any, fields, keys []string, convertKey fu
 	if !hasMore || len(data) == 0 {
 		return page, nil
 	}
-	dbRow, err := keysetValues(data[len(data)-1], fields, convertKey, isDate)
+	dbRow, err := keysetValues(data[len(data)-1], fields, convertKey, isDate, textKeys)
 	if err != nil {
 		return page, err
 	}

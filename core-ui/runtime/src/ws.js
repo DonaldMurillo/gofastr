@@ -152,7 +152,7 @@
         socket = null;
         const code = ev ? Number(ev.code) : 0;
         if (code >= 4400 && code <= 4499) { status.refused = code - 4000; endGeneration('refused'); return; }
-        endGeneration(ev && ev.wasClean ? 'closed' : 'error');
+        endGeneration(ev && ev.wasClean && !(code >= 4500 && code <= 4599) ? 'closed' : 'error');
       };
     };
 

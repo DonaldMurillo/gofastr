@@ -55,8 +55,12 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// 2. Each is one module loaded only on a page carrying that
 		// pattern.
 		// TestTrapKeepsNestedTabOrder retains nested stops: 3174 + 2.
+		// TestSortableVersionRenews: a versioned list renews its token
+		// from the X-Gofastr-Sortable-Version header on a 2xx move and
+		// on a conflict refresh, so sequential moves stop conflicting:
+		// 3189 measured + 2.
 		"framework/headless/disclosure.js":   3176,
-		"framework/headless/sortablelist.js": 3091,
+		"framework/headless/sortablelist.js": 3191,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added
 		// the late-body rejection in tx, closing a connection a failed

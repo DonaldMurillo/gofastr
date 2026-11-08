@@ -421,6 +421,9 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", op, err)
 	}
+	if err := ch.refuseLegacyTimestampComparisons(ctx, filters, where); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", op, err)
+	}
 	searchConds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", op, err)
@@ -611,6 +614,9 @@ func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, err
 	}
 	filters, err := ch.validateFilters(opts.Filters)
 	if err != nil {
+		return 0, fmt.Errorf("CountAll: %w", err)
+	}
+	if err := ch.refuseLegacyTimestampComparisons(ctx, filters, where); err != nil {
 		return 0, fmt.Errorf("CountAll: %w", err)
 	}
 	if len(opts.Fields) > 0 {

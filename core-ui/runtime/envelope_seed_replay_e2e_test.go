@@ -27,7 +27,7 @@ func envelopeSeedServer(t *testing.T) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	routes := `[{"path":"/","layouts":["l:site"]},{"path":"/a","layouts":["l:site"]},{"path":"/s","layouts":["l:site"]},{"path":"/f","layouts":["l:site"]},{"path":"/c","layouts":["l:other"]},{"path":"/c2","layouts":["l:other"]}]`
+	routes := `[{"path":"/","layouts":["l:site"]},{"path":"/a","layouts":["l:site"]},{"path":"/prototype","layouts":["l:site"]},{"path":"/s","layouts":["l:site"]},{"path":"/f","layouts":["l:site"]},{"path":"/c","layouts":["l:other"]},{"path":"/c2","layouts":["l:other"]}]`
 	doc := func(seed, body string) string {
 		return `<!doctype html><html lang="en"><head><title>seed</title>` +
 			`<script type="application/json" id="gofastr-routes">` + routes + `</script>` +
@@ -37,12 +37,13 @@ func envelopeSeedServer(t *testing.T) *httptest.Server {
 	}
 	site := func(inner string) string {
 		return `<div data-cui-layout="site" data-cui-layout-key="l:site">` +
-			`<nav><a id="goA" href="/a">A</a><a id="goS" href="/s">S</a><a id="goC" href="/c">C</a><a id="goF" href="/f">F</a></nav>` +
+			`<nav><a id="goA" href="/a">A</a><a id="goPrototype" href="/prototype">Prototype names</a><a id="goS" href="/s">S</a><a id="goC" href="/c">C</a><a id="goF" href="/f">F</a></nav>` +
 			`<div data-cui-outlet="l:site#side" id="side">SIDE</div>` +
 			`<main role="main" tabindex="-1" data-cui-layout-slot="l:site" id="main">` + inner + `</main></div>`
 	}
-	home := `<p id="screen-home"><span data-cui-signal="quantity">1</span></p>`
-	screenA := `<p id="screen-a"><span data-cui-signal="quantity">10</span></p>`
+	home := `<p id="screen-home"><span data-cui-signal="quantity">1</span><span id="home-cart" data-cui-signal="cart">0</span></p>`
+	screenA := `<p id="screen-a"><span data-cui-signal="quantity">10</span><span id="a-cart" data-cui-signal="cart">0</span></p>`
+	prototype := `<p id="screen-prototype"><span data-cui-signal="newGlobal">7</span><span data-cui-signal="toString">11</span><span data-cui-signal="valueOf">12</span></p>`
 	mux := http.NewServeMux()
 	mux.HandleFunc("/__gofastr/runtime.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
@@ -87,7 +88,10 @@ func envelopeSeedServer(t *testing.T) *httptest.Server {
 			w.Header().Set("X-Gofastr-Partial", "true")
 			w.Header().Set("X-Gofastr-Swap", "l:site")
 			w.Header().Set("X-Gofastr-Envelope", "2")
-			if req.URL.Path == "/a" {
+			if req.URL.Path == "/prototype" {
+				fmt.Fprint(w, `<script type="application/json" id="gofastr-signals-partial">{"p":{"quantity":3},"g":{"newGlobal":7,"toString":11,"valueOf":12}}</script>`+
+					`<template data-cui-fill="l:site">`+prototype+`</template>`)
+			} else if req.URL.Path == "/a" {
 				fmt.Fprint(w, `<script type="application/json" id="gofastr-signals-partial">{"p":{"quantity":10},"g":{"cart":0}}</script>`+
 					`<template data-cui-fill="l:site">`+screenA+`</template>`)
 			} else {
@@ -98,6 +102,10 @@ func envelopeSeedServer(t *testing.T) *httptest.Server {
 		}
 		if req.URL.Path == "/a" {
 			fmt.Fprint(w, doc(`{"quantity":10,"cart":0}`, site(screenA)))
+			return
+		}
+		if req.URL.Path == "/prototype" {
+			fmt.Fprint(w, doc(`{"quantity":3,"newGlobal":7,"toString":11,"valueOf":12}`, site(prototype)))
 			return
 		}
 		fmt.Fprint(w, doc(`{"quantity":1,"cart":0}`, site(home)))
@@ -163,6 +171,96 @@ func TestEnvelopeReplayRestoresPageSignals(t *testing.T) {
 	}
 	if cart != "3" {
 		t.Errorf("global cart = %s after the replays, want the user's 3", cart)
+	}
+}
+
+// A fill and a cache replay through the envelope navigator paint the
+// stored global into the markup they bring. The store kept the cart the
+// reader set while the filled /a and the replayed boot page showed the
+// server's 0.
+func TestEnvelopeSwapShowsStoredGlobal(t *testing.T) {
+	srv := envelopeSeedServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	var onA, back string
+	var soft bool
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(500*time.Millisecond),
+		chromedp.Evaluate(`window.__softMark = 1; __gofastr.setSignal('cart', 3); true`, nil),
+		chromedp.Click(`#goA`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-a`, chromedp.ByID),
+		chromedp.Text(`#a-cart`, &onA, chromedp.ByID),
+		chromedp.Evaluate(`__gofastr.setSignal('cart', 4); history.back(); true`, nil),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Sleep(200*time.Millisecond),
+		chromedp.Text(`#home-cart`, &back, chromedp.ByID),
+		chromedp.Evaluate(`window.__softMark === 1`, &soft),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !soft {
+		t.Fatal("a navigation reloaded the document; the test needs soft swaps")
+	}
+	if onA != "3" {
+		t.Errorf("cart badge filled into /a = %s, want the stored 3", onA)
+	}
+	if back != "4" {
+		t.Errorf("cart badge after Back to the boot page = %s, want the stored 4", back)
+	}
+}
+
+func TestEnvelopeSeedsPrototypeNamedGlobals(t *testing.T) {
+	srv := envelopeSeedServer(t)
+	ctx := chromedptest.Context(t, chromedptest.Timeout(90*time.Second))
+	type snapshot struct {
+		Name, Value, Text string
+		Own, Global       bool
+	}
+	var seeded, replayed []snapshot
+	var soft bool
+	read := `['newGlobal', 'toString', 'valueOf'].map(name => ({
+  name, value: String(__gofastr.getSignal(name)),
+  text: document.querySelector('[data-cui-signal="' + name + '"]').textContent,
+  own: Object.prototype.hasOwnProperty.call(__gofastr._signals, name),
+  global: __gofastr._signals[name]?.global === true
+}))`
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(srv.URL+"/"),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Evaluate(`window.__prototypeNavMark = true`, nil),
+		chromedp.Click(`#goPrototype`, chromedp.ByID),
+		chromedp.WaitVisible(`#screen-prototype`, chromedp.ByID),
+		chromedp.Poll(`Boolean(window.__gofastr?._navHooks?.envelope)`, nil),
+		chromedp.Evaluate(read, &seeded),
+		chromedp.Evaluate(`__gofastr.setSignal('newGlobal', 70); __gofastr.setSignal('toString', 110); __gofastr.setSignal('valueOf', 120); history.back(); true`, nil),
+		chromedp.WaitVisible(`#screen-home`, chromedp.ByID),
+		chromedp.Evaluate(`history.forward(); true`, nil),
+		chromedp.WaitVisible(`#screen-prototype`, chromedp.ByID),
+		chromedp.Evaluate(read, &replayed),
+		chromedp.Evaluate(`window.__prototypeNavMark === true`, &soft),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if !soft {
+		t.Fatal("expected envelope soft navigation without a document reload")
+	}
+	for _, stage := range []struct {
+		name string
+		rows []snapshot
+		want map[string]string
+	}{
+		{"first envelope seed", seeded, map[string]string{"newGlobal": "7", "toString": "11", "valueOf": "12"}},
+		{"cached replay", replayed, map[string]string{"newGlobal": "70", "toString": "110", "valueOf": "120"}},
+	} {
+		if len(stage.rows) != len(stage.want) {
+			t.Fatalf("%s returned %d globals, want %d", stage.name, len(stage.rows), len(stage.want))
+		}
+		for _, row := range stage.rows {
+			if want := stage.want[row.Name]; row.Value != want || row.Text != want || !row.Own || !row.Global {
+				t.Errorf("%s %s: value=%q text=%q own=%v global=%v, want %q and an own global slot", stage.name, row.Name, row.Value, row.Text, row.Own, row.Global, want)
+			}
+		}
 	}
 }
 

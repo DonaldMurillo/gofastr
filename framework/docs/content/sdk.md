@@ -242,6 +242,14 @@ parent's patch instead of an `ID`: a `has_many` child declared with
 `primary_key: [isbn_code]` nests as `IsbnCode string`, since the server
 finds the child to update by its key.
 
+The `created_at` and `updated_at` columns an entity gets from
+`timestamps` (on unless the entity sets `timestamps: false`) are in
+every response, so the Go struct carries `CreatedAt` and `UpdatedAt`
+strings and the `client.d.ts` interface `createdAt` and `updatedAt`.
+They are read-only: no `Input` or `Patch` shape carries them. A column
+the entity declares itself under either name keeps its own type and
+flags.
+
 `?include=<field>` replaces a relation field's key with the related
 record under the same JSON name. The Go client keeps the field typed as
 the key: a record decoded from an include response still holds the key
@@ -313,7 +321,13 @@ the key can hold SQL `NULL`, and the server returns it as `null`, so
 the key stay plain `T`. Check for `null` before using an optional field's
 value. The exported
 `<entity>Fields` constants map camelCase names to the snake_case column
-names query params require.
+names query params require, the timestamp columns included.
+
+A relation field is typed as the key of the entity it names: a relation
+to an entity with an integer `id` is `number | string`, like that
+entity's `id`, and a relation to a string or UUID key is `string`. A
+target outside the generated selection (`--only`, `--exclude`) or one
+with a composite key types the relation `string`.
 
 Each entity is a property of `Client` named for its table (`api.posts`),
 so a table whose name the class already uses is refused: a `token`

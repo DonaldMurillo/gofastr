@@ -167,6 +167,13 @@ img.Resize(800, 600, image.WithFit(image.FitInside))   // preserve aspect; fit w
 img.Resize(800, 600, image.WithFit(image.FitOutside))  // preserve aspect; overflow
 ```
 
+A side passed as 0 is derived from the other one and the source's
+aspect, rounded down to at least 1 pixel. That box already has the
+source's shape, so every fit mode returns it as is:
+`Resize(16, 0, image.WithFit(image.FitInside))` on a 1920×36 banner is
+16×1, and `Placeholder` (which resizes to width 16 that way) keeps the
+width too.
+
 `WithoutEnlargement()` skips the resize entirely when the target box
 would scale up the source on either axis.
 

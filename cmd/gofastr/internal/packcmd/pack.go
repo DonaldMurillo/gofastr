@@ -770,6 +770,25 @@ func writeYAMLListItem(sb *strings.Builder, item any, indent int, order []string
 		sb.WriteString(strings.Repeat(" ", indent) + "- " + s[indent+2:])
 		return nil
 	}
+	if list, ok := item.([]any); ok {
+		pad := strings.Repeat(" ", indent)
+		switch {
+		case len(list) == 0:
+			sb.WriteString(pad + "- []\n")
+		case allScalars(list):
+			sb.WriteString(pad + "- ")
+			writeFlowList(sb, list)
+			sb.WriteString("\n")
+		default:
+			sb.WriteString(pad + "-\n")
+			for _, inner := range list {
+				if err := writeYAMLListItem(sb, inner, indent+2, order, path); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
 	sb.WriteString(strings.Repeat(" ", indent) + "- ")
 	// parseList cuts ANY unquoted block-list item at the first ':' into a
 	// map entry (`- postgres://u@h/db` re-parses as {postgres: "//u@h/db"}),

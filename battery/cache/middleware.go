@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,11 +18,22 @@ import (
 )
 
 // cachedResponse holds the serialized HTTP response for caching.
+//
+// An entry with a Generation is a varyIndex read back, not a response.
+// A response that carries Vary is stored under variantKey, one entry per
+// variant, and the URL's own key holds the index: Vary then lists the
+// bare header names the response varies on, and Generation names the
+// set of variant entries the index reaches. Storing the variants under
+// the URL's key overwrote one with the next, so light, light, dark,
+// light fetched the origin three times. A bare name never matches in
+// variantMatches, so a reader that does not know the index misses on
+// it instead of replaying an empty response.
 type cachedResponse struct {
 	StatusCode int                 `json:"status_code"`
 	Headers    map[string][]string `json:"headers"`
 	Body       []byte              `json:"body"`
 	Vary       []string            `json:"vary,omitempty"`
+	Generation string              `json:"generation,omitempty"`
 }
 
 // credentialHeaders are the request headers the framework treats as a
@@ -87,8 +102,9 @@ const DefaultMaxCacheableBytes = 8 << 20
 //     likewise never stored.
 //   - Responses carrying a Vary header are stored under a key that
 //     includes the values of every listed request header so different
-//     variants do not collide. A Vary: * response is treated as
-//     uncacheable and is never stored (RFC 9111 §4.1).
+//     variants do not collide: each variant keeps its own entry, and
+//     an unsafe request evicts all of them. A Vary: * response is
+//     treated as uncacheable and is never stored (RFC 9111 §4.1).
 
 func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Handler {
 	return CacheMiddlewareWithLimit(cache, ttl, DefaultMaxCacheableBytes)
@@ -143,16 +159,9 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// Try to fetch from cache only if we're allowed to serve a
 			// stored variant for this request.
 			if !hasCreds && !reqNoCache && !reqNoStore {
-				var cached cachedResponse
-				if err := cache.Get(r.Context(), baseKey, &cached); err == nil {
-					// The replay side of the 304 refusal: an entry primed by
-					// a pre-fix process on a shared backend (Redis) must
-					// not be served either — fall through to the origin
-					// and re-store a real representation.
-					if cached.StatusCode != http.StatusNotModified && variantMatches(r, cached.Vary) {
-						writeCached(w, &cached, "HIT")
-						return
-					}
+				if cached := lookupStored(r.Context(), cache, r, baseKey); cached != nil {
+					writeCached(w, cached, "HIT")
+					return
 				}
 			}
 
@@ -192,7 +201,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 					Body:       append([]byte(nil), rec.body.Bytes()...),
 					Vary:       captureVariant(r, vary),
 				}
-				_ = cache.Set(context.Background(), baseKey, stored, ttl)
+				storeResponse(cache, baseKey, vary, stored, ttl)
 			}
 
 			// Replay the captured response to the client. Nothing has
@@ -244,6 +253,84 @@ func getKeys(r *http.Request) []string {
 		keys = append(keys, keyPrefix(r)+"#"+tag)
 	}
 	return keys
+}
+
+// lookupStored returns the stored response r may be served, following a
+// variant index to the entry of r's own variant, or nil.
+//
+// It is also the replay side of the 304 refusal: an entry primed by a
+// pre-fix process on a shared backend (Redis) is not served either, and
+// the request falls through to the origin, which re-stores a real
+// representation. Only a 2xx or 3xx status is replayed, and an index is
+// never a response.
+func lookupStored(ctx context.Context, cache Cache, r *http.Request, baseKey string) *cachedResponse {
+	var stored cachedResponse
+	if err := cache.Get(ctx, baseKey, &stored); err != nil {
+		return nil
+	}
+	if stored.Generation != "" {
+		key := variantKey(baseKey, stored.Generation, captureVariant(r, stored.Vary))
+		var variant cachedResponse
+		if err := cache.Get(ctx, key, &variant); err != nil {
+			return nil
+		}
+		stored = variant
+	}
+	if stored.Generation != "" || stored.StatusCode == http.StatusNotModified ||
+		stored.StatusCode < 200 || stored.StatusCode >= 400 {
+		return nil
+	}
+	if !variantMatches(r, stored.Vary) {
+		return nil
+	}
+	return &stored
+}
+
+// varyIndex is the variant index a varying response leaves under the
+// URL's own key; see cachedResponse.
+type varyIndex struct {
+	Vary       []string `json:"vary"`
+	Generation string   `json:"generation"`
+}
+
+// storeResponse stores response for baseKey. A response without Vary
+// takes the key itself. A varying one gets its own variant entry, and
+// the key holds the index that reaches it, so a second variant leaves
+// the first in place.
+//
+// The index keeps its Generation while it lives. Once it is gone
+// (evicted by an unsafe request, expired, or dropped for capacity) the
+// next store mints a new one, so variant entries stored before the
+// eviction are unreachable even though they outlive it. The index is
+// written after its variant, with the same TTL, and every store
+// refreshes it, so it lasts at least as long as the newest variant.
+func storeResponse(cache Cache, baseKey string, vary []string, response cachedResponse, ttl time.Duration) {
+	ctx := context.Background()
+	if len(vary) == 0 {
+		_ = cache.Set(ctx, baseKey, response, ttl)
+		return
+	}
+	var index varyIndex
+	if err := cache.Get(ctx, baseKey, &index); err != nil || index.Generation == "" {
+		index.Generation = rand.Text()
+	}
+	index.Vary = vary
+	if err := cache.Set(ctx, variantKey(baseKey, index.Generation, response.Vary), response, ttl); err != nil {
+		return
+	}
+	_ = cache.Set(ctx, baseKey, index, ttl)
+}
+
+// variantKey is the key one variant of baseKey is stored under. The
+// variant's header values enter only through a SHA-256 digest over
+// length-prefixed fields, so request headers never appear in a key a
+// backend lists or logs, and no two variants share one.
+func variantKey(baseKey, generation string, variant []string) string {
+	digest := sha256.New()
+	for _, field := range variant {
+		digest.Write([]byte(strconv.Itoa(len(field)) + ":" + field))
+	}
+	return baseKey + "|vary:" + generation + ":" + hex.EncodeToString(digest.Sum(nil))
 }
 
 // safeMethod reports whether method is safe in RFC 9110 §9.2.1's sense:

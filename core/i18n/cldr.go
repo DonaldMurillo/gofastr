@@ -33,6 +33,9 @@ type cldrLocale struct {
 	numbering          string
 	decimal, group     string
 	minus, percentSign string
+	// nan is the locale's not-a-number symbol: "NaN" in English,
+	// "не число" (with a no-break space) in Russian.
+	nan string
 	// minGrouping is the fewest digits left of the first separator: 2
 	// keeps Spanish's 1234 ungrouped and groups 12.345.
 	minGrouping     int

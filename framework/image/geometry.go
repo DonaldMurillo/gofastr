@@ -67,9 +67,11 @@ func WithoutEnlargement() ResizeOption { return func(o *resizeOpts) { o.withoutE
 
 // Resize returns a new *Image scaled to the target box. If height is
 // 0 or negative it is computed from width preserving aspect; same for
-// width when height is 0 or negative. Width and height both 0 (or
-// both negative) return the source unchanged. Use Sharp-style "skip
-// if larger than source" via WithoutEnlargement().
+// width when height is 0 or negative. The given side is kept, the
+// derived one rounds down to at least 1, and the fit does not change
+// that box. Width and height both 0 (or both negative) return the
+// source unchanged. Use Sharp-style "skip if larger than source" via
+// WithoutEnlargement().
 //
 // A target whose area exceeds the image's MaxPixels (Config.MaxPixels,
 // else DefaultMaxPixels) panics with an error wrapping
@@ -113,6 +115,12 @@ func (i *Image) maxPixels() int64 {
 // resizeBox is Resize's target size: keep reports that the source is
 // returned unchanged. The aspect and fit arithmetic cannot overflow, and
 // an area past maxPixels is ErrTargetTooLarge.
+//
+// A derived side already keeps the aspect, so the box is the source's
+// shape and every fit maps it to itself: the fit runs only when both
+// sides were given. Running it on the truncated derived side shrank the
+// given one: 1920x36 at width 16 derives height 0, FitInside's scale
+// became zero, and the clamp returned 1x1 instead of 16x1.
 func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep bool, err error) {
 	sb := i.img.Bounds()
 	sw, sh := sb.Dx(), sb.Dy()
@@ -126,6 +134,7 @@ func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep boo
 		return 0, 0, false, fmt.Errorf("%w: %dx%d from %dx%d, MaxPixels %d", ErrTargetTooLarge, width, height, sw, sh, i.maxPixels())
 	}
 	var ok bool
+	derived := width <= 0 || height <= 0
 	if width <= 0 {
 		if width, ok = mulDiv(sw, height, sh); !ok {
 			return tooLarge()
@@ -136,7 +145,7 @@ func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep boo
 		}
 	}
 	tw, th = width, height
-	if o.fit == FitInside || o.fit == FitOutside {
+	if !derived && (o.fit == FitInside || o.fit == FitOutside) {
 		sx := float64(tw) / float64(sw)
 		sy := float64(th) / float64(sh)
 		s := min(sx, sy)

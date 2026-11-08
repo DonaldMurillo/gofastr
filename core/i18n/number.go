@@ -112,17 +112,29 @@ func Percent[N Numeric](ctx context.Context, v N, opts ...NumberOption) string {
 // Currency writes amount in the currency named by its ISO 4217 code, in
 // the context's locale: Currency(ctx, 1234.5, "EUR") is "€1,234.50" in
 // English and "1 234,50 €" in French. The amount rounds to the
-// currency's digits (none for JPY). An unknown code writes the amount
-// with two digits and no symbol.
+// currency's standard digits in the CLDR release the locale tables come
+// from (none for JPY, two for AMD, three for BHD). An unknown code
+// writes the amount with two digits and no symbol.
 func Currency[N Numeric](ctx context.Context, amount N, code string) string {
 	m := cldrFor(ctx)
 	scale, symbol := 2, ""
 	if cur, err := currency.ParseISO(code); err == nil {
-		scale, _ = currency.Standard.Rounding(cur)
+		scale = standardCurrencyDigits(cur.String())
 		symbol = m.printer().Sprint(currency.Symbol(cur))
 	}
 	opts := []NumberOption{MinFraction(scale), MaxFraction(scale)}
 	return m.loc.formatNumber(m.loc.currencyPattern, amount, 0, opts, symbol)
+}
+
+// standardCurrencyDigits is the CLDR fraction digits of a known ISO
+// 4217 code: its own entry, else CLDR's DEFAULT. golang.org/x/text's
+// rounding table is an older CLDR's and gives AMD, COP, GYD, IDR, MNT,
+// MUR, PKR, TZS and UZS none.
+func standardCurrencyDigits(code string) int {
+	if digits, ok := cldrCurrencyDigits[code]; ok {
+		return digits
+	}
+	return cldrCurrencyDefaultDigits
 }
 
 // formatParam writes v as a number in l's locale when v is a plain
@@ -210,7 +222,7 @@ func (l *cldrLocale) formatNumber(pattern string, v any, shift int, opts []Numbe
 	}
 	o.maxFrac = max(o.maxFrac, o.minFrac)
 
-	digits, neg, special := plainDecimal(v, o.maxFrac+shift)
+	digits, neg, special := plainDecimal(v, o.maxFrac+shift, l.nan)
 	// NaN and the infinities wear the pattern's affixes like any
 	// number: $∞, ∞ %.
 	body := special
@@ -248,9 +260,9 @@ func (l *cldrLocale) formatNumber(pattern string, v any, shift int, opts []Numbe
 }
 
 // plainDecimal writes the magnitude of v in plain decimal, floats
-// rounded to frac digits, and reports its sign. NaN and the infinities
-// come back as special.
-func plainDecimal(v any, frac int) (digits string, neg bool, special string) {
+// rounded to frac digits, and reports its sign. NaN (spelled nan, the
+// locale's symbol) and the infinities come back as special.
+func plainDecimal(v any, frac int, nan string) (digits string, neg bool, special string) {
 	if r, ok := v.(*big.Rat); ok {
 		return new(big.Rat).Abs(r).FloatString(frac), r.Sign() < 0, ""
 	}
@@ -266,7 +278,7 @@ func plainDecimal(v any, frac int) (digits string, neg bool, special string) {
 		f := rv.Float()
 		switch {
 		case math.IsNaN(f):
-			return "", false, "NaN"
+			return "", false, nan
 		case math.IsInf(f, 0):
 			return "", f < 0, "∞"
 		}

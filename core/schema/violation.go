@@ -74,20 +74,24 @@ var (
 	ReasonDecimalExponent       = i18n.Define("validation.decimal_exponent", "must have an exponent between -{{max}} and {{max}}")
 	ReasonDecimalIntegerDigits  = i18n.Define("validation.decimal_integer_digits", "must have at most {{max}} digits before the decimal point")
 	ReasonDecimalFractionDigits = i18n.Define("validation.decimal_fraction_digits", "must have at most {{max}} digits after the decimal point")
-	// ReasonDecimalSignificantDigits refuses, on SQLite, a decimal with a
-	// fraction the column would keep only as a 64-bit float (see
-	// [DecimalExactOnSQLite]).
+	// ReasonDecimalSignificantDigits refuses, on SQLite, a decimal the
+	// column would keep only as a 64-bit float with digits dropped (see
+	// [SQLiteDecimalRefusal]).
 	ReasonDecimalSignificantDigits = i18n.Define("validation.decimal_significant_digits", "must have at most {{max}} significant digits")
-	ReasonNotTrueFalse             = i18n.Define("validation.not_true_false", "must be true or false")
-	ReasonNotBoolean               = i18n.Define("validation.not_boolean", "must be a boolean")
-	ReasonNotOneOf                 = i18n.Define("validation.not_one_of", "must be one of {{values}}")
-	ReasonNotUUID                  = i18n.Define("validation.not_uuid", "must be a valid UUID")
-	ReasonNotTimestamp             = i18n.Define("validation.not_timestamp", "must be a valid RFC 3339 timestamp")
-	ReasonNotDate                  = i18n.Define("validation.not_date", "must be a valid date (YYYY-MM-DD)")
-	ReasonNotJSON                  = i18n.Define("validation.not_json", "must be valid JSON")
-	ReasonNotReference             = i18n.Define("validation.not_reference", "must be a string reference")
-	ReasonEmptyReference           = i18n.Define("validation.empty_reference", "must be a non-empty reference")
-	ReasonNotPath                  = i18n.Define("validation.not_path", "must be a string path or URL")
-	ReasonEmptyPath                = i18n.Define("validation.empty_path", "must be a non-empty path or URL")
-	ReasonUniqueTaken              = i18n.Define("validation.unique_taken", "is already in use")
+	// ReasonDecimalUnderflow refuses, on SQLite, a nonzero decimal too
+	// small for the 64-bit float the column would keep it in (see
+	// [SQLiteDecimalMinMagnitude]).
+	ReasonDecimalUnderflow = i18n.Define("validation.decimal_underflow", "must be 0 or at least {{min}} in absolute value")
+	ReasonNotTrueFalse     = i18n.Define("validation.not_true_false", "must be true or false")
+	ReasonNotBoolean       = i18n.Define("validation.not_boolean", "must be a boolean")
+	ReasonNotOneOf         = i18n.Define("validation.not_one_of", "must be one of {{values}}")
+	ReasonNotUUID          = i18n.Define("validation.not_uuid", "must be a valid UUID")
+	ReasonNotTimestamp     = i18n.Define("validation.not_timestamp", "must be a valid RFC 3339 timestamp")
+	ReasonNotDate          = i18n.Define("validation.not_date", "must be a valid date (YYYY-MM-DD)")
+	ReasonNotJSON          = i18n.Define("validation.not_json", "must be valid JSON")
+	ReasonNotReference     = i18n.Define("validation.not_reference", "must be a string reference")
+	ReasonEmptyReference   = i18n.Define("validation.empty_reference", "must be a non-empty reference")
+	ReasonNotPath          = i18n.Define("validation.not_path", "must be a string path or URL")
+	ReasonEmptyPath        = i18n.Define("validation.empty_path", "must be a non-empty path or URL")
+	ReasonUniqueTaken      = i18n.Define("validation.unique_taken", "is already in use")
 )

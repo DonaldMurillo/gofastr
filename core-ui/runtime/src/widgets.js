@@ -267,7 +267,7 @@
   };
 
   NS.mountWidget = function (cfg, html, existing, ctx) {
-    if (NS._widgets[cfg.name]) return; // already mounted
+    if (own(cfg.name)) return; // already mounted
     // ctx: the data-cui-ctx this chrome was rendered for ('' for none).
     NS._widgets[cfg.name] = { cfg, ctx: ctx || '' };
 

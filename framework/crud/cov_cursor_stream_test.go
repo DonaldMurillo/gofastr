@@ -248,11 +248,11 @@ func TestCursorPageRefusesNullKeyset(t *testing.T) {
 	same := func(s string) string { return s }
 	rows := []map[string]any{{"id": "a", "seq": 1}, {"id": "b", "seq": nil}, {"id": "c", "seq": 3}}
 	for _, fields := range [][]string{{"seq"}, {"seq", "id"}} {
-		if _, err := buildCursorPage(rows, fields, fields[len(fields)-1:], same, nil, 2); err == nil {
+		if _, err := buildCursorPage(rows, fields, fields[len(fields)-1:], same, nil, nil, 2); err == nil {
 			t.Errorf("fields %v: a NULL keyset value in the last row minted a cursor", fields)
 		}
 	}
-	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, []string{"seq"}, same, nil, 2)
+	page, err := buildCursorPage(rows[:1:1], []string{"seq"}, []string{"seq"}, same, nil, nil, 2)
 	if err != nil || page.HasMore {
 		t.Fatalf("a short last page: %+v, %v", page, err)
 	}
@@ -269,7 +269,7 @@ func TestCursorPastFieldCapCarriesKey(t *testing.T) {
 		row[fields[i]] = 1
 	}
 	fields[64] = "id"
-	page, err := buildCursorPage([]map[string]any{row, row}, fields, []string{"id"}, same, nil, 1)
+	page, err := buildCursorPage([]map[string]any{row, row}, fields, []string{"id"}, same, nil, nil, 1)
 	if err != nil {
 		t.Fatal(err)
 	}

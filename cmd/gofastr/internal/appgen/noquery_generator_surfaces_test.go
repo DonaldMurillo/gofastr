@@ -53,7 +53,7 @@ func TestCLIListRendererOmitsNoQueryFlagsAndForwarding(t *testing.T) {
 func TestSDKJSFieldConstantsOmitNoQueryFields(t *testing.T) {
 	decl, model := noQueryGeneratorFixture()
 	var js, dts strings.Builder
-	writeJSEntity(&js, &dts, decl, model)
+	writeJSEntity(&js, &dts, decl, model, []framework.EntityDeclaration{decl})
 	got := js.String()
 	// Keys are QUOTED in the emitted .js. See TestClientJSQuotesEmittedNames in
 	// emitter_output_context_security_test.go. The property this test owns

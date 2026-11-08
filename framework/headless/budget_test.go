@@ -69,8 +69,12 @@ func TestBehaviorModuleSizeBudgets(t *testing.T) {
 		budget int
 	}{
 		{TreeBehaviorName, "tree.js", 1536},
-		// TestIMEKeepsEscapeConsumers pins both IME indicators: 3089 measured + 2.
-		{SortableListBehaviorName, "sortablelist.js", 3091},
+		// TestIMEKeepsEscapeConsumers pins both IME indicators (3076 measured
+		// on 2026-11-07); TestSortableVersionRenews adds the version renewal
+		// a 2xx move and a conflict refresh read from their response header
+		// (+113, the header decode and the group's peer walk, paid down by
+		// folding two group lookups into it): 3189 measured + 2.
+		{SortableListBehaviorName, "sortablelist.js", 3191},
 		{MultiSelectBehaviorName, "multiselect.js", 1024},
 		// TestIslandToastReturnsFocus: removal recovery measures 3144 + 2.
 		{FeedbackBehaviorName, "feedback.js", 3146},

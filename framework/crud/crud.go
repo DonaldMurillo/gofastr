@@ -650,9 +650,20 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// Compiles to ONE parenthesized WHERE clause that AND-composes with
 		// the owner/tenant/soft-delete scopes exactly like the search
 		// clauses above, a user OR-group can never widen past a scope.
-		treeWheres, err := ch.whereTreeClausesQ(q)
+		treeWheres, where, err := ch.whereTreeClausesQ(q)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidWhere)
+			return
+		}
+		if err := ch.refuseLegacyTimestampComparisons(ctx, filters, where); err != nil {
+			var layout *timestampLayoutError
+			if errors.As(err, &layout) {
+				logf("crud: %v; rewrite it in schema.TimestampLayout or read it through a view that does", err)
+				writeJSONError(w, r, http.StatusInternalServerError, reasonTimestampLayout, map[string]any{"field": strconv.Quote(layout.field)})
+				return
+			}
+			logf("crud: timestamp layout check for %s: %v", ch.Entity.GetTable(), err)
+			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
 		searchWheres = append(searchWheres, treeWheres...)
@@ -902,27 +913,29 @@ func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, er
 // AND-composes with owner/tenant/soft-delete scopes because the query
 // builder wraps each Where in parens.
 func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, error) {
-	return ch.whereTreeClausesQ(r.URL.Query())
+	clauses, _, err := ch.whereTreeClausesQ(r.URL.Query())
+	return clauses, err
 }
 
-// whereTreeClausesQ is the no-reparse variant of whereTreeClauses.
-func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, error) {
+// whereTreeClausesQ is the no-reparse variant of whereTreeClauses. It
+// also returns the parsed tree, for checks that read its fields.
+func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *filter.Predicate, error) {
 	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	p, err := filter.ParseWhere(raw, ch.queryFields())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if p == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	c := filter.BuildPredicate(p)
 	if c.SQL == "" {
-		return nil, nil
+		return nil, p, nil
 	}
-	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, nil
+	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
 }
 
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"

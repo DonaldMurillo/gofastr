@@ -64,95 +64,7 @@
       // taking setSignal (and every listener it drives) down with it.
       // Same shape as sse.js:76.
       document.querySelectorAll('[data-cui-signal="' + CSS.escape(String(name)) + '"]').forEach((node) => {
-        const mode = node.getAttribute('data-cui-signal-mode') || 'text';
-        if (mode === 'html') {
-          // The html escape hatch is for TRUSTED HTML *strings* only.
-          // On a non-2xx response dispatchRPC broadcasts the auto-built
-          // error object {ok:false,status,text} into the signal. That
-          // object is NOT trusted HTML, and applying it here (via
-          // innerHTML OR textContent) would either execute reflected
-          // markup or overwrite the existing trusted region with a
-          // JSON blob, corrupting the UI on every failed RPC. The
-          // documented optimistic-UI invariant, "a failed delete
-          // leaves the row/list unchanged", depends on this no-op.
-          // Text-mode nodes below still render a human-readable
-          // "Request failed (…)" string, so failure feedback is not lost.
-          if (typeof value !== 'string') return;
-          // A value seeded from location.search is attacker-supplied by
-          // construction, `?x=<img onerror=…>` on any page carrying an
-          // html-mode binding of `x`. Render it as text instead. The
-          // value still reaches the node; it just stops being markup.
-          if (s.untrusted) { node.textContent = value; return; }
-          node.innerHTML = value;
-          window.__gofastr.scanAndLoadCSS(node);
-          // Wire any toast items the freshly-swapped HTML brought in.
-          // Awaits the toasts module, when an island-driven update
-          // injects a toast for the first time, the module loads,
-          // then _initToasts runs against the new content.
-          if (node.querySelector && node.querySelector('[data-hui-toast]')) {
-            window.__gofastr.loadModule('headless-feedback').then(() => {
-              window.__gofastr._initToasts(node);
-            }).catch(() => {});
-          }
-        } else if (mode === 'attr') {
-          // Folded: the Go allow-list matches names case-insensitively,
-          // and the property writes below need the DOM's spelling.
-          const attr = (node.getAttribute('data-cui-signal-attr') || 'value').toLowerCase();
-          // The attribute NAME is developer-supplied and server-
-          // rendered, so the allow-list that keeps a signal out of
-          // `srcdoc` / `style` / `on*` lives in Go, at the emitters
-          // (core-ui/store.SignalAttrAllowed), refusing to render the
-          // binding beats warning about it after it shipped, and costs
-          // the runtime no bytes. The value guard below still runs on
-          // every client-side update.
-          let v = String(value ?? '');
-          // URL-bearing attrs (href / src / action / xlink:href /
-          // formaction): reject dangerous schemes (javascript:,
-          // vbscript:, data: except data:image/*). Stops a signal-
-          // driven anchor (e.g. a media viewer's download) from
-          // executing arbitrary JS when an attacker controls the
-          // signal value via a query-string deeplink param.
-          if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
-          // A boolean attribute is on whenever it is present, so
-          // disabled="false" disables: false, null, '', 0 and 'false'
-          // remove it. disabled, hidden and open reflect the attribute;
-          // checked, selected and value also live as properties that
-          // stop following it once the reader clicks or types, so the
-          // property is written too, by name (no computed-key write).
-          if (/^(disabled|hidden|checked|open|selected)$/.test(attr)) {
-            const on = !!value && value !== 'false';
-            node.toggleAttribute(attr, on);
-            if (attr === 'checked') node.checked = on;
-            if (attr === 'selected') node.selected = on;
-          } else {
-            node.setAttribute(attr, v);
-            if (attr === 'value' && 'value' in node) node.value = v;
-          }
-          // Tabs (framework/ui.Tabs): when the wrapper's data-active
-          // index changes, mirror it into aria-selected on the strip's
-          // role=tab buttons, CSS keys the visual highlight off
-          // data-active, but assistive tech reads aria-selected.
-          if (attr === 'data-active') {
-            node.querySelectorAll('[role="tab"][data-cui-tab-index]').forEach((b) => {
-              b.setAttribute('aria-selected', String(b.getAttribute('data-cui-tab-index') === v));
-            });
-          }
-        } else {
-          // Task B: when the value is an error object from dispatchRPC
-          // ({ok:false, status, text}), render it as a human-readable
-          // string instead of raw JSON so users see "Request failed (500)"
-          // in their language rather than {"ok":false,"status":500,...}.
-          if (value != null && typeof value === 'object' && value.ok === false) {
-            const t = value.text ? String(value.text).substring(0, 200) : '';
-            node.textContent = say('runtime.request_failed_status', 'Request failed ({{status}})', { status: value.status || '?' }) + (t ? ' \u2014 ' + t : '');
-          } else if (value == null) {
-            node.textContent = '';
-          } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-            node.textContent = String(value);
-          } else {
-            node.textContent = JSON.stringify(value);
-          }
-        }
+        if (!this._renderSignal(node, s, value)) return;
         // After-update hook: brief flash to signal the value changed.
         // Useful for headers/badges where the user might miss an
         // update otherwise. Duration overridable via
@@ -185,6 +97,101 @@
           Promise.resolve().then(() => { try { target.scrollTop = target.scrollHeight; } catch (_) {} });
         }
       });
+    },
+
+    // _renderSignal writes value into one bound node by its mode. False
+    // when the html mode refuses the value, which skips the hooks.
+    _renderSignal(node, slot, value) {
+      const mode = node.getAttribute('data-cui-signal-mode') || 'text';
+      if (mode === 'html') {
+        // The html escape hatch is for TRUSTED HTML *strings* only.
+        // On a non-2xx response dispatchRPC broadcasts the auto-built
+        // error object {ok:false,status,text} into the signal. That
+        // object is NOT trusted HTML, and applying it here (via
+        // innerHTML OR textContent) would either execute reflected
+        // markup or overwrite the existing trusted region with a
+        // JSON blob, corrupting the UI on every failed RPC. The
+        // documented optimistic-UI invariant, "a failed delete
+        // leaves the row/list unchanged", depends on this no-op.
+        // Text-mode nodes below still render a human-readable
+        // "Request failed (…)" string, so failure feedback is not lost.
+        if (typeof value !== 'string') return false;
+        // A value seeded from location.search is attacker-supplied by
+        // construction, `?x=<img onerror=…>` on any page carrying an
+        // html-mode binding of `x`. Render it as text instead. The
+        // value still reaches the node; it just stops being markup.
+        if (slot.untrusted) { node.textContent = value; return true; }
+        node.innerHTML = value;
+        window.__gofastr.scanAndLoadCSS(node);
+        // Wire any toast items the freshly-swapped HTML brought in.
+        // Awaits the toasts module, when an island-driven update
+        // injects a toast for the first time, the module loads,
+        // then _initToasts runs against the new content.
+        if (node.querySelector && node.querySelector('[data-hui-toast]')) {
+          window.__gofastr.loadModule('headless-feedback').then(() => {
+            window.__gofastr._initToasts(node);
+          }).catch(() => {});
+        }
+      } else if (mode === 'attr') {
+        // Folded: the Go allow-list matches names case-insensitively,
+        // and the property writes below need the DOM's spelling.
+        const attr = (node.getAttribute('data-cui-signal-attr') || 'value').toLowerCase();
+        // The attribute NAME is developer-supplied and server-
+        // rendered, so the allow-list that keeps a signal out of
+        // `srcdoc` / `style` / `on*` lives in Go, at the emitters
+        // (core-ui/store.SignalAttrAllowed), refusing to render the
+        // binding beats warning about it after it shipped, and costs
+        // the runtime no bytes. The value guard below still runs on
+        // every client-side update.
+        let v = String(value ?? '');
+        // URL-bearing attrs (href / src / action / xlink:href /
+        // formaction): reject dangerous schemes (javascript:,
+        // vbscript:, data: except data:image/*). Stops a signal-
+        // driven anchor (e.g. a media viewer's download) from
+        // executing arbitrary JS when an attacker controls the
+        // signal value via a query-string deeplink param.
+        if (window.__gofastr._isUnsafeSignalUrl(attr, v)) v = '';
+        // A boolean attribute is on whenever it is present, so
+        // disabled="false" disables: false, null, '', 0 and 'false'
+        // remove it. disabled, hidden and open reflect the attribute;
+        // checked, selected and value also live as properties that
+        // stop following it once the reader clicks or types, so the
+        // property is written too, by name (no computed-key write).
+        if (/^(disabled|hidden|checked|open|selected)$/.test(attr)) {
+          const on = !!value && value !== 'false';
+          node.toggleAttribute(attr, on);
+          if (attr === 'checked') node.checked = on;
+          if (attr === 'selected') node.selected = on;
+        } else {
+          node.setAttribute(attr, v);
+          if (attr === 'value' && 'value' in node) node.value = v;
+        }
+        // Tabs (framework/ui.Tabs): when the wrapper's data-active
+        // index changes, mirror it into aria-selected on the strip's
+        // role=tab buttons, CSS keys the visual highlight off
+        // data-active, but assistive tech reads aria-selected.
+        if (attr === 'data-active') {
+          node.querySelectorAll('[role="tab"][data-cui-tab-index]').forEach((b) => {
+            b.setAttribute('aria-selected', String(b.getAttribute('data-cui-tab-index') === v));
+          });
+        }
+      } else {
+        // Task B: when the value is an error object from dispatchRPC
+        // ({ok:false, status, text}), render it as a human-readable
+        // string instead of raw JSON so users see "Request failed (500)"
+        // in their language rather than {"ok":false,"status":500,...}.
+        if (value != null && typeof value === 'object' && value.ok === false) {
+          const t = value.text ? String(value.text).substring(0, 200) : '';
+          node.textContent = say('runtime.request_failed_status', 'Request failed ({{status}})', { status: value.status || '?' }) + (t ? ' \u2014 ' + t : '');
+        } else if (value == null) {
+          node.textContent = '';
+        } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          node.textContent = String(value);
+        } else {
+          node.textContent = JSON.stringify(value);
+        }
+      }
+      return true;
     },
 
     /** Read the current value of a named signal. */
@@ -235,6 +242,7 @@
   if (window.__gofastr_signals_seed) {
     const store = window.__gofastr._signals;
     const seed = window.__gofastr_signals_seed;
+    const pageNames = _readInlineJSON('gofastr-signals-page');
     for (const k in seed) {
       if (!Object.prototype.hasOwnProperty.call(seed, k)) continue;
       if (isReservedSignalKey(k)) continue;
@@ -245,5 +253,6 @@
       } else {
         store[k] = { value: seed[k], listeners: [] };
       }
+      if (!(Array.isArray(pageNames) && pageNames.includes(k))) store[k].global = true;
     }
   }

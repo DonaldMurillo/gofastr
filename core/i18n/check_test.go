@@ -63,8 +63,8 @@ func TestCheckCatalogPluralFormKeepsParams(t *testing.T) {
 	}
 }
 
-// say() and the headless fills match {{name}} exactly, so a spaced
-// spelling is a different placeholder.
+// Headless fills match {{name}} exactly, so catalog validation keeps a
+// spaced spelling distinct even though Fill and say() trim whitespace.
 func TestCheckCatalogSpacedPlaceholder(t *testing.T) {
 	c := NewMapCatalog()
 	c.Set("fr", "checktest.greet", Message{Text: "Bonjour, {{ name }}"})

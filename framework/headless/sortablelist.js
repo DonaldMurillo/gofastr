@@ -14,6 +14,12 @@
 //     version=<token> when versioned;
 //   - a cross-container drop POSTs the destination order plus
 //     moved=<key> and always carries container=;
+//   - when the list is versioned, a response carrying
+//     X-Gofastr-Sortable-Version (percent-encoded) renews the token:
+//     a 2xx move renews every list of the group still holding the
+//     token the move sent, and the conflict refresh renews the list
+//     whose rows it replaced, so the next move sends the version its
+//     rows reflect;
 //   - when the list is versioned, a 409 fires the conflict path
 //     (GET the conflict endpoint, replace the list's rows with the
 //     fresh server-rendered ones) instead of a blanket rollback; the
@@ -43,6 +49,21 @@
 
   const attr = (el, name) => el?.getAttribute?.(name) || '';
 
+  const VERSION = 'data-hui-sortable-version';
+
+  // peers: the lists a move can cross between, the list alone when it
+  // has no group.
+  function peers(list) {
+    const group = attr(list, 'data-hui-sortable-group');
+    return group ? Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(group) + '"]')) : [list];
+  }
+
+  // renewed: the version a response says the server holds now, '' when
+  // it names none or the value does not decode.
+  function renewed(res) {
+    try { return decodeURIComponent(res.headers.get('X-Gofastr-Sortable-Version') || ''); } catch (_) { return ''; }
+  }
+
   // fill substitutes the announcement's tokens: {{label}} the row's
   // name, {{list}} the list's own name, {{position}} the 1-based place.
   function fill(tpl, map) {
@@ -51,9 +72,7 @@
 
   // canCross: over and src are different lists of the same group.
   function canCross(overList, srcList) {
-    if (!overList || overList === srcList) return false;
-    const g = attr(overList, 'data-hui-sortable-group');
-    return !!g && g === attr(srcList, 'data-hui-sortable-group');
+    return !!overList && overList !== srcList && peers(srcList).includes(overList);
   }
 
   // CSRF: forward meta[name="csrf-token"] via X-CSRF-Token so the
@@ -65,18 +84,19 @@
     return headers;
   }
 
-  // post sends the list's order, plus version=<token> when versioned.
+  // post sends the list's order, plus version=<token> when versioned
+  // (version, the token the list held when the move settled).
   // A same-container reorder adds container=<id> when the list carries
   // one, so the server can route the write without inferring the
   // column from the keys; a crossing (moved set) adds moved=<key> and
   // ALWAYS carries container= (empty when the list has no configured
   // id).
-  function post(list, moved) {
+  function post(list, moved, version) {
     const rpc = attr(list, 'data-hui-sortable-rpc');
     if (!rpc || !NS._originOK?.(rpc)) return Promise.resolve();
-    const c = attr(list, 'data-hui-sortable-container'), v = attr(list, 'data-hui-sortable-version');
+    const c = attr(list, 'data-hui-sortable-container');
     let body = 'order=' + encodeURIComponent(rowsOf(list).map((r) => attr(r, 'data-hui-sort-key')).join(','));
-    if (v) body += '&version=' + encodeURIComponent(v);
+    if (version) body += '&version=' + encodeURIComponent(version);
     if (moved) body += '&moved=' + encodeURIComponent(attr(moved, 'data-hui-sort-key'));
     if (c || moved) body += '&container=' + encodeURIComponent(c);
     return NS.fetch(rpc, { method: 'POST', credentials: 'same-origin', headers: csrfHeaders(), body: body });
@@ -162,7 +182,8 @@
     lists.forEach((l, i) => { if (!l.__huiN) l.__huiAck = pres[i]; l.__huiN = (l.__huiN || 0) + 1; });
     const sent = lists.map(rowsOf);
     const mine = lists.map((l) => (l.__huiSeq = (l.__huiSeq || 0) + 1));
-    const p = post(dest, movedItem);
+    const was = attr(dest, VERSION);
+    const p = post(dest, movedItem, was);
     // record notes the outcome on every list the commit sent and
     // reports whether it was the newest on all of them, the one whose
     // outcome is announced.
@@ -182,13 +203,15 @@
       // line, and the reverted announcement already says the save
       // failed; the reader's next navigation meets the same redirect.
       if (res && res.ok && !res.redirected) {
+        const next = was && renewed(res);
+        if (next) peers(dest).forEach((peer) => { if (attr(peer, VERSION) === was) peer.setAttribute(VERSION, next); });
         record(true);
         NS._inval?.(res);
         announce(dest, 'data-hui-sortable-s-saved');
         return;
       }
       const is409 = res && res.status === 409;
-      if (!is409 || !dest.hasAttribute('data-hui-sortable-version')) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
+      if (!is409 || !was) return fail(is409 ? 'data-hui-sortable-s-conflict-reverted' : 'data-hui-sortable-s-reverted');
       conflictMessage(res, (msg) => {
         const crpc = attr(dest, 'data-hui-sortable-conflict');
         // A real server message is the announcement AND an error
@@ -199,6 +222,7 @@
         if (msg) { announce(dest, '', 0, msg); fireToast(msg); }
         const reverted = msg ? '' : 'data-hui-sortable-s-conflict-reverted';
         if (!crpc || !NS._originOK?.(crpc)) return fail(reverted);
+        let next = '';
         NS.fetch(crpc, { credentials: 'same-origin' })
           .then((r) => {
             // Same convention as poll.js/rpc.js: an HTTP error must
@@ -207,12 +231,14 @@
             // markup with reflected output. A followed 3xx is another
             // URL's markup (a sign-in page), never the rows.
             if (!r.ok || r.redirected) throw new Error('conflict refresh failed: ' + r.status);
+            next = renewed(r);
             return r.text();
           })
           .then((html) => {
             // The fresh rows are the server's order: the destination
             // confirms them, and the record puts the source back.
             dest.innerHTML = html;
+            if (next) dest.setAttribute(VERSION, next);
             dest.__huiAck = rowsOf(dest);
             dest.__huiOk = dest.__huiSeq;
             record(false);
@@ -381,9 +407,7 @@
     if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
       ev.preventDefault();
       const list = listOf(t);
-      const g = attr(list, 'data-hui-sortable-group');
-      if (!g) return;
-      const cols = Array.from(document.querySelectorAll('[data-hui-sortable-group="' + CSS.escape(g) + '"]'));
+      const cols = peers(list);
       const idx = cols.indexOf(list);
       if (idx < 0) return;
       // The columns run in document order along the inline axis: in a

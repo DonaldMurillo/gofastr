@@ -205,11 +205,13 @@
   // p. A Go test holds each say() call to its registered phrase. No
   // Object.prototype member is a string, so a key like "toString" falls
   // through to the English. A soft nav replaces the table
-  // (applyDocShell, frag/nav.js).
+  // (applyDocShell, frag/nav.js). The name is i18n.Fill's: everything
+  // up to the next }}, trimmed of what Go's unicode.IsSpace counts, so
+  // {{ name }} and {{user-name}} fill here as they do on the server.
   let _says = _readInlineJSON('gofastr-strings') || {};
   const say = (k, en, p) => {
     const s = _says[k];
-    return (typeof s == 'string' ? s : en).replace(/\{\{(\w+)\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
+    return (typeof s == 'string' ? s : en).replace(/\{\{(?:[^\S\ufeff]|\x85)*([\s\S]*?)(?:[^\S\ufeff]|\x85)*\}\}/g, (m, n) => (p && own(p, n) ? p[n] : m));
   };
   // formatNumber writes n the way the page's language (<html lang>)
   // writes numbers, as the server's i18n.Number did for the same text:
@@ -751,8 +753,10 @@
     // the toasts module can't load. No TTL, no animation, no hover
     // pause, just a labelled live region the user can read and
     // dismiss with the × button. Uses textContent throughout (no
-    // innerHTML) so a malicious title can't inject script.
+    // innerHTML) so a malicious title can't inject script. A string is
+    // its title, as NS.toast reads one (an action's message).
     _fallbackToast(cfg) {
+      if (typeof cfg === 'string') cfg = { title: cfg };
       if (!cfg || !cfg.title) return null;
       // Body singleton (doc.MANIFEST), distinct from the styled
       // [data-cui-toast-stack] container the toasts module owns; the

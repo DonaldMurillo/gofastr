@@ -493,9 +493,10 @@ func setupServer() *framework.App {
 
 	// Sortable kanban demo (/components/sortablelist): a 3-column board held
 	// per visitor in demoState (see demo_state.go). The move endpoint accepts
-	// order/moved/container/version; the conflict endpoint returns fresh <li>
-	// HTML for 409 reconciliation. Each visitor moves their own board, no
-	// shared global to vandalize.
+	// order/moved/container/version and renews the board's version on the
+	// 204; the conflict endpoint returns fresh <li> HTML for 409
+	// reconciliation with the version those rows were read at. Each visitor
+	// moves their own board, no shared global to vandalize.
 	//gofastr:allow(GOFASTR1902) docs-site demo endpoint, unauthenticated by design (the NOTE at the interactive endpoints), keeps no state
 	fwApp.Router().Post("/__site/sortable/move", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Cap the body, a move carries a handful of short card ids; without
@@ -572,6 +573,7 @@ func setupServer() *framework.App {
 
 		sess.kanban[destIdx].Cards = newCards
 		sess.kanbanVer++
+		ui.RenewSortableVersion(w, fmt.Sprintf("v%d", sess.kanbanVer))
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	fwApp.Router().Get("/__site/sortable/conflict", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -591,13 +593,15 @@ func setupServer() *framework.App {
 		for i, c := range col.Cards {
 			items[i] = ui.SortableItem{Key: c.Key, Label: c.Title}
 		}
+		version := fmt.Sprintf("v%d", sess.kanbanVer)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		ui.RenewSortableVersion(w, version)
 		fmt.Fprint(w, string(ui.SortableListItems(ui.SortableListConfig{
 			Label:       col.Title,
 			Group:       "kanban-demo",
 			Container:   col.ID,
 			RPCPath:     "/__site/sortable/move",
-			Version:     fmt.Sprintf("v%d", sess.kanbanVer),
+			Version:     version,
 			ConflictRPC: "/__site/sortable/conflict?container=" + col.ID,
 			Items:       items,
 		})))

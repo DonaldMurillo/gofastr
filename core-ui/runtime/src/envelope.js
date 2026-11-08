@@ -153,18 +153,21 @@
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (!store[k]) store[k] = { value: glob[k], listeners: [] };
+      if (!Object.prototype.hasOwnProperty.call(store, k)) store[k] = { value: glob[k], listeners: [] };
+      store[k].global = true;
     }
   };
 
   const mergeSeedFromDOM = (root) => {
     if (!root || !root.querySelector) return;
     const el = root.querySelector('#gofastr-signals-partial');
-    if (!el) return;
     let data = null;
-    try { data = JSON.parse(el.textContent || 'null'); } catch (_) { return; }
-    el.remove();
+    if (el) {
+      try { data = JSON.parse(el.textContent || 'null'); } catch (_) { return; }
+      el.remove();
+    }
     if (data) applyPartialSeed(data);
+    G._paintGlobals?.(root);
   };
 
   let _announceTimer = 0;
@@ -328,6 +331,7 @@
   const applyFillTargets = (resolved) => {
     for (const [t, f] of resolved) {
       t.innerHTML = f.html;
+      G._paintGlobals?.(t);
       NS.scanAndLoadCSS?.(t);
     }
   };

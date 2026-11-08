@@ -693,7 +693,23 @@ as `"12345678901.2345"`, read back as sent on both. Keep money that
 needs all 19 digits on Postgres, store it as an `int` count of the
 smallest unit, or give the field `RawType: "TEXT"`, which SQLite keeps
 as written (and which then sorts and compares as text).
-`schema.DecimalExactOnSQLite` is the check.
+
+A custom `RawType` such as `NUMERIC(30,0)` follows the same SQLite rule.
+With INTEGER or NUMERIC affinity, plain digits that fit a signed 64-bit
+integer are stored as that integer, so `"9223372036854775807"` and `"-9223372036854775808"` read
+back as sent. Anything written with a point or an exponent goes through
+the float, even a whole value: `"123456789012345678.0"` would store
+123456789012345680, so it gets the same `decimal_significant_digits`
+400. A nonzero value smaller than `1e-307` in size (`"1e-400"`,
+`"1e-320"`) is refused with `decimal_underflow`, because the float
+would hold it as 0 or with digits gone. A TEXT column takes both.
+REAL-affinity types (`REAL`, `FLOAT`, `DOUBLE PRECISION`) always use the
+float checks, including for integer literals: `"9223372036854775807"`
+and `"9007199254740993"` are refused with `decimal_significant_digits`.
+SQLite's affinity precedence still applies: `FLOATING POINT` has INTEGER
+affinity because it contains `INT`, while `REAL TEXT` has TEXT affinity.
+`schema.SQLiteDecimalRefusal` returns the reason and
+`schema.DecimalExactOnSQLite` the yes/no.
 
 A create or update refuses a `decimal` its column cannot store as sent,
 with a 400 naming the field, on both dialects:
@@ -2025,6 +2041,28 @@ refused with 404. Postgres checks the rows a delete reached through
 `RETURNING`; SQLite, which cannot return rows from a virtual table such
 as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
 owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
+
+A filter on an `Unmanaged` entity's `timestamp` column over SQLite
+(`?at_gt=`, `?where=`, `ListOptions.Filters` and `Where`) binds its
+value in `schema.TimestampLayout`, and SQLite compares the column as
+text. Against rows another writer stored as `2026-03-03 10:00:00` or
+`2026-01-02T12:00:00Z` that comparison drops or adds rows, so before
+it runs crud reads one row of the column that is not in that layout,
+and if it finds one the list answers 500 `timestamp_layout` naming the
+field (the Go API returns the error), with a log line naming the table.
+The check scans the column on every such request, so the fix is the
+data: rewrite the column in `schema.TimestampLayout`, or point the
+entity at a view that does. `like` is not checked, and Postgres, which
+compares a timestamp as an instant, is not checked either. Cursor
+pages on such a column keep working: see
+[cursor pagination](cursor-pagination.md).
+
+This check covers base CRUD filters on the entity's own columns, including
+the `ListAll`, aggregate and `CountAll` paths. It does not normalize legacy
+rows, inspect nested relation targets, or guard separate DSL predicates,
+typed queries or read-scope bindings. Keep those timestamp columns canonical
+before using those comparison surfaces. A managed table filled by a direct
+SQL writer is also outside this unmanaged-table check.
 
 ### What a composite key cannot do
 

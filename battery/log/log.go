@@ -112,9 +112,13 @@ type Config struct {
 
 // Plugin is the log plugin. Implements framework.Plugin.
 type Plugin struct {
-	cfg     Config
-	logger  *slog.Logger
-	handler *fanoutHandler
+	cfg    Config
+	logger *slog.Logger
+
+	// handler is the fan-out handler Init builds. It is an atomic
+	// pointer because Metrics and MetricsHandler are callable at any
+	// time, before Init and concurrently with it, and read it then.
+	handler atomic.Pointer[fanoutHandler]
 
 	// ring is the in-memory query backing store when EnableMCP is set.
 	// nil otherwise. Held on the plugin so MCP tool handlers (closures
@@ -207,13 +211,18 @@ type Metrics struct {
 }
 
 // Metrics returns a point-in-time snapshot of the plugin's counters.
-// Safe to call at any time; values are atomic loads.
+// Safe to call at any time; values are atomic loads. Before Init no
+// sink exists and nothing has been counted, so every counter is zero.
 func (p *Plugin) Metrics() Metrics {
-	m := Metrics{
-		PostStopDrops:     p.handler.metrics.closedDrops.Load(),
-		SinkWriteFailures: p.handler.metrics.failedSinks.Load(),
+	handler := p.handler.Load()
+	if handler == nil {
+		return Metrics{}
 	}
-	for _, s := range p.handler.sinks {
+	m := Metrics{
+		PostStopDrops:     handler.metrics.closedDrops.Load(),
+		SinkWriteFailures: handler.metrics.failedSinks.Load(),
+	}
+	for _, s := range handler.sinks {
 		if ws, ok := s.(*webhookSink); ok {
 			m.WebhookDropped += ws.Dropped()
 			m.WebhookGaveUp += ws.GaveUp()
@@ -290,11 +299,12 @@ func (p *Plugin) Init(app *framework.App) error {
 	p.level = new(slog.LevelVar)
 	p.level.Set(cfg.Level)
 
-	p.handler = newFanoutHandler(sinks, &slog.HandlerOptions{
+	handler := newFanoutHandler(sinks, &slog.HandlerOptions{
 		Level:     p.level,
 		AddSource: cfg.AddSource,
 	})
-	p.logger = slog.New(p.handler)
+	p.handler.Store(handler)
+	p.logger = slog.New(handler)
 	p.cfg = cfg
 
 	// Swap the App's logger so middleware.LoggingFn(app.Logger) and any
@@ -348,11 +358,11 @@ func (p *Plugin) Init(app *framework.App) error {
 			p.logger.LogAttrs(context.Background(), slog.LevelInfo, "app.stop",
 				slog.String("app", appName),
 			)
-			return p.closeReporter(p.handler.close())
+			return p.closeReporter(handler.close())
 		})
 	} else {
 		app.OnStopFirst(func() error {
-			return p.closeReporter(p.handler.close())
+			return p.closeReporter(handler.close())
 		})
 	}
 

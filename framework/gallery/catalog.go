@@ -1897,7 +1897,9 @@ ui.SortableList(ui.SortableListConfig{
     RPCPath: "/api/move", Version: "v1",
     ConflictRPC: "/api/conflict?col=todo",
     Items: items,
-})`,
+})
+// The move's 2xx and the conflict GET renew the board's token:
+// ui.RenewSortableVersion(w, fmt.Sprintf("v%d", board.Version))`,
 }
 
 // noteOnlySlugs are components whose showcase shows an explanatory NOTE

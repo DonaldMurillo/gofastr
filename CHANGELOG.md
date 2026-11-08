@@ -140,6 +140,70 @@ few lines, and link the PR or the docs page for the rest.
   `make analyze` passed before can now fail; the messages name the
   fix.
 
+### Fixed
+- **Client phrase interpolation matches Go's placeholder-name grammar**,
+  including surrounding whitespace and hyphenated names. Catalog validation
+  still requires matching spellings for headless component compatibility.
+- **String action messages survive toast fallback**, and global signal
+  bindings repaint their retained values after navigation, cached Back/Forward
+  and envelope fills instead of showing stale server markup. The core runtime
+  grows 203 bytes at gzip level 6; budget increases are itemized and gated.
+  Envelope globals first introduced under prototype names such as `toString`
+  and `valueOf` now receive their own seeded slots, matching core navigation.
+- **Clean server-error WebSocket closes expose `error` and retry**, while
+  unchanged structured widget polls skip redundant binding writes and update
+  hooks. See [reactivity](framework/docs/content/reactivity.md).
+- **Unmanaged SQLite timestamp cursors preserve stored spellings.** Paging
+  now follows the same text ordering as the source table, including legacy
+  timestamp layouts. Base CRUD timestamp comparisons refuse noncanonical
+  columns with 500 `timestamp_layout` rather than silently selecting wrong
+  rows. Normalize legacy data or expose a canonical view before filtering;
+  this does not extend to DSL/typed-query/read-scope or nested-relation
+  comparisons. See [entity declarations](framework/docs/content/entity-declarations.md).
+- **SQLite Decimal admission follows integer storage and rejects underflow.**
+  Whole-digit literals within int64 now pass for INTEGER/NUMERIC affinity,
+  including both bounds. REAL/FLOAT/DOUBLE columns retain the float precision
+  checks even for integer literals, refusing writes that would lose digits.
+  Fractional/exponent spellings retain the 15-significant-digit limit;
+  nonzero magnitudes below the conservative `1e-307` floor now return
+  `decimal_underflow` instead of being rounded into subnormal values or zero.
+  Values such as `123456789012345678.0` are refused as
+  `decimal_significant_digits`. TEXT-backed Decimal and Postgres are unchanged.
+- **Required single-value enums render working forms**, using a select
+  rather than an invalid segmented control. Widgets named `toString` or
+  `valueOf` now mount normally while genuine duplicate mounts stay blocked.
+- **SDK response shapes include injected timestamps**, without adding
+  read-only fields to input/patch shapes. TypeScript single-key relations
+  use the selected target's key type, including `number | string` for
+  integer IDs. `pack` preserves nested table rows as lists so packed specs
+  validate and regenerate. See [SDKs](framework/docs/content/sdk.md).
+- **Cache Vary variants no longer overwrite each other.** Middleware keeps
+  separate variant entries and invalidates their index on unsafe requests.
+  Invalidation remains non-atomic with an in-flight GET store; see
+  [cache limits](framework/docs/content/cache.md).
+- **Derived image dimensions retain the requested side**, including very
+  wide placeholder banners. Log metrics and their HTTP handler return zero
+  counters before initialization rather than panicking.
+- **Locale NaN symbols, standard currency digits and week starts use the
+  pinned CLDR 47 generator.** Nine recognized currency codes gain the proper
+  two-digit precision; CN and AE now default to Monday. Unknown-currency
+  fallback and x/text-sourced currency symbols are unchanged. See
+  [locale formatting](framework/docs/content/i18n.md).
+- **A versioned `SortableList` saves move after move.** The list kept the
+  token it was rendered with, so the second move sent a stale version and
+  conflicted, and a conflict refresh, which returns rows only, could not
+  renew it. A move handler now calls `ui.RenewSortableVersion(w, version)`
+  (or `headless.RenewSortableVersion`) on the 2xx that accepts a move and
+  on the conflict endpoint's response; the list takes the token from the
+  `X-Gofastr-Sortable-Version` header. Linked columns share the board's
+  token: a saved move renews every column still holding the token it sent.
+  A handler that does not call it behaves as before. See
+  [Optimistic UI, recipe 5](framework/docs/content/optimistic-ui.md).
+- **Tab closes a menu whose rows are all disabled.** With no row to
+  focus, Enter left focus on the native summary, and Tab or Shift+Tab
+  from there moved focus on with the menu still open. The summary's Tab
+  now closes the chain, as a caller-owned trigger's already did.
+
 ## [0.96.0] - 2026-11-06
 
 ### Added

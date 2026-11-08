@@ -1,6 +1,9 @@
 package headless
 
 import (
+	"net/http"
+	"net/url"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
@@ -17,8 +20,10 @@ import (
 // travel as attributes, so a translated page announces in its own
 // language) and the commit/rollback/conflict contract the pattern
 // shipped: linked lists share a Group, a commit carries the
-// destination order plus container and version fields, and a versioned
-// 409 refetches fresh rows instead of a blanket rollback.
+// destination order plus container and version fields, a versioned
+// 409 refetches fresh rows instead of a blanket rollback, and the
+// server renews a versioned list's token through
+// RenewSortableVersion.
 
 // sortableGripIcon is the six-dot drag grip: a real 14×14 svg with
 // its own size, aria-hidden because the row's name rides its
@@ -71,13 +76,19 @@ type SortableListProps struct {
 	// Group and N containers.
 	Container string
 	// Version is an optional optimistic-concurrency token appended to
-	// every commit. When set, a 409 fires the conflict path instead
-	// of a blanket rollback.
+	// every commit: the version the list's rows were rendered at.
+	// When set, a 409 fires the conflict path instead of a blanket
+	// rollback. Linked lists (one Group) share one token, the board's.
+	// The server renews it with RenewSortableVersion on the 2xx that
+	// accepts a move and on the ConflictRPC response; without the
+	// renewal every move after the first sends the token it rendered
+	// with and conflicts.
 	Version string
 	// ConflictRPC, alongside Version, is GET-fetched on a 409: the
 	// response body (fresh rows) replaces the list's contents,
-	// server-rendered reconciliation. Without it a 409 falls back to
-	// rollback.
+	// server-rendered reconciliation, and the response's renewed
+	// version replaces the list's token. Without it a 409 falls back
+	// to rollback.
 	ConflictRPC string
 
 	ID         string
@@ -87,6 +98,27 @@ type SortableListProps struct {
 	// the rows are the caller's data.
 	Parts   Parts
 	Strings *Strings
+}
+
+// sortableVersionHeader carries a versioned list's renewed token,
+// percent-encoded: HTTP header values are Latin-1, the token is any
+// string.
+const sortableVersionHeader = "X-Gofastr-Sortable-Version"
+
+// RenewSortableVersion tells a versioned list the version the server
+// holds now. Call it on the 2xx that accepts a move, with the version
+// the move produced: every list of the move's Group still holding the
+// token the move sent takes it, since their rows showed the state the
+// server accepted the move against. Call it on the ConflictRPC
+// response too, with the version the returned rows were read at: the
+// refreshed list takes it with its rows. Lists holding any other token
+// keep theirs, so a list whose rows are older than the server's still
+// conflicts and refreshes. An empty version sets nothing.
+func RenewSortableVersion(w http.ResponseWriter, version string) {
+	if version == "" {
+		return
+	}
+	w.Header().Set(sortableVersionHeader, url.PathEscape(version))
 }
 
 // SortableList renders the list.

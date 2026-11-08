@@ -165,8 +165,9 @@ func isCountParam(name string) bool {
 
 // Placeholders returns the distinct {{name}} placeholder names in s,
 // sorted: the set a translation of s must keep. A name is taken as
-// written, spaces included: the runtime's say() and the headless fills
-// match {{name}} exactly, so "{{ name }}" is a different placeholder.
+// written, spaces included: headless component fills match {{name}}
+// exactly, so the catalog keeps "{{ name }}" distinct even though Fill
+// and the runtime's say() trim whitespace around parameter names.
 func Placeholders(s string) []string {
 	var out []string
 	for {

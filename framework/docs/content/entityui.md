@@ -246,7 +246,10 @@ keeps the UI unchanged; without a callback the default stays
   (a set bool keeps its switch), and an optional enum has an empty choice that clears it; an
   enum holding a value no longer declared keeps a disabled placeholder,
   so an untouched save does not clear it; on a required enum the
-  placeholder stops the save until a declared value is picked. A relation a read hook masks
+  placeholder stops the save until a declared value is picked. On the record
+  and create forms a required enum with two to four values draws a
+  segmented control; one with a single value, or more than four, draws
+  a select. A relation a read hook masks
   changes through its own Replace button, as a masked text field does.
   A `Decimal` field steps by `0.0001`, the column's four fraction
   digits, or finer when the stored value has more, so any stored value

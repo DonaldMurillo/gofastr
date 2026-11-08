@@ -527,10 +527,36 @@ ui.SortableList(ui.SortableListConfig{
   `{"error":"…","code":409,"reason":"…"}` (`handler.WriteError` writes
   it from a `handler.Fail` or `handler.Errorf`; the `error` text is surfaced
   through the polite `aria-live` region, capped at ~300 chars). On
-  match, apply the move, bump the version, respond 2xx.
+  match, apply the move, bump the version, call
+  `ui.RenewSortableVersion(w, newVersion)`, respond 2xx.
 - `GET /api/board/conflict?container=<col>`: return fresh `<li>` HTML
-  for the named column at its current authoritative state. An empty body
-  reconciles the column to zero items.
+  for the named column at its current authoritative state, and call
+  `ui.RenewSortableVersion(w, version)` with the version those rows were
+  read at. An empty body reconciles the column to zero items.
+
+**Version renewal.** `ui.RenewSortableVersion` writes the
+`X-Gofastr-Sortable-Version` response header (percent-encoded). A list
+sends the token its rows were rendered at, so without the renewal every
+move after the first sends a stale token and conflicts. Every column of a
+`Group` carries the board's one token:
+
+- On a 2xx move, every column still holding the token the move sent takes
+  the new version. Their rows showed the state the server accepted the
+  move against, so they show the new state too.
+- On the conflict refresh, only the refreshed column takes the version,
+  together with its rows.
+- A column holding any other token keeps it. Its rows may be older than
+  the server's, so its next move conflicts and refreshes it.
+
+A response without the header changes no token. Never call it on the
+409: the client's rows there are not the server's.
+
+```go
+// POST /api/board/move, after the version check passed
+board.Version++
+ui.RenewSortableVersion(w, fmt.Sprintf("v%d", board.Version))
+w.WriteHeader(http.StatusNoContent)
+```
 
 The runtime reads the 409 body under hard safety bounds
 (`Content-Type: application/json`, ≤ ~4 KB, must parse, `error` ≤ ~300
@@ -546,10 +572,14 @@ conflicts, never for authorization failures.
 
 **Runnable proof:** [`/components/sortablelist`](../../../examples/site/components.go),
 a 3-column kanban backed by the package-level `kanbanBoard` store, with
-`/__site/sortable/move` (version-aware 409) and
-`/__site/sortable/conflict` (fresh HTML). E2E:
-`TestE2E_SortableKanbanDragPersist` in
-`examples/site/e2e_sortable_kanban_test.go`. Full handler source:
+`/__site/sortable/move` (version-aware 409, renewed version on the 204)
+and `/__site/sortable/conflict` (fresh HTML and its version). E2E:
+`TestE2E_SortableKanbanDragPersist` and
+`TestE2E_SortableKanbanThreeMoves` in
+`examples/site/e2e_sortable_kanban_test.go`; the handler's renewal is
+pinned by `TestSortableMoveRenewsVersion`, and three sequential moves,
+a conflict refresh and linked columns by `TestSortableVersionRenews` and
+`TestSortableConflictRenewsToken` in `framework/headless`. Full handler source:
 `examples/site/main.go` (search `sortable/move`).
 
 ### Recipe 6: grouped mutually-exclusive selection

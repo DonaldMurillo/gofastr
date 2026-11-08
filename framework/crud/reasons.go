@@ -74,6 +74,7 @@ var (
 	reasonCursorFormat         = i18n.Define("error.cursor_format", "cursor format not recognised")
 	reasonCursorAnchorGone     = i18n.Define("error.cursor_anchor_gone", "the row this cursor continues from is gone; start again from the first page")
 	reasonCursorKeyTooLong     = i18n.Define("error.cursor_key_too_long", "the last row's key is too long to carry in a cursor; page this list with ?page= instead")
+	reasonTimestampLayout      = i18n.Define("error.timestamp_layout", "{{field}} stores timestamps in a layout this filter cannot compare")
 
 	reasonStateSetByMove = i18n.Define("error.state_set_by_move", "{{field}} is set by a move, not on create")
 	reasonStateInitial   = i18n.Define("error.state_initial", "a new record starts at {{initial}}")
