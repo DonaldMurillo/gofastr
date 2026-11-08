@@ -98,8 +98,10 @@ An app with subcommands of its own checks for them before calling
 
 To ship the binary to people without Go, build it with
 `gofastr release --service` ([release](release.md)): its `install.sh`
-and `install.ps1` download and verify the build, put it on the user's
-`PATH`, and run `service install`.
+and `install.ps1` download and verify the build, install it for the
+current user, and run `service install`. `install.ps1` also adds the
+install directory to the user's `Path`; `install.sh` prints the
+`export PATH=…` line to add.
 
 ## Ports
 

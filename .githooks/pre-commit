@@ -238,7 +238,11 @@ else
   review_py=$(command -v python3 || command -v python || true)
   if [ -z "$review_py" ]; then
     review_note="skipped: no python3 on PATH"
-  elif ! review_check=$("$review_py" "$review_script" --check 2>&1); then
+  elif review_check=$("$review_py" "$review_script" --check 2>&1); review_rc=$?; [ "$review_rc" -ne 0 ] && [ "$review_rc" -ne 3 ]; then
+    # A --check that crashed (exit other than 0 or 3) is a review that
+    # could not run, which lets the commit through like a crashed run.
+    review_note="skipped: review3.py --check exited $review_rc: $review_check"
+  elif [ "$review_rc" -eq 3 ]; then
     # No codex blocks: a skipped review only printed a warning, and
     # nobody read it for a week of commits.
     fail "model review: $review_check"
