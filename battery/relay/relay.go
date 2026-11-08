@@ -317,6 +317,9 @@ func validateSegments(what, p string) error {
 		if c <= 0x20 || c == 0x7f {
 			return fmt.Errorf("relay: %s %q contains a control character or space", what, p)
 		}
+		if c == '{' || c == '}' || c == '$' {
+			return fmt.Errorf("relay: %s %q must be a literal path without ServeMux metacharacters", what, p)
+		}
 		if c == '%' || c == '#' || c == '?' || c == '\\' {
 			return fmt.Errorf("relay: %s %q contains %q; percent-encoding and fragments are not valid here", what, p, string(c))
 		}

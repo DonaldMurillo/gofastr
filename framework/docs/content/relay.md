@@ -54,7 +54,8 @@ plausibleBase := r.Base() + "/e"
 
 `New` panics on invalid config (unknown scheme, `http://` to a
 non-loopback host, an internal/private upstream, empty `Methods`,
-traversal in a prefix, a mount colliding with a reserved
+traversal in a prefix, `{`, `}`, or `$` in a prefix or `Config.Path`
+(paths must be literal), a mount colliding with a reserved
 `/__gofastr/...` route). A misdeclared relay is a programmer error you
 want at startup, not a runtime surprise.
 
