@@ -219,7 +219,8 @@ Empty
 text stays an
 empty string, since that is a value a user can mean.
 
-`String` and `Text` values must be valid UTF-8 without NUL bytes. Unstorable
+`String`, `Text`, `Relation`, `Image` and `File` values must be valid UTF-8
+without NUL bytes. Unstorable
 text is a validation 400 with code `invalid_text` keyed by the field's wire
 name, before any database write. This applies to create, update and upsert,
 including form and multipart input. JSON fields also refuse NUL in decoded

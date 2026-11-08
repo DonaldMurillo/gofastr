@@ -68,7 +68,7 @@ func validateString(f Field, value any) error {
 	if !ok {
 		return violate(ReasonNotString, nil)
 	}
-	if !utf8.ValidString(s) || strings.IndexByte(s, 0) >= 0 {
+	if !storableText(s) {
 		return violate(ReasonInvalidText, nil)
 	}
 	if f.Required && s == "" {
@@ -380,6 +380,9 @@ func validateRelation(value any) error {
 	if !ok {
 		return violate(ReasonNotReference, nil)
 	}
+	if !storableText(s) {
+		return violate(ReasonInvalidText, nil)
+	}
 	if s == "" {
 		return violate(ReasonEmptyReference, nil)
 	}
@@ -393,6 +396,9 @@ func validateImageOrFile(value any) error {
 	if !ok {
 		return violate(ReasonNotPath, nil)
 	}
+	if !storableText(s) {
+		return violate(ReasonInvalidText, nil)
+	}
 	if s == "" {
 		return violate(ReasonEmptyPath, nil)
 	}
@@ -400,6 +406,13 @@ func validateImageOrFile(value any) error {
 }
 
 // --- helpers ---
+
+// storableText reports whether s is text every dialect stores as sent:
+// valid UTF-8 with no NUL byte. Postgres refuses either with 22021, a 500
+// at the write; SQLite stores them, so the same body answered two ways.
+func storableText(s string) bool {
+	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
+}
 
 func toString(v any) (string, bool) {
 	switch val := v.(type) {
