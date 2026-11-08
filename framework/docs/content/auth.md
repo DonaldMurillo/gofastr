@@ -1277,16 +1277,15 @@ auth.AuthConfig{
     LoginRateLimit:           &auth.RateLimiterConfig{...}, // per-IP on /auth/login
     LoginRateLimitPerAccount: &auth.RateLimiterConfig{...}, // per-email on /auth/login
     RegisterRateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/register
+    MailAddressRateLimit:     &auth.RateLimiterConfig{...}, // per-address, both mail endpoints
 }
 auth.MagicLinkConfig{
     RateLimit:        &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/send
-    AddressRateLimit: &auth.RateLimiterConfig{...}, // per-address on /auth/magic-link/send
     VerifyRateLimit:  &auth.RateLimiterConfig{...}, // per-IP on /auth/magic-link/verify
 }
 auth.TwoFAConfig{ RateLimit: &auth.RateLimiterConfig{...} }     // per-IP on /2fa/{verify,challenge}
 auth.PasswordResetConfig{
-    RateLimit:        &auth.RateLimiterConfig{...}, // per-IP on forgot/reset
-    AddressRateLimit: &auth.RateLimiterConfig{...}, // per-address on /auth/forgot-password
+    RateLimit: &auth.RateLimiterConfig{...}, // per-IP on forgot/reset
 }
 auth.EmailVerificationConfig{ RateLimit: &auth.RateLimiterConfig{...} } // per-IP on send-verification
 ```
@@ -1316,23 +1315,25 @@ Loosening any of them is explicit: pass the plugin's `RateLimit` (or
 
 The two endpoints that mail a link to whatever address they are given,
 `POST /auth/magic-link/send` and `POST /auth/forgot-password`, also
-limit each address however many IPs ask: one mail every two minutes
-(`AddressRateLimit` on `MagicLinkConfig` and `PasswordResetConfig`).
-Without it a rotating proxy could flood one inbox with links. It is a
-short cooldown, not an hourly budget with a long block: anyone can spend
-an address's budget, and a long block would let a stranger stop every
-link to its owner. The mails a stranger triggers still reach the owner,
-and each link outlives the cooldown, so the owner always holds a working
-one. Keep `TokenTTL` above `Window + BlockDuration` (4 minutes at the
-defaults) if you shorten it.
+share one per-address limit however many IPs ask: one mail every two
+minutes (`AuthConfig.MailAddressRateLimit`), spent from a single budget
+the auth manager owns, so a mail from either endpoint starts the
+cooldown for both — an address cannot draw two mails per window by
+alternating endpoints. Without it a rotating proxy could flood one inbox
+with links. It is a short cooldown, not an hourly budget with a long
+block: anyone can spend an address's budget, and a long block would let
+a stranger stop every link to its owner. The mails a stranger triggers
+still reach the owner, and each link outlives the cooldown, so the owner
+always holds a working one. Keep `TokenTTL` above `Window +
+BlockDuration` (4 minutes at the defaults) if you shorten it.
 
 The default per-address limiter keeps its state in memory on each
-replica, even when the plugin's `RateLimit` uses a shared
+replica, even when a plugin's `RateLimit` uses a shared
 `SQLRateLimitStore`, so the cooldown holds per replica. That is
 deliberate: the SQL store records an attempt before it counts, so a
 concurrent burst on one key can deny every caller, which on this limiter
 would let a stranger's burst stop the owner's mail again. Put
-`AddressRateLimit` on a shared store only knowing that. Past the budget the request gets the same 200 as any
+`MailAddressRateLimit` on a shared store only knowing that. Past the budget the request gets the same 200 as any
 other and nothing is minted or mailed, so the limit says nothing about
 whether the address has an account; the audit event carries
 `throttled=address`. The limiter key is `address:` plus the SHA-256 of
@@ -1400,7 +1401,7 @@ refused, the legitimate one included, and the key is blocked. For a
 brute-force limiter that is the right side to err on. For a limiter
 whose budget a stranger can spend on someone else's behalf, it hands the
 stranger a way to lock the owner out, which is why the per-address mail
-limit (`AddressRateLimit`) keeps its default in memory. Put such a
+limit (`MailAddressRateLimit`) keeps its default in memory. Put such a
 limiter on the shared store only if a fleet-wide bound matters more than
 the owner always getting through.
 

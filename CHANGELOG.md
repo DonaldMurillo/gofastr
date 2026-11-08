@@ -88,6 +88,16 @@ few lines, and link the PR or the docs page for the rest.
   `MaxPushConfigsPerTask` to -1. The v0.96.0 upgrade note's `find`
   already flags the old method.
 
+- **BREAKING: magic-link send and forgot-password share one per-address
+  mail budget** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-AU-03). `AuthConfig.MailAddressRateLimit` (default: one mail per
+  address every two minutes) sets the single budget both endpoints spend
+  from, so a mail from either starts the cooldown for both — an address
+  can no longer draw two mails per window by alternating endpoints. The
+  `AddressRateLimit` fields on `MagicLinkConfig` and
+  `PasswordResetConfig` are removed; move any explicit setting to
+  `AuthConfig.MailAddressRateLimit`.
+
 ### Security
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is

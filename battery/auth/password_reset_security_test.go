@@ -186,6 +186,8 @@ func TestPasswordReset_KillsSiblingTokens(t *testing.T) {
 		SessionCookie: "session_id",
 		UserStore:     store,
 		DevMode:       true,
+		// Two links for one address inside the per-address cooldown.
+		MailAddressRateLimit: &RateLimiterConfig{MaxAttempts: 100, Window: time.Minute},
 	})
 	mgr.Use(NewCorePlugin())
 	sender := &stubEmailSender{}
@@ -193,8 +195,6 @@ func TestPasswordReset_KillsSiblingTokens(t *testing.T) {
 		BaseURL:     "http://localhost",
 		TokenTTL:    time.Hour,
 		EmailSender: sender,
-		// Two links for one address inside the per-address cooldown.
-		AddressRateLimit: &RateLimiterConfig{MaxAttempts: 100, Window: time.Minute},
 	}))
 	if err := mgr.Init(nil); err != nil {
 		t.Fatalf("Init: %v", err)

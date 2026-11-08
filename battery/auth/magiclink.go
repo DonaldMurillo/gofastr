@@ -72,21 +72,11 @@ type MagicLinkConfig struct {
 	// RateLimit applies a per-IP rate limit to /auth/magic-link/send. It
 	// defaults to 10 attempts/min with a 15-minute block (the register
 	// floor): send is an unauthenticated email-dispatch primitive, every
-	// request mints a token and mails a link. Loosen by passing a config
-	// with a large MaxAttempts.
+	// request mints a token and mails a link. The per-address mail
+	// cooldown is shared with forgot-password and lives on
+	// AuthConfig.MailAddressRateLimit. Loosen by passing a config with a
+	// large MaxAttempts.
 	RateLimit *RateLimiterConfig
-
-	// AddressRateLimit limits /auth/magic-link/send per email address,
-	// however many IPs ask: without it a rotating proxy mails a victim an
-	// unbounded stream of sign-in links. It defaults to one mail per
-	// address every two minutes (see defaultAddressRateLimit). Past it
-	// the request gets the same 200 as any other
-	// and nothing is minted or sent, so the limit tells a caller nothing
-	// about the address. The key is a SHA-256 digest of the canonical
-	// address, never the address. Loosen by passing a config with a large
-	// MaxAttempts.
-	AddressRateLimit *RateLimiterConfig
-
 	// VerifyRateLimit applies a per-IP rate limit to
 	// /auth/magic-link/verify. It defaults to 30 attempts/min with a
 	// 5-minute block (the login per-IP floor): verify redeems a secret
@@ -248,7 +238,6 @@ type MagicLinkPlugin struct {
 	mgr         *AuthManager
 	tokenStore  MagicLinkTokenStore
 	sendLimit   *RateLimiter
-	addrLimit   *RateLimiter
 	verifyLimit *RateLimiter
 	// basePath is captured at RegisterRoutes so the confirmation page's
 	// form can post back to the same path the link was mounted under.
@@ -290,14 +279,10 @@ func NewMagicLinkPlugin(config MagicLinkConfig) *MagicLinkPlugin {
 			BlockDuration: 5 * time.Minute,
 		}
 	}
-	if config.AddressRateLimit == nil {
-		config.AddressRateLimit = defaultAddressRateLimit()
-	}
 	p := &MagicLinkPlugin{
 		config:      config,
 		tokenStore:  store,
 		sendLimit:   newScopedRateLimiter(*config.RateLimit, "magiclink_send"),
-		addrLimit:   newScopedRateLimiter(*config.AddressRateLimit, "magiclink_address"),
 		verifyLimit: newScopedRateLimiter(*config.VerifyRateLimit, "magiclink_verify"),
 	}
 	return p
@@ -332,30 +317,11 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 	return nil
 }
 
-// defaultAddressRateLimit is the per-address floor on the two endpoints
-// that mail a link to whatever address they are given (magic-link send,
-// forgot-password): one mail every two minutes, no longer block.
-//
-// It is a cooldown on purpose, not an hourly budget. Anyone can spend an
-// address's budget, and the first version (5 an hour, then an hour's
-// block) let a stranger send six requests and stop every link to the
-// victim for the next hour: for a passwordless app, no sign-in at all.
-// With a two-minute cooldown the mails a stranger triggers still reach
-// the victim's inbox, and each link lives longer than the cooldown, so
-// the owner always holds a working one, while a flood is held to about
-// thirty mails an hour.
-func defaultAddressRateLimit() *RateLimiterConfig {
-	return &RateLimiterConfig{
-		MaxAttempts:   1,
-		Window:        2 * time.Minute,
-		BlockDuration: 2 * time.Minute,
-	}
-}
-
 // allowAddress spends one of the address's mail budget and reports
 // whether it was left. The key is a SHA-256 digest of the canonical
 // address, so a shared RateLimitStore holds no addresses. A nil limiter
-// allows everything.
+// allows everything. It is the spend behind AuthManager.allowMailAddress,
+// the one budget AuthConfig.MailAddressRateLimit sets.
 func allowAddress(ctx context.Context, rl *RateLimiter, email string) bool {
 	if rl == nil {
 		return true
@@ -547,7 +513,7 @@ func (p *MagicLinkPlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	// the same answer as any other and nothing is minted or mailed: the
 	// limit is the same for every address, so the answer says nothing
 	// about whether an account exists.
-	if !allowAddress(r.Context(), p.addrLimit, body.Email) {
+	if !p.mgr.allowMailAddress(r.Context(), body.Email) {
 		requested.Meta = map[string]string{"throttled": "address"}
 		p.mgr.emitSecurity(r.Context(), requested)
 		writeMagicLinkSent(w, r)

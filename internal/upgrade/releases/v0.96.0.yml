@@ -782,7 +782,7 @@ notes:
   - change: "magic-link send and forgot-password mail one link per address every two minutes (AddressRateLimit, kept in memory per replica); a request inside the cooldown gets the usual 200 and nothing is mailed"
     breaking: true
     hits: review
-    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin."
+    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin. From v0.97 the per-plugin field is gone and one shared AuthConfig.MailAddressRateLimit sets both endpoints."
     find:
       uses:
         - gofastr/battery/auth.NewMagicLinkPlugin

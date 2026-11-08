@@ -1,0 +1,10 @@
+version: v0.97.0
+notes:
+  - change: "BREAKING - the AddressRateLimit fields on auth.MagicLinkConfig and auth.PasswordResetConfig are gone; magic-link send and forgot-password now spend one shared per-address mail budget (auth.AuthConfig.MailAddressRateLimit, default one mail per address every two minutes), so a mail from either endpoint starts the cooldown for both"
+    breaking: true
+    hits: edit
+    guidance: "Move any explicit AddressRateLimit setting to AuthConfig.MailAddressRateLimit on the auth.New call. A request inside the cooldown still gets the usual 200 and nothing is mailed; an end-to-end test that asks twice for one address passes MailAddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to AuthConfig."
+    find:
+      uses:
+        - gofastr/battery/auth.NewMagicLinkPlugin
+        - gofastr/battery/auth.NewPasswordResetPlugin
