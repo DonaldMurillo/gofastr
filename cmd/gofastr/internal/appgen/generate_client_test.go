@@ -706,6 +706,9 @@ func TestRelationDecode(t *testing.T) {
 	if fresh.AuthorId != nil {
 		t.Errorf("an explicit null kept the previous relation key: %v", *fresh.AuthorId)
 	}
+	if fresh.Included["authorId"] != nil {
+		t.Errorf("an explicit null kept the previous included record: %s", fresh.Included["authorId"])
+	}
 }
 `
 

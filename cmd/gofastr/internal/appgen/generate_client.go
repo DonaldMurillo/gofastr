@@ -469,6 +469,7 @@ func renderClientRelationDecode(decl framework.EntityDeclaration, decls []framew
 		fmt.Fprintf(&mb, "\tif wire.%[1]s != nil {\n"+
 			"\t\tif string(wire.%[1]s) == `null` {\n"+
 			"\t\t\tr.%[1]s = %[5]s\n"+
+			"\t\t\tdelete(r.%[4]s, %[3]q)\n"+
 			"\t\t} else {\n"+
 			"\t\t\tkey, err := relationKey(wire.%[1]s, %[2]q, %[3]q, &r.%[4]s)\n"+
 			"\t\t\tif err != nil {\n"+
