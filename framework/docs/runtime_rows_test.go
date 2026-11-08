@@ -183,3 +183,18 @@ func TestHeadlessHooksHaveDocRows(t *testing.T) {
 		}
 	}
 }
+
+// Input-triggered RPCs also bind non-form carriers such as comboboxes.
+// Keep the source-of-truth row as broad as the embedded reference.
+//
+//gofastr:test-reads core-ui/ARCHITECTURE.md
+func TestRPCCarrierDocsMatch(t *testing.T) {
+	arch := attributeRow(t, readArchitecture(t), "data-cui-rpc-trigger")
+	extract := attributeRow(t, readRuntimeContract(t), "data-cui-rpc-trigger")
+	if arch != extract {
+		t.Error("RPC input carrier rows disagree between the references")
+	}
+	if !strings.Contains(arch, "any element") || !strings.Contains(arch, "named, enabled controls") {
+		t.Error("RPC carrier row must cover non-form serialization")
+	}
+}
