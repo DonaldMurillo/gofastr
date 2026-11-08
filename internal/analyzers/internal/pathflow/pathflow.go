@@ -958,6 +958,12 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 	if obj == nil || !ok || QualifiedFunc(pass, call.Fun) != "path/filepath.EvalSymlinks" {
 		return false
 	}
+	// The resolution must run on every path to the sink: after
+	// `if resolve { p, err = EvalSymlinks(p) }` the other branch writes
+	// the unresolved p, and the check it passed was lexical.
+	if !dominates(call, sink, body) {
+		return false
+	}
 	resolved := map[types.Object]bool{obj: true}
 	// The tie runs through the binding chain: `real := x` after
 	// `x, err := EvalSymlinks(p)` resolves to the same call. An alias
@@ -967,7 +973,13 @@ func resolvedContained(pass *analysis.Pass, pathArg ast.Expr, bound map[types.Ob
 	// second resolution while it holds the first.
 	assigns := assignCounts(pass, body)
 	for o, b := range bound {
-		if o != obj && assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call {
+		switch {
+		case o == obj:
+		case ast.Unparen(b) == call:
+			// The result itself, when the sink writes a copy of it:
+			// `real, err := EvalSymlinks(p)` then `out := real`.
+			resolved[o] = true
+		case assigns[o] == 1 && b.Pos() >= call.End() && Resolve(pass, b, bound, 0) == call:
 			resolved[o] = true
 		}
 	}
@@ -1052,6 +1064,10 @@ func joinRoots(pass *analysis.Pass, call *ast.CallExpr, bound map[types.Object]a
 //     condition false: `if HasPrefix(real, rootSep) { write }`;
 //   - the else-branch refuses and an outside path makes the condition
 //     false: `if HasPrefix(real, rootSep) {} else { return }`.
+//
+// A ".." test of a Rel result also needs Rel's error refused
+// (relErrRefused): a failed Rel returns "". IsLocal(rel) does not, as
+// IsLocal("") is false.
 //
 // A Rel whose result nobody reads, a prefix test whose answer only
 // logs, and `if HasPrefix(real, root) { return nil }` before the write
@@ -1168,6 +1184,21 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	part := func(r *ast.CallExpr, bit int) cover {
 		return cover{parts: map[*ast.CallExpr]int{r: bit}}
 	}
+	// settle turns a cover into its force: Rel parts covering both
+	// ".." and ".." plus separator force the condition true, but only
+	// when Rel's own error is refused (relErrRefused). A failed Rel
+	// leaves rel == "", which no ".." test catches.
+	settle := func(c cover) int {
+		if c.force != 0 {
+			return c.force
+		}
+		for call, bits := range c.parts {
+			if bits == dotdot|parent && relErrRefused(pass, body, call, sink) {
+				return forceTrue
+			}
+		}
+		return 0
+	}
 	var outsideForces func(e ast.Expr, depth int) cover
 	outsideForces = func(e ast.Expr, depth int) cover {
 		if depth > 6 {
@@ -1176,7 +1207,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		switch x := ast.Unparen(e).(type) {
 		case *ast.UnaryExpr:
 			if x.Op == token.NOT {
-				return cover{force: -outsideForces(x.X, depth+1).force}
+				return cover{force: -settle(outsideForces(x.X, depth+1))}
 			}
 		case *ast.BinaryExpr:
 			if x.Op == token.EQL {
@@ -1202,9 +1233,6 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 				for _, side := range []cover{l, r} {
 					for call, bits := range side.parts {
 						parts[call] |= bits
-						if parts[call] == dotdot|parent {
-							return cover{force: forceTrue}
-						}
 					}
 				}
 				if len(parts) > 0 {
@@ -1214,10 +1242,11 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 					return cover{force: forceFalse}
 				}
 			case token.LAND:
-				if l.force == forceFalse || r.force == forceFalse {
+				lf, rf := settle(l), settle(r)
+				if lf == forceFalse || rf == forceFalse {
 					return cover{force: forceFalse}
 				}
-				if l.force == forceTrue && r.force == forceTrue {
+				if lf == forceTrue && rf == forceTrue {
 					return cover{force: forceTrue}
 				}
 			}
@@ -1255,7 +1284,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 				if r := relOf(x.Args[0]); r != nil {
 					switch c, _ := strConst(x.Args[1]); c {
 					case "..":
-						return cover{force: forceTrue}
+						return part(r, dotdot|parent)
 					case parentPrefix:
 						return part(r, parent)
 					}
@@ -1273,7 +1302,7 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 		if !ok || found {
 			return !found
 		}
-		f := outsideForces(ifs.Cond, 0).force
+		f := settle(outsideForces(ifs.Cond, 0))
 		switch {
 		case f == forceTrue && refuses(ifs.Body) && !holds(ifs.Body):
 			found = true
@@ -1804,6 +1833,82 @@ func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) 
 
 // assignCounts counts the assignments and var-spec initializers that
 // bind each local in body.
+// relErrRefused reports whether the error beside the Rel result r is
+// refused before sink: an if that dominates sink, whose condition has
+// `err != nil` as a disjunct and whose then-branch refuses, with err
+// still holding r's error there. `rel, _ := filepath.Rel(...)` has no
+// such if: a failed Rel gives rel == "", which passes every ".." test.
+func relErrRefused(pass *analysis.Pass, body *ast.BlockStmt, r *ast.CallExpr, sink ast.Node) bool {
+	var errObj types.Object
+	var at token.Pos
+	ast.Inspect(body, func(n ast.Node) bool {
+		st, ok := n.(*ast.AssignStmt)
+		if !ok || len(st.Rhs) != 1 || len(st.Lhs) != 2 || ast.Unparen(st.Rhs[0]) != r {
+			return errObj == nil
+		}
+		if id, ok := st.Lhs[1].(*ast.Ident); ok && id.Name != "_" {
+			errObj, at = pass.TypesInfo.ObjectOf(id), st.End()
+		}
+		return false
+	})
+	if errObj == nil {
+		return false
+	}
+	// reassigned reports whether errObj is assigned in (at, before).
+	reassigned := func(before token.Pos) bool {
+		found := false
+		ast.Inspect(body, func(n ast.Node) bool {
+			st, ok := n.(*ast.AssignStmt)
+			if found || !ok {
+				return !found
+			}
+			for _, lhs := range st.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && pass.TypesInfo.ObjectOf(id) == errObj && st.Pos() >= at && st.Pos() < before {
+					found = true
+				}
+			}
+			return !found
+		})
+		return found
+	}
+	var hasErrNil func(e ast.Expr) bool
+	hasErrNil = func(e ast.Expr) bool {
+		x, ok := ast.Unparen(e).(*ast.BinaryExpr)
+		if !ok {
+			return false
+		}
+		if x.Op == token.LOR {
+			return hasErrNil(x.X) || hasErrNil(x.Y)
+		}
+		if x.Op != token.NEQ {
+			return false
+		}
+		isErr := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && pass.TypesInfo.ObjectOf(id) == errObj
+		}
+		isNil := func(e ast.Expr) bool {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			return ok && id.Name == "nil"
+		}
+		return (isErr(x.X) && isNil(x.Y)) || (isNil(x.X) && isErr(x.Y))
+	}
+	found := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		ifs, ok := n.(*ast.IfStmt)
+		if found || !ok {
+			return !found
+		}
+		if ifs.Cond.Pos() > at && hasErrNil(ifs.Cond) && refuses(ifs.Body) &&
+			!(ifs.Body.Pos() <= sink.Pos() && sink.End() <= ifs.Body.End()) &&
+			dominates(ifs.Cond, sink, body) && !reassigned(ifs.Cond.Pos()) {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
 func assignCounts(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]int {
 	counts := map[types.Object]int{}
 	ast.Inspect(body, func(n ast.Node) bool {

@@ -1019,3 +1019,134 @@ func constJoinRoot(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600)
 }
+
+// relErrIgnored drops Rel's error: a failed Rel gives rel == "",
+// which no ".." test catches.
+func relErrIgnored(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, _ := filepath.Rel(realRoot, real)
+	if strings.HasPrefix(rel, "..") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relErrIgnoredPair drops it under the two-part test.
+func relErrIgnoredPair(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, _ := filepath.Rel(realRoot, real)
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relErrSeparate refuses Rel's error in its own if first. Quiet.
+func relErrSeparate(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(rel, "..") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// relErrReplaced tests an err that no longer holds Rel's.
+func relErrReplaced(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(realRoot, real)
+	_, err = os.Stat(realRoot)
+	if err != nil {
+		return err
+	}
+	if strings.HasPrefix(rel, "..") {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// relIsLocalNoErr drops Rel's error under IsLocal, which is false for
+// "". Quiet.
+func relIsLocalNoErr(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, _ := filepath.Rel(realRoot, real)
+	if !filepath.IsLocal(rel) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600)
+}
+
+// copySink checks the resolved path and writes a copy of it. Quiet.
+func copySink(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(real, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	out := real
+	return os.WriteFile(out, data, 0o600)
+}
+
+// maybeResolved resolves only on one branch: on the other the check
+// is lexical and the write follows the link.
+func maybeResolved(baseDir, name string, data []byte, resolve bool) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	p := filepath.Join(realRoot, name)
+	if resolve {
+		p, err = filepath.EvalSymlinks(p)
+		if err != nil {
+			return err
+		}
+	}
+	if !strings.HasPrefix(p, realRoot+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
+}

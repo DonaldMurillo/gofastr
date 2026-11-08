@@ -95,7 +95,10 @@ few lines, and link the PR or the docs page for the rest.
   or a resolved path that is then used for the read or write, after a
   `filepath.Rel(root, real)` or `strings.HasPrefix(real, root+sep)`
   test made after the resolution, in an `if` that refuses an outside
-  path or writes only on the inside branch. The tested string must be
+  path or writes only on the inside branch. The resolution must run on
+  every path to the write, and a `".."` test of a Rel result counts
+  only when Rel's error is refused too (a failed Rel returns `""`);
+  `filepath.IsLocal(rel)` needs no such check. The tested string must be
   the resolved path itself (or a copy made once, after the
   resolution), not a path rebuilt from it. The root must be the one
   the path was joined under, not its parent or another directory, and

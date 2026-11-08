@@ -270,7 +270,9 @@ expose them to agents connected to a live app.**
   test (real the resolved local itself, root neither a constant nor
   built from real) runs before the
   sink in an if that refuses an outside path (or holds the sink on
-  the inside branch); the root is the one the path was joined under.
+  the inside branch); the root is the one the path was joined under,
+  the resolution dominates the sink, and a `".."` test of a Rel
+  result needs Rel's error refused (IsLocal does not).
   os.Mkdir may also go through `Join(dir, filepath.Base(p))` on a
   contained `dir`: Mkdir refuses an existing leaf, while MkdirAll
   follows a linked one and gets no such credit. An
