@@ -239,11 +239,17 @@ func TestDocExamplesCompile(t *testing.T) {
 	// module `replace`s gofastr to the checkout, and Go refuses to build a
 	// module whose directive is below a dependency's, so a hardcoded version
 	// breaks this gate on every toolchain bump.
+	// Snippets can import modules outside the repository's graph. Pin
+	// those modules here so a warm cache compiles offline and a new
+	// upstream release cannot silently change the examples' API target.
 	gomod := fmt.Sprintf(`module docsnippet
 
 go %s
 
-require github.com/DonaldMurillo/gofastr v0.0.0
+require (
+ github.com/DonaldMurillo/gofastr v0.0.0
+ go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
+)
 
 replace github.com/DonaldMurillo/gofastr => %s
 `, repoGoDirective(t, root), root)
