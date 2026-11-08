@@ -125,3 +125,14 @@ type describedHeadComp struct{ describedHomeComp }
 func (c *describedHeadComp) HeadHTML() string {
 	return `<meta name="description" content="From HeadHTML"><meta name="author" content="kept">`
 }
+
+// Strict mode's site-description check reads the same site description
+// the page does, so a description in WithHeadHTML satisfies it.
+func TestStrictTakesHostHeadDescription(t *testing.T) {
+	ds := New(app.NewApp("Test App"), WithHeadHTML(`<meta name="description" content="From WithHeadHTML">`))
+	for _, f := range ds.strictSiteFindings() {
+		if f.check == strictCheckSiteDescription {
+			t.Fatalf("strict reports %q for a site whose WithHeadHTML carries its description", f.msg)
+		}
+	}
+}

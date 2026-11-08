@@ -153,7 +153,7 @@ type UIHost struct {
 	strict              bool            // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
 	coreRouter          *router.Router  // the framework router Mount received; strict mode reads its route table for the internal-links check
 	strictConfig        StrictConfig    // per-check levels + route exemptions; zero value enforces everything
-	siteDescription     string          // WithDescription's text: the description of a page that names none of its own; the strict site-surface check reads it too
+	siteDescription     string          // WithDescription's text: the description of a page that names none of its own (siteDescriptionTag)
 	embedHost           *fembed.Host    // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
 	embedThemes         embedThemeState // per-surface cap on distinct customer theme variants
 

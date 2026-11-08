@@ -30,7 +30,7 @@ host := uihost.New(ui,
 |---|---|---|
 | Screen title | every page screen | `Screen.Title` is set: implement `ScreenTitler` or register with `WithTitle` |
 | Screen description | every page screen | `Screen.Description` is set (`ScreenDescriber`), or the component implements `ScreenSEO`: a zero-value return is the documented "deliberately naked" opt-out |
-| Site description | the host | `WithDescription` with a non-empty value |
+| Site description | the host | `WithDescription` with a non-empty value, or a description tag in `WithHeadHTML` |
 | Site icon | the host | `WithAppIcon` (preferred: one source image derives the whole icon surface) or `WithFavicon` |
 | Sitemap | the host | `WithSitemap` with a valid `BaseURL`: a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
@@ -191,7 +191,7 @@ uihost.WithStrict(uihost.StrictConfig{
 |---|---|---|
 | `ScreenTitles` | per-screen title check | enforce |
 | `ScreenDescriptions` | per-screen description check | enforce |
-| `SiteDescription` | `WithDescription` present | enforce |
+| `SiteDescription` | `WithDescription` or a `WithHeadHTML` description present | enforce |
 | `SiteIcon` | `WithAppIcon`/`WithFavicon` present | enforce |
 | `Sitemap` | `WithSitemap` present | enforce |
 | `Robots` | `WithRobots` present | enforce |
