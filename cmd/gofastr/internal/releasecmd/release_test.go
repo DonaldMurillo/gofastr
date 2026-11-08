@@ -204,6 +204,24 @@ func TestIncludeCannotAliasBinary(t *testing.T) {
 	}
 }
 
+func TestIncludeRefusesNonRegularOrOddName(t *testing.T) {
+	dir := writeModule(t, map[string]string{"main.go": helloMain, "docs/a.md": "x", "notes v2.txt": "x", "café.txt": "x"})
+	includes := []string{"docs", "notes v2.txt", "café.txt"}
+	if err := os.Symlink("main.go", filepath.Join(dir, "link.go")); err == nil {
+		includes = append(includes, "link.go")
+	} else if runtime.GOOS != "windows" {
+		t.Fatal(err)
+	}
+	for _, inc := range includes {
+		if _, err := resolveIncludes(dir, []string{inc}, "hello", false); err == nil {
+			t.Errorf("--include=%s: accepted", inc)
+		}
+	}
+	if _, err := resolveIncludes(dir, []string{"main.go"}, "hello", false); err != nil {
+		t.Errorf("a plain file was refused: %v", err)
+	}
+}
+
 func TestReleaseRefusesWindowsDeviceName(t *testing.T) {
 	dir := writeModule(t, map[string]string{"main.go": helloMain})
 	opts, _ := parseOptions([]string{"--version=1.0.0", "--name=aux", "--targets=windows/amd64", "-o", t.TempDir()})
