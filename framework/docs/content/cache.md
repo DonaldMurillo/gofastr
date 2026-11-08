@@ -184,7 +184,7 @@ r.Use(cache.CacheMiddleware(c, 30*time.Second))
 r.Use(cache.CacheMiddlewareWithLimit(c, 30*time.Second, 2<<20)) // 2 MiB
 ```
 
-The middleware is RFC 9111-compliant by default:
+The middleware uses conservative shared-cache rules:
 
 - Only `GET` requests are cached.
 - An unsafe request (`POST`, `PUT`, `PATCH`, `DELETE`, any method but
@@ -203,6 +203,16 @@ The middleware is RFC 9111-compliant by default:
   only for those saw a per-subject response as anonymous and served it to the
   next grant holder. An API key had the same hole.
 - `Cache-Control: no-cache` / `no-store` directives are honoured.
+- Origin `s-maxage` (preferred) or `max-age` caps the configured TTL,
+  subtracting response age from `Age` and `Date`. Zero or already-stale
+  freshness, invalid values, and duplicate freshness directives prevent
+  storage. This includes `must-revalidate, max-age=0`: the middleware
+  does not revalidate or serve expired entries. Quoted delta-seconds
+  are accepted. An Expires-only response is not stored; without origin
+  freshness headers the configured TTL applies. A zero configured TTL
+  uses explicit origin freshness when present, otherwise the backend's
+  default. This middleware does not implement the full RFC 9111 cache
+  protocol (for example, conditional revalidation).
 - `Set-Cookie` responses and non-2xx/3xx responses are never stored,
   and neither are `304` responses: a 304 is a conditional-reply
   artifact, not a representation, and the key encodes no conditional
