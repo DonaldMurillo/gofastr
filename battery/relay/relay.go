@@ -56,8 +56,9 @@ type Config struct {
 	// Path is the local mount prefix. Default "/__gofastr/t".
 	//
 	// Validated at New: absolute, no trailing slash, no traversal, no
-	// percent-encoding, and no collision with a reserved /__gofastr
-	// route. Any other absolute path works ("/firstparty", "/fp", …).
+	// percent-encoding, no "{", "}" or "$" (the path is literal, never a
+	// mux pattern), and no collision with a reserved /__gofastr route.
+	// Any other absolute path works ("/firstparty", "/fp", …).
 	Path string
 
 	// Routes declare what gets proxied. Required, non-empty.

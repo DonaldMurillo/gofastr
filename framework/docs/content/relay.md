@@ -27,7 +27,8 @@ app := framework.NewApp(
 	framework.WithConfig(framework.AppConfig{Name: "myapp"}),
 )
 r := relay.New(relay.Config{
-	// Path defaults to "/__gofastr/t"; any absolute path works.
+	// Path defaults to "/__gofastr/t"; any literal absolute path works
+	// ({, } and $ are refused).
 	Routes: []relay.Route{
 		{
 			Prefix:   "e/",   // subtree: POST /t/e/{rest} → plausible.io/api/event/{rest}
