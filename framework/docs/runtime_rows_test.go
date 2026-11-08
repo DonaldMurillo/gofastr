@@ -59,3 +59,32 @@ func TestRailDocsDescribeObservedRegions(t *testing.T) {
 		})
 	}
 }
+
+//gofastr:test-reads core-ui/ARCHITECTURE.md
+//gofastr:test-reads core-ui/runtime/src/popover.js
+func TestPopoverDocsNameFallbackOrder(t *testing.T) {
+	src, err := os.ReadFile("../../core-ui/runtime/src/popover.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`: \[pref, ([^\]]+)\]`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("popover fallback order not found")
+	}
+	var sides []string
+	for _, side := range regexp.MustCompile(`'([^']+)'`).FindAllSubmatch(m[1], -1) {
+		sides = append(sides, string(side[1]))
+	}
+	if len(sides) != 4 {
+		t.Fatalf("expected four fallback sides, got %v", sides)
+	}
+	for _, doc := range contractDocs(t) {
+		row := attributeRow(t, doc.text, "data-cui-popover-anchor")
+		if !strings.Contains(row, "preferred side first") || !strings.Contains(row, strings.Join(sides, " → ")) {
+			t.Errorf("%s must describe the preferred side first, then %s", doc.name, strings.Join(sides, " → "))
+		}
+		if strings.Contains(row, "auto-flips to the opposite") {
+			t.Errorf("%s promises an opposite-side fallback the runtime does not implement", doc.name)
+		}
+	}
+}
