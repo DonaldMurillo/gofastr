@@ -133,8 +133,9 @@ type updater struct {
 	defaultOnce     sync.Once
 	defaultPlatform update.Platform
 
-	mu       sync.Mutex
-	notified string // last version an update_available event named
+	mu        sync.Mutex
+	notified  string // last version successfully delivered to every open page
+	notifying bool   // an event delivery is in flight, guarded by mu
 
 	// installMu single-flights install: two runs would share
 	// <Name>.app.new and .old, and the second's RemoveAll(old) could
@@ -606,15 +607,28 @@ func (u *updater) check(ctx context.Context) (Update, error) {
 // still-uninstalled update does not re-toast every interval).
 func (u *updater) notifyOnce(res Update) {
 	u.mu.Lock()
-	first := u.notified != res.Version
-	u.notified = res.Version
-	u.mu.Unlock()
-	if !first {
+	if u.notified == res.Version || u.notifying {
+		u.mu.Unlock()
 		return
 	}
+	u.notifying = true
+	u.mu.Unlock()
+
+	// Eval invokes the native window outside the state lock. Only a
+	// successful delivery consumes the version; a closed or unready
+	// window must get another chance on the next scheduled check.
+	defer func() {
+		u.mu.Lock()
+		u.notifying = false
+		u.mu.Unlock()
+	}()
 	if err := u.b.Emit("update_available", map[string]string{"version": res.Version, "notes": res.Notes}); err != nil {
 		u.b.logger.Warn("desktop: delivering the update_available event failed", "error", err.Error())
+		return
 	}
+	u.mu.Lock()
+	u.notified = res.Version
+	u.mu.Unlock()
 	u.b.logger.Info("desktop: update available", "version", res.Version)
 }
 

@@ -1719,6 +1719,11 @@ __gofastr.desktop.on("update_available", ({ version, notes }) => {
 })
 ```
 
+A version is marked notified only after event delivery succeeds. If no
+window is open or a window refuses delivery, the next interval retries
+that version; pages that already received a partial broadcast may see it
+again. Concurrent checks share one in-flight delivery.
+
 Failures are logged (Warn) and retried next interval; an unbundled or
 unsupported host logs once and stops. So does a bundle whose
 `CFBundleShortVersionString` is not semver (`1.0`): the check answers

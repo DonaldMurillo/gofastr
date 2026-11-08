@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 )
@@ -368,4 +370,105 @@ func TestStartUpdaterNegativeIntervalStartsNoLoop(t *testing.T) {
 	// Nothing to observe directly without waiting 30 s for the first
 	// check; the guard is that startUpdater returns immediately (the
 	// test's runtime proves no synchronous check ran).
+}
+
+// An unavailable page and an Eval refusal must both leave delivery retryable.
+func TestUpdateNotifyRetriesDelivery(t *testing.T) {
+	feed := newUpdateFeedServer(t, "1.2.0")
+	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	u := b.updaterFor()
+	res := Update{Available: true, Version: "1.2.0", Notes: "Changes"}
+	u.notifyOnce(res) // no window yet
+	w := &retryUpdateWindow{fakeWindow: fakeWindow{id: "main"}, refuse: true}
+	b.windowMu.Lock()
+	b.window = w
+	b.windowMu.Unlock()
+	u.notifyOnce(res) // window exists but Eval refuses
+	w.refuse = false
+	u.notifyOnce(res)
+	u.notifyOnce(res)
+	if got := len(w.evals()); got != 1 {
+		t.Fatalf("successful deliveries = %d, want 1", got)
+	}
+	if w.attempts != 2 {
+		t.Fatalf("Eval attempts = %d, want refusal then success", w.attempts)
+	}
+}
+
+type retryUpdateWindow struct {
+	fakeWindow
+	refuse   bool
+	attempts int
+}
+
+func (w *retryUpdateWindow) Eval(js string) error {
+	w.attempts++
+	if w.refuse {
+		return fmt.Errorf("window not ready")
+	}
+	return w.fakeWindow.Eval(js)
+}
+
+func TestUpdateNotifySharesInflight(t *testing.T) {
+	feed := newUpdateFeedServer(t, "1.2.0")
+	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	w := &blockingUpdateWindow{started: make(chan struct{}), release: make(chan struct{})}
+	b.window = w
+	u := b.updaterFor()
+	res := Update{Available: true, Version: "1.2.0"}
+	first, second := make(chan struct{}), make(chan struct{})
+	go func() { defer close(first); u.notifyOnce(res) }()
+	<-w.started
+	go func() { defer close(second); u.notifyOnce(res) }()
+	select {
+	case <-second:
+	case <-time.After(time.Second):
+		t.Error("overlapping notification did not return")
+	}
+	close(w.release)
+	<-first
+	<-second
+	if got := len(w.evals()); got != 1 {
+		t.Fatalf("overlapping deliveries = %d, want 1", got)
+	}
+}
+
+type blockingUpdateWindow struct {
+	fakeWindow
+	once             sync.Once
+	started, release chan struct{}
+}
+
+func (w *blockingUpdateWindow) Eval(js string) error {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return w.fakeWindow.Eval(js)
+}
+
+func TestUpdateNotifyRetriesAfterPanic(t *testing.T) {
+	feed := newUpdateFeedServer(t, "1.2.0")
+	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	w := &panicUpdateWindow{panics: true}
+	b.window = w
+	u := b.updaterFor()
+	if u.checkAndNotify(context.Background()) {
+		t.Fatal("panic stopped scheduled checks")
+	}
+	w.panics = false
+	u.checkAndNotify(context.Background())
+	if got := len(w.evals()); got != 1 {
+		t.Fatalf("deliveries after panic = %d, want 1", got)
+	}
+}
+
+type panicUpdateWindow struct {
+	fakeWindow
+	panics bool
+}
+
+func (w *panicUpdateWindow) Eval(js string) error {
+	if w.panics {
+		panic("window not ready")
+	}
+	return w.fakeWindow.Eval(js)
 }
