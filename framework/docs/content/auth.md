@@ -590,7 +590,10 @@ plaintext, rec, err := auth.IssueToken(ctx, ts, auth.TokenSpec{
 _ = rec // {ID, Name, Prefix, Scopes, ExpiresAt, …}
 ```
 
-Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user, service};
+Validation: Name/OwnerKind/OwnerID required; Name is at most 256 bytes;
+Name and OwnerID must be valid UTF-8 without NUL. Token creation refuses
+invalid text before storage with `ErrInvalidTokenSpec` (HTTP 400, with
+a `fields.name` or `fields.owner_id` message). OwnerKind ∈ {user, service};
 scopes match `^[a-z0-9_*-]+:[a-z0-9_*-]+$` (so `*:read` and `*:*` mint);
 max 32 scopes. `POST /auth/tokens` answers 400 for a `ttl_seconds` below
 zero or above 9223372036 (about 292 years, the largest that fits a

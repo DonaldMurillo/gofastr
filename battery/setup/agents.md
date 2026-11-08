@@ -40,9 +40,13 @@ app := framework.NewApp(framework.WithSetup(runner), …)
   steps run before the port binds and failures abort `Start` loudly.
 - `GOFASTR_SETUP=off` skips setup mode entirely; `force` re-enters it
   as a rescue mode; invalid values fail `Start`.
-- Completion is **derived**, never a marker file. A crash mid-setup
-  re-enters setup on next boot. Worker-role processes refuse to start
-  while setup is incomplete.
+- Completion is **derived**, never a marker file. A restart re-enters
+  setup only while `Complete` is false (before an admin exists for
+  `AdminStep`). Once it becomes true, the next boot serves the full app
+  even with remaining steps: wizard progress is only in memory. Cover
+  all required persisted effects in `Complete`, or run mandatory readiness
+  checks on every boot. Worker-role processes refuse to start while setup
+  is incomplete.
 - Every declared step runs, including the ones after the step that
   flips `Complete` (`HealthStep` after `AdminStep`). Under `force` the
   wizard stays up until its last step has re-run.

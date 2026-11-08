@@ -264,3 +264,30 @@ func TestE2E_TabsDisabledTabIgnoresClicks(t *testing.T) {
 		t.Fatalf("a click on the disabled tab acted: %+v", got)
 	}
 }
+
+func TestDisabledTabArrowsKeepOrder(t *testing.T) {
+	for _, dir := range []string{"ltr", "rtl"} {
+		page := `<div dir="` + dir + `">` + string(Tabs(TabsProps{Name: "disabled", Active: 1,
+			Tabs: []Tab{{Label: "First"}, {Label: "Blocked", Disabled: true}, {Label: "Next"}, {Label: "Last"}}}, nil)) + `</div>`
+		ctx := behaviorPage(t, startBehaviorServer(t, page))
+		if !pollTrue(ctx, tabsLoaded) {
+			t.Fatal("tabs module did not load")
+		}
+		for _, key := range []string{"ArrowLeft", "ArrowRight"} {
+			want := "First"
+			if (key == "ArrowRight") != (dir == "rtl") {
+				want = "Next"
+			}
+			var got string
+			if err := chromedp.Run(ctx,
+				chromedp.Evaluate(`document.querySelector('[aria-disabled="true"]').focus()`, nil),
+				tabKey(key), chromedp.Evaluate(`document.activeElement.textContent`, &got),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if got != want {
+				t.Errorf("%s %s: focused %q, want %q", dir, key, got, want)
+			}
+		}
+	}
+}

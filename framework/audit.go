@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -195,6 +196,19 @@ func (a *App) WithAuditLog(cfg AuditConfig) *App {
 	a.auditTable = table
 	a.auditActor = cfg.actor
 	a.auditCfg = &cfg
+	a.modules.auditToggle = func(ctx context.Context, name string, enabled bool) {
+		op := "module_disable"
+		if enabled {
+			op = "module_enable"
+		}
+		// The toggle already committed; cancellation must not drop its trail.
+		auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := AppendAuditEvent(auditCtx, a.DB, table, "module", op, name, cfg.actor(ctx), nil); err != nil {
+			a.Logger().Error("module audit write failed after the change committed",
+				"op", op, "module", textsafe.ScrubControlBytes(name), "error", textsafe.ScrubControlBytes(err.Error()))
+		}
+	}
 
 	want := map[string]bool{}
 	for _, name := range cfg.Entities {
@@ -430,8 +444,10 @@ func requestUserID(ctx context.Context) string {
 // from fields that land in the audit row's TEXT columns. Those columns
 // are queried and emitted verbatim by forensics tools, so an injected
 // `\n` or `\x00` would let a malicious actor or redact callback forge
-// log lines / split records. Drop everything below 0x20 plus DEL.
+// log lines / split records. Replace invalid UTF-8 so SQL text binds are
+// portable, then drop everything below 0x20 plus DEL.
 func sanitizeAuditField(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	if s == "" {
 		return s
 	}

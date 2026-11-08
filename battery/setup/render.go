@@ -20,7 +20,7 @@ import (
 // indicator (ProgressSteps) + the form (AuthCard wrapping Form +
 // FormField rows). Zero bespoke CSS, zero hand-rolled structural markup,
 // everything is typed framework/ui composition.
-func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, fieldErrors map[string]string) render.HTML {
+func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, fieldErrors, values map[string]string) render.HTML {
 	// 1. Progress indicator.
 	progressSteps := make([]ui.ProgressStep, len(steps))
 	for i, s := range steps {
@@ -52,9 +52,14 @@ func (r *Runner) buildStepForm(ctx context.Context, stepIdx int, steps []Step, f
 		}
 		inputID := "setup-field-" + f.Name
 		inputValue := ""
-		// Pre-fill from env (secrets excepted).
-		if !f.Secret && f.EnvVar != "" {
-			inputValue = os.Getenv(f.EnvVar)
+		// A rejected submission takes precedence over the environment,
+		// including an explicitly empty value. Secrets are never echoed.
+		if !f.Secret {
+			if submitted, ok := values[f.Name]; ok {
+				inputValue = submitted
+			} else if f.EnvVar != "" {
+				inputValue = os.Getenv(f.EnvVar)
+			}
 		}
 		fields = append(fields, ui.FormFieldFor(ui.FieldErrors(fieldErrors), f.Name, ui.FormFieldConfig{
 			Label:    f.label(ctx),
@@ -147,7 +152,7 @@ func (r *Runner) renderStep(w http.ResponseWriter, req *http.Request) {
 		r.renderIncomplete(req.Context(), w, pageIncompleteWiring.Text(req.Context()))
 		return
 	}
-	body := r.buildStepForm(req.Context(), stepIdx, steps, nil)
+	body := r.buildStepForm(req.Context(), stepIdx, steps, nil, nil)
 	r.writePage(req.Context(), w, body)
 }
 
@@ -176,8 +181,8 @@ func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, re
 }
 
 // renderStepWithErrors writes the step page with validation errors.
-func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors map[string]string) {
-	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors)
+func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors, values map[string]string) {
+	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors, values)
 	r.writePage(req.Context(), w, body)
 }
 

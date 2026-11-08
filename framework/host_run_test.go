@@ -1186,18 +1186,20 @@ func TestDeferredHookReentrantShutdownIsBounded(t *testing.T) {
 
 // breakingListener accepts nothing until broken; then Accept fails the
 // way a listener whose socket died does, which ends Serve with an error.
+// accepting closes on the first Accept: the host is serving.
 type breakingListener struct {
-	broken, closed       chan struct{}
-	breakOnce, closeOnce sync.Once
+	broken, closed, accepting       chan struct{}
+	breakOnce, closeOnce, serveOnce sync.Once
 }
 
 var errListenerBroke = errors.New("listener broke")
 
 func newBreakingListener() *breakingListener {
-	return &breakingListener{broken: make(chan struct{}), closed: make(chan struct{})}
+	return &breakingListener{broken: make(chan struct{}), closed: make(chan struct{}), accepting: make(chan struct{})}
 }
 
 func (l *breakingListener) Accept() (net.Conn, error) {
+	l.serveOnce.Do(func() { close(l.accepting) })
 	select {
 	case <-l.broken:
 		return nil, errListenerBroke
@@ -1224,6 +1226,10 @@ func TestHostFailureDuringDeferredStartWaitsForIt(t *testing.T) {
 	swap := <-setup.swap
 	go swap()
 	<-bat.entered
+	// The swap reaches the test while the host builds its handler, before
+	// it adopts the server. A Shutdown in that window makes Run return nil
+	// without serving, so wait until the host accepts.
+	<-ln.accepting
 
 	sctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()

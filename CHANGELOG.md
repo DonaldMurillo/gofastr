@@ -89,6 +89,10 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **netguard checks both IPv4 addresses inside a Teredo address.** A
+  `2001:0::/32` address whose server or (inverted) client IPv4 is
+  internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
+  already were.
 - **`contracts_fix` and `gofastr verify --fix` write through an `os.Root`**
   ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
   `Report.Apply` checked the symlink-resolved path against the project
@@ -141,6 +145,79 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **More unstorable text is refused before it reaches SQL.** A2A task,
+  push-config and context IDs and API-token names and owner IDs that hold
+  a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
+  a Postgres 500 (A2A answers invalid-params, not internal error). An
+  A2A request body that is not valid UTF-8 gets a parse error, so a
+  malformed byte is never stored as U+FFFD.
+  API-token names are limited to 256 bytes. `webhook.Manager.Subscribe`
+  and `Unsubscribe` return an error for such a URL, secret or ID before
+  the store sees it. Audit text fields replace invalid UTF-8, so a state override
+  with such a reason is kept instead of rolled back.
+- **The HTTP cache middleware follows the origin's freshness.** A response
+  is kept no longer than its `s-maxage` (preferred) or `max-age` allows
+  after `Age` and `Date`, and one already stale, with a duplicate or
+  malformed directive, or with only `Expires` is not stored. There is no
+  revalidation, so cache.md no longer calls the middleware RFC
+  9111-compliant. Non-GET methods and Range requests now carry
+  `X-Cache: BYPASS`.
+- **`core/static` sends `Allow: GET, HEAD` with its 405.**
+- **Relay prefixes and mount paths must be literal.** `{`, `}` and `$` are
+  refused at construction; a brace used to register a ServeMux wildcard
+  that proxied far more paths than the one declared.
+- **MCP and dev tools.** `app_module_enable` and `app_module_disable`
+  (and any `Modules().Enable`/`Disable` call) write an audit row with the
+  actor, as the admin Modules page does. `app_readiness` answers
+  `ready: false`, reason `draining`, during the shutdown grace.
+  `GOFASTR_DEV_MCP_EXPOSE=1` now also accepts a remote `Host`, so the
+  documented network opt-in works. An entity whose tool names match a
+  built-in tool (an entity named `contracts`) no longer fails `gofastr
+  dev`: the built-in is skipped with a warning.
+- **Concurrent writers keep their work.** Two `gofastr` commands updating
+  `gofastr.settings.yml` at once no longer drop each other's section: the
+  update holds a lock in `.gofastr/`. `gofastr verify --baseline-write`
+  replaces the baseline atomically. Two replicas running `migrate up
+  --create-db` against a missing database no longer fail the one that
+  loses the race.
+- **Local storage keeps a re-pinned root open until `Close`**, in both
+  `core/upload` and `battery/storage`, so an operation already running
+  on the old root is not cut off.
+- **A process module's stderr reaches the log.** When a module crashes
+  or fails to start, the supervisor logs the tail of its stderr,
+  scrubbed of control bytes.
+- **An ACP client error that carries JSON-RPC's `data` member settles the
+  pending permission request** instead of failing the decode and hanging
+  the prompt turn.
+- **Headless components.** A sidebar toggle with only one of its two
+  labels set falls back to the nav label after a client-side toggle, not
+  the stale name. Arrow keys from a tab that is disabled and selected
+  move to its neighbour, not the first enabled tab. The leave guard's
+  default question is a registered phrase, so it is translated.
+- **The setup wizard keeps what you typed** when a step is refused;
+  secrets are still never echoed.
+- **`EmailChannel` sends attachments.** A rendered `Extra["attachments"]`
+  holding `[]email.Attachment` goes out with the mail, and any other type
+  refuses the send with `notify.ErrInvalidAttachments`.
+- **Deprecated language codes reach the modern catalog.** An `iw` reader
+  gets the `he` catalog (and `in` gets `id`) when no catalog is named for
+  the old code.
+- **The desktop updater retries a failed `update_available`.** The
+  version is marked notified only after the event is delivered.
+- **Docs corrections**: runtime-contract.md and core-ui/ARCHITECTURE.md
+  give the rail and TOC heading default with `h4[id]`, the popover's
+  real fallback order, the step wizard's attributes instead of an unused
+  `data-wizard-steps`, the RPC trigger on non-form carriers, and the
+  `data-cui-backdrop` shape; every headless hook the JS reads now has a
+  row, enforced by a test. first-run.md says when a crash mid-setup
+  re-enters setup. A test comment in core/mcp no longer describes the
+  removed widget-client script.
+- **`TestDocExamplesCompile` no longer needs the network**
+  ([#684](https://github.com/DonaldMurillo/gofastr/issues/684)). The
+  snippet module pins the OpenTelemetry exporter it imports and carries
+  its go.sum (`framework/docs/testdata/snippet-go.sum`), so the checksum
+  database is never asked; a sum the run had to add fails the test and
+  names the line.
 - **Client phrase interpolation matches Go's placeholder-name grammar**,
   including surrounding whitespace and hyphenated names. Catalog validation
   still requires matching spellings for headless component compatibility.

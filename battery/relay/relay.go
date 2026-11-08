@@ -56,8 +56,9 @@ type Config struct {
 	// Path is the local mount prefix. Default "/__gofastr/t".
 	//
 	// Validated at New: absolute, no trailing slash, no traversal, no
-	// percent-encoding, and no collision with a reserved /__gofastr
-	// route. Any other absolute path works ("/firstparty", "/fp", …).
+	// percent-encoding, no "{", "}" or "$" (the path is literal, never a
+	// mux pattern), and no collision with a reserved /__gofastr route.
+	// Any other absolute path works ("/firstparty", "/fp", …).
 	Path string
 
 	// Routes declare what gets proxied. Required, non-empty.
@@ -316,6 +317,9 @@ func validateSegments(what, p string) error {
 		c := p[i]
 		if c <= 0x20 || c == 0x7f {
 			return fmt.Errorf("relay: %s %q contains a control character or space", what, p)
+		}
+		if c == '{' || c == '}' || c == '$' {
+			return fmt.Errorf("relay: %s %q must be a literal path without ServeMux metacharacters", what, p)
 		}
 		if c == '%' || c == '#' || c == '?' || c == '\\' {
 			return fmt.Errorf("relay: %s %q contains %q; percent-encoding and fragments are not valid here", what, p, string(c))

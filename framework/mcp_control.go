@@ -149,6 +149,9 @@ func (a *App) registerControlTools() error {
 	tools := a.controlToolSpecs()
 	gate := controlToolGate(a.mcpControlDevImplied, a.mcpControlGate)
 	for _, t := range tools {
+		if a.skipDevEntityMCPCollision(t.name) {
+			continue
+		}
 		var opts []mcp.ToolOption
 		if gate != nil {
 			// WithToolGate, not mcp.Gated: the wrapper only ever reached

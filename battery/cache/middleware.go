@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
 // cachedResponse holds the serialized HTTP response for caching.
@@ -71,16 +72,18 @@ const DefaultMaxCacheableBytes = 8 << 20
 
 // CacheMiddleware returns an HTTP middleware that caches GET responses
 // using the provided Cache implementation. The X-Cache response header
-// is set to "HIT" or "MISS" accordingly.
+// is set to "HIT" or "MISS" for considered GETs, and "BYPASS" for
+// non-GET methods and Range requests.
 //
 // The middleware is conservative and refuses to cache responses that
 // carry user-specific data or that the origin marks as uncacheable:
 //
-//   - Requests other than GET are passed through untouched. After an
+//   - Requests other than GET are passed through with X-Cache: BYPASS. After an
 //     unsafe one (any method but GET, HEAD, OPTIONS and TRACE) runs,
 //     the stored GET of its URL is evicted on every locale (RFC 9111
 //     §4.4), whatever the status.
-//   - Requests carrying a Range header are passed through untouched and
+//   - Requests carrying a Range header are passed through with X-Cache:
+//     BYPASS and
 //     never cached: the key does not encode the Range, so a partial
 //     (206) body must not be allowed to collide with the full variant.
 //   - The cache key includes the request authority (Host) so distinct
@@ -92,7 +95,10 @@ const DefaultMaxCacheableBytes = 8 << 20
 //     stored variant and force a fresh origin fetch (no-store also
 //     skips writing the response back into the cache).
 //   - Responses with Set-Cookie or with Cache-Control containing
-//     private, no-store, or no-cache are never stored.
+//     private, no-store, or no-cache are never stored. Origin s-maxage
+//     (preferred) or max-age caps retention after Age/Date correction;
+//     stale, invalid, duplicate, or Expires-only freshness is not stored.
+//     Revalidation is not implemented: expired entries miss.
 //   - Responses with non-2xx/3xx status (i.e. 4xx and 5xx) are never
 //     stored, and so are 304 responses: a 304 is a conditional-reply
 //     artifact, not a representation, and the key encodes no conditional
@@ -122,6 +128,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// handler ran: after a DELETE or PUT the anonymous GET kept
 			// answering HIT with the old body until the TTL.
 			if r.Method != http.MethodGet {
+				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				if !safeMethod(r.Method) {
 					for _, k := range getKeys(r) {
@@ -147,9 +154,10 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// not encode the Range, so serving from or writing to the cache
 			// for a Range request would let a truncated 206 body collide with
 			// (and poison) the full-document variant. Pass them straight
-			// through, untouched and uncached.
+			// through, uncached with a BYPASS diagnostic.
 			isRange := r.Header.Get("Range") != ""
 			if isRange {
+				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -188,7 +196,8 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// i18n negotiation runs first and adds Vary: Accept-Language,
 			// which the recorder never sees. Every Vary line counts.
 			varyHeader := strings.Join(append(w.Header().Values("Vary"), rec.header.Values("Vary")...), ",")
-			storeable := isStoreable(rec, w.Header(), hasCreds, reqNoStore) && !varyHasStar(varyHeader)
+			responseTTL, fresh := originTTL(ttl, time.Now(), w.Header(), rec.header)
+			storeable := fresh && isStoreable(rec, w.Header(), hasCreds, reqNoStore) && !varyHasStar(varyHeader)
 
 			if storeable {
 				vary := parseVary(varyHeader)
@@ -201,7 +210,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 					Body:       append([]byte(nil), rec.body.Bytes()...),
 					Vary:       captureVariant(r, vary),
 				}
-				storeResponse(cache, baseKey, vary, stored, ttl)
+				storeResponse(cache, baseKey, vary, stored, responseTTL)
 			}
 
 			// Replay the captured response to the client. Nothing has
@@ -405,6 +414,85 @@ func isStoreable(rec *responseRecorder, outer http.Header, hasCreds, reqNoStore 
 	return true
 }
 
+// originTTL caps local retention at the origin's remaining shared freshness.
+// There is no revalidation path: expired or ambiguous freshness is not stored.
+func originTTL(ttl time.Duration, now time.Time, headers ...http.Header) (time.Duration, bool) {
+	if ttl < 0 {
+		return ttl, false
+	}
+	limits := make(map[string]uint64)
+	for part := range strings.SplitSeq(allValues("Cache-Control", headers...), ",") {
+		name, value, assigned := strings.Cut(part, "=")
+		name = asciicase.Lower(strings.TrimSpace(name))
+		if name != "max-age" && name != "s-maxage" {
+			continue
+		}
+		seconds, valid := deltaSeconds(strings.TrimSpace(value))
+		if _, duplicate := limits[name]; duplicate || !assigned || !valid {
+			return 0, false
+		}
+		limits[name] = seconds
+	}
+	lifetime, explicit := limits["s-maxage"]
+	if !explicit {
+		lifetime, explicit = limits["max-age"]
+	}
+	if !explicit {
+		// Expires-only responses need date-based freshness, not our fallback TTL.
+		return ttl, allValues("Expires", headers...) == ""
+	}
+	var age uint64
+	if raw := allValues("Age", headers...); raw != "" {
+		var valid bool
+		age, valid = deltaSeconds(strings.TrimSpace(raw))
+		if !valid {
+			return 0, false
+		}
+	}
+	if raw := allValues("Date", headers...); raw != "" {
+		date, err := http.ParseTime(raw)
+		if err != nil {
+			return 0, false
+		}
+		if elapsed := now.Sub(date); elapsed > 0 {
+			// Round up so sub-second response age cannot extend freshness.
+			apparent := uint64(elapsed / time.Second)
+			if elapsed%time.Second != 0 {
+				apparent++
+			}
+			age = max(age, apparent)
+		}
+	}
+	if age >= lifetime {
+		return 0, false
+	}
+	remaining := lifetime - age
+	// Saturate before converting seconds to a nanosecond duration.
+	const maxSeconds = uint64((1<<63 - 1) / time.Second)
+	bounded := time.Duration(min(remaining, maxSeconds)) * time.Second
+	if ttl == 0 || bounded < ttl {
+		ttl = bounded
+	}
+	return ttl, ttl > 0
+}
+
+// deltaSeconds accepts the decimal (optionally quoted) Cache-Control grammar.
+func deltaSeconds(raw string) (uint64, bool) {
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		raw = raw[1 : len(raw)-1]
+	}
+	if raw == "" {
+		return 0, false
+	}
+	for i := range len(raw) {
+		if raw[i] < '0' || raw[i] > '9' {
+			return 0, false
+		}
+	}
+	seconds, err := strconv.ParseUint(raw, 10, 64)
+	return seconds, err == nil
+}
+
 // allValues joins every field line of name across hs with ",", the
 // list form RFC 9110 §5.3 makes equivalent to repeated lines.
 func allValues(name string, hs ...http.Header) string {
@@ -441,7 +529,7 @@ func parseCacheControl(v string) map[string]bool {
 		if i := strings.IndexByte(part, '='); i >= 0 {
 			part = part[:i]
 		}
-		out[strings.ToLower(part)] = true
+		out[asciicase.Lower(part)] = true
 	}
 	return out
 }

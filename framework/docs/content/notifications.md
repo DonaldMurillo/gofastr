@@ -107,7 +107,11 @@ header continuations). A custom `Templater` owns the same obligation:
 `MapTemplater` copies the top-level `Template.Extra` map on `Set` and
 `Render`; nested values remain shared. `Template.Extra` reaches the channel
 as `Rendered.Extra`:
-the bundled `EmailChannel` honours `Extra["headers"]` (custom headers,
+the bundled `EmailChannel` passes `Extra["attachments"]` as
+`[]email.Attachment` to the email sender, preserving filenames, content and
+content types. A present entry of any other type returns
+`notify.ErrInvalidAttachments` before sending the message; a typed nil slice
+is accepted as no attachments. It also honours `Extra["headers"]` (custom headers,
 with reserved keys like To/From/Cc/Bcc/Reply-To rejected) so
 per-notification overrides don't need a custom Channel. A templated
 `Extra["from"]` is **rejected** with an error: a per-notification sender
@@ -200,7 +204,8 @@ still delivered to `WithErrorCallback`) instead of crashing the process.
   Template / Rendered fields.
 - **Don't bundle large payloads in Data.** Anything that ends up in
   Rendered.TextBody / HTMLBody gets pushed across every channel; for
-  attachments use channel-specific Extra entries or pre-render.
+  email attachments use `Extra["attachments"]` with `[]email.Attachment`;
+  other channels need an adapter that explicitly supports attachments.
 - **Don't rely on the LoggerChannel in production.** It writes to a
   *log.Logger, meant for development, CI, and as a sanity sink. Like
   `email.LogSender`, it redacts credential-bearing URLs (`?token=…`,

@@ -127,7 +127,30 @@ var scopePattern = regexp.MustCompile(`^[a-z0-9_*-]+:[a-z0-9_*-]+$`)
 // else — which came from the store — with 5xx and no detail.
 var ErrInvalidTokenSpec = errors.New("auth: invalid token spec")
 
+const maxTokenNameBytes = 256
+
+// tokenSpecFieldError preserves the spec refusal and identifies its wire field.
+type tokenSpecFieldError struct {
+	field  string
+	reason i18n.Phrase
+	params map[string]any
+}
+
+func (e *tokenSpecFieldError) Error() string                          { return e.reason.Format(e.params) }
+func (e *tokenSpecFieldError) Unwrap() error                          { return ErrInvalidTokenSpec }
+func (e *tokenSpecFieldError) Phrased() (i18n.Phrase, map[string]any) { return e.reason, e.params }
+
+func invalidTokenField(field string, reason i18n.Phrase, params map[string]any) error {
+	return &tokenSpecFieldError{field: field, reason: reason, params: params}
+}
+
 func validateTokenSpec(spec TokenSpec) error {
+	if !storableText(spec.Name) || len(spec.Name) > maxTokenNameBytes {
+		return invalidTokenField("name", reasonInvalidTokenName, map[string]any{"max": maxTokenNameBytes})
+	}
+	if !storableText(spec.OwnerID) {
+		return invalidTokenField("owner_id", reasonInvalidTokenOwnerID, nil)
+	}
 	if strings.TrimSpace(spec.Name) == "" {
 		return invalidTokenSpec(reasonTokenNameRequired, nil)
 	}
@@ -168,7 +191,8 @@ func invalidTokenSpec(reason i18n.Phrase, params map[string]any) error {
 // (plaintext, record, error). The plaintext is returned exactly ONCE and
 // is never persisted, logged, or placed in any error string.
 //
-// Validation: Name/OwnerKind/OwnerID required; OwnerKind ∈ {user,service};
+// Validation: Name/OwnerKind/OwnerID required; Name is at most 256 bytes;
+// Name and OwnerID must be valid UTF-8 without NUL; OwnerKind ∈ {user,service};
 // scope strings must match ^[a-z0-9_*-]+:[a-z0-9_*-]+$; max 32 scopes.
 func IssueToken(ctx context.Context, store APITokenStore, spec TokenSpec) (string, APIToken, error) {
 	if store == nil {

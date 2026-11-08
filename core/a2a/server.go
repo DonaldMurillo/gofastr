@@ -18,6 +18,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
@@ -436,6 +437,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "read body: %v", err))
 		return
 	}
+	// JSON text is UTF-8 (RFC 8259). encoding/json would replace a
+	// malformed byte with U+FFFD, so a stored id or text would differ
+	// from what the client sent; refuse the body instead.
+	if !utf8.Valid(raw) {
+		s.writeTransport(w, http.StatusBadRequest, Errorf(CodeParseError, "request body is not valid UTF-8"))
+		return
+	}
 	trimmed := strings.TrimLeft(string(raw), " \t\r\n")
 	if strings.HasPrefix(trimmed, "[") {
 		// A batch has no single id to answer; refuse at the transport
@@ -627,6 +635,23 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 		return Errorf(CodeInvalidParams, "invalid params: %v", err)
 	}
 	return nil
+}
+
+// validateStoreText refuses text SQL backends cannot bind, before any store call.
+func validateStoreText(field, value string) *Error {
+	if utf8.ValidString(value) && !strings.ContainsRune(value, 0) {
+		return nil
+	}
+	err := Errorf(CodeInvalidParams, "%s must be valid UTF-8 without NUL", field)
+	err.Data = map[string]any{"fields": map[string]string{field: err.Message}}
+	return err
+}
+
+func validatePushIDs(prefix string, cfg *PushNotificationConfig) *Error {
+	if err := validateStoreText(prefix+"taskId", cfg.TaskID); err != nil {
+		return err
+	}
+	return validateStoreText(prefix+"id", cfg.ID)
 }
 
 func isJSONContentType(ct string) bool {
@@ -1027,6 +1052,12 @@ func (s *Server) validateInbound(p *SendMessageRequest) *Error {
 	if m == nil {
 		return Errorf(CodeInvalidParams, "message is required")
 	}
+	if err := validateStoreText("message.taskId", m.TaskID); err != nil {
+		return err
+	}
+	if err := validateStoreText("message.contextId", m.ContextID); err != nil {
+		return err
+	}
 	if m.Role != RoleUser {
 		return Errorf(CodeInvalidParams, "message.role must be ROLE_USER, got %q", m.Role)
 	}
@@ -1039,6 +1070,9 @@ func (s *Server) validateInbound(p *SendMessageRequest) *Error {
 		}
 	}
 	if cfg := pushConfigOf(p); cfg != nil {
+		if err := validatePushIDs("configuration.taskPushNotificationConfig.", cfg); err != nil {
+			return err
+		}
 		if s.push.disable {
 			return Errorf(CodePushNotificationNotSupported, "push notifications are disabled")
 		}
@@ -1685,6 +1719,10 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, req *rpcR
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
+	if aerr := validateStoreText("id", p.ID); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
 	if p.ID == "" {
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
@@ -1708,6 +1746,10 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request, req *rpcR
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p ListTasksRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
+	if aerr := validateStoreText("contextId", p.ContextID); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
@@ -1809,6 +1851,10 @@ const walkScopedBatch = 200
 func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p CancelTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
+	if aerr := validateStoreText("id", p.ID); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
@@ -1914,6 +1960,10 @@ func (s *Server) handleCancelTask(w http.ResponseWriter, r *http.Request, req *r
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string) {
 	var p SubscribeToTaskRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
+	if aerr := validateStoreText("id", p.ID); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
@@ -2200,6 +2250,10 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, r *http.Request, 
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
+	if aerr := validatePushIDs("", &cfg); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
 	if cfg.TaskID == "" {
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "taskId is required"))
 		return
@@ -2240,6 +2294,10 @@ func (s *Server) handleCreatePushConfig(w http.ResponseWriter, r *http.Request, 
 // another tenant; the push-config handlers all need exactly that. A
 // push config belongs to its task, so the task's check is the config's.
 func (s *Server) requireOwnedTask(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope, taskID string) bool {
+	if aerr := validateStoreText("taskId", taskID); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return false
+	}
 	_, err := s.getTask(r.Context(), owner, sc, taskID)
 	if err == nil {
 		return true
@@ -2255,6 +2313,10 @@ func (s *Server) requireOwnedTask(w http.ResponseWriter, r *http.Request, req *r
 func (s *Server) handleGetPushConfig(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p GetTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
+	if aerr := validateStoreText("id", p.ID); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}
@@ -2321,6 +2383,10 @@ func (s *Server) handleListPushConfigs(w http.ResponseWriter, r *http.Request, r
 func (s *Server) handleDeletePushConfig(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string, sc taskScope) {
 	var p DeleteTaskPushNotificationConfigRequest
 	if aerr := decodeParams(req.Params, &p); aerr != nil {
+		s.writeResult(w, req.ID, nil, aerr)
+		return
+	}
+	if aerr := validateStoreText("id", p.ID); aerr != nil {
 		s.writeResult(w, req.ID, nil, aerr)
 		return
 	}

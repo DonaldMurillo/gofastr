@@ -709,21 +709,34 @@ func (c *CorePlugin) deliverRegisterDuplicateNotice(r *http.Request, holderEmail
 // in the request's locale, reason its stable code. battery/auth keeps a
 // local copy because batteries may not import framework/crud.
 func writeAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, params ...map[string]any) {
+	writeAuthErrorFields(w, r, status, reason, nil, params...)
+}
+
+func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]string, params ...map[string]any) {
 	writeCredentialHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]any{
+	body := map[string]any{
 		"error":   reason.Text(requestContext(r), params...),
 		"success": false,
 		"code":    status,
 		"reason":  reason.Code(),
-	})
+	}
+	if len(fields) > 0 {
+		body["fields"] = fields
+	}
+	json.NewEncoder(w).Encode(body)
 }
 
 // writeAuthErrorFor answers err with its own phrase when it carries one,
 // and with frame otherwise: an unphrased error's text never reaches the
 // caller.
 func writeAuthErrorFor(w http.ResponseWriter, r *http.Request, status int, err error, frame i18n.Phrase) {
+	if field, ok := errors.AsType[*tokenSpecFieldError](err); ok {
+		reason, params := field.Phrased()
+		writeAuthErrorFields(w, r, status, reason, map[string]string{field.field: reason.Text(requestContext(r), params)}, params)
+		return
+	}
 	if p, ok := errors.AsType[i18n.Phrased](err); ok {
 		reason, params := p.Phrased()
 		writeAuthError(w, r, status, reason, params)

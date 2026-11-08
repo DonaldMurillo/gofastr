@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -79,6 +80,22 @@ func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName strin
 	// CREATE DATABASE cannot be parameterized; the name is validated by caller.
 	//gofastr:allow(quoteident) the DSN connects to its database name with the case kept
 	if _, err := admin.ExecContext(ctx, "CREATE DATABASE "+query.QuoteIdent(safeName)); err != nil {
+		// Another replica may have created it after our probe. Match the
+		// driver's SQLSTATE, never the server's localized error text.
+		var state interface{ SQLState() string }
+		if errors.As(err, &state) && state.SQLState() == "42P04" {
+			return false, nil
+		}
+		// Two concurrent creates can also collide on pg_database's unique
+		// index (23505). That is the same lost race only if the database
+		// exists now.
+		if errors.As(err, &state) && state.SQLState() == "23505" {
+			var nowExists bool
+			if qerr := admin.QueryRowContext(ctx,
+				"SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&nowExists); qerr == nil && nowExists {
+				return false, nil
+			}
+		}
 		return false, fmt.Errorf("ensure database: create %q: %w", dbName, err)
 	}
 	return true, nil

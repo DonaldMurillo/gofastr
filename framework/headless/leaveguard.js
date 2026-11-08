@@ -58,7 +58,7 @@
   }
 
   function messageOf(f) {
-    return f.getAttribute('data-hui-leave-guard-message') || 'You have unsaved changes.';
+    return f.getAttribute('data-hui-leave-guard-message') || NS.say('headless.leave_guard', 'You have unsaved changes.');
   }
 
   // Asks the document at the moment it fires: a dirty form removed since

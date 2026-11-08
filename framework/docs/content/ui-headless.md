@@ -543,7 +543,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   `Strings.SidebarOpenDrawer` ("Open navigation", the
   `ui.sidebar.openDrawer` phrase `ui.Sidebar` names its own trigger
   with), so the phone's only way into the navigation is never an
-  unnamed button. `Gallery` takes a
+  unnamed button. Each empty collapse-toggle label (`CollapseLabel` or
+  `ExpandLabel`) uses `NavLabel`, at render and after client-side toggles.
+  `Gallery` takes a
   `GalleryLightbox` wiring: the typed prop that renders the widget
   runtime's `data-cui-open` / `data-cui-deeplink` /
   `data-fui-lightbox-group` trigger family on every item anchor. Each
@@ -551,6 +553,9 @@ The parts the navigation members draw beyond the shared vocabulary:
   `decodeURIComponent` reads it back (`&`, `=` and `+` escaped, a
   space as `%20`), and the viewer's `src` passes the image-source
   policy the thumbnail does.
+
+Tab arrow keys skip disabled tabs in DOM order, even when focus starts
+on a disabled selected tab; direction follows the strip’s LTR or RTL.
 
 ## The behaviour module
 

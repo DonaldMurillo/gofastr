@@ -48,6 +48,12 @@ unmounted:      # written by gofastr unmount and gofastr remount
 Every section is optional. `gofastr init` writes the file with an
 `isolation` section.
 
+Section updates by the tools hold an exclusive OS lock from the read
+through the replacement, so concurrent endpoint and unmounted updates keep
+each other's sections. The lock file is
+`.gofastr/gofastr.settings.yml.lock` in the settings file's directory;
+`.gofastr/` is local state that generated apps ignore.
+
 ## How the file is found
 
 Each reader looks for `gofastr.settings.yml` in the directory it starts

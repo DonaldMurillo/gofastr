@@ -74,9 +74,11 @@ there, because the atomic rename cannot be expressed through the root).
 
 Both `storage.LocalStorage` and `upload.LocalStorage` implement `Close()`.
 Close the backend when its owner shuts down, after storage operations finish
-and readers returned by `Get` or `GetRange` are closed. This releases the
-pinned directory handle, which otherwise prevents Windows from removing the
-storage directory.
+and readers returned by `Get` or `GetRange` are closed. This releases all
+pinned directory handles, including roots replaced after a symlinked base
+resolves differently. Re-pinning keeps an in-flight operation's root open
+through its rename and staging cleanup. Each retained handle otherwise prevents
+Windows from removing the storage directory.
 
 On a case-insensitive or Unicode-normalization-insensitive filesystem
 (macOS's default APFS, most CIFS mounts), two spellings of a key resolve

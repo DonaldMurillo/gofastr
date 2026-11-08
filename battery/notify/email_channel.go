@@ -16,6 +16,10 @@ import (
 // value that is not exactly one mailbox.
 var ErrUnsafeRecipient = errors.New("notify: unsafe recipient address")
 
+// ErrInvalidAttachments reports a rendered attachments entry that is not
+// []email.Attachment. The channel refuses the entire message before sending.
+var ErrInvalidAttachments = errors.New("notify: attachments must be []email.Attachment")
+
 // EmailChannel adapts a battery/email Sender to the notify Channel
 // interface. Renders Subject/TextBody/HTMLBody from the Templater into
 // the email's matching fields.
@@ -105,13 +109,22 @@ func (c *EmailChannel) Send(ctx context.Context, n Notification, r Rendered) (er
 		}
 		headers = hdr
 	}
+	var attachments []email.Attachment
+	if raw, present := r.Extra["attachments"]; present {
+		var ok bool
+		attachments, ok = raw.([]email.Attachment)
+		if !ok {
+			return ErrInvalidAttachments
+		}
+	}
 	msg := email.Email{
-		To:       []string{n.To.Email},
-		From:     from,
-		Subject:  r.Subject,
-		TextBody: r.TextBody,
-		HTMLBody: r.HTMLBody,
-		Headers:  headers,
+		To:          []string{n.To.Email},
+		From:        from,
+		Subject:     r.Subject,
+		TextBody:    r.TextBody,
+		HTMLBody:    r.HTMLBody,
+		Headers:     headers,
+		Attachments: attachments,
 	}
 	return c.sender.Send(ctx, msg)
 }

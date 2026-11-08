@@ -6,9 +6,15 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/netguard"
 )
+
+// storableText reports whether a SQL text column can retain s unchanged.
+func storableText(s string) bool {
+	return utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+}
 
 // validateSubscriberURL rejects URLs that obviously target internal
 // infrastructure. Webhooks delivered to RFC1918, loopback, link-local
@@ -19,6 +25,9 @@ import (
 // test helper and by apps that explicitly want to deliver to private
 // networks. The scheme guard runs in both modes.
 func validateSubscriberURL(raw string, allowPrivate bool) error {
+	if !storableText(raw) {
+		return fmt.Errorf("webhook: subscriber URL must be valid UTF-8 without NUL")
+	}
 	if raw == "" {
 		return fmt.Errorf("webhook: subscriber URL required")
 	}

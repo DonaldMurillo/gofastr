@@ -58,7 +58,7 @@ var metadataIPv4 = net.IPv4(169, 254, 169, 254)
 // IPv4-mapped IPv6 addresses (`::ffff:a.b.c.d`) are normalized to their
 // 4-byte form first, so a mapped internal literal cannot slip past the
 // v4 range checks. Addresses in an IPv4-*translation* prefix (NAT64,
-// 6to4, IPv4-compatible) are checked against the IPv4 they carry. See
+// 6to4, Teredo, IPv4-compatible) are checked against the IPv4 they carry. See
 // [translatedV4].
 func IsInternal(ip net.IP) bool {
 	if ip == nil {
@@ -104,7 +104,8 @@ func internalRange(ip net.IP) bool {
 }
 
 // translatedV4 returns the IPv4 address carried by an IPv4-translation
-// IPv6 address, or nil when ip is not one.
+// IPv6 address, or nil when ip is not one. For Teredo, it returns the
+// server if internal, otherwise the client, so both endpoints are checked.
 //
 // net.IP.To4 normalizes only the IPv4-*mapped* form (`::ffff:0:0/96`).
 // These other encodings also resolve to an IPv4 destination, so a guard
@@ -116,6 +117,8 @@ func internalRange(ip net.IP) bool {
 //     /48 embedding splits the v4 across bytes 6-7 and 9-10, skipping
 //     the reserved u octet at byte 8. It is NOT contiguous.
 //   - 6to4 `2002::/16` (RFC 3056): v4 at bytes 2-6.
+//   - Teredo `2001:0::/32` (RFC 4380): server at bytes 4-8 and
+//     bitwise-inverted client at bytes 12-16.
 //   - Deprecated IPv4-compatible `::/96` (RFC 4291): v4 at bytes 12-16.
 //
 // 6to4 and IPv4-compatible are defense in depth: Linux routes only
@@ -140,6 +143,13 @@ func translatedV4(ip net.IP) net.IP {
 		if isZero(ip[4:12]) {
 			return net.IPv4(ip[12], ip[13], ip[14], ip[15])
 		}
+	case ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0 && ip[3] == 0:
+		// Either endpoint can address an internal service on a Teredo path.
+		server := net.IPv4(ip[4], ip[5], ip[6], ip[7])
+		if internalRange(server) {
+			return server
+		}
+		return net.IPv4(^ip[12], ^ip[13], ^ip[14], ^ip[15])
 	case ip[0] == 0x20 && ip[1] == 0x02:
 		// 6to4.
 		return net.IPv4(ip[2], ip[3], ip[4], ip[5])

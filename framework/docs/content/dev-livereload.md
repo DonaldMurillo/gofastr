@@ -82,6 +82,9 @@ treats as final, so open pages stop asking. The script still loads.
 Set `GOFASTR_DEV_LIVERELOAD_EXPOSE=1` (`dev.LiveReloadExposeEnv`) to keep
 it on such a bind, say to reload a phone on your network. The dev MCP
 follows the same rule with its own opt-in, `GOFASTR_DEV_MCP_EXPOSE`.
+On a non-loopback bind that opt-in also lifts the loopback Host pin, so
+clients may connect using the actual LAN address or hostname. Loopback
+binds retain the pin. This opt-in accepts unauthenticated remote MCP access.
 
 An app that registered its own `/__livereload` before the framework's
 keeps it: the framework installed nothing there and does not touch the

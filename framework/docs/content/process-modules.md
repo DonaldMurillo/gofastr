@@ -338,6 +338,13 @@ the module confined; on macOS (no distinct uid, no resource caps) it
 refuses the module and prints which probes failed. `-trust=trusted` runs
 the same module with crash isolation only.
 
+On an unexpected child exit, a failed spawn or a terminal `Failed`
+transition, the supervisor logs the retained stderr tail (at most 64 KiB).
+Terminal controls and invisible control characters are scrubbed before the
+host log callback receives the diagnostic. The tail belongs to that child;
+a replacement's output is kept separate. App-created supervisors use the current
+App logger; custom supervisors use `SupervisorConfig.Logf` (nil is silent).
+
 ## Migrations (per-module schema + role)
 
 The host runs all DDL under a restricted **per-module Postgres schema +

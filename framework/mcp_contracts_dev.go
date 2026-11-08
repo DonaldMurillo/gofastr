@@ -94,6 +94,9 @@ func (a *App) registerContractDevTools() error {
 		},
 	}
 	for _, t := range tools {
+		if a.skipDevEntityMCPCollision(t.name) {
+			continue
+		}
 		// contracts_fix WRITES TO DISK and contracts_verify hands out the
 		// source tree's lint findings (file paths, line numbers, code),
 		// and this pair registers only under the dev-loop

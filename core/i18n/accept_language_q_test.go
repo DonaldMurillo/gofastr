@@ -60,3 +60,21 @@ func TestMalformedQDropsEntry(t *testing.T) {
 		}
 	}
 }
+
+// Refusing a deprecated code refuses the language it names: iw;q=0
+// must not let an accepted iw-IL reach the he catalog through its alias.
+func TestRefusedAliasStaysRefused(t *testing.T) {
+	c := NewMapCatalog()
+	for _, l := range []string{"en", "he", "id", "fr"} {
+		c.Set(l, "k", Message{Text: l})
+	}
+	tr := NewTranslator(c, "en")
+	for _, h := range []string{"iw-IL, iw;q=0, fr;q=0.8", "in, in;q=0, fr;q=0.8", "iw, he;q=0, fr;q=0.8"} {
+		if got := negotiateHeader(tr, h); got != "fr" {
+			t.Errorf("%q negotiated %q, want fr", h, got)
+		}
+	}
+	if got := negotiateHeader(tr, "iw-IL;q=0, iw, fr;q=0.8"); got != "he" {
+		t.Errorf("refusing only iw-IL negotiated %q, want he", got)
+	}
+}

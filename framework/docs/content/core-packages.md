@@ -470,7 +470,8 @@ the configured root the same way write sinks elsewhere in the repo
 are, including a root directory created after `Handler` was built,
 which the handler binds on the first request that finds it; `embed.FS`
 cannot carry symlinks and is unaffected. Direct: call
-`Mount` (or `Handler`) to serve embedded CSS/JS/images; the framework
+`Mount` (or `Handler`) to serve embedded CSS/JS/images; methods other
+than GET and HEAD receive 405 with `Allow: GET, HEAD`. The framework
 uses it for its own assets too. `Prefix` is `/static`, `static` or
 `/static/` alike; `Mount` serves `/static/...` and redirects a bare
 `/static`. The handler strips the prefix on a segment boundary only
@@ -567,8 +568,9 @@ Direct: call `config.Load(&cfg)` at startup. Start at
 
 The single "is this IP internal" predicate (loopback, private,
 link-local, site-local IPv6, CGNAT, cloud-metadata), normalizing
-IPv4-mapped IPv6 first,
-with a `Reason` helper. Tiny: two exported funcs. Indirect:
+IPv4-mapped IPv6 first and checking IPv4 addresses carried by NAT64,
+6to4, IPv4-compatible IPv6, and Teredo. Teredo is refused if either
+its server or its decoded client IPv4 is internal, with a `Reason` helper. Tiny: two exported funcs. Indirect:
 outbound-fetch surfaces (webhooks, A2A push, the harness WebFetch tool,
 the Web Bot Auth directory fetch) enforce it at dial time;
 app authors do not call it. Start at `core/netguard/netguard.go`:

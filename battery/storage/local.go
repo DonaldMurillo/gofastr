@@ -42,9 +42,10 @@ type LocalStorage struct {
 	// rootMu guards root/rootBase. The root is opened lazily on the
 	// first operation whose base resolves on disk and pinned for the
 	// backend's lifetime, so every syscall can go through it.
-	rootMu   sync.Mutex
-	root     *os.Root
-	rootBase string
+	rootMu       sync.Mutex
+	root         *os.Root
+	rootBase     string
+	retiredRoots []*os.Root
 }
 
 // afterResolve is a test seam: when non-nil it runs after a key's
@@ -74,11 +75,15 @@ func NewLocalStorage(baseDir string, opts ...LocalOption) *LocalStorage {
 func (ls *LocalStorage) Close() error {
 	ls.rootMu.Lock()
 	defer ls.rootMu.Unlock()
-	if ls.root == nil {
-		return nil
+	roots := ls.retiredRoots
+	if ls.root != nil {
+		roots = append(roots, ls.root)
 	}
-	err := ls.root.Close()
-	ls.root, ls.rootBase = nil, ""
+	var err error
+	for _, root := range roots {
+		err = errors.Join(err, root.Close())
+	}
+	ls.root, ls.rootBase, ls.retiredRoots = nil, "", nil
 	return err
 }
 
@@ -215,7 +220,9 @@ func (ls *LocalStorage) rootFor(base string) *os.Root {
 		return nil
 	}
 	if ls.root != nil {
-		ls.root.Close()
+		// Operations keep their root across copies and cleanup. Re-pinning
+		// must not close that handle; Close releases it after callers drain.
+		ls.retiredRoots = append(ls.retiredRoots, ls.root)
 	}
 	ls.root, ls.rootBase = root, base
 	return root
