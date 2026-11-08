@@ -243,7 +243,8 @@ The middleware uses conservative shared-cache rules:
   websocket upgrade) gets the client writer from then on, and its
   response is not stored, so the middleware can sit in front of
   `/__gofastr/sse` and upgrade routes.
-- The `X-Cache: HIT` / `MISS` header is set on every response.
+- `X-Cache` is `HIT` or `MISS` on GET requests the middleware considers.
+  Non-GET methods and Range requests pass through with `X-Cache: BYPASS`.
 
 ## Battery wrapper (lifecycle)
 

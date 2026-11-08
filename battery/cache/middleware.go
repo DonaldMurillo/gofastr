@@ -72,16 +72,18 @@ const DefaultMaxCacheableBytes = 8 << 20
 
 // CacheMiddleware returns an HTTP middleware that caches GET responses
 // using the provided Cache implementation. The X-Cache response header
-// is set to "HIT" or "MISS" accordingly.
+// is set to "HIT" or "MISS" for considered GETs, and "BYPASS" for
+// non-GET methods and Range requests.
 //
 // The middleware is conservative and refuses to cache responses that
 // carry user-specific data or that the origin marks as uncacheable:
 //
-//   - Requests other than GET are passed through untouched. After an
+//   - Requests other than GET are passed through with X-Cache: BYPASS. After an
 //     unsafe one (any method but GET, HEAD, OPTIONS and TRACE) runs,
 //     the stored GET of its URL is evicted on every locale (RFC 9111
 //     §4.4), whatever the status.
-//   - Requests carrying a Range header are passed through untouched and
+//   - Requests carrying a Range header are passed through with X-Cache:
+//     BYPASS and
 //     never cached: the key does not encode the Range, so a partial
 //     (206) body must not be allowed to collide with the full variant.
 //   - The cache key includes the request authority (Host) so distinct
@@ -126,6 +128,7 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// handler ran: after a DELETE or PUT the anonymous GET kept
 			// answering HIT with the old body until the TTL.
 			if r.Method != http.MethodGet {
+				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				if !safeMethod(r.Method) {
 					for _, k := range getKeys(r) {
@@ -151,9 +154,10 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// not encode the Range, so serving from or writing to the cache
 			// for a Range request would let a truncated 206 body collide with
 			// (and poison) the full-document variant. Pass them straight
-			// through, untouched and uncached.
+			// through, uncached with a BYPASS diagnostic.
 			isRange := r.Header.Get("Range") != ""
 			if isRange {
+				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				return
 			}
