@@ -1014,8 +1014,26 @@ func ContainmentChecked(pass *analysis.Pass, body *ast.BlockStmt, bound map[type
 	// real gives a rel that is exactly ".." or starts with ".." plus
 	// the target's separator. relOf returns the Rel call, so parts
 	// checked on two different Rel results never combine.
+	//
+	// Resolve follows each local's last binding, so a local assigned
+	// twice breaks the chain: after `alias := rel` and
+	// `rel, _ = filepath.Rel(root, real)`, alias still holds the first
+	// Rel's answer but resolves to the second. No credit through one.
+	assigns := assignCounts(pass, body)
 	relOf := func(e ast.Expr) *ast.CallExpr {
-		r, ok := Resolve(pass, e, bound, 0).(*ast.CallExpr)
+		for depth := 0; depth < 8; depth++ {
+			id, ok := ast.Unparen(e).(*ast.Ident)
+			if !ok {
+				break
+			}
+			obj := pass.TypesInfo.ObjectOf(id)
+			b, ok := bound[obj]
+			if !ok || assigns[obj] > 1 {
+				return nil
+			}
+			e = b
+		}
+		r, ok := ast.Unparen(e).(*ast.CallExpr)
 		if ok && QualifiedFunc(pass, r.Fun) == "path/filepath.Rel" && isContain(r) && mentionsObj(pass, r, bound, objs, 0) {
 			return r
 		}
@@ -1681,6 +1699,38 @@ func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) 
 			return false
 		}
 	}
+}
+
+// assignCounts counts the assignments and var-spec initializers that
+// bind each local in body.
+func assignCounts(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]int {
+	counts := map[types.Object]int{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch st := n.(type) {
+		case *ast.AssignStmt:
+			for _, lhs := range st.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+					if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+						counts[obj]++
+					}
+				}
+			}
+		case *ast.ValueSpec:
+			for _, name := range st.Names {
+				if obj := pass.TypesInfo.ObjectOf(name); obj != nil && name.Name != "_" {
+					counts[obj]++
+				}
+			}
+		case *ast.IncDecStmt:
+			if id, ok := st.X.(*ast.Ident); ok {
+				if obj := pass.TypesInfo.ObjectOf(id); obj != nil {
+					counts[obj]++
+				}
+			}
+		}
+		return true
+	})
+	return counts
 }
 
 // targetSeparator is filepath.Separator as the package was type-checked

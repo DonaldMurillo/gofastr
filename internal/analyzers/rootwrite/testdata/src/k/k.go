@@ -628,3 +628,23 @@ func relMixed(baseDir, name string, data []byte) error {
 	}
 	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
 }
+
+// relReassigned keeps an alias of the first Rel, then rebinds rel to
+// a second: the two parts read two answers.
+func relReassigned(baseDir, name string, data []byte) error {
+	realRoot, err := filepath.EvalSymlinks(baseDir)
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(filepath.Join(baseDir, name))
+	if err != nil {
+		return err
+	}
+	rel, _ := filepath.Rel(filepath.Dir(realRoot), real)
+	alias := rel
+	rel, _ = filepath.Rel(realRoot, real)
+	if rel == ".." || strings.HasPrefix(alias, ".."+string(filepath.Separator)) {
+		return errEscape
+	}
+	return os.WriteFile(real, data, 0o600) // want `write under a root with lexical containment only`
+}
