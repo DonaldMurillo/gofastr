@@ -188,3 +188,29 @@ in-place mutation proof according to the worker. Its restored final state
 now passes independently. Next time isolate negative mutation proofs from
 concurrently validated shared files; preserve complete timeout output and
 allow more than ten minutes for this browser-heavy suite.
+
+## PR #688 envelope prototype-name follow-up (2026-11-08)
+
+Accepted Cursor Bugbot discussion `4505523980`: the envelope global seed
+loop still used a truthy lookup to create a slot. First-seen `toString` and
+`valueOf` resolved to inherited functions, leaving no own global slot and
+`getSignal` returning undefined. The loop now tests own properties before
+creation, then marks that own slot global, matching core navigation.
+
+`TestEnvelopeSeedsPrototypeNamedGlobals` drives real HTTP envelope navigation
+and cached Back/Forward in Chrome. Its globals are absent at boot; the paired
+`newGlobal` control and both prototype-named globals must be seeded, marked
+global, rendered, and retain later client mutations. Before the fix, only the
+two prototype names failed (`own=false`, `global=false`, value undefined).
+The red log is `/tmp/gofastr-pr688-envelope-prototype-red.log`. The first test
+draft waited for the demand-loaded envelope module before navigating and
+timed out; moving that wait after navigation exposed the actual defect.
+
+Validation: the focused regression and existing envelope global/replay tests
+pass; the broader `Envelope|PartSeedKeepsPageSeed|InvalidatedPageKeepsSeed|
+RuntimeModuleSizeBudgets|SwappedGlobalBindingShowsStore` runtime selection
+passes fresh (26.033s), as do full `core-ui/check`, runtime treegate, and
+`framework/docs` suites. No runtime or module budget was raised. The first
+docs run hit an external proxy.golang.org TLS handshake timeout fetching an
+existing observability example dependency; the unchanged retry passed in
+7.171s. Logs remain under `/tmp/gofastr-pr688-envelope-*.log`.

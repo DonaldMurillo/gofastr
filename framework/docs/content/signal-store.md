@@ -71,6 +71,10 @@ The host emits one inert `<script type="application/json" id="gofastr-signals">`
 island; the runtime seeds `_signals` before hydration. SPA-nav partials carry a
 scope-split `#gofastr-signals-partial` island that merges without clobbering
 mutated globals. Static export (SSG) emits the same block.
+Names such as `toString` and `valueOf` are ordinary signal keys, not existing
+store entries inherited from JavaScript's object prototype. A global first
+introduced by an envelope partial gets its own seeded slot and participates
+in the same retained-value repaint and cached-navigation behavior.
 
 Beside the seed, the host emits `<script type="application/json"
 id="gofastr-signals-page">` listing the page's page-scoped signal names

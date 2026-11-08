@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-08 - Seed first-seen prototype-named globals through both navigators
+- Scope: core-ui/runtime/src/envelope.js, envelope seed lifecycle
+- Trigger: Cursor Bugbot found first-seen `toString` and `valueOf` globals resolving to inherited functions instead of own slots.
+- Approach: create global slots using an own-property check, matching core navigation; exercise names absent from the boot seed through real envelope HTTP navigation and cached replay.
+- Evidence: [runtime fix follow-up](reviews/2026-11-07-fixes-runtime.md), `TestEnvelopeSeedsPrototypeNamedGlobals`; ordinary `newGlobal` passed while both prototype names failed before the fix.
+- Next time: test first-seen names as well as pre-seeded client mutations, and wait for demand modules after the navigation that loads them.
+- Status: active
+
 ## 2026-11-08 - Refresh the PR base without losing review artifacts
 - Scope: git integration and PR preparation
 - Trigger: main advanced while correctness fixes and their review notes were uncommitted.

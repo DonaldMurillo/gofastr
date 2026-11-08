@@ -1405,6 +1405,8 @@ client-side with no per-consumer round-trip.
   `#gofastr-signals-partial` island; the runtime applies page-scoped values
   unconditionally but **never clobbers an app-global the user already
   mutated** (it only seeds a global the first time it is seen).
+  Both navigators test own store properties when creating global slots:
+  `toString` and `valueOf` are valid names, not already-seeded globals.
 - **Whole documents.** A full page's flat seed mixes scopes, so the host
   also names its page-scoped keys in an inert
   `<script type="application/json" id="gofastr-signals-page">[name,…]</script>`.

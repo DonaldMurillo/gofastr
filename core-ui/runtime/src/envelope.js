@@ -153,8 +153,8 @@
     for (const k in glob) {
       if (!Object.prototype.hasOwnProperty.call(glob, k)) continue;
       if (isReservedSignalKey(k)) continue;
-      if (!store[k]) store[k] = { value: glob[k], listeners: [] };
-      if (Object.prototype.hasOwnProperty.call(store, k)) store[k].global = true;
+      if (!Object.prototype.hasOwnProperty.call(store, k)) store[k] = { value: glob[k], listeners: [] };
+      store[k].global = true;
     }
   };
 

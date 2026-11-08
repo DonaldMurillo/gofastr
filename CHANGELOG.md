@@ -148,6 +148,8 @@ few lines, and link the PR or the docs page for the rest.
   bindings repaint their retained values after navigation, cached Back/Forward
   and envelope fills instead of showing stale server markup. The core runtime
   grows 203 bytes at gzip level 6; budget increases are itemized and gated.
+  Envelope globals first introduced under prototype names such as `toString`
+  and `valueOf` now receive their own seeded slots, matching core navigation.
 - **Clean server-error WebSocket closes expose `error` and retry**, while
   unchanged structured widget polls skip redundant binding writes and update
   hooks. See [reactivity](framework/docs/content/reactivity.md).
