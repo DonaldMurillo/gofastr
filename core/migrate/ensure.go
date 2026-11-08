@@ -86,6 +86,16 @@ func ensureDatabaseOn(ctx context.Context, admin *sql.DB, dbName, safeName strin
 		if errors.As(err, &state) && state.SQLState() == "42P04" {
 			return false, nil
 		}
+		// Two concurrent creates can also collide on pg_database's unique
+		// index (23505). That is the same lost race only if the database
+		// exists now.
+		if errors.As(err, &state) && state.SQLState() == "23505" {
+			var nowExists bool
+			if qerr := admin.QueryRowContext(ctx,
+				"SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)", dbName).Scan(&nowExists); qerr == nil && nowExists {
+				return false, nil
+			}
+		}
 		return false, fmt.Errorf("ensure database: create %q: %w", dbName, err)
 	}
 	return true, nil
