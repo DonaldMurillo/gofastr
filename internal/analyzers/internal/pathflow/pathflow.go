@@ -1894,8 +1894,6 @@ func rangesParam(pass *analysis.Pass, e ast.Expr, params map[types.Object]bool) 
 	}
 }
 
-// assignCounts counts the assignments and var-spec initializers that
-// bind each local in body.
 // relErrRefused reports whether the error beside the Rel result r is
 // refused before sink: an if that dominates sink, whose condition has
 // `err != nil` as a disjunct and whose then-branch refuses, with err
@@ -1972,6 +1970,8 @@ func relErrRefused(pass *analysis.Pass, body *ast.BlockStmt, r *ast.CallExpr, si
 	return found
 }
 
+// assignCounts counts the assignments and var-spec initializers that
+// bind each local in body.
 func assignCounts(pass *analysis.Pass, body *ast.BlockStmt) map[types.Object]int {
 	counts := map[types.Object]int{}
 	ast.Inspect(body, func(n ast.Node) bool {
