@@ -89,6 +89,18 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **The status override writes under the read hooks**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `UI.OverrideHandler` checked the record against the caller's
+  `BeforeGet` hooks before the write, but wrote without
+  `crud.WithReadHooks`, so a row a hook hid by the time the write ran was
+  still changed. The write now carries the opt-in and answers 404, as
+  bulk edits, trash restore and purge, and the JSON write routes do. The
+  `hookedread` analyzer now covers the crud write API (`UpdateOne`,
+  `DeleteOne`, `RestoreOne`, `PurgeOne`, `RunTransition`, `CreateOne`,
+  `UpsertOne`, the `Batch*Many` calls, `TypedQuery.UpdateAll` and
+  `DeleteAll`) in framework/entityui and battery/admin, and
+  `TypedQuery.Exists` among the reads.
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses

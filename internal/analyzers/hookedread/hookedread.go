@@ -15,18 +15,28 @@
 // countRows, ... hooked; getRowUnhooked, listRowsUnhooked,
 // listByIDsUnhooked stored), and this rule holds that seam.
 //
+// The writes hold it too. The crud write API (CreateOne, UpdateOne,
+// DeleteOne, UpsertOne, RestoreOne, PurgeOne, RunTransition, the
+// Batch*Many calls, TypedQuery UpdateAll/DeleteAll) refuses a row the
+// caller's BeforeGet hooks hide with the 404 a missing row gets, but in
+// process only under crud.WithReadHooks: without it a screen's bulk edit,
+// trash restore or status override wrote a row GET answered 404 for
+// (owner decision on #645, 2026-11-08: every admin write runs under the
+// read hooks).
+//
 // Fires, in framework/entityui and battery/admin only (the packages
 // that draw entity rows to an end user), on a call to one of the read
-// methods above on a *crud.CrudHandler or *crud.TypedQuery whose
-// context argument is not a crud.WithReadHooks(...) call, nor a local
-// bound once to one.
+// or write methods above on a *crud.CrudHandler or *crud.TypedQuery
+// whose context argument is not a crud.WithReadHooks(...) call, nor a
+// local bound once to one.
 //
 // Silent postures, deliberately:
-//   - inside a function whose name ends in "Unhooked": the named
+//   - a read inside a function whose name ends in "Unhooked": the named
 //     stored-value readers, whose doc says the three jobs they may do
 //     (prefill an input that round-trips, diff against the hooked read
 //     to find masked fields, ask whether a row the hooked read missed is
-//     stored);
+//     stored). A write gets no such exemption: no screen writes a row
+//     its caller cannot read;
 //   - a context argument that is crud.WithReadHooks(...), or an
 //     identifier assigned exactly once from one;
 //   - every other package: crud's own internal reads (write pre-images,
@@ -36,7 +46,8 @@
 //   - _test.go files.
 //
 // The fix: read through the hooked reader (getRow, listRows, ...), or,
-// for one of the three stored-value jobs, through an *Unhooked reader.
+// for one of the three stored-value jobs, through an *Unhooked reader;
+// write with crud.WithReadHooks as the outermost context option.
 package hookedread
 
 import (
@@ -49,7 +60,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name: "hookedread",
-	Doc:  "report an entity screen reading crud rows without crud.WithReadHooks outside a named *Unhooked reader",
+	Doc:  "report an entity screen reading crud rows without crud.WithReadHooks outside a named *Unhooked reader, or writing them without it",
 	Run:  run,
 }
 
@@ -61,7 +72,19 @@ const crudPath = "/framework/crud"
 // readMethods are the read API methods, by receiver type name.
 var readMethods = map[string]map[string]bool{
 	"CrudHandler": {"GetOne": true, "ListAll": true, "CountAll": true, "SumAll": true, "GroupCountAll": true},
-	"TypedQuery":  {"Find": true, "First": true, "Count": true},
+	"TypedQuery":  {"Find": true, "First": true, "Count": true, "Exists": true},
+}
+
+// writeMethods are the write API methods, by receiver type name: each
+// checks its target against the caller's BeforeGet hooks only under
+// crud.WithReadHooks.
+var writeMethods = map[string]map[string]bool{
+	"CrudHandler": {
+		"CreateOne": true, "UpdateOne": true, "DeleteOne": true, "UpsertOne": true,
+		"RestoreOne": true, "PurgeOne": true, "RunTransition": true,
+		"BatchCreateMany": true, "BatchUpdateMany": true, "BatchDeleteMany": true,
+	},
+	"TypedQuery": {"UpdateAll": true, "DeleteAll": true},
 }
 
 func inScope(path string) bool {
@@ -83,23 +106,29 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Body == nil || strings.HasSuffix(fn.Name.Name, "Unhooked") {
+			if !ok || fn.Body == nil {
 				continue
 			}
+			unhooked := strings.HasSuffix(fn.Name.Name, "Unhooked")
 			hooked := hookedLocals(pass, fn.Body)
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok || len(call.Args) == 0 {
 					return true
 				}
-				name, ok := readMethod(pass, call)
-				if !ok {
+				name, write, ok := crudMethod(pass, call)
+				if !ok || (unhooked && !write) {
 					return true
 				}
 				if isWithReadHooks(pass, call.Args[0]) {
 					return true
 				}
 				if id, ok := ast.Unparen(call.Args[0]).(*ast.Ident); ok && hooked[pass.TypesInfo.Uses[id]] {
+					return true
+				}
+				if write {
+					pass.Reportf(call.Pos(), "%s writes without the read hooks: a screen writes under crud.WithReadHooks, "+
+						"so a row a BeforeGet hook hides answers 404 as it does over HTTP", name)
 					return true
 				}
 				pass.Reportf(call.Pos(), "%s reads stored values: a screen reads through the hooked reader (crud.WithReadHooks), "+
@@ -111,20 +140,20 @@ func run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// readMethod reports whether call is a read-API method of the crud
-// package, and its name.
-func readMethod(pass *analysis.Pass, call *ast.CallExpr) (string, bool) {
+// crudMethod reports whether call is a read- or write-API method of the
+// crud package, its name, and whether it writes.
+func crudMethod(pass *analysis.Pass, call *ast.CallExpr) (string, bool, bool) {
 	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok || sig.Recv() == nil {
-		return "", false
+		return "", false, false
 	}
 	t := sig.Recv().Type()
 	if p, ok := t.(*types.Pointer); ok {
@@ -132,16 +161,20 @@ func readMethod(pass *analysis.Pass, call *ast.CallExpr) (string, bool) {
 	}
 	named, ok := t.(*types.Named)
 	if !ok {
-		return "", false
+		return "", false, false
 	}
 	obj := named.Origin().Obj()
 	if obj.Pkg() == nil || !strings.HasSuffix(obj.Pkg().Path(), crudPath) {
-		return "", false
+		return "", false, false
 	}
-	if readMethods[obj.Name()][fn.Name()] {
-		return obj.Name() + "." + fn.Name(), true
+	name := obj.Name() + "." + fn.Name()
+	switch {
+	case readMethods[obj.Name()][fn.Name()]:
+		return name, false, true
+	case writeMethods[obj.Name()][fn.Name()]:
+		return name, true, true
 	}
-	return "", false
+	return "", false, false
 }
 
 // isWithReadHooks reports whether e is a call of crud.WithReadHooks.

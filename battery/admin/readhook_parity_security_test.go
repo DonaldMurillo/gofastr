@@ -41,6 +41,15 @@ const (
 
 func parityEnv(t *testing.T) (*env, http.Handler) {
 	t.Helper()
+	return parityEnvHooks(t, true)
+}
+
+// parityEnvHooks is parityEnv with the BeforeList hook registered only
+// when list is set. Without it the hidden row reaches every list, so a
+// write that names it is refused by its own BeforeGet check alone: the
+// shape a bulk write resolving ids from a list once missed.
+func parityEnvHooks(t *testing.T, list bool) (*env, http.Handler) {
+	t.Helper()
 	cases := entity.EntityConfig{
 		Table:        "cases",
 		SearchFields: []string{"title"},
@@ -77,7 +86,9 @@ func parityEnv(t *testing.T) (*env, http.Handler) {
 			}
 			return nil
 		}
-		reg.RegisterHook(hook.BeforeList, scope)
+		if list {
+			reg.RegisterHook(hook.BeforeList, scope)
+		}
 		reg.RegisterHook(hook.BeforeGet, scope)
 		maskRow := func(row map[string]any) {
 			if s, _ := row["secret"].(string); s != "" {
@@ -193,12 +204,7 @@ func TestReadHookParityAdmin(t *testing.T) {
 
 	// Writes and RPCs that act on a row: the hidden one answers as a
 	// missing one does and stays as stored.
-	acts := []struct {
-		name   string
-		req    func(id string) *http.Request
-		hidden string // the hidden row the act names
-		shown  string // its visible twin, which the act must change
-	}{
+	acts := []parityActCase{
 		{"patch", func(id string) *http.Request {
 			return jsonReq(http.MethodPatch, "/admin/api/cases/"+id, `{"title":"OVERWRITTEN"}`)
 		}, "c-hid", "c-vis"},
@@ -235,25 +241,46 @@ func TestReadHookParityAdmin(t *testing.T) {
 		}, "c-hid", "c-vis"},
 	}
 	for _, a := range acts {
-		t.Run("act/"+a.name, func(t *testing.T) {
-			x, _ := parityEnv(t)
-			h := x.withGrant(theAdmin, "cases:override_state")
-			changed := func(id string) (bool, int, string) {
-				before := x.caseRow(id)
-				rr := serve(h, a.req(id))
-				return x.caseRow(id) != before, rr.Code, rr.Body.String()
+		for _, list := range []bool{true, false} {
+			mode := "list+get"
+			if !list {
+				mode = "get only"
 			}
-			moved, code, body := changed(a.hidden)
-			if strings.Contains(body, parityHidden) || strings.Contains(body, paritySecret) {
-				t.Errorf("SECURITY: %s answered with a hidden row or masked value (%d): %s", a.name, code, body)
-			}
-			if moved {
-				t.Errorf("SECURITY: %s acted on a row the hook hides (%d %s)", a.name, code, body)
-			}
-			if moved, code, body := changed(a.shown); !moved {
-				t.Errorf("%s left the visible twin unchanged (%d %s), so the check above proves nothing", a.name, code, body)
-			}
-		})
+			t.Run("act/"+mode+"/"+a.name, func(t *testing.T) { a.run(t, list) })
+		}
+	}
+}
+
+// parityActCase is one write or RPC of TestReadHookParityAdmin that acts
+// on a row.
+type parityActCase struct {
+	name   string
+	req    func(id string) *http.Request
+	hidden string // the hidden row the act names
+	shown  string // its visible twin, which the act must change
+}
+
+// run checks that the act on the hidden row answers as a missing one
+// does and changes nothing, and that the same act on the visible twin
+// changes it. list registers the BeforeList hook beside BeforeGet.
+func (a parityActCase) run(t *testing.T, list bool) {
+	t.Helper()
+	x, _ := parityEnvHooks(t, list)
+	h := x.withGrant(theAdmin, "cases:override_state")
+	changed := func(id string) (bool, int, string) {
+		before := x.caseRow(id)
+		rr := serve(h, a.req(id))
+		return x.caseRow(id) != before, rr.Code, rr.Body.String()
+	}
+	moved, code, body := changed(a.hidden)
+	if strings.Contains(body, parityHidden) || strings.Contains(body, paritySecret) {
+		t.Errorf("SECURITY: %s answered with a hidden row or masked value (%d): %s", a.name, code, body)
+	}
+	if moved {
+		t.Errorf("SECURITY: %s acted on a row the hook hides (%d %s)", a.name, code, body)
+	}
+	if moved, code, body := changed(a.shown); !moved {
+		t.Errorf("%s left the visible twin unchanged (%d %s), so the check above proves nothing", a.name, code, body)
 	}
 }
 

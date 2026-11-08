@@ -660,9 +660,11 @@ expose them to agents connected to a live app.**
   ArrowRight sent different ways with no direction read), and
   `clipboardawait` (a dropped clipboard promise followed by a status
   write). Structural: `hookedread` (in framework/entityui and battery/admin,
-  a crud read-API call whose context is not `crud.WithReadHooks` — the
-  screens read through the hooked `meta` readers `getRow`/`listRows`/…,
-  and a stored-value read lives in a function named `*Unhooked`); the
+  a crud read- or write-API call whose context is not `crud.WithReadHooks` —
+  the screens read through the hooked `meta` readers `getRow`/`listRows`/…,
+  a stored-value read lives in a function named `*Unhooked`, and every
+  write (UpdateOne, RestoreOne, PurgeOne, RunTransition, …) carries the
+  opt-in so crud refuses a row a BeforeGet hook hides); the
   read-hook invariant itself, fixed five times piecemeal, is held by the
   parity matrices `TestReadHookParityCrud` and `TestReadHookParityAdmin`,
   where a new surface adds its case. Tried and dropped as unsharp: a catalog-name 63-byte-cut rule,

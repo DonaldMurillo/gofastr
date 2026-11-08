@@ -505,7 +505,10 @@ run `AfterList`; an unhooked in-process read still returns stored values.
 a case there. Generated screens read through entityui's hooked readers
 (`getRow`, `listRows`, …); a deliberate stored-value read lives in a
 function named `*Unhooked`, and the `hookedread` analyzer holds
-entityui and battery/admin to that.
+entityui and battery/admin to that. The rule covers their writes too:
+an in-process write (`UpdateOne`, `DeleteOne`, `RestoreOne`, `PurgeOne`,
+`RunTransition`, …) refuses a row the caller's `BeforeGet` hooks hide
+only under `crud.WithReadHooks`, so every screen write passes it.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. Sorting

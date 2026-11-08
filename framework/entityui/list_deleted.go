@@ -196,11 +196,13 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
+		// The write names the opt-in itself: crud refuses a row the
+		// caller's BeforeGet hooks hide only under it.
 		var writeErr error
 		if op == "restore" {
-			writeErr = m.ch.RestoreOne(ctx, id)
+			writeErr = m.ch.RestoreOne(crud.WithReadHooks(ctx), id)
 		} else {
-			writeErr = m.ch.PurgeOne(ctx, id)
+			writeErr = m.ch.PurgeOne(crud.WithReadHooks(ctx), id)
 		}
 		if writeErr != nil {
 			switch {

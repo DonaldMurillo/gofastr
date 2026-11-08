@@ -641,7 +641,11 @@ Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
 target, including queued runs; a row hidden only from single-record reads
 cannot be changed through a bulk selection.
 App-action callbacks receive the same read-hook-enabled context, including
-when they write through their action context's CRUD handler.
+when they write through their action context's CRUD handler. Every write
+the screens make (bulk, trash restore and purge, the status override) runs
+under `crud.WithReadHooks`, and the record form saves and deletes through
+the JSON routes, so a row a `BeforeGet` hook hides answers 404 from every
+admin write as it does over HTTP.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
@@ -848,7 +852,9 @@ caps the body, checks the capability before reading anything, reads the
 record under the caller's context and the entity's read permission
 (another owner's id answers 404), refuses a caller the update
 permission refuses (403), validates the state and the reason, and
-writes with `crud.UpdateOne` under `crud.WithStateOverride`. The audit
+writes with `crud.UpdateOne` under `crud.WithStateOverride` and
+`crud.WithReadHooks`, so a row a `BeforeGet` hook hides when the write
+runs answers 404 and is not changed. The audit
 row (`state_override`, with the reason) comes from crud. An entity no
 audit log records answers 409; the write never falls back to an
 unaudited one. A write crud refuses answers what the JSON API would: 403,
