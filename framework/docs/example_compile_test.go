@@ -256,6 +256,13 @@ replace github.com/DonaldMurillo/gofastr => %s
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
+	// Seed go.sum with the repo's sums plus the pinned modules' sums, so
+	// -mod=mod never asks the checksum database: a warm module cache then
+	// compiles with no network at all.
+	seedSum := snippetGoSum(t, root)
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), []byte(seedSum), 0o644); err != nil {
+		t.Fatalf("write go.sum: %v", err)
+	}
 
 	index := map[string]snippet{}
 	for i, s := range snippets {
@@ -282,6 +289,15 @@ replace github.com/DonaldMurillo/gofastr => %s
 	cmd.Stdout = io.Discard
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err == nil {
+		// A sum go had to add came from the checksum database, which an
+		// offline run cannot reach. Name the lines to pin.
+		got, err := os.ReadFile(filepath.Join(dir, "go.sum"))
+		if err != nil {
+			t.Fatalf("read go.sum: %v", err)
+		}
+		if added := addedLines(seedSum, string(got)); len(added) > 0 {
+			t.Errorf("snippet module needed sums missing from testdata/snippet-go.sum; add:\n%s", strings.Join(added, "\n"))
+		}
 		return
 	}
 	out := stderr.String()
@@ -304,4 +320,34 @@ func TestCompileDirectiveAcceptsCheckoutLineEndings(t *testing.T) {
 			t.Fatalf("compile directive missed a %q checkout: %q", newline, body)
 		}
 	}
+}
+
+// snippetGoSum joins the repository's go.sum with testdata/snippet-go.sum,
+// the sums of the modules the snippet go.mod pins beyond the repo graph.
+func snippetGoSum(t *testing.T, root string) string {
+	t.Helper()
+	repo, err := os.ReadFile(filepath.Join(root, "go.sum"))
+	if err != nil {
+		t.Fatalf("read repo go.sum: %v", err)
+	}
+	pinned, err := os.ReadFile(filepath.Join("testdata", "snippet-go.sum"))
+	if err != nil {
+		t.Fatalf("read testdata/snippet-go.sum: %v", err)
+	}
+	return string(repo) + string(pinned)
+}
+
+// addedLines returns the lines of after that before does not hold.
+func addedLines(before, after string) []string {
+	seen := map[string]bool{}
+	for _, line := range strings.Split(before, "\n") {
+		seen[strings.TrimSpace(line)] = true
+	}
+	var added []string
+	for _, line := range strings.Split(after, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !seen[line] {
+			added = append(added, line)
+		}
+	}
+	return added
 }

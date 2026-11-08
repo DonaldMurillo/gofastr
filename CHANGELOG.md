@@ -214,7 +214,10 @@ few lines, and link the PR or the docs page for the rest.
   removed widget-client script.
 - **`TestDocExamplesCompile` no longer needs the network**
   ([#684](https://github.com/DonaldMurillo/gofastr/issues/684)). The
-  snippet module pins the OpenTelemetry exporter it imports.
+  snippet module pins the OpenTelemetry exporter it imports and carries
+  its go.sum (`framework/docs/testdata/snippet-go.sum`), so the checksum
+  database is never asked; a sum the run had to add fails the test and
+  names the line.
 - **Client phrase interpolation matches Go's placeholder-name grammar**,
   including surrounding whitespace and hyphenated names. Catalog validation
   still requires matching spellings for headless component compatibility.
