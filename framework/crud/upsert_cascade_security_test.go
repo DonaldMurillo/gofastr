@@ -406,3 +406,47 @@ func TestUpsertGeneratedCascadeMatchesCreate(t *testing.T) {
 		t.Errorf("refused upsert changed rows\n%s\nwas\n%s", after, before)
 	}
 }
+
+// The upsert picks its arm, and runs its preflight and hidden-row
+// checks, on the key in the body before any cascade runs. A belongs_to
+// cascade that fills a key column would move the conflict onto a row
+// none of those checks read, so it is refused before anything is
+// written; the key goes in the body instead.
+func TestUpsertRefusesCascadeFilledKey(t *testing.T) {
+	db := setupDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE profiles (user_id TEXT PRIMARY KEY, bio TEXT)`,
+	)
+	users := entity.Define("users", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "id", Type: schema.String}, {Name: "name", Type: schema.String}},
+	}.WithTimestamps(false))
+	profiles := entity.Define("profiles", entity.EntityConfig{
+		PrimaryKey: []string{"user_id"},
+		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "bio", Type: schema.String}},
+		Relations:  []entity.Relation{entity.BelongsTo("user", "users", "user_id").WithCascadeWrite(true)},
+	}.WithTimestamps(false))
+	users.SetDB(db)
+	profiles.SetDB(db)
+	ch := NewCrudHandler(profiles, db).WithJSONCase(CaseSnake)
+	ch.Registry = stubRegistry{byName: map[string]*entity.Entity{"users": users, "profiles": profiles}}
+	seedRows(t, db, "users", []map[string]any{{"id": "u1", "name": "Ada"}})
+	seedRows(t, db, "profiles", []map[string]any{{"user_id": "u1", "bio": "stored"}})
+
+	for _, nested := range []map[string]any{{"id": "u1", "name": "Ada"}, {"id": "u2", "name": "Bo"}} {
+		_, err := ch.UpsertOne(context.Background(), map[string]any{"bio": "moved", "user": nested})
+		if !hasViolation(err, "user", "validation.cascade_upsert_key") {
+			t.Errorf("upsert keyed by a cascade on %v = %v, want cascade_upsert_key", nested["id"], err)
+		}
+	}
+	var users2, bio string
+	if err := db.QueryRow(`SELECT (SELECT GROUP_CONCAT(id) FROM users), (SELECT bio FROM profiles WHERE user_id = 'u1')`).Scan(&users2, &bio); err != nil {
+		t.Fatal(err)
+	}
+	if users2 != "u1" || bio != "stored" {
+		t.Errorf("refused upserts left users %q, bio %q; want u1 and the stored bio", users2, bio)
+	}
+	// With the key in the body the upsert matches on it.
+	if _, err := ch.UpsertOne(context.Background(), map[string]any{"user_id": "u1", "bio": "kept"}); err != nil {
+		t.Errorf("upsert with the key in the body: %v", err)
+	}
+}

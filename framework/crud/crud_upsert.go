@@ -155,6 +155,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		// A belongs_to cascade sets its key once the arm is known below,
 		// so the key is not required here: the cascade either fills it or
 		// refuses the write.
+		if err := ch.refuseCascadeUpsertKey(body); err != nil {
+			return err
+		}
 		vs := ch.entitySchema()
 		if setKeys := ch.cascadeSetKeys(body); len(setKeys) > 0 {
 			vs.Fields = slices.Clone(vs.Fields)

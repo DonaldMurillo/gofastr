@@ -528,6 +528,37 @@ func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	return keys
 }
 
+// refuseCascadeUpsertKey refuses, in UpsertOne, a belongs_to cascade
+// that sets a column of the entity's key. The upsert picks its arm, and
+// runs its preflight and hidden-row checks, on the key in the body before
+// any cascade runs, so a key the cascade filled would conflict with a row
+// none of those checks read.
+func (ch *CrudHandler) refuseCascadeUpsertKey(body map[string]any) error {
+	if ch.Entity == nil {
+		return nil
+	}
+	keys := ch.keyCols()
+	fields := map[string][]schema.Violation{}
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); !ok || v == nil {
+			continue
+		}
+		for _, fk := range rel.ForeignKey {
+			if slices.Contains(keys, fk) {
+				fields[rel.Name] = []schema.Violation{{Reason: reasonCascadeUpsertKey, Params: map[string]any{"column": fk}}}
+				break
+			}
+		}
+	}
+	if len(fields) > 0 {
+		return &ValidationError{fields: fields}
+	}
+	return nil
+}
+
 // cascadeParentID is the key a dependent cascade links its children to:
 // the written row's key column, else the body's. A composite parent has
 // no single key, and processDependentCascadeWrites refuses it.
