@@ -37,7 +37,9 @@ func snapshotDir(path string) error {
 	return fileperm.Restrict(filepath.Dir(path), true) // want `tightenshared: fileperm.Restrict tightens`
 }
 
-// createdOnly is the fix: Stat first, tighten only what this call made.
+// createdOnly Stats first: "missing" loses the race to another
+// process's mkdir between the Stat and MkdirAll, and the chmod tightens
+// their directory (#665).
 func createdOnly(dir string) error {
 	_, err := os.Stat(dir)
 	created := errors.Is(err, fs.ErrNotExist)
@@ -45,7 +47,7 @@ func createdOnly(dir string) error {
 		return err
 	}
 	if created {
-		return os.Chmod(dir, 0o700)
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
 	}
 	return nil
 }
@@ -150,8 +152,8 @@ func bareStat(dir string) error {
 	return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
 }
 
-// statInIfInit: the existence check inside the if's Init, its error
-// compared in the Cond. The fix posture. Quiet.
+// statInIfInit: the existence check inside the if's Init. The same
+// race as createdOnly (#665).
 func statInIfInit(dir string) error {
 	if _, err := os.Stat(dir); err == nil {
 		return nil // existed: leave its mode alone
@@ -159,7 +161,7 @@ func statInIfInit(dir string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.Chmod(dir, 0o700)
+	return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
 }
 
 // mkdirTolerated is the desktop profile walk spelling (AZ12-04,
@@ -191,8 +193,8 @@ func mkdirStrict(dir string) error {
 	return os.Chmod(dir, 0o700)
 }
 
-// mkdirToleratedThenStat: a consulted Stat still exempts, Mkdir arm or
-// not. Quiet.
+// mkdirToleratedThenStat: the Stat's "missing" says nothing once the
+// tolerated EEXIST waves another process's directory through (#665).
 func mkdirToleratedThenStat(dir string) error {
 	_, err := os.Stat(dir)
 	created := errors.Is(err, fs.ErrNotExist)
@@ -202,5 +204,95 @@ func mkdirToleratedThenStat(dir string) error {
 	if !created {
 		return nil
 	}
-	return os.Chmod(dir, 0o700)
+	return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+}
+
+// mkdirCreated tolerates EEXIST and tightens only when its own Mkdir
+// succeeded: the fix (#665). Quiet.
+func mkdirCreated(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err == nil {
+		return os.Chmod(dir, 0o700)
+	}
+	return nil
+}
+
+// mkdirCreatedFlag spells the same proof through a local. Quiet.
+func mkdirCreatedFlag(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	created := err == nil
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	if created {
+		return fileperm.Restrict(dir, true)
+	}
+	return nil
+}
+
+// mkdirExistBranch tightens in the branch where the Mkdir FAILED.
+func mkdirExistBranch(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err == nil {
+		return nil
+	} else {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+}
+
+// mkdirOtherErr tests a different error for nil.
+func mkdirOtherErr(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	_, statErr := os.Stat(dir)
+	if statErr == nil {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+	return nil
+}
+
+// mkdirErrReused reassigns err before testing it: on the EEXIST path
+// the Stat leaves err nil, and the chmod rewrites a directory this call
+// did not make.
+func mkdirErrReused(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	_, err = os.Stat(dir)
+	if err == nil {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+	return nil
+}
+
+// mkdirIfInit tests the Mkdir's own error in the if's Init. Quiet.
+func mkdirIfInit(dir string) error {
+	if err := os.Mkdir(dir, 0o700); err == nil {
+		return os.Chmod(dir, 0o700)
+	} else if !os.IsExist(err) {
+		return err
+	}
+	return nil
+}
+
+// mkdirErrReusedInInit reassigns err in the if's own initializer: the
+// condition tests the Stat, not the Mkdir.
+func mkdirErrReusedInInit(dir string) error {
+	err := os.Mkdir(dir, 0o700)
+	if err != nil && !os.IsExist(err) {
+		return err
+	}
+	if _, err = os.Stat(dir); err == nil {
+		return os.Chmod(dir, 0o700) // want `tightenshared: os.Chmod tightens the caller-named directory dir`
+	}
+	return nil
 }

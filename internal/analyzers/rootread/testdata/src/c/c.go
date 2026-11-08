@@ -17,14 +17,15 @@ func listJobs(workDir, user string) ([]os.DirEntry, error) {
 	return os.ReadDir(filepath.Join(workDir, "jobs", user)) // want `read under a root with lexical containment only`
 }
 
-// listFixed resolves the chain before listing.
+// listFixed lists the resolved path with no containment check: it
+// listed an outside directory in the #665 replay.
 func listFixed(workDir, user string) ([]os.DirEntry, error) {
 	p := filepath.Join(workDir, "jobs", user)
 	real, err := filepath.EvalSymlinks(p)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadDir(real)
+	return os.ReadDir(real) // want `read under a root with lexical containment only`
 }
 
 // fsListDir is the fs.ReadDir package form, in an HTTP-serving

@@ -3,7 +3,8 @@
 // os.OpenFile(write flag) / os.Mkdir / os.MkdirAll / os.Remove on a
 // path built under a root — filepath.Join, or a flat `root + "/" + x`
 // concatenation — where the root is a caller-supplied parameter or
-// field — with no filepath.EvalSymlinks on that path's chain — plus
+// field — with no confinement on that path (os.Root, a contained
+// resolution, or a leaf posture) — plus
 // the archive twin: zip.Writer entry names assembled from a parameter
 // with no path.Clean on the entry-name chain.
 //
@@ -69,14 +70,29 @@
 //     and there is no TOCTOU window between check and use. Root
 //     methods are no os.* sink, so the rule is quiet by construction
 //     (the stashViaRoot fixture keeps it that way);
-//   - the write's path (or a component of it, or the Join's root) is
-//     bound to a filepath.EvalSymlinks result, or an EvalSymlinks ran
-//     on this path expression or on its Dir — resolution on the chain
-//     (the fix posture; core/upload Save resolves the storage root and
-//     the destination's parent directory before creating anything);
+//   - a contained resolution: the path is a local bound to a
+//     filepath.EvalSymlinks result AND a containment check of that
+//     resolved local against the root (filepath.Rel, strings.HasPrefix
+//     or strings.CutPrefix, in the condition of an if that returns or
+//     holds the sink) dominates the
+//     sink, so the sink goes through the resolved path and the
+//     resolved path is known to be under the root. Issue #665 (2026-11)
+//     narrowed this from "an EvalSymlinks ran on the chain": that says
+//     where a path points and confines nothing. Replays of six quiet
+//     fixtures escaped — a resolved path that nobody compared with the
+//     root, a resolved root with a symlinked key component joined
+//     under it, and a check on the resolved path followed by a sink on
+//     the original spelling (a link swapped in between wins). An
+//     EvalSymlinks call in a guard's body no longer makes it a guard
+//     either;
+//   - a contained parent for os.Mkdir / os.MkdirAll:
+//     Join(dir, filepath.Base(p)) where dir is a contained resolution.
+//     mkdir refuses an existing leaf, symlink or not; a leaf write, and
+//     os.CreateTemp (whose argument is the directory the file lands
+//     in), would follow one, so they get no such credit;
 //   - a call to a VERIFIED guard on the write's own path, its Dir, or
-//     a local bound to either: a function whose body runs EvalSymlinks,
-//     an O_NOFOLLOW open, an Lstat consulted with ModeSymlink, or calls
+//     a local bound to either: a function whose body runs an
+//     O_NOFOLLOW open, an Lstat consulted with ModeSymlink, or calls
 //     another verified guard. Guards in other packages are judged by
 //     an exported symlinkGuard fact. A function that resolves its
 //     argument and then writes it (ApplyFixed) counts too: it did check
@@ -129,7 +145,7 @@ import (
 
 var Analyzer = &analysis.Analyzer{
 	Name:      "rootwrite",
-	Doc:       "forbids writes under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or resolve with filepath.EvalSymlinks; and path.Clean zip entry names",
+	Doc:       "forbids writes under a root whose containment is lexical only: prefer os.OpenRoot (kernel-enforced containment), or write the filepath.EvalSymlinks result after checking it is under the resolved root; and path.Clean zip entry names",
 	Run:       run,
 	FactTypes: []analysis.Fact{new(symlinkGuard)},
 }
@@ -142,7 +158,7 @@ type symlinkGuard struct{}
 func (*symlinkGuard) AFact()         {}
 func (*symlinkGuard) String() string { return "symlinkGuard" }
 
-const writeMsg = "write under a root with lexical containment only: a symlinked directory component escapes the root undetected; resolve with filepath.EvalSymlinks before writing"
+const writeMsg = "write under a root with lexical containment only: a symlinked directory component escapes the root undetected; write through os.OpenRoot, or write the filepath.EvalSymlinks result after checking it is under the resolved root"
 
 func run(pass *analysis.Pass) (any, error) {
 	pkgFuncs := pathflow.CollectFuncs(pass)
@@ -205,15 +221,30 @@ func writeHelpers(pass *analysis.Pass, pkgFuncs map[string][]*ast.FuncDecl, isGu
 	return pathflow.HelperSinkParams(pass, pkgFuncs, sinksOf, resolvedHere, isGuard)
 }
 
-// resolvedHere reports whether body resolves the sink's path before
-// writing it: EvalSymlinks on its chain, a verified guard on it, or —
-// for a leaf sink — an Lstat+ModeSymlink check of it. Each must
+// resolvedHere reports whether body confines the sink's path before
+// writing it: a contained resolution, a contained parent for a
+// Mkdir/MkdirAll, a verified guard on it, or — for a leaf sink
+// — an Lstat+ModeSymlink check of it. Each must
 // DOMINATE the write (pathflow): a posture after the sink gates
 // nothing.
 func resolvedHere(pass *analysis.Pass, body *ast.BlockStmt, s pathflow.SinkArg, bound map[types.Object]ast.Expr, evals []*ast.CallExpr, isGuard pathflow.GuardFunc, sink ast.Node) bool {
 	return pathflow.GuardsPath(pass, body, s.Path, bound, isGuard, sink) ||
 		pathflow.SymlinkResolved(pass, s.Path, bound, evals, body, sink) ||
+		(makesDir(pass, sink) && pathflow.ContainedParent(pass, s.Path, bound, body, sink)) ||
 		(s.Leaf && pathflow.LstatLeafCheck(pass, body, s.Path, bound, sink))
+}
+
+// makesDir reports whether sink is a direct os.Mkdir / os.MkdirAll
+// call: the only sinks that refuse an existing leaf, symlink or not.
+// os.CreateTemp gets no contained-parent credit: its argument is the
+// directory the file lands in, and a linked one leads it out.
+func makesDir(pass *analysis.Pass, sink ast.Node) bool {
+	call, ok := sink.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	q := pathflow.QualifiedFunc(pass, call.Fun)
+	return q == "os.Mkdir" || q == "os.MkdirAll"
 }
 
 // callerParams is fn's parameters plus those of every function literal
@@ -240,8 +271,9 @@ func callerParams(pass *analysis.Pass, fn *ast.FuncDecl) map[types.Object]bool {
 }
 
 func checkFunc(pass *analysis.Pass, fn *ast.FuncDecl, pkgFuncs map[string][]*ast.FuncDecl, isGuard pathflow.GuardFunc, helpers map[*ast.FuncDecl]map[int]bool) {
-	bound := pathflow.Bindings(pass, fn.Body)
+	bound := pathflow.PathBindings(pass, fn.Body)
 	params := callerParams(pass, fn)
+	pathflow.AddRangeVars(pass, fn.Body, bound, params)
 	declParams := pathflow.ParamObjects(pass, fn) // the zip arm keeps its own scope
 	// Resolution gates are per WRITE, not per function: an
 	// EvalSymlinks (or leaf Lstat, or guard) on an unrelated path

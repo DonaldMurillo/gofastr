@@ -78,8 +78,8 @@ func writeHeadersFile(outDir, body string) error {
 	return writeFile(filepath.Join(outDir, "_headers"), []byte(body))
 }
 
-// resolvedWrite resolves the parent chain before writing: the helper
-// is the fix posture, so its callers are quiet.
+// resolvedWrite resolves the parent chain and never compares it with
+// a root: a symlinked parent points the write anywhere (#665).
 func resolvedWrite(dst string, data []byte) error {
 	real, err := filepath.EvalSymlinks(filepath.Dir(dst))
 	if err != nil {
@@ -89,7 +89,7 @@ func resolvedWrite(dst string, data []byte) error {
 }
 
 func (b *Builder) writeResolved(p string, html []byte) error {
-	return resolvedWrite(filepath.Join(b.OutDir, p), html)
+	return resolvedWrite(filepath.Join(b.OutDir, p), html) // want `write under a root with lexical containment only`
 }
 
 // writeViaRoot is the os.Root fix: kernel-enforced containment. Quiet.
@@ -141,8 +141,8 @@ func (b *Builder) literalCallback() error {
 	})
 }
 
-// checkedWrite resolves its own parameter's parent chain before
-// writing it: the helper is the fix posture. Quiet at the caller.
+// checkedWrite resolves its parameter's parent chain, discards the
+// answer and writes the original path: no posture (#665).
 func checkedWrite(dst string, data []byte) error {
 	if _, err := filepath.EvalSymlinks(filepath.Dir(dst)); err != nil {
 		return err
@@ -151,7 +151,7 @@ func checkedWrite(dst string, data []byte) error {
 }
 
 func (b *Builder) writeChecked(p string, html []byte) error {
-	return checkedWrite(filepath.Join(b.OutDir, p), html)
+	return checkedWrite(filepath.Join(b.OutDir, p), html) // want `write under a root with lexical containment only`
 }
 
 func phase(maintenance bool) string {

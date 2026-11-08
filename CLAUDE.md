@@ -259,12 +259,22 @@ expose them to agents connected to a live app.**
   fs.ReadFile, fs.Stat) in HTTP-serving functions. The same round's
   reviewer mutation (core/upload Save with both EvalSymlinks removed
   stayed silent behind sanitizeKey) stripped the sanitizer shield from
-  `rootwrite` too: in EITHER twin only resolution postures gate —
-  EvalSymlinks on the chain or its Dir, symlink-named guards, an
-  O_NOFOLLOW flag, or an Lstat+ModeSymlink leaf check (including a
-  var-declared first result) — and a
-  sanitized join is never one (the upload probes escaped through
-  exactly one). `os.Root` is the fix spelling of first resort on
+  `rootwrite` too: in EITHER twin only confinement gates — `os.Root`,
+  an O_NOFOLLOW flag, an Lstat+ModeSymlink leaf check (including a
+  var-declared first result), or a contained resolution: the sink
+  uses an EvalSymlinks result, and a filepath.Rel/strings.HasPrefix
+  test of that result against a non-constant root runs before it in
+  an if that refuses an outside path (or holds the sink on the inside
+  branch). os.Mkdir/MkdirAll may also go through
+  `Join(dir, filepath.Base(p))` on a contained `dir`: mkdir refuses an
+  existing leaf. An
+  EvalSymlinks alone is no gate and no guard (#665, 2026-11): it says
+  where a path points, and six quiet fixtures escaped when replayed —
+  a resolved path nobody compared with the root, a resolved root
+  with a linked key component joined under it, and a check on the
+  resolved path followed by a write through the original. A
+  sanitized join is never a gate either (the upload probes escaped
+  through exactly one). `os.Root` is the fix spelling of first resort on
   Go 1.27: os.OpenRoot plus root.Open/ReadFile/Stat/Create/OpenFile/
   Mkdir(All)/Remove/Rename confines reads and writes in the kernel —
   no symlink escape, no TOCTOU — and both rules are quiet on it.
@@ -490,8 +500,11 @@ expose them to agents connected to a live app.**
   (`strings.TrimSpace` on an id/tenant/actor value that is then kept:
   " x " and "x" name different rows). `tightenshared` (`os.MkdirAll`
   then an owner-only `os.Chmod`/`fileperm.Restrict` of a directory the
-  caller named: it rewrites a directory somebody else owns; `os.Stat`
-  first and tighten only what this call created). `settlectx` (an
+  caller named: it rewrites a directory somebody else owns; make it
+  with `os.Mkdir` and tighten only inside `if err == nil` on that
+  Mkdir's own error. An `os.Stat` that said "missing" first is no
+  exemption since #665: another process's mkdir lands between the
+  two). `settlectx` (an
   ack/settle/record write on the same cancellable context the work just
   ran under: a shutdown or timeout drops the outcome; settle on
   `context.WithoutCancel`). `resolvedial` (an SSRF guard that resolves

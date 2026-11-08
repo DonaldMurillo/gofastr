@@ -87,6 +87,23 @@ few lines, and link the PR or the docs page for the rest.
   refused instead of walked. `os.Root` also refuses an absolute
   symlink, even one that points back inside the project: make such a
   link relative.
+- **`rootwrite`, `rootread` and `tightenshared` stop crediting checks
+  that confine nothing** ([#665](https://github.com/DonaldMurillo/gofastr/issues/665)).
+  A `filepath.EvalSymlinks` call no longer quiets a read or write by
+  itself, and no longer makes a function a symlink guard. The rules
+  accept `os.Root`, `O_NOFOLLOW`, an `Lstat`+`ModeSymlink` leaf check,
+  or a resolved path that is then used for the read or write, after a
+  `filepath.Rel` or `strings.HasPrefix` test of it against the root
+  (not a constant such as `"/"`) in an `if` that refuses an outside
+  path, or that writes only on the inside branch. A path joined in steps (`dir := filepath.Join(root, id)`,
+  then `filepath.Join(dir, "x")`) and a path rebound in place
+  (`p = filepath.Join(p, x)`) are now checked like a single join.
+  `tightenshared` no longer exempts an `os.Stat`
+  before `MkdirAll`: tighten a directory only inside `if err == nil` on
+  the `os.Mkdir` that made it. Code that `gofastr verify` or
+  `make analyze` passed before can now fail; the messages name the
+  fix.
+
 ## [0.96.0] - 2026-11-06
 
 ### Added

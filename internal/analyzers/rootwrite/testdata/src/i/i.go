@@ -24,7 +24,10 @@ func stageFile(baseDir, name string) (*os.File, error) {
 	return os.CreateTemp(filepath.Join(baseDir, "stage", name), "run-*") // want `write under a root with lexical containment only`
 }
 
-// jobDirSafe is the fix posture: resolve the chain before creating.
+// jobDirSafe resolves the parent, checks it under the resolved root,
+// and makes the leaf with os.Mkdir under the resolved parent: mkdir
+// refuses an existing leaf, symlink or not. The contained-parent
+// posture (#665). Quiet.
 func jobDirSafe(baseDir, id string) error {
 	root, err := filepath.EvalSymlinks(baseDir)
 	if err != nil {
