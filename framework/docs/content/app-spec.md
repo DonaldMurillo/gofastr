@@ -1259,8 +1259,17 @@ card's label (`screen "dashboard" stat_card "Billed": ...`) instead of
 drawing "—" forever. For the chart kinds `source` (with both `entity` and
 `group_by`, targeting a declared entity) is **required**: validation
 rejects a chart without one rather than letting the block silently vanish
-from the page. A chart with a
-`title` renders inside a `ui.Card` with that heading. A chart or `card`
+from the page. `group_by` names a column the database can group: a
+`json` field, a many-to-many relation, and a `hidden` or `no_query`
+field are refused, since the chart would draw nothing or print stored
+values as labels. A source `entity` is the entity's name as declared
+(`customers`, not `/customers`), for a `stat_card` too. The generated
+app checks every sourced chart when its screen mounts, as it checks a
+`stat_card`: `entityui.CheckChart` judges `group_by` against the
+registered entity and panics with the screen and the chart's `title`
+(`screen "cards" pie_chart "Cards by group": ...`, the entity name
+when the chart has no title) instead of drawing an empty chart. A
+chart with a `title` renders inside a `ui.Card` with that heading. A chart or `card`
 block with no titled `section` or `card` above it emits
 `HeadingLevel: 2`, so its title follows the page's h1 without skipping a
 level; one inside a titled section keeps the default h3.

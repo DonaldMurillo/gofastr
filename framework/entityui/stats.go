@@ -110,6 +110,32 @@ func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 	return nil
 }
 
+// CheckChart reports why GroupBars, GroupSlices and LineChart could
+// never draw groupBy: an unknown entity, or a groupBy that is not a
+// visible, queryable column the database can group (a JSON field, or a
+// many-to-many relation, which is no column). A no_query field is
+// refused too: the chart would print every stored value as a label. A
+// host checks a configured chart with it at boot, as it checks a stat
+// with CheckStat, so a typo fails the start rather than drawing an
+// empty chart forever.
+func (u *UI) CheckChart(entityName, groupBy string) error {
+	m, err := u.meta(entityName)
+	if err != nil {
+		return err
+	}
+	f, ok := m.field(groupBy)
+	if !ok || f.Hidden {
+		return fmt.Errorf("entityui: a chart of %s groups by a visible field (got %q)", entityName, groupBy)
+	}
+	if f.NoQuery {
+		return fmt.Errorf("entityui: a chart of %s cannot group by %q, a no-query field", entityName, groupBy)
+	}
+	if f.Type == schema.JSON || (f.Type == schema.Relation && f.Many) {
+		return fmt.Errorf("entityui: a chart of %s cannot group by %q, which the database does not group", entityName, groupBy)
+	}
+	return nil
+}
+
 // Count is how many records of the entity the caller can read that
 // match where (filter text in the query DSL; "" for all), formatted
 // with digit grouping, under the same read gate, scope and read hooks

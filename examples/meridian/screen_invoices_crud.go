@@ -106,6 +106,25 @@ func (s *InvoicesCreateScreen) RenderCtx(ctx context.Context) render.HTML {
 }
 
 func mountDashboardScreen(fwApp *framework.App, site *app.App, db *sql.DB) {
+	// A stat card or chart whose source could never compute fails the
+	// boot here, naming it, instead of drawing nothing forever: the
+	// checks a generated mount emits, kept as statements so gofastr pack
+	// still reads the screen from RenderCtx.
+	if err := appUI.CheckStat("subscriptions", "sum", "mrr", `status = "active"`, "money"); err != nil {
+		panic("screen \"dashboard\" stat_card \"MRR\": " + err.Error())
+	}
+	if err := appUI.CheckStat("customers", "count", "", `status = "active"`, ""); err != nil {
+		panic("screen \"dashboard\" stat_card \"Active customers\": " + err.Error())
+	}
+	if err := appUI.CheckStat("invoices", "count", "", `status = "past_due"`, ""); err != nil {
+		panic("screen \"dashboard\" stat_card \"Past-due invoices\": " + err.Error())
+	}
+	if err := appUI.CheckStat("plans", "count", "", "", ""); err != nil {
+		panic("screen \"dashboard\" stat_card \"Plans\": " + err.Error())
+	}
+	if err := appUI.CheckChart("customers", "status"); err != nil {
+		panic("screen \"dashboard\" bar_chart \"Customers by status\": " + err.Error())
+	}
 	site.RegisterScreen(app.NewScreen("/app", &DashboardScreen{}).WithTitle("Overview").WithDescription("Your revenue at a glance.").WithPolicy(authPolicy("/login", "")), appLayout)
 }
 

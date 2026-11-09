@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
@@ -54,34 +55,71 @@ var revenuePage = admin.Page{
 	},
 }
 
+// revenueStats and revenueCharts are the report's figures and
+// breakdowns; paymentMethods and paymentStatuses are the heatmap's rows
+// and columns. RenderCtx draws them all and checkRevenueReport checks
+// them once at boot.
+var (
+	revenueStats = []figureStat{
+		{label: metricMRR, icon: "activity", entity: "customers", agg: "sum", field: "mrr", where: `status = "active"`, format: "money"},
+		{label: revenueCollected, icon: "card", entity: "payments", agg: "sum", field: "amount", where: `status = "succeeded"`, format: "money"},
+		{label: revenueOutstanding, icon: "receipt", entity: "invoices", agg: "sum", field: "amount", where: `status in ["open", "past_due"]`, format: "money"},
+		{label: revenueFailed, icon: "warning", entity: "payments", agg: "count", where: paymentsFailedWhere},
+	}
+	revenueCharts = []figureChart{
+		{title: revenueInvoicesByStatus, entity: "invoices", groupBy: "status"},
+		{title: revenuePaymentsByMethod, entity: "payments", groupBy: "method"},
+		{title: revenueSubscriptionsByStatus, entity: "subscriptions", groupBy: "status"},
+	}
+	paymentMethods  = []string{"card", "ach", "wire"}
+	paymentStatuses = []string{"succeeded", "failed", "refunded"}
+)
+
+// paymentsFailedWhere is the failed payments: a stat, and the gauge's
+// share of attempts that did not go through.
+const paymentsFailedWhere = `status = "failed"`
+
+// paymentCellWhere is the heatmap cell for one method and status.
+func paymentCellWhere(method, status string) string {
+	return `method = "` + method + `" and status = "` + status + `"`
+}
+
+// checkRevenueReport reports the first of the report's figures, the
+// gauge's and the heatmap's counts among them, that could never compute.
+func checkRevenueReport(u *entityui.UI) error {
+	stats := append([]figureStat{
+		{label: revenuePaymentSuccess, entity: "payments"},
+		{label: revenuePaymentSuccess, entity: "payments", where: paymentsFailedWhere},
+	}, revenueStats...)
+	for _, m := range paymentMethods {
+		for _, s := range paymentStatuses {
+			stats = append(stats, figureStat{label: revenuePaymentsGrid, entity: "payments", where: paymentCellWhere(m, s)})
+		}
+	}
+	return checkFigures(u, `admin page "revenue"`, stats, revenueCharts)
+}
+
 // revenueReport draws the figures and the breakdowns.
 type revenueReport struct{ component.ContextOnly }
 
 func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
-	stat := func(entityName, agg, field, where, format string) string {
-		return appUI.StatValue(ctx, entityName, agg, field, where, format)
+	cards := make([]render.HTML, 0, len(revenueStats))
+	for _, st := range revenueStats {
+		cards = append(cards, ui.StatCard(ui.StatCardConfig{Label: st.label.Text(ctx), Value: st.value(ctx, appUI), Icon: st.icon}))
 	}
-	figures := ui.Grid(ui.GridConfig{Min: "14rem", Gap: ui.GapMD},
-		ui.StatCard(ui.StatCardConfig{Label: metricMRR.Text(ctx), Value: stat("customers", "sum", "mrr", `status = "active"`, "money"), Icon: "activity"}),
-		ui.StatCard(ui.StatCardConfig{Label: revenueCollected.Text(ctx), Value: stat("payments", "sum", "amount", `status = "succeeded"`, "money"), Icon: "card"}),
-		ui.StatCard(ui.StatCardConfig{Label: revenueOutstanding.Text(ctx), Value: stat("invoices", "sum", "amount", `status in ["open", "past_due"]`, "money"), Icon: "receipt"}),
-		ui.StatCard(ui.StatCardConfig{Label: revenueFailed.Text(ctx), Value: stat("payments", "count", "", `status = "failed"`, ""), Icon: "warning"}),
-	)
-	// Each chart is named by its card's heading, "<card ID>-title".
-	breakdown := func(title i18n.Phrase, entityName, groupBy string) render.HTML {
-		id := entityName + "-by-" + groupBy
-		return ui.Card(ui.CardConfig{ID: id, Heading: title.Text(ctx), HeadingLevel: 2},
-			ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, entityName, groupBy), ShowLabels: true, FitHeight: true, LabelledBy: id + "-title"}))
+	figures := ui.Grid(ui.GridConfig{Min: "14rem", Gap: ui.GapMD}, cards...)
+	// The gauge, then one card per breakdown. Each chart is named by its
+	// card's heading, "<card ID>-title".
+	panels := []render.HTML{ui.Card(ui.CardConfig{Heading: revenuePaymentSuccess.Text(ctx), HeadingLevel: 2}, ui.Center(ui.CenterConfig{}, paymentSuccessGauge(ctx)))}
+	for _, c := range revenueCharts {
+		id := c.entity + "-by-" + c.groupBy
+		panels = append(panels, ui.Card(ui.CardConfig{ID: id, Heading: c.title.Text(ctx), HeadingLevel: 2},
+			ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: appUI.GroupBars(ctx, c.entity, c.groupBy), ShowLabels: true, FitHeight: true, LabelledBy: id + "-title"})))
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		ui.PageHeader(ui.PageHeaderConfig{Title: revenueTitle.Text(ctx), Subtitle: revenueSubtitle.Text(ctx)}),
 		figures,
-		ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapMD},
-			ui.Card(ui.CardConfig{Heading: revenuePaymentSuccess.Text(ctx), HeadingLevel: 2}, ui.Center(ui.CenterConfig{}, paymentSuccessGauge(ctx))),
-			breakdown(revenueInvoicesByStatus, "invoices", "status"),
-			breakdown(revenuePaymentsByMethod, "payments", "method"),
-			breakdown(revenueSubscriptionsByStatus, "subscriptions", "status"),
-		),
+		ui.Grid(ui.GridConfig{Min: "24rem", Gap: ui.GapMD}, panels...),
 		ui.Card(ui.CardConfig{ID: "payments-grid", Heading: revenuePaymentsGrid.Text(ctx), HeadingLevel: 2}, paymentsHeatmap(ctx, "payments-grid-title")),
 	)
 }
@@ -89,14 +127,13 @@ func (revenueReport) RenderCtx(ctx context.Context) render.HTML {
 // paymentsHeatmap counts payments for each method and status: where the
 // failures cluster. A count the caller may not read is an empty cell.
 func paymentsHeatmap(ctx context.Context, labelledBy string) render.HTML {
-	methods := []string{"card", "ach", "wire"}
-	statuses := []string{"succeeded", "failed", "refunded"}
+	methods, statuses := paymentMethods, paymentStatuses
 	values := make([][]float64, len(methods))
 	for i, m := range methods {
 		values[i] = make([]float64, len(statuses))
 		for j, s := range statuses {
 			values[i][j] = math.NaN()
-			if n, ok := appUI.CountInt(ctx, "payments", `method = "`+m+`" and status = "`+s+`"`); ok {
+			if n, ok := appUI.CountInt(ctx, "payments", paymentCellWhere(m, s)); ok {
 				values[i][j] = float64(n)
 			}
 		}
@@ -119,7 +156,7 @@ func paymentsHeatmap(ctx context.Context, labelledBy string) render.HTML {
 func paymentSuccessGauge(ctx context.Context) render.HTML {
 	rate := math.NaN()
 	all, okAll := appUI.CountInt(ctx, "payments", "")
-	failed, okFailed := appUI.CountInt(ctx, "payments", `status = "failed"`)
+	failed, okFailed := appUI.CountInt(ctx, "payments", paymentsFailedWhere)
 	if okAll && okFailed && all > 0 {
 		// Two reads, not one: a payment that fails between them can make
 		// failed outrun all, and the share must not go below zero.

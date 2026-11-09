@@ -783,6 +783,19 @@ screens:
       - kind: entity_list
         entity: cards
         fields: [label, number]
+      # Charts grouped on SQL-keyword columns; each is checked when the
+      # screen mounts (the chart check probe drops "group").
+      - kind: pie_chart
+        props:
+          title: Cards by group
+          source:
+            entity: cards
+            group_by: group
+      - kind: line_chart
+        props:
+          source:
+            entity: cards
+            group_by: order
 
   # Record screens at one path segment per key column.
   - name: bookings

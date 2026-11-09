@@ -3582,7 +3582,13 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if srcEntity == "" || groupBy == "" {
 			return fmt.Errorf("app spec: screen %q %s source needs both entity and group_by", screenName, kind)
 		}
-		decl, known := entities[strings.Trim(srcEntity, "/")]
+		// The generated chart and its boot check (entityui.CheckChart)
+		// take the name as written, so a route-style "/customers" is an
+		// unknown entity there: refuse it here, naming the spelling.
+		if t := strings.Trim(srcEntity, "/"); t != srcEntity {
+			return fmt.Errorf("app spec: screen %q %s source entity %q is a route, not an entity name: write %q", screenName, kind, srcEntity, t)
+		}
+		decl, known := entities[srcEntity]
 		if !known {
 			return fmt.Errorf("app spec: screen %q %s source targets unknown entity %q", screenName, kind, srcEntity)
 		}
@@ -3599,6 +3605,14 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			"the chart renders each distinct stored value as a bar or slice label", decl); err != nil {
 			return err
 		}
+		// entityui.CheckChart refuses at boot a column the database does
+		// not group: a json field, and a many-to-many relation, which is
+		// a link table rather than a column. The chart drew nothing.
+		if col, _ := appSpecColumn(decl, groupBy); col != nil {
+			if t := strings.ToLower(strings.TrimSpace(col.Type)); t == "json" || (t == "relation" && col.Many) {
+				return fmt.Errorf("app spec: screen %q %s group_by %q is a %s field, which the chart cannot group by", screenName, kind, groupBy, appSpecGroupKind(col))
+			}
+		}
 	case "stat_card":
 		// A stat_card with a source binds to live entity data; without a
 		// registered CRUD handler statValue would render a silent "—".
@@ -3609,7 +3623,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			if srcEntity == "" {
 				return fmt.Errorf("app spec: screen %q stat_card source needs entity", screenName)
 			}
-			decl, known := entities[strings.Trim(srcEntity, "/")]
+			// As for a chart: entityui.CheckStat takes the name as written.
+			if t := strings.Trim(srcEntity, "/"); t != srcEntity {
+				return fmt.Errorf("app spec: screen %q stat_card source entity %q is a route, not an entity name: write %q", screenName, srcEntity, t)
+			}
+			decl, known := entities[srcEntity]
 			if !known {
 				return fmt.Errorf("app spec: screen %q stat_card source targets unknown entity %q", screenName, srcEntity)
 			}
@@ -4167,6 +4185,15 @@ func appSpecColumn(decl framework.EntityDeclaration, name string) (found *framew
 		return nil, true
 	}
 	return nil, false
+}
+
+// appSpecGroupKind names a field a chart cannot group by, for the
+// refusal: "json" or "many-to-many relation".
+func appSpecGroupKind(col *framework.FieldDeclaration) string {
+	if col.Many {
+		return "many-to-many relation"
+	}
+	return "json"
 }
 
 // appSpecNumericType reports a declared field type a sum can total.
