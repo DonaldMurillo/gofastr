@@ -91,7 +91,7 @@ func TestUpgradeApplyAllowDowngradeRunsSteps(t *testing.T) {
 // alike: a script must not read unfinished migration work as success.
 func TestUpgradeExitsNonZeroOnRemainingBreakingHits(t *testing.T) {
 	note := &upgrade.Note{
-		Change: "removed X", Breaking: true, Review: true,
+		Change: "removed X", Breaking: true,
 		Guidance: "Port to Y.",
 		Find:     upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "p", Name: "X"}}},
 	}
@@ -111,7 +111,7 @@ func TestUpgradeExitsNonZeroOnRemainingBreakingHits(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit = %d, want 1 with breaking hits outstanding (out:\n%s)", code, out)
 	}
-	if !strings.Contains(out, "breaking-change hits remain") {
+	if !strings.Contains(out, "breaking-change edit hits remain") {
 		t.Fatalf("the non-zero exit must say why:\n%s", out)
 	}
 }
@@ -137,6 +137,37 @@ func TestUpgradeExitsZeroWithoutBreakingHits(t *testing.T) {
 	})
 	if code != -1 {
 		t.Fatalf("exit = %d, want no exit (0 for the CLI) with no breaking hit", code)
+	}
+}
+
+// A hits: review note's hit may already be right (v0.97's well-known
+// note names every framework.NewApp call), so it never clears: counting
+// it made a finished port exit 1 on every run. Only edit hits count —
+// a review note's hit read from a compile error is one, as the report
+// files it.
+func TestUpgradeReviewHitsLeaveExitZero(t *testing.T) {
+	note := &upgrade.Note{
+		Change: "default flipped", Breaking: true, Review: true,
+		Guidance: "Check the call.",
+		Find:     upgrade.Find{Uses: []upgrade.Symbol{{Pkg: "p", Name: "X"}}},
+	}
+	stubRegistry(t, note)
+	hits := []scan.Hit{{File: "a.go", Line: 3, Why: "p.X"}}
+	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
+		return &scan.Result{TypeChecked: true, Hits: map[*upgrade.Note][]scan.Hit{note: hits}}, nil
+	})
+	dir := downgradedApp(t)
+	run := func() int {
+		return clitest.CovT_capExit(t, func() {
+			_ = clitest.CovT_capStdout(t, func() { RunUpgrade([]string{dir, "--from", "v0.85.0", "--to", "v0.86.0"}) })
+		})
+	}
+	if code := run(); code != -1 {
+		t.Fatalf("exit = %d, want no exit with only review hits", code)
+	}
+	hits = []scan.Hit{{File: "a.go", Line: 3, Why: "p.X", Err: "undefined: p.X"}}
+	if code := run(); code != 1 {
+		t.Fatalf("exit = %d, want 1 for a review note's compile-error hit", code)
 	}
 }
 

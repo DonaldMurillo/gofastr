@@ -30,6 +30,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -691,10 +692,13 @@ func repoGoDirective(t *testing.T, repoRoot string) string {
 }
 
 // cliUpgradeSmokeRun keeps the shipped binary path covered: `gofastr
-// upgrade` with the registry embedded in the CLI must run cleanly (exit 0)
-// against appDir. What the run FINDS is asserted by the scan gates over
-// scan.Run; this only proves the binary still loads its registry, scans and
-// renders without failing.
+// upgrade` with the registry embedded in the CLI must run to the end of its
+// report against appDir. What the run FINDS is asserted by the scan gates
+// over scan.Run; this only proves the binary still loads its registry, scans
+// and renders without failing. A finished report that still holds breaking
+// edit hits exits 1 by design (#669), and an old fixture app has them, so
+// that one exit counts as a clean run when the report says so on its last
+// line; every other failure is still fatal.
 func cliUpgradeSmokeRun(t *testing.T, root, appDir string) {
 	t.Helper()
 	cli := filepath.Join(t.TempDir(), "gofastr-cli")
@@ -704,10 +708,22 @@ func cliUpgradeSmokeRun(t *testing.T, root, appDir string) {
 	cmd := exec.CommandContext(ctxWithTimeout(t, 2*time.Minute), cli, "upgrade", appDir, "--to", target)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if err != nil && !finishedWithEditHits(err, out) {
 		t.Fatalf("gofastr upgrade %s --to %s (smoke run) failed: %v\n%s", appDir, target, err, firstLines(string(out), 30))
 	}
 	t.Logf("CLI smoke run ok:\n%s", firstLines(strings.TrimSpace(string(out)), 10))
+}
+
+// finishedWithEditHits reports whether a failed upgrade run is the
+// designed exit 1 after a complete report: exit status exactly 1 and the
+// breaking-hits line as the last thing the run printed.
+func finishedWithEditHits(err error, out []byte) bool {
+	var ee *exec.ExitError
+	if !errors.As(err, &ee) || ee.ExitCode() != 1 {
+		return false
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	return strings.HasSuffix(lines[len(lines)-1], "breaking-change edit hits remain: edit the lines above before shipping.")
 }
 
 // latestRegistryVersion returns the newest release in the registry

@@ -141,6 +141,11 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Nothing called either helper in `framework/experimental/harness/session`
+  or `kiln/agent`, and each dropped its encode error and returned a
+  partial value. Call `json.Marshal` and handle the error instead.
 - **The static export keeps its prune list beside `OutDir`**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [static export](framework/docs/content/static-export.md)).
@@ -229,19 +234,23 @@ few lines, and link the PR or the docs page for the rest.
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
   report still prints — the notes describe what a downgrade undoes — but
   no step runs until the flag says to. A run whose BREAKING notes still
-  have hits, plan or apply, now exits 1 (a refused downgrade exits 2), so
-  a script no longer reads unfinished migration work as success.
+  have edit hits, plan or apply, now exits 1 (a refused downgrade exits
+  2), so a script no longer reads unfinished migration work as success.
+  Review hits do not count: they may already be right and never clear.
 - **A registry note pairing `shapes` with `hits: review` no longer
   parses** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A shapes hit is a use of the OLD shape, a dead spelling, so it is an
-  edit; the four shipped notes that said review moved to edit.
+  edit; the four shipped notes that said review moved to edit. The
+  v0.94 `print.AccessPolicy` note split in two: the old `RequireAuth`
+  and `Public` shapes are edits, and a use of `print.AccessPolicy` (a
+  policy of your own) stays a review hit, since the type survives.
 - **BREAKING: `localentity` refuses `\s`, `\S` and a bare `.` in a
+  field `Pattern`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   JavaScript's `\s` is Unicode whitespace where Go's is ASCII, and its
   `.` skips every line terminator where Go's skips only `\n`, so the
   browser and the server validated different values. Name the characters
   in a class instead (`[ \t\r\n]+`); `Define` refuses the ambiguous
   spellings at startup.
-
 - **BREAKING: magic-link send and forgot-password share one per-address
   mail budget** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   R8-AU-03). `AuthConfig.MailAddressRateLimit` (default: one mail per
@@ -563,17 +572,20 @@ few lines, and link the PR or the docs page for the rest.
   are documented with the semantics the route applies (the offset
   ceiling, limit-wins-over-per_page, stream's refusals), beside the
   `?limit=` description that already names the entity's real cap.
-- **llm.md and the MCP tools close their doc gaps**
+- **BREAKING: llm.md and the MCP tools close their doc gaps**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Enum
   values in llm.md's field table escape the cell pipe (`a\|b`), a long
   default truncates on a rune boundary, the multi-tenancy note names the
   configured tenant column (wire key), and the list parameters document
   `per_page` and `offset`. The MCP record-key arguments are typed from
   the key column — an integer key offers an integer `id` prop — and the
-  list tool forwards and documents `per_page` and `offset`.
-- **The SDK schema hash covers `JSONCase`**
+  list tool forwards and documents `per_page` and `offset`. A client that
+  sent an integer key as a string (`{"id": "42"}`) is now refused with
+  invalid params; it sends the number. A key past 1e6 builds its route
+  from its digits, not `1.234567e+06`.
+- **BREAKING: the SDK schema hash covers `JSONCase`**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `sdk.SchemaHash` takes the case the artifacts speak ("camelCase" for
+  `sdk.SchemaHash(named, jsonCase)` takes the case the artifacts speak ("camelCase" for
   the generated clients, the app's own case in sdkdocs via
   `Config.SnakeCase`), so an app served snake_case no longer reports
   "in sync" for camel artifacts. Every existing manifest's digest changes

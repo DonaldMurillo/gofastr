@@ -546,7 +546,9 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	if !ok {
 		return "", toolArgError("missing required param %q", key)
 	}
-	s := fmt.Sprint(value)
+	// toolParamString, not fmt.Sprint: an integer key arrives as float64
+	// and fmt.Sprint spells 1234567 as 1.234567e+06 (#669).
+	s := toolParamString(value)
 	if s == "" {
 		return "", toolArgError("param %q must not be empty", key)
 	}

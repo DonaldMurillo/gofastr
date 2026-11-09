@@ -41,8 +41,10 @@ steps and stops at the first failure so you fix with the notes in hand.
 `--apply` against an OLDER release is refused unless `--allow-downgrade`
 is passed: the steps are written for moving forward, and the notes
 describe what a downgrade undoes, not how to undo it. The exit status is
-1 while any BREAKING note still has hits (2 for the refused downgrade),
-so a script does not read unfinished migration work as success.
+1 while any BREAKING note still has edit hits (2 for the refused
+downgrade), so a script does not read unfinished migration work as
+success. A review hit does not count: it may already be right, so it
+never clears.
 An app that vendors its dependencies (`vendor/modules.txt`) gets a
 `go mod vendor` step after `go mod tidy`; without it every later go
 command refuses the stale `vendor/`. A release candidate target
