@@ -99,7 +99,9 @@ func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 }
 
 // agg is StatValue's exact spelling, and a sum totals a numeric field:
-// anything else renders "—" at runtime, so generation refuses it.
+// anything else renders "—" at runtime, so generation refuses it. A
+// count given a field is refused too: StatValue ignores the field, and
+// entityui.CheckStat, which the generated app runs at boot, refuses it.
 func TestStatCardAggIsExact(t *testing.T) {
 	stat := func(agg, field string) error {
 		return r5AppSpec(t, `      - kind: stat_card
@@ -110,12 +112,12 @@ func TestStatCardAggIsExact(t *testing.T) {
             field: `+field+`
 `)
 	}
-	for _, c := range [][2]string{{"SUM", "amount"}, {"avg", "amount"}, {" sum", "amount"}, {"sum", "label"}, {"sum", "created_at"}} {
+	for _, c := range [][2]string{{"SUM", "amount"}, {"avg", "amount"}, {" sum", "amount"}, {"sum", "label"}, {"sum", "created_at"}, {"count", "label"}, {"", "label"}} {
 		if err := stat(c[0], c[1]); err == nil {
 			t.Errorf("stat_card agg %q field %q was accepted", c[0], c[1])
 		}
 	}
-	for _, c := range [][2]string{{"sum", "amount"}, {"count", "label"}, {"", "label"}} {
+	for _, c := range [][2]string{{"sum", "amount"}} {
 		if err := stat(c[0], c[1]); err != nil {
 			t.Errorf("stat_card agg %q field %q: %v", c[0], c[1], err)
 		}

@@ -481,7 +481,10 @@ few lines, and link the PR or the docs page for the rest.
   forever with no error. Each generated screen's mount now runs
   `entityui.CheckStat` for every sourced card it renders and panics
   naming the screen and the card, as `battery/admin` already does for
-  its metrics.
+  its metrics. So that a spec the load passes never fails that check,
+  the load now also refuses a count card given a `source.field` or a
+  `format`, and a sum whose `format` is not `money`: the card ignored
+  them and drew a plain number.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

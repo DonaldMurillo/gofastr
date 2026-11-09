@@ -1241,7 +1241,9 @@ optional `filter: status=active`) for a `stat_card`, and
 `source: {entity: customers, group_by: status}` for a chart. `agg` is
 `count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
 `int`, `float` or `decimal` field; validation refuses anything else rather
-than rendering "—". A `stat_card` filter is a filter predicate
+than rendering "—". A count takes no `field` and no `format`, and a sum's
+`format` is `money` or absent: validation refuses the rest, because the
+card would ignore it and draw a plain number. A `stat_card` filter is a filter predicate
 (`'status in ["draft", "open"] and amount >= 1000'`); the bare
 `field=value` form is read as `field = "value"`. Validation checks the
 value in each comparison against its column, with the `entity_list`
