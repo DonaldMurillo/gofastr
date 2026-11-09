@@ -305,6 +305,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			}
 			storeKey := idemStoreKey(principal, tenant, scope, key)
 
+			//gofastr:allow(textbind) the store key's NUL bytes are escaped injectively by pgKey at bind time (Postgres) and invalid UTF-8 is refused by columnPrincipal before any write; SQLite stores raw bytes, so no half of the check applies there
 			replay, ok, beginErr := cfg.Store.Begin(r.Context(), storeKey, fp)
 			switch {
 			case errors.Is(beginErr, ErrFingerprintMismatch):
@@ -354,6 +355,7 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 				// 30-second TTL; that would block legitimate retries.
 				finishCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
+				//gofastr:allow(textbind) Finish binds the same pgKey-escaped column Begin claimed under; the key was vetted by columnPrincipal on the Begin that must precede it, and NUL keys are stored, not refused (the round-trip contract)
 				if err := cfg.Store.Finish(finishCtx, storeKey, fp, resp); err != nil {
 					cfg.Logger.Error("idempotency: Finish failed (claim stranded; retries of this key will 409 until TTL)",
 						// The key is request-borne: scrub it the way every

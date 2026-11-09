@@ -16,11 +16,11 @@ var db *sql.DB
 
 var errBad = errors.New("bad")
 
-func bindHelper(v string) { // want bindHelper:`textbind\(sink=1 return=0 check=0 source=false\)`
+func bindHelper(v string) { // want bindHelper:`textbind\(sink=1 return=0 check=0 source=false retfields=\[\]\)`
 	db.ExecContext(context.Background(), "INSERT INTO t (v) VALUES ($1)", v)
 }
 
-func bindThenCheck(v string) error { // want bindThenCheck:`textbind\(sink=1 return=0 check=0 source=false\)`
+func bindThenCheck(v string) error { // want bindThenCheck:`textbind\(sink=1 return=0 check=0 source=false retfields=\[\]\)`
 	bindHelper(v)
 	if !utf8.ValidString(v) || strings.IndexByte(v, 0) >= 0 {
 		return errBad

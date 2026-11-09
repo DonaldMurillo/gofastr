@@ -604,7 +604,13 @@ expose them to agents connected to a live app.**
   with `utf8.ValidString && no NUL`, credited by body; flows through
   helpers, same-package interface implementations and struct fields by
   fact — a field filled with request text anywhere is request text at
-  every read, so check before storing); `controlbytes` grew a Location arm (a scrub
+  every read, and a method returning its receiver's field hands the
+  caller's fill back (`RetFields` in the exported summary); a call
+  through a func-typed field follows its same-package fill sites'
+  summaries, field-wide, and a fill-less `func(*http.Request) string`
+  field the package declares is request text itself (the d6167d1a
+  principal); a `strings.Builder` local's String/Bytes carry what
+  WriteString/Write put in it until Reset); `controlbytes` grew a Location arm (a scrub
   that exempts tab clears nothing at a redirect) and a guard-then-strip
   arm (test the stripped value, not the raw one); `sanitizefix` (a
   one-pass multi-character removal in a scrub/strip/sanitize function:

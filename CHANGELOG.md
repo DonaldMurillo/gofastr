@@ -235,6 +235,25 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`textbind` follows request text through method returns, host
+  callbacks and `strings.Builder`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A method that returns its receiver's field (`ParsedFilter.BindValue`)
+  hands the caller's fill back, so the exported summary now names those
+  fields (`RetFields`) and the caller's marks taint the call result; a
+  call through a func-typed field follows its same-package fill sites'
+  summaries, and a fill-less `func(*http.Request) string` field the
+  package declares (the d6167d1a `IdempotencyConfig.Principal` shape)
+  is request text itself; a `strings.Builder` local's `String`/`Bytes`
+  carry what `WriteString`/`Write` put in it until `Reset`.
+- **A2A refuses an owner or tenant the store cannot bind** (#669). An
+  `Owner` or `Tenant` callback that returns a NUL byte or invalid
+  UTF-8 (read from the request) is refused with the transport's 401 at
+  resolution; before, the first task write answered Postgres's 22021
+  as a 500 where SQLite silently stored it.
+- **Inbound webhook ingestion refuses an unstorable dedupe key or
+  owner** (#669). A `DedupeKeyFunc` or `Owner` callback result holding
+  a NUL or invalid UTF-8 is a 400 before anything persists, instead of
+  a Postgres 500 on the first store write (SQLite stored it silently).
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

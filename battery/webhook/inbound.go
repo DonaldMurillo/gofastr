@@ -122,6 +122,8 @@ var errVerifyFailed = i18n.NewError(reasonVerifyFailed)
 
 var reasonVerifyFailed = i18n.Define("webhook.verify_failed", "signature verification failed")
 
+var reasonUnstorableText = i18n.Define("webhook.unstorable_text", "dedupe key or owner holds bytes the store cannot save")
+
 // TimestampedVerifier wraps VerifyTimestamped over the X-GoFastr-Signature
 // header (SignatureHeader), with the event and delivery id read from
 // EventHeader and DeliveryIDHeader. The timestamp, event and id are all in
@@ -266,6 +268,13 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		if cfg.DedupeKeyFunc != nil {
 			dedupeKey = cfg.DedupeKeyFunc(r, body)
 		}
+		// A dedupe key or owner the SQL store cannot bind (a NUL byte,
+		// invalid UTF-8 — Postgres answers 22021) is refused before
+		// anything persists: it could never dedupe or attribute anyway.
+		if dedupeKey != "" && !storableText(dedupeKey) {
+			i18n.HTTPError(w, r, http.StatusBadRequest, reasonUnstorableText)
+			return
+		}
 		if dedupeKey != "" {
 			seen, serr := cfg.Store.SeenDedupeKey(r.Context(), cfg.Source, dedupeKey)
 			if serr != nil {
@@ -294,7 +303,12 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 			UpdatedAt:  time.Now().UTC(),
 		}
 		if cfg.Owner != nil {
-			env.Owner = cfg.Owner(r, body)
+			owner := cfg.Owner(r, body)
+			if !storableText(owner) {
+				i18n.HTTPError(w, r, http.StatusBadRequest, reasonUnstorableText)
+				return
+			}
+			env.Owner = owner
 		}
 		if cfg.Queue == nil {
 			env.DedupeKey = dedupeKey
