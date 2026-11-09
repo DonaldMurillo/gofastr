@@ -24,3 +24,7 @@ notes:
     breaking: false
     guidance: "Delete <OutDir>/.gofastr-pages; a host that published it keeps serving the old copy until it goes. The first build on this release finds no list beside OutDir and removes no stale page, so a page gated or dropped since the last build stays in the tree: clear OutDir once if that matters. An OutDir with no parent directory (a filesystem root) now fails the build."
     nodetect: "the old file is build output in the export directory, not app source"
+  - change: "The Linux desktop shell asks AllowNavigation before every frame's request, iframes included: a foreign iframe now stays blank on Linux"
+    breaking: false
+    nodetect: "only an app that loosened the default CSP's frame-src to frame another origin sees a change, and that is a header value, often from configuration"
+    guidance: "Under the default CSP nothing changes: default-src 'self' already blocked foreign frames on every shell. An app that frames another origin on purpose and ships on Linux has no per-frame switch: Config.DangerouslyAllowForeignNavigation lets the frame load, and with it every main-frame navigation off the app's origin."

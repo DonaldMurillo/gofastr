@@ -184,6 +184,9 @@ type Symbols struct {
 
 	// WebKitGTK navigation policy (2.40+, the same floor as evaluate_javascript).
 	WebkitPolicyDecisionIgnore                          uintptr // webkit_policy_decision_ignore
+	WebkitNavigationPolicyDecisionGetNavigationAction   uintptr // webkit_navigation_policy_decision_get_navigation_action
+	WebkitNavigationActionGetRequest                    uintptr // webkit_navigation_action_get_request
+	WebkitURIRequestGetURI                              uintptr // webkit_uri_request_get_uri
 	WebkitResponsePolicyDecisionGetResponse             uintptr // webkit_response_policy_decision_get_response
 	WebkitResponsePolicyDecisionIsMainFrameMainResource uintptr // webkit_response_policy_decision_is_main_frame_main_resource
 	WebkitURIResponseGetURI                             uintptr // webkit_uri_response_get_uri
@@ -365,6 +368,9 @@ func table() []symbol {
 		{&Sym.WebkitSettingsSetEnableDeveloperExtras, libWebKit, "webkit_settings_set_enable_developer_extras"},
 		{&Sym.WebkitJavascriptResultGetJSValue, libWebKit, "webkit_javascript_result_get_js_value"},
 		{&Sym.WebkitPolicyDecisionIgnore, libWebKit, "webkit_policy_decision_ignore"},
+		{&Sym.WebkitNavigationPolicyDecisionGetNavigationAction, libWebKit, "webkit_navigation_policy_decision_get_navigation_action"},
+		{&Sym.WebkitNavigationActionGetRequest, libWebKit, "webkit_navigation_action_get_request"},
+		{&Sym.WebkitURIRequestGetURI, libWebKit, "webkit_uri_request_get_uri"},
 		{&Sym.WebkitResponsePolicyDecisionGetResponse, libWebKit, "webkit_response_policy_decision_get_response"},
 		{&Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, libWebKit, "webkit_response_policy_decision_is_main_frame_main_resource"},
 		{&Sym.WebkitURIResponseGetURI, libWebKit, "webkit_uri_response_get_uri"},

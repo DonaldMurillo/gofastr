@@ -324,7 +324,13 @@ an external link, `location.href = "https://…"`, a redirect to another
 host, a `data:` URL. The page stays where it was and the shell logs a
 warning naming the refused host (`desktop.NavigationHost`, which drops
 the path and query so an OAuth code in the URL is never logged).
-Iframes are not checked; the page's own CSP decides what it frames.
+macOS and Windows check the main frame only and leave iframes to the
+page's own CSP. WebKitGTK does not say which frame a navigation is for,
+so Linux checks every frame: a foreign iframe stays blank there and
+loads on the other two. The default CSP (`default-src 'self'` with no
+`frame-src`) already blocks foreign frames on every shell, so the
+difference shows only in an app that loosens `frame-src`. An
+`about:srcdoc` iframe sends no request and loads on all three.
 
 A foreign page in the app's window looks like the app to the user, and
 native events are evaluated into whatever the window shows, so the
@@ -342,7 +348,8 @@ How each shell enforces it:
 | macOS | `WKNavigationDelegate` `decidePolicyForNavigationAction` | Before the request, main frame only |
 | Windows | `ICoreWebView2::add_NavigationStarting` | Before the request and on each redirect; WebView2 raises it for the main frame only |
 | Windows | `ICoreWebView2::add_NewWindowRequested` | Every new-window request is marked handled. WebView2 would otherwise open a second web view with no navigation policy |
-| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | After the response arrives, before the page commits. WebKitGTK's navigation action has no main-frame flag, so a refused request still reaches the other host; nothing it returns renders |
+| Linux | `decide-policy` on the navigation action (`webkit_navigation_action_get_request`) | Before the request, for every navigation and new-window request. The action has no main-frame flag, so iframes are checked too; `about:srcdoc` passes |
+| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | The second line: the main frame's response, after a redirect, before the page commits |
 
 A custom `Shell` gets the policy as `WindowConfig.AllowNavigation` and
 must call it, on the UI thread, before a main-frame navigation commits;
@@ -352,7 +359,10 @@ A test checks the policy without a shell: `desktoptest.Harness`'s
 `AllowsNavigation(url)` runs the battery's check with the harness's
 bound address (`battery/desktop/navigation_policy_security_test.go`).
 The macOS e2e (`phaseForeignNavigation`) and the Linux graphical test
-(`TestNativeGTKWebKit`) drive a real web view at a second origin. The
+(`TestNativeGTKWebKit`) drive a real web view at a second origin; the
+Linux one also counts the requests that reach it, which must be none.
+The Linux rule itself, `refuseNavigation`, has no GTK in it and is
+tested on every OS (`battery/desktop/linux/navpolicy_test.go`). The
 Windows hooks have no test runner yet; `TestWindowsShellRefusesNewWindows`
 checks the shell's source.
 

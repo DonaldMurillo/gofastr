@@ -144,6 +144,18 @@ few lines, and link the PR or the docs page for the rest.
   the upsert's checks read it.
 
 ### Security
+- **The Linux desktop shell checks a navigation before its request**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [desktop](framework/docs/content/desktop.md)). Linux asked
+  `AllowNavigation` only when the main frame's response arrived, so a
+  refused URL's request, path and query had already reached the other
+  host. It now checks every navigation and new-window request with its
+  URL before the request leaves the web view, and keeps the response
+  check as a second line. WebKitGTK does not say which frame a
+  navigation is for, so iframes are checked too: a foreign iframe stays
+  blank on Linux. The default CSP already blocks foreign frames on every
+  shell; an app that loosens `frame-src` sees them load on macOS and
+  Windows only.
 - **The static export no longer follows a symlink out of an `ExtraDirs`
   directory** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [static export](framework/docs/content/static-export.md)). An

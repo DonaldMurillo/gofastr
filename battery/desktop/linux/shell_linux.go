@@ -102,14 +102,15 @@ var focusCallback = ffi.NewCallback(func(a *ffi.Args) uintptr {
 	return 0
 })
 
-// decidePolicyCallback is a web view's "decide-policy" handler. A
-// navigation action carries no main-frame flag in WebKitGTK, so the
-// check runs on the response: a refused main-frame document is ignored
-// before it commits. The request has reached the other host by then,
-// but nothing it returns renders in the window. Subframes load as on
-// the other shells. A panic refuses.
+// decidePolicyCallback is a web view's "decide-policy" handler; the rule
+// itself is refuseNavigation. A navigation or new-window action is
+// checked with its request URI before the request leaves the web view.
+// WebKitGTK's action carries no main-frame flag, so every frame is
+// checked, a subframe's included. The main frame's response is checked
+// again, the second line for a URI a redirect moved. A refused decision
+// is ignored; a panic refuses.
 var decidePolicyCallback = ffi.NewCallback(func(a *ffi.Args) (handled uintptr) {
-	decision := a.Int[1]
+	decision, kind := a.Int[1], a.Int[2]
 	defer func() {
 		if v := recover(); v != nil {
 			slog.Default().Error("desktop/linux: navigation policy panicked", "panic", textsafe.Recovered(v))
@@ -117,17 +118,28 @@ var decidePolicyCallback = ffi.NewCallback(func(a *ffi.Args) (handled uintptr) {
 			handled = 1
 		}
 	}()
-	if a.Int[2] != 2 /* WEBKIT_POLICY_DECISION_TYPE_RESPONSE */ ||
-		call(gtk.Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, decision)&0xff == 0 {
-		return 0
-	}
 	s := toolkitOwner.Load()
 	if s == nil || s.cfg.AllowNavigation == nil {
 		return 0
 	}
-	response := call(gtk.Sym.WebkitResponsePolicyDecisionGetResponse, decision)
-	raw := capsGoString(call(gtk.Sym.WebkitURIResponseGetURI, response))
-	if s.cfg.AllowNavigation(raw) {
+	var raw string
+	mainResource := false
+	switch kind {
+	case policyNavigationAction, policyNewWindowAction:
+		action := call(gtk.Sym.WebkitNavigationPolicyDecisionGetNavigationAction, decision)
+		request := call(gtk.Sym.WebkitNavigationActionGetRequest, action)
+		raw = capsGoString(call(gtk.Sym.WebkitURIRequestGetURI, request))
+	case policyResponse:
+		mainResource = call(gtk.Sym.WebkitResponsePolicyDecisionIsMainFrameMainResource, decision)&0xff != 0
+		if !mainResource {
+			return 0
+		}
+		response := call(gtk.Sym.WebkitResponsePolicyDecisionGetResponse, decision)
+		raw = capsGoString(call(gtk.Sym.WebkitURIResponseGetURI, response))
+	default:
+		return 0
+	}
+	if !refuseNavigation(kind, mainResource, raw, s.cfg.AllowNavigation) {
 		return 0
 	}
 	slog.Default().Warn("desktop/linux: refused a navigation off the app's origin", "host", desktop.NavigationHost(raw))

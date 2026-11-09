@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unsafe"
@@ -224,10 +225,13 @@ func TestNativeGTKWebKit(t *testing.T) {
 		fmt.Fprint(w, `<!doctype html><html><head><title>GoFastr Linux</title><style>body{font:24px sans-serif;background:#16223a;color:white;padding:48px}button{padding:16px}</style></head><body><h1>GoFastr Linux native</h1><p>GTK 3 · WebKitGTK · CGO_ENABLED=0</p><button id="test" onclick="this.textContent='Clicked'">Native WebView works</button></body></html>`)
 	}))
 	defer server.Close()
-	// A second origin: its page posts to the parent when it renders, so an
-	// iframe of it proves subframes still load while the main frame may not
-	// leave the app's origin.
+	// A second origin: its page posts to the parent when it renders. The
+	// shell checks every frame's navigation before the request, so an
+	// iframe of it neither renders nor reaches it, and neither does a
+	// main-frame navigation; hits counts the requests that got there.
+	var hits atomic.Int64
 	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprint(w, `<!doctype html><title>Foreign</title><script>parent.postMessage("framed", "*")</script>`)
 	}))
@@ -247,7 +251,7 @@ func TestNativeGTKWebKit(t *testing.T) {
 			s.Quit()
 			return
 		}
-		go func() { defer s.Quit(); result <- exerciseNative(ctx, s, window, server.URL, foreign.URL) }()
+		go func() { defer s.Quit(); result <- exerciseNative(ctx, s, window, server.URL, foreign.URL, &hits) }()
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +266,7 @@ func TestNativeGTKWebKit(t *testing.T) {
 	}
 }
 
-func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin, foreign string) error {
+func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin, foreign string, hits *atomic.Int64) error {
 	evaluator := w.(desktop.PageEvaluator)
 	awaitPage := func(e desktop.PageEvaluator, id string) error {
 		deadline := time.Now().Add(20 * time.Second)
@@ -293,7 +297,7 @@ func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin
 	if err = json.Unmarshal(out, &value); err != nil || value.Answer != 42 || value.OS != "linux" {
 		return fmt.Errorf("async eval: %s (%v)", out, err)
 	}
-	if err = exerciseForeignNavigation(ctx, evaluator, origin, foreign); err != nil {
+	if err = exerciseForeignNavigation(ctx, evaluator, origin, foreign, hits); err != nil {
 		return err
 	}
 	if _, err := evaluator.EvalAsync(ctx, `throw new Error("expected native failure")`); err == nil {
@@ -387,18 +391,27 @@ func exerciseNative(ctx context.Context, s *linuxShell, w desktop.Window, origin
 	return w.Close()
 }
 
-// exerciseForeignNavigation frames the other origin, which must render,
-// then points the main frame at it, which must not leave the app.
-func exerciseForeignNavigation(ctx context.Context, e desktop.PageEvaluator, origin, foreign string) error {
-	framed, err := e.EvalAsync(ctx, `return await new Promise(done => {
-		addEventListener("message", m => m.data === "framed" && done(true));
-		setTimeout(() => done(false), 10000);
+// exerciseForeignNavigation frames a srcdoc page, which must render, and
+// the other origin, which must not, then points the main frame at the
+// other origin, which must not leave the app. No request may reach the
+// other origin: hits counts the ones that did.
+func exerciseForeignNavigation(ctx context.Context, e desktop.PageEvaluator, origin, foreign string, hits *atomic.Int64) error {
+	frame := func(attr, value, want string) (json.RawMessage, error) {
+		return e.EvalAsync(ctx, `return await new Promise(done => {
+		addEventListener("message", m => m.data === `+strconv.Quote(want)+` && done(true));
+		setTimeout(() => done(false), 3000);
 		const f = document.createElement("iframe");
-		f.src = `+strconv.Quote(foreign+"/frame")+`;
+		f.setAttribute(`+strconv.Quote(attr)+`, `+strconv.Quote(value)+`);
 		document.body.append(f);
 	})`)
+	}
+	framed, err := frame("srcdoc", `<script>parent.postMessage("srcdoc", "*")</script>`, "srcdoc")
 	if err != nil || string(framed) != "true" {
-		return fmt.Errorf("foreign iframe did not render: %s (%v)", framed, err)
+		return fmt.Errorf("srcdoc iframe did not render: %s (%v)", framed, err)
+	}
+	framed, err = frame("src", foreign+"/frame", "framed")
+	if err != nil || string(framed) != "false" {
+		return fmt.Errorf("foreign iframe rendered: %s (%v)", framed, err)
 	}
 	if _, err = e.EvalAsync(ctx, `location.href = `+strconv.Quote(foreign+"/page")+`; return true`); err != nil {
 		return err
@@ -407,6 +420,9 @@ func exerciseForeignNavigation(ctx context.Context, e desktop.PageEvaluator, ori
 	at, err := e.EvalAsync(ctx, `return location.origin + "|" + document.title`)
 	if err != nil || string(at) != strconv.Quote(origin+"|GoFastr Linux") {
 		return fmt.Errorf("main frame left the app origin: %s (%v)", at, err)
+	}
+	if n := hits.Load(); n != 0 {
+		return fmt.Errorf("%d request(s) reached the other origin; the check must run before the request", n)
 	}
 	return nil
 }
