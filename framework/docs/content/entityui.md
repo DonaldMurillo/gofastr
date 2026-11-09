@@ -145,7 +145,7 @@ keeps the UI unchanged; without a callback the default stays
   becomes two-line rows (`ui.ResponsiveRows`): the title over the card
   subtitle (or the first other text column), the card badge (or the
   first enum) over the first number at the end, the checkbox before
-  and the row menu after. On a 320px screen (a table under 22rem) the
+  and the row menu after. On a 320px screen (a table under 21rem) the
   title, subtitle, badge and number each take a line, so the name is
   never cut to a few letters. The other columns show on the record.
 - **A record** (`appUI.Record("invoices", id)`): a page header with the

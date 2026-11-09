@@ -113,7 +113,7 @@ const (
 	// over the PhoneSubtitle cell, the PhoneMeta cell over the
 	// PhoneDetail cell at the end, the PhoneLead cell (a selection box)
 	// before them and the PhoneEnd cell (a row menu) after. Cells of a
-	// column with no Phone slot are not drawn on a phone. Below 22rem
+	// column with no Phone slot are not drawn on a phone. Below 21rem
 	// (a 320px screen) each slot takes a line of its own, title,
 	// subtitle, meta, detail, so a badge and a price never squeeze the
 	// title. One column must be the PhoneTitle.

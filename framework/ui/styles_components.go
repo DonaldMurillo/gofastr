@@ -1736,7 +1736,7 @@ func dataTableCSS(_ style.Theme) string {
    and a name read "C…", and a badge and a price side by side still ran
    into each other. The meta and detail start where the title does, and
    the columns close up so the text keeps more of the width. */
-@container (max-width: 22rem) {
+@container (max-width: 21rem) {
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas: "lead title end" "lead subtitle end" "lead meta end" "lead detail end";
