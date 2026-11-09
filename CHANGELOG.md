@@ -553,6 +553,11 @@ few lines, and link the PR or the docs page for the rest.
   `--ui-segmented-min-width-2…6` tokens stay; seven or more options size
   to their content. The `--fui-segmented-dir` variable and the options'
   `data-position` attribute are gone.
+- **Lightbox chevrons point the way their buttons go in right-to-left**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  toolbar puts Prev on the right in RTL and the arrow keys follow it,
+  but the chevron glyphs kept their left-to-right direction. They now
+  mirror under `:dir(rtl)`.
 
 ## [0.96.0] - 2026-11-06
 
