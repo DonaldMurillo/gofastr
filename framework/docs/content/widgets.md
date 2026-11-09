@@ -83,6 +83,15 @@ builds each one. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
 
+`gofastr:widgets-synced` fires on `window` each time one page's catalog
+pass settles: the boot fetch, and the re-fetch after each SPA
+navigation. `detail.path` is the page the pass was for, without its
+query string. It fires once
+the widgets the pass mounts, and any its deep link opens, have settled
+(mounted, or failed), and also when the fetch failed or there was
+nothing to mount, so a script or test
+waiting for "the widgets for /b are in" waits on it, never on a timer.
+
 The registry is process-wide but routes belong to a router, so a second
 router in the same process that serves a widget another router mounted
 calls `widget.MountShared(r, def)`. It registers, on `r`'s root, each of
@@ -435,7 +444,8 @@ close path (trigger-side close, the chrome's own close button, a
 backdrop click, Escape). Rebind on open, unbind on close; never assume
 a root mounts exactly once. The `fui:` prefix marks widget-UI events on
 `document`; the `gofastr:` prefix is reserved for window-level
-navigation events (`gofastr:navigate`, `gofastr:beforenavigate`).
+navigation events (`gofastr:navigate`, `gofastr:beforenavigate`,
+`gofastr:widgets-synced`).
 
 **DOM lifetime.** A registered widget root survives SPA navigation.
 Roots the runtime fetches are appended to `<body>`, outside the layout

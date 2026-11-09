@@ -139,9 +139,13 @@ go build -o site ./examples/site/
   so a screen that reads the request works in both. A page's doc is the
   one the live host serves, SEO front matter included: the builder
   writes it through `UIHost.LLMMDWithSEO`.
-- `.gofastr-pages`: the list of page and `llm.md` files this build
-  wrote. The next build into the same `OutDir` removes any listed file
-  it no longer writes, such as a page that became gated or a route that
+- Beside `OutDir`, never in it: `.<name>.gofastr-pages`, the list of
+  page and `llm.md` files this build wrote (`OutDir` `dist/site` keeps
+  it in `dist/.site.gofastr-pages`). A static host serves every file in
+  the export tree, and the builder's own state is not one of them; an
+  `OutDir` with no parent directory fails the build before it writes
+  anything. The next build into the same `OutDir` removes any listed
+  file it no longer writes, such as a page that became gated or a route that
   was dropped, so the static host stops serving it with a 200. A file
   the builder never listed, and anything this build wrote or copied,
   stays; a first build with no list removes nothing. A page renamed by
@@ -221,7 +225,14 @@ go build -o site ./examples/site/
   (`_HEADERS`) is refused: no host reads it, and on a case-insensitive
   filesystem it would replace the generated file.
 - `Builder.ExtraDirs` files under their mount path, minus the dotfiles
-  and config files the static dir also skips. A page or asset
+  and config files the static dir also skips. An `os.DirFS` extra
+  directory is read through `os.Root`, the way the static dir is: a
+  symlink whose target leaves the directory, or is not a regular file,
+  is skipped and logged, and a symlinked directory inside it is walked.
+  A symlink in any other `fs.FS`, a wrapped `os.DirFS` such as
+  `fs.Sub(os.DirFS(dir), "docs")` included, is skipped and logged
+  wherever it points: such an FS follows a link anywhere on disk. Pass
+  the `os.DirFS` itself to keep links inside it. A page or asset
   the build wrote, in any case (the generated `_headers` and `_redirects` included),
   or a file the static source provides, wins over an extra file at the
   same path. An extra file spelled in another case than an asset the

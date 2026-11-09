@@ -175,3 +175,21 @@ func TestVerifyAnyMultiplePreviousKeys(t *testing.T) {
 		}
 	}
 }
+
+// MintedAt reads back the signing time a token carries, and refuses a
+// token that is not three dot-separated parts with a numeric time.
+func TestMintedAtReadsSigningTime(t *testing.T) {
+	at := time.Unix(1_700_000_000, 0)
+	token, _, err := Mint(make([]byte, 32), at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := MintedAt(token); !ok || !got.Equal(at) {
+		t.Fatalf("MintedAt = %v, %v; want %v", got, ok, at)
+	}
+	for _, bad := range []string{"", "sess-a.b", "sess-a.notanumber.mac", "a.1.b.c"} {
+		if _, ok := MintedAt(bad); ok {
+			t.Errorf("MintedAt(%q) ok, want refused", bad)
+		}
+	}
+}

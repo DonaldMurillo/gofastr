@@ -68,3 +68,35 @@ func TestRootRefusesSymlinkEscape(t *testing.T) {
 		t.Fatal("root followed a symlink outside the directory")
 	}
 }
+
+// Only a kernel-held view counts as confined: both os.Root's and this
+// package's. os.DirFS, and a wrapper around one, follow links anywhere.
+func TestConfinedNamesKernelHeldViews(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	osRoot, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer osRoot.Close()
+	sub, err := fs.Sub(os.DirFS(dir), "sub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		fsys fs.FS
+		want bool
+	}{
+		"os.Root.FS":      {osRoot.FS(), true},
+		"ConfineDirFS":    {ConfineDirFS(os.DirFS(dir)), true},
+		"os.DirFS":        {os.DirFS(dir), false},
+		"fs.Sub of DirFS": {sub, false},
+		"nil":             {nil, false},
+	} {
+		if got := Confined(tc.fsys); got != tc.want {
+			t.Errorf("Confined(%s) = %v, want %v", name, got, tc.want)
+		}
+	}
+}

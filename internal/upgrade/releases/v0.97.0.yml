@@ -66,3 +66,18 @@ notes:
     find:
       uses:
         - gofastr/framework/entityui.ListBuilder.NoLinks
+  - change: "BREAKING - core/static.Refuses no longer refuses a segment shaped like a Windows 8.3 short name (\"~\" then a digit); the new core/static.RefusesIn(fsys, path) does, and only when the segment's directory has no entry of exactly that name"
+    breaking: true
+    hits: review
+    guidance: "Refuses judges a spelling alone, which is right for a tree you walked: a walk yields real names. Code that serves a requested path calls RefusesIn with the filesystem it opens from, so WEB~1.CON stays refused while a real photo~1.png is served."
+    find:
+      uses:
+        - gofastr/core/static.Refuses
+  - change: "The static export keeps its prune list beside OutDir instead of in it: OutDir dist/site keeps it in dist/.site.gofastr-pages, and <OutDir>/.gofastr-pages is no longer written or read"
+    breaking: false
+    guidance: "Delete <OutDir>/.gofastr-pages; a host that published it keeps serving the old copy until it goes. The first build on this release finds no list beside OutDir and removes no stale page, so a page gated or dropped since the last build stays in the tree: clear OutDir once if that matters. An OutDir with no parent directory (a filesystem root) now fails the build."
+    nodetect: "the old file is build output in the export directory, not app source"
+  - change: "The Linux desktop shell asks AllowNavigation before every frame's request, iframes included: a foreign iframe now stays blank on Linux"
+    breaking: false
+    nodetect: "only an app that loosened the default CSP's frame-src to frame another origin sees a change, and that is a header value, often from configuration"
+    guidance: "Under the default CSP nothing changes: default-src 'self' already blocked foreign frames on every shell. An app that frames another origin on purpose and ships on Linux has no per-frame switch: Config.DangerouslyAllowForeignNavigation lets the frame load, and with it every main-frame navigation off the app's origin."

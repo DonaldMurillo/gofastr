@@ -291,7 +291,11 @@ type WindowConfig struct {
 	// main frame navigates to url; false cancels the navigation. The
 	// battery allows only the app's own origin and the blank page a web
 	// view starts on, unless Config.DangerouslyAllowForeignNavigation is
-	// set. A nil func allows every navigation. It must not block.
+	// set. A nil func allows every navigation. It must not block. A
+	// shell whose engine does not say which frame a navigation is for
+	// (WebKitGTK) asks it for every frame and every new-window request,
+	// before the request leaves the web view; it passes about:srcdoc,
+	// which sends no request, without asking.
 	AllowNavigation func(url string) bool
 	// OnWindowClosed is called by the shell (on a goroutine) when a
 	// secondary window the user closed goes away, with the id OpenWindow

@@ -386,6 +386,7 @@ failed to load), then fires that component's mounts once it registers
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders; never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Sortable-Version: <token>` | Percent-encoded: `decodeURIComponent` it. On the 2xx that accepts a sortable move, every list of the move's group (the list alone when ungrouped) still holding the token the move sent takes it as its `data-hui-sortable-version`; on a conflict-refresh response, the refreshed list takes it with its rows. A list holding another token keeps it, a value that does not decode is ignored, and a 409 never renews. Set from Go with `ui.RenewSortableVersion(w, version)` (or `headless.RenewSortableVersion`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
+| `X-Gofastr-Session-Expires-In: <seconds>` | On a prefetch answer (`X-Gofastr-Prefetch: 1`) with a live session: the whole seconds until the session token stops verifying. The preload cache drops the entry then if that comes before its 30-second TTL, so a click after the session ends fetches the page (and uihost re-mints the session) instead of painting a page whose islands, actions and SSE would answer 401. Relative, so the browser's clock does not matter. An answer without it keeps the TTL alone. |
 
 **Layer-key encoding.** `X-Gofastr-Swap` percent-encodes C0 control bytes,
 DEL, non-ASCII bytes and literal percent signs. Decode it once with
@@ -734,6 +735,16 @@ activity panel landed 700 ms later" UI — no MutationObserver
 heuristics. (Streaming was the old transport for this; it is gone —
 Chrome keeps no body in DevTools for a fetch read through a stream
 reader, and a navigation's requests must be inspectable.)
+
+**The widget catalog announces itself (`gofastr:widgets-synced`).**
+The widget catalog (`/__gofastr/widgets`) is fetched at boot and again
+after each `gofastr:navigate`. When one page's pass settles (the
+widgets it mounts and the deep-link opens `_syncDeepLinks` starts have
+settled, or the fetch failed) the runtime dispatches `gofastr:widgets-synced` on `window` with `detail.path`, the
+page the pass was for (its path, without the query string; the catalog's
+`?page=` names the same path). The static-export runtime fires it too, after
+its boot and after each navigation's re-mount. It is the hook for "the
+widgets on /b are in"; a test waits on it rather than counting calls.
 
 **The flow for an in-page update** (e.g. clicking "page 2" on a pagination island):
 

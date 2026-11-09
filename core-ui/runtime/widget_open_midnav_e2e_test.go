@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/chromedptest"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -147,19 +148,17 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 				return fmt.Errorf("the open never reached the held request %s", held)
 			}
 		}),
-		// Count the deep-link syncs from here on, recording whether the
-		// widget was still open after each one. widgets-boot calls the
-		// namespace slot at call time, so the wrapper sees every call.
-		chromedp.Evaluate(`(() => {
-			const G = window.__gofastr, sync = G._syncDeepLinks;
-			G.__syncs = 0; G.__syncKept = true;
-			G._syncDeepLinks = function () {
-				try { return sync.apply(this, arguments); } finally {
-					G.__syncs++;
-					if (!G._widgets.late) G.__syncKept = false;
-				}
-			};
-		})()`, nil),
+		// The commit's catalog re-fetch ends with gofastr:widgets-synced
+		// for /b, right after its deep-link sync: the one pass that could
+		// close the widget. synced resolves then, with whether the widget
+		// was still open.
+		chromedp.Evaluate(`window.__synced = new Promise((done) => {
+			addEventListener('gofastr:widgets-synced', function on(e) {
+				if (e.detail.path !== '/b') return;
+				removeEventListener('gofastr:widgets-synced', on);
+				done(!!window.__gofastr._widgets.late);
+			});
+		}); true`, nil),
 		chromedp.ActionFunc(func(context.Context) error { freeNav(); return nil }),
 		chromedp.WaitVisible(`#screen-b`, chromedp.ByID),
 		chromedp.ActionFunc(func(c context.Context) error {
@@ -171,18 +170,11 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 			// against a URL with no ?panel yet. That sync must run, and
 			// the widget must survive it, BEFORE the module is released:
 			// otherwise this case never exercises the guard.
-			return chromedp.Poll(`window.__gofastr.__syncs >= 1`, nil,
-				chromedp.WithPollingTimeout(5*time.Second)).Do(c)
-		}),
-		chromedp.ActionFunc(func(c context.Context) error {
-			if held != "/__gofastr/runtime/widgetlinks.js" {
-				return nil
-			}
 			var kept bool
-			if err := chromedp.Evaluate(`window.__gofastr.__syncKept && !!window.__gofastr._widgets.late`, &kept).Do(c); err != nil {
+			if err := awaitSynced(c, &kept); err != nil {
 				return err
 			}
-			if !kept {
+			if !kept || !hasLate(c) {
 				return fmt.Errorf("the post-commit deep-link sync closed the widget whose open was still writing its deep link")
 			}
 			return nil
@@ -192,11 +184,10 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 			chromedp.WithPollingTimeout(5*time.Second)),
 		// Read the outcome only once the commit's catalog re-fetch has
 		// synced deep links: the one sync that could close the widget.
-		// It is the only _syncDeepLinks call after the counter went in
-		// (no popstate, and the boot catalog's ran before), so waiting
-		// for the count is waiting for exactly that pass, with no
-		// fixed sleep standing in for it.
-		chromedp.Poll(`window.__gofastr.__syncs >= 1`, nil, chromedp.WithPollingTimeout(5*time.Second)),
+		chromedp.ActionFunc(func(c context.Context) error {
+			var kept bool
+			return awaitSynced(c, &kept)
+		}),
 		// And for the open's own deep-link write, the last step it takes.
 		chromedp.ActionFunc(func(c context.Context) error {
 			err := chromedp.Poll(`location.pathname + location.search === '/b?panel=late&who=fresh'`, nil,
@@ -226,4 +217,23 @@ func midNavOpenCase(t *testing.T, held string, modal bool) {
 	if search != "/b?panel=late&who=fresh" {
 		t.Errorf("URL = %q, want the open's deep link on the page it opened on (/b?panel=late&who=fresh)", search)
 	}
+}
+
+// awaitSynced waits, at most 5 s, for the gofastr:widgets-synced the
+// page's window.__synced promise is listening for.
+func awaitSynced(c context.Context, kept *bool) error {
+	c, cancel := context.WithTimeout(c, 5*time.Second)
+	defer cancel()
+	if err := chromedp.Evaluate(`window.__synced`, kept, func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	}).Do(c); err != nil {
+		return fmt.Errorf("no gofastr:widgets-synced for /b after the commit: %w", err)
+	}
+	return nil
+}
+
+// hasLate reports whether the widget is open now.
+func hasLate(c context.Context) bool {
+	var open bool
+	return chromedp.Evaluate(`!!window.__gofastr._widgets.late`, &open).Do(c) == nil && open
 }

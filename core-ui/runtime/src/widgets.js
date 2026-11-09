@@ -249,7 +249,9 @@
   // save a walk over an object the runtime already has. Deriving it here
   // deletes both copies from the core bundle, which is where bytes are
   // scarce, and removes the class of bug where the two disagree.
+  // Answers a promise that settles when the opens it started settle.
   NS._syncDeepLinks = function () {
+    const opens = [];
     const cat = NS._widgetCatalog || {};
     const url = new URL(window.location.href);
     for (const name in cat) {
@@ -260,10 +262,31 @@
       const hit = url.searchParams.get(cfg.deepLinkKey) === cfg.deepLinkValue;
       const mounted = !!own(name);
       if (hit !== mounted) {
-        if (hit) NS.openWidget(name);
+        if (hit) opens.push(NS.openWidget(name));
         else if (pend.get(name) !== here()) NS.closeWidget(name);
       }
     }
+    return Promise.allSettled(opens);
+  };
+
+  // One page's catalog pass, after core fetched the list and loaded
+  // this module: merge the entries into the catalog, mount every
+  // non-hidden widget (_mountByName is idempotent, and hydrates an
+  // SSR-inlined root), then open or close what the URL's deep link
+  // names. Hidden widgets (Modal / Drawer / Popover) wait for
+  // openWidget. The deep-link sync runs at once, with the mounts in
+  // flight; the answer settles when every mount and open it started
+  // has, so gofastr:widgets-synced means the page's widgets are in.
+  // Core's boot and navigate passes both end here, so the loop lives
+  // once, in the module, not twice in core.
+  NS._catalogPass = function (list) {
+    const cat = NS._widgetCatalog = NS._widgetCatalog || {};
+    const mounts = [];
+    for (const item of list) {
+      cat[item.cfg.name] = item;
+      if (!item.hidden) mounts.push(NS._mountByName(item.cfg.name));
+    }
+    return Promise.allSettled(mounts.concat(NS._syncDeepLinks()));
   };
 
   NS.mountWidget = function (cfg, html, existing, ctx) {

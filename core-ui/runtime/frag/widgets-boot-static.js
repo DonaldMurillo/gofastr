@@ -53,6 +53,9 @@
   // would otherwise wipe direct assignments here.
   let _wcr;
   const _wready = new Promise((resolve) => { _wcr = resolve; });
+  // gofastr:widgets-synced, as in widgets-boot: one page's catalog pass
+  // settled.
+  const _wsynced = (path) => dispatchEvent(new CustomEvent('gofastr:widgets-synced', { detail: { path } }));
 
   // Catalog fetch, the dumped file. The live endpoint is session-gated
   // and absent on a serverless host; the static exporter dumps the
@@ -81,23 +84,24 @@
           const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
           for (const item of list) cat[item.cfg.name] = item;
           await window.__gofastr.loadModule('widgets');
-          for (const item of list) {
-            if (item.hidden) continue; // open later via openWidget(name)
-            // Non-hidden widgets auto-mount at boot. Chrome HTML is
-            // fetched lazily from cfg.chromePath, the static exporter
-            // dumps the same bytes, so the fetch resolves against the
-            // static tree.
-            window.__gofastr._mountByName(item.cfg.name);
-          }
-          // Open any widget whose deep link matches the current URL.
-          window.__gofastr._syncDeepLinks();
+          // Mount the non-hidden widgets and open any whose deep link
+          // matches the current URL (widgets.js _catalogPass). Chrome
+          // HTML is fetched lazily from cfg.chromePath; the static
+          // exporter dumps the same bytes, so the fetch resolves
+          // against the static tree.
+          // Ready before the pass, not after its mounts: the pass
+          // starts them now, and the click delegator need not wait for
+          // their chrome (gofastr:widgets-synced does).
+          _wcr();
+          await window.__gofastr._catalogPass(list);
         }
       } catch (_) {}
       // The eager click delegator (installed at boot, see below)
       // awaits this Promise.
       _wcr();
     })
-    .catch(() => { _wcr(); });
+    .catch(() => { _wcr(); })
+    .then(() => _wsynced(location.pathname));
 
   // === EAGER WIDGET DELEGATORS =========================================
   // Identical to widgets-boot's _installEagerWidgetDelegators (the
@@ -172,14 +176,11 @@
   // local: once that catalog is in, mount any non-hidden widget the
   // swap left unmounted (_mountByName is idempotent) and open whatever
   // the destination URL's deep link names.
-  window.addEventListener('gofastr:navigate', () => {
+  window.addEventListener('gofastr:navigate', (e) => {
+    // detail.path carries the query; the catalog and the event name the page.
+    const path = ((e && e.detail && e.detail.path) || location.pathname).split('?')[0];
     _wready.then(() => {
       const G = window.__gofastr;
-      if (!G || !G._widgetCatalog) return;
-      for (const item of Object.values(G._widgetCatalog)) {
-        if (item.hidden) continue;
-        if (G._mountByName) G._mountByName(item.cfg.name);
-      }
-      if (G._syncDeepLinks) G._syncDeepLinks();
-    });
+      if (G && G._widgetCatalog && G._catalogPass) return G._catalogPass(Object.values(G._widgetCatalog));
+    }).catch(() => {}).then(() => _wsynced(path));
   });

@@ -23,13 +23,17 @@
   // otherwise wipe direct assignments here.
   let _wcr;
   const _wready = new Promise((resolve) => { _wcr = resolve; });
+  // gofastr:widgets-synced: one page's catalog fetch settled, its
+  // widgets mounted and its deep links synced, or nothing to do.
+  const _wsynced = (path) => dispatchEvent(new CustomEvent('gofastr:widgets-synced', { detail: { path } }));
 
   // Widget catalog fetch. The live endpoint is session-gated and per-page
   // scoped (?page= filters widgets to the current route). A serverless
   // export never composes widgets-boot, the `static` composition omits it
   // and rpc-stub intercepts data-cui-open clicks, so this fetch only ever
   // runs in the live (full) composition.
-  _fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(location.pathname)),
+  const _bootPath = location.pathname;
+  _fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(_bootPath)),
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     // A followed 3xx is another URL's list: no catalog.
     .then((r) => (r.ok && !r.redirected ? r.json() : null))
@@ -52,29 +56,24 @@
           const cat = window.__gofastr._widgetCatalog = window.__gofastr._widgetCatalog || {};
           for (const item of list) cat[item.cfg.name] = item;
           await window.__gofastr.loadModule('widgets');
-          for (const item of list) {
-            if (item.hidden) continue; // open later via openWidget(name)
-            // Non-hidden widgets auto-mount at boot. Chrome HTML is
-            // fetched lazily from cfg.chromePath so the registry stays
-            // small; if the page already SSR-inlined this widget (root
-            // element exists in DOM), mountWidget short-circuits to a
-            // hydrate-only path. Either way, the result is a wired
-            // widget root.
-            window.__gofastr._mountByName(item.cfg.name);
-          }
-          // Open any widget whose deep link matches the current URL. On
-          // a full page load the host has usually SSR-inlined that
-          // chrome (framework/uihost injectWidgetSSR) and _mountByName
-          // hydrates it here; this pass is what covers SPA navigations
-          // and popstate, where no fresh HTML arrives.
-          window.__gofastr._syncDeepLinks();
+          // Mount the non-hidden widgets and open any whose deep link
+          // matches the current URL (widgets.js _catalogPass). Chrome
+          // HTML is fetched lazily from cfg.chromePath so the registry
+          // stays small; a widget the host SSR-inlined (framework/uihost
+          // injectWidgetSSR) hydrates in place.
+          // Ready before the pass, not after its mounts: the pass
+          // starts them now, and the click delegator need not wait for
+          // their chrome (gofastr:widgets-synced does).
+          _wcr();
+          await window.__gofastr._catalogPass(list);
         }
       } catch (_) {}
       // The eager click delegator (installed at boot, see below)
       // awaits this Promise.
       _wcr();
     })
-    .catch(() => { _wcr(); });
+    .catch(() => { _wcr(); })
+    .then(() => _wsynced(_bootPath));
 
   // === EAGER WIDGET DELEGATORS =========================================
   // The data-cui-open click handler, data-cui-toast click handler, and
@@ -170,7 +169,8 @@
   // aren't already mounted are mounted now. Then _syncDeepLinks runs
   // so the URL's modal/drawer query params open the right surface.
   window.addEventListener('gofastr:navigate', (e) => {
-    const path = (e && e.detail && e.detail.path) || location.pathname;
+    // detail.path carries the query; the catalog and the event name the page.
+    const path = ((e && e.detail && e.detail.path) || location.pathname).split('?')[0];
     _fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
       .then((r) => (r.ok && !r.redirected ? r.json() : null))
@@ -182,17 +182,9 @@
         // may have had no widgets, so loadModule('widgets') was never
         // triggered and mountWidget isn't on the namespace yet.
         try { await G.loadModule('widgets'); } catch (_) { return; }
-        G._widgetCatalog = G._widgetCatalog || {};
-        for (const item of list) {
-          const cfg = item.cfg;
-          G._widgetCatalog[cfg.name] = item;
-          // Auto-mount non-hidden widgets that aren't already on the
-          // page. Hidden widgets (Modal / Drawer / Popover) stay
-          // hidden until openWidget is called from a trigger.
-          if (item.hidden) continue;
-          if (G._mountByName) G._mountByName(cfg.name);
-        }
-        if (G._syncDeepLinks) G._syncDeepLinks();
+        // Merge, mount the non-hidden ones, sync deep links.
+        await G._catalogPass(list);
       })
-      .catch(() => { /* navigation succeeded; missing catalog is non-fatal */ });
+      .catch(() => { /* navigation succeeded; missing catalog is non-fatal */ })
+      .then(() => _wsynced(path));
   });

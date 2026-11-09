@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/routeseg"
 )
 
 // Router maps paths to screens and layouts.
@@ -218,7 +219,7 @@ func matchDynamicRouting(segments, pathParts []string) (map[string]string, bool)
 				if parts[i] == "" {
 					return nil, false
 				}
-				if !constraintOK(seg, parts[i]) {
+				if !routeseg.ConstraintOK(seg, parts[i]) {
 					return nil, false
 				}
 				params[segParamName(seg)] = pathParts[i]
@@ -242,7 +243,7 @@ func matchDynamicRouting(segments, pathParts []string) (map[string]string, bool)
 			if parts[i] == "" {
 				return nil, false
 			}
-			if !constraintOK(seg, parts[i]) {
+			if !routeseg.ConstraintOK(seg, parts[i]) {
 				return nil, false
 			}
 			params[segParamName(seg)] = pathParts[i]
@@ -274,12 +275,12 @@ func validateDynamicSegments(pathLabel string, parts []string) []string {
 			panic("app: route " + pathLabel +
 				": catch-all segment \"" + p + "\" must be the final segment")
 		}
-		if c := segConstraint(p); c != "" {
+		if c := routeseg.Constraint(p); c != "" {
 			if strings.Contains(p, "*") {
 				panic("app: route " + pathLabel +
 					": a constraint is not allowed on a catch-all segment (\"" + p + "\")")
 			}
-			if !validConstraints[c] {
+			if !routeseg.Valid(c) {
 				panic("app: route " + pathLabel +
 					" has unknown constraint :" + c + " (supported: int, uuid, alpha, alnum)")
 			}

@@ -39,6 +39,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
+	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 )
 
 // Builder generates a static-site snapshot from a UIHost.
@@ -65,6 +66,9 @@ type Builder struct {
 	// live sdkdocs.Mount serves also ship in the static tree. Files the
 	// build (or the user static dir) already produced win: extra files
 	// are written only when absent, matching the SEO/PWA precedence.
+	// An os.DirFS value is read through os.Root, so a symlink out of
+	// its directory is skipped. A symlink in any other FS, a wrapped
+	// os.DirFS (fs.Sub) included, is skipped wherever it points.
 	ExtraDirs map[string]fs.FS
 	// ExcludeRoutes skips routes whose pattern (or a prefix segment of
 	// it) matches an entry, e.g. ExcludeRoutes: []string{"/broken"}
@@ -103,6 +107,13 @@ type Builder struct {
 	// it; static pages link every script, so none needs one), a control
 	// byte, or a quote or angle bracket.
 	ContentSecurityPolicy string
+
+	// extraDirs is ExtraDirs with each os.DirFS re-rooted through
+	// os.Root (rootfs.ConfineDirFS), set at the start of Build: a
+	// symlink in an extra directory pointing outside it is refused at
+	// open, as the UI host's SetStaticFS refuses it, instead of copying
+	// whatever it names into the public tree.
+	extraDirs map[string]fs.FS
 }
 
 // Contributor adds files to an export from the pages it renders: a
@@ -137,8 +148,17 @@ func (b *Builder) Build(ctx context.Context) (Result, error) {
 	if err := checkExportCSP(b.policy()); err != nil {
 		return Result{}, err
 	}
+	// The page manifest lives beside OutDir; an OutDir with no parent is
+	// refused here, before anything is written into it.
+	if _, _, err := b.pageManifest(); err != nil {
+		return Result{}, err
+	}
 	if err := os.MkdirAll(b.OutDir, 0o755); err != nil {
 		return Result{}, fmt.Errorf("static: create out dir: %w", err)
+	}
+	b.extraDirs = make(map[string]fs.FS, len(b.ExtraDirs))
+	for mount, fsys := range b.ExtraDirs {
+		b.extraDirs[mount] = rootfs.ConfineDirFS(fsys)
 	}
 
 	res := Result{}
@@ -1296,7 +1316,7 @@ func (b *Builder) keepUnprefixed(p string) bool {
 		if b.staticSourceFile(rel) {
 			return true
 		}
-		for mount, fsys := range b.ExtraDirs {
+		for mount, fsys := range b.extraDirs {
 			sub, ok := strings.CutPrefix(rel, strings.Trim(mount, "/")+"/")
 			if strings.Trim(mount, "/") == "" {
 				sub, ok = rel, true
@@ -1874,13 +1894,13 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 	for _, p := range res.Assets {
 		written.add(p)
 	}
-	mounts := make([]string, 0, len(b.ExtraDirs))
-	for m := range b.ExtraDirs {
+	mounts := make([]string, 0, len(b.extraDirs))
+	for m := range b.extraDirs {
 		mounts = append(mounts, m)
 	}
 	sort.Strings(mounts)
 	for _, mount := range mounts {
-		fsys := b.ExtraDirs[mount]
+		fsys := b.extraDirs[mount]
 		if fsys == nil {
 			continue
 		}
@@ -1888,10 +1908,7 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 			return fmt.Errorf("static: extra dir: %w", err)
 		}
 		cleanMount := "/" + strings.Trim(mount, "/")
-		err := fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return err
-			}
+		err := walkStatic(fsys, b.log, func(p string, d fs.DirEntry) error {
 			if err := refuseSeparatorName(p); err != nil {
 				return err
 			}
@@ -1899,6 +1916,9 @@ func (b *Builder) dumpExtraDirs(res *Result, rendered *fileSet) error {
 			rel := strings.TrimPrefix(urlPath, "/")
 			if !publishable(rel) {
 				b.log("skipped %s (not published)", urlPath)
+				return nil
+			}
+			if skipSymlink(fsys, p, d, b.log) {
 				return nil
 			}
 			dst := filepath.Join(b.OutDir, filepath.FromSlash(rel))
@@ -2097,8 +2117,9 @@ func copyDir(src, dst string, rendered *fileSet, res *Result, log func(string, .
 
 // walkStatic walks a static tree the way the UI host serves it, calling
 // fn for every entry that is not a directory, slash-separated and
-// relative to the tree's root. fsys is an os.Root view (or an embed.FS,
-// which holds no links), so a symlink resolves only inside the tree.
+// relative to the tree's root. In an os.Root view a symlink resolves
+// only inside the tree; any other FS (an embed.FS holds no links) gets
+// no directory link walked, since nothing holds that walk inside it.
 // fs.WalkDir does not descend a symlinked directory, and the live host
 // serves static/images/logo.svg through static/images -> img all the
 // same: the export dropped every asset under such a link and the
@@ -2129,7 +2150,10 @@ func walkStatic(fsys fs.FS, log func(string, ...any), fn func(rel string, d fs.D
 				if sub, err = e.Info(); err != nil {
 					return err
 				}
-			case e.Type()&fs.ModeSymlink != 0:
+			case e.Type()&fs.ModeSymlink != 0 && rootfs.Confined(fsys):
+				// Only an os.Root view holds a linked directory's walk
+				// inside the root. Elsewhere the link goes to fn, whose
+				// skipSymlink drops it.
 				if fi, err := fs.Stat(fsys, rel); err == nil && fi.IsDir() {
 					sub = fi
 				}
@@ -2177,6 +2201,36 @@ func openSourceFile(srcRoot *os.Root, rel string, d fs.DirEntry) (*os.File, stri
 	return f, "", nil
 }
 
+// skipSymlink reports whether the walked entry at rel is a symlink the
+// export does not publish, and logs why. A symlink in a disk-backed FS
+// (SetStaticFS and Builder.ExtraDirs re-root os.DirFS through os.Root)
+// is published only when it resolves to a regular file inside the tree,
+// as openSourceFile decides for the static dir; a read of one that
+// escapes failed the whole build. One that resolves to a directory in
+// the tree never reaches here: walkStatic walks it.
+func skipSymlink(fsys fs.FS, rel string, d fs.DirEntry, log func(string, ...any)) bool {
+	if d.Type()&fs.ModeSymlink == 0 {
+		return false
+	}
+	// Only an os.Root view keeps the link's target inside the directory.
+	// Any other FS, fs.Sub(os.DirFS(dir), ".") among them, follows it
+	// anywhere on disk, and nothing here can tell where it lands.
+	if !rootfs.Confined(fsys) {
+		log("skipped %s (symlink in a filesystem os.Root does not confine)", rel)
+		return true
+	}
+	fi, err := fs.Stat(fsys, rel)
+	if err != nil {
+		log("skipped %s (symlink out of its directory or to nothing)", rel)
+		return true
+	}
+	if !fi.Mode().IsRegular() {
+		log("skipped %s (not a regular file)", rel)
+		return true
+	}
+	return false
+}
+
 func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(string, ...any)) error {
 	root, err := os.OpenRoot(dst)
 	if err != nil {
@@ -2191,22 +2245,8 @@ func copyFS(fsys fs.FS, dst string, rendered *fileSet, res *Result, log func(str
 			log("skipped %s (not published)", path)
 			return nil
 		}
-		// A symlink in a disk-backed FS (SetStaticFS re-roots os.DirFS
-		// through os.Root) is published only when it resolves to a regular
-		// file inside the tree, as openSourceFile decides for the static
-		// dir; a read of one that escapes failed the whole build. One that
-		// resolves to a directory in the tree never reaches here:
-		// walkStatic walks it.
-		if d.Type()&fs.ModeSymlink != 0 {
-			fi, err := fs.Stat(fsys, path)
-			if err != nil {
-				log("skipped %s (symlink out of the static dir or to nothing)", path)
-				return nil
-			}
-			if !fi.Mode().IsRegular() {
-				log("skipped %s (not a regular file)", path)
-				return nil
-			}
+		if skipSymlink(fsys, path, d, log) {
+			return nil
 		}
 		if generatedHostRules(path, rendered) {
 			data, err := fs.ReadFile(fsys, path)

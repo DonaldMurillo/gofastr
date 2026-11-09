@@ -273,9 +273,11 @@ type Battery struct {
 	// keeps both trees so dispatchMenu finds tray items too).
 	runMenu *Menu
 
-	// fs allow-list (cap_fs.go).
-	allowMu    sync.Mutex
-	allowPaths map[string]struct{}
+	// fs allow-list (cap_fs.go) and picked folders, clean and resolved
+	// path to the resolution at the pick (cap_fs_folder.go).
+	allowMu      sync.Mutex
+	allowPaths   map[string]struct{}
+	allowFolders map[string]string
 
 	// deepLinks queues links that arrive before the window is up
 	// (deeplink.go).
@@ -438,6 +440,7 @@ func New(cfg Config) *Battery {
 		windows:      make(map[string]Window),
 		winPaths:     make(map[string]string),
 		allowPaths:   make(map[string]struct{}),
+		allowFolders: make(map[string]string),
 	}
 	prefs.b = b
 	b.prefs = prefs
@@ -716,7 +719,10 @@ func (b *Battery) emitWindowBlur(id string) {
 // shell fires the key-window delegates during its own startup (its
 // makeKeyAndOrderFront) before the battery has registered any window;
 // that early report is dropped silently, not Warned, because it is the
-// normal boot sequence, not a failed emit.
+// normal boot sequence, not a failed emit. A report after the first
+// window registers goes through, so a window manager that activates the
+// window late in startup reaches the page as window_focus; desktop.md
+// tells pages to read document.hasFocus() rather than count the events.
 func (b *Battery) emitWindowActivity(name, id string) {
 	if len(b.Windows()) == 0 {
 		return

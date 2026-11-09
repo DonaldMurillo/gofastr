@@ -25,6 +25,36 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Embed surfaces on routes with parameters**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [embed](framework/docs/content/embed.md)). `embed.New` accepts a
+  surface whose screen route has parameters (`/reports/:id:int`,
+  `/files/{path...}`), which it refused at boot before. The snippet names
+  the concrete path with `data-path` (or `path` in `GoFastrEmbed.mount`),
+  and the frame loads `/__gofastr/embed/<surface>/reports/42`. uihost
+  renders that path only when the router resolves it to the surface's own
+  screen, so the route binds and checks the params; any other path is a
+  404. The grant covers the surface, not one path: the screen decides
+  which record its subject may see. `ResolvedSurface.Dynamic` reports
+  such a surface.
+- **`gofastr:widgets-synced` says a page's widgets are in**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [runtime contract](framework/docs/content/runtime-contract.md)). The
+  runtime fires it on `window` when one page's widget catalog pass
+  settles, at boot and after each SPA navigation, with `detail.path`
+  naming the page. It comes once the widgets the pass mounts, and any
+  its deep link opens, have settled, and also when the fetch failed. A script or test that
+  needs the widgets for a page waits on it instead of a timer.
+- **A picked folder can be read**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [desktop](framework/docs/content/desktop.md)). `dialogs.openFolder`
+  granted `fs.stat` on the folder alone, so a page could not open
+  anything the user picked. It now grants `fs.stat`, `fs.readText` and
+  the new `fs.list` on the folder and everything under it, read through
+  an `os.Root` at the folder, so a symlink or `..` cannot leave it.
+  Writing stays separate: `fs.writeText` still needs the exact path from
+  `openFile` or `saveFile`. `Battery.AllowFolder` makes the same grant
+  in process.
 - **A field can declare its own mask**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [entity declarations](framework/docs/content/entity-declarations.md)).
@@ -101,6 +131,26 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **The static export keeps its prune list beside `OutDir`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [static export](framework/docs/content/static-export.md)).
+  `.gofastr-pages`, the list of pages a build wrote, was published with
+  the site. It now sits next to the export directory: `OutDir`
+  `dist/site` keeps it in `dist/.site.gofastr-pages`. The first build
+  on this release finds no list there and removes no stale page; delete
+  the old `<OutDir>/.gofastr-pages` and, if a page went private since
+  the last build, clear `OutDir` once.
+- **`core/static` serves a real `~digit` file name**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [core packages](framework/docs/content/core-packages.md)). A segment
+  with `~` followed by a digit, the shape of an NTFS 8.3 short name, is
+  refused only when its directory has no entry with exactly that name, so
+  `photo~1.png` is served again while `WEB~1.CON` and `PHOTO~1.PNG` (when
+  only `photo~1.png` exists) still answer 404 on every OS. An `embed.FS`
+  is not listed. The new `static.RefusesIn(fsys, path)` runs the check for
+  code that serves a requested path; `static.Refuses(path)` no longer
+  refuses short names, since a tree walk yields only real names, so a
+  static export now publishes a `~digit` file.
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left
@@ -200,6 +250,37 @@ few lines, and link the PR or the docs page for the rest.
   control-byte name never reaches the consent prompt, the environment or
   `--allow-repo-secrets`, and the CLI no longer unsets such keys after
   the fact.
+- **The Linux desktop shell checks a navigation before its request**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [desktop](framework/docs/content/desktop.md)). Linux asked
+  `AllowNavigation` only when the main frame's response arrived, so a
+  refused URL's request, path and query had already reached the other
+  host. It now checks every navigation and new-window request with its
+  URL before the request leaves the web view, and keeps the response
+  check as a second line. WebKitGTK does not say which frame a
+  navigation is for, so iframes are checked too: a foreign iframe stays
+  blank on Linux. The default CSP already blocks foreign frames on every
+  shell; an app that loosens `frame-src` sees them load on macOS and
+  Windows only.
+- **The static export no longer follows a symlink out of an `ExtraDirs`
+  directory** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [static export](framework/docs/content/static-export.md)). An
+  `os.DirFS` extra directory was read as it is, so a link inside it
+  published the file it pointed at anywhere on disk. It is now read
+  through `os.Root`, like the static dir and `UIHost.SetStaticFS`: a link
+  that leaves the directory is skipped and logged. A symlink in any
+  other filesystem, an extra dir or static FS such as
+  `fs.Sub(os.DirFS(dir), "docs")` included, is skipped wherever it
+  points, since nothing holds such a link inside its directory.
+- **`core/static` refuses Windows alias spellings of any file**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A path
+  segment that ends in a dot or a space, or holds a colon, is never
+  opened, on every OS: Windows opens `app.css.` and `app.css::$DATA` as
+  `app.css`. The config-file refusal covered these spellings of
+  `web.config` only. In SPA mode such a path is a miss, so a client route
+  still gets the index. `static.Refuses` and the UI host's static
+  directory refuse the same names, and the static export skips such
+  files.
 - **`App.ImportData` restores the bytes it checked**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
   each archive file on one read and parsed the rows from a second, so a
@@ -475,6 +556,35 @@ few lines, and link the PR or the docs page for the rest.
   value in a table's link column reached `ui.Link` as empty text, which
   panicked and replaced the whole list with its failure markup. The link
   now reads the record's id, as a card title already did.
+- **Page-scoped widgets load after a link with a query string**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  catalog re-fetch after a client-side navigation sent the whole URL as
+  `?page=`, so a link to `/b?tab=2` asked for `/b?tab=2` and a widget
+  scoped with `.Pages("/b")` was left out of the catalog. The re-fetch
+  now sends the path alone.
+- **A prefetched page ends with its session**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [layouts](framework/docs/content/layouts.md)). A page prefetched in
+  the last 30 seconds of a session still painted after the session
+  expired, with no server contact, and its islands, actions and SSE
+  then answered 401 until the next network navigation. A prefetch
+  answer now carries `X-Gofastr-Session-Expires-In`, the seconds the
+  session has left, and the preload cache drops the entry at that point
+  when it comes before the TTL, so the click fetches the page and gets a
+  fresh session.
+- **A page carries one `<meta name="description">`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [SEO](framework/docs/content/seo.md)). `WithDescription` added its tag
+  to every page, so a screen with its own description shipped two and
+  left the choice between them to each crawler. The site description
+  (a description tag in `WithHeadHTML`, else the `WithDescription`
+  text) is now the fallback, and a screen description or a description
+  tag in `SEOScreen.HeadHTML` replaces it; a screen with both keeps the
+  typed one. It rides the page metadata a client navigation swaps, so
+  leaving a described page restores the site description instead of
+  keeping the last page's. Head HTML is read with the HTML tokenizer,
+  so a tag inside a comment does not count and a screen head holding
+  several keeps the first.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
