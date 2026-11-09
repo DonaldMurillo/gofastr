@@ -249,16 +249,23 @@ entities:
         name: plan
         entity: plans
         foreign_key: plan_id
-    # Advisory as above: the screen transitions named no From.
+    # Enforced: the CRUD layer refuses a move whose From does not hold
+    # and a create or update that writes status directly. The seed runs
+    # under framework.WithStateOverride (see main.go), which the audit
+    # log records.
     states:
       field: status
-      advisory: true
       transitions:
         - key: activate
           label: Activate
           from: [trialing, past_due]
           to: active
           variant: primary
+        - key: mark_past_due
+          label: Mark past due
+          from: [active]
+          to: past_due
+          variant: danger
         - key: cancel
           label: Cancel
           from: [trialing, active, past_due]
@@ -303,19 +310,30 @@ entities:
         name: customer
         entity: customers
         foreign_key: customer_id
-    # The old screen-level transitions named no From, so the moves stay
-    # advisory until the from-lists below are confirmed; drop advisory:
-    # to let the CRUD handler enforce them.
+    # Enforced, with the workflow the operator actually drives: draft is
+    # internal, an invoice must be issued before it can collect money,
+    # and past_due is a dunning state an open invoice falls into — never
+    # one a draft skips to. The seed runs under
+    # framework.WithStateOverride (see main.go).
     states:
       field: status
-      advisory: true
       transitions:
+        - key: issue
+          label: Issue
+          from: [draft]
+          to: open
+          variant: primary
         - key: mark_paid
           label: Mark paid
-          from: [draft, open, past_due]
+          from: [open, past_due]
           to: paid
           variant: primary
           stamp: paid_on
+        - key: mark_past_due
+          label: Mark past due
+          from: [open]
+          to: past_due
+          variant: danger
         - key: void
           label: Void
           from: [draft, open, past_due]
