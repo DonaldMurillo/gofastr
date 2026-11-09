@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -145,38 +144,14 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	file := filepath.Join(sub, "f.txt")
-	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// Surface 1: Delete failure must not carry the absolute path. The
-	// unlink has to fail for root too, so on macOS the file carries the
-	// user-immutable flag (root cannot unlink it either); elsewhere the
-	// directory's mode bits are the obstruction, which holds for every
-	// non-root process.
-	if runtime.GOOS == "darwin" {
-		chflags(t, "uchg", file)
-		t.Cleanup(func() { chflags(t, "nouchg", file) })
-	} else {
-		if err := os.Chmod(sub, 0o500); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(sub, 0o700) })
-	}
-	err := store.Delete(ctx, "sub/f.txt")
-	if err == nil {
-		t.Fatal("Delete unexpectedly succeeded against the blocked unlink; test setup is wrong")
+	// A missing leaf forces Remove to fail for every uid. Its PathError
+	// still carries the absolute path that Delete must scrub.
+	err := store.Delete(ctx, "sub/missing.txt")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Delete = %v, want a wrapped not-exist error", err)
 	}
 	if strings.Contains(err.Error(), base) {
-		t.Errorf("SECURITY: [upload-path-leak] Delete error discloses the absolute storage path: %q. Save and open scrub this exact class; erase_data.go and DeleteFileField embed this message in operator-facing errors.", err.Error())
-	}
-	if runtime.GOOS == "darwin" {
-		chflags(t, "nouchg", file)
-	} else {
-		if err := os.Chmod(sub, 0o700); err != nil {
-			t.Fatal(err)
-		}
+		t.Errorf("Delete error discloses the absolute storage path: %q", err)
 	}
 
 	// Surface 2: Exists failure must not carry the absolute path. A
@@ -192,15 +167,6 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), base) {
 		t.Errorf("SECURITY: [upload-path-leak] Exists error discloses the absolute storage path: %q, unlike Save/open.", err.Error())
-	}
-}
-
-// chflags sets or clears a macOS file flag, failing the test if the
-// chflags binary cannot do it.
-func chflags(t *testing.T, flag, path string) {
-	t.Helper()
-	if out, err := exec.Command("chflags", flag, path).CombinedOutput(); err != nil {
-		t.Fatalf("chflags %s %s: %v %s", flag, path, err, out)
 	}
 }
 

@@ -371,3 +371,11 @@
 - Evidence: `go test ./framework/uihost -run 'Test.*Toast' -count=1` covers simultaneous custom hosts, prefixed assets, repeated boot, unrelated widgets, and the original two-default-host case; mutations of stack-kind, missing-route, and default-registration guards each fail.
 - Next time: boot every host before rendering the first, assert the region count, and fetch every linked stylesheet on each router.
 - Status: active
+
+## 2026-11-08 - Obstruct contract application without permission bits
+- Scope: contract tooling tests, upload, migrate
+- Trigger: chmod-based write failures still succeed as root; macOS immutable flags do not fix Linux.
+- Approach: `internal/contractstest.ObstructApply` links readable fixture source outside the project root, so discovery sees it and Apply's `os.Root` refuses it after the first file. Upload uses a missing leaf and a regular-file parent; migrate omits the snapshot directory.
+- Evidence: all six issue #669 obstruction tests pass as uid 0 in the `golang:1.27` container; removing ObstructApply makes all four CLI/MCP partial-application tests fail.
+- Next time: choose a kernel path or confinement failure that holds for every uid, and assert the prior file changed before accepting a partial-application result.
+- Status: active
