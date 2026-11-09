@@ -202,6 +202,47 @@ func TestFirstPaintSubsetOverBudgetLinks(t *testing.T) {
 	}
 }
 
+// A subset can fit the inline budget while app.css alongside it cannot.
+// Keep that subset, including the offline toast's rules, and cache app.css
+// separately instead of making the page fetch every unused component rule.
+func TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget(t *testing.T) {
+	registry.IsolateForTest(t)
+	var used []string
+	for i := range 1050 {
+		sum := sha256.Sum256([]byte(strconv.Itoa(i)))
+		used = append(used, "fui-unused-"+hex.EncodeToString(sum[:8]))
+	}
+	s := heavySubsetStyle(t)
+	ds := newClassPageHost(s, used...)
+	w := servePage(t, ds, "/")
+	body := w.Body.String()
+	m := subsetBundleRe.FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("the component subset was discarded when only app.css needed a link")
+	}
+	scheme := inlineSchemeRe.FindStringSubmatch(body)
+	if scheme == nil || gzipLen(m[3])+gzipLen(scheme[1]) > firstPaintBudget {
+		t.Fatal("the subset and scheme must fit the unchanged inline budget")
+	}
+	app, _ := ds.appCSSBlock()
+	t.Logf("subset %d, scheme %d, app %d", gzipLen(m[3]), gzipLen(scheme[1]), app.gz)
+	if gzipLen(m[3])+gzipLen(scheme[1])+app.gz <= firstPaintBudget {
+		t.Fatal("fixture does not cross the combined-head budget")
+	}
+	if inlineAppRe.MatchString(body) || !strings.Contains(body, `id="cui-app-css"`) || !strings.Contains(body, `href="/__gofastr/app.css?v=`) {
+		t.Fatal("app.css must retain its versioned link and cascade anchor")
+	}
+	policy := w.Header().Get("Content-Security-Policy")
+	if strings.Contains(policy, app.hash) {
+		t.Error("the linked app stylesheet must not add an inline CSP hash")
+	}
+	for _, block := range []string{m[3], scheme[1]} {
+		if !strings.Contains(policy, cspHash(block)) {
+			t.Error("the policy does not allow an inlined block")
+		}
+	}
+}
+
 // TestFirstPaintFittingBundleShipsWhole: a bundle that fits inlines whole,
 // with no full-bundle URL, whatever its markup uses.
 func TestFirstPaintFittingBundleShipsWhole(t *testing.T) {

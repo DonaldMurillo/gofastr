@@ -2494,7 +2494,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// query-free because the files land on disk under their bare paths
 	// and naive static hosts/mirrors resolve by path (the wget
 	// regression that already forced query-free module writes).
-	if inlined != nil {
+	if inlined != nil && !inlined.linkApp {
 		headClose.WriteString(`<style id="cui-app-css">` + inlined.app.body + "</style>\n")
 	} else if ds.App != nil {
 		href := "/__gofastr/app.css"

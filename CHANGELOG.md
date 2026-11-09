@@ -475,6 +475,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Toast CSS no longer makes a page fetch the full component bundle**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). When a
+  page's component subset fits the inline budget but app.css takes the
+  head over it, the host links app.css separately and keeps the subset
+  in the document. Offline toasts keep their styles without forcing
+  the page to download unused component rules.
 - **A data table's phone rows keep the name whole at 320px**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
   badge, a price and the row menu, a `ResponsiveRows` title kept a few
