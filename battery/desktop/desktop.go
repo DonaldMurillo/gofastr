@@ -716,7 +716,10 @@ func (b *Battery) emitWindowBlur(id string) {
 // shell fires the key-window delegates during its own startup (its
 // makeKeyAndOrderFront) before the battery has registered any window;
 // that early report is dropped silently, not Warned, because it is the
-// normal boot sequence, not a failed emit.
+// normal boot sequence, not a failed emit. A report after the first
+// window registers goes through, so a window manager that activates the
+// window late in startup reaches the page as window_focus; desktop.md
+// tells pages to read document.hasFocus() rather than count the events.
 func (b *Battery) emitWindowActivity(name, id string) {
 	if len(b.Windows()) == 0 {
 		return

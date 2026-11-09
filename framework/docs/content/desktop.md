@@ -969,6 +969,17 @@ JavaScript for them. Go hosts get the same signals through
 `WindowConfig.OnWindowFocus`, `OnWindowBlur`, and `OnAppearance`,
 which the battery fills.
 
+Every shell sends `window_focus` and `window_blur`: macOS from the
+key-window delegates, Linux from GTK's `focus-in-event` and
+`focus-out-event`, Windows from `WM_ACTIVATE`. The battery drops the
+reports a shell makes before its first window is registered. A window
+manager may still report the first activation after that, once the
+page has loaded, so `window_focus` may arrive once at startup on some
+platforms (some Linux compositors) and not on others. That event is
+true, the window did become active, but it is not the user's doing.
+Treat `window_focus` as a change of state, not a count of activations:
+a page that wants the current state reads `document.hasFocus()`.
+
 ### The desktop theme
 
 `battery/desktop/ui` (package `desktopui`) is the page half: one theme,
