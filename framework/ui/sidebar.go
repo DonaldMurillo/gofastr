@@ -877,9 +877,10 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	if h.title == "" {
 		return name
 	}
-	label := h.closeLabel
+	label, compact := h.closeLabel, h.compact
 	if h.resolve != nil {
-		label = h.resolve(ctx).DrawerCloseLabel
+		cfg := h.resolve(ctx)
+		label, compact = cfg.DrawerCloseLabel, cfg.Compact
 	}
 	if label == "" {
 		label = i18nui.SidebarCloseDrawer.Text(ctx)
@@ -888,7 +889,7 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
 	class := "fui-sidebar__drawer-head"
-	if h.compact {
+	if compact {
 		class += " fui-sidebar__drawer-head--compact"
 	}
 	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: class},
