@@ -122,6 +122,13 @@ few lines, and link the PR or the docs page for the rest.
   `belongs_to` cascade that would fill the entity's own key is refused
   with `validation.cascade_upsert_key`; the key goes in the body, where
   the upsert's checks read it.
+- **`gofastr upgrade --apply` refuses a downgrade without
+  `--allow-downgrade`, and breaking hits change the exit status**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  report still prints — the notes describe what a downgrade undoes — but
+  no step runs until the flag says to. A run whose BREAKING notes still
+  have hits, plan or apply, now exits 1 (a refused downgrade exits 2), so
+  a script no longer reads unfinished migration work as success.
 
 ### Security
 - **`App.ImportData` restores the bytes it checked**

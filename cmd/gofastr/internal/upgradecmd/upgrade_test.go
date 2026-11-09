@@ -114,7 +114,7 @@ func TestUpgradeReportRendersHits(t *testing.T) {
 			},
 		}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), sinks)
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), sinks)
 	for _, want := range []string{
 		"v0.23.0: Auth",
 		"! BREAKING: theme.Default() is now adaptive",
@@ -149,7 +149,7 @@ func TestUpgradeReportSplitsEditFromCheck(t *testing.T) {
 			review: {{File: "b.go", Line: 2, Col: 1, Why: "uses x.Flipped"}, {File: "c.go", Line: 3, Col: 1, Why: "uses x.Flipped", Err: "too many arguments"}},
 		}}, nil
 	})
-	report := upgradeReport(t.TempDir(), []upgrade.Release{
+	report, _ := upgradeReport(t.TempDir(), []upgrade.Release{
 		{Version: "v0.22.0", Title: "Old", Notes: []*upgrade.Note{review}},
 		{Version: "v0.23.0", Title: "Auth", Notes: []*upgrade.Note{edit, quiet}},
 	}, upgrade.MarkerSinks{})
@@ -192,7 +192,7 @@ func TestUpgradeReportCapsHitsAtTwenty(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return &scan.Result{TypeChecked: true, Hits: map[*upgrade.Note][]scan.Hit{note: hits}}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	rendered := strings.Count(report, ":1:1  w")
 	if rendered != maxNoteHits {
 		t.Errorf("rendered %d hit lines, want the cap of %d", rendered, maxNoteHits)
@@ -215,7 +215,7 @@ func TestUpgradeReportListsUnexplained(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return &scan.Result{TypeChecked: true, Unexplained: unexplained}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	if !strings.Contains(report, "Compile errors no note explains:") {
 		t.Errorf("report missing the unexplained block, got:\n%s", report)
 	}
@@ -240,7 +240,7 @@ func TestUpgradeReportListsUnscanned(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return &scan.Result{TypeChecked: true, Unscanned: unscanned}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	head, _, _ := strings.Cut(report, "v0.23.0")
 	if !strings.Contains(head, "NOTE: 23 files could not be scanned") {
 		t.Errorf("the unscanned NOTE must lead the report, got:\n%s", report)
@@ -261,7 +261,7 @@ func TestUpgradeReportPositionlessError(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return &scan.Result{Unexplained: []scan.Hit{{Why: "go: inconsistent vendoring\n\tsee go help vendor"}}}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	if !strings.Contains(report, "  (no position)  go: inconsistent vendoring\n      \tsee go help vendor\n") {
 		t.Errorf("positionless error must render with no position and indented continuation lines, got:\n%s", report)
 	}
@@ -275,7 +275,7 @@ func TestUpgradeReportShowsCompileError(t *testing.T) {
 			{File: "b.go", Line: 7, Col: 2, Why: "x.Config"},
 		}}}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	if !strings.Contains(report, "a.go:3:5  field x.Config.Public\n          compile error: unknown field Public in struct literal\n") {
 		t.Errorf("a hit read from a compile error must show the error under it, got:\n%s", report)
 	}
@@ -293,7 +293,7 @@ func TestUpgradeReportNotesBrokenTypeCheck(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return &scan.Result{Broken: broken}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	if !strings.Contains(report, "did not type-check") {
 		t.Errorf("report missing the not-type-checked NOTE, got:\n%s", report)
 	}
@@ -319,7 +319,7 @@ func TestUpgradeReportScansErrorShowsNotes(t *testing.T) {
 	stubScan(t, func(root string, notes []*upgrade.Note, sinks upgrade.MarkerSinks) (*scan.Result, error) {
 		return nil, fmt.Errorf("no go.mod at or above %s", root)
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(notes...), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(notes...), upgrade.MarkerSinks{})
 	for _, want := range []string{
 		"NOTE: could not scan this project",
 		"no go.mod at or above",
@@ -342,7 +342,7 @@ func TestUpgradeReportEmptyRangeSkipsScan(t *testing.T) {
 		t.Error("no notes in range: the engine must not run")
 		return nil, nil
 	})
-	report := upgradeReport(t.TempDir(), nil, upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), nil, upgrade.MarkerSinks{})
 	want := "No migration notes between these versions: the mechanical steps below are all there is.\n"
 	if report != want {
 		t.Errorf("got:\n%s\nwant:\n%s", report, want)
@@ -380,7 +380,7 @@ func TestUpgradeReportScrubsHitText(t *testing.T) {
 			Broken:      []string{"pkg\x1b[2J"},
 		}, nil
 	})
-	report := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
+	report, _ := upgradeReport(t.TempDir(), oneRelease(note), upgrade.MarkerSinks{})
 	for _, r := range []rune{0x1b, '\a', 0x202E, 0x9B} {
 		if strings.ContainsRune(report, r) {
 			t.Errorf("report carries raw %U:\n%q", r, report)
