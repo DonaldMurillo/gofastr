@@ -1,11 +1,28 @@
 package log
 
 import (
+	"bufio"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReadLineCappedAppliesLimitAtEOF(t *testing.T) {
+	for _, terminator := range []string{"", "\n"} {
+		for _, size := range []int{5, 6} {
+			line, err := readLineCapped(bufio.NewReader(strings.NewReader(strings.Repeat("x", size)+terminator)), 5)
+			if err != nil && !errors.Is(err, io.EOF) {
+				t.Fatal(err)
+			}
+			if (line == nil) != (size > 5) {
+				t.Errorf("size=%d terminator=%q: line=%q, want skipped=%v", size, terminator, line, size > 5)
+			}
+		}
+	}
+}
 
 // TestTailFileSkipsOverlongLine pins that one log line past the reader's
 // 1 MiB cap is skipped, not fatal. The fanout does not cap an entry's

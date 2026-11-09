@@ -179,6 +179,8 @@ few lines, and link the PR or the docs page for the rest.
   error to the tool caller instead of an empty history. The file sink's
   rotation parses backup indexes exactly: `server.log.01`, a
   zero-padded index another tool (logrotate) owns, is no longer read as
+  `.1` or moved over another backup. Historical lines over 1 MiB are
+  skipped even when the last line has no newline.
 - **A late cron tick fires the minutes it slept through.** A tick that
   arrived minutes late — the process slept, a GC pause, a slow leader
   acquire — ran only its own minute, so a fixed-time job whose minute

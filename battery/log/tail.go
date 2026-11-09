@@ -116,6 +116,9 @@ func readLineCapped(rd *bufio.Reader, limit int) ([]byte, error) {
 			return nil, err
 		}
 		buf = bytes.TrimSuffix(buf, []byte{'\n'})
+		if len(buf) > limit {
+			return nil, err
+		}
 		if err == io.EOF && len(buf) == 0 {
 			return nil, io.EOF
 		}
