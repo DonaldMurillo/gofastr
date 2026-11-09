@@ -302,6 +302,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A data table's phone rows keep the name whole at 320px**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
+  badge, a price and the row menu, a `ResponsiveRows` title kept a few
+  pixels: the back office listed "Ada…" and "C…", and a short name could
+  vanish. Below 22rem the title, subtitle, meta and detail each take a
+  line, start-aligned, with the columns closed up to `--spacing-md`.
 - **The sidebar drawer's rows stand off its edges**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The phone
   drawer's body is `display: contents`, so its links sat flush against the
