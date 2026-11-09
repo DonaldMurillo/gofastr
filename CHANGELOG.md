@@ -541,6 +541,18 @@ few lines, and link the PR or the docs page for the rest.
   focus, Enter left focus on the native summary, and Tab or Shift+Tab
   from there moved focus on with the menu still open. The summary's Tab
   now closes the chain, as a caller-owned trigger's already did.
+- **`ui.SegmentedControl` draws its pill on the checked segment for any
+  number of options** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-NC8-02). The sheet sized and moved the pill with one rule per
+  option count (2 to 6) and per position, so with seven options and the
+  seventh checked the pill was too wide and sat on the first segment.
+  The checked option is now a CSS anchor scoped to its control, and the
+  pill takes that option's box and slides to the next one, in either
+  direction. A browser without anchor positioning draws the pill on the
+  checked option itself, without the slide. The
+  `--ui-segmented-min-width-2…6` tokens stay; seven or more options size
+  to their content. The `--fui-segmented-dir` variable and the options'
+  `data-position` attribute are gone.
 
 ## [0.96.0] - 2026-11-06
 

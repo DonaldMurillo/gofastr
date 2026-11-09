@@ -26,9 +26,7 @@ func TestSegmentedControlBasic(t *testing.T) {
 		`value="month"`,
 		`checked`,
 		`fui-segmented__indicator`,
-		`data-position="0"`,
-		`data-position="2"`,
-		`data-count="3"`, // now on the wrapper, drives equal-width column math
+		`data-count="3"`, // on the wrapper, picks the per-count minimum width
 		`for="view--0"`,
 	}
 	for _, w := range wants {
