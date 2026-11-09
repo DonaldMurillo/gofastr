@@ -110,7 +110,7 @@ func (ch *CrudHandler) ReadHooksRestrict(ctx context.Context, id string) bool {
 		return false
 	}
 	ctx = WithReadHooks(ctx)
-	clauses, err := ch.ownBeforeScopes(ctx, syntheticRequest(ctx, http.MethodGet, "/"), id, true)
+	clauses, err := ch.ownBeforeScopes(ctx, ch.requestFrom(ctx), id, true)
 	return err != nil || len(clauses) > 0
 }
 
