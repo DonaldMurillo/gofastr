@@ -34,32 +34,34 @@ func TestUnstorableOwnerAndTenantRefused(t *testing.T) {
 			t.Fatalf("status = %d, want 401 for a non-UTF-8 owner", status)
 		}
 	})
-	t.Run("tenant NUL", func(t *testing.T) {
-		h := newHarness(t, func(c *Config) {
-			c.Tenant = func(r *http.Request) string { return "t\x00x" }
-		})
-		// Every dispatch path refuses; message/send exercises the
-		// prepare path, tasks/list the dispatch one.
-		status, e, raw := h.call("alice", MethodSendMessage, map[string]any{
-			"message": map[string]any{
-				"role":  "ROLE_USER",
-				"parts": []any{map[string]any{"kind": "text", "text": "hi"}},
-				"metadata": map[string]any{
-					"gofastr.skill": "echo",
+	for _, bad := range []struct{ name, value string }{{"NUL", "t\x00x"}, {"invalid UTF-8", "t\xffx"}} {
+		t.Run("tenant "+bad.name, func(t *testing.T) {
+			h := newHarness(t, func(c *Config) {
+				c.Tenant = func(r *http.Request) string { return bad.value }
+			})
+			// Every dispatch path refuses; message/send exercises the
+			// prepare path, tasks/list the dispatch one.
+			status, e, raw := h.call("alice", MethodSendMessage, map[string]any{
+				"message": map[string]any{
+					"role":  "ROLE_USER",
+					"parts": []any{map[string]any{"kind": "text", "text": "hi"}},
+					"metadata": map[string]any{
+						"gofastr.skill": "echo",
+					},
 				},
-			},
+			})
+			if e.Error == nil || e.Error.Code != CodeUnauthenticated {
+				t.Fatalf("message/send: error = %+v body=%s, want unauthenticated", e.Error, raw)
+			}
+			if status != http.StatusUnauthorized {
+				t.Fatalf("message/send status = %d, want 401", status)
+			}
+			_, e, _ = h.call("alice", MethodListTasks, map[string]any{})
+			if e.Error == nil || e.Error.Code != CodeUnauthenticated {
+				t.Fatalf("tasks/list: error = %+v, want unauthenticated", e.Error)
+			}
 		})
-		if e.Error == nil || e.Error.Code != CodeUnauthenticated {
-			t.Fatalf("message/send: error = %+v body=%s, want unauthenticated", e.Error, raw)
-		}
-		if status != http.StatusUnauthorized {
-			t.Fatalf("message/send status = %d, want 401", status)
-		}
-		_, e, _ = h.call("alice", MethodListTasks, map[string]any{})
-		if e.Error == nil || e.Error.Code != CodeUnauthenticated {
-			t.Fatalf("tasks/list: error = %+v, want unauthenticated", e.Error)
-		}
-	})
+	}
 	t.Run("storable tenant passes", func(t *testing.T) {
 		h := newHarness(t, func(c *Config) {
 			c.Tenant = func(r *http.Request) string { return "acme" }

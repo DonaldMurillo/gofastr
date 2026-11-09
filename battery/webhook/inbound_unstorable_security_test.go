@@ -18,62 +18,39 @@ func TestIngestUnstorableDedupeKeyAndOwnerRefused(t *testing.T) {
 	body := []byte(`{"event":"push"}`)
 	sign := SignWithTimestamp(secret, time.Now().Unix(), "", "", body)
 
-	t.Run("dedupe key NUL", func(t *testing.T) {
-		store := NewMemoryInboundStore()
-		h, err := IngestHandler(IngestConfig{
-			Source:        "github",
-			Verifier:      TimestampedVerifier(secret, 5*time.Minute),
-			Store:         store,
-			DedupeKeyFunc: func(r *http.Request, _ []byte) string { return "d\x00k" },
+	for _, tc := range []struct {
+		name, key, owner string
+		code             int
+	}{
+		{"key NUL", "d\x00k", "owner", http.StatusBadRequest},
+		{"key invalid UTF-8", "d\xffk", "owner", http.StatusBadRequest},
+		{"owner NUL", "key", "o\x00p", http.StatusBadRequest},
+		{"owner invalid UTF-8", "key", "o\xffp", http.StatusBadRequest},
+		{"storable callbacks", "abc-123", "u-1", http.StatusAccepted},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := NewMemoryInboundStore()
+			h, err := IngestHandler(IngestConfig{
+				Source: "github", Verifier: TimestampedVerifier(secret, 5*time.Minute), Store: store,
+				DedupeKeyFunc: func(*http.Request, []byte) string { return tc.key },
+				Owner:         func(*http.Request, []byte) string { return tc.owner },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, newIngestRequest(http.MethodPost, string(body), map[string]string{SignatureHeader: sign}))
+			if rr.Code != tc.code {
+				t.Fatalf("status = %d, want %d", rr.Code, tc.code)
+			}
+			envs, err := store.ListEnvelopes(context.Background(), "", 10)
+			want := 0
+			if tc.code == http.StatusAccepted {
+				want = 1
+			}
+			if err != nil || len(envs) != want {
+				t.Fatalf("persisted %d envelopes, error %v; want %d", len(envs), err, want)
+			}
 		})
-		if err != nil {
-			t.Fatalf("handler: %v", err)
-		}
-		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, newIngestRequest(http.MethodPost, string(body), map[string]string{SignatureHeader: sign}))
-		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("status = %d, want 400", rr.Code)
-		}
-		if envs, err := store.ListEnvelopes(context.Background(), "", 10); err != nil || len(envs) != 0 {
-			t.Fatalf("unstorable key persisted: envs=%d err=%v", len(envs), err)
-		}
-	})
-	t.Run("owner invalid UTF-8", func(t *testing.T) {
-		store := NewMemoryInboundStore()
-		h, err := IngestHandler(IngestConfig{
-			Source:   "github",
-			Verifier: TimestampedVerifier(secret, 5*time.Minute),
-			Store:    store,
-			Owner:    func(r *http.Request, _ []byte) string { return "o\xffp" },
-		})
-		if err != nil {
-			t.Fatalf("handler: %v", err)
-		}
-		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, newIngestRequest(http.MethodPost, string(body), map[string]string{SignatureHeader: sign}))
-		if rr.Code != http.StatusBadRequest {
-			t.Fatalf("status = %d, want 400", rr.Code)
-		}
-		if envs, err := store.ListEnvelopes(context.Background(), "", 10); err != nil || len(envs) != 0 {
-			t.Fatalf("unstorable owner persisted: envs=%d err=%v", len(envs), err)
-		}
-	})
-	t.Run("storable key and owner persist", func(t *testing.T) {
-		store := NewMemoryInboundStore()
-		h, err := IngestHandler(IngestConfig{
-			Source:        "github",
-			Verifier:      TimestampedVerifier(secret, 5*time.Minute),
-			Store:         store,
-			DedupeKeyFunc: func(r *http.Request, _ []byte) string { return "abc-123" },
-			Owner:         func(r *http.Request, _ []byte) string { return "u-1" },
-		})
-		if err != nil {
-			t.Fatalf("handler: %v", err)
-		}
-		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, newIngestRequest(http.MethodPost, string(body), map[string]string{SignatureHeader: sign}))
-		if rr.Code != http.StatusAccepted {
-			t.Fatalf("status = %d, want 202", rr.Code)
-		}
-	})
+	}
 }

@@ -5,6 +5,7 @@ package builders
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -95,4 +96,70 @@ func pointerLocal(w http.ResponseWriter, r *http.Request) {
 	b := &strings.Builder{}
 	b.WriteString(r.PathValue("slug"))
 	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
+
+// A reset in another switch arm never runs on the binding path.
+func switchSiblingReset(r *http.Request, arm int) {
+	var b strings.Builder
+	b.WriteString(r.FormValue("q"))
+	switch arm {
+	case 0:
+		b.Reset()
+	default:
+		db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+	}
+}
+
+// Sharing a loop does not make a conditional reset unconditional.
+func conditionalLoopReset(r *http.Request, items []bool) {
+	var b strings.Builder
+	for _, reset := range items {
+		b.WriteString(r.FormValue("q"))
+		if reset {
+			b.Reset()
+		}
+		db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+	}
+}
+
+func sameSwitchArmReset(r *http.Request, arm int) {
+	var b strings.Builder
+	b.WriteString(r.FormValue("q"))
+	switch arm {
+	case 0:
+		b.Reset()
+		db.Exec("INSERT INTO b (v) VALUES ($1)", b.String())
+	}
+}
+
+func indexedByte(r *http.Request) {
+	var b strings.Builder
+	s := r.FormValue("q")
+	if len(s) > 0 {
+		b.WriteByte(s[0])
+	}
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
+
+func runeLoop(r *http.Request) {
+	var b strings.Builder
+	for _, c := range r.FormValue("q") {
+		b.WriteRune(c)
+	}
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
+
+func formatted(r *http.Request) {
+	var b strings.Builder
+	fmt.Fprintf(&b, "prefix:%s", r.FormValue("q"))
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
+
+// Loop offsets are integers, not the request's bytes.
+func loopOffsets(r *http.Request) {
+	var b strings.Builder
+	for i := range r.FormValue("q") {
+		b.WriteRune(rune(i))
+	}
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String())
 }

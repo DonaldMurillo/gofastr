@@ -243,8 +243,9 @@ few lines, and link the PR or the docs page for the rest.
   call through a func-typed field follows its same-package fill sites'
   summaries, and a fill-less `func(*http.Request) string` field the
   package declares (the d6167d1a `IdempotencyConfig.Principal` shape)
-  is request text itself; a `strings.Builder` local's `String`/`Bytes`
-  carry what `WriteString`/`Write` put in it until `Reset`.
+  is request text itself; a `strings.Builder` local's `String`
+  carries string, byte, rune and standard formatted writes until a
+  dominating `Reset`.
 - **`discardeddecode` covers every dropped JSON encode error** (#669).
   The encode arm — born scoped to JSON-RPC envelopes after
   3516c4d9b's empty-200 MCP replies — now fires on any

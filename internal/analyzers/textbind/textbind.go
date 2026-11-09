@@ -85,9 +85,9 @@
 //
 // strings.Builder output carries what was written into it:
 // WriteString/Write add their argument's bytes to the builder's
-// content, Reset drops them, String/Bytes read them back. WriteByte
-// and WriteRune are not followed (a single byte of a checked string
-// cannot carry a NUL it did not have).
+// content; WriteByte/WriteRune follow indexed bytes and range values.
+// fmt.Fprint/Fprintf/Fprintln and io.WriteString add their arguments.
+// Reset drops content only when it dominates the String read.
 //
 // Silent postures:
 //   - a dominating storable-text check on the value, credited by what
@@ -514,7 +514,7 @@ func run(pass *analysis.Pass) (any, error) {
 // import path with no dot in its first element, outside a testdata
 // tree (the fixtures share the spelling). Its bodies are summarised by
 // the defaults in throughCall instead: strings.ToLower goes through a
-// Builder this rule does not follow, and calling it a sanitiser would
+// Builder; calling it a sanitiser without checking its bytes would
 // clear every value it touches.
 func isStdlib(pass *analysis.Pass) bool {
 	if strings.Contains(strings.SplitN(pass.Pkg.Path(), "/", 2)[0], ".") {
@@ -990,13 +990,32 @@ func (st *fnState) collectDefs() {
 				add(x.Key, def{pos: x.Pos(), at: x, rangeOf: x.X})
 			}
 		case *ast.CallExpr:
+			// Standard writer helpers write to the same local builder.
+			if sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr); ok && len(x.Args) >= 2 {
+				if id, ok := sel.X.(*ast.Ident); ok {
+					if pkg, ok := info.Uses[id].(*types.PkgName); ok {
+						writes := pkg.Imported().Path() == "fmt" && (sel.Sel.Name == "Fprint" || sel.Sel.Name == "Fprintf" || sel.Sel.Name == "Fprintln") || pkg.Imported().Path() == "io" && sel.Sel.Name == "WriteString"
+						target := ast.Unparen(x.Args[0])
+						if addr, ok := target.(*ast.UnaryExpr); ok && addr.Op == token.AND {
+							target = ast.Unparen(addr.X)
+						}
+						if id, ok := target.(*ast.Ident); ok && writes {
+							if v, ok := objOf(info, id).(*types.Var); ok && isBuilder(v.Type()) {
+								for _, arg := range x.Args[1:] {
+									st.defs[v] = append(st.defs[v], def{pos: x.Pos(), at: x, rhs: arg})
+								}
+							}
+						}
+					}
+				}
+			}
 			// A strings.Builder collects what is written into it;
-			// String/Bytes hand those bytes back.
+			// String hands those bytes back.
 			if sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr); ok {
 				if id, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
 					if v, ok := objOf(info, id).(*types.Var); ok && isBuilder(v.Type()) {
 						switch sel.Sel.Name {
-						case "WriteString", "Write":
+						case "WriteString", "Write", "WriteByte", "WriteRune":
 							if len(x.Args) == 1 {
 								st.defs[v] = append(st.defs[v], def{pos: x.Pos(), at: x, rhs: x.Args[0]})
 							}
@@ -1259,11 +1278,11 @@ func (st *fnState) callTaint(call *ast.CallExpr) taint {
 }
 
 // builderTaint is the taint of a strings.Builder's collected bytes,
-// read through String or Bytes: every WriteString/Write into it
+// read through String: every WriteString/Write into it
 // before the use (loop back edges included), minus what a Reset
 // dropped.
 func (st *fnState) builderTaint(call *ast.CallExpr, sel *ast.SelectorExpr) (taint, bool) {
-	if sel.Sel.Name != "String" && sel.Sel.Name != "Bytes" {
+	if sel.Sel.Name != "String" {
 		return taint{}, false
 	}
 	id, ok := ast.Unparen(sel.X).(*ast.Ident)
@@ -1282,9 +1301,58 @@ func (st *fnState) builderTaint(call *ast.CallExpr, sel *ast.SelectorExpr) (tain
 		if st.resetBetween(v, d, call) {
 			continue
 		}
-		t = t.or(st.defTaint(d))
+		t = t.or(st.builderWriteTaint(d.rhs, d.at, map[types.Object]bool{}))
 	}
 	return t, true
+}
+
+// builderWriteTaint also follows byte/rune values derived from request text.
+// Ordinary integer parameters and range offsets carry no text provenance.
+func (st *fnState) builderWriteTaint(e ast.Expr, use ast.Node, seen map[types.Object]bool) taint {
+	if e == nil {
+		return taint{}
+	}
+	typ := typeOf(st.c.pass, e)
+	if typ == nil {
+		return taint{}
+	}
+	basic, scalar := typ.Underlying().(*types.Basic)
+	if !scalar || basic.Info()&types.IsInteger == 0 {
+		return st.exprTaint(e)
+	}
+	switch x := ast.Unparen(e).(type) {
+	case *ast.IndexExpr:
+		return st.exprTaint(x.X)
+	case *ast.CallExpr:
+		if tv, ok := st.c.pass.TypesInfo.Types[x.Fun]; ok && tv.IsType() && len(x.Args) == 1 {
+			return st.builderWriteTaint(x.Args[0], use, seen)
+		}
+	case *ast.Ident:
+		v, ok := objOf(st.c.pass.TypesInfo, x).(*types.Var)
+		if !ok || seen[v] {
+			return taint{}
+		}
+		seen[v] = true
+		defer delete(seen, v)
+		var out taint
+		for _, d := range st.defs[v] {
+			if d.pos >= use.Pos() && !st.inLoopWith(d.at, use) {
+				continue
+			}
+			if d.rangeOf != nil {
+				r, ok := d.at.(*ast.RangeStmt)
+				if ok {
+					if value, ok := r.Value.(*ast.Ident); ok && objOf(st.c.pass.TypesInfo, value) == v {
+						out = out.or(st.rangeTaint(d.rangeOf))
+					}
+				}
+			} else {
+				out = out.or(st.builderWriteTaint(d.rhs, d.at, seen))
+			}
+		}
+		return out
+	}
+	return taint{}
 }
 
 // resetBetween reports whether a Reset of the builder v sits between
@@ -1296,11 +1364,6 @@ func (st *fnState) resetBetween(v *types.Var, d def, call *ast.CallExpr) bool {
 	for _, r := range st.resets[v] {
 		if r.Pos() <= d.pos || r.End() > call.Pos() {
 			continue
-		}
-		if st.inLoopWith(r, call) {
-			// The reset may run again before the read; same
-			// conservativeness as the write side.
-			return true
 		}
 		if !st.unconditionalTo(r, call) {
 			continue
@@ -1321,6 +1384,10 @@ func (st *fnState) unconditionalTo(r, use ast.Node) bool {
 		switch b := p.(type) {
 		case *ast.IfStmt:
 			if !contains(b, use) || !sameArm(b, r, use) {
+				return false
+			}
+		case *ast.CaseClause, *ast.CommClause:
+			if !contains(p, use) {
 				return false
 			}
 		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:

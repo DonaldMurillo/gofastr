@@ -16,3 +16,6 @@ notes:
     breaking: true
     guidance: "A null on the wire (a PATCH to null, a row from before the column existed) was silently decoded into a zero value that read as authored data. Dereference where app code read such a field directly (sub.Mrr, inv.DueOn): the nil pointer is the honest absent. Regenerate with gofastr generate app gofastr.yml --force (or copy entities/ from a scratch regeneration for an app that hand-maintains its root) and let the compiler walk you to every read."
     nodetect: "the pointer types live in generated trees; a read of the old value-typed field is any selector on the entity struct, which no source shape separates from a dereference"
+  - change: "Webhook dedupe-key and owner callbacks refuse NUL or invalid UTF-8 with 400; A2A owner and tenant callbacks refuse those bytes with 401 before a store call"
+    guidance: "Return storable text from identity callbacks. The request used to fail at the PostgreSQL bind while SQLite accepted the bytes."
+    nodetect: "the callback result's runtime bytes determine the refusal"
