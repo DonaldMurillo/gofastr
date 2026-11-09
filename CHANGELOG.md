@@ -302,6 +302,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **The sidebar drawer's rows stand off its edges**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The phone
+  drawer's body is `display: contents`, so its links sat flush against the
+  panel's left and right edges. Each part of the body now keeps an inline
+  margin of `--ui-sidebar-drawer-inset` (default `--spacing-md`), and the
+  drawer head lines its brand up with the row icons below it.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

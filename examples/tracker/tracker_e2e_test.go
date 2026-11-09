@@ -1212,9 +1212,19 @@ func TestTrackerDrawerHeaderE2E(t *testing.T) {
 			closeLabel: close.getAttribute('aria-label'),
 			brandLeft: brand ? brand.getBoundingClientRect().left : -1,
 			iconLeft: icon ? icon.getBoundingClientRect().left : -1,
+			// The tightest gap between a nav row and the panel's edges.
+			rowInset: Math.min(...[...drawer.querySelectorAll('.fui-sidebar__link')].map(a => {
+				const p = drawer.getBoundingClientRect(), b = a.getBoundingClientRect();
+				return Math.min(b.left - p.left, p.right - b.right);
+			})),
 		};
 	})()`, &head)); err != nil {
 		t.Fatalf("header read: %v", err)
+	}
+	// The rows stand off the panel's edges: their hover and current
+	// fill used to run into both sides of the drawer.
+	if inset := head["rowInset"].(float64); inset < 8 {
+		t.Errorf("a drawer nav row sits %.1fpx from the panel edge, want at least 8", inset)
 	}
 	if d := head["brandLeft"].(float64) - head["iconLeft"].(float64); math.Abs(d) > 1 {
 		t.Errorf("drawer brand starts %.1fpx from the first nav row's icon (brand %.1f, icon %.1f) — one inline inset must line them up",
