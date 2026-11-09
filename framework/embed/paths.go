@@ -79,9 +79,9 @@ func CSRFExempt(r *http.Request) bool {
 	}
 	// The surface space is exempt for SAFE methods only.
 	//
-	// The framework mounts exactly two routes under SurfacePrefix, the shell
-	// and the content endpoint, and both are r.Get (see
-	// framework/uihost/embed.go mountEmbed). A blanket prefix exemption
+	// The framework mounts only GET routes under SurfacePrefix: the shell
+	// (with a dynamic surface's app path after the name) and the content
+	// endpoint (see framework/uihost/embed.go mountEmbed). A blanket prefix exemption
 	// therefore granted CSRF-free status to nothing that exists, and to every
 	// POST/PUT/PATCH/DELETE an app might later mount under the same prefix.
 	// The justification above only covers requests that carry no ambient

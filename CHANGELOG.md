@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Embed surfaces on routes with parameters**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [embed](framework/docs/content/embed.md)). `embed.New` accepts a
+  surface whose screen route has parameters (`/reports/:id:int`,
+  `/files/{path...}`), which it refused at boot before. The snippet names
+  the concrete path with `data-path` (or `path` in `GoFastrEmbed.mount`),
+  and the frame loads `/__gofastr/embed/<surface>/reports/42`. uihost
+  renders that path only when the router resolves it to the surface's own
+  screen, so the route binds and checks the params; any other path is a
+  404. The grant covers the surface, not one path: the screen decides
+  which record its subject may see. `ResolvedSurface.Dynamic` reports
+  such a surface.
 - **`gofastr:widgets-synced` says a page's widgets are in**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [runtime contract](framework/docs/content/runtime-contract.md)). The

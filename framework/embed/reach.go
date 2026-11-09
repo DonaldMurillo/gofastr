@@ -58,7 +58,7 @@ func normalizeReach(surface, field, p string, reserved []string) (string, error)
 				"surface actually posts to instead", surface, field, p)
 	}
 	for _, res := range reserved {
-		if pathWithin(res, cleaned) || pathWithin(cleaned, res) {
+		if routesOverlap(cleaned, res) {
 			return "", fmt.Errorf(
 				"embed: surface %q: %s %q covers %q, which the framework mounts "+
 					"itself: an embed grant must never reach it", surface, field, p, res)
@@ -99,13 +99,13 @@ func (h *Host) AddReservedPrefixes(prefixes ...string) error {
 	for _, name := range h.names {
 		s := h.surfaces[name]
 		for _, reserved := range added {
-			if pathWithin(reserved, s.path) || pathWithin(s.path, reserved) {
+			if routesOverlap(s.path, reserved) {
 				return fmt.Errorf(
 					"embed: surface %q: Path %q covers %q, which a mounted battery serves "+
 						": an embed grant must never reach it", name, s.path, reserved)
 			}
 			for _, rch := range s.Reach {
-				if pathWithin(reserved, rch) || pathWithin(rch, reserved) {
+				if routesOverlap(rch, reserved) {
 					return fmt.Errorf(
 						"embed: surface %q: Reach entry %q covers %q, which a mounted battery "+
 							"serves: an embed grant must never reach it", name, rch, reserved)
@@ -192,6 +192,74 @@ func pathWithin(prefix, p string) bool {
 	// Boundary: the next byte after the prefix must start a new segment.
 	rest := p[len(prefix):]
 	return strings.HasPrefix(rest, "/")
+}
+
+// routeWithin reports whether p, a decoded path, is a path the route
+// pattern matches, or sits beneath one on a segment boundary: a param
+// segment matches one non-empty segment its constraint admits
+// (":id:int" refuses "abc", which another route may serve), a catch-all
+// one or more, a literal itself. A route with no param is pathWithin.
+func routeWithin(pattern, p string) bool {
+	if !isDynamicRoute(pattern) {
+		return pathWithin(pattern, p)
+	}
+	if !strings.HasPrefix(pattern, "/") || !strings.HasPrefix(p, "/") {
+		return false
+	}
+	want := strings.Split(pattern[1:], "/")
+	got := strings.Split(p[1:], "/")
+	for i, seg := range want {
+		if i >= len(got) {
+			return false
+		}
+		param, rest := routeSeg(seg)
+		switch {
+		case rest:
+			return strings.Join(got[i:], "/") != ""
+		case param:
+			if !segAdmits(seg, got[i]) {
+				return false
+			}
+		case seg != got[i]:
+			return false
+		}
+	}
+	return true
+}
+
+// routesOverlap reports whether one path can sit under both a and b,
+// either within the other: a param segment matches any param, and a
+// literal its constraint admits. A Path or Reach entry that overlaps a reserved prefix could
+// hand a grant a path under it: "/:section/summary" reaches
+// "/auth/summary". Two literal routes overlap exactly when one is
+// pathWithin the other.
+func routesOverlap(a, b string) bool {
+	if !isDynamicRoute(a) && !isDynamicRoute(b) {
+		return pathWithin(a, b) || pathWithin(b, a)
+	}
+	as := strings.Split(strings.TrimPrefix(a, "/"), "/")
+	bs := strings.Split(strings.TrimPrefix(b, "/"), "/")
+	for i := 0; i < len(as) && i < len(bs); i++ {
+		ap, ar := routeSeg(as[i])
+		bp, br := routeSeg(bs[i])
+		switch {
+		case ar || br:
+			return true
+		case ap && bp:
+			continue
+		case ap:
+			if !segAdmits(as[i], bs[i]) {
+				return false
+			}
+		case bp:
+			if !segAdmits(bs[i], as[i]) {
+				return false
+			}
+		case as[i] != bs[i]:
+			return false
+		}
+	}
+	return true
 }
 
 // runtimeEndpoints and runtimePrefixes are the /__gofastr routes framework/uihost
@@ -290,7 +358,8 @@ func reservedFor(reserved []string, p string) (string, bool) {
 
 // MayReach reports whether a grant for this surface may be used on p.
 //
-// Three things are in reach: the surface's own Path subtree, the runtime
+// Three things are in reach: the surface's own Path subtree (every path a
+// dynamic Path matches, and what lies under it; see routeWithin), the runtime
 // endpoints uihost mounts under /__gofastr (runtimeEndpoints), and each
 // declared Reach prefix. The middleware also refuses any path under a reserved
 // prefix before it asks MayReach.
@@ -306,7 +375,7 @@ func (s *ResolvedSurface) MayReach(p string) bool {
 		return false
 	}
 	cleaned := path.Clean(p)
-	if pathWithin(s.path, cleaned) {
+	if routeWithin(s.path, cleaned) {
 		return true
 	}
 	if runtimeReach(cleaned) {

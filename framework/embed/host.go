@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/routeseg"
 )
 
 // Default token lifetimes.
@@ -63,7 +65,8 @@ type ThemeConfig struct {
 // by a human, a static analyzer, and the boot-time server-action walk,
 // instead of a string resolved against a route table.
 type Screen interface {
-	// RoutePath is the static app route the screen is mounted at, e.g. "/reports".
+	// RoutePath is the app route the screen is mounted at, e.g.
+	// "/reports" or the pattern "/reports/:id".
 	RoutePath() string
 }
 
@@ -213,6 +216,7 @@ type Host struct {
 type ResolvedSurface struct {
 	Surface
 	path    string
+	dynamic bool
 	origins *originSet
 	scopes  map[string]struct{}
 }
@@ -221,6 +225,16 @@ type ResolvedSurface struct {
 // may reach as its own subtree. It is resolved once at boot from the surface's
 // screen. Callers that compared the old Surface.Path string read this instead.
 func (s *ResolvedSurface) Path() string { return s.path }
+
+// Dynamic reports whether the surface's route captures a parameter: a
+// ":name" or whole "{name}" segment, or a trailing catch-all. Path is then
+// a pattern. A dynamic surface's frame URL names the concrete app path
+// after the surface name (/__gofastr/embed/<surface>/reports/42), and
+// uihost renders it only when it resolves to the surface's own screen. A
+// grant for the surface reaches every path the pattern matches: which
+// record the granted subject may see is the screen's to decide, as on any
+// first-party route.
+func (s *ResolvedSurface) Dynamic() bool { return s.dynamic }
 
 // validSurfaceName mirrors the module-name rule in core-ui/runtime: the name
 // lands in a URL path segment, so anything that could be read as traversal or
@@ -303,9 +317,6 @@ func New(cfg Config) (*Host, error) {
 		if !strings.HasPrefix(route, "/") {
 			return nil, fmt.Errorf("embed: surface %q screen route must be an absolute app route, got %q", s.Name, route)
 		}
-		if isDynamicRoute(route) {
-			return nil, fmt.Errorf("embed: surface %q screen route %q is dynamic: use a static app route", s.Name, route)
-		}
 		// The screen's route gets the SAME validation as Reach, and for a
 		// stronger reason.
 		//
@@ -344,7 +355,7 @@ func New(cfg Config) (*Host, error) {
 			}
 			s.Reach = cleaned
 		}
-		h.surfaces[s.Name] = &ResolvedSurface{Surface: s, path: norm, origins: origins, scopes: scopes}
+		h.surfaces[s.Name] = &ResolvedSurface{Surface: s, path: norm, dynamic: isDynamicRoute(norm), origins: origins, scopes: scopes}
 		h.names = append(h.names, s.Name)
 	}
 	sort.Strings(h.names)
@@ -794,9 +805,32 @@ func (h *Host) Prune(ctx context.Context) error {
 // segment, "/reports/rev{1}" or "/reports/a:b", is a static path.
 func isDynamicRoute(route string) bool {
 	for _, seg := range strings.Split(route, "/") {
-		if strings.HasPrefix(seg, ":") || (len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}') {
+		if param, _ := routeSeg(seg); param {
 			return true
 		}
 	}
 	return false
+}
+
+// routeSeg classifies one route segment as the app router does: a whole
+// ":name" or "{name}" segment captures one path segment, and ":name*" or
+// "{name...}" captures the rest. Anything else is a literal.
+func routeSeg(seg string) (param, rest bool) {
+	if strings.HasPrefix(seg, ":") {
+		return true, strings.HasSuffix(seg, "*")
+	}
+	if len(seg) >= 3 && seg[0] == '{' && seg[len(seg)-1] == '}' {
+		return true, strings.HasSuffix(seg, "...}")
+	}
+	return false, false
+}
+
+// segAdmits reports whether the param segment seg admits the decoded
+// path segment v: non-empty, and passing the constraint the segment
+// declares (":id:int", "{id:int}"), judged by the router's own rules.
+func segAdmits(seg, v string) bool {
+	if seg[0] == '{' {
+		seg = ":" + seg[1:len(seg)-1]
+	}
+	return v != "" && routeseg.ConstraintOK(seg, v)
 }

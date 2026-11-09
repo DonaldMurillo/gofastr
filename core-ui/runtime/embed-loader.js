@@ -42,6 +42,11 @@
     // frame links the right stylesheet in its FIRST response instead of
     // rendering in the app palette and swapping. They are colours, not secrets.
     let src = origin + '/__gofastr/embed/' + encodeURIComponent(surface);
+    // A dynamic surface's app path ("/reports/42") follows its name,
+    // each segment encoded (/__gofastr/embed/report/reports/42); the
+    // server 404s a path the surface's screen does not match, one
+    // without its leading slash included.
+    if (opts.path) src += opts.path.split('/').map(encodeURIComponent).join('/');
     // customer + theme ride in the URL so the shell's FIRST response is right
     // (the right frame-ancestors list for an OriginSource, the right
     // stylesheet) instead of swapping after paint. Neither is secret:
@@ -215,6 +220,7 @@
         title: self.getAttribute('data-title') || '',
         theme: self.getAttribute('data-theme') || '',
         customer: self.getAttribute('data-customer') || '',
+        path: self.getAttribute('data-path'),
         // The auto-mount path had no error surface at all: onError was reachable
         // only through the programmatic API, so every failure inside the frame
         // (a spent nonce from a cached page, a refused origin) reached the
@@ -242,18 +248,12 @@
   window.GoFastrEmbed = {
     mount(opts) {
       const target = typeof opts.target === 'string' ? document.querySelector(opts.target) : opts.target;
-      return mount({
+      // A copy of the caller's options (mount reads only the keys it
+      // knows), with the origin defaulted and the target resolved.
+      return mount(Object.assign({}, opts, {
         origin: opts.origin || (self ? originOf(self.src) : null),
-        surface: opts.surface,
-        token: opts.token,
         target: target,
-        height: opts.height || 0,
-        className: opts.className || '',
-        title: opts.title || '',
-        theme: opts.theme || '',
-        customer: opts.customer || '',
-        onError: opts.onError,
-      });
+      }));
     },
   };
 })();
