@@ -8,6 +8,8 @@ package sqlbusy
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/rand/v2"
 	"time"
 )
 
@@ -17,13 +19,31 @@ func Is(err error) bool {
 	return errors.As(err, &coded) && (coded.Code()&0xff == 5 || coded.Code()&0xff == 6)
 }
 
-// Retry preserves the first call's context, then bounds retries after a
-// SQLite busy error to two seconds or the caller's earlier deadline.
-// It returns the last error or the context error when cancelled.
-// A busy database is contention, not corruption: retrying a
-// settle write keeps the row out of the slow lease-expiry recovery path,
-// and every settle in battery/queue and framework/outbox is fenced on
-// its claim, so a late retry that lost the race changes nothing.
+// DefaultBudget bounds the retries of a call whose context carries no
+// deadline. The settle paths that use this package all pass a detached
+// context with a deadline of their own (ten seconds), so this is the
+// ceiling for a host calling Ack or Nack on context.Background.
+const DefaultBudget = 10 * time.Second
+
+// maxDelay caps the pause between two attempts. Short, so a settle gets
+// many tries at the lock while claims churn around it.
+const maxDelay = 100 * time.Millisecond
+
+// Retry runs fn and, while it fails with a SQLite busy error, runs it
+// again until it succeeds, fails another way, or ctx ends. The first
+// call keeps the caller's context; when that context has no deadline,
+// the retries stop after DefaultBudget. On a context that ends first it
+// returns the context error wrapped around the last busy error.
+//
+// The budget is the caller's deadline, never a count of attempts: an
+// attempt cap of seven (about two seconds) ran out on a contended file
+// while workers kept claiming, and each settle that gave up left its
+// row claimed until the lease expired (#669). A failed claim costs
+// nothing (the row stays pending), but a failed settle costs a whole
+// lease, so a settle keeps trying for as long as its caller allows.
+// Every settle in battery/queue, battery/webhook and framework/outbox
+// is fenced on its claim, so a late retry that lost the race changes
+// nothing.
 func Retry(ctx context.Context, fn func(context.Context) error) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -32,24 +52,31 @@ func Retry(ctx context.Context, fn func(context.Context) error) error {
 	if err == nil || !Is(err) {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	delay := 25 * time.Millisecond
-	for attempt := 1; attempt < 8; attempt++ {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultBudget)
+		defer cancel()
+	}
+	delay := 5 * time.Millisecond
+	for {
+		// Jitter keeps two settles that met the same lock from
+		// retrying in step and meeting each other again.
+		pause := delay/2 + rand.N(delay/2+1)
+		t := time.NewTimer(pause)
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(delay):
+			t.Stop()
+			return fmt.Errorf("%w: %w", ctx.Err(), err)
+		case <-t.C:
 		}
-		if err := ctx.Err(); err != nil {
-			return err
+		if cerr := ctx.Err(); cerr != nil {
+			return fmt.Errorf("%w: %w", cerr, err)
 		}
 		if err = fn(ctx); err == nil || !Is(err) {
 			return err
 		}
-		delay = min(delay*2, 500*time.Millisecond)
+		delay = min(delay*2, maxDelay)
 	}
-	return err
 }
 
 // Exec retries a single statement and reports the rows it touched. It

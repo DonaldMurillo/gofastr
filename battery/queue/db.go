@@ -1474,8 +1474,15 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
-			// No handler, drop the row so it doesn't loop forever.
-			_ = q.Ack(ctx, job)
+			// No handler, drop the row so it doesn't loop forever. The
+			// drop is a settle like any other: detached from shutdown,
+			// and a failure is logged, not discarded.
+			settleCtx, cancel := settleContext(ctx)
+			if err := q.Ack(settleCtx, job); err != nil {
+				q.logger.Warn("queue: dropping a job with no handler failed; it reruns when its lease expires",
+					"job_id", job.ID, "err", err)
+			}
+			cancel()
 			continue
 		}
 		// Gate race window: the gate may flip from allow to deny between

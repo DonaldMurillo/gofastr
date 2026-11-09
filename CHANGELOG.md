@@ -856,11 +856,11 @@ few lines, and link the PR or the docs page for the rest.
   expired. The settle writes in `DBQueue` (`Ack`, `Nack`, the gate
   hand-back), outbox delivery settles and claim refunds, and webhook
   delivery settles and releases retry `SQLITE_BUSY` or `SQLITE_LOCKED`
-  by result code for up to two seconds after the first busy error.
-  The first call keeps the caller's deadline, including on Postgres;
-  retries use the earlier deadline before falling back to recovery. Every
-  settle stays fenced on its claim, so a late retry that lost the race
-  changes nothing.
+  by result code until they land or the caller's deadline passes (ten
+  seconds on a context with none), so workers claiming around a settle
+  cannot wear it out. The first call keeps the caller's context,
+  including on Postgres. Every settle stays fenced on
+  its claim, so a late retry that lost the race changes nothing.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

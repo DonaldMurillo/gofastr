@@ -22,13 +22,46 @@ func TestRetryHasBoundedOperationContext(t *testing.T) {
 			return codedError(5)
 		}
 		deadline, ok := ctx.Deadline()
-		if !ok || deadline.Sub(start) > 2100*time.Millisecond {
-			t.Errorf("operation has no two-second deadline: deadline=%v, present=%v", deadline, ok)
+		if !ok || deadline.Sub(start) > DefaultBudget+100*time.Millisecond {
+			t.Errorf("retry on a deadline-free context has no DefaultBudget deadline: deadline=%v, present=%v", deadline, ok)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A settle that met the write lock gave up after seven attempts (about
+// two seconds) while workers kept claiming, and its row sat claimed
+// until the lease expired (#669). Retries now run until the caller's
+// deadline, however many attempts that takes.
+func TestRetryOutlastsAttemptCap(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	calls := 0
+	err := Retry(ctx, func(context.Context) error {
+		calls++
+		if calls < 40 {
+			return codedError(5)
+		}
+		return nil
+	})
+	if err != nil || calls != 40 {
+		t.Fatalf("busy retries stopped early: calls=%d err=%v", calls, err)
+	}
+}
+
+func TestRetryDeadlineKeepsBusyCause(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := Retry(ctx, func(context.Context) error { return codedError(5) })
+	if !errors.Is(err, context.DeadlineExceeded) || !Is(err) {
+		t.Fatalf("err = %v, want the deadline wrapped around the busy error", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Fatalf("retry ran %v past a 150ms deadline", took)
 	}
 }
 
@@ -119,7 +152,8 @@ func TestRetryRecoversAfterBusy(t *testing.T) {
 	if calls != 3 {
 		t.Fatalf("calls = %d, want 3", calls)
 	}
-	if time.Since(start) < 25*time.Millisecond {
+	// Two pauses, at least 2.5ms and 5ms with jitter.
+	if time.Since(start) < 7*time.Millisecond {
 		t.Fatal("retry did not back off between attempts")
 	}
 }

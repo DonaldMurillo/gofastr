@@ -489,8 +489,8 @@ dead-letters at `MaxAttempts`; `New` neither raises its lease nor logs
 the lease adjustment, because that store never uses a claim lease.
 
 On SQLite, delivery settles and unstarted-claim releases retry a busy
-database for up to two seconds after the first busy error, bounded by
-the caller's deadline. The claim fence still applies on every retry.
+database until they land or the caller's deadline passes (ten seconds
+when the context has none). The claim fence still applies on every retry.
 A failed rollback of an abandoned SQLite claim logs a warning without
 replacing the original claim error.
 

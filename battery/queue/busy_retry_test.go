@@ -3,7 +3,10 @@ package queue
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"log/slog"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -187,6 +190,123 @@ func TestOtherSettlesRetrySQLiteBusy(t *testing.T) {
 			want := map[string]string{"retained": "done", "dead": "failed", "release": "pending"}[arm]
 			if status != want {
 				t.Fatalf("status=%s, want %s", status, want)
+			}
+		})
+	}
+}
+
+// The soak's stranded rows (#669): a worker settle that met the write
+// lock for longer than its retry cap (seven tries, about two seconds)
+// gave up, logged, and left the row claimed until the lease expired.
+// Each worker settle arm here meets a lock held for busyHold, past that
+// old cap and inside the settle budget, and must land once the lock
+// drops. The lease is an hour, so only the settle can move the row.
+func TestWorkerSettleOutlastsBusyLock(t *testing.T) {
+	const busyHold = 3 * time.Second
+	arms := []struct {
+		name        string
+		want        string
+		maxAttempts int
+		fail        bool // the handler returns an error
+		gate        bool // the gate closes between claim and start
+		shutdown    bool // the shutdown lands between claim and start
+	}{
+		{name: "ack", want: "done", maxAttempts: 3},
+		{name: "nack", want: "pending", maxAttempts: 3, fail: true},
+		{name: "dead", want: "failed", maxAttempts: 1, fail: true},
+		{name: "gate", want: "pending", maxAttempts: 3, gate: true},
+		{name: "shutdown", want: "pending", maxAttempts: 3, shutdown: true},
+	}
+	for _, arm := range arms {
+		t.Run(arm.name, func(t *testing.T) {
+			t.Parallel()
+			db := openBusyQueueDB(t)
+			settles := &settleFailureLog{}
+			q, err := NewDBQueue(db, WithWorkers(0), WithDoneRetention(time.Hour),
+				WithLeaseTimeout(time.Hour), WithBackoff(time.Hour, time.Hour),
+				WithDBLogger(slog.New(settles)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var closed atomic.Bool
+			q.SetGate(func(string) bool { return !closed.Load() })
+			q.RegisterHandler("t", func(context.Context, Job) error {
+				if arm.fail {
+					return errors.New("flake")
+				}
+				return nil
+			})
+			if err := q.Enqueue(context.Background(), Job{ID: "j", Type: "t", MaxAttempts: arm.maxAttempts}); err != nil {
+				t.Fatal(err)
+			}
+			blocker, err := db.Conn(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer blocker.Close()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var unlockedAt atomic.Int64
+			var claims atomic.Int32
+			q.afterClaim = func(Job) {
+				if claims.Add(1) > 1 {
+					return
+				}
+				// The claim committed; take the write lock before the
+				// worker settles, and hold it past the old retry cap.
+				if _, err := blocker.ExecContext(context.Background(), "BEGIN IMMEDIATE"); err != nil {
+					t.Errorf("take the write lock: %v", err)
+					return
+				}
+				time.AfterFunc(busyHold, func() {
+					if _, err := blocker.ExecContext(context.Background(), "ROLLBACK"); err != nil {
+						t.Errorf("drop the write lock: %v", err)
+					}
+					unlockedAt.Store(time.Now().UnixNano())
+				})
+				if arm.gate {
+					closed.Store(true)
+				}
+				if arm.shutdown {
+					cancel()
+				}
+			}
+			loopDone := make(chan struct{})
+			go func() {
+				defer close(loopDone)
+				q.workerLoop(ctx, "")
+			}()
+
+			status := ""
+			deadline := time.Now().Add(busyHold + 3*time.Second)
+			for time.Now().Before(deadline) {
+				if err := db.QueryRow("SELECT status FROM queue_jobs WHERE id = 'j'").Scan(&status); err != nil {
+					t.Fatal(err)
+				}
+				// The row starts pending: only a claimed-then-settled
+				// row counts.
+				if claims.Load() > 0 && status == arm.want {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			cancel()
+			<-loopDone
+			if claims.Load() == 0 {
+				t.Fatal("the worker never claimed the job; nothing was tested")
+			}
+			if status != arm.want {
+				t.Fatalf("status=%q after the lock dropped, want %q; settle failures: %v",
+					status, arm.want, settles.list())
+			}
+			if unlockedAt.Load() == 0 {
+				// The row moved while the lock was held: the lock never
+				// stood in the settle's way.
+				t.Fatal("the settle landed before the write lock dropped; the lock blocked nothing")
+			}
+			if failed := settles.list(); len(failed) > 0 {
+				t.Fatalf("a settle logged failure: %v", failed)
 			}
 		})
 	}

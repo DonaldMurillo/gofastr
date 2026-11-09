@@ -5,20 +5,31 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
 // The reported reproduction (#656): one SQLite-file run, 12 workers over
-// two lanes, left a job `claimed` past its lease window once in 15 runs
-// — a nack whose UPDATE met SQLITE_BUSY and gave up. This soak drives
-// that shape hard (two queues on one file, a 5ms busy timeout, half the
-// handlers nacking) and asserts the drain invariant: once every job has
-// settled, none sits claimed. Bounded to ~30s.
+// two lanes, left a job `claimed` past its lease window once in 15 runs.
+// The cause (#669): a settle (ack, nack, hand-back) that met the write
+// lock gave up after seven retries, about two seconds, while the other
+// workers kept claiming, and its row sat claimed until the lease expired.
+// This soak drives that shape hard (two queues on one file, a 5ms busy
+// timeout, half the handlers nacking) and asserts the drain invariant:
+// once every job has settled, none sits claimed, and no settle failed.
+//
+// The lease is far longer than the drain deadline, so a drain that only
+// finishes because lease expiry reclaimed a stranded row fails here
+// instead of passing late. The settle-failure log check fails the run on
+// the first settle that gave up, before any timing comes into it.
 func TestSQLiteFileStressDrainsClean(t *testing.T) {
 	dsn := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "stress.db")) +
 		"?_busy_timeout=5&_journal_mode=WAL"
@@ -28,15 +39,36 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 	}
 	db.SetMaxOpenConns(16)
 	t.Cleanup(func() { _ = db.Close() })
+	assertStressDrainsClean(t, db)
+}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// The Postgres twin of the soak: row locks and SKIP LOCKED claims never
+// fail a settle on contention, and this holds it to the same invariant.
+func TestPGStressDrainsClean(t *testing.T) {
+	db := pgtest.DB(t)
+	// pgtest pins one connection; the soak needs the workers to race.
+	db.SetMaxOpenConns(16)
+	assertStressDrainsClean(t, db)
+}
+
+// stressDeadline is how long the drain may take. It sits well below
+// stressLease, the claim lease, so lease recovery cannot finish a drain
+// in time.
+const (
+	stressDeadline = 15 * time.Second
+	stressLease    = 2 * time.Minute
+)
+
+func assertStressDrainsClean(t *testing.T, db *sql.DB) {
+	ctx, cancel := context.WithTimeout(context.Background(), stressDeadline+5*time.Second)
 	defer cancel()
 
 	const jobs = 600
 	var nacked atomic.Int64
+	settles := &settleFailureLog{}
 	mk := func() *DBQueue {
 		q, err := NewDBQueue(db, WithWorkers(6), WithDoneRetention(time.Hour),
-			WithLeaseTimeout(20*time.Second))
+			WithLeaseTimeout(stressLease), WithDBLogger(slog.New(settles)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -68,44 +100,77 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 		}
 	}()
 
-	deadline := time.Now().Add(25 * time.Second)
-	for time.Now().Before(deadline) {
-		var claimed, pending int
-		for _, table := range []string{"queue_jobs"} {
-			for _, status := range []string{"claimed", "pending"} {
-				q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = $1", table)
-				var n int
-				if err := db.QueryRowContext(ctx, q, status).Scan(&n); err != nil {
-					t.Fatalf("count %s/%s: %v", table, status, err)
-				}
-				if status == "claimed" {
-					claimed += n
-				} else {
-					pending += n
-				}
-			}
+	count := func(status string) int {
+		var n int
+		if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM queue_jobs WHERE status = $1", status).Scan(&n); err != nil {
+			t.Fatalf("count %s: %v", status, err)
 		}
-		if pending == 0 && claimed == 0 {
+		return n
+	}
+	deadline := time.Now().Add(stressDeadline)
+	for time.Now().Before(deadline) {
+		if failed := settles.list(); len(failed) > 0 {
+			t.Fatalf("a settle gave up and left its row claimed (stuck claimed rows: %d): %s",
+				count("claimed"), strings.Join(failed, "; "))
+		}
+		if count("pending") == 0 && count("claimed") == 0 {
 			// Every job settled and nothing is stuck mid-flight.
 			if nacked.Load() == 0 {
 				t.Fatal("the flaky handler never ran; the soak proved nothing")
 			}
 			for _, status := range []string{"done", "failed"} {
-				var count int
-				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM queue_jobs WHERE status = $1", status).Scan(&count); err != nil {
-					t.Fatal(err)
-				}
-				if count != jobs/2 {
-					t.Fatalf("%s rows=%d, want %d", status, count, jobs/2)
+				if n := count(status); n != jobs/2 {
+					t.Fatalf("%s rows=%d, want %d", status, n, jobs/2)
 				}
 			}
 			return
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
-	var stuck int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM queue_jobs WHERE status='claimed'").Scan(&stuck); err != nil {
-		t.Fatal(err)
+	t.Fatalf("drain did not finish in %v (stuck claimed rows: %d, settle failures: %v)",
+		stressDeadline, count("claimed"), settles.list())
+}
+
+// settleFailureLog is a slog handler that keeps the worker's settle
+// failures (an ack, nack or hand-back that gave up), the warnings a
+// drained soak must never log.
+type settleFailureLog struct {
+	mu     sync.Mutex
+	failed []string
+}
+
+func (l *settleFailureLog) Enabled(context.Context, slog.Level) bool { return true }
+
+func (l *settleFailureLog) Handle(_ context.Context, r slog.Record) error {
+	if !isSettleFailure(r.Message) {
+		return nil
 	}
-	t.Fatalf("drain did not finish in 25s (stuck claimed rows: %d)", stuck)
+	line := r.Message
+	r.Attrs(func(a slog.Attr) bool {
+		line += fmt.Sprintf(" %s=%v", a.Key, a.Value)
+		return true
+	})
+	l.mu.Lock()
+	l.failed = append(l.failed, line)
+	l.mu.Unlock()
+	return nil
+}
+
+func (l *settleFailureLog) WithAttrs([]slog.Attr) slog.Handler { return l }
+func (l *settleFailureLog) WithGroup(string) slog.Handler      { return l }
+
+func (l *settleFailureLog) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.failed...)
+}
+
+// isSettleFailure matches the worker loop's settle-failure warnings.
+func isSettleFailure(msg string) bool {
+	for _, m := range []string{"queue: ack failed", "queue: nack failed", "queue: handing back", "queue: dropping a job with no handler failed"} {
+		if strings.HasPrefix(msg, m) {
+			return true
+		}
+	}
+	return false
 }
