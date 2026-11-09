@@ -44,21 +44,7 @@ func TestNavCatalogDropsTheQuery(t *testing.T) {
 		}
 		fmt.Fprint(w, `[{"hidden":true,"cfg":{"name":"scoped","chromePath":"/chrome/scoped"}}]`)
 	})
-	routes := `<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"}]</script>`
-	for path, screen := range map[string]string{"/a": "screen-a", "/b": "screen-b"} {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			body := `<h1 id="` + screen + `">` + screen + `</h1><a id="to-b" href="/b?x=1">B</a>`
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if r.Header.Get("X-Gofastr-Navigate") == "1" {
-				w.Header().Set("X-Gofastr-Partial", "true")
-				fmt.Fprint(w, body)
-				return
-			}
-			fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+routes+`</head><body>`+
-				`<main role="main" tabindex="-1">`+body+`</main>`+
-				`<script src="/__gofastr/runtime.js"></script></body></html>`)
-		})
-	}
+	serveTwoScreens(mux, "/b?x=1")
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 

@@ -1,8 +1,6 @@
 package releasetest
 
 import (
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -12,18 +10,7 @@ import (
 // v097Note finds a v0.97.0 note by the start of its change text.
 func v097Note(t *testing.T, prefix string) *upgrade.Note {
 	t.Helper()
-	reg := scantest.Registry(t)
-	i := slices.IndexFunc(reg.Releases, func(r upgrade.Release) bool { return r.Version == "v0.97.0" })
-	if i < 0 {
-		t.Fatal("registry has no v0.97.0")
-	}
-	for j, n := range reg.Releases[i].Notes {
-		if strings.HasPrefix(n.Change, prefix) {
-			return scantest.Note(t, reg, "v0.97.0", j)
-		}
-	}
-	t.Fatalf("v0.97.0 has no note starting %q", prefix)
-	return nil
+	return scantest.NoteByChange(t, scantest.Registry(t), "v0.97.0", prefix)
 }
 
 // v096AuthKit is the v0.96 battery/auth surface the shared-budget note
