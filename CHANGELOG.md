@@ -183,6 +183,13 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Forms draw no input for the owner or tenant column**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  visible `Scope.OwnerField` (or a `MultiTenant` entity's tenant column)
+  drew as an editable input on the create and record forms, though crud
+  stamps it from the caller. The forms now
+  leave it out, and inline editors, bulk set and the picker treat it as
+  locked.
 - **A list of an entity with no fields of its own draws**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A join
   or marker table with only its key panicked the admin list and

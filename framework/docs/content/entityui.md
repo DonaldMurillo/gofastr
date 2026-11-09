@@ -73,6 +73,12 @@ of a composite key, and a one-column key that is `Required` with no
 belongs to the server and stays off the forms; an optional key may be
 filled by a hook, which a blank input would defeat.
 
+The scope columns crud stamps from the caller, `Scope.OwnerField` and a
+`MultiTenant` entity's tenant column, stay off the forms too, even when
+declared visible. They show as list columns, and a form layout that
+places one draws its value read-only; no inline editor, bulk set or
+picker offers them.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;

@@ -319,7 +319,22 @@ func (m *meta) locked(f schema.Field) bool {
 
 // createLocked is locked for a create form, which sets a composite key.
 func (m *meta) createLocked(f schema.Field) bool {
-	return m.hint(f.Name).Locked || m.guarded(f.Name) || m.system(f)
+	return m.hint(f.Name).Locked || m.guarded(f.Name) || m.system(f) || m.serverOwned(f.Name)
+}
+
+// serverOwned reports the scope columns crud stamps from the caller and
+// never writes from a body: Scope.OwnerField, and the tenant column of
+// a MultiTenant entity. No form draws an input for one, and no inline
+// editor, bulk set or picker offers it.
+func (m *meta) serverOwned(field string) bool {
+	sc := m.e.Config.Scope
+	if sc == nil {
+		return false
+	}
+	if sc.OwnerField != "" && field == sc.OwnerField {
+		return true
+	}
+	return sc.MultiTenant && field == m.e.Config.TenantColumn()
 }
 
 // omitted reports a field left out of forms and columns on purpose.
