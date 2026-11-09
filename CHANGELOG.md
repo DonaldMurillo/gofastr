@@ -97,6 +97,16 @@ few lines, and link the PR or the docs page for the rest.
   survives. Before, two recipes that expanded to the same rows (count 7
   with `open: 5` vs `open: 10`) packed byte-identically and the recipe
   was lost.
+- **An app spec `entity_list` can pin one equality**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [app spec](framework/docs/content/app-spec.md)). `filter: field=value`
+  (stat_card's spelling) emits `.Where(field, value)` on the list
+  builder, so every read matches the pin inside the caller's scope and
+  the field drops from the facets. The load refuses a hidden or
+  `no_query` column, a value the column's type cannot hold
+  (`featured=yes` on a bool), and an enum value outside its `values:`.
+  A pinned list draws no CSV export, and `gofastr pack` reads the pin
+  back.
 - **`DBQueue` retries can follow a delivery policy**
   ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   `WithRetrySchedule(steps...)` sets each wait from a list (the last step

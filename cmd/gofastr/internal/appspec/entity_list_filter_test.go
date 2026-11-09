@@ -96,3 +96,61 @@ func TestEntityListFilterRefusesMalformed(t *testing.T) {
 		}
 	}
 }
+
+// The pin binds through crud's filter coercion at request time, so a
+// value its column cannot hold (featured=yes on a bool) built an app
+// whose list answered 400 on every load. The load refuses it instead,
+// and an enum value outside the field's values, which would match no
+// row, is refused the same way.
+func entityListTypedFilterAppSpec(t *testing.T, filter string) error {
+	t.Helper()
+	yaml := `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: cards
+    crud: true
+    fields:
+      - name: label
+        type: string
+      - name: featured
+        type: bool
+      - name: stage
+        type: enum
+        values: [draft, open]
+      - name: amount
+        type: float
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: entity_list
+        entity: cards
+        fields: [label]
+        filter: ` + filter + `
+`
+	return r5YAMLAppSpec(t, yaml)
+}
+
+func TestEntityListFilterAcceptsTypedValues(t *testing.T) {
+	for _, ok := range []string{"featured=true", "stage=open", "amount=12"} {
+		if err := entityListTypedFilterAppSpec(t, ok); err != nil {
+			t.Errorf("filter %q was refused: %v", ok, err)
+		}
+	}
+}
+
+func TestEntityListFilterRefusesMistypedValue(t *testing.T) {
+	for _, bad := range []string{"featured=yes", "amount=abc", "stage=closed"} {
+		err := entityListTypedFilterAppSpec(t, bad)
+		if err == nil {
+			t.Errorf("filter %q was accepted; its column cannot hold the value", bad)
+			continue
+		}
+		_, value, _ := strings.Cut(bad, "=")
+		if !strings.Contains(err.Error(), value) {
+			t.Errorf("filter %q: error does not name the value: %v", bad, err)
+		}
+	}
+}

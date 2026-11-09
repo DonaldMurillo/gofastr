@@ -900,8 +900,9 @@ partial and keeps the shell).
   `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
   refused on any other block kind), `filter: field=value` →
   `.Where(field, value)` (stat_card's filter spelling: one pinned
-  equality, validated against the entity's fields and refused on a
-  hidden or `no_query` column) and a `text:` heading (level 2 when a block ahead of it on the screen
+  equality, validated against the entity's fields: refused on a
+  hidden or `no_query` column, on a value the column's type cannot hold,
+  and on an enum value outside the field's `values:`) and a `text:` heading (level 2 when a block ahead of it on the screen
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
   params stay apart, and two blocks for the same entity on one screen are
@@ -912,8 +913,11 @@ partial and keeps the shell).
   caller's scope (the same `ListBuilder.Where` a tab listing one
   invoice's payments uses): it works with search, sort, facets and
   paging, the pinned field drops from the facets, and New carries it as
-  `?prefill_<field>=<value>`. It is one equality — anything richer is
-  the entity's `display: views:` or a hand-written screen.
+  `?prefill_<field>=<value>`. A pinned list draws no Export CSV or Copy
+  CSV and offers no bulk action across every match: the export route
+  cannot see the pin, so it would hand back rows the list leaves out. It
+  is one equality; anything richer is the entity's `display: views:` or
+  a hand-written screen.
 - An entity listed on several screens has one **home list**: the list
   screen its detail screen sits under, else the first one with
   `create: true`, else the first one declared. A list on any other screen

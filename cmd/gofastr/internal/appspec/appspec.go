@@ -29,6 +29,7 @@ import (
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	fwfilter "github.com/DonaldMurillo/gofastr/framework/filter"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
@@ -3719,6 +3720,19 @@ func validateEntityListFilter(screenName string, decl framework.EntityDeclaratio
 		}
 		if f.NoQuery {
 			return fmt.Errorf("app spec: screen %q entity_list filter column %q is no_query (the pinned list would match on the stored value)", screenName, f.Name)
+		}
+		// The pin binds through crud's filter coercion on every read, so
+		// a value the column cannot hold answers 400 on every load, and
+		// an enum value outside the field's values matches no row.
+		sf, err := f.Field()
+		if err != nil {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q: %w", screenName, f.Name, err)
+		}
+		if _, err := fwfilter.CoerceValue(f.Name, sf.Type, value); err != nil {
+			return fmt.Errorf("app spec: screen %q entity_list filter value %q does not fit %s column %q", screenName, value, f.Type, f.Name)
+		}
+		if len(sf.Values) > 0 && !slices.Contains(sf.Values, value) {
+			return fmt.Errorf("app spec: screen %q entity_list filter value %q is not one of enum column %q's values %v", screenName, value, f.Name, sf.Values)
 		}
 		return nil
 	}
