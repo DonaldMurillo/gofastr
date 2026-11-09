@@ -68,6 +68,11 @@ func TestBrokenFigureStopsBoot(t *testing.T) {
 			billingFigures[0].where = `state = "open"`
 			return func() { billingFigures = saved }
 		}, []string{`customers side panel "billing"`, `stat "Outstanding"`, "state"}},
+		{"heatmap cell", func() func() {
+			saved := paymentStatuses
+			paymentStatuses = append(slices.Clone(saved), "bounced")
+			return func() { paymentStatuses = saved }
+		}, []string{`admin page "revenue"`, `stat "Payments by method and status"`, "bounced"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

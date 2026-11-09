@@ -304,7 +304,12 @@ keeps the UI unchanged; without a callback the default stays
   reports false for a view whose `Show` hides it from the caller.
   `appUI.CheckStat(entity, agg, field,
   where, format)` returns why `StatValue` could never compute a spec,
-  so a host can refuse a configured stat at boot.
+  so a host can refuse a configured stat at boot. Besides an unknown
+  entity, aggregate, field or format and a `where` that does not parse,
+  it refuses an `=`, `!=` or `in` comparison on an enum field whose value
+  is not one of the field's `Values`: the parse takes any text for an
+  enum, and such a filter counts no row, or every row, forever. A
+  `contains` comparison matches text and is not judged.
   `appUI.CheckChart(entity, groupBy)` does the same for `GroupBars`,
   `GroupSlices` and `LineChart`: it refuses an unknown entity and a
   `groupBy` that is not a visible column the database can group (a

@@ -115,8 +115,48 @@ func CheckStatFields(entityName string, fields []schema.Field, agg, field, where
 	default:
 		return fmt.Errorf("entityui: stat agg %q is not count or sum", agg)
 	}
-	if _, err := dsl.ParsePredicate(where, fields); err != nil {
+	p, err := dsl.ParsePredicate(where, fields)
+	if err != nil {
 		return fmt.Errorf("entityui: stat filter on %s: %w", entityName, err)
+	}
+	if err := checkEnumValues(p, fields); err != nil {
+		return fmt.Errorf("entityui: stat filter on %s: %w", entityName, err)
+	}
+	return nil
+}
+
+// checkEnumValues refuses an =, != or in comparison on an Enum field
+// whose value is not one of the field's Values. The parse takes any
+// text for an enum (the database column is text), so such a filter
+// counts no row, or every row, and the stat draws a figure that never
+// moves. A contains comparison matches text and is not judged.
+func checkEnumValues(p *filter.Predicate, fields []schema.Field) error {
+	if p == nil {
+		return nil
+	}
+	for i := range p.Children {
+		if err := checkEnumValues(&p.Children[i], fields); err != nil {
+			return err
+		}
+	}
+	if len(p.Children) > 0 {
+		return nil
+	}
+	f, ok := visibleField(fields, p.Field)
+	if !ok || f.Type != schema.Enum || len(f.Values) == 0 {
+		return nil
+	}
+	var values []string
+	switch p.Op {
+	case filter.OpEq, filter.OpNe:
+		values = []string{p.Value}
+	case filter.OpIn:
+		values = p.Values
+	}
+	for _, v := range values {
+		if !slices.Contains(f.Values, v) {
+			return fmt.Errorf("%q is not one of enum field %s's values %v", v, f.Name, f.Values)
+		}
 	}
 	return nil
 }

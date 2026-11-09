@@ -491,7 +491,9 @@ few lines, and link the PR or the docs page for the rest.
   and the parse error; a filter on `created_at` loads and boots. A count
   card given a `source.field` or a `format`, and a sum whose `format` is
   not `money`, are refused too: the card ignored them and drew a plain
-  number.
+  number. `CheckStat` also refuses an `=`, `!=` or `in` comparison whose
+  value is not one of an enum field's values, which the parse let
+  through and which counted nothing.
 - **A generated app checks its charts at boot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [app spec](framework/docs/content/app-spec.md)). A `bar_chart`,
@@ -513,7 +515,9 @@ few lines, and link the PR or the docs page for the rest.
   `GroupBars` calls, which no generated check reached. Each surface now
   keeps its figures in one list that its render reads, and the boot runs
   `entityui.CheckStat` and `CheckChart` over it: a figure that could
-  never compute stops the start, naming the surface and the figure.
+  never compute stops the start, naming the surface and the figure. A
+  Revenue heatmap cell keyed by a payment status the `payments.status`
+  enum does not list stops it too.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
