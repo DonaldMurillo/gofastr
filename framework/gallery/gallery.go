@@ -26,7 +26,8 @@
 // (like examples/site) call the render helpers in demos.go directly from
 // their own request-bearing SSR path, bypassing the Demo closure.
 // Hosts also call MountDemoWidgets once before mounting the UIHost to back
-// the catalog's modal, drawer, bottom-sheet and sidebar triggers.
+// the catalog's modal, drawer, bottom-sheet and sidebar triggers, and
+// MountDemoFormRoute to answer the demo forms.
 package gallery
 
 import "github.com/DonaldMurillo/gofastr/core/render"

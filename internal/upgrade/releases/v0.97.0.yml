@@ -59,3 +59,8 @@ notes:
   - change: "gofastr agents skill refuses to overwrite a .claude/skills/gofastr-host/SKILL.md that lacks the generated header, unless --force is passed"
     nodetect: "an existing file's content decides, not the app's code; the refusal itself names the flag"
     guidance: "Move or delete the hand-written SKILL.md, or pass --force (gofastr init --reinit --force overrides the same way)."
+  - change: "framework/gallery demo forms post to gallery.DemoFormPath, which a gallery host mounts with gallery.MountDemoFormRoute; without it a submitted demo form answers 404"
+    guidance: "Beside gallery.MountDemoWidgets, call gallery.MountDemoFormRoute(router, demoPage) once before mounting the UIHost. demoPage returns the local path of the page that shows a demo, such as func(slug string) string { return \"/components/\" + slug }; the route answers 303 there and keeps nothing."
+    find:
+      uses:
+        - gofastr/framework/gallery.MountDemoWidgets

@@ -571,6 +571,15 @@ few lines, and link the PR or the docs page for the rest.
   so the toast that reports a failed request was drawn as bare text
   exactly when no sheet could be fetched. The host now links those sheets
   in the page head with the page's own.
+- **Gallery demo forms land back on their demo**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  selection bar posted to its own page, which answers GET only, so it
+  showed the 405 page, and the sign-in, conditional-field and repeater
+  demos posted to a docs-site route the theme editor does not have.
+  Every demo form now posts to `gallery.DemoFormPath`, which reads
+  nothing and answers 303 to the demo's page. A gallery host mounts it
+  with `gallery.MountDemoFormRoute(router, demoPage)`; `demoPage` maps a
+  demo to its page and must return a local path.
 
 ## [0.96.0] - 2026-11-06
 

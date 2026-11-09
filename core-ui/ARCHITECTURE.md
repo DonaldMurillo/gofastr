@@ -3280,9 +3280,12 @@ The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
 escapes return 400 rather than selecting a different widget set.
 
-Gallery hosts call `gallery.MountDemoWidgets` before mounting their UIHost.
+Gallery hosts call `gallery.MountDemoWidgets` and
+`gallery.MountDemoFormRoute` before mounting their UIHost.
 The docs site and theme editor share these mounts so demo triggers always
-resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets.
+resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets,
+and every demo form posts to the one gallery route, which answers 303
+back to the demo.
 
 `component.Widget.RenderCtx` forwards the request context to its child and
 prefers `RenderCtx` over `Render`. Context-free widget and composition

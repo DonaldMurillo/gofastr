@@ -1,14 +1,19 @@
 package main
 
 import (
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+
+	"github.com/DonaldMurillo/gofastr/framework/gallery"
 )
 
+// Each demo form posts to the gallery's demo-form route and is sent back
+// to its demo with a 303.
 func TestGalleryFormPostsSucceed(t *testing.T) {
 	base := startE2EServer(t)
 	for _, slug := range []string{"form", "formrepeater", "repeater", "conditionalfield"} {
@@ -19,7 +24,14 @@ func TestGalleryFormPostsSucceed(t *testing.T) {
 			chromedp.ListenTarget(ctx, func(event any) {
 				switch event := event.(type) {
 				case *network.EventRequestWillBeSent:
-					if event.Request.Method == "POST" {
+					// The redirect's response arrives on the follow-up
+					// request, which keeps the POST's id.
+					if event.RedirectResponse != nil {
+						if _, ok := posts.LoadAndDelete(event.RequestID); ok {
+							responses <- int(event.RedirectResponse.Status)
+						}
+					}
+					if event.Request.Method == "POST" && strings.HasPrefix(event.Request.URL, base+gallery.DemoFormPath+"?demo="+slug) {
 						posts.Store(event.RequestID, true)
 					}
 				case *network.EventResponseReceived:
@@ -38,8 +50,8 @@ form.querySelectorAll('input[type="password"]').forEach(input=>input.value='exam
 			}
 			select {
 			case status := <-responses:
-				if status < 200 || status >= 300 {
-					t.Fatalf("demo form answered %d", status)
+				if status != 303 {
+					t.Fatalf("demo form answered %d, want 303 back to the demo", status)
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("demo form sent no POST")
