@@ -78,6 +78,22 @@ func TestSidebarDrawerCloseLabel(t *testing.T) {
 	}
 }
 
+// A builder that turns Compact on per request gets a compact drawer
+// head on that request, so the brand lines up with the compact rows.
+func TestSidebarDrawerHeadFollowsCompact(t *testing.T) {
+	def := MountSidebarFunc(&mountRecorder{}, func(ctx context.Context) SidebarConfig {
+		on, _ := ctx.Value(sectionKey{}).(string)
+		return SidebarConfig{DrawerTitle: "Help", Compact: on == "compact"}
+	})
+	if chrome := widget.RenderChromeCtx(context.Background(), &def); strings.Contains(chrome, "fui-sidebar__drawer-head--compact") {
+		t.Fatalf("a default drawer head was drawn compact: %s", chrome)
+	}
+	ctx := context.WithValue(context.Background(), sectionKey{}, "compact")
+	if chrome := widget.RenderChromeCtx(ctx, &def); !strings.Contains(chrome, "fui-sidebar__drawer-head--compact") {
+		t.Fatalf("the drawer head did not follow the request's Compact: %s", chrome)
+	}
+}
+
 // No brand anywhere (both Title and DrawerTitle empty): the drawer
 // renders no header rather than an empty row above the nav.
 func TestSidebarDrawerHeaderOmittedWithoutTitle(t *testing.T) {

@@ -253,5 +253,8 @@ func lightboxCSS(_ style.Theme) string {
 [data-cui-comp="ui-lightbox"] .fui-lightbox__download:focus-visible {
   outline: var(--stroke-focus, 2px) solid var(--color-text-subtle);
   outline-offset: var(--stroke-focus-offset, 2px);
-}`
+}
+/* Right to left the toolbar puts Prev on the right and the arrow keys
+   follow it, so each chevron mirrors to point the way its button goes. */
+[data-cui-comp="ui-lightbox"] .fui-lightbox__nav:dir(rtl) > svg { transform: scaleX(-1); }`
 }

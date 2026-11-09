@@ -9,6 +9,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
+	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 	"github.com/DonaldMurillo/gofastr/framework/ui/theme"
@@ -155,5 +156,81 @@ func TestDataTableTruncatedColumn(t *testing.T) {
 	}
 	if wide, _ := got["wide"].(float64); wide > 1 {
 		t.Errorf("the table scrolls %vpx sideways", wide)
+	}
+}
+
+// At 320px a phone row's meta badge, detail and row menu took their
+// full widths and left the title a few pixels: "Cordless Drill" drew
+// as "C…" and a short name could vanish. On a narrow row the title,
+// subtitle, meta and detail each have a line of their own, so none is
+// cut and the badge never runs over the price.
+func TestDataTableRowsNarrowKeepTitle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("browser E2E disabled in short mode")
+	}
+	// The backoffice example's spacing: row gaps of 24px.
+	th := theme.Default()
+	th.Spacing.SM = style.Spacing{Name: "sm", Value: 8}
+	th.Spacing.MD = style.Spacing{Name: "md", Value: 12}
+	var css strings.Builder
+	for _, e := range registry.All() {
+		css.WriteString(e.CSSFor(th))
+		css.WriteString("\n")
+	}
+	head := `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+		"<style>" + th.CSSCustomProperties() + "\n" + css.String() + "</style>"
+	table := ui.DataTable(ui.DataTableConfig{
+		Columns: []ui.Column{
+			{Key: "s", Fit: true, Phone: ui.PhoneLead},
+			{Key: "name", Header: "Name", Phone: ui.PhoneTitle},
+			{Key: "stock", Header: "In stock", Phone: ui.PhoneSubtitle},
+			{Key: "category", Header: "Category", Phone: ui.PhoneMeta},
+			{Key: "price", Header: "Price", Align: "end", Phone: ui.PhoneDetail},
+			{Key: "a", Fit: true, Align: "end", Phone: ui.PhoneEnd},
+		},
+		Responsive: ui.ResponsiveRows,
+		Rows: []ui.Row{{Cells: map[string]render.HTML{
+			"s":        ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "sel", Value: "1", Label: "Select", LabelHidden: true}),
+			"name":     render.HTML(`<a id="title" href="/p/1">Cordless Drill</a>`),
+			"stock":    ui.StatusBadge(ui.StatusBadgeConfig{Label: "Yes", ID: "sub"}),
+			"category": ui.StatusBadge(ui.StatusBadgeConfig{Label: "Accessories", Dot: true, ID: "meta"}),
+			"price":    render.HTML(`<span id="detail">129.00</span>`),
+			"a":        render.HTML(`<button id="menu" style="inline-size: 36px">…</button>`),
+		}}},
+	})
+	srv := themeTestPageWithHead(t, head, `<div id="t" style="padding-inline: 24px">`+string(table)+`</div>`)
+	ctx := moduleTestCtxURL(t, srv.URL, chromedp.EmulateViewport(320, 720), prefersScheme("light"))
+	var got map[string]any
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(() => {
+		const cell = id => document.getElementById(id).closest("td");
+		const box = id => document.getElementById(id).getBoundingClientRect();
+		const sc = document.querySelector("#t .fui-data-table__scroll");
+		const t = cell("title"), m = cell("meta");
+		return {
+			titleCut: t.scrollWidth > t.clientWidth + 0.5, titleW: t.clientWidth,
+			metaCut: m.scrollWidth > m.clientWidth + 0.5 || box("meta").right > m.getBoundingClientRect().right + 0.5,
+			overlap: (() => { const a = box("meta"), b = box("detail");
+				return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })(),
+			wide: sc.scrollWidth - sc.clientWidth,
+			menuLeft: box("menu").left, detailRight: box("detail").right, metaRight: box("meta").right,
+		};
+	})()`, &got)); err != nil {
+		t.Fatal(err)
+	}
+	f := func(k string) float64 { v, _ := got[k].(float64); return v }
+	if got["titleCut"] == true {
+		t.Errorf("the title is cut to %.0fpx at 320px: %v", f("titleW"), got)
+	}
+	if got["metaCut"] == true {
+		t.Errorf("the meta badge is cut at 320px: %v", got)
+	}
+	if got["overlap"] == true {
+		t.Errorf("the meta badge runs over the detail: %v", got)
+	}
+	if f("wide") > 1 {
+		t.Errorf("the rows scroll %vpx sideways", f("wide"))
+	}
+	if f("menuLeft") < f("detailRight") || f("menuLeft") < f("metaRight") {
+		t.Errorf("the row menu overlaps the meta or detail: %v", got)
 	}
 }

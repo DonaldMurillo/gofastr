@@ -38,7 +38,10 @@ Examples of widgets the framework already supports:
   builds are cloned from the row template the kit registers
   (`preset.ToastTemplate`, via `registry.RegisterTemplate`), which
   `preset.ToastSlotHTML` renders inside the stack; `preset.IsToastStack`
-  tells a host whether a widget definition is one.
+  tells a host whether a widget definition is one. The host links the
+  stack's component sheets, the row's included, in the page head, so a
+  toast raised after the connection drops (a failed request's error)
+  draws styled without fetching a sheet.
 - **Drawer**: edge-mounted sliding panel
 - **Banner**: top strip for build progress, version warnings, etc.
 - **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.

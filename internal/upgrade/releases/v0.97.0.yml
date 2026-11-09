@@ -81,3 +81,8 @@ notes:
     breaking: false
     nodetect: "only an app that loosened the default CSP's frame-src to frame another origin sees a change, and that is a header value, often from configuration"
     guidance: "Under the default CSP nothing changes: default-src 'self' already blocked foreign frames on every shell. An app that frames another origin on purpose and ships on Linux has no per-frame switch: Config.DangerouslyAllowForeignNavigation lets the frame load, and with it every main-frame navigation off the app's origin."
+  - change: "framework/gallery demo forms post to gallery.DemoFormPath, which a gallery host mounts with gallery.MountDemoFormRoute; without it a submitted demo form answers 404"
+    guidance: "Beside gallery.MountDemoWidgets, call gallery.MountDemoFormRoute(router, demoPage) once before mounting the UIHost. demoPage returns the local path of the page that shows a demo, such as func(slug string) string { return \"/components/\" + slug }; the route answers 303 there and keeps nothing."
+    find:
+      uses:
+        - gofastr/framework/gallery.MountDemoWidgets

@@ -431,6 +431,18 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A data table's phone rows keep the name whole at 320px**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
+  badge, a price and the row menu, a `ResponsiveRows` title kept a few
+  pixels: the back office listed "Ada…" and "C…", and a short name could
+  vanish. Below 21rem the title, subtitle, meta and detail each take a
+  line, start-aligned, with the columns closed up to `--spacing-md`.
+- **The sidebar drawer's rows stand off its edges**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The phone
+  drawer's body is `display: contents`, so its links sat flush against the
+  panel's left and right edges. Each part of the body now keeps an inline
+  margin of `--ui-sidebar-drawer-inset` (default `--spacing-md`), and the
+  drawer head lines its brand up with the row icons below it.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
@@ -723,6 +735,54 @@ few lines, and link the PR or the docs page for the rest.
   focus, Enter left focus on the native summary, and Tab or Shift+Tab
   from there moved focus on with the menu still open. The summary's Tab
   now closes the chain, as a caller-owned trigger's already did.
+- **`ui.SegmentedControl` draws its pill on the checked segment for any
+  number of options** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  R8-NC8-02). The sheet sized and moved the pill with one rule per
+  option count (2 to 6) and per position, so with seven options and the
+  seventh checked the pill was too wide and sat on the first segment.
+  The checked option is now a CSS anchor scoped to its control, and the
+  pill takes that option's box and slides to the next one, in either
+  direction. A browser without anchor positioning draws the pill on the
+  checked option itself, without the slide. The
+  `--ui-segmented-min-width-2…6` tokens stay; seven or more options size
+  to their content. The `--fui-segmented-dir` variable and the options'
+  `data-position` attribute are gone.
+- **Lightbox chevrons point the way their buttons go in right-to-left**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  toolbar puts Prev on the right in RTL and the arrow keys follow it,
+  but the chevron glyphs kept their left-to-right direction. They now
+  mirror under `:dir(rtl)`.
+- **Tab and Shift+Tab no longer leave a control behind the sticky header
+  or toolbar** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  WCAG 2.4.11). On a phone the browser counted a control behind the
+  bars as in view and did not scroll it. A focused control inside a
+  `StickyHeader` stack or a `Sticky` content row's workspace now takes a
+  scroll margin of `--ui-sticky-top`, the offset those bars publish, so
+  it scrolls out from under them.
+- **The error toast is styled when the connection is down**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The toast
+  stack's sheets, and the row's inside its template, loaded on demand,
+  so the toast that reports a failed request was drawn as bare text
+  exactly when no sheet could be fetched. The host now links those sheets
+  in the page head with the page's own.
+- **Gallery demo forms land back on their demo**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  selection bar posted to its own page, which answers GET only, so it
+  showed the 405 page, and the sign-in, conditional-field and repeater
+  demos posted to a docs-site route the theme editor does not have.
+  Every demo form now posts to `gallery.DemoFormPath`, which reads
+  nothing and answers 303 to the demo's page. A gallery host mounts it
+  with `gallery.MountDemoFormRoute(router, demoPage)`; `demoPage` maps a
+  demo to its page and must return a local path.
+- **A trapped disclosure open before its module loads is contained**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  `headless-disclosure` module made the page under an open
+  `Disclosure{Trap: true}` inert only when it heard the disclosure
+  open, so one rendered `Open`, or a phone menu tapped open before the
+  module arrived, left the page reachable to a screen reader. The module
+  now arms the trap for one it finds open on arrival. The acme-site
+  phone menu gains a test that Tab walks its links and its close button
+  and that Escape closes it.
 
 ## [0.96.0] - 2026-11-06
 

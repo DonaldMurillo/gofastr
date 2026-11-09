@@ -648,6 +648,7 @@ func setupServer() *framework.App {
 		Hidden())
 
 	gallery.MountDemoWidgets(fwApp.Router(), "/components/sidebar", "/components/sidebardrawertrigger")
+	gallery.MountDemoFormRoute(fwApp.Router(), func(slug string) string { return "/components/" + slug })
 
 	// Toast stack anchored top-right; auto-mount so every page can fire one.
 	widget.MountBuilder(fwApp.Router(), preset.ToastStack("site-toasts").Mount(widget.TopRight))

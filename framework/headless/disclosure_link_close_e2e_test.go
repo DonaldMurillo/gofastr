@@ -108,3 +108,31 @@ func TestE2E_DrawerClosesOnAFollowedLink(t *testing.T) {
 		t.Fatal("a followed link inside the trapped drawer left it open (and the page inert)")
 	}
 }
+
+// A trapped drawer already open when the module loads (rendered Open,
+// or tapped before the module arrived) holds the page under it inert
+// too: the module armed the trap only on a toggle, which that drawer
+// never fires, so a screen reader walked out of it. A second arrival
+// scan (the kernel runs one after a swap) must not arm it twice, or
+// closing it would leave the page inert.
+func TestE2E_DrawerOpenAtLoadIsTrapped(t *testing.T) {
+	d := Disclosure(DisclosureProps{ID: "drawer", Summary: render.Text("Menu"), Trap: true, Open: true,
+		Content: render.Raw(`<a id="pricing" href="#pricing-x">Pricing</a>`)}, nil)
+	b := startBehaviorServer(t, string(d))
+	ctx := behaviorPage(t, b)
+	if !pollTrue(ctx, disclosureLoaded) {
+		t.Fatal("module never loaded")
+	}
+	if !pollTrue(ctx, `document.querySelectorAll('body > [inert]').length > 0`) {
+		t.Fatal("the page under a drawer open at load is not inert")
+	}
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.__gofastr._moduleScanners['headless-disclosure'](document)`, nil),
+		chromedp.Click(`#drawer > summary`, chromedp.ByQuery),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !pollTrue(ctx, `!document.getElementById('drawer').open && document.querySelectorAll('body > [inert]').length === 0`) {
+		t.Fatal("closing the drawer left the page inert")
+	}
+}

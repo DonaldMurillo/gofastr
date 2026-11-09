@@ -526,7 +526,7 @@ var Catalog = []Entry{
 
 	// ---------- Forms ----------
 	{"form", "Form", "Forms", "Form container with submit + validation.", func() render.HTML {
-		return ui.Form(ui.FormConfig{Action: "/__site/toggle/noop", Method: "POST", SubmitLabel: "Sign in"},
+		return ui.Form(ui.FormConfig{Action: demoFormAction("form"), Method: "POST", SubmitLabel: "Sign in"},
 			ui.FormField(ui.FormFieldConfig{Label: "Email", For: "demo-email", Required: true,
 				Input: func(c headless.FieldControl) render.HTML {
 					return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email"})
@@ -738,7 +738,7 @@ var Catalog = []Entry{
 		})
 	}},
 	{"conditionalfield", "ConditionalField", "Forms", "A field shown or hidden by another field's value — one value or any of a list; visible on first paint, hidden by the runtime until the watched field matches.", func() render.HTML {
-		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: "/__site/toggle/noop"},
+		return ui.Form(ui.FormConfig{ID: "demo-conditional", Action: demoFormAction("conditionalfield")},
 			ui.RadioGroup(ui.RadioGroupConfig{
 				Legend: "Plan",
 				Name:   "plan",
@@ -776,7 +776,7 @@ var Catalog = []Entry{
 		// The rows and their controls live in the caller's form: the
 		// add/remove controls are named submit buttons, so a plain
 		// POST walks the same path the island does.
-		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
+		return render.Tag("form", map[string]string{"method": "post", "action": demoFormAction("formrepeater")},
 			ui.FormRepeater(ui.FormRepeaterConfig{
 				Name:  "links",
 				Items: [][]render.HTML{{row(0)}, {row(1)}},
@@ -790,7 +790,7 @@ var Catalog = []Entry{
 				Label: fmt.Sprintf("Guest %d", i+1),
 			})
 		}
-		return render.Tag("form", map[string]string{"method": "post", "action": "/__site/toggle/noop"},
+		return render.Tag("form", map[string]string{"method": "post", "action": demoFormAction("repeater")},
 			ui.Repeater(ui.RepeaterConfig{
 				Name:     "guests",
 				Label:    "Guests",
@@ -811,7 +811,7 @@ var Catalog = []Entry{
 			return ui.Checkbox(ui.ToggleConfig{Name: "ids", ID: "demo-sel-" + id, Value: id, Label: label, ExtraAttrs: html.Attrs{"form": "demo-selection-bar"}})
 		}
 		return ui.Selection(ui.SelectionConfig{
-			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: "?", Method: "POST", HideSubmit: true},
+			Bar: ui.Form(ui.FormConfig{ID: "demo-selection-bar", Action: demoFormAction("selection"), Method: "POST", HideSubmit: true},
 				ui.Button(ui.ButtonConfig{Label: "Archive selected", Variant: ui.ButtonSecondary, Size: ui.ButtonSizeSmall, Type: "button"})),
 			Body: ui.Stack(ui.StackConfig{}, row("a", "INV-1041"), row("b", "INV-1042"), row("c", "INV-1043")),
 		})

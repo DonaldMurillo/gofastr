@@ -18,7 +18,7 @@ import (
 // the title, Prepend and footer, which do not, sat flush against the
 // drawer's edge while the rows' text started an inset in. Their text
 // must start where the rows' text does, in the default and compact
-// spellings.
+// spellings. The drawer head's brand starts there too.
 func TestDrawerBodyTitleAlignsWithRows(t *testing.T) {
 	for _, compact := range []bool{false, true} {
 		cfg := SidebarConfig{
@@ -28,12 +28,13 @@ func TestDrawerBodyTitleAlignsWithRows(t *testing.T) {
 			Items:   []SidebarItem{{Label: "Overview", Href: "/app"}},
 			Footer:  render.HTML(`<span id="foot">Sign out</span>`),
 		}
+		head := string(sidebarDrawerHeader{title: cfg.Title, compact: compact, labelID: "nav-label"}.Render())
 		body := string(sidebarDrawerSlot{cfg: cfg}.Render())
 		css := theme.Default().CSSCustomProperties() + sidebarStyle.Entry().CSSFor(theme.Default())
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			fmt.Fprintf(w, `<!doctype html><meta charset=utf-8><style>body{margin:0}</style><style>%s</style>`+
-				`<div id="drawer" style="width:320px">%s</div>`, css, body)
+				`<div id="drawer" style="width:320px">%s%s</div>`, css, head, body)
 		}))
 		ctx := chromedptest.Context(t)
 		// Content-box left edge: border-box left plus the inline-start
@@ -47,7 +48,8 @@ func TestDrawerBodyTitleAlignsWithRows(t *testing.T) {
 				const q = (s) => document.querySelector('#drawer ' + s);
 				return {drawer: q('.fui-sidebar__title').parentElement.getBoundingClientRect().left,
 					title: left(q('.fui-sidebar__title')), prepend: left(q('.fui-sidebar__prepend')),
-					row: left(q('.fui-sidebar__link')), footer: left(q('.fui-sidebar__footer'))};
+					row: left(q('.fui-sidebar__link')), footer: left(q('.fui-sidebar__footer')),
+					brand: q('.fui-sidebar__drawer-brand').getBoundingClientRect().left};
 			})()`, &got),
 		)
 		srv.Close()
@@ -57,7 +59,7 @@ func TestDrawerBodyTitleAlignsWithRows(t *testing.T) {
 		if got["row"] <= got["drawer"] {
 			t.Fatalf("compact=%v: the row text starts at %.1f, not inside the drawer (%.1f); the page did not lay out", compact, got["row"], got["drawer"])
 		}
-		for _, part := range []string{"title", "prepend", "footer"} {
+		for _, part := range []string{"title", "prepend", "footer", "brand"} {
 			if d := got[part] - got["row"]; d < -0.5 || d > 0.5 {
 				t.Errorf("compact=%v: %s text starts at %.1fpx, the rows' text at %.1fpx", compact, part, got[part], got["row"])
 			}

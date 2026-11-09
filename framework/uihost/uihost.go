@@ -1798,11 +1798,13 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	// _mountByName checks for an existing root before fetching
 	// cfg.chromePath. It goes in after the chrome, so a widget's sheets
 	// load on demand rather than in the head, but a first-paint subset
-	// keeps the rules its classes need.
-	widgets := widgetSSRHTML(r)
+	// keeps the rules its classes need. The toast stack is the one
+	// widget whose sheets go in the head (see inlineHead.sheets).
+	widgets, toastSheets := widgetSSRHTML(r)
 	inline := &inlineHead{
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
+		sheets: toastSheets,
 	}
 	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
@@ -1836,17 +1838,20 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 // TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch here and
 // TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx in core-ui/runtime.
 func injectWidgetSSR(page string, r *http.Request) string {
-	html := widgetSSRHTML(r)
+	html, _ := widgetSSRHTML(r)
 	if html == "" {
 		return page
 	}
 	return replaceChromeMarker(page, "</body>", html+"</body>", "widget chrome")
 }
 
-// widgetSSRHTML renders the widget chrome injectWidgetSSR places.
-func widgetSSRHTML(r *http.Request) string {
+// widgetSSRHTML renders the widget chrome injectWidgetSSR places, and
+// lists the component sheets the inlined toast stacks name, their row
+// template's included: the head carries those (inlineHead.sheets).
+func widgetSSRHTML(r *http.Request) (string, []string) {
 	b := borrowBuilder()
 	defer returnBuilder(b)
+	var toastSheets []string
 	u := r.URL
 	q := u.Query()
 	// Per-page filter: widgets scoped via .Pages / .PagesPrefix /
@@ -1884,9 +1889,14 @@ func widgetSSRHTML(r *http.Request) string {
 		// paint. The lazy /chrome endpoint already threaded r.Context(); the
 		// SSR inline path must match, or the same slot renders anonymous here
 		// and personalized when the user reopens it.
-		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
+		chrome := widget.RenderChromeCtx(r.Context(), d)
+		if preset.IsToastStack(d) {
+			live, held := registry.ScanSplit(chrome)
+			toastSheets = append(append(toastSheets, live...), held...)
+		}
+		b.WriteString(chrome)
 	}
-	return b.String()
+	return b.String(), toastSheets
 }
 
 // injectConfirmTemplate emits the kit's confirm dialog
@@ -2308,6 +2318,12 @@ type inlineHead struct {
 	// markup is what the response adds to the page after the chrome
 	// (the first-paint widgets), whose classes a subset must keep.
 	markup string
+	// sheets are component sheets the head carries though the page's
+	// markers do not name them live: the toast stack's, row template
+	// included. A widget's sheets otherwise load on demand, but the
+	// toast that reports a lost connection is raised exactly when no
+	// sheet can load, and it drew as bare text.
+	sheets []string
 }
 
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
@@ -2434,7 +2450,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// them or not; sheets only <template> content needs are prefetched.
 	var inlined *firstPaintPlan
 	if bundle && inline != nil && !ds.noInlineFirstPaint {
-		names, held := pageSheetNames(page)
+		names, held := pageSheetNames(page, inline.sheets...)
 		if p, ok := ds.planFirstPaint(names, page, inline.markup); ok && inline.allow(p.styleHashes(), p.scriptHashes()) {
 			inlined = p
 			if p.comp != nil {
@@ -2452,7 +2468,11 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 		}
 	}
 	if inlined == nil {
-		if tags := ds.componentCSSTags(page, bundle); tags != "" {
+		var always []string
+		if inline != nil {
+			always = inline.sheets
+		}
+		if tags := ds.componentCSSTags(page, bundle, always...); tags != "" {
 			headClose.WriteString(tags)
 			headClose.WriteByte('\n')
 		}
@@ -5090,8 +5110,8 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // item) gets a <link rel="prefetch"> instead: the browser fetches it at
 // idle priority, off the render-blocking path, and the runtime's link
 // for the clone it makes later is a cache hit.
-func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
-	names, held := pageSheetNames(page)
+func (ds *UIHost) componentCSSTags(page string, bundle bool, always ...string) string {
+	names, held := pageSheetNames(page, always...)
 	if len(names) == 0 && len(held) == 0 {
 		return ""
 	}
@@ -5106,8 +5126,9 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 }
 
 // pageSheetNames returns the sorted component sheets a page's first
-// paint needs (rendered markers plus every LoadAlways entry) and the
-// sheets only its <template> content needs.
+// paint needs (rendered markers, every LoadAlways entry and the always
+// names the caller adds) and the sheets only its <template> content
+// needs.
 //
 // Only registered, path-safe names are kept. A marker can name nothing
 // (host markup, a typo, a CMS field, a component this replica does not
@@ -5115,11 +5136,14 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 // its data-cui-bundle list: an unknown one made the bundle answer 404
 // while the runtime, seeded from the list, never fetched the real
 // sheets on its own, so the whole page stayed unstyled.
-func pageSheetNames(page string) (names, held []string) {
+func pageSheetNames(page string, always ...string) (names, held []string) {
 	used, held := registry.ScanSplit(page)
 	eager := registry.EagerNames()
 	seen := setOf(used)
 	for _, n := range eager {
+		seen[n] = struct{}{}
+	}
+	for _, n := range always {
 		seen[n] = struct{}{}
 	}
 	names = make([]string, 0, len(seen))

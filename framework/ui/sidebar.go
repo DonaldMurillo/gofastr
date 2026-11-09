@@ -863,6 +863,7 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 type sidebarDrawerHeader struct {
 	title, closeLabel string
 	labelID           string
+	compact           bool
 	resolve           func(context.Context) SidebarConfig
 }
 
@@ -876,9 +877,10 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	if h.title == "" {
 		return name
 	}
-	label := h.closeLabel
+	label, compact := h.closeLabel, h.compact
 	if h.resolve != nil {
-		label = h.resolve(ctx).DrawerCloseLabel
+		cfg := h.resolve(ctx)
+		label, compact = cfg.DrawerCloseLabel, cfg.Compact
 	}
 	if label == "" {
 		label = i18nui.SidebarCloseDrawer.Text(ctx)
@@ -886,7 +888,11 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
-	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
+	class := "fui-sidebar__drawer-head"
+	if compact {
+		class += " fui-sidebar__drawer-head--compact"
+	}
+	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: class},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
 		Button(ButtonConfig{Ctx: ctx, Label: label, Icon: "close", IconOnly: true,
 			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
@@ -945,7 +951,7 @@ func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
 		LabelledBy(labelID).
-		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, labelID: labelID, resolve: build}).
+		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, labelID: labelID, compact: cfg.Compact, resolve: build}).
 		Slot("body", sidebarDrawerSlot{cfg: cfg, resolve: build})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`
@@ -1071,7 +1077,9 @@ func sidebarCSS(_ style.Theme) string {
 /* Knobs: --ui-sidebar-width (220px) is the expanded inline column's
    width (min-width and width); --ui-sidebar-rail-width (64px) is the
    collapsed icon rail's width (the collapsible collapsed state and the
-   auto-hide rest state); --ui-sidebar-row-height is a row's minimum
+   auto-hide rest state); --ui-sidebar-drawer-inset (--spacing-md) is
+   the gap between the < md drawer's edges and its rows, header and
+   footer; --ui-sidebar-row-height is a row's minimum
    height: the touch target on a coarse pointer, 2.25rem under a fine
    one, where a 44px row spreads a long nav over two screens. */
 @media (pointer: fine) {
@@ -1198,10 +1206,16 @@ func sidebarCSS(_ style.Theme) string {
   padding-bottom: var(--spacing-md, 8px);
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
 }
-/* The drawer body has no column padding (each nav row pads itself), so
-   the title, Prepend and footer take the rows' inline inset: their text
-   starts where the rows' text does, not flush against the drawer edge.
-   Compact rows add a 1px current-marker border before their padding. */
+/* The drawer body is display: contents, so its parts stand off the
+   panel's edges themselves, by --ui-sidebar-drawer-inset: a row's hover
+   and current fill no longer runs into both sides of the drawer. */
+[data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body > * {
+  margin-inline: var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px));
+}
+/* Inside that inset each nav row pads itself, so the title, Prepend and
+   footer take the rows' inline padding: their text starts where the
+   rows' text does. Compact rows add a 1px current-marker border before
+   their padding. */
 [data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__title,
 [data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__prepend,
 [data-cui-comp="ui-sidebar"].fui-sidebar--drawer-body .fui-sidebar__footer {
@@ -1393,12 +1407,16 @@ func sidebarCSS(_ style.Theme) string {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md, 8px);
-  /* The same INLINE inset the nav rows' own padding gives their
-     icons/text (the drawer body carries no column padding, so the
-     row's padding IS the inset): the brand lines up with the first
-     row's icon instead of starting 8px deeper. */
-  padding: var(--spacing-md, 8px) var(--spacing-md, 8px);
+  /* The brand starts where the first row's icon does (the drawer
+     inset plus the row's own padding), and the close button ends where
+     the rows do. */
+  padding-block: var(--spacing-md, 8px);
+  padding-inline: calc(var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px)) + var(--spacing-md, 8px)) var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px));
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
+/* Compact rows pad by --spacing-sm after a 1px current marker. */
+.fui-sidebar__drawer-head--compact {
+  padding-inline-start: calc(var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px)) + var(--spacing-sm, 4px) + 1px);
 }
 .fui-sidebar__drawer-brand {
   font-weight: var(--font-weight-bold);
