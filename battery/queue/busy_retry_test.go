@@ -136,3 +136,58 @@ func TestAckRetriesSQLiteBusy(t *testing.T) {
 		t.Fatal("the acked job row is still there")
 	}
 }
+
+func TestOtherSettlesRetrySQLiteBusy(t *testing.T) {
+	for _, arm := range []string{"retained", "dead", "release"} {
+		t.Run(arm, func(t *testing.T) {
+			db := openBusyQueueDB(t)
+			queue, err := NewDBQueue(db, WithDoneRetention(time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			if err := queue.Enqueue(ctx, Job{Type: "t", MaxAttempts: 1}); err != nil {
+				t.Fatal(err)
+			}
+			claim, err := queue.Dequeue(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			blocker, err := db.Conn(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer blocker.Close()
+			if _, err := blocker.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+				t.Fatal(err)
+			}
+			unlocked := make(chan error, 1)
+			time.AfterFunc(75*time.Millisecond, func() {
+				_, err := blocker.ExecContext(ctx, "ROLLBACK")
+				unlocked <- err
+			})
+			switch arm {
+			case "retained":
+				err = queue.Ack(ctx, claim)
+			case "dead":
+				err = queue.Nack(ctx, claim)
+			case "release":
+				err = queue.release(ctx, claim)
+			}
+			if unlockErr := <-unlocked; unlockErr != nil {
+				t.Fatal(unlockErr)
+			}
+			if err != nil {
+				t.Fatalf("settle failed under transient contention: %v", err)
+			}
+			var status string
+			if err := db.QueryRowContext(ctx, "SELECT status FROM queue_jobs WHERE id = $1", claim.ID).Scan(&status); err != nil {
+				t.Fatal(err)
+			}
+			want := map[string]string{"retained": "done", "dead": "failed", "release": "pending"}[arm]
+			if status != want {
+				t.Fatalf("status=%s, want %s", status, want)
+			}
+		})
+	}
+}

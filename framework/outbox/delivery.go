@@ -697,16 +697,25 @@ func (o *Outbox) markDeliveryFailure(ctx context.Context, d claimedDelivery, cau
 // otherwise hand back an attempt the newer claim consumed.
 func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	now := o.now().UTC()
-	res, err := o.db.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s
-			SET status='abandoned', last_error='no consumer handler within grace', claimed_until=NULL, next_attempt_at=NULL
-			WHERE row_id=$1 AND consumer=$2 AND status='pending' AND created_at <= $3 AND claimed_until=$4`, o.qd()),
-		d.RowID, d.Consumer, now.Add(-o.handlerGrace), d.ClaimedUntil)
-	if err == nil {
-		if n, _ := res.RowsAffected(); n > 0 {
-			o.completeParent(ctx, d.RowID, d.Type)
-			return
+	n, err := sqlbusy.Exec(ctx, func(ctx context.Context) (int64, error) {
+		res, err := o.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s
+				SET status='abandoned', last_error='no consumer handler within grace', claimed_until=NULL, next_attempt_at=NULL
+				WHERE row_id=$1 AND consumer=$2 AND status='pending' AND created_at <= $3 AND claimed_until=$4`, o.qd()),
+			d.RowID, d.Consumer, now.Add(-o.handlerGrace), d.ClaimedUntil)
+		if err != nil {
+			return 0, err
 		}
+		return res.RowsAffected()
+	})
+	if err != nil {
+		slog.Default().Error("outbox: abandon unhandled delivery failed; lease recovery will retry",
+			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
+		return
+	}
+	if n > 0 {
+		o.completeParent(ctx, d.RowID, d.Type)
+		return
 	}
 	// Requeue at the MAX backoff, not the base: a no-handler delivery may sit
 	// for the whole grace window (a removal drain), and it sorts to the front
@@ -714,13 +723,17 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 	// re-claim it every poll and both amplify writes and crowd out real work.
 	// A coarse retry still picks it up within backoffMax once a handler lands.
 	next := now.Add(o.backoffMax)
-	if _, err := o.db.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s
-				SET status='pending',
-				    attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
-				    next_attempt_at=$1, claimed_until=NULL
-				WHERE row_id=$2 AND consumer=$3 AND status='pending' AND claimed_until=$4`, o.qd()),
-		next, d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
+	err = sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := o.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s
+					SET status='pending',
+					    attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+					    next_attempt_at=$1, claimed_until=NULL
+					WHERE row_id=$2 AND consumer=$3 AND status='pending' AND claimed_until=$4`, o.qd()),
+			next, d.RowID, d.Consumer, d.ClaimedUntil)
+		return err
+	})
+	if err != nil {
 		slog.Default().Error("outbox: requeue unhandled delivery failed; lease recovery will retry",
 			"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 	}
@@ -735,11 +748,15 @@ func (o *Outbox) requeueNoHandler(ctx context.Context, d claimedDelivery) {
 // row.
 func (o *Outbox) releaseUnstarted(ctx context.Context, ds []claimedDelivery) {
 	for _, d := range ds {
-		if _, err := o.db.ExecContext(ctx,
-			fmt.Sprintf(`UPDATE %s
-				SET attempts = attempts - 1, claimed_until=NULL
-				WHERE row_id=$1 AND consumer=$2 AND claimed_until=$3`, o.qd()),
-			d.RowID, d.Consumer, d.ClaimedUntil); err != nil {
+		err := sqlbusy.Retry(ctx, func(ctx context.Context) error {
+			_, err := o.db.ExecContext(ctx,
+				fmt.Sprintf(`UPDATE %s
+					SET attempts = attempts - 1, claimed_until=NULL
+					WHERE row_id=$1 AND consumer=$2 AND claimed_until=$3`, o.qd()),
+				d.RowID, d.Consumer, d.ClaimedUntil)
+			return err
+		})
+		if err != nil {
 			slog.Default().Error("outbox: release unstarted delivery failed; lease recovery will retry",
 				"row_id", d.RowID, "consumer", d.Consumer, "error", err)
 		}

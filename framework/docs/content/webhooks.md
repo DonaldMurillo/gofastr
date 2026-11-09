@@ -485,7 +485,14 @@ delivery at a time; when less of the lease is left than the HTTP
 client's timeout (capped at half the lease), it hands that delivery
 and the rest of the batch back, attempt refunded, for the next tick.
 A store without `LeasedStore` still counts each attempt and
-dead-letters at `MaxAttempts`.
+dead-letters at `MaxAttempts`; `New` neither raises its lease nor logs
+the lease adjustment, because that store never uses a claim lease.
+
+On SQLite, delivery settles and unstarted-claim releases retry a busy
+database for up to two seconds after the first busy error, bounded by
+the caller's deadline. The claim fence still applies on every retry.
+A failed rollback of an abandoned SQLite claim logs a warning without
+replacing the original claim error.
 
 A `leasePeriod` of `0` selects the 30 s default; a negative one is
 rejected by both bundled stores — a negative lease can only be a sign

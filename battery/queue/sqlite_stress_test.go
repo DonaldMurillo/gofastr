@@ -34,8 +34,8 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 
 	const jobs = 600
 	var nacked atomic.Int64
-	mk := func(table string) *DBQueue {
-		q, err := NewDBQueue(db, WithTable(table), WithWorkers(6),
+	mk := func() *DBQueue {
+		q, err := NewDBQueue(db, WithWorkers(6), WithDoneRetention(time.Hour),
 			WithLeaseTimeout(20*time.Second))
 		if err != nil {
 			t.Fatal(err)
@@ -47,7 +47,7 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 		})
 		return q
 	}
-	queues := []*DBQueue{mk("q1_jobs"), mk("q2_jobs")}
+	queues := []*DBQueue{mk(), mk()}
 	for _, q := range queues {
 		for i := range jobs / 2 {
 			typ := "ok"
@@ -71,7 +71,7 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 	deadline := time.Now().Add(25 * time.Second)
 	for time.Now().Before(deadline) {
 		var claimed, pending int
-		for _, table := range []string{"q1_jobs", "q2_jobs"} {
+		for _, table := range []string{"queue_jobs"} {
 			for _, status := range []string{"claimed", "pending"} {
 				q := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE status = $1", table)
 				var n int
@@ -90,15 +90,21 @@ func TestSQLiteFileStressDrainsClean(t *testing.T) {
 			if nacked.Load() == 0 {
 				t.Fatal("the flaky handler never ran; the soak proved nothing")
 			}
+			for _, status := range []string{"done", "failed"} {
+				var count int
+				if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM queue_jobs WHERE status = $1", status).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != jobs/2 {
+					t.Fatalf("%s rows=%d, want %d", status, count, jobs/2)
+				}
+			}
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	var stuck int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM q1_jobs WHERE status='claimed'").Scan(&stuck); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM q2_jobs WHERE status='claimed'").Scan(&stuck); err != nil {
+	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM queue_jobs WHERE status='claimed'").Scan(&stuck); err != nil {
 		t.Fatal(err)
 	}
 	t.Fatalf("drain did not finish in 25s (stuck claimed rows: %d)", stuck)

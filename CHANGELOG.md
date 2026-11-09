@@ -172,6 +172,7 @@ few lines, and link the PR or the docs page for the rest.
   shared table a second manager may also claim; a store that is not a
   `LeasedStore` has no claim path that reads the lease, so the raise
   and its log line are skipped there and single-instance deployments
+  no longer log an adjustment to a lease they never use.
 - **The log battery surfaces historical read errors and owns only its
   own backups.** `log_filter` with `historical=true` no longer swallows
   a failed file read — an unreadable or symlinked log path returns the
@@ -208,12 +209,15 @@ few lines, and link the PR or the docs page for the rest.
   a response the middleware finishes after the write cut (its own 503
   included) is never delivered. Set `WriteTimeout` above the deadline,
   set it to 0, or configure `RequestTimeout` explicitly.
-- **Queue and outbox settles retry `SQLITE_BUSY`.** On a contended
+- **Queue, outbox and webhook settles retry SQLite contention.** On a contended
   SQLite file, a nack or ack whose write met the database lock after
   `busy_timeout` failed and left the job `claimed` until its lease
   expired. The settle writes in `DBQueue` (`Ack`, `Nack`, the gate
-  hand-back) and the outbox delivery settles now retry a busy database
-  for about two seconds before falling back to lease recovery; every
+  hand-back), outbox delivery settles and claim refunds, and webhook
+  delivery settles and releases retry `SQLITE_BUSY` or `SQLITE_LOCKED`
+  by result code for up to two seconds after the first busy error.
+  The first call keeps the caller's deadline, including on Postgres;
+  retries use the earlier deadline before falling back to recovery. Every
   settle stays fenced on its claim, so a late retry that lost the race
   changes nothing.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
