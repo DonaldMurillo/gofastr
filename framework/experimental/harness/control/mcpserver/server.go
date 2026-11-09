@@ -442,8 +442,13 @@ func (s *Server) handleToolsCall(ctx context.Context, req rpcRequest) {
 	}
 	switch params.Name {
 	case "harness.list_sessions":
+		text, err := jsonString(s.listSessions())
+		if err != nil {
+			s.writeErr(req.ID, -32603, "internal error: the result could not be encoded")
+			return
+		}
 		s.write(rpcResponse{ID: req.ID, Result: map[string]any{
-			"content": []any{textContent(jsonString(s.listSessions()))},
+			"content": []any{textContent(text)},
 		}})
 	case "harness.run_agent_with_shell_access":
 		s.runAgentWithShellAccess(ctx, req.ID, params.Arguments)
@@ -754,9 +759,14 @@ func (s *Server) handleResourcesRead(ctx context.Context, req rpcRequest) {
 		s.writeErr(req.ID, -32602, "unknown URI: "+params.URI)
 		return
 	}
+	text, err := jsonString(body)
+	if err != nil {
+		s.writeErr(req.ID, -32603, "internal error: the result could not be encoded")
+		return
+	}
 	s.write(rpcResponse{ID: req.ID, Result: map[string]any{
 		"contents": []map[string]any{
-			{"uri": params.URI, "mimeType": "application/json", "text": jsonString(body)},
+			{"uri": params.URI, "mimeType": "application/json", "text": text},
 		},
 	}})
 }
@@ -811,9 +821,14 @@ func (s *Server) readEvents(ctx context.Context, req rpcRequest, uri string, ses
 	if events == nil {
 		events = []control.EventEnvelope{}
 	}
+	text, err := jsonString(events)
+	if err != nil {
+		s.writeErr(req.ID, -32603, "internal error: the result could not be encoded")
+		return
+	}
 	s.write(rpcResponse{ID: req.ID, Result: map[string]any{
 		"contents": []map[string]any{
-			{"uri": uri, "mimeType": "application/json", "text": jsonString(events)},
+			{"uri": uri, "mimeType": "application/json", "text": text},
 		},
 	}})
 }
@@ -841,9 +856,15 @@ func textContent(text string) map[string]any {
 	return map[string]any{"type": "text", "text": text}
 }
 
-func jsonString(v any) string {
-	b, _ := json.Marshal(v)
-	return string(b)
+// jsonString encodes v for a text content block. A value with no JSON
+// form (a NaN, a chan) returns the error so the caller answers -32603
+// instead of handing the client an empty text block.
+func jsonString(v any) (string, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // ---------- control.Client implementation for MCP-attached clients ----------

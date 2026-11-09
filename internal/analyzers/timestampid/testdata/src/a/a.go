@@ -129,6 +129,61 @@ func nowLocal() {
 	_ = nonce
 }
 
+// varDeclID: the id is a local var DECLARATION (var token = …), whose
+// value the bindings walker records from the GenDecl arm; the 4 random
+// bytes sit under the 16-byte bar.
+func varDeclID() string {
+	var rb [4]byte
+	_, _ = rand.Read(rb[:])
+	var token = "tok_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[:]) // want `token minted from wall-clock time is enumerable; mint from crypto/rand \(ids package\)`
+	return token
+}
+
+// sliceConstLow: a buffer slice with a constant low keeps only the
+// span above it — bytes 8..16 of a 16-byte buffer retain 8 random bytes,
+// under the bar. The low bound is load-bearing: reading it as the full
+// span would credit 16.
+func sliceConstLow() string {
+	var rb [16]byte
+	_, _ = rand.Read(rb[:])
+	sessionID := "s_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[8:16]) // want `sessionID minted from wall-clock time is enumerable; mint from crypto/rand \(ids package\)`
+	return sessionID
+}
+
+// sliceVarLow: a variable low bound is unreadable and earns no span.
+func sliceVarLow(start int) string {
+	var rb [16]byte
+	_, _ = rand.Read(rb[:])
+	sessionID := "s_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[start:16]) // want `sessionID minted from wall-clock time is enumerable; mint from crypto/rand \(ids package\)`
+	return sessionID
+}
+
+// varDeclClock: the wall-clock reading itself sits in a var
+// DECLARATION; the bindings walker's GenDecl arm carries it to the id.
+func varDeclClock() {
+	var clock = time.Now().UnixNano()
+	sessionID := "s_" + strconv.FormatInt(clock, 10) // want `sessionID minted from wall-clock time is enumerable; mint from crypto/rand \(ids package\)`
+	_ = sessionID
+}
+
+// fullSpanCredit: an explicit zero low over the full 16-byte span
+// credits the buffer; the constant low bound must be read to see it.
+func fullSpanCredit() string {
+	var rb [16]byte
+	_, _ = rand.Read(rb[:])
+	sessionID := "s_" + strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + hex.EncodeToString(rb[0:16])
+	return sessionID
+}
+
+// declOnly and a local const: the body walker's declaration arm sees
+// declarations with no values and non-VAR specs.
+func declShapes() {
+	var scratch []byte
+	const span = 8
+	_ = len(scratch)
+	_ = span
+}
+
 // rawNano is capability-NAMED but never formatted into a string: the
 // int64 is a value, not a minted id.
 func rawNano() int64 {

@@ -443,6 +443,43 @@ few lines, and link the PR or the docs page for the rest.
   panel's left and right edges. Each part of the body now keeps an inline
   margin of `--ui-sidebar-drawer-inset` (default `--spacing-md`), and the
   drawer head lines its brand up with the row icons below it.
+- **`textbind` follows request text through method returns, host
+  callbacks and `strings.Builder`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A method that returns its receiver's field (`ParsedFilter.BindValue`)
+  hands the caller's fill back, so the exported summary now names those
+  fields (`RetFields`) and the caller's marks taint the call result; a
+  call through a func-typed field follows its same-package fill sites'
+  summaries, and a fill-less `func(*http.Request) string` field the
+  package declares (the d6167d1a `IdempotencyConfig.Principal` shape)
+  is request text itself; a `strings.Builder` local's `String`
+  carries string, byte, rune and standard formatted writes until a
+  dominating `Reset`.
+- **`discardeddecode` checks non-envelope JSON encode errors**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Shared HTTP response helpers encode before committing their status;
+  broker and queue operations return serialization errors, and other
+  output paths log failures.
+  The analyzer now covers fallible values outside JSON-RPC envelopes.
+- **A2A refuses an owner or tenant the store cannot bind**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An
+  `Owner` or `Tenant` callback that returns a NUL byte or invalid
+  UTF-8 (read from the request) is refused with the transport's 401 at
+  resolution; before, the first task write answered Postgres's 22021
+  as a 500 where SQLite silently stored it.
+- **Inbound webhook ingestion refuses an unstorable dedupe key or
+  owner** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A `DedupeKeyFunc` or `Owner` callback result holding
+  a NUL or invalid UTF-8 is a 400 before anything persists, instead of
+  a Postgres 500 on the first store write (SQLite stored it silently).
+- **BREAKING: a semantic store's `ChunkIDsForDoc` returns an error,
+  and `PgVectorStore` indexes its keyword search**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), [semantic search](framework/docs/content/semantic-search.md)).
+  A custom `battery/semantic` store used with `Options.Keyword` now
+  implements `ChunkIDsForDoc(docID) ([]string, error)`: a database error
+  used to read as an empty list, so removing a document left its keyword
+  entries behind. A failed listing now refuses the replacement or
+  removal. `PgVectorStore` creates the GIN index for the keyword leg,
+  on existing tables too at their next `EnsureSchema`, and keeps its
+  index names distinct at PostgreSQL's 63-byte identifier limit.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

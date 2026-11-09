@@ -379,3 +379,35 @@
 - Evidence: `go test ./framework/uihost -run 'Test.*Toast' -count=1` covers simultaneous custom hosts, prefixed assets, repeated boot, unrelated widgets, and the original two-default-host case; mutations of stack-kind, missing-route, and default-registration guards each fail.
 - Next time: boot every host before rendering the first, assert the region count, and fetch every linked stylesheet on each router.
 - Status: active
+
+## 2026-11-08 - Obstruct contract application without permission bits
+- Scope: contract tooling tests, upload, migrate
+- Trigger: chmod-based write failures still succeed as root; macOS immutable flags do not fix Linux.
+- Approach: `internal/contractstest.ObstructApply` links readable fixture source outside the project root, so discovery sees it and Apply's `os.Root` refuses it after the first file. Windows holds a read-sharing handle to refuse a write without symlink privileges. Upload uses a missing leaf and a regular-file parent; migrate omits the snapshot directory.
+- Evidence: all six issue #669 obstruction tests pass as uid 0 in the `golang:1.27` container; removing ObstructApply makes all four CLI/MCP partial-application tests fail.
+- Next time: choose a kernel path or confinement failure that holds for every uid, and assert the prior file changed before accepting a partial-application result.
+- Status: active
+
+## 2026-11-08 - Check Builder control flow and PostgreSQL identifier boundaries
+- Scope: textbind, battery/semantic
+- Trigger: Builder resets in sibling branches cleared taint; PostgreSQL truncated both index suffixes of a 62-byte table to the same name.
+- Approach: require a reset to dominate the read; test byte, rune and formatted writes. Keep distinct suffixes when shortening index names and inspect the actual pg_indexes catalog.
+- Evidence: new Builder fixtures fail on the GLM analyzer; TestPgVectorLongTableHasBothIndexes finds one index with its original naming helper and two with the fix.
+- Next time: test both branches and identifier lengths 61, 62 and 63; pin EXPLAIN settings to one transaction rather than a pooled connection.
+- Status: active
+
+## 2026-11-08 - Measure analyzer guards with explicit mutation operators
+- Scope: internal/analyzers, issue #669
+- Trigger: historical survivor counts did not describe the current sources or mutation operators.
+- Approach: run each package's analysistest fixtures, negate every nonliteral if condition and replace each reporter selector (including a.pass) with a compiling no-op separately, with a bounded test timeout; restore source after each run.
+- Evidence: fixedtmp 79/79, timestampid 86/86, recoverlog 66/66, nowaitdelay 47/47 and keytrim 32/32 mutants killed. Added fixture cases kill missing guards; two verdict-invariant branches were removed.
+- Next time: reject mutation build failures as invalid; the draft reporter rewrite produced pass.mutateNopReportf, so it hid an untested exec.Cmd.Path reporter. Record the operator set and keep bad and quiet fixtures.
+- Status: active
+
+## 2026-11-08 - Encode JSON before committing an HTTP status
+- Scope: JSON response helpers, discardeddecode
+- Trigger: a NaN or invalid RawMessage produced an empty 200 because the encoder failed after success headers were written.
+- Approach: marshal first and answer a generic 500, propagate broker/queue serialization errors, and log output failures. Preserve encoder options and avoid fabricated cursor placeholders.
+- Evidence: HTTP regressions in framework/crud, framework, battery/auth and cmd/kiln fail on their original writers; the widget failure-writer test pins logging.
+- Next time: inject unencodable values at the real response boundary and assert status, body and sensitive-response headers before widening the analyzer.
+- Status: active

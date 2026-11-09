@@ -145,9 +145,17 @@ func describeAdapter(a Adapter) map[string]any {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Cache-Control", "no-store")
+	b, err := json.Marshal(v)
+	if err != nil {
+		// A body that cannot encode would answer 200 with no body;
+		// answer 500 instead.
+		http.Error(w, "encode failed", http.StatusInternalServerError)
+		return
+	}
 	// no-store: these bodies are per-session agent/runtime state, the
 	// same discipline kiln/chat's status endpoints carry.
-	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }

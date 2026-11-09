@@ -732,7 +732,21 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 			// pop→processing transition below; the claim-time bump keeps
 			// the restored job from redelivering forever once the
 			// backend heals).
-			dlqData, _ := json.Marshal(job)
+			dlqData, err := json.Marshal(job)
+			if err != nil {
+				// The bumped job cannot be re-encoded: restore the
+				// original bytes and surface the loss, the same
+				// contract a failed DLQ push holds.
+				resultErr := fmt.Errorf("dequeue: marshal exhausted job: %w", err)
+				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
+					resultErr = errors.Join(resultErr, fmt.Errorf("restore exhausted job: %w", restoreErr))
+				}
+				rerr := requeueSkipped()
+				if rerr != nil {
+					resultErr = errors.Join(resultErr, rerr)
+				}
+				return Job{}, resultErr
+			}
 			if _, err := q.homePopped(ctx, rec, data, q.deadLetterQueue, "", string(dlqData), true); err != nil {
 				resultErr := fmt.Errorf("dequeue: dead-letter exhausted job: %w", err)
 				if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", string(dlqData), true); restoreErr != nil {
@@ -750,7 +764,21 @@ func (q *RedisQueue) Dequeue(ctx context.Context, types ...string) (Job, error) 
 		// visibility timeout expired (and whose job was re-claimed by
 		// someone else) cannot Ack/Nack the newer claim.
 		job.ClaimToken = token
-		bumped, _ := json.Marshal(job)
+		bumped, err := json.Marshal(job)
+		if err != nil {
+			// The bumped record cannot be re-encoded: restore the
+			// original bytes and surface the loss, the same
+			// no-silent-loss contract the processing push below holds.
+			resultErr := fmt.Errorf("dequeue: marshal bumped job: %w", err)
+			if _, restoreErr := q.homePopped(ctx, rec, data, q.queueName, "", data, true); restoreErr != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("restore popped job: %w", restoreErr))
+			}
+			rerr := requeueSkipped()
+			if rerr != nil {
+				resultErr = errors.Join(resultErr, rerr)
+			}
+			return Job{}, resultErr
+		}
 
 		// Track in processing queue for visibility timeout. The job was
 		// already RPop'd off the main list, so a failure here MUST restore it.
@@ -1099,7 +1127,12 @@ func (q *RedisQueue) Nack(ctx context.Context, claimed Job) error {
 	// entry that was checked (atomically, with [CompareAndMover]), so a
 	// stale Nack pushes nothing rather than a second copy of a job that
 	// another worker is running.
-	payload, _ := json.Marshal(job)
+	payload, err := json.Marshal(job)
+	if err != nil {
+		// A job that cannot be re-encoded would push an empty payload:
+		// refuse the move instead, leaving the claim for Reclaim.
+		return fmt.Errorf("nack: marshal job: %w", err)
+	}
 	if _, err := q.moveClaim(ctx, claimed.ID, raw, dest, string(payload)); err != nil {
 		return fmt.Errorf("nack: %w", err)
 	}

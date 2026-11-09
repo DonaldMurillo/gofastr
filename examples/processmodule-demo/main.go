@@ -226,13 +226,19 @@ func registerHandlers(peer *moduleproto.Peer) error {
 				// A denial from the broker surfaces as a per-call error;
 				// report it as a 403 so a test can distinguish "denied"
 				// from "unavailable".
-				body, _ := json.Marshal(map[string]string{"error": err.Error()})
+				body, mErr := json.Marshal(map[string]string{"error": err.Error()})
+				if mErr != nil {
+					return moduleproto.HTTPResponseResult{}, fmt.Errorf("encode error body: %w", mErr)
+				}
 				return moduleproto.HTTPResponseResult{
 					Status: 403,
 					Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: body},
 				}, nil
 			}
-			body, _ := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows})
+			body, err := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows})
+			if err != nil {
+				return moduleproto.HTTPResponseResult{}, fmt.Errorf("encode rows: %w", err)
+			}
 			return moduleproto.HTTPResponseResult{
 				Status: 200,
 				Body:   moduleproto.HTTPResponseBody{Kind: moduleproto.BodyKindJSON, Value: body},
@@ -288,7 +294,10 @@ func registerHandlers(peer *moduleproto.Peer) error {
 		if err != nil {
 			return nil, err
 		}
-		result, _ := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows, "caller": p.Caller.Subject})
+		result, err := json.Marshal(map[string]any{"entity": cfg.queryEntity, "total": total, "rows": rows, "caller": p.Caller.Subject})
+		if err != nil {
+			return nil, fmt.Errorf("encode result: %w", err)
+		}
 		return moduleproto.ToolCallResult{Result: result}, nil
 	}); err != nil {
 		return err

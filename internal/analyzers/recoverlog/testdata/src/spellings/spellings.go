@@ -71,3 +71,38 @@ func slogLogQuiet(ctx context.Context) {
 		}
 	}()
 }
+
+// varFuncLit: a recover-logging function literal bound to a package-level
+// var (the agent ready/serve wire-up shape). The ValueSpec walker must
+// descend into it.
+var varFuncLit = func() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic: %v", r) // want `recover\(\) value reaches std log print unscrubbed`
+		}
+	}()
+}
+
+// compositeLit: the recover value inside a composite literal reaching a
+// log sink; orig() walks the literal's elements.
+func compositeLit() {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic", "parts", []any{fmt.Sprint(r)}) // want `recover\(\) value reaches slog\.Debug/Info/Warn/Error key-value unscrubbed`
+		}
+	}()
+}
+
+// localHelper: the sink is a package-local function called by its bare
+// name, not a selector; qualifiedFunc must still name it a helper.
+func localHelper() {
+	defer func() {
+		if r := recover(); r != nil {
+			emitPanic(r) // want `recover\(\) value passed to emitPanic reaches its log sink unscrubbed`
+		}
+	}()
+}
+
+func emitPanic(v any) {
+	log.Printf("panic: %v", v)
+}

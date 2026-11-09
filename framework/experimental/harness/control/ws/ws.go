@@ -513,7 +513,11 @@ func (c *Conn) eventPump(ctx context.Context, ch <-chan control.EventEnvelope) {
 				continue
 			}
 			f := frame{Frame: "event", Body: body}
-			out, _ := json.Marshal(f)
+			out, err := json.Marshal(f)
+			if err != nil {
+				log.Printf("harness ws: encode event frame: %v", err)
+				continue
+			}
 			if err := c.writeFrame(opcodeText, out); err != nil {
 				return
 			}
@@ -671,11 +675,18 @@ func (c *Conn) writeFrame(op byte, payload []byte) error {
 }
 
 func controlError(msg string) []byte {
-	body, _ := json.Marshal(control.Error{
+	body, err := json.Marshal(control.Error{
 		Reason:  control.ReasonInvalidCommand,
 		Message: msg,
 	})
-	f := frame{Frame: "event", Body: body}
-	out, _ := json.Marshal(f)
+	if err != nil {
+		// control.Error holds two strings and no Details here, so this
+		// cannot fail; answer the fixed frame rather than an empty one.
+		return []byte(`{"frame":"event","body":{"reason":"InvalidCommand","message":"invalid command"}}`)
+	}
+	out, err := json.Marshal(frame{Frame: "event", Body: body})
+	if err != nil {
+		return []byte(`{"frame":"event","body":{"reason":"InvalidCommand","message":"invalid command"}}`)
+	}
 	return out
 }

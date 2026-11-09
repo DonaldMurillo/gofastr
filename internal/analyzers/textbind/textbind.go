@@ -19,8 +19,10 @@
 //   - 1de1c216, 155cafcd: a nested ?rel.f_like= value and a CoerceValue
 //     argument, and d6167d1a: an idempotency principal. The first two
 //     flowed through struct fields (nestedFilter.Value, ParsedFilter
-//     .Value), which the field arm below now follows; the third through
-//     a host callback (IdempotencyConfig.Principal), which it does not.
+//     .Value) and back out through the declaring package's method
+//     (BindValue), which the field and return-field arms below follow;
+//     the third through a host callback (IdempotencyConfig.Principal),
+//     which the callback arm follows.
 //   - R8-TX-04: a saved view's name and filter reached the admin
 //     store's INSERT through entityui.SavedView's fields, found by the
 //     field arm on its first tree run.
@@ -63,6 +65,29 @@
 // request text itself. A call through an interface method takes the
 // union of the same-package types that implement it, so the middleware's
 // cfg.Store.Begin(ctx, storeKey, fp) sees SQLIdempotencyStore.Begin.
+// A method's summary also names the receiver fields its result hands
+// back (RetFields): a call to it reads those fields on its own
+// receiver, so a caller that filled one with request text — even
+// though the declaring package never wrote it — taints the result
+// (crud fills ParsedFilter.Value and binds f.BindValue()).
+//
+// Host callbacks carry request text: a call through a func-typed
+// struct field (d6167d1a's IdempotencyConfig.Principal, whose result
+// idemStoreKey folded into SQLIdempotencyStore.Begin's key bind). With
+// fill sites in this package the call unions their summaries, named
+// function or literal, field-wide like the data-field arm (one
+// unchecked fill taints every call through the field). With no fill
+// here, a field this package declares whose callback takes an
+// *http.Request and returns a stringish value is read as request text:
+// the host installs it to read the request, and the declaring package
+// is where its result binds — that is the arm watching the Begin key
+// check itself.
+//
+// strings.Builder output carries what was written into it:
+// WriteString/Write add their argument's bytes to the builder's
+// content; WriteByte/WriteRune follow indexed bytes and range values.
+// fmt.Fprint/Fprintf/Fprintln and io.WriteString add their arguments.
+// Reset drops content only when it dominates the String read.
 //
 // Silent postures:
 //   - a dominating storable-text check on the value, credited by what
@@ -105,13 +130,17 @@
 // queue replay and battery/semantic's DELETE /doc. Each now refuses the
 // value before any query.
 //
-// Residuals, stated so nobody assumes coverage: host callbacks (the d6167d1a principal), a method value or call
+// Residuals, stated so nobody assumes coverage: a method value or call
 // through an interface whose implementation lives in another package
 // (battery/admin's grant grid binds grantChange.role through
 // access.GrantStore, R8-AA-01), a constructor in another package that
 // stores its parameter in a field (other.New(r.FormValue("k")).Key: a
-// function's parameter-to-field writes are not exported), and
-// strings.Builder output.
+// function's parameter-to-field writes are not exported), a host
+// callback filled in another package than the field's declaring
+// package (framework/app.go installs ownerPrincipal on the middleware's
+// IdempotencyConfig from a dependent, so the declaring package's
+// no-fill posture stands in for the host's fill), and a builder local
+// held somewhere other than a plain local (a field, a parameter).
 //
 // The fix spelling: refuse the value before it binds, with a 400 naming
 // the field (filter's storableText: utf8.ValidString(s) &&
@@ -159,20 +188,45 @@ type paramField struct {
 // summary is what a caller needs to know about a function: which
 // parameters reach a SQL bind unchecked (Sink), which reach the string
 // result (Return), which it refuses when they are not storable text
-// (Check), and whether its result is request text (Source). Parameter
-// indices exclude the receiver.
+// (Check), whether its result is request text (Source), and — for a
+// method — which stringish fields of its receiver its result hands
+// back (RetFields): the caller may have marked one of them with request
+// text even though this package never did (filter.ParsedFilter
+// .BindValue returning Value, which framework/crud fills; 1de1c216,
+// 155cafcd). Parameter indices exclude the receiver.
 type summary struct {
 	Sink, Return, Check uint64
 	Source              bool
+	RetFields           []string
 }
 
 func (*summary) AFact() {}
 
 func (s *summary) String() string {
-	return fmt.Sprintf("textbind(sink=%b return=%b check=%b source=%v)", s.Sink, s.Return, s.Check, s.Source)
+	return fmt.Sprintf("textbind(sink=%b return=%b check=%b source=%v retfields=%v)", s.Sink, s.Return, s.Check, s.Source, s.RetFields)
 }
 
-func (s summary) empty() bool { return s.Sink == 0 && s.Return == 0 && s.Check == 0 && !s.Source }
+func (s summary) empty() bool {
+	return s.Sink == 0 && s.Return == 0 && s.Check == 0 && !s.Source && len(s.RetFields) == 0
+}
+
+func (s summary) same(o summary) bool {
+	return s.Sink == o.Sink && s.Return == o.Return && s.Check == o.Check && s.Source == o.Source &&
+		slices.Equal(s.RetFields, o.RetFields)
+}
+
+// merge grows s with the facts of u (both fixed points only grow, so a
+// plain union ends).
+func (s *summary) merge(u summary) {
+	s.Sink |= u.Sink
+	s.Return |= u.Return
+	s.Source = s.Source || u.Source
+	for _, name := range u.RetFields {
+		if !slices.Contains(s.RetFields, name) {
+			s.RetFields = append(s.RetFields, name)
+		}
+	}
+}
 
 // taint is where a value's bytes came from: the request (src) and the
 // enclosing function's parameters (params, a bit per index).
@@ -206,6 +260,22 @@ type checker struct {
 	// only then: a write judged before its check's callee was summarised
 	// would mark the field for good.
 	flows bool
+
+	// fills maps a func-typed field to the functions and literals this
+	// package assigns to it (a host callback's fill sites), scanned
+	// once before the fixed points; lits are the literals among them,
+	// summarised in every round like a declared function; litSums is
+	// the running summary of each literal.
+	fills   map[*types.Var][]fillSite
+	lits    []*ast.FuncLit
+	litSums map[*ast.FuncLit]*summary
+}
+
+// fillSite is one assignment of a function or literal to a func-typed
+// field.
+type fillSite struct {
+	fn  *types.Func
+	lit *ast.FuncLit
 }
 
 // markField records that field holds request text. A field another
@@ -249,6 +319,88 @@ func (c *checker) fieldHolds(field *types.Var) bool {
 	return c.pass.ImportObjectFact(field, new(fieldFact))
 }
 
+// scanFills indexes every assignment of a function or function
+// literal to a func-typed field — a host callback's fill sites — once,
+// before the fixed points: the literals among them are summarised
+// every round like a declared function, and a call through the field
+// uses their summaries. _test.go files are skipped like the decls.
+func (c *checker) scanFills() {
+	info := c.pass.TypesInfo
+	for _, f := range c.pass.Files {
+		if strings.HasSuffix(c.pass.Fset.Position(f.Pos()).Filename, "_test.go") {
+			continue
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			switch x := n.(type) {
+			case *ast.AssignStmt:
+				if len(x.Lhs) != len(x.Rhs) {
+					return true
+				}
+				for i, l := range x.Lhs {
+					if fv, ok := c.fillField(l); ok {
+						c.recordFill(fv, x.Rhs[i])
+					}
+				}
+			case *ast.CompositeLit:
+				for _, el := range x.Elts {
+					kv, ok := el.(*ast.KeyValueExpr)
+					if !ok {
+						continue
+					}
+					id, ok := kv.Key.(*ast.Ident)
+					if !ok {
+						continue
+					}
+					if fv, ok := info.Uses[id].(*types.Var); ok && fv.IsField() && isFuncField(fv) {
+						c.recordFill(fv.Origin(), kv.Value)
+					}
+				}
+			}
+			return true
+		})
+	}
+}
+
+// fillField resolves the func-typed field an assignment writes.
+func (c *checker) fillField(l ast.Expr) (*types.Var, bool) {
+	sx, ok := ast.Unparen(l).(*ast.SelectorExpr)
+	if !ok {
+		return nil, false
+	}
+	sel, ok := c.pass.TypesInfo.Selections[sx]
+	if !ok || sel.Kind() != types.FieldVal {
+		return nil, false
+	}
+	fv, ok := sel.Obj().(*types.Var)
+	if !ok || !isFuncField(fv) {
+		return nil, false
+	}
+	return fv.Origin(), true
+}
+
+func isFuncField(fv *types.Var) bool {
+	_, ok := fv.Type().Underlying().(*types.Signature)
+	return ok
+}
+
+func (c *checker) recordFill(fv *types.Var, rhs ast.Expr) {
+	switch v := ast.Unparen(rhs).(type) {
+	case *ast.FuncLit:
+		c.fills[fv] = append(c.fills[fv], fillSite{lit: v})
+		if !slices.ContainsFunc(c.lits, func(l *ast.FuncLit) bool { return l == v }) {
+			c.lits = append(c.lits, v)
+		}
+	case *ast.Ident:
+		if fn, ok := c.pass.TypesInfo.Uses[v].(*types.Func); ok {
+			c.fills[fv] = append(c.fills[fv], fillSite{fn: fn.Origin()})
+		}
+	case *ast.SelectorExpr:
+		if fn, ok := c.pass.TypesInfo.Uses[v.Sel].(*types.Func); ok {
+			c.fills[fv] = append(c.fills[fv], fillSite{fn: fn.Origin()})
+		}
+	}
+}
+
 func run(pass *analysis.Pass) (any, error) {
 	c := &checker{
 		pass:    pass,
@@ -259,6 +411,8 @@ func run(pass *analysis.Pass) (any, error) {
 
 		fields:      map[*types.Var]bool{},
 		paramFields: map[*types.Func][]paramField{},
+		fills:       map[*types.Var][]fillSite{},
+		litSums:     map[*ast.FuncLit]*summary{},
 	}
 	var order []*types.Func
 	for _, f := range pass.Files {
@@ -279,6 +433,7 @@ func run(pass *analysis.Pass) (any, error) {
 			order = append(order, fn)
 		}
 	}
+	c.scanFills()
 
 	// Two fixed points. The checks first: whether a function refuses
 	// unstorable text depends only on its own body and the checks it
@@ -286,30 +441,42 @@ func run(pass *analysis.Pass) (any, error) {
 	// taint, so computing both at once would let a caller summarised
 	// before its check's callee keep a taint the check removes. Each
 	// field only grows within its phase and holds 64 bits, so both
-	// terminate; the cap is a guard against a bug.
+	// terminate; the cap is a guard against a bug. The fill literals
+	// ride the same rounds: their summaries feed the call sites that
+	// invoke the field.
+	merge := func(old *summary, s summary, flows bool) bool {
+		merged := *old
+		if flows {
+			merged.merge(s)
+			// A bind through a same-package helper is known only now:
+			// a check after it vets nothing, so it loses the credit
+			// phase 1 gave it. Check only shrinks here while Sink
+			// grows, so this ends.
+			merged.Check &^= merged.Sink
+		} else {
+			merged.Check |= s.Check
+		}
+		if merged.same(*old) {
+			return false
+		}
+		*old = merged
+		return true
+	}
 	for _, flows := range []bool{false, true} {
 		c.flows = flows
 		for round := 0; round < 32; round++ {
 			c.grew = false
 			changed := false
 			for _, fn := range order {
-				s := c.summarize(fn, c.decls[fn], nil)
-				old := c.local[fn]
-				merged := *old
-				if flows {
-					merged.Sink |= s.Sink
-					merged.Return |= s.Return
-					merged.Source = merged.Source || s.Source
-					// A bind through a same-package helper is known
-					// only now: a check after it vets nothing, so it
-					// loses the credit phase 1 gave it. Check only
-					// shrinks here while Sink grows, so this ends.
-					merged.Check &^= merged.Sink
-				} else {
-					merged.Check |= s.Check
+				if merge(c.local[fn], c.summarize(fn, c.decls[fn], nil), flows) {
+					changed = true
 				}
-				if merged != *old {
-					*old = merged
+			}
+			for _, lit := range c.lits {
+				if _, ok := c.litSums[lit]; !ok {
+					c.litSums[lit] = &summary{}
+				}
+				if merge(c.litSums[lit], c.summarizeLit(lit, nil), flows) {
 					changed = true
 				}
 			}
@@ -347,7 +514,7 @@ func run(pass *analysis.Pass) (any, error) {
 // import path with no dot in its first element, outside a testdata
 // tree (the fixtures share the spelling). Its bodies are summarised by
 // the defaults in throughCall instead: strings.ToLower goes through a
-// Builder this rule does not follow, and calling it a sanitiser would
+// Builder; calling it a sanitiser without checking its bytes would
 // clear every value it touches.
 func isStdlib(pass *analysis.Pass) bool {
 	if strings.Contains(strings.SplitN(pass.Pkg.Path(), "/", 2)[0], ".") {
@@ -359,15 +526,18 @@ func isStdlib(pass *analysis.Pass) bool {
 	return false
 }
 
-// fnState is one function body under evaluation.
+// fnState is one function body under evaluation. recv is the method
+// receiver's object, set for declared methods only.
 type fnState struct {
 	c       *checker
 	fn      *types.Func
 	fd      *ast.FuncDecl
+	recv    types.Object
 	params  map[*types.Var]int
 	results map[*types.Var]bool
 	parents map[ast.Node]ast.Node
 	defs    map[types.Object][]def
+	resets  map[*types.Var][]ast.Node
 	memo    map[ast.Node]taint
 	busy    map[ast.Node]bool
 	report  func(token.Pos, string)
@@ -385,56 +555,106 @@ type def struct {
 }
 
 func (c *checker) summarize(fn *types.Func, fd *ast.FuncDecl, report func(token.Pos, string)) summary {
-	st := &fnState{
-		c:       c,
-		fd:      fd,
-		params:  map[*types.Var]int{},
-		results: map[*types.Var]bool{},
-		parents: dominance.Parents(fd.Body),
-		defs:    map[types.Object][]def{},
-		memo:    map[ast.Node]taint{},
-		busy:    map[ast.Node]bool{},
-		report:  report,
-	}
 	sig := fn.Type().(*types.Signature)
-	for i := 0; i < sig.Params().Len(); i++ {
-		st.params[sig.Params().At(i)] = i
-	}
-	for i := 0; i < sig.Results().Len(); i++ {
-		st.results[sig.Results().At(i)] = true
+	st := c.newState(sig, fd.Body, report)
+	st.fn = fn
+	st.fd = fd
+	if fd.Recv != nil && len(fd.Recv.List) > 0 && len(fd.Recv.List[0].Names) > 0 {
+		st.recv = objOf(c.pass.TypesInfo, fd.Recv.List[0].Names[0])
 	}
 	st.collectDefs()
 
-	st.fn = fn
 	ast.Inspect(fd.Body, func(n ast.Node) bool {
-		switch x := n.(type) {
-		case *ast.CallExpr:
-			st.callSinks(x)
-			st.callFields(x)
-		case *ast.CompositeLit:
-			st.literalSink(x)
-			st.literalFields(x)
-		case *ast.AssignStmt:
-			st.assignFields(x)
-		case *ast.ReturnStmt:
-			if st.enclosingLit(x) {
-				return true
-			}
-			st.returnTaint(x)
-		}
+		st.walk(n)
 		return true
 	})
+	return st.finish()
+}
 
-	// Storable checks the body performs on its own parameters — after
-	// the walk, so a parameter whose bytes already reached a bind
-	// unchecked (the Sink bit) is not credited: a check that runs only
-	// after the parameter bound vets nothing.
+// summarizeLit evaluates a function literal assigned to a func-typed
+// field (a host callback fill site) the way summarize does a declared
+// function, so the call through the field can use its summary. The
+// literal's parameters are its own; it writes no param-field records
+// (its call sites are the field's invocation, not a constructor call).
+func (c *checker) summarizeLit(lit *ast.FuncLit, report func(token.Pos, string)) summary {
+	sig, _ := c.pass.TypesInfo.Types[lit].Type.Underlying().(*types.Signature)
+	if sig == nil {
+		return summary{}
+	}
+	st := c.newState(sig, lit.Body, report)
+	st.fd = &ast.FuncDecl{Type: lit.Type, Body: lit.Body}
+	i := 0
+	for _, field := range lit.Type.Params.List {
+		for _, name := range field.Names {
+			if v, ok := objOf(c.pass.TypesInfo, name).(*types.Var); ok {
+				st.params[v] = i
+			}
+			i++
+		}
+		if len(field.Names) == 0 {
+			i++
+		}
+	}
+	st.collectDefs()
+
+	ast.Inspect(lit.Body, func(n ast.Node) bool {
+		st.walk(n)
+		return true
+	})
+	return st.finish()
+}
+
+// walk is the shared body inspection of summarize and summarizeLit.
+func (st *fnState) walk(n ast.Node) {
+	switch x := n.(type) {
+	case *ast.CallExpr:
+		st.callSinks(x)
+		st.callFields(x)
+	case *ast.CompositeLit:
+		st.literalSink(x)
+		st.literalFields(x)
+	case *ast.AssignStmt:
+		st.assignFields(x)
+	case *ast.ReturnStmt:
+		if st.enclosingLit(x) {
+			return
+		}
+		st.returnTaint(x)
+	}
+}
+
+// finish computes the parameter checks after the walk, so a parameter
+// whose bytes already reached a bind unchecked (the Sink bit) is not
+// credited: a check that runs only after the parameter bound vets
+// nothing.
+func (st *fnState) finish() summary {
 	for v, i := range st.params {
 		if stringish(v.Type()) && st.bodyChecks(v) && !has(st.out.Sink, i) {
 			st.out.Check |= bit(i)
 		}
 	}
 	return st.out
+}
+
+func (c *checker) newState(sig *types.Signature, body ast.Node, report func(token.Pos, string)) *fnState {
+	st := &fnState{
+		c:       c,
+		params:  map[*types.Var]int{},
+		results: map[*types.Var]bool{},
+		parents: dominance.Parents(body),
+		defs:    map[types.Object][]def{},
+		resets:  map[*types.Var][]ast.Node{},
+		memo:    map[ast.Node]taint{},
+		busy:    map[ast.Node]bool{},
+		report:  report,
+	}
+	for i := 0; i < sig.Params().Len(); i++ {
+		st.params[sig.Params().At(i)] = i
+	}
+	for i := 0; i < sig.Results().Len(); i++ {
+		st.results[sig.Results().At(i)] = true
+	}
+	return st
 }
 
 // enclosingLit reports whether n sits in a function literal inside the
@@ -463,10 +683,38 @@ func (st *fnState) returnTaint(ret *ast.ReturnStmt) {
 			continue
 		}
 		t = t.or(st.exprTaint(r))
+		st.recordRetField(r)
 	}
 	st.out.Return |= t.params
 	if t.src {
 		st.out.Source = true
+	}
+}
+
+// recordRetField notes a return of the receiver's own field, the
+// BindValue shape: a method handing a field back to a package that
+// filled it with request text. Only stringish fields matter; the name
+// is resolved on the call site's receiver type when the summary is
+// used.
+func (st *fnState) recordRetField(r ast.Expr) {
+	if st.recv == nil {
+		return
+	}
+	sel, ok := ast.Unparen(r).(*ast.SelectorExpr)
+	if !ok {
+		return
+	}
+	if id, ok := ast.Unparen(sel.X).(*ast.Ident); !ok || objOf(st.c.pass.TypesInfo, id) != st.recv {
+		return
+	}
+	s, ok := st.c.pass.TypesInfo.Selections[sel]
+	if !ok || s.Kind() != types.FieldVal {
+		return
+	}
+	if fv, ok := s.Obj().(*types.Var); ok && fv.IsField() && stringish(fv.Type()) {
+		if !slices.Contains(st.out.RetFields, fv.Name()) {
+			st.out.RetFields = append(st.out.RetFields, fv.Name())
+		}
 	}
 }
 
@@ -741,6 +989,45 @@ func (st *fnState) collectDefs() {
 			if x.Key != nil {
 				add(x.Key, def{pos: x.Pos(), at: x, rangeOf: x.X})
 			}
+		case *ast.CallExpr:
+			// Standard writer helpers write to the same local builder.
+			if sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr); ok && len(x.Args) >= 2 {
+				if id, ok := sel.X.(*ast.Ident); ok {
+					if pkg, ok := info.Uses[id].(*types.PkgName); ok {
+						writes := pkg.Imported().Path() == "fmt" && (sel.Sel.Name == "Fprint" || sel.Sel.Name == "Fprintf" || sel.Sel.Name == "Fprintln") || pkg.Imported().Path() == "io" && sel.Sel.Name == "WriteString"
+						target := ast.Unparen(x.Args[0])
+						if addr, ok := target.(*ast.UnaryExpr); ok && addr.Op == token.AND {
+							target = ast.Unparen(addr.X)
+						}
+						if id, ok := target.(*ast.Ident); ok && writes {
+							if v, ok := objOf(info, id).(*types.Var); ok && isBuilder(v.Type()) {
+								for _, arg := range x.Args[1:] {
+									st.defs[v] = append(st.defs[v], def{pos: x.Pos(), at: x, rhs: arg})
+								}
+							}
+						}
+					}
+				}
+			}
+			// A strings.Builder collects what is written into it;
+			// String hands those bytes back.
+			if sel, ok := ast.Unparen(x.Fun).(*ast.SelectorExpr); ok {
+				if id, ok := ast.Unparen(sel.X).(*ast.Ident); ok {
+					if v, ok := objOf(info, id).(*types.Var); ok && isBuilder(v.Type()) {
+						switch sel.Sel.Name {
+						case "WriteString", "Write", "WriteByte", "WriteRune":
+							if len(x.Args) == 1 {
+								st.defs[v] = append(st.defs[v], def{pos: x.Pos(), at: x, rhs: x.Args[0]})
+							}
+						case "Reset":
+							// Not a clear: a read before this reset still
+							// sees the writes before it; builderTaint
+							// decides by position.
+							st.resets[v] = append(st.resets[v], x)
+						}
+					}
+				}
+			}
 		}
 		return true
 	})
@@ -970,6 +1257,12 @@ func (st *fnState) callTaint(call *ast.CallExpr) taint {
 		if src, ok := st.sourceCall(sel); ok {
 			return src
 		}
+		if t, ok := st.builderTaint(call, sel); ok {
+			return t
+		}
+		if t, ok := st.hostCallbackTaint(call, sel); ok {
+			return t
+		}
 	}
 
 	callees := st.c.callees(call)
@@ -982,6 +1275,248 @@ func (st *fnState) callTaint(call *ast.CallExpr) taint {
 		t = t.or(st.throughCall(call, fn))
 	}
 	return t
+}
+
+// builderTaint is the taint of a strings.Builder's collected bytes,
+// read through String: every WriteString/Write into it
+// before the use (loop back edges included), minus what a Reset
+// dropped.
+func (st *fnState) builderTaint(call *ast.CallExpr, sel *ast.SelectorExpr) (taint, bool) {
+	if sel.Sel.Name != "String" {
+		return taint{}, false
+	}
+	id, ok := ast.Unparen(sel.X).(*ast.Ident)
+	if !ok {
+		return taint{}, false
+	}
+	v, ok := objOf(st.c.pass.TypesInfo, id).(*types.Var)
+	if !ok || v.IsField() || !isBuilder(v.Type()) {
+		return taint{}, false
+	}
+	var t taint
+	for _, d := range st.defs[v] {
+		if d.pos >= call.Pos() && !st.inLoopWith(d.at, call) {
+			continue
+		}
+		if st.resetBetween(v, d, call) {
+			continue
+		}
+		t = t.or(st.builderWriteTaint(d.rhs, d.at, map[types.Object]bool{}))
+	}
+	return t, true
+}
+
+// builderWriteTaint also follows byte/rune values derived from request text.
+// Ordinary integer parameters and range offsets carry no text provenance.
+func (st *fnState) builderWriteTaint(e ast.Expr, use ast.Node, seen map[types.Object]bool) taint {
+	if e == nil {
+		return taint{}
+	}
+	typ := typeOf(st.c.pass, e)
+	if typ == nil {
+		return taint{}
+	}
+	basic, scalar := typ.Underlying().(*types.Basic)
+	if !scalar || basic.Info()&types.IsInteger == 0 {
+		return st.exprTaint(e)
+	}
+	switch x := ast.Unparen(e).(type) {
+	case *ast.BinaryExpr:
+		return st.builderWriteTaint(x.X, use, seen).or(st.builderWriteTaint(x.Y, use, seen))
+	case *ast.UnaryExpr:
+		return st.builderWriteTaint(x.X, use, seen)
+	case *ast.IndexExpr:
+		return st.exprTaint(x.X)
+	case *ast.CallExpr:
+		if tv, ok := st.c.pass.TypesInfo.Types[x.Fun]; ok && tv.IsType() && len(x.Args) == 1 {
+			return st.builderWriteTaint(x.Args[0], use, seen)
+		}
+	case *ast.Ident:
+		v, ok := objOf(st.c.pass.TypesInfo, x).(*types.Var)
+		if !ok || seen[v] {
+			return taint{}
+		}
+		seen[v] = true
+		defer delete(seen, v)
+		var out taint
+		for _, d := range st.defs[v] {
+			if d.pos >= use.Pos() && !st.inLoopWith(d.at, use) {
+				continue
+			}
+			if d.rangeOf != nil {
+				r, ok := d.at.(*ast.RangeStmt)
+				if ok {
+					if value, ok := r.Value.(*ast.Ident); ok && objOf(st.c.pass.TypesInfo, value) == v {
+						out = out.or(st.rangeTaint(d.rangeOf))
+					}
+				}
+			} else {
+				out = out.or(st.builderWriteTaint(d.rhs, d.at, seen))
+			}
+		}
+		return out
+	}
+	return taint{}
+}
+
+// resetBetween reports whether a Reset of the builder v sits between
+// the write d and the read call AND provably ran: a reset nested in a
+// conditional branch the read is not in may never execute, so it
+// clears nothing (fail closed — the write may still be in the
+// builder).
+func (st *fnState) resetBetween(v *types.Var, d def, call *ast.CallExpr) bool {
+	for _, r := range st.resets[v] {
+		if r.Pos() <= d.pos || r.End() > call.Pos() {
+			continue
+		}
+		if !st.unconditionalTo(r, call) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// unconditionalTo reports whether node r, which stands before use, is
+// not nested inside a construct that can skip it on the path to use:
+// a conditional (if/switch/select) whose taken branch may be another
+// arm, or a loop that may run zero times. Every path from the
+// function entry to use must pass r, as far as this syntactic check
+// can tell.
+func (st *fnState) unconditionalTo(r, use ast.Node) bool {
+	for p := st.parents[r]; p != nil; p = st.parents[p] {
+		switch b := p.(type) {
+		case *ast.IfStmt:
+			if !contains(b, use) || !sameArm(b, r, use) {
+				return false
+			}
+		case *ast.CaseClause, *ast.CommClause:
+			if !contains(p, use) {
+				return false
+			}
+		case *ast.SwitchStmt, *ast.TypeSwitchStmt, *ast.SelectStmt:
+			if !contains(p, use) {
+				return false
+			}
+		case *ast.ForStmt, *ast.RangeStmt:
+			// A loop may run zero times; when use is inside the
+			// loop too, resetBetween's inLoopWith already spoke.
+			if !contains(p, use) {
+				return false
+			}
+		case *ast.FuncLit:
+			return false
+		}
+	}
+	return true
+}
+
+// sameArm reports whether r and use sit in the same direct arm of the
+// if: both in Body, or both in the same Else subtree. A read in the
+// sibling arm runs on the path where the reset never did.
+func sameArm(b *ast.IfStmt, r, use ast.Node) bool {
+	inBody := contains(b.Body, r)
+	if inBody {
+		return contains(b.Body, use)
+	}
+	if b.Else == nil {
+		return false
+	}
+	return contains(b.Else, r) && contains(b.Else, use)
+}
+
+func isBuilder(t types.Type) bool {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	return isNamed(t, "strings", "Builder")
+}
+
+// hostCallbackTaint is the taint of a call through a func-typed struct
+// field — a host callback, d6167d1a's IdempotencyConfig.Principal,
+// whose result reached SQLIdempotencyStore.Begin's key bind unchecked.
+// With fill sites in this package the call sees what they return: the
+// fill's own summary, named function or literal. With no fill here, a
+// field this package declares whose callback takes an *http.Request
+// and returns a stringish value is read as request text: the host
+// installs it to read the request, and the declaring package is where
+// its result binds. The fill in another package (framework/app.go's
+// ownerPrincipal, installed from a dependent) stays a residual below.
+func (st *fnState) hostCallbackTaint(call *ast.CallExpr, sel *ast.SelectorExpr) (taint, bool) {
+	fv, ok := st.c.pass.TypesInfo.Uses[sel.Sel].(*types.Var)
+	if !ok || !fv.IsField() {
+		return taint{}, false
+	}
+	if _, ok := fv.Type().Underlying().(*types.Signature); !ok {
+		return taint{}, false
+	}
+	fv = fv.Origin()
+	fills := st.c.fills[fv]
+	if len(fills) == 0 {
+		if fv.Pkg() != st.c.pass.Pkg || !requestCallback(fv.Type().Underlying().(*types.Signature)) {
+			return taint{}, false
+		}
+		return taint{src: true}, true
+	}
+	var t taint
+	for _, f := range fills {
+		if f.fn != nil {
+			t = t.or(st.throughCall(call, f.fn))
+		}
+		if f.lit != nil {
+			t = t.or(st.litTaint(call, f.lit))
+		}
+	}
+	return t, true
+}
+
+// litTaint applies a fill literal's summary at the call through the
+// field: the arguments its return reads, minus the parameters it
+// checks, plus its own request reads.
+func (st *fnState) litTaint(call *ast.CallExpr, lit *ast.FuncLit) taint {
+	s, ok := st.c.litSums[lit]
+	if !ok {
+		return taint{}
+	}
+	sig, _ := st.c.pass.TypesInfo.Types[lit].Type.Underlying().(*types.Signature)
+	if sig == nil {
+		return taint{}
+	}
+	var t taint
+	for i, a := range call.Args {
+		pi := i
+		if sig.Variadic() && pi >= sig.Params().Len()-1 {
+			pi = sig.Params().Len() - 1
+		}
+		if has(s.Return&^s.Check, pi) {
+			t = t.or(st.exprTaint(a))
+		}
+	}
+	if s.Source {
+		t.src = true
+	}
+	return t
+}
+
+// requestCallback: a callback handed the request and returning a
+// stringish value — the shape a host installs to read the request.
+func requestCallback(sig *types.Signature) bool {
+	req := false
+	for i := range sig.Params().Len() {
+		if isRequest(sig.Params().At(i).Type()) {
+			req = true
+			break
+		}
+	}
+	if !req {
+		return false
+	}
+	for i := range sig.Results().Len() {
+		if stringish(sig.Results().At(i).Type()) {
+			return true
+		}
+	}
+	return false
 }
 
 // throughCall is the taint a call to fn passes on to its result.
@@ -1005,6 +1540,7 @@ func (st *fnState) throughCall(call *ast.CallExpr, fn *types.Func) taint {
 		if s.Source {
 			t.src = true
 		}
+		t = t.or(st.retFieldTaint(call, s.RetFields))
 		return t
 	}
 	// No summary. A function from a module (a dot in the path's first
@@ -1026,6 +1562,31 @@ func (st *fnState) throughCall(call *ast.CallExpr, fn *types.Func) taint {
 		}
 	}
 	return t
+}
+
+// retFieldTaint is the taint a call reads out of the receiver's named
+// fields (RetFields): a method returning its receiver's field hands
+// back whatever the caller stored in it, request text included, even
+// though the declaring package never wrote the field itself.
+func (st *fnState) retFieldTaint(call *ast.CallExpr, names []string) taint {
+	if len(names) == 0 {
+		return taint{}
+	}
+	sel, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+	if !ok {
+		return taint{}
+	}
+	recvT := typeOf(st.c.pass, sel.X)
+	if recvT == nil {
+		return taint{}
+	}
+	for _, name := range names {
+		obj, _, _ := types.LookupFieldOrMethod(recvT, true, st.c.pass.Pkg, name)
+		if fv, ok := obj.(*types.Var); ok && st.c.fieldHolds(fv) {
+			return taint{src: true}
+		}
+	}
+	return taint{}
 }
 
 func identOf(e ast.Expr) *ast.Ident {

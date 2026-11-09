@@ -496,9 +496,15 @@ func (a *assistApp) toolCommandHandler(build func(toolInput) assistCommand) http
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, "encode failed", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // localURL renders a listen address as the URL to open: a bare ":8090"

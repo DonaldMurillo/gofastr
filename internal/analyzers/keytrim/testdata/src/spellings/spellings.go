@@ -54,3 +54,14 @@ func rawID(frame struct{ ID json.RawMessage }) bool {
 	id := bytes.TrimSpace(frame.ID)
 	return len(id) > 0 && id[0] == '"'
 }
+
+// rawAlias is a host-declared alias of raw JSON: keytrim's rawJSON
+// walks the alias chain (since encoding/json v2, json.RawMessage is
+// itself an alias of jsontext.Value), so trimming it stays quiet — the
+// whitespace around raw JSON is not part of the value.
+type rawAlias = json.RawMessage
+
+func rawAliasID(frame struct{ ID rawAlias }) bool {
+	id := bytes.TrimSpace(frame.ID)
+	return len(id) > 0 && id[0] == '"'
+}

@@ -514,8 +514,18 @@ func writeJSON(w http.ResponseWriter, code int, body any) {
 	// would otherwise replay at another caller's URL.
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
+	// Encode before the status goes out: a body with no JSON form (a
+	// NaN, a chan) would otherwise answer code with an empty body.
+	b, err := json.Marshal(body)
+	if err != nil {
+		log.Printf("harness rest: encode %T: %v", body, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		//gofastr:allow(rawtext) the control API is an agent contract, writeError's posture: reason is the stable code, message the English detail
+		_, _ = w.Write([]byte(`{"reason":"InternalError","message":"the response could not be encoded"}` + "\n"))
+		return
+	}
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(body)
+	_, _ = w.Write(append(b, '\n'))
 }
 
 //gofastr:allow(rawtext) the control API is an agent contract: reason is its stable code and msg the English detail an agent reads, never a page

@@ -138,12 +138,24 @@ func safeShapes(w io.Writer, a ackResponse, h hiddenResponse, s stampedResponse)
 	w.Write(b)
 }
 
-// notEnvelope: a map or a page of rows can fail too, but the arm is
-// scoped to protocol envelopes (see the package doc for the counts).
-func notEnvelope(w io.Writer, rows []map[string]any, f float64) {
-	json.NewEncoder(w).Encode(rows)
-	b, _ := json.Marshal(map[string]any{"ratio": f})
+// nonEnvelope: since the 2026-11-08 widening (#669), a map or a page
+// of rows that can fail to encode reports without being an envelope:
+// a NaN row silently empties a CRUD page or an SSE event.
+func nonEnvelope(w io.Writer, rows []map[string]any, f float64) {
+	json.NewEncoder(w).Encode(rows)                  // want `Encode error discarded on a \[\]map\[string\]any`
+	b, _ := json.Marshal(map[string]any{"ratio": f}) // want `json.Marshal error discarded on a map\[string\]any`
 	w.Write(b)
+	_, _ = json.MarshalIndent(rows, "", " ") // want `json.MarshalIndent error discarded on a \[\]map\[string\]any`
+}
+
+// plainValues cannot fail: a slice of ints and a map of strings stay
+// quiet even with the error dropped (the write can fail, not the
+// encode; a lost client is not news).
+func plainValues(w io.Writer, ids []int, names map[string]string, note struct{ Text string }) {
+	json.NewEncoder(w).Encode(ids)
+	b, _ := json.Marshal(names)
+	w.Write(b)
+	_ = json.NewEncoder(w).Encode(note)
 }
 
 // otherEncoder is not encoding/json.

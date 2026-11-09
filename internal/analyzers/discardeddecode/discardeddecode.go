@@ -46,32 +46,29 @@
 //     source operand and have no such spelling;
 //   - _test.go files.
 //
-// The encode arm (2026-11 bug bash): json.Marshal / json.MarshalIndent
-// with the error blanked (`b, _ := json.Marshal(v)`) and Encode on a
-// json Encoder with its error blanked or dropped as a bare statement,
-// when the encoded value is a JSON-RPC envelope (a struct with a field
-// tagged json:"jsonrpc") that can actually fail to encode: it
-// holds, at any depth through exported fields, slices, arrays, maps and
-// pointers, an interface (any, map[string]any), a json.RawMessage, a
-// float (NaN and ±Inf are refused), a chan, a func or a complex — and,
-// since the 2026-11-03 round, a map whose key is none of a string, an
-// integer and a TextMarshaler (map[float64]string is always refused,
-// "unsupported key type"). Bug
-// 3516c4d9b: core/mcp's transports encoded a dispatched Response (its
-// Result is `any`) with the error dropped, so a NaN in a content block's
-// _meta answered HTTP with an empty 200 body and stdio with no line at
-// all; the client waited on a reply that never came. The fix spelling is
-// core/mcp encodeResponse: check the error and answer an internal error
-// instead. A composite literal is judged by what it sets: the fields a
-// struct literal leaves out are zero and encode, and a map or slice
-// literal by its elements. Scoped to envelopes because every encode that
-// can fail measured 84 sites over ./... (57 with literals read by their
-// values), mostly HTTP handlers acking with a map or a CRUD page of
-// rows; a protocol peer waiting on its reply is where an empty body is
-// a hang (protocolEnvelope carries the counts). Quiet: a non-envelope
-// value, a value of only strings, ints, bools, byte slices and
-// structs of them (the marshal cannot fail; only the write can, and a
-// lost client is not news), a type that implements json.Marshaler or
+// The encode arm (2026-11 bug bash, widened 2026-11-08 by #669):
+// json.Marshal / json.MarshalIndent with the error blanked
+// (`b, _ := json.Marshal(v)`) and Encode on a json Encoder with its
+// error blanked or dropped as a bare statement, when the encoded value
+// can actually fail to encode: it holds, at any depth through exported
+// fields, slices, arrays, maps and pointers, an interface (any,
+// map[string]any), a json.RawMessage, a float (NaN and ±Inf are
+// refused), a chan, a func or a complex — and a map whose key is none
+// of a string, an integer and a TextMarshaler (map[float64]string is
+// refused when nonempty, "unsupported key type"). Bug 3516c4d9b: core/mcp's
+// transports encoded a dispatched Response (its Result is `any`) with
+// the error dropped, so a NaN in a content block's _meta answered HTTP
+// with an empty 200 body and stdio with no line at all; the client
+// waited on a reply that never came. The fix spelling is core/mcp
+// encodeResponse: check the error and answer an internal error instead.
+// A composite literal is judged by what it sets: the fields a struct
+// literal leaves out are zero and encode, and a map or slice literal
+// by its elements. Non-envelope replies and event payloads need the
+// same check: an unencodable CRUD row must not disappear silently.
+// Quiet: a
+// value of only strings, ints, bools, byte slices and structs of them
+// (the marshal cannot fail; only the write can, and a lost client is
+// not news), a type that implements json.Marshaler or
 // encoding.TextMarshaler (its own contract, time.Time among them),
 // fields tagged json:"-" and unexported fields, and the checked
 // spellings.
@@ -111,7 +108,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if len(st.Rhs) == 1 && len(st.Lhs) == 2 {
 					if id, ok := st.Lhs[1].(*ast.Ident); ok && id.Name == "_" {
 						if call, ok := st.Rhs[0].(*ast.CallExpr); ok {
-							if label, arg, ok := encodeCall(pass, call); ok && protocolEnvelope(pass, arg) {
+							if label, arg, ok := encodeCall(pass, call); ok && canFailExpr(pass, arg) {
 								reportEncode(pass, call, label, pass.TypesInfo.TypeOf(arg))
 							}
 						}
@@ -132,7 +129,7 @@ func run(pass *analysis.Pass) (any, error) {
 					if label, ok := familyCall(pass, call); ok {
 						report(pass, call, label)
 					}
-					if label, arg, ok := encoderCall(pass, call); ok && protocolEnvelope(pass, arg) {
+					if label, arg, ok := encoderCall(pass, call); ok && canFailExpr(pass, arg) {
 						reportEncode(pass, call, label, pass.TypesInfo.TypeOf(arg))
 					}
 				}
@@ -145,7 +142,7 @@ func run(pass *analysis.Pass) (any, error) {
 				if label, ok := familyCall(pass, call); ok {
 					report(pass, call, label)
 				}
-				if label, arg, ok := encoderCall(pass, call); ok && protocolEnvelope(pass, arg) {
+				if label, arg, ok := encoderCall(pass, call); ok && canFailExpr(pass, arg) {
 					reportEncode(pass, call, label, pass.TypesInfo.TypeOf(arg))
 				}
 			}
@@ -327,34 +324,6 @@ func encoderCall(pass *analysis.Pass, call *ast.CallExpr) (string, ast.Expr, boo
 		return "", nil, false
 	}
 	return "Encode", call.Args[0], true
-}
-
-// protocolEnvelope reports whether e is a JSON-RPC envelope (a struct,
-// or a pointer to one, with a field tagged json:"jsonrpc") whose encode
-// can fail. The arm is scoped to envelopes: measured over ./... on
-// 2026-11-02, every encode of a value that can fail found 84 sites,
-// and 57 once literal maps were read by the values they hold, mostly
-// HTTP handlers acking with a map or a CRUD page of rows. An envelope is
-// the case where the reader is a protocol peer that waits on the
-// reply: an empty body or a missing line is a hang, not a blank page.
-func protocolEnvelope(pass *analysis.Pass, e ast.Expr) bool {
-	t := pass.TypesInfo.TypeOf(e)
-	if t == nil {
-		return false
-	}
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	st, ok := t.Underlying().(*types.Struct)
-	if !ok {
-		return false
-	}
-	for i := range st.NumFields() {
-		if jsonName(st.Tag(i)) == "jsonrpc" {
-			return canFailExpr(pass, e)
-		}
-	}
-	return false
 }
 
 // canFailExpr reports whether encoding e can fail. A composite literal

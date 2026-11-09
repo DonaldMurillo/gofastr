@@ -395,18 +395,24 @@ It matches any query term against `to_tsvector('simple', text)` (no
 stemming) and ranks by `ts_rank`; fusion uses rank order only. Terms are
 split the way `MemoryKeyword` splits them, runs of letters and digits, so a
 token Postgres keeps whole (an email address, a URL, `3.14`) is not matched
-by its parts. The search scans the table; for a large one, add the index
-the query can use:
-
-```sql
-CREATE INDEX ON embed_chunks USING gin (to_tsvector('simple', text));
-```
+by its parts. `EnsureSchema` creates the GIN index over that exact
+`to_tsvector('simple', text)` expression, so the planner can use an index
+for keyword queries; a table created before this was automatic
+gets it on the next `EnsureSchema` (`CREATE INDEX IF NOT EXISTS`). The
+index must match the search's predicate exactly, so leave the expression
+as is when tuning.
 
 `Open` refuses `MemoryKeyword` with a `PgVectorStore`: it would hold only
 the writes of the process that made it, so replicas' hybrid results would
 drift apart. It also refuses one store's `Keyword()` paired with another
 store. A host's own in-process `KeywordBackend` is filled from the table's
 rows at `Open`, with no deadline, and a read that fails fails `Open`.
+
+A custom store paired with `Options.Keyword` implements
+`ChunkIDsForDoc(docID string) ([]string, error)`, `ChunkByID` and
+`AllChunks`. A chunk-listing error refuses a replacement or removal
+before the store changes; a WAL-backed index also refuses it before
+logging the mutation. In-memory stores return a nil error.
 
 **Replace is one transaction.** `Index.Add` and `Index.Remove` on a
 `PgVectorStore` delete a document's old chunks and insert its new ones in a

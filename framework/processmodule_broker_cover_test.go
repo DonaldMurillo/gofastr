@@ -98,7 +98,10 @@ func TestRawBody_nilAndValue(t *testing.T) {
 // ---- mapMutationResult ----
 
 func TestMapMutationResult_envelope(t *testing.T) {
-	res := mapMutationResult(map[string]any{"data": map[string]any{"id": 7}})
+	res, err := mapMutationResult(map[string]any{"data": map[string]any{"id": 7}})
+	if err != nil {
+		t.Fatalf("mapMutationResult: %v", err)
+	}
 	if res.Affected != 1 {
 		t.Errorf("Affected = %d, want 1", res.Affected)
 	}
@@ -108,14 +111,20 @@ func TestMapMutationResult_envelope(t *testing.T) {
 }
 
 func TestMapMutationResult_nil(t *testing.T) {
-	res := mapMutationResult(nil)
+	res, err := mapMutationResult(nil)
+	if err != nil {
+		t.Fatalf("mapMutationResult(nil): %v", err)
+	}
 	if res.Affected != 1 || res.Rows != nil {
 		t.Errorf("nil mapMutationResult = %+v, want Affected=1 nil Rows", res)
 	}
 }
 
 func TestMapMutationResult_rawValue(t *testing.T) {
-	res := mapMutationResult("plain")
+	res, err := mapMutationResult("plain")
+	if err != nil {
+		t.Fatalf("mapMutationResult(raw): %v", err)
+	}
 	if res.Affected != 1 || string(res.Rows) != `"plain"` {
 		t.Errorf("raw mapMutationResult = %+v, want Affected=1 quoted value", res)
 	}
@@ -124,10 +133,14 @@ func TestMapMutationResult_rawValue(t *testing.T) {
 // ---- mapSearchResult ----
 
 func TestMapSearchResult_envelopeData(t *testing.T) {
-	r := mapSearchResult(map[string]any{
+	v, err := mapSearchResult(map[string]any{
 		"data":  []any{"x"},
 		"total": json.Number("3"),
-	}).(moduleproto.SearchQueryResult)
+	})
+	if err != nil {
+		t.Fatalf("mapSearchResult: %v", err)
+	}
+	r := v.(moduleproto.SearchQueryResult)
 	if r.Total != 3 || string(r.Results) == "" {
 		t.Errorf("data-envelope search result = %+v", r)
 	}
@@ -136,10 +149,14 @@ func TestMapSearchResult_envelopeWithoutData(t *testing.T) {
 	// An envelope whose "data" key is absent: json.Marshal(nil) yields
 	// "null", so Results carries that literal (the results-fallback only
 	// fires when Marshal returns nil bytes, which it never does).
-	r := mapSearchResult(map[string]any{
+	v, err := mapSearchResult(map[string]any{
 		"results": []any{"y"},
 		"total":   json.Number("2"),
-	}).(moduleproto.SearchQueryResult)
+	})
+	if err != nil {
+		t.Fatalf("mapSearchResult: %v", err)
+	}
+	r := v.(moduleproto.SearchQueryResult)
 	if r.Total != 2 {
 		t.Errorf("Total = %d, want 2", r.Total)
 	}
@@ -149,7 +166,11 @@ func TestMapSearchResult_envelopeWithoutData(t *testing.T) {
 }
 
 func TestMapSearchResult_rawValue(t *testing.T) {
-	r := mapSearchResult(42).(moduleproto.SearchQueryResult)
+	v, err := mapSearchResult(42)
+	if err != nil {
+		t.Fatalf("mapSearchResult(raw): %v", err)
+	}
+	r := v.(moduleproto.SearchQueryResult)
 	if string(r.Results) != "42" {
 		t.Errorf("raw search result = %s, want 42", string(r.Results))
 	}

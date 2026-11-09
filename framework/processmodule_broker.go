@@ -490,7 +490,7 @@ func (b *Broker) dispatchEntity(op entityOp, ent *entity.Entity, ctx context.Con
 		if err != nil {
 			return nil, mapRedispatchErr(err)
 		}
-		return mapMutationResult(res), nil
+		return mapMutationResult(res)
 	case opUpdate:
 		var p moduleproto.EntityMutationParams
 		if err := unmarshalParams(params, &p); err != nil {
@@ -505,7 +505,7 @@ func (b *Broker) dispatchEntity(op entityOp, ent *entity.Entity, ctx context.Con
 		if err != nil {
 			return nil, mapRedispatchErr(err)
 		}
-		return mapMutationResult(res), nil
+		return mapMutationResult(res)
 	case opDelete:
 		var p moduleproto.EntityMutationParams
 		if err := unmarshalParams(params, &p); err != nil {
@@ -557,7 +557,7 @@ func (b *Broker) searchHandler(view ModuleGrantView) moduleproto.Handler {
 		if err != nil {
 			return nil, mapRedispatchErr(err)
 		}
-		return mapSearchResult(res), nil
+		return mapSearchResult(res)
 	}
 }
 
@@ -860,10 +860,16 @@ func mapQueryResult(res any) (any, error) {
 	env, ok := res.(map[string]any)
 	if !ok {
 		// Non-envelope (rare): return the raw value as rows.
-		raw, _ := json.Marshal(res)
-		return moduleproto.EntityQueryResult{Rows: raw}, nil
+		rows, err := json.Marshal(res)
+		if err != nil {
+			return nil, fmt.Errorf("encode query rows: %w", err)
+		}
+		return moduleproto.EntityQueryResult{Rows: rows}, nil
 	}
-	rows, _ := json.Marshal(env["data"])
+	rows, err := json.Marshal(env["data"])
+	if err != nil {
+		return nil, fmt.Errorf("encode query rows: %w", err)
+	}
 	total := 0
 	if raw, present := env["total"]; present {
 		t, ok := envelopeTotal(raw)
@@ -889,29 +895,38 @@ func envelopeTotal(raw any) (int, bool) {
 	return int(t), true
 }
 
-func mapMutationResult(res any) moduleproto.EntityMutationResult {
+func mapMutationResult(res any) (moduleproto.EntityMutationResult, error) {
 	if env, ok := res.(map[string]any); ok {
-		raw, _ := json.Marshal(env["data"])
-		return moduleproto.EntityMutationResult{Affected: 1, Rows: raw}
+		raw, err := json.Marshal(env["data"])
+		if err != nil {
+			return moduleproto.EntityMutationResult{}, fmt.Errorf("encode mutation rows: %w", err)
+		}
+		return moduleproto.EntityMutationResult{Affected: 1, Rows: raw}, nil
 	}
 	if res == nil {
-		return moduleproto.EntityMutationResult{Affected: 1}
+		return moduleproto.EntityMutationResult{Affected: 1}, nil
 	}
-	raw, _ := json.Marshal(res)
-	return moduleproto.EntityMutationResult{Affected: 1, Rows: raw}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return moduleproto.EntityMutationResult{}, fmt.Errorf("encode mutation rows: %w", err)
+	}
+	return moduleproto.EntityMutationResult{Affected: 1, Rows: raw}, nil
 }
 
-func mapSearchResult(res any) any {
+func mapSearchResult(res any) (any, error) {
 	if env, ok := res.(map[string]any); ok {
-		raw, _ := json.Marshal(env["data"])
-		if raw == nil {
-			raw, _ = json.Marshal(env["results"])
+		raw, err := json.Marshal(env["data"])
+		if err != nil {
+			return nil, fmt.Errorf("encode search results: %w", err)
 		}
 		total, _ := envelopeTotal(env["total"])
-		return moduleproto.SearchQueryResult{Results: raw, Total: total}
+		return moduleproto.SearchQueryResult{Results: raw, Total: total}, nil
 	}
-	raw, _ := json.Marshal(res)
-	return moduleproto.SearchQueryResult{Results: raw}
+	raw, err := json.Marshal(res)
+	if err != nil {
+		return nil, fmt.Errorf("encode search results: %w", err)
+	}
+	return moduleproto.SearchQueryResult{Results: raw}, nil
 }
 
 // mapRedispatchErr converts a CRUD chokepoint failure into a wire error. A

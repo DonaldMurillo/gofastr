@@ -34,7 +34,7 @@ type snapshotter interface {
 // Otherwise hybrid search would silently drop keyword hits and deletes would
 // leave stale keyword entries.
 type chunkLister interface {
-	ChunkIDsForDoc(docID string) []string
+	ChunkIDsForDoc(docID string) ([]string, error)
 	ChunkByID(id string) (Chunk, bool)
 	AllChunks() []Chunk
 }
@@ -521,6 +521,18 @@ func (i *index) replaceLocked(ctx context.Context, docIDs []string, chunks []Chu
 				return err
 			}
 		}
+		// Collect the prior keyword IDs BEFORE the WAL append: a listing
+		// that fails must refuse the replace before anything is logged,
+		// or the WAL would hold a mutation the caller was told failed and
+		// a reopen could apply it.
+		var priorKeyword []string
+		for _, id := range docIDs {
+			prior, err := i.collectChunkIDs(id)
+			if err != nil {
+				return err
+			}
+			priorKeyword = append(priorKeyword, prior...)
+		}
 		e := walEntry{Op: walOpReplace, DocIDs: docIDs, Chunks: chunks}
 		if len(chunks) > 0 {
 			e.Model = i.embedder.Name()
@@ -528,10 +540,7 @@ func (i *index) replaceLocked(ctx context.Context, docIDs []string, chunks []Chu
 		if err := i.wal.append(e); err != nil {
 			return err
 		}
-		logged = &pendingReplace{docIDs: docIDs, chunks: chunks}
-		for _, id := range docIDs {
-			logged.priorKeyword = append(logged.priorKeyword, i.collectChunkIDs(id)...)
-		}
+		logged = &pendingReplace{docIDs: docIDs, chunks: chunks, priorKeyword: priorKeyword}
 	}
 	// Past this point the replace is logged: store and keyword index
 	// apply it (ctx no longer cancels). A panic or error mid-apply leaves
@@ -618,7 +627,11 @@ func (i *index) applyReplaceLocked(ctx context.Context, r docReplacer, docIDs []
 	}()
 	var prior []string
 	for _, id := range docIDs {
-		prior = append(prior, i.collectChunkIDs(id)...)
+		ids, err := i.collectChunkIDs(id)
+		if err != nil {
+			return err
+		}
+		prior = append(prior, ids...)
 	}
 	if err := r.replaceDocs(ctx, i.embedder.Name(), docIDs, chunks); err != nil {
 		return err
@@ -675,7 +688,10 @@ func (i *index) applyRemoveLocked(ctx context.Context, docID string) (err error)
 	}()
 	// Collect prior chunk IDs under the same lock as the mutation so the
 	// keyword cleanup matches the exact state being removed.
-	priorChunkIDs := i.collectChunkIDs(docID)
+	priorChunkIDs, err := i.collectChunkIDs(docID)
+	if err != nil {
+		return err
+	}
 	if err := i.store.RemoveDoc(ctx, docID); err != nil {
 		return err
 	}
@@ -686,13 +702,17 @@ func (i *index) applyRemoveLocked(ctx context.Context, docID string) (err error)
 	return nil
 }
 
-func (i *index) collectChunkIDs(docID string) []string {
+// collectChunkIDs lists a doc's chunk IDs for the keyword purge. A
+// store that cannot list them fails: folding the failure into an empty
+// list would purge nothing and orphan keyword entries pointing at a
+// doc whose chunks are gone.
+func (i *index) collectChunkIDs(docID string) ([]string, error) {
 	if i.keyword == nil {
-		return nil
+		return nil, nil
 	}
 	cl, ok := i.store.(chunkLister)
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	return cl.ChunkIDsForDoc(docID)
 }

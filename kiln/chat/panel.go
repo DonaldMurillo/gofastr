@@ -1123,7 +1123,9 @@ func summarizeArgs(args map[string]any) string {
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(args)
+	if err := enc.Encode(args); err != nil {
+		return "args=?"
+	}
 	s := strings.TrimSpace(buf.String())
 	if len(s) > 80 {
 		s = s[:80] + "…"

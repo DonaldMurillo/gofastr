@@ -17,10 +17,12 @@ package framework
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
@@ -124,7 +126,7 @@ func (c *OAuthProtectedResourceConfig) metadataPaths() []string {
 }
 
 // handleOAuthProtectedResource emits the RFC 9728 metadata document.
-func (a *App) handleOAuthProtectedResource(w http.ResponseWriter, _ *http.Request) {
+func (a *App) handleOAuthProtectedResource(w http.ResponseWriter, r *http.Request) {
 	cfg := a.oauthResource
 	if cfg == nil {
 		http.NotFound(w, nil)
@@ -160,9 +162,14 @@ func (a *App) handleOAuthProtectedResource(w http.ResponseWriter, _ *http.Reques
 		doc["resource_tos_uri"] = cfg.ResourceTOSURI
 	}
 
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		slog.Warn("oauth resource metadata: encode document", "error", err)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(doc)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }

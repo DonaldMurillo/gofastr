@@ -33,10 +33,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/jcs"
 )
 
@@ -292,11 +294,18 @@ func (ds *UIHost) handleJWKS(w http.ResponseWriter, req *http.Request) {
 	for _, k := range ds.agentReady.signing.keys {
 		keys = append(keys, k.jwk)
 	}
+	b, err := json.MarshalIndent(map[string]any{"keys": keys}, "", "  ")
+	if err != nil {
+		// A host-filled JWK member with no JSON form would answer an
+		// empty key set; answer 500 so verifiers treat it as failed.
+		slog.Warn("uihost: encode JWK set", "error", err)
+		i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	w.Header().Set("Content-Type", "application/jwk-set+json")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(map[string]any{"keys": keys})
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // pinnedBaseURL returns the explicit, server-configured origin the

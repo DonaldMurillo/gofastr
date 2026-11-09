@@ -186,6 +186,10 @@ are per-user data (the same rule that requires `Scope.OwnerField` on
 entities, see [entity declarations](entity-declarations.md) → Per-user
 scoping).
 
+`Config.Owner` and `Config.Tenant` callback results must be valid UTF-8
+without NUL. Invalid identity text returns HTTP 401 with the JSON-RPC
+unauthenticated error before the task store runs.
+
 Every task is owned by the principal that created it. Reads, resumes,
 cancels, and push configs are scoped to that owner in the store; another
 owner's task id is indistinguishable from an unknown one

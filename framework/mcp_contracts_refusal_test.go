@@ -2,12 +2,12 @@ package framework
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/contractstest"
 )
 
 // toolCall is a tools/call request body for name with JSON arguments.
@@ -63,10 +63,8 @@ func TestContractsFixPartialWriteOverMCP(t *testing.T) {
 		"b.go": "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +
 			"func wireB(r *router.Router) {\n\tr.Handle(\"put\", \"/b\", nil)\n}\n",
 	})
-	if err := os.Chmod(filepath.Join(dir, "b.go"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
+	// Discovery reads the linked source; Apply refuses it after a.go.
+	contractstest.ObstructApply(t, filepath.Join(dir, "b.go"))
 	app := NewApp(WithConfig(AppConfig{Name: "mcp-partial"}), WithMCP(), WithMCPIntrospection())
 	app, cleanup := startApp(t, app)
 	t.Cleanup(cleanup)

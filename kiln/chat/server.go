@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"slices"
 	"strconv"
@@ -275,6 +276,7 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 	// Live.Apply can mutate the data mid-encode. The marshalled bytes
 	// (no session pointers) are written to w afterward.
 	var buf bytes.Buffer
+	var encErr error
 	s.live.ReadSession(func(sess *journal.Session) {
 		out := map[string]any{}
 
@@ -350,8 +352,13 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 			out["chat"] = sess.Chat
 		}
 
-		_ = json.NewEncoder(&buf).Encode(out)
+		encErr = json.NewEncoder(&buf).Encode(out)
 	})
+	if encErr != nil {
+		log.Printf("kiln: status response could not be encoded: %v", encErr)
+		http.Error(w, "the status could not be encoded", http.StatusInternalServerError)
+		return
+	}
 
 	// Per-session JSON: a back/forward cache or a non-conforming proxy
 	// must not retain one session's status snapshot (chat, plans, world
@@ -370,6 +377,7 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 	// the IR is human-readable in a tab, the shape is identical, so
 	// automated callers parsing JSON don't care about whitespace.
 	var buf bytes.Buffer
+	var encErr error
 	s.live.ReadSession(func(sess *journal.Session) {
 		resp := map[string]any{
 			// Redacted copy: the world carries App.Auth.JWTSecret (a
@@ -385,8 +393,13 @@ func (s *Server) serveWorld(w http.ResponseWriter, r *http.Request) {
 		enc := json.NewEncoder(&buf)
 		enc.SetIndent("", "  ")
 		enc.SetEscapeHTML(false)
-		_ = enc.Encode(resp)
+		encErr = enc.Encode(resp)
 	})
+	if encErr != nil {
+		log.Printf("kiln: world response could not be encoded: %v", encErr)
+		http.Error(w, "the world could not be encoded", http.StatusInternalServerError)
+		return
+	}
 	// no-store for the same reason serveStatus sets it: this body is
 	// one session's world and chat timeline, credentials included
 	// before redaction.
@@ -535,8 +548,14 @@ func (s *Server) applyEntry(kind journal.Kind, payload any) error {
 }
 
 func writeResult(w http.ResponseWriter, res protocol.Result) {
+	b, err := json.Marshal(res)
+	if err != nil {
+		log.Printf("kiln: tool result could not be encoded: %v", err)
+		http.Error(w, "the result could not be encoded", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(res)
+	_, _ = w.Write(append(b, '\n'))
 }
 
 // dispatch is the bridge from JSON tool calls to typed Tools methods. The

@@ -670,9 +670,10 @@ func valueArg1(call *ast.CallExpr) []ast.Expr {
 func (a *analyzer) qualifiedFunc(fun ast.Expr) string {
 	sel, ok := ast.Unparen(fun).(*ast.SelectorExpr)
 	if !ok {
-		if id, ok := fun.(*ast.Ident); ok {
-			return id.Name
-		}
+		// A bare-ident callee (a local function) can never equal a
+		// dotted package name, and every caller compares against
+		// those; its own name says nothing here. scrubNamed reads
+		// local names directly, not through this.
 		return ""
 	}
 	if pkg := a.pkgNameOf(sel); pkg != "" {

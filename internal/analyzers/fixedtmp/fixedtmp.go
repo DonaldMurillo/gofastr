@@ -326,9 +326,11 @@ func tempRootedPredictableWith(pass *analysis.Pass, e ast.Expr, bound map[types.
 				ops := pathflow.ConcatOperands(x, nil)
 				tail = ops[1:]
 			}
-			if len(tail) == 0 {
-				tail = []ast.Expr{r} // "/tmp/literal" whole-path literal
-			}
+			// An empty tail means r is a whole-path literal or a one-argument
+			// shape whose only operand is the temp root itself — both
+			// constant by construction, so there is nothing to scan for
+			// entropy; fixed is fixed. (This used to loop over [r] anyway,
+			// a check no reachable shape could flip.)
 			for _, t := range tail {
 				if hasEntropy(pass, t, bound, hist, ctx, 0) {
 					return false

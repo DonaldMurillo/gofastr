@@ -132,9 +132,8 @@ func TestLocalStorage_DeleteMissingIsNotExist(t *testing.T) {
 // Surfaces: core/upload/local.go:Delete, core/upload/local.go:Exists.
 func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("POSIX permission bits are required to force the failing syscall deterministically")
+		t.Skip("POSIX path semantics are required to force the failing syscall deterministically")
 	}
-	requirePOSIXFileModes(t)
 	t.Parallel()
 
 	base := t.TempDir()
@@ -145,31 +144,26 @@ func TestDeleteExistsLeakNoAbsPath(t *testing.T) {
 	if err := os.MkdirAll(sub, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(sub, "f.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// r-x: traversal and stat succeed, unlink is denied.
-	if err := os.Chmod(sub, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = os.Chmod(sub, 0o700) }() // let t.TempDir cleanup remove it
-
-	// Surface 1: Delete failure must not carry the absolute path.
-	err := store.Delete(ctx, "sub/f.txt")
-	if err == nil {
-		t.Fatal("Delete unexpectedly succeeded in a non-writable directory; test setup is wrong")
+	// A missing leaf forces Remove to fail for every uid. Its PathError
+	// still carries the absolute path that Delete must scrub.
+	err := store.Delete(ctx, "sub/missing.txt")
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Delete = %v, want a wrapped not-exist error", err)
 	}
 	if strings.Contains(err.Error(), base) {
-		t.Errorf("SECURITY: [upload-path-leak] Delete error discloses the absolute storage path: %q. Save and open scrub this exact class; erase_data.go and DeleteFileField embed this message in operator-facing errors.", err.Error())
+		t.Errorf("Delete error discloses the absolute storage path: %q", err)
 	}
 
-	// Surface 2: Exists failure must not carry the absolute path.
-	if err := os.Chmod(sub, 0o000); err != nil {
+	// Surface 2: Exists failure must not carry the absolute path. A
+	// regular file where a key's directory component should be fails
+	// the resolution with ENOTDIR — deterministically, for root the
+	// same as anyone: no permission bit is involved.
+	if err := os.WriteFile(filepath.Join(base, "notdir"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = store.Exists(ctx, "sub/f.txt")
+	_, err = store.Exists(ctx, "notdir/f.txt")
 	if err == nil {
-		t.Fatal("Exists unexpectedly succeeded under an untraversable directory; test setup is wrong")
+		t.Fatal("Exists unexpectedly succeeded under a non-directory component; test setup is wrong")
 	}
 	if strings.Contains(err.Error(), base) {
 		t.Errorf("SECURITY: [upload-path-leak] Exists error discloses the absolute storage path: %q, unlike Save/open.", err.Error())

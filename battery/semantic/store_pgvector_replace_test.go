@@ -16,7 +16,11 @@ import (
 func docTexts(t *testing.T, s *PgVectorStore, docID string) []string {
 	t.Helper()
 	var out []string
-	for _, id := range s.ChunkIDsForDoc(docID) {
+	ids, err := s.ChunkIDsForDoc(docID)
+	if err != nil {
+		t.Fatalf("list chunks for %s: %v", docID, err)
+	}
+	for _, id := range ids {
 		c, ok := s.ChunkByID(id)
 		if !ok {
 			t.Fatalf("chunk %q listed but not readable", id)

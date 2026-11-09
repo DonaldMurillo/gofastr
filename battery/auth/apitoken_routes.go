@@ -289,9 +289,7 @@ func (p *TokensPlugin) listTokensHandler() http.HandlerFunc {
 		// Per-caller token inventory (names, prefixes, scopes, last-used):
 		// replayable recon from a shared machine's cache, so the body is
 		// uncacheable, the same posture /auth/me pins.
-		writeCredentialHeaders(w)
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"tokens": out})
+		writeAuthJSON(w, r, http.StatusOK, map[string]any{"tokens": out})
 	}
 }
 

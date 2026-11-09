@@ -29,7 +29,10 @@ func TestMCPSessionListHonoursTokenScope(t *testing.T) {
 	}
 	for name, req := range reqs {
 		resp := runMCPRequest(t, s, req)
-		raw := jsonString(resp["result"])
+		raw, err := jsonString(resp["result"])
+		if err != nil {
+			t.Fatalf("%s: encode result: %v", name, err)
+		}
 		if !strings.Contains(raw, string(sessA)) {
 			t.Fatalf("%s: own session %s missing from %s", name, sessA, raw)
 		}

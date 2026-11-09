@@ -11,7 +11,6 @@ package session
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -86,13 +85,6 @@ type ToolOutcome struct {
 	Outcome     string // "ok" | "error" | "cancelled" | "timeout"
 	CompletedAt time.Time
 	ResultRef   string // pointer into events table (event ID encoded)
-}
-
-// EncodeEvent is a helper for tests/in-memory stores: serializes the
-// envelope's payload to a raw JSON message.
-func EncodeEvent(env control.EventEnvelope) []byte {
-	b, _ := json.Marshal(env)
-	return b
 }
 
 // ErrSession is the root of session-package errors.

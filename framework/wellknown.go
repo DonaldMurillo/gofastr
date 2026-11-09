@@ -16,8 +16,11 @@ package framework
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
 // resolveWellKnownBase returns the canonical origin for absolute URLs in
@@ -85,13 +88,20 @@ func (a *App) varyWellKnown(w http.ResponseWriter) {
 	w.Header().Add("Vary", "X-Forwarded-Proto")
 }
 
-func (a *App) writeWellKnownJSON(w http.ResponseWriter, doc any) {
+func (a *App) writeWellKnownJSON(w http.ResponseWriter, r *http.Request, doc any) {
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		// A document that cannot encode (a host-filled field with no
+		// JSON form) would answer with an empty body; answer 500.
+		slog.Warn("well-known: encode document", "error", err)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	a.varyWellKnown(w)
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(doc)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // ── API catalog (RFC 9727 linkset+json) ────────────────────────────
@@ -102,7 +112,7 @@ func (a *App) writeWellKnownJSON(w http.ResponseWriter, doc any) {
 func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
 	base := a.resolveWellKnownBase(r)
 	prefix := a.apiPrefix() // "" or "/api"
-	a.writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, r, map[string]any{
 		"linkset": []map[string]any{{
 			"anchor": base + "/",
 			"service-desc": []map[string]any{{
@@ -138,18 +148,23 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 	// card body embeds remotes[].url built from r.Host and
 	// X-Forwarded-Proto, so a shared cache must key on those inputs.
 	a.varyWellKnown(w)
+	b, err := json.MarshalIndent(a.buildMCPServerCard(r), "", "  ")
+	if err != nil {
+		slog.Warn("well-known: encode MCP server card", "error", err)
+		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	w.Header().Set("Content-Type", "application/mcp-server-card+json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(a.buildMCPServerCard(r))
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // handleMCPCatalog serves /.well-known/mcp/catalog.json, the spec-
 // recommended well-known that points at the server card.
 func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 	base := a.resolveWellKnownBase(r)
-	a.writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, r, map[string]any{
 		"specVersion": "draft",
 		"entries": []map[string]any{{
 			"identifier":  "urn:air:" + a.mcpCardName(),
@@ -246,7 +261,7 @@ func (a *App) handleAgentSkillsIndex(w http.ResponseWriter, r *http.Request) {
 			skills[i].Type = "skill-md"
 		}
 	}
-	a.writeWellKnownJSON(w, map[string]any{
+	a.writeWellKnownJSON(w, r, map[string]any{
 		"$schema": "https://schemas.agentskills.io/discovery/0.2.0/schema.json",
 		"skills":  skills,
 	})
@@ -312,5 +327,5 @@ func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Requ
 	if ab := a.agentAuthBlock(r); ab != nil {
 		doc["agent_auth"] = ab
 	}
-	a.writeWellKnownJSON(w, doc)
+	a.writeWellKnownJSON(w, r, doc)
 }

@@ -308,7 +308,9 @@ func embedQuery(args []string) {
 func printHits(hits []semantic.Hit) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(hits)
+	if err := enc.Encode(hits); err != nil {
+		failSemanticJSON(fmt.Errorf("print hits: %w", err))
+	}
 }
 
 func embedStats() {

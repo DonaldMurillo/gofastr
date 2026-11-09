@@ -615,6 +615,10 @@ deletes that user's payloads. Nil, or an empty return, names nobody.
 The handler runs only after the signature checks out. The 202 ack sets
 `Cache-Control: no-store`.
 
+`DedupeKeyFunc` and `Owner` results must be valid UTF-8 without NUL.
+An invalid result returns 400 before persistence, with reason
+`webhook.unstorable_text`, consistently on SQLite and PostgreSQL.
+
 ### Request flow
 
 1. Non-POST → `405`.

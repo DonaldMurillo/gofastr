@@ -38,7 +38,7 @@ func TestCanceledReplaceLeavesOriginal(t *testing.T) {
 	if err := idx.Add(ctx, Document{ID: "d", Text: "replacement"}); err == nil {
 		t.Fatal("replacement under a canceled context succeeded")
 	}
-	if ids := store.ChunkIDsForDoc("d"); len(ids) == 0 {
+	if ids, _ := store.ChunkIDsForDoc("d"); len(ids) == 0 {
 		t.Fatal("canceled replacement deleted the original document")
 	}
 	if keywordHits(t, kw, "needle") == 0 {
@@ -65,7 +65,8 @@ func TestCancelMidReplaceStaysConsistent(t *testing.T) {
 	idx, kw := newReplaceIndex(t, store)
 	store.cancel = cancel
 	_ = idx.Add(ctx, Document{ID: "d", Text: "replacement"})
-	vectors := len(store.ChunkIDsForDoc("d")) > 0
+	ids, _ := store.ChunkIDsForDoc("d")
+	vectors := len(ids) > 0
 	oldKW := keywordHits(t, kw, "needle") > 0
 	newKW := keywordHits(t, kw, "replacement") > 0
 	if oldKW {
