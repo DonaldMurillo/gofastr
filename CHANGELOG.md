@@ -453,6 +453,13 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **An app spec `stat_card` filter is refused when a column cannot hold
+  its value** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [app spec](framework/docs/content/app-spec.md)). `source.filter` is a
+  predicate entityui parses on every render, so `featured=yes` on a bool
+  built a card that drew "—" forever, and an enum value outside the
+  field's `values:` counted nothing. The load now checks the value in
+  every comparison with the `entity_list` pin's type and enum rules.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
