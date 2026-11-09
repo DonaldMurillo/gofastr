@@ -236,6 +236,13 @@ few lines, and link the PR or the docs page for the rest.
   `Config.SnakeCase`), so an app served snake_case no longer reports
   "in sync" for camel artifacts. Every existing manifest's digest changes
   with this; re-run `gofastr generate sdk` to re-stamp it.
+- **The upgrade registry's config `value:` matching is documented as
+  parsed** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The scanner matches the scalar's parsed value, never its source
+  spelling (`theme: 2.0` matches `^2$`), which
+  [upgrading](framework/docs/content/upgrading.md) now spells out per
+  kind; a note written against the source spelling used to report a
+  false clean.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
