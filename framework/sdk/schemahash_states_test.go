@@ -36,7 +36,7 @@ func statesConfig(mutate func(*entity.StatesConfig)) entity.EntityConfig {
 // the block — the moves, the initial set, the Advisory release — has to
 // move the hash or the drift banner reports "in sync" for a stale SDK.
 func TestStatesChangeMovesSchemaHash(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "invoices", Config: statesConfig(nil)}})
+	base := hashOf([]NamedConfig{{Name: "invoices", Config: statesConfig(nil)}})
 
 	mutations := map[string]func(*entity.StatesConfig){
 		"a new move": func(st *entity.StatesConfig) {
@@ -49,7 +49,7 @@ func TestStatesChangeMovesSchemaHash(t *testing.T) {
 		"the advisory release":        func(st *entity.StatesConfig) { st.Advisory = true },
 	}
 	for name, mutate := range mutations {
-		if got := SchemaHash([]NamedConfig{{Name: "invoices", Config: statesConfig(mutate)}}); got == base {
+		if got := hashOf([]NamedConfig{{Name: "invoices", Config: statesConfig(mutate)}}); got == base {
 			t.Errorf("%s did not move the schema hash; an SDK generated before it would look in sync", name)
 		}
 	}
@@ -57,7 +57,7 @@ func TestStatesChangeMovesSchemaHash(t *testing.T) {
 	// Dropping the block entirely is drift too.
 	noStates := statesConfig(nil)
 	noStates.States = nil
-	if got := SchemaHash([]NamedConfig{{Name: "invoices", Config: noStates}}); got == base {
+	if got := hashOf([]NamedConfig{{Name: "invoices", Config: noStates}}); got == base {
 		t.Error("removing States did not move the schema hash")
 	}
 }
@@ -66,10 +66,10 @@ func TestStatesChangeMovesSchemaHash(t *testing.T) {
 // hints into the hash: a Display change on a states entity stays a
 // non-change, exactly as on a plain one.
 func TestStatesEntityDisplayStillIgnored(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "invoices", Config: statesConfig(nil)}})
+	base := hashOf([]NamedConfig{{Name: "invoices", Config: statesConfig(nil)}})
 	withDisplay := statesConfig(nil)
 	withDisplay.Display = displayRich()
-	if got := SchemaHash([]NamedConfig{{Name: "invoices", Config: withDisplay}}); got != base {
+	if got := hashOf([]NamedConfig{{Name: "invoices", Config: withDisplay}}); got != base {
 		t.Fatalf("adding Display to a states entity moved the hash:\n%s\n%s", base, got)
 	}
 }

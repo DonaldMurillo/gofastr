@@ -311,7 +311,15 @@ func (s *site) resolved() (m *sdk.Manifest, drift, unknownProvenance bool) {
 			s.provenance = true
 			return
 		}
-		live := sdk.SchemaHash(sdk.RegistryNamedConfigs(s.cfg.Registry, mf.Entities))
+		// The digest covers the app's JSONCase (cfg.SnakeCase mirrors a
+		// crud.CaseSnake server): the same entities served snake_case are
+		// a different SDK surface, and the drift check must see that
+		// (#669). "" means the camel default.
+		jsonCase := ""
+		if s.cfg.SnakeCase {
+			jsonCase = "snake_case"
+		}
+		live := sdk.SchemaHash(sdk.RegistryNamedConfigs(s.cfg.Registry, mf.Entities), jsonCase)
 		if live != mf.SchemaHash {
 			s.drift = true
 			slog.Warn("sdkdocs: SDK artifacts were generated from an older schema: re-run `gofastr generate sdk`",

@@ -63,8 +63,8 @@ func TestRegistryNamedConfigsResolvesVersionedEntity(t *testing.T) {
 // no mount. The two halves could not agree, so regenerating never cleared
 // the warning.
 func TestSchemaHashIgnoresMountPoint(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
-	versioned := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig(), Version: "/api/v1"}})
+	base := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	versioned := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig(), Version: "/api/v1"}})
 	if base != versioned {
 		t.Fatal("same schema hashed differently because of its mount point")
 	}
@@ -75,8 +75,8 @@ func TestSchemaHashIgnoresMountPoint(t *testing.T) {
 // declaration behind them.
 func TestSchemaHashCollapsesIdenticalVersions(t *testing.T) {
 	cfg := postsConfig()
-	one := SchemaHash([]NamedConfig{{Name: "posts", Config: cfg}})
-	two := SchemaHash([]NamedConfig{
+	one := hashOf([]NamedConfig{{Name: "posts", Config: cfg}})
+	two := hashOf([]NamedConfig{
 		{Name: "posts", Config: cfg, Version: "/api/v1"},
 		{Name: "posts", Config: cfg, Version: "/api/v2"},
 	})
@@ -92,8 +92,8 @@ func TestSchemaHashKeepsDivergentVersions(t *testing.T) {
 	v2 := postsConfig()
 	v2.Fields = append(v2.Fields, schema.Field{Name: "subtitle", Type: schema.String})
 
-	one := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
-	diverged := SchemaHash([]NamedConfig{
+	one := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	diverged := hashOf([]NamedConfig{
 		{Name: "posts", Config: postsConfig(), Version: "/api/v1"},
 		{Name: "posts", Config: v2, Version: "/api/v2"},
 	})
@@ -108,11 +108,11 @@ func TestSchemaHashKeepsDivergentVersions(t *testing.T) {
 // entries sharing a name could land in either order.
 func TestSchemaHashVersionedDeterministic(t *testing.T) {
 	cfg := postsConfig()
-	a := SchemaHash([]NamedConfig{
+	a := hashOf([]NamedConfig{
 		{Name: "posts", Config: cfg, Version: "/api/v1"},
 		{Name: "posts", Config: cfg, Version: "/api/v2"},
 	})
-	b := SchemaHash([]NamedConfig{
+	b := hashOf([]NamedConfig{
 		{Name: "posts", Config: cfg, Version: "/api/v2"},
 		{Name: "posts", Config: cfg, Version: "/api/v1"},
 	})

@@ -13,8 +13,8 @@ func TestSchemaHashChangesWhenNoQueryChanges(t *testing.T) {
 			{Name: "number", Type: schema.String, NoQuery: noQuery},
 		}}.WithTimestamps(false)
 	}
-	plain := SchemaHash([]NamedConfig{{Name: "cards", Config: config(false)}})
-	masked := SchemaHash([]NamedConfig{{Name: "cards", Config: config(true)}})
+	plain := hashOf([]NamedConfig{{Name: "cards", Config: config(false)}})
+	masked := hashOf([]NamedConfig{{Name: "cards", Config: config(true)}})
 	if plain == masked {
 		t.Fatalf("SchemaHash did not change when NoQuery changed: %s", plain)
 	}
@@ -25,7 +25,7 @@ func TestSchemaHashChangesWhenNoQueryChanges(t *testing.T) {
 // the same ordinary value still hash the same.
 func TestSchemaHashSeesBigDefaults(t *testing.T) {
 	hash := func(def any) string {
-		return SchemaHash([]NamedConfig{{Name: "cards", Config: entity.EntityConfig{Fields: []schema.Field{
+		return hashOf([]NamedConfig{{Name: "cards", Config: entity.EntityConfig{Fields: []schema.Field{
 			{Name: "n", Type: schema.Int, Default: def},
 		}}.WithTimestamps(false)}})
 	}

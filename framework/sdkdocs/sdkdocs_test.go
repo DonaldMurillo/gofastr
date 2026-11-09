@@ -66,7 +66,7 @@ func testArtifacts(t *testing.T, reg *fakeRegistry, matchLive bool) fstest.MapFS
 	t.Helper()
 	hash := "sha256:deadbeef"
 	if matchLive {
-		hash = sdk.SchemaHash(sdk.RegistryNamedConfigs(reg, []string{"posts"}))
+		hash = sdk.SchemaHash(sdk.RegistryNamedConfigs(reg, []string{"posts"}), "")
 	}
 	m := sdk.Manifest{
 		SchemaVersion:  sdk.SchemaVersion,

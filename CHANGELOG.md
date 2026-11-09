@@ -229,6 +229,13 @@ few lines, and link the PR or the docs page for the rest.
   `per_page` and `offset`. The MCP record-key arguments are typed from
   the key column — an integer key offers an integer `id` prop — and the
   list tool forwards and documents `per_page` and `offset`.
+- **The SDK schema hash covers `JSONCase`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `sdk.SchemaHash` takes the case the artifacts speak ("camelCase" for
+  the generated clients, the app's own case in sdkdocs via
+  `Config.SnakeCase`), so an app served snake_case no longer reports
+  "in sync" for camel artifacts. Every existing manifest's digest changes
+  with this; re-run `gofastr generate sdk` to re-stamp it.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

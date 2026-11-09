@@ -703,8 +703,12 @@ func renderSDKFiles(spec sdkSpec, targets []string, dist bool) ([]GeneratedFile,
 }
 
 // SdkSchemaHash computes the drift-detection hash over the selected
-// declarations, the generation-time half of the check sdkdocs.Mount
-// recomputes against the live registry.
+// declarations under the JSONCase the generated artifacts speak — camel,
+// the casing of the emitters' wire keys (appspec.WireKey) — the
+// generation-time half of the check sdkdocs.Mount recomputes against the
+// live registry under the app's own case. An app served snake_case
+// reports drift against these artifacts, which is the true state: the
+// artifacts speak camel keys its routes do not answer (#669).
 func SdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 	var named []sdk.NamedConfig
 	for _, decl := range decls {
@@ -714,7 +718,7 @@ func SdkSchemaHash(decls []framework.EntityDeclaration) (string, error) {
 		}
 		named = append(named, sdk.NamedConfig{Name: decl.Name, Config: cfg})
 	}
-	return sdk.SchemaHash(named), nil
+	return sdk.SchemaHash(named, string(framework.CaseCamel)), nil
 }
 
 // renderSDKGoFiles emits the standalone Go module: the renderClient output

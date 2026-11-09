@@ -35,11 +35,15 @@ type NamedConfig struct {
 }
 
 // SchemaHash returns a deterministic "sha256:<hex>" digest of the
-// API-visible schema of the given entities. Both halves of the SDK feature
-// compute it: `gofastr generate sdk` records it in the manifest at
-// generation time; sdkdocs.Mount recomputes it from the live registry
-// (restricted to Manifest.Entities) to warn when the downloadable SDKs no
-// longer match the running API.
+// API-visible schema of the given entities as served under jsonCase (the
+// app's crud.JSONCase; "" means camel, the default). The case is part of
+// the digest because it spells every wire key a generated client sends
+// and reads: the same entities served snake_case are a different SDK
+// surface (#669). Both halves of the SDK feature compute it:
+// `gofastr generate sdk` records it in the manifest at generation time
+// (the case its artifacts speak); sdkdocs.Mount recomputes it from the
+// live registry (the case the app serves, pass fwApp.JSONCasing()) to
+// warn when the downloadable SDKs no longer match the running API.
 //
 // Every config is normalized through entity.Define before projection, so a
 // raw declaration config (no injected id/timestamp columns, empty Table)
@@ -56,7 +60,7 @@ type NamedConfig struct {
 // default. Hidden fields never appear on the wire, so flipping one is
 // invisible to SDKs and deliberately does not change the hash. Field order
 // is sorted away for the same reason.
-func SchemaHash(named []NamedConfig) string {
+func SchemaHash(named []NamedConfig, jsonCase string) string {
 	type hashField struct {
 		Name     string   `json:"name"`
 		Type     int      `json:"type"`
@@ -293,8 +297,14 @@ func SchemaHash(named []NamedConfig) string {
 		prev = encoded[idx]
 	}
 	entities = sorted
-
-	raw, err := json.Marshal(entities)
+	if jsonCase == "" {
+		jsonCase = "camelCase" // "" means the app default, camel
+	}
+	payload := struct {
+		JSONCase string       `json:"jsonCase"`
+		Entities []hashEntity `json:"entities"`
+	}{JSONCase: jsonCase, Entities: entities}
+	raw, err := json.Marshal(payload)
 	if err != nil {
 		// Marshalling plain structs of strings/bools/ints cannot fail;
 		// a non-nil error here means a default value snuck through with

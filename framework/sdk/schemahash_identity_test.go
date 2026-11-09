@@ -24,8 +24,8 @@ func TestHashKeepsAmbiguousEnumsDistinct(t *testing.T) {
 	oneValue := enumConfig("draft ready")
 	twoValues := enumConfig("draft", "ready")
 
-	manifest := SchemaHash([]NamedConfig{{Name: "posts", Config: oneValue}})
-	live := SchemaHash([]NamedConfig{
+	manifest := hashOf([]NamedConfig{{Name: "posts", Config: oneValue}})
+	live := hashOf([]NamedConfig{
 		{Name: "posts", Config: oneValue, Version: "/api/v1"},
 		{Name: "posts", Config: twoValues, Version: "/api/v2"},
 	})
@@ -38,11 +38,11 @@ func TestHashIsInputOrderIndependent(t *testing.T) {
 	oneValue := enumConfig("draft ready")
 	twoValues := enumConfig("draft", "ready")
 
-	forward := SchemaHash([]NamedConfig{
+	forward := hashOf([]NamedConfig{
 		{Name: "posts", Config: oneValue, Version: "/api/v1"},
 		{Name: "posts", Config: twoValues, Version: "/api/v2"},
 	})
-	reverse := SchemaHash([]NamedConfig{
+	reverse := hashOf([]NamedConfig{
 		{Name: "posts", Config: twoValues, Version: "/api/v2"},
 		{Name: "posts", Config: oneValue, Version: "/api/v1"},
 	})
