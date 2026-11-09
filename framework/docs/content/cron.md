@@ -138,13 +138,19 @@ Supported within each field:
   guarding against overlap (e.g. via a `sync.Mutex` or a DB lock).
 - **No persistence.** Pending firings are not durable. If the process
   restarts mid-minute, that minute's jobs are skipped.
-- **Late ticks catch up.** A tick that arrives minutes late — the
-  process slept, a GC pause, a slow leader acquire — walks every minute
-  boundary it missed, oldest first, capped at two hours: a fixed-time
-  job whose minute fell inside the gap still fires, and a laptop that
-  slept longer does not queue hours of firings on wake. Under leader
-  election the walk claims each minute in order, so a replica that kept
-  ticking refuses the late claims and nothing fires twice.
+- **Late ticks catch up fixed-time jobs only.** A tick that arrives
+  minutes late (the process slept, a GC pause, a slow leader acquire)
+  walks every minute boundary it missed, oldest first, capped at two
+  hours. Only fixed-time jobs, whose minute and hour fields both name
+  values, replay a missed minute: `"15 3 * * *"` still runs when 03:15
+  fell inside the gap, and a fixed-time minute older than two hours is
+  dropped. Every other job is judged once, at the current minute, the
+  way vixie cron runs it after a clock jump: after a 90-minute sleep
+  `"* * * * *"` runs once, not 90 times, and `"*/5 * * * *"` runs once
+  if the current minute is a multiple of five. Under leader election
+  the walk claims each minute in order, the current one included, so a
+  replica that kept ticking refuses the late claims and nothing fires
+  twice.
   The current minute boundary is included even when the delay is
   exactly one interval. Cancellation or stop ends the walk before
   the next minute is claimed.

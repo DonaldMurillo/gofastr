@@ -12,7 +12,9 @@ import (
 // minute in between, so a fixed-time job whose minute fell inside the
 // gap never fired at all — most visibly across a DST transition, where
 // the gap swallows the repeated or skipped hour (#656). The loop now
-// walks each missed minute, oldest first, bounded to two hours.
+// walks each missed minute, oldest first, bounded to two hours, and
+// replays only fixed-time jobs: every other job runs once, at the
+// current minute.
 
 // fakeClock is the loop's injectable clock.
 type fakeClock struct {
@@ -132,39 +134,68 @@ func TestTickLoopCatchesUpAcrossSpringForward(t *testing.T) {
 	}
 }
 
-// A plain every-minute job fires at most once per walked minute, and a
-// jump longer than the bound walks only the bounded tail.
+// countingJobs registers one job per spec and returns each job's fire
+// count, keyed by spec.
+func countingJobs(t *testing.T, s *Scheduler, specs ...string) map[string]*atomic.Int32 {
+	t.Helper()
+	counts := make(map[string]*atomic.Int32, len(specs))
+	for _, spec := range specs {
+		n := &atomic.Int32{}
+		counts[spec] = n
+		if err := s.Register(CronJob{Name: spec, Spec: spec, Run: func(context.Context) error {
+			n.Add(1)
+			return nil
+		}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return counts
+}
+
+// assertFires checks each spec fired exactly want[spec] times.
+func assertFires(t *testing.T, counts map[string]*atomic.Int32, want map[string]int32) {
+	t.Helper()
+	for spec, w := range want {
+		if got := counts[spec].Load(); got != w {
+			t.Errorf("%q fired %d times, want %d", spec, got, w)
+		}
+	}
+}
+
+// Only fixed-time jobs replay past minutes. A wildcard job is judged
+// once, at the current boundary, the way vixie cron runs it after a
+// clock jump: a 90-minute sleep used to start 90 runs of "* * * * *"
+// and 18 of "*/5" at the same moment.
+func TestCatchUpRunsWildcardJobsOnce(t *testing.T) {
+	s := NewScheduler()
+	counts := countingJobs(t, s, "* * * * *", "*/5 * * * *", "15 12 * * *")
+	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
+	now := last.Add(90 * time.Minute) // 13:30, a */5 boundary
+	if got := s.catchUp(context.Background(), last, last.Add(time.Minute), now); !got.Equal(now) {
+		t.Fatalf("last boundary = %v, want %v", got, now)
+	}
+	s.inflight.Wait()
+	assertFires(t, counts, map[string]int32{
+		"* * * * *":   1,
+		"*/5 * * * *": 1,
+		"15 12 * * *": 1, // 12:15 fell in the gap and still runs
+	})
+}
+
+// The walk is bounded to two hours: a fixed-time job whose minute is
+// older than the bound is dropped, one inside it fires.
 func TestTickCatchUpIsBounded(t *testing.T) {
 	s := NewScheduler()
-	fired := make(chan struct{}, 256)
-	if err := s.Register(CronJob{Name: "every", Spec: "* * * * *", Run: func(context.Context) error {
-		fired <- struct{}{}
-		return nil
-	}}); err != nil {
-		t.Fatal(err)
-	}
+	counts := countingJobs(t, s, "30 12 * * *", "30 13 * * *", "* * * * *")
 	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
 	now := last.Add(3 * time.Hour)
 	s.catchUp(context.Background(), last, last, now)
-
-	// The walk is bounded to two hours of minutes; the third hour is
-	// dropped, not queued.
-	deadline := time.After(5 * time.Second)
-	got := 0
-	for got < 120 {
-		select {
-		case <-fired:
-			got++
-		case <-deadline:
-			t.Fatalf("timed out after %d fires (want 120)", got)
-		}
-	}
-	time.Sleep(200 * time.Millisecond)
-	select {
-	case <-fired:
-		t.Fatalf("catch-up fired more than 120 minutes for a 3h jump (got at least %d)", got+1)
-	default:
-	}
+	s.inflight.Wait()
+	assertFires(t, counts, map[string]int32{
+		"30 12 * * *": 0, // three hours back, past the bound
+		"30 13 * * *": 1,
+		"* * * * *":   1,
+	})
 }
 
 // A tick that arrives between minute boundaries fires each covered
@@ -173,33 +204,17 @@ func TestTickCatchUpIsBounded(t *testing.T) {
 // leader election nothing dedupes it.
 func TestTickCatchUpFiresEachMinuteOnce(t *testing.T) {
 	s := NewScheduler()
-	fired := make(chan struct{}, 16)
-	if err := s.Register(CronJob{Name: "every", Spec: "* * * * *", Run: func(context.Context) error {
-		fired <- struct{}{}
-		return nil
-	}}); err != nil {
-		t.Fatal(err)
-	}
+	counts := countingJobs(t, s, "1 12 * * *", "2 12 * * *", "* * * * *")
 	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
 	tick := last.Add(time.Minute)
 	now := tick.Add(90 * time.Second) // 12:02:30, between boundaries
 	s.catchUp(context.Background(), last, tick, now)
-
-	// 12:01 and 12:02, once each.
-	deadline := time.After(5 * time.Second)
-	for range 2 {
-		select {
-		case <-fired:
-		case <-deadline:
-			t.Fatal("timed out waiting for the two covered minutes")
-		}
-	}
-	time.Sleep(200 * time.Millisecond)
-	select {
-	case <-fired:
-		t.Fatal("a minute fired twice")
-	default:
-	}
+	s.inflight.Wait()
+	assertFires(t, counts, map[string]int32{
+		"1 12 * * *": 1,
+		"2 12 * * *": 1,
+		"* * * * *":  1, // judged at 12:02 only
+	})
 }
 
 func TestTickCatchUpIncludesCurrentBoundary(t *testing.T) {
@@ -240,5 +255,36 @@ func TestTickCatchUpStopsWhenCancelled(t *testing.T) {
 	s.catchUp(ctx, last, last.Add(time.Minute), last.Add(time.Hour))
 	if len(ticks) != 0 {
 		t.Fatalf("cancelled catch-up claimed %d minutes", len(ticks))
+	}
+}
+
+// Under tick-claim leader election the wildcard job's one run at the
+// current boundary is claimed like any minute: a late replica runs it
+// once when no peer has claimed that minute, and not at all when a peer
+// that kept ticking already did.
+func TestCatchUpClaimsCurrentBoundaryOnce(t *testing.T) {
+	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
+	now := last.Add(90 * time.Minute)
+
+	var lateOnly atomic.Int32
+	a := countingScheduler(t, fakeTickLease{&tickBook{}}, &lateOnly)
+	a.catchUp(context.Background(), last, last.Add(time.Minute), now)
+	a.inflight.Wait()
+	if got := lateOnly.Load(); got != 1 {
+		t.Fatalf("late replica alone ran the wildcard job %d times, want 1", got)
+	}
+
+	book := &tickBook{}
+	var fired atomic.Int32
+	peer := countingScheduler(t, fakeTickLease{book}, &fired)
+	late := countingScheduler(t, fakeTickLease{book}, &fired)
+	if !peer.runTick(context.Background(), now) {
+		t.Fatal("the peer did not fire the current minute")
+	}
+	peer.inflight.Wait()
+	late.catchUp(context.Background(), last, last.Add(time.Minute), now)
+	late.inflight.Wait()
+	if got := fired.Load(); got != 1 {
+		t.Fatalf("the current minute ran %d times across two replicas, want 1", got)
 	}
 }

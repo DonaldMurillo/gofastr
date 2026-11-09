@@ -206,11 +206,19 @@ func (s *Scheduler) WithLeaderElection(le LeaderElection) {
 // cluster-wide, until that one job ended. Extracted from the run loop so
 // the leader-gating is testable without the wall clock.
 func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
+	return s.runTickJobs(ctx, now, false)
+}
+
+// runTickJobs is runTick that, with fixedOnly, judges only the jobs whose
+// schedule is FixedTime. The catch-up walk replays past minutes this way;
+// the minute is still claimed as a whole, so a peer replica's claim of it
+// refuses ours exactly as it does for a full tick.
+func (s *Scheduler) runTickJobs(ctx context.Context, now time.Time, fixedOnly bool) bool {
 	s.mu.RLock()
 	leader := s.leader
 	s.mu.RUnlock()
 	if leader == nil {
-		s.RunOnce(ctx, now)
+		s.runOnce(ctx, now, nil, fixedOnly)
 		return true
 	}
 	acquire := leader.Acquire
@@ -232,7 +240,7 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 		// trip for Postgres) and the loop must stay selectable on s.stop /
 		// ctx.Done() so StopContext's deadline holds.
 		go s.releaseSafely(release)
-		s.RunOnce(ctx, now)
+		s.runOnce(ctx, now, nil, fixedOnly)
 		return true
 	}
 	// Hold the plain lease until this tick's jobs finish so a peer replica
@@ -249,7 +257,7 @@ func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
 			s.releaseSafely(release)
 		}()
 	}()
-	s.runOnce(ctx, now, &tickJobs)
+	s.runOnce(ctx, now, &tickJobs, fixedOnly)
 	return true
 }
 
@@ -351,13 +359,14 @@ func (s *Scheduler) StopContext(ctx context.Context) error {
 // (Register during tick) are safe because the mutex is held only for the
 // read, new jobs appear on the next tick.
 func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
-	s.runOnce(ctx, now, nil)
+	s.runOnce(ctx, now, nil, false)
 }
 
 // runOnce is RunOnce that also counts each job it starts into tickJobs
 // when it is non-nil, so a plain lease can be held for this tick's jobs
-// alone.
-func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.WaitGroup) {
+// alone. With fixedOnly it skips every job whose schedule is not
+// FixedTime.
+func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.WaitGroup, fixedOnly bool) {
 	// Snapshot the firing jobs AND the gate under the read lock, then
 	// evaluate the gate OUTSIDE it. Gates are registered callbacks
 	// (SetGate) free to do I/O, and a blocking gate holding s.mu
@@ -372,10 +381,14 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.W
 	var gate func(jobName string) bool
 	for i := range s.jobs {
 		sj := &s.jobs[i]
+		sched := Schedule{expr: sj.expr}
+		if fixedOnly && !sched.FixedTime() {
+			continue
+		}
 		// Vixie DST handling (Schedule.FiresAt): a fixed-time job runs
 		// once in a repeated hour and once after a skipped one, in now's
 		// location. The previous tick is a real minute earlier.
-		if (Schedule{expr: sj.expr}).FiresAt(now.Add(-time.Minute), now) {
+		if sched.FiresAt(now.Add(-time.Minute), now) {
 			firing = append(firing, sj.job)
 		}
 	}
@@ -484,9 +497,8 @@ func (s *Scheduler) run(ctx context.Context) {
 }
 
 // maxCatchUp bounds how far back a late tick replays minutes. Real DST
-// gaps are at most two hours, and a laptop that slept longer should not
-// queue hours of job fires on wake: the minutes older than the bound
-// are dropped.
+// gaps are at most two hours; a fixed-time job whose minute is older
+// than the bound is dropped.
 const maxCatchUp = 2 * time.Hour
 
 // catchUp runs the tick at tick, and when the clock has moved beyond it
@@ -494,12 +506,17 @@ const maxCatchUp = 2 * time.Hour
 // oldest first, returning the last boundary it fired. A tick that fires
 // late (a sleep, a GC pause, a slow leader acquire) used to carry only
 // its own minute plus RunOnce's one-minute look-back, so a fixed-time
-// job whose minute fell inside the gap never fired — most visibly
+// job whose minute fell inside the gap never fired, most visibly
 // across a DST transition, where the gap swallows the repeated or
-// skipped hour and the one-minute look-back cannot see it. Walking
-// oldest-first keeps a TickLeaderElection lease claiming minutes in
-// order; a peer replica that kept ticking refuses our older claims, so
-// a shared schedule still fires each minute at most once.
+// skipped hour and the one-minute look-back cannot see it.
+//
+// Only fixed-time jobs replay a past minute. Every other job is judged
+// once, at the last boundary (end), the way vixie cron runs a wildcard
+// job after a clock jump: a 90-minute sleep starts "* * * * *" once,
+// not 90 times at the same moment. Walking oldest-first keeps a
+// TickLeaderElection lease claiming minutes in order; a peer replica
+// that kept ticking refuses our older claims, so a shared schedule
+// still fires each minute at most once.
 func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time.Time {
 	// Both ends stay on the tick grid: a tick that lands between
 	// boundaries fires the boundary's minute once (an unaligned `now`
@@ -521,7 +538,7 @@ func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time
 			return last
 		default:
 		}
-		s.runTick(ctx, m)
+		s.runTickJobs(ctx, m, m.Before(end))
 		last = m
 	}
 	return end
