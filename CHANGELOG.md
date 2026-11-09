@@ -135,6 +135,13 @@ few lines, and link the PR or the docs page for the rest.
   edit; the four shipped notes that said review moved to edit.
 
 ### Security
+- **A repository secrets file cannot name a key that is not an
+  environment variable** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `isProviderCredentialKey` checks the whole name at the source
+  (`^[A-Z][A-Z0-9_]*$`, not just the `_API_KEY`/`_TOKEN` suffix), so a
+  control-byte name never reaches the consent prompt, the environment or
+  `--allow-repo-secrets`, and the CLI no longer unsets such keys after
+  the fact.
 - **`App.ImportData` restores the bytes it checked**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
   each archive file on one read and parsed the rows from a second, so a

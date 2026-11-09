@@ -111,66 +111,45 @@ func writeRepoEnv(t *testing.T, repo, body string) {
 	}
 }
 
-// A key that is not an environment variable name is refused before the
-// operator is asked anything: the prompt never shows, a "y" typed ahead
-// approves nothing, no key from the file is set or remembered, and what
-// is printed instead carries no live escape.
-func TestRepoSecretsHostileKeyNameRefusedBeforePrompt(t *testing.T) {
+// A key name that is not an environment variable name is stopped at the
+// source: the secrets package's isProviderCredentialKey checks the whole
+// name, so a hostile key never reaches the prompt (whose key list it
+// would decorate), is never set under --allow-repo-secrets or a
+// remembered approval, and the CLI no longer unsets it after the fact
+// (#669). The file's ordinary keys behave exactly as before.
+func TestRepoSecretsHostileKeyNameStoppedAtSource(t *testing.T) {
 	repo, xdg := clonedRepo(t)
 	writeRepoEnv(t, repo, "OPENROUTER_API_KEY=sk-author\n"+hostileKey+"=sk-hostile\n")
-	t.Cleanup(func() { _ = os.Unsetenv(hostileKey) })
+	t.Cleanup(func() {
+		_ = os.Unsetenv("OPENROUTER_API_KEY")
+		_ = os.Unsetenv(hostileKey)
+	})
 	for _, interactive := range []bool{true, false} {
 		_ = os.Unsetenv("OPENROUTER_API_KEY")
 		_ = os.Unsetenv(hostileKey)
 		var out bytes.Buffer
 		loadRepoSecrets(xdg, false, interactive, strings.NewReader("y\n"), &out)
-		if strings.Contains(out.String(), "[y/N]") {
-			t.Errorf("SECURITY: interactive=%v: the consent prompt was shown for a file with a key that is not an environment variable name:\n%q", interactive, out.String())
-		}
-		if _, ok := os.LookupEnv("OPENROUTER_API_KEY"); ok {
-			t.Errorf("SECURITY: interactive=%v: a file naming a hostile key still set OPENROUTER_API_KEY", interactive)
-		}
 		if _, ok := os.LookupEnv(hostileKey); ok {
 			t.Errorf("SECURITY: interactive=%v: the hostile key name was set in the environment", interactive)
 		}
-		if !strings.Contains(out.String(), "environment variable name") {
-			t.Errorf("interactive=%v: the refusal must say why:\n%q", interactive, out.String())
+		if strings.Contains(out.String(), "ZAI_API_KEY") {
+			t.Errorf("SECURITY: interactive=%v: the hostile key's name reached the output:\n%q", interactive, out.String())
 		}
-		assertNoLiveEscape(t, "the refusal", out.String())
-	}
-	if _, err := os.Stat(filepath.Join(xdg, secrets.ApprovalsFile)); !os.IsNotExist(err) {
-		t.Errorf("SECURITY: a refused file left an approval behind: %v", err)
+		assertNoLiveEscape(t, "the consent flow", out.String())
+		_ = os.Unsetenv("OPENROUTER_API_KEY")
 	}
 
-	// --allow-repo-secrets asks nobody, so the secrets package sets the
-	// keys before this command sees their names; they come back out.
+	// --allow-repo-secrets sets only the well-formed key; the hostile
+	// name is never set, with no after-the-fact unset to thank for it.
 	var out bytes.Buffer
 	loadRepoSecrets(xdg, true, false, strings.NewReader(""), &out)
-	if _, ok := os.LookupEnv("OPENROUTER_API_KEY"); ok {
-		t.Error("SECURITY: --allow-repo-secrets: a file naming a hostile key still set OPENROUTER_API_KEY")
+	if _, ok := os.LookupEnv("OPENROUTER_API_KEY"); !ok {
+		t.Error("the file's ordinary key was not set under --allow-repo-secrets")
 	}
 	if _, ok := os.LookupEnv(hostileKey); ok {
 		t.Error("SECURITY: --allow-repo-secrets: the hostile key name was set in the environment")
 	}
-	if !strings.Contains(out.String(), "environment variable name") {
-		t.Errorf("--allow-repo-secrets: the refusal must say why:\n%q", out.String())
-	}
-	assertNoLiveEscape(t, "the --allow-repo-secrets refusal", out.String())
-}
-
-// The names a file may set are environment variable names; the
-// ordinary ones pass.
-func TestRepoSecretsKeyNameShape(t *testing.T) {
-	for k, want := range map[string]bool{
-		"ZAI_API_KEY": true, "OPENROUTER_API_KEY": true, "GITHUB_TOKEN": true, "A1_TOKEN": true,
-		"": false, "1_API_KEY": false, "_API_KEY": false, "zai_api_key": false, "ZAI-API_KEY": false,
-		hostileKey: false, "ZAI_API_KEY\u202e": false, "ZAİ_API_KEY": false,
-		"ZAi_API_KEY": false, "ZAI_API_KEY\n": false, "ZAI API_KEY": false,
-	} {
-		if got := checkKeyNames([]string{"OPENAI_API_KEY", k}) == nil; got != want {
-			t.Errorf("checkKeyNames(%q) passes = %v, want %v", k, got, want)
-		}
-	}
+	assertNoLiveEscape(t, "the --allow-repo-secrets run", out.String())
 }
 
 // The prompt and the refusal print the secrets file's path and the
