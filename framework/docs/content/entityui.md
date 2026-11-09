@@ -292,7 +292,10 @@ keeps the UI unchanged; without a callback the default stays
   reports false where `StatValue` would print "—", so a nav row or a
   badge draws nothing instead. `appUI.CountInt` is the same count as an
   `int`, for a figure the host computes with, like a success rate drawn
-  on a `ui.Gauge`. `appUI.CheckStat(entity, agg, field,
+  on a `ui.Gauge`. `appUI.CountView(ctx, entity, view)` counts what a
+  declared view lists: its `Where` or its registered `Filter` func. It
+  reports false for a view whose `Show` hides it from the caller.
+  `appUI.CheckStat(entity, agg, field,
   where, format)` returns why `StatValue` could never compute a spec,
   so a host can refuse a configured stat at boot.
   `appUI.LastUpdated` is when the newest record the caller can read was

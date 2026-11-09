@@ -89,6 +89,14 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **Needs attention skips a view hidden from the caller**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  panel counted a watched view by its `Where` alone. A view whose `Show`
+  hid it from the caller still drew, and its list fell back to All, so
+  the panel listed every row under that view's heading. A filter-func
+  view (no `Where`) was counted as every row. The panel now counts with
+  the new `entityui.UI.CountView`, which runs the view's own filter and
+  reports false for a hidden view.
 - **Audit rows for purged or hard-deleted records follow the read hooks**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `entityui.UI.RecordHidden` answered "not hidden" once no stored row was

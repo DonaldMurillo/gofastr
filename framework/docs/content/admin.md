@@ -235,7 +235,9 @@ translating.
   (`View`); the panel previews the first `Rows` rows (5 by default, at
   most 20) of every watched view that has any, with `Columns` replacing
   the list's columns, a link to the full view, and no pager or sorting.
-  A view with no rows draws nothing. With a `Queue` the panel also lists
+  The count is the view's own (`entityui.UI.CountView`), filter-func
+  views included. A view with no rows draws nothing, and so does a view
+  whose `Show` hides it from the caller. With a `Queue` the panel also lists
   the newest failed jobs, each with Replay, under a link to the failed
   filter. With nothing left it says "Nothing needs attention." The rows
   sit in the card with no table frame (`ListBuilder.Flush`). Boot fails

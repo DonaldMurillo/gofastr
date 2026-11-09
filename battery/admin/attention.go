@@ -78,7 +78,10 @@ func (b *Battery) attentionCard(ctx context.Context) render.HTML {
 		e, _ := b.exposedNamed(w.Entity)
 		v, _ := watchedView(e, w.View)
 		cctx, cancel := context.WithTimeout(ctx, countDeadline)
-		n, ok := b.ui.CountInt(cctx, w.Entity, v.Where)
+		// The view's own count: a filter-func view has no Where, and a
+		// view hidden from the caller draws nothing (its list would fall
+		// back to All under the view's heading).
+		n, ok := b.ui.CountView(cctx, w.Entity, w.View)
 		cancel()
 		if !ok || n == 0 {
 			continue
