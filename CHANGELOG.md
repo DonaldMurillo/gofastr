@@ -580,6 +580,15 @@ few lines, and link the PR or the docs page for the rest.
   nothing and answers 303 to the demo's page. A gallery host mounts it
   with `gallery.MountDemoFormRoute(router, demoPage)`; `demoPage` maps a
   demo to its page and must return a local path.
+- **A trapped disclosure open before its module loads is contained**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  `headless-disclosure` module made the page under an open
+  `Disclosure{Trap: true}` inert only when it heard the disclosure
+  open, so one rendered `Open`, or a phone menu tapped open before the
+  module arrived, left the page reachable to a screen reader. The module
+  now arms the trap for one it finds open on arrival. The acme-site
+  phone menu gains a test that Tab walks its links and its close button
+  and that Escape closes it.
 
 ## [0.96.0] - 2026-11-06
 
