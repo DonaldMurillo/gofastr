@@ -281,7 +281,7 @@ func TestFramedCSPSealsFormAction(t *testing.T) {
 // A request whose scheme/host would inject a CSP directive must be refused,
 // not served with a poisoned policy.
 func TestAssetServerRejectsOriginInjection(t *testing.T) {
-	rt := newAssetRouter(t)
+	rt := fromTrustedProxy(newAssetRouter(t))
 
 	// Malicious X-Forwarded-Proto trying to splice a directive.
 	req := httptest.NewRequest(http.MethodGet, "/__p/editor.html", nil)

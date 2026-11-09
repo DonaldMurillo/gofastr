@@ -380,6 +380,19 @@ few lines, and link the PR or the docs page for the rest.
   documents follow. Behind a TLS-terminating proxy, list the proxy or
   set `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs
   say `http://`.
+- **BREAKING: a pluginhost framed asset's CSP takes `X-Forwarded-Proto`
+  only from a trusted proxy**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  origin a framed plugin asset's `Content-Security-Policy` names took its
+  scheme from an `X-Forwarded-Proto` header any client could send, with
+  no `Vary`, on a response that may be cached `public, immutable`: one
+  forged request could leave a shared cache serving every later visitor
+  a policy keyed to the wrong origin. The header now counts only from a
+  peer listed in `AppConfig.TrustedProxies`, which the App puts on each
+  request's context so an `AssetServer` on `app.Router()` reads it with
+  no plugin change, and framed responses send
+  `Vary: Host, X-Forwarded-Proto`. Behind a TLS-terminating proxy, list
+  the proxy, or the framed CSP names `http://`.
 - **BREAKING: an MCP item gate answers exactly as an unknown name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #656). `tools/call`, `resources/read` and `prompts/get` answered an

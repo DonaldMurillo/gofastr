@@ -47,6 +47,18 @@ Framed assets get a scoped relaxation (framing headers + a CSP keyed to
 the explicit request origin; inside an opaque frame, `'self'` resolves
 to `null` and spec-correct browsers like Safari refuse subresources).
 
+That origin is the request's `Host` plus its scheme: `https` on a TLS
+connection, and otherwise `X-Forwarded-Proto` (exactly `http` or
+`https`) only when the TCP peer is listed in
+`AppConfig.TrustedProxies`. Any client can send the header, and a
+framed asset may be cached `public, immutable`, so a header from any
+other peer is ignored rather than written into a CSP a shared cache
+could hand to later visitors. The App puts the list on each request's
+context, so an `AssetServer` registered on `app.Router()` reads it with
+no extra wiring. Behind a TLS-terminating proxy, list the proxy, or the
+framed CSP names `http://`. Framed responses send
+`Vary: Host, X-Forwarded-Proto`, because both feed the policy.
+
 An `AssetSpec` names a file and marks whether it is framed; its
 `ContentType` is optional and, when omitted, comes from
 `core/static.DetectFromName` — the same canonical table the rest of the

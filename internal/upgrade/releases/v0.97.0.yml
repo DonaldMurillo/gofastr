@@ -52,6 +52,15 @@ notes:
         - gofastr/framework/uihost.WithAgentReady
         - gofastr/framework/uihost.WithAgentCard
         - gofastr/framework/uihost.WithAgentLinkHeaders
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the origin in a framework/pluginhost framed asset's Content-Security-Policy unless the TCP peer is listed in AppConfig.TrustedProxies; framed responses now send Vary: Host, X-Forwarded-Proto"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8); the App puts the list on each request's context and every AssetServer registered on app.Router() reads it, so plugin code does not change. Without it the framed CSP names http:// origins. AppConfig.BaseURL does not reach the frames. Apps that mount a plugin package (gofastr-plugins chart, datagrid, ...) never name pluginhost themselves: check AppConfig.TrustedProxies on any app behind a proxy that mounts one. Hosts not behind a proxy are unaffected."
+    find:
+      uses:
+        - gofastr/framework/pluginhost.NewAssetServer
+        - gofastr/framework/pluginhost.NewClientModule
+        - gofastr/framework/pluginhost.RegisterFrameClientRoute
   - change: "?fields= projections now return every required column beside the primary key, on list, cursor and get responses alike"
     nodetect: "a response-shape fact of the CRUD routes; no app spelling differs, and only a caller that asserts the exact key set of a projected row changes answer"
     guidance: "Required fields stay in a projection because the OpenAPI response schema holds them required; a client that needs slimmer rows reads the keys it names and ignores the rest."
