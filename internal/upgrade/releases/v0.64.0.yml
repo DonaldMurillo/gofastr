@@ -11,7 +11,7 @@ notes:
           match: 'servers\[0\]\s*\.\s*url'
   - change: IdempotencyStore.Finish takes the request fingerprint
     breaking: true
-    hits: review
+    hits: edit
     guidance: "The signature is now Finish(ctx, key, fingerprint string, resp *IdempotentResponse) error. Custom stores must accept the fingerprint and refuse to write a row that no longer carries it — a store that ignores it can serve one principal's response to another. Built-in stores need no change."
     find:
       shapes:

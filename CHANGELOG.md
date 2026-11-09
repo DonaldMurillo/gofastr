@@ -129,6 +129,10 @@ few lines, and link the PR or the docs page for the rest.
   no step runs until the flag says to. A run whose BREAKING notes still
   have hits, plan or apply, now exits 1 (a refused downgrade exits 2), so
   a script no longer reads unfinished migration work as success.
+- **A registry note pairing `shapes` with `hits: review` no longer
+  parses** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A shapes hit is a use of the OLD shape, a dead spelling, so it is an
+  edit; the four shipped notes that said review moved to edit.
 
 ### Security
 - **`App.ImportData` restores the bytes it checked**

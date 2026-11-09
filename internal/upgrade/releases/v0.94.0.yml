@@ -40,7 +40,7 @@ notes:
     guidance: "decide.Block(403) writes the status's own phrase. For your own text, define a phrase at package level and call decide.BlockWith(403, reasonNoAccess) or auth.WithBlockReason(403, reasonNoAccess). Read d.Reason.Text(ctx, d.Params) where you read d.Message."
   - change: "print.AccessPolicy returns (status int, reason i18n.Phrase); print.RequireAuth and print.Public follow"
     breaking: true
-    hits: review
+    hits: edit
     find:
       uses: [gofastr/battery/print.AccessPolicy]
       shapes:
