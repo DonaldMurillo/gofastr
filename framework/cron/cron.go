@@ -490,7 +490,7 @@ func (s *Scheduler) run(ctx context.Context) {
 const maxCatchUp = 2 * time.Hour
 
 // catchUp runs the tick at tick, and when the clock has moved beyond it
-// by more than one interval, every missed minute boundary in between,
+// by at least one interval, every missed minute boundary in between,
 // oldest first, returning the last boundary it fired. A tick that fires
 // late (a sleep, a GC pause, a slow leader acquire) used to carry only
 // its own minute plus RunOnce's one-minute look-back, so a fixed-time
@@ -506,7 +506,7 @@ func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time
 	// would fire the same minute the walk already covered, and without
 	// tick-claim leader election nothing would dedupe it).
 	end := tick
-	if now.Sub(tick) > s.tickEv {
+	if now.Sub(tick) >= s.tickEv {
 		end = now.Truncate(s.tickEv)
 	}
 	start := last
@@ -514,7 +514,15 @@ func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time
 		start = end.Add(-maxCatchUp)
 	}
 	for m := start.Add(s.tickEv); !m.After(end); m = m.Add(s.tickEv) {
+		select {
+		case <-ctx.Done():
+			return last
+		case <-s.stop:
+			return last
+		default:
+		}
 		s.runTick(ctx, m)
+		last = m
 	}
 	return end
 }

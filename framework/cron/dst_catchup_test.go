@@ -37,7 +37,15 @@ func startLateScheduler(t *testing.T, at time.Time, jump time.Duration, spec str
 	s := NewScheduler()
 	clock := &fakeClock{}
 	clock.Set(at.Add(-100 * time.Millisecond))
-	s.clock = clock.Now
+	armed := make(chan struct{})
+	var clockCalls atomic.Int32
+	s.clock = func() time.Time {
+		now := clock.Now()
+		if clockCalls.Add(1) == 3 {
+			close(armed)
+		}
+		return now
+	}
 	fired := make(chan struct{}, 32)
 	if err := s.Register(CronJob{Name: "job", Spec: spec, Run: func(context.Context) error {
 		fired <- struct{}{}
@@ -47,7 +55,13 @@ func startLateScheduler(t *testing.T, at time.Time, jump time.Duration, spec str
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-armed:
+	case <-time.After(5 * time.Second):
+		cancel()
+		s.Stop()
+		t.Fatal("tick timer was not armed")
+	}
 	clock.Set(at.Add(jump))
 	return s, clock, fired, func() { cancel(); s.Stop() }
 }
@@ -107,7 +121,7 @@ func TestTickLoopCatchesUpAcrossSpringForward(t *testing.T) {
 	_, _, fired, stop := startLateScheduler(t, start, 100*time.Minute, "30 2 14 3 *")
 	defer stop()
 
-	// 01:45 EST + 100min = 03:25 EDT, five minutes past the jump. With
+	// 01:45 EST + 100min = 04:25 EDT, well past the jump. With
 	// only the one-minute look-back the gap is invisible and the 02:30
 	// job never fires; the walk's 03:00 boundary sees it.
 	waitForFires(t, fired, 1, 5*time.Second)
@@ -185,5 +199,46 @@ func TestTickCatchUpFiresEachMinuteOnce(t *testing.T) {
 	case <-fired:
 		t.Fatal("a minute fired twice")
 	default:
+	}
+}
+
+func TestTickCatchUpIncludesCurrentBoundary(t *testing.T) {
+	s := NewScheduler()
+	var ticks []time.Time
+	s.WithLeaderElection(&recordingTickLease{ticks: &ticks})
+	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
+	tick := last.Add(time.Minute)
+	now := tick.Add(time.Minute)
+	if got := s.catchUp(context.Background(), last, tick, now); !got.Equal(now) {
+		t.Fatalf("last boundary = %v, want %v; claimed %v", got, now, ticks)
+	}
+	if len(ticks) != 2 || !ticks[0].Equal(tick) || !ticks[1].Equal(now) {
+		t.Fatalf("claimed minutes = %v, want %v and %v", ticks, tick, now)
+	}
+}
+
+type recordingTickLease struct {
+	ticks *[]time.Time
+}
+
+func (l *recordingTickLease) Acquire(context.Context) (bool, func(), error) {
+	return false, func() {}, nil
+}
+
+func (l *recordingTickLease) AcquireTick(_ context.Context, tick time.Time) (bool, func(), error) {
+	*l.ticks = append(*l.ticks, tick)
+	return false, func() {}, nil
+}
+
+func TestTickCatchUpStopsWhenCancelled(t *testing.T) {
+	s := NewScheduler()
+	var ticks []time.Time
+	s.WithLeaderElection(&recordingTickLease{ticks: &ticks})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	last := time.Date(2027, 3, 14, 12, 0, 0, 0, time.UTC)
+	s.catchUp(ctx, last, last.Add(time.Minute), last.Add(time.Hour))
+	if len(ticks) != 0 {
+		t.Fatalf("cancelled catch-up claimed %d minutes", len(ticks))
 	}
 }

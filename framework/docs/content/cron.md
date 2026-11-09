@@ -145,6 +145,9 @@ Supported within each field:
   slept longer does not queue hours of firings on wake. Under leader
   election the walk claims each minute in order, so a replica that kept
   ticking refuses the late claims and nothing fires twice.
+  The current minute boundary is included even when the delay is
+  exactly one interval. Cancellation or stop ends the walk before
+  the next minute is claimed.
 - **Daylight-saving changes behave like vixie cron.** Ticks are read in
   the host's local zone (`TZ`; a container is usually UTC, where nothing
   changes). A fixed-time job, one whose minute and hour fields both name

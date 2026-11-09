@@ -187,6 +187,8 @@ few lines, and link the PR or the docs page for the rest.
   now walks every missed minute boundary, oldest first, capped at two
   hours; under leader election each walked minute is claimed in order,
   so a replica that kept ticking refuses the late claims and nothing
+  fires twice. The current boundary is included at an exact one-minute
+  delay, and cancellation or stop interrupts the catch-up walk.
 - **BREAKING — The idempotency in-flight TTL is sized and checked against the
   enforced request deadline.** The optional `middleware.InFlightTTLStore`
   interface (`InFlightTTL() time.Duration`, separate from
