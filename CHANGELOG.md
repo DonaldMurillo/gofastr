@@ -25,6 +25,14 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`gofastr:widgets-synced` says a page's widgets are in**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [runtime contract](framework/docs/content/runtime-contract.md)). The
+  runtime fires it on `window` when one page's widget catalog pass
+  settles, at boot and after each SPA navigation, with `detail.path`
+  naming the page. It comes once the widgets the pass mounts, and any
+  its deep link opens, have settled, and also when the fetch failed. A script or test that
+  needs the widgets for a page waits on it instead of a timer.
 - **A picked folder can be read**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [desktop](framework/docs/content/desktop.md)). `dialogs.openFolder`

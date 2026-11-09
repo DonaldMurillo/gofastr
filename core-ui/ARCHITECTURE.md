@@ -3357,7 +3357,11 @@ same epoch and URL. Comparing chrome-cache objects, the earlier test,
 read every commit as a leave and dropped such opens without a word
 (the `TestTrackerBellPopoverE2E` flake; pinned by
 `TestOpenDuringNavigationSurvivesCommit` and, for the stale side,
-`TestStaleChromeSkipsNextPage`).
+`TestStaleChromeSkipsNextPage`). The catalog pass for a page ends
+with `gofastr:widgets-synced` (`detail.path`), once the mounts and
+deep-link opens that pass started have settled;
+`TestOpenDuringNavigationSurvivesCommit` waits on it for the commit's
+re-fetch.
 
 ---
 
