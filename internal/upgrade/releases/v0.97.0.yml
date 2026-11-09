@@ -22,3 +22,6 @@ notes:
   - change: "gofastr upgrade --apply refuses a downgrade without --allow-downgrade, and a run whose BREAKING notes still have hits exits 1 (a refused downgrade exits 2)"
     nodetect: "a CLI exit-status fact; scripts reading $? are the only callers that can observe it"
     guidance: "Pass --allow-downgrade to apply a downgrade deliberately, and clear the breaking hits the report lists to get exit 0 back."
+  - change: "gofastr agents skill refuses to overwrite a .claude/skills/gofastr-host/SKILL.md that lacks the generated header, unless --force is passed"
+    nodetect: "an existing file's content decides, not the app's code; the refusal itself names the flag"
+    guidance: "Move or delete the hand-written SKILL.md, or pass --force (gofastr init --reinit --force overrides the same way)."

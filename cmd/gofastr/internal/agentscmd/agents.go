@@ -133,10 +133,21 @@ func createAgentsMD(dir string) error {
 
 // runAgentsSkill drops the gofastr-host Claude Code skill into the
 // current project's .claude/skills/ tree. Useful when a host that
-// pre-dates `gofastr init --skill` wants the skill retroactively.
+// pre-dates `gofastr init --skill` wants the skill retroactively. An
+// existing SKILL.md without the generated header is refused unless
+// --force says to clobber the hand-written copy.
 func runAgentsSkill(args []string) {
-	dir := agentsDirArg(args)
-	if err := WriteHostSkill(dir); err != nil {
+	force := false
+	var dirArgs []string
+	for _, a := range args {
+		if a == "--force" {
+			force = true
+			continue
+		}
+		dirArgs = append(dirArgs, a)
+	}
+	dir := agentsDirArg(dirArgs)
+	if err := WriteHostSkill(dir, force); err != nil {
 		cli.Fail("Failed to write skill: %v", err)
 		cli.OsExit(1)
 	}

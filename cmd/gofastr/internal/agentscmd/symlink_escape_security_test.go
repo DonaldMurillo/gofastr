@@ -71,13 +71,13 @@ func TestAgentFilesStayInsideTheProject(t *testing.T) {
 	t.Run("skill file linked out", func(t *testing.T) {
 		dir, victim := t.TempDir(), victimFile(t)
 		symlink(t, victim, filepath.Join(dir, ".claude", "skills", "gofastr-host", "SKILL.md"))
-		_ = WriteHostSkill(dir)
+		_ = WriteHostSkill(dir, false)
 		unchanged(t, victim)
 	})
 	t.Run("skill directory linked out", func(t *testing.T) {
 		dir, out := t.TempDir(), t.TempDir()
 		symlink(t, out, filepath.Join(dir, ".claude"))
-		_ = WriteHostSkill(dir)
+		_ = WriteHostSkill(dir, false)
 		empty(t, out)
 	})
 	t.Run("detail directory linked out", func(t *testing.T) {

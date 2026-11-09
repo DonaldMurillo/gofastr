@@ -254,6 +254,12 @@ few lines, and link the PR or the docs page for the rest.
   [upgrading](framework/docs/content/upgrading.md) now spells out per
   kind; a note written against the source spelling used to report a
   false clean.
+- **`gofastr agents skill` refuses to overwrite a hand-written
+  `SKILL.md`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated skill carries a header in its frontmatter; an existing
+  file without it is refused unless `--force` is passed, the rule the
+  `.agents/` detail files already follow. `gofastr init --reinit --force`
+  overrides it the same way.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

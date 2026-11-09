@@ -113,13 +113,16 @@ scrubbed the same way.
   declares.
 - `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`, in `dir` (default
-  the current directory). The verbs take no flags: a flag or a second
-  argument is refused with exit 2 before anything is written. Every write
-  stays in the project: a symlink there (`.agents`, `.claude`,
-  `AGENTS.md`, a detail file or the skill's `SKILL.md`) is followed only
-  while it points inside the project, and one that leads out is refused,
-  so running the command in a cloned repo cannot write over a file
-  elsewhere on disk.
+  the current directory). The verbs take no flags except `skill
+  --force`; any other flag or a second argument is refused with exit 2
+  before anything is written. Every write stays in the project: a
+  symlink there (`.agents`, `.claude`, `AGENTS.md`, a detail file or the
+  skill's `SKILL.md`) is followed only while it points inside the
+  project, and one that leads out is refused, so running the command in
+  a cloned repo cannot write over a file elsewhere on disk. `agents
+  skill` also refuses an existing `SKILL.md` without the generated
+  header in its frontmatter — a hand-written file — unless `--force`
+  says to replace it, the same rule the `.agents/` detail files follow.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
