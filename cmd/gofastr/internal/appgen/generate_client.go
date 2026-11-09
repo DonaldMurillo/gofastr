@@ -371,9 +371,13 @@ func (c *Client) watchSSE(ctx context.Context, path string, fn func(event string
 const clientRelationKeySource = `// relationKey reads a relation field off the wire: the referenced key,
 // sent as a string or a number, or, under ?include=<field>, the record the
 // server sends in its place. That record lands in included under the
-// field's JSON name, and its keyField is the key.
+// field's JSON name, and its keyField is the key. A plain key drops the
+// record an earlier decode into the same struct left there: it described
+// the previous relation, not this one.
 func relationKey(raw json.RawMessage, keyField, name string, included *map[string]json.RawMessage) (string, error) {
-	if len(raw) > 0 && raw[0] == '{' {
+	if len(raw) == 0 || raw[0] != '{' {
+		delete(*included, name)
+	} else {
 		var rec map[string]json.RawMessage
 		if err := json.Unmarshal(raw, &rec); err != nil {
 			return "", err

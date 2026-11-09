@@ -709,6 +709,21 @@ func TestRelationDecode(t *testing.T) {
 	if fresh.Included["authorId"] != nil {
 		t.Errorf("an explicit null kept the previous included record: %s", fresh.Included["authorId"])
 	}
+	// A plain key into a struct an include filled drops the included
+	// record too: it described the previous relation, not this one.
+	var reused Posts
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"n2","authorId":{"id":"o1","email":"a@example.com"},"title":"b"}` + "`" + `), &reused); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(` + "`" + `{"id":"n2","authorId":"o9","title":"b"}` + "`" + `), &reused); err != nil {
+		t.Fatal(err)
+	}
+	if reused.AuthorId == nil || *reused.AuthorId != "o9" {
+		t.Errorf("the plain key did not land: %v", reused.AuthorId)
+	}
+	if rec := reused.Included["authorId"]; rec != nil {
+		t.Errorf("a plain key kept the previous included record: %s", rec)
+	}
 }
 `
 
