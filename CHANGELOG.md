@@ -247,8 +247,9 @@ few lines, and link the PR or the docs page for the rest.
   carries string, byte, rune and standard formatted writes until a
   dominating `Reset`.
 - **`discardeddecode` checks non-envelope JSON encode errors** (#669).
-  HTTP answers encode before committing their status; broker and queue
-  operations return serialization errors, and output paths log failures.
+  Shared HTTP response helpers encode before committing their status;
+  broker and queue operations return serialization errors, and other
+  output paths log failures.
   The analyzer now covers fallible values outside JSON-RPC envelopes.
 - **A2A refuses an owner or tenant the store cannot bind** (#669). An
   `Owner` or `Tenant` callback that returns a NUL byte or invalid
