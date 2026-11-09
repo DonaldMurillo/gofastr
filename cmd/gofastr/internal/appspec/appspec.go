@@ -3646,9 +3646,24 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			// renders the total of a numeric column. At one row that total IS
 			// the stored value, so the masked-column bar applies here too.
 			agg, _ := src["agg"].(string)
+			// The generated app runs entityui.CheckStat on the card at
+			// boot, which refuses a count given a field or a format and a
+			// sum formatted other than "money": StatValue ignores those
+			// props, so the card would draw a plain count where a sum or
+			// money was asked for. Refuse the same shapes here.
+			format := AppSpecProp(block, "format")
 			switch agg {
 			case "", "count":
+				if f, _ := src["field"].(string); f != "" {
+					return fmt.Errorf("app spec: screen %q stat_card counts rows and takes no source.field (got %q); set agg: sum to total it", screenName, f)
+				}
+				if format != "" {
+					return fmt.Errorf("app spec: screen %q stat_card counts rows and takes no format (got %q)", screenName, format)
+				}
 			case "sum":
+				if format != "" && format != "money" {
+					return fmt.Errorf("app spec: screen %q stat_card format %q is not money (or empty)", screenName, format)
+				}
 				f, _ := src["field"].(string)
 				if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
 					"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {

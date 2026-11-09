@@ -2703,9 +2703,65 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(body)
 	mountName := "mount" + appspec.ToCamelCase(screen.Name) + "Screen"
-	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, AppSpecScreenMountStmt(screen, bp)))
+	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s%s\n}\n\n", mountName, screen.Name, mountName, appSpecStatCardChecks(screen), AppSpecScreenMountStmt(screen, bp)))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
 	return GeneratedFile{Name: appspec.ScreenFileName(screen.Name), Content: sb.String()}
+}
+
+// appSpecStat is a sourced stat_card's arguments to entityui's StatValue
+// and CheckStat, in their order.
+type appSpecStat struct {
+	entity, agg, field, filter, format string
+}
+
+// appSpecStatSource reads a stat_card's source block. ok is false for a
+// card with a fixed value and no source.
+func appSpecStatSource(block appspec.AppSpecBlock) (appSpecStat, bool) {
+	src, ok := block.Props["source"].(map[string]any)
+	if !ok {
+		return appSpecStat{}, false
+	}
+	var st appSpecStat
+	st.entity, _ = src["entity"].(string)
+	st.agg, _ = src["agg"].(string)
+	st.field, _ = src["field"].(string)
+	st.filter, _ = src["filter"].(string)
+	st.format = appspec.AppSpecProp(block, "format")
+	return st, true
+}
+
+// appSpecStatCardChecks emits, for the head of a screen's mount func, one
+// entityui CheckStat call per sourced stat_card the screen renders. The
+// app spec load judges a card against the spec's declarations; CheckStat
+// judges it against the entity the app actually registered (every
+// column, hidden and no_query flags, the filter parsed with real types).
+// A card that passes the load but could never compute (a filter naming a
+// column the entity lacks) would draw "—" forever with no error; the
+// check panics at boot instead, naming the screen and the card, the way
+// EntityUI already panics on a bad appExtensions name.
+func appSpecStatCardChecks(screen appspec.AppSpecScreen) string {
+	var sb strings.Builder
+	for _, b := range appspec.AppSpecBlocksDeep(screen.Body) {
+		if !strings.EqualFold(strings.TrimSpace(b.Kind), "stat_card") {
+			continue
+		}
+		st, ok := appSpecStatSource(b)
+		if !ok {
+			continue
+		}
+		if sb.Len() == 0 {
+			sb.WriteString("	// A stat card whose source could never compute fails the boot\n")
+			sb.WriteString("	// here, naming the card, instead of drawing \"—\" forever.\n")
+		}
+		label := appspec.AppSpecProp(b, "label")
+		if label == "" {
+			label = st.entity
+		}
+		prefix := fmt.Sprintf("screen %q stat_card %q: ", screen.Name, label)
+		fmt.Fprintf(&sb, "\tif err := appUI.CheckStat(%q, %q, %q, %q, %q); err != nil {\n", st.entity, st.agg, st.field, st.filter, st.format)
+		fmt.Fprintf(&sb, "\t\tpanic(%q + err.Error())\n\t}\n", prefix)
+	}
+	return sb.String()
 }
 
 // screenGoIdentifiers reports whether the screen's derived type name
@@ -2753,6 +2809,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range ordered {
 		mountName := "mount" + appspec.ToCamelCase(s.Name) + "Screen"
 		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
+		sb.WriteString(appSpecStatCardChecks(s))
 		sb.WriteString(AppSpecScreenMountStmt(s, bp))
 		sb.WriteString("\n}\n\n")
 		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: %d, fn: %s},", screenOrder[s.Name], mountName))
@@ -3408,13 +3465,8 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 		return "ui.Grid(ui.GridConfig{Min: \"12rem\"}, " + childExprs() + ")", true
 	case "stat_card":
 		label := appspec.AppSpecProp(block, "label")
-		if src, ok := block.Props["source"].(map[string]any); ok {
-			entity, _ := src["entity"].(string)
-			agg, _ := src["agg"].(string)
-			field, _ := src["field"].(string)
-			filter, _ := src["filter"].(string)
-			format := appspec.AppSpecProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), entity, agg, field, filter, format), true
+		if st, ok := appSpecStatSource(block); ok {
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), st.entity, st.agg, st.field, st.filter, st.format), true
 		}
 		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: %q})", tx(label), appspec.AppSpecProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":

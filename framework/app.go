@@ -114,10 +114,13 @@ type AppConfig struct {
 	// TrustedProxies lists the TCP peer addresses (IPs and CIDR ranges)
 	// X-Forwarded-Proto is honored from, the same trust rule the rate
 	// limiters apply to X-Forwarded-For. A client that is not a listed
-	// peer cannot change the scheme of the well-known documents' URLs.
+	// peer cannot change the scheme of the well-known documents' URLs,
+	// nor the origin in the Content-Security-Policy of a
+	// framework/pluginhost framed asset served from this App's router.
 	// Empty (default) honors X-Forwarded-Proto from nobody, so behind a
 	// TLS-terminating proxy that forwards it you must list the proxy or
-	// set BaseURL.
+	// set BaseURL (BaseURL does not reach pluginhost: its frames need the
+	// proxy listed).
 	TrustedProxies []string
 
 	// RequestTimeout caps the per-request wall-clock budget enforced by
@@ -383,7 +386,9 @@ type App struct {
 	// routes on the same router, and its screens post to the full path.
 	crudMounts map[*entity.Entity]crudMount
 	// trustedProxies is AppConfig.TrustedProxies parsed once: the peers
-	// X-Forwarded-Proto is honored from in the well-known documents.
+	// X-Forwarded-Proto is honored from in the well-known documents, and,
+	// through the request context (clientip.WithTrusted), in
+	// framework/pluginhost's framed asset CSP.
 	trustedProxies clientip.Proxies
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
@@ -2280,6 +2285,18 @@ func NewApp(opts ...AppOption) *App {
 	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
 		a.router.Use(DefaultMiddleware(a)...)
+	}
+	// The trusted-proxy list rides on every request context, defaults or
+	// not, so a package mounted on this router without the App
+	// (framework/pluginhost's framed assets build their CSP origin from
+	// X-Forwarded-Proto) applies the same AppConfig.TrustedProxies rule as
+	// the well-known documents. Nothing is installed when the list is empty.
+	if proxies := a.trustedProxies; !proxies.Empty() {
+		a.router.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, r.WithContext(clientip.WithTrusted(r.Context(), proxies)))
+			})
+		})
 	}
 	// Idempotency runs innermost, after the app's auth and tenant
 	// middleware, so the replay key carries the user and tenant they

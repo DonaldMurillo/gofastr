@@ -1241,14 +1241,22 @@ optional `filter: status=active`) for a `stat_card`, and
 `source: {entity: customers, group_by: status}` for a chart. `agg` is
 `count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
 `int`, `float` or `decimal` field; validation refuses anything else rather
-than rendering "—". A `stat_card` filter is a filter predicate
+than rendering "—". A count takes no `field` and no `format`, and a sum's
+`format` is `money` or absent: validation refuses the rest, because the
+card would ignore it and draw a plain number. A `stat_card` filter is a filter predicate
 (`'status in ["draft", "open"] and amount >= 1000'`); the bare
 `field=value` form is read as `field = "value"`. Validation checks the
 value in each comparison against its column, with the `entity_list`
 pin's rules: it refuses a value the column's type cannot hold
 (`featured = "yes"` on a bool), and on `=`, `!=` and `in` an enum value
 outside the field's `values:`. A `contains` comparison, and a filter
-the predicate parser refuses, pass through unchecked. For the chart kinds `source` (with both `entity` and
+the predicate parser refuses, pass through unchecked. The generated
+app checks every sourced `stat_card` again when its screen mounts:
+`entityui.CheckStat` judges the card against the entity the app
+registered, so a filter naming a column the entity lacks, or anything
+else that could never compute, panics at boot with the screen and the
+card's label (`screen "dashboard" stat_card "Billed": ...`) instead of
+drawing "—" forever. For the chart kinds `source` (with both `entity` and
 `group_by`, targeting a declared entity) is **required**: validation
 rejects a chart without one rather than letting the block silently vanish
 from the page. A chart with a

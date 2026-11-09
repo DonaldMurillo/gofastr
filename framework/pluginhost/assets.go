@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/static"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 	"github.com/DonaldMurillo/gofastr/internal/rootfs"
 )
 
@@ -80,26 +81,34 @@ func framedCSP(origin string, csp []string) string {
 		"; base-uri " + origin
 }
 
-// requestOrigin reconstructs the scheme://host origin the request came in on,
-// honouring a reverse-proxy X-Forwarded-Proto when present. Both the scheme
-// and host are request-controlled and get interpolated into the CSP header, so
-// both are strictly validated: a value carrying a space or ';' could inject an
-// arbitrary CSP directive (e.g. re-enabling connect-src, the exfil guard). An
-// invalid origin returns ok=false and the framed asset is refused (400) rather
-// than served with a poisoned policy.
+// requestOrigin reconstructs the scheme://host origin the request came in on.
+// The scheme is https on a TLS connection; X-Forwarded-Proto changes it only
+// when the TCP peer is a trusted proxy, the AppConfig.TrustedProxies list the
+// App stamps on the request context (clientip.WithTrusted). Any client can
+// send the header, and the origin lands in a CSP that a framed asset may
+// cache "public, immutable", so an untrusted peer's value is ignored (#669;
+// framework/wellknown.go and framework/uihost/agentready.go apply the same
+// rule). Both the scheme and host are request-controlled and get
+// interpolated into the CSP header, so both are strictly validated: a value
+// carrying a space or ';' could inject an arbitrary CSP directive (e.g.
+// re-enabling connect-src, the exfil guard). An invalid origin returns
+// ok=false and the framed asset is refused (400) rather than served with a
+// poisoned policy.
 func requestOrigin(r *http.Request) (string, bool) {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	// Only an exact http/https X-Forwarded-Proto is honoured, never a raw
-	// header value spliced into the policy.
-	if xf := r.Header.Get("X-Forwarded-Proto"); xf != "" {
-		switch xf {
-		case "http", "https":
-			scheme = xf
-		default:
-			return "", false
+	// Only an exact http/https X-Forwarded-Proto from a trusted proxy is
+	// honoured, never a raw header value spliced into the policy.
+	if clientip.TrustedFrom(r.Context()).ContainsAddr(r.RemoteAddr) {
+		if xf := r.Header.Get("X-Forwarded-Proto"); xf != "" {
+			switch xf {
+			case "http", "https":
+				scheme = xf
+			default:
+				return "", false
+			}
 		}
 	}
 	host := r.Host
@@ -459,6 +468,10 @@ func writeAsset(w http.ResponseWriter, r *http.Request, b []byte, contentType st
 	// a stale copy must not linger across rebuilds — see [CacheProfile]).
 	h.Set("Cache-Control", p.cache.cacheControl())
 	if p.framed {
+		// The CSP below names the request's origin, so a cache must key
+		// the response on what built it: Host, and X-Forwarded-Proto from
+		// a trusted proxy. Add, not Set, so an upstream Vary survives.
+		h.Add("Vary", "Host, X-Forwarded-Proto")
 		h.Del("X-Frame-Options")
 		h.Set("Content-Security-Policy", framedCSP(origin, p.csp))
 		h.Set("Cross-Origin-Resource-Policy", "cross-origin")

@@ -8,7 +8,20 @@ import (
 	"testing/fstest"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
+
+// fromTrustedProxy serves h as an App listing httptest's peer (192.0.2.1)
+// in AppConfig.TrustedProxies would: the list rides on the request context,
+// so that peer's X-Forwarded-Proto reaches requestOrigin (#669: it counts
+// from no one else). Tests of the http/https enum use it so the enum check
+// is what refuses a value, not the trust rule.
+func fromTrustedProxy(h http.Handler) http.Handler {
+	trusted := clientip.ParseProxies([]string{"192.0.2.1"})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.ServeHTTP(w, r.WithContext(clientip.WithTrusted(r.Context(), trusted)))
+	})
+}
 
 // adversarialAssets wires one AssetServer with a filesystem that contains
 // files NO route should ever be able to reach (secret.txt, deep/nest.js),
@@ -109,7 +122,7 @@ func TestAssetRouteServesOnlyRegisteredBytes(t *testing.T) {
 // other injection classes: a forwarded-proto LIST, whitespace padding, the
 // uppercase spelling, and control characters in the Host.
 func TestFramedAssetsRefusePoisonedOrigin(t *testing.T) {
-	rt := adversarialAssets(t)
+	rt := fromTrustedProxy(adversarialAssets(t))
 
 	surfaces := []string{"/__p/editor.html", "/__p/frame", FrameClientScriptURL}
 	poisoned := []struct {
