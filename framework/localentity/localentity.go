@@ -449,10 +449,13 @@ func indexName(field string) string { return "by_" + field }
 // way the server does. It must compile as Go (core/schema checks it
 // there), and it is scanned against the subset Go's RE2 and JavaScript's
 // u-mode regexes share: literals; classes with ranges and the escapes
-// below; groups, with (?:…) the only extension; | ^ $ . * + ?; {n},
-// {n,} and {n,m}; escapes \d \D \w \W \s \S \b \B \n \r \t \f \v, an
+// below; groups, with (?:…) the only extension; | ^ $ * + ?; {n},
+// {n,} and {n,m}; escapes \d \D \w \W \b \B \n \r \t \f \v, an
 // escaped metacharacter, \- inside a class, and \p{…}/\P{…} naming a
-// general category. Everything else (inline flags, (?P<name>), \A, \z,
+// general category. \s, \S and a bare . are refused too: JavaScript's
+// \s is Unicode whitespace where Go's is ASCII, and its . skips four
+// line terminators where Go's skips one (#669) — name the characters in
+// a class instead. Everything else (inline flags, (?P<name>), \A, \z,
 // \Q…\E, POSIX classes, octal and other letter escapes, a lone { } or ],
 // script names in \p{…}, a class opening with ]) is refused at startup,
 // because one side would accept what the other refuses.
@@ -470,7 +473,9 @@ func checkPattern(p string) error {
 			}
 			n := p[i+1]
 			switch {
-			case strings.IndexByte(`dDwWsSnrtfv\/.^$*+?()[]{}|`, n) >= 0:
+			case n == 's' || n == 'S':
+				return fmt.Errorf("Pattern uses \\%c: JavaScript's \\s is Unicode whitespace, Go's is ASCII [ \\t\\n\\f\\r]; name the characters in a class instead (a space, \\t, \\r, \\n, \\f, \\v …)", n)
+			case strings.IndexByte(`dDwWnrtfv\/.^$*+?()[]{}|`, n) >= 0:
 			case (n == 'b' || n == 'B') && !inClass:
 			case n == '-' && inClass:
 			case n == 'p' || n == 'P':
@@ -498,6 +503,8 @@ func checkPattern(p string) error {
 			if i+1 < len(p) && p[i+1] == ']' {
 				return fmt.Errorf("Pattern opens a class with ]; escape it as \\]")
 			}
+		case c == '.' && !inClass:
+			return fmt.Errorf("Pattern uses . outside a class: JavaScript's . skips every line terminator (\\n \\r \\u2028 \\u2029), Go's only \\n; name the characters you accept in a class instead")
 		case c == '(' && strings.HasPrefix(p[i:], "(?") && !strings.HasPrefix(p[i:], "(?:"):
 			return fmt.Errorf("Pattern uses %q; JavaScript has no inline flags or (?P<name>) groups", p[i:min(i+4, len(p))])
 		case c == '{':

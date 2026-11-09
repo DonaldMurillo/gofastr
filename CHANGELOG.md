@@ -133,6 +133,12 @@ few lines, and link the PR or the docs page for the rest.
   parses** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A shapes hit is a use of the OLD shape, a dead spelling, so it is an
   edit; the four shipped notes that said review moved to edit.
+- **BREAKING: `localentity` refuses `\s`, `\S` and a bare `.` in a
+  JavaScript's `\s` is Unicode whitespace where Go's is ASCII, and its
+  `.` skips every line terminator where Go's skips only `\n`, so the
+  browser and the server validated different values. Name the characters
+  in a class instead (`[ \t\r\n]+`); `Define` refuses the ambiguous
+  spellings at startup.
 
 ### Security
 - **A repository secrets file cannot name a key that is not an
