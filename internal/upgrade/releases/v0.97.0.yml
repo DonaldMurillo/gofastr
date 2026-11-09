@@ -19,3 +19,7 @@ notes:
   - change: "Webhook dedupe-key and owner callbacks refuse NUL or invalid UTF-8 with 400; A2A owner and tenant callbacks refuse those bytes with 401 before a store call"
     guidance: "Return storable text from identity callbacks. The request used to fail at the PostgreSQL bind while SQLite accepted the bytes."
     nodetect: "the callback result's runtime bytes determine the refusal"
+  - change: "BREAKING for a custom battery/semantic Store with Options.Keyword - the chunk-listing capability method ChunkIDsForDoc now returns ([]string, error); a store still returning just []string is rejected at Open with the cannot-list-chunks error"
+    breaking: true
+    guidance: "ChunkIDsForDoc fed the keyword purge on document removal, and a database failure folded into an empty list read as nothing-to-clean, orphaning keyword entries that pointed at a removed document. Stores now return the error and the index refuses the mutation instead. Add the error return — the failure path can return fmt.Errorf wrapping the query error, as PgVectorStore does; an in-memory store returns nil. EnsureSchema on PgVectorStore also creates the keyword search's GIN index (to_tsvector('simple', text)) automatically, so the manual CREATE INDEX the earlier pgvector note suggested is no longer needed after the next EnsureSchema, including for existing tables."
+    nodetect: "the capability interface (chunkLister) is unexported and satisfied structurally at Open; a source search for the old signature only finds the framework's own stores"

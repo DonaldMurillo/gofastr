@@ -44,15 +44,21 @@ func TestPgVectorKeywordSearchUsesGINIndex(t *testing.T) {
 	// With sequential scans off, the planner must answer the search's
 	// own predicate through the expression index: the same
 	// to_tsvector('simple', text) the Search method filters on.
-	if _, err := s.db.ExecContext(ctx, `SET enable_seqscan = off`); err != nil {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL enable_seqscan = off`); err != nil {
 		t.Fatalf("disable seqscan: %v", err)
 	}
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
+	rows, err := tx.QueryContext(ctx, fmt.Sprintf(
 		`EXPLAIN SELECT id FROM %s WHERE to_tsvector('simple', text) @@ CAST($1 AS tsquery)`,
 		s.quotedTable), "'token'")
 	if err != nil {
 		t.Fatalf("explain keyword search: %v", err)
 	}
+	defer rows.Close()
 	var planLines []string
 	for rows.Next() {
 		var line string
@@ -108,5 +114,37 @@ func TestIndexNamesQualifiedTableDistinct(t *testing.T) {
 	}
 	if docIndexName(qualified) == keywordIndexName(qualified) {
 		t.Fatal("doc and keyword index names collide for a schema-qualified table")
+	}
+}
+
+// Both index suffixes must survive PostgreSQL's identifier limit.
+func TestIndexNamesLongTableDistinct(t *testing.T) {
+	for _, n := range []int{61, 62, 63} {
+		table := strings.Repeat("t", n)
+		doc, kw := docIndexName(table), keywordIndexName(table)
+		if doc == kw || len(doc) > 63 || len(kw) > 63 {
+			t.Fatalf("length %d: colliding or oversized index names %q / %q", n, doc, kw)
+		}
+	}
+}
+
+func TestPgVectorLongTableHasBothIndexes(t *testing.T) {
+	for _, n := range []int{62, 63} {
+		t.Run(fmt.Sprint(n), func(t *testing.T) {
+			s, err := NewPgVector(openPgVector(t), PgVectorConfig{Table: strings.Repeat("t", n), Dim: 3, Model: "test"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := s.EnsureSchema(context.Background()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var count int
+			err = s.db.QueryRow(`SELECT count(*) FROM pg_indexes WHERE schemaname=current_schema() AND tablename=$1 AND indexname IN ($2,$3)`, s.table, docIndexName(s.table), keywordIndexName(s.table)).Scan(&count)
+			if err != nil || count != 2 {
+				t.Fatalf("table length %d: found %d document/keyword indexes, error %v", n, count, err)
+			}
+		})
 	}
 }

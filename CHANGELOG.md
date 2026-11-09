@@ -269,18 +269,12 @@ few lines, and link the PR or the docs page for the rest.
   owner** (#669). A `DedupeKeyFunc` or `Owner` callback result holding
   a NUL or invalid UTF-8 is a 400 before anything persists, instead of
   a Postgres 500 on the first store write (SQLite stored it silently).
-- **`PgVectorStore` indexes the keyword leg and fails its chunk
-  listing** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
-  [semantic search](framework/docs/content/semantic-search.md)).
-  `EnsureSchema` now creates the GIN index over
-  `to_tsvector('simple', text)` the hybrid keyword search filters on,
-  so it stops being a full table scan that recomputes the tsvector for
-  every row on every query; tables from earlier releases get it on
-  their next `EnsureSchema`. `ChunkIDsForDoc` — **BREAKING for a custom
-  Store with `Options.Keyword`** — now returns `([]string, error)`: a
-  database failure used to fold into an empty list the keyword purge
-  read as nothing-to-clean, orphaning entries that pointed at a removed
-  document; the index now refuses the mutation instead.
+- **`PgVectorStore` creates the keyword GIN index**, including for
+  existing tables on their next `EnsureSchema`, and keeps index names
+  distinct at PostgreSQL's identifier limit (#669).
+  **BREAKING for custom stores using `Options.Keyword`:**
+  `ChunkIDsForDoc` now returns `([]string, error)` so a failed listing
+  refuses replacement or removal. See [semantic search](framework/docs/content/semantic-search.md).
 - **Analyzer guards are mutation-tested** ([#656](https://github.com/DonaldMurillo/gofastr/issues/656),
   [#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `go run ./cmd/analyzermutate internal/analyzers/<pkg>…` negates every

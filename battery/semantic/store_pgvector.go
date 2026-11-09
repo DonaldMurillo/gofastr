@@ -138,12 +138,14 @@ func indexName(table, suffix string) string {
 	if i := strings.LastIndexByte(table, '.'); i >= 0 {
 		table = table[i+1:]
 	}
-	name := table + suffix
-	if len(name) > 63 {
-		name = name[:63]
+	if len(table)+len(suffix) <= 63 {
+		return table + suffix
 	}
-	if name != table {
-		return name
+	// Preserve earlier truncated names where their distinct suffix bytes
+	// survive. At 62 bytes both suffixes become "_"; retain the full
+	// suffix and shorten the table with a hash instead.
+	if len(table) <= 61 {
+		return (table + suffix)[:63]
 	}
 	h := fnv.New32a()
 	h.Write([]byte(table))

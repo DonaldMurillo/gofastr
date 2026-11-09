@@ -379,3 +379,11 @@
 - Evidence: all six issue #669 obstruction tests pass as uid 0 in the `golang:1.27` container; removing ObstructApply makes all four CLI/MCP partial-application tests fail.
 - Next time: choose a kernel path or confinement failure that holds for every uid, and assert the prior file changed before accepting a partial-application result.
 - Status: active
+
+## 2026-11-08 - Check Builder control flow and PostgreSQL identifier boundaries
+- Scope: textbind, battery/semantic
+- Trigger: Builder resets in sibling branches cleared taint; PostgreSQL truncated both index suffixes of a 62-byte table to the same name.
+- Approach: require a reset to dominate the read; test byte, rune and formatted writes. Keep distinct suffixes when shortening index names and inspect the actual pg_indexes catalog.
+- Evidence: new Builder fixtures fail on the GLM analyzer; TestPgVectorLongTableHasBothIndexes finds one index with its original naming helper and two with the fix.
+- Next time: test both branches and identifier lengths 61, 62 and 63; pin EXPLAIN settings to one transaction rather than a pooled connection.
+- Status: active
