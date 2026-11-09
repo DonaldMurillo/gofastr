@@ -155,11 +155,13 @@ few lines, and link the PR or the docs page for the rest.
   (`ALTER COLUMN … SET NOT NULL` on Postgres, a named constraint change
   on the SQLite rebuild). Backfill the rows first: the tightening fails
   while any row still holds NULL.
-- **`gofastr migrate generate` warns when its output drops data.** A
+- **`gofastr migrate generate` warns when its output drops tables or columns.** A
   generated Up section running any `DROP TABLE` or `DROP COLUMN` now
   prints a warning naming each one. An undeclared rename generates as a
   drop plus a create and loses every row; the warning says so and points
-  at the entity's `renames:` declaration.
+  at the entity's `renames:` declaration. Comments do not hide real drops,
+  and quoted routine bodies do not produce false warnings. A SQLite
+  rebuild may copy rows before dropping the old table; review that copy.
 - **A failed rollback of an abandoned webhook claim is logged.**
   `claimSqlite` deferred the `ROLLBACK` for a claim it could not use and
   dropped the error, so a stuck row that could not hand its claim back

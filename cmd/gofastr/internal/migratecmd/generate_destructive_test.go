@@ -103,3 +103,22 @@ func TestDestructiveDropsIgnoresLiterals(t *testing.T) {
 		t.Fatalf("a Down drop counted as destructive: %v", drops)
 	}
 }
+
+func TestDestructiveDropsAfterComments(t *testing.T) {
+	for _, prefix := range []string{"-- review this change\n", "/* review */ ", "/* outer /* inner */ outer */\n"} {
+		file := "-- +migrate Up\n" + prefix + "DROP TABLE tags;\nALTER /* change */ TABLE posts DROP /* loss */ COLUMN title;\n"
+		got := destructiveDrops(file)
+		if strings.Join(got, ",") != "DROP TABLE tags,DROP COLUMN posts.title" {
+			t.Errorf("prefix %q: drops = %v", prefix, got)
+		}
+	}
+}
+
+func TestDestructiveDropsIgnoresRoutineBodies(t *testing.T) {
+	for _, quote := range []string{"$$", "$body$"} {
+		file := "-- +migrate Up\nCREATE FUNCTION f() RETURNS void AS " + quote + "\nBEGIN\nPERFORM 1;\nDROP TABLE secret;\nEND;\n" + quote + " LANGUAGE plpgsql;\nDROP TABLE tags;\n"
+		if got := destructiveDrops(file); strings.Join(got, ",") != "DROP TABLE tags" {
+			t.Errorf("quote %s: drops = %v", quote, got)
+		}
+	}
+}

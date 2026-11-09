@@ -388,6 +388,9 @@ runs any `DROP TABLE` or `DROP COLUMN`, naming each one. A rename is
 indistinguishable from a removal, so an undeclared rename generates as a
 drop plus a create and loses every row; if the drop is a rename in
 disguise, declare it (`renames:` on the entity) and regenerate instead.
+The warning ignores SQL comments and quoted routine bodies. A SQLite
+rebuild also drops the old table after copying its rows; review that
+copy rather than treating every `DROP TABLE` as a table removal.
 
 Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On

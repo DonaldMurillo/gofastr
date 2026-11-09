@@ -19,6 +19,9 @@ import (
 // rows into a NOT NULL column without the change ever being named (#656).
 
 func deferredMustPlan(extra ...schema.Field) migrate.Plan {
+	if len(extra) == 0 {
+		extra = []schema.Field{{Name: "extra", Type: schema.String}}
+	}
 	return migrate.Plan{Registry: fkReg{ixEntity(append([]schema.Field{{Name: "must", Type: schema.String, Required: true}}, extra...))}}
 }
 
@@ -61,11 +64,12 @@ func ddlLine(t *testing.T, ddl, col string) string {
 // `must` column behind, and generates (without applying) the tightening.
 func deferredMustState(t *testing.T, db *sql.DB, d migrate.Dialect) (tighten string, snapshotAfterAdd migrate.SchemaSnapshot) {
 	t.Helper()
-	_, _, s1, err := genStep(t, db, d, 1, migrate.Plan{Registry: fkReg{ixEntity(nil)}}, migrate.SchemaSnapshot{})
+	_, _, s1, err := genStep(t, db, d, 1, migrate.Plan{Registry: fkReg{ixEntity([]schema.Field{{Name: "extra", Type: schema.String}})}}, migrate.SchemaSnapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	up2, _, s2, err := genStep(t, db, d, 2, deferredMustPlan(), s1)
+	plan := deferredMustPlan(schema.Field{Name: "extra", Type: schema.String})
+	up2, _, s2, err := genStep(t, db, d, 2, plan, s1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +79,7 @@ func deferredMustState(t *testing.T, db *sql.DB, d migrate.Dialect) (tighten str
 	if line := ddlLine(t, s2.TableDDL["ixt"], "must"); strings.Contains(strings.ToUpper(line), "NOT NULL") {
 		t.Fatalf("snapshot records the deferred column as NOT NULL:\n%s", line)
 	}
-	tighten, _, _, err = migrate.GeneratePlan(deferredMustPlan(), s2, d)
+	tighten, _, _, err = migrate.GeneratePlan(plan, s2, d)
 	if err != nil {
 		t.Fatal(err)
 	}

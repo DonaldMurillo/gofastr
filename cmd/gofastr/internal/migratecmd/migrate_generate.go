@@ -98,7 +98,7 @@ func runMigrateGenerate(args []string) {
 	if body, err := os.ReadFile(path); err == nil {
 		if drops := destructiveDrops(string(body)); len(drops) > 0 {
 			cli.Warn("Destructive: `gofastr migrate up` will run %s.", strings.Join(drops, ", "))
-			cli.Info("Dropped tables and columns lose their rows; the Down restores the shape, not the data. Declare a rename (entity renames: in the app spec) instead of dropping and re-adding.")
+			cli.Info("Review data-copy and rename steps: a drop can lose data, and Down restores the shape, not deleted data. Declare a rename (entity renames: in the app spec) instead of dropping and re-adding.")
 		}
 	}
 	cli.Info("Review it, commit it, then run `gofastr migrate up`.")
@@ -109,9 +109,9 @@ func runMigrateGenerate(args []string) {
 }
 
 // destructiveDrops names every DROP TABLE and DROP COLUMN a rendered
-// migration's Up section runs. A drop loses rows the Down cannot restore,
+// migration's Up section runs. A drop can lose rows the Down cannot restore,
 // and an undeclared rename generates as DROP + CREATE, so the reviewer
-// gets one loud line naming each loss before the file is committed. Only
+// gets one loud line naming each drop before the file is committed. Only
 // the Up counts: the Down of an additive migration drops what it added,
 // which is the rollback, not a loss. Statements are split with string
 // literals, quoted identifiers and comments respected, so a DEFAULT
@@ -157,17 +157,21 @@ func upSection(content string) (string, bool) {
 }
 
 // splitSQLStatements splits SQL on ";" outside single-quoted strings,
-// double-quoted identifiers, line comments and block comments.
+// double-quoted identifiers, dollar-quoted bodies and comments.
 func splitSQLStatements(sql string) []string {
 	var stmts []string
 	var cur []byte
 	var quote byte
+	var escapes bool
 	for i := 0; i < len(sql); i++ {
 		c := sql[i]
 		switch {
 		case quote == '\'':
 			cur = append(cur, c)
-			if c == '\'' {
+			if escapes && c == '\\' && i+1 < len(sql) {
+				i++
+				cur = append(cur, sql[i])
+			} else if c == '\'' {
 				if i+1 < len(sql) && sql[i+1] == '\'' { // escaped ''
 					cur = append(cur, '\'')
 					i++
@@ -187,20 +191,40 @@ func splitSQLStatements(sql string) []string {
 			}
 		case c == '\'' || c == '"':
 			quote = c
+			escapes = i > 0 && (sql[i-1] == 'E' || sql[i-1] == 'e')
 			cur = append(cur, c)
+		case c == '$' && dollarQuoteRe.FindString(sql[i:]) != "":
+			delimiter := dollarQuoteRe.FindString(sql[i:])
+			end := strings.Index(sql[i+len(delimiter):], delimiter)
+			if end < 0 {
+				cur = append(cur, sql[i:]...)
+				i = len(sql)
+			} else {
+				length := len(delimiter)*2 + end
+				cur = append(cur, sql[i:i+length]...)
+				i += length - 1
+			}
 		case c == '-' && i+1 < len(sql) && sql[i+1] == '-':
 			for ; i < len(sql) && sql[i] != '\n'; i++ {
-				cur = append(cur, sql[i])
 			}
+			cur = append(cur, ' ')
 		case c == '/' && i+1 < len(sql) && sql[i+1] == '*':
-			for ; i+1 < len(sql); i++ {
-				cur = append(cur, sql[i])
-				if sql[i] == '*' && sql[i+1] == '/' {
-					cur = append(cur, '/')
+			depth := 1
+			i += 2
+			for i < len(sql) && depth > 0 {
+				switch {
+				case strings.HasPrefix(sql[i:], "/*"):
+					depth++
+					i += 2
+				case strings.HasPrefix(sql[i:], "*/"):
+					depth--
+					i += 2
+				default:
 					i++
-					break
 				}
 			}
+			i--
+			cur = append(cur, ' ')
 		case c == ';':
 			stmts = append(stmts, string(cur))
 			cur = cur[:0]
@@ -223,8 +247,9 @@ const (
 )
 
 var (
-	dropTableRe  = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
-	dropColumnRe = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
+	dollarQuoteRe = regexp.MustCompile(`^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
+	dropTableRe   = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
+	dropColumnRe  = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
 )
 
 func dropTableTarget(stmt string) (string, bool) {
