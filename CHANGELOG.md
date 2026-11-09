@@ -186,7 +186,7 @@ few lines, and link the PR or the docs page for the rest.
   now walks every missed minute boundary, oldest first, capped at two
   hours; under leader election each walked minute is claimed in order,
   so a replica that kept ticking refuses the late claims and nothing
-- **The idempotency in-flight TTL is sized and checked against the
+- **BREAKING — The idempotency in-flight TTL is sized and checked against the
   enforced request deadline.** The optional `middleware.InFlightTTLStore`
   interface (`InFlightTTL() time.Duration`, separate from
   `IdempotencyStore`, so custom stores still compile) is implemented by
@@ -198,7 +198,9 @@ few lines, and link the PR or the docs page for the rest.
   values when a store reports a TTL at or below the budget (the
   `WriteTimeout`-vs-`RequestTimeout` shape). A store without the
   method, or `DisableRequestTimeout`, logs a startup warning.
-- **An explicit `WriteTimeout` is refused below the enforced request
+  Combining both also warns. Reusing one `WithIdempotency` option
+  creates independent default stores sized for their respective Apps.
+- **BREAKING — An explicit `WriteTimeout` is refused below the enforced request
   deadline, not just a configured `RequestTimeout`.** The deadline the
   default chain's timeout middleware actually enforces — the configured
   `RequestTimeout`, or its 30s default when unset — now pairs with the

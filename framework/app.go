@@ -269,11 +269,8 @@ func (a *App) checkIdempotencyInFlightTTL() error {
 	store, reports := a.idempotency.Store.(middleware.InFlightTTLStore)
 	budget := a.requestBudget()
 	if !reports {
-		if budget > 0 {
-			a.Logger().Warn("framework: the idempotency store does not report its in-flight TTL " +
-				"(implement middleware.InFlightTTLStore): a request budget longer than the claim would let a retry " +
-				"execute a still-running handler again")
-		}
+		a.Logger().Warn("framework: the idempotency store does not report its in-flight TTL " +
+			"(implement middleware.InFlightTTLStore): a handler that outlives the claim may be executed again by a retry")
 		return nil
 	}
 	if budget <= 0 {
@@ -1253,7 +1250,8 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 		cfg.Scope = heldScopeKey
 	}
 	return func(a *App) {
-		a.idempotency = &cfg
+		config := cfg
+		a.idempotency = &config
 	}
 }
 

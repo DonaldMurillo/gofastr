@@ -70,6 +70,31 @@ func TestAppSizesDefaultIdempotencyInFlightTTL(t *testing.T) {
 	}
 }
 
+func TestIdempotencyOptionBuildsPerAppStore(t *testing.T) {
+	option := WithIdempotency(middleware.IdempotencyConfig{Principal: idemPrincipal})
+	first := NewApp(option, WithConfig(AppConfig{RequestTimeout: time.Minute}))
+	second := NewApp(option, WithConfig(AppConfig{RequestTimeout: 2 * time.Minute}))
+	if first.idempotency == second.idempotency || first.idempotency.Store == second.idempotency.Store {
+		t.Fatal("reusing an AppOption shares the default idempotency store between apps")
+	}
+	if ttl := second.idempotency.Store.(middleware.InFlightTTLStore).InFlightTTL(); ttl != 2*time.Minute+idempotencyInFlightSlack {
+		t.Fatalf("second app inherited the first app's claim TTL: %v", ttl)
+	}
+}
+
+func TestAppChecksIdempotencyTTLEdgeCases(t *testing.T) {
+	for _, ttl := range []time.Duration{29 * time.Second, 30 * time.Second, 31 * time.Second} {
+		app := NewApp(WithIdempotency(middleware.IdempotencyConfig{
+			Principal: idemPrincipal,
+			Store:     middleware.NewMemoryIdempotencyStore(time.Hour, middleware.WithMemoryIdempotencyInFlightTTL(ttl)),
+		}))
+		err := app.checkIdempotencyInFlightTTL()
+		if (err != nil) != (ttl <= defaultRequestTimeout) {
+			t.Fatalf("TTL=%v budget=%v: err=%v", ttl, defaultRequestTimeout, err)
+		}
+	}
+}
+
 func TestAppRefusesIdempotencyClaimOutlivedByRequestTimeout(t *testing.T) {
 	app := NewApp(
 		WithConfig(AppConfig{RequestTimeout: time.Minute}),
@@ -131,5 +156,8 @@ func TestAppWarnsOnUncheckedIdempotencyInFlightTTL(t *testing.T) {
 	// DisableRequestTimeout: no budget to check against.
 	if logs := run(AppConfig{DisableRequestTimeout: true}, shortClaimStore{}); !strings.Contains(logs, "DisableRequestTimeout") {
 		t.Fatalf("no warning with DisableRequestTimeout: %q", logs)
+	}
+	if logs := run(AppConfig{DisableRequestTimeout: true}, opaqueClaimStore{}); !strings.Contains(logs, "does not report") {
+		t.Fatalf("no warning for an opaque store with DisableRequestTimeout: %q", logs)
 	}
 }

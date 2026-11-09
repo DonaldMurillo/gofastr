@@ -257,6 +257,10 @@ time.Duration`, separate from `IdempotencyStore`, so custom stores
 still compile); a store without the method, or an app with
 `DisableRequestTimeout`, logs a startup warning instead, because there
 is nothing to check.
+The warning also appears when a store without the method is paired with
+`DisableRequestTimeout` or `WithoutDefaultMiddleware`. Reusing one
+`WithIdempotency` option across Apps creates a separate default memory
+store for each App and sizes each store from that App's request budget.
 
 The SQL store uses `INSERT … ON CONFLICT DO NOTHING` to claim rows
 atomically; concurrent writers race without one of them surfacing a
