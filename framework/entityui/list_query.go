@@ -157,14 +157,22 @@ func (s *listState) createHref() string {
 
 // resolveColumns settles the columns a list shows: the builder's, else
 // Display's, else the schema-derived default less the pinned fields
-// (every row repeats the pin). Every name must be a visible,
-// non-omitted field.
+// (every row repeats the pin), else the key columns: an entity with no
+// field of its own still lists its records, titled by key. Every name
+// must be a visible, non-omitted field.
 func (s *listState) resolveColumns(b *ListBuilder) error {
 	names := b.columns
 	if len(names) == 0 {
 		for _, n := range s.m.columns() {
 			if !s.pinned(n) {
 				names = append(names, n)
+			}
+		}
+	}
+	if len(names) == 0 {
+		for _, k := range s.m.keys {
+			if _, ok := s.m.field(k); ok && !s.m.omitted(k) {
+				names = append(names, k)
 			}
 		}
 	}

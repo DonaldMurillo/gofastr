@@ -183,6 +183,11 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A list of an entity with no fields of its own draws**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A join
+  or marker table with only its key panicked the admin list and
+  `entityui` tables: no column was left to title the phone layout. Such
+  a list now shows its key columns, each row linked to its record.
 - **A field kind's markup no longer prints as tags in a text slot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A row
   link's label and a card's title, subtitle and meta line took a kind's

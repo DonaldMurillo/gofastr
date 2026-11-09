@@ -133,7 +133,8 @@ keeps the UI unchanged; without a callback the default stays
 ## What it draws
 
 - **A list** (`appUI.List("invoices")`): a `ui.DataTable` (or cards),
-  its columns from `Display.Columns`, a title cell that links to the
+  its columns from `Display.Columns` (an entity with no field of its
+  own lists its key columns), a title cell that links to the
   record, view tabs, facets, a search box over `SearchFields`, filter
   chips, sort headers and a pager. The row menu offers Open, Duplicate
   and Delete where the builder turns them on. Five more controls are
