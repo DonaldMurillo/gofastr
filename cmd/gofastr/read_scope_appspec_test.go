@@ -44,8 +44,14 @@ func TestExampleReadScopeBoots(t *testing.T) {
 	// The home list's pinned filter (filter: featured=true): the
 	// unfeatured Analytics Dashboard project is absent from the "Featured
 	// Work" section but present on /projects, whose list has no pin.
-	if home := page("/"); strings.Contains(home, "Analytics Dashboard") {
+	// The featured Task Manager CLI must still be there: a pin that matched
+	// nothing (or a list that answered 400) would pass the absence check.
+	home := page("/")
+	if strings.Contains(home, "Analytics Dashboard") {
 		t.Error("the home page's featured list shows the unfeatured project: the pinned filter did not reach the builder")
+	}
+	if !strings.Contains(home, "Task Manager CLI") {
+		t.Error("the home page's featured list lost the featured project: the pin matched no row")
 	}
 	if all := page("/projects"); !strings.Contains(all, "Analytics Dashboard") {
 		t.Error("/projects lost the unfeatured project: the home list's pin leaked into the unpinned list")
