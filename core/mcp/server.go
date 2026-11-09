@@ -71,6 +71,11 @@ type Tool struct {
 	// Deliberately unexported: it is wiring metadata between registrar
 	// and withdrawer, never a property clients see or set.
 	devImplied bool
+
+	// callHandler is the innermost handler of a Gated chain. Handler keeps
+	// the original wrapper for callers reading the public Tool value.
+	callHandler  ToolHandler
+	handlerGates []func(context.Context) error
 }
 
 // ToolOption customizes a tool at registration time.
@@ -318,6 +323,7 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	for _, opt := range opts {
 		opt(&tool)
 	}
+	tool.callHandler, tool.handlerGates = gatedParts(tool.Handler)
 
 	s.mu.Lock()
 
@@ -731,6 +737,18 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		})
 	}
 
+	// Gated wrappers carry the same caller boundary as WithToolGate.
+	// Run their gates before schema validation, which would otherwise
+	// disclose a hidden tool's required fields to a refused caller.
+	for _, gate := range t.handlerGates {
+		if gErr := gatedCall(gate, ctx); gErr != nil {
+			return nil, maskedRefusalRPC(gErr, &RPCError{
+				Code:    ErrMethodNotFound,
+				Message: fmt.Sprintf("tool %q not found", name),
+			})
+		}
+	}
+
 	// Arguments must conform to the tool's declared inputSchema before
 	// the handler runs. The schema tools/list advertises is the
 	// contract the caller is held to: type confusion, missing required
@@ -807,5 +825,8 @@ func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]an
 			}
 		}
 	}()
+	if t.callHandler != nil {
+		return t.callHandler(ctx, params)
+	}
 	return t.Handler(ctx, params)
 }

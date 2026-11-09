@@ -71,7 +71,8 @@ func relationNames(ent *entity.Entity) map[string]bool {
 // runMask is f's Mask over v. A Mask that panics reads as null, never as
 // the stored value, and the panic is logged: masks run on paths with no
 // per-request recover (an _events delivery loop), where a panic would end
-// the process.
+// the process. A mask runs as the caller, without a back office's CRUD
+// elevation, just as lifecycle hooks do.
 func runMask(ctx context.Context, ent *entity.Entity, f schema.Field, v any) (out any) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -79,7 +80,7 @@ func runMask(ctx context.Context, ent *entity.Entity, f schema.Field, v any) (ou
 			out = nil
 		}
 	}()
-	return f.Mask(ctx, v)
+	return f.Mask(WithoutElevation(ctx), v)
 }
 
 // maskOwn runs this handler's entity masks over rows keyed the way its

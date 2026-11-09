@@ -3,7 +3,10 @@ package mcp
 import (
 	"context"
 	"log/slog"
+	"reflect"
 	"runtime/debug"
+	"sync"
+	"weak"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -31,21 +34,71 @@ func Gated(gate func(ctx context.Context) error, h ToolHandler) ToolHandler {
 	if h == nil {
 		panic("mcp.Gated: nil handler")
 	}
-	return func(ctx context.Context, params map[string]any) (any, error) {
-		if err := gatedCall(gate, ctx); err != nil {
-			// The gate's message is withheld by default: an unmarked
-			// refusal returns the hidden-item sentinel, which tools/call
-			// answers as an unknown tool (maskedRefusalRPC's rule), so a
-			// Gated tool is not confirmed to exist. ShowRefusal marks the
-			// refusals a caller must read — an "upgrade your plan"
-			// refusal — and those cross with their own code and message
-			// the same way WithToolGate refusals do.
-			if refusalShown(err) {
-				return nil, gateRefusal(err)
-			}
-			return nil, errGatedHidden
+	state := &gatedHandler{gate: gate, handler: h}
+	state.wrapper = state.call
+	gatedHandlers.Lock()
+	// The registry must not keep discarded wrappers (and app closures)
+	// alive. Prune dead entries whenever another wrapper is made.
+	live := gatedHandlers.refs[:0]
+	for _, ref := range gatedHandlers.refs {
+		if ref.Value() != nil {
+			live = append(live, ref)
 		}
-		return h(ctx, params)
+	}
+	gatedHandlers.refs = append(live, weak.Make(state))
+	gatedHandlers.Unlock()
+	return state.wrapper
+}
+
+// gatedHandler keeps the original function's gate available at registration
+// without changing ToolHandler's public function type or executing app code.
+// The wrapper retains state, so its weak registry entry lives as long as any
+// caller retains the function. Its self-reference is collected with it.
+type gatedHandler struct {
+	gate    func(context.Context) error
+	handler ToolHandler
+	wrapper ToolHandler
+}
+
+var gatedHandlers struct {
+	sync.Mutex
+	refs []weak.Pointer[gatedHandler]
+}
+
+func (g *gatedHandler) call(ctx context.Context, params map[string]any) (any, error) {
+	if err := gatedCall(g.gate, ctx); err != nil {
+		if refusalShown(err) {
+			return nil, gateRefusal(err)
+		}
+		return nil, errGatedHidden
+	}
+	return g.handler(ctx, params)
+}
+
+// gatedParts resolves each directly nested Gated wrapper once, at tool
+// registration. Compare reflected wrapper identities, not code pointers: every
+// bound call method shares code while carrying a different gate and handler.
+// No callback runs under the registry lock.
+func gatedParts(h ToolHandler) (ToolHandler, []func(context.Context) error) {
+	gatedHandlers.Lock()
+	defer gatedHandlers.Unlock()
+	// This index lives only for registration. Keeping reflected wrappers
+	// in the global registry would retain the closures the weak entries
+	// are meant to release.
+	byWrapper := make(map[reflect.Value]*gatedHandler, len(gatedHandlers.refs))
+	for _, ref := range gatedHandlers.refs {
+		if g := ref.Value(); g != nil {
+			byWrapper[reflect.ValueOf(g.wrapper)] = g
+		}
+	}
+	var gates []func(context.Context) error
+	for {
+		found := byWrapper[reflect.ValueOf(h)]
+		if found == nil {
+			return h, gates
+		}
+		gates = append(gates, found.gate)
+		h = found.handler
 	}
 }
 

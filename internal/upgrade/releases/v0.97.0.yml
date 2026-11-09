@@ -1,6 +1,15 @@
 version: v0.97.0
 title: Pending release
 notes:
+  - change: "Gated tool handlers run their gates before input-schema validation, including for missing or malformed arguments"
+    guidance: "A refused call now returns the same code and message as an unknown tool even when its arguments are invalid. ShowRefusal still exposes a deliberate refusal before argument validation; allowed calls retain schema validation. Keep Gated outermost when composing handler decorators, or attach WithToolGate at registration. Prefer WithToolGate when the tool must also be hidden from listings."
+    nodetect: "the difference depends on a gate refusing a malformed runtime call; no host source spelling distinguishes it"
+  - change: "UpsertOne validates belongs-to cascade-filled keys against the parent schema on insert and conflict, rolling back nested writes on refusal"
+    guidance: "Ensure a nested child's key satisfies the parent foreign key's type, required and Pattern rules. A formerly accepted invalid key now returns the same 400 validation refusal as create and leaves no nested changes."
+    nodetect: "the child key and parent schema at runtime determine the refusal; no host code spelling distinguishes an invalid cascade"
+  - change: "Field masks no longer inherit back office CRUD elevation on any read or write response"
+    guidance: "A permission-sensitive mask checks the caller's own permissions. Grant the intended read permission explicitly if an admin should see the stored value."
+    nodetect: "the mask's runtime permission checks determine the output; no host source spelling distinguishes an affected mask"
   - change: "BREAKING - battery/cache.CacheMiddlewareWithLimit panics when maxBodyBytes is negative; a negative cap used to read as 0 and buffer every response whole"
     breaking: true
     nodetect: "the condition is a negative value, usually read from configuration, which no spelling shows; every ordinary call passes a cap or 0"

@@ -262,6 +262,17 @@ few lines, and link the PR or the docs page for the rest.
   `AuthConfig.MailAddressRateLimit`.
 
 ### Security
+- **A refused MCP tool does not disclose its argument schema**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An outermost
+  `Gated` handler checks its gate before argument validation, like `WithToolGate`, so
+  missing or malformed arguments still answer exactly as an unknown tool.
+  Allowed calls keep schema validation before the handler runs.
+- **Field masks run with the caller's permissions**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). CRUD
+  removes back office elevation before every field mask, including
+  included rows, events and streamed results. A permission-sensitive
+  mask no longer reveals a value solely because an admin can manage
+  the entity.
 - **A repository secrets file cannot name a key that is not an
   environment variable** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `isProviderCredentialKey` checks the whole name at the source
@@ -493,6 +504,11 @@ few lines, and link the PR or the docs page for the rest.
   head over it, the host links app.css separately and keeps the subset
   in the document. Offline toasts keep their styles without forcing
   the page to download unused component rules.
+- **Upserts validate cascade-filled foreign keys before storing the parent**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Both
+  insert and conflict arms enforce the parent's schema after a belongs-to
+  cascade supplies its key. A refusal rolls back nested child writes,
+  including inside a caller-owned transaction, as create does.
 - **A data table's phone rows keep the name whole at 320px**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
   badge, a price and the row menu, a `ResponsiveRows` title kept a few

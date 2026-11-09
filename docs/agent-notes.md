@@ -6,6 +6,31 @@
 - Approach: weigh component, app and scheme blocks separately; keep a fitting subset and bootstrap inline while linking app.css after them, under the unchanged 16 KiB inline budget.
 - Evidence: TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget fails with the fallback removed; Meridian CSS is 16,360 B against its unchanged 17,408 B cap. TestOfflineToastIsStyled covers linked app.css with the full bundle blocked.
 - Next time: dump heads before and after a sheet-set change and compare full/subset sizes before blaming CSP; CSS weight excludes the 794 B scheme script the planner counts.
+
+## 2026-11-09 - Put caller gates before item-schema validation
+- Scope: core/mcp Gated handlers, tool gates and prompt gates
+- Trigger: a refused Gated tool with required arguments disclosed its schema instead of answering as an unknown name.
+- Approach: retain wrapper gates at registration and check them before validation; keep direct callable wrappers intact and weakly register their metadata.
+- Pitfall: code pointers merge closures; index live metadata by reflected wrapper identity only during registration to avoid retaining closures.
+- Boundary: keep Gated outermost across ordinary host decorators, or attach WithToolGate at registration; opaque functions hide inner metadata.
+- Evidence: TestGatedItemAnswersAsUnknown now uses a required string schema; TestGatedValidationOrderAndIdentity pins nested gates, reuse, GC and exactly-once invocation.
+- Next time: compare unknown-name code and message for missing, mistyped and extra arguments, then mutate each ordering guard with a Go overlay.
+- Status: active
+
+## 2026-11-09 - Validate cascade-filled keys inside the parent operation
+- Scope: framework/crud upsert, create and batch writes
+- Trigger: upsert preflight relaxed required cascade keys but never validated their final values.
+- Approach: retain preflight and hidden-target checks, then validate the full parent schema after belongs-to writes inside inTx.
+- Evidence: TestUpsertValidatesCascadeForeignKey covers both arms on SQLite/Postgres, child creates/edits, and owned, context-carried and bound transactions.
+- Next time: compare create ordering and commit the caller transaction after a handled refusal to prove savepoint rollback.
+- Status: active
+
+## 2026-11-09 - Strip CRUD elevation at the mask callback boundary
+- Scope: framework/crud field masks and battery/admin
+- Trigger: a mask using CanReadScoped inherited the admin entity lift and revealed its stored value.
+- Approach: remove elevation inside runMask, which covers own rows and included rows on every response surface.
+- Evidence: TestReadHookParityCrud mask elevated mode and TestReadHookParityAdmin mask elevation cover permission-sensitive masks; removing WithoutElevation makes them fail.
+- Next time: extend the parity matrices and check callback contexts at their common invocation boundary.
 - Status: active
 
 ## 2026-11-08 - Recheck T4 claim lifetimes and settle invariants

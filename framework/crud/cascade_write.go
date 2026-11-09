@@ -511,7 +511,8 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 // cascadeSetKeys names the foreign keys the belongs_to cascades in body
 // will set. UpsertOne validates the parent before it knows which arm it
 // takes, and the cascade, which fills these keys, runs once it does, so
-// the first validation does not require them.
+// the first validation does not require them. The final validation, after
+// the cascade, checks them against the full parent schema.
 func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	if ch.Entity == nil {
 		return nil
