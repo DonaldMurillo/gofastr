@@ -43,6 +43,10 @@ notes:
     find:
       uses:
         - gofastr.NewApp
+  - change: "BREAKING - the CRUD MCP record tools (get, update, delete, transitions) type each key argument from its key column: an integer key takes a JSON number, and a string such as \"42\" is refused with invalid params"
+    breaking: true
+    nodetect: "the argument is a value an MCP client sends at runtime; no code in the app spells it"
+    guidance: "Send an integer key as a number ({\"id\": 42}). A client that reads the tool's inputSchema already does; one that hard-codes string ids changes for integer-keyed entities only."
   - change: "?fields= projections now return every required column beside the primary key, on list, cursor and get responses alike"
     nodetect: "a response-shape fact of the CRUD routes; no app spelling differs, and only a caller that asserts the exact key set of a projected row changes answer"
     guidance: "Required fields stay in a projection because the OpenAPI response schema holds them required; a client that needs slimmer rows reads the keys it names and ignores the rest."

@@ -124,3 +124,30 @@ func TestMCPListToolDocumentsPerPageOffset(t *testing.T) {
 		}
 	}
 }
+
+// An integer key arrives from the MCP server as float64 (the JSON number
+// the integer-typed id prop asks for), and fmt.Sprint spells 1234567 as
+// 1.234567e+06: the tool fetched /widgets/1.234567e+06, a record that
+// does not exist. The key segment is the integer's own digits.
+func TestMCPIntegerKeyPathKeepsDigits(t *testing.T) {
+	ent := entity.Define("widgets", entity.EntityConfig{
+		Name:       "widgets",
+		Table:      "widgets",
+		PrimaryKey: []string{"serial"},
+		Fields: []schema.Field{
+			{Name: "serial", Type: schema.Int, AutoGenerate: schema.AutoNone},
+			{Name: "title", Type: schema.String},
+		},
+	}.WithTimestamps(false))
+	ch := &CrudHandler{Entity: ent}
+	path, args, err := ch.toolRecordPath(map[string]any{"id": float64(1234567)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := ch.mcpBase() + "/1234567"; path != want {
+		t.Fatalf("path = %q, want %q", path, want)
+	}
+	if args["id"] != "1234567" {
+		t.Fatalf("args[id] = %q, want 1234567", args["id"])
+	}
+}

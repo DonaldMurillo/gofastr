@@ -504,14 +504,17 @@ few lines, and link the PR or the docs page for the rest.
   are documented with the semantics the route applies (the offset
   ceiling, limit-wins-over-per_page, stream's refusals), beside the
   `?limit=` description that already names the entity's real cap.
-- **llm.md and the MCP tools close their doc gaps**
+- **BREAKING: llm.md and the MCP tools close their doc gaps**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Enum
   values in llm.md's field table escape the cell pipe (`a\|b`), a long
   default truncates on a rune boundary, the multi-tenancy note names the
   configured tenant column (wire key), and the list parameters document
   `per_page` and `offset`. The MCP record-key arguments are typed from
   the key column — an integer key offers an integer `id` prop — and the
-  list tool forwards and documents `per_page` and `offset`.
+  list tool forwards and documents `per_page` and `offset`. A client that
+  sent an integer key as a string (`{"id": "42"}`) is now refused with
+  invalid params; it sends the number. A key past 1e6 builds its route
+  from its digits, not `1.234567e+06`.
 - **The SDK schema hash covers `JSONCase`**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `sdk.SchemaHash` takes the case the artifacts speak ("camelCase" for
