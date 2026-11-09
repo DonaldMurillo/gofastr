@@ -282,12 +282,14 @@ const DefaultMaxResponseBodyBytes int64 = 64 << 10 // 64 KiB
 //
 // LeasePeriod controls how long a claimed delivery is hidden from
 // other workers when the store implements LeasedStore. Must be
-// longer than the worst-case handler latency; default 30s. A lease no
-// longer than HTTPClient.Timeout (10s on the default client) is raised
-// by New to twice that timeout, with a line to Logger: a receiver
-// answering inside the timeout would otherwise outlive its claim, and a
-// second Manager on the same store would re-claim and send the delivery
-// again mid-POST.
+// longer than the worst-case handler latency; default 30s. With a
+// LeasedStore, a lease no longer than HTTPClient.Timeout (10s on the
+// default client) is raised by New to twice that timeout, with a line
+// to Logger: a receiver answering inside the timeout would otherwise
+// outlive its claim, and a second Manager on the same store would
+// re-claim and send the delivery again mid-POST. A store without the
+// LeasedStore method has no claim path that reads the lease, so New
+// neither raises it nor logs.
 type Options struct {
 	MaxAttempts          int
 	Backoff              []time.Duration
@@ -445,11 +447,17 @@ func New(s Store, opts Options) *Manager {
 		// opts out.
 		opts.HTTPClient = ssrfGuardClient(opts.HTTPClient)
 	}
-	if t := opts.HTTPClient.Timeout; t > 0 && opts.LeasePeriod <= t {
-		raised := leaseForClientTimeout(t)
-		opts.Logger("webhook: LeasePeriod %s is not longer than the HTTP client timeout %s; raised to %s "+
-			"so a slow receiver cannot outlive its claim and be sent the delivery twice", opts.LeasePeriod, t, raised)
-		opts.LeasePeriod = raised
+	// The raise exists for a shared table where a second Manager may
+	// exist and New cannot tell: only a LeasedStore has a claim path
+	// that reads the lease (tick), so with any other store the raise and
+	// its log would be noise about a lease nothing claims under.
+	if _, leased := s.(LeasedStore); leased {
+		if t := opts.HTTPClient.Timeout; t > 0 && opts.LeasePeriod <= t {
+			raised := leaseForClientTimeout(t)
+			opts.Logger("webhook: LeasePeriod %s is not longer than the HTTP client timeout %s; raised to %s "+
+				"so a slow receiver cannot outlive its claim and be sent the delivery twice", opts.LeasePeriod, t, raised)
+			opts.LeasePeriod = raised
+		}
 	}
 	// A delivery that carries a credential goes through a copy of the
 	// client that never follows a redirect: Go drops Authorization on a

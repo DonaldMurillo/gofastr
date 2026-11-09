@@ -550,6 +550,20 @@ usual. A worker that finds a claimed job's type gated hands it back the
 same way. A claim the database committed while the shutdown cancelled the
 query cannot be handed back; that job reruns when its lease expires.
 
+On SQLite, the settle writes (`Ack`, `Nack`, the gate hand-back) retry
+`SQLITE_BUSY` and `SQLITE_LOCKED`, including extended result codes,
+for up to two seconds after the first busy error before giving up. The
+first database call keeps the caller's deadline; each retry uses the
+earlier of that deadline and the retry budget. A contended
+database file could fail a nack's `UPDATE` after the driver's
+`busy_timeout` ran out, and the job then sat `claimed` until its lease
+expired — recovered, but invisible for the whole lease window. A retry
+that still fails (or loses its claim meanwhile) falls back to lease
+recovery as before; every settle is fenced on its claim token, so a
+late retry that lost the race changes nothing. The outbox's delivery
+settles, unhandled-delivery refunds and unstarted-claim releases retry
+the same way, as do webhook SQL delivery settles and releases.
+
 **RedisQueue** uses a visibility timeout: while a job is in-flight it
 sits in a processing hash with an expiry timestamp. Call
 `RedisQueue.Start(ctx, interval)` to run an auto-reclaim ticker:

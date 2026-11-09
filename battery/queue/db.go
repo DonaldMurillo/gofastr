@@ -21,6 +21,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/backoff"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/framework/db/sqlbusy"
 )
 
 // DBQueue is a SQL-backed queue. Jobs persist in a single table; Dequeue
@@ -630,13 +631,15 @@ func (q *DBQueue) SetGate(gate func(jobType string) bool) {
 // no-op. Rows claimed before the claim_token column existed carry ” and
 // stay completable by a caller presenting no token.
 func (q *DBQueue) release(ctx context.Context, job Job) error {
-	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`UPDATE %s SET status='pending',
-			attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
-			scheduled_at = $1, updated_at = $2
-			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt()),
-		q.now().UTC().Add(gateDeferDelay), q.now().UTC(), job.ID, job.ClaimToken)
-	return err
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := q.db.ExecContext(ctx,
+			fmt.Sprintf(`UPDATE %s SET status='pending',
+				attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END,
+				scheduled_at = $1, updated_at = $2
+				WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt()),
+			q.now().UTC().Add(gateDeferDelay), q.now().UTC(), job.ID, job.ClaimToken)
+		return err
+	})
 }
 
 // gateDeferDelay is how far into the future a gate-deferred job's
@@ -900,10 +903,13 @@ func (q *DBQueue) dequeueSQLite(ctx context.Context, lane string, types []string
 	defer func() {
 		if !committed {
 			// Nowhere to return this: the claim already failed and its
-			// error is the one the caller needs. A rollback that also
-			// fails means the connection is unusable, which the pool
-			// discovers on its own — but silence here would hide a
-			// leaked write lock, so it is logged.
+			// error is the one the caller needs. Since SQLite 3.7.11
+			// ROLLBACK aborts pending reads instead of failing, an error
+			// from it means no transaction is left active — nothing holds
+			// the write lock, so the connection needs no retiring (and the
+			// pool would not discard it on its own; modernc drops only
+			// interrupted connections) — but it is still unexpected, so
+			// it is logged.
 			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
 			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
 				if q.logger != nil {
@@ -1046,16 +1052,18 @@ func (q *DBQueue) sequenceClear() string {
 // Under WithDoneRetention the row is kept as status 'done' instead, under
 // the same fence, and pruneDone deletes it once the retention passes.
 func (q *DBQueue) Ack(ctx context.Context, job Job) error {
-	if q.doneRetention > 0 {
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		if q.doneRetention > 0 {
+			_, err := q.db.ExecContext(ctx,
+				fmt.Sprintf(`UPDATE %s SET status='done', updated_at=$1 WHERE id = $2 AND status='claimed' AND claim_token = $3`, q.qt()),
+				q.now().UTC(), job.ID, job.ClaimToken)
+			return err
+		}
 		_, err := q.db.ExecContext(ctx,
-			fmt.Sprintf(`UPDATE %s SET status='done', updated_at=$1 WHERE id = $2 AND status='claimed' AND claim_token = $3`, q.qt()),
-			q.now().UTC(), job.ID, job.ClaimToken)
+			fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2`, q.qt()),
+			job.ID, job.ClaimToken)
 		return err
-	}
-	_, err := q.db.ExecContext(ctx,
-		fmt.Sprintf(`DELETE FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2`, q.qt()),
-		job.ID, job.ClaimToken)
-	return err
+	})
 }
 
 // Nack returns a claimed job to the queue (status=pending) when it still
@@ -1110,10 +1118,16 @@ func (q *DBQueue) settleFailure(ctx context.Context, job Job, reason error) (dea
 	lastError := lastErrorText(reason)
 	var stored Job
 	var createdAt any
-	row := q.db.QueryRowContext(ctx,
-		fmt.Sprintf("SELECT attempts, max_attempts, max_age_ns, created_at FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2", q.qt()),
-		job.ID, job.ClaimToken)
-	if err := row.Scan(&stored.Attempts, &stored.MaxAttempts, &stored.MaxAge, &createdAt); err != nil {
+	// The read and both writes retry a busy SQLite file: a nack that
+	// fails on SQLITE_BUSY left the row claimed until lease expiry
+	// (#656). The fence below makes a late retry harmless.
+	err = sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		row := q.db.QueryRowContext(ctx,
+			fmt.Sprintf("SELECT attempts, max_attempts, max_age_ns, created_at FROM %s WHERE id = $1 AND status='claimed' AND claim_token = $2", q.qt()),
+			job.ID, job.ClaimToken)
+		return row.Scan(&stored.Attempts, &stored.MaxAttempts, &stored.MaxAge, &createdAt)
+	})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil // settled or re-claimed meanwhile; nothing to do
 		}
@@ -1136,19 +1150,27 @@ func (q *DBQueue) settleFailure(ctx context.Context, job Job, reason error) (dea
 		stmt := fmt.Sprintf(`UPDATE %s SET status='failed', updated_at = $1,
 			last_error = CASE WHEN $2 = '' THEN last_error ELSE $2 END
 			WHERE id = $3 AND status='claimed' AND claim_token = $4`, q.qt())
-		res, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
+		n, err := sqlbusy.Exec(ctx, func(ctx context.Context) (int64, error) {
+			res, err := q.db.ExecContext(ctx, stmt, now, lastError, job.ID, job.ClaimToken)
+			if err != nil {
+				return 0, err
+			}
+			return res.RowsAffected()
+		})
 		if err != nil {
 			return false, err
 		}
 		// A claim re-taken since the read matches no row: nothing was
 		// dead-lettered, so nothing is reported.
-		n, err := res.RowsAffected()
-		return n > 0, err
+		return n > 0, nil
 	}
 	stmt := fmt.Sprintf(`UPDATE %s SET status='pending', scheduled_at=$1, updated_at = $2,
 		last_error = CASE WHEN $3 = '' THEN last_error ELSE $3 END
 		WHERE id = $4 AND status='claimed' AND claim_token = $5`, q.qt())
-	_, err = q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
+	err = sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := q.db.ExecContext(ctx, stmt, next, now, lastError, job.ID, job.ClaimToken)
+		return err
+	})
 	return false, err
 }
 

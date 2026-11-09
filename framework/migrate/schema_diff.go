@@ -471,6 +471,12 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			} else {
 				summary += " (NOT NULL deferred: no default for existing rows)"
 				deferredRequired[f.Name] = true
+				if env != nil {
+					if env.deferredNotNull == nil {
+						env.deferredNotNull = map[string][]string{}
+					}
+					env.deferredNotNull[ent.GetTable()] = append(env.deferredNotNull[ent.GetTable()], f.Name)
+				}
 			}
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s%s%s",

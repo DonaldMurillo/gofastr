@@ -57,6 +57,20 @@ type IdempotencyStore interface {
 	Finish(ctx context.Context, key, fingerprint string, resp *IdempotentResponse) error
 }
 
+// InFlightTTLStore is the optional capability an IdempotencyStore
+// implements to publish how long an in-flight claim holds its key
+// before a retry may execute the handler again. It is deliberately
+// separate from IdempotencyStore, so a custom store still compiles
+// unchanged; the App probes for it at startup and checks the value
+// against the request budget (a claim that expires before the budget
+// lets a retry double-execute a handler the deadline has not killed
+// yet). Both built-in stores implement it; the memory store's value is
+// set with WithMemoryIdempotencyInFlightTTL, the SQL store's with
+// WithSQLIdempotencyInFlightTTL.
+type InFlightTTLStore interface {
+	InFlightTTL() time.Duration
+}
+
 // IdempotentResponse is the cached snapshot of a completed write.
 type IdempotentResponse struct {
 	Status int
@@ -641,6 +655,22 @@ func WithMemoryStoreMaxEntries(n int) MemoryIdempotencyOption {
 		}
 	}
 }
+
+// WithMemoryIdempotencyInFlightTTL overrides the default 30s in-flight
+// claim TTL. Set this above the request budget (the App sizes its
+// default store from RequestTimeout plus slack): a claim that expires
+// while the handler still runs lets a retry execute it again. d <= 0
+// keeps the default.
+func WithMemoryIdempotencyInFlightTTL(d time.Duration) MemoryIdempotencyOption {
+	return func(s *memoryIdempotencyStore) {
+		if d > 0 {
+			s.inFlightTTL = d
+		}
+	}
+}
+
+// InFlightTTL implements InFlightTTLStore.
+func (s *memoryIdempotencyStore) InFlightTTL() time.Duration { return s.inFlightTTL }
 
 // WithMemoryStoreMaxEntryBytes caps the retained footprint of one cached
 // response (body + headers). A response larger than the cap is not

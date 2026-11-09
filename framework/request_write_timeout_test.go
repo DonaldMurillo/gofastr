@@ -54,6 +54,31 @@ func TestRequestTimeoutPastExplicitWriteTimeoutRefused(t *testing.T) {
 	}
 }
 
+// The implicit 30s budget is enforced like an explicit one: a write cut
+// under it is refused, because the timeout middleware's own 503 at 30s
+// could never pass a 20s write deadline.
+func TestImplicitDefaultBudgetPastExplicitWriteTimeoutRefused(t *testing.T) {
+	app := NewApp(WithConfig(AppConfig{
+		DisableSignalHandling: true,
+		HTTPServerTimeouts:    HTTPServerTimeoutsConfig{WriteTimeout: new(20 * time.Second)},
+	}))
+	ready := make(chan struct{}, 1)
+	app.OnReady(func(string) { ready <- struct{}{} })
+	done := make(chan error, 1)
+	go func() { done <- app.Start("127.0.0.1:0") }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "WriteTimeout") {
+			t.Fatalf("Start = %v, want a refusal naming WriteTimeout", err)
+		}
+	case <-ready:
+		t.Cleanup(func() { _ = app.Shutdown(t.Context()) })
+		t.Fatal("Start served a 20s WriteTimeout under the enforced 30s default budget")
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start neither refused nor became ready")
+	}
+}
+
 // Pairs that are not a contradiction stay as configured.
 func TestRequestTimeoutWriteTimeoutPairsKept(t *testing.T) {
 	for _, tc := range []struct {
@@ -69,10 +94,9 @@ func TestRequestTimeoutWriteTimeoutPairsKept(t *testing.T) {
 			HTTPServerTimeouts: HTTPServerTimeoutsConfig{WriteTimeout: new(3 * time.Minute)}}, 3 * time.Minute},
 		{"timeout middleware off", AppConfig{RequestTimeout: 2 * time.Minute, DisableRequestTimeout: true,
 			HTTPServerTimeouts: HTTPServerTimeoutsConfig{WriteTimeout: new(time.Second)}}, time.Second},
-		// The framework's own 30s default budget is not the host asking
-		// for 30s: a host that cuts responses at 20s keeps its cut.
-		{"explicit deadline under the default budget", AppConfig{
-			HTTPServerTimeouts: HTTPServerTimeoutsConfig{WriteTimeout: new(20 * time.Second)}}, 20 * time.Second},
+		// The framework's own 30s default budget is enforced like any
+		// other: a write cut under it can drop the timeout middleware's
+		// own 503, so the pair is refused (see the refusal test below).
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app := NewApp(WithConfig(tc.cfg))

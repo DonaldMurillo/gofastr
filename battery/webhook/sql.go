@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/db/sqlbusy"
 )
 
 // SQLStore is a SQL-backed Store. Subscribers and deliveries each
@@ -429,8 +431,10 @@ func (s *SQLStore) UpdateDelivery(ctx context.Context, d Delivery) error {
 		q += ` AND next_attempt_at = ` + s.placeholder(len(args)+1)
 		args = append(args, d.claimedUntil)
 	}
-	_, err := s.db.ExecContext(ctx, q, args...)
-	return err
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := s.db.ExecContext(ctx, q, args...)
+		return err
+	})
 }
 
 func (s *SQLStore) ListDeliveries(ctx context.Context, subscriberID string, limit int) ([]Delivery, error) {
@@ -551,12 +555,14 @@ func (s *SQLStore) ReapTerminalBefore(ctx context.Context, cutoff time.Time) (in
 // replay moves next_attempt_at off the lease too, so the fence alone also
 // keeps the release off a settled row.
 func (s *SQLStore) releaseClaim(ctx context.Context, d Delivery, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET
-		next_attempt_at = %s, updated_at = %s, attempts = attempts - 1
-		WHERE id = %s AND next_attempt_at = %s`,
-		s.delTable, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4)),
-		now.UTC(), now.UTC(), d.ID, d.claimedUntil)
-	return err
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET
+			next_attempt_at = %s, updated_at = %s, attempts = attempts - 1
+			WHERE id = %s AND next_attempt_at = %s`,
+			s.delTable, s.placeholder(1), s.placeholder(2), s.placeholder(3), s.placeholder(4)),
+			now.UTC(), now.UTC(), d.ID, d.claimedUntil)
+		return err
+	})
 }
 
 // reapTerminalSQL runs the retention DELETE both SQL stores share: rows
@@ -627,9 +633,18 @@ func (s *SQLStore) claimSqlite(ctx context.Context, now time.Time, limit int, le
 	committed := false
 	defer func() {
 		if !committed {
-			// best-effort: the claim already failed with the error the caller gets; a failed rollback means a broken connection the pool discards on its own.
+			// Nowhere to return this: the claim already failed with the
+			// error the caller gets. Since SQLite 3.7.11 ROLLBACK aborts
+			// pending reads instead of failing, an error from it means no
+			// transaction is left active — nothing holds the write lock, so
+			// the connection needs no retiring (and the pool would not
+			// discard it on its own; modernc drops only interrupted
+			// connections) — but it is still unexpected, so it is logged,
+			// the way the queue and outbox claims log theirs.
 			//gofastr:allow(poisonedconn) SQLite BEGIN IMMEDIATE claim: since SQLite 3.7.11 ROLLBACK aborts pending reads instead of failing, so its error here means no transaction is left active, and retiring the conn would only drop a :memory: database
-			_, _ = conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK")
+			if _, err := conn.ExecContext(context.WithoutCancel(ctx), "ROLLBACK"); err != nil {
+				slog.Default().Warn("webhook: rolling back an abandoned claim", "err", err)
+			}
 		}
 	}()
 	commit := func() error {

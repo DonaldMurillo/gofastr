@@ -108,6 +108,19 @@ A read-only transaction (`sql.TxOptions{ReadOnly: true}`) still begins
 deferred and takes no write lock. `_txlock=deferred` restores SQLite's
 default.
 
+### Settle writes retry a busy database
+
+A write can still meet the lock after `busy_timeout` runs out on a
+heavily contended file. `framework/db/sqlbusy` retries such a write:
+`sqlbusy.Is(err)` reports `SQLITE_BUSY` or `SQLITE_LOCKED`,
+`sqlbusy.Retry(ctx, fn)` calls `fn` again with backoff for at most two
+seconds or until `ctx` ends, and `sqlbusy.Exec` does the same for a
+statement whose row count the caller reads. The queue, outbox and
+webhook settles use it, so a nack or ack that meets the lock no longer
+leaves its row claimed until the lease runs out. Retry only a write
+that is safe to repeat: those settles are fenced on their claim, so a
+late retry that lost the race changes nothing.
+
 ## In-memory databases need one connection
 
 `sql.Open("sqlite3", ":memory:")` gives each pooled connection its own

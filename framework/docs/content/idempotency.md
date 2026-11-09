@@ -237,8 +237,30 @@ Two stores are bundled:
   - `WithSQLIdempotencyTTL(d)`: override the 24h cached-response TTL.
   - `WithSQLIdempotencyInFlightTTL(d)`: override the 30s in-flight
     claim TTL. Set above your worst-case handler latency.
+    `WithMemoryIdempotencyInFlightTTL(d)` is the memory store's
+    counterpart of the same override.
   - `WithSQLIdempotencyDialect("postgres"|"sqlite")`: pin the dialect
     instead of auto-detecting.
+
+**In-flight TTL against the request deadline.** An in-flight claim that
+expires while its handler still runs — a request budget longer than the
+claim — lets a retry execute the handler again, which is the double
+execution the key promised to prevent. The budget is the deadline the
+default middleware chain actually enforces: your `RequestTimeout`, or
+the framework's 30s default when you set none. The App sizes the
+default store's in-flight TTL from that budget plus 10s of slack, and
+at startup any store reporting a TTL at or below the budget makes
+`Start` fail, naming both values (the same shape as `WriteTimeout`
+against `RequestTimeout`). A store reports its TTL by implementing the
+optional `middleware.InFlightTTLStore` interface (`InFlightTTL()
+time.Duration`, separate from `IdempotencyStore`, so custom stores
+still compile); a store without the method, or an app with
+`DisableRequestTimeout`, logs a startup warning instead, because there
+is nothing to check.
+The warning also appears when a store without the method is paired with
+`DisableRequestTimeout` or `WithoutDefaultMiddleware`. Reusing one
+`WithIdempotency` option across Apps creates a separate default memory
+store for each App and sizes each store from that App's request budget.
 
 The SQL store uses `INSERT … ON CONFLICT DO NOTHING` to claim rows
 atomically; concurrent writers race without one of them surfacing a

@@ -597,6 +597,85 @@ few lines, and link the PR or the docs page for the rest.
   keeping the last page's. Head HTML is read with the HTML tokenizer,
   so a tag inside a comment does not count and a screen head holding
   several keeps the first.
+- **A deferred `NOT NULL` is tightened by a later migration** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  required field with no default used to be added nullable (so existing
+  rows would not violate the constraint) while the snapshot recorded it
+  as `NOT NULL`, so the tightening was never generated and a later
+  SQLite table rebuild copied NULL rows into a `NOT NULL` column with
+  no change ever naming it. The snapshot now records the column as it
+  was applied, so the next `migrate generate` emits the tightening
+  (`ALTER COLUMN … SET NOT NULL` on Postgres, a named constraint change
+  on the SQLite rebuild). Backfill the rows first: the tightening fails
+  while any row still holds NULL.
+- **`gofastr migrate generate` warns when its output drops tables or columns** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  generated Up section running any `DROP TABLE` or `DROP COLUMN` now
+  prints a warning naming each one. An undeclared rename generates as a
+  drop plus a create and loses every row; the warning says so and points
+  at the entity's `renames:` declaration. Comments do not hide real drops,
+  and quoted routine bodies do not produce false warnings. A SQLite
+  rebuild may copy rows before dropping the old table; review that copy.
+- **A failed rollback of an abandoned webhook claim is logged** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `claimSqlite` deferred the `ROLLBACK` for a claim it could not use and
+  dropped the error, so a stuck row that could not hand its claim back
+  left no trace. The rollback error now logs a warning, the way the
+  queue and outbox paths already do.
+- **The webhook manager raises a short `LeasePeriod` only for a leased
+  store** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The raise to twice the HTTP client timeout exists for a
+  shared table a second manager may also claim; a store that is not a
+  `LeasedStore` has no claim path that reads the lease, so the raise
+  and its log line are skipped there and single-instance deployments
+  no longer log an adjustment to a lease they never use.
+- **The log battery surfaces historical read errors and owns only its
+  own backups** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). `log_filter` with `historical=true` no longer swallows
+  a failed file read: an unreadable or symlinked log path returns the
+  error to the tool caller instead of an empty history. The file sink's
+  rotation parses backup indexes exactly: `server.log.01`, a
+  zero-padded index another tool (logrotate) owns, is no longer read as
+  `.1` or moved over another backup. Historical lines over 1 MiB are
+  skipped even when the last line has no newline.
+- **A late cron tick fires the minutes it slept through** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A tick that
+  arrived minutes late (the process slept, a GC pause, a slow leader
+  acquire) ran only its own minute, so a fixed-time job whose minute
+  fell inside the gap never fired, most visibly across a DST change
+  where the gap swallows the repeated or skipped hour. The tick loop
+  now walks every missed minute boundary, oldest first, capped at two
+  hours; under leader election each walked minute is claimed in order,
+  so a replica that kept ticking refuses the late claims and nothing
+  fires twice. The current boundary is included at an exact one-minute
+  delay, and cancellation or stop interrupts the catch-up walk.
+- **BREAKING: the idempotency in-flight TTL is sized and checked against the
+  enforced request deadline** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The optional `middleware.InFlightTTLStore`
+  interface (`InFlightTTL() time.Duration`, separate from
+  `IdempotencyStore`, so custom stores still compile) is implemented by
+  both built-in stores; the memory store gains
+  `WithMemoryIdempotencyInFlightTTL`. The budget is the deadline the
+  default chain actually enforces: `RequestTimeout`, or its 30s
+  default when unset. The App's default store sizes its in-flight TTL
+  from that budget plus 10s of slack, and `Start` fails naming both
+  values when a store reports a TTL at or below the budget (the
+  `WriteTimeout`-vs-`RequestTimeout` shape). A store without the
+  method, or `DisableRequestTimeout`, logs a startup warning.
+  Combining both also warns. Reusing one `WithIdempotency` option
+  creates independent default stores sized for their respective Apps.
+- **BREAKING: an explicit `WriteTimeout` is refused below the enforced request
+  deadline, not just a configured `RequestTimeout`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The deadline the
+  default chain's timeout middleware actually enforces (the configured
+  `RequestTimeout`, or its 30s default when unset) now pairs with the
+  server's write cut: a `WriteTimeout` below it fails `Start`, because
+  a response the middleware finishes after the write cut (its own 503
+  included) is never delivered. Set `WriteTimeout` above the deadline,
+  set it to 0, or configure `RequestTimeout` explicitly.
+- **Queue, outbox and webhook settles retry SQLite contention** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). On a contended
+  SQLite file, a nack or ack whose write met the database lock after
+  `busy_timeout` failed and left the job `claimed` until its lease
+  expired. The settle writes in `DBQueue` (`Ack`, `Nack`, the gate
+  hand-back), outbox delivery settles and claim refunds, and webhook
+  delivery settles and releases retry `SQLITE_BUSY` or `SQLITE_LOCKED`
+  by result code for up to two seconds after the first busy error.
+  The first call keeps the caller's deadline, including on Postgres;
+  retries use the earlier deadline before falling back to recovery. Every
+  settle stays fenced on its claim, so a late retry that lost the race
+  changes nothing.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

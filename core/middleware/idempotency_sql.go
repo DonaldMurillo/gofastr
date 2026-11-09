@@ -93,6 +93,9 @@ func WithSQLIdempotencyInFlightTTL(d time.Duration) SQLIdempotencyOption {
 	}
 }
 
+// InFlightTTL implements InFlightTTLStore.
+func (s *SQLIdempotencyStore) InFlightTTL() time.Duration { return s.inFlightTTL }
+
 // WithSQLIdempotencyDialect pins the SQL dialect ("postgres" or
 // "sqlite") instead of running the auto-detection probe.
 func WithSQLIdempotencyDialect(dialect string) SQLIdempotencyOption {

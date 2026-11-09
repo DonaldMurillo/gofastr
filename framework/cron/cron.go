@@ -121,6 +121,10 @@ type Scheduler struct {
 	started   bool           // set under mu inside Start; gates Stop's wait on stopped
 	inflight  sync.WaitGroup // one Add per job goroutine; Stop/StopContext join it
 	OnError   func(jobName string, err error)
+	// clock is the loop's time source; time.Now in production. The tick
+	// stamps and the catch-up walk read it, so a test can jump it across
+	// a DST boundary without sleeping.
+	clock func() time.Time
 
 	// gate, when set, is checked in RunOnce for every firing job before
 	// inflight.Add. Returning false skips the job for this tick.
@@ -145,6 +149,7 @@ func NewScheduler() *Scheduler {
 		tickEv:  time.Minute,
 		stop:    make(chan struct{}),
 		stopped: make(chan struct{}),
+		clock:   time.Now,
 	}
 }
 
@@ -437,32 +442,89 @@ func (s *Scheduler) reportError(jobName string, err error) {
 	s.OnError(jobName, err)
 }
 
-// untilNextTick is how long until the next tickEv boundary.
-func (s *Scheduler) untilNextTick() time.Duration {
-	now := time.Now()
-	return now.Truncate(s.tickEv).Add(s.tickEv).Sub(now)
-}
-
 func (s *Scheduler) run(ctx context.Context) {
 	defer close(s.stopped)
 
-	// Every tick, the first included, fires at the next interval boundary
-	// (:00 of a minute): rearming one interval after a slow tick finished
-	// let the delay pile up until a whole minute was skipped.
-	timer := time.NewTimer(s.untilNextTick())
+	// Ticks land on the clock's interval boundaries (:00 of a minute),
+	// never one interval after the previous work finished: rearming that
+	// way let the delay pile up until a whole minute was skipped. The
+	// timer is armed for the boundary the CLOCK names, and that boundary
+	// — not the timer's own fire time — is the tick's stamp, so a test
+	// clock can jump without the stamp drifting onto real time.
+	timer := time.NewTimer(0)
 	defer timer.Stop()
+	arm := func() (target time.Time) {
+		now := s.clock()
+		target = now.Truncate(s.tickEv).Add(s.tickEv)
+		wait := target.Sub(s.clock())
+		if wait < 0 {
+			wait = 0
+		}
+		timer.Reset(wait)
+		return target
+	}
 
+	// last is the last boundary the loop fired. A tick whose processing
+	// overran a whole interval would otherwise skip a boundary silently:
+	// the walk replays it. Aligned so the first walk fires only
+	// boundaries.
+	last := s.clock().Truncate(s.tickEv)
+	target := arm()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-s.stop:
 			return
-		case t := <-timer.C:
-			s.runTick(ctx, t)
-			timer.Reset(s.untilNextTick())
+		case <-timer.C:
+			last = s.catchUp(ctx, last, target, s.clock())
+			target = arm()
 		}
 	}
+}
+
+// maxCatchUp bounds how far back a late tick replays minutes. Real DST
+// gaps are at most two hours, and a laptop that slept longer should not
+// queue hours of job fires on wake: the minutes older than the bound
+// are dropped.
+const maxCatchUp = 2 * time.Hour
+
+// catchUp runs the tick at tick, and when the clock has moved beyond it
+// by at least one interval, every missed minute boundary in between,
+// oldest first, returning the last boundary it fired. A tick that fires
+// late (a sleep, a GC pause, a slow leader acquire) used to carry only
+// its own minute plus RunOnce's one-minute look-back, so a fixed-time
+// job whose minute fell inside the gap never fired — most visibly
+// across a DST transition, where the gap swallows the repeated or
+// skipped hour and the one-minute look-back cannot see it. Walking
+// oldest-first keeps a TickLeaderElection lease claiming minutes in
+// order; a peer replica that kept ticking refuses our older claims, so
+// a shared schedule still fires each minute at most once.
+func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time.Time {
+	// Both ends stay on the tick grid: a tick that lands between
+	// boundaries fires the boundary's minute once (an unaligned `now`
+	// would fire the same minute the walk already covered, and without
+	// tick-claim leader election nothing would dedupe it).
+	end := tick
+	if now.Sub(tick) >= s.tickEv {
+		end = now.Truncate(s.tickEv)
+	}
+	start := last
+	if end.Sub(start) > maxCatchUp {
+		start = end.Add(-maxCatchUp)
+	}
+	for m := start.Add(s.tickEv); !m.After(end); m = m.Add(s.tickEv) {
+		select {
+		case <-ctx.Done():
+			return last
+		case <-s.stop:
+			return last
+		default:
+		}
+		s.runTick(ctx, m)
+		last = m
+	}
+	return end
 }
 
 // ---------------------------------------------------------------------------
