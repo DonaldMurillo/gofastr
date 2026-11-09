@@ -35,7 +35,7 @@ const maxNoteHits = 20
 // the engine cannot run at all the notes still print, with no hits:
 // guidance never depends on the scan succeeding.
 //
-// The int returned is the number of hits under BREAKING notes, the
+// The int returned is the number of edit hits under BREAKING notes, the
 // figure RunUpgrade gates its exit status on (#669): a report that
 // still points at breaking lines must not read as success to a script.
 func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerSinks) (string, int) {
@@ -87,10 +87,13 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(cli.ScrubTerminalOutput(h.Why), "\n", "\n      "))
 		}
 	}
+	// Edit hits only, the ones the report files as edits (hitsFor): a
+	// hits: review hit may already be right and never clears, so
+	// counting it would fail every run after a finished port.
 	breakingHits := 0
 	for _, note := range notes {
 		if note.Breaking {
-			breakingHits += len(result.Hits[note])
+			breakingHits += len(hitsFor(result, note, true))
 		}
 	}
 	return b.String(), breakingHits
@@ -350,7 +353,7 @@ func RunUpgrade(args []string) {
 		fmt.Println("proxy. With --apply the mechanical steps run for you: go get, go mod")
 		fmt.Println("tidy, go build ./..., go test ./…. A downgrade under --apply is refused")
 		fmt.Println("unless --allow-downgrade says to run it. The exit status is 1 while any")
-		fmt.Println("BREAKING note still has hits, so scripts see unfinished work.")
+		fmt.Println("BREAKING note still has edit hits, so scripts see unfinished work.")
 		fmt.Println()
 		fmt.Println("--from names the release the code was written for when go.mod no")
 		fmt.Println("longer says so: run go get first and go.mod already names the")
@@ -490,6 +493,6 @@ func exitIfBreakingHitsRemain(breakingHits int) {
 	if breakingHits == 0 {
 		return
 	}
-	cli.Printf("\n%d breaking-change hits remain: edit or clear the lines above before shipping.\n", breakingHits)
+	cli.Printf("\n%d breaking-change edit hits remain: edit the lines above before shipping.\n", breakingHits)
 	cli.OsExit(1)
 }
