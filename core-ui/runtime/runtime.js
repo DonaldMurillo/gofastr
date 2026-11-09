@@ -2527,7 +2527,8 @@
   // aren't already mounted are mounted now. Then _syncDeepLinks runs
   // so the URL's modal/drawer query params open the right surface.
   window.addEventListener('gofastr:navigate', (e) => {
-    const path = (e && e.detail && e.detail.path) || location.pathname;
+    // detail.path carries the query; the catalog and the event name the page.
+    const path = ((e && e.detail && e.detail.path) || location.pathname).split('?')[0];
     _fetch(_lp('/__gofastr/widgets') + '?page=' + encodeURIComponent(_unlocalize(path)),
           { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
       .then((r) => (r.ok && !r.redirected ? r.json() : null))

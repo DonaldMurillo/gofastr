@@ -741,7 +741,8 @@ The widget catalog (`/__gofastr/widgets`) is fetched at boot and again
 after each `gofastr:navigate`. When one page's pass settles (the
 widgets it mounts and the deep-link opens `_syncDeepLinks` starts have
 settled, or the fetch failed) the runtime dispatches `gofastr:widgets-synced` on `window` with `detail.path`, the
-page the pass was for. The static-export runtime fires it too, after
+page the pass was for (its path, without the query string; the catalog's
+`?page=` names the same path). The static-export runtime fires it too, after
 its boot and after each navigation's re-mount. It is the hook for "the
 widgets on /b are in"; a test waits on it rather than counting calls.
 

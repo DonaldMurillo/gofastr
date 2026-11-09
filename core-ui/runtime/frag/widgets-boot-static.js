@@ -177,7 +177,8 @@
   // swap left unmounted (_mountByName is idempotent) and open whatever
   // the destination URL's deep link names.
   window.addEventListener('gofastr:navigate', (e) => {
-    const path = (e && e.detail && e.detail.path) || location.pathname;
+    // detail.path carries the query; the catalog and the event name the page.
+    const path = ((e && e.detail && e.detail.path) || location.pathname).split('?')[0];
     _wready.then(() => {
       const G = window.__gofastr;
       if (G && G._widgetCatalog && G._catalogPass) return G._catalogPass(Object.values(G._widgetCatalog));

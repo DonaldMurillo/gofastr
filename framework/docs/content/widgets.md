@@ -85,7 +85,8 @@ once and embeds `widget.RuntimeTag()` in its page HTML.
 
 `gofastr:widgets-synced` fires on `window` each time one page's catalog
 pass settles: the boot fetch, and the re-fetch after each SPA
-navigation. `detail.path` is the page the pass was for. It fires once
+navigation. `detail.path` is the page the pass was for, without its
+query string. It fires once
 the widgets the pass mounts, and any its deep link opens, have settled
 (mounted, or failed), and also when the fetch failed or there was
 nothing to mount, so a script or test

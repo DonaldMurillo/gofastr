@@ -272,6 +272,11 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Page-scoped widgets load after a link with a query string.** The
+  catalog re-fetch after a client-side navigation sent the whole URL as
+  `?page=`, so a link to `/b?tab=2` asked for `/b?tab=2` and a widget
+  scoped with `.Pages("/b")` was left out of the catalog. The re-fetch
+  now sends the path alone.
 - **A prefetched page ends with its session**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [layouts](framework/docs/content/layouts.md)). A page prefetched in
