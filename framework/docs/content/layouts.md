@@ -865,6 +865,14 @@ style sheet leaves positioning to the stack, and its bar is that token
 tall. An owned sheet that pins something of its own (a docs rail)
 offsets it by `var(--ui-sticky-top, 0px)`.
 
+Keyboard focus clears the bars too (WCAG 2.4.11). Inside a
+`StickyHeader` stack, and in a `Sticky` content row's workspace, a
+focused control carries a scroll margin of `--ui-sticky-top` plus a
+phone sheet's bar and room for the focus ring. The browser counts a
+control behind the header or toolbar as in view and would leave it
+there; with the margin, Tab and Shift+Tab scroll it out from under
+them.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.

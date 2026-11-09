@@ -558,6 +558,13 @@ few lines, and link the PR or the docs page for the rest.
   toolbar puts Prev on the right in RTL and the arrow keys follow it,
   but the chevron glyphs kept their left-to-right direction. They now
   mirror under `:dir(rtl)`.
+- **Tab and Shift+Tab no longer leave a control behind the sticky header
+  or toolbar** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  WCAG 2.4.11). On a phone the browser counted a control behind the
+  bars as in view and did not scroll it. A focused control inside a
+  `StickyHeader` stack or a `Sticky` content row's workspace now takes a
+  scroll margin of `--ui-sticky-top`, the offset those bars publish, so
+  it scrolls out from under them.
 
 ## [0.96.0] - 2026-11-06
 

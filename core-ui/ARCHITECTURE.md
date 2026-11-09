@@ -2684,7 +2684,10 @@ refer to itself. A region that scrolls on its own (a bounded Box,
 ContentRow's pinned nav column and Viewport columns, ListDetail's list,
 the PaneHost drawer, the Workbench rail) resets it to `0px`, because its
 sticky parts pin to its top, not the window's. A new top-sticky part
-reads the variable; a new self-scrolling region resets it.
+reads the variable; a new self-scrolling region resets it. A focused control
+inside a `StickyHeader` stack or a `Sticky` ContentRow's workspace takes
+`scroll-margin-block-start` from the same variable, so Tab and
+Shift+Tab never leave it behind the bars (WCAG 2.4.11).
 
 `ui.ContentRow` owns an optional labelled aside and toolbar placement.
 Its aside observes an empty outlet by the same CSS rule. `ui.ListDetail`
