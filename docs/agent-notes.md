@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-08 - Recheck T4 claim lifetimes and settle invariants
+- Scope: issue #669 T4, migrations, queue, outbox, webhook, idempotency, cron and log history
+- Trigger: review of the nine GLM commits found missed settle sinks, shared AppOption state, warning gaps and weak regression premises.
+- Approach: classify SQLite contention by result code, preserve the first call's context, bound retries, and exercise every claim-settle destination with a real file lock.
+- Evidence: [T4 review and negative-proof ledger](reviews/2026-11-08-i669-t4.md); 19 mutation checks, scoped SQLite/Postgres packages, race tests and repository analyzers pass.
+- Next time: use Go overlays for negative proofs, test two queues on the same table, and keep unreleased upgrade notes out of published release files.
+- Status: active
+
 ## 2026-11-08 - Seed first-seen prototype-named globals through both navigators
 - Scope: core-ui/runtime/src/envelope.js, envelope seed lifecycle
 - Trigger: Cursor Bugbot found first-seen `toString` and `valueOf` globals resolving to inherited functions instead of own slots.

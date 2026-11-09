@@ -1,0 +1,38 @@
+version: v0.97.0
+title: Pending release
+notes:
+  - change: "migrate generate records a deferred NOT NULL column as nullable, so the next generation emits the tightening"
+    guidance: "Backfill NULL rows before applying the tightening. Older snapshots may already record NOT NULL even though the migration added a nullable column: compare the applied migration with table_ddl in schema.snapshot.json, remove that column's un-applied NOT NULL from table_ddl, then regenerate. Postgres emits SET NOT NULL; SQLite rebuilds the table."
+    nodetect: "the applied column constraint and committed snapshot, not app source, determine whether a deferral is pending"
+  - change: "migrate generate warns about DROP TABLE and DROP COLUMN in its Up output"
+    guidance: "Review the named drops before applying. Declare a rename instead of dropping and re-adding a renamed entity or field. A SQLite rebuild copies rows before dropping the old table; review that copy. Down restores the schema, not deleted data. SQL comments, quoted values and dollar-quoted routine bodies are not drop statements."
+    nodetect: "the schema delta and generated SQL determine whether a warning appears, not an app-source spelling"
+  - change: "BREAKING - WithIdempotency refuses a store whose in-flight TTL is at or below the request deadline"
+    breaking: true
+    hits: review
+    guidance: "Start names both durations. Raise the store TTL with WithSQLIdempotencyInFlightTTL or WithMemoryIdempotencyInFlightTTL, or lower RequestTimeout. An unset RequestTimeout still enforces 30s. The App creates its default memory store with the budget plus 10s and keeps that store separate for each App, even when an AppOption is reused. A custom store may implement middleware.InFlightTTLStore (InFlightTTL() time.Duration); a store without the method or an App without a request deadline logs a warning, including when both conditions hold."
+    find:
+      uses:
+        - gofastr/framework.WithIdempotency
+        - gofastr/core/middleware.NewSQLIdempotencyStore
+        - gofastr/core/middleware.NewMemoryIdempotencyStore
+  - change: "BREAKING - an explicit HTTPServerTimeouts.WriteTimeout below the enforced request deadline makes Start fail, including when RequestTimeout is unset"
+    breaking: true
+    hits: review
+    guidance: "The default request deadline is 30s. Set WriteTimeout at or above that deadline, set it to 0 to disable the write deadline, or configure a shorter RequestTimeout. With DisableRequestTimeout or WithoutDefaultMiddleware the pairing is not checked."
+    find:
+      uses:
+        - gofastr/framework.HTTPServerTimeoutsConfig
+        - gofastr/framework.WithHTTPServerTimeouts
+  - change: "webhook New raises a short lease only for a LeasedStore; failed SQLite claim rollbacks log a warning"
+    guidance: "The raise remains twice HTTPClient.Timeout for a LeasedStore. Non-leased stores neither change LeasePeriod nor log the adjustment. A rollback warning does not replace the original claim error. Queue and outbox rollback comments use the same SQLite rationale; connection handling does not change."
+    nodetect: "the concrete store capability, configured durations and rollback result determine the change"
+  - change: "queue, outbox and webhook SQL settles and claim releases retry SQLite contention by result code"
+    guidance: "SQLITE_BUSY and SQLITE_LOCKED, including extended codes, receive up to two seconds of retries after the first failure, bounded by the caller's deadline. The first operation retains its original context on both SQLite and Postgres. Every retry retains its claim fence; exhausted retries still use lease recovery."
+    nodetect: "the database lock state determines whether a settle retries"
+  - change: "the cron tick loop catches up missed minute boundaries across DST, bounded to two hours"
+    guidance: "Missed minutes run oldest first, including the current boundary at an exact one-interval delay. Older minutes beyond the cap are dropped. Tick leader election claims each minute separately. Stop or cancellation interrupts the walk before its next claim."
+    nodetect: "a late runtime tick, not an app-source spelling, triggers catch-up"
+  - change: "log_filter returns historical file-read errors, skips oversized lines, and file rotation touches only canonical backup suffixes"
+    guidance: "A line over 1 MiB is skipped even without a final newline; later readable entries remain available. An unreadable or symlinked history path returns a tool error. Rotation shifts server.log.1 but leaves server.log.01 and server.log.+1 untouched."
+    nodetect: "the log file contents, filesystem read result and backup names determine the change"
