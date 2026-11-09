@@ -396,7 +396,7 @@ The core capabilities:
 | `dialogs` | `openFile`, `saveFile`, `openFolder` | none (the user mediates every dialog; returned paths join the `fs` allow-list) |
 | `clipboard` | `readText`, `writeText` | `clipboard:read`, `clipboard:write` |
 | `notifications` | `show` | `notifications:show` |
-| `fs` | `readText`, `writeText`, `stat` | `fs:read`, `fs:write` |
+| `fs` | `readText`, `writeText`, `stat`, `list` | `fs:read` (`readText`, `stat`, `list`), `fs:write` |
 | `tray` | `setTitle` | none (the tray label is the app's own) |
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
@@ -430,13 +430,25 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
-on the exact picked folder and nothing under the folder: no descendant
-`stat`, reads, or writes. It does not grant directory traversal or listing.
+(`Battery.AllowPath` and `Battery.AllowFolder` for in-process grants).
 `openFile` and `saveFile` grant only the exact returned file paths for
 `fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
-parent directory. All picks retain the same least-authority `AllowPath`
-grant; a folder pick does not create a prefix grant. The path must arrive in
+parent directory.
+
+`openFolder` grants `fs.stat`, `fs.readText` and `fs.list` on the picked
+folder and everything under it, and never `fs.writeText`: a page that
+wants to save into the folder asks for a `saveFile` dialog. A request
+under the folder is opened through an `os.Root` at the folder's symlink
+resolution taken at the pick, so a symlink or `..` inside it cannot
+reach a file outside; such a path answers `denied` like any path off
+the list. A symlink that stays inside the folder is followed. If the
+picked path has since been replaced by a link to another folder, every
+request under it is refused. `fs.list` answers `{"entries": [{"name",
+"isDir"}], "truncated"}`, sorted by name; past 10000 entries it returns
+the first 10000 the directory yields and sets `truncated`. It lists
+only under a picked folder, never an exact `AllowPath` grant.
+
+A path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink

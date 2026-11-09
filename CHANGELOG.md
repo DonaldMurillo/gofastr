@@ -25,6 +25,16 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **A picked folder can be read**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [desktop](framework/docs/content/desktop.md)). `dialogs.openFolder`
+  granted `fs.stat` on the folder alone, so a page could not open
+  anything the user picked. It now grants `fs.stat`, `fs.readText` and
+  the new `fs.list` on the folder and everything under it, read through
+  an `os.Root` at the folder, so a symlink or `..` cannot leave it.
+  Writing stays separate: `fs.writeText` still needs the exact path from
+  `openFile` or `saveFile`. `Battery.AllowFolder` makes the same grant
+  in process.
 - **A field can declare its own mask**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [entity declarations](framework/docs/content/entity-declarations.md)).

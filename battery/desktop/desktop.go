@@ -273,9 +273,11 @@ type Battery struct {
 	// keeps both trees so dispatchMenu finds tray items too).
 	runMenu *Menu
 
-	// fs allow-list (cap_fs.go).
-	allowMu    sync.Mutex
-	allowPaths map[string]struct{}
+	// fs allow-list (cap_fs.go) and picked folders, clean and resolved
+	// path to the resolution at the pick (cap_fs_folder.go).
+	allowMu      sync.Mutex
+	allowPaths   map[string]struct{}
+	allowFolders map[string]string
 
 	// deepLinks queues links that arrive before the window is up
 	// (deeplink.go).
@@ -438,6 +440,7 @@ func New(cfg Config) *Battery {
 		windows:      make(map[string]Window),
 		winPaths:     make(map[string]string),
 		allowPaths:   make(map[string]struct{}),
+		allowFolders: make(map[string]string),
 	}
 	prefs.b = b
 	b.prefs = prefs
