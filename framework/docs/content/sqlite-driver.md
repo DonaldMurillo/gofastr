@@ -113,9 +113,12 @@ default.
 A write can still meet the lock after `busy_timeout` runs out on a
 heavily contended file. `framework/db/sqlbusy` retries such a write:
 `sqlbusy.Is(err)` reports `SQLITE_BUSY` or `SQLITE_LOCKED`,
-`sqlbusy.Retry(ctx, fn)` calls `fn` again with backoff for at most two
-seconds or until `ctx` ends, and `sqlbusy.Exec` does the same for a
-statement whose row count the caller reads. The queue, outbox and
+`sqlbusy.Retry(ctx, fn)` calls `fn` again, with a short jittered pause,
+until it lands, fails another way, or `ctx` ends. A `ctx` with no
+deadline gets `sqlbusy.DefaultBudget` (ten seconds). On a deadline it
+returns the context error wrapped around the last busy error.
+`sqlbusy.Exec` does the same for a statement whose row count the caller
+reads. The queue, outbox and
 webhook settles use it, so a nack or ack that meets the lock no longer
 leaves its row claimed until the lease runs out. Retry only a write
 that is safe to repeat: those settles are fenced on their claim, so a

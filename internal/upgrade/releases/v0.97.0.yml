@@ -169,7 +169,7 @@ notes:
     guidance: "The raise remains twice HTTPClient.Timeout for a LeasedStore. Non-leased stores neither change LeasePeriod nor log the adjustment. A rollback warning does not replace the original claim error. Queue and outbox rollback comments use the same SQLite rationale; connection handling does not change."
     nodetect: "the concrete store capability, configured durations and rollback result determine the change"
   - change: "queue, outbox and webhook SQL settles and claim releases retry SQLite contention by result code"
-    guidance: "SQLITE_BUSY and SQLITE_LOCKED, including extended codes, receive up to two seconds of retries after the first failure, bounded by the caller's deadline. The first operation retains its original context on both SQLite and Postgres. Every retry retains its claim fence; exhausted retries still use lease recovery."
+    guidance: "SQLITE_BUSY and SQLITE_LOCKED, including extended codes, are retried until the write lands or the caller's deadline passes, ten seconds on a context with no deadline. The first operation retains its original context on both SQLite and Postgres. Every retry retains its claim fence; exhausted retries still use lease recovery."
     nodetect: "the database lock state determines whether a settle retries"
   - change: "the cron tick loop catches up missed minute boundaries across DST, bounded to two hours"
     guidance: "Missed minutes run oldest first, including the current boundary at an exact one-interval delay. Older minutes beyond the cap are dropped. Tick leader election claims each minute separately. Stop or cancellation interrupts the walk before its next claim."

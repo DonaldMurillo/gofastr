@@ -550,17 +550,20 @@ usual. A worker that finds a claimed job's type gated hands it back the
 same way. A claim the database committed while the shutdown cancelled the
 query cannot be handed back; that job reruns when its lease expires.
 
-On SQLite, the settle writes (`Ack`, `Nack`, the gate hand-back) retry
-`SQLITE_BUSY` and `SQLITE_LOCKED`, including extended result codes,
-for up to two seconds after the first busy error before giving up. The
-first database call keeps the caller's deadline; each retry uses the
-earlier of that deadline and the retry budget. A contended
-database file could fail a nack's `UPDATE` after the driver's
-`busy_timeout` ran out, and the job then sat `claimed` until its lease
-expired — recovered, but invisible for the whole lease window. A retry
-that still fails (or loses its claim meanwhile) falls back to lease
-recovery as before; every settle is fenced on its claim token, so a
-late retry that lost the race changes nothing. The outbox's delivery
+On SQLite, the settle writes (`Ack`, `Nack`, the gate and shutdown
+hand-backs) retry `SQLITE_BUSY` and `SQLITE_LOCKED`, including extended
+result codes, until they land or the caller's deadline passes. The
+first database call keeps the caller's context. The worker settles on
+a context detached from shutdown with a ten-second deadline; a host
+that calls `Ack` or `Nack` on a context with no deadline gets the same
+ten seconds. A contended database file could fail a nack's `UPDATE`
+after the driver's `busy_timeout` ran out, and the job then sat
+`claimed` until its lease expired: recovered, but invisible for the
+whole lease window. A settle that meets the lock keeps retrying while
+the other workers claim around it, so only a lock held past the
+settle's deadline leaves the row to lease recovery. Every settle is
+fenced on its claim token, so a late retry that lost the race changes
+nothing. The outbox's delivery
 settles, unhandled-delivery refunds and unstarted-claim releases retry
 the same way, as do webhook SQL delivery settles and releases.
 
