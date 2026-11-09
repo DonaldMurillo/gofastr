@@ -426,8 +426,24 @@ validation, so missing or malformed arguments reveal no schema detail to
 a refused caller. Allowed calls validate arguments before the handler runs.
 Keep `Gated` outermost when composing handler decorators: an ordinary
 function that calls a gated handler hides the inner function's metadata
-from registration. Use `WithToolGate` at registration when another
-function wraps the gated handler.
+from registration. To wrap a handler someone else supplied, use
+`mcp.Decorate(h, wrap)`: it peels the `Gated` layers off `h`, passes the
+inner handler to `wrap`, and puts the same gates back outside the result
+in the same order, so the wrapper runs only for allowed callers and
+registration still finds the gates. The framework does this for an
+`entity.Endpoint`'s `MCPHandler`, so an endpoint twin built from
+`mcp.Gated` keeps its gate ahead of argument validation. Otherwise use
+`WithToolGate` at registration when another function wraps the gated
+handler.
+
+```go
+logged := mcp.Decorate(hostHandler, func(inner mcp.ToolHandler) mcp.ToolHandler {
+	return func(ctx context.Context, params map[string]any) (any, error) {
+		slog.InfoContext(ctx, "tool called")
+		return inner(ctx, params)
+	}
+})
+```
 
 `SetGate` installs one server-wide precondition over the data methods
 (`tools/list`, `tools/call`, `resources/list`, `resources/read`,

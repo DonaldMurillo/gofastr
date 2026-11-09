@@ -2,7 +2,7 @@ version: v0.97.0
 title: Pending release
 notes:
   - change: "Gated tool handlers run their gates before input-schema validation, including for missing or malformed arguments"
-    guidance: "A refused call now returns the same code and message as an unknown tool even when its arguments are invalid. ShowRefusal still exposes a deliberate refusal before argument validation; allowed calls retain schema validation. Keep Gated outermost when composing handler decorators, or attach WithToolGate at registration. Prefer WithToolGate when the tool must also be hidden from listings."
+    guidance: "A refused call now returns the same code and message as an unknown tool even when its arguments are invalid. ShowRefusal still exposes a deliberate refusal before argument validation; allowed calls retain schema validation. Keep Gated outermost when composing handler decorators, wrap a supplied handler with mcp.Decorate, or attach WithToolGate at registration. Prefer WithToolGate when the tool must also be hidden from listings."
     nodetect: "the difference depends on a gate refusing a malformed runtime call; no host source spelling distinguishes it"
   - change: "UpsertOne validates belongs-to cascade-filled keys against the parent schema on insert and conflict, rolling back nested writes on refusal"
     guidance: "Ensure a nested child's key satisfies the parent foreign key's type, required and Pattern rules. A formerly accepted invalid key now returns the same 400 validation refusal as create and leaves no nested changes."
