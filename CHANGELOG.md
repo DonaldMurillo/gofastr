@@ -565,6 +565,12 @@ few lines, and link the PR or the docs page for the rest.
   `StickyHeader` stack or a `Sticky` content row's workspace now takes a
   scroll margin of `--ui-sticky-top`, the offset those bars publish, so
   it scrolls out from under them.
+- **The error toast is styled when the connection is down**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The toast
+  stack's sheets, and the row's inside its template, loaded on demand,
+  so the toast that reports a failed request was drawn as bare text
+  exactly when no sheet could be fetched. The host now links those sheets
+  in the page head with the page's own.
 
 ## [0.96.0] - 2026-11-06
 

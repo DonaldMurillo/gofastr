@@ -2731,7 +2731,10 @@ skeleton) do not count: the browser renders none of it at first paint.
 Each sheet only template content needs gets a
 `<link rel="prefetch" href="/__gofastr/comp/<name>.css?v=<hash>">`
 instead, the exact URL the runtime builds from the catalog, so the
-clone the runtime makes later finds its sheet in the HTTP cache. A
+clone the runtime makes later finds its sheet in the HTTP cache. The
+toast stack is the exception: its sheets, the row template's included,
+load in the head with the page's own, because the toast that reports a
+lost connection is raised exactly when no sheet can be fetched. A
 declarative shadow root (`<template shadowrootmode>`) renders, so its
 markers count. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
