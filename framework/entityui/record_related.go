@@ -100,7 +100,7 @@ func (b *RecordBuilder) relatedListFor(ctx context.Context, m *meta, rl relatedL
 	}
 	if otherBase == "" {
 		// No screen of its own: rows without links and no New.
-		list = list.NoLinks()
+		list = list.NoLinks().NoCreate()
 	} else {
 		list = list.Base(otherBase)
 	}

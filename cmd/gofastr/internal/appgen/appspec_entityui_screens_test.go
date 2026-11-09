@@ -251,3 +251,60 @@ screens:
 		t.Errorf("an off-home list of an entity with a record screen links to its home:\n%s", home)
 	}
 }
+
+// A writable list with no record screen keeps New and still draws its
+// rows without links: NoLinks no longer takes New away, so the
+// generator need not choose between a working New and rows that link
+// to a 404.
+func TestGeneratedWritableListWithoutRecordScreen(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "gofastr.yml")
+	clitest.WriteTestFile(t, path, `app:
+  name: Links
+  module: example.com/links
+entities:
+  - name: tags
+    crud: true
+    fields:
+      - name: label
+        type: string
+        required: true
+screens:
+  - name: tags
+    route: /tags
+    body:
+      - kind: entity_list
+        entity: tags
+        fields: [label]
+        create: true
+  - name: board
+    route: /board
+    body:
+      - kind: entity_list
+        entity: tags
+        fields: [label]
+        create: true
+`)
+	bp, err := appspec.LoadAppSpec(path)
+	if err != nil {
+		t.Fatalf("loadAppSpec: %v", err)
+	}
+	tags := fileContent(mustRenderAppSpecFiles(t, bp), "screen_tags_crud.go")
+	if !strings.Contains(tags, `appUI.List("tags").Columns("label").NoLinks()`) {
+		t.Errorf("a writable list with no record screen must draw no record links:\n%s", tags)
+	}
+	if strings.Contains(tags, "NoCreate()") {
+		t.Errorf("a writable list keeps New:\n%s", tags)
+	}
+	// Off the home screen, New must reach the create screen the home
+	// list mounts: Base moves New (and record links, here none) there.
+	var board string
+	for _, f := range mustRenderAppSpecFiles(t, bp) {
+		if strings.Contains(f.Content, "\"/board\"") && strings.Contains(f.Content, `appUI.List("tags")`) {
+			board = f.Content
+		}
+	}
+	if !strings.Contains(board, `.NoLinks().Base("/tags")`) {
+		t.Errorf("an off-home writable list must take the home list's base for New:\n%s", board)
+	}
+}

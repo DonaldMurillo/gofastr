@@ -72,6 +72,16 @@ few lines, and link the PR or the docs page for the rest.
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
 ### Changed
+- **BREAKING: `entityui` `ListBuilder.NoLinks` keeps New**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It
+  takes away only the record links and the row menu; a list that should
+  offer no New calls `NoCreate` as well. `NoLinks` used to remove New
+  too, so the app spec generator left record links on a `create: true`
+  list of an entity with no `entity_detail` screen, and every row linked
+  to a page that did not exist. The generator now emits `NoLinks` on
+  every list of such an entity; New opens the create screen beside the
+  entity's home list, from any screen, and a create lands back there. A
+  `RelatedAt` list with an empty base still draws no New.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler

@@ -222,7 +222,7 @@ func (b *RecordBuilder) Related(entities ...string) *RecordBuilder {
 
 // RelatedAt names one related entity whose list hangs off base instead
 // of the path Related derives. An empty base draws that list with no
-// links and no New (ListBuilder.NoLinks): the entity has no screen of its
+// links and no New (ListBuilder.NoLinks, NoCreate): the entity has no screen of its
 // own on this app.
 func (b *RecordBuilder) RelatedAt(entity, base string) *RecordBuilder {
 	b.related = append(b.related, relatedList{name: entity, base: base, fixed: true})

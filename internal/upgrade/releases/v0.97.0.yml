@@ -1,0 +1,10 @@
+version: v0.97.0
+title: Unreleased
+notes:
+  - change: "BREAKING - entityui ListBuilder.NoLinks keeps New; it takes away only the record links and the row menu"
+    breaking: true
+    hits: review
+    guidance: "NoLinks is for an entity with no record screen, and a create lands back on the list, so New stays. A list that should offer no New either calls NoCreate as well: list.NoLinks().NoCreate(). RelatedAt with an empty base already does. Regenerate an app spec app: its generator now puts NoLinks on every list of an entity with no entity_detail screen, create: true lists included."
+    find:
+      uses:
+        - gofastr/framework/entityui.ListBuilder.NoLinks

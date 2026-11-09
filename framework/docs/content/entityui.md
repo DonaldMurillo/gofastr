@@ -407,8 +407,9 @@ caller's scope — a tab listing one invoice's payments; the pinned field leaves
 record links hang off), `Heading(text, level)` (it also names the table,
 as a hidden caption, so two lists on one page are two named regions) and
 `Empty(text)`,
-`NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
-for an entity with no screen of its own), `Delete`, `Undo`, `Duplicate`, `Bulk`,
+`NoCreate`, `NoLinks` (rows with no record links and no row menu, for an
+entity with no record screen; New stays, and a create lands back on the
+list), `Delete`, `Undo`, `Duplicate`, `Bulk`,
 `QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
 controls below), and `Actions` for header buttons beside New.
 
@@ -423,7 +424,7 @@ The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
+`NoLinks` and `NoCreate`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
 `Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`. The Related tab's count is the rows those lists
