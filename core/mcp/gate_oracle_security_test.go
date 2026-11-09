@@ -11,6 +11,13 @@ import (
 // one with not-found, so a direct call was an existence oracle: the
 // listings already hide a gated item, and the call revealed it. A gated
 // tool, resource or prompt now answers EXACTLY as an unknown name does.
+var gateOracleInputSchema = map[string]any{
+	"type":                 "object",
+	"properties":           map[string]any{"secret": map[string]any{"type": "string"}},
+	"required":             []string{"secret"},
+	"additionalProperties": false,
+}
+
 func TestGatedItemAnswersAsUnknown(t *testing.T) {
 	refuse := func(context.Context) error { return errString("upgrade your plan") }
 	toolNoop := func(context.Context, map[string]any) (any, error) { return "ok", nil }
@@ -43,10 +50,18 @@ func TestGatedItemAnswersAsUnknown(t *testing.T) {
 
 	t.Run("tools/call", func(t *testing.T) {
 		gated, empty := NewServer(), NewServer()
-		if err := gated.RegisterTool("secret_tool", "", nil, toolNoop, WithToolGate(refuse)); err != nil {
+		if err := gated.RegisterTool("secret_tool", "", gateOracleInputSchema, toolNoop, WithToolGate(refuse)); err != nil {
 			t.Fatal(err)
 		}
-		sameAnswer(t, "tools/call", `{"name":"secret_tool"}`, gated, empty)
+		for _, params := range []string{
+			`{"name":"secret_tool"}`,
+			`{"name":"secret_tool","arguments":{}}`,
+			`{"name":"secret_tool","arguments":{"secret":17}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid","extra":true}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid"}}`,
+		} {
+			sameAnswer(t, "tools/call", params, gated, empty)
+		}
 	})
 
 	t.Run("resources/read", func(t *testing.T) {
@@ -59,18 +74,34 @@ func TestGatedItemAnswersAsUnknown(t *testing.T) {
 
 	t.Run("prompts/get", func(t *testing.T) {
 		gated, empty := NewServer(), NewServer()
-		if err := gated.RegisterPrompt("secret_prompt", promptHandler, WithPromptGate(refuse)); err != nil {
+		if err := gated.RegisterPrompt("secret_prompt", promptHandler, WithPromptGate(refuse), WithPromptArguments(PromptArgument{Name: "secret", Required: true})); err != nil {
 			t.Fatal(err)
 		}
-		sameAnswer(t, "prompts/get", `{"name":"secret_prompt"}`, gated, empty)
+		for _, params := range []string{
+			`{"name":"secret_prompt"}`,
+			`{"name":"secret_prompt","arguments":{}}`,
+			`{"name":"secret_prompt","arguments":{"secret":null}}`,
+			`{"name":"secret_prompt","arguments":{"secret":17}}`,
+			`{"name":"secret_prompt","arguments":{"secret":"valid"}}`,
+		} {
+			sameAnswer(t, "prompts/get", params, gated, empty)
+		}
 	})
 
 	t.Run("Gated-wrapped handler", func(t *testing.T) {
 		gated, empty := NewServer(), NewServer()
-		if err := gated.RegisterTool("secret_tool", "", nil, Gated(refuse, toolNoop)); err != nil {
+		if err := gated.RegisterTool("secret_tool", "", gateOracleInputSchema, Gated(refuse, toolNoop)); err != nil {
 			t.Fatal(err)
 		}
-		sameAnswer(t, "tools/call", `{"name":"secret_tool"}`, gated, empty)
+		for _, params := range []string{
+			`{"name":"secret_tool"}`,
+			`{"name":"secret_tool","arguments":{}}`,
+			`{"name":"secret_tool","arguments":{"secret":17}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid","extra":true}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid"}}`,
+		} {
+			sameAnswer(t, "tools/call", params, gated, empty)
+		}
 	})
 
 	// A panicking gate fails closed AND masks: an internal-error answer
@@ -78,11 +109,19 @@ func TestGatedItemAnswersAsUnknown(t *testing.T) {
 	// exists (the review hole this guards).
 	t.Run("panicking Gated gate", func(t *testing.T) {
 		gated, empty := NewServer(), NewServer()
-		if err := gated.RegisterTool("secret_tool", "", nil,
+		if err := gated.RegisterTool("secret_tool", "", gateOracleInputSchema,
 			Gated(func(context.Context) error { panic("gate bug") }, toolNoop)); err != nil {
 			t.Fatal(err)
 		}
-		sameAnswer(t, "tools/call", `{"name":"secret_tool"}`, gated, empty)
+		for _, params := range []string{
+			`{"name":"secret_tool"}`,
+			`{"name":"secret_tool","arguments":{}}`,
+			`{"name":"secret_tool","arguments":{"secret":17}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid","extra":true}}`,
+			`{"name":"secret_tool","arguments":{"secret":"valid"}}`,
+		} {
+			sameAnswer(t, "tools/call", params, gated, empty)
+		}
 	})
 
 	t.Run("panicking resource gate", func(t *testing.T) {
@@ -130,7 +169,7 @@ func TestShowRefusalLetsTheMessageCross(t *testing.T) {
 
 	t.Run("Gated handler", func(t *testing.T) {
 		s := NewServer()
-		if err := s.RegisterTool("plan_tool", "", nil, Gated(refuse, toolNoop)); err != nil {
+		if err := s.RegisterTool("plan_tool", "", gateOracleInputSchema, Gated(refuse, toolNoop)); err != nil {
 			t.Fatal(err)
 		}
 		if got := call(s, "tools/call", `{"name":"plan_tool"}`); got.Code != ErrInvalidParams || got.Message != "upgrade your plan for the invoicing tools" {

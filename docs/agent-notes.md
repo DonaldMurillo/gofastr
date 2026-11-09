@@ -1,5 +1,15 @@
 # Implementation regression notes
 
+## 2026-11-09 - Put caller gates before item-schema validation
+- Scope: core/mcp Gated handlers, tool gates and prompt gates
+- Trigger: a refused Gated tool with required arguments disclosed its schema instead of answering as an unknown name.
+- Approach: retain wrapper gates at registration and check them before validation; keep direct callable wrappers intact and weakly register their metadata.
+- Pitfall: code pointers merge closures; index live metadata by reflected wrapper identity only during registration to avoid retaining closures.
+- Boundary: keep Gated outermost across ordinary host decorators, or attach WithToolGate at registration; opaque functions hide inner metadata.
+- Evidence: TestGatedItemAnswersAsUnknown now uses a required string schema; TestGatedValidationOrderAndIdentity pins nested gates, reuse, GC and exactly-once invocation.
+- Next time: compare unknown-name code and message for missing, mistyped and extra arguments, then mutate each ordering guard with a Go overlay.
+- Status: active
+
 ## 2026-11-09 - Validate cascade-filled keys inside the parent operation
 - Scope: framework/crud upsert, create and batch writes
 - Trigger: upsert preflight relaxed required cascade keys but never validated their final values.

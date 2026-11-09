@@ -420,7 +420,14 @@ definitions. Prefer `WithToolGate`, which applies the same predicate on
 both the listing and the call. `Gated` remains for wrapping a handler
 before passing it somewhere that takes only a `ToolHandler`; its
 refusals mask as an unknown tool exactly like an item gate's, unless
-the error carries `ShowRefusal`.
+the error carries `ShowRefusal`. When registered directly, including a
+chain of nested `Gated` wrappers, the gate runs before input-schema
+validation, so missing or malformed arguments reveal no schema detail to
+a refused caller. Allowed calls validate arguments before the handler runs.
+Keep `Gated` outermost when composing handler decorators: an ordinary
+function that calls a gated handler hides the inner function's metadata
+from registration. Use `WithToolGate` at registration when another
+function wraps the gated handler.
 
 `SetGate` installs one server-wide precondition over the data methods
 (`tools/list`, `tools/call`, `resources/list`, `resources/read`,

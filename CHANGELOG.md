@@ -262,6 +262,11 @@ few lines, and link the PR or the docs page for the rest.
   `AuthConfig.MailAddressRateLimit`.
 
 ### Security
+- **A refused MCP tool does not disclose its argument schema**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An outermost
+  `Gated` handler checks its gate before argument validation, like `WithToolGate`, so
+  missing or malformed arguments still answer exactly as an unknown tool.
+  Allowed calls keep schema validation before the handler runs.
 - **Field masks run with the caller's permissions**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). CRUD
   removes back office elevation before every field mask, including
