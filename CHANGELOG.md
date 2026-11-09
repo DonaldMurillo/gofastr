@@ -481,6 +481,11 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Upserts validate cascade-filled foreign keys before storing the parent**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Both
+  insert and conflict arms enforce the parent's schema after a belongs-to
+  cascade supplies its key. A refusal rolls back nested child writes,
+  including inside a caller-owned transaction, as create does.
 - **A data table's phone rows keep the name whole at 320px**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Beside a
   badge, a price and the row menu, a `ResponsiveRows` title kept a few

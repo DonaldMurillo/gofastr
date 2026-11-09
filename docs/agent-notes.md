@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-09 - Validate cascade-filled keys inside the parent operation
+- Scope: framework/crud upsert, create and batch writes
+- Trigger: upsert preflight relaxed required cascade keys but never validated their final values.
+- Approach: retain preflight and hidden-target checks, then validate the full parent schema after belongs-to writes inside inTx.
+- Evidence: TestUpsertValidatesCascadeForeignKey covers both arms on SQLite/Postgres, child creates/edits, and owned, context-carried and bound transactions.
+- Next time: compare create ordering and commit the caller transaction after a handled refusal to prove savepoint rollback.
+- Status: active
+
 ## 2026-11-09 - Strip CRUD elevation at the mask callback boundary
 - Scope: framework/crud field masks and battery/admin
 - Trigger: a mask using CanReadScoped inherited the admin entity lift and revealed its stored value.

@@ -238,6 +238,19 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err != nil {
 			return err
 		}
+		// Preflight validation could not check keys a belongs-to cascade
+		// had not filled. Validate the final parent body as create does,
+		// still inside inTx so a refusal undoes the child writes too.
+		if err := ch.coerceNumberColumnValues(body); err != nil {
+			return err
+		}
+		vr = schema.ValidateAll(ch.entitySchema(), body)
+		if !vr.Valid {
+			return &ValidationError{fields: vr.Errors}
+		}
+		if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+			return err
+		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).
 		if ctx, err = ch.checkStateUpsert(ctx, req, body); err != nil {
