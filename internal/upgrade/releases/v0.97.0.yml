@@ -64,10 +64,10 @@ notes:
     breaking: true
     nodetect: "the argument is a value an MCP client sends at runtime; no code in the app spells it"
     guidance: "Send an integer key as a number ({\"id\": 42}). A client that reads the tool's inputSchema already does; one that hard-codes string ids changes for integer-keyed entities only."
-  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of uihost's agent card service URL and agent Link headers (sitemap, llms.txt, agent card, MCP endpoint) unless the TCP peer is listed in uihost.WithTrustedProxies"
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of uihost's agent card service URL and agent Link headers (sitemap, llms.txt, agent card, MCP endpoint) unless the TCP peer is listed in uihost.WithTrustedProxies or, when the host sets none, in AppConfig.TrustedProxies"
     breaking: true
     hits: review
-    guidance: "With no WithAgentReady or WithSitemap BaseURL configured, behind a TLS-terminating proxy that forwards X-Forwarded-Proto, pass the proxy to uihost.WithTrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8) or set a BaseURL on WithAgentReady or WithSitemap; otherwise those URLs say http://. Hosts not behind a proxy, or with a BaseURL, are unaffected."
+    guidance: "With no WithAgentReady or WithSitemap BaseURL configured, behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8), which the host reads when it sets no list of its own, or pass it to uihost.WithTrustedProxies, which replaces the App's list for that host; or set a BaseURL on WithAgentReady or WithSitemap. Otherwise those URLs say http://. Hosts not behind a proxy, or with a BaseURL, are unaffected."
     find:
       uses:
         - gofastr/framework/uihost.WithAgentReady

@@ -235,13 +235,24 @@ func (m *Manager) ConnectSession(sessionID, peer string) (<-chan IslandUpdate, f
 // the proxy's one address and shares one budget.
 func (m *Manager) hintUntrustedProxy(r *http.Request) {
 	ip := clientip.ParseHop(r.RemoteAddr)
-	if !m.proxies.Empty() || ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
+	if !m.trustedFor(r).Empty() || ip == nil || !(ip.IsLoopback() || ip.IsPrivate()) {
 		return
 	}
 	m.proxyHint.Do(func() {
-		slog.Default().Warn("island: the per-client SSE stream cap refused a stream from a private address; behind a reverse proxy, list it with uihost.WithTrustedProxies or every visitor shares its budget",
+		slog.Default().Warn("island: the per-client SSE stream cap refused a stream from a private address; behind a reverse proxy, list it in AppConfig.TrustedProxies or uihost.WithTrustedProxies or every visitor shares its budget",
 			"peer", ip.String(), "cap", m.caps.perPeer)
 	})
+}
+
+// trustedFor is the proxy list r's X-Forwarded-For is read against: the
+// manager's WithTrustedProxies when it named any entry, else the list the
+// App put on r's context (AppConfig.TrustedProxies), which trusts nothing
+// when there is none.
+func (m *Manager) trustedFor(r *http.Request) clientip.Proxies {
+	if m.proxiesSet {
+		return m.proxies
+	}
+	return clientip.TrustedFrom(r.Context())
 }
 
 // ClientKey is the client a stream request counts under for the per-client
@@ -255,8 +266,8 @@ func (m *Manager) ClientKey(r *http.Request, identity PresenceIdentity) string {
 		return "user:" + identity.UserID
 	}
 	ip := clientip.ParseHop(r.RemoteAddr)
-	if ip != nil && m.proxies.Contains(ip) {
-		if fwd, ok := clientip.Forwarded(r.Header, m.proxies); ok {
+	if proxies := m.trustedFor(r); ip != nil && proxies.Contains(ip) {
+		if fwd, ok := clientip.Forwarded(r.Header, proxies); ok {
 			ip = fwd
 		}
 	}

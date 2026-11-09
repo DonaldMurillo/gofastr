@@ -2732,13 +2732,14 @@ func appSpecStatSource(block appspec.AppSpecBlock) (appSpecStat, bool) {
 
 // appSpecSourceChecks emits, for the head of a screen's mount func, one
 // entityui check per sourced stat_card (CheckStat) and chart (CheckChart)
-// the screen renders. The app spec load judges a block against the
-// spec's declarations; the checks judge it against the entity the app
-// actually registered (every column, hidden and no_query flags, real
-// types, the filter parsed with them). A block that passes the load but
-// could never compute (a filter or group_by naming a column the entity
-// lacks) would draw "—" or an empty chart forever with no error; the
-// check panics at boot instead, naming the screen and the block, the way
+// the screen renders. The app spec load runs the same rules
+// (entityui.CheckStatFields, CheckChartFields) over the fields the
+// generated entity registers (appspec.AppSpecEntityFields); the checks
+// judge the block against the entity the app actually registered, which
+// an entity file edited after generation can change. A block that could
+// never compute (a filter or group_by naming a column the entity lacks)
+// would draw "—" or an empty chart forever with no error; the check
+// panics at boot instead, naming the screen and the block, the way
 // EntityUI already panics on a bad appExtensions name.
 func appSpecSourceChecks(screen appspec.AppSpecScreen) string {
 	var sb strings.Builder
@@ -2752,20 +2753,14 @@ func appSpecSourceChecks(screen appspec.AppSpecScreen) string {
 				continue
 			}
 			call = fmt.Sprintf("appUI.CheckStat(%q, %q, %q, %q, %q)", st.entity, st.agg, st.field, st.filter, st.format)
-			name = appspec.AppSpecProp(b, "label")
-			if name == "" {
-				name = st.entity
-			}
+			name = appspec.AppSpecBlockName(b, "label", st.entity)
 		case "bar_chart", "pie_chart", "line_chart":
 			entity, groupBy, ok := appSpecChartSource(b)
 			if !ok {
 				continue
 			}
 			call = fmt.Sprintf("appUI.CheckChart(%q, %q)", entity, groupBy)
-			name = appspec.AppSpecProp(b, "title")
-			if name == "" {
-				name = entity
-			}
+			name = appspec.AppSpecBlockName(b, "title", entity)
 		default:
 			continue
 		}
@@ -3074,10 +3069,8 @@ func appSpecEntityListFilterParts(bp appspec.AppSpec, entity, filter string) (fi
 		if decl.Name != entity {
 			continue
 		}
-		for _, fd := range decl.Fields {
-			if fd.Name == f || appspec.ToCamelJSON(fd.Name) == f {
-				return fd.Name, v, true
-			}
+		if fd, ok := appspec.EntityListPinColumn(decl, f); ok {
+			return fd.Name, v, true
 		}
 	}
 	return "", "", false

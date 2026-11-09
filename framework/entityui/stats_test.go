@@ -74,6 +74,9 @@ func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
 		{"invoices", "", "", "", ""},
 		{"invoices", "count", "", `status = "draft"`, ""},
 		{"invoices", "sum", "amount", `status = "draft"`, "money"},
+		{"invoices", "count", "", `status in ["open", "paid"]`, ""},
+		{"invoices", "count", "", `status != "draft"`, ""},
+		{"invoices", "count", "", `status contains "ai"`, ""},
 	} {
 		if err := x.ui.CheckStat(ok[0], ok[1], ok[2], ok[3], ok[4]); err != nil {
 			t.Errorf("CheckStat%q: %v", ok, err)
@@ -88,6 +91,10 @@ func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
 		"sum of no-query":    {"invoices", "sum", "cost", "", ""},
 		"count with a field": {"invoices", "count", "amount", "", ""},
 		"bad filter":         {"invoices", "count", "", `nope = 1`, ""},
+		"enum value":         {"invoices", "count", "", `status = "closed"`, ""},
+		"enum not-equal":     {"invoices", "count", "", `status != "closed"`, ""},
+		"enum in list":       {"invoices", "count", "", `status in ["open", "closed"]`, ""},
+		"enum in a group":    {"invoices", "count", "", `memo = "x" or status = "closed"`, ""},
 		"unknown format":     {"invoices", "sum", "amount", "", "euros"},
 		"money on a count":   {"invoices", "count", "", "", "money"},
 	} {

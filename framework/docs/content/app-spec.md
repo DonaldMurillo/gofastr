@@ -1245,24 +1245,33 @@ than rendering "—". A count takes no `field` and no `format`, and a sum's
 `format` is `money` or absent: validation refuses the rest, because the
 card would ignore it and draw a plain number. A `stat_card` filter is a filter predicate
 (`'status in ["draft", "open"] and amount >= 1000'`); the bare
-`field=value` form is read as `field = "value"`. Validation checks the
-value in each comparison against its column, with the `entity_list`
-pin's rules: it refuses a value the column's type cannot hold
-(`featured = "yes"` on a bool), and on `=`, `!=` and `in` an enum value
-outside the field's `values:`. A `contains` comparison, and a filter
-the predicate parser refuses, pass through unchecked. The generated
-app checks every sourced `stat_card` again when its screen mounts:
-`entityui.CheckStat` judges the card against the entity the app
-registered, so a filter naming a column the entity lacks, or anything
-else that could never compute, panics at boot with the screen and the
-card's label (`screen "dashboard" stat_card "Billed": ...`) instead of
+`field=value` form is read as `field = "value"`. A filter names columns
+by their column name (`due_on`, not `dueOn`: no generated field has a
+wire alias). Validation parses the filter over the fields the generated
+entity registers, which are the spec's fields plus the columns
+`entity.Define` adds: `id`, `created_at` and `updated_at` (unless
+`timestamps: false`), and `deleted_at` under `soft_delete` (hidden, so
+it cannot be filtered). It refuses, naming the card and the parse
+error, a filter naming a column the entity lacks, an unknown operator,
+and a value the column's type cannot hold (`featured = "yes"` on a
+bool). On `=`, `!=` and `in` it also refuses an enum value outside the
+field's `values:`. The generated app checks every sourced `stat_card`
+again when its screen mounts: `entityui.CheckStat` judges the card
+against the entity the app registered, by the same rule
+(`entityui.CheckStatFields`) over the same fields, so a card the load
+passes never fails it. A filter or a field changed by hand in the
+generated entity files after generation, or anything else that could
+never compute, panics at boot with the screen and the card's label
+(`screen "dashboard" stat_card "Billed": ...`) instead of
 drawing "—" forever. For the chart kinds `source` (with both `entity` and
 `group_by`, targeting a declared entity) is **required**: validation
 rejects a chart without one rather than letting the block silently vanish
 from the page. `group_by` names a column the database can group: a
 `json` field, a many-to-many relation, and a `hidden` or `no_query`
 field are refused, since the chart would draw nothing or print stored
-values as labels. A source `entity` is the entity's name as declared
+values as labels. Validation judges it over the same fields as a
+`stat_card` filter, with `entityui.CheckChartFields`, so `created_at`
+is accepted and `deleted_at` (hidden) is refused. A source `entity` is the entity's name as declared
 (`customers`, not `/customers`), for a `stat_card` too. The generated
 app checks every sourced chart when its screen mounts, as it checks a
 `stat_card`: `entityui.CheckChart` judges `group_by` against the

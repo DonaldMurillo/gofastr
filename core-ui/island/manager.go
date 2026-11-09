@@ -117,9 +117,14 @@ func WithPeerStreamCap(n int) ManagerOption {
 // header it sends is ignored. Behind a proxy that is not listed, every
 // anonymous visitor counts as the proxy's one address and shares one
 // per-client budget. Entries that are neither an IP nor a CIDR are dropped.
+//
+// With no entries the manager reads the list a framework.App puts on each
+// request's context (its AppConfig.TrustedProxies). A list given here
+// replaces the App's for this manager; it is not added to it.
 func WithTrustedProxies(entries ...string) ManagerOption {
 	return func(m *Manager) {
 		m.proxies = clientip.ParseProxies(entries)
+		m.proxiesSet = len(entries) > 0
 	}
 }
 
@@ -170,10 +175,12 @@ type Manager struct {
 	globalSubs int
 	// peerSubs counts each client's live streams (guarded by mu) for the
 	// per-client cap; a client's entry is deleted with its last stream.
-	// proxies is WithTrustedProxies, read-only after NewManager.
-	peerSubs  map[string]int
-	proxies   clientip.Proxies
-	proxyHint sync.Once // hintUntrustedProxy logs once per manager
+	// proxies is WithTrustedProxies, read-only after NewManager;
+	// proxiesSet reports that it named any entry (trustedFor).
+	peerSubs   map[string]int
+	proxies    clientip.Proxies
+	proxiesSet bool
+	proxyHint  sync.Once // hintUntrustedProxy logs once per manager
 
 	// sseHeartbeat/sseStreamBound tune the SSE stream loop in
 	// ServeSSEWithPresence (see stream.go). sseHeartbeat is the period

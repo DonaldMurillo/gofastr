@@ -204,7 +204,11 @@ Useful options:
   `gofastr docs reactivity`. The same list decides whose
   `X-Forwarded-Proto` sets the scheme of the agent card and the agent
   `Link` headers when no `BaseURL` is configured (`gofastr docs
-  agent-ready`).
+  agent-ready`). Without the option the host reads
+  `AppConfig.TrustedProxies`, which the App puts on each request's
+  context, for both uses, so an App that lists its proxy once needs
+  nothing here. A list given here replaces the App's for this host; it
+  is not added to it, so the option says exactly whom the host trusts.
 - `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
   the component bundle and app.css as links on every page. By default a
   first-load page whose head fits 16 KiB compressed carries them inline,

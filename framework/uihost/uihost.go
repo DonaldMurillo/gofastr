@@ -572,6 +572,11 @@ func WithNoLiveChannel() Option {
 // agent card's and the Link headers' absolute URLs when no BaseURL is
 // configured. Behind a TLS-terminating proxy, list the proxy or set a
 // BaseURL, or those URLs say http://.
+//
+// Without this option the host reads the list a framework.App puts on
+// each request's context, its AppConfig.TrustedProxies, for both uses. A
+// list given here replaces the App's for this host; it is not added to
+// it.
 func WithTrustedProxies(entries ...string) Option {
 	return func(ds *UIHost) { ds.trustedProxies = append(ds.trustedProxies, entries...) }
 }

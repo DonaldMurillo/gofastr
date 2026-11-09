@@ -12,6 +12,12 @@ package appgen
 // pie_chart grouped on "group", and a cards entity with no group column
 // would draw an empty chart forever. Mounting the screen must refuse it
 // through entityui.CheckChart, naming the screen and the chart.
+//
+// TestFrameworkColumnStatBoots is the other side: the "Since 2026" card
+// filters on created_at, a column entity.Define adds that the spec does
+// not list. The load passed it over the same field list, and the
+// generated entities registered as the app registers them pass
+// CheckStat with it (TestE2E's boot mounts the whole dashboard).
 const statCheckProbe = `package main
 
 import (
@@ -23,7 +29,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+
+	"example.com/union/entities"
 )
+
+func TestFrameworkColumnStatBoots(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fwApp := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
+	entities.RegisterAll(fwApp)
+	saved := appUI
+	t.Cleanup(func() { appUI = saved })
+	appUI = fwApp.EntityUI(appExtensions)
+	if err := appUI.CheckStat("invoices", "count", "", ` + "`" + `created_at >= "2026-01-01T00:00:00Z"` + "`" + `, ""); err != nil {
+		t.Fatalf("a filter on a column Define adds fails the boot check: %v", err)
+	}
+	if appUI.CheckStat("invoices", "count", "", ` + "`" + `dueOn = "2026-01-01"` + "`" + `, "") == nil {
+		t.Fatal("the boot check took dueOn for due_on, which the generated entity does not alias")
+	}
+}
 
 func TestStatCardCheckedAtBoot(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")

@@ -396,10 +396,14 @@ few lines, and link the PR or the docs page for the rest.
   scheme from an `X-Forwarded-Proto` header any client could send, so a
   client could make the host advertise `http://` URLs or poison a cached
   copy. The header now counts only from a peer listed in
-  `uihost.WithTrustedProxies`, the rule the framework's well-known
-  documents follow. Behind a TLS-terminating proxy, list the proxy or
-  set `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs
-  say `http://`.
+  `uihost.WithTrustedProxies` or, when the host sets no list, in
+  `AppConfig.TrustedProxies`, which the App puts on each request's
+  context: the rule the framework's well-known documents follow. A host
+  list replaces the App's rather than adding to it. The island stream's
+  per-client cap reads `X-Forwarded-For` through the same fallback.
+  Behind a TLS-terminating proxy, list the proxy in either place or set
+  `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs say
+  `http://`.
 - **BREAKING: a pluginhost framed asset's CSP takes `X-Forwarded-Proto`
   only from a trusted proxy**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
@@ -573,10 +577,19 @@ few lines, and link the PR or the docs page for the rest.
   forever with no error. Each generated screen's mount now runs
   `entityui.CheckStat` for every sourced card it renders and panics
   naming the screen and the card, as `battery/admin` already does for
-  its metrics. So that a spec the load passes never fails that check,
-  the load now also refuses a count card given a `source.field` or a
-  `format`, and a sum whose `format` is not `money`: the card ignored
-  them and drew a plain number.
+  its metrics. The spec load runs the same rule, the new
+  `entityui.CheckStatFields`, over the fields the generated entity
+  registers: the spec's fields plus the `id`, `created_at`, `updated_at`
+  and `deleted_at` columns `entity.Define` adds. So a card the load
+  passes also passes the boot check. A filter naming a column the
+  entity lacks, or a camel spelling such as `dueOn` for `due_on` (no
+  generated field has a wire alias), is refused at load, naming the card
+  and the parse error; a filter on `created_at` loads and boots. A count
+  card given a `source.field` or a `format`, and a sum whose `format` is
+  not `money`, are refused too: the card ignored them and drew a plain
+  number. `CheckStat` also refuses an `=`, `!=` or `in` comparison whose
+  value is not one of an enum field's values, which the parse let
+  through and which counted nothing.
 - **A generated app checks its charts at boot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [app spec](framework/docs/content/app-spec.md)). A `bar_chart`,
@@ -585,10 +598,12 @@ few lines, and link the PR or the docs page for the rest.
   The new `entityui.CheckChart(entity, groupBy)` reports why
   `GroupBars`, `GroupSlices` and `LineChart` could never draw one, and
   each generated screen's mount runs it for every sourced chart and
-  panics naming the screen and the chart. The spec load now refuses a
-  `group_by` on a `json` field or a many-to-many relation, and a chart or
-  `stat_card` source `entity` written as a route (`/customers`), which
-  the boot checks read as an unknown entity.
+  panics naming the screen and the chart. The spec load runs the same
+  rule, `entityui.CheckChartFields`, over the generated entity's fields,
+  so it refuses a `group_by` on a `json` field, a many-to-many relation
+  or a hidden column `entity.Define` adds (`deleted_at`). It also
+  refuses a chart or `stat_card` source `entity` written as a route
+  (`/customers`), which the boot checks read as an unknown entity.
 - **Meridian checks its hand-written stats and charts at boot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
   Overview screen, the admin Revenue page and the customer Billing panel
@@ -596,7 +611,9 @@ few lines, and link the PR or the docs page for the rest.
   `GroupBars` calls, which no generated check reached. Each surface now
   keeps its figures in one list that its render reads, and the boot runs
   `entityui.CheckStat` and `CheckChart` over it: a figure that could
-  never compute stops the start, naming the surface and the figure.
+  never compute stops the start, naming the surface and the figure. A
+  Revenue heatmap cell keyed by a payment status the `payments.status`
+  enum does not list stops it too.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of
