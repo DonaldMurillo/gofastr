@@ -151,7 +151,7 @@ func TestEndpointsOverTheWire(t *testing.T) {
 	if err := c.ArchivePost(ctx, "p1"); err != nil {
 		t.Fatalf("ArchivePost: %v", err)
 	}
-	live := sdk.SchemaHash(sdk.RegistryNamedConfigs(app.Registry, []string{"posts", "documents"}))
+	live := sdk.SchemaHash(sdk.RegistryNamedConfigs(app.Registry, []string{"posts", "documents"}), "camelCase")
 	if want := os.Getenv("WANT_SCHEMA_HASH"); live != want {
 		t.Fatalf("live schema hash %s, generated %s: the SDK would report drift", live, want)
 	}

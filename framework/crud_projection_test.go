@@ -135,8 +135,11 @@ func TestProjection_CamelCaseInput(t *testing.T) {
 		if got["authorId"] != "u1" {
 			t.Fatalf("expected authorId=u1, got %v (full=%v)", got["authorId"], got)
 		}
-		if _, present := got["title"]; present {
-			t.Fatalf("title should be projected out, got %v", got)
+		// authorId is projected IN; title stays too because it is
+		// required (#669: a projection keeps every required column
+		// beside the key).
+		if got["title"] != "hi" {
+			t.Fatalf("the required title must stay in a projection, got %v", got)
 		}
 	})
 }

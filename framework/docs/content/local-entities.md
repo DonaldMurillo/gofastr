@@ -113,9 +113,13 @@ saves once.
 
 A `Pattern` must stay inside the regex syntax Go and JavaScript read the
 same way: literals, classes and ranges, groups with `(?:…)` as the only
-extension, `| ^ $ . * + ?`, `{n,m}` quantifiers, the escapes `\d \w \s
-\b` and their capitals, an escaped metacharacter, `\-` inside a class,
+extension, `| ^ $ * + ?`, `{n,m}` quantifiers, the escapes `\d \w \b`
+and their capitals, an escaped metacharacter, `\-` inside a class,
 and `\p{…}` naming a Unicode general category (`\p{L}`, `\p{Nd}`).
+`\s`, `\S` and a bare `.` are refused too: JavaScript's `\s` is Unicode
+whitespace where Go's is ASCII, and its `.` skips every line terminator
+where Go's skips only `\n` — name the characters you accept in a class
+instead (`[ \t\r\n]+`, `[^,;]+`, …).
 `Define` refuses anything else at startup (inline flags, `(?P<name>)`,
 `\A`, `\z`, POSIX classes, other letter escapes, script names such as
 `\p{Greek}`). A pattern the browser still cannot compile refuses every

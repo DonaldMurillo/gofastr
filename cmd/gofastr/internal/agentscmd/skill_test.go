@@ -38,7 +38,7 @@ func TestEmbeddedHostSkillMatchesRepo(t *testing.T) {
 
 func TestWriteHostSkillDropsFileWithFrontmatter(t *testing.T) {
 	dir := t.TempDir()
-	if err := WriteHostSkill(dir); err != nil {
+	if err := WriteHostSkill(dir, false); err != nil {
 		t.Fatalf("writeHostSkill: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dir, ".claude/skills/gofastr-host/SKILL.md"))

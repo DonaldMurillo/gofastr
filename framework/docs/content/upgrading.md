@@ -38,6 +38,11 @@ out clearly), and where a change has a known code signature, the report
 points at the affected `file:line` in *your* project: the same guided
 style as `gofastr audit a11y`. `--apply` then runs the mechanical
 steps and stops at the first failure so you fix with the notes in hand.
+`--apply` against an OLDER release is refused unless `--allow-downgrade`
+is passed: the steps are written for moving forward, and the notes
+describe what a downgrade undoes, not how to undo it. The exit status is
+1 while any BREAKING note still has hits (2 for the refused downgrade),
+so a script does not read unfinished migration work as success.
 An app that vendors its dependencies (`vendor/modules.txt`) gets a
 `go mod vendor` step after `go mod tidy`; without it every later go
 command refuses the stale `vendor/`. A release candidate target
@@ -64,6 +69,27 @@ or pseudo-class function; longer names remain distinct.
 Retired classes also match `[class=…]` and `[class~=…]` selectors. Quoted
 values follow CSS string escapes: an escaped LF, CR, CRLF or form feed
 continues the value without adding whitespace before class-token matching.
+A `config:` note's `value:` regexp matches the scalar's parsed value,
+never the source spelling: the scanner reads gofastr.yml through the
+YAML parser, which keeps values, not tokens. Write the pattern against
+these forms:
+
+| YAML source | Matched text |
+|---|---|
+| `theme: 2.0` | `2` |
+| `ratio: 1.10` | `1.1` |
+| `kilo: 1e3` | `1000` |
+| `price: 3.250` | `3.25` |
+| `count: 42` | `42` |
+| `flag: true` | `true` |
+| `word: hello` | `hello` (strings are the one verbatim kind) |
+| `nothing: ~` | `<nil>` |
+
+So a note about `theme: 2.0` writes `^2(\.0)?$` or `^2$`, and `^2\.0$`
+stays silent — a false clean, which is why the parsed form is the one to
+pin. A float past `+MaxFloat64` is refused by the parser rather than
+matched, and only `true`/`True`/`TRUE` (and their false counterparts)
+are booleans.
 A module without a `go` directive is checked as Go 1.16, the Go tool's
 default, rather than bypassing minimum-version notes. An invalid
 `go.mod` either prevents scan startup or appears as **Unscanned** when

@@ -155,8 +155,8 @@ func TestOnboardingWritersRefuseLinksOutOfTheProject(t *testing.T) {
 		write func(proj string) error
 	}
 	surfaces := []surface{
-		{"agents skill leaf", ".claude/skills/gofastr-host/SKILL.md", false, agentscmd.WriteHostSkill},
-		{"agents skill parent", ".claude", true, agentscmd.WriteHostSkill},
+		{"agents skill leaf", ".claude/skills/gofastr-host/SKILL.md", false, func(p string) error { return agentscmd.WriteHostSkill(p, true) }},
+		{"agents skill parent", ".claude", true, func(p string) error { return agentscmd.WriteHostSkill(p, true) }},
 		{"agents detail dir", ".agents", true, agentscmd.WriteAgentDetailFiles},
 		{"agents detail file", ".agents/framework.md", false, agentscmd.WriteAgentDetailFiles},
 		{"scaffold file", "main.go", false, func(p string) error { return writeScaffoldFile(p, "main.go", []byte("package main\n")) }},

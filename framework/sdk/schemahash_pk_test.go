@@ -15,7 +15,7 @@ import (
 // own (2026-10-27 bug bash G4).
 func TestPrimaryKeyOrderMovesSchemaHash(t *testing.T) {
 	hash := func(pk ...string) string {
-		return SchemaHash([]NamedConfig{{Name: "depots", Config: entity.EntityConfig{
+		return hashOf([]NamedConfig{{Name: "depots", Config: entity.EntityConfig{
 			PrimaryKey: pk,
 			Fields: []schema.Field{
 				{Name: "region", Type: schema.String, Required: true},

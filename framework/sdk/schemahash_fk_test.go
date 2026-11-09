@@ -12,7 +12,7 @@ import (
 // the key reads (order_no, order_store).
 func TestForeignKeysMoveSchemaHash(t *testing.T) {
 	hash := func(fks ...string) string {
-		return SchemaHash([]NamedConfig{{Name: "lines", Config: entity.EntityConfig{
+		return hashOf([]NamedConfig{{Name: "lines", Config: entity.EntityConfig{
 			Fields: []schema.Field{
 				{Name: "order_store", Type: schema.String},
 				{Name: "order_no", Type: schema.Int},

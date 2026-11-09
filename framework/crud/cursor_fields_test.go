@@ -60,8 +60,8 @@ func TestCursorPageHonorsFields(t *testing.T) {
 				keys = append(keys, k)
 			}
 			slices.Sort(keys)
-			if !slices.Equal(keys, []string{"id", "title"}) {
-				t.Fatalf("?fields=title row carried %v, want [id title]", keys)
+			if !slices.Equal(keys, []string{"id", "rank", "title"}) {
+				t.Fatalf("?fields=title row carried %v, want [id rank title] (rank is required, so the projection keeps it; #669)", keys)
 			}
 			titles = append(titles, row["title"].(string))
 		}

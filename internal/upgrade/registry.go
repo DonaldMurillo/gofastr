@@ -257,6 +257,13 @@ func parseHits(n *coreyaml.Node, note *Note) error {
 	case hn.Kind == coreyaml.Scalar && v == "edit":
 		note.Review = false
 	case hn.Kind == coreyaml.Scalar && v == "review":
+		// A shapes matcher fires on a use resolving to the OLD shape,
+		// which the release replaced: every hit is a dead spelling, so
+		// review contradicts the matcher. The four shipped notes that
+		// paired them moved to edit with #655's fix batch (#669).
+		if len(note.Find.Shapes) > 0 {
+			return errAt(hn.Line, "hits: review on a shapes matcher: a hit is a use of the old shape, a dead spelling — say hits: edit")
+		}
 		note.Review = true
 	default:
 		return errAt(hn.Line, "hits must be edit or review")

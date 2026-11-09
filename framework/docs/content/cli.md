@@ -113,13 +113,16 @@ scrubbed the same way.
   declares.
 - `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`, in `dir` (default
-  the current directory). The verbs take no flags: a flag or a second
-  argument is refused with exit 2 before anything is written. Every write
-  stays in the project: a symlink there (`.agents`, `.claude`,
-  `AGENTS.md`, a detail file or the skill's `SKILL.md`) is followed only
-  while it points inside the project, and one that leads out is refused,
-  so running the command in a cloned repo cannot write over a file
-  elsewhere on disk.
+  the current directory). The verbs take no flags except `skill
+  --force`; any other flag or a second argument is refused with exit 2
+  before anything is written. Every write stays in the project: a
+  symlink there (`.agents`, `.claude`, `AGENTS.md`, a detail file or the
+  skill's `SKILL.md`) is followed only while it points inside the
+  project, and one that leads out is refused, so running the command in
+  a cloned repo cannot write over a file elsewhere on disk. `agents
+  skill` also refuses an existing `SKILL.md` without the generated
+  header in its frontmatter — a hand-written file — unless `--force`
+  says to replace it, the same rule the `.agents/` detail files follow.
 - `gofastr theme edit`: a local theme configurator with every token as a
   control, the whole component gallery as a live preview, and write-back to
   `theme/theme.go`.
@@ -408,8 +411,10 @@ tests, never a user's upgrade. CI also refuses a `hits: review` note
 naming a symbol its own release removed, a `hits: edit` note whose
 `uses` symbol (or unconditioned `fields` entry) survives its release
 (the ported spelling would stay a hit: name the old shape under
-`shapes`), and a `shapes` regex that does not match the symbol's type
-at the release before, or still matches it at the release itself. A review note earns its
+`shapes`), a `shapes` regex that does not match the symbol's type
+at the release before, or still matches it at the release itself, and a
+`hits: review` on a note whose `find:` has `shapes` — a shapes hit is a
+use resolving to the OLD shape, a dead spelling, so it is an edit. A review note earns its
 `find:` only when each hit is a place to decide something: a note
 whose condition is an absence (an entity declaring no posture, an
 owner field with no matching column), a fact of the database, or a

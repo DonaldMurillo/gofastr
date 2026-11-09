@@ -144,8 +144,8 @@ func TestLLMMD_NotesCombinations(t *testing.T) {
 	if !strings.Contains(md, "unique, default: AUTO") {
 		t.Errorf("expected combined unique+default notes; md=%s", md)
 	}
-	if !strings.Contains(md, "unique, values: a|b") {
-		t.Errorf("expected combined unique+values notes")
+	if !strings.Contains(md, `unique, values: a\|b`) {
+		t.Errorf("expected combined unique+values notes with the cell pipe escaped")
 	}
 }
 

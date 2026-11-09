@@ -21,7 +21,13 @@ func TestAgentsVerbsRefuseFlagsAndExtraArgs(t *testing.T) {
 		"skill": runAgentsSkill,
 	}
 	for name, run := range verbs {
-		for _, args := range [][]string{{"--force"}, {"-f"}, {".", "extra"}, {"--dir=x"}} {
+		argsList := [][]string{{"--force"}, {"-f"}, {".", "extra"}, {"--dir=x"}}
+		if name == "skill" {
+			// skill owns --force now (#669): it overwrites a
+			// hand-written SKILL.md, so it is not a refusal here.
+			argsList = [][]string{{"-f"}, {".", "extra"}, {"--dir=x"}}
+		}
+		for _, args := range argsList {
 			dir := t.TempDir()
 			clitest.CovT_chdir(t, dir)
 			code := -1

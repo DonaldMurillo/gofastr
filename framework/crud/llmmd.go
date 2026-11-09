@@ -118,7 +118,13 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			if notes != "" {
 				notes += ", "
 			}
-			notes += "values: " + strings.Join(f.Values, "|")
+			// Each value is escaped, and the separator is \|, because a
+			// raw pipe splits the markdown cell (#669).
+			escaped := make([]string, len(f.Values))
+			for i, v := range f.Values {
+				escaped[i] = strings.ReplaceAll(v, "|", `\|`)
+			}
+			notes += "values: " + strings.Join(escaped, `\|`)
 		}
 		if f.NoQuery {
 			if notes != "" {
@@ -198,6 +204,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	// the doc and the clamp cannot disagree.
 	defLimit, maxLimit := ListLimits(ent.Config.Pagination.MaxListLimit)
 	fmt.Fprintf(&b, "| `limit` | integer | Items per page (default %d, max %d) |\n", defLimit, maxLimit)
+	fmt.Fprintf(&b, "| `per_page` | integer | Alias for `limit`; `limit` wins when both are sent (same default %d, max %d) |\n", defLimit, maxLimit)
+	fmt.Fprintf(&b, "| `offset` | integer | Rows to skip, replacing the page-derived skip (offset mode only; refused past %d rows) |\n", maxLimit*1000)
 	b.WriteString("| `sort` | string | Sort field (prefix with `-` for descending, e.g. `-created_at`) |\n")
 	b.WriteString("| `cursor` | string | Opaque cursor for keyset pagination. Presence switches to cursor mode. |\n")
 	b.WriteString("| `direction` | string | Cursor walk direction: `forward` (default) or `backward` |\n")
@@ -399,7 +407,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	// Multi-tenant note
 	if ent.Config.Scope.MultiTenant {
 		b.WriteString("## Multi-tenancy\n\n")
-		b.WriteString("All endpoints are scoped by `tenant_id`. The tenant context is derived from the request (middleware-injected).\n\n")
+		fmt.Fprintf(&b, "All endpoints are scoped by `%s`. The tenant context is derived from the request (middleware-injected).\n\n", wireKey(ent.Config.TenantColumn()))
 	}
 
 	return b.String()
@@ -657,8 +665,10 @@ func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 func sanitizeDefault(v any) string {
 	switch val := v.(type) {
 	case string:
-		if len(val) > 50 {
-			return val[:50] + "…"
+		// Truncate on a rune boundary: a byte cut splits a multi-byte
+		// character and puts invalid UTF-8 into the document (#669).
+		if runes := []rune(val); len(runes) > 50 {
+			return string(runes[:50]) + "…"
 		}
 		return val
 	case int, int8, int16, int32, int64,

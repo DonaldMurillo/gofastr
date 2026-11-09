@@ -154,6 +154,23 @@ few lines, and link the PR or the docs page for the rest.
   `belongs_to` cascade that would fill the entity's own key is refused
   with `validation.cascade_upsert_key`; the key goes in the body, where
   the upsert's checks read it.
+- **`gofastr upgrade --apply` refuses a downgrade without
+  `--allow-downgrade`, and breaking hits change the exit status**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  report still prints — the notes describe what a downgrade undoes — but
+  no step runs until the flag says to. A run whose BREAKING notes still
+  have hits, plan or apply, now exits 1 (a refused downgrade exits 2), so
+  a script no longer reads unfinished migration work as success.
+- **A registry note pairing `shapes` with `hits: review` no longer
+  parses** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  A shapes hit is a use of the OLD shape, a dead spelling, so it is an
+  edit; the four shipped notes that said review moved to edit.
+- **BREAKING: `localentity` refuses `\s`, `\S` and a bare `.` in a
+  JavaScript's `\s` is Unicode whitespace where Go's is ASCII, and its
+  `.` skips every line terminator where Go's skips only `\n`, so the
+  browser and the server validated different values. Name the characters
+  in a class instead (`[ \t\r\n]+`); `Define` refuses the ambiguous
+  spellings at startup.
 
 - **BREAKING: magic-link send and forgot-password share one per-address
   mail budget** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
@@ -166,6 +183,13 @@ few lines, and link the PR or the docs page for the rest.
   `AuthConfig.MailAddressRateLimit`.
 
 ### Security
+- **A repository secrets file cannot name a key that is not an
+  environment variable** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `isProviderCredentialKey` checks the whole name at the source
+  (`^[A-Z][A-Z0-9_]*$`, not just the `_API_KEY`/`_TOKEN` suffix), so a
+  control-byte name never reaches the consent prompt, the environment or
+  `--allow-repo-secrets`, and the CLI no longer unsets such keys after
+  the fact.
 - **`App.ImportData` restores the bytes it checked**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It hashed
   each archive file on one read and parsed the rows from a second, so a
@@ -333,6 +357,52 @@ few lines, and link the PR or the docs page for the rest.
   `..` segments, empty segments and control bytes stay refused, and a
   tool registered by hand (no route) keeps every path parameter strict.
   New: `router.IsCatchAllParam`, `handler.WithRoutePattern`.
+- **`?fields=` projections keep required keys**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The projection parser (`crud.projectFromRequestQ`) now includes every
+  required column beside the primary key, on list, cursor and get routes
+  alike. The OpenAPI response schema marks those keys required, so a
+  projected response that dropped them failed the spec it was documented
+  by; the `?fields=` description says so now. Generated typed clients keep
+  binding required fields to non-optional types on every response.
+- **`/openapi.json` types the list envelopes and documents every list
+  parameter** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  Each entity's list route now answers in its own
+  `<Entity>ListResponse`/`<Entity>CursorPage` envelopes whose `data`
+  items `$ref` the entity's schema, so a typed client generated from the
+  spec reads List() as typed rows, not untyped objects; the shared
+  untyped envelopes are gone. `?offset=`, `?per_page=` and `?stream=`
+  are documented with the semantics the route applies (the offset
+  ceiling, limit-wins-over-per_page, stream's refusals), beside the
+  `?limit=` description that already names the entity's real cap.
+- **llm.md and the MCP tools close their doc gaps**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). Enum
+  values in llm.md's field table escape the cell pipe (`a\|b`), a long
+  default truncates on a rune boundary, the multi-tenancy note names the
+  configured tenant column (wire key), and the list parameters document
+  `per_page` and `offset`. The MCP record-key arguments are typed from
+  the key column — an integer key offers an integer `id` prop — and the
+  list tool forwards and documents `per_page` and `offset`.
+- **The SDK schema hash covers `JSONCase`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `sdk.SchemaHash` takes the case the artifacts speak ("camelCase" for
+  the generated clients, the app's own case in sdkdocs via
+  `Config.SnakeCase`), so an app served snake_case no longer reports
+  "in sync" for camel artifacts. Every existing manifest's digest changes
+  with this; re-run `gofastr generate sdk` to re-stamp it.
+- **The upgrade registry's config `value:` matching is documented as
+  parsed** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The scanner matches the scalar's parsed value, never its source
+  spelling (`theme: 2.0` matches `^2$`), which
+  [upgrading](framework/docs/content/upgrading.md) now spells out per
+  kind; a note written against the source spelling used to report a
+  false clean.
+- **`gofastr agents skill` refuses to overwrite a hand-written
+  `SKILL.md`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  The generated skill carries a header in its frontmatter; an existing
+  file without it is refused unless `--force` is passed, the rule the
+  `.agents/` detail files already follow. `gofastr init --reinit --force`
+  overrides it the same way.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

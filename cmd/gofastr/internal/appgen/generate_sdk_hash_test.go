@@ -35,7 +35,7 @@ func TestSDKHashMatchesVersionedRuntime(t *testing.T) {
 		Name:    decl.Name,
 		Version: "/api/v1",
 		Config:  cfg,
-	}})
+	}}, string(framework.CaseCamel))
 	if generated != live {
 		t.Fatalf("generated manifest hash %s never matches the versioned runtime hash %s", generated, live)
 	}
