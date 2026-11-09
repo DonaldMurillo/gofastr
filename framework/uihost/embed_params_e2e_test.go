@@ -38,6 +38,11 @@ func (c *tallParamComp) Render() render.HTML {
 // encoded, from data-path and from mount({path}) alike. A file name with a
 // space, "#" and "?" must reach the route as one segment: unencoded, "#"
 // ends the URL and "?" starts its query.
+//
+// The spacer puts the second frame below the fold from the start. Chrome
+// stops rendering a cross-origin frame there, so a height report that
+// waits for the next animation frame never arrives; CI hit this whenever
+// the first frame grew before the second had reported.
 func TestEmbedDynamicPathInABrowser(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser test")
@@ -49,7 +54,7 @@ func TestEmbedDynamicPathInABrowser(t *testing.T) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(w, `<!doctype html><html><head><title>customer</title></head><body>
 <h1 id="host-page">Acme</h1>
-<div id="snippet"></div><div id="mounted"></div>
+<div id="snippet"></div><div style="height:3000px"></div><div id="mounted"></div>
 <script src="%[1]s/__gofastr/embed.js" data-surface="files" data-path="/files/a/%[3]s" data-token="%[2]s" data-target="#snippet"></script>
 <script>GoFastrEmbed.mount({surface: 'files', path: %[5]q, token: %[4]q, target: '#mounted'});</script>
 </body></html>`, appURL, snippetNonce, file, mountNonce, "/files/b/"+file)

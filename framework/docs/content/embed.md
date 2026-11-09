@@ -572,6 +572,11 @@ to match. The measurement is of the embed root's own extent, deliberately not of
 document's scroll height: the document's height is the frame's height, so
 measuring it feeds each report into the next one.
 
+The first report goes out as soon as the content lands, not on the next
+animation frame. Chrome stops rendering a cross-origin frame that sits
+outside the viewport, so an embed placed below the fold still arrives at
+its full height instead of waiting at 150px for the visitor to scroll.
+
 That means **an embeddable surface must not size itself to the viewport.** A
 `100vh` rule inside the frame is circular by construction: the viewport IS the
 thing being sized from the measurement. `app.EmbedLayout` already neutralises

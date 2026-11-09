@@ -106,19 +106,22 @@
     // next report. The panel ratchets open with a band of empty space under the
     // content. Measuring the root element's own extent breaks that loop: it is
     // a function of the content and nothing else.
+    function sendHeight() {
+      if (!root) return;
+      const rect = root.getBoundingClientRect();
+      // Add the root's offset from the document top so any margin above it
+      // is counted, and round up so a fractional layout never clips.
+      const h = Math.ceil(rect.height + rect.top + window.scrollY);
+      if (h === lastHeight) return;
+      lastHeight = h;
+      post({ type: 'height', height: h });
+    }
     function reportHeight() {
       if (heightPending) return;
       heightPending = true;
       requestAnimationFrame(() => {
         heightPending = false;
-        if (!root) return;
-        const rect = root.getBoundingClientRect();
-        // Add the root's offset from the document top so any margin above it
-        // is counted, and round up so a fractional layout never clips.
-        const h = Math.ceil(rect.height + rect.top + window.scrollY);
-        if (h === lastHeight) return;
-        lastHeight = h;
-        post({ type: 'height', height: h });
+        sendHeight();
       });
     }
 
@@ -280,7 +283,12 @@
         window.dispatchEvent(new CustomEvent('gofastr:navigate', {
           detail: { path: surfacePath, prevPath: surfacePath, cached: false },
         }));
-        reportHeight();
+        // Measure now, not on the next frame. Chrome stops rendering a
+        // cross-origin frame that sits below the fold, so neither
+        // requestAnimationFrame nor the ResizeObserver fires there, and the
+        // embed sat at its 150px start until someone scrolled to it. A
+        // read of the root's box still lays it out.
+        sendHeight();
       } catch (err) {
         fail('content-error', err);
       }

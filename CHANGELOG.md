@@ -509,6 +509,13 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **An embed below the fold sizes itself on arrival**
+  ([embed](framework/docs/content/embed.md)). The frame reported its
+  height on the next animation frame, and Chrome stops rendering a
+  cross-origin frame outside the viewport, so an embed placed below
+  the fold sat at the loader's 150px start until someone scrolled to
+  it, then pushed the page down. The frame now measures and reports
+  as soon as its content lands.
 - **Toast CSS no longer makes a page fetch the full component bundle**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). When a
   page's component subset fits the inline budget but app.css takes the
