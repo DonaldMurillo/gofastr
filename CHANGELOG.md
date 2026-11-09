@@ -368,6 +368,18 @@ few lines, and link the PR or the docs page for the rest.
   `AppConfig.TrustedProxies`, the same trust rule the rate limiters
   apply to `X-Forwarded-For`. Behind a TLS-terminating proxy, list the
   proxy or set `BaseURL`, or the documents advertise `http://` origins.
+- **BREAKING: uihost's agent card and Link headers take
+  `X-Forwarded-Proto` only from a trusted proxy**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). With no
+  `BaseURL` configured, the agent card's service URL and the page `Link`
+  headers (sitemap, llms.txt, agent card, MCP endpoint) took their
+  scheme from an `X-Forwarded-Proto` header any client could send, so a
+  client could make the host advertise `http://` URLs or poison a cached
+  copy. The header now counts only from a peer listed in
+  `uihost.WithTrustedProxies`, the rule the framework's well-known
+  documents follow. Behind a TLS-terminating proxy, list the proxy or
+  set `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs
+  say `http://`.
 - **BREAKING: an MCP item gate answers exactly as an unknown name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #656). `tools/call`, `resources/read` and `prompts/get` answered an

@@ -60,6 +60,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
 	xhtml "golang.org/x/net/html"
@@ -134,6 +135,7 @@ type UIHost struct {
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
 	trustedProxies      []string                             // WithTrustedProxies: the island stream cap reads X-Forwarded-For from these peers
+	proxies             clientip.Proxies                     // trustedProxies parsed in New: the peers resolveBaseURL honors X-Forwarded-Proto from
 	noInlineFirstPaint  bool                                 // WithNoInlineFirstPaint: head CSS and the color-scheme bootstrap always ship as links
 	firstPaint          firstPaintCache                      // blocks a live page carries inline in its head (firstpaint.go)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
@@ -565,6 +567,11 @@ func WithNoLiveChannel() Option {
 // it, behind a proxy, every anonymous visitor shares the proxy address's
 // budget of island.DefaultStreamsPerPeer streams. A header from a peer not
 // in the list is ignored. See island.WithTrustedProxies.
+//
+// The same list decides whose X-Forwarded-Proto sets the scheme of the
+// agent card's and the Link headers' absolute URLs when no BaseURL is
+// configured. Behind a TLS-terminating proxy, list the proxy or set a
+// BaseURL, or those URLs say http://.
 func WithTrustedProxies(entries ...string) Option {
 	return func(ds *UIHost) { ds.trustedProxies = append(ds.trustedProxies, entries...) }
 }
@@ -1092,6 +1099,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		opt(ds)
 	}
 	ds.Islands = island.NewManager(island.WithTrustedProxies(ds.trustedProxies...))
+	ds.proxies = clientip.ParseProxies(ds.trustedProxies)
 	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
 	// their relative order doesn't matter.
 	// The app's 404-outlet outcome body (FallbackNotFound renders the

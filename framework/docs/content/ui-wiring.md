@@ -201,7 +201,10 @@ Useful options:
   (IPs or CIDRs) whose `X-Forwarded-For` hop the island stream's
   per-client cap reads. Without it, behind a proxy, every anonymous
   visitor counts as the proxy's address and shares its 256 streams. See
-  `gofastr docs reactivity`.
+  `gofastr docs reactivity`. The same list decides whose
+  `X-Forwarded-Proto` sets the scheme of the agent card and the agent
+  `Link` headers when no `BaseURL` is configured (`gofastr docs
+  agent-ready`).
 - `uihost.WithNoInlineFirstPaint()`: keep the color-scheme bootstrap,
   the component bundle and app.css as links on every page. By default a
   first-load page whose head fits 16 KiB compressed carries them inline,
