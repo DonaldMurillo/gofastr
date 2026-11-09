@@ -1,9 +1,66 @@
 package queue
 
 import (
+	"context"
 	"testing"
 	"time"
 )
+
+func TestErasureWaitsForCheckedSettle(t *testing.T) {
+	for _, destination := range []string{"pending", "dead"} {
+		t.Run(destination, func(t *testing.T) {
+			q := NewMemoryQueue(0)
+			job := Job{ID: "job", Type: "work", UserID: "user"}
+			running := &runningJob{job: job}
+			q.running = append(q.running, running)
+			checked := make(chan struct{})
+			resume := make(chan struct{})
+			settled := make(chan struct{})
+			go func() {
+				defer close(settled)
+				q.settleRunning(running, func() {
+					close(checked)
+					<-resume
+					if destination == "dead" {
+						q.retainDead(job)
+					} else {
+						q.pmu.Lock()
+						q.pushLocked(job)
+						q.pmu.Unlock()
+					}
+				})
+			}()
+			<-checked
+			started := make(chan struct{})
+			erased := make(chan error, 1)
+			go func() {
+				close(started)
+				_, err := q.eraseUser(context.Background(), job.UserID, false)
+				erased <- err
+			}()
+			<-started
+			var early bool
+			select {
+			case err := <-erased:
+				early = true
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(100 * time.Millisecond):
+			}
+			close(resume)
+			<-settled
+			if !early {
+				if err := <-erased; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if early || len(q.pending.items) != 0 || len(q.dead) != 0 || len(q.running) != 0 {
+				t.Fatalf("erasure missed a checked settle: early=%v pending=%d dead=%d running=%d", early, len(q.pending.items), len(q.dead), len(q.running))
+			}
+		})
+	}
+}
 
 // The erasure/settle window: settleRunning reads rj.erased, then re-adds
 // the job to a store. If an eraseUser ran between those two steps, it
