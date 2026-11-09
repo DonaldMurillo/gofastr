@@ -49,6 +49,11 @@ type Kind struct {
 	Input  func(InputContext) render.HTML
 	Cell   func(CellContext) render.HTML
 	Detail func(CellContext) render.HTML
+	// Text is the value as plain text, for the slots that hold no
+	// markup: a row link's label, a card's title, a chip. The screens
+	// escape it. With no Text those slots print the field type's own
+	// text, never the Cell's HTML.
+	Text func(CellContext) string
 }
 
 // InputContext is what a Kind's Input receives: the field, the control

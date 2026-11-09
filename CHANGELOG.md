@@ -129,6 +129,16 @@ few lines, and link the PR or the docs page for the rest.
   writes the status directly; the seed runs under
   `framework.WithStateOverride(ctx, "seed")`, which the audit log
   records.
+- **BREAKING: `entityui` `ListBuilder.NoLinks` keeps New**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). It
+  takes away only the record links and the row menu; a list that should
+  offer no New calls `NoCreate` as well. `NoLinks` used to remove New
+  too, so the app spec generator left record links on a `create: true`
+  list of an entity with no `entity_detail` screen, and every row linked
+  to a page that did not exist. The generator now emits `NoLinks` on
+  every list of such an entity; New opens the create screen beside the
+  entity's home list, from any screen, and a create lands back there. A
+  `RelatedAt` list with an empty base still draws no New.
 - **A shutdown that lands during a `DBQueue` handler no longer spends
   the attempt** ([#680](https://github.com/DonaldMurillo/gofastr/issues/680)).
   When the context passed to `Start` is cancelled mid-run and the handler
@@ -213,6 +223,44 @@ few lines, and link the PR or the docs page for the rest.
   `maxBodyBytes`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A negative cap read as no cap and buffered every response whole; `0`
   still means unbounded.
+- **The admin account page needs the caller's user id**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  admin gate admits a caller by roles, so a user type with no `GetID`
+  reached the account routes, where the audit label "unknown" stood in
+  for the id. Saving a display name then named the user whose id is
+  `unknown`. The name route now refuses such a caller, and the account
+  page reads no verified-email or password state for one.
+- **Needs attention skips a view hidden from the caller**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  panel counted a watched view by its `Where` alone. A view whose `Show`
+  hid it from the caller still drew, and its list fell back to All, so
+  the panel listed every row under that view's heading. A filter-func
+  view (no `Where`) was counted as every row. The panel now counts with
+  the new `entityui.UI.CountView`, which runs the view's own filter and
+  reports false for a hidden view.
+- **Audit rows for purged or hard-deleted records follow the read hooks**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `entityui.UI.RecordHidden` answered "not hidden" once no stored row was
+  left, so the admin audit log printed a purged record's stored title and
+  changes to a viewer its `BeforeGet`/`BeforeList` hooks restrict. Such a
+  row now shows its title and changes only when the viewer's hooks append
+  no clause, the rule `_events` applies to a hard delete; otherwise it
+  shows the id, operation and time. A hook error or a failed read hides
+  the record. `crud.CrudHandler.ReadHooksRestrict` is the new check.
+- **The status override writes under the read hooks**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `UI.OverrideHandler` checked the record against the caller's
+  `BeforeGet` hooks before the write, but wrote without
+  `crud.WithReadHooks`, so a row a hook hid by the time the write ran was
+  still changed. The write now carries the opt-in and answers 404, as
+  bulk edits, trash restore and purge, and the JSON write routes do. The
+  `hookedread` analyzer now covers the crud write API (`UpdateOne`,
+  `DeleteOne`, `RestoreOne`, `PurgeOne`, `RunTransition`, `CreateOne`,
+  `UpsertOne`, the `Batch*Many` calls) in framework/entityui and
+  battery/admin, and `TypedQuery.Exists` among the reads. It refuses
+  `TypedQuery.UpdateAll` and `DeleteAll` there under any context: they
+  apply write scopes only and never consult `BeforeGet`, so a screen
+  writes record by record.
 - **netguard checks both IPv4 addresses inside a Teredo address.** A
   `2001:0::/32` address whose server or (inverted) client IPv4 is
   internal is now internal, as NAT64, 6to4 and IPv4-compatible addresses
@@ -403,6 +451,30 @@ few lines, and link the PR or the docs page for the rest.
   file without it is refused unless `--force` is passed, the rule the
   `.agents/` detail files already follow. `gofastr init --reinit --force`
   overrides it the same way.
+- **Forms draw no input for the owner or tenant column**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  visible `Scope.OwnerField` (or a `MultiTenant` entity's tenant column)
+  drew as an editable input on the create and record forms, though crud
+  stamps it from the caller. The forms now
+  leave it out, and inline editors, bulk set and the picker treat it as
+  locked.
+- **A list of an entity with no fields of its own draws**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A join
+  or marker table with only its key panicked the admin list and
+  `entityui` tables: no column was left to title the phone layout. Such
+  a list now shows its key columns, each row linked to its record.
+- **A field kind's markup no longer prints as tags in a text slot**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A row
+  link's label and a card's title, subtitle and meta line took a kind's
+  `Cell` HTML as text, so a kind that drew `<strong>` showed the tags.
+  The new `entityui.Kind.Text` fills those slots; a kind without one
+  prints the field type's text. The built-in `money` kind has a `Text`,
+  so a money title reads `$1,234.50`.
+- **A list row with an empty title still draws**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An empty
+  value in a table's link column reached `ui.Link` as empty text, which
+  panicked and replaced the whole list with its failure markup. The link
+  now reads the record's id, as a card title already did.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

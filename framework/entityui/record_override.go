@@ -23,9 +23,9 @@ import (
 // The status override: a form on the record screen that writes the state
 // field directly, outside the declared moves, for a caller an operator
 // trusted with the capability <entity>:override_state. The write itself
-// is crud's: it runs under crud.WithStateOverride through UpdateOne in
-// the caller's own context, so the owner and tenant scopes, the state
-// gates and the audit row (operation "state_override", the reason in the
+// is crud's: it runs under crud.WithStateOverride and crud.WithReadHooks
+// through UpdateOne in the caller's own context, so the owner and tenant
+// scopes, the BeforeGet hooks, the state gates and the audit row (operation "state_override", the reason in the
 // row's reason column) all come from the CRUD layer, never from here.
 //
 // The form posts to <write base>/{id}/_override (the same write base the
@@ -160,8 +160,9 @@ func (b *RecordBuilder) overridePanel(ctx context.Context, m *meta, row map[stri
 //     and nothing changes;
 //   - validates the target state against the field's declared values and
 //     the reason (non-blank, at most OverrideReasonMax characters), and writes
-//     with crud.UpdateOne under crud.WithStateOverride in the caller's
-//     context, so the CRUD gates and the audit row ("state_override"
+//     with crud.UpdateOne under crud.WithStateOverride and
+//     crud.WithReadHooks in the caller's context, so the CRUD gates, the
+//     BeforeGet hooks and the audit row ("state_override"
 //     with the reason) come from crud itself. An entity no audit log
 //     records is refused by crud (409 here); the write never falls back
 //     to an unaudited one.
@@ -259,7 +260,9 @@ func (u *UI) OverrideHandler(entityName string) http.Handler {
 			writeOverrideError(w, r, ctx, http.StatusBadRequest, reasonOverrideLong)
 			return
 		}
-		if _, err := m.ch.UpdateOne(crud.WithStateOverride(ctx, reason), id, map[string]any{m.states.Field: state}); err != nil {
+		// The write runs under the read hooks as well as the read
+		// above, so a row a BeforeGet hook hides answers 404 here too.
+		if _, err := m.ch.UpdateOne(crud.WithReadHooks(crud.WithStateOverride(ctx, reason)), id, map[string]any{m.states.Field: state}); err != nil {
 			writeOverrideRefusal(w, r, ctx, m, err)
 			return
 		}

@@ -921,11 +921,11 @@ partial and keeps the shell).
   links and New reach the home's detail and create screens instead of
   `<dashboard>/<id>`.
 - An entity with **no** `entity_detail` screen has no page at
-  `<list>/<id>`, so its lists without `create: true` render with
-  `.NoLinks()`: the rows draw as text with no row menu, instead of
-  linking every row to a 404. A `create: true` list keeps its links
-  (`NoLinks` also removes New), so give a writable entity a detail
-  screen.
+  `<list>/<id>`, so its lists render with `.NoLinks()`: the rows draw as
+  text with no row menu, instead of linking every row to a 404. A
+  `create: true` list keeps New, which opens the create screen beside
+  the entity's home list, on any screen; a create lands back on that
+  list.
 - `entity_detail` renders `appUI.Record("<entity>", id).Delete().Duplicate()`
   from the screen's `{id}` route param. The record page holds the edit
   form and a button per declared move, so there is no `/<detail>/edit`

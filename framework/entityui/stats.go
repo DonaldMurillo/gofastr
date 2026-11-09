@@ -140,6 +140,31 @@ func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool)
 	return n, true
 }
 
+// CountView counts the records a declared view lists for the caller:
+// its Where, or its registered Filter func, under the same read gate,
+// scope and read hooks as CountInt. ok is false for a view that is not
+// declared or whose Show hides it from the caller (the list would fall
+// back to All), and for a refused read, a failed filter or a failed
+// query.
+func (u *UI) CountView(ctx context.Context, entityName, view string) (int, bool) {
+	m, opts, ok := u.statRead(ctx, entityName, "")
+	if !ok || view == "" || !declaredAndViewable(ctx, m, view) {
+		return 0, false
+	}
+	p, err := viewPredicate(ctx, m, view)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
+		return 0, false
+	}
+	opts.Where = p
+	n, err := m.countRows(ctx, opts)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
+		return 0, false
+	}
+	return n, true
+}
+
 // CountUpTo counts the records the caller can read that match where, up
 // to limit: a read of at most limit+1 ids, under the same gates and
 // scope as Count, for when an exact count is too slow. more reports

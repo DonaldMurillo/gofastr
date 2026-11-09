@@ -73,6 +73,12 @@ of a composite key, and a one-column key that is `Required` with no
 belongs to the server and stays off the forms; an optional key may be
 filled by a hook, which a blank input would defeat.
 
+The scope columns crud stamps from the caller, `Scope.OwnerField` and a
+`MultiTenant` entity's tenant column, stay off the forms too, even when
+declared visible. They show as list columns, and a form layout that
+places one draws its value read-only; no inline editor, bulk set or
+picker offers them.
+
 Mount the exact create route: the default New, Duplicate, Create another,
 related-list Add and relation-picker New links use `<base>/create`.
 Mounting only `/deals/new` leaves those links pointing at a missing screen;
@@ -133,7 +139,8 @@ keeps the UI unchanged; without a callback the default stays
 ## What it draws
 
 - **A list** (`appUI.List("invoices")`): a `ui.DataTable` (or cards),
-  its columns from `Display.Columns`, a title cell that links to the
+  its columns from `Display.Columns` (an entity with no field of its
+  own lists its key columns), a title cell that links to the
   record, view tabs, facets, a search box over `SearchFields`, filter
   chips, sort headers and a pager. The row menu offers Open, Duplicate
   and Delete where the builder turns them on. Five more controls are
@@ -292,7 +299,10 @@ keeps the UI unchanged; without a callback the default stays
   reports false where `StatValue` would print "—", so a nav row or a
   badge draws nothing instead. `appUI.CountInt` is the same count as an
   `int`, for a figure the host computes with, like a success rate drawn
-  on a `ui.Gauge`. `appUI.CheckStat(entity, agg, field,
+  on a `ui.Gauge`. `appUI.CountView(ctx, entity, view)` counts what a
+  declared view lists: its `Where` or its registered `Filter` func. It
+  reports false for a view whose `Show` hides it from the caller.
+  `appUI.CheckStat(entity, agg, field,
   where, format)` returns why `StatValue` could never compute a spec,
   so a host can refuse a configured stat at boot.
   `appUI.LastUpdated` is when the newest record the caller can read was
@@ -397,8 +407,9 @@ caller's scope — a tab listing one invoice's payments; the pinned field leaves
 record links hang off), `Heading(text, level)` (it also names the table,
 as a hidden caption, so two lists on one page are two named regions) and
 `Empty(text)`,
-`NoCreate`, `NoLinks` (rows with no record links, no row menu and no New,
-for an entity with no screen of its own), `Delete`, `Undo`, `Duplicate`, `Bulk`,
+`NoCreate`, `NoLinks` (rows with no record links and no row menu, for an
+entity with no record screen; New stays, and a create lands back on the
+list), `Delete`, `Undo`, `Duplicate`, `Bulk`,
 `QueryBox`, `ColumnsMenu`, `Deleted` and `SavedViews` (the four list
 controls below), and `Actions` for header buttons beside New.
 
@@ -413,7 +424,7 @@ The record builder takes `Base`, `Form` (replaces `Display.Form` on this
 page), `Omit(fields...)`, `Tab(key, build)` for a page-local tab,
 `Related(entities...)` for the Related tab's lists, `RelatedAt(entity,
 base)` for one whose screens live elsewhere (an empty base draws it with
-`NoLinks`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
+`NoLinks` and `NoCreate`), `Activity()`, `API()`, `Override()`, `Delete()`, `Undo()`,
 `Duplicate()`, `Steps(list)`, `Panel()` and `Prefill(values)`.
 A related list's heading sits one level below the record's title, so the
 page keeps one `<h1>`. The Related tab's count is the rows those lists
@@ -543,18 +554,21 @@ appUI := fwApp.EntityUI(entityui.Extensions{
 ```
 
 - **Kinds** draw one field kind: `Input` on forms, `Cell` in list cells
-  and cards, `Detail` read-only (`Cell` when nil). `Display.Fields[f].Input`
+  and cards, `Detail` read-only (`Cell` when nil), and `Text` in the
+  slots that hold plain text: a row link's label, a card's title,
+  subtitle and meta line. With no `Text` those slots print the field
+  type's own text; `Cell`'s markup never reaches them. `Display.Fields[f].Input`
   picks one by name. `email`, `url`, `color`, `markdown` and `code` are
   built in (`color` draws the picker only for a stored lowercase
   `#rrggbb`, and a text input that keeps any other value), and so is `money` for an Int, Float or Decimal: a number input
   behind the currency symbol, and the value printed as an amount (`$1,234.50`,
-  `-$5.00`) in cells and read-only. The symbol is the
+  `-$5.00`) in cells, text slots and read-only. The symbol is the
   `ui.entity.currency` catalog entry (`$` by default), which the
   `format: money` stat reads too. A built-in kind on a field type it does
   not fit (`money` on a String) fails registration. An app kind of the
   same name replaces a built-in one, and its fit is the app's to judge. A
   locked field drawn by a kind keeps its label above the kind's `Detail`.
-  `Cell` and `Detail` get the row after the read hooks, so a column a hook
+  `Cell`, `Detail` and `Text` get the row after the read hooks, so a column a hook
   masks stays masked in them, and a relation whose target the caller may
   not read draws muted without calling them. Only `Input` gets the stored
   value, since a form prefills from it. `InputContext.Label` and `Help`
@@ -641,7 +655,11 @@ Bulk set, move, delete and restore also honor `BeforeGet` hooks on each
 target, including queued runs; a row hidden only from single-record reads
 cannot be changed through a bulk selection.
 App-action callbacks receive the same read-hook-enabled context, including
-when they write through their action context's CRUD handler.
+when they write through their action context's CRUD handler. Every write
+the screens make (bulk, trash restore and purge, the status override) runs
+under `crud.WithReadHooks`, and the record form saves and deletes through
+the JSON routes, so a row a `BeforeGet` hook hides answers 404 from every
+admin write as it does over HTTP.
 
 A builder never draws a write the API would refuse the caller. New,
 Duplicate and the create screen need the entity's create access
@@ -848,7 +866,9 @@ caps the body, checks the capability before reading anything, reads the
 record under the caller's context and the entity's read permission
 (another owner's id answers 404), refuses a caller the update
 permission refuses (403), validates the state and the reason, and
-writes with `crud.UpdateOne` under `crud.WithStateOverride`. The audit
+writes with `crud.UpdateOne` under `crud.WithStateOverride` and
+`crud.WithReadHooks`, so a row a `BeforeGet` hook hides when the write
+runs answers 404 and is not changed. The audit
 row (`state_override`, with the reason) comes from crud. An entity no
 audit log records answers 409; the write never falls back to an
 unaudited one. A write crud refuses answers what the JSON API would: 403,

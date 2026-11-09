@@ -59,3 +59,10 @@ notes:
   - change: "gofastr agents skill refuses to overwrite a .claude/skills/gofastr-host/SKILL.md that lacks the generated header, unless --force is passed"
     nodetect: "an existing file's content decides, not the app's code; the refusal itself names the flag"
     guidance: "Move or delete the hand-written SKILL.md, or pass --force (gofastr init --reinit --force overrides the same way)."
+  - change: "BREAKING - entityui ListBuilder.NoLinks keeps New; it takes away only the record links and the row menu"
+    breaking: true
+    hits: review
+    guidance: "NoLinks is for an entity with no record screen, and a create lands back on the list, so New stays. A list that should offer no New either calls NoCreate as well: list.NoLinks().NoCreate(). RelatedAt with an empty base already does. Regenerate an app spec app: its generator now puts NoLinks on every list of an entity with no entity_detail screen, create: true lists included."
+    find:
+      uses:
+        - gofastr/framework/entityui.ListBuilder.NoLinks

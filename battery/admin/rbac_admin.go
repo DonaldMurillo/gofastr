@@ -23,17 +23,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui"
 )
 
-// adminActorID is the signed-in admin's user id, for audit rows.
-// "unknown" when there is none, which the gate never lets through.
+// adminActorID names the signed-in admin in an audit row: their user
+// id, else "unknown". It is a label, never a key: a lookup or a write
+// for the caller's own account takes callerUserID.
 func adminActorID(ctx context.Context) string {
+	return cmp.Or(callerUserID(ctx), "unknown")
+}
+
+// callerUserID is the signed-in user's id, or "" when there is no user
+// or the user type carries none. The gate admits a caller by roles, so
+// an id-less admin reaches the account routes.
+func callerUserID(ctx context.Context) string {
 	u, ok := handler.GetUser(ctx)
 	if !ok || u == nil {
-		return "unknown"
+		return ""
 	}
 	if id, ok := u.(interface{ GetID() string }); ok {
 		return id.GetID()
 	}
-	return "unknown"
+	return ""
 }
 
 // ----- roles ------------------------------------------------------------------

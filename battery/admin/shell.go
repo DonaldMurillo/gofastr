@@ -535,7 +535,7 @@ func (b *Battery) displayName(ctx context.Context) string {
 	if handlerUser(ctx) == nil {
 		return ""
 	}
-	return cmp.Or(b.userName(ctx), userEmail(ctx), adminActorID(ctx))
+	return cmp.Or(b.userName(ctx), userEmail(ctx), callerUserID(ctx))
 }
 
 // handlerUser is the signed-in user the auth middleware set, or nil.

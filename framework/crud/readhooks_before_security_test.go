@@ -3,6 +3,8 @@ package crud
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -147,5 +149,49 @@ func TestBeforeScopeHookDoesNotRecurse(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("BeforeList ran %d times, want 1", calls)
+	}
+}
+
+// ReadHooksRestrict hands a hook the same system-read context the reads
+// do: a hook that reads its own entity through its request's context
+// gets a system read, not itself again.
+func TestReadHooksRestrictDoesNotRecurse(t *testing.T) {
+	ch, _ := setupInvoiceWorld(t)
+	calls := 0
+	ch.Hooks.RegisterHook(hook.BeforeList, func(ctx context.Context, data any) error {
+		calls++
+		if calls > 3 {
+			return errors.New("recursed")
+		}
+		_, err := ch.ListAll(data.(*hook.ListPayload).Request.Context(), ListOptions{})
+		return err
+	})
+	if ch.ReadHooksRestrict(ctxWithUser("alice"), "gone") {
+		t.Error("a hook appending no clause restricted the caller")
+	}
+	if calls != 1 {
+		t.Errorf("BeforeList ran %d times, want 1", calls)
+	}
+}
+
+// ReadHooksRestrict runs the hooks on the request the context carries,
+// as the in-process reads do, so a hook that branches on a header sees
+// the caller's.
+func TestReadHooksRestrictSeesRealRequest(t *testing.T) {
+	ch, _ := setupInvoiceWorld(t)
+	ch.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		p := data.(*hook.GetPayload)
+		if p.Request.Header.Get("X-Role") != "auditor" {
+			p.Where = append(p.Where, hook.WhereClause{SQL: "user_id = ?", Args: []any{"nobody"}})
+		}
+		return nil
+	})
+	r := httptest.NewRequest(http.MethodGet, "/admin/audit", nil)
+	r.Header.Set("X-Role", "auditor")
+	if ch.ReadHooksRestrict(withRealRequest(ctxWithUser("alice"), r), "gone") {
+		t.Error("the hook restricted a caller its request header clears")
+	}
+	if !ch.ReadHooksRestrict(ctxWithUser("alice"), "gone") {
+		t.Error("the hook did not restrict a caller with no header")
 	}
 }

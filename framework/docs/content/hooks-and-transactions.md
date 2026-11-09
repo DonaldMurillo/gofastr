@@ -504,12 +504,24 @@ A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
 on the same paths, in-process ones under the same opt-in, before these
 hooks and without registering one.
 
+`ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
+or `BeforeGet` hooks append any clause for a read of `id` (a hook error
+answers true). A screen asks it about a record that is no longer stored,
+before it prints a stored copy of the record's values: the admin audit
+log does, the rule the `_events` feed applies to a hard delete.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers
 (`getRow`, `listRows`, …); a deliberate stored-value read lives in a
 function named `*Unhooked`, and the `hookedread` analyzer holds
-entityui and battery/admin to that.
+entityui and battery/admin to that. The rule covers their writes too:
+an in-process write (`UpdateOne`, `DeleteOne`, `RestoreOne`, `PurgeOne`,
+`RunTransition`, …) refuses a row the caller's `BeforeGet` hooks hide
+only under `crud.WithReadHooks`, so every screen write passes it.
+`TypedQuery.UpdateAll` and `DeleteAll` apply write scopes only and never
+consult `BeforeGet`, whatever the context, so the analyzer refuses them
+in the screens: a screen writes record by record.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. Sorting

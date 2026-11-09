@@ -274,11 +274,12 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 }
 
 // editableFields is the form's candidate set in schema order: visible,
-// not system, not omitted. Locked fields stay: they render read-only.
+// not system, not omitted, not a scope column crud stamps (the owner,
+// the tenant). Locked fields stay: they render read-only.
 func (b *RecordBuilder) editableFields(m *meta) []schema.Field {
 	var out []schema.Field
 	for _, f := range m.fields {
-		if m.system(f) || m.omitted(f.Name) || m.hint(f.Name).Omit {
+		if m.system(f) || m.serverOwned(f.Name) || m.omitted(f.Name) || m.hint(f.Name).Omit {
 			continue
 		}
 		out = append(out, f)

@@ -108,6 +108,23 @@ func setup(t *testing.T, ents map[string]entity.EntityConfig, cfg Config, prep f
 // trySetup is setup that returns Init's error.
 func trySetup(t *testing.T, ents map[string]entity.EntityConfig, cfg Config, prep func(*env, *Config)) (*Battery, *env, error) {
 	t.Helper()
+	return trySetupExt(t, ents, entityui.Extensions{}, cfg, prep)
+}
+
+// setupExt is setup with the screens' Extensions (view funcs, kinds):
+// an app builds its EntityUI once.
+func setupExt(t *testing.T, ents map[string]entity.EntityConfig, ext entityui.Extensions, cfg Config, prep func(*env, *Config)) *env {
+	t.Helper()
+	b, x, err := trySetupExt(t, ents, ext, cfg, prep)
+	if err != nil {
+		t.Fatalf("admin init: %v", err)
+	}
+	x.b = b
+	return x
+}
+
+func trySetupExt(t *testing.T, ents map[string]entity.EntityConfig, ext entityui.Extensions, cfg Config, prep func(*env, *Config)) (*Battery, *env, error) {
+	t.Helper()
 	db := newDB(t)
 	if err := framework.EnsureAuditTable(db, ""); err != nil {
 		t.Fatalf("audit table: %v", err)
@@ -124,7 +141,7 @@ func trySetup(t *testing.T, ents map[string]entity.EntityConfig, cfg Config, pre
 	app.WithAuditLog(framework.AuditConfig{})
 	x := &env{t: t, db: db, app: app, site: site, h: app.Router()}
 	if len(ents) > 0 {
-		cfg.UI = app.EntityUI(entityui.Extensions{})
+		cfg.UI = app.EntityUI(ext)
 	}
 	if prep != nil {
 		prep(x, &cfg)

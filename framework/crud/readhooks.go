@@ -97,6 +97,23 @@ func hookCtx(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, false)
 }
 
+// ReadHooksRestrict reports whether the caller's own BeforeList or
+// BeforeGet hooks, run for a read of record id the way the in-process
+// reads run them under WithReadHooks, append any clause. It is the
+// question a screen asks about a record that is no longer stored: with
+// no row left to check the clauses against, a stored copy of its values
+// (an audit row's sides) is shown only to a caller the hooks do not
+// restrict, the rule the _events feed applies to a hard delete. A hook
+// error answers true: it fails closed.
+func (ch *CrudHandler) ReadHooksRestrict(ctx context.Context, id string) bool {
+	if ch.Hooks == nil {
+		return false
+	}
+	ctx = WithReadHooks(ctx)
+	clauses, err := ch.ownBeforeScopes(ctx, ch.requestFrom(ctx), id, true)
+	return err != nil || len(clauses) > 0
+}
+
 // runBeforeList runs the BeforeList chain for an in-process read under
 // WithReadHooks and returns the WHERE clauses its hooks appended. The
 // HTTP List handler runs the same chain and ANDs the same clauses into

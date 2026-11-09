@@ -30,7 +30,13 @@ func builtinKind(name string) Kind {
 			}
 			return muted()
 		}
-		return Kind{Input: moneyInput, Cell: show}
+		text := func(cc CellContext) string {
+			if s := cell(cc.Value); s != "" {
+				return money(cc.Ctx, s)
+			}
+			return ""
+		}
+		return Kind{Input: moneyInput, Cell: show, Text: text}
 	case "email", "url", "color":
 		kindType := map[string]string{"email": "email", "url": "url", "color": "color"}[name]
 		return Kind{Input: func(ic InputContext) render.HTML {
