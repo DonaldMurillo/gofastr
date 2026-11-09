@@ -275,20 +275,9 @@ few lines, and link the PR or the docs page for the rest.
   **BREAKING for custom stores using `Options.Keyword`:**
   `ChunkIDsForDoc` now returns `([]string, error)` so a failed listing
   refuses replacement or removal. See [semantic search](framework/docs/content/semantic-search.md).
-- **Analyzer guards are mutation-tested** ([#656](https://github.com/DonaldMurillo/gofastr/issues/656),
-  [#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `go run ./cmd/analyzermutate internal/analyzers/<pkg>…` negates every
-  non-literal `if` and mutes each `pass.Report` call in an analyzer,
-  one mutant at a time, and counts the mutants the package's own test
-  suite fails to kill. Baselines under that operator set — fixedtmp 80
-  mutants/3 survivors, timestampid 86/5, recoverlog 65/3, nowaitdelay
-  47/0, keytrim 32/1 — are now 0 across all five: eleven killing
-  fixtures (host-declared `json.RawMessage` aliases, local
-  `var x = expr` id bindings, constant- and variable-low buffer
-  slices, recover-logging function literals in package-level vars,
-  recover values inside composite literals, `fmt.Sprintf` temp roots
-  whose argument 1 is a minted Join) and two deletions of
-  verdict-invariant guards, each justified where it stood.
+- **Analyzer fixtures pin previously untested guards** (#669).
+  Added cases for local declarations, sliced entropy, raw JSON aliases,
+  recovered values in composites and package-level callback literals.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

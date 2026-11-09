@@ -1321,6 +1321,10 @@ func (st *fnState) builderWriteTaint(e ast.Expr, use ast.Node, seen map[types.Ob
 		return st.exprTaint(e)
 	}
 	switch x := ast.Unparen(e).(type) {
+	case *ast.BinaryExpr:
+		return st.builderWriteTaint(x.X, use, seen).or(st.builderWriteTaint(x.Y, use, seen))
+	case *ast.UnaryExpr:
+		return st.builderWriteTaint(x.X, use, seen)
 	case *ast.IndexExpr:
 		return st.exprTaint(x.X)
 	case *ast.CallExpr:

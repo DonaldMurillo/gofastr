@@ -387,3 +387,11 @@
 - Evidence: new Builder fixtures fail on the GLM analyzer; TestPgVectorLongTableHasBothIndexes finds one index with its original naming helper and two with the fix.
 - Next time: test both branches and identifier lengths 61, 62 and 63; pin EXPLAIN settings to one transaction rather than a pooled connection.
 - Status: active
+
+## 2026-11-08 - Measure analyzer guards with explicit mutation operators
+- Scope: internal/analyzers, issue #669
+- Trigger: historical survivor counts did not describe the current sources or mutation operators.
+- Approach: run each package's analysistest fixtures, negate every nonliteral if condition and replace each reporter selector (including a.pass) with a compiling no-op separately, with a bounded test timeout; restore source after each run.
+- Evidence: fixedtmp 79/79, timestampid 86/86, recoverlog 66/66, nowaitdelay 47/47 and keytrim 32/32 mutants killed. Added fixture cases kill missing guards; two verdict-invariant branches were removed.
+- Next time: reject mutation build failures as invalid; the draft reporter rewrite produced pass.mutateNopReportf, so it hid an untested exec.Cmd.Path reporter. Record the operator set and keep bad and quiet fixtures.
+- Status: active

@@ -163,3 +163,17 @@ func loopOffsets(r *http.Request) {
 	}
 	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String())
 }
+
+func byteArithmetic(r *http.Request) {
+	var b strings.Builder
+	b.WriteByte(r.FormValue("q")[0] ^ 1)
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
+
+func runeNegation(r *http.Request) {
+	var b strings.Builder
+	for _, c := range r.FormValue("q") {
+		b.WriteRune(-c)
+	}
+	db.Exec("INSERT INTO b (v) VALUES ($1)", b.String()) // want `request text reaches a SQL bind`
+}
