@@ -1,3 +1,5 @@
+//go:build !windows
+
 // Package contractstest builds filesystem fixtures for contract tooling tests.
 package contractstest
 
