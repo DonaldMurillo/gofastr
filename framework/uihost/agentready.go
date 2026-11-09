@@ -39,8 +39,9 @@ import (
 type AgentReadyConfig struct {
 	// BaseURL is the canonical origin (scheme://host) used to
 	// absolutize URLs in the agent card and Link headers. When empty,
-	// handlers derive it per request from the forwarded Host + the
-	// request TLS/scheme: correct behind a proxy that sets Host.
+	// handlers derive it per request from the request Host and the
+	// TLS state, with X-Forwarded-Proto honored only from a peer listed
+	// in WithTrustedProxies: correct behind a proxy that sets Host.
 	BaseURL string
 
 	// Title is the /llms.txt H1 and the agent-card name fallback.
@@ -773,7 +774,8 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 // resolveBaseURL returns the canonical origin for absolute discovery URLs:
 // the WithAgentReady BaseURL if set, else the WithSitemap BaseURL (so a host
 // that configured one origin gets it everywhere), else derived per request
-// from the forwarded scheme + Host.
+// from the scheme (TLS state, or X-Forwarded-Proto from a trusted proxy)
+// and Host.
 func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if ds.agentReady != nil && ds.agentReady.baseURL != "" {
 		return strings.TrimRight(ds.agentReady.baseURL, "/")
@@ -792,16 +794,21 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if req.TLS != nil {
 		scheme = "https"
 	}
-	// X-Forwarded-Proto is honored for the scheme ONLY as an exact
-	// "http"/"https": the raw value is request-controlled and this
-	// origin is reflected into cacheable output (the Link header, the
-	// agent card's service URL), so a non-scheme value like
-	// "https://evil.example/p" would poison both with an attacker-named
-	// origin — the same reflection the Host refusal above exists to
-	// prevent. framework/pluginhost/assets.go applies the identical
-	// enum check for the identical reason.
-	if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
-		scheme = u
+	// X-Forwarded-Proto is honored for the scheme ONLY from a peer
+	// listed in WithTrustedProxies, and then ONLY as an exact
+	// "http"/"https". Any client can send the header, and this origin is
+	// reflected into cacheable output (the Link header, the agent card's
+	// service URL), so an untrusted peer could make the host advertise
+	// http:// URLs, and a non-scheme value like "https://evil.example/p"
+	// would poison both with an attacker-named origin, the same
+	// reflection the Host refusal above exists to prevent.
+	// framework/wellknown.go's resolveWellKnownBase applies the same
+	// trust rule (#669), and framework/pluginhost/assets.go the same
+	// enum check.
+	if ds.proxies.ContainsAddr(req.RemoteAddr) {
+		if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
+			scheme = u
+		}
 	}
 	return scheme + "://" + req.Host
 }

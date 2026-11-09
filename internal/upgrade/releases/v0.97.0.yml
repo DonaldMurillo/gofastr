@@ -55,6 +55,15 @@ notes:
     breaking: true
     nodetect: "the argument is a value an MCP client sends at runtime; no code in the app spells it"
     guidance: "Send an integer key as a number ({\"id\": 42}). A client that reads the tool's inputSchema already does; one that hard-codes string ids changes for integer-keyed entities only."
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of uihost's agent card service URL and agent Link headers (sitemap, llms.txt, agent card, MCP endpoint) unless the TCP peer is listed in uihost.WithTrustedProxies"
+    breaking: true
+    hits: review
+    guidance: "With no WithAgentReady or WithSitemap BaseURL configured, behind a TLS-terminating proxy that forwards X-Forwarded-Proto, pass the proxy to uihost.WithTrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8) or set a BaseURL on WithAgentReady or WithSitemap; otherwise those URLs say http://. Hosts not behind a proxy, or with a BaseURL, are unaffected."
+    find:
+      uses:
+        - gofastr/framework/uihost.WithAgentReady
+        - gofastr/framework/uihost.WithAgentCard
+        - gofastr/framework/uihost.WithAgentLinkHeaders
   - change: "?fields= projections now return every required column beside the primary key, on list, cursor and get responses alike"
     nodetect: "a response-shape fact of the CRUD routes; no app spelling differs, and only a caller that asserts the exact key set of a projected row changes answer"
     guidance: "Required fields stay in a projection because the OpenAPI response schema holds them required; a client that needs slimmer rows reads the keys it names and ignores the rest."

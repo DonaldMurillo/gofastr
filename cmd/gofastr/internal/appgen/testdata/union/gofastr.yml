@@ -692,6 +692,13 @@ screens:
                 entity: invoices
                 agg: count
                 filter: status=open
+          - kind: stat_card
+            props:
+              label: Large unpaid
+              source:
+                entity: invoices
+                agg: count
+                filter: 'status in ["draft", "open"] and amount >= 1000'
       - kind: bar_chart
         props:
           title: Invoices by status

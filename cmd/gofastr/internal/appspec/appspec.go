@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwdsl "github.com/DonaldMurillo/gofastr/framework/dsl"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 	fwfilter "github.com/DonaldMurillo/gofastr/framework/filter"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
@@ -3637,6 +3638,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 					}
 					break
 				}
+				if err := validateStatCardFilterValues(screenName, decl, f); err != nil {
+					return err
+				}
 			}
 			// agg is StatValue's exact spelling: count (or empty) or sum. sum
 			// renders the total of a numeric column. At one row that total IS
@@ -3721,22 +3725,82 @@ func validateEntityListFilter(screenName string, decl framework.EntityDeclaratio
 		if f.NoQuery {
 			return fmt.Errorf("app spec: screen %q entity_list filter column %q is no_query (the pinned list would match on the stored value)", screenName, f.Name)
 		}
-		// The pin binds through crud's filter coercion on every read, so
-		// a value the column cannot hold answers 400 on every load, and
-		// an enum value outside the field's values matches no row.
-		sf, err := f.Field()
-		if err != nil {
-			return fmt.Errorf("app spec: screen %q entity_list filter column %q: %w", screenName, f.Name, err)
-		}
-		if _, err := fwfilter.CoerceValue(f.Name, sf.Type, value); err != nil {
-			return fmt.Errorf("app spec: screen %q entity_list filter value %q does not fit %s column %q", screenName, value, f.Type, f.Name)
-		}
-		if len(sf.Values) > 0 && !slices.Contains(sf.Values, value) {
-			return fmt.Errorf("app spec: screen %q entity_list filter value %q is not one of enum column %q's values %v", screenName, value, f.Name, sf.Values)
-		}
-		return nil
+		return validateFilterValue(screenName, "entity_list filter", f, value, true)
 	}
 	return fmt.Errorf("app spec: screen %q entity_list filter column %q is not defined on entity %q", screenName, field, decl.Name)
+}
+
+// validateFilterValue refuses a filter literal its column cannot hold.
+// The entity_list pin and the stat_card filter both bind through crud's
+// filter coercion on every read, so a value the column's type cannot
+// hold (yes on a bool) fails every load: a 400 on the list, "—" on the
+// card. With member set (an equality, inequality or in comparison) an
+// enum value outside the field's values is refused too: it matches no
+// row, or every row.
+func validateFilterValue(screenName, what string, f fwentity.FieldDeclaration, value string, member bool) error {
+	sf, err := f.Field()
+	if err != nil {
+		return fmt.Errorf("app spec: screen %q %s column %q: %w", screenName, what, f.Name, err)
+	}
+	if _, err := fwfilter.CoerceValue(f.Name, sf.Type, value); err != nil {
+		return fmt.Errorf("app spec: screen %q %s value %q does not fit %s column %q", screenName, what, value, f.Type, f.Name)
+	}
+	if member && len(sf.Values) > 0 && !slices.Contains(sf.Values, value) {
+		return fmt.Errorf("app spec: screen %q %s value %q is not one of enum column %q's values %v", screenName, what, value, f.Name, sf.Values)
+	}
+	return nil
+}
+
+// validateStatCardFilterValues runs each comparison literal in a
+// stat_card's source.filter (the DSL predicate entityui.StatValue
+// parses on every render) through validateFilterValue against its
+// column. A contains comparison matches text and is not judged. A
+// filter the predicate parser refuses (an unknown column, an operator
+// it does not know) is not this check's to judge and passes through
+// unchanged.
+func validateStatCardFilterValues(screenName string, decl framework.EntityDeclaration, filter string) error {
+	byName := make(map[string]fwentity.FieldDeclaration, len(decl.Fields))
+	fields := make([]schema.Field, 0, len(decl.Fields))
+	for _, f := range decl.Fields {
+		byName[f.Name] = f
+		// Type String takes every value and every operator, so the parse
+		// judges only the grammar and the names (the column or its camel
+		// JSON spelling, which resolves to the column) and returns the
+		// literals as written; the walk below holds each to its column.
+		fields = append(fields, schema.Field{Name: f.Name, WireName: ToCamelJSON(f.Name), Type: schema.String})
+	}
+	pred, err := fwdsl.ParsePredicate(filter, fields)
+	if err != nil || pred == nil {
+		return nil
+	}
+	var walk func(p *fwfilter.Predicate) error
+	walk = func(p *fwfilter.Predicate) error {
+		for i := range p.Children {
+			if err := walk(&p.Children[i]); err != nil {
+				return err
+			}
+		}
+		f, ok := byName[p.Field]
+		if len(p.Children) > 0 || !ok {
+			return nil
+		}
+		switch p.Op {
+		case fwfilter.OpLike:
+			return nil
+		case fwfilter.OpIn:
+			for _, v := range p.Values {
+				if err := validateFilterValue(screenName, "stat_card filter", f, v, true); err != nil {
+					return err
+				}
+			}
+			return nil
+		case fwfilter.OpEq, fwfilter.OpNe:
+			return validateFilterValue(screenName, "stat_card filter", f, p.Value, true)
+		default:
+			return validateFilterValue(screenName, "stat_card filter", f, p.Value, false)
+		}
+	}
+	return walk(pred)
 }
 
 // appSpecCatalogUnderNode returns the first catalog kind among blocks the
