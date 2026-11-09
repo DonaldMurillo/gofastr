@@ -16,7 +16,7 @@ import "net/http"
 func (a *App) handleMCPManifest(w http.ResponseWriter, r *http.Request) {
 	base := resolveWellKnownBase(r)
 	name := a.mcpDisplayName()
-	writeWellKnownJSON(w, map[string]any{
+	writeWellKnownJSON(w, r, map[string]any{
 		"name":        name,
 		"description": a.mcpCardDescription(),
 		"endpoint":    base + "/mcp",

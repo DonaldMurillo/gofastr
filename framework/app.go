@@ -4276,8 +4276,15 @@ func (a *App) registerDebugEndpoints() {
 			"goroutineLeaks": goroutineLeakCount(),
 		}
 
+		b, err := json.Marshal(stats)
+		if err != nil {
+			slog.Warn("debug stats: encode", "error", err)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
+		w.Write(b)
+		w.Write([]byte("\n"))
 	}))
 	a.router.Get("/.debug/goroutineleak", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

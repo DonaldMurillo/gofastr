@@ -196,7 +196,9 @@ func searchPosts(index search.Backend) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": results})
+		if err := json.NewEncoder(w).Encode(map[string]any{"data": results}); err != nil {
+			log.Printf("blog: encode search results: %v", err)
+		}
 	}
 }
 

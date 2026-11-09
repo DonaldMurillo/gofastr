@@ -160,13 +160,13 @@ func initSkipped(n int) []batchResult {
 // success Data is scrubbed: a caller that reads it without checking
 // Committed=false would otherwise treat the constructed-but-not-
 // persisted shape as authoritative.
-func writeBatchResponse(w http.ResponseWriter, resp BatchResponse) {
-	w.Header().Set("Content-Type", "application/json")
+func writeBatchResponse(w http.ResponseWriter, r *http.Request, resp BatchResponse) {
+	status := http.StatusOK
 	if !resp.Committed {
 		scrubRolledBackData(resp.Results)
-		w.WriteHeader(http.StatusBadRequest)
+		status = http.StatusBadRequest
 	}
-	json.NewEncoder(w).Encode(resp)
+	writeJSONStatus(w, r, status, resp)
 }
 
 // scrubRolledBackData clears the Data field on per-item results whose
@@ -297,7 +297,7 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 				results[i].Data = body
 			}
 		}
-		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -434,7 +434,7 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 				results[i].Data = body
 			}
 		}
-		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
@@ -508,6 +508,6 @@ func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 				}
 			}
 		}
-		writeBatchResponse(w, BatchResponse{Committed: txErr == nil, Results: results})
+		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }

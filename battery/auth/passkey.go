@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -357,13 +356,6 @@ func (p *PasskeyPlugin) requireFullSession(w http.ResponseWriter, r *http.Reques
 	return sess, true
 }
 
-func writePasskeyJSON(w http.ResponseWriter, status int, v any) {
-	writeCredentialHeaders(w)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
 // decodeB64Fields decodes base64url members of a request body, refusing
 // padding and empty values.
 func decodeB64Fields(fields map[string]string) (map[string][]byte, error) {
@@ -439,7 +431,7 @@ func (p *PasskeyPlugin) registerOptionsHandler(w http.ResponseWriter, r *http.Re
 	for _, alg := range passkeyAlgs {
 		params = append(params, map[string]any{"type": "public-key", "alg": alg})
 	}
-	writePasskeyJSON(w, http.StatusOK, map[string]any{"publicKey": map[string]any{
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"publicKey": map[string]any{
 		"rp":                 map[string]string{"id": p.rp.ID, "name": p.config.RPName},
 		"user":               map[string]string{"id": b64url.EncodeToString([]byte(sess.UserID)), "name": user.GetEmail(), "displayName": user.GetEmail()},
 		"challenge":          b64url.EncodeToString([]byte(challenge)),
@@ -568,7 +560,7 @@ func (p *PasskeyPlugin) registerHandler(w http.ResponseWriter, r *http.Request) 
 		Kind: "passkey.registered", UserID: sess.UserID, Remote: remoteHost(r),
 		Meta: map[string]string{"alg": strconv.FormatInt(res.alg, 10), "backup_eligible": strconv.FormatBool(res.backupEligible)},
 	})
-	writePasskeyJSON(w, http.StatusCreated, passkeyView(cred))
+	writeAuthJSON(w, r, http.StatusCreated, passkeyView(cred))
 }
 
 // ─── sign-in ──────────────────────────────────────────────────────────
@@ -585,7 +577,7 @@ func (p *PasskeyPlugin) loginOptionsHandler(w http.ResponseWriter, r *http.Reque
 	// No allowCredentials: the browser offers the passkeys it holds for
 	// the RP ID, and the response names the account (userHandle), so the
 	// sign-in needs no username and reveals no account list.
-	writePasskeyJSON(w, http.StatusOK, map[string]any{"publicKey": map[string]any{
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"publicKey": map[string]any{
 		"challenge":        b64url.EncodeToString([]byte(challenge)),
 		"rpId":             p.rp.ID,
 		"timeout":          p.config.ChallengeTTL.Milliseconds(),
@@ -733,7 +725,7 @@ func (p *PasskeyPlugin) loginHandler(w http.ResponseWriter, r *http.Request) {
 		out["redirect"] = safeRedirectURL(p.config.TwoFactorURL)
 		out["two_factor_required"] = true
 	}
-	writePasskeyJSON(w, http.StatusOK, out)
+	writeAuthJSON(w, r, http.StatusOK, out)
 }
 
 // refuse answers a failed ceremony with one fixed message and records
@@ -787,7 +779,7 @@ func (p *PasskeyPlugin) listHandler(w http.ResponseWriter, r *http.Request) {
 	for _, c := range creds {
 		out = append(out, passkeyView(c))
 	}
-	writePasskeyJSON(w, http.StatusOK, map[string]any{"passkeys": out})
+	writeAuthJSON(w, r, http.StatusOK, map[string]any{"passkeys": out})
 }
 
 func (p *PasskeyPlugin) deleteHandler(w http.ResponseWriter, r *http.Request) {

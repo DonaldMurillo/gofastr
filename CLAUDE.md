@@ -610,7 +610,8 @@ expose them to agents connected to a live app.**
   summaries, field-wide, and a fill-less `func(*http.Request) string`
   field the package declares is request text itself (the d6167d1a
   principal); a `strings.Builder` local's String carries its string,
-  byte, rune and standard formatted writes until a dominating Reset); `controlbytes` grew a Location arm (a scrub
+  byte, rune and standard formatted writes until a dominating Reset);
+  `controlbytes` grew a Location arm (a scrub
   that exempts tab clears nothing at a redirect) and a guard-then-strip
   arm (test the stripped value, not the raw one); `sanitizefix` (a
   one-pass multi-character removal in a scrub/strip/sanitize function:
@@ -632,8 +633,8 @@ expose them to agents connected to a live app.**
   statistical form measured 333 sites and is not shipped), `silentskip`
   (an `if err != nil` in a loop that waits then continues without
   reading err — an outage that looks like an empty queue),
-  `discardeddecode` grew an encode arm for JSON-RPC envelopes that can
-  fail to encode, `mapwriter` grew a return arm (a map range over
+  `discardeddecode` checks dropped encode errors on fallible JSON values,
+  including non-envelope HTTP replies and event payloads (#669), `mapwriter` grew a return arm (a map range over
   decoded wire input returning an error built from the entry it
   reached), `embedskip` grew three tag-walk arms (a struct-kind gate one
   Elem below the param with no pointer loop; a SetString/SetInt binder

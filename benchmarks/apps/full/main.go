@@ -141,7 +141,9 @@ func main() {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"results": results})
+		if err := json.NewEncoder(w).Encode(map[string]any{"results": results}); err != nil {
+			log.Printf("bench: encode search results: %v", err)
+		}
 	})
 
 	// ----- Custom endpoint ---------------------------------------------

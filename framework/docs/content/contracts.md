@@ -300,6 +300,13 @@ The response-mount lint follows `.then(this.render)` to the method in the
 enclosing JavaScript class. Same-named methods in unrelated classes never
 supply a mount or an OK gate for that chain.
 
+The `discardeddecode` vet analyzer checks dropped errors from
+`json.Marshal`, `json.MarshalIndent` and `Encoder.Encode` when a value can
+fail to encode, including non-envelope replies. Check errors on values
+holding interfaces, floating-point numbers, raw JSON or unsupported JSON
+types. Marshal an HTTP response before committing its status so a failure
+can answer 500; return or log errors on other output paths.
+
 The `textbind` vet analyzer follows request text through struct fields,
 receiver-field return values, host callbacks and local `strings.Builder`
 output. Check UTF-8 validity and reject NUL before storing or binding text.

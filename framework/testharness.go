@@ -253,8 +253,11 @@ func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 		t.Fatalf("unmarshal response body: %v\nbody: %s", err, tr.recorder.Body.String())
 	}
 
-	expJSON, _ := json.Marshal(expNorm)
-	actJSON, _ := json.Marshal(actNorm)
+	expJSON, expErr := json.Marshal(expNorm)
+	actJSON, actErr := json.Marshal(actNorm)
+	if expErr != nil || actErr != nil {
+		t.Fatalf("marshal normalized JSON: exp %v, act %v", expErr, actErr)
+	}
 	if string(expJSON) != string(actJSON) {
 		t.Fatalf("JSON mismatch:\nexpected: %s\nactual:   %s", expJSON, actJSON)
 	}

@@ -766,10 +766,18 @@ func (b *Battery) refuse(w http.ResponseWriter, r *http.Request, page string, st
 			}
 			body["fields"] = fieldErrors
 		}
+		w.Header().Set("Cache-Control", "no-store")
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			slog.Warn("admin: encode refusal body", "error", err)
+			handler.WriteError(w, r, handler.Fail(http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError)))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(status)
-		_ = json.NewEncoder(w).Encode(body)
+		w.Write(encoded)
+		w.Write([]byte("\n"))
 		return
 	}
 	http.Redirect(w, r, withResult(page, name), http.StatusSeeOther)

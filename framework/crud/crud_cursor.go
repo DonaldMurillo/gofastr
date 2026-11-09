@@ -2,7 +2,6 @@ package crud
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -255,8 +254,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		page.Data = payload.Results
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(page)
+	writeJSONStatus(w, r, http.StatusOK, page)
 }
 
 // decodeCursorFor decodes a cursor in either shape buildCursorPage

@@ -246,20 +246,10 @@ few lines, and link the PR or the docs page for the rest.
   is request text itself; a `strings.Builder` local's `String`
   carries string, byte, rune and standard formatted writes until a
   dominating `Reset`.
-- **`discardeddecode` covers every dropped JSON encode error** (#669).
-  The encode arm — born scoped to JSON-RPC envelopes after
-  3516c4d9b's empty-200 MCP replies — now fires on any
-  `json.Marshal`/`MarshalIndent`/`Encoder.Encode` whose error is dropped
-  when the value can fail to encode (an `any`, a NaN, a
-  `json.RawMessage`, a chan/func, a float map key): a CRUD page, SSE
-  event loop, well-known document or JWKS that hits one was answering
-  200 with an empty body. All 53 sites the widened rule found across
-  the repo are fixed in the same batch — answers marshal before the
-  first byte is written (a 500 instead of an empty 200), propagated
-  errors where a caller could take them (crud batch, module broker,
-  redis queue's dead-letter/claim/nack re-homing), or checked-and-logged
-  where every element was already individually marshaled
-  (`widget.serveState`).
+- **`discardeddecode` checks non-envelope JSON encode errors** (#669).
+  HTTP answers encode before committing their status; broker and queue
+  operations return serialization errors, and output paths log failures.
+  The analyzer now covers fallible values outside JSON-RPC envelopes.
 - **A2A refuses an owner or tenant the store cannot bind** (#669). An
   `Owner` or `Tenant` callback that returns a NUL byte or invalid
   UTF-8 (read from the request) is refused with the transport's 401 at

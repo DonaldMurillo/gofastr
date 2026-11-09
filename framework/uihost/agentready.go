@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -656,11 +657,18 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		w.Header().Add("Vary", "Host")
 		w.Header().Add("Vary", "X-Forwarded-Proto")
 	}
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		// A host-filled card member with no JSON form would answer an
+		// empty card; answer 500 so agents treat it as failed.
+		slog.Warn("uihost: encode agent card", "error", err)
+		i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(doc)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // buildAgentCard assembles the A2A v1.0 card as an ordered map so the

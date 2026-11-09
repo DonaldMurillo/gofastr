@@ -395,3 +395,11 @@
 - Evidence: fixedtmp 79/79, timestampid 86/86, recoverlog 66/66, nowaitdelay 47/47 and keytrim 32/32 mutants killed. Added fixture cases kill missing guards; two verdict-invariant branches were removed.
 - Next time: reject mutation build failures as invalid; the draft reporter rewrite produced pass.mutateNopReportf, so it hid an untested exec.Cmd.Path reporter. Record the operator set and keep bad and quiet fixtures.
 - Status: active
+
+## 2026-11-08 - Encode JSON before committing an HTTP status
+- Scope: JSON response helpers, discardeddecode
+- Trigger: a NaN or invalid RawMessage produced an empty 200 because the encoder failed after success headers were written.
+- Approach: marshal first and answer a generic 500, propagate broker/queue serialization errors, and log output failures. Preserve encoder options and avoid fabricated cursor placeholders.
+- Evidence: HTTP regressions in framework/crud, framework, battery/auth and cmd/kiln fail on their original writers; the widget failure-writer test pins logging.
+- Next time: inject unencodable values at the real response boundary and assert status, body and sensitive-response headers before widening the analyzer.
+- Status: active
