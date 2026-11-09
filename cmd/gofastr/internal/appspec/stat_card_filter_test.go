@@ -51,9 +51,6 @@ func TestStatCardFilterAcceptsTypedValues(t *testing.T) {
 		`featured = true and amount > 12.5`,
 		`stage in ["draft", "open"] or label contains "x"`,
 		`(stage != "draft") and amount <= 3`,
-		// Columns and operators the check cannot judge pass through.
-		`nosuch = "x" and stage = "closed"`,
-		`stage ~ "x"`,
 	} {
 		if err := statCardFilterAppSpec(t, ok); err != nil {
 			t.Errorf("filter %q was refused: %v", ok, err)
@@ -69,6 +66,10 @@ func TestStatCardFilterRefusesMistypedValue(t *testing.T) {
 		{`stage != "closed"`, "closed"},
 		{`stage in ["open", "closed"]`, "closed"},
 		{`label = "x" or (featured = "maybe")`, "maybe"},
+		// An unknown column or operator fails the boot parse, so the load
+		// refuses it too (TestStatFilterLoadMatchesBoot).
+		{`nosuch = "x" and stage = "closed"`, "nosuch"},
+		{`stage ~ "x"`, "~"},
 	} {
 		err := statCardFilterAppSpec(t, tc.filter)
 		if err == nil {

@@ -310,6 +310,12 @@ keeps the UI unchanged; without a callback the default stays
   `groupBy` that is not a visible column the database can group (a
   JSON field or a many-to-many relation), and a no-query field, whose
   stored values the chart would print as labels.
+  `entityui.CheckStatFields(entity, fields, agg, field, where, format)`
+  and `entityui.CheckChartFields(entity, fields, groupBy)` are the same
+  rules over a field list, for a check that runs before any app exists:
+  the app spec load runs them over the fields the generated entity
+  registers (`EntityConfig.WithSystemFields`), so a card or chart the
+  load passes passes the boot check.
   `appUI.LastUpdated` is when the newest record the caller can read was
   written (the greatest `updated_at` in scope); it reports false on an
   entity without timestamps, a refused read or no rows.

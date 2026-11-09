@@ -481,10 +481,17 @@ few lines, and link the PR or the docs page for the rest.
   forever with no error. Each generated screen's mount now runs
   `entityui.CheckStat` for every sourced card it renders and panics
   naming the screen and the card, as `battery/admin` already does for
-  its metrics. So that a spec the load passes never fails that check,
-  the load now also refuses a count card given a `source.field` or a
-  `format`, and a sum whose `format` is not `money`: the card ignored
-  them and drew a plain number.
+  its metrics. The spec load runs the same rule, the new
+  `entityui.CheckStatFields`, over the fields the generated entity
+  registers: the spec's fields plus the `id`, `created_at`, `updated_at`
+  and `deleted_at` columns `entity.Define` adds. So a card the load
+  passes also passes the boot check. A filter naming a column the
+  entity lacks, or a camel spelling such as `dueOn` for `due_on` (no
+  generated field has a wire alias), is refused at load, naming the card
+  and the parse error; a filter on `created_at` loads and boots. A count
+  card given a `source.field` or a `format`, and a sum whose `format` is
+  not `money`, are refused too: the card ignored them and drew a plain
+  number.
 - **A generated app checks its charts at boot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [app spec](framework/docs/content/app-spec.md)). A `bar_chart`,
@@ -493,10 +500,12 @@ few lines, and link the PR or the docs page for the rest.
   The new `entityui.CheckChart(entity, groupBy)` reports why
   `GroupBars`, `GroupSlices` and `LineChart` could never draw one, and
   each generated screen's mount runs it for every sourced chart and
-  panics naming the screen and the chart. The spec load now refuses a
-  `group_by` on a `json` field or a many-to-many relation, and a chart or
-  `stat_card` source `entity` written as a route (`/customers`), which
-  the boot checks read as an unknown entity.
+  panics naming the screen and the chart. The spec load runs the same
+  rule, `entityui.CheckChartFields`, over the generated entity's fields,
+  so it refuses a `group_by` on a `json` field, a many-to-many relation
+  or a hidden column `entity.Define` adds (`deleted_at`). It also
+  refuses a chart or `stat_card` source `entity` written as a route
+  (`/customers`), which the boot checks read as an unknown entity.
 - **Meridian checks its hand-written stats and charts at boot**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
   Overview screen, the admin Revenue page and the customer Billing panel
