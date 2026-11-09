@@ -402,6 +402,18 @@ few lines, and link the PR or the docs page for the rest.
   no plugin change, and framed responses send
   `Vary: Host, X-Forwarded-Proto`. Behind a TLS-terminating proxy, list
   the proxy, or the framed CSP names `http://`.
+- **BREAKING: an entityui record's copy links take `X-Forwarded-Proto`
+  only from a trusted proxy**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A
+  record's Copy link, Copy API URL and the drawer's copy link took their
+  scheme from an `X-Forwarded-Proto` header any client could send, after
+  only an `http`/`https` check. The header now counts only from a peer
+  listed in `AppConfig.TrustedProxies`, the list the App already puts
+  on each request's context for pluginhost, so the record screens need
+  no wiring. Behind a TLS-terminating proxy, list the proxy, or the
+  copied links say `http://`. Record pages are already sent
+  `Cache-Control: no-store`, so no cache keys them and they gain no
+  `Vary`.
 - **BREAKING: an MCP item gate answers exactly as an unknown name**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669), was
   #656). `tools/call`, `resources/read` and `prompts/get` answered an
@@ -756,16 +768,20 @@ few lines, and link the PR or the docs page for the rest.
   zero-padded index another tool (logrotate) owns, is no longer read as
   `.1` or moved over another backup. Historical lines over 1 MiB are
   skipped even when the last line has no newline.
-- **A late cron tick fires the minutes it slept through** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A tick that
+- **A late cron tick fires the fixed-time jobs it slept through** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A tick that
   arrived minutes late (the process slept, a GC pause, a slow leader
   acquire) ran only its own minute, so a fixed-time job whose minute
   fell inside the gap never fired, most visibly across a DST change
   where the gap swallows the repeated or skipped hour. The tick loop
   now walks every missed minute boundary, oldest first, capped at two
-  hours; under leader election each walked minute is claimed in order,
-  so a replica that kept ticking refuses the late claims and nothing
-  fires twice. The current boundary is included at an exact one-minute
-  delay, and cancellation or stop interrupts the catch-up walk.
+  hours, and replays only fixed-time jobs (minute and hour fields both
+  name values). Every other job is judged once, at the current minute,
+  as vixie cron does after a clock jump: a 90-minute sleep runs
+  `* * * * *` once, not 90 times. Under leader election each walked
+  minute is claimed in order, so a replica that kept ticking refuses
+  the late claims and nothing fires twice. The current boundary is
+  included at an exact one-minute delay, and cancellation or stop
+  interrupts the catch-up walk.
 - **BREAKING: the idempotency in-flight TTL is sized and checked against the
   enforced request deadline** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The optional `middleware.InFlightTTLStore`
   interface (`InFlightTTL() time.Duration`, separate from

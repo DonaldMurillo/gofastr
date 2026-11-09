@@ -162,7 +162,12 @@ keeps the UI unchanged; without a callback the default stays
   Copy API URL, the record's REST address on this origin, when its REST
   routes mounted; with `Duplicate()` and a caller who may create,
   Duplicate and Create another, the blank create screen; and Delete
-  where turned on); and on the Edit tab, Save. A
+  where turned on); and on the Edit tab, Save. Copy link, Copy API URL
+  and the drawer's copy link build the address from the request's
+  `Host` and scheme: `https` on a TLS connection, and otherwise
+  `X-Forwarded-Proto` (exactly `http` or `https`) only when the TCP peer
+  is listed in `AppConfig.TrustedProxies`. Behind a TLS-terminating
+  proxy, list the proxy, or the copied links say `http://`. A
   move or app action declared `danger` is not a header button: it sits
   in the menu above Delete and runs only after a confirm dialog names it
   ("Void this invoice?" / "It moves from Draft to Paid."). Save

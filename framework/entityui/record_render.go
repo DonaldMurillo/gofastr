@@ -22,6 +22,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // render draws the record or create screen: the read gates, the header
@@ -513,12 +514,18 @@ func absoluteURL(ctx context.Context) string {
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	// The forwarded scheme counts only as an exact "http"/"https": the
-	// header is request input, and a value like "https://evil.example/p"
-	// would put another origin in the link the reader copies. Same gate
-	// as uihost's resolveBaseURL.
-	if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
-		scheme = p
+	// X-Forwarded-Proto is a header any client can send, so it counts
+	// only when the TCP peer is a trusted proxy: the
+	// AppConfig.TrustedProxies list the App stamps on every request
+	// context (clientip.WithTrusted). Even then only an exact
+	// "http"/"https" is honored: a value like "https://evil.example/p"
+	// would put another origin in the link the reader copies. The rule
+	// is the one framework/wellknown.go, uihost's resolveBaseURL and
+	// pluginhost's requestOrigin apply (#669).
+	if clientip.TrustedFrom(r.Context()).ContainsAddr(r.RemoteAddr) {
+		if p := r.Header.Get("X-Forwarded-Proto"); p == "http" || p == "https" {
+			scheme = p
+		}
 	}
 	return scheme + "://" + r.Host + r.URL.Path
 }

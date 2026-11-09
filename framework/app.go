@@ -115,12 +115,13 @@ type AppConfig struct {
 	// X-Forwarded-Proto is honored from, the same trust rule the rate
 	// limiters apply to X-Forwarded-For. A client that is not a listed
 	// peer cannot change the scheme of the well-known documents' URLs,
-	// nor the origin in the Content-Security-Policy of a
-	// framework/pluginhost framed asset served from this App's router.
+	// the origin in the Content-Security-Policy of a framework/pluginhost
+	// framed asset served from this App's router, nor the scheme of a
+	// framework/entityui record's copy links.
 	// Empty (default) honors X-Forwarded-Proto from nobody, so behind a
 	// TLS-terminating proxy that forwards it you must list the proxy or
-	// set BaseURL (BaseURL does not reach pluginhost: its frames need the
-	// proxy listed).
+	// set BaseURL (BaseURL reaches neither pluginhost nor entityui: their
+	// URLs need the proxy listed).
 	TrustedProxies []string
 
 	// RequestTimeout caps the per-request wall-clock budget enforced by
@@ -388,7 +389,8 @@ type App struct {
 	// trustedProxies is AppConfig.TrustedProxies parsed once: the peers
 	// X-Forwarded-Proto is honored from in the well-known documents, and,
 	// through the request context (clientip.WithTrusted), in
-	// framework/pluginhost's framed asset CSP.
+	// framework/pluginhost's framed asset CSP and framework/entityui's
+	// record copy links.
 	trustedProxies clientip.Proxies
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
@@ -2289,7 +2291,7 @@ func NewApp(opts ...AppOption) *App {
 	// The trusted-proxy list rides on every request context, defaults or
 	// not, so a package mounted on this router without the App
 	// (framework/pluginhost's framed assets build their CSP origin from
-	// X-Forwarded-Proto) applies the same AppConfig.TrustedProxies rule as
+	// X-Forwarded-Proto, framework/entityui its record copy links) applies the same AppConfig.TrustedProxies rule as
 	// the well-known documents. Nothing is installed when the list is empty.
 	if proxies := a.trustedProxies; !proxies.Empty() {
 		a.router.Use(func(next http.Handler) http.Handler {
