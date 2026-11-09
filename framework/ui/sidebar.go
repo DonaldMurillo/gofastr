@@ -863,6 +863,7 @@ func (s sidebarDrawerSlot) render(ctx context.Context) render.HTML {
 type sidebarDrawerHeader struct {
 	title, closeLabel string
 	labelID           string
+	compact           bool
 	resolve           func(context.Context) SidebarConfig
 }
 
@@ -886,7 +887,11 @@ func (h sidebarDrawerHeader) RenderCtx(ctx context.Context) render.HTML {
 	// Wrapped in the ui-sidebar marker so the drawer's chrome fetch
 	// pulls this sheet too — the header slot sits in the widget
 	// chrome, beside (not inside) the body's marked region.
-	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-sidebar__drawer-head"},
+	class := "fui-sidebar__drawer-head"
+	if h.compact {
+		class += " fui-sidebar__drawer-head--compact"
+	}
+	return name + sidebarStyle.WrapHTML(html.Div(html.DivConfig{Class: class},
 		html.Span(html.TextConfig{Class: "fui-sidebar__drawer-brand"}, render.Text(h.title)),
 		Button(ButtonConfig{Ctx: ctx, Label: label, Icon: "close", IconOnly: true,
 			Variant: ButtonGhost, Class: "fui-sidebar__drawer-close",
@@ -945,7 +950,7 @@ func mountSidebar(r WidgetMounter, cfg SidebarConfig, build func(context.Context
 	b := preset.Drawer(cfg.DrawerName).
 		Hidden().
 		LabelledBy(labelID).
-		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, labelID: labelID, resolve: build}).
+		Slot("header", sidebarDrawerHeader{title: title, closeLabel: cfg.DrawerCloseLabel, labelID: labelID, compact: cfg.Compact, resolve: build}).
 		Slot("body", sidebarDrawerSlot{cfg: cfg, resolve: build})
 	// Optional page scoping: apps that only use the sidebar on a
 	// subset of routes can declare them explicitly; omitting `pages`
@@ -1407,6 +1412,10 @@ func sidebarCSS(_ style.Theme) string {
   padding-block: var(--spacing-md, 8px);
   padding-inline: calc(var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px)) + var(--spacing-md, 8px)) var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px));
   border-bottom: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
+}
+/* Compact rows pad by --spacing-sm after a 1px current marker. */
+.fui-sidebar__drawer-head--compact {
+  padding-inline-start: calc(var(--ui-sidebar-drawer-inset, var(--spacing-md, 8px)) + var(--spacing-sm, 4px) + 1px);
 }
 .fui-sidebar__drawer-brand {
   font-weight: var(--font-weight-bold);
