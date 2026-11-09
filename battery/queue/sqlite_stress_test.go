@@ -53,9 +53,11 @@ func TestPGStressDrainsClean(t *testing.T) {
 
 // stressDeadline is how long the drain may take. It sits well below
 // stressLease, the claim lease, so lease recovery cannot finish a drain
-// in time.
+// in time. A passing run returns the moment the queue drains (about a
+// second on a laptop); the margin is for a loaded CI runner, where 15
+// seconds ran out with the drain still moving.
 const (
-	stressDeadline = 15 * time.Second
+	stressDeadline = 60 * time.Second
 	stressLease    = 2 * time.Minute
 )
 
@@ -135,8 +137,8 @@ func assertStressDrainsClean(t *testing.T, db *sql.DB) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Fatalf("drain did not finish in %v (stuck claimed rows: %d, settle failures: %v)",
-		stressDeadline, count("claimed"), settles.list())
+	t.Fatalf("drain did not finish in %v (pending rows: %d, stuck claimed rows: %d, settle failures: %v)",
+		stressDeadline, count("pending"), count("claimed"), settles.list())
 }
 
 // settleFailureLog is a slog handler that keeps the worker's settle

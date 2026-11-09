@@ -82,7 +82,9 @@ jobs:
   test:
     name: build · vet · test (blocking)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Full runs on main took 44-45 minutes by 2026-11-08, so 45 cancelled
+    # a full run with tests still going.
+    timeout-minutes: 60
     env:
       CGO_ENABLED: "1" # mattn/go-sqlite3 requires cgo
       # Every Postgres suite in the repo resolves through TEST_POSTGRES_DSN.
