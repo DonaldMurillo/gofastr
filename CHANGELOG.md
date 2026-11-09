@@ -485,6 +485,18 @@ few lines, and link the PR or the docs page for the rest.
   the load now also refuses a count card given a `source.field` or a
   `format`, and a sum whose `format` is not `money`: the card ignored
   them and drew a plain number.
+- **A generated app checks its charts at boot**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [app spec](framework/docs/content/app-spec.md)). A `bar_chart`,
+  `pie_chart` or `line_chart` grouped on a column the entity lacks, or
+  on one the database cannot group, drew an empty chart with no error.
+  The new `entityui.CheckChart(entity, groupBy)` reports why
+  `GroupBars`, `GroupSlices` and `LineChart` could never draw one, and
+  each generated screen's mount runs it for every sourced chart and
+  panics naming the screen and the chart. The spec load now refuses a
+  `group_by` on a `json` field or a many-to-many relation, and a chart or
+  `stat_card` source `entity` written as a route (`/customers`), which
+  the boot checks read as an unknown entity.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

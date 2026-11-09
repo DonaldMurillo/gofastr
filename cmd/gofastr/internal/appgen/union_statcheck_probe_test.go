@@ -7,6 +7,11 @@ package appgen
 // and entityui.StatValue draws as "—" forever. Mounting the generated
 // screen must refuse it through entityui.CheckStat, naming the screen
 // and the card, before the screen registers (#669).
+//
+// TestChartCheckedAtBoot is the chart twin: the cards screen draws a
+// pie_chart grouped on "group", and a cards entity with no group column
+// would draw an empty chart forever. Mounting the screen must refuse it
+// through entityui.CheckChart, naming the screen and the chart.
 const statCheckProbe = `package main
 
 import (
@@ -45,6 +50,40 @@ func TestStatCardCheckedAtBoot(t *testing.T) {
 	}
 	msg := fmt.Sprint(got)
 	for _, want := range []string{` + "`" + `screen "dashboard"` + "`" + `, ` + "`" + `stat_card "Billed"` + "`" + `, "status"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("boot refusal %q does not name %s", msg, want)
+		}
+	}
+}
+
+func TestChartCheckedAtBoot(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fwApp := framework.NewApp(framework.WithDB(db), framework.WithoutDefaultMiddleware())
+	fwApp.Entity("cards", entity.EntityConfig{
+		Table: "cards",
+		Fields: []schema.Field{
+			{Name: "label", Type: schema.String},
+			{Name: "order", Type: schema.Int},
+		},
+	})
+	saved := appUI
+	t.Cleanup(func() { appUI = saved })
+	appUI = fwApp.EntityUI(appExtensions)
+
+	got := func() (r any) {
+		defer func() { r = recover() }()
+		mountCardsScreen(fwApp, nil, db)
+		return nil
+	}()
+	if got == nil {
+		t.Fatal("mountCardsScreen mounted a chart grouped on a column the entity lacks")
+	}
+	msg := fmt.Sprint(got)
+	for _, want := range []string{` + "`" + `screen "cards"` + "`" + `, ` + "`" + `pie_chart "Cards by group"` + "`" + `, "group"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("boot refusal %q does not name %s", msg, want)
 		}

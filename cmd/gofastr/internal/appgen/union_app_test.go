@@ -29,8 +29,8 @@ const unionCatalog = `{"union":{"screens":{"enrollments_crud":{"enrollment_recor
 // editSaveTest (an edit screen whose key values need escaping saves back
 // to its record) and intIDProbe (consumer code passing an integer id
 // between the repo, the id column, events, cascades and the client) and
-// statCheckProbe (a stat card over a column the entity lacks fails the
-// screen's mount, naming the card).
+// statCheckProbe (a stat card, or a chart, over a column the entity
+// lacks fails the screen's mount, naming the card or the chart).
 //
 // It is the only build for several features whose own tests check the
 // emitted source in-process and no longer compile it: per-verb access
@@ -131,7 +131,7 @@ func TestUnionApp(t *testing.T) {
 		}
 	}
 
-	tests := []string{"TestE2E", "TestCatalogsMatchPhrases", "TestOwnedJoinRecord", "TestEditSavesToRecord", "TestIntIDRepo", "TestStatCardCheckedAtBoot"}
+	tests := []string{"TestE2E", "TestCatalogsMatchPhrases", "TestOwnedJoinRecord", "TestEditSavesToRecord", "TestIntIDRepo", "TestStatCardCheckedAtBoot", "TestChartCheckedAtBoot"}
 	cmd := exec.Command("go", "test", "-run", "^("+strings.Join(tests, "|")+")$", "-count=1", "-v", ".")
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOFLAGS=-mod=mod")

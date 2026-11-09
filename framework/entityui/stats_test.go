@@ -97,6 +97,47 @@ func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
 	}
 }
 
+// CheckChart refuses at boot every group_by GroupBars, GroupSlices and
+// LineChart would draw as an empty chart for a reason no request can
+// change, and a no_query column the load refuses too.
+func TestCheckChartRefusesWhatCannotGroup(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(slices.Clone(inv.Fields),
+		schema.Field{Name: "secret", Type: schema.String, Hidden: true},
+		schema.Field{Name: "meta", Type: schema.JSON},
+	)
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows())
+	ctx := x.userCtx("/dash", "", "u1")
+	for _, ok := range []string{"status", "number", "issued_on", "customer_id"} {
+		if err := x.ui.CheckChart("invoices", ok); err != nil {
+			t.Errorf("CheckChart(invoices, %q): %v", ok, err)
+		}
+	}
+	for name, bad := range map[string][2]string{
+		"unknown entity": {"ghosts", "status"},
+		"no group_by":    {"invoices", ""},
+		"unknown field":  {"invoices", "nope"},
+		"hidden field":   {"invoices", "secret"},
+		"no-query field": {"invoices", "token"},
+		"json field":     {"invoices", "meta"},
+	} {
+		err := x.ui.CheckChart(bad[0], bad[1])
+		if err == nil {
+			t.Errorf("%s: CheckChart%q passed", name, bad)
+			continue
+		}
+		// Each refused shape but no_query draws an empty chart: the check
+		// names what the reader would only log.
+		if name != "no-query field" {
+			if bars := x.ui.GroupBars(ctx, bad[0], bad[1]); len(bars) != 0 {
+				t.Errorf("%s: GroupBars drew %v, so CheckChart refuses a chart that computes", name, bars)
+			}
+		}
+	}
+}
+
 // Count is the list's count, and draws nothing when it cannot answer.
 func TestCountReportsWhatItCannotRead(t *testing.T) {
 	x := newInvoiceUI(t)

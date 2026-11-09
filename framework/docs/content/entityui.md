@@ -305,6 +305,11 @@ keeps the UI unchanged; without a callback the default stays
   `appUI.CheckStat(entity, agg, field,
   where, format)` returns why `StatValue` could never compute a spec,
   so a host can refuse a configured stat at boot.
+  `appUI.CheckChart(entity, groupBy)` does the same for `GroupBars`,
+  `GroupSlices` and `LineChart`: it refuses an unknown entity and a
+  `groupBy` that is not a visible column the database can group (a
+  JSON field or a many-to-many relation), and a no-query field, whose
+  stored values the chart would print as labels.
   `appUI.LastUpdated` is when the newest record the caller can read was
   written (the greatest `updated_at` in scope); it reports false on an
   entity without timestamps, a refused read or no rows.
