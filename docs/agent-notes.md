@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-09 - Strip CRUD elevation at the mask callback boundary
+- Scope: framework/crud field masks and battery/admin
+- Trigger: a mask using CanReadScoped inherited the admin entity lift and revealed its stored value.
+- Approach: remove elevation inside runMask, which covers own rows and included rows on every response surface.
+- Evidence: TestReadHookParityCrud mask elevated mode and TestReadHookParityAdmin mask elevation cover permission-sensitive masks; removing WithoutElevation makes them fail.
+- Next time: extend the parity matrices and check callback contexts at their common invocation boundary.
+- Status: active
+
 ## 2026-11-08 - Recheck T4 claim lifetimes and settle invariants
 - Scope: issue #669 T4, migrations, queue, outbox, webhook, idempotency, cron and log history
 - Trigger: review of the nine GLM commits found missed settle sinks, shared AppOption state, warning gaps and weak regression premises.

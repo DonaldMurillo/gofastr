@@ -494,7 +494,8 @@ page, `?stream=true`, an `?include=` child, a create or update response,
 an `_events` delivery, and the MCP tools. In-process reads (`GetOne`,
 `ListAll`, `TypedQuery`) mask under `crud.WithReadHooks`, the opt-in that
 runs read hooks, and return the stored value without it. The context it
-gets carries the caller, so a mask may depend on who reads. A NULL stays
+gets carries the caller, with the back office's CRUD elevation removed,
+so a mask may check the caller's own permissions. A NULL stays
 null and `Mask` is not called for it. It runs before the entity's
 `AfterGet`/`AfterList` hooks, which see the masked value. Return a
 placeholder for a value it cannot read: a `Mask` that panics reads as

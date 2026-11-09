@@ -1,6 +1,9 @@
 version: v0.97.0
 title: Pending release
 notes:
+  - change: "Field masks no longer inherit back office CRUD elevation on any read or write response"
+    guidance: "A permission-sensitive mask checks the caller's own permissions. Grant the intended read permission explicitly if an admin should see the stored value."
+    nodetect: "the mask's runtime permission checks determine the output; no host source spelling distinguishes an affected mask"
   - change: "BREAKING - battery/cache.CacheMiddlewareWithLimit panics when maxBodyBytes is negative; a negative cap used to read as 0 and buffer every response whole"
     breaking: true
     nodetect: "the condition is a negative value, usually read from configuration, which no spelling shows; every ordinary call passes a cap or 0"

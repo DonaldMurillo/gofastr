@@ -262,6 +262,12 @@ few lines, and link the PR or the docs page for the rest.
   `AuthConfig.MailAddressRateLimit`.
 
 ### Security
+- **Field masks run with the caller's permissions**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). CRUD
+  removes back office elevation before every field mask, including
+  included rows, events and streamed results. A permission-sensitive
+  mask no longer reveals a value solely because an admin can manage
+  the entity.
 - **A repository secrets file cannot name a key that is not an
   environment variable** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   `isProviderCredentialKey` checks the whole name at the source

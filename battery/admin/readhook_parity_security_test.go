@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -141,6 +142,45 @@ func (x *env) caseRow(id string) string {
 }
 
 func TestReadHookParityAdmin(t *testing.T) {
+	t.Run("mask elevation", func(t *testing.T) {
+		var private *crud.CrudHandler
+		cases := entity.EntityConfig{
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String},
+				{Name: "secret", Type: schema.String, Mask: func(ctx context.Context, v any) any {
+					if private.CanReadScoped(ctx) {
+						t.Error("mask inherited admin elevation for cases:private")
+						return v
+					}
+					return "****"
+				}},
+			},
+			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "cases:private"}},
+		}.WithTimestamps(false)
+		tasks := entity.EntityConfig{
+			Fields:    []schema.Field{{Name: "name", Type: schema.String}, {Name: "case_id", Type: schema.String}},
+			Relations: []entity.Relation{entity.BelongsTo("case", "cases", "case_id")},
+		}.WithTimestamps(false)
+		x := setup(t, map[string]entity.EntityConfig{"cases": cases, "tasks": tasks},
+			Config{Entities: []string{"cases", "tasks"}}, func(x *env, _ *Config) {
+				var err error
+				private, err = x.app.CrudHandler("cases")
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+		x.insert("cases", map[string]any{"id": "c1", "title": "Visible case", "secret": paritySecret})
+		x.insert("tasks", map[string]any{"id": "t1", "name": "Visible task", "case_id": "c1"})
+		for _, path := range []string{"/admin/entities/cases/c1", "/admin/entities/cases/c1?tab=api", "/admin/entities/cases", "/admin/api/cases/_export.csv"} {
+			t.Run(path, func(t *testing.T) {
+				rr := get(withPolicy(x.as(theAdmin)), path)
+				body := rr.Body.String()
+				if rr.Code != http.StatusOK || !strings.Contains(body, "Visible case") || strings.Contains(body, paritySecret) {
+					t.Fatalf("elevated admin without cases:private = %d %s, want a masked visible row", rr.Code, excerpt(body, paritySecret))
+				}
+			})
+		}
+	})
 	reads := []struct {
 		name string
 		req  func() *http.Request
