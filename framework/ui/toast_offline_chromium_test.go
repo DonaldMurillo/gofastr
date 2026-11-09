@@ -2,6 +2,8 @@ package ui_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -88,25 +90,49 @@ func TestOfflineToastIsStyled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser E2E disabled in short mode")
 	}
-	srv := toastOfflineServer(t)
-	ctx := chromedptest.Context(t)
-	var display string
-	if err := chromedp.Run(ctx,
-		chromedp.Navigate(srv.URL+"/"),
-		chromedp.WaitReady("main", chromedp.ByQuery),
-		chromedp.Poll(`!!window.__gofastr`, nil),
-		network.Enable(),
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			_, err := network.EmulateNetworkConditionsByRule(true, []*network.Conditions{{URLPattern: ""}}).Do(ctx)
-			return err
-		}),
-		chromedp.Evaluate(`window.__gofastr._toastOrFallback({variant: 'error', title: 'Request failed', ttl: 60000}); true`, nil),
-		chromedp.Poll(`!!document.querySelector('[data-cui-toast-stack] [data-cui-comp="ui-notification"]')`, nil),
-		chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-toast-stack] [data-cui-comp="ui-notification"]')).display`, &display),
-	); err != nil {
-		t.Fatal(err)
+	var largeAppCSS strings.Builder
+	largeAppCSS.WriteString(":root{")
+	for i := range 1800 {
+		sum := sha256.Sum256(fmt.Appendf(nil, "%d", i))
+		fmt.Fprintf(&largeAppCSS, "--offline-probe-%d:%x;", i, sum[:16])
 	}
-	if display != "grid" {
-		t.Errorf("offline toast row display = %q, want grid (the notification sheet never applied)", display)
+	largeAppCSS.WriteString("}")
+	for _, tc := range []struct {
+		name string
+		opts []uihost.Option
+	}{
+		{name: "inline"},
+		{name: "linked-app", opts: []uihost.Option{uihost.WithCustomCSS(largeAppCSS.String())}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := toastOfflineServer(t, tc.opts...)
+			ctx := chromedptest.Context(t)
+			var display string
+			var subset, linkedApp bool
+			if err := chromedp.Run(ctx,
+				network.Enable(),
+				network.SetBlockedURLs().WithURLPatterns([]*network.BlockPattern{{URLPattern: srv.URL + "/__gofastr/comp-bundle.css*", Block: true}}),
+				chromedp.Navigate(srv.URL+"/"),
+				chromedp.WaitReady("main", chromedp.ByQuery),
+				chromedp.Poll(`!!window.__gofastr`, nil),
+				chromedp.Evaluate(`!!document.querySelector('style[data-cui-bundle]')`, &subset),
+				chromedp.Evaluate(`!!document.querySelector('link#cui-app-css')`, &linkedApp),
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					_, err := network.EmulateNetworkConditionsByRule(true, []*network.Conditions{{URLPattern: ""}}).Do(ctx)
+					return err
+				}),
+				chromedp.Evaluate(`window.__gofastr._toastOrFallback({variant: 'error', title: 'Request failed', ttl: 60000}); true`, nil),
+				chromedp.Poll(`!!document.querySelector('[data-cui-toast-stack] [data-cui-comp="ui-notification"]')`, nil),
+				chromedp.Evaluate(`getComputedStyle(document.querySelector('[data-cui-toast-stack] [data-cui-comp="ui-notification"]')).display`, &display),
+			); err != nil {
+				t.Fatal(err)
+			}
+			if display != "grid" {
+				t.Errorf("offline toast row display = %q, want grid (the notification sheet never applied)", display)
+			}
+			if tc.name == "linked-app" && (!subset || !linkedApp) {
+				t.Fatal("fixture did not inline the component subset beside linked app.css")
+			}
+		})
 	}
 }

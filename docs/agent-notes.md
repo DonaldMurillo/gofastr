@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-09 - Keep a fitting component subset when app.css needs a link
+- Scope: framework/uihost, issue #669 first-paint CSS
+- Trigger: eager offline-toast sheets moved Meridian Customers from 15,328 B of subset CSS to 20,951 B of full linked CSS.
+- Approach: weigh component, app and scheme blocks separately; keep a fitting subset and bootstrap inline while linking app.css after them, under the unchanged 16 KiB inline budget.
+- Evidence: TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget fails with the fallback removed; Meridian CSS is 16,360 B against its unchanged 17,408 B cap. TestOfflineToastIsStyled covers linked app.css with the full bundle blocked.
+- Next time: dump heads before and after a sheet-set change and compare full/subset sizes before blaming CSP; CSS weight excludes the 794 B scheme script the planner counts.
+- Status: active
+
 ## 2026-11-08 - Recheck T4 claim lifetimes and settle invariants
 - Scope: issue #669 T4, migrations, queue, outbox, webhook, idempotency, cron and log history
 - Trigger: review of the nine GLM commits found missed settle sinks, shared AppOption state, warning gaps and weak regression premises.

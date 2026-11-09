@@ -2919,6 +2919,12 @@ inlines it marked with the full sheet's URL:
 <style data-cui-bundle="a,b,c" data-cui-bundle-href="/__gofastr/comp-bundle.css?names=a,b,c&amp;v=…">/* the rules the page can match */</style>
 ```
 
+If the subset and color-scheme bootstrap fit the same 16 KiB inline
+budget but app.css takes them over it, the host keeps app.css linked
+after the subset. Its bytes can then be cached separately, while the
+component rules needed at first paint, including the offline toast,
+stay in the document. The policy allows only the blocks actually inlined.
+
 The `fullbundle` behaviour links that URL at boot, right after the
 `<style>` and so before `app.css`, so the states a click or a client
 navigation adds are styled once it arrives, in the cascade position the
@@ -2927,8 +2933,8 @@ component the subset covers waits on that link (the kernel finds it by
 `data-cui-bundle`, and while the marker is unspent it first waits, once
 and for at most 3 s, for the `fullbundle` module), so it commits and settles scroll only after
 it loads. Until then a class the page did not render
-at first paint has no rules. If the subset misses the budget too, the
-head links as before.
+at first paint has no rules. If the subset and bootstrap alone miss the
+budget, the head links as before.
 
 Every block is allowed by its `'sha256-…'` hash in the response's own
 `Content-Security-Policy`, never by `'unsafe-inline'`. The host patches
