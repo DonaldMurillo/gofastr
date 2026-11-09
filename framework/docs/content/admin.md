@@ -281,7 +281,8 @@ never elevated.
   the caller holds. When the store implements `auth.NameStore` the name
   is a form posting to `POST <PathPrefix>/account/_name`, which names
   the caller only (a `user_id` in the body is not read) and refuses what
-  `auth.CleanName` refuses. A saved name is audited as `account` /
+  `auth.CleanName` refuses, and a caller whose user type has no
+  `GetID`. A saved name is audited as `account` /
   `set-name` with the cleaned name. The account menu and its avatar's
   initials use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in

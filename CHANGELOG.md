@@ -89,6 +89,13 @@ few lines, and link the PR or the docs page for the rest.
   already flags the old method.
 
 ### Security
+- **The admin account page needs the caller's user id**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  admin gate admits a caller by roles, so a user type with no `GetID`
+  reached the account routes, where the audit label "unknown" stood in
+  for the id. Saving a display name then named the user whose id is
+  `unknown`. The name route now refuses such a caller, and the account
+  page reads no verified-email or password state for one.
 - **Needs attention skips a view hidden from the caller**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
   panel counted a watched view by its `Where` alone. A view whose `Show`
