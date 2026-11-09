@@ -198,8 +198,10 @@ sensibly reflect (sub-second internal dashboards).
   `Manager.ClientKey` returns the key a request counts under. The
   per-client cap exists because a session costs one same-origin POST, so
   without it one client could mint sessions until it held every slot.
-  Behind a reverse proxy, list it with `uihost.WithTrustedProxies` (or
-  `island.WithTrustedProxies` on a manager you build): the cap then reads
+  Behind a reverse proxy, list it in `AppConfig.TrustedProxies`, which
+  the App puts on each request's context, or with
+  `uihost.WithTrustedProxies` (`island.WithTrustedProxies` on a manager
+  you build), which replaces the App's list for that host: the cap then reads
   the `X-Forwarded-For` hop the proxy saw, walked from the right the way
   the rate limiter does. Without the list every anonymous visitor counts
   as the proxy's address and shares its 256 streams; the first refusal

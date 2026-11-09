@@ -376,10 +376,14 @@ few lines, and link the PR or the docs page for the rest.
   scheme from an `X-Forwarded-Proto` header any client could send, so a
   client could make the host advertise `http://` URLs or poison a cached
   copy. The header now counts only from a peer listed in
-  `uihost.WithTrustedProxies`, the rule the framework's well-known
-  documents follow. Behind a TLS-terminating proxy, list the proxy or
-  set `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs
-  say `http://`.
+  `uihost.WithTrustedProxies` or, when the host sets no list, in
+  `AppConfig.TrustedProxies`, which the App puts on each request's
+  context: the rule the framework's well-known documents follow. A host
+  list replaces the App's rather than adding to it. The island stream's
+  per-client cap reads `X-Forwarded-For` through the same fallback.
+  Behind a TLS-terminating proxy, list the proxy in either place or set
+  `WithAgentReady{BaseURL}` / `WithSitemap{BaseURL}`, or those URLs say
+  `http://`.
 - **BREAKING: a pluginhost framed asset's CSP takes `X-Forwarded-Proto`
   only from a trusted proxy**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The

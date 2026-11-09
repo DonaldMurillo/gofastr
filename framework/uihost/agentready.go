@@ -28,6 +28,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // ─── Public config types ───────────────────────────────────────────
@@ -787,7 +788,8 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 		scheme = "https"
 	}
 	// X-Forwarded-Proto is honored for the scheme ONLY from a peer
-	// listed in WithTrustedProxies, and then ONLY as an exact
+	// listed in WithTrustedProxies (or, when the host lists none, in the
+	// App's AppConfig.TrustedProxies), and then ONLY as an exact
 	// "http"/"https". Any client can send the header, and this origin is
 	// reflected into cacheable output (the Link header, the agent card's
 	// service URL), so an untrusted peer could make the host advertise
@@ -797,12 +799,24 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	// framework/wellknown.go's resolveWellKnownBase applies the same
 	// trust rule (#669), and framework/pluginhost/assets.go the same
 	// enum check.
-	if ds.proxies.ContainsAddr(req.RemoteAddr) {
+	if ds.trustedFor(req).ContainsAddr(req.RemoteAddr) {
 		if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
 			scheme = u
 		}
 	}
 	return scheme + "://" + req.Host
+}
+
+// trustedFor is the proxy list resolveBaseURL honors X-Forwarded-Proto
+// from: WithTrustedProxies when the host named any entry, else the list a
+// framework.App puts on each request's context (AppConfig.TrustedProxies).
+// A host list replaces the App's; it is not added to it, so the host
+// option says exactly whom the host trusts.
+func (ds *UIHost) trustedFor(req *http.Request) clientip.Proxies {
+	if len(ds.trustedProxies) > 0 {
+		return ds.proxies
+	}
+	return clientip.TrustedFrom(req.Context())
 }
 
 // baseURLPinned reports whether resolveBaseURL returns a configured

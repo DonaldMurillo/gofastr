@@ -751,11 +751,14 @@ canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
 `WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
 The per-request scheme comes from the TLS state. `X-Forwarded-Proto`
 (exactly `http` or `https`) overrides it only when the TCP peer is listed
-in `uihost.WithTrustedProxies`: any client can send the header, and an
-untrusted one could otherwise make the host advertise `http://` URLs or
-poison a cached copy. An empty list trusts nobody, so behind a
-TLS-terminating proxy, list the proxy or set a `BaseURL`, or the card
-and the `Link` headers say `http://`. `X-Forwarded-Host` is deliberately
+in `uihost.WithTrustedProxies` or, when the host sets no list, in the
+App's `AppConfig.TrustedProxies`, which the App puts on each request's
+context: any client can send the header, and an untrusted one could
+otherwise make the host advertise `http://` URLs or poison a cached
+copy. A host list replaces the App's rather than adding to it. With
+neither list the host trusts nobody, so behind a TLS-terminating proxy,
+list the proxy or set a `BaseURL`, or the card and the `Link` headers
+say `http://`. `X-Forwarded-Host` is deliberately
 **not** honored from anyone: reflecting it into the `Link:
 rel="service"` header would be a cache-poisoning primitive, so the
 addressed `Host` is used instead. Set `BaseURL` explicitly when your
