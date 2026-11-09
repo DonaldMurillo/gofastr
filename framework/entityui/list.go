@@ -126,9 +126,10 @@ func (b *ListBuilder) Duplicate() *ListBuilder { b.dup = true; return b }
 // re-renders the list as it was. Off by default.
 func (b *ListBuilder) Undo() *ListBuilder { b.undo = true; return b }
 
-// NoLinks draws the rows with no record links: the title is text, there
-// is no row menu and no New. It is for an entity with no screen of its
-// own on this app, such as a Related list of payments on an invoice.
+// NoLinks draws the rows with no record links: the title is text and
+// there is no row menu. It is for an entity with no record screen on
+// this app, such as a Related list of payments on an invoice. New stays
+// (a create lands back on the list); NoCreate takes it away.
 func (b *ListBuilder) NoLinks() *ListBuilder { b.noLinks = true; return b }
 
 // QueryBox turns on the filter's text box: a control named the list's
@@ -185,9 +186,9 @@ func (b *ListBuilder) Flush() *ListBuilder { b.flush = true; return b }
 // such as a dashboard panel linking to it.
 func (b *ListBuilder) Top(n int) *ListBuilder { b.pageSize = n; b.top = true; return b }
 
-// mayCreate reports whether the list offers New: on unless NoCreate or
-// NoLinks turned it off.
-func (b *ListBuilder) mayCreate() bool { return b.create && !b.noLinks }
+// mayCreate reports whether the list offers New: on unless NoCreate
+// turned it off.
+func (b *ListBuilder) mayCreate() bool { return b.create }
 
 // Bulk turns on row selection and bulk actions, off by default on app
 // pages and off for an entity with Display.NoBulk.

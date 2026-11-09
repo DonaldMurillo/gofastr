@@ -544,7 +544,10 @@ func FormatMessages(h []provider.Message) string {
 	b := make([]byte, 0, 256)
 	for _, m := range h {
 		b = append(b, []byte(string(m.Role)+": ")...)
-		blob, _ := json.Marshal(m.Content)
+		blob, err := json.Marshal(m.Content)
+		if err != nil {
+			blob = []byte("<unencodable: " + err.Error() + ">")
+		}
 		b = append(b, blob...)
 		b = append(b, '\n')
 	}

@@ -50,6 +50,7 @@ type PgVectorStore struct {
 	table        string // validated configured table name
 	quotedTable  string // validated + quoted table identifier
 	quotedDocIdx string // validated + quoted doc_id index name
+	quotedKwIdx  string // validated + quoted keyword-search GIN index name
 	dim          int
 	model        string
 
@@ -113,27 +114,42 @@ func NewPgVector(db *sql.DB, cfg PgVectorConfig) (*PgVectorStore, error) {
 		table:        safe,
 		quotedTable:  query.QuoteFolded(safe),
 		quotedDocIdx: query.QuoteIndexName(docIndexName(safe)),
+		quotedKwIdx:  query.QuoteIndexName(keywordIndexName(safe)),
 		dim:          cfg.Dim,
 		model:        cfg.Model,
 	}, nil
 }
 
-// docIndexName names the doc_id index: table+"_doc_id_idx" as Postgres
-// cuts it at 63 bytes, the name every earlier build created. A 63-byte
-// table name cuts to the table's own name, and CREATE INDEX IF NOT EXISTS
-// then skipped the index, so that one name ends in a hash of the table
-// instead.
-func docIndexName(table string) string {
-	name := table + "_doc_id_idx"
-	if len(name) > 63 {
-		name = name[:63]
+// docIndexName names the doc_id index, keywordIndexName the keyword
+// search's GIN index: table+"_doc_id_idx" and table+"_kw_fts_idx" as
+// Postgres cuts each at 63 bytes, the name every earlier build created.
+// A 63-byte table name cuts to the table's own name, and CREATE INDEX
+// IF NOT EXISTS then skipped the index, so that one name ends in a hash
+// of the table instead.
+func docIndexName(table string) string     { return indexName(table, "_doc_id_idx") }
+func keywordIndexName(table string) string { return indexName(table, "_kw_fts_idx") }
+
+func indexName(table, suffix string) string {
+	// QuoteIndexName strips a schema qualifier AFTER this runs, so
+	// strip it here first: truncating the qualified spelling could cut
+	// the suffix off and hand two indexes of one table the same
+	// name, which CREATE INDEX IF NOT EXISTS then reads as "already
+	// there" and skips the second index.
+	if i := strings.LastIndexByte(table, '.'); i >= 0 {
+		table = table[i+1:]
 	}
-	if name != table {
-		return name
+	if len(table)+len(suffix) <= 63 {
+		return table + suffix
+	}
+	// Preserve earlier truncated names where their distinct suffix bytes
+	// survive. At 62 bytes both suffixes become "_"; retain the full
+	// suffix and shorten the table with a hash instead.
+	if len(table) <= 61 {
+		return (table + suffix)[:63]
 	}
 	h := fnv.New32a()
 	h.Write([]byte(table))
-	tag := fmt.Sprintf("_%08x_doc_id_idx", h.Sum32())
+	tag := fmt.Sprintf("_%08x%s", h.Sum32(), suffix)
 	return table[:63-len(tag)] + tag
 }
 
@@ -194,6 +210,15 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	docIdx := "CREATE INDEX IF NOT EXISTS " + s.quotedDocIdx + " ON " + s.quotedTable + " (doc_id)"
 	if _, err := s.db.ExecContext(ctx, docIdx); err != nil {
 		return fmt.Errorf("semantic: create doc_id index: %w", err)
+	}
+	// GIN index over the exact tsvector expression the keyword search
+	// filters on, so hybrid search's keyword leg is an index scan, not a
+	// full table scan that recomputes to_tsvector for every row on every
+	// query.
+	kwIdx := "CREATE INDEX IF NOT EXISTS " + s.quotedKwIdx + " ON " + s.quotedTable +
+		" USING GIN (to_tsvector('simple', text))"
+	if _, err := s.db.ExecContext(ctx, kwIdx); err != nil {
+		return fmt.Errorf("semantic: create keyword index: %w. Postgres 11+ ships GIN expression indexes; to_tsvector('simple', text) must match the search's predicate exactly", err)
 	}
 	return s.ensureModelTable(ctx)
 }
@@ -475,8 +500,11 @@ func (s *PgVectorStore) Stats() Stats {
 
 // ChunkIDsForDoc returns the IDs of every chunk belonging to docID. Part of
 // the [chunkLister] capability; used to purge a doc's keyword entries on
-// remove.
-func (s *PgVectorStore) ChunkIDsForDoc(docID string) []string {
+// remove. A database failure is returned, never folded into an empty
+// list: this list drives RemoveDoc's keyword purge, and a short list
+// read as complete would orphan keyword entries pointing at a doc that
+// is gone.
+func (s *PgVectorStore) ChunkIDsForDoc(docID string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), statsTimeout)
 	defer cancel()
 	rows, err := s.db.QueryContext(ctx,
@@ -484,26 +512,23 @@ func (s *PgVectorStore) ChunkIDsForDoc(docID string) []string {
 		docID,
 	)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("semantic: list chunks for doc %q: %w", docID, err)
 	}
 	defer rows.Close()
 	var ids []string
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
-			return nil
+			return nil, fmt.Errorf("semantic: list chunks for doc %q: %w", docID, err)
 		}
 		ids = append(ids, id)
 	}
 	// A failure part-way through Next stops the loop with no error of its
-	// own. Returning the short list would hand the caller a partial doc
-	// that reads as complete, and this list drives RemoveDoc's keyword
-	// purge: the orphaned entries would point at a doc that is gone. Fail
-	// the same way a scan error already does.
+	// own; hand it back instead of a partial list.
 	if err := rows.Err(); err != nil {
-		return nil
+		return nil, fmt.Errorf("semantic: list chunks for doc %q: %w", docID, err)
 	}
-	return ids
+	return ids, nil
 }
 
 // ChunkByID returns the chunk with the given ID. Part of chunkLister; used to

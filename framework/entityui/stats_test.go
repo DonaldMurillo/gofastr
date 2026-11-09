@@ -74,6 +74,9 @@ func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
 		{"invoices", "", "", "", ""},
 		{"invoices", "count", "", `status = "draft"`, ""},
 		{"invoices", "sum", "amount", `status = "draft"`, "money"},
+		{"invoices", "count", "", `status in ["open", "paid"]`, ""},
+		{"invoices", "count", "", `status != "draft"`, ""},
+		{"invoices", "count", "", `status contains "ai"`, ""},
 	} {
 		if err := x.ui.CheckStat(ok[0], ok[1], ok[2], ok[3], ok[4]); err != nil {
 			t.Errorf("CheckStat%q: %v", ok, err)
@@ -88,11 +91,56 @@ func TestCheckStatRefusesWhatCannotCompute(t *testing.T) {
 		"sum of no-query":    {"invoices", "sum", "cost", "", ""},
 		"count with a field": {"invoices", "count", "amount", "", ""},
 		"bad filter":         {"invoices", "count", "", `nope = 1`, ""},
+		"enum value":         {"invoices", "count", "", `status = "closed"`, ""},
+		"enum not-equal":     {"invoices", "count", "", `status != "closed"`, ""},
+		"enum in list":       {"invoices", "count", "", `status in ["open", "closed"]`, ""},
+		"enum in a group":    {"invoices", "count", "", `memo = "x" or status = "closed"`, ""},
 		"unknown format":     {"invoices", "sum", "amount", "", "euros"},
 		"money on a count":   {"invoices", "count", "", "", "money"},
 	} {
 		if err := x.ui.CheckStat(bad[0], bad[1], bad[2], bad[3], bad[4]); err == nil {
 			t.Errorf("%s: CheckStat%q passed", name, bad)
+		}
+	}
+}
+
+// CheckChart refuses at boot every group_by GroupBars, GroupSlices and
+// LineChart would draw as an empty chart for a reason no request can
+// change, and a no_query column the load refuses too.
+func TestCheckChartRefusesWhatCannotGroup(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(slices.Clone(inv.Fields),
+		schema.Field{Name: "secret", Type: schema.String, Hidden: true},
+		schema.Field{Name: "meta", Type: schema.JSON},
+	)
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows())
+	ctx := x.userCtx("/dash", "", "u1")
+	for _, ok := range []string{"status", "number", "issued_on", "customer_id"} {
+		if err := x.ui.CheckChart("invoices", ok); err != nil {
+			t.Errorf("CheckChart(invoices, %q): %v", ok, err)
+		}
+	}
+	for name, bad := range map[string][2]string{
+		"unknown entity": {"ghosts", "status"},
+		"no group_by":    {"invoices", ""},
+		"unknown field":  {"invoices", "nope"},
+		"hidden field":   {"invoices", "secret"},
+		"no-query field": {"invoices", "token"},
+		"json field":     {"invoices", "meta"},
+	} {
+		err := x.ui.CheckChart(bad[0], bad[1])
+		if err == nil {
+			t.Errorf("%s: CheckChart%q passed", name, bad)
+			continue
+		}
+		// Each refused shape but no_query draws an empty chart: the check
+		// names what the reader would only log.
+		if name != "no-query field" {
+			if bars := x.ui.GroupBars(ctx, bad[0], bad[1]); len(bars) != 0 {
+				t.Errorf("%s: GroupBars drew %v, so CheckChart refuses a chart that computes", name, bars)
+			}
 		}
 	}
 }

@@ -78,17 +78,17 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 	keyArgs := crud.toolKeyArgs()
 	defs := []toolDef{
 		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false, ""},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(keyArgs), crud.getTool(router), opRead, true, false, ""},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(crud.Entity, keyArgs), crud.getTool(router), opRead, true, false, ""},
 		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true, ""},
 		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
 	}
 	// One tool per non-system move, named by its key (the boot check
 	// keeps keys off the names above and the other reserved ones),
 	// posting to the move's route.
 	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
-		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
+		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
 	}
 	for _, def := range defs {
 		// Every tool carries the Access permission its route enforces
@@ -174,7 +174,9 @@ func (ch *CrudHandler) mcpBase() string {
 func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		values := make(url.Values)
-		for _, key := range []string{"page", "limit", "sort"} {
+		// per_page and offset ride with page/limit/sort: the route accepts
+		// both spellings, and listToolSchema advertises them (#669).
+		for _, key := range []string{"page", "limit", "per_page", "offset", "sort"} {
 			if v, ok := params[key]; ok {
 				values[key] = toolParamValues(v)
 			}
@@ -544,7 +546,9 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	if !ok {
 		return "", toolArgError("missing required param %q", key)
 	}
-	s := fmt.Sprint(value)
+	// toolParamString, not fmt.Sprint: an integer key arrives as float64
+	// and fmt.Sprint spells 1234567 as 1.234567e+06 (#669).
+	s := toolParamString(value)
 	if s == "" {
 		return "", toolArgError("param %q must not be empty", key)
 	}
@@ -588,11 +592,13 @@ func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string
 }
 
 // idToolSchema is the input of a tool that takes nothing but the record's
-// key arguments (toolKeyArgs).
-func idToolSchema(args []string) map[string]any {
+// key arguments (toolKeyArgs). Each argument is typed from the key column
+// it names: an integer key offers an integer prop, so a client sends a
+// number and not a quoted string (#669).
+func idToolSchema(ent *entity.Entity, args []string) map[string]any {
 	props := make(map[string]any, len(args))
 	for _, a := range args {
-		props[a] = map[string]any{"type": "string"}
+		props[a] = keyArgSchema(ent, a)
 	}
 	return map[string]any{
 		"type":       "object",
@@ -601,12 +607,37 @@ func idToolSchema(args []string) map[string]any {
 	}
 }
 
+// keyArgSchema types one record-key argument by the field its key column
+// declares. The single-column key's argument is "id" (toolKeyArgs), which
+// names the key column whatever it is called — and must resolve to THAT
+// column, never to an unrelated field that happens to be named "id"; a
+// name that matches no field stays a plain string.
+func keyArgSchema(ent *entity.Entity, arg string) map[string]any {
+	if arg == "id" && len(ent.KeyColumns()) == 1 {
+		col := ent.KeyColumns()[0]
+		for _, f := range ent.GetFields() {
+			if f.Name == col || mcpFieldKey(f) == col {
+				return mcpFieldSchema(f)
+			}
+		}
+		return map[string]any{"type": "string"}
+	}
+	for _, f := range ent.GetFields() {
+		if f.Name == arg || mcpFieldKey(f) == arg {
+			return mcpFieldSchema(f)
+		}
+	}
+	return map[string]any{"type": "string"}
+}
+
 func listToolSchema(ent *entity.Entity) map[string]any {
 	_, maximum := ListLimits(ent.Config.Pagination.MaxListLimit)
 	props := map[string]any{
-		"page":  map[string]any{"type": "integer", "minimum": 1},
-		"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": maximum},
-		"sort":  map[string]any{"type": "string"},
+		"page":     map[string]any{"type": "integer", "minimum": 1},
+		"limit":    map[string]any{"type": "integer", "minimum": 1, "maximum": maximum},
+		"per_page": map[string]any{"type": "integer", "minimum": 1, "maximum": maximum, "description": "Alias for limit; limit wins when both are sent."},
+		"offset":   map[string]any{"type": "integer", "minimum": 0, "description": "Rows to skip, replacing the page-derived skip (offset mode only)."},
+		"sort":     map[string]any{"type": "string"},
 	}
 	if len(ent.Config.SearchFields) > 0 {
 		props["q"] = map[string]any{"type": "string", "description": "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")}
@@ -685,7 +716,7 @@ func updateToolSchema(ent *entity.Entity, args []string) map[string]any {
 	out := bodyToolSchema(ent, true)
 	props := out["properties"].(map[string]any)
 	for _, a := range args {
-		props[a] = map[string]any{"type": "string"}
+		props[a] = keyArgSchema(ent, a)
 	}
 	out["required"] = slices.Clone(args)
 	return out

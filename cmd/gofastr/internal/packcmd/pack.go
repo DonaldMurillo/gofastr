@@ -443,6 +443,7 @@ func blockToMap(b appspec.AppSpecBlock) map[string]any {
 	putInt(m, "limit", b.Limit)
 	putBool(m, "create", b.Create)
 	putBool(m, "bulk", b.Bulk)
+	putStr(m, "filter", b.Filter)
 	putStr(m, "empty_text", b.EmptyText)
 	putStr(m, "class", b.Class)
 	putStr(m, "href", b.Href)
@@ -1063,7 +1064,7 @@ var (
 	entityOrder    = []string{"name", "table", "primary_key", "scope", "pagination", "exposure", "search_fields", "timestamps", "properties", "renames", "indices", "fields", "relations", "display", "states"}
 	fieldOrder     = []string{"name", "type", "required", "unique", "default", "max", "min", "pattern", "values", "to", "many", "auto_generate", "read_only", "hidden", "no_query"}
 	screenOrder    = []string{"name", "route", "title", "description", "type", "layout", "access", "body"}
-	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
+	blockOrder     = []string{"kind", "type", "text", "level", "entity", "fields", "limit", "create", "bulk", "filter", "empty_text", "class", "href", "mode", "island", "widget", "props", "children", "actions"}
 	relationOrder  = []string{"type", "name", "entity", "foreign_key", "through", "local_key", "foreign_key_target", "on_delete", "cascade_write", "hidden"}
 	indexOrder     = []string{"name", "columns", "unique"}
 	navOrder       = []string{"label", "href", "icon", "role", "items"}
@@ -1338,8 +1339,16 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	return nil
 }
 
-// packReadSeed reconstructs seed data from stubs.go seedData().
-func packReadSeed(dir string) ([]appspec.AppSpecSeedEntity, error) {
+// packReadSeed reconstructs seed data from stubs.go seedData(). The
+// emitted seedEntity carries the recipe beside the rows: Count generated
+// rows after Authored authored ones, shaped by Weights. Pack keeps the
+// authored rows and the recipe, and regenerates the rest to check them:
+// two recipes that expand to the same rows stay apart in the packed spec.
+// A generated row that was hand-edited no longer matches what the recipe
+// regenerates, so pack keeps every row as explicit data and drops the
+// recipe — the edit survives; regenerating from the packed spec keeps the
+// edited rows as authored ones.
+func packReadSeed(dir string, entities map[string]framework.EntityDeclaration) ([]appspec.AppSpecSeedEntity, error) {
 	path := filepath.Join(dir, "stubs.go")
 	if _, err := os.Stat(path); err != nil {
 		return nil, nil
@@ -1356,16 +1365,111 @@ func packReadSeed(dir string) ([]appspec.AppSpecSeedEntity, error) {
 	for _, el := range lit.Elts {
 		sv := appspec.FieldVals(el)
 		se := appspec.AppSpecSeedEntity{Entity: appspec.AstString(sv["Entity"])}
+		count, _ := appspec.AstInt(sv["Count"])
+		authored, _ := appspec.AstInt(sv["Authored"])
+		weights := packReadSeedWeights(sv["Weights"])
+		var rows []map[string]any
 		if rowsLit, ok := sv["Rows"].(*ast.CompositeLit); ok {
 			for _, rowEl := range rowsLit.Elts {
 				if m, ok := appspec.AstAny(rowEl).(map[string]any); ok {
-					se.Rows = append(se.Rows, m)
+					rows = append(rows, m)
 				}
 			}
 		}
+		se.Rows, se.Count, se.Weights = packSeedRecipeOrRows(se.Entity, rows, count, authored, weights, entities)
 		out = append(out, se)
 	}
 	return out, nil
+}
+
+// packSeedRecipeOrRows decides what one seedEntity's data means: a
+// verifiable recipe (authored rows + count + weights, the generated rows
+// regenerated and checked) or every row as explicit data with no recipe.
+// The recipe is dropped when it cannot be checked (no entity
+// declaration), does not line up with the rows (wrong count, rows beyond
+// the recipe), or a generated row was hand-edited.
+func packSeedRecipeOrRows(entity string, rows []map[string]any, count, authored int, weights map[string]map[string]int, entities map[string]framework.EntityDeclaration) ([]map[string]any, int, map[string]map[string]int) {
+	if count <= 0 || authored < 0 || authored > len(rows) || authored+count != len(rows) {
+		return rows, 0, nil
+	}
+	decl, known := entities[entity]
+	if !known {
+		return rows, 0, nil
+	}
+	want := appspec.AppSpecGenerateSeedRows(decl, count, weights)
+	for i, w := range want {
+		if !packSeedRowEqual(w, rows[authored+i]) {
+			return rows, 0, nil
+		}
+	}
+	return rows[:authored], count, weights
+}
+
+// packSeedRowEqual compares a regenerated row against the one read back
+// from stubs.go. The emitter writes ints as int literals and decimals as
+// strings; AstAny reads numbers back as int64/float64, so compare by the
+// value's canonical text, which is stable across both spellings.
+func packSeedRowEqual(want, got map[string]any) bool {
+	if len(want) != len(got) {
+		return false
+	}
+	for k, v := range want {
+		have, ok := got[k]
+		if !ok || fmt.Sprint(v) != fmt.Sprint(normalizeSeedNumber(have)) {
+			return false
+		}
+	}
+	return true
+}
+
+// normalizeSeedNumber renders int64 and float64 the emitter's %d/%%v
+// spellings would have produced, so a decoded 7 (int64) equals a
+// generated 7 (int).
+func normalizeSeedNumber(v any) any {
+	switch n := v.(type) {
+	case int64:
+		return int(n)
+	case float64:
+		if n == float64(int64(n)) {
+			return int64(n)
+		}
+	}
+	return v
+}
+
+// packReadSeedWeights reads the Weights map literal the emitter writes
+// (map[string]map[string]int, keys sorted). Anything else reads as nil.
+func packReadSeedWeights(e ast.Expr) map[string]map[string]int {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return nil
+	}
+	out := map[string]map[string]int{}
+	for _, colEl := range lit.Elts {
+		kv, ok := colEl.(*ast.KeyValueExpr)
+		if !ok {
+			return nil
+		}
+		col := appspec.AstString(kv.Key)
+		valsLit, ok := kv.Value.(*ast.CompositeLit)
+		if !ok {
+			return nil
+		}
+		vals := map[string]int{}
+		for _, valEl := range valsLit.Elts {
+			vkv, ok := valEl.(*ast.KeyValueExpr)
+			if !ok {
+				return nil
+			}
+			w, ok := appspec.AstInt(vkv.Value)
+			if !ok {
+				return nil
+			}
+			vals[appspec.AstString(vkv.Key)] = w
+		}
+		out[col] = vals
+	}
+	return out
 }
 
 // packReadNav reconstructs the sidebar nav from app.go
@@ -2594,7 +2698,7 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 		return appspec.AppSpecBlock{}, false
 	}
 	b := appspec.AppSpecBlock{}
-	noCreate, deletes := false, false
+	noCreate, deletes, wheres := false, false, 0
 	var omit []string
 	node := ast.Expr(call)
 	hops := 0
@@ -2665,6 +2769,22 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			noCreate = true
 		case "Bulk":
 			b.Bulk = true
+		case "Where":
+			// The pinned filter: one equality is the app spec's whole
+			// filter, so a second pin makes the chain irreversible (pack
+			// reports the screen instead of dropping a pin silently). Both
+			// arguments must be string literals — the spec's filter is an
+			// authored literal, and a pin by variable has no spelling.
+			wheres++
+			if wheres > 1 || len(c.Args) != 2 {
+				return appspec.AppSpecBlock{}, false
+			}
+			field, fieldOK := c.Args[0].(*ast.BasicLit)
+			value, valueOK := c.Args[1].(*ast.BasicLit)
+			if !fieldOK || !valueOK || field.Kind != token.STRING || value.Kind != token.STRING {
+				return appspec.AppSpecBlock{}, false
+			}
+			b.Filter = appspec.AstString(field) + "=" + appspec.AstString(value)
 		case "Heading":
 			if len(c.Args) >= 1 {
 				b.Text = appspec.AstString(c.Args[0])
@@ -2684,7 +2804,7 @@ func reverseEntityUI(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBl
 			// into the HTML the screen's stack takes; Actions, Related and
 			// RelatedAt are app-side extensions pack does not declare).
 			// NoLinks follows from the spec: the generator emits it on a
-			// list without create when the entity has no record screen,
+			// list whose entity has no record screen,
 			// so the packed spec regenerates it; a NoLinks written by hand
 			// on a list that has one is a difference pack check reports.
 		default:
@@ -3015,7 +3135,11 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	if bp.Nav, err = packReadNav(dir); err != nil {
 		return bp, err
 	}
-	if bp.Seed, err = packReadSeed(dir); err != nil {
+	seedEntities := make(map[string]framework.EntityDeclaration, len(bp.Entities))
+	for _, d := range bp.Entities {
+		seedEntities[d.Name] = d
+	}
+	if bp.Seed, err = packReadSeed(dir, seedEntities); err != nil {
 		return bp, err
 	}
 	if err = packReadStubs(dir, &bp); err != nil {

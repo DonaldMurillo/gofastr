@@ -2,6 +2,7 @@ package framework
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -308,10 +309,12 @@ func sqliteWAL(ctx context.Context, db *sql.DB) bool {
 }
 
 // ImportData restores an archive written by ExportData into the live database.
-// It validates the WHOLE archive before writing a single row (missing
-// manifest, unknown source, incompatible columns, checksum mismatch are all
+// It validates the archive's shape before writing a single row (a missing
+// manifest or file, an unknown source and incompatible columns are
 // rejected up front), then writes every source inside a single transaction,
-// rolling back on any error, parents before children (decision D4).
+// rolling back on any error, parents before children (decision D4). Each
+// file is read once, in that transaction: its checksum is checked on the
+// bytes it restores, and a mismatch rolls every source back.
 // Original ids/timestamps/owner/tenant and soft-deleted rows are preserved
 // verbatim.
 func (a *App) ImportData(ctx context.Context, dir string) error {
@@ -356,6 +359,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		cols []string     // archive columns, confirmed ⊆ live.columns
 		keys []string     // the archive columns holding the primary key
 		path string
+		sum  string // the manifest's checksum of the file at path
 		phys string // the table as the catalog spells it (physicalTable)
 	}
 	plans := make([]planned, 0, len(manifest.Entities))
@@ -394,13 +398,12 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		if err != nil {
 			return fmt.Errorf("framework: import: source %q: %w", ent.Name, err)
 		}
+		// The checksum is checked in the write phase, on the bytes it
+		// restores: checked here on a read of its own, a file swapped
+		// before the second read was restored unchecked.
 		ndjsonPath := filepath.Join(dir, ent.Name+".ndjson")
-		data, err := os.ReadFile(ndjsonPath)
-		if err != nil {
+		if _, err := os.Stat(ndjsonPath); err != nil {
 			return fmt.Errorf("framework: import: read %q: %w", ent.Name, err)
-		}
-		if sum := sha256Hex(data); sum != ent.SHA256 {
-			return fmt.Errorf("framework: import: source %q checksum mismatch (archive corrupt or tampered)", ent.Name)
 		}
 		// Resolved before the transaction opens: a single-connection pool
 		// would deadlock reading the catalog while the tx holds it.
@@ -411,7 +414,7 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 		if !exists {
 			return fmt.Errorf("framework: import: source %q table %q is not in the database", ent.Name, src.table)
 		}
-		plans = append(plans, planned{src: src, cols: cols, keys: keyCols, path: ndjsonPath, phys: phys})
+		plans = append(plans, planned{src: src, cols: cols, keys: keyCols, path: ndjsonPath, sum: ent.SHA256, phys: phys})
 	}
 	// Parents first, by the live schema (decision D4): the archive's own
 	// listing may predate that order.
@@ -439,7 +442,14 @@ func (a *App) ImportData(ctx context.Context, dir string) error {
 	}
 	var held []heldRefs
 	for _, p := range plans {
-		rows, err := readNDJSON(p.path)
+		data, err := os.ReadFile(p.path)
+		if err != nil {
+			return fmt.Errorf("framework: import: read %q: %w", p.src.name, err)
+		}
+		if sha256Hex(data) != p.sum {
+			return fmt.Errorf("framework: import: source %q checksum mismatch (archive corrupt or tampered)", p.src.name)
+		}
+		rows, err := decodeNDJSON(data)
 		if err != nil {
 			return fmt.Errorf("framework: import: parse %q: %w", p.src.name, err)
 		}
@@ -1443,19 +1453,15 @@ func (w *ndjsonFile) close() (string, error) {
 	return hex.EncodeToString(w.h.Sum(nil)), nil
 }
 
-// readNDJSON reads one JSON object per line into a slice of maps. Numbers
+// decodeNDJSON reads one JSON object per line into a slice of maps. Numbers
 // decode exactly (see jsonNumberValue): a float64 holds integers only up to
 // 2^53, so a BIGINT id or an amount in cents above that would restore as a
 // different value. A {"$bytes": base64} object decodes to the []byte it
 // tags, which binds as a BLOB or bytea; any other object or array is
 // refused.
-func readNDJSON(path string) ([]map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
+func decodeNDJSON(data []byte) ([]map[string]any, error) {
 	var out []map[string]any
-	dec := json.NewDecoder(strings.NewReader(string(data)))
+	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
 	for dec.More() {
 		var m map[string]any

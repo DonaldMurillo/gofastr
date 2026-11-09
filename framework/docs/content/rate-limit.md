@@ -32,8 +32,11 @@ mux.Handle("POST /api/checkout", checkoutLimit.Middleware()(checkoutHandler))
 ```
 
 `Middleware()` keys on the client IP by default. Over-limit responses are
-`429 Too Many Requests` with a `Retry-After` header (whole seconds); the body is
-a plain `rate limit exceeded`.
+`429 Too Many Requests` with a `Retry-After` header (whole seconds,
+rounded **up**, so a block with under a second left still answers
+`Retry-After: 1`, never `0`); the body is a plain `rate limit exceeded`.
+The auth battery's limiters (login, magic-link, password reset, 2FA)
+format the header the same way.
 
 ## Throttle by something other than IP
 

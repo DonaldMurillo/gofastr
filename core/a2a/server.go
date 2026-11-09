@@ -478,8 +478,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// The owner check precedes dispatch for every method, so no method
 	// — not even the card — leaks anything to an unidentified caller.
+	// An owner this dialect's SQL cannot store (a NUL byte or invalid
+	// UTF-8 read from the request) is refused the same way: it would
+	// 500 on the first task write instead of identifying the caller.
 	owner, ok := s.owner(r)
-	if !ok {
+	if !ok || !utf8.ValidString(owner) || strings.ContainsRune(owner, 0) {
 		s.writeTransport(w, http.StatusUnauthorized, ErrUnauthenticated())
 		return
 	}
@@ -492,27 +495,32 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dispatch(w http.ResponseWriter, r *http.Request, req *rpcRequest, owner string) {
+	sc := s.callerScope(r)
+	if sc.refused {
+		s.writeTransport(w, http.StatusUnauthorized, ErrUnauthenticated())
+		return
+	}
 	switch req.Method {
 	case MethodSendMessage:
 		s.handleSend(w, r, req, owner, false)
 	case MethodSendStreamingMessage:
 		s.handleSend(w, r, req, owner, true)
 	case MethodGetTask:
-		s.handleGetTask(w, r, req, owner, s.callerScope(r))
+		s.handleGetTask(w, r, req, owner, sc)
 	case MethodListTasks:
-		s.handleListTasks(w, r, req, owner, s.callerScope(r))
+		s.handleListTasks(w, r, req, owner, sc)
 	case MethodCancelTask:
-		s.handleCancelTask(w, r, req, owner, s.callerScope(r))
+		s.handleCancelTask(w, r, req, owner, sc)
 	case MethodSubscribeToTask:
 		s.handleSubscribe(w, r, req, owner)
 	case MethodCreateTaskPushNotificationConfig:
-		s.handleCreatePushConfig(w, r, req, owner, s.callerScope(r))
+		s.handleCreatePushConfig(w, r, req, owner, sc)
 	case MethodGetTaskPushNotificationConfig:
-		s.handleGetPushConfig(w, r, req, owner, s.callerScope(r))
+		s.handleGetPushConfig(w, r, req, owner, sc)
 	case MethodListTaskPushNotificationConfigs:
-		s.handleListPushConfigs(w, r, req, owner, s.callerScope(r))
+		s.handleListPushConfigs(w, r, req, owner, sc)
 	case MethodDeleteTaskPushNotificationConfig:
-		s.handleDeletePushConfig(w, r, req, owner, s.callerScope(r))
+		s.handleDeletePushConfig(w, r, req, owner, sc)
 	case MethodGetExtendedAgentCard:
 		s.handleExtendedCard(w, r, req, owner)
 	default:
@@ -1127,12 +1135,16 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 	if rerr == nil {
 		task.Metadata = map[string]any{"gofastr.skill": skillID}
 	}
+	sc := s.callerScope(r)
+	if sc.refused {
+		return nil, nil, nil, ErrUnauthenticated()
+	}
 	rec := &TaskRecord{
 		Task:      task,
 		Owner:     owner,
 		SkillID:   skillID,
-		Scope:     s.callerScope(r).key,
-		Tenant:    s.callerScope(r).tenant,
+		Scope:     sc.key,
+		Tenant:    sc.tenant,
 		CreatedAt: s.now(),
 		UpdatedAt: s.now(),
 	}
@@ -1200,7 +1212,11 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 		msg.MessageID = s.newID()
 	}
 	taskID := msg.TaskID
-	rec, err := s.getTask(r.Context(), owner, s.callerScope(r), taskID)
+	sc := s.callerScope(r)
+	if sc.refused {
+		return nil, nil, nil, ErrUnauthenticated()
+	}
+	rec, err := s.getTask(r.Context(), owner, sc, taskID)
 	if errors.Is(err, ErrNotFound) {
 		return nil, nil, nil, ErrTaskNotFound(taskID)
 	}
@@ -1971,6 +1987,11 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		s.writeResult(w, req.ID, nil, Errorf(CodeInvalidParams, "id is required"))
 		return
 	}
+	sc := s.callerScope(r)
+	if sc.refused {
+		s.writeResult(w, req.ID, nil, ErrUnauthenticated())
+		return
+	}
 	// Attach to the in-process run BEFORE reading the snapshot. The bus
 	// channel is buffered, so an event the handler publishes between this
 	// subscribe and the snapshot send is queued and forwarded after the
@@ -1994,7 +2015,6 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request, req *rp
 		ch  chan busEvent
 		rec *TaskRecord
 		err error
-		sc  = s.callerScope(r)
 	)
 	for try := 0; ; try++ {
 		if rn = s.runFor(p.ID); rn != nil {
@@ -2168,12 +2188,15 @@ var errStorePanicked = errors.New("a2a: store GetTask panicked")
 // unrecovered panic that takes down the process.
 // taskScope is the credential tier a caller holds: unscoped, or the
 // canonical key of the scopes its credential is narrowed to, plus the
-// tenant it acts in when the server has a Tenant hook.
+// tenant it acts in when the server has a Tenant hook. refused marks a
+// tenant the store cannot bind (a NUL byte or invalid UTF-8 read from
+// the request): such a request is refused, never filed or listed.
 type taskScope struct {
 	scoped   bool
 	key      string
 	tenanted bool
 	tenant   string
+	refused  bool
 }
 
 // sees reports whether a caller of this tier may reach rec: an unscoped
@@ -2206,7 +2229,15 @@ func ScopeKey(scopes []string) string {
 func (s *Server) callerScope(r *http.Request) taskScope {
 	var sc taskScope
 	if s.tenant != nil {
-		sc.tenanted, sc.tenant = true, s.tenant(r)
+		t := s.tenant(r)
+		// A tenant the store cannot bind can never scope a task: on
+		// Postgres it is SQLSTATE 22021 on the first write (a 500)
+		// where SQLite silently stores it. Refuse the request instead.
+		if !utf8.ValidString(t) || strings.ContainsRune(t, 0) {
+			sc.refused = true
+			return sc
+		}
+		sc.tenanted, sc.tenant = true, t
 	}
 	if s.scopes == nil {
 		return sc

@@ -35,7 +35,7 @@ func TestPackSeedRowKeyInjection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seeds, err := packReadSeed(dir)
+	seeds, err := packReadSeed(dir, nil)
 	if err != nil {
 		t.Fatalf("packReadSeed: %v", err)
 	}

@@ -41,6 +41,10 @@ func (b *Builder) Watch(ctx context.Context, watchDirs []string, interval time.D
 	if out, err := filepath.Abs(b.OutDir); err == nil && b.OutDir != "" {
 		state.skip = out
 	}
+	// Nor is the page manifest every build rewrites beside OutDir.
+	if dir, name, err := b.pageManifest(); err == nil && b.OutDir != "" {
+		state.skipFile = filepath.Join(dir, name)
+	}
 	state.scan(watchDirs)
 
 	ticker := time.NewTicker(interval)
@@ -67,6 +71,9 @@ type mtimeMap struct {
 	// skip is an absolute directory left out of every walk: the
 	// builder's OutDir.
 	skip string
+	// skipFile is an absolute file left out of every walk: OutDir's
+	// page manifest, which sits beside OutDir.
+	skipFile string
 }
 
 // skipped reports whether the walk leaves path's subtree out.
@@ -76,6 +83,15 @@ func (m *mtimeMap) skipped(path string, d os.DirEntry) bool {
 	}
 	abs, err := filepath.Abs(path)
 	return err == nil && abs == m.skip
+}
+
+// ignored reports whether the walk leaves the file at path out.
+func (m *mtimeMap) ignored(path string) bool {
+	if m.skipFile == "" {
+		return false
+	}
+	abs, err := filepath.Abs(path)
+	return err == nil && abs == m.skipFile
 }
 
 func newMtimeMap() *mtimeMap {
@@ -94,6 +110,9 @@ func (m *mtimeMap) scan(dirs []string) {
 			}
 			if m.skipped(path, de) {
 				return filepath.SkipDir
+			}
+			if m.ignored(path) {
+				return nil
 			}
 			info, err := os.Stat(path)
 			if err != nil || info.IsDir() {
@@ -122,6 +141,9 @@ func (m *mtimeMap) changed(dirs []string) bool {
 			}
 			if m.skipped(path, de) {
 				return filepath.SkipDir
+			}
+			if m.ignored(path) {
+				return nil
 			}
 			info, err := os.Stat(path)
 			if err != nil || info.IsDir() {

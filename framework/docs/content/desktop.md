@@ -324,7 +324,13 @@ an external link, `location.href = "https://…"`, a redirect to another
 host, a `data:` URL. The page stays where it was and the shell logs a
 warning naming the refused host (`desktop.NavigationHost`, which drops
 the path and query so an OAuth code in the URL is never logged).
-Iframes are not checked; the page's own CSP decides what it frames.
+macOS and Windows check the main frame only and leave iframes to the
+page's own CSP. WebKitGTK does not say which frame a navigation is for,
+so Linux checks every frame: a foreign iframe stays blank there and
+loads on the other two. The default CSP (`default-src 'self'` with no
+`frame-src`) already blocks foreign frames on every shell, so the
+difference shows only in an app that loosens `frame-src`. An
+`about:srcdoc` iframe sends no request and loads on all three.
 
 A foreign page in the app's window looks like the app to the user, and
 native events are evaluated into whatever the window shows, so the
@@ -342,7 +348,8 @@ How each shell enforces it:
 | macOS | `WKNavigationDelegate` `decidePolicyForNavigationAction` | Before the request, main frame only |
 | Windows | `ICoreWebView2::add_NavigationStarting` | Before the request and on each redirect; WebView2 raises it for the main frame only |
 | Windows | `ICoreWebView2::add_NewWindowRequested` | Every new-window request is marked handled. WebView2 would otherwise open a second web view with no navigation policy |
-| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | After the response arrives, before the page commits. WebKitGTK's navigation action has no main-frame flag, so a refused request still reaches the other host; nothing it returns renders |
+| Linux | `decide-policy` on the navigation action (`webkit_navigation_action_get_request`) | Before the request, for every navigation and new-window request. The action has no main-frame flag, so iframes are checked too; `about:srcdoc` passes |
+| Linux | `decide-policy` on the response (`webkit_response_policy_decision_is_main_frame_main_resource`) | The second line: the main frame's response, after a redirect, before the page commits |
 
 A custom `Shell` gets the policy as `WindowConfig.AllowNavigation` and
 must call it, on the UI thread, before a main-frame navigation commits;
@@ -352,7 +359,10 @@ A test checks the policy without a shell: `desktoptest.Harness`'s
 `AllowsNavigation(url)` runs the battery's check with the harness's
 bound address (`battery/desktop/navigation_policy_security_test.go`).
 The macOS e2e (`phaseForeignNavigation`) and the Linux graphical test
-(`TestNativeGTKWebKit`) drive a real web view at a second origin. The
+(`TestNativeGTKWebKit`) drive a real web view at a second origin; the
+Linux one also counts the requests that reach it, which must be none.
+The Linux rule itself, `refuseNavigation`, has no GTK in it and is
+tested on every OS (`battery/desktop/linux/navpolicy_test.go`). The
 Windows hooks have no test runner yet; `TestWindowsShellRefusesNewWindows`
 checks the shell's source.
 
@@ -386,7 +396,7 @@ The core capabilities:
 | `dialogs` | `openFile`, `saveFile`, `openFolder` | none (the user mediates every dialog; returned paths join the `fs` allow-list) |
 | `clipboard` | `readText`, `writeText` | `clipboard:read`, `clipboard:write` |
 | `notifications` | `show` | `notifications:show` |
-| `fs` | `readText`, `writeText`, `stat` | `fs:read`, `fs:write` |
+| `fs` | `readText`, `writeText`, `stat`, `list` | `fs:read` (`readText`, `stat`, `list`), `fs:write` |
 | `tray` | `setTitle` | none (the tray label is the app's own) |
 | `state` | `get`, `set`, `delete`, `keys` | none (page keys live under the `page.` prefix only; see "App state") |
 | `preferences` | `get`, `set` | none (only declared keys; the values live in the battery's own `settings` entry; see "Preferences") |
@@ -420,13 +430,25 @@ match `*.exe`, and `saveFile`'s `defaultName` is a file name, with no
 `/` or `\`. Filter names and the default name may not hold a NUL.
 
 `fs` only touches paths a `dialogs` call returned during this process
-(`Battery.AllowPath` for in-process grants). `openFolder` grants only `fs.stat`
-on the exact picked folder and nothing under the folder: no descendant
-`stat`, reads, or writes. It does not grant directory traversal or listing.
+(`Battery.AllowPath` and `Battery.AllowFolder` for in-process grants).
 `openFile` and `saveFile` grant only the exact returned file paths for
 `fs.stat`, `fs.readText`, and `fs.writeText`; neither grants siblings or a
-parent directory. All picks retain the same least-authority `AllowPath`
-grant; a folder pick does not create a prefix grant. The path must arrive in
+parent directory.
+
+`openFolder` grants `fs.stat`, `fs.readText` and `fs.list` on the picked
+folder and everything under it, and never `fs.writeText`: a page that
+wants to save into the folder asks for a `saveFile` dialog. A request
+under the folder is opened through an `os.Root` at the folder's symlink
+resolution taken at the pick, so a symlink or `..` inside it cannot
+reach a file outside; such a path answers `denied` like any path off
+the list. A symlink that stays inside the folder is followed. If the
+picked path has since been replaced by a link to another folder, every
+request under it is refused. `fs.list` answers `{"entries": [{"name",
+"isDir"}], "truncated"}`, sorted by name; past 10000 entries it returns
+the first 10000 the directory yields and sets `truncated`. It lists
+only under a picked folder, never an exact `AllowPath` grant.
+
+A path must arrive in
 the exact cleaned absolute form the dialog returned: `a/link/../x` or
 `a//x` is refused even when it cleans to a grant, because the OS opens
 the raw string and walks `link/..` through the link. Its live symlink
@@ -968,6 +990,17 @@ while the setting is on. CSS reads the classes; no component ships
 JavaScript for them. Go hosts get the same signals through
 `WindowConfig.OnWindowFocus`, `OnWindowBlur`, and `OnAppearance`,
 which the battery fills.
+
+Every shell sends `window_focus` and `window_blur`: macOS from the
+key-window delegates, Linux from GTK's `focus-in-event` and
+`focus-out-event`, Windows from `WM_ACTIVATE`. The battery drops the
+reports a shell makes before its first window is registered. A window
+manager may still report the first activation after that, once the
+page has loaded, so `window_focus` may arrive once at startup on some
+platforms (some Linux compositors) and not on others. That event is
+true, the window did become active, but it is not the user's doing.
+Treat `window_focus` as a change of state, not a count of activations:
+a page that wants the current state reads `document.hasFocus()`.
 
 ### The desktop theme
 

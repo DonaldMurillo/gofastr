@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math"
 	"net/http"
 	"reflect"
@@ -462,7 +463,11 @@ func toString(v any) string {
 	case float64:
 		return strconv.FormatFloat(val, 'f', -1, 64)
 	default:
-		b, _ := json.Marshal(val)
+		b, err := json.Marshal(val)
+		if err != nil {
+			slog.Warn("pagination: encode keyset value", "error", err)
+			return ""
+		}
 		return string(b)
 	}
 }

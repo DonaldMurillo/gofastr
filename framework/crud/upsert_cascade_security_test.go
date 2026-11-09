@@ -3,22 +3,27 @@ package crud
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
-	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
+
+// UpsertOne runs cascade writes under the rules of the arm it takes: the
+// insert arm writes nested relations as CreateOne does, the conflict arm
+// as UpdateOne does. Each test here runs one body through UpsertOne and
+// through that control write, each on a fresh fixture, and wants the same
+// answer and the same rows. Upsert used to commit the parent alone and
+// drop the nested values, and then refused them (#669 decided cascades
+// run instead).
 
 func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase, extraFields ...schema.Field) (*CrudHandler, *sql.DB) {
 	t.Helper()
@@ -30,8 +35,16 @@ func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase, extraFiel
 	notes := entity.Define("notes", entity.EntityConfig{
 		Fields: []schema.Field{{Name: "id", Type: schema.String}, {Name: "post_id", Type: schema.String}, {Name: "body_text", Type: schema.String}},
 	}.WithTimestamps(false))
+	fields := []schema.Field{{Name: "id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "note_id", Type: schema.String}}
+	for _, extra := range extraFields {
+		if i := slices.IndexFunc(fields, func(f schema.Field) bool { return f.Name == extra.Name }); i >= 0 {
+			fields[i] = extra
+		} else {
+			fields = append(fields, extra)
+		}
+	}
 	posts := entity.Define("posts", entity.EntityConfig{
-		Fields: append([]schema.Field{{Name: "id", Type: schema.String}, {Name: "title", Type: schema.String}, {Name: "note_id", Type: schema.String}}, extraFields...),
+		Fields: fields,
 		Relations: []entity.Relation{
 			entity.HasMany("child_rows", "notes", "post_id").WithCascadeWrite(true),
 			entity.HasOne("profile_row", "notes", "post_id").WithCascadeWrite(true),
@@ -46,101 +59,136 @@ func upsertCascadeFixture(t *testing.T, arm string, jsonCase JSONCase, extraFiel
 	seedRows(t, database, "notes", []map[string]any{{"id": "child", "body_text": "before-child"}})
 	if arm == "conflict" {
 		seedRows(t, database, "posts", []map[string]any{{"id": "parent", "title": "before"}})
+		// An update writes a has-one or has-many child by its id, and the
+		// child must already be the parent's.
+		seedRows(t, database, "notes", []map[string]any{{"id": "kid", "post_id": "parent", "body_text": "before-kid"}})
 	}
 	return handler, database
 }
 
-func checkUpsertCascadeRows(t *testing.T, database *sql.DB, arm string, refused bool) {
+// upsertCascadeState is every row of the fixture's three tables, in key
+// order.
+func upsertCascadeState(t *testing.T, database *sql.DB) string {
 	t.Helper()
-	wantCount, wantTitle := 1, "after"
-	if refused {
-		wantCount, wantTitle = 0, ""
-		if arm == "conflict" {
-			wantCount, wantTitle = 1, "before"
+	var out strings.Builder
+	for _, q := range []string{
+		`SELECT id || '|' || COALESCE(title, '') || '|' || COALESCE(note_id, '') FROM posts ORDER BY id`,
+		`SELECT id || '|' || COALESCE(post_id, '') || '|' || COALESCE(body_text, '') FROM notes ORDER BY id`,
+		`SELECT post_id || '|' || note_id FROM post_notes ORDER BY post_id, note_id`,
+	} {
+		rows, err := database.Query(q)
+		if err != nil {
+			t.Fatal(err)
 		}
+		for rows.Next() {
+			var line string
+			if err := rows.Scan(&line); err != nil {
+				t.Fatal(err)
+			}
+			out.WriteString(line + "\n")
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		rows.Close()
+		out.WriteString("--\n")
 	}
-	var count int
-	var title string
-	if err := database.QueryRow(`SELECT COUNT(*), COALESCE(MAX(title), '') FROM posts`).Scan(&count, &title); err != nil {
-		t.Fatal(err)
-	}
-	if count != wantCount || title != wantTitle {
-		t.Errorf("parent rows = %d, title = %q; want %d, %q", count, title, wantCount, wantTitle)
-	}
-	var childBody string
-	if err := database.QueryRow(`SELECT COUNT(*), MAX(body_text) FROM notes`).Scan(&count, &childBody); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 || childBody != "before-child" {
-		t.Errorf("child rows = %d, body = %q; want 1, before-child", count, childBody)
-	}
-	if err := database.QueryRow(`SELECT COUNT(*) FROM post_notes`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Errorf("upsert wrote %d pivot rows", count)
-	}
+	return out.String()
 }
 
-func checkUpsertCascadeError(t *testing.T, err error, relations ...string) {
-	t.Helper()
+// violationKeys is a ValidationError's fields with each one's reason keys.
+func violationKeys(err error) map[string][]string {
 	var validation *ValidationError
 	if !errors.As(err, &validation) {
-		t.Errorf("upsert error = %v, want ValidationError naming %v", err, relations)
-		return
+		return nil
 	}
-	fields := validation.Fields()
-	if len(fields) != len(relations) {
-		t.Errorf("validation fields = %v, want exactly %v", fields, relations)
-	}
-	for _, relation := range relations {
-		violations := fields[relation]
-		if len(violations) != 1 || violations[0].Reason.Key() != "validation.cascade_upsert_unsupported" {
-			t.Errorf("%s violations = %v, want cascade_upsert_unsupported", relation, violations)
+	out := map[string][]string{}
+	for field, violations := range validation.Fields() {
+		for _, v := range violations {
+			out[field] = append(out[field], v.Reason.Key())
 		}
+	}
+	return out
+}
+
+// checkUpsertMatchesControl runs body through UpsertOne and through the
+// arm's control write (CreateOne on insert, UpdateOne on conflict) on
+// fresh fixtures. hookAdds is set into the body by a BeforeCreate hook on
+// the upsert, and straight into the control's body: an update runs no
+// BeforeCreate. It returns the upsert's result.
+func checkUpsertMatchesControl(t *testing.T, arm string, jsonCase JSONCase, fields []schema.Field, body, hookAdds map[string]any) map[string]any {
+	t.Helper()
+	control, controlDB := upsertCascadeFixture(t, arm, jsonCase, fields...)
+	controlBody := maps.Clone(body)
+	maps.Copy(controlBody, hookAdds)
+	var want map[string]any
+	var wantErr error
+	if arm == "insert" {
+		want, wantErr = control.CreateOne(context.Background(), controlBody)
+	} else {
+		want, wantErr = control.UpdateOne(context.Background(), "parent", controlBody)
+	}
+
+	handler, database := upsertCascadeFixture(t, arm, jsonCase, fields...)
+	afterHooks := 0
+	handler.Hooks = hook.NewHookRegistry()
+	handler.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
+		maps.Copy(data.(map[string]any), hookAdds)
+		return nil
+	})
+	for _, phase := range []hook.HookType{hook.AfterCreate, hook.AfterUpdate} {
+		handler.Hooks.RegisterHook(phase, func(context.Context, any) error { afterHooks++; return nil })
+	}
+	got, err := handler.UpsertOne(context.Background(), maps.Clone(body))
+
+	switch {
+	case (err == nil) != (wantErr == nil):
+		t.Fatalf("%s upsert = %v, %v; control = %v, %v", arm, got, err, want, wantErr)
+	case err != nil:
+		if gotKeys, wantKeys := violationKeys(err), violationKeys(wantErr); !reflect.DeepEqual(gotKeys, wantKeys) || (gotKeys == nil && err.Error() != wantErr.Error()) {
+			t.Errorf("%s upsert error = %v (%v), control = %v (%v)", arm, err, gotKeys, wantErr, wantKeys)
+		}
+	default:
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s upsert = %v, control = %v", arm, got, want)
+		}
+		if afterHooks != 1 {
+			t.Errorf("%s upsert ran %d after hooks, want 1", arm, afterHooks)
+		}
+	}
+	if gotState, wantState := upsertCascadeState(t, database), upsertCascadeState(t, controlDB); gotState != wantState {
+		t.Errorf("%s upsert left rows\n%s\ncontrol left\n%s", arm, gotState, wantState)
+	}
+	return got
+}
+
+// cascadeValues are the nested values each relation kind takes, with the
+// null that is no nested write.
+func cascadeValues(relation entity.Relation) []any {
+	nested := map[string]any{"id": "new-child", "body_text": "nested child"}
+	switch relation.Type {
+	case entity.RelHasMany:
+		return []any{nil, []any{nested}, []any{}, []any{map[string]any{"id": "child", "body_text": "after-child"}}}
+	case entity.RelManyToMany:
+		return []any{nil, []any{"child"}, []any{}, []any{nested}}
+	default:
+		return []any{nil, nested, map[string]any{"id": "child", "body_text": "after-child"}, map[string]any{}, ""}
 	}
 }
 
-func TestUpsertRefusesCascadeKeys(t *testing.T) {
-	for _, arm := range []string{"insert", "conflict"} {
-		for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
-			fixture, _ := upsertCascadeFixture(t, arm, jsonCase)
-			for _, relation := range fixture.Entity.Config.Relations {
-				child := map[string]any{"id": "child", "body_text": "after-child"}
-				var nested any = child
-				var empty any = map[string]any{}
-				if relation.Type == entity.RelHasMany || relation.Type == entity.RelManyToMany {
-					nested, empty = []any{child}, []any{}
+func TestUpsertCascadesMatchCreateAndUpdate(t *testing.T) {
+	for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
+		fixture, _ := upsertCascadeFixture(t, "insert", jsonCase)
+		for _, relation := range fixture.Entity.Config.Relations {
+			keys := []string{relation.Name, fixture.convertKey(relation.Name), casing.ToSnake(fixture.convertKey(relation.Name))}
+			for keyIndex, key := range keys {
+				if slices.Contains(keys[:keyIndex], key) {
+					continue
 				}
-				keys := []string{relation.Name, fixture.convertKey(relation.Name), casing.ToSnake(fixture.convertKey(relation.Name))}
-				for keyIndex, key := range keys {
-					if slices.Contains(keys[:keyIndex], key) {
-						continue
-					}
-					for _, value := range []struct {
-						name    string
-						body    any
-						refused bool
-					}{{"nested", nested, true}, {"empty", empty, true}, {"blank", "", true}, {"null", nil, false}} {
-						t.Run(fmt.Sprintf("%s/%s/%s/%s", arm, jsonCase, key, value.name), func(t *testing.T) {
-							handler, database := upsertCascadeFixture(t, arm, jsonCase)
-							calls := 0
-							handler.Hooks = hook.NewHookRegistry()
-							for _, phase := range []hook.HookType{hook.BeforeCreate, hook.AfterCreate, hook.AfterUpdate} {
-								handler.Hooks.RegisterHook(phase, func(context.Context, any) error { calls++; return nil })
-							}
-							body := map[string]any{"id": "parent", "title": "after", key: value.body}
-							original := maps.Clone(body)
-							result, err := handler.UpsertOne(context.Background(), body)
-							if value.refused {
-								checkUpsertCascadeError(t, err, relation.Name)
-								if result != nil || calls != 0 || !reflect.DeepEqual(body, original) {
-									t.Errorf("refused upsert changed state: result=%v hooks=%d body=%v", result, calls, body)
-								}
-							} else if err != nil || result["title"] != "after" || calls != 2 {
-								t.Errorf("null relation upsert = %v, %v, hooks=%d; want parent write", result, err, calls)
-							}
-							checkUpsertCascadeRows(t, database, arm, value.refused)
+				for valueIndex, value := range cascadeValues(relation) {
+					for _, arm := range []string{"insert", "conflict"} {
+						t.Run(fmt.Sprintf("%s/%s/%d/%s", jsonCase, key, valueIndex, arm), func(t *testing.T) {
+							checkUpsertMatchesControl(t, arm, jsonCase, nil, map[string]any{"id": "parent", "title": "after", key: value}, nil)
 						})
 					}
 				}
@@ -149,69 +197,106 @@ func TestUpsertRefusesCascadeKeys(t *testing.T) {
 	}
 }
 
-func TestUpsertNamesAllCascades(t *testing.T) {
-	catalog := i18n.NewMapCatalog()
-	catalog.Set("es", "validation.cascade_upsert_unsupported", i18n.Message{Text: "use CreateOne o UpdateOne para escrituras anidadas"})
-	ctx := i18n.WithContext(context.Background(), i18n.Locale{Tag: "es"})
-	ctx = i18n.WithTranslator(ctx, i18n.NewTranslator(catalog, "en"))
-	for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
-		t.Run(string(jsonCase), func(t *testing.T) {
-			handler, database := upsertCascadeFixture(t, "insert", jsonCase)
-			body := map[string]any{"id": "parent", "title": "after"}
-			var relations []string
-			for _, relation := range handler.Entity.Config.Relations {
-				body[handler.convertKey(relation.Name)] = map[string]any{}
-				relations = append(relations, relation.Name)
+// The insert arm and the conflict arm take different rules for one body:
+// a belongs_to child carrying an existing id is created again on insert
+// (a create always creates) and updated in place on conflict.
+func TestUpsertCascadeTakesItsArmsRules(t *testing.T) {
+	body := map[string]any{"id": "parent", "title": "after", "lead_row": map[string]any{"id": "child", "body_text": "after-child"}}
+	for _, arm := range []string{"insert", "conflict"} {
+		t.Run(arm, func(t *testing.T) {
+			got := checkUpsertMatchesControl(t, arm, CaseSnake, nil, body, nil)
+			if arm == "conflict" && (got == nil || got["lead_row"] == nil) {
+				t.Fatalf("conflict upsert = %v, want the updated lead_row attached", got)
 			}
-			_, err := handler.UpsertOne(ctx, body)
-			checkUpsertCascadeError(t, err, relations...)
-			if err == nil {
-				return
-			}
-			response := httptest.NewRecorder()
-			writeCRUDError(response, syntheticRequest(ctx, http.MethodPost, "/"), err, handler.convertKey)
-			var envelope struct {
-				Fields       map[string][]string `json:"fields"`
-				FieldReasons map[string][]string `json:"field_reasons"`
-			}
-			if decodeErr := json.Unmarshal(response.Body.Bytes(), &envelope); decodeErr != nil {
-				t.Fatal(decodeErr)
-			}
-			if response.Code != http.StatusBadRequest || len(envelope.Fields) != len(relations) || len(envelope.FieldReasons) != len(relations) {
-				t.Fatalf("validation response = %d %s", response.Code, response.Body.String())
-			}
-			for _, relation := range relations {
-				key := handler.convertKey(relation)
-				if !reflect.DeepEqual(envelope.Fields[key], []string{"use CreateOne o UpdateOne para escrituras anidadas"}) ||
-					!reflect.DeepEqual(envelope.FieldReasons[key], []string{"cascade_upsert_unsupported"}) {
-					t.Errorf("%s validation response = %s", key, response.Body.String())
-				}
-			}
-			checkUpsertCascadeRows(t, database, "insert", true)
 		})
 	}
 }
 
-func TestUpsertRefusesHookCascadeKeys(t *testing.T) {
+// A Required foreign key a belongs_to cascade fills is not missing: the
+// upsert validates the parent before it knows its arm, and the cascade
+// runs after, as a create fills the key before it validates.
+func TestUpsertCascadeFillsRequiredKey(t *testing.T) {
+	fields := []schema.Field{{Name: "note_id", Type: schema.String, Required: true}}
 	for _, arm := range []string{"insert", "conflict"} {
-		fixture, _ := upsertCascadeFixture(t, arm, CaseCamel)
-		for _, relation := range fixture.Entity.Config.Relations {
-			t.Run(arm+"/"+relation.Name, func(t *testing.T) {
-				handler, database := upsertCascadeFixture(t, arm, CaseCamel)
-				handler.Hooks = hook.NewHookRegistry()
-				handler.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
-					data.(map[string]any)[handler.convertKey(relation.Name)] = map[string]any{}
-					return nil
-				})
-				_, err := handler.UpsertOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
-				checkUpsertCascadeError(t, err, relation.Name)
-				checkUpsertCascadeRows(t, database, arm, true)
+		t.Run(arm, func(t *testing.T) {
+			got := checkUpsertMatchesControl(t, arm, CaseSnake, fields,
+				map[string]any{"id": "parent", "title": "after", "lead_row": map[string]any{"id": "child", "body_text": "lead"}}, nil)
+			if arm == "insert" && got != nil {
+				t.Fatalf("insert upsert = %v; a create of an existing child id is refused", got)
+			}
+			if arm == "conflict" && (got == nil || got["note_id"] != "child") {
+				t.Fatalf("conflict upsert = %v, want note_id child", got)
+			}
+		})
+	}
+	t.Run("new child", func(t *testing.T) {
+		got := checkUpsertMatchesControl(t, "insert", CaseSnake, fields,
+			map[string]any{"id": "parent", "title": "after", "lead_row": map[string]any{"id": "fresh", "body_text": "lead"}}, nil)
+		if got == nil || got["note_id"] != "fresh" {
+			t.Fatalf("insert upsert = %v, want note_id fresh", got)
+		}
+	})
+}
+
+// A conflict whose body writes only nested rows is an update, as an
+// UpdateOne carrying only cascades is: its after hook runs once.
+func TestUpsertCascadeOnlyConflictIsAWrite(t *testing.T) {
+	for _, rel := range []string{"child_rows", "_tags"} {
+		t.Run(rel, func(t *testing.T) {
+			var nested any = []any{map[string]any{"id": "kid", "body_text": "after-kid"}}
+			if rel == "_tags" {
+				nested = []any{"child"}
+			}
+			got := checkUpsertMatchesControl(t, "conflict", CaseSnake, nil, map[string]any{"id": "parent", rel: nested}, nil)
+			if got == nil || got[rel] == nil {
+				t.Fatalf("conflict upsert = %v, want %s attached", got, rel)
+			}
+		})
+	}
+}
+
+func TestUpsertCascadesEveryRelationAtOnce(t *testing.T) {
+	for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
+		for _, arm := range []string{"insert", "conflict"} {
+			t.Run(string(jsonCase)+"/"+arm, func(t *testing.T) {
+				handler, _ := upsertCascadeFixture(t, arm, jsonCase)
+				body := map[string]any{"id": "parent", "title": "after"}
+				for _, relation := range handler.Entity.Config.Relations {
+					body[handler.convertKey(relation.Name)] = cascadeValues(relation)[1]
+				}
+				// The insert arm creates every child. The conflict arm
+				// updates them, as UpdateOne does, so it names seeded ones.
+				manyID, oneID, leadID := "many-child", "one-child", "lead-child"
+				if arm == "conflict" {
+					manyID, oneID, leadID = "kid", "kid", "child"
+				}
+				body[handler.convertKey("child_rows")] = []any{map[string]any{"id": manyID, "body_text": "many"}}
+				body[handler.convertKey("profile_row")] = map[string]any{"id": oneID, "body_text": "one"}
+				body[handler.convertKey("lead_row")] = map[string]any{"id": leadID, "body_text": "lead"}
+				got := checkUpsertMatchesControl(t, arm, jsonCase, nil, body, nil)
+				for _, relation := range handler.Entity.Config.Relations {
+					if got[handler.convertKey(relation.Name)] == nil {
+						t.Errorf("upsert result has no %s: %v", relation.Name, got)
+					}
+				}
 			})
 		}
 	}
 }
 
-func TestUpsertAllowsNonCascadeKeys(t *testing.T) {
+func TestUpsertCascadesHookValues(t *testing.T) {
+	for _, arm := range []string{"insert", "conflict"} {
+		fixture, _ := upsertCascadeFixture(t, arm, CaseCamel)
+		for _, relation := range fixture.Entity.Config.Relations {
+			t.Run(arm+"/"+relation.Name, func(t *testing.T) {
+				checkUpsertMatchesControl(t, arm, CaseCamel, nil, map[string]any{"id": "parent", "title": "after"},
+					map[string]any{fixture.convertKey(relation.Name): cascadeValues(relation)[1]})
+			})
+		}
+	}
+}
+
+func TestUpsertIgnoresNonCascadeKeys(t *testing.T) {
 	for _, arm := range []string{"insert", "conflict"} {
 		t.Run(arm, func(t *testing.T) {
 			handler, database := upsertCascadeFixture(t, arm, CaseCamel)
@@ -223,22 +308,30 @@ func TestUpsertAllowsNonCascadeKeys(t *testing.T) {
 			}
 			result, err := handler.UpsertOne(context.Background(), body)
 			if err != nil || result["title"] != "after" {
-				t.Errorf("non-cascade upsert = %v, %v; want parent write", result, err)
+				t.Fatalf("non-cascade upsert = %v, %v; want parent write", result, err)
 			}
-			checkUpsertCascadeRows(t, database, arm, false)
+			want := "parent|after|\n--\nchild||before-child\n--\n--\n"
+			if arm == "conflict" {
+				want = "parent|after|\n--\nchild||before-child\nkid|parent|before-kid\n--\n--\n"
+			}
+			if state := upsertCascadeState(t, database); state != want {
+				t.Errorf("non-cascade upsert left rows\n%s", state)
+			}
 		})
 	}
 }
 
-func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema.Field, body map[string]any, wantCascades ...string) {
-	test.Helper()
-	creator, createDB := upsertCascadeFixture(test, "insert", jsonCase, fields...)
+// createCascades is the relations a CreateOne of body treated as nested
+// writes, so a key-spelling test can say which it expects.
+func createCascades(t *testing.T, fields []schema.Field, body map[string]any) []string {
+	t.Helper()
+	creator, _ := upsertCascadeFixture(t, "insert", CaseCamel, fields...)
 	if err := creator.Entity.Validate(); err != nil {
-		test.Fatal(err)
+		t.Fatal(err)
 	}
 	created, err := creator.CreateOne(context.Background(), maps.Clone(body))
 	if err != nil {
-		test.Fatalf("create control: %v", err)
+		t.Fatalf("create control: %v", err)
 	}
 	var cascades []string
 	for _, relation := range creator.Entity.Config.Relations {
@@ -247,143 +340,113 @@ func checkUpsertCreateParity(test *testing.T, jsonCase JSONCase, fields []schema
 			cascades = append(cascades, relation.Name)
 		}
 	}
-	if !slices.Equal(cascades, wantCascades) {
-		test.Fatalf("create cascades = %v, want %v", cascades, wantCascades)
-	}
-	var children int
-	if err := createDB.QueryRow(`SELECT COUNT(*) FROM notes WHERE id = 'new-child'`).Scan(&children); err != nil {
-		test.Fatal(err)
-	}
-	if children != 0 && len(cascades) == 0 {
-		test.Fatal("create wrote a child without returning its cascade")
-	}
-	for _, arm := range []string{"insert", "conflict"} {
-		for _, withHooks := range []bool{false, true} {
-			test.Run(fmt.Sprintf("%s/hooks=%t", arm, withHooks), func(test *testing.T) {
-				handler, database := upsertCascadeFixture(test, arm, jsonCase, fields...)
-				calls := 0
-				if withHooks {
-					handler.Hooks = hook.NewHookRegistry()
-					for _, phase := range []hook.HookType{hook.BeforeCreate, hook.AfterCreate, hook.AfterUpdate} {
-						handler.Hooks.RegisterHook(phase, func(context.Context, any) error { calls++; return nil })
-					}
-				}
-				input := maps.Clone(body)
-				result, err := handler.UpsertOne(context.Background(), input)
-				refused := len(cascades) != 0
-				if refused {
-					checkUpsertCascadeError(test, err, cascades...)
-					if result != nil || calls != 0 || !reflect.DeepEqual(input, body) {
-						test.Errorf("refused upsert changed state: result=%v hooks=%d body=%v", result, calls, input)
-					}
-				} else {
-					if err != nil {
-						test.Fatalf("create accepted a scalar body, upsert refused it: %v", err)
-					}
-					if !reflect.DeepEqual(result, created) {
-						test.Errorf("upsert = %v, want create's scalar result %v", result, created)
-					}
-					if withHooks && calls != 2 {
-						test.Errorf("scalar upsert ran %d hooks, want 2", calls)
-					}
-					if arm == "conflict" {
-						updater, _ := upsertCascadeFixture(test, arm, jsonCase, fields...)
-						updated, updateErr := updater.UpdateOne(context.Background(), "parent", maps.Clone(body))
-						if updateErr != nil || !reflect.DeepEqual(updated, result) {
-							test.Errorf("update control = %v, %v; want %v", updated, updateErr, result)
-						}
-					}
-				}
-				checkUpsertCascadeRows(test, database, arm, refused)
-			})
-		}
-	}
+	return cascades
 }
 
-func TestUpsertNormalizesCascadeKeys(test *testing.T) {
+func TestUpsertNormalizesCascadeKeys(t *testing.T) {
 	for _, relation := range []string{"child_rows", "profile_row"} {
-		test.Run(relation, func(test *testing.T) {
+		t.Run(relation, func(t *testing.T) {
 			var nested any = map[string]any{"id": "new-child", "body_text": "nested child"}
 			if relation == "child_rows" {
 				nested = []any{nested}
 			}
-			checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: casing.ToCamel(relation), WireName: "nestedValue", Type: schema.JSON, Hidden: true}}, map[string]any{
-				"id": "parent", "title": "after", "nestedValue": nested,
-			}, relation)
+			fields := []schema.Field{{Name: casing.ToCamel(relation), WireName: "nestedValue", Type: schema.JSON, Hidden: true}}
+			body := map[string]any{"id": "parent", "title": "after", "nestedValue": nested}
+			if got := createCascades(t, fields, body); !slices.Equal(got, []string{relation}) {
+				t.Fatalf("create cascades = %v, want %s", got, relation)
+			}
+			for _, arm := range []string{"insert", "conflict"} {
+				checkUpsertMatchesControl(t, arm, CaseCamel, fields, body, nil)
+			}
 		})
 	}
-	test.Run("relation_wire_name", func(test *testing.T) {
-		checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: "tag_label", WireName: "_tags", Type: schema.JSON, Hidden: true}}, map[string]any{
-			"id": "parent", "title": "after", "_tags": []any{"child"},
-		}, "_tags")
+	t.Run("relation_wire_name", func(t *testing.T) {
+		fields := []schema.Field{{Name: "tag_label", WireName: "_tags", Type: schema.JSON, Hidden: true}}
+		body := map[string]any{"id": "parent", "title": "after", "_tags": []any{"child"}}
+		if got := createCascades(t, fields, body); !slices.Equal(got, []string{"_tags"}) {
+			t.Fatalf("create cascades = %v, want _tags", got)
+		}
+		for _, arm := range []string{"insert", "conflict"} {
+			checkUpsertMatchesControl(t, arm, CaseCamel, fields, body, nil)
+		}
 	})
 }
 
-func TestUpsertKeepsScalarAliases(test *testing.T) {
+func TestUpsertKeepsScalarAliases(t *testing.T) {
 	for _, alias := range []string{"tags", "Tags"} {
 		for _, key := range []string{alias, "tag_label"} {
-			test.Run(alias+"/"+key, func(test *testing.T) {
-				checkUpsertCreateParity(test, CaseCamel, []schema.Field{{Name: "tag_label", WireName: alias, Type: schema.String}}, map[string]any{
-					"id": "parent", "title": "after", key: "plain scalar",
-				})
+			t.Run(alias+"/"+key, func(t *testing.T) {
+				fields := []schema.Field{{Name: "tag_label", WireName: alias, Type: schema.String}}
+				body := map[string]any{"id": "parent", "title": "after", key: "plain scalar"}
+				if got := createCascades(t, fields, body); len(got) != 0 {
+					t.Fatalf("create cascades = %v, want none", got)
+				}
+				for _, arm := range []string{"insert", "conflict"} {
+					checkUpsertMatchesControl(t, arm, CaseCamel, fields, body, nil)
+				}
 			})
 		}
 	}
 }
 
-func TestUpsertCreateCascadeParity(test *testing.T) {
-	for _, jsonCase := range []JSONCase{CaseSnake, CaseCamel} {
-		fixture, _ := upsertCascadeFixture(test, "insert", jsonCase)
-		for _, relation := range fixture.Entity.Config.Relations {
-			keys := []string{relation.Name, fixture.convertKey(relation.Name), casing.ToSnake(fixture.convertKey(relation.Name))}
-			for keyIndex, key := range keys {
-				if slices.Contains(keys[:keyIndex], key) {
-					continue
-				}
-				var nested any = map[string]any{"id": "new-child", "body_text": "nested child"}
-				values := []any{nil, nested}
-				if relation.Type == entity.RelHasMany || relation.Type == entity.RelManyToMany {
-					values = []any{nil, []any{nested}, []any{}}
-				}
-				if relation.Type == entity.RelManyToMany {
-					values = []any{nil, []any{"child"}, []any{}}
-				}
-				for valueIndex, value := range values {
-					test.Run(fmt.Sprintf("%s/%s/%d", jsonCase, key, valueIndex), func(test *testing.T) {
-						var wantCascades []string
-						if value != nil {
-							wantCascades = []string{relation.Name}
-						}
-						checkUpsertCreateParity(test, jsonCase, nil, map[string]any{"id": "parent", "title": "after", key: value}, wantCascades...)
-					})
-				}
-			}
-		}
+// A generated value under a key that names a relation is a cascade value,
+// on upsert as on create: a generated UUID is no object. Upsert generates
+// it on either arm (the conflict arm then keeps the stored one), so both
+// arms answer as the create does.
+func TestUpsertGeneratedCascadeMatchesCreate(t *testing.T) {
+	fields := []schema.Field{{Name: "profileRow", Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true}}
+	checkUpsertMatchesControl(t, "insert", CaseCamel, fields, map[string]any{"id": "parent", "title": "after"}, nil)
+	handler, database := upsertCascadeFixture(t, "conflict", CaseCamel, fields...)
+	before := upsertCascadeState(t, database)
+	_, err := handler.UpsertOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
+	if got := violationKeys(err); !reflect.DeepEqual(got, map[string][]string{"profile_row": {"validation.not_object"}}) {
+		t.Errorf("conflict upsert = %v (%v), want profile_row not_object", err, got)
+	}
+	if after := upsertCascadeState(t, database); after != before {
+		t.Errorf("refused upsert changed rows\n%s\nwas\n%s", after, before)
 	}
 }
 
-func TestUpsertRefusesGeneratedCascades(test *testing.T) {
-	field := schema.Field{Name: "profileRow", Type: schema.UUID, AutoGenerate: schema.AutoUUID, Hidden: true}
-	creator, createDB := upsertCascadeFixture(test, "insert", CaseCamel, field)
-	if err := creator.Entity.Validate(); err != nil {
-		test.Fatal(err)
+// The upsert picks its arm, and runs its preflight and hidden-row
+// checks, on the key in the body before any cascade runs. A belongs_to
+// cascade that fills a key column would move the conflict onto a row
+// none of those checks read, so it is refused before anything is
+// written; the key goes in the body instead.
+func TestUpsertRefusesCascadeFilledKey(t *testing.T) {
+	db := setupDB(t,
+		`CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT)`,
+		`CREATE TABLE profiles (user_id TEXT PRIMARY KEY, bio TEXT)`,
+	)
+	users := entity.Define("users", entity.EntityConfig{
+		Fields: []schema.Field{{Name: "id", Type: schema.String}, {Name: "name", Type: schema.String}},
+	}.WithTimestamps(false))
+	profiles := entity.Define("profiles", entity.EntityConfig{
+		PrimaryKey: []string{"user_id"},
+		Fields:     []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "bio", Type: schema.String}},
+		Relations:  []entity.Relation{entity.BelongsTo("user", "users", "user_id").WithCascadeWrite(true)},
+	}.WithTimestamps(false))
+	users.SetDB(db)
+	profiles.SetDB(db)
+	ch := NewCrudHandler(profiles, db).WithJSONCase(CaseSnake)
+	ch.Registry = stubRegistry{byName: map[string]*entity.Entity{"users": users, "profiles": profiles}}
+	seedRows(t, db, "users", []map[string]any{{"id": "u1", "name": "Ada"}})
+	seedRows(t, db, "profiles", []map[string]any{{"user_id": "u1", "bio": "stored"}})
+
+	for _, nested := range []map[string]any{{"id": "u1", "name": "Ada"}, {"id": "u2", "name": "Bo"}} {
+		_, err := ch.UpsertOne(context.Background(), map[string]any{"bio": "moved", "user": nested})
+		if !hasViolation(err, "user", "validation.cascade_upsert_key") {
+			t.Errorf("upsert keyed by a cascade on %v = %v, want cascade_upsert_key", nested["id"], err)
+		}
 	}
-	_, err := creator.CreateOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
-	var validation *ValidationError
-	if !errors.As(err, &validation) {
-		test.Fatalf("create control = %v, want a cascade validation error", err)
+	var users2, bio string
+	if err := db.QueryRow(`SELECT (SELECT GROUP_CONCAT(id) FROM users), (SELECT bio FROM profiles WHERE user_id = 'u1')`).Scan(&users2, &bio); err != nil {
+		t.Fatal(err)
 	}
-	violations := validation.Fields()["profile_row"]
-	if len(violations) != 1 || violations[0].Reason.Key() != "validation.not_object" {
-		test.Fatalf("create control violations = %v, want not_object on profile_row", validation.Fields())
+	if users2 != "u1" || bio != "stored" {
+		t.Errorf("refused upserts left users %q, bio %q; want u1 and the stored bio", users2, bio)
 	}
-	checkUpsertCascadeRows(test, createDB, "insert", true)
-	for _, arm := range []string{"insert", "conflict"} {
-		test.Run(arm, func(test *testing.T) {
-			handler, database := upsertCascadeFixture(test, arm, CaseCamel, field)
-			_, err := handler.UpsertOne(context.Background(), map[string]any{"id": "parent", "title": "after"})
-			checkUpsertCascadeError(test, err, "profile_row")
-			checkUpsertCascadeRows(test, database, arm, true)
-		})
+	// With the key in the body the upsert matches on it.
+	if _, err := ch.UpsertOne(context.Background(), map[string]any{"user_id": "u1", "bio": "kept"}); err != nil {
+		t.Errorf("upsert with the key in the body: %v", err)
 	}
 }

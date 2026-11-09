@@ -60,6 +60,15 @@ func layoutCSS(_ style.Theme) string {
    at a container's end they move above their offset and behind it. */
 :where([data-cui-comp="ui-layout"]).fui-stack--sticky-header { --ui-sticky-top: var(--size-header-height, 56px); }
 :where([data-cui-comp="ui-layout"]).fui-stack--sticky-header > header { position: sticky; inset-block-start: 0; z-index: calc(var(--z-sticky, 200) + 1); }
+/* A focused control scrolls clear of the sticky bars (WCAG 2.4.11).
+   The browser counts a control behind the header as in view and leaves
+   it there; a scroll margin of the published offset (plus a phone
+   sheet's bar and the focus ring's room) makes it scroll out. A control
+   in a sticky bar is already where the bar holds it, and the browser
+   does not scroll for it. */
+:where([data-cui-comp="ui-layout"].fui-stack--sticky-header :focus) {
+  scroll-margin-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px) + var(--spacing-sm, 4px));
+}
 :where([data-cui-comp="ui-layout"]).fui-stack {
   display: flex;
   flex-direction: column;

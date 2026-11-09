@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=ce4f57c8186195a1
+//gofastr:generated generator=app kind=scaffold version=dev sum=75b312dcb32b4cb7
 
 package entities
 
@@ -11,16 +11,16 @@ import (
 )
 
 type Invoices struct {
-	ID         string              `json:"id"`
-	CustomerId string              `json:"customerId,omitempty"`
-	Number     string              `json:"number,omitempty"`
-	Amount     string              `json:"amount,omitempty"`
-	Status     InvoicesStatusValue `json:"status,omitempty"`
-	IssuedOn   string              `json:"issuedOn,omitempty"`
-	DueOn      string              `json:"dueOn,omitempty"`
-	PaidOn     string              `json:"paidOn,omitempty"`
-	UserId     string              `json:"userId,omitempty"`
-	Customer   *Customers          `json:"customer,omitempty"`
+	ID         string               `json:"id"`
+	CustomerId string               `json:"customerId,omitempty"`
+	Number     string               `json:"number,omitempty"`
+	Amount     string               `json:"amount,omitempty"`
+	Status     *InvoicesStatusValue `json:"status,omitempty"`
+	IssuedOn   *string              `json:"issuedOn,omitempty"`
+	DueOn      *string              `json:"dueOn,omitempty"`
+	PaidOn     *string              `json:"paidOn,omitempty"`
+	UserId     *string              `json:"userId,omitempty"`
+	Customer   *Customers           `json:"customer,omitempty"`
 }
 
 // InvoicesStatusValue is one value of the invoices field status.
@@ -38,8 +38,10 @@ const (
 type InvoicesMove string
 
 const (
-	InvoicesMoveMarkPaid InvoicesMove = "mark_paid"
-	InvoicesMoveVoid     InvoicesMove = "void"
+	InvoicesMoveIssue       InvoicesMove = "issue"
+	InvoicesMoveMarkPaid    InvoicesMove = "mark_paid"
+	InvoicesMoveMarkPastDue InvoicesMove = "mark_past_due"
+	InvoicesMoveVoid        InvoicesMove = "void"
 )
 
 // InvoicesInput is the create payload for InvoicesRepo. A required field with no
@@ -52,7 +54,6 @@ type InvoicesInput struct {
 	Status     *InvoicesStatusValue `json:"status,omitempty"`
 	IssuedOn   *string              `json:"issuedOn,omitempty"`
 	DueOn      *string              `json:"dueOn,omitempty"`
-	PaidOn     *string              `json:"paidOn,omitempty"`
 	UserId     *string              `json:"userId,omitempty"`
 }
 
@@ -61,13 +62,11 @@ type InvoicesInput struct {
 // float, string or text field. "" for any other type is a blank: it
 // clears an optional field and fails validation on a required one.
 type InvoicesPatch struct {
-	CustomerId *string              `json:"customerId,omitempty"`
-	Number     *string              `json:"number,omitempty"`
-	Amount     *string              `json:"amount,omitempty"`
-	Status     *InvoicesStatusValue `json:"status,omitempty"`
-	IssuedOn   *string              `json:"issuedOn,omitempty"`
-	DueOn      *string              `json:"dueOn,omitempty"`
-	PaidOn     *string              `json:"paidOn,omitempty"`
+	CustomerId *string `json:"customerId,omitempty"`
+	Number     *string `json:"number,omitempty"`
+	Amount     *string `json:"amount,omitempty"`
+	IssuedOn   *string `json:"issuedOn,omitempty"`
+	DueOn      *string `json:"dueOn,omitempty"`
 }
 
 // ====== Invoices column references ======
@@ -102,8 +101,11 @@ func NewInvoicesRepo(app *framework.App) *InvoicesRepo {
 	if err != nil {
 		panic("entities: invoices not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("invoices")
 	h.Storage = app.Storage
 	h.Events = app.Events()
@@ -325,7 +327,7 @@ func registerInvoices(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_invoices_owner_number", Columns: []string{"user_id", "number"}, Unique: true},
 		},
-		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "mark_paid", Label: "Mark paid", From: []string{"draft", "open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}, Advisory: true},
+		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "issue", Label: "Issue", From: []string{"draft"}, To: "open", Variant: "primary"}, {Key: "mark_paid", Label: "Mark paid", From: []string{"open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "mark_past_due", Label: "Mark past due", From: []string{"open"}, To: "past_due", Variant: "danger"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}},
 		Display:    &framework.DisplayConfig{TitleFields: []string{"number"}, Description: "Every invoice issued, paid or not.", Columns: []string{"number", "customer_id", "amount", "status", "issued_on", "due_on"}, Nav: &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 3}, Views: []framework.ListView{{Key: "past_due", Label: "Past due", Where: "status = \"past_due\"", Sort: "due_on ASC"}, {Key: "open", Label: "Open", Where: "status = \"open\"", Sort: "due_on ASC"}}, Facets: []string{"status", "customer_id"}, Fields: map[string]framework.FieldDisplay{"amount": {Input: "money"}}},
 		Properties: map[string]any{"label": "Invoices"},
 	})

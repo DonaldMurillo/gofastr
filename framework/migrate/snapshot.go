@@ -168,6 +168,36 @@ func SnapshotFromPlan(plan Plan, dialect Dialect) SchemaSnapshot {
 	return snap
 }
 
+// recordDeferredNotNull rewrites the new snapshot's CREATE TABLE for every
+// table whose change set added a Required column without its NOT NULL: the
+// snapshot must record what was APPLIED, not what was declared, or the
+// tightening is never generated and a later SQLite rebuild copies NULL
+// rows into a NOT NULL column no change ever named (#656).
+func recordDeferredNotNull(all map[string]*entity.Entity, next SchemaSnapshot, dialect Dialect, deferred map[string][]string) error {
+	for table, cols := range deferred {
+		ent := entityForTable(all, table)
+		if ent == nil {
+			continue
+		}
+		relaxed := *ent
+		relaxed.Config.Fields = slices.Clone(ent.Config.Fields)
+		for i := range relaxed.Config.Fields {
+			if slices.Contains(cols, relaxed.Config.Fields[i].Name) {
+				relaxed.Config.Fields[i].Required = false
+			}
+		}
+		ddl, err := buildCreateTableSQL(&relaxed, all, dialect)
+		if err != nil {
+			return err
+		}
+		if next.TableDDL == nil {
+			next.TableDDL = map[string]string{}
+		}
+		next.TableDDL[ent.GetTable()] = ddl
+	}
+	return nil
+}
+
 // GenerateMigration diffs the registered entities against prev (the last
 // snapshot) and returns the forward (up) and inverse (down) DDL for the delta,
 // plus the new snapshot to persist. up is empty when there is nothing to do.
@@ -510,6 +540,9 @@ func GeneratePlan(plan Plan, prev SchemaSnapshot, dialect Dialect) (up, down str
 	changes = dedupedChanges
 
 	next = SnapshotFromPlan(plan, dialect)
+	if err := recordDeferredNotNull(all, next, dialect, env.deferredNotNull); err != nil {
+		return "", "", SchemaSnapshot{}, err
+	}
 	keepRefitted(prev, next)
 	if len(changes) == 0 {
 		return "", "", next, nil

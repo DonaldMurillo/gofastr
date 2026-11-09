@@ -21,6 +21,10 @@ import (
 // while exercising the renderer.
 var scanRun = scan.Run
 
+// loadRegistry is the registry entry point; a var so tests can stub a
+// synthetic registry while exercising RunUpgrade's report and exit paths.
+var loadRegistry = upgrade.Load
+
 // maxNoteHits caps the hits rendered per note (and the unexplained
 // compile errors) so one pervasive pattern doesn't drown the report.
 const maxNoteHits = 20
@@ -30,13 +34,17 @@ const maxNoteHits = 20
 // their guidance and hits, and the unexplained compile errors. When
 // the engine cannot run at all the notes still print, with no hits:
 // guidance never depends on the scan succeeding.
-func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerSinks) string {
+//
+// The int returned is the number of edit hits under BREAKING notes, the
+// figure RunUpgrade gates its exit status on (#669): a report that
+// still points at breaking lines must not read as success to a script.
+func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerSinks) (string, int) {
 	var notes []*upgrade.Note
 	for _, r := range inRange {
 		notes = append(notes, r.Notes...)
 	}
 	if len(notes) == 0 {
-		return formatUpgradeNotes(nil, inRange)
+		return formatUpgradeNotes(nil, inRange), 0
 	}
 	result, err := scanRun(root, notes, sinks)
 	if err != nil {
@@ -44,7 +52,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 		fmt.Fprintf(&b, "NOTE: could not scan this project (%s); no lines are\n", cli.ScrubTerminalOutput(err.Error()))
 		b.WriteString("      pointed at below, but every note still carries its guidance.\n\n")
 		b.WriteString(formatUpgradeNotes(nil, inRange))
-		return b.String()
+		return b.String(), 0
 	}
 	var b strings.Builder
 	if !result.TypeChecked {
@@ -79,7 +87,16 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(cli.ScrubTerminalOutput(h.Why), "\n", "\n      "))
 		}
 	}
-	return b.String()
+	// Edit hits only, the ones the report files as edits (hitsFor): a
+	// hits: review hit may already be right and never clears, so
+	// counting it would fail every run after a finished port.
+	breakingHits := 0
+	for _, note := range notes {
+		if note.Breaking {
+			breakingHits += len(hitsFor(result, note, true))
+		}
+	}
+	return b.String(), breakingHits
 }
 
 // brokenList renders the broken-package list, capped: at most five
@@ -273,10 +290,21 @@ func applySteps(root, target string) [][]string {
 }
 
 type upgradeOpts struct {
-	root  string
-	from  string
-	to    string
-	apply bool
+	root           string
+	from           string
+	to             string
+	apply          bool
+	allowDowngrade bool
+}
+
+// runStep runs one --apply step; a var so tests can stub the exec while
+// exercising the refusal and completion paths.
+var runStep = func(name string, args []string, dir string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Dir = dir
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 // parseUpgradeArgs resolves `gofastr upgrade` arguments: an optional
@@ -297,6 +325,8 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 			opts.to = strings.TrimPrefix(arg, "--to=")
 		case arg == "--apply":
 			opts.apply = true
+		case arg == "--allow-downgrade":
+			opts.allowDowngrade = true
 		case arg == "--help" || arg == "-h":
 			return opts, "--help"
 		case !strings.HasPrefix(arg, "-"):
@@ -312,7 +342,7 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 func RunUpgrade(args []string) {
 	opts, bad := parseUpgradeArgs(args)
 	if bad == "--help" {
-		fmt.Println("Usage: gofastr upgrade [root] [--from vX.Y.Z] [--to vX.Y.Z] [--apply]")
+		fmt.Println("Usage: gofastr upgrade [root] [--from vX.Y.Z] [--to vX.Y.Z] [--apply] [--allow-downgrade]")
 		fmt.Println()
 		fmt.Println("Guides an app from its current GoFastr release to a newer one: reads")
 		fmt.Println("the project's go.mod, shows every migration note between the two")
@@ -321,7 +351,9 @@ func RunUpgrade(args []string) {
 		fmt.Println()
 		fmt.Println("Without --to the newest tagged release is resolved via the module")
 		fmt.Println("proxy. With --apply the mechanical steps run for you: go get, go mod")
-		fmt.Println("tidy, go build ./..., go test ./….")
+		fmt.Println("tidy, go build ./..., go test ./…. A downgrade under --apply is refused")
+		fmt.Println("unless --allow-downgrade says to run it. The exit status is 1 while any")
+		fmt.Println("BREAKING note still has edit hits, so scripts see unfinished work.")
 		fmt.Println()
 		fmt.Println("--from names the release the code was written for when go.mod no")
 		fmt.Println("longer says so: run go get first and go.mod already names the")
@@ -337,7 +369,7 @@ func RunUpgrade(args []string) {
 		cli.OsExit(2)
 	}
 
-	reg, err := upgrade.Load()
+	reg, err := loadRegistry()
 	if err != nil {
 		cli.Fprintf(os.Stderr, "upgrade: %v\n", err)
 		cli.OsExit(1)
@@ -410,10 +442,23 @@ func RunUpgrade(args []string) {
 		fmt.Println("know. Install the newest involved CLI first and re-run:")
 		cli.Printf("    go install %s/cmd/gofastr@%s\n\n", project.GofastrModule, hi)
 	}
-	cli.Print(upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks))
+	downgrade := semver.Less(target, current)
+	report, breakingHits := upgradeReport(opts.root, upgrade.ReleasesInRange(reg, lo, hi), reg.MarkerSinks)
+	cli.Print(report)
 	printUnmountedForUpgrade(opts.root, target)
 	fmt.Println("Consult the release notes for the full story:")
 	fmt.Printf("    https://github.com/DonaldMurillo/gofastr/releases\n\n")
+
+	// --apply on a downgrade is refused without --allow-downgrade: the
+	// steps below are written for moving FORWARD (go get would pin the
+	// older release, and the notes above describe what you'd be undoing,
+	// not how to undo it). #669.
+	if downgrade && opts.apply && !opts.allowDowngrade {
+		fmt.Println("Downgrade refused: --apply would run go get against the older release,")
+		fmt.Println("and the notes above describe what you'd be undoing, not how to undo it.")
+		fmt.Println("Re-run with --allow-downgrade to apply it anyway.")
+		cli.OsExit(2)
+	}
 
 	steps := applySteps(opts.root, target)
 	if !opts.apply {
@@ -423,15 +468,12 @@ func RunUpgrade(args []string) {
 		}
 		cli.Printf("  %d. go install %s/cmd/gofastr@%s   (the CLI doesn't update with go.mod)\n", len(steps)+1, project.GofastrModule, target)
 		fmt.Printf("  %d. review the go.mod / go.sum diff before committing\n", len(steps)+2)
+		exitIfBreakingHitsRemain(breakingHits)
 		return
 	}
 	for _, s := range steps {
 		cli.Printf("→ %s\n", strings.Join(s, " "))
-		cmd := exec.Command(s[0], s[1:]...)
-		cmd.Dir = opts.root
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
+		if err := runStep(s[0], s[1:], opts.root); err != nil {
 			cli.Fprintf(os.Stderr, "upgrade: %q failed: %v\nFix the errors above (see the migration notes), then re-run.\n", strings.Join(s, " "), err)
 			cli.OsExit(1)
 		}
@@ -440,4 +482,17 @@ func RunUpgrade(args []string) {
 	fmt.Println("Upgraded. Two manual steps remain:")
 	cli.Println("  • go install " + project.GofastrModule + "/cmd/gofastr@" + target + "   (the CLI doesn't update with go.mod)")
 	fmt.Println("  • review the go.mod / go.sum diff before committing")
+	exitIfBreakingHitsRemain(breakingHits)
+}
+
+// exitIfBreakingHitsRemain ends the run non-zero when the report still
+// holds hits under BREAKING notes, plan and apply alike: a script reading
+// the exit status must not take unfinished migration work for success
+// (#669). The report above has already said which lines.
+func exitIfBreakingHitsRemain(breakingHits int) {
+	if breakingHits == 0 {
+		return
+	}
+	cli.Printf("\n%d breaking-change edit hits remain: edit the lines above before shipping.\n", breakingHits)
+	cli.OsExit(1)
 }

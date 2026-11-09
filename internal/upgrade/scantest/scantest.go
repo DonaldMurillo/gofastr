@@ -19,6 +19,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -112,6 +113,25 @@ func Note(t testing.TB, reg *upgrade.Registry, version string, index int) *upgra
 		t.Fatalf("release %s has %d notes, no index %d", version, len(notes), index)
 	}
 	return notes[index]
+}
+
+// NoteByChange returns the note of release version in reg whose change
+// text starts with prefix, failing the test when there is none. Finding
+// a note by its text keeps a test independent of the note's position in
+// a release file several branches append to.
+func NoteByChange(t testing.TB, reg *upgrade.Registry, version, prefix string) *upgrade.Note {
+	t.Helper()
+	i := slices.IndexFunc(reg.Releases, func(r upgrade.Release) bool { return r.Version == version })
+	if i < 0 {
+		t.Fatalf("registry has no release %s", version)
+	}
+	for _, n := range reg.Releases[i].Notes {
+		if strings.HasPrefix(n.Change, prefix) {
+			return n
+		}
+	}
+	t.Fatalf("%s has no note starting %q", version, prefix)
+	return nil
 }
 
 // Only returns a copy of n whose Find keeps just the matcher kinds

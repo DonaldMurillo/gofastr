@@ -503,7 +503,7 @@ func TestA2A_GatedToolRefused(t *testing.T) {
 	if got := taskState(task); got != "TASK_STATE_FAILED" {
 		t.Fatalf("gated tool task state = %s, want TASK_STATE_FAILED (body %s)", got, body)
 	}
-	if !strings.Contains(string(body), "tool unavailable") {
-		t.Fatalf("task must carry the gate's refusal: %s", body)
+	if !strings.Contains(string(body), "not found") || strings.Contains(string(body), "unavailable") {
+		t.Fatalf("task must carry the refusal, answered as an unknown tool: %s", body)
 	}
 }

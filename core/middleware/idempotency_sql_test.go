@@ -11,7 +11,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
 )
 
-func openSQLIdemStore(t *testing.T) (*sql.DB, *SQLIdempotencyStore) {
+func openSQLIdemStoreWithOpts(t *testing.T, opts ...SQLIdempotencyOption) (*sql.DB, *SQLIdempotencyStore) {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -19,11 +19,16 @@ func openSQLIdemStore(t *testing.T) (*sql.DB, *SQLIdempotencyStore) {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	s, err := NewSQLIdempotencyStore(db)
+	s, err := NewSQLIdempotencyStore(db, opts...)
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
 	return db, s
+}
+
+func openSQLIdemStore(t *testing.T) (*sql.DB, *SQLIdempotencyStore) {
+	t.Helper()
+	return openSQLIdemStoreWithOpts(t)
 }
 
 func TestSQLIdempotency_FreshClaimAndReplay(t *testing.T) {

@@ -43,9 +43,9 @@ func displayConfig(display *entity.DisplayConfig) entity.EntityConfig {
 }
 
 func TestDisplayDoesNotChangeSchemaHash(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "invoices", Config: displayConfig(nil)}})
+	base := hashOf([]NamedConfig{{Name: "invoices", Config: displayConfig(nil)}})
 
-	withDisplay := SchemaHash([]NamedConfig{{Name: "invoices", Config: displayConfig(displayRich())}})
+	withDisplay := hashOf([]NamedConfig{{Name: "invoices", Config: displayConfig(displayRich())}})
 	if withDisplay != base {
 		t.Fatalf("adding Display changed the schema hash:\n%s\n%s", base, withDisplay)
 	}
@@ -58,7 +58,7 @@ func TestDisplayDoesNotChangeSchemaHash(t *testing.T) {
 	other.Fields["amount"] = entity.FieldDisplay{Help: "total"}
 	other.Form.Side = nil
 	other.PageSizes = []int{5}
-	changed := SchemaHash([]NamedConfig{{Name: "invoices", Config: displayConfig(other)}})
+	changed := hashOf([]NamedConfig{{Name: "invoices", Config: displayConfig(other)}})
 	if changed != base {
 		t.Fatalf("changing Display changed the schema hash:\n%s\n%s", base, changed)
 	}
@@ -66,7 +66,7 @@ func TestDisplayDoesNotChangeSchemaHash(t *testing.T) {
 	// The test is not vacuous: a real schema change still moves the hash.
 	cfg := displayConfig(nil)
 	cfg.Fields = append(cfg.Fields, schema.Field{Name: "memo", Type: schema.Text})
-	if drifted := SchemaHash([]NamedConfig{{Name: "invoices", Config: cfg}}); drifted == base {
+	if drifted := hashOf([]NamedConfig{{Name: "invoices", Config: cfg}}); drifted == base {
 		t.Fatal("a schema change did not move the hash; the comparison above proves nothing")
 	}
 }

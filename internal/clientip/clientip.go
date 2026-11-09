@@ -15,6 +15,7 @@
 package clientip
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/netip"
@@ -45,6 +46,29 @@ func ParseProxies(entries []string) Proxies {
 			p.ips = append(p.ips, ip)
 		}
 	}
+	return p
+}
+
+// trustedKey is the context key WithTrusted stores a Proxies under.
+type trustedKey struct{}
+
+// WithTrusted returns ctx carrying p. framework.App stamps its parsed
+// AppConfig.TrustedProxies onto every request this way, so a package that
+// is mounted on the App's router but holds no App (framework/pluginhost's
+// framed assets) reads the same list instead of being handed a second one.
+// An empty p returns ctx unchanged: the zero value already trusts nothing.
+func WithTrusted(ctx context.Context, p Proxies) context.Context {
+	if p.Empty() {
+		return ctx
+	}
+	return context.WithValue(ctx, trustedKey{}, p)
+}
+
+// TrustedFrom returns the Proxies WithTrusted stored on ctx, or the zero
+// value, which trusts nothing, when the request never passed through an
+// App that lists one.
+func TrustedFrom(ctx context.Context) Proxies {
+	p, _ := ctx.Value(trustedKey{}).(Proxies)
 	return p
 }
 

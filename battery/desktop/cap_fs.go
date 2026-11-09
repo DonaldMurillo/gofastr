@@ -15,8 +15,9 @@ import (
 )
 
 // fsCapability: read/write/stat on paths the dialogs capability (or an
-// in-process AllowPath call) put on the allow-list. The allow-list is
-// per-process; whole-disk access is a plugin's call, not the core
+// in-process AllowPath call) put on the allow-list, and read/stat/list
+// under a picked folder (AllowFolder, cap_fs_folder.go). The allow-list
+// is per-process; whole-disk access is a plugin's call, not the core
 // default.
 
 // fsReadLimit caps a readText call (8 MiB).
@@ -29,12 +30,12 @@ var errPathNotAllowed = &Error{Code: CodeDenied, Message: "path is not accessibl
 func (b *Battery) fsCapability() Capability {
 	return Capability{
 		Name:        "fs",
-		Description: "Read and write files the user picked through a dialog in this session.",
+		Description: "Read and write files the user picked through a dialog in this session, and read and list under a folder the user picked.",
 		Version:     1,
 		Methods: []Method{
 			{
 				Name:        "readText",
-				Description: "Reads a UTF-8 text file (at most 8 MiB) from the allow-list.",
+				Description: "Reads a UTF-8 text file (at most 8 MiB) from the allow-list or under a picked folder.",
 				Permission:  "fs:read",
 				Input:       json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 				Output:      json.RawMessage(`{"type":"object","properties":{"text":{"type":"string"}}}`),
@@ -43,17 +44,25 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					if !b.pathAllowed(req.Path) {
+					mapErr := fsError
+					var f *os.File
+					var err error
+					if b.pathAllowed(req.Path) {
+						f, err = os.Open(req.Path)
+					} else if root, rel, ok := b.folderGrant(req.Path); ok {
+						f, err = root.Open(rel)
+						root.Close()
+						mapErr = folderError
+					} else {
 						return nil, errPathNotAllowed
 					}
-					f, err := os.Open(req.Path)
 					if err != nil {
-						return nil, fsError(err)
+						return nil, mapErr(err)
 					}
 					defer f.Close()
 					data, err := io.ReadAll(io.LimitReader(f, fsReadLimit+1))
 					if err != nil {
-						return nil, fsError(err)
+						return nil, mapErr(err)
 					}
 					if len(data) > fsReadLimit {
 						return nil, &Error{Code: CodeInvalidInput, Message: "file is larger than the 8 MiB read limit"}
@@ -86,7 +95,7 @@ func (b *Battery) fsCapability() Capability {
 			},
 			{
 				Name:        "stat",
-				Description: "Returns size, modification time, and directory flag for an allow-listed path.",
+				Description: "Returns size, modification time, and directory flag for an allow-listed path or one under a picked folder.",
 				Permission:  "fs:read",
 				Input:       json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 				Output: json.RawMessage(`{"type":"object","properties":{` +
@@ -96,18 +105,51 @@ func (b *Battery) fsCapability() Capability {
 					if derr != nil {
 						return nil, derr
 					}
-					if !b.pathAllowed(req.Path) {
+					var info fs.FileInfo
+					var err error
+					mapErr := fsError
+					if b.pathAllowed(req.Path) {
+						info, err = os.Stat(req.Path)
+					} else if root, rel, ok := b.folderGrant(req.Path); ok {
+						info, err = root.Stat(rel)
+						root.Close()
+						mapErr = folderError
+					} else {
 						return nil, errPathNotAllowed
 					}
-					info, err := os.Stat(req.Path)
 					if err != nil {
-						return nil, fsError(err)
+						return nil, mapErr(err)
 					}
 					return fsStatOutput{
 						Size:    info.Size(),
 						ModTime: info.ModTime().UTC().Format(time.RFC3339Nano),
 						IsDir:   info.IsDir(),
 					}, nil
+				},
+			},
+			{
+				Name:        "list",
+				Description: "Lists a folder under a picked folder, the picked folder included: each entry's name and directory flag, sorted by name, at most 10000 (truncated is true past that).",
+				Permission:  "fs:read",
+				Input:       json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
+				Output: json.RawMessage(`{"type":"object","properties":{` +
+					`"entries":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"isDir":{"type":"boolean"}}}},` +
+					`"truncated":{"type":"boolean"}}}`),
+				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
+					req, derr := decodeFSPath(in)
+					if derr != nil {
+						return nil, derr
+					}
+					root, rel, ok := b.folderGrant(req.Path)
+					if !ok {
+						return nil, errPathNotAllowed
+					}
+					defer root.Close()
+					out, lerr := listFolder(root, rel)
+					if lerr != nil {
+						return nil, lerr
+					}
+					return out, nil
 				},
 			},
 		},

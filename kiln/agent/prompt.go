@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -209,16 +208,6 @@ func BuildPrompt(sess *journal.Session, tools []protocol.Descriptor) PromptLayer
 		Framework: BuildFrameworkSlab(tools),
 		Project:   BuildProjectSlab(sess),
 	}
-}
-
-// MarshalArgs is a small helper for tests and providers that want to
-// see a tool call's args as JSON.
-func MarshalArgs(c ToolCall) string {
-	if c.Args == nil {
-		return "{}"
-	}
-	buf, _ := json.Marshal(c.Args)
-	return string(buf)
 }
 
 // SummarizeWorld returns a tight, model-friendly snapshot of an entity

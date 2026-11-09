@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // One anonymous client could fill the global UI stream cap: a session
@@ -110,6 +112,18 @@ func TestClientKey(t *testing.T) {
 	differ("xff trusted", proxied, req("10.0.0.1:1", "198.51.100.1"), req("10.0.0.1:1", "198.51.100.2"))
 	same("xff from a peer outside the list", proxied, req("203.0.113.7:1", "198.51.100.1"), req("203.0.113.7:1", "198.51.100.2"))
 	same("xff names the peer", proxied, req("10.0.0.1:1", "198.51.100.1"), req("198.51.100.1:9", ""))
+
+	// With no WithTrustedProxies the manager reads the list the App put on
+	// the request context (AppConfig.TrustedProxies); a manager list
+	// replaces it rather than adding to it.
+	viaApp := func(remote, xff string) *http.Request {
+		r := req(remote, xff)
+		return r.WithContext(clientip.WithTrusted(r.Context(), clientip.ParseProxies([]string{"10.0.0.0/8"})))
+	}
+	differ("xff trusted by the App", plain, viaApp("10.0.0.1:1", "198.51.100.1"), viaApp("10.0.0.1:1", "198.51.100.2"))
+	same("xff from a peer outside the App list", plain, viaApp("203.0.113.7:1", "198.51.100.1"), viaApp("203.0.113.7:1", "198.51.100.2"))
+	other := NewManager(WithTrustedProxies("192.168.0.0/16"))
+	same("manager list replaces the App's", other, viaApp("10.0.0.1:1", "198.51.100.1"), viaApp("10.0.0.1:1", "198.51.100.2"))
 
 	user := PresenceIdentity{UserID: "u1"}
 	if a, b := plain.ClientKey(req("203.0.113.7:1", ""), user), plain.ClientKey(req("198.51.100.1:1", ""), user); a != b {

@@ -60,6 +60,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/outbox"
 	"github.com/DonaldMurillo/gofastr/framework/owner"
 	"github.com/DonaldMurillo/gofastr/framework/routegroup"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
 )
 
@@ -98,6 +99,30 @@ type AppConfig struct {
 	// GroupEntity routes are unaffected. A group owns its own prefix. MCP
 	// tool names are unchanged.
 	APIPrefix string
+
+	// BaseURL is the canonical origin (scheme://host) the well-known
+	// discovery documents build their absolute URLs from: the server
+	// card, the MCP manifest, the API catalog, /auth.md and the agent
+	// extras. Empty (default) derives the origin from the request (the
+	// Host it was addressed to, and X-Forwarded-Proto from a
+	// TrustedProxies peer). Set it when the app is reachable under one
+	// fixed origin: it wins over every request input, and the documents
+	// stop varying on Host and X-Forwarded-Proto, so a spoofed Host can
+	// no longer paint an attacker-named origin into cacheable output.
+	BaseURL string
+
+	// TrustedProxies lists the TCP peer addresses (IPs and CIDR ranges)
+	// X-Forwarded-Proto is honored from, the same trust rule the rate
+	// limiters apply to X-Forwarded-For. A client that is not a listed
+	// peer cannot change the scheme of the well-known documents' URLs,
+	// the origin in the Content-Security-Policy of a framework/pluginhost
+	// framed asset served from this App's router, nor the scheme of a
+	// framework/entityui record's copy links.
+	// Empty (default) honors X-Forwarded-Proto from nobody, so behind a
+	// TLS-terminating proxy that forwards it you must list the proxy or
+	// set BaseURL (BaseURL reaches neither pluginhost nor entityui: their
+	// URLs need the proxy listed).
+	TrustedProxies []string
 
 	// RequestTimeout caps the per-request wall-clock budget enforced by
 	// the default middleware chain. Zero (default) installs a 30s cap.
@@ -240,24 +265,79 @@ const (
 	// unset WriteTimeout is moved, so the timeout middleware's own 503
 	// (or a response finished just inside the budget) is still written.
 	requestTimeoutWriteSlack = 10 * time.Second
+
+	// idempotencyInFlightSlack is how far past the request budget the
+	// App-sized idempotency in-flight claim TTL sits, so a handler that
+	// finishes inside the budget still holds its claim to the end.
+	idempotencyInFlightSlack = 10 * time.Second
+
+	// defaultRequestTimeout is the deadline DefaultMiddleware's timeout
+	// middleware enforces when AppConfig.RequestTimeout is unset. The
+	// idempotency in-flight check reads it so an unset budget still
+	// sizes and checks the claim against the deadline that is real.
+	defaultRequestTimeout = 30 * time.Second
 )
 
-// requestBudget is the RequestTimeout the host asked the default chain's
-// timeout middleware to enforce: zero when it set none (the framework's
-// own 30s default) or when that middleware is not installed.
+// checkIdempotencyInFlightTTL checks the idempotency store's in-flight
+// claim TTL against the request budget, the WriteTimeout-vs-
+// RequestTimeout shape: a claim that expires while its handler still
+// runs (the budget has not killed it yet) lets a retry execute the
+// handler again — exactly the double execution the key promised to
+// prevent. A store that reports no TTL cannot be checked and says so;
+// with no request deadline at all (DisableRequestTimeout, or the
+// default middleware chain removed) there is nothing to check against,
+// which is also said.
+func (a *App) checkIdempotencyInFlightTTL() error {
+	if a.idempotency == nil || a.idempotency.Store == nil {
+		return nil
+	}
+	store, reports := a.idempotency.Store.(middleware.InFlightTTLStore)
+	budget := a.requestBudget()
+	if !reports {
+		a.Logger().Warn("framework: the idempotency store does not report its in-flight TTL " +
+			"(implement middleware.InFlightTTLStore): a handler that outlives the claim may be executed again by a retry")
+		return nil
+	}
+	if budget <= 0 {
+		if a.noDefaults || a.Config.DisableRequestTimeout {
+			a.Logger().Warn(fmt.Sprintf("framework: no request deadline is configured (DisableRequestTimeout), so the "+
+				"idempotency store's in-flight TTL (%s) is not checked: a handler that runs longer than the claim "+
+				"may be executed again by a retry", store.InFlightTTL()))
+		}
+		return nil
+	}
+	if ttl := store.InFlightTTL(); ttl <= budget {
+		return fmt.Errorf("framework: the idempotency store's in-flight TTL (%s) must be longer than RequestTimeout (%s): "+
+			"a claim that expires while the handler still runs lets a retry execute it again; raise the store's "+
+			"in-flight TTL (WithMemoryIdempotencyInFlightTTL / WithSQLIdempotencyInFlightTTL) or lower RequestTimeout",
+			ttl, budget)
+	}
+	return nil
+}
+
+// requestBudget is the request deadline the default chain's timeout
+// middleware enforces: the configured RequestTimeout, or the
+// framework's own 30s default when the host set none. Zero only when
+// no deadline is enforced at all (WithoutDefaultMiddleware or
+// DisableRequestTimeout).
 func (a *App) requestBudget() time.Duration {
-	if a.noDefaults || a.Config.DisableRequestTimeout || a.Config.RequestTimeout <= 0 {
+	if a.noDefaults || a.Config.DisableRequestTimeout {
 		return 0
 	}
-	return a.Config.RequestTimeout
+	if a.Config.RequestTimeout > 0 {
+		return a.Config.RequestTimeout
+	}
+	return defaultRequestTimeout
 }
 
 // checkRequestWriteTimeouts refuses an explicit WriteTimeout no longer
-// than an explicit RequestTimeout. Each is valid alone; together a
-// buffered response finished between the two is never delivered (the
-// client sees the connection drop, not the response or the timeout
-// middleware's 503) while its handler runs on to the budget. An unset
-// WriteTimeout is raised instead (see Start); 0 disables the deadline.
+// than the enforced request deadline (see requestBudget: the configured
+// RequestTimeout, or its 30s default when unset). Each is valid alone;
+// together a buffered response finished between the two is never
+// delivered (the client sees the connection drop, not the response or
+// the timeout middleware's 503) while its handler runs on to the
+// budget. An unset WriteTimeout is raised instead (see Start); 0
+// disables the deadline.
 func (a *App) checkRequestWriteTimeouts() error {
 	budget := a.requestBudget()
 	w := a.Config.HTTPServerTimeouts.WriteTimeout
@@ -306,6 +386,12 @@ type App struct {
 	// middleware) and the path on it. EntityUI mounts the bulk and export
 	// routes on the same router, and its screens post to the full path.
 	crudMounts map[*entity.Entity]crudMount
+	// trustedProxies is AppConfig.TrustedProxies parsed once: the peers
+	// X-Forwarded-Proto is honored from in the well-known documents, and,
+	// through the request context (clientip.WithTrusted), in
+	// framework/pluginhost's framed asset CSP and framework/entityui's
+	// record copy links.
+	trustedProxies clientip.Proxies
 
 	migrationRoutines []migrate.Routine // stored procedures/functions/triggers run on boot
 	migrationViews    []migrate.View    // views (virtual tables built from entities) run on boot
@@ -1195,7 +1281,8 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 		cfg.Scope = heldScopeKey
 	}
 	return func(a *App) {
-		a.idempotency = &cfg
+		config := cfg
+		a.idempotency = &config
 	}
 }
 
@@ -1424,7 +1511,7 @@ func (a *App) SetLogger(l *slog.Logger) {
 // back to slog.Default and the timeout to 30s.
 func DefaultMiddleware(a *App) []router.Middleware {
 	var getLogger func() *slog.Logger
-	timeout := 30 * time.Second
+	timeout := defaultRequestTimeout
 	var translator *i18n.Translator
 	var localeResolver i18n.LocaleResolver
 	if a != nil {
@@ -1824,7 +1911,7 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 			if description == "" {
 				description = method + " " + g.Prefix() + path
 			}
-			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(toolName, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(g.Prefix()+path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -2006,6 +2093,9 @@ func NewApp(opts ...AppOption) *App {
 	for _, opt := range opts {
 		opt(a)
 	}
+	// Parsed after the options ran: a config set by any option is in
+	// place (the well-known documents read this on every request).
+	a.trustedProxies = clientip.ParseProxies(a.Config.TrustedProxies)
 	// The gate goes on whichever server the options left in a.MCP.
 	if a.mcpGate != nil && a.MCP != nil {
 		a.MCP.SetGate(a.mcpGate)
@@ -2155,6 +2245,21 @@ func NewApp(opts ...AppOption) *App {
 		a.Logger().Warn("framework: WithIdempotency keeps its keys in this process's memory, but WithFanout runs the app on several replicas: " +
 			"a retry that reaches another replica runs the handler again; set IdempotencyConfig.Store to a shared store (middleware.NewSQLIdempotencyStore)")
 	}
+	// The default store is built here, where the request budget is
+	// known, so its in-flight claim outlives the budget: a claim that
+	// expires first lets a retry execute a handler the deadline has not
+	// killed yet. The budget is the enforced one, so an unset
+	// RequestTimeout (the 30s default) still sizes the claim.
+	if a.idempotency != nil && a.idempotency.Store == nil {
+		opts := []middleware.MemoryIdempotencyOption{
+			middleware.WithMemoryStoreMaxEntries(a.idempotency.MaxStoreEntries),
+			middleware.WithMemoryStoreMaxEntryBytes(a.idempotency.MaxStoreEntryBytes),
+		}
+		if budget := a.requestBudget(); budget > 0 {
+			opts = append(opts, middleware.WithMemoryIdempotencyInFlightTTL(budget+idempotencyInFlightSlack))
+		}
+		a.idempotency.Store = middleware.NewMemoryIdempotencyStore(a.idempotency.TTL, opts...)
+	}
 	if a.fanout != nil && a.DB == nil {
 		a.Logger().Warn("framework: module toggles remain local with WithFanout but no WithDB: " +
 			"refresh messages re-read each replica's in-memory store; use WithDB against a shared database to propagate toggles")
@@ -2182,6 +2287,18 @@ func NewApp(opts ...AppOption) *App {
 	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
 		a.router.Use(DefaultMiddleware(a)...)
+	}
+	// The trusted-proxy list rides on every request context, defaults or
+	// not, so a package mounted on this router without the App
+	// (framework/pluginhost's framed assets build their CSP origin from
+	// X-Forwarded-Proto, framework/entityui its record copy links) applies the same AppConfig.TrustedProxies rule as
+	// the well-known documents. Nothing is installed when the list is empty.
+	if proxies := a.trustedProxies; !proxies.Empty() {
+		a.router.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				next.ServeHTTP(w, r.WithContext(clientip.WithTrusted(r.Context(), proxies)))
+			})
+		})
 	}
 	// Idempotency runs innermost, after the app's auth and tenant
 	// middleware, so the replay key carries the user and tenant they
@@ -2951,7 +3068,7 @@ func (a *App) registerEntityEndpoints(ent *entity.Entity, endpoints []entity.End
 			if description == "" {
 				description = method + " " + path
 			}
-			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpoint.MCPHandler, endpointMCPOptions(ent, endpoint)...); err != nil {
+			if err := a.MCP.RegisterTool(name, description, openapi.EndpointInputSchema(endpoint), endpointMCPTwin(path, endpoint.MCPHandler), endpointMCPOptions(ent, endpoint)...); err != nil {
 				return err
 			}
 		}
@@ -3018,6 +3135,26 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 		}
 		return nil
 	})}
+}
+
+// endpointMCPTwin wraps an Endpoint's MCPHandler so the tool's call
+// context carries the HTTP route pattern it is the twin of. The twin's
+// path parameters are then sanitized with the route's own catch-all
+// flags (handler.WithRoutePattern), so a {path...} route's tool accepts
+// a slash-bearing value the route accepts, dot-dot and empty segments
+// and control bytes still refused. A tool registered by hand keeps
+// every path parameter strict.
+//
+// mcp.Decorate keeps an mcp.Gated MCPHandler's gates outside the twin,
+// where registration finds them: the server then runs them before
+// argument validation, so a refused caller gets the unknown-tool answer
+// whatever arguments it sends (#669).
+func endpointMCPTwin(pattern string, h mcp.ToolHandler) mcp.ToolHandler {
+	return mcp.Decorate(h, func(inner mcp.ToolHandler) mcp.ToolHandler {
+		return func(ctx context.Context, params map[string]any) (any, error) {
+			return inner(handler.WithRoutePattern(ctx, pattern), params)
+		}
+	})
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to
@@ -4276,8 +4413,15 @@ func (a *App) registerDebugEndpoints() {
 			"goroutineLeaks": goroutineLeakCount(),
 		}
 
+		b, err := json.Marshal(stats)
+		if err != nil {
+			slog.Warn("debug stats: encode", "error", err)
+			i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats)
+		w.Write(b)
+		w.Write([]byte("\n"))
 	}))
 	a.router.Get("/.debug/goroutineleak", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

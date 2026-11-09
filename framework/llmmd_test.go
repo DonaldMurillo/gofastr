@@ -58,9 +58,9 @@ func TestEntityLLMMD_BasicEntity(t *testing.T) {
 		t.Error("expected '**required**' for title field")
 	}
 
-	// Must contain enum values
-	if !strings.Contains(md, "draft|published") {
-		t.Error("expected enum values 'draft|published'")
+	// Must contain enum values, cell-pipe escaped
+	if !strings.Contains(md, `draft\|published`) {
+		t.Error(`expected enum values 'draft\|published'`)
 	}
 
 	// Must list all endpoints

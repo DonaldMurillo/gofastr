@@ -500,12 +500,28 @@ stays unchanged. Put visibility filters in `BeforeList`, so the list, its total,
 `CountAll` and `TypedQuery.Count` use the same database predicate. Counts do not
 run `AfterList`; an unhooked in-process read still returns stored values.
 
+A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
+on the same paths, in-process ones under the same opt-in, before these
+hooks and without registering one.
+
+`ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
+or `BeforeGet` hooks append any clause for a read of `id` (a hook error
+answers true). A screen asks it about a record that is no longer stored,
+before it prints a stored copy of the record's values: the admin audit
+log does, the rule the `_events` feed applies to a hard delete.
+
 `TestReadHookParityCrud` (framework/crud) and `TestReadHookParityAdmin`
 (battery/admin) list every surface that serves a row; a new surface adds
 a case there. Generated screens read through entityui's hooked readers
 (`getRow`, `listRows`, …); a deliberate stored-value read lives in a
 function named `*Unhooked`, and the `hookedread` analyzer holds
-entityui and battery/admin to that.
+entityui and battery/admin to that. The rule covers their writes too:
+an in-process write (`UpdateOne`, `DeleteOne`, `RestoreOne`, `PurgeOne`,
+`RunTransition`, …) refuses a row the caller's `BeforeGet` hooks hide
+only under `crud.WithReadHooks`, so every screen write passes it.
+`TypedQuery.UpdateAll` and `DeleteAll` apply write scopes only and never
+consult `BeforeGet`, whatever the context, so the analyzer refuses them
+in the screens: a screen writes record by record.
 
 On `?include=`, a child hook may redact in place or by replacing a row
 with a projection; both are folded back into the attached row. Sorting
@@ -525,7 +541,7 @@ the query never produced, or returning one row more often than the query
 did, fails for the same reason.
 
 `?stream=true` still refuses when an `AfterList` hook is registered
-rather than bypassing it. The durable outbox row stores the unredacted
+rather than bypassing it; a declared `Mask` runs on each streamed row. The durable outbox row stores the unredacted
 record, since it is server-side state used for replay; redaction happens
 on the way out. `webhook.Bridge` POSTs to third-party URLs and has no
 handler to redact through, so pass `webhook.WithBridgeRedactor` if masked
@@ -533,8 +549,9 @@ fields must not leave that way.
 
 If a value must never leave the server in raw form at all, mark it
 `Hidden`: that is enforced in the SQL projection, so no path can return
-it. Reserve `AfterGet`/`AfterList` masking plus `NoQuery` for values that
-may be shown in a reduced form on the paths listed above.
+it. Reserve masking (a field's `Mask`, or `AfterGet`/`AfterList` hooks
+plus `NoQuery`) for values that may be shown in a reduced form on the
+paths listed above.
 
 Keep this matrix in mind when writing bulk operations or tests that
 assert side-effect counts.

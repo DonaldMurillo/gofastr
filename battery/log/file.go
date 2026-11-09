@@ -243,7 +243,11 @@ func (s *fileSink) rotateLocked() error {
 		}
 		suffix := name[len(prefix):]
 		n, err := strconv.Atoi(suffix)
-		if err != nil || n < 1 {
+		// The suffix must be n's canonical spelling: "01" parses to 1
+		// but is a different file another tool (logrotate's zero-padded
+		// series) owns. Shifting it onto our ".2" would overwrite a
+		// backup, so it is left alone.
+		if err != nil || n < 1 || strconv.Itoa(n) != suffix {
 			continue
 		}
 		existing = append(existing, rotated{path: filepath.Join(dir, name), n: n})

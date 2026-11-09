@@ -44,3 +44,17 @@ func TestJSONRefusesUnstorableStrings(t *testing.T) {
 		}
 	}
 }
+
+func TestReferenceRefusesUnstorableBytes(t *testing.T) {
+	for _, kind := range []FieldType{Relation, Image, File} {
+		field := Field{Name: "value", Type: kind}
+		for _, value := range []string{"a\x00b", "\x00", "bad\xff"} {
+			if err := Validate(field, value); err == nil || AsViolation(err).Code() != "invalid_text" {
+				t.Errorf("type %v accepts %q: %v", kind, value, err)
+			}
+		}
+		if err := Validate(field, "uploads/café.png"); err != nil {
+			t.Errorf("type %v refuses valid text: %v", kind, err)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net"
 	"net/http"
 	"sort"
@@ -120,7 +121,12 @@ func CacheMiddleware(cache Cache, ttl time.Duration) func(http.Handler) http.Han
 // response size that may be buffered for caching. A response exceeding
 // maxBodyBytes is streamed to the client and never stored. Pass 0 for
 // unbounded buffering (the pre-cap behaviour, not recommended in production).
+// A negative maxBodyBytes panics: it used to read as 0 and buffer every
+// response whole.
 func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) func(http.Handler) http.Handler {
+	if maxBodyBytes < 0 {
+		panic(fmt.Sprintf("cache: CacheMiddlewareWithLimit: maxBodyBytes %d is negative (0 means unbounded)", maxBodyBytes))
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Only cache GET requests. An unsafe method invalidates the
@@ -155,8 +161,17 @@ func CacheMiddlewareWithLimit(cache Cache, ttl time.Duration, maxBodyBytes int) 
 			// for a Range request would let a truncated 206 body collide with
 			// (and poison) the full-document variant. Pass them straight
 			// through, uncached with a BYPASS diagnostic.
+			//
+			// Navigation fetches (the runtime's X-Gofastr-Navigate) bypass
+			// for the mirror-image reason: the key does not encode the
+			// header, so a cookieless navigation could be answered with the
+			// cached FULL page, and the navigation's partial could be stored
+			// under the full page's key. A navigation is a user action
+			// expecting current state; it is never served from the cache and
+			// never stored into it.
 			isRange := r.Header.Get("Range") != ""
-			if isRange {
+			isNavigate := r.Header.Get("X-Gofastr-Navigate") == "1"
+			if isRange || isNavigate {
 				w.Header().Set("X-Cache", "BYPASS")
 				next.ServeHTTP(w, r)
 				return

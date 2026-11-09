@@ -28,7 +28,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
 	"github.com/DonaldMurillo/gofastr/framework"
+	fwdsl "github.com/DonaldMurillo/gofastr/framework/dsl"
 	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/entityui"
+	fwfilter "github.com/DonaldMurillo/gofastr/framework/filter"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
@@ -93,6 +96,12 @@ type AppSpecSeedEntity struct {
 	// column with no weights entry gets a deterministic skew seeded from the
 	// entity name so demos never read as a flat round-robin.
 	Weights map[string]map[string]int
+	// Authored is the number of leading Rows the author wrote; the
+	// generator sets it when it expands Count (ExpandAppSpecSeed) so the
+	// stub emitter and pack know where the authored rows end. It is not an
+	// app-spec key, and pack never writes it back: a packed spec carries
+	// the recipe (count/weights) plus the authored rows only.
+	Authored int
 }
 
 // AppSpecNavItem describes a navigation entry: a link to a screen or URL.
@@ -204,6 +213,7 @@ type AppSpecBlock struct {
 	Mode      string // "create", "edit" for entity_form; "table", "cards" for entity_list
 	Create    bool   // entity_list: show "New" + mount a create screen at <list>/create
 	Bulk      bool   // entity_list: row selection, the bulk bar and Export CSV
+	Filter    string // entity_list: a pinned `field=value` equality (stat_card's filter spelling), emitted as ListBuilder.Where
 	Props     map[string]any
 	Children  []AppSpecBlock
 	Actions   []AppSpecAction
@@ -2342,7 +2352,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 		if err := refuseReplacedBlockKeys(m, kind, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
-		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
+		allowed := map[string]bool{"type": true, "kind": true, "text": true, "level": true, "class": true, "href": true, "entity": true, "fields": true, "limit": true, "empty_text": true, "mode": true, "create": true, "bulk": true, "filter": true, "props": true, "children": true, "actions": true, "island": true, "widget": true}
 		if err := rejectUnknownKeys(m, allowed, fmt.Sprintf("body[%d]", i)); err != nil {
 			return nil, err
 		}
@@ -2368,6 +2378,7 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 			Mode:      stringValue(m["mode"]),
 			Create:    boolValue(m["create"]),
 			Bulk:      boolValue(m["bulk"]),
+			Filter:    stringValue(m["filter"]),
 			Props:     normalizeControlProps(kind, mapValue(m["props"])),
 			Children:  children,
 			Actions:   actions,
@@ -3399,6 +3410,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 	if block.Bulk && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
 		return fmt.Errorf("app spec: screen %q bulk applies only to an entity_list block, not %q", screenName, kind)
 	}
+	if block.Filter != "" && strings.ToLower(strings.TrimSpace(kind)) != "entity_list" {
+		return fmt.Errorf("app spec: screen %q filter applies only to an entity_list block, not %q", screenName, kind)
+	}
 	requiredProp := ""
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "label":
@@ -3474,6 +3488,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			if !validFields[field] {
 				return fmt.Errorf("app spec: screen %q entity_list field %q is not defined on entity %q", screenName, field, block.Entity)
 			}
+		}
+		if err := validateEntityListFilter(screenName, decl, block.Filter); err != nil {
+			return err
 		}
 		if block.Limit < 0 {
 			return fmt.Errorf("app spec: screen %q entity_list limit must be >= 0", screenName)
@@ -3566,7 +3583,13 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if srcEntity == "" || groupBy == "" {
 			return fmt.Errorf("app spec: screen %q %s source needs both entity and group_by", screenName, kind)
 		}
-		decl, known := entities[strings.Trim(srcEntity, "/")]
+		// The generated chart and its boot check (entityui.CheckChart)
+		// take the name as written, so a route-style "/customers" is an
+		// unknown entity there: refuse it here, naming the spelling.
+		if t := strings.Trim(srcEntity, "/"); t != srcEntity {
+			return fmt.Errorf("app spec: screen %q %s source entity %q is a route, not an entity name: write %q", screenName, kind, srcEntity, t)
+		}
+		decl, known := entities[srcEntity]
 		if !known {
 			return fmt.Errorf("app spec: screen %q %s source targets unknown entity %q", screenName, kind, srcEntity)
 		}
@@ -3583,6 +3606,23 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			"the chart renders each distinct stored value as a bar or slice label", decl); err != nil {
 			return err
 		}
+		// entityui.CheckChart refuses at boot a column the database does
+		// not group: a json field, and a many-to-many relation, which is
+		// a link table rather than a column. The chart drew nothing.
+		if col, _ := appSpecColumn(decl, groupBy); col != nil {
+			if t := strings.ToLower(strings.TrimSpace(col.Type)); t == "json" || (t == "relation" && col.Many) {
+				return fmt.Errorf("app spec: screen %q %s group_by %q is a %s field, which the chart cannot group by", screenName, kind, groupBy, appSpecGroupKind(col))
+			}
+		}
+		// Then the boot check itself, over the fields the generated entity
+		// registers, so a chart the load passes never panics at boot.
+		fields, err := AppSpecEntityFields(decl)
+		if err != nil {
+			return fmt.Errorf("app spec: entity %q: %w", srcEntity, err)
+		}
+		if err := entityui.CheckChartFields(srcEntity, fields, groupBy); err != nil {
+			return fmt.Errorf("app spec: screen %q %s %q: %w", screenName, kind, AppSpecBlockName(block, "title", srcEntity), err)
+		}
 	case "stat_card":
 		// A stat_card with a source binds to live entity data; without a
 		// registered CRUD handler statValue would render a silent "—".
@@ -3593,7 +3633,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			if srcEntity == "" {
 				return fmt.Errorf("app spec: screen %q stat_card source needs entity", screenName)
 			}
-			decl, known := entities[strings.Trim(srcEntity, "/")]
+			// As for a chart: entityui.CheckStat takes the name as written.
+			if t := strings.Trim(srcEntity, "/"); t != srcEntity {
+				return fmt.Errorf("app spec: screen %q stat_card source entity %q is a route, not an entity name: write %q", screenName, srcEntity, t)
+			}
+			decl, known := entities[srcEntity]
 			if !known {
 				return fmt.Errorf("app spec: screen %q stat_card source targets unknown entity %q", screenName, srcEntity)
 			}
@@ -3622,14 +3666,32 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 					}
 					break
 				}
+				if err := validateStatCardFilterValues(screenName, AppSpecBlockName(block, "label", srcEntity), decl, f); err != nil {
+					return err
+				}
 			}
 			// agg is StatValue's exact spelling: count (or empty) or sum. sum
 			// renders the total of a numeric column. At one row that total IS
 			// the stored value, so the masked-column bar applies here too.
 			agg, _ := src["agg"].(string)
+			// The generated app runs entityui.CheckStat on the card at
+			// boot, which refuses a count given a field or a format and a
+			// sum formatted other than "money": StatValue ignores those
+			// props, so the card would draw a plain count where a sum or
+			// money was asked for. Refuse the same shapes here.
+			format := AppSpecProp(block, "format")
 			switch agg {
 			case "", "count":
+				if f, _ := src["field"].(string); f != "" {
+					return fmt.Errorf("app spec: screen %q stat_card counts rows and takes no source.field (got %q); set agg: sum to total it", screenName, f)
+				}
+				if format != "" {
+					return fmt.Errorf("app spec: screen %q stat_card counts rows and takes no format (got %q)", screenName, format)
+				}
 			case "sum":
+				if format != "" && format != "money" {
+					return fmt.Errorf("app spec: screen %q stat_card format %q is not money (or empty)", screenName, format)
+				}
 				f, _ := src["field"].(string)
 				if err := requireGroupableColumn(screenName, "stat_card", "source.field", f,
 					"the card renders the total of the stored values, which at one row is the value itself", decl); err != nil {
@@ -3640,6 +3702,19 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 				}
 			default:
 				return fmt.Errorf("app spec: screen %q stat_card source agg %q is not count or sum", screenName, agg)
+			}
+			// Then the boot check itself, over the fields the generated
+			// entity registers, so a card the load passes never panics at
+			// boot. The checks above refuse the common mistakes in the
+			// spec's own words first.
+			fields, err := AppSpecEntityFields(decl)
+			if err != nil {
+				return fmt.Errorf("app spec: entity %q: %w", srcEntity, err)
+			}
+			srcField, _ := src["field"].(string)
+			filter, _ := src["filter"].(string)
+			if err := entityui.CheckStatFields(srcEntity, fields, agg, srcField, filter, format); err != nil {
+				return fmt.Errorf("app spec: screen %q stat_card %q: %w", screenName, AppSpecBlockName(block, "label", srcEntity), err)
 			}
 		}
 	case "stack", "cluster", "grid", "stat_grid":
@@ -3674,6 +3749,152 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		}
 	}
 	return nil
+}
+
+// validateEntityListFilter guards an entity_list's pinned filter
+// (`filter: field=value`, stat_card's spelling): exactly one `=`, both
+// sides non-empty bare words, the field defined on the entity (its camel
+// JSON spelling resolves to the column) and neither hidden nor no_query.
+// The pin lands on entityui's ListBuilder.Where, which pins field =
+// value on every read inside the caller's scope — the same one-bit
+// oracle the stat_card filter guard closes, so the same columns are
+// barred here.
+func validateEntityListFilter(screenName string, decl framework.EntityDeclaration, filter string) error {
+	if filter == "" {
+		return nil
+	}
+	if strings.Contains(filter, " ") || strings.Count(filter, "=") != 1 {
+		return fmt.Errorf("app spec: screen %q entity_list filter %q is not the pinned spelling; use field=value", screenName, filter)
+	}
+	field, value, _ := strings.Cut(filter, "=")
+	if field == "" || value == "" || !statFilterWord.MatchString(field) || !statFilterWord.MatchString(value) {
+		return fmt.Errorf("app spec: screen %q entity_list filter %q is not the pinned spelling; use field=value", screenName, filter)
+	}
+	if f, ok := EntityListPinColumn(decl, field); ok {
+		if f.Hidden {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q is hidden (the pinned list would disclose its values)", screenName, f.Name)
+		}
+		if f.NoQuery {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q is no_query (the pinned list would match on the stored value)", screenName, f.Name)
+		}
+		return validateFilterValue(screenName, "entity_list filter", f, value, true)
+	}
+	return fmt.Errorf("app spec: screen %q entity_list filter column %q is not defined on entity %q", screenName, field, decl.Name)
+}
+
+// EntityListPinColumn resolves an entity_list pin's field to the
+// declared column: its name, or its camel JSON spelling. The load
+// checks the pin through it and the generator emits the column it
+// returns in .Where(column, value), so the two cannot resolve
+// differently. The pin binds through ListBuilder.Where, which takes
+// the column, so the camel spelling is resolved here, never at runtime.
+func EntityListPinColumn(decl framework.EntityDeclaration, field string) (framework.FieldDeclaration, bool) {
+	for _, f := range decl.Fields {
+		if f.Name == field || ToCamelJSON(f.Name) == field {
+			return f, true
+		}
+	}
+	return framework.FieldDeclaration{}, false
+}
+
+// validateFilterValue refuses a filter literal its column cannot hold.
+// The entity_list pin and the stat_card filter both bind through crud's
+// filter coercion on every read, so a value the column's type cannot
+// hold (yes on a bool) fails every load: a 400 on the list, "—" on the
+// card. With member set (an equality, inequality or in comparison) an
+// enum value outside the field's values is refused too: it matches no
+// row, or every row.
+func validateFilterValue(screenName, what string, f fwentity.FieldDeclaration, value string, member bool) error {
+	sf, err := f.Field()
+	if err != nil {
+		return fmt.Errorf("app spec: screen %q %s column %q: %w", screenName, what, f.Name, err)
+	}
+	if _, err := fwfilter.CoerceValue(f.Name, sf.Type, value); err != nil {
+		return fmt.Errorf("app spec: screen %q %s value %q does not fit %s column %q", screenName, what, value, f.Type, f.Name)
+	}
+	if member && len(sf.Values) > 0 && !slices.Contains(sf.Values, value) {
+		return fmt.Errorf("app spec: screen %q %s value %q is not one of enum column %q's values %v", screenName, what, value, f.Name, sf.Values)
+	}
+	return nil
+}
+
+// validateStatCardFilterValues parses a stat_card's source.filter (the
+// DSL predicate entityui.StatValue parses on every render) over the
+// fields the generated entity registers, the parse entityui.CheckStat
+// runs at boot: an unknown column, a camel spelling (no generated field
+// sets a WireName), an operator the parser does not know and a literal
+// its column's type cannot hold are refused, naming the card and the
+// parse error. Then each =, != and in comparison on an enum column must
+// name one of the column's values: it matches no row, or every row,
+// otherwise.
+func validateStatCardFilterValues(screenName, card string, decl framework.EntityDeclaration, filter string) error {
+	fields, err := AppSpecEntityFields(decl)
+	if err != nil {
+		return fmt.Errorf("app spec: entity %q: %w", decl.Name, err)
+	}
+	pred, err := fwdsl.ParsePredicate(filter, fields)
+	if err != nil {
+		return fmt.Errorf("app spec: screen %q stat_card %q filter %q: %w", screenName, card, filter, err)
+	}
+	if pred == nil {
+		return nil
+	}
+	byName := make(map[string]fwentity.FieldDeclaration, len(decl.Fields))
+	for _, f := range decl.Fields {
+		byName[f.Name] = f
+	}
+	var walk func(p *fwfilter.Predicate) error
+	walk = func(p *fwfilter.Predicate) error {
+		for i := range p.Children {
+			if err := walk(&p.Children[i]); err != nil {
+				return err
+			}
+		}
+		// A column Define adds (id, the timestamps) is no enum, and the
+		// parse already held its literal to its type.
+		f, ok := byName[p.Field]
+		if len(p.Children) > 0 || !ok {
+			return nil
+		}
+		switch p.Op {
+		case fwfilter.OpIn:
+			for _, v := range p.Values {
+				if err := validateFilterValue(screenName, "stat_card filter", f, v, true); err != nil {
+					return err
+				}
+			}
+		case fwfilter.OpEq, fwfilter.OpNe:
+			return validateFilterValue(screenName, "stat_card filter", f, p.Value, true)
+		}
+		return nil
+	}
+	return walk(pred)
+}
+
+// AppSpecEntityFields returns the fields the generated app's entity
+// holds once it registers: the declaration's fields (the owner column
+// the loader adds among them) and the system columns entity.Define
+// injects that the declaration does not name, the id key, created_at
+// and updated_at unless timestamps is false, and deleted_at under
+// soft_delete. It runs the framework's own injector
+// (EntityConfig.WithSystemFields), so the load and the boot see one
+// field list. No generated field sets a WireName: a filter names the
+// column.
+func AppSpecEntityFields(decl framework.EntityDeclaration) ([]schema.Field, error) {
+	cfg, err := decl.Config()
+	if err != nil {
+		return nil, err
+	}
+	return cfg.WithSystemFields().Fields, nil
+}
+
+// AppSpecBlockName is the name a generated screen's boot check gives a
+// stat card or chart: its label or title prop, else the source entity.
+func AppSpecBlockName(block AppSpecBlock, prop, entity string) string {
+	if name := AppSpecProp(block, prop); name != "" {
+		return name
+	}
+	return entity
 }
 
 // appSpecCatalogUnderNode returns the first catalog kind among blocks the
@@ -4025,6 +4246,15 @@ func appSpecColumn(decl framework.EntityDeclaration, name string) (found *framew
 		return nil, true
 	}
 	return nil, false
+}
+
+// appSpecGroupKind names a field a chart cannot group by, for the
+// refusal: "json" or "many-to-many relation".
+func appSpecGroupKind(col *framework.FieldDeclaration) string {
+	if col.Many {
+		return "many-to-many relation"
+	}
+	return "json"
 }
 
 // appSpecNumericType reports a declared field type a sum can total.

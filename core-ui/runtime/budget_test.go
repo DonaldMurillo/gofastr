@@ -1679,7 +1679,13 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 3656 measured: TestPaneCloseDismissesOwnedModals pins pending
 		// chrome and deep-link cancellation across a layer content refresh.
 		// TestTrapSkipsNegativeControls: 3670 measured + 2 for tabbable initial focus.
-		"widgets": 3672,
+		// 3760 measured + 2 (2026-11-08): _catalogPass, the merge, mount
+		// and deep-link sync core's boot and navigate passes each spelled
+		// out, moved here so core could take gofastr:widgets-synced
+		// (TestOpenDuringNavigationSurvivesCommit) and stay under its
+		// lines; 46 of it is the pass answering when its mounts and
+		// deep-link opens settle, so the event means the widgets are in.
+		"widgets": 3762,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top

@@ -136,7 +136,7 @@ func handleHelperChecked(w http.ResponseWriter, r *http.Request) {
 	db.Exec("INSERT INTO h (name) VALUES ($1)", v.name)
 }
 
-func okText(s string) bool { // want okText:`textbind\(sink=0 return=0 check=1 source=false\)`
+func okText(s string) bool { // want okText:`textbind\(sink=0 return=0 check=1 source=false retfields=\[\]\)`
 	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
 
@@ -144,3 +144,8 @@ func okText(s string) bool { // want okText:`textbind\(sink=0 return=0 check=1 s
 type Plain struct {
 	Key string
 }
+
+// Bound returns the field — filter.ParsedFilter.BindValue's shape
+// (1de1c216, 155cafcd): a method in the declaring package handing a
+// field back to a package that filled it with request text.
+func (p Plain) Bound() any { return p.Key } // want Bound:`textbind\(sink=0 return=0 check=0 source=false retfields=\[Key\]\)`

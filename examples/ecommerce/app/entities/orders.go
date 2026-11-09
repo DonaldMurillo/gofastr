@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=de6e4cc645ebbc54
+//gofastr:generated generator=app kind=scaffold version=dev sum=9710dbeb9bb3cd49
 
 package entities
 
@@ -11,23 +11,23 @@ import (
 )
 
 type Orders struct {
-	ID              string            `json:"id"`
-	UserId          string            `json:"userId,omitempty"`
-	OrderNumber     string            `json:"orderNumber,omitempty"`
-	Status          OrdersStatusValue `json:"status,omitempty"`
-	CustomerName    string            `json:"customerName,omitempty"`
-	CustomerEmail   string            `json:"customerEmail,omitempty"`
-	CustomerPhone   string            `json:"customerPhone,omitempty"`
-	ShippingAddress any               `json:"shippingAddress,omitempty"`
-	BillingAddress  any               `json:"billingAddress,omitempty"`
-	Subtotal        string            `json:"subtotal,omitempty"`
-	Tax             string            `json:"tax,omitempty"`
-	ShippingCost    string            `json:"shippingCost,omitempty"`
-	Total           string            `json:"total,omitempty"`
-	Notes           string            `json:"notes,omitempty"`
-	ShippedAt       string            `json:"shippedAt,omitempty"`
-	DeliveredAt     string            `json:"deliveredAt,omitempty"`
-	Items           []*OrderItems     `json:"items,omitempty"`
+	ID              string             `json:"id"`
+	UserId          *string            `json:"userId,omitempty"`
+	OrderNumber     string             `json:"orderNumber,omitempty"`
+	Status          *OrdersStatusValue `json:"status,omitempty"`
+	CustomerName    string             `json:"customerName,omitempty"`
+	CustomerEmail   string             `json:"customerEmail,omitempty"`
+	CustomerPhone   *string            `json:"customerPhone,omitempty"`
+	ShippingAddress any                `json:"shippingAddress,omitempty"`
+	BillingAddress  any                `json:"billingAddress,omitempty"`
+	Subtotal        string             `json:"subtotal,omitempty"`
+	Tax             *string            `json:"tax,omitempty"`
+	ShippingCost    *string            `json:"shippingCost,omitempty"`
+	Total           string             `json:"total,omitempty"`
+	Notes           *string            `json:"notes,omitempty"`
+	ShippedAt       *string            `json:"shippedAt,omitempty"`
+	DeliveredAt     *string            `json:"deliveredAt,omitempty"`
+	Items           []*OrderItems      `json:"items,omitempty"`
 }
 
 // OrdersStatusValue is one value of the orders field status.
@@ -129,8 +129,11 @@ func NewOrdersRepo(app *framework.App) *OrdersRepo {
 	if err != nil {
 		panic("entities: orders not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("orders")
 	h.Storage = app.Storage
 	h.Events = app.Events()

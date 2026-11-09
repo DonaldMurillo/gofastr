@@ -844,6 +844,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
+		ch.maskOwn(ctx, results...)
 		// AfterList may redact or transform rows; visibility belongs in BeforeList.
 		if ch.Hooks != nil {
 			listPayload.Results = results
@@ -868,8 +869,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			TotalPages: totalPages,
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		writeJSONStatus(w, r, http.StatusOK, resp)
 		if pooledEncode {
 			returnRowSlice(pooledRows)
 		}
@@ -1035,6 +1035,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
+		ch.maskOwn(ctx, result)
 		if ch.Hooks != nil {
 			getPayload.Result = result
 			if err := runHooks(ch.Hooks, ctx, hook.AfterGet, getPayload); err != nil {
@@ -1045,8 +1046,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			result = getPayload.Result
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(singleResponse{Data: result})
+		writeJSONStatus(w, r, http.StatusOK, singleResponse{Data: result})
 	}
 }
 
@@ -1142,9 +1142,7 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			}
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(singleResponse{Data: resp})
+		writeJSONStatus(w, r, http.StatusCreated, singleResponse{Data: resp})
 	}
 }
 
@@ -1230,8 +1228,7 @@ func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, resu
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(singleResponse{Data: resp})
+	writeJSONStatus(w, r, http.StatusOK, singleResponse{Data: resp})
 }
 
 // Delete returns an http.HandlerFunc that deletes an entity by ID. If the
@@ -1368,7 +1365,7 @@ func fieldsRefusal(ctx context.Context, code int, head schema.Violation, fields 
 // (crudRefusal).
 func writeCRUDError(w http.ResponseWriter, r *http.Request, err error, wireKeys ...func(string) string) {
 	f := crudRefusal(r.Context(), err, wireKeys...)
-	writeErrorBody(w, f.code, f.body())
+	writeErrorBody(w, r, f.code, f.body())
 }
 
 // crudRefusal maps a CRUD-flow error to its refusal. Sentinel and typed
@@ -1840,7 +1837,7 @@ func textIsTrue(s string) bool {
 // writeJSONError writes a structured JSON error response: reason
 // translated into r's locale as "error", its code as "reason".
 func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
-	writeErrorBody(w, code, phraseRefusal(r.Context(), code, reason, params...).body())
+	writeErrorBody(w, r, code, phraseRefusal(r.Context(), code, reason, params...).body())
 }
 
 // writeErrJSON writes err as a JSON error response (errRefusal). A hook
@@ -1856,22 +1853,37 @@ func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, f
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
 	}
-	writeErrorBody(w, code, errRefusal(r.Context(), code, err, frame).body())
+	writeErrorBody(w, r, code, errRefusal(r.Context(), code, err, frame).body())
 }
 
 // writeErrorBody adds the envelope every crud error shares to body and
 // writes it.
-func writeErrorBody(w http.ResponseWriter, code int, body map[string]any) {
+func writeErrorBody(w http.ResponseWriter, r *http.Request, code int, body map[string]any) {
 	// Every crud JSON error shares this choke point; the error arms of
 	// scoped data surfaces are no-store exactly like their 2xx arms
 	// (the handler-top stamp covers them when reached through a handler;
 	// this covers direct callers).
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
 	body["success"] = false
 	body["code"] = code
-	json.NewEncoder(w).Encode(body)
+	writeJSONStatus(w, r, code, body)
+}
+
+// writeJSONStatus answers body as JSON with status. The value is
+// marshalled before a byte is written, so a body that cannot encode (a
+// NaN in a row, say) answers the generic 500 instead of the intended
+// status with an empty body.
+func writeJSONStatus(w http.ResponseWriter, r *http.Request, status int, body any) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		logf("crud: encode response: %v", err)
+		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // generateFieldValue creates a value based on the auto-generation strategy.

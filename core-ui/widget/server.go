@@ -1,6 +1,7 @@
 package widget
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -351,10 +352,18 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 			"cfg":    cfg,
 		})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(out)
+	if err := enc.Encode(out); err != nil {
+		// A state value that cannot encode would answer the catalog
+		// with an empty body, mounting no widgets; answer 500 so the
+		// runtime treats the catalog as failed, not empty.
+		i18n.HTTPError(w, r, http.StatusInternalServerError, reasonEncodeFailed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(buf.Bytes())
 }
 
 // chromePathFor returns the route the runtime fetches to get the
@@ -531,7 +540,11 @@ func (s *server) serveState(w http.ResponseWriter, _ *http.Request) {
 	if terminal && !partial {
 		w.Header().Set("X-Gofastr-Poll-Stop", "1")
 	}
-	_ = json.NewEncoder(w).Encode(out)
+	// Every value here already survived its own json.Marshal above, so
+	// this encode can only fail at the write (a client gone mid-poll).
+	if err := json.NewEncoder(w).Encode(out); err != nil {
+		slog.Default().Debug("widget: state write", "widget", s.def.Name, "err", err)
+	}
 }
 
 // renderSkeleton produces the initial chrome HTML: framework-default

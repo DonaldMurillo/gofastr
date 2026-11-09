@@ -56,16 +56,10 @@ var errUpsertBeforeUpdate = errors.New("upsert: entities with BeforeUpdate hooks
 // fills an omitted column on the insert arm alone. A conflict that
 // writes any column re-stamps an auto updated_at with the server time,
 // as Update does; created_at and the key keep their stored values.
-// A non-null cascade relation value returns a ValidationError without
-// writing; use CreateOne or UpdateOne for nested writes.
+// Nested writes run under the arm the upsert takes: the insert arm
+// writes cascade_write relations as CreateOne does, the conflict arm as
+// UpdateOne does, in the same transaction.
 func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[string]any, error) {
-	columns := maps.Clone(body)
-	if err := ch.bodyColumns(columns); err != nil {
-		return nil, err
-	}
-	if err := ch.refuseUpsertCascades(columns); err != nil {
-		return nil, err
-	}
 	ctx = withEventStamps(ctx)
 	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.BeforeUpdate)) > 0 {
 		return nil, errUpsertBeforeUpdate
@@ -90,9 +84,6 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 	// Keys resolve to columns first, so an ownerId spelling is the owner
 	// column the strip below removes.
 	if err := ch.bodyColumns(body); err != nil {
-		return nil, err
-	}
-	if err := ch.refuseUpsertCascades(body); err != nil {
 		return nil, err
 	}
 	// Strip caller-supplied owner_id / tenant_id from the body BEFORE
@@ -152,9 +143,6 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 				return &beforeHookError{err: err}
 			}
-			if err := ch.refuseUpsertCascades(body); err != nil {
-				return err
-			}
 			blanked = slices.DeleteFunc(blanked, func(name string) bool {
 				_, set := body[name]
 				return set
@@ -164,10 +152,22 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err := ch.coerceNumberColumnValues(body); err != nil {
 			return err
 		}
-		if err := ch.refuseUpsertCascades(body); err != nil {
+		// A belongs_to cascade sets its key once the arm is known below,
+		// so the key is not required here: the cascade either fills it or
+		// refuses the write.
+		if err := ch.refuseCascadeUpsertKey(body); err != nil {
 			return err
 		}
-		vr := schema.ValidateAll(ch.entitySchema(), body)
+		vs := ch.entitySchema()
+		if setKeys := ch.cascadeSetKeys(body); len(setKeys) > 0 {
+			vs.Fields = slices.Clone(vs.Fields)
+			for i := range vs.Fields {
+				if setKeys[vs.Fields[i].Name] {
+					vs.Fields[i].Required = false
+				}
+			}
+		}
+		vr := schema.ValidateAll(vs, body)
 		if !vr.Valid {
 			return &ValidationError{fields: vr.Errors}
 		}
@@ -231,6 +231,25 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			for _, name := range blanked {
 				body[name] = nil
 			}
+		}
+		// Belongs-to cascades write their child before the parent, under
+		// the arm's rules: the conflict arm updates, as UpdateOne does.
+		belongsToResults, err := ch.processBelongsToCascadeWrites(ctx, req, body, existed)
+		if err != nil {
+			return err
+		}
+		// Preflight validation could not check keys a belongs-to cascade
+		// had not filled. Validate the final parent body as create does,
+		// still inside inTx so a refusal undoes the child writes too.
+		if err := ch.coerceNumberColumnValues(body); err != nil {
+			return err
+		}
+		vr = schema.ValidateAll(ch.entitySchema(), body)
+		if !vr.Valid {
+			return &ValidationError{fields: vr.Errors}
+		}
+		if err := ch.refuseInexactDecimals(ctx, body); err != nil {
+			return err
 		}
 		// The state check, as an update of the existing row or a create
 		// (states.go).
@@ -478,6 +497,9 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		if err != nil {
 			return fmt.Errorf("upsert: %w", err)
 		}
+		if err := ch.refuseNullKey(res); err != nil {
+			return err
+		}
 		result = res
 		if wrote {
 			if id, ok := ch.rowID(result); ok {
@@ -488,6 +510,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 		}
 		if err := ch.releaseObjects(ctx, req, "", ch.colKeyVals(body), objs, false); err != nil {
 			return fmt.Errorf("upsert: %w", err)
+		}
+		depResults, err := ch.processDependentCascadeWrites(ctx, req, ch.cascadeParentID(result, body), body, existed)
+		if err != nil {
+			return err
+		}
+		maps.Copy(result, belongsToResults)
+		maps.Copy(result, depResults)
+		// A conflict that writes only nested rows is still a write, as an
+		// update carrying only cascades is.
+		if len(belongsToResults)+len(depResults) > 0 {
+			wrote = true
 		}
 
 		if ch.Hooks != nil && wrote {

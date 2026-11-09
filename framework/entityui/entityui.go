@@ -276,3 +276,17 @@ func contain(ctx context.Context, entityName, slot string, build func() (render.
 	}
 	return html
 }
+
+// kindText runs a kind's Text the way contain runs a slot: a panic is
+// logged by its type and the slot is left empty. contain's failure
+// markup would print as tags in a text slot.
+func kindText(ctx context.Context, entityName, field string, text func() string) (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			//gofastr:allow(recoverlog) logs only the panic value's type: its text may carry record contents
+			slog.ErrorContext(ctx, "entityui: kind text panicked", "entity", entityName, "field", field, "panic", fmt.Sprintf("%T", r))
+			out = ""
+		}
+	}()
+	return text()
+}

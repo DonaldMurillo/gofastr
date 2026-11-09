@@ -692,6 +692,23 @@ screens:
                 entity: invoices
                 agg: count
                 filter: status=open
+          - kind: stat_card
+            props:
+              label: Large unpaid
+              source:
+                entity: invoices
+                agg: count
+                filter: 'status in ["draft", "open"] and amount >= 1000'
+          # created_at is a column entity.Define adds, not a spec field:
+          # the load and the boot check both see it (the stat check
+          # probe's TestFrameworkColumnStatBoots).
+          - kind: stat_card
+            props:
+              label: Since 2026
+              source:
+                entity: invoices
+                agg: count
+                filter: 'created_at >= "2026-01-01T00:00:00Z"'
       - kind: bar_chart
         props:
           title: Invoices by status
@@ -703,6 +720,9 @@ screens:
         text: Recent invoices
         fields: [number, amount, status, due_on]
         limit: 8
+        # A pinned filter: this list shows open invoices only, whatever
+        # the stat cards above it count.
+        filter: status=open
         empty_text: No invoices yet.
   - name: invoices
     route: /app/invoices
@@ -773,6 +793,19 @@ screens:
       - kind: entity_list
         entity: cards
         fields: [label, number]
+      # Charts grouped on SQL-keyword columns; each is checked when the
+      # screen mounts (the chart check probe drops "group").
+      - kind: pie_chart
+        props:
+          title: Cards by group
+          source:
+            entity: cards
+            group_by: group
+      - kind: line_chart
+        props:
+          source:
+            entity: cards
+            group_by: order
 
   # Record screens at one path segment per key column.
   - name: bookings
@@ -884,7 +917,16 @@ seed:
         price: 30
         active: false
         specs: [oak, pine]
+  # count:/weights: is the seed recipe. The generated stubs.go carries it
+  # beside the rows (Count, Authored, Weights on seedEntity) so `gofastr
+  # pack` reads it back instead of flattening the entry to explicit rows.
   - entity: invoices
+    count: 6
+    weights:
+      status:
+        draft: 1
+        open: 3
+        paid: 2
     rows:
       - number: INV-1
         amount: "120"

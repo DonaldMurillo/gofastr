@@ -21,9 +21,10 @@ import (
 //   - Screen readers announce "radio group", current option, position
 //     in set, all via native ARIA.
 //
-// The visual sliding indicator is CSS-only (uses :has(), supported
-// in all evergreen browsers as of 2024). On older engines the
-// indicator stays static; the control remains fully functional.
+// The sliding indicator is CSS-only: the checked option is a CSS
+// anchor and the indicator is positioned on it, so it fits any number
+// of options. A browser without anchor positioning draws the pill on
+// the checked option itself, without the slide.
 //
 // Optional RPCPath fires a POST to the server on change so apps can
 // pre-cache or re-render dependent islands; pair with RPCSignal for
@@ -150,20 +151,19 @@ func SegmentedControl(cfg SegmentedControlConfig) render.HTML {
 		// data-label feeds the hidden bold copy that reserves the
 		// checked weight's width (see segmentedCSS).
 		labelHTML := html.Span(html.TextConfig{Class: "fui-segmented__label", ExtraAttrs: html.Attrs{"data-label": o.Label}}, render.Text(o.Label))
-		// Position index for sliding indicator CSS. Every option comes
-		// from SegmentedControlConfig's Options (label/value strings),
-		// never from caller markup, so each label is a topmost internal
-		// subtree; its input/labelHTML children need no mark of their own.
+		// Every option comes from SegmentedControlConfig's Options
+		// (label/value strings), never from caller markup, so each label
+		// is a topmost internal subtree; its input/labelHTML children
+		// need no mark of their own.
 		labelAttrs := html.Attrs{
 			"class":             "fui-segmented__option",
 			"for":               cfg.Name + "--" + strconv.Itoa(i),
-			"data-position":     strconv.Itoa(i),
 			"data-cui-internal": "",
 		}
 		items = append(items, render.Tag("label", flattenAttrs(labelAttrs), input, labelHTML))
 	}
-	// Indicator (CSS-positioned via :has() / data-position siblings) —
-	// also this component's own, not caller content.
+	// Indicator (anchored to the checked option in CSS), also this
+	// component's own, not caller content.
 	items = append(items, html.Span(html.TextConfig{
 		Class:      "fui-segmented__indicator",
 		ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
@@ -178,16 +178,16 @@ var segmentedStyle = registry.RegisterStyle("ui-segmented", segmentedCSS)
 
 func segmentedCSS(_ style.Theme) string {
 	// Equal-width columns via CSS Grid (grid-auto-columns: 1fr). The
-	// sliding indicator is sized to one column via the data-count
-	// attribute on the wrapper, then translated by translateX(100% *
-	// position). Math works because every column is the same width.
+	// sliding indicator is anchored to the checked option (CSS anchor
+	// positioning, scoped to the control), so it fits any option count.
 	//
 	// Knobs: --ui-segmented-min-width-2…-6 (16/22/26/30/34rem, the
-	// per-count minimum widths), --ui-segmented-indicator-shadow (the
-	// sliding pill's two-layer shadow). The indicator's insets and
-	// width follow the wrapper's --spacing-sm padding.
+	// minimum widths for two to six options; seven or more size to
+	// their content), --ui-segmented-indicator-shadow (the sliding
+	// pill's two-layer shadow).
 	return `[data-cui-comp="ui-segmented"] {
   position: relative;
+  anchor-scope: --fui-segmented-checked;
   display: inline-grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
@@ -273,41 +273,44 @@ func segmentedCSS(_ style.Theme) string {
   opacity: var(--opacity-disabled, 0.5);
 }
 
-/* Sliding pill indicator. Sized to one column width via the data-count
-   attribute on the wrapper; translated by (position × 100%) which is
-   exact because every column is exactly 1fr wide. */
+/* Sliding pill indicator. The checked option is the anchor and the
+   control scopes the anchor name, so each control's pill finds its own
+   checked segment and takes its box: any option count, either
+   direction, no per-count or per-position rule. When the checked
+   option changes, the pill's insets change and the transition slides
+   it there. */
+[data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
+  anchor-name: --fui-segmented-checked;
+}
 [data-cui-comp="ui-segmented"] .fui-segmented__indicator {
   position: absolute;
   z-index: 0;
-  top: var(--spacing-sm, 4px);
-  bottom: var(--spacing-sm, 4px);
-  inset-inline-start: var(--spacing-sm, 4px);
-  inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2);
+  position-anchor: --fui-segmented-checked;
+  top: anchor(top);
+  bottom: anchor(bottom);
+  inset-inline-start: anchor(start);
+  inset-inline-end: anchor(end);
   border-radius: calc(var(--radii-md, 8px) - 4px);
   background: var(--color-surface, #fff);
   box-shadow: var(--ui-segmented-indicator-shadow, 0 1px 2px rgba(0,0,0,0.08),
               0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05));
-  transition: transform var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
+  transition: inset-inline-start var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1)),
+              inset-inline-end var(--duration-normal, 250ms) var(--easing-ease-in-out, cubic-bezier(0.4, 0, 0.2, 1));
   pointer-events: none;
 }
-[data-cui-comp="ui-segmented"][data-count="2"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 2); }
-[data-cui-comp="ui-segmented"][data-count="3"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 3); }
-[data-cui-comp="ui-segmented"][data-count="4"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 4); }
-[data-cui-comp="ui-segmented"][data-count="5"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 5); }
-[data-cui-comp="ui-segmented"][data-count="6"] .fui-segmented__indicator { inline-size: calc((100% - var(--spacing-sm, 4px) * 2) / 6); }
-/* With no segment checked the pill would sit under the first one and
-   claim a choice the group does not hold. */
+/* With no segment checked there is no anchor, and a pill would claim a
+   choice the group does not hold. */
 [data-cui-comp="ui-segmented"]:not(:has(.fui-segmented__input:checked)) .fui-segmented__indicator { visibility: hidden; }
-
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="0"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(0); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="1"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 100%)); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="2"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 200%)); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="3"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 300%)); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="4"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 400%)); }
-[data-cui-comp="ui-segmented"]:has(.fui-segmented__option[data-position="5"] .fui-segmented__input:checked) .fui-segmented__indicator { transform: translateX(calc(var(--fui-segmented-dir, 1) * 500%)); }
-/* Right to left the first option sits on the right, so the indicator
-   steps leftward. */
-[data-cui-comp="ui-segmented"]:dir(rtl) { --fui-segmented-dir: -1; }
+/* Without anchor positioning the checked option draws its own pill:
+   in the right place, without the slide. */
+@supports not (anchor-name: --x) {
+  [data-cui-comp="ui-segmented"] .fui-segmented__indicator { display: none; }
+  [data-cui-comp="ui-segmented"] .fui-segmented__option:has(.fui-segmented__input:checked) {
+    background: var(--color-surface, #fff);
+    box-shadow: var(--ui-segmented-indicator-shadow, 0 1px 2px rgba(0,0,0,0.08),
+                0 0 0 var(--stroke-thin, 1px) rgba(0,0,0,0.05));
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
   [data-cui-comp="ui-segmented"] .fui-segmented__indicator { transition: none; }

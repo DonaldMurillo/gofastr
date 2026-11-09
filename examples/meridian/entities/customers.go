@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=7dffa518f95cb54b
+//gofastr:generated generator=app kind=scaffold version=dev sum=7902eeef1e4645a7
 
 package entities
 
@@ -11,14 +11,14 @@ import (
 )
 
 type Customers struct {
-	ID      string               `json:"id"`
-	Name    string               `json:"name,omitempty"`
-	Email   string               `json:"email,omitempty"`
-	Company string               `json:"company,omitempty"`
-	Status  CustomersStatusValue `json:"status,omitempty"`
-	Mrr     string               `json:"mrr,omitempty"`
-	Logo    string               `json:"logo,omitempty"`
-	UserId  string               `json:"userId,omitempty"`
+	ID      string                `json:"id"`
+	Name    string                `json:"name,omitempty"`
+	Email   string                `json:"email,omitempty"`
+	Company *string               `json:"company,omitempty"`
+	Status  *CustomersStatusValue `json:"status,omitempty"`
+	Mrr     *string               `json:"mrr,omitempty"`
+	Logo    *string               `json:"logo,omitempty"`
+	UserId  *string               `json:"userId,omitempty"`
 }
 
 // CustomersStatusValue is one value of the customers field status.
@@ -83,8 +83,11 @@ func NewCustomersRepo(app *framework.App) *CustomersRepo {
 	if err != nil {
 		panic("entities: customers not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("customers")
 	h.Storage = app.Storage
 	h.Events = app.Events()

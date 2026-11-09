@@ -100,6 +100,9 @@
   const activeTraps = new Set();
   const applyTrap = (d, engage) => {
     if (engage) {
+      // Armed once: a second pass would find the siblings already
+      // inert, record none of them, and never release them.
+      if (activeTraps.has(d)) return;
       let bodyChild = d;
       while (bodyChild.parentElement && bodyChild.parentElement !== document.body) {
         bodyChild = bodyChild.parentElement;
@@ -471,6 +474,9 @@
     for (const d of within(scope, HOOK)) {
       restore(d);
       mirror(d);
+      // A trap open on arrival (rendered open, or tapped before this
+      // module loaded) fired no toggle this module heard: arm it here.
+      if (d.open && d.hasAttribute('data-hui-disclosure-trap')) applyTrap(d, true);
     }
   }
 

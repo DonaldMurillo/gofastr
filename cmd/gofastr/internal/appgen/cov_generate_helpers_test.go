@@ -230,7 +230,7 @@ func TestRenderEntityModelRelations(t *testing.T) {
 			{Type: framework.RelHasMany, Name: "posts", Entity: "post"},
 		},
 	})
-	for _, want := range []string{"type User struct", "ID string", "Age int", "Profile *Profile", "Posts []*Post"} {
+	for _, want := range []string{"type User struct", "ID string", "Age *int", "Profile *Profile", "Posts []*Post"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("model missing %q:\n%s", want, got)
 		}

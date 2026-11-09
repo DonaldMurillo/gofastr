@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 	"log"
 	"log/slog"
 	"net/http"
@@ -160,7 +161,7 @@ func guardAuthLimit(rl *RateLimiter, w http.ResponseWriter, r *http.Request) boo
 	if allowed {
 		return true
 	}
-	w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+	w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 	if isFormRequest(r) {
 		writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 	} else {
@@ -268,7 +269,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			key := "account:" + email
 			allowed, retry := c.loginLimitAccount.AllowContext(r.Context(), key)
 			if !allowed {
-				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+				w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 				if isForm {
 					writeFormAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				} else {
@@ -389,9 +390,7 @@ func (c *CorePlugin) loginHandler() http.HandlerFunc {
 			resp["two_factor_required"] = true
 		}
 
-		writeCredentialHeaders(w)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		writeAuthJSON(w, r, http.StatusOK, resp)
 	}
 }
 
@@ -523,9 +522,7 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 			}
 		}
 
-		writeCredentialHeaders(w)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		writeAuthJSON(w, r, http.StatusOK, resp)
 	}
 }
 
@@ -713,9 +710,6 @@ func writeAuthError(w http.ResponseWriter, r *http.Request, status int, reason i
 }
 
 func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase, fields map[string]string, params ...map[string]any) {
-	writeCredentialHeaders(w)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
 	body := map[string]any{
 		"error":   reason.Text(requestContext(r), params...),
 		"success": false,
@@ -725,7 +719,25 @@ func writeAuthErrorFields(w http.ResponseWriter, r *http.Request, status int, re
 	if len(fields) > 0 {
 		body["fields"] = fields
 	}
-	json.NewEncoder(w).Encode(body)
+	writeAuthJSON(w, r, status, body)
+}
+
+// writeAuthJSON answers body as JSON with status, the shared success
+// spelling: the value is marshalled before a byte is written, so a body
+// that cannot encode (a NaN in a computed field) answers the canonical
+// 500 envelope instead of the intended status with an empty body.
+func writeAuthJSON(w http.ResponseWriter, r *http.Request, status int, body any) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		slog.Warn("auth: encode response", "error", err)
+		writeAuthError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
+	writeCredentialHeaders(w)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // writeAuthErrorFor answers err with its own phrase when it carries one,

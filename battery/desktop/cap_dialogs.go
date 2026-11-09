@@ -8,13 +8,14 @@ import (
 
 // dialogsCapability: the OS file/folder pickers. Ungated on purpose:
 // every dialog is user-mediated (the user picks the path), and every
-// returned path lands on the fs allow-list, which is the actual grant.
+// returned path lands on the fs allow-list, which is the actual grant: a
+// file's exact path, or a folder read through an os.Root.
 // A dialog answers with the filepath.Clean form it granted, the only
 // spelling fs accepts back.
 func (b *Battery) dialogsCapability() Capability {
 	return Capability{
 		Name:        "dialogs",
-		Description: "Operating-system file and folder dialogs. Each pick grants only its exact path through fs; folders allow fs.stat, never descendants.",
+		Description: "Operating-system file and folder dialogs. A file pick grants its exact path through fs; a folder pick grants fs.stat, fs.readText and fs.list on the folder and everything under it, confined to it, and never fs.writeText.",
 		Version:     1,
 		Methods: []Method{
 			{
@@ -79,14 +80,14 @@ func (b *Battery) dialogsCapability() Capability {
 			},
 			{
 				Name:        "openFolder",
-				Description: "Shows a folder-picker dialog; grants fs.stat on the exact returned folder and nothing under it.",
+				Description: "Shows a folder-picker dialog; grants fs.stat, fs.readText and fs.list on the returned folder and everything under it, read through an os.Root at the folder so a symlink or .. cannot leave it; never fs.writeText.",
 				Output:      json.RawMessage(`{"type":"object","properties":{"path":{"type":"string"}}}`),
 				Handler: func(ctx context.Context, in json.RawMessage) (any, error) {
 					path, err := b.shell.Dialogs().OpenFolder(ctx)
 					if err != nil {
 						return nil, err
 					}
-					if err := b.AllowPath(path); err != nil {
+					if err := b.AllowFolder(path); err != nil {
 						return nil, &Error{Code: CodeInvalidInput, Message: "dialog returned an unusable path"}
 					}
 					return dialogPathOutput{Path: filepath.Clean(path)}, nil

@@ -59,8 +59,8 @@ func TestOpenAPI_AddsCursorPageSchema(t *testing.T) {
 	doc := buildSpecForBlogApp(t)
 	components := getNestedMap(doc, "components")
 	schemas := getNestedMap(components, "schemas")
-	if _, ok := schemas["CursorPage"]; !ok {
-		t.Fatalf("expected CursorPage schema, got keys %v", mapKeys(schemas))
+	if _, ok := schemas["postsCursorPage"]; !ok {
+		t.Fatalf("expected postsCursorPage schema, got keys %v", mapKeys(schemas))
 	}
 }
 

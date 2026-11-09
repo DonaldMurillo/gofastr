@@ -21,6 +21,7 @@ func recordScreen(ctx context.Context, m *meta, id string) {
 	_, _ = crud.NewTypedQuery[note](m.ch).Find(ctx)            // want `TypedQuery.Find reads stored values`
 	_, _ = crud.NewTypedQuery[note](m.ch).First(ctx)           // want `TypedQuery.First reads stored values`
 	_, _ = crud.NewTypedQuery[note](m.ch).Count(ctx)           // want `TypedQuery.Count reads stored values`
+	_, _ = crud.NewTypedQuery[note](m.ch).Exists(ctx)          // want `TypedQuery.Exists reads stored values`
 }
 
 // A local reassigned after the hooked bind is not hooked any more.
@@ -54,9 +55,49 @@ func (m *meta) getRowUnhooked(ctx context.Context, id string) (map[string]any, e
 	return m.ch.GetOne(ctx, id, nil)
 }
 
-// Near miss: a write takes a bare ctx and is not a read.
+// A write on a bare ctx skips the BeforeGet check on its target: a row
+// GET answers 404 for is written.
 func write(ctx context.Context, m *meta, id string) {
-	_, _ = m.ch.UpdateOne(ctx, id, nil)
+	_, _ = m.ch.CreateOne(ctx, nil)                                                      // want `CrudHandler.CreateOne writes without the read hooks`
+	_, _ = m.ch.UpdateOne(ctx, id, nil)                                                  // want `CrudHandler.UpdateOne writes without the read hooks`
+	_ = m.ch.DeleteOne(ctx, id)                                                          // want `CrudHandler.DeleteOne writes without the read hooks`
+	_ = m.ch.RestoreOne(ctx, id)                                                         // want `CrudHandler.RestoreOne writes without the read hooks`
+	_ = m.ch.PurgeOne(ctx, id)                                                           // want `CrudHandler.PurgeOne writes without the read hooks`
+	_, _ = m.ch.UpsertOne(ctx, nil)                                                      // want `CrudHandler.UpsertOne writes without the read hooks`
+	_, _ = m.ch.RunTransition(ctx, id, "send")                                           // want `CrudHandler.RunTransition writes without the read hooks`
+	_, _ = m.ch.BatchCreateMany(ctx, nil)                                                // want `CrudHandler.BatchCreateMany writes without the read hooks`
+	_, _ = m.ch.BatchUpdateMany(ctx, nil, nil)                                           // want `CrudHandler.BatchUpdateMany writes without the read hooks`
+	_, _ = m.ch.BatchDeleteMany(ctx, nil)                                                // want `CrudHandler.BatchDeleteMany writes without the read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).UpdateAll(ctx, nil)                            // want `TypedQuery.UpdateAll writes every matching row with no read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)                                 // want `TypedQuery.DeleteAll writes every matching row with no read hooks`
+	_, _ = m.ch.UpdateOne(crud.WithStateOverride(crud.WithReadHooks(ctx), "r"), id, nil) // want `CrudHandler.UpdateOne writes without the read hooks`
+}
+
+// The fix: the opt-in is the outermost context option, or a local bound
+// once to it (a parameter rebound once counts).
+func hookedWrite(ctx context.Context, m *meta, id string) {
+	_, _ = m.ch.UpdateOne(crud.WithReadHooks(crud.WithStateOverride(ctx, "r")), id, nil)
+	ctx = crud.WithReadHooks(ctx)
+	_ = m.ch.DeleteOne(ctx, id)
+}
+
+// UpdateAll and DeleteAll apply no read hooks under any context, so the
+// opt-in does not silence them.
+func hooklessWrite(ctx context.Context, m *meta) {
+	ctx = crud.WithReadHooks(ctx)
+	_, _ = crud.NewTypedQuery[note](m.ch).UpdateAll(crud.WithReadHooks(ctx), nil) // want `TypedQuery.UpdateAll writes every matching row with no read hooks`
+	_, _ = crud.NewTypedQuery[note](m.ch).DeleteAll(ctx)                          // want `TypedQuery.DeleteAll writes every matching row with no read hooks`
+}
+
+// A write gets no *Unhooked exemption: no screen writes a row its caller
+// cannot read.
+func (m *meta) saveUnhooked(ctx context.Context, id string) {
+	_, _ = m.ch.UpdateOne(ctx, id, nil) // want `CrudHandler.UpdateOne writes without the read hooks`
+}
+
+// Near miss: a gate is neither a read nor a write.
+func gate(ctx context.Context, m *meta, id string) bool {
+	return m.ch.CanUpdateRecordScoped(ctx, id)
 }
 
 // Near miss: a method of the same name on another type.

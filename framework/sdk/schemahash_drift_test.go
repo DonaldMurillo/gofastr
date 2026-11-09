@@ -65,7 +65,7 @@ func TestNoDriftForGroupMountedEntity(t *testing.T) {
 
 	// Generation half, exactly what cmd/gofastr's appgen.SdkSchemaHash emits.
 	// entity.Define applies the same defaults EntityDeclaration.Config() does.
-	manifestHash := SchemaHash([]NamedConfig{
+	manifestHash := hashOf([]NamedConfig{
 		{Name: "posts", Config: entity.Define("posts", cfg).Config},
 	})
 
@@ -73,7 +73,7 @@ func TestNoDriftForGroupMountedEntity(t *testing.T) {
 	v1 := entity.Define("posts", zzRound2PostsConfig())
 	v1.Version = "/api/v1"
 	reg := &zzRound2Registry{ents: []*entity.Entity{v1}}
-	liveHash := SchemaHash(RegistryNamedConfigs(reg, []string{"posts"}))
+	liveHash := hashOf(RegistryNamedConfigs(reg, []string{"posts"}))
 
 	if liveHash != manifestHash {
 		t.Fatalf("SDK drift reported for an app that never drifted:\n  manifest (generation side) = %s\n  live (serving side)        = %s\n"+

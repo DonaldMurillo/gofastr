@@ -84,7 +84,7 @@ func TestUploadRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create: %v", err)
 		}
-		if created.Name != "Go Upload" || !bytes.Equal(stored(t, created.Logo), logo) {
+		if created.Name != "Go Upload" || created.Logo == nil || !bytes.Equal(stored(t, *created.Logo), logo) {
 			t.Fatalf("create stored %+v", created)
 		}
 		// A patch sends only what it sets: the name survives a new logo.
@@ -94,7 +94,7 @@ func TestUploadRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("patch: %v", err)
 		}
-		if patched.Name != "Go Upload" || patched.Company != "Acme" || !bytes.Equal(stored(t, patched.Logo), other) {
+		if patched.Name != "Go Upload" || patched.Company == nil || *patched.Company != "Acme" || patched.Logo == nil || !bytes.Equal(stored(t, *patched.Logo), other) {
 			t.Fatalf("patch stored %+v", patched)
 		}
 	})

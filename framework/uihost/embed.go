@@ -8,6 +8,7 @@ import (
 	stdhtml "html"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -35,8 +36,10 @@ const (
 	embedExchangePath = fembed.ExchangePath
 	embedRefreshPath  = fembed.RefreshPath
 	embedShellPath    = fembed.SurfacePrefix + "{surface}"
-	embedContentPath  = fembed.SurfacePrefix + "{surface}/content"
-	embedGrantHeader  = fembed.GrantHeader
+	// A dynamic surface's shell: the concrete app path follows the name.
+	embedShellPathParams = fembed.SurfacePrefix + "{surface}/{path...}"
+	embedContentPath     = fembed.SurfacePrefix + "{surface}/content"
+	embedGrantHeader     = fembed.GrantHeader
 )
 
 // maxEmbedThemeParam bounds the base64url theme parameter. It is checked before
@@ -320,7 +323,35 @@ func (ds *UIHost) mountEmbed(r *router.Router) {
 	r.Get(embedExchangePath, http.HandlerFunc(methodNotAllowed))
 	r.Get(embedRefreshPath, http.HandlerFunc(methodNotAllowed))
 	r.Get(embedShellPath, http.HandlerFunc(ds.handleEmbedShell))
+	r.Get(embedShellPathParams, http.HandlerFunc(ds.handleEmbedShell))
 	r.Get(embedContentPath, http.HandlerFunc(ds.handleEmbedContent))
+}
+
+// embedPagePath answers the app path, in routing form, an embed request
+// for s renders. A static surface renders its own route and takes no
+// path: escaped must be empty. A dynamic one takes the concrete path,
+// escaped (the shell URL's tail, or the content URL's ?path=), and
+// renders it only when it resolves to the surface's own screen, with the
+// params that route binds. embed.RoutedPath refuses the rest as it does
+// for every embed request: no leading slash, a bad escape (the URL's
+// EscapedPath then falls back to the empty Path), or a segment that
+// decodes to a separator or a dot segment. ok=false is a 404,
+// byte-identical to an unknown surface.
+func (ds *UIHost) embedPagePath(s *fembed.ResolvedSurface, escaped string) (routed string, ok bool) {
+	if !s.Dynamic() {
+		return s.Path(), escaped == ""
+	}
+	decoded, _ := url.PathUnescape(escaped)
+	if _, ok := fembed.RoutedPath(&url.URL{Path: decoded, RawPath: escaped}); !ok {
+		return "", false
+	}
+	routed = app.RoutePath(escaped)
+	want, ok := ds.App.Router.ScreenByPattern(s.Path())
+	got, _, found := ds.App.Router.Resolve(routed)
+	if !ok || !found || got != want {
+		return "", false
+	}
+	return routed, true
 }
 
 // stripAmbientCredentials discards every ambient credential before an embed
@@ -764,6 +795,19 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The app path the frame renders: the surface's route, or for a
+	// dynamic surface the path after its name, escaped as the request
+	// spelled it.
+	escaped := strings.TrimPrefix(r.URL.EscapedPath(), fembed.SurfacePrefix+s.Name)
+	page, ok := ds.embedPagePath(s, escaped)
+	if !ok {
+		embedError(w, r, http.StatusNotFound, "path does not match the surface", nil)
+		return
+	}
+	content := fembed.SurfacePrefix + s.Name + "/content"
+	if s.Dynamic() {
+		content += "?path=" + url.QueryEscape(escaped)
+	}
 	if !ds.embedHost.Ready() {
 		// Every other embed handler checks this; the shell did not, so a host
 		// wired without an app secret served a framable document for a
@@ -783,14 +827,15 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 
 	cfg := map[string]string{
 		"surface":  s.Name,
-		"content":  "/__gofastr/embed/" + s.Name + "/content",
+		"content":  content,
 		"exchange": embedExchangePath,
 		"refresh":  embedRefreshPath,
-		// The app route the surface renders. Anything inside the frame that
-		// asks the server "what belongs on this page" has to name THIS, not the
-		// shell's own URL: a widget scoped with .Pages("/reports") is not
-		// scoped to /__gofastr/embed/reports.
-		"path": s.Path(),
+		// The app path the surface renders (a dynamic surface's concrete
+		// path). Anything inside the frame that asks the server "what
+		// belongs on this page" has to name THIS, not the shell's own URL:
+		// a widget scoped with .Pages("/reports") is not scoped to
+		// /__gofastr/embed/reports.
+		"path": page,
 	}
 	cfgJSON, _ := json.Marshal(cfg)
 
@@ -812,7 +857,7 @@ func (ds *UIHost) handleEmbedShell(w http.ResponseWriter, r *http.Request) {
 	var b strings.Builder
 	// The frame's language is that of the app route it renders, not of the shell
 	// URL (/__gofastr/embed/<surface>), which matches no registered route.
-	lang := ds.LangFor(r.Context(), s.Path())
+	lang := ds.LangFor(r.Context(), page)
 	b.WriteString("<!DOCTYPE html>\n<html dir=\"" + i18n.Dir(lang) + "\" lang=\"" + stdhtml.EscapeString(lang) + "\">\n<head>\n")
 	b.WriteString(`<meta charset="utf-8">` + "\n")
 	b.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">` + "\n")
@@ -1025,6 +1070,14 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		embedError(w, r, http.StatusNotFound, "grant is for another surface", nil)
 		return
 	}
+	// A dynamic surface names the path it renders in ?path=, the escaped
+	// spelling the shell handed boot-embed; it must resolve to the
+	// surface's own screen. A static surface takes none.
+	page, ok := ds.embedPagePath(s, r.URL.Query().Get("path"))
+	if !ok {
+		embedError(w, r, http.StatusNotFound, "path does not match the surface", nil)
+		return
+	}
 
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx)
@@ -1099,7 +1152,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	res, err := ds.App.RenderPartialResult(ctx, s.Path())
+	res, err := ds.App.RenderPartialResult(ctx, page)
 	if err != nil {
 		if errors.Is(err, app.ErrScreenPanicked) {
 			// Same contract as every other render path: a panic is a
@@ -1107,9 +1160,9 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 			// that hid it.
 			slog.Default().Error("uihost: embed surface screen render panicked; serving 500",
 				"surface", s.Name,
-				"path", textsafe.ScrubControlBytes(s.Path()),
+				"path", textsafe.ScrubControlBytes(page),
 				"panic", textsafe.Recovered(err))
-			ds.serveServerError(w, r, s.Path())
+			ds.serveServerError(w, r, page)
 			return
 		}
 		// Any other render error keeps this route's plain http.NotFound:
@@ -1119,7 +1172,7 @@ func (ds *UIHost) handleEmbedContent(w http.ResponseWriter, r *http.Request) {
 		// its Load is a host bug worth one Warn line.
 		slog.Default().Warn("uihost: embed surface screen render failed; serving 404",
 			"surface", s.Name,
-			"path", textsafe.ScrubControlBytes(s.Path()),
+			"path", textsafe.ScrubControlBytes(page),
 			"err", textsafe.Recovered(err))
 		http.NotFound(w, r)
 		return

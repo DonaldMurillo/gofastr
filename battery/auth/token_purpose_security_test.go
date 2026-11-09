@@ -67,6 +67,9 @@ func newTokenPurposeHarnessOn(t *testing.T, tokenStore MagicLinkTokenStore) *tok
 			SessionCookie: "session_id",
 			UserStore:     store,
 			DevMode:       true,
+			// One address drives every mail flow here; the shared
+			// per-address cooldown is not what these tests measure.
+			MailAddressRateLimit: &RateLimiterConfig{MaxAttempts: 100, Window: time.Minute},
 		}),
 		store:        store,
 		resetSender:  &stubEmailSender{},

@@ -106,7 +106,7 @@ func (b *Battery) handleName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := b.nameStore()
-	actor := adminActorID(r.Context())
+	actor := callerUserID(r.Context())
 	if store == nil || actor == "" {
 		b.refuse(w, r, page, http.StatusNotImplemented, "failed")
 		return
@@ -213,7 +213,11 @@ func (b *Battery) emailVerified(ctx context.Context) (verified, known bool) {
 	if !ok {
 		return false, false
 	}
-	v, err := checker.IsEmailVerified(ctx, adminActorID(ctx))
+	id := callerUserID(ctx)
+	if id == "" {
+		return false, false
+	}
+	v, err := checker.IsEmailVerified(ctx, id)
 	if err != nil {
 		return false, false
 	}
@@ -228,7 +232,11 @@ func (b *Battery) hasPassword(ctx context.Context) (has, known bool) {
 	if !ok {
 		return false, false
 	}
-	v, err := checker.HasPassword(ctx, adminActorID(ctx))
+	id := callerUserID(ctx)
+	if id == "" {
+		return false, false
+	}
+	v, err := checker.HasPassword(ctx, id)
 	if err != nil {
 		return false, false
 	}
@@ -243,7 +251,7 @@ func (b *Battery) userName(ctx context.Context) string {
 			return name
 		}
 	}
-	store, actor := b.nameStore(), adminActorID(ctx)
+	store, actor := b.nameStore(), callerUserID(ctx)
 	if store == nil || actor == "" {
 		return ""
 	}

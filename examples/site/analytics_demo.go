@@ -30,6 +30,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -140,7 +141,9 @@ func wireFakeAnalytics(host *uihost.UIHost, app *framework.App) {
 				id = v.String()
 			}
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": id})
+		if err := json.NewEncoder(w).Encode(map[string]any{"id": id}); err != nil {
+			slog.Debug("site: encode whoami", "error", err)
+		}
 	}))
 
 	// The e2e harness drives app.Router() directly (no App.Start), so run

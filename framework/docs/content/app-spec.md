@@ -898,12 +898,26 @@ partial and keeps the shell).
   `.Columns(...)`, `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
   `mode: cards` (or `table`) → `.As(...)`, `create: false` → `.NoCreate()`,
   `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
-  refused on any other block kind), and a `text:` heading (level 2 when a block ahead of it on the screen
+  refused on any other block kind), `filter: field=value` →
+  `.Where(field, value)` (stat_card's filter spelling: one pinned
+  equality, validated against the entity's fields: refused on a
+  hidden or `no_query` column, on a value the column's type cannot hold,
+  and on an enum value outside the field's `values:`) and a `text:` heading (level 2 when a block ahead of it on the screen
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
   params stay apart, and two blocks for the same entity on one screen are
   refused at validate time. `fields: [id]` requires an actual `id` column:
   natural and composite keys do not add one unless explicitly declared.
+
+  A list's `filter:` pins `field = value` on every read inside the
+  caller's scope (the same `ListBuilder.Where` a tab listing one
+  invoice's payments uses): it works with search, sort, facets and
+  paging, the pinned field drops from the facets, and New carries it as
+  `?prefill_<field>=<value>`. A pinned list draws no Export CSV or Copy
+  CSV and offers no bulk action across every match: the export route
+  cannot see the pin, so it would hand back rows the list leaves out. It
+  is one equality; anything richer is the entity's `display: views:` or
+  a hand-written screen.
 - An entity listed on several screens has one **home list**: the list
   screen its detail screen sits under, else the first one with
   `create: true`, else the first one declared. A list on any other screen
@@ -911,11 +925,11 @@ partial and keeps the shell).
   links and New reach the home's detail and create screens instead of
   `<dashboard>/<id>`.
 - An entity with **no** `entity_detail` screen has no page at
-  `<list>/<id>`, so its lists without `create: true` render with
-  `.NoLinks()`: the rows draw as text with no row menu, instead of
-  linking every row to a 404. A `create: true` list keeps its links
-  (`NoLinks` also removes New), so give a writable entity a detail
-  screen.
+  `<list>/<id>`, so its lists render with `.NoLinks()`: the rows draw as
+  text with no row menu, instead of linking every row to a 404. A
+  `create: true` list keeps New, which opens the create screen beside
+  the entity's home list, on any screen; a create lands back on that
+  list.
 - `entity_detail` renders `appUI.Record("<entity>", id).Delete().Duplicate()`
   from the screen's `{id}` route param. The record page holds the edit
   form and a button per declared move, so there is no `/<detail>/edit`
@@ -1227,11 +1241,44 @@ optional `filter: status=active`) for a `stat_card`, and
 `source: {entity: customers, group_by: status}` for a chart. `agg` is
 `count` (the default) or `sum`, spelled exactly, and a sum's `field` is an
 `int`, `float` or `decimal` field; validation refuses anything else rather
-than rendering "—". For the chart kinds `source` (with both `entity` and
+than rendering "—". A count takes no `field` and no `format`, and a sum's
+`format` is `money` or absent: validation refuses the rest, because the
+card would ignore it and draw a plain number. A `stat_card` filter is a filter predicate
+(`'status in ["draft", "open"] and amount >= 1000'`); the bare
+`field=value` form is read as `field = "value"`. A filter names columns
+by their column name (`due_on`, not `dueOn`: no generated field has a
+wire alias). Validation parses the filter over the fields the generated
+entity registers, which are the spec's fields plus the columns
+`entity.Define` adds: `id`, `created_at` and `updated_at` (unless
+`timestamps: false`), and `deleted_at` under `soft_delete` (hidden, so
+it cannot be filtered). It refuses, naming the card and the parse
+error, a filter naming a column the entity lacks, an unknown operator,
+and a value the column's type cannot hold (`featured = "yes"` on a
+bool). On `=`, `!=` and `in` it also refuses an enum value outside the
+field's `values:`. The generated app checks every sourced `stat_card`
+again when its screen mounts: `entityui.CheckStat` judges the card
+against the entity the app registered, by the same rule
+(`entityui.CheckStatFields`) over the same fields, so a card the load
+passes never fails it. A filter or a field changed by hand in the
+generated entity files after generation, or anything else that could
+never compute, panics at boot with the screen and the card's label
+(`screen "dashboard" stat_card "Billed": ...`) instead of
+drawing "—" forever. For the chart kinds `source` (with both `entity` and
 `group_by`, targeting a declared entity) is **required**: validation
 rejects a chart without one rather than letting the block silently vanish
-from the page. A chart with a
-`title` renders inside a `ui.Card` with that heading. A chart or `card`
+from the page. `group_by` names a column the database can group: a
+`json` field, a many-to-many relation, and a `hidden` or `no_query`
+field are refused, since the chart would draw nothing or print stored
+values as labels. Validation judges it over the same fields as a
+`stat_card` filter, with `entityui.CheckChartFields`, so `created_at`
+is accepted and `deleted_at` (hidden) is refused. A source `entity` is the entity's name as declared
+(`customers`, not `/customers`), for a `stat_card` too. The generated
+app checks every sourced chart when its screen mounts, as it checks a
+`stat_card`: `entityui.CheckChart` judges `group_by` against the
+registered entity and panics with the screen and the chart's `title`
+(`screen "cards" pie_chart "Cards by group": ...`, the entity name
+when the chart has no title) instead of drawing an empty chart. A
+chart with a `title` renders inside a `ui.Card` with that heading. A chart or `card`
 block with no titled `section` or `card` above it emits
 `HeadingLevel: 2`, so its title follows the page's h1 without skipping a
 level; one inside a titled section keeps the default h3.
@@ -1387,6 +1434,17 @@ system/auto-generated columns alone. For entities with a **required** relation,
 use explicit `rows:` (with `@entity.field=value` refs) instead; a generated
 row can't fabricate a valid foreign key. `count` and explicit `rows:` can be
 combined: the explicit rows are seeded first, then the generated ones.
+
+The recipe survives `gofastr pack`. The generated `stubs.go` carries it
+beside the rows: `seedEntity` gains `Count`, `Weights` and `Authored`
+(the number of leading rows you wrote), while `Rows` still holds every
+row, so seeding itself does not change. Pack keeps the authored rows and
+the recipe, regenerates the rest to check them, and a generated row you
+hand-edited turns the whole entry back into explicit rows — the edit
+survives, the recipe is dropped. Without the recipe in `stubs.go`, two
+specs whose weights differ but whose rows expand the same (count: 7 with
+`open: 5` vs `open: 10` on a two-value enum) packed to the same file and
+pack could not tell them apart.
 
 Generated rows never repeat a `primary_key`: an integer key column counts
 up from 1001, or, when the column sets bounds, from `min` but never below
@@ -1978,14 +2036,16 @@ portability rules are built into that template:
   the bare `"app"` the old template produced cannot be exec'd there.
 - **Database bootstrap follows `db.driver`.** A SQLite/empty-driver
   app spec boots against a throwaway `DATABASE_URL=file:<tmp>/e2e.db`. A
-  `postgres` app spec links only `lib/pq`, which cannot open that file DSN,
-  so the test instead carves a disposable database from the env-provided
+  `postgres` app spec declares the engine the spec ships against, so the
+  test carves a disposable database from the env-provided
   `TEST_POSTGRES_DSN` admin DSN and points the child at it
   (`DATABASE_URL` + `DB_DRIVER=postgres`). When `TEST_POSTGRES_DSN` is unset or
   Postgres is unreachable the test **skips** (`t.Skip`). That keeps driverless CI
   green-by-skip instead of timing out with a misleading "server did not become
   ready". Set `TEST_POSTGRES_DSN` to a `postgres://` DSN whose role can
   `CREATE DATABASE` / `DROP DATABASE` to exercise the postgres path locally.
+  (The generated `main.go` links both drivers, so switching `DB_DRIVER`
+  between `sqlite` and `postgres` at boot works whatever the spec declares.)
 
 With gated screens and a seeded admin, the test signs in as that admin and
 then requires each gated screen to answer 200. The admin is seeded with the

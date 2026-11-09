@@ -314,9 +314,10 @@ the deadline entirely. `WriteTimeout` is a whole-response backstop: without
 it, a handler that hangs holds its connection (and a goroutine) forever.
 A `RequestTimeout` raised past the write deadline raises an unset
 `WriteTimeout` to the budget plus 10s; an explicit `WriteTimeout` no
-longer than an explicit `RequestTimeout` makes `Start` return an error,
-since every buffered response finished after the write deadline would be
-lost. `0` still disables it.
+longer than the enforced request deadline — your `RequestTimeout`, or
+its 30s default when unset — makes `Start` return an error, since every
+buffered response finished after the write deadline (the timeout
+middleware's own 503 included) would be lost. `0` still disables it.
 
 The per-request middleware deadline (`AppConfig.RequestTimeout`, default
 30s) can be overridden per route or per group instead of app-wide:

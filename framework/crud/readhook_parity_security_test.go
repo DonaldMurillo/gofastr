@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
@@ -40,7 +41,8 @@ import (
 // opt-in, the way a screen calls it.
 //
 // The fixture: notes, whose hooks hide every team-b row (BeforeList and
-// BeforeGet) and mask the stored body (AfterGet and AfterList);
+// BeforeGet) and mask the stored body, by AfterGet and AfterList hooks in
+// the "hooks" mode and by the field's declared Mask in the "mask" mode;
 // projects, which has many notes; comments, which belong to a note. A
 // hidden row's every value carries "HIDDEN" and every stored body
 // "STORED-SECRET", so a response holding either served what the hooks
@@ -57,9 +59,19 @@ type parityFixture struct {
 	notes    *CrudHandler
 	projects *CrudHandler
 	mcp      *mcp.Server
+	elevated bool
 }
 
-func parityCrud(t *testing.T) *parityFixture {
+// parityMask is the notes body's Mask in the "mask" mode, the same
+// rewrite the "hooks" mode's AfterGet/AfterList hooks make.
+func parityMask(_ context.Context, v any) any {
+	if s, _ := v.(string); s != "" {
+		return "****"
+	}
+	return v
+}
+
+func parityCrud(t *testing.T, mode string) *parityFixture {
 	t.Helper()
 	db := setupDB(t,
 		`CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT)`,
@@ -67,6 +79,32 @@ func parityCrud(t *testing.T) *parityFixture {
 		`CREATE TABLE comments (id TEXT PRIMARY KEY, note_id TEXT, text TEXT)`,
 	)
 	public := &entity.ExposureConfig{Public: true}
+	body := schema.Field{Name: "body", Type: schema.String}
+	if strings.HasPrefix(mode, "mask") {
+		body.Mask = parityMask
+	}
+	if mode == "mask elevated" {
+		private := NewCrudHandler(entity.Define("private", entity.EntityConfig{
+			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "private:read"}},
+		}.WithTimestamps(false)), db)
+		if private.CanReadScoped(context.Background()) || !private.CanReadScoped(WithElevation(context.Background(), "private")) {
+			t.Fatal("fixture must distinguish the caller's permission from elevation")
+		}
+		body.Mask = func(ctx context.Context, v any) any {
+			if private.CanReadScoped(ctx) {
+				return v
+			}
+			return parityMask(ctx, v)
+		}
+		policy := access.NewRolePolicy()
+		if err := policy.Grant("reader", "private:read"); err != nil {
+			t.Fatal(err)
+		}
+		allowed := access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"reader"})
+		if got := body.Mask(allowed, paritySecret); got != paritySecret {
+			t.Fatalf("mask refused a real permission: %v", got)
+		}
+	}
 	projEnt := entity.Define("projects", entity.EntityConfig{
 		Fields: []schema.Field{
 			{Name: "id", Type: schema.String},
@@ -81,7 +119,7 @@ func parityCrud(t *testing.T) *parityFixture {
 			{Name: "project_id", Type: schema.String},
 			{Name: "team_id", Type: schema.String},
 			{Name: "label", Type: schema.String},
-			{Name: "body", Type: schema.String},
+			body,
 			{Name: "status", Type: schema.Enum, Values: []string{"open", "closed"}, Default: "open"},
 			{Name: "amount", Type: schema.Int},
 		},
@@ -112,16 +150,18 @@ func parityCrud(t *testing.T) *parityFixture {
 			row["body"] = "****"
 		}
 	}
-	hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
-		mask(data.(*hook.GetPayload).Result)
-		return nil
-	})
-	hooks.RegisterHook(hook.AfterList, func(_ context.Context, data any) error {
-		for _, row := range data.(*hook.ListPayload).Results {
-			mask(row)
-		}
-		return nil
-	})
+	if mode == "hooks" {
+		hooks.RegisterHook(hook.AfterGet, func(_ context.Context, data any) error {
+			mask(data.(*hook.GetPayload).Result)
+			return nil
+		})
+		hooks.RegisterHook(hook.AfterList, func(_ context.Context, data any) error {
+			for _, row := range data.(*hook.ListPayload).Results {
+				mask(row)
+			}
+			return nil
+		})
+	}
 
 	reg := stubRegistry{byName: map[string]*entity.Entity{"projects": projEnt, "notes": noteEnt, "comments": commentEnt}}
 	child := func(name string) *hook.HookRegistry {
@@ -130,7 +170,7 @@ func parityCrud(t *testing.T) *parityFixture {
 		}
 		return nil
 	}
-	f := &parityFixture{db: db, r: router.New(), mcp: mcp.NewServer()}
+	f := &parityFixture{db: db, r: router.New(), mcp: mcp.NewServer(), elevated: mode == "mask elevated"}
 	mount := func(ent *entity.Entity, path string) *CrudHandler {
 		ent.SetDB(db)
 		ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
@@ -165,11 +205,19 @@ func parityCrud(t *testing.T) *parityFixture {
 	return f
 }
 
+// context mirrors the back office's lift over all its exposed entities.
+func (f *parityFixture) context(ctx context.Context) context.Context {
+	if f.elevated {
+		return WithElevation(ctx, "notes", "projects", "comments", "private")
+	}
+	return ctx
+}
+
 // serve sends one request through the router as user u1.
 func (f *parityFixture) serve(method, target, body string) (int, string) {
 	req := httptest.NewRequest(method, target, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(handler.SetUser(req.Context(), &testUser{id: "u1"}))
+	req = req.WithContext(f.context(handler.SetUser(req.Context(), &testUser{id: "u1"})))
 	rec := httptest.NewRecorder()
 	f.r.ServeHTTP(rec, req)
 	return rec.Code, rec.Body.String()
@@ -223,6 +271,7 @@ func TestReadHookParityCrud(t *testing.T) {
 		{"GET list total", httpRead("/notes"), `"total":1`, nil},
 		{"GET list search", httpRead("/notes?q=label"), "visible-label", nil},
 		{"GET list sorted on the masked field", httpRead("/notes?sort=body"), "visible-label", nil},
+		{"GET list filtered on the masked field", httpRead("/notes?body_like=VIS"), "", nil},
 		{"GET list filtered to the hidden row", httpRead("/notes?label=HIDDEN-LABEL"), `"total":0`, nil},
 		{"GET trash", httpRead("/notes?trashed=true"), "visible-label", nil},
 		{"GET cursor page", httpRead("/notes?cursor="), "visible-label", nil},
@@ -256,7 +305,7 @@ func TestReadHookParityCrud(t *testing.T) {
 		}, "closed", nil},
 		{"_events", func(t *testing.T, f *parityFixture) string {
 			req := httptest.NewRequest(http.MethodGet, "/notes/_events", nil)
-			sctx, cancel := context.WithCancel(handler.SetUser(req.Context(), &testUser{id: "u1"}))
+			sctx, cancel := context.WithCancel(f.context(handler.SetUser(req.Context(), &testUser{id: "u1"})))
 			rec := httptest.NewRecorder()
 			done := make(chan struct{})
 			go func() { f.r.ServeHTTP(rec, req.WithContext(sctx)); close(done) }()
@@ -277,42 +326,42 @@ func TestReadHookParityCrud(t *testing.T) {
 		{"MCP get", mcpRead("notes_get", map[string]any{"id": "n1"}), "visible-label", nil},
 		{"MCP get hidden", mcpRead("notes_get", map[string]any{"id": "n2"}), "", nil},
 		{"ListAll", func(t *testing.T, f *parityFixture) string {
-			rows, err := f.notes.ListAll(inproc(), ListOptions{})
+			rows, err := f.notes.ListAll(f.context(inproc()), ListOptions{})
 			return jsonOf(rows, err)
 		}, "visible-label", nil},
 		{"ListAll trash", func(t *testing.T, f *parityFixture) string {
-			rows, err := f.notes.ListAll(inproc(), ListOptions{Deleted: true})
+			rows, err := f.notes.ListAll(f.context(inproc()), ListOptions{Deleted: true})
 			return jsonOf(rows, err)
 		}, "visible-binned-label", nil},
 		{"ListAll with include", func(t *testing.T, f *parityFixture) string {
-			rows, err := f.projects.ListAll(inproc(), ListOptions{Includes: []string{"notes"}})
+			rows, err := f.projects.ListAll(f.context(inproc()), ListOptions{Includes: []string{"notes"}})
 			return jsonOf(rows, err)
 		}, "visible-label", nil},
 		{"CountAll", func(t *testing.T, f *parityFixture) string {
-			n, err := f.notes.CountAll(inproc(), ListOptions{})
+			n, err := f.notes.CountAll(f.context(inproc()), ListOptions{})
 			return jsonOf(map[string]any{"count": n}, err)
 		}, `"count":1`, nil},
 		{"GetOne", func(t *testing.T, f *parityFixture) string {
-			row, err := f.notes.GetOne(inproc(), "n1", nil)
+			row, err := f.notes.GetOne(f.context(inproc()), "n1", nil)
 			return jsonOf(row, err)
 		}, "visible-label", nil},
 		{"GetOne hidden", func(t *testing.T, f *parityFixture) string {
-			row, err := f.notes.GetOne(inproc(), "n2", nil)
+			row, err := f.notes.GetOne(f.context(inproc()), "n2", nil)
 			return jsonOf(row, err)
 		}, "", nil},
 		{"GetOne with include", func(t *testing.T, f *parityFixture) string {
-			row, err := f.projects.GetOne(inproc(), "p1", []string{"notes"})
+			row, err := f.projects.GetOne(f.context(inproc()), "p1", []string{"notes"})
 			return jsonOf(row, err)
 		}, "visible-label", nil},
 		{"SumAll", func(t *testing.T, f *parityFixture) string {
-			s, err := f.notes.SumAll(inproc(), "amount", ListOptions{})
+			s, err := f.notes.SumAll(f.context(inproc()), "amount", ListOptions{})
 			if err == nil && s != "1" {
 				return "HIDDEN rows summed: " + s
 			}
 			return jsonOf(map[string]any{"sum": s}, err)
 		}, "", nil},
 		{"GroupCountAll", func(t *testing.T, f *parityFixture) string {
-			g, err := f.notes.GroupCountAll(inproc(), "team_id", ListOptions{}, 0)
+			g, err := f.notes.GroupCountAll(f.context(inproc()), "team_id", ListOptions{}, 0)
 			for _, gc := range g {
 				if gc.Value == "b" {
 					return "HIDDEN rows grouped: " + jsonOf(g, nil)
@@ -321,27 +370,39 @@ func TestReadHookParityCrud(t *testing.T) {
 			return jsonOf(g, err)
 		}, "", nil},
 		{"TypedQuery Find", func(t *testing.T, f *parityFixture) string {
-			rows, err := NewTypedQuery[parityNote](f.notes).Find(inproc())
+			rows, err := NewTypedQuery[parityNote](f.notes).Find(f.context(inproc()))
 			return jsonOf(rows, err)
 		}, "visible-label", nil},
 		{"TypedQuery First", func(t *testing.T, f *parityFixture) string {
-			row, err := NewTypedQuery[parityNote](f.notes).Where(entity.NewStringColumn("label").Eq("HIDDEN-LABEL")).First(inproc())
+			row, err := NewTypedQuery[parityNote](f.notes).Where(entity.NewStringColumn("label").Eq("HIDDEN-LABEL")).First(f.context(inproc()))
 			return jsonOf(row, err)
 		}, "", nil},
 		{"TypedQuery Count", func(t *testing.T, f *parityFixture) string {
-			n, err := NewTypedQuery[parityNote](f.notes).Count(inproc())
+			n, err := NewTypedQuery[parityNote](f.notes).Count(f.context(inproc()))
 			return jsonOf(map[string]any{"count": n}, err)
 		}, `"count":1`, nil},
 	}
-	for _, c := range reads {
-		t.Run("read/"+c.name, func(t *testing.T) {
-			f := parityCrud(t)
-			body := c.read(t, f)
-			parityCheck(t, c.name, body, c.forbid...)
-			if c.want != "" && !strings.Contains(body, c.want) {
-				t.Errorf("%s answered without %q, so the check above proves nothing:\n%s", c.name, c.want, body)
-			}
-		})
+	// In the "mask" mode the body is NoQuery, as a Mask makes it, and the
+	// query surface refuses it.
+	maskWants := map[string]string{
+		"GET list sorted on the masked field":   `"reason":"not_sortable"`,
+		"GET list filtered on the masked field": `"reason":"not_filterable"`,
+	}
+	for _, mode := range []string{"hooks", "mask", "mask elevated"} {
+		for _, c := range reads {
+			t.Run(mode+"/read/"+c.name, func(t *testing.T) {
+				f := parityCrud(t, mode)
+				body := c.read(t, f)
+				parityCheck(t, c.name, body, c.forbid...)
+				want := c.want
+				if w, ok := maskWants[c.name]; ok && strings.HasPrefix(mode, "mask") {
+					want = w
+				}
+				if want != "" && !strings.Contains(body, want) {
+					t.Errorf("%s answered without %q, so the check above proves nothing:\n%s", c.name, want, body)
+				}
+			})
+		}
 	}
 
 	// Acts on a row: the hidden row answers as a missing one does and
@@ -394,7 +455,7 @@ func TestReadHookParityCrud(t *testing.T) {
 	}
 	for _, a := range acts {
 		t.Run("act/"+a.name, func(t *testing.T) {
-			f := parityCrud(t)
+			f := parityCrud(t, "hooks")
 			before := f.noteRow(t, a.hidden)
 			body := a.act(f, a.hidden)
 			parityCheck(t, a.name, body)
@@ -442,7 +503,7 @@ func mcpRead(tool string, args map[string]any) func(*testing.T, *parityFixture) 
 		if args == nil {
 			args = map[string]any{}
 		}
-		out, err := f.mcp.CallTool(handler.SetUser(context.Background(), &testUser{id: "u1"}), tool, args)
+		out, err := f.mcp.CallTool(f.context(handler.SetUser(context.Background(), &testUser{id: "u1"})), tool, args)
 		return jsonOf(out, err)
 	}
 }
@@ -453,7 +514,7 @@ func mcpAct(tool string, extra map[string]any) func(*parityFixture, string) stri
 		for k, v := range extra {
 			args[k] = v
 		}
-		out, err := f.mcp.CallTool(handler.SetUser(context.Background(), &testUser{id: "u1"}), tool, args)
+		out, err := f.mcp.CallTool(f.context(handler.SetUser(context.Background(), &testUser{id: "u1"})), tool, args)
 		return jsonOf(out, err)
 	}
 }

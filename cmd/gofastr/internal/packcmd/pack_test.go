@@ -403,6 +403,7 @@ func TestPackSerializerCoversEveryConstructField(t *testing.T) {
 var constructOmissions = map[string]string{
 	"entities.Endpoints": "derived runtime wiring, not an authoring key: the decoder splits entity-level endpoints into decl.Endpoints (Method/Path/Name/Description, MCP hard-false, handler dropped) and a top-level App spec.Endpoints stub carrying the full authoring form (entity, handler, mcp). Emitting decl.Endpoints back under the entity would duplicate every endpoint on re-parse.",
 	"indices.Expression": "framework.Index is shared with hand-written Go configs, which support expression indexes; the app spec grammar's indices allow-list is name/columns/unique only (decodeIndices), so Expression can never be authored in YAML and emitting it would fail rejectUnknownKeys on re-parse.",
+	"seed.Authored":      "generator-set, not an authoring key: ExpandAppSpecSeed records where the authored rows end so stubs.go can carry the recipe beside the rows and pack can split them again. The packed spec writes the recipe (count/weights) plus the authored rows only; authoring `authored:` in YAML is refused by the seed decoder's key allow-list.",
 }
 
 // constructSpec: how to build a App spec holding one zero element of a
@@ -781,7 +782,11 @@ func TestPack_ReadSeedAndNav(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	seed, err := packReadSeed(clitest.MeridianDir())
+	entityIndex := make(map[string]framework.EntityDeclaration, len(a.Entities))
+	for _, d := range a.Entities {
+		entityIndex[d.Name] = d
+	}
+	seed, err := packReadSeed(clitest.MeridianDir(), entityIndex)
 	if err != nil {
 		t.Fatalf("packReadSeed: %v", err)
 	}

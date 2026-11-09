@@ -57,7 +57,9 @@ func agentCardVaryFields(rec *httptest.ResponseRecorder) map[string]bool {
 // sibling, or a shared cache can pin one caller's origin into every later
 // agent's card.
 func TestAgentCardVaryOnOriginInputs(t *testing.T) {
-	ds := newISOHost(WithAgentCard(AgentCardConfig{Name: "t", MCPEndpoint: "/mcp"}))
+	// httptest's peer (192.0.2.1) is a trusted proxy, so its
+	// X-Forwarded-Proto reaches the card (#669: it counts from no one else).
+	ds := newISOHost(WithAgentCard(AgentCardConfig{Name: "t", MCPEndpoint: "/mcp"}), WithTrustedProxies("192.0.2.1"))
 
 	for _, path := range []string{"/.well-known/agent-card.json", "/.well-known/agent.json"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -99,6 +101,7 @@ func TestAgentLinkHeadersVaryOrigin(t *testing.T) {
 	ds := newISOHost(
 		WithAgentCard(AgentCardConfig{Name: "t", MCPEndpoint: "/mcp"}),
 		WithAgentLinkHeaders(),
+		WithTrustedProxies("192.0.2.1"), // httptest's peer: its X-Forwarded-Proto counts
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

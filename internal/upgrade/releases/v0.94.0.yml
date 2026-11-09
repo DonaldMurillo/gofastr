@@ -40,9 +40,8 @@ notes:
     guidance: "decide.Block(403) writes the status's own phrase. For your own text, define a phrase at package level and call decide.BlockWith(403, reasonNoAccess) or auth.WithBlockReason(403, reasonNoAccess). Read d.Reason.Text(ctx, d.Params) where you read d.Message."
   - change: "print.AccessPolicy returns (status int, reason i18n.Phrase); print.RequireAuth and print.Public follow"
     breaking: true
-    hits: review
+    hits: edit
     find:
-      uses: [gofastr/battery/print.AccessPolicy]
       shapes:
         - symbol: gofastr/battery/print.RequireAuth
           type: '^func\([^)]*\*http\.Request\) \(int, string\)$'
@@ -965,3 +964,9 @@ notes:
     breaking: true
     nodetect: "the change is in which tables the admin lists; nothing in an app's source spells it"
     guidance: "To manage a table in the admin, declare it with app.Entity and name it in Config.Entities."
+  - change: "print.AccessPolicy returns (status int, reason i18n.Phrase): a policy of your own changes with it"
+    breaking: true
+    hits: review
+    find:
+      uses: [gofastr/battery/print.AccessPolicy]
+    guidance: "Each hit names print.AccessPolicy. A policy function of your own returns a phrase where it returned a string: return http.StatusForbidden, reasonNoPrint, or i18n.Phrase{} for the status's own phrase. A use already returning a phrase is done."

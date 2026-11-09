@@ -1,5 +1,46 @@
 # Implementation regression notes
 
+## 2026-11-09 - Keep a fitting component subset when app.css needs a link
+- Scope: framework/uihost, issue #669 first-paint CSS
+- Trigger: eager offline-toast sheets moved Meridian Customers from 15,328 B of subset CSS to 20,951 B of full linked CSS.
+- Approach: weigh component, app and scheme blocks separately; keep a fitting subset and bootstrap inline while linking app.css after them, under the unchanged 16 KiB inline budget.
+- Evidence: TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget fails with the fallback removed; Meridian CSS is 16,360 B against its unchanged 17,408 B cap. TestOfflineToastIsStyled covers linked app.css with the full bundle blocked.
+- Next time: dump heads before and after a sheet-set change and compare full/subset sizes before blaming CSP; CSS weight excludes the 794 B scheme script the planner counts.
+
+## 2026-11-09 - Put caller gates before item-schema validation
+- Scope: core/mcp Gated handlers, tool gates and prompt gates
+- Trigger: a refused Gated tool with required arguments disclosed its schema instead of answering as an unknown name.
+- Approach: retain wrapper gates at registration and check them before validation; keep direct callable wrappers intact and weakly register their metadata.
+- Pitfall: code pointers merge closures; index live metadata by reflected wrapper identity only during registration to avoid retaining closures.
+- Boundary: keep Gated outermost across ordinary host decorators, wrap a supplied handler with mcp.Decorate (the endpoint twin does), or attach WithToolGate at registration; opaque functions hide inner metadata.
+- Evidence: TestGatedItemAnswersAsUnknown now uses a required string schema; TestGatedValidationOrderAndIdentity pins nested gates, reuse, GC and exactly-once invocation.
+- Next time: compare unknown-name code and message for missing, mistyped and extra arguments, then mutate each ordering guard with a Go overlay.
+- Status: active
+
+## 2026-11-09 - Validate cascade-filled keys inside the parent operation
+- Scope: framework/crud upsert, create and batch writes
+- Trigger: upsert preflight relaxed required cascade keys but never validated their final values.
+- Approach: retain preflight and hidden-target checks, then validate the full parent schema after belongs-to writes inside inTx.
+- Evidence: TestUpsertValidatesCascadeForeignKey covers both arms on SQLite/Postgres, child creates/edits, and owned, context-carried and bound transactions.
+- Next time: compare create ordering and commit the caller transaction after a handled refusal to prove savepoint rollback.
+- Status: active
+
+## 2026-11-09 - Strip CRUD elevation at the mask callback boundary
+- Scope: framework/crud field masks and battery/admin
+- Trigger: a mask using CanReadScoped inherited the admin entity lift and revealed its stored value.
+- Approach: remove elevation inside runMask, which covers own rows and included rows on every response surface.
+- Evidence: TestReadHookParityCrud mask elevated mode and TestReadHookParityAdmin mask elevation cover permission-sensitive masks; removing WithoutElevation makes them fail.
+- Next time: extend the parity matrices and check callback contexts at their common invocation boundary.
+- Status: active
+
+## 2026-11-08 - Recheck T4 claim lifetimes and settle invariants
+- Scope: issue #669 T4, migrations, queue, outbox, webhook, idempotency, cron and log history
+- Trigger: review of the nine GLM commits found missed settle sinks, shared AppOption state, warning gaps and weak regression premises.
+- Approach: classify SQLite contention by result code, preserve the first call's context, bound retries, and exercise every claim-settle destination with a real file lock.
+- Evidence: [T4 review and negative-proof ledger](reviews/2026-11-08-i669-t4.md); 19 mutation checks, scoped SQLite/Postgres packages, race tests and repository analyzers pass.
+- Next time: use Go overlays for negative proofs, test two queues on the same table, and keep unreleased upgrade notes out of published release files.
+- Status: active
+
 ## 2026-11-08 - Seed first-seen prototype-named globals through both navigators
 - Scope: core-ui/runtime/src/envelope.js, envelope seed lifecycle
 - Trigger: Cursor Bugbot found first-seen `toString` and `valueOf` globals resolving to inherited functions instead of own slots.
@@ -370,4 +411,36 @@
 - Approach: reuse all registered stack definitions and attach only missing CSS routes at their published `StyleURL`; toast stacks have no per-stack script.
 - Evidence: `go test ./framework/uihost -run 'Test.*Toast' -count=1` covers simultaneous custom hosts, prefixed assets, repeated boot, unrelated widgets, and the original two-default-host case; mutations of stack-kind, missing-route, and default-registration guards each fail.
 - Next time: boot every host before rendering the first, assert the region count, and fetch every linked stylesheet on each router.
+- Status: active
+
+## 2026-11-08 - Obstruct contract application without permission bits
+- Scope: contract tooling tests, upload, migrate
+- Trigger: chmod-based write failures still succeed as root; macOS immutable flags do not fix Linux.
+- Approach: `internal/contractstest.ObstructApply` links readable fixture source outside the project root, so discovery sees it and Apply's `os.Root` refuses it after the first file. Windows holds a read-sharing handle to refuse a write without symlink privileges. Upload uses a missing leaf and a regular-file parent; migrate omits the snapshot directory.
+- Evidence: all six issue #669 obstruction tests pass as uid 0 in the `golang:1.27` container; removing ObstructApply makes all four CLI/MCP partial-application tests fail.
+- Next time: choose a kernel path or confinement failure that holds for every uid, and assert the prior file changed before accepting a partial-application result.
+- Status: active
+
+## 2026-11-08 - Check Builder control flow and PostgreSQL identifier boundaries
+- Scope: textbind, battery/semantic
+- Trigger: Builder resets in sibling branches cleared taint; PostgreSQL truncated both index suffixes of a 62-byte table to the same name.
+- Approach: require a reset to dominate the read; test byte, rune and formatted writes. Keep distinct suffixes when shortening index names and inspect the actual pg_indexes catalog.
+- Evidence: new Builder fixtures fail on the GLM analyzer; TestPgVectorLongTableHasBothIndexes finds one index with its original naming helper and two with the fix.
+- Next time: test both branches and identifier lengths 61, 62 and 63; pin EXPLAIN settings to one transaction rather than a pooled connection.
+- Status: active
+
+## 2026-11-08 - Measure analyzer guards with explicit mutation operators
+- Scope: internal/analyzers, issue #669
+- Trigger: historical survivor counts did not describe the current sources or mutation operators.
+- Approach: run each package's analysistest fixtures, negate every nonliteral if condition and replace each reporter selector (including a.pass) with a compiling no-op separately, with a bounded test timeout; restore source after each run.
+- Evidence: fixedtmp 79/79, timestampid 86/86, recoverlog 66/66, nowaitdelay 47/47 and keytrim 32/32 mutants killed. Added fixture cases kill missing guards; two verdict-invariant branches were removed.
+- Next time: reject mutation build failures as invalid; the draft reporter rewrite produced pass.mutateNopReportf, so it hid an untested exec.Cmd.Path reporter. Record the operator set and keep bad and quiet fixtures.
+- Status: active
+
+## 2026-11-08 - Encode JSON before committing an HTTP status
+- Scope: JSON response helpers, discardeddecode
+- Trigger: a NaN or invalid RawMessage produced an empty 200 because the encoder failed after success headers were written.
+- Approach: marshal first and answer a generic 500, propagate broker/queue serialization errors, and log output failures. Preserve encoder options and avoid fabricated cursor placeholders.
+- Evidence: HTTP regressions in framework/crud, framework, battery/auth and cmd/kiln fail on their original writers; the widget failure-writer test pins logging.
+- Next time: inject unencodable values at the real response boundary and assert status, body and sensitive-response headers before widening the analyzer.
 - Status: active

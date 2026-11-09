@@ -3,7 +3,7 @@ title: Apps run under any host, one error envelope, Windows signing and auto-upd
 notes:
   - change: "BREAKING for direct callers of the llm.md index - crud.RegistryLLMMD / RegistryLLMMDHandler take a trailing pagesIndex string, the path the app serves its page index at; empty drops the index's Pages section, which used to link /llm-pages.md even when nothing served it"
     breaking: true
-    hits: review
+    hits: edit
     guidance: "The framework's own /api/llm.md passes the path the UI host registered, so apps that never call these change nothing. A hand-rolled mount passes \"/llm-pages.md\" only when a UI host built with WithPublicLLMMD serves it, and \"\" otherwise."
     find:
       shapes:
@@ -782,7 +782,7 @@ notes:
   - change: "magic-link send and forgot-password mail one link per address every two minutes (AddressRateLimit, kept in memory per replica); a request inside the cooldown gets the usual 200 and nothing is mailed"
     breaking: true
     hits: review
-    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin."
+    guidance: "A user's resend within two minutes sends nothing; the link already mailed still works. An end-to-end test that asks twice for one address passes AddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to the plugin. From v0.97 the per-plugin field is gone and one shared AuthConfig.MailAddressRateLimit sets both endpoints."
     find:
       uses:
         - gofastr/battery/auth.NewMagicLinkPlugin

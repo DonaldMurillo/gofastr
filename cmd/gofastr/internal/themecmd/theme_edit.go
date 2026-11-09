@@ -324,6 +324,7 @@ func (s *ThemeEditServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			routes.Use(middleware.SecurityHeaders(middleware.SecurityHeadersConfig{}))
 			routes.Use(retired.Middleware(dev.Enabled))
 			gallery.MountDemoWidgets(routes, "/preview")
+			gallery.MountDemoFormRoute(routes, func(string) string { return "/preview" })
 			s.Host.Mount(routes)
 			s.previewHandler = routes
 		})

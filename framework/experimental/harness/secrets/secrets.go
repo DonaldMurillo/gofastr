@@ -153,17 +153,39 @@ func pendingFromFile(path string) ([]pair, error) {
 }
 
 // isProviderCredentialKey reports whether key names a provider
-// credential — the only thing a walked secrets file may deliver. Keys
-// ending in _API_KEY or _TOKEN qualify (ZAI_API_KEY,
-// OPENROUTER_API_KEY, GITHUB_TOKEN, ...); anything else, including
-// process-shaping names and every GOFASTR_HARNESS_* variable (the
-// credential store's own key material), does not. The real environment
-// stays authoritative for everything the file may not set.
+// credential — the only thing a walked secrets file may deliver. The
+// WHOLE name must be an environment variable name,
+// ^[A-Z][A-Z0-9_]*$, ending in _API_KEY or _TOKEN (ZAI_API_KEY,
+// OPENROUTER_API_KEY, GITHUB_TOKEN, ...); a suffix match alone let
+// "\x1b…ZAI_API_KEY" and other non-names count, which the CLI then had
+// to unset after the fact when no prompt ran (#669). Anything else,
+// including process-shaping names and every GOFASTR_HARNESS_* variable
+// (the credential store's own key material), does not qualify. The real
+// environment stays authoritative for everything the file may not set.
 func isProviderCredentialKey(key string) bool {
+	if !isEnvVarName(key) {
+		return false
+	}
 	if strings.HasPrefix(key, "GOFASTR_") {
 		return false
 	}
 	return strings.HasSuffix(key, "_API_KEY") || strings.HasSuffix(key, "_TOKEN")
+}
+
+// isEnvVarName reports whether k is shaped like an environment variable
+// name: ^[A-Z][A-Z0-9_]*$, byte-wise, so multi-byte lookalikes (a
+// Turkish dotted capital) do not pass.
+func isEnvVarName(k string) bool {
+	if k == "" || k[0] < 'A' || k[0] > 'Z' {
+		return false
+	}
+	for i := 1; i < len(k); i++ {
+		c := k[i]
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 func trimQuotes(s string) string {

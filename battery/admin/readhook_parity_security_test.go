@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
@@ -40,6 +41,15 @@ const (
 )
 
 func parityEnv(t *testing.T) (*env, http.Handler) {
+	t.Helper()
+	return parityEnvHooks(t, true)
+}
+
+// parityEnvHooks is parityEnv with the BeforeList hook registered only
+// when list is set. Without it the hidden row reaches every list, so a
+// write that names it is refused by its own BeforeGet check alone: the
+// shape a bulk write resolving ids from a list once missed.
+func parityEnvHooks(t *testing.T, list bool) (*env, http.Handler) {
 	t.Helper()
 	cases := entity.EntityConfig{
 		Table:        "cases",
@@ -77,7 +87,9 @@ func parityEnv(t *testing.T) (*env, http.Handler) {
 			}
 			return nil
 		}
-		reg.RegisterHook(hook.BeforeList, scope)
+		if list {
+			reg.RegisterHook(hook.BeforeList, scope)
+		}
 		reg.RegisterHook(hook.BeforeGet, scope)
 		maskRow := func(row map[string]any) {
 			if s, _ := row["secret"].(string); s != "" {
@@ -130,6 +142,45 @@ func (x *env) caseRow(id string) string {
 }
 
 func TestReadHookParityAdmin(t *testing.T) {
+	t.Run("mask elevation", func(t *testing.T) {
+		var private *crud.CrudHandler
+		cases := entity.EntityConfig{
+			Fields: []schema.Field{
+				{Name: "title", Type: schema.String},
+				{Name: "secret", Type: schema.String, Mask: func(ctx context.Context, v any) any {
+					if private.CanReadScoped(ctx) {
+						t.Error("mask inherited admin elevation for cases:private")
+						return v
+					}
+					return "****"
+				}},
+			},
+			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "cases:private"}},
+		}.WithTimestamps(false)
+		tasks := entity.EntityConfig{
+			Fields:    []schema.Field{{Name: "name", Type: schema.String}, {Name: "case_id", Type: schema.String}},
+			Relations: []entity.Relation{entity.BelongsTo("case", "cases", "case_id")},
+		}.WithTimestamps(false)
+		x := setup(t, map[string]entity.EntityConfig{"cases": cases, "tasks": tasks},
+			Config{Entities: []string{"cases", "tasks"}}, func(x *env, _ *Config) {
+				var err error
+				private, err = x.app.CrudHandler("cases")
+				if err != nil {
+					t.Fatal(err)
+				}
+			})
+		x.insert("cases", map[string]any{"id": "c1", "title": "Visible case", "secret": paritySecret})
+		x.insert("tasks", map[string]any{"id": "t1", "name": "Visible task", "case_id": "c1"})
+		for _, path := range []string{"/admin/entities/cases/c1", "/admin/entities/cases/c1?tab=api", "/admin/entities/cases", "/admin/api/cases/_export.csv"} {
+			t.Run(path, func(t *testing.T) {
+				rr := get(withPolicy(x.as(theAdmin)), path)
+				body := rr.Body.String()
+				if rr.Code != http.StatusOK || !strings.Contains(body, "Visible case") || strings.Contains(body, paritySecret) {
+					t.Fatalf("elevated admin without cases:private = %d %s, want a masked visible row", rr.Code, excerpt(body, paritySecret))
+				}
+			})
+		}
+	})
 	reads := []struct {
 		name string
 		req  func() *http.Request
@@ -193,12 +244,7 @@ func TestReadHookParityAdmin(t *testing.T) {
 
 	// Writes and RPCs that act on a row: the hidden one answers as a
 	// missing one does and stays as stored.
-	acts := []struct {
-		name   string
-		req    func(id string) *http.Request
-		hidden string // the hidden row the act names
-		shown  string // its visible twin, which the act must change
-	}{
+	acts := []parityActCase{
 		{"patch", func(id string) *http.Request {
 			return jsonReq(http.MethodPatch, "/admin/api/cases/"+id, `{"title":"OVERWRITTEN"}`)
 		}, "c-hid", "c-vis"},
@@ -235,25 +281,46 @@ func TestReadHookParityAdmin(t *testing.T) {
 		}, "c-hid", "c-vis"},
 	}
 	for _, a := range acts {
-		t.Run("act/"+a.name, func(t *testing.T) {
-			x, _ := parityEnv(t)
-			h := x.withGrant(theAdmin, "cases:override_state")
-			changed := func(id string) (bool, int, string) {
-				before := x.caseRow(id)
-				rr := serve(h, a.req(id))
-				return x.caseRow(id) != before, rr.Code, rr.Body.String()
+		for _, list := range []bool{true, false} {
+			mode := "list+get"
+			if !list {
+				mode = "get only"
 			}
-			moved, code, body := changed(a.hidden)
-			if strings.Contains(body, parityHidden) || strings.Contains(body, paritySecret) {
-				t.Errorf("SECURITY: %s answered with a hidden row or masked value (%d): %s", a.name, code, body)
-			}
-			if moved {
-				t.Errorf("SECURITY: %s acted on a row the hook hides (%d %s)", a.name, code, body)
-			}
-			if moved, code, body := changed(a.shown); !moved {
-				t.Errorf("%s left the visible twin unchanged (%d %s), so the check above proves nothing", a.name, code, body)
-			}
-		})
+			t.Run("act/"+mode+"/"+a.name, func(t *testing.T) { a.run(t, list) })
+		}
+	}
+}
+
+// parityActCase is one write or RPC of TestReadHookParityAdmin that acts
+// on a row.
+type parityActCase struct {
+	name   string
+	req    func(id string) *http.Request
+	hidden string // the hidden row the act names
+	shown  string // its visible twin, which the act must change
+}
+
+// run checks that the act on the hidden row answers as a missing one
+// does and changes nothing, and that the same act on the visible twin
+// changes it. list registers the BeforeList hook beside BeforeGet.
+func (a parityActCase) run(t *testing.T, list bool) {
+	t.Helper()
+	x, _ := parityEnvHooks(t, list)
+	h := x.withGrant(theAdmin, "cases:override_state")
+	changed := func(id string) (bool, int, string) {
+		before := x.caseRow(id)
+		rr := serve(h, a.req(id))
+		return x.caseRow(id) != before, rr.Code, rr.Body.String()
+	}
+	moved, code, body := changed(a.hidden)
+	if strings.Contains(body, parityHidden) || strings.Contains(body, paritySecret) {
+		t.Errorf("SECURITY: %s answered with a hidden row or masked value (%d): %s", a.name, code, body)
+	}
+	if moved {
+		t.Errorf("SECURITY: %s acted on a row the hook hides (%d %s)", a.name, code, body)
+	}
+	if moved, code, body := changed(a.shown); !moved {
+		t.Errorf("%s left the visible twin unchanged (%d %s), so the check above proves nothing", a.name, code, body)
 	}
 }
 

@@ -1,10 +1,15 @@
-package app
+// Package routeseg holds the app router's segment constraints (":id:int",
+// ":id:uuid", ":slug:alpha", ":code:alnum"): what a constrained segment
+// admits. core-ui/app's router enforces them, and framework/embed reads them
+// to keep a grant's reach to the paths the surface's route matches, without
+// importing the UI layer.
+package routeseg
 
 import "strings"
 
-// segConstraint returns the constraint name declared on a dynamic segment
+// Constraint returns the constraint name declared on a dynamic segment
 // ("" when none). ":id:int" → "int"; ":id" and ":path*" → "".
-func segConstraint(seg string) string {
+func Constraint(seg string) string {
 	if !strings.HasPrefix(seg, ":") {
 		return ""
 	}
@@ -15,12 +20,13 @@ func segConstraint(seg string) string {
 	return ""
 }
 
-// constraintOK reports whether val satisfies the constraint declared on seg.
+// ConstraintOK reports whether val, a decoded path segment, satisfies the
+// constraint declared on seg.
 // Unknown / absent constraints pass (the value matches anything); only the
 // names in validConstraints are enforced. Unknown constraint names are
 // rejected at registration, so resolve never sees them.
-func constraintOK(seg, val string) bool {
-	switch segConstraint(seg) {
+func ConstraintOK(seg, val string) bool {
+	switch Constraint(seg) {
 	case "int":
 		return isAllDigits(val)
 	case "uuid":
@@ -34,10 +40,17 @@ func constraintOK(seg, val string) bool {
 	}
 }
 
-// validConstraints is the registration-time allowlist. There is
-// deliberately no "string" constraint, every param is a string, so it
-// would be an unconstrained no-op under a misleading name.
-var validConstraints = map[string]bool{"int": true, "uuid": true, "alpha": true, "alnum": true}
+// Valid reports whether name is a constraint the router enforces: the
+// registration-time allowlist. There is deliberately no "string"
+// constraint, every param is a string, so it would be an unconstrained
+// no-op under a misleading name.
+func Valid(name string) bool {
+	switch name {
+	case "int", "uuid", "alpha", "alnum":
+		return true
+	}
+	return false
+}
 
 // isAllAlpha reports whether s is one or more ASCII letters (the "alpha"
 // constraint). Empty never matches.

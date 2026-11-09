@@ -281,7 +281,7 @@ func TestSQLMagicLinkCreateTokenSurvivesSweepFailure(t *testing.T) {
 // the limiter can force, Window + BlockDuration (2026-11-01 review,
 // round 2: MaxAttempts 1 with an hour's block passed every other test).
 func TestAddressLimitIsACooldownALinkOutlives(t *testing.T) {
-	cfg := defaultAddressRateLimit()
+	cfg := defaultMailAddressRateLimit()
 	gap := cfg.Window + cfg.BlockDuration
 	if gap > 5*time.Minute {
 		t.Errorf("per-address limit can hold mail back %v, want a short cooldown", gap)
@@ -291,6 +291,125 @@ func TestAddressLimitIsACooldownALinkOutlives(t *testing.T) {
 	for name, ttl := range map[string]time.Duration{"magic link": ml.config.TokenTTL, "password reset": pr.cfg.TokenTTL} {
 		if ttl <= gap {
 			t.Errorf("%s TokenTTL %v does not outlive the per-address gap %v", name, ttl, gap)
+		}
+	}
+}
+
+// R8-AU-03: magic-link send and forgot-password share ONE per-address
+// mail budget (AuthConfig.MailAddressRateLimit, default one mail per
+// address every two minutes). Two in-memory limiters never share a
+// budget: with one per plugin the same address drew about sixty mails an
+// hour, double the floor the default documents. A mail from either
+// endpoint starts the cooldown for both, and a different address is
+// unaffected.
+func TestMailAddressRateLimitSharedBySendAndForgot(t *testing.T) {
+	store := newUserStoreWithPassword()
+	tokens := &countingResetTokenStore{inner: NewMemoryMagicLinkTokenStore()}
+	mgr := New(AuthConfig{
+		JWTSecret:           "test-secret",
+		AllowInMemoryStores: true,
+		SessionCookie:       "session_id",
+		SessionTTL:          time.Hour,
+		UserStore:           store,
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		TokenStore:  tokens,
+		EmailSender: &countingLinkSender{},
+	}))
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		TokenStore:  tokens,
+		EmailSender: &stubEmailSender{},
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := mountRoutes(mgr)
+	post := func(path, email string) int {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email})
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	const addr = "shared@example.com"
+	if code := post("/auth/magic-link/send", addr); code != http.StatusOK {
+		t.Fatalf("magic-link send: %d", code)
+	}
+	if tokens.creations != 1 {
+		t.Fatalf("precondition: first send minted %d tokens, want 1", tokens.creations)
+	}
+
+	// The same address through the other endpoint, inside the default
+	// two-minute cooldown: the shared budget is spent, so nothing is
+	// minted and the anti-enumeration 200 is all the caller learns.
+	if code := post("/auth/forgot-password", addr); code != http.StatusOK {
+		t.Fatalf("forgot-password: %d", code)
+	}
+	if tokens.creations != 1 {
+		t.Errorf("SECURITY: [mail-address-budget] forgot-password minted for an address magic-link send just mailed (%d creations, want 1): the endpoints keep separate budgets, so one address draws about sixty mails an hour, double the documented floor", tokens.creations)
+	}
+
+	// The cooldown is per address: a different one is not throttled by
+	// the spend above.
+	if code := post("/auth/magic-link/send", "other@example.com"); code != http.StatusOK {
+		t.Fatalf("magic-link send, other address: %d", code)
+	}
+	if tokens.creations != 2 {
+		t.Errorf("a different address was throttled by the shared budget: %d creations, want 2", tokens.creations)
+	}
+}
+
+// The AuthConfig.MailAddressRateLimit knob sets the one budget for both
+// endpoints: loosened, both mail the same address inside the default
+// cooldown.
+func TestMailAddressRateLimitConfigLoosensBothEndpoints(t *testing.T) {
+	store := newUserStoreWithPassword()
+	tokens := &countingResetTokenStore{inner: NewMemoryMagicLinkTokenStore()}
+	mgr := New(AuthConfig{
+		JWTSecret:            "test-secret",
+		AllowInMemoryStores:  true,
+		SessionCookie:        "session_id",
+		SessionTTL:           time.Hour,
+		UserStore:            store,
+		MailAddressRateLimit: &RateLimiterConfig{MaxAttempts: 100, Window: time.Minute},
+	})
+	mgr.Use(NewCorePlugin())
+	mgr.Use(NewMagicLinkPlugin(MagicLinkConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		TokenStore:  tokens,
+		EmailSender: &countingLinkSender{},
+	}))
+	mgr.Use(NewPasswordResetPlugin(PasswordResetConfig{
+		BaseURL:     "http://localhost",
+		TokenTTL:    time.Hour,
+		TokenStore:  tokens,
+		EmailSender: &stubEmailSender{},
+	}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	r := mountRoutes(mgr)
+	const addr = "loose@example.com"
+	for i, path := range []string{"/auth/magic-link/send", "/auth/forgot-password", "/auth/magic-link/send"} {
+		body, _ := json.Marshal(map[string]string{"email": addr})
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: %d", path, w.Code)
+		}
+		if want := i + 1; tokens.creations != want {
+			t.Errorf("after %d requests, %d tokens minted, want %d: the loosened AuthConfig budget must cover both endpoints", i+1, tokens.creations, want)
 		}
 	}
 }

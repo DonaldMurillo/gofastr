@@ -1729,6 +1729,25 @@ func dataTableCSS(_ style.Theme) string {
     display: block;
     text-align: start;
   }
+}
+
+/* A narrow phone row (a 320px screen) gives each slot a line of its own:
+   beside a badge, a price and the row menu the title kept a few pixels
+   and a name read "C…", and a badge and a price side by side still ran
+   into each other. The meta and detail start where the title does, and
+   the columns close up so the text keeps more of the width. */
+@container (max-width: 21rem) {
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas: "lead title end" "lead subtitle end" "lead meta end" "lead detail end";
+    column-gap: var(--spacing-md, 8px);
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody tr:not(:has(> td.is-phone-lead)) {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title end" "subtitle end" "meta end" "detail end";
+  }
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-detail,
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-phone-meta { justify-self: start; }
 }`
 }
 

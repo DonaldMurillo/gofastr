@@ -443,9 +443,10 @@ caller without the role. The role is read from the user's
 `GetRoles() []string` (battery/auth's `User` has it) or from the roles
 access middleware put on the context, the same rule `/.debug` uses. Make
 sure the app's session/JWT middleware runs on the `/mcp` route, or every
-call comes back asking for a caller. An identity alone was the old gate,
-and on an app with open sign-up it let any account turn a module off for
-everyone. When your operators hold another role, replace the gate:
+call answers as if the tool did not exist (a gated item answers exactly
+as an unknown name). An identity alone was the old gate, and on an app
+with open sign-up it let any account turn a module off for everyone.
+When your operators hold another role, replace the gate:
 
 <!-- gofastr:compile
 import "github.com/DonaldMurillo/gofastr/framework"
@@ -549,6 +550,15 @@ entity.Endpoint{
     MCPGate:    auth.MCPRole("editor"),   // else: any authenticated caller
 }
 ```
+
+A twin built with `handler.ToolAdapter` binds its `path`-tagged
+parameters with the endpoint's own route pattern, which the framework
+puts on the call context at registration: a `{path...}` catch-all
+route's twin accepts a slash-bearing value the route accepts, while a
+`..` segment, an empty segment and a control byte are refused exactly
+as the router refuses them. A tool registered by hand with
+`app.MCP.RegisterTool` has no route, so every path parameter stays
+strict — a `/` in one is refused.
 
 For your own `RegisterTool` calls, gate them per-caller with
 `mcp.WithToolGate` + battery/auth's `auth.MCPUser()` / `auth.MCPRole(...)`
@@ -739,12 +749,32 @@ payment backend), WebMCP (client-side browser API), ap2 (server-only).
 All absolute discovery URLs (agent card `url`, `Link` header targets) use one
 canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
 `WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
-Set one origin and every artifact stays consistent. Behind a proxy,
-`X-Forwarded-Proto` is honored for the scheme, but `X-Forwarded-Host` is
-deliberately **not**: it is client-settable and reflecting it into the
-`Link: rel="service"` header would be a cache-poisoning primitive, so the
-addressed `Host` is used instead. Set `BaseURL` explicitly when your proxy
-rewrites the host.
+The per-request scheme comes from the TLS state. `X-Forwarded-Proto`
+(exactly `http` or `https`) overrides it only when the TCP peer is listed
+in `uihost.WithTrustedProxies` or, when the host sets no list, in the
+App's `AppConfig.TrustedProxies`, which the App puts on each request's
+context: any client can send the header, and an untrusted one could
+otherwise make the host advertise `http://` URLs or poison a cached
+copy. A host list replaces the App's rather than adding to it. With
+neither list the host trusts nobody, so behind a TLS-terminating proxy,
+list the proxy or set a `BaseURL`, or the card and the `Link` headers
+say `http://`. `X-Forwarded-Host` is deliberately
+**not** honored from anyone: reflecting it into the `Link:
+rel="service"` header would be a cache-poisoning primitive, so the
+addressed `Host` is used instead. Set `BaseURL` explicitly when your
+proxy rewrites the host. While the origin is derived per request, the
+card and the pages carrying these `Link` headers send `Vary: Host` and
+`Vary: X-Forwarded-Proto`; a configured `BaseURL` drops both.
+
+The framework layer's own well-known documents (the MCP server card,
+`/.well-known/mcp.json`, `/.well-known/api-catalog`, `/auth.md`, the
+agent extras) resolve their origin the same way, from `AppConfig`:
+`BaseURL` wins outright when set, and without it the scheme comes from
+the TLS state, with `X-Forwarded-Proto` honored only from a peer listed
+in `AppConfig.TrustedProxies`, the same trust rule the rate limiters
+apply to `X-Forwarded-For`. An empty `TrustedProxies` trusts nobody:
+behind a TLS-terminating proxy that forwards the header, list the proxy
+or set `BaseURL`, or the documents advertise `http://` origins.
 
 Signed cards are the exception to the per-request fallback: with
 `SigningKeys` set, an explicit `BaseURL` is **required** and the host

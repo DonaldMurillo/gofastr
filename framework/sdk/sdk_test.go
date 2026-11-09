@@ -20,8 +20,8 @@ func postsConfig() entity.EntityConfig {
 }
 
 func TestSchemaHashDeterministic(t *testing.T) {
-	a := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
-	b := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	a := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	b := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
 	if a != b {
 		t.Fatalf("same config hashed differently: %s vs %s", a, b)
 	}
@@ -31,19 +31,19 @@ func TestSchemaHashDeterministic(t *testing.T) {
 }
 
 func TestSchemaHashChangesOnFieldType(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	base := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
 	changed := postsConfig()
 	changed.Fields[1].Type = schema.Float
-	if got := SchemaHash([]NamedConfig{{Name: "posts", Config: changed}}); got == base {
+	if got := hashOf([]NamedConfig{{Name: "posts", Config: changed}}); got == base {
 		t.Fatal("field type change did not change the hash")
 	}
 }
 
 func TestSchemaHashIgnoresHiddenFields(t *testing.T) {
-	base := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	base := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
 	changed := postsConfig()
 	changed.Fields[2].Type = schema.Text // still Hidden
-	if got := SchemaHash([]NamedConfig{{Name: "posts", Config: changed}}); got != base {
+	if got := hashOf([]NamedConfig{{Name: "posts", Config: changed}}); got != base {
 		t.Fatal("hidden field change leaked into the hash")
 	}
 }
@@ -52,9 +52,9 @@ func TestSchemaHashMatchesDefinedEntity(t *testing.T) {
 	// The generation side hashes raw declaration configs; the serving side
 	// hashes registry entities that already went through Define (injected
 	// id/created_at/updated_at, defaulted Table). Both must agree.
-	raw := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}})
+	raw := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}})
 	defined := entity.Define("posts", postsConfig())
-	viaRegistry := SchemaHash([]NamedConfig{{Name: defined.Config.Name, Config: defined.Config}})
+	viaRegistry := hashOf([]NamedConfig{{Name: defined.Config.Name, Config: defined.Config}})
 	if raw != viaRegistry {
 		t.Fatalf("raw config and Defined entity hash differently: %s vs %s", raw, viaRegistry)
 	}
@@ -62,8 +62,8 @@ func TestSchemaHashMatchesDefinedEntity(t *testing.T) {
 
 func TestSchemaHashEntityOrderIrrelevant(t *testing.T) {
 	users := entity.EntityConfig{Fields: []schema.Field{{Name: "email", Type: schema.String}}}
-	ab := SchemaHash([]NamedConfig{{Name: "posts", Config: postsConfig()}, {Name: "users", Config: users}})
-	ba := SchemaHash([]NamedConfig{{Name: "users", Config: users}, {Name: "posts", Config: postsConfig()}})
+	ab := hashOf([]NamedConfig{{Name: "posts", Config: postsConfig()}, {Name: "users", Config: users}})
+	ba := hashOf([]NamedConfig{{Name: "users", Config: users}, {Name: "posts", Config: postsConfig()}})
 	if ab != ba {
 		t.Fatal("entity order changed the hash")
 	}

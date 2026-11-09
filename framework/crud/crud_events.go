@@ -564,7 +564,8 @@ func (ch *CrudHandler) eventHookScopeHides(r *http.Request, ev event.Event) bool
 // leaves the record out rather than publishing it raw, the subscriber still
 // learns something changed and can re-read through the API.
 func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.Event {
-	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.AfterGet)) == 0 {
+	hooked := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterGet)) > 0
+	if !hooked && !ch.hasMasks() {
 		return ev
 	}
 	data, ok := ev.Data.(map[string]any)
@@ -597,10 +598,13 @@ func (ch *CrudHandler) redactEventRecord(r *http.Request, ev event.Event) event.
 	if r != nil {
 		hctx = r.Context()
 	}
+	ch.maskOwn(hctx, clone)
 	payload := &hook.GetPayload{Request: r, ID: id, Result: clone}
-	if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
-		logf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
-		payload.Result = nil
+	if hooked {
+		if err := runHooks(ch.Hooks, hookCtx(hctx), hook.AfterGet, payload); err != nil {
+			logf("crud: after-get hook failed on %s event; omitting record: %v", ch.Entity.GetName(), err)
+			payload.Result = nil
+		}
 	}
 
 	// Copy the envelope so the redacted view never reaches another

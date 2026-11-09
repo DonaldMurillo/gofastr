@@ -45,3 +45,15 @@ func minted() error {
 	}
 	return os.WriteFile(filepath.Join(dir, "x"), nil, 0o600)
 }
+
+func cmdLiteralPath() *exec.Cmd {
+	return &exec.Cmd{Path: "/tmp/fixed-program"} // want `exec/build reaches a fixed path under the shared temp root`
+}
+
+func mintedCmdPath() (*exec.Cmd, error) {
+	dir, err := os.MkdirTemp("", "program-")
+	if err != nil {
+		return nil, err
+	}
+	return &exec.Cmd{Path: filepath.Join(dir, "program")}, nil
+}

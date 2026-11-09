@@ -100,8 +100,11 @@ func (e *engine) configWalk(n *upgrade.Note, cm upgrade.ConfigMatch, node *corey
 	}
 }
 
-// scalarText renders a scalar the way it was written; the parser keeps
-// strings verbatim and other kinds as their source spelling.
+// scalarText renders a scalar for a Value regexp: strings verbatim, every
+// other kind as its PARSED value printed with fmt.Sprint — the parser
+// keeps values, not source spellings, so theme: 2.0 matches ^2$, not
+// ^2\.0$; ~ prints "<nil>". upgrading.md lists the forms; the pin is
+// TestConfigScalarValueMatchesParsedForm (#669, R8-NC-SF-03).
 func scalarText(v any) string {
 	if s, ok := v.(string); ok {
 		return s

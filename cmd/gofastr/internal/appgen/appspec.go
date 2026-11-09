@@ -177,12 +177,15 @@ func appSpecHasOwnerScopedEntity(bp appspec.AppSpec) bool {
 	return false
 }
 
-// appSpecExpandSeed appends Count auto-generated demo rows to each seed
-// entity that declares one. Generation is deterministic (no runtime
-// randomness), so regeneration is stable and the diff never churns. Enum
-// columns get a weighted or deterministically-skewed distribution so demo data
-// never reads as a flat 1/N-per-value round-robin.
-func appSpecExpandSeed(bp appspec.AppSpec) appspec.AppSpec {
+// ExpandAppSpecSeed appends Count auto-generated demo rows to each seed
+// entity that declares one and records how many rows were authored (the
+// leading rows the author wrote), so the stub emitter can carry the
+// recipe beside the rows and pack can tell them apart again. Generation
+// is deterministic (no runtime randomness), so regeneration is stable and
+// the diff never churns. Enum columns get a weighted or
+// deterministically-skewed distribution so demo data never reads as a
+// flat 1/N-per-value round-robin.
+func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 	entityMap := make(map[string]framework.EntityDeclaration, len(bp.Entities))
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
@@ -196,6 +199,7 @@ func appSpecExpandSeed(bp appspec.AppSpec) appspec.AppSpec {
 		if !ok {
 			continue
 		}
+		s.Authored = len(s.Rows)
 		s.Rows = append(s.Rows, appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
 	}
 	return bp
@@ -222,7 +226,7 @@ func RenderAppSpecCode(bp appspec.AppSpec) ([]GeneratedFile, error) {
 
 func renderAppSpec(bp appspec.AppSpec, entityOrderOffset, screenOrderOffset int, fonts bool) ([]GeneratedFile, error) {
 	bp = appspec.AppSpecSynthesizeCRUDScreens(bp)
-	bp = appSpecExpandSeed(bp)
+	bp = ExpandAppSpecSeed(bp)
 	var files []GeneratedFile
 	if bp.App.Module != "" {
 		files = append(files, GeneratedFile{Name: "main.go", Content: RenderAppSpecMain(bp)})
@@ -1208,10 +1212,11 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	adminSeeded := bp.App.Auth.Enabled && adminEmail != "" && adminPass != ""
 	target, hasTarget := appSpecE2EWritableTarget(bp)
 	crud := hasTarget && needsAuthClient // the lifecycle needs an authed client
-	// The generated e2e test boots against the app spec's declared driver.
-	// A postgres app spec links only lib/pq, so it cannot open a SQLite
-	// file DSN. Provision a throwaway Postgres database instead, and skip
-	// when Postgres is unreachable so driverless CI stays green-by-skip.
+	// The generated e2e test boots against the app spec's declared driver,
+	// so a postgres spec provisions a throwaway Postgres database (skips
+	// when Postgres is unreachable so driverless CI stays green-by-skip):
+	// the declared engine is the one the spec ships against, even though
+	// the generated app now links both drivers and DB_DRIVER can switch.
 	dbDriver := strings.ToLower(strings.TrimSpace(bp.App.DBDriver))
 	isPostgres := dbDriver == "postgres" || dbDriver == "postgresql"
 
@@ -1841,8 +1846,14 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	sb.WriteString("\tfwimage \"github.com/DonaldMurillo/gofastr/framework/image\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/isolation\"\n")
 	sb.WriteString("\t\"github.com/DonaldMurillo/gofastr/framework/uihost\"\n")
-	if imp := appSpecDriverImport(driver); imp != "" {
-		sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
+	if driver != "" || dbURL != "" {
+		// Both engines, not just the declared one: openDB switches on
+		// DB_DRIVER, and a spec whose driver is the only import linked
+		// answers the switch for the other engine with `sql: unknown
+		// driver`.
+		for _, imp := range appSpecDriverImports(driver) {
+			sb.WriteString(fmt.Sprintf("\t_ %q\n", imp))
+		}
 	}
 	// Unconditional: the entities seam ships even with zero entities, so a
 	// later `--add`/scaffold entity registers without editing this owned file.
@@ -2214,14 +2225,19 @@ func isHexRGB(s string) bool {
 	return true
 }
 
-func appSpecDriverImport(driver string) string {
+// appSpecDriverImports is the blank-import set a generated app with a
+// database links: BOTH engines, whatever the spec declares. openDB
+// switches on DB_DRIVER at boot — the reason D-07 keeps refusing
+// Postgres-only reserved words for SQLite app specs too — so linking
+// only the declared driver left that switch dead for the other engine
+// (`sql: unknown driver`). An unknown driver returns nil;
+// validateAppSpec is the loud gate for it.
+func appSpecDriverImports(driver string) []string {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
-	case "", "sqlite", "sqlite3":
-		return "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
-	case "postgres", "postgresql":
-		return "github.com/lib/pq"
+	case "", "sqlite", "sqlite3", "postgres", "postgresql":
+		return []string{"github.com/DonaldMurillo/gofastr/sqlite/stdlib", "github.com/lib/pq"}
 	default:
-		return ""
+		return nil
 	}
 }
 
@@ -2687,9 +2703,88 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	sb.WriteString(bp.PhraseCollector().Block())
 	sb.WriteString(body)
 	mountName := "mount" + appspec.ToCamelCase(screen.Name) + "Screen"
-	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s\n}\n\n", mountName, screen.Name, mountName, AppSpecScreenMountStmt(screen, bp)))
+	sb.WriteString(fmt.Sprintf("// %s mounts the %s screen with site.\nfunc %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n%s%s\n}\n\n", mountName, screen.Name, mountName, appSpecSourceChecks(screen), AppSpecScreenMountStmt(screen, bp)))
 	sb.WriteString(fmt.Sprintf("func init() {\n\tscreenRegistrars = append(screenRegistrars, screenRegistrar{order: %d, fn: %s})\n}\n", order, mountName))
 	return GeneratedFile{Name: appspec.ScreenFileName(screen.Name), Content: sb.String()}
+}
+
+// appSpecStat is a sourced stat_card's arguments to entityui's StatValue
+// and CheckStat, in their order.
+type appSpecStat struct {
+	entity, agg, field, filter, format string
+}
+
+// appSpecStatSource reads a stat_card's source block. ok is false for a
+// card with a fixed value and no source.
+func appSpecStatSource(block appspec.AppSpecBlock) (appSpecStat, bool) {
+	src, ok := block.Props["source"].(map[string]any)
+	if !ok {
+		return appSpecStat{}, false
+	}
+	var st appSpecStat
+	st.entity, _ = src["entity"].(string)
+	st.agg, _ = src["agg"].(string)
+	st.field, _ = src["field"].(string)
+	st.filter, _ = src["filter"].(string)
+	st.format = appspec.AppSpecProp(block, "format")
+	return st, true
+}
+
+// appSpecSourceChecks emits, for the head of a screen's mount func, one
+// entityui check per sourced stat_card (CheckStat) and chart (CheckChart)
+// the screen renders. The app spec load runs the same rules
+// (entityui.CheckStatFields, CheckChartFields) over the fields the
+// generated entity registers (appspec.AppSpecEntityFields); the checks
+// judge the block against the entity the app actually registered, which
+// an entity file edited after generation can change. A block that could
+// never compute (a filter or group_by naming a column the entity lacks)
+// would draw "—" or an empty chart forever with no error; the check
+// panics at boot instead, naming the screen and the block, the way
+// EntityUI already panics on a bad appExtensions name.
+func appSpecSourceChecks(screen appspec.AppSpecScreen) string {
+	var sb strings.Builder
+	for _, b := range appspec.AppSpecBlocksDeep(screen.Body) {
+		kind := strings.ToLower(strings.TrimSpace(b.Kind))
+		var call, name string
+		switch kind {
+		case "stat_card":
+			st, ok := appSpecStatSource(b)
+			if !ok {
+				continue
+			}
+			call = fmt.Sprintf("appUI.CheckStat(%q, %q, %q, %q, %q)", st.entity, st.agg, st.field, st.filter, st.format)
+			name = appspec.AppSpecBlockName(b, "label", st.entity)
+		case "bar_chart", "pie_chart", "line_chart":
+			entity, groupBy, ok := appSpecChartSource(b)
+			if !ok {
+				continue
+			}
+			call = fmt.Sprintf("appUI.CheckChart(%q, %q)", entity, groupBy)
+			name = appspec.AppSpecBlockName(b, "title", entity)
+		default:
+			continue
+		}
+		if sb.Len() == 0 {
+			sb.WriteString("\t// A stat card or chart whose source could never compute fails the\n")
+			sb.WriteString("\t// boot here, naming it, instead of drawing nothing forever.\n")
+		}
+		prefix := fmt.Sprintf("screen %q %s %q: ", screen.Name, kind, name)
+		fmt.Fprintf(&sb, "\tif err := %s; err != nil {\n", call)
+		fmt.Fprintf(&sb, "\t\tpanic(%q + err.Error())\n\t}\n", prefix)
+	}
+	return sb.String()
+}
+
+// appSpecChartSource reads a chart's source block: the entity and the
+// group_by column GroupBars, GroupSlices and LineChart take.
+func appSpecChartSource(block appspec.AppSpecBlock) (entity, groupBy string, ok bool) {
+	src, ok := block.Props["source"].(map[string]any)
+	if !ok {
+		return "", "", false
+	}
+	entity, _ = src["entity"].(string)
+	groupBy, _ = src["group_by"].(string)
+	return entity, groupBy, true
 }
 
 // screenGoIdentifiers reports whether the screen's derived type name
@@ -2737,6 +2832,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 	for _, s := range ordered {
 		mountName := "mount" + appspec.ToCamelCase(s.Name) + "Screen"
 		sb.WriteString(fmt.Sprintf("func %s(fwApp *framework.App, site *app.App, db *sql.DB) {\n", mountName))
+		sb.WriteString(appSpecSourceChecks(s))
 		sb.WriteString(AppSpecScreenMountStmt(s, bp))
 		sb.WriteString("\n}\n\n")
 		initLines = append(initLines, fmt.Sprintf("\t\tscreenRegistrar{order: %d, fn: %s},", screenOrder[s.Name], mountName))
@@ -2901,6 +2997,14 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 		}
 		expr += ".Columns(" + strings.Join(args, ", ") + ")"
 	}
+	// The pinned filter (filter: field=value) rides the builder as Where:
+	// entityui pins field = value on every read inside the caller's scope
+	// and drops the field from the facets. The column's declared name, not
+	// the author's spelling (camelJSON resolves), because the builder
+	// resolves byName.
+	if field, value, ok := appSpecEntityListFilterParts(bp, entity, block.Filter); ok {
+		expr += fmt.Sprintf(".Where(%q, %q)", field, value)
+	}
 	if mode := strings.ToLower(strings.TrimSpace(block.Mode)); mode != "" {
 		expr += fmt.Sprintf(".As(%q)", mode)
 	}
@@ -2912,9 +3016,9 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	}
 	// No record screen means no page at <list route>/<id>: the rows'
 	// record links and their row menu's View would each be a 404, so the
-	// rows draw as text. A writable list keeps them: NoLinks also takes
-	// New away, and its create screen is synthesized beside the list.
-	noLinks := !block.Create && !appspec.AppSpecHasRecordScreen(bp, entity)
+	// rows draw as text. NoLinks keeps New, so a writable list still
+	// offers its create screen, synthesized beside the list.
+	noLinks := !appspec.AppSpecHasRecordScreen(bp, entity)
 	if noLinks {
 		expr += ".NoLinks()"
 	}
@@ -2936,14 +3040,40 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	}
 	// Off the entity's home screen the rows still link to the home list,
 	// where the detail and create screens sit; the default base is the
-	// current path, which has neither.
-	if home := appspec.AppSpecEntityListScreen(bp, entity); home != nil && !noLinks {
+	// current path, which has neither. A NoLinks list takes it only for
+	// New, which goes to the create screen the home list mounts.
+	if home := appspec.AppSpecEntityListScreen(bp, entity); home != nil && (!noLinks || block.Create) {
 		if base := strings.TrimRight(home.Route, "/"); base != "" && base != strings.TrimRight(screen.Route, "/") {
 			expr += fmt.Sprintf(".Base(%q)", base)
 		}
 	}
 	// The builder is a component; the screen's stack takes HTML.
 	return expr + ".RenderCtx(ctx)"
+}
+
+// appSpecEntityListFilterParts splits an entity_list's pinned filter into
+// the column to pin and the value, resolving the author's spelling (the
+// declared name or its camelJSON form) to the declared column name. ok is
+// false for no filter or a filter that does not name a field —
+// validateAppSpec is the loud gate for both; the emitter serves
+// unvalidated renders and never emits a non-column.
+func appSpecEntityListFilterParts(bp appspec.AppSpec, entity, filter string) (field, value string, ok bool) {
+	if filter == "" || strings.Count(filter, "=") != 1 {
+		return "", "", false
+	}
+	f, v, _ := strings.Cut(filter, "=")
+	if f == "" || v == "" {
+		return "", "", false
+	}
+	for _, decl := range bp.Entities {
+		if decl.Name != entity {
+			continue
+		}
+		if fd, ok := appspec.EntityListPinColumn(decl, f); ok {
+			return fd.Name, v, true
+		}
+	}
+	return "", "", false
 }
 
 // countEntityListBlocks counts the entity_list blocks on a screen at any
@@ -3356,20 +3486,13 @@ func renderAppSpecCatalogBlock(bp appspec.AppSpec, screen appspec.AppSpecScreen,
 		return "ui.Grid(ui.GridConfig{Min: \"12rem\"}, " + childExprs() + ")", true
 	case "stat_card":
 		label := appspec.AppSpecProp(block, "label")
-		if src, ok := block.Props["source"].(map[string]any); ok {
-			entity, _ := src["entity"].(string)
-			agg, _ := src["agg"].(string)
-			field, _ := src["field"].(string)
-			filter, _ := src["filter"].(string)
-			format := appspec.AppSpecProp(block, "format")
-			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), entity, agg, field, filter, format), true
+		if st, ok := appSpecStatSource(block); ok {
+			return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: appUI.StatValue(ctx, %q, %q, %q, %q, %q)})", tx(label), st.entity, st.agg, st.field, st.filter, st.format), true
 		}
 		return fmt.Sprintf("ui.StatCard(ui.StatCardConfig{Label: %s, Value: %q})", tx(label), appspec.AppSpecProp(block, "value")), true
 	case "bar_chart", "pie_chart", "line_chart":
 		title := appspec.AppSpecProp(block, "title")
-		if src, ok := block.Props["source"].(map[string]any); ok {
-			entity, _ := src["entity"].(string)
-			groupBy, _ := src["group_by"].(string)
+		if entity, groupBy, ok := appSpecChartSource(block); ok {
 			var chart string
 			switch kind {
 			case "pie_chart":
@@ -4127,13 +4250,29 @@ func RenderAppSpecStubs(bp appspec.AppSpec) string {
 	}
 	if len(bp.Seed) > 0 {
 		sb.WriteString("// seedEntity is one entity's ordered seed rows.\n")
-		sb.WriteString("type seedEntity struct {\n\tEntity string\n\tRows   []map[string]any\n}\n\n")
+		sb.WriteString("// Rows holds every row: the Authored leading rows the\n")
+		sb.WriteString("// author wrote, then the Count rows the recipe generated.\n")
+		sb.WriteString("// Count, Weights and Authored carry that recipe, so\n")
+		sb.WriteString("// `gofastr pack` can tell two recipes that expand to the\n")
+		sb.WriteString("// same rows apart and keep count:/weights: in the packed\n")
+		sb.WriteString("// app spec instead of flattening it to explicit rows.\n")
+		sb.WriteString("type seedEntity struct {\n")
+		sb.WriteString("\tEntity   string\n")
+		sb.WriteString("\tRows     []map[string]any\n")
+		sb.WriteString("\tCount    int\n")
+		sb.WriteString("\tAuthored int\n")
+		sb.WriteString("\tWeights  map[string]map[string]int\n")
+		sb.WriteString("}\n\n")
 		sb.WriteString("// seedData returns the initial seed data in declared\n")
 		sb.WriteString("// order (so entities that reference others are inserted after them).\n")
 		sb.WriteString("func seedData() []seedEntity {\n")
 		sb.WriteString("\treturn []seedEntity{\n")
 		for _, seed := range bp.Seed {
-			sb.WriteString(fmt.Sprintf("\t\t{Entity: %q, Rows: []map[string]any{\n", seed.Entity))
+			sb.WriteString(fmt.Sprintf("\t\t{Entity: %q, Count: %d, Authored: %d,", seed.Entity, seed.Count, seed.Authored))
+			if len(seed.Weights) > 0 {
+				sb.WriteString(" Weights: " + appSpecSeedWeightsLiteral(seed.Weights) + ",")
+			}
+			sb.WriteString(" Rows: []map[string]any{\n")
 			for _, row := range seed.Rows {
 				sb.WriteString("\t\t\t{")
 				// Emit keys in sorted order so regeneration is deterministic
@@ -4224,6 +4363,21 @@ func appSpecSeedGoLiteral(v any) string {
 	default:
 		return fmt.Sprintf("nil // unsupported type %T", val)
 	}
+}
+
+// appSpecSeedWeightsLiteral renders a seed recipe's enum weights as a Go
+// map literal, keys sorted at both levels so regeneration is
+// deterministic.
+func appSpecSeedWeightsLiteral(w map[string]map[string]int) string {
+	var parts []string
+	for _, col := range slices.Sorted(maps.Keys(w)) {
+		var vals []string
+		for _, v := range slices.Sorted(maps.Keys(w[col])) {
+			vals = append(vals, fmt.Sprintf("%q: %d", v, w[col][v]))
+		}
+		parts = append(parts, fmt.Sprintf("%q: {%s}", col, strings.Join(vals, ", ")))
+	}
+	return "map[string]map[string]int{" + strings.Join(parts, ", ") + "}"
 }
 
 func RenderAppSpecApp(bp appspec.AppSpec) string {

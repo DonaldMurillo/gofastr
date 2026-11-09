@@ -16,6 +16,9 @@ import (
 func TestMCPAppConfigReflectsRunningServerTimeouts(t *testing.T) {
 	app := NewApp(
 		WithMCPIntrospection(),
+		// The write cut must sit past the enforced request deadline
+		// (30s when RequestTimeout is unset) or Start refuses the pair.
+		WithConfig(AppConfig{RequestTimeout: 5 * time.Second}),
 		WithHTTPServerTimeouts(HTTPServerTimeoutsConfig{
 			ReadHeaderTimeout: new(4 * time.Second),
 			ReadTimeout:       new(7 * time.Second),

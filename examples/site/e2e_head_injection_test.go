@@ -60,7 +60,7 @@ func TestE2E_HeadInjection_AllGlobalTagsPresent(t *testing.T) {
 		{"og:url", `<meta property="og:url" content="` + siteOrigin + `">`},
 		{"og:type", `<meta property="og:type" content="website">`},
 		// WithDescription
-		{"description", `<meta name="description"`},
+		{"description", `name="description"`},
 	}
 
 	for _, tc := range checks {

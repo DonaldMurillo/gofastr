@@ -15,7 +15,7 @@ func TestWriteHostSkillMkdirFailure(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteHostSkill(blocker); err == nil {
+	if err := WriteHostSkill(blocker, false); err == nil {
 		t.Fatal("writeHostSkill should fail when target path is a file")
 	}
 }

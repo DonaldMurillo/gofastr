@@ -30,6 +30,9 @@ func (h *httpHost) preflight() error {
 	if err := a.checkRequestWriteTimeouts(); err != nil {
 		return err
 	}
+	if err := a.checkIdempotencyInFlightTTL(); err != nil {
+		return err
+	}
 	h.network = "tcp"
 	if h.ln != nil {
 		// A caller-supplied listener is served as given: there is no

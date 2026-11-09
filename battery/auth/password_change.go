@@ -5,7 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -120,7 +120,7 @@ func (c *CorePlugin) changePasswordHandler() http.HandlerFunc {
 		}
 		if c.loginLimitAccount != nil {
 			if allowed, retry := c.loginLimitAccount.AllowContext(ctx, "account:"+email); !allowed {
-				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+				w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
 				writeAuthError(w, r, http.StatusTooManyRequests, reasonRateLimit)
 				return
 			}

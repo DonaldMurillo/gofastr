@@ -115,6 +115,22 @@ func verifyOne(key []byte, token string, now time.Time, maxAge time.Duration) (i
 	return id, true
 }
 
+// MintedAt returns the signing time a token carries. It authenticates
+// nothing: call it only on a token Verify or VerifyAny accepted, to learn
+// when that token stops verifying (MintedAt plus the maxAge passed
+// there).
+func MintedAt(token string) (time.Time, bool) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return time.Time{}, false
+	}
+	createdUnix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(createdUnix, 0), true
+}
+
 func sign(key []byte, id, created string) string {
 	mac := hmac.New(sha256.New, key)
 	mac.Write([]byte(macContext))

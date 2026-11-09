@@ -27,9 +27,10 @@ func TestSetLevelRefusesUnauthenticatedCaller(t *testing.T) {
 	if resp.Error == nil {
 		t.Fatal("SECURITY: [authz] log_set_level ran for an unauthenticated caller")
 	}
-	// The refusal must be the gate, not an incidental handler error, and
-	// the level must be untouched.
-	if !strings.Contains(resp.Error.Message, "authenticated caller") {
+	// The refusal must be the gate, not an incidental handler error: an
+	// item gate answers exactly as an unknown tool now, so the masked
+	// not-found is the gate's shape, and the level must be untouched.
+	if !strings.Contains(resp.Error.Message, "not found") {
 		t.Errorf("refused for the wrong reason: %q", resp.Error.Message)
 	}
 	if got := p.level.Level(); got != before {
@@ -157,7 +158,7 @@ func TestLogReadToolsRefuseAnonCaller(t *testing.T) {
 			t.Errorf("SECURITY: [authz] %s ran for an unauthenticated caller: it hands out every caller's paths, remote IPs and request IDs straight off /mcp", tool.name)
 			continue
 		}
-		if !strings.Contains(resp.Error.Message, "authenticated caller") {
+		if !strings.Contains(resp.Error.Message, "not found") {
 			t.Errorf("%s refused for the wrong reason: %q", tool.name, resp.Error.Message)
 		}
 	}

@@ -76,12 +76,23 @@ func (u *UI) StatValue(ctx context.Context, entityName, agg, field, where, forma
 // Decimal field (or a count given one), a filter that does not parse
 // against the entity's fields, or a format other than "" or "money"
 // ("money" only on a sum). A host checks a configured stat with it at
-// boot, so a typo fails the start rather than drawing "—" forever.
+// boot, so a typo fails the start rather than drawing "—" forever. It is
+// CheckStatFields over the registered entity's fields.
 func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 	m, err := u.meta(entityName)
 	if err != nil {
 		return err
 	}
+	return CheckStatFields(entityName, m.e.GetFields(), agg, field, where, format)
+}
+
+// CheckStatFields is CheckStat's rule over a field list, for a caller
+// that judges a stat before any app exists: the app spec load runs it
+// over the fields the generated entity registers, so a card the load
+// passes passes CheckStat at boot. fields are what entity.Define leaves
+// on the entity (EntityConfig.WithSystemFields), Hidden ones included:
+// they are skipped here as CheckStat skips them.
+func CheckStatFields(entityName string, fields []schema.Field, agg, field, where, format string) error {
 	switch agg {
 	case "", "count":
 		if field != "" {
@@ -91,8 +102,8 @@ func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 			return fmt.Errorf("entityui: a count of %s takes no format (got %q)", entityName, format)
 		}
 	case "sum":
-		f, ok := m.field(field)
-		if !ok || f.Hidden || f.NoQuery {
+		f, ok := visibleField(fields, field)
+		if !ok || f.NoQuery {
 			return fmt.Errorf("entityui: sum over %s needs a visible, queryable field (got %q)", entityName, field)
 		}
 		if f.Type != schema.Int && f.Type != schema.Float && f.Type != schema.Decimal {
@@ -104,10 +115,94 @@ func (u *UI) CheckStat(entityName, agg, field, where, format string) error {
 	default:
 		return fmt.Errorf("entityui: stat agg %q is not count or sum", agg)
 	}
-	if _, err := dsl.ParsePredicate(where, m.e.GetFields()); err != nil {
+	p, err := dsl.ParsePredicate(where, fields)
+	if err != nil {
+		return fmt.Errorf("entityui: stat filter on %s: %w", entityName, err)
+	}
+	if err := checkEnumValues(p, fields); err != nil {
 		return fmt.Errorf("entityui: stat filter on %s: %w", entityName, err)
 	}
 	return nil
+}
+
+// checkEnumValues refuses an =, != or in comparison on an Enum field
+// whose value is not one of the field's Values. The parse takes any
+// text for an enum (the database column is text), so such a filter
+// counts no row, or every row, and the stat draws a figure that never
+// moves. A contains comparison matches text and is not judged.
+func checkEnumValues(p *filter.Predicate, fields []schema.Field) error {
+	if p == nil {
+		return nil
+	}
+	for i := range p.Children {
+		if err := checkEnumValues(&p.Children[i], fields); err != nil {
+			return err
+		}
+	}
+	if len(p.Children) > 0 {
+		return nil
+	}
+	f, ok := visibleField(fields, p.Field)
+	if !ok || f.Type != schema.Enum || len(f.Values) == 0 {
+		return nil
+	}
+	var values []string
+	switch p.Op {
+	case filter.OpEq, filter.OpNe:
+		values = []string{p.Value}
+	case filter.OpIn:
+		values = p.Values
+	}
+	for _, v := range values {
+		if !slices.Contains(f.Values, v) {
+			return fmt.Errorf("%q is not one of enum field %s's values %v", v, f.Name, f.Values)
+		}
+	}
+	return nil
+}
+
+// CheckChart reports why GroupBars, GroupSlices and LineChart could
+// never draw groupBy: an unknown entity, or a groupBy that is not a
+// visible, queryable column the database can group (a JSON field, or a
+// many-to-many relation, which is no column). A no_query field is
+// refused too: the chart would print every stored value as a label. A
+// host checks a configured chart with it at boot, as it checks a stat
+// with CheckStat, so a typo fails the start rather than drawing an
+// empty chart forever. It is CheckChartFields over the registered
+// entity's fields.
+func (u *UI) CheckChart(entityName, groupBy string) error {
+	m, err := u.meta(entityName)
+	if err != nil {
+		return err
+	}
+	return CheckChartFields(entityName, m.e.GetFields(), groupBy)
+}
+
+// CheckChartFields is CheckChart's rule over a field list, as
+// CheckStatFields is CheckStat's.
+func CheckChartFields(entityName string, fields []schema.Field, groupBy string) error {
+	f, ok := visibleField(fields, groupBy)
+	if !ok {
+		return fmt.Errorf("entityui: a chart of %s groups by a visible field (got %q)", entityName, groupBy)
+	}
+	if f.NoQuery {
+		return fmt.Errorf("entityui: a chart of %s cannot group by %q, a no-query field", entityName, groupBy)
+	}
+	if f.Type == schema.JSON || (f.Type == schema.Relation && f.Many) {
+		return fmt.Errorf("entityui: a chart of %s cannot group by %q, which the database does not group", entityName, groupBy)
+	}
+	return nil
+}
+
+// visibleField finds the field named name that is not Hidden, the lookup
+// meta.field makes over the fields the API returns.
+func visibleField(fields []schema.Field, name string) (schema.Field, bool) {
+	for _, f := range fields {
+		if f.Name == name && !f.Hidden {
+			return f, true
+		}
+	}
+	return schema.Field{}, false
 }
 
 // Count is how many records of the entity the caller can read that
@@ -135,6 +230,31 @@ func (u *UI) CountInt(ctx context.Context, entityName, where string) (int, bool)
 	n, err := m.countRows(ctx, opts)
 	if err != nil {
 		slog.WarnContext(ctx, "entityui: count", "entity", entityName, "error", err)
+		return 0, false
+	}
+	return n, true
+}
+
+// CountView counts the records a declared view lists for the caller:
+// its Where, or its registered Filter func, under the same read gate,
+// scope and read hooks as CountInt. ok is false for a view that is not
+// declared or whose Show hides it from the caller (the list would fall
+// back to All), and for a refused read, a failed filter or a failed
+// query.
+func (u *UI) CountView(ctx context.Context, entityName, view string) (int, bool) {
+	m, opts, ok := u.statRead(ctx, entityName, "")
+	if !ok || view == "" || !declaredAndViewable(ctx, m, view) {
+		return 0, false
+	}
+	p, err := viewPredicate(ctx, m, view)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
+		return 0, false
+	}
+	opts.Where = p
+	n, err := m.countRows(ctx, opts)
+	if err != nil {
+		slog.WarnContext(ctx, "entityui: view count", "entity", entityName, "view", view, "error", err)
 		return 0, false
 	}
 	return n, true

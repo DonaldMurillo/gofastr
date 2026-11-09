@@ -11,4 +11,5 @@ import (
 func resolve(ctx context.Context, ch *crud.CrudHandler) {
 	_, _ = ch.ListAll(ctx, crud.ListOptions{Limit: 1})
 	_, _ = ch.GetOne(ctx, "x", nil)
+	_, _ = ch.UpdateOne(ctx, "x", nil)
 }

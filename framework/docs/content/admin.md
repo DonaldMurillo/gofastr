@@ -235,7 +235,9 @@ translating.
   (`View`); the panel previews the first `Rows` rows (5 by default, at
   most 20) of every watched view that has any, with `Columns` replacing
   the list's columns, a link to the full view, and no pager or sorting.
-  A view with no rows draws nothing. With a `Queue` the panel also lists
+  The count is the view's own (`entityui.UI.CountView`), filter-func
+  views included. A view with no rows draws nothing, and so does a view
+  whose `Show` hides it from the caller. With a `Queue` the panel also lists
   the newest failed jobs, each with Replay, under a link to the failed
   filter. With nothing left it says "Nothing needs attention." The rows
   sit in the card with no table frame (`ListBuilder.Flush`). Boot fails
@@ -279,7 +281,8 @@ never elevated.
   the caller holds. When the store implements `auth.NameStore` the name
   is a form posting to `POST <PathPrefix>/account/_name`, which names
   the caller only (a `user_id` in the body is not read) and refuses what
-  `auth.CleanName` refuses. A saved name is audited as `account` /
+  `auth.CleanName` refuses, and a caller whose user type has no
+  `GetID`. A saved name is audited as `account` /
   `set-name` with the cleaned name. The account menu and its avatar's
   initials use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
@@ -419,11 +422,16 @@ Both read elevated: the page is behind the admin gate, and the trail
 names records whatever the entity's own read permission says.
 
 **Hidden records stay hidden.** The Audit log page and the dashboard's
-activity feed show only the id and operation of a record that is still
-stored (live or in the trash) but hidden from the admin by its
+activity feed show only the id, operation and time of a record that is
+still stored (live or in the trash) but hidden from the admin by its
 `BeforeGet`/`BeforeList` hooks (`entityui.UI.RecordHidden`): its title
 and changed values stay out of the page, the answer the owner-scope check
-already gave.
+already gave. A record that is no longer stored (hard-deleted or purged)
+has no row left to check, so it follows the `_events` rule for a hard
+delete: its title and changes show only when the viewer's `BeforeGet`
+and `BeforeList` hooks append no clause
+(`crud.CrudHandler.ReadHooksRestrict`). A viewer the hooks restrict, or
+a hook that fails, gets the id, operation and time.
 
 **Audit filters.** The audit page carries a GET filter form, the list
 toolbar's Filters dropdown (`ui.FilterToolbar` with `Dropdown`), so a

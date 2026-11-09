@@ -193,7 +193,9 @@ func TestDiscoveryURLsIgnoreForwardedProto(t *testing.T) {
 	}
 	for _, poison := range poisons {
 		t.Run(poison, func(t *testing.T) {
-			host := newAgentLinkHost()
+			// From a trusted proxy (httptest's peer, 192.0.2.1), so the
+			// enum check is what refuses the value, not the trust rule.
+			host := newAgentLinkHost(WithTrustedProxies("192.0.2.1"))
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Host = "real.example"
 			req.Header.Set("X-Forwarded-Proto", poison)

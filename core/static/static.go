@@ -4,6 +4,7 @@
 package static
 
 import (
+	"embed"
 	"errors"
 	"io"
 	"io/fs"
@@ -178,12 +179,11 @@ func Handler(config Config) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
-		// ENV~1 opens .env), which the two refusals above cannot read.
-		if hasShortNameSegment(reqPath) {
-			http.NotFound(w, r)
-			return
-		}
+		// A name Windows opens as another one (a trailing dot or space,
+		// or a ":stream" suffix: app.css. and app.css::$DATA open
+		// app.css) is never opened. It is a miss: in SPA mode a client
+		// route such as /trailing. still gets the index.
+		aliased := hasWindowsAliasSegment(reqPath)
 
 		// Reopen the original directory for this request. No idle handle
 		// pins it on Windows, and identity checking refuses a replacement.
@@ -211,12 +211,23 @@ func Handler(config Config) http.Handler {
 			}
 			config.root = root
 		}
+		// Refuse Windows 8.3 short names (WEB~1.CON opens web.config,
+		// ENV~1 opens .env), which the refusals above cannot read. The
+		// directory listing runs through the same root as the open.
+		listed := config.FS
+		if config.root != nil {
+			listed = config.root.FS()
+		}
+		if shortNameAlias(listed, reqPath) {
+			http.NotFound(w, r)
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, "/") {
 			config.dirRequest = reqPath
 		}
 
 		// Try to open and serve the file.
-		served := serveFile(w, r, config, reqPath)
+		served := !aliased && serveFile(w, r, config, reqPath)
 		if served {
 			return
 		}
@@ -688,32 +699,103 @@ func hasDotDotSegment(p string) bool {
 }
 
 // Refuses reports whether the handler refuses p, a slash-separated path
-// below the served root: one with a dot segment (.env, .git/config), a
-// well-known server config file (web.config), or a Windows 8.3 short
-// name (WEB~1.CON). Code that serves or publishes a file tree by another
-// route calls it to refuse the same paths.
+// below the served root, by its spelling alone: one with a dot segment
+// (.env, .git/config), a well-known server config file (web.config), or
+// a segment Windows opens under another name (a trailing dot or space, or
+// a colon: web.config. and web.config::$DATA). Code that publishes a file
+// tree it walked calls it: a walk yields each entry's real name, so no
+// 8.3 short name can appear. Code that serves a requested path calls
+// [RefusesIn], which also refuses short names.
 func Refuses(p string) bool {
-	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasShortNameSegment(p)
+	return hasDotfileSegment(p) || hasForbiddenConfigSegment(p) || hasWindowsAliasSegment(p)
 }
 
-// hasShortNameSegment reports whether any path component holds a "~"
-// followed by a digit, the shape of an NTFS 8.3 short name. On a volume
-// that generates them, Windows opens WEB~1.CON as web.config and ENV~1
-// as .env, names the dotfile and config refusals never see. Which long
-// name a short one stands for is the volume's choice, so every such
-// segment is refused, on every OS like the backslash split
-// (pathSegments), so every platform gives one answer.
-func hasShortNameSegment(p string) bool {
+// RefusesIn reports whether the handler refuses p, a requested path below
+// fsys's root: [Refuses], or a segment shaped like a Windows 8.3 short
+// name (WEB~1.CON) that no entry of its directory in fsys carries
+// exactly. Code that serves a requested path by another route calls it.
+func RefusesIn(fsys fs.FS, p string) bool {
+	return Refuses(p) || shortNameAlias(fsys, p)
+}
+
+// shortNameAlias reports whether a segment of p holds a "~" followed by a
+// digit, the shape of an NTFS 8.3 short name, while the directory it sits
+// in, listed through fsys, has no entry with exactly that name. On a
+// volume that generates them, Windows opens WEB~1.CON as web.config and
+// ENV~1 as .env, names the dotfile and config refusals never see; which
+// long name a short one stands for is the volume's choice, and a listing
+// shows only long names, so a name the listing lacks is refused. A real
+// photo~1.png is listed and served. The comparison is exact, so a
+// case-insensitive volume's PHOTO~1.PNG is refused too. It runs on every
+// OS, so every platform gives one answer. An embed.FS cannot hold an
+// alias and is not listed (see listsShortNames). A directory that cannot
+// be listed refuses the name.
+func shortNameAlias(fsys fs.FS, p string) bool {
+	if !listsShortNames(fsys) {
+		return false
+	}
+	segs := pathSegments(p)
+	for i, seg := range segs {
+		if !hasShortNameShape(seg) {
+			continue
+		}
+		dir := path.Join(segs[:i]...)
+		if dir == "" {
+			dir = "."
+		}
+		entries, err := fs.ReadDir(fsys, dir)
+		if err != nil {
+			return true
+		}
+		if !slices.ContainsFunc(entries, func(e fs.DirEntry) bool { return e.Name() == seg }) {
+			return true
+		}
+	}
+	return false
+}
+
+// listsShortNames reports whether shortNameAlias must list fsys to judge
+// a "~digit" name. An embed.FS holds the files the compiler embedded,
+// under their own names, with no volume to alias them, so it is opened
+// without a listing. Every other FS may be disk-backed or wrap one.
+func listsShortNames(fsys fs.FS) bool {
+	switch fsys.(type) {
+	case embed.FS, *embed.FS:
+		return false
+	}
+	return fsys != nil
+}
+
+// hasShortNameShape reports whether segment holds a "~" followed by a
+// digit.
+func hasShortNameShape(segment string) bool {
+	for i := strings.IndexByte(segment, '~'); i >= 0; {
+		if i+1 < len(segment) && segment[i+1] >= '0' && segment[i+1] <= '9' {
+			return true
+		}
+		next := strings.IndexByte(segment[i+1:], '~')
+		if next < 0 {
+			break
+		}
+		i += 1 + next
+	}
+	return false
+}
+
+// hasWindowsAliasSegment reports whether a segment of p ends in a dot or
+// a space, or holds a colon. Windows strips trailing dots and spaces from
+// each component (GetFullPathName) and NTFS opens "name:stream" as a data
+// stream of name, so "app.css.", "app.css " and "app.css::$DATA" open
+// app.css, and "web.config." opens web.config past a refusal that reads
+// the spelling. Such a segment is refused on every OS, whatever file it
+// would reach, so every platform gives one answer.
+func hasWindowsAliasSegment(p string) bool {
 	for _, component := range pathSegments(p) {
-		for i := strings.IndexByte(component, '~'); i >= 0; {
-			if i+1 < len(component) && component[i+1] >= '0' && component[i+1] <= '9' {
-				return true
-			}
-			next := strings.IndexByte(component[i+1:], '~')
-			if next < 0 {
-				break
-			}
-			i += 1 + next
+		if component == "." || component == ".." {
+			continue
+		}
+		if strings.ContainsRune(component, ':') || strings.HasSuffix(component, ".") || strings.HasSuffix(component, " ") {
+			return true
 		}
 	}
 	return false
@@ -748,12 +830,13 @@ var forbiddenConfigFiles = map[string]struct{}{
 	"applicationhost.config": {}, // IIS Express host config
 }
 
-// hasForbiddenConfigSegment matches the forbidden-config list case-
-// insensitively so a request for `/Web.Config` is treated the same as
-// `/web.config`, and by the name Windows opens (see windowsName).
+// hasForbiddenConfigSegment matches the forbidden-config list ignoring
+// ASCII case, so a request for `/Web.Config` is treated the same as
+// `/web.config`. The Windows spellings of the name (web.config.,
+// web.config::$DATA) are refused by hasWindowsAliasSegment.
 func hasForbiddenConfigSegment(p string) bool {
 	for _, component := range pathSegments(p) {
-		if _, ok := forbiddenConfigFiles[windowsName(component)]; ok {
+		if _, ok := forbiddenConfigFiles[asciicase.Lower(component)]; ok {
 			return true
 		}
 	}
@@ -771,15 +854,4 @@ func hasForbiddenConfigSegment(p string) bool {
 // name ("a\.env", "x\web.config") is refused.
 func pathSegments(p string) []string {
 	return strings.FieldsFunc(p, func(r rune) bool { return r == '/' || r == '\\' })
-}
-
-// windowsName is the name Windows opens for a path segment, lower-cased
-// for comparison: NTFS reads "web.config::$DATA" as the file's default
-// data stream, and GetFullPathName strips the trailing dots and spaces
-// of "web.config." and "web.config ".
-func windowsName(segment string) string {
-	if i := strings.IndexByte(segment, ':'); i >= 0 {
-		segment = segment[:i]
-	}
-	return strings.ToLower(strings.TrimRight(segment, ". "))
 }

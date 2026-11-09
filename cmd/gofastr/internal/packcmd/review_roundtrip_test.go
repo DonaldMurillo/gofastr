@@ -99,3 +99,45 @@ func TestPackUnionControlCanonicalRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// The union spec's invoices seed is a recipe (count 6, status weights)
+// over two authored rows. Generated and packed through the real
+// generator, the recipe and the authored rows come back as written; the
+// fixture-only round trip in pack_seed_recipe_test.go never saw the
+// union's refs, states and other seeded entities beside it.
+func TestPackUnionKeepsSeedRecipe(t *testing.T) {
+	spec := reviewUnionSpec(t)
+	packed, err := packAppSpec(materializeAppSpec(t, spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	find := func(seeds []appspec.AppSpecSeedEntity) *appspec.AppSpecSeedEntity {
+		for i := range seeds {
+			if seeds[i].Entity == "invoices" {
+				return &seeds[i]
+			}
+		}
+		return nil
+	}
+	want, got := find(spec.Seed), find(packed.Seed)
+	if want == nil || want.Count == 0 {
+		t.Fatal("the union spec's invoices seed no longer carries a recipe; the test reads nothing")
+	}
+	if got == nil {
+		t.Fatal("packed spec has no invoices seed")
+	}
+	if got.Count != want.Count || !reflect.DeepEqual(got.Weights, want.Weights) {
+		t.Errorf("recipe = count %d weights %v, want count %d weights %v", got.Count, got.Weights, want.Count, want.Weights)
+	}
+	// Load expands the recipe into Rows; Authored counts the leading
+	// rows the author wrote, which is all pack keeps beside the recipe.
+	authored := want.Rows[:want.Authored]
+	if want.Authored == 0 || len(got.Rows) != len(authored) {
+		t.Fatalf("packed %d rows, want the %d authored ones", len(got.Rows), want.Authored)
+	}
+	for i := range authored {
+		if got.Rows[i]["number"] != authored[i]["number"] || got.Rows[i]["status"] != authored[i]["status"] {
+			t.Errorf("row %d = %v, want %v", i, got.Rows[i], authored[i])
+		}
+	}
+}

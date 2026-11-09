@@ -51,7 +51,7 @@ func TestEntityLLMMD_CoversAllBranches(t *testing.T) {
 	md := EntityLLMMD(ent)
 	for _, want := range []string{
 		"# posts", "## Fields", "**required**", "auto", "unique",
-		"default:", "values: draft|published", "## Includes",
+		"default:", `values: draft\|published`, "## Includes",
 		"scoped eager-load", "## Endpoints", "Custom Endpoints",
 		"Publish a post", "/posts/{id}/archive",
 	} {
@@ -152,7 +152,7 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 
 func TestMcpSchemas_Shapes(t *testing.T) {
 	ent := covRelEntity()
-	if s := idToolSchema([]string{"id"}); s["type"] != "object" {
+	if s := idToolSchema(ent, []string{"id"}); s["type"] != "object" {
 		t.Error("idToolSchema bad shape")
 	}
 	ls := listToolSchema(ent)

@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // Property: GenerateMigrationFile must be safe to re-run after its snapshot
@@ -30,8 +28,17 @@ func TestGenFileRerunAfterSnapshotFail(t *testing.T) {
 	migrations := filepath.Join(dir, "migrations")
 	snapDir := filepath.Join(dir, "snap")
 	snapPath := filepath.Join(snapDir, "schema.snapshot.json")
-	for _, d := range []string{migrations, snapDir} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+	// Only the migrations directory exists. The snapshot directory is
+	// deliberately absent: LoadSnapshot reads the missing file as an
+	// empty snapshot, while SaveSnapshot's CreateTemp into the missing
+	// directory fails — the committed-file / stale-snapshot crash state.
+	// An absent directory blocks root as surely as anyone: there are no
+	// permission bits for root to bypass.
+	if err := os.MkdirAll(migrations, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restore := func() {
+		if err := os.MkdirAll(snapDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -42,12 +49,9 @@ func TestGenFileRerunAfterSnapshotFail(t *testing.T) {
 	}
 	reg := blogReg(nil)
 
-	// Obstruct only the snapshot WRITE: the snapshot directory is made
-	// read-only with no snapshot file in it, so LoadSnapshot reads the
-	// pre-state (missing file = empty snapshot, not an error) while
-	// SaveSnapshot's os.WriteFile fails — the committed-file /
-	// stale-snapshot crash state.
-	restore := filepermtest.MakeUnwritable(t, snapDir)
+	// The obstruction is already in place: the snapshot directory does
+	// not exist, so the SaveSnapshot below fails while LoadSnapshot
+	// above read the pre-state as empty.
 	path1, err := GenerateMigrationFile(Plan{Registry: reg}, "initial", opts)
 	if err == nil {
 		t.Fatalf("call 1 unexpectedly succeeded (path %q): the obstructed snapshot write must fail", path1)

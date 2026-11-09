@@ -66,35 +66,48 @@ func (u *UI) RecordTitle(ctx context.Context, entityName, id string) (string, bo
 	return u.recordTitle(ctx, m, row), true
 }
 
-// RecordHidden reports whether record id is still stored, live or in
-// the trash, while the caller's read hooks keep it out of sight: the
+// RecordHidden reports whether the caller's read hooks keep record id
+// out of sight. A screen that draws a record from a stored copy of its
+// values (an audit row's sides, SnapshotTitle) asks it first: printing
+// that copy for a row the hooks hide shows what the record screen
+// answers not-found for.
+//
+// A stored record is hidden when the hooked read misses it: the
 // BeforeGet chain hides the live row from its record screen, or the
-// BeforeList chain hides the trashed one from the trash view. A screen
-// that draws a record from a stored copy of its values (an audit row's
-// sides, SnapshotTitle) asks it first: printing that copy for a row the
-// hooks hide shows what the record screen answers not-found for. It
-// answers false for a record that is gone, a failed read and an unknown
-// entity: the unhooked read decides that the row is stored, and only a
-// stored row the hooked read misses is hidden.
+// BeforeList chain hides the trashed one from the trash view. A record
+// that is no longer stored (hard-deleted or purged) leaves no row to
+// check the hooks' clauses against, so it is hidden from every caller
+// whose BeforeGet or BeforeList hooks append a clause
+// (crud.CrudHandler.ReadHooksRestrict), the rule the _events feed applies
+// to a hard delete. A failed read and a hook error hide the record: it
+// fails closed. An entity with no Before hooks, and an unknown entity,
+// hide nothing.
 func (u *UI) RecordHidden(ctx context.Context, entityName, id string) bool {
 	m, err := u.meta(entityName)
 	if err != nil || m.ch.Hooks == nil ||
 		len(m.ch.Hooks.HooksFor(hook.BeforeGet))+len(m.ch.Hooks.HooksFor(hook.BeforeList)) == 0 {
 		return false
 	}
-	if row, err := m.getRowUnhooked(ctx, id); err == nil && row != nil {
+	row, err := m.getRowUnhooked(ctx, id)
+	switch {
+	case err == nil && row != nil:
 		hooked, err := m.getRow(ctx, id)
 		return err != nil || hooked == nil
+	case err != nil && !crud.IsNotFound(err):
+		return true
 	}
-	if m.e.Config.Scope == nil || !m.e.Config.Scope.SoftDelete {
-		return false
+	if m.e.Config.Scope != nil && m.e.Config.Scope.SoftDelete {
+		opts := crud.ListOptions{Fields: m.keys, Deleted: true}
+		raw, err := m.listByIDsUnhooked(ctx, []string{id}, opts)
+		if err != nil {
+			return true
+		}
+		if len(raw) > 0 {
+			hooked, err := m.listByIDs(ctx, []string{id}, opts)
+			return err != nil || len(hooked) == 0
+		}
 	}
-	opts := crud.ListOptions{Fields: m.keys, Deleted: true}
-	if raw, err := m.listByIDsUnhooked(ctx, []string{id}, opts); err != nil || len(raw) == 0 {
-		return false
-	}
-	hooked, err := m.listByIDs(ctx, []string{id}, opts)
-	return err != nil || len(hooked) == 0
+	return m.ch.ReadHooksRestrict(ctx, id)
 }
 
 // SnapshotTitle names a record from a stored copy of its values, an
@@ -209,7 +222,7 @@ func (b *RecordBuilder) Related(entities ...string) *RecordBuilder {
 
 // RelatedAt names one related entity whose list hangs off base instead
 // of the path Related derives. An empty base draws that list with no
-// links and no New (ListBuilder.NoLinks): the entity has no screen of its
+// links and no New (ListBuilder.NoLinks, NoCreate): the entity has no screen of its
 // own on this app.
 func (b *RecordBuilder) RelatedAt(entity, base string) *RecordBuilder {
 	b.related = append(b.related, relatedList{name: entity, base: base, fixed: true})

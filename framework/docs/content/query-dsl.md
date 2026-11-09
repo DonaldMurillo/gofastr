@@ -98,7 +98,9 @@ supports it, or use the lower-level `core/query` builder.
 
 ### `include(relation, ...)`
 
-Validates each relation exists on the entity. A name may be quoted
+Validates each relation exists on the entity. A relation behind a
+`Hidden` field, or marked `Relation.Hidden`, is refused as not found, the
+answer `?include=` gives. A name may be quoted
 (`include("author")`); the bare name is what the query keeps. **Validation only**;
 includes do not currently translate into SQL joins. Resolve eager
 loading through the CRUD list endpoint's `?include=` query parameter, or

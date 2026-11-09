@@ -78,7 +78,7 @@ running app live:
 | Tool            | Use                                                                                                  |
 |-----------------|------------------------------------------------------------------------------------------------------|
 | `log_recent`    | Last N entries from the ring, optional level filter.                                                 |
-| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level` (`since_ts`/`until_ts` are RFC 3339 strings; another JSON type is an error, never an ignored filter). `historical=true` tails the file sink for entries evicted from the ring; a line past 1 MiB is skipped, the rest still return. |
+| `log_filter`    | Match by `msg`/`path`/`request_id`/`since_ts`/`until_ts`/`level` (`since_ts`/`until_ts` are RFC 3339 strings; another JSON type is an error, never an ignored filter). `historical=true` tails the file sink for entries evicted from the ring; a line past 1 MiB is skipped, even at EOF, and the rest still return. A failed historical read returns a tool error instead of an empty history. |
 | `log_metrics`   | Current counter snapshot, the same data as `Plugin.Metrics()`.                                          |
 | `log_set_level` | Mutate the runtime log level (e.g. flip to DEBUG for an investigation, back to INFO afterward). Only registered when `AllowMCPMutation` is set. |
 
@@ -230,7 +230,8 @@ in the path cannot forge log lines or repaint an operator's tail.
 - Size-based rotation: when an entry would push the file past
   `MaxSize`, the active file is renamed to `<path>.1`, existing
   backups shift up (`.1` → `.2`, …), and anything past `MaxBackups`
-  is removed.
+  is removed. Only canonical positive decimal suffixes belong to the
+  sink: `.01`, `.+1` and other noncanonical backups are left untouched.
 - Default rotation: 100 MiB cap, 5 backups.
 - File mode: `FileMode`, default `0600`. A log file that already exists
   and that this process owns is tightened to `FileMode` when the sink

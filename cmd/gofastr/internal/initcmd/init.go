@@ -357,7 +357,7 @@ bin/
 	// Drop the gofastr-host Claude Code skill so AI agents working on
 	// this project auto-load the framework's host-app guidance at task
 	// start. Refresh manually with `gofastr agents skill`.
-	if err := agentscmd.WriteHostSkill(name); err != nil {
+	if err := agentscmd.WriteHostSkill(name, force); err != nil {
 		cli.Fail("Failed to write gofastr-host skill: %v", err)
 		cli.OsExit(1)
 	}
@@ -919,7 +919,12 @@ func writeScaffoldFile(dir, name string, data []byte) error {
 // existingScaffoldFiles lists the files init . would replace that the
 // current directory already holds. .gitignore is not one: it is merged.
 func existingScaffoldFiles(noEntity bool) []string {
-	files := []string{"main.go", "screens.go", ".env", settings.FileName, "AGENTS.md", "CLAUDE.md", "DESIGN.md"}
+	files := []string{"main.go", "screens.go", ".env", settings.FileName, "AGENTS.md", "CLAUDE.md", "DESIGN.md",
+		// The host skill is onboarding output too: `init .` over a
+		// project holding one (hand-written or generated) refuses up
+		// front, before any scaffold file is written, instead of
+		// failing halfway through when WriteHostSkill declines.
+		filepath.Join(".claude", "skills", "gofastr-host", "SKILL.md")}
 	if !noEntity {
 		files = append(files, "screens_auth.go", filepath.Join("entities", "entities.go"))
 	}
@@ -1436,8 +1441,9 @@ func runReinit(dir string, force bool) {
 	}
 	cli.Info("  ✓ .agents/ detail files refreshed")
 
-	// 2. .claude/skills/gofastr-host/: always overwrite.
-	if err := agentscmd.WriteHostSkill(dir); err != nil {
+	// 2. .claude/skills/gofastr-host/: overwrite a generated copy; a
+	// hand-written one is refused unless reinit itself runs --force.
+	if err := agentscmd.WriteHostSkill(dir, force); err != nil {
 		cli.Fail("Failed to refresh gofastr-host skill: %v", err)
 		cli.OsExit(1)
 	}

@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -59,8 +60,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/uihost/internal/sessiontoken"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 	"github.com/DonaldMurillo/gofastr/internal/retired"
+	xhtml "golang.org/x/net/html"
 )
 
 // OG holds Open Graph meta tag values for social sharing.
@@ -132,6 +135,7 @@ type UIHost struct {
 	faviconURL          string                               // configured WithFavicon URL: serveOrRender 204s it when no static file matches
 	noLiveChannel       bool                                 // WithNoLiveChannel: omit the gofastr-sse meta (no EventSource)
 	trustedProxies      []string                             // WithTrustedProxies: the island stream cap reads X-Forwarded-For from these peers
+	proxies             clientip.Proxies                     // trustedProxies parsed in New: the peers resolveBaseURL honors X-Forwarded-Proto from
 	noInlineFirstPaint  bool                                 // WithNoInlineFirstPaint: head CSS and the color-scheme bootstrap always ship as links
 	firstPaint          firstPaintCache                      // blocks a live page carries inline in its head (firstpaint.go)
 	appIcons            map[string][]byte                    // WithAppIcon-generated PNGs, URL path → bytes; also served at /favicon.ico
@@ -152,7 +156,7 @@ type UIHost struct {
 	strict              bool            // WithStrict: Mount refuses to serve an app that fails the strict checks (strict.go)
 	coreRouter          *router.Router  // the framework router Mount received; strict mode reads its route table for the internal-links check
 	strictConfig        StrictConfig    // per-check levels + route exemptions; zero value enforces everything
-	siteDescription     bool            // set by WithDescription; read by the strict site-surface check
+	siteDescription     string          // WithDescription's text: the description of a page that names none of its own (siteDescriptionTag)
 	embedHost           *fembed.Host    // set by WithEmbed; nil means the app hands out no pieces of itself and mounts no embed routes
 	embedThemes         embedThemeState // per-surface cap on distinct customer theme variants
 
@@ -467,6 +471,10 @@ func WithExtraScripts(urls ...string) Option {
 // For safe, auto-escaped alternatives, see WithFavicon,
 // WithThemeColor, WithDescription, WithOpenGraph, WithTwitterCard,
 // WithCanonicalURL, and WithPreconnect.
+//
+// A <meta name="description"> tag in html is the site description, as
+// with WithDescription: it moves into the per-page head and gives way to
+// a screen's own description, so a page never carries two.
 func WithHeadHTML(html string) Option {
 	return func(ds *UIHost) {
 		ds.headHTML = html
@@ -559,6 +567,16 @@ func WithNoLiveChannel() Option {
 // it, behind a proxy, every anonymous visitor shares the proxy address's
 // budget of island.DefaultStreamsPerPeer streams. A header from a peer not
 // in the list is ignored. See island.WithTrustedProxies.
+//
+// The same list decides whose X-Forwarded-Proto sets the scheme of the
+// agent card's and the Link headers' absolute URLs when no BaseURL is
+// configured. Behind a TLS-terminating proxy, list the proxy or set a
+// BaseURL, or those URLs say http://.
+//
+// Without this option the host reads the list a framework.App puts on
+// each request's context, its AppConfig.TrustedProxies, for both uses. A
+// list given here replaces the App's for this host; it is not added to
+// it.
 func WithTrustedProxies(entries ...string) Option {
 	return func(ds *UIHost) { ds.trustedProxies = append(ds.trustedProxies, entries...) }
 }
@@ -583,11 +601,15 @@ func WithThemeColor(color string) Option {
 	}
 }
 
-// WithDescription adds a <meta name="description"> tag to <head>.
+// WithDescription sets the site's <meta name="description">: the one a
+// page carries when it names no description of its own. A screen
+// description (ScreenDescriber, ScreenSEO.Description) or a description
+// tag in SEOScreen.HeadHTML replaces it, so a page never carries two. A
+// description tag in WithHeadHTML is site-level too and takes
+// precedence over this one.
 func WithDescription(desc string) Option {
 	return func(ds *UIHost) {
-		ds.headTags = append(ds.headTags, fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(desc)))
-		ds.siteDescription = desc != ""
+		ds.siteDescription = desc
 	}
 }
 
@@ -716,37 +738,8 @@ func (ds *UIHost) StaticDir() string {
 // served: a directory falls through to the screens, as under
 // WithStaticDir.
 func (ds *UIHost) SetStaticFS(fsys fs.FS) {
-	ds.staticFS = reRootDirFS(fsys)
+	ds.staticFS = rootfs.ConfineDirFS(fsys)
 }
-
-// dirFSType is the dynamic type os.DirFS returns (the unexported
-// os.dirFS, a string type holding the directory), captured by
-// constructing one so reflect can recognize the shape without naming
-// the unexported type.
-var dirFSType = reflect.TypeOf(os.DirFS(""))
-
-// reRootDirFS returns fsys unchanged unless it is an os.DirFS value, in
-// which case it returns the kernel-contained os.Root.FS() view over the
-// same directory (or a fail-closed FS when the root cannot be opened).
-func reRootDirFS(fsys fs.FS) fs.FS {
-	if fsys == nil || reflect.TypeOf(fsys) != dirFSType {
-		return fsys
-	}
-	dir := reflect.ValueOf(fsys).String()
-	root, err := rootfs.Open(dir)
-	if err != nil {
-		return failClosedFS{err: fmt.Errorf("static FS rooted at an unopenable directory: %w", err)}
-	}
-	return root.FS()
-}
-
-// failClosedFS is what SetStaticFS installs when an os.DirFS-backed
-// filesystem's directory cannot be opened as a root: every open fails
-// with the reason rather than following symlinks out of a directory
-// that was not verifiable at installation time.
-type failClosedFS struct{ err error }
-
-func (m failClosedFS) Open(string) (fs.File, error) { return nil, m.err }
 
 // HasStaticFS reports whether an embedded static FS is configured.
 func (ds *UIHost) HasStaticFS() bool {
@@ -1111,6 +1104,7 @@ func New(application *app.App, opts ...Option) *UIHost {
 		opt(ds)
 	}
 	ds.Islands = island.NewManager(island.WithTrustedProxies(ds.trustedProxies...))
+	ds.proxies = clientip.ParseProxies(ds.trustedProxies)
 	// WithAppIcon ↔ WithPWA reconciliation happens after ALL options so
 	// their relative order doesn't matter.
 	// The app's 404-outlet outcome body (FallbackNotFound renders the
@@ -1817,11 +1811,13 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 	// _mountByName checks for an existing root before fetching
 	// cfg.chromePath. It goes in after the chrome, so a widget's sheets
 	// load on demand rather than in the head, but a first-paint subset
-	// keeps the rules its classes need.
-	widgets := widgetSSRHTML(r)
+	// keeps the rules its classes need. The toast stack is the one
+	// widget whose sheets go in the head (see inlineHead.sheets).
+	widgets, toastSheets := widgetSSRHTML(r)
 	inline := &inlineHead{
 		allow:  func(styles, scripts []string) bool { return allowInlineHashes(w.Header(), styles, scripts) },
 		markup: widgets,
+		sheets: toastSheets,
 	}
 	out = ds.injectChromeDoc(ctx, out, path, sessionID, boundedPresenceParam(r), true, comp, inline, status)
 	out = injectHeadData(ctx, out)
@@ -1855,17 +1851,20 @@ func (ds *UIHost) finishPageDocument(w http.ResponseWriter, r *http.Request, ctx
 // TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch here and
 // TestWidgetChromeCtx_SSRInlinedDeepLinkOpensPerCtx in core-ui/runtime.
 func injectWidgetSSR(page string, r *http.Request) string {
-	html := widgetSSRHTML(r)
+	html, _ := widgetSSRHTML(r)
 	if html == "" {
 		return page
 	}
 	return replaceChromeMarker(page, "</body>", html+"</body>", "widget chrome")
 }
 
-// widgetSSRHTML renders the widget chrome injectWidgetSSR places.
-func widgetSSRHTML(r *http.Request) string {
+// widgetSSRHTML renders the widget chrome injectWidgetSSR places, and
+// lists the component sheets the inlined toast stacks name, their row
+// template's included: the head carries those (inlineHead.sheets).
+func widgetSSRHTML(r *http.Request) (string, []string) {
 	b := borrowBuilder()
 	defer returnBuilder(b)
+	var toastSheets []string
 	u := r.URL
 	q := u.Query()
 	// Per-page filter: widgets scoped via .Pages / .PagesPrefix /
@@ -1903,9 +1902,14 @@ func widgetSSRHTML(r *http.Request) string {
 		// paint. The lazy /chrome endpoint already threaded r.Context(); the
 		// SSR inline path must match, or the same slot renders anonymous here
 		// and personalized when the user reopens it.
-		b.WriteString(widget.RenderChromeCtx(r.Context(), d))
+		chrome := widget.RenderChromeCtx(r.Context(), d)
+		if preset.IsToastStack(d) {
+			live, held := registry.ScanSplit(chrome)
+			toastSheets = append(append(toastSheets, live...), held...)
+		}
+		b.WriteString(chrome)
 	}
-	return b.String()
+	return b.String(), toastSheets
 }
 
 // injectConfirmTemplate emits the kit's confirm dialog
@@ -1953,23 +1957,122 @@ func (ds *UIHost) injectChromeFor(ctx context.Context, page, pagePath, sessionID
 	return ds.injectChromeModeFor(ctx, page, pagePath, sessionID, presenceTopic, true, comp)
 }
 
-// screenHeadHTML returns per-screen head content. It composes from
+// scanDescriptions reads html with the HTML tokenizer, so a tag is what
+// the browser takes it for: comments and raw text hold none, a quoted
+// value may hold '>', and the name may be spelled with character
+// references. It returns html with every <meta name="description"> tag
+// after the first keep dropped (the rest of html byte for byte), and the
+// first such tag ("" when there is none).
+func scanDescriptions(html string, keep int) (out, first string) {
+	if !strings.Contains(html, "<") {
+		return html, ""
+	}
+	var b strings.Builder
+	seen := 0
+	z := xhtml.NewTokenizer(strings.NewReader(html))
+	for {
+		tt := z.Next()
+		raw := z.Raw()
+		if tt == xhtml.ErrorToken {
+			b.Write(raw) // an unterminated tail, kept as written
+			return b.String(), first
+		}
+		if tt == xhtml.StartTagToken || tt == xhtml.SelfClosingTagToken {
+			if tok := z.Token(); tok.Data == "meta" && isDescriptionMeta(tok.Attr) {
+				if seen == 0 {
+					first = string(raw)
+				}
+				seen++
+				if seen > keep {
+					continue
+				}
+			}
+		}
+		b.Write(raw)
+	}
+}
+
+// isDescriptionMeta reports whether a <meta> tag's attributes (decoded
+// by the tokenizer) name it a description.
+func isDescriptionMeta(attrs []xhtml.Attribute) bool {
+	for _, a := range attrs {
+		if a.Key == "name" {
+			return strings.EqualFold(strings.TrimSpace(a.Val), "description")
+		}
+	}
+	return false
+}
+
+// siteDescriptionTag returns the site-level description tag: the first
+// one in WithHeadHTML, else WithDescription's, else "".
+func (ds *UIHost) siteDescriptionTag() string {
+	if _, tag := scanDescriptions(stripInlineScripts(ds.headHTML), 0); tag != "" {
+		return tag
+	}
+	if ds.siteDescription != "" {
+		return fmt.Sprintf(`<meta name="description" content="%s">`, stdhtml.EscapeString(ds.siteDescription))
+	}
+	return ""
+}
+
+// siteDescriptionText returns the trimmed text of the site description
+// (siteDescriptionTag), "" when there is none or it holds no text: what
+// strict mode's SiteDescription check reads.
+func (ds *UIHost) siteDescriptionText() string {
+	z := xhtml.NewTokenizer(strings.NewReader(ds.siteDescriptionTag()))
+	if tt := z.Next(); tt != xhtml.StartTagToken && tt != xhtml.SelfClosingTagToken {
+		return ""
+	}
+	for _, a := range z.Token().Attr {
+		if a.Key == "content" {
+			return strings.TrimSpace(a.Val)
+		}
+	}
+	return ""
+}
+
+// screenHeadHTML returns the per-page head content: the screen's own
+// tags (screenOwnHead) with any description after the first dropped,
+// led by the site-level description (siteDescriptionTag) when they
+// carry none. The site description rides
+// here, in the page metadata a client navigation swaps, and never in
+// the fixed head (the head assembly drops it from WithHeadHTML), so a
+// page carries exactly one description and leaving a described page
+// restores the site's.
+func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
+	head, own := scanDescriptions(ds.screenOwnHead(ctx, pagePath, comp), 1)
+	if own != "" {
+		return head
+	}
+	site := ds.siteDescriptionTag()
+	if site == "" {
+		return head
+	}
+	if head == "" {
+		return site
+	}
+	return site + "\n" + head
+}
+
+// screenOwnHead returns per-screen head content. It composes from
 // two sources:
 //
 //   - ScreenDescriber: when the screen has a non-empty Description
 //     (set automatically at Register time from the ScreenDescriber
-//     interface), a `<meta name="description">` tag is emitted. Per-
-//     page descriptions appear AFTER the global WithDescription tag,
+//     interface), a `<meta name="description">` tag is emitted, in
+//     place of the site's WithDescription one.
 //
 //   - SEOScreen.HeadHTML(): the explicit escape hatch for screens
-//     that need to declare canonical, OG, JSON-LD, etc. inline.
+//     that need to declare canonical, OG, JSON-LD, etc. inline. A
+//     description tag in it is dropped when the screen has a typed
+//     description.
 //
 // pagePath is the route path used to resolve the screen.
 //
 // The per-concern SEO fields are resolved first via resolveScreenSEO
 // (the shared resolution path also used to render the per-screen
 // llm.md front-matter), then rendered to HTML.
-func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp component.Component) string {
+func (ds *UIHost) screenOwnHead(ctx context.Context, pagePath string, comp component.Component) string {
 	if ds.App == nil || pagePath == "" {
 		return ""
 	}
@@ -2029,7 +2132,13 @@ func (ds *UIHost) screenHeadHTML(ctx context.Context, pagePath string, comp comp
 	}
 	if seoScreen, ok := src.(SEOScreen); ok {
 		if h := seoScreen.HeadHTML(); h != "" {
-			parts = append(parts, stripInlineScripts(h))
+			h = stripInlineScripts(h)
+			// The typed description above wins over a tag here, so the
+			// page carries one.
+			if resolved.Description != "" {
+				h, _ = scanDescriptions(h, 0)
+			}
+			parts = append(parts, h)
 		}
 	}
 	return strings.Join(parts, "\n")
@@ -2222,6 +2331,12 @@ type inlineHead struct {
 	// markup is what the response adds to the page after the chrome
 	// (the first-paint widgets), whose classes a subset must keep.
 	markup string
+	// sheets are component sheets the head carries though the page's
+	// markers do not name them live: the toast stack's, row template
+	// included. A widget's sheets otherwise load on demand, but the
+	// toast that reports a lost connection is raised exactly when no
+	// sheet can load, and it drew as bare text.
+	sheets []string
 }
 
 // injectChromeDoc is the chrome injector. inline, when set, lets a head
@@ -2286,9 +2401,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// per-page og:title / og:description / og:image is the one they pick.
 	// If the page provides no OG data, the global fallback still fires.
 	//
-	// Typed helpers (WithOpenGraph, WithDescription, …) are set at New()
-	// time and serve as sitewide fallbacks. Per-screen SEOScreen data is
-	// per-request.
+	// Typed helpers (WithOpenGraph, …) are set at New() time and serve
+	// as sitewide fallbacks. Per-screen SEOScreen data is per-request,
+	// and so is the site description: screenHeadHTML emits it only for
+	// a page that names no description of its own.
 	var headParts []string
 	if screenHead := ds.screenHeadHTML(ctx, pagePath, comp); screenHead != "" {
 		headParts = append(headParts, markScreenHead(screenHead))
@@ -2300,8 +2416,10 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// SEOScreen.HeadHTML() is scrubbed inside screenHeadHTML so we
 	// preserve the auto-generated JSON-LD <script type="application/
 	// ld+json"> blocks emitted by seo.Render.
-	if ds.headHTML != "" {
-		headParts = append(headParts, stripInlineScripts(ds.headHTML))
+	// Its description tag, if any, is the site description and rides
+	// the per-page head above instead (siteDescriptionTag).
+	if host, _ := scanDescriptions(stripInlineScripts(ds.headHTML), 0); host != "" {
+		headParts = append(headParts, host)
 	}
 	if ds.pwaConfig != nil {
 		headParts = append(headParts, pwaManifestLink(ctx))
@@ -2345,7 +2463,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// them or not; sheets only <template> content needs are prefetched.
 	var inlined *firstPaintPlan
 	if bundle && inline != nil && !ds.noInlineFirstPaint {
-		names, held := pageSheetNames(page)
+		names, held := pageSheetNames(page, inline.sheets...)
 		if p, ok := ds.planFirstPaint(names, page, inline.markup); ok && inline.allow(p.styleHashes(), p.scriptHashes()) {
 			inlined = p
 			if p.comp != nil {
@@ -2363,7 +2481,11 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 		}
 	}
 	if inlined == nil {
-		if tags := ds.componentCSSTags(page, bundle); tags != "" {
+		var always []string
+		if inline != nil {
+			always = inline.sheets
+		}
+		if tags := ds.componentCSSTags(page, bundle, always...); tags != "" {
 			headClose.WriteString(tags)
 			headClose.WriteByte('\n')
 		}
@@ -2377,7 +2499,7 @@ func (ds *UIHost) injectChromeDoc(ctx context.Context, page, pagePath, sessionID
 	// query-free because the files land on disk under their bare paths
 	// and naive static hosts/mirrors resolve by path (the wget
 	// regression that already forced query-free module writes).
-	if inlined != nil {
+	if inlined != nil && !inlined.linkApp {
 		headClose.WriteString(`<style id="cui-app-css">` + inlined.app.body + "</style>\n")
 	} else if ds.App != nil {
 		href := "/__gofastr/app.css"
@@ -3141,7 +3263,9 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	// leaves this SPA's islands and SSE 401ing until a hard reload.
 	// The fresh bare id travels in X-Gofastr-Session so the runtime
 	// rewires the SSE meta; the signed token rides Set-Cookie only.
-	if _, live := ds.verifySessionToken(readSessionCookie(r)); !live {
+	token := readSessionCookie(r)
+	var sessionMinted time.Time // a live session's signing time, on a prefetch
+	if _, live := ds.verifySessionToken(token); !live {
 		// A prefetch with a dead session gets 204 and no mint: the client
 		// never caches a non-partial response, so the eventual real click
 		// runs the full rollover below. Serving the prefetch instead would
@@ -3156,6 +3280,12 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 			setSessionCookie(w, r, sess.Token)
 			w.Header().Set("X-Gofastr-Session", sess.ID)
 		}
+	} else if r.Header.Get("X-Gofastr-Prefetch") == "1" {
+		// A live session still ends: a prefetched entry kept past that
+		// point would paint with no server contact, and its islands,
+		// actions and SSE would answer 401. The page's write below says
+		// how long the token has left.
+		sessionMinted, _ = sessiontoken.MintedAt(token)
 	}
 	// Declarative redirect on the SPA path: hand the runtime the target
 	// via X-Gofastr-Location so it pushState's and loads the partial
@@ -3272,6 +3402,14 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 		return
 	}
 
+	// The whole seconds the session has left, counted after the render
+	// so a slow loader does not stretch it, let preload.js drop the entry
+	// then if it comes before the TTL. Relative, so the browser's clock
+	// does not matter.
+	if !sessionMinted.IsZero() {
+		left := max(time.Until(sessionMinted.Add(sessionMaxAge)), 0)
+		w.Header().Set("X-Gofastr-Session-Expires-In", strconv.FormatInt(int64(left/time.Second), 10))
+	}
 	ds.writePartialResult(w, r, ctx, path, res, overlay, pageStatus(res, recorded()))
 }
 
@@ -4316,13 +4454,19 @@ func staticRel(urlPath string) string {
 	return strings.TrimPrefix(path.Clean("/"+urlPath), "/")
 }
 
-// staticServable reports whether rel, a slash path below the static
-// directory or FS, may be served: not one core/static refuses (a dot
-// segment such as .env or .git/config, or a server config file), except
-// that a leading .well-known/ is the public namespace RFC 8615 reserves,
-// so the files under it are served unless they are dotfiles themselves.
-func staticServable(rel string) bool {
-	return !corestatic.Refuses(strings.TrimPrefix(rel, ".well-known/"))
+// staticServable reports whether rel, a slash path below fsys (the
+// static directory's root or the static FS), may be served: not one
+// core/static refuses (a dot segment such as .env or .git/config, a
+// server config file, a Windows alias spelling, or an 8.3 short name no
+// entry of its directory carries), except that a leading .well-known/ is
+// the public namespace RFC 8615 reserves, so the files under it are
+// served unless they are dotfiles themselves.
+func staticServable(fsys fs.FS, rel string) bool {
+	if sub, ok := strings.CutPrefix(rel, ".well-known/"); ok {
+		wk, err := fs.Sub(fsys, ".well-known")
+		return err == nil && !corestatic.RefusesIn(wk, sub)
+	}
+	return !corestatic.RefusesIn(fsys, rel)
 }
 
 // resolvesStaticOrScreen reports whether serveOrRender would produce
@@ -4340,7 +4484,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" && staticServable(rel) {
+			if rel := staticRel(path); rel != "" && staticServable(root.FS(), rel) {
 				if info, err := root.Stat(filepath.FromSlash(rel)); err == nil && !info.IsDir() {
 					return true
 				}
@@ -4348,7 +4492,7 @@ func (ds *UIHost) resolvesStaticOrScreen(r *http.Request) bool {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" && staticServable(cleanPath) {
+			if cleanPath != "" && staticServable(ds.staticFS, cleanPath) {
 				//gofastr:allow(rootread) caller-supplied fs.FS: embed.FS carries no symlinks and os.DirFS is re-rooted through os.OpenRoot at install time; the *os.File branch above already goes through os.Root
 				if f, err := ds.staticFS.Open(cleanPath); err == nil && !fsEntryIsDir(f) {
 					f.Close()
@@ -4571,7 +4715,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 	}
 	if path != "/" {
 		if root := ds.staticRootOf(); root != nil {
-			if rel := staticRel(path); rel != "" && staticServable(rel) {
+			if rel := staticRel(path); rel != "" && staticServable(root.FS(), rel) {
 				if info, statErr := root.Stat(filepath.FromSlash(rel)); statErr == nil && !info.IsDir() {
 					if f, openErr := root.Open(filepath.FromSlash(rel)); openErr == nil {
 						devStaticNoStore(w)
@@ -4585,7 +4729,7 @@ func (ds *UIHost) serveOrRender(w http.ResponseWriter, r *http.Request) {
 		}
 		if ds.staticFS != nil {
 			cleanPath := strings.TrimPrefix(path, "/")
-			if cleanPath != "" && staticServable(cleanPath) {
+			if cleanPath != "" && staticServable(ds.staticFS, cleanPath) {
 				// A directory is no static file: it falls through to the
 				// screens, as the static-dir branch above does. Handed to
 				// http.ServeFileFS it answered a 301 to "docs/", whose
@@ -4979,8 +5123,8 @@ func (ds *UIHost) PushUpdate(islandID string, html string, sessionID string) {
 // item) gets a <link rel="prefetch"> instead: the browser fetches it at
 // idle priority, off the render-blocking path, and the runtime's link
 // for the clone it makes later is a cache hit.
-func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
-	names, held := pageSheetNames(page)
+func (ds *UIHost) componentCSSTags(page string, bundle bool, always ...string) string {
+	names, held := pageSheetNames(page, always...)
 	if len(names) == 0 && len(held) == 0 {
 		return ""
 	}
@@ -4995,8 +5139,9 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 }
 
 // pageSheetNames returns the sorted component sheets a page's first
-// paint needs (rendered markers plus every LoadAlways entry) and the
-// sheets only its <template> content needs.
+// paint needs (rendered markers, every LoadAlways entry and the always
+// names the caller adds) and the sheets only its <template> content
+// needs.
 //
 // Only registered, path-safe names are kept. A marker can name nothing
 // (host markup, a typo, a CMS field, a component this replica does not
@@ -5004,11 +5149,14 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool) string {
 // its data-cui-bundle list: an unknown one made the bundle answer 404
 // while the runtime, seeded from the list, never fetched the real
 // sheets on its own, so the whole page stayed unstyled.
-func pageSheetNames(page string) (names, held []string) {
+func pageSheetNames(page string, always ...string) (names, held []string) {
 	used, held := registry.ScanSplit(page)
 	eager := registry.EagerNames()
 	seen := setOf(used)
 	for _, n := range eager {
+		seen[n] = struct{}{}
+	}
+	for _, n := range always {
 		seen[n] = struct{}{}
 	}
 	names = make([]string, 0, len(seen))

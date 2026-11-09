@@ -61,11 +61,52 @@ reportsRoutes := fwApp.Group("/reports")
 reportsRoutes.Use(embeds.RequireScope("reports:read"))
 ```
 
-A surface must use a static screen route. `embed.New` refuses a route with a
-parameter segment, a `:name` or a whole `{name}` segment (for example,
-`/reports/:id` or `/teams/{team}`), at boot, naming the
-surface and route in its error. Register a dedicated static embed screen and
-resolve viewer-specific data inside its loader instead of passing a route pattern.
+### A surface on a route with parameters
+
+A surface's screen may sit on a route with parameters, `/reports/:id:int`
+or `/files/{path...}`. The snippet then names the concrete app path, and
+the loader puts it on the frame URL after the surface name:
+
+```html
+<script src="https://app.example.com/__gofastr/embed.js"
+        data-surface="report"
+        data-path="/reports/42"
+        data-token="emb_…"
+        data-target="#report"></script>
+```
+
+The frame loads `/__gofastr/embed/report/reports/42`. uihost renders that
+path only when the app router resolves it to the surface's own screen, so
+the route binds and checks its params as it does for a first-party
+request: `/reports/abc` fails the `:int` constraint, and
+`/reports/42/edit` belongs to another screen. Either is a 404, the same
+bytes as an unknown surface. A segment that decodes to `/` or `\` is a
+404 too. The loader encodes each segment of `data-path`, but the browser
+resolves `.` and `..` segments in it, as in any URL, before the frame
+loads: `/files/a/../b` loads `/files/b`. An encoded dot segment that
+reaches the server (`%2E%2E`, from a client that does not resolve it)
+is a 404. A static surface takes no path:
+`/__gofastr/embed/<surface>/<anything>` is a 404 for it.
+
+The grant is per surface, not per path. A grant for `report` renders any
+path its route matches, `/reports/7` as well as `/reports/42`, and
+reaches every path the pattern matches for the runtime's own requests.
+A constraint narrows that reach as it narrows the route: a
+`/reports/:id:int` grant does not reach `/reports/abc`, which another
+route may serve.
+Which record its subject may see is the screen's decision, as it is on
+every first-party route: read `embed.GrantFromContext` (or the subject
+your `Resolve` returns) in the screen's loader and refuse a record the
+subject does not own.
+
+Widgets in the frame are scoped against the route pattern, not the
+concrete path, because the grant does not name one. A widget with no
+page scope, or `PagesPrefix("/reports/")`, is offered in a
+`/reports/:id` frame. One scoped to concrete pages, `Pages("/reports/42")`
+or a `PagesMatch` over ids, is not.
+
+A surface route that could match a path under a reserved prefix is
+refused at boot: `/:section/summary` would reach `/auth/summary`.
 
 ### What a grant may reach
 
@@ -507,8 +548,10 @@ GoFastrEmbed.mount({
 });
 ```
 
-Same code path as the `data-*` form. The loader mounts once per target element,
-so a double-mount does not create a second frame.
+A surface on a route with parameters takes `path: '/reports/42'`, the
+programmatic form of `data-path`. Same code path as the `data-*` form.
+The loader mounts once per target element, so a double-mount does not
+create a second frame.
 
 `mount` returns a handle, or `null` when `origin`, `surface`, `token` or the
 target is missing: `handle.frame` is the iframe, and
@@ -528,6 +571,11 @@ The frame reports its content height to the host page, which resizes the iframe
 to match. The measurement is of the embed root's own extent, deliberately not of
 document's scroll height: the document's height is the frame's height, so
 measuring it feeds each report into the next one.
+
+The first report goes out as soon as the content lands, not on the next
+animation frame. Chrome stops rendering a cross-origin frame that sits
+outside the viewport, so an embed placed below the fold still arrives at
+its full height instead of waiting at 150px for the visitor to scroll.
 
 That means **an embeddable surface must not size itself to the viewport.** A
 `100vh` rule inside the frame is circular by construction: the viewport IS the

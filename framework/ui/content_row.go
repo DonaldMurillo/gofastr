@@ -271,6 +271,12 @@ func contentRowCSS(_ style.Theme) string {
    it there would make the property refer to itself. */
 .fui-content-row--sticky { --fui-content-row-top: var(--ui-sticky-top, 0px); --ui-content-row-toolbar-block: var(--ui-content-row-toolbar-height, calc(var(--spacing-touch-target, 44px) + 2 * var(--spacing-sm, 4px) + var(--stroke-thin, 1px))); }
 .fui-content-row--sticky > .fui-content-row__workspace { --ui-sticky-top: calc(var(--fui-content-row-top) + var(--ui-content-row-toolbar-block)); }
+/* A focused control in the workspace scrolls clear of the toolbar and
+   anything above it (WCAG 2.4.11): the workspace's --ui-sticky-top
+   already holds both. */
+:where(.fui-content-row--sticky > .fui-content-row__workspace :focus) {
+  scroll-margin-block-start: calc(var(--ui-sticky-top, 0px) + var(--ui-sheet-bar-offset, 0px) + var(--spacing-sm, 4px));
+}
 .fui-content-row--sticky .fui-content-row__toolbar { box-sizing: border-box; min-block-size: var(--ui-content-row-toolbar-block); display: flex; flex-direction: column; justify-content: center; }
 /* Viewport aside: the tighter padding applies below the breakpoint
    too, matching the shell (the phone column is denser everywhere). */

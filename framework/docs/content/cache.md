@@ -238,13 +238,19 @@ The middleware uses conservative shared-cache rules:
   runs, so the key carries the URL's locale: `/es/pricing` and
   `/pricing` are separate entries.
 - Responses larger than `maxBodyBytes` (default 8 MiB) are streamed
-  without caching.
+  without caching. `0` buffers every response whole, and a negative
+  `maxBodyBytes` panics when the middleware is built.
 - A handler that flushes (an SSE stream) or hijacks the connection (a
   websocket upgrade) gets the client writer from then on, and its
   response is not stored, so the middleware can sit in front of
   `/__gofastr/sse` and upgrade routes.
 - `X-Cache` is `HIT` or `MISS` on GET requests the middleware considers.
-  Non-GET methods and Range requests pass through with `X-Cache: BYPASS`.
+  Non-GET methods, Range requests, and navigation fetches
+  (`X-Gofastr-Navigate`, the client router's request for a partial)
+  pass through with `X-Cache: BYPASS`: a navigation is a user action
+  expecting current state, and neither direction of the confusion — a
+  cached full page answered to a navigation, or a partial stored under
+  the page's key — can happen.
 
 ## Battery wrapper (lifecycle)
 

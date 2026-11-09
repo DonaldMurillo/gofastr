@@ -375,9 +375,24 @@ auto-migrate, so a generated migration matches what auto-migrate would
 have applied. A new **required** field with **no default** is added
 *nullable*: a `NOT NULL` `ADD COLUMN` with nothing to fill existing
 rows fails on a populated table, so the constraint is deferred (the
-change summary notes this); backfill the rows and tighten it in a later
-migration. A required field that has a default keeps `NOT NULL`, since
-every existing row gets the default. Type changes are DETECTED and surfaced
+change summary notes this). The snapshot records the column as it was
+applied — nullable — so the *next* `migrate generate` emits the
+tightening (`ALTER COLUMN … SET NOT NULL` on Postgres, a named
+constraint change on the SQLite rebuild); backfill the rows first,
+because the tightening fails while any row holds NULL. A required field
+that has a default keeps `NOT NULL`, since every existing row gets the
+default.
+
+`gofastr migrate generate` warns on its own output when the Up section
+runs any `DROP TABLE` or `DROP COLUMN`, naming each one. A rename is
+indistinguishable from a removal, so an undeclared rename generates as a
+drop plus a create and loses every row; if the drop is a rename in
+disguise, declare it (`renames:` on the entity) and regenerate instead.
+The warning ignores SQL comments and quoted routine bodies. A SQLite
+rebuild also drops the old table after copying its rows; review that
+copy rather than treating every `DROP TABLE` as a table removal.
+
+Type changes are DETECTED and surfaced
 as destructive changes (refused unless `AllowDestructive` is set). On
 Postgres they render as an in-place `ALTER COLUMN TYPE`. Text to an integer
 type carries `USING col::INTEGER` (or the declared integer type), so

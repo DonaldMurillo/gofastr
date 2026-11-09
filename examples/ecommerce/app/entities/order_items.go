@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=7a382e4e6e2c0880
+//gofastr:generated generator=app kind=scaffold version=dev sum=3d85def0707bb534
 
 package entities
 
@@ -12,7 +12,7 @@ import (
 
 type OrderItems struct {
 	ID          string    `json:"id"`
-	UserId      string    `json:"userId,omitempty"`
+	UserId      *string   `json:"userId,omitempty"`
 	OrderId     string    `json:"orderId,omitempty"`
 	ProductId   string    `json:"productId,omitempty"`
 	ProductName string    `json:"productName,omitempty"`
@@ -81,8 +81,11 @@ func NewOrderItemsRepo(app *framework.App) *OrderItemsRepo {
 	if err != nil {
 		panic("entities: order_items not registered: " + err.Error())
 	}
-	h := framework.NewCrudHandler(entity, app.DB)
-	h.JSONCase = app.JSONCasing()
+	// WithJSONCase, not a field assignment: the wire-key snapshot is
+	// keyed under the case (crud's fieldcache rebuilds when they differ,
+	// but the chain is the spelling framework/app.go's wireCrudHandler
+	// fixed, and the one a generated repo should read the same way).
+	h := framework.NewCrudHandler(entity, app.DB).WithJSONCase(app.JSONCasing())
 	h.Hooks = app.HookRegistry("order_items")
 	h.Storage = app.Storage
 	h.Events = app.Events()

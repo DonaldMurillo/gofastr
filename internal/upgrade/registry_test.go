@@ -288,6 +288,7 @@ func TestParseRefuses(t *testing.T) {
 		{"breaking find without hits", note("        find:\n          uses: [gofastr/framework/ui.X]\n"), "hits: edit"},
 		{"hits not edit or review", note("        hits: maybe\n        find:\n          uses: [gofastr/framework/ui.X]\n"), "edit or review"},
 		{"hits on a nodetect note", note("        hits: edit\n        nodetect: reason\n"), "only a breaking note with find"},
+		{"shapes with review", note("        hits: review\n        find:\n          shapes:\n            - symbol: gofastr/core-ui/app.NewLayout\n              type: '^x$'\n"), "shapes matcher"},
 		{"hits on a non-breaking note", "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        guidance: g\n        hits: review\n        find:\n          uses: [gofastr/framework/ui.X]\n", "only a breaking note with find"},
 
 		{"config key empty", note("        find:\n          config:\n            - key: \"\"\n"), "config key is empty"},
@@ -471,39 +472,15 @@ func TestThroughMatchesChangelog(t *testing.T) {
 	}
 }
 
-// TestNewestReleaseBreakingNotesCarryFind: a breaking note in the
-// release being shipped must carry a Find (so `gofastr upgrade` can
-// point at the lines it affects) or a one-line `nodetect` reason (a
-// change with no spelling an app carries that differs). Scoped to the
-// newest release deliberately: older entries are grandfathered.
-func TestNewestReleaseBreakingNotesCarryFind(t *testing.T) {
-	reg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	var newest *Release
-	for i := range reg.Releases {
-		if reg.Releases[i].Version == reg.Through {
-			newest = &reg.Releases[i]
-		}
-	}
-	if newest == nil {
-		t.Fatalf("no release matching through=%s", reg.Through)
-	}
-	for _, note := range newest.Notes {
-		if !note.Breaking {
-			continue
-		}
-		hasFind := !note.Find.Empty()
-		reason := strings.TrimSpace(note.Nodetect)
-		switch {
-		case hasFind && reason != "":
-			t.Errorf("%s: breaking note %q carries both find and nodetect — pick one", newest.Version, note.Change)
-		case !hasFind && reason == "":
-			t.Errorf("%s: breaking note %q has no find — `gofastr upgrade` cannot show the user where it bites, and no nodetect reason says why", newest.Version, note.Change)
-		}
-	}
-}
+// TestNewestReleaseBreakingNotesCarryFind was deleted (#669, Upgrade
+// engine): every property it asserted — a breaking note carries find or
+// nodetect, never both — is parseNote's own refusal for EVERY note of
+// EVERY release, pinned by the "find with nodetect" and "neither find
+// nor nodetect" rows of TestParseRefuses above, so Load() fails before
+// that test could see a violation; and it read reg.Through (the newest
+// SHIPPED release), never the pending releases/<next>.yml the notes are
+// actually accruing in. A registry-wide Load(), which parses every file,
+// already covers the pending one.
 
 func TestParseFieldRefused(t *testing.T) {
 	src := "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        breaking: true\n        hits: edit\n        guidance: g\n        find:\n          fields:\n            - field: example.com/kit/ui.FormConfig.Action\n              refused: anchor\n"

@@ -71,6 +71,11 @@ type Tool struct {
 	// Deliberately unexported: it is wiring metadata between registrar
 	// and withdrawer, never a property clients see or set.
 	devImplied bool
+
+	// callHandler is the innermost handler of a Gated chain. Handler keeps
+	// the original wrapper for callers reading the public Tool value.
+	callHandler  ToolHandler
+	handlerGates []func(context.Context) error
 }
 
 // ToolOption customizes a tool at registration time.
@@ -318,6 +323,7 @@ func (s *Server) RegisterTool(name, description string, inputSchema map[string]a
 	for _, opt := range opts {
 		opt(&tool)
 	}
+	tool.callHandler, tool.handlerGates = gatedParts(tool.Handler)
 
 	s.mu.Lock()
 
@@ -545,7 +551,10 @@ func gateRefused(gate func(ctx context.Context) error, ctx context.Context) (ref
 // recover guard — the prompt-side contract of checkPromptGate. A
 // panicking gate must become a well-formed internal error, never a
 // transport crash; on stdio there is no net/http per-request recover
-// net, so an escaped panic kills the whole process.
+// net, so an escaped panic kills the whole process. The gate's raw
+// error is returned; callTool answers it with maskedRefusalRPC, so an
+// unmarked refusal reads as an unknown tool and only a ShowRefusal
+// error's message crosses.
 func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 	if t.Gate == nil {
 		return nil
@@ -558,7 +567,7 @@ func (s *Server) checkToolGate(ctx context.Context, t Tool) (err error) {
 		}
 	}()
 	if gErr := t.Gate(ctx); gErr != nil {
-		return gateRefusal(gErr)
+		return gErr
 	}
 	return nil
 }
@@ -700,24 +709,44 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	// Call gate: framework code uses this to block tools owned by a
 	// disabled module. Read under RLock to avoid a data race with
-	// SetCallGate. The refusal message is deliberately generic. It
-	// must not name the module or its disabled state.
+	// SetCallGate. The refusal answers exactly as an unknown tool — the
+	// two-layer module gate's own rule (disabled is indistinguishable
+	// from uninstalled), and the only answer that names no module or
+	// disabled state: a distinct "unavailable" confirmed the tool.
 	s.mu.RLock()
 	gate := s.callGate
 	s.mu.RUnlock()
 	if gate != nil {
 		if err := runCallGate(gate, name); err != nil {
 			return nil, &RPCError{
-				Code:    ErrInternalError,
-				Message: "tool unavailable",
+				Code:    ErrMethodNotFound,
+				Message: fmt.Sprintf("tool %q not found", name),
 			}
 		}
 	}
 
 	// Per-tool caller gate (WithToolGate). Runs before the handler; the
 	// same predicate decided whether this tool appeared in tools/list.
-	if err := s.checkToolGate(ctx, t); err != nil {
-		return nil, err
+	// An unmarked refusal answers exactly as an unknown tool, so the
+	// call cannot confirm a gated tool exists; ShowRefusal opts a gate's
+	// message back across.
+	if gErr := s.checkToolGate(ctx, t); gErr != nil {
+		return nil, maskedRefusalRPC(gErr, &RPCError{
+			Code:    ErrMethodNotFound,
+			Message: fmt.Sprintf("tool %q not found", name),
+		})
+	}
+
+	// Gated wrappers carry the same caller boundary as WithToolGate.
+	// Run their gates before schema validation, which would otherwise
+	// disclose a hidden tool's required fields to a refused caller.
+	for _, gate := range t.handlerGates {
+		if gErr := gatedCall(gate, ctx); gErr != nil {
+			return nil, maskedRefusalRPC(gErr, &RPCError{
+				Code:    ErrMethodNotFound,
+				Message: fmt.Sprintf("tool %q not found", name),
+			})
+		}
 	}
 
 	// Arguments must conform to the tool's declared inputSchema before
@@ -737,6 +766,13 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 
 	result, err := s.invokeHandler(ctx, t, params)
 	if err != nil {
+		// An unmarked Gated refusal: answer as an unknown tool.
+		if errors.Is(err, errGatedHidden) {
+			return nil, &RPCError{
+				Code:    ErrMethodNotFound,
+				Message: fmt.Sprintf("tool %q not found", name),
+			}
+		}
 		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
 			return nil, rpcErr
 		}
@@ -789,5 +825,8 @@ func (s *Server) invokeHandler(ctx context.Context, t Tool, params map[string]an
 			}
 		}
 	}()
+	if t.callHandler != nil {
+		return t.callHandler(ctx, params)
+	}
 	return t.Handler(ctx, params)
 }

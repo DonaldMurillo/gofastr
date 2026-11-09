@@ -180,6 +180,11 @@ type cliEntity struct {
 	Endpoints   []cliEndpoint   // gofastr.settings.yml endpoints, one command each
 	Search      bool
 	SoftDelete  bool
+	// StateField names the state column under enforced States: it keeps
+	// a create flag (a new record may start at an initial value) but
+	// update and patch never offer it — the server refuses the write,
+	// and transitions own the move.
+	StateField string
 	// filterKeys spells each filter param: the suffix key, or the
 	// bracket key where the bare key reads two ways (a stage field
 	// beside stage_in), which the server answers 400. It knows every
@@ -779,9 +784,12 @@ func buildEntityModel(decl framework.EntityDeclaration, verbs []string) cliEntit
 		Search:     len(decl.SearchFields) > 0,
 		SoftDelete: appspec.EntityDeclarationScope(decl).SoftDelete,
 	}
+	if decl.States != nil && !decl.States.Advisory {
+		ent.StateField = decl.States.Field
+	}
 	// Stamps are server-set on every write path under enforced States, so
-	// they get no mutation flag. The state field keeps one: create shares
-	// the flag table and may start at an initial value.
+	// they get no mutation flag. The state field keeps its create flag
+	// only: update and patch address the change table, which drops it.
 	stamps, _ := statesWriteDrops(decl.States)
 	uploads := uploadFields(decl)
 	keyIsID := appspec.DeclKeyIsID(decl)
@@ -2065,7 +2073,11 @@ func renderCLIEntityFile(spec cliSpec, ent cliEntity) string {
 		// A declared key's columns are fields, set on create. The path
 		// names the record on update and patch, and the server never
 		// writes a key column there, so those verbs offer no flag for one.
-		if (has("update") || has("patch")) && slices.ContainsFunc(ent.Fields, func(f cliField) bool { return slices.Contains(ent.Keys, f.Snake) }) {
+		// An enforced state field leaves the same way: the server refuses
+		// the write, so the flag would always fail — transitions own the
+		// move.
+		hasKeyFlag := slices.ContainsFunc(ent.Fields, func(f cliField) bool { return slices.Contains(ent.Keys, f.Snake) })
+		if (has("update") || has("patch")) && (hasKeyFlag || ent.StateField != "") {
 			renderCLIMutationFields(&sb, ent, true)
 			changeFields = lowerFirst(ent.Struct) + "ChangeFields"
 		}
@@ -2210,7 +2222,7 @@ func renderCLIListTables(sb *strings.Builder, ent cliEntity) {
 func renderCLIMutationFields(sb *strings.Builder, ent cliEntity, change bool) {
 	p := lowerFirst(ent.Struct)
 	if change {
-		fmt.Fprintf(sb, "// %sChangeFields is %sMutationFields less the key columns, behind\n// `%s update/patch`: the path names the record.\n", p, p, goCommentSafe(ent.Command))
+		fmt.Fprintf(sb, "// %sChangeFields is %sMutationFields less the key columns and any\n// enforced state field, behind `%s update/patch`: the path names the\n// record, and transitions own the state.\n", p, p, goCommentSafe(ent.Command))
 		fmt.Fprintf(sb, "var %sChangeFields = []mutationField{\n", p)
 	} else {
 		fmt.Fprintf(sb, "// %sMutationFields is the field-flag table behind `%s create/update/patch`:\n// one entry per writable field, each bound to the JSON wire key it sets.\n", p, goCommentSafe(ent.Command))
@@ -2220,7 +2232,7 @@ func renderCLIMutationFields(sb *strings.Builder, ent cliEntity, change bool) {
 		fmt.Fprintf(sb, "var %sMutationFields = []mutationField{\n", p)
 	}
 	for _, f := range ent.Fields {
-		if f.ReadOnly || (change && slices.Contains(ent.Keys, f.Snake)) {
+		if f.ReadOnly || (change && (slices.Contains(ent.Keys, f.Snake) || f.Snake == ent.StateField)) {
 			continue
 		}
 		help := f.Snake + " (" + f.Type + ")"

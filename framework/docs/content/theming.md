@@ -412,9 +412,14 @@ The preview renders the `framework/gallery` catalog, every design-system
 component against your theme, so you see the effect of a token change
 across buttons, badges, cards, inputs, and the status tones at once.
 Modal, drawer, bottom-sheet and mobile sidebar triggers open their real
-widgets in the preview. Other gallery hosts call
-`gallery.MountDemoWidgets(router, sidebarPages...)` once before mounting
-the UIHost; the optional paths scope the sidebar demo's drawer.
+widgets in the preview, and a submitted demo form reloads it. Other
+gallery hosts call `gallery.MountDemoWidgets(router, sidebarPages...)`
+and `gallery.MountDemoFormRoute(router, demoPage)` once before mounting
+the UIHost; the optional paths scope the sidebar demo's drawer. Every
+demo form posts to `gallery.DemoFormPath`, which keeps nothing and
+answers 303 to `demoPage(slug)`, the host page that shows that demo
+(`/components/<slug>` on the docs site). `demoPage` must return a local
+path; the mount panics on anything else.
 
 The controls pane groups tokens — Colors first, then **Component
 options**, then the rest. Component options (density, the button

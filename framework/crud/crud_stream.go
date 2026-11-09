@@ -156,6 +156,7 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 			return
 		}
 		ch.decodeReadFields(row)
+		ch.maskOwn(ctx, row)
 		if !first {
 			if _, err := w.Write([]byte(",")); err != nil {
 				return

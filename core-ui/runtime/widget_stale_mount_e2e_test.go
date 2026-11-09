@@ -73,21 +73,7 @@ func staleOpenCase(t *testing.T, held string) {
 		w.Header().Set("Content-Type", "application/javascript")
 		fmt.Fprint(w, src)
 	})
-	routes := `<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"}]</script>`
-	for path, screen := range map[string]string{"/a": "screen-a", "/b": "screen-b"} {
-		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			body := `<h1 id="` + screen + `">` + screen + `</h1><a id="to-b" href="/b">B</a>`
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if r.Header.Get("X-Gofastr-Navigate") == "1" {
-				w.Header().Set("X-Gofastr-Partial", "true")
-				fmt.Fprint(w, body)
-				return
-			}
-			fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+routes+`</head><body>`+
-				`<main role="main" tabindex="-1">`+body+`</main>`+
-				`<script src="/__gofastr/runtime.js"></script></body></html>`)
-		})
-	}
+	serveTwoScreens(mux, "/b")
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
@@ -119,5 +105,26 @@ func staleOpenCase(t *testing.T, held string) {
 	}
 	if search != "" {
 		t.Errorf("location.search = %q on /b, want empty (the stale open pushed its deep link)", search)
+	}
+}
+
+// serveTwoScreens registers the pages /a and /b on mux: each is a full
+// document on a plain load and its body alone on a client navigation,
+// with a link (#to-b) to toB.
+func serveTwoScreens(mux *http.ServeMux, toB string) {
+	routes := `<script type="application/json" id="gofastr-routes">[{"path":"/a"},{"path":"/b"}]</script>`
+	for path, screen := range map[string]string{"/a": "screen-a", "/b": "screen-b"} {
+		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			body := `<h1 id="` + screen + `">` + screen + `</h1><a id="to-b" href="` + toB + `">B</a>`
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if r.Header.Get("X-Gofastr-Navigate") == "1" {
+				w.Header().Set("X-Gofastr-Partial", "true")
+				fmt.Fprint(w, body)
+				return
+			}
+			fmt.Fprint(w, `<!doctype html><html><head><title>t</title>`+routes+`</head><body>`+
+				`<main role="main" tabindex="-1">`+body+`</main>`+
+				`<script src="/__gofastr/runtime.js"></script></body></html>`)
+		})
 	}
 }

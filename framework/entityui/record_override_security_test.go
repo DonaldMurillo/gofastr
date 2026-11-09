@@ -255,3 +255,28 @@ func assertInvoiceUntouched(t *testing.T, w *overrideWorld) {
 		t.Fatalf("a refused override wrote audit rows: %v (reasons %v)", w.ops, w.why)
 	}
 }
+
+// SECURITY: the override's write runs under the read hooks too, not only
+// the read before it, so a row a BeforeGet hook hides at write time
+// answers 404 and stays as stored. The hook here lets the first read
+// through and hides the row from every later one.
+func TestOverrideWriteRunsBeforeGet(t *testing.T) {
+	w := newOverrideWorld(t, nil)
+	ch, err := w.x.host.Crud(mustEntity(t, w.x, "invoices"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	ch.Hooks.RegisterHook(hook.BeforeGet, func(_ context.Context, data any) error {
+		calls++
+		if calls > 1 {
+			data.(*hook.GetPayload).AddWhere("id <> $1", "inv-1")
+		}
+		return nil
+	})
+	rec := postOverride(t, w, overrideCtx(overridePolicy(t, "invoices:override_state"), "boss"), "application/json", `{"state":"paid","reason":"hidden at write"}`)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("SECURITY: status %d, want 404 for a row the hook hides at write time: %s", rec.Code, rec.Body.String())
+	}
+	assertInvoiceUntouched(t, w)
+}

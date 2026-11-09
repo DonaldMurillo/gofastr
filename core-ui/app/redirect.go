@@ -4,6 +4,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/DonaldMurillo/gofastr/internal/routeseg"
 )
 
 // patternRedirect is a dynamic redirect (RedirectPattern): a from-pattern
@@ -286,7 +288,7 @@ func sameShape(a, b []string) bool {
 		if isCatchAllSeg(a[i]) != isCatchAllSeg(b[i]) {
 			return false
 		}
-		if segConstraint(a[i]) != segConstraint(b[i]) {
+		if routeseg.Constraint(a[i]) != routeseg.Constraint(b[i]) {
 			return false
 		}
 	}
@@ -358,11 +360,11 @@ func segsOverlap(x, y string) bool {
 	case !px && !py:
 		return x == y
 	case px && !py:
-		return constraintOK(x, y)
+		return routeseg.ConstraintOK(x, y)
 	case !px && py:
-		return constraintOK(y, x)
+		return routeseg.ConstraintOK(y, x)
 	}
-	cx, cy := segConstraint(x), segConstraint(y)
+	cx, cy := routeseg.Constraint(x), routeseg.Constraint(y)
 	if cx == "" || cy == "" || cx == cy {
 		return true
 	}

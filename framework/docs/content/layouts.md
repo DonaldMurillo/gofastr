@@ -865,6 +865,14 @@ style sheet leaves positioning to the stack, and its bar is that token
 tall. An owned sheet that pins something of its own (a docs rail)
 offsets it by `var(--ui-sticky-top, 0px)`.
 
+Keyboard focus clears the bars too (WCAG 2.4.11). Inside a
+`StickyHeader` stack, and in a `Sticky` content row's workspace, a
+focused control carries a scroll margin of `--ui-sticky-top` plus a
+phone sheet's bar and room for the focus ring. The browser counts a
+control behind the header or toolbar as in view and would leave it
+there; with the margin, Tab and Shift+Tab scroll it out from under
+them.
+
 ### Context columns and list/detail panes
 
 `ui.ContentRowConfig.Aside` adds a labelled context column after main.
@@ -1045,7 +1053,12 @@ The prefetched response lives in a small 30-second
 cache the router checks before fetching; `ui.InvalidateScreens`
 selectors evict it like the screen cache. Prefetch requests carry
 `X-Gofastr-Prefetch: 1`, skip session side effects, and are never used
-for routes that would open as overlays. Declare it on cheap,
+for routes that would open as overlays. An entry also ends with the
+session it was rendered for: the answer carries
+`X-Gofastr-Session-Expires-In`, the whole seconds the session has
+left, and a click after that fetches the page instead of painting one
+whose islands and actions would answer 401. A prefetch with no live
+session gets a 204 and caches nothing. Declare it on cheap,
 frequently-next routes; a prefetched page with deferred outlets
 fetches the page only.
 

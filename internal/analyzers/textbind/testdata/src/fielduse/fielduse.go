@@ -21,3 +21,10 @@ func foreignField(w http.ResponseWriter, r *http.Request) {
 	p := fields.Plain{Key: r.FormValue("k")}
 	db.Exec("INSERT INTO p (k) VALUES ($1)", p.Key) // want `request text reaches a SQL bind`
 }
+
+// The 1de1c216/155cafcd shape: the field is filled here with request
+// text and read back through the declaring package's method.
+func methodRead(w http.ResponseWriter, r *http.Request) {
+	p := fields.Plain{Key: r.FormValue("k")}
+	db.Exec("INSERT INTO p (k) VALUES ($1)", p.Bound()) // want `request text reaches a SQL bind`
+}

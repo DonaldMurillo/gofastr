@@ -32,7 +32,7 @@ var embedStaticRoot embed.FS
 // the host named. WithStaticDir already guarantees this through an
 // *os.Root; the FS-option route must not be the weaker sibling.
 // Surfaces: framework/uihost/uihost.go:SetStaticFS (installs
-// ds.staticFS via reRootDirFS), and the consumers,
+// ds.staticFS via rootfs.ConfineDirFS), and the consumers,
 // resolvesStaticOrScreen and serveOrRender (ds.staticFS.Open +
 // http.ServeFileFS), plus pwa.go's fs.ReadFile.
 

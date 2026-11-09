@@ -8,4 +8,5 @@ var (
 	reasonInvalidChrome      = i18n.Define("widget.invalid_chrome", "invalid chrome context")
 	reasonInvalidPage        = i18n.Define("widget.invalid_page", "invalid widget page path")
 	reasonWidgetNeedsSession = i18n.Define("widget.session_required", "forbidden: widget requires a session")
+	reasonEncodeFailed       = i18n.Define("widget.encode_failed", "response could not be encoded")
 )

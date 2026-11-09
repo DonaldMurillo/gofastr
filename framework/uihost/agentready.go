@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
 // ─── Public config types ───────────────────────────────────────────
@@ -38,8 +40,9 @@ import (
 type AgentReadyConfig struct {
 	// BaseURL is the canonical origin (scheme://host) used to
 	// absolutize URLs in the agent card and Link headers. When empty,
-	// handlers derive it per request from the forwarded Host + the
-	// request TLS/scheme: correct behind a proxy that sets Host.
+	// handlers derive it per request from the request Host and the
+	// TLS state, with X-Forwarded-Proto honored only from a peer listed
+	// in WithTrustedProxies: correct behind a proxy that sets Host.
 	BaseURL string
 
 	// Title is the /llms.txt H1 and the agent-card name fallback.
@@ -186,14 +189,28 @@ type AgentCardConfig struct {
 }
 
 // AgentSkill is one A2A AgentSkill.
+//
+// The A2A AgentSkill schema marks description and tags REQUIRED, so
+// neither key is omitted: an unset description serializes as "" and an
+// unset tags list as [] (MarshalJSON below keeps a nil slice from
+// serializing as null, which the schema also refuses).
 type AgentSkill struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
 	Examples    []string `json:"examples,omitempty"`
 	InputModes  []string `json:"inputModes,omitempty"`
 	OutputModes []string `json:"outputModes,omitempty"`
+}
+
+// MarshalJSON serializes tags as [] when nil instead of null.
+func (s AgentSkill) MarshalJSON() ([]byte, error) {
+	type plain AgentSkill
+	if s.Tags == nil {
+		s.Tags = []string{}
+	}
+	return json.Marshal(plain(s))
 }
 
 // AgentSecurityScheme is an OpenAPI-style security scheme emitted in the
@@ -656,11 +673,18 @@ func (ds *UIHost) handleAgentCard(w http.ResponseWriter, req *http.Request) {
 		w.Header().Add("Vary", "Host")
 		w.Header().Add("Vary", "X-Forwarded-Proto")
 	}
+	b, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		// A host-filled card member with no JSON form would answer an
+		// empty card; answer 500 so agents treat it as failed.
+		slog.Warn("uihost: encode agent card", "error", err)
+		i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	enc.Encode(doc)
+	w.Write(b)
+	w.Write([]byte("\n"))
 }
 
 // buildAgentCard assembles the A2A v1.0 card as an ordered map so the
@@ -751,7 +775,8 @@ func buildAgentCard(cfg *AgentCardConfig, baseURL string) map[string]any {
 // resolveBaseURL returns the canonical origin for absolute discovery URLs:
 // the WithAgentReady BaseURL if set, else the WithSitemap BaseURL (so a host
 // that configured one origin gets it everywhere), else derived per request
-// from the forwarded scheme + Host.
+// from the scheme (TLS state, or X-Forwarded-Proto from a trusted proxy)
+// and Host.
 func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if ds.agentReady != nil && ds.agentReady.baseURL != "" {
 		return strings.TrimRight(ds.agentReady.baseURL, "/")
@@ -770,18 +795,36 @@ func (ds *UIHost) resolveBaseURL(req *http.Request) string {
 	if req.TLS != nil {
 		scheme = "https"
 	}
-	// X-Forwarded-Proto is honored for the scheme ONLY as an exact
-	// "http"/"https": the raw value is request-controlled and this
-	// origin is reflected into cacheable output (the Link header, the
-	// agent card's service URL), so a non-scheme value like
-	// "https://evil.example/p" would poison both with an attacker-named
-	// origin — the same reflection the Host refusal above exists to
-	// prevent. framework/pluginhost/assets.go applies the identical
-	// enum check for the identical reason.
-	if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
-		scheme = u
+	// X-Forwarded-Proto is honored for the scheme ONLY from a peer
+	// listed in WithTrustedProxies (or, when the host lists none, in the
+	// App's AppConfig.TrustedProxies), and then ONLY as an exact
+	// "http"/"https". Any client can send the header, and this origin is
+	// reflected into cacheable output (the Link header, the agent card's
+	// service URL), so an untrusted peer could make the host advertise
+	// http:// URLs, and a non-scheme value like "https://evil.example/p"
+	// would poison both with an attacker-named origin, the same
+	// reflection the Host refusal above exists to prevent.
+	// framework/wellknown.go's resolveWellKnownBase applies the same
+	// trust rule (#669), and framework/pluginhost/assets.go the same
+	// enum check.
+	if ds.trustedFor(req).ContainsAddr(req.RemoteAddr) {
+		if u := req.Header.Get("X-Forwarded-Proto"); u == "http" || u == "https" {
+			scheme = u
+		}
 	}
 	return scheme + "://" + req.Host
+}
+
+// trustedFor is the proxy list resolveBaseURL honors X-Forwarded-Proto
+// from: WithTrustedProxies when the host named any entry, else the list a
+// framework.App puts on each request's context (AppConfig.TrustedProxies).
+// A host list replaces the App's; it is not added to it, so the host
+// option says exactly whom the host trusts.
+func (ds *UIHost) trustedFor(req *http.Request) clientip.Proxies {
+	if len(ds.trustedProxies) > 0 {
+		return ds.proxies
+	}
+	return clientip.TrustedFrom(req.Context())
 }
 
 // baseURLPinned reports whether resolveBaseURL returns a configured

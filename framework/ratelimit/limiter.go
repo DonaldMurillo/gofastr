@@ -31,11 +31,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -435,13 +435,34 @@ func (rl *Limiter) MiddlewareByKey(keyFunc func(*http.Request) string) func(http
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			allowed, retry := rl.AllowContext(r.Context(), keyFunc(r))
 			if !allowed {
-				w.Header().Set("Retry-After", fmt.Sprintf("%.0f", retry.Seconds()))
+				w.Header().Set("Retry-After", RetryAfterSeconds(retry))
 				i18n.HTTPError(w, r, http.StatusTooManyRequests, reasonRateLimited)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// RetryAfterSeconds formats a blocked limiter's remaining wait as whole
+// seconds, rounded UP. %.0f rounds to nearest, so a window with under
+// half a second left answered "Retry-After: 0" — telling a still-blocked
+// client to retry at once. While a wait remains, one whole second is the
+// honest minimum; a non-positive duration (the limiter saying the block
+// already expired) stays "0". The auth battery's limiters format the
+// header with this helper too.
+func RetryAfterSeconds(d time.Duration) string {
+	if d <= 0 {
+		return "0"
+	}
+	// Division-and-remainder ceil, not d+time.Second-1: a huge duration
+	// (a misconfigured BlockDuration near the int64 nanosecond ceiling)
+	// would overflow the addition and print a negative wait.
+	secs := d / time.Second
+	if d%time.Second > 0 {
+		secs++
+	}
+	return strconv.FormatInt(int64(secs), 10)
 }
 
 // ClientIP extracts the request IP. It honours X-Forwarded-For only when

@@ -351,8 +351,8 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 		t.Fatal("PATCH request schema must not require omitted fields")
 	}
 
-	// List 200 is now oneOf [ListResponse, CursorPage], verify ListResponse
-	// is one of the variants.
+	// List 200 is oneOf [postsListResponse, postsCursorPage]; the
+	// variants are per-entity and typed (#669).
 	listGet := getNestedMap(listPath, "get")
 	listResponses := getNestedMap(listGet, "responses")
 	listResp200 := getNestedMap(listResponses, "200")
@@ -366,13 +366,13 @@ func TestE2E_OpenAPI_ResponseSchemaReferences(t *testing.T) {
 	foundList := false
 	for _, v := range oneOf {
 		m, _ := v.(map[string]any)
-		if m["$ref"] == "#/components/schemas/ListResponse" {
+		if m["$ref"] == "#/components/schemas/postsListResponse" {
 			foundList = true
 			break
 		}
 	}
 	if !foundList {
-		t.Fatalf("expected ListResponse among oneOf variants, got %v", oneOf)
+		t.Fatalf("expected postsListResponse among oneOf variants, got %v", oneOf)
 	}
 }
 
@@ -416,7 +416,7 @@ func TestE2E_OpenAPI_ServeSpecViaHTTP(t *testing.T) {
 
 	components := getNestedMap(doc, "components")
 	schemas := getNestedMap(components, "schemas")
-	for _, name := range []string{"posts", "ListResponse", "Error"} {
+	for _, name := range []string{"posts", "postsListResponse", "Error"} {
 		if _, ok := schemas[name]; !ok {
 			t.Errorf("missing %s schema in components", name)
 		}

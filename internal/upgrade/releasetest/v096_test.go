@@ -1,8 +1,6 @@
 package releasetest
 
 import (
-	"slices"
-	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/internal/upgrade"
@@ -14,18 +12,7 @@ import (
 // branches append to.
 func v096Note(t *testing.T, prefix string) *upgrade.Note {
 	t.Helper()
-	reg := scantest.Registry(t)
-	i := slices.IndexFunc(reg.Releases, func(r upgrade.Release) bool { return r.Version == "v0.96.0" })
-	if i < 0 {
-		t.Fatal("registry has no v0.96.0")
-	}
-	for j, n := range reg.Releases[i].Notes {
-		if strings.HasPrefix(n.Change, prefix) {
-			return scantest.Note(t, reg, "v0.96.0", j)
-		}
-	}
-	t.Fatalf("v0.96.0 has no note starting %q", prefix)
-	return nil
+	return scantest.NoteByChange(t, scantest.Registry(t), "v0.96.0", prefix)
 }
 
 // A custom A2A store still declaring the old TrimTerminalTasks(ctx,

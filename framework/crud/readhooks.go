@@ -97,6 +97,23 @@ func hookCtx(ctx context.Context) context.Context {
 	return context.WithValue(ctx, readHooksKey{}, false)
 }
 
+// ReadHooksRestrict reports whether the caller's own BeforeList or
+// BeforeGet hooks, run for a read of record id the way the in-process
+// reads run them under WithReadHooks, append any clause. It is the
+// question a screen asks about a record that is no longer stored: with
+// no row left to check the clauses against, a stored copy of its values
+// (an audit row's sides) is shown only to a caller the hooks do not
+// restrict, the rule the _events feed applies to a hard delete. A hook
+// error answers true: it fails closed.
+func (ch *CrudHandler) ReadHooksRestrict(ctx context.Context, id string) bool {
+	if ch.Hooks == nil {
+		return false
+	}
+	ctx = WithReadHooks(ctx)
+	clauses, err := ch.ownBeforeScopes(ctx, ch.requestFrom(ctx), id, true)
+	return err != nil || len(clauses) > 0
+}
+
 // runBeforeList runs the BeforeList chain for an in-process read under
 // WithReadHooks and returns the WHERE clauses its hooks appended. The
 // HTTP List handler runs the same chain and ANDs the same clauses into
@@ -281,7 +298,11 @@ func hookScopeSubquery(qualifier, table string, key []string, clauses []hook.Whe
 // prevent. Request is the synthetic request the surrounding scope already
 // builds, so hooks reading p.Request keep working.
 func (ch *CrudHandler) runAfterGet(ctx context.Context, r *http.Request, id string, result map[string]any) (map[string]any, error) {
-	if ch.Hooks == nil || !readHooksEnabled(ctx) || result == nil {
+	if !readHooksEnabled(ctx) || result == nil {
+		return result, nil
+	}
+	ch.maskOwn(ctx, result)
+	if ch.Hooks == nil {
 		return result, nil
 	}
 	payload := &hook.GetPayload{Request: hookRequest(r), ID: id, Result: result}
@@ -340,7 +361,11 @@ func (ch *CrudHandler) applyAfterList(ctx context.Context, payload *hook.ListPay
 
 // runAfterList applies the AfterList chain to an in-process result set.
 func (ch *CrudHandler) runAfterList(ctx context.Context, r *http.Request, results []map[string]any) ([]map[string]any, error) {
-	if ch.Hooks == nil || !readHooksEnabled(ctx) {
+	if !readHooksEnabled(ctx) {
+		return results, nil
+	}
+	ch.maskOwn(ctx, results...)
+	if ch.Hooks == nil {
 		return results, nil
 	}
 	payload := &hook.ListPayload{Request: hookRequest(r), Results: results}
@@ -386,7 +411,7 @@ func (ch *CrudHandler) applyChildReadHooks(ctx context.Context, nodes []*Include
 // target's converter, never the root handler's: a WireName on either side
 // otherwise misses the rows, and the child's masking never runs.
 func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*IncludeNode, rows []map[string]any, keyOf func(string) string) error {
-	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(nodes) == 0 || len(rows) == 0 {
+	if !readHooksEnabled(ctx) || len(nodes) == 0 || len(rows) == 0 {
 		return nil
 	}
 	for _, node := range mergeHookRelations(nodes) {
@@ -398,7 +423,13 @@ func (ch *CrudHandler) applyChildReadHooksUnder(ctx context.Context, nodes []*In
 		if len(childRows) == 0 {
 			continue
 		}
-		reg := ch.ChildHooks(node.Target.GetName())
+		// The target's declared masks first, once per row (attachedRows
+		// dedupes a row several parents share), then its hooks.
+		maskRows(hookCtx(ctx), node.Target, childKeyOf, childRows)
+		var reg *hook.HookRegistry
+		if ch.ChildHooks != nil {
+			reg = ch.ChildHooks(node.Target.GetName())
+		}
 		if reg == nil {
 			if err := ch.applyChildReadHooksUnder(ctx, node.Children, childRows, childKeyOf); err != nil {
 				return err
@@ -538,7 +569,7 @@ func attachedRows(rows []map[string]any, key string) []map[string]any {
 // raw so read-modify-write still works.
 func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) (map[string]any, error) {
 	parentHooks := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterGet)) > 0
-	if result == nil || (!parentHooks && !ch.hasCascadeAttachments(result)) {
+	if result == nil || (!parentHooks && !ch.hasMasks() && !ch.hasCascadeAttachments(result)) {
 		return result, nil
 	}
 	// Redact a DEEP copy. The caller has already handed `result` to EmitEvent,
@@ -557,6 +588,7 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	// it and racing the subscriber that reads it. deepcopy.Map is the same
 	// helper redactEventRecord uses, for the same reason.
 	row := deepcopy.Map(result)
+	ch.maskOwn(r.Context(), row)
 	// Cascade-written children get their own entity's read hooks here, on
 	// the copy, after commit: running them inside the write handed the
 	// redacted child to AfterCreate/AfterUpdate, the outbox and the event.
@@ -736,7 +768,7 @@ func sameMap(a, b map[string]any) bool {
 // hasCascadeAttachments reports whether a write result carries any
 // cascade-written relation that child read hooks could apply to.
 func (ch *CrudHandler) hasCascadeAttachments(result map[string]any) bool {
-	if ch.ChildHooks == nil || ch.Entity == nil {
+	if ch.Entity == nil {
 		return false
 	}
 	for _, rel := range ch.Entity.Config.Relations {
@@ -750,9 +782,10 @@ func (ch *CrudHandler) hasCascadeAttachments(result map[string]any) bool {
 // applyCascadeChildReadHooks runs child entity read hooks over cascade-written
 // relation attachments in a write response. runResponseHooks calls it on a
 // deep copy after commit; it must never run on the row the write is still
-// using. No-op without ChildHooks or when read hooks are not enabled on ctx.
+// using. No-op when read hooks are not enabled on ctx; a child entity's
+// declared masks run even when it has no ChildHooks registry.
 func (ch *CrudHandler) applyCascadeChildReadHooks(ctx context.Context, result map[string]any) error {
-	if ch.ChildHooks == nil || !readHooksEnabled(ctx) || len(result) == 0 || ch.Entity == nil {
+	if !readHooksEnabled(ctx) || len(result) == 0 || ch.Entity == nil {
 		return nil
 	}
 	rows := []map[string]any{result}

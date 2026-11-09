@@ -508,18 +508,103 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 	return false
 }
 
-func (ch *CrudHandler) refuseUpsertCascades(body map[string]any) error {
+// cascadeSetKeys names the foreign keys the belongs_to cascades in body
+// will set. UpsertOne validates the parent before it knows which arm it
+// takes, and the cascade, which fills these keys, runs once it does, so
+// the first validation does not require them. The final validation, after
+// the cascade, checks them against the full parent schema.
+func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	if ch.Entity == nil {
 		return nil
 	}
-	fields := make(map[string][]schema.Violation)
-	for _, relation := range ch.Entity.Config.Relations {
-		if _, present := ch.findCascadeValue(body, relation); present {
-			fields[relation.Name] = []schema.Violation{{Reason: reasonCascadeUpsert}}
+	keys := map[string]bool{}
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); ok && v != nil {
+			keys[oneFK(rel)] = true
 		}
 	}
-	if len(fields) != 0 {
+	return keys
+}
+
+// refuseCascadeUpsertKey refuses, in UpsertOne, a belongs_to cascade
+// that sets a column of the entity's key. The upsert picks its arm, and
+// runs its preflight and hidden-row checks, on the key in the body before
+// any cascade runs, so a key the cascade filled would conflict with a row
+// none of those checks read.
+func (ch *CrudHandler) refuseCascadeUpsertKey(body map[string]any) error {
+	if ch.Entity == nil {
+		return nil
+	}
+	keys := ch.keyCols()
+	fields := map[string][]schema.Violation{}
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type != entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); !ok || v == nil {
+			continue
+		}
+		for _, fk := range rel.ForeignKey {
+			if slices.Contains(keys, fk) {
+				fields[rel.Name] = []schema.Violation{{Reason: reasonCascadeUpsertKey, Params: map[string]any{"column": fk}}}
+				break
+			}
+		}
+	}
+	if len(fields) > 0 {
 		return &ValidationError{fields: fields}
+	}
+	return nil
+}
+
+// cascadeParentID is the key a dependent cascade links its children to:
+// the written row's key column, else the body's. A composite parent has
+// no single key, and processDependentCascadeWrites refuses it.
+func (ch *CrudHandler) cascadeParentID(result, body map[string]any) any {
+	parentPK, err := ch.keyColumn()
+	if err != nil {
+		return nil
+	}
+	for _, m := range []map[string]any{result, body} {
+		for _, k := range []string{parentPK, ch.convertKey(parentPK)} {
+			if v, ok := m[k]; ok && v != nil {
+				return v
+			}
+		}
+	}
+	return nil
+}
+
+// refuseHiddenCascade refuses a nested write through a relation the
+// entity hides (entity.HidesRelation). The relation is not on the wire:
+// reads leave it out and ?include= refuses it, so a client that writes
+// through it would create rows it can never see, and the attached child
+// came back in the response. Server code writes through it under
+// WithServerWrites, as it writes Hidden fields.
+func (ch *CrudHandler) refuseHiddenCascade(ctx context.Context, rel entity.Relation) error {
+	if serverWrites(ctx) || !ch.Entity.HidesRelation(rel) {
+		return nil
+	}
+	return &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonCascadeHidden}}}}
+}
+
+// refuseHiddenDependents runs refuseHiddenCascade over the has-one,
+// has-many and many-to-many cascades in body. Those run after the parent
+// is written, so the refusal comes first, before any row is touched.
+func (ch *CrudHandler) refuseHiddenDependents(ctx context.Context, body map[string]any) error {
+	for _, rel := range ch.Entity.Config.Relations {
+		if rel.Type == entity.RelManyToOne {
+			continue
+		}
+		if v, ok := ch.findCascadeValue(body, rel); !ok || v == nil {
+			continue
+		}
+		if err := ch.refuseHiddenCascade(ctx, rel); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -559,6 +644,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 	if ch.Entity == nil || len(ch.Entity.Config.Relations) == 0 {
 		return nil, nil
 	}
+	if err := ch.refuseHiddenDependents(ctx, body); err != nil {
+		return nil, err
+	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
 		if rel.Type != entity.RelManyToOne {
@@ -590,6 +678,9 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
 				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
 			}}}}
+		}
+		if err := ch.refuseHiddenCascade(ctx, rel); err != nil {
+			return nil, err
 		}
 
 		childHandler := ch.childHandlerFor(target)

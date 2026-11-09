@@ -38,7 +38,10 @@ Examples of widgets the framework already supports:
   builds are cloned from the row template the kit registers
   (`preset.ToastTemplate`, via `registry.RegisterTemplate`), which
   `preset.ToastSlotHTML` renders inside the stack; `preset.IsToastStack`
-  tells a host whether a widget definition is one.
+  tells a host whether a widget definition is one. The host links the
+  stack's component sheets, the row's included, in the page head, so a
+  toast raised after the connection drops (a failed request's error)
+  draws styled without fetching a sheet.
 - **Drawer**: edge-mounted sliding panel
 - **Banner**: top strip for build progress, version warnings, etc.
 - **Popover**: click-triggered anchored panel, no backdrop dim, no focus trap. ESC + click-outside dismiss. Use for help panels, share menus, per-row expanders.
@@ -82,6 +85,15 @@ registered widget: the runtime fetches `/__gofastr/widgets` on boot and
 builds each one. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
+
+`gofastr:widgets-synced` fires on `window` each time one page's catalog
+pass settles: the boot fetch, and the re-fetch after each SPA
+navigation. `detail.path` is the page the pass was for, without its
+query string. It fires once
+the widgets the pass mounts, and any its deep link opens, have settled
+(mounted, or failed), and also when the fetch failed or there was
+nothing to mount, so a script or test
+waiting for "the widgets for /b are in" waits on it, never on a timer.
 
 The registry is process-wide but routes belong to a router, so a second
 router in the same process that serves a widget another router mounted
@@ -435,7 +447,8 @@ close path (trigger-side close, the chrome's own close button, a
 backdrop click, Escape). Rebind on open, unbind on close; never assume
 a root mounts exactly once. The `fui:` prefix marks widget-UI events on
 `document`; the `gofastr:` prefix is reserved for window-level
-navigation events (`gofastr:navigate`, `gofastr:beforenavigate`).
+navigation events (`gofastr:navigate`, `gofastr:beforenavigate`,
+`gofastr:widgets-synced`).
 
 **DOM lifetime.** A registered widget root survives SPA navigation.
 Roots the runtime fetches are appended to `<body>`, outside the layout

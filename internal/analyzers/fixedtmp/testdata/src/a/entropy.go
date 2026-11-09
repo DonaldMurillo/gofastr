@@ -3,6 +3,7 @@ package a
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -90,3 +91,32 @@ func fixedBufferSuffix(buffer []byte) string {
 func createFixedBufferPath() error {
 	return os.MkdirAll(filepath.Join(os.TempDir(), fixedBufferSuffix(make([]byte, 16))), 0o700) // want `mkdir on a fixed path under the shared temp root`
 }
+
+// sprintfFormatRoot: the temp root is the FORMAT literal, so the tail is
+// every argument; a minted argument keeps the path quiet. (The Sprintf
+// special case must not kick in: argument 1 is not a temp root.)
+func sprintfFormatRoot() error {
+	return os.MkdirAll(fmt.Sprintf("/tmp/%s-%d", rand.Text(), os.Getpid()), 0o700)
+}
+
+// localMintedJoin: the minted segment is a local var DECLARATION inside
+// the helper (var suffix = …), whose value the body walker records.
+func localMintedJoin() string {
+	var suffix = rand.Text()
+	return filepath.Join(os.TempDir(), suffix)
+}
+
+func createLocalMintedPath() error {
+	return os.MkdirAll(localMintedJoin(), 0o700)
+}
+
+// localDeclOnly: a type-only local declaration has no value for its
+// name; the walker must skip the names-without-values zip.
+func localDeclOnly() {
+	var scratch []byte
+	_ = len(scratch)
+}
+
+// bare declaration with no value: the name/value zip guard must not
+// index an absent value.
+var declaredOnly []byte

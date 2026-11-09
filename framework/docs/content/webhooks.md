@@ -485,7 +485,14 @@ delivery at a time; when less of the lease is left than the HTTP
 client's timeout (capped at half the lease), it hands that delivery
 and the rest of the batch back, attempt refunded, for the next tick.
 A store without `LeasedStore` still counts each attempt and
-dead-letters at `MaxAttempts`.
+dead-letters at `MaxAttempts`; `New` neither raises its lease nor logs
+the lease adjustment, because that store never uses a claim lease.
+
+On SQLite, delivery settles and unstarted-claim releases retry a busy
+database until they land or the caller's deadline passes (ten seconds
+when the context has none). The claim fence still applies on every retry.
+A failed rollback of an abandoned SQLite claim logs a warning without
+replacing the original claim error.
 
 A `leasePeriod` of `0` selects the 30 s default; a negative one is
 rejected by both bundled stores — a negative lease can only be a sign
@@ -607,6 +614,10 @@ and `SQLInboundStore` registers a data eraser, so `App.EraseUserData`
 deletes that user's payloads. Nil, or an empty return, names nobody.
 The handler runs only after the signature checks out. The 202 ack sets
 `Cache-Control: no-store`.
+
+`DedupeKeyFunc` and `Owner` results must be valid UTF-8 without NUL.
+An invalid result returns 400 before persistence, with reason
+`webhook.unstorable_text`, consistently on SQLite and PostgreSQL.
 
 ### Request flow
 

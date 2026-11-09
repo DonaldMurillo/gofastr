@@ -1,0 +1,189 @@
+version: v0.97.0
+title: Pending release
+notes:
+  - change: "Gated tool handlers run their gates before input-schema validation, including for missing or malformed arguments"
+    guidance: "A refused call now returns the same code and message as an unknown tool even when its arguments are invalid. ShowRefusal still exposes a deliberate refusal before argument validation; allowed calls retain schema validation. Keep Gated outermost when composing handler decorators, wrap a supplied handler with mcp.Decorate, or attach WithToolGate at registration. Prefer WithToolGate when the tool must also be hidden from listings."
+    nodetect: "the difference depends on a gate refusing a malformed runtime call; no host source spelling distinguishes it"
+  - change: "UpsertOne validates belongs-to cascade-filled keys against the parent schema on insert and conflict, rolling back nested writes on refusal"
+    guidance: "Ensure a nested child's key satisfies the parent foreign key's type, required and Pattern rules. A formerly accepted invalid key now returns the same 400 validation refusal as create and leaves no nested changes."
+    nodetect: "the child key and parent schema at runtime determine the refusal; no host code spelling distinguishes an invalid cascade"
+  - change: "Field masks no longer inherit back office CRUD elevation on any read or write response"
+    guidance: "A permission-sensitive mask checks the caller's own permissions. Grant the intended read permission explicitly if an admin should see the stored value."
+    nodetect: "the mask's runtime permission checks determine the output; no host source spelling distinguishes an affected mask"
+  - change: "BREAKING - battery/cache.CacheMiddlewareWithLimit panics when maxBodyBytes is negative; a negative cap used to read as 0 and buffer every response whole"
+    breaking: true
+    nodetect: "the condition is a negative value, usually read from configuration, which no spelling shows; every ordinary call passes a cap or 0"
+    guidance: "Pass 0 for no cap, or a positive byte count. A value read from configuration is checked before the middleware is built."
+  - change: "BREAKING on SQLite - a create, batch create or upsert whose row would hold a NULL key part (a key left out or sent as null that no column DEFAULT, declared Default or rowid fills) is refused with 400 {<key>: [required]}, the answer Postgres gives; SQLite used to store the row under a NULL key"
+    breaking: true
+    nodetect: "a fact of the request and the database: a key declared without AutoGenerate is ordinary, and only a write that sends no key value changes answer"
+    guidance: "Send the key, or declare it generated (AutoGenerate: schema.AutoUUID). Rows already stored under a NULL key cannot be read, updated or deleted through the CRUD routes: find them with SELECT ... WHERE <key> IS NULL and give them a key or delete them."
+  - change: "the generated seedEntity (stubs.go) gains Count, Weights and Authored beside Rows; Rows still holds every row, the Authored leading rows first, so seeding itself does not change"
+    guidance: "Regenerate to pick the fields up (gofastr generate app gofastr.yml --force; an app that hand-maintains its root copies the seedEntity type and seedData from a scratch regeneration's stubs.go, at the app root, not entities/). Nothing must change: the new fields are additive and seeding reads Rows only. gofastr pack now reads the seed recipe back instead of flattening a count:/weights: entry to explicit rows, and a generated row that was hand-edited packs as explicit rows with the recipe dropped."
+    nodetect: "additive fields on a generated struct; no source spelling differs"
+  - change: "BREAKING - in regenerated code the entities model struct and the generated Go client's read struct carry optional scalars as pointers (*string, *bool, *int, *<Entity><Field>Value for enums): every field that is not required:, not a primary key and not auto-generated (timestamps included). json fields stay any; write shapes are unchanged"
+    breaking: true
+    guidance: "A null on the wire (a PATCH to null, a row from before the column existed) was silently decoded into a zero value that read as authored data. Dereference where app code read such a field directly (sub.Mrr, inv.DueOn): the nil pointer is the honest absent. Regenerate with gofastr generate app gofastr.yml --force (or copy entities/ from a scratch regeneration for an app that hand-maintains its root) and let the compiler walk you to every read."
+    nodetect: "the pointer types live in generated trees; a read of the old value-typed field is any selector on the entity struct, which no source shape separates from a dereference"
+  - change: "BREAKING - the AddressRateLimit fields on auth.MagicLinkConfig and auth.PasswordResetConfig are gone; magic-link send and forgot-password now spend one shared per-address mail budget (auth.AuthConfig.MailAddressRateLimit, default one mail per address every two minutes), so a mail from either endpoint starts the cooldown for both"
+    breaking: true
+    hits: edit
+    guidance: "Move any explicit AddressRateLimit setting to AuthConfig.MailAddressRateLimit on the auth.New call. A request inside the cooldown still gets the usual 200 and nothing is mailed; an end-to-end test that asks twice for one address passes MailAddressRateLimit: &auth.RateLimiterConfig{MaxAttempts: 100, Window: time.Minute} to AuthConfig."
+    find:
+      uses:
+        - gofastr/battery/auth.MagicLinkConfig.AddressRateLimit
+        - gofastr/battery/auth.PasswordResetConfig.AddressRateLimit
+  - change: "BREAKING - the uncalled helpers session.EncodeEvent (framework/experimental/harness/session) and agent.MarshalArgs (kiln/agent) are gone; each dropped its encode error and returned a partial value"
+    breaking: true
+    hits: edit
+    guidance: "Call json.Marshal on the value and handle its error: json.Marshal(env) for EncodeEvent, json.Marshal(call.Args) for MarshalArgs (which answered \"{}\" for nil Args)."
+    find:
+      uses:
+        - gofastr/framework/experimental/harness/session.EncodeEvent
+        - gofastr/kiln/agent.MarshalArgs
+
+  - change: "BREAKING - an MCP item gate's refusal on tools/call, resources/read and prompts/get answers exactly as an unknown name does, instead of crossing with the gate's message; a direct call can no longer confirm a gated tool, resource or prompt exists"
+    breaking: true
+    hits: review
+    guidance: "A gate whose message the caller must read (an upgrade-your-plan refusal) wraps its error with mcp.ShowRefusal(err) before returning it; only then does the message cross, and a gate returning its own *mcp.RPCError keeps its code. Tests that assert a gated call's error message now see the unknown-name not-found answer. The server-wide SetGate is unchanged."
+    find:
+      uses:
+        - gofastr/core/mcp.WithToolGate
+        - gofastr/core/mcp.WithResourceGate
+        - gofastr/core/mcp.WithPromptGate
+        - gofastr/core/mcp.Gated
+
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of the framework well-known documents' URLs (MCP server card, /.well-known/mcp.json, api-catalog, /auth.md, agent extras) unless the TCP peer is listed in the new AppConfig.TrustedProxies, and the new AppConfig.BaseURL pins the origin outright"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8) or set AppConfig.BaseURL to the canonical https origin; otherwise the documents advertise http:// URLs. Apps not behind a proxy, or with an explicit BaseURL, are unaffected."
+    find:
+      uses:
+        - gofastr/framework.NewApp
+  - change: "BREAKING - the CRUD MCP record tools (get, update, delete, transitions) type each key argument from its key column: an integer key takes a JSON number, and a string such as \"42\" is refused with invalid params"
+    breaking: true
+    nodetect: "the argument is a value an MCP client sends at runtime; no code in the app spells it"
+    guidance: "Send an integer key as a number ({\"id\": 42}). A client that reads the tool's inputSchema already does; one that hard-codes string ids changes for integer-keyed entities only."
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of uihost's agent card service URL and agent Link headers (sitemap, llms.txt, agent card, MCP endpoint) unless the TCP peer is listed in uihost.WithTrustedProxies or, when the host sets none, in AppConfig.TrustedProxies"
+    breaking: true
+    hits: review
+    guidance: "With no WithAgentReady or WithSitemap BaseURL configured, behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8), which the host reads when it sets no list of its own, or pass it to uihost.WithTrustedProxies, which replaces the App's list for that host; or set a BaseURL on WithAgentReady or WithSitemap. Otherwise those URLs say http://. Hosts not behind a proxy, or with a BaseURL, are unaffected."
+    find:
+      uses:
+        - gofastr/framework/uihost.WithAgentReady
+        - gofastr/framework/uihost.WithAgentCard
+        - gofastr/framework/uihost.WithAgentLinkHeaders
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the origin in a framework/pluginhost framed asset's Content-Security-Policy unless the TCP peer is listed in AppConfig.TrustedProxies; framed responses now send Vary: Host, X-Forwarded-Proto"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8); the App puts the list on each request's context and every AssetServer registered on app.Router() reads it, so plugin code does not change. Without it the framed CSP names http:// origins. AppConfig.BaseURL does not reach the frames. Apps that mount a plugin package (gofastr-plugins chart, datagrid, ...) never name pluginhost themselves: check AppConfig.TrustedProxies on any app behind a proxy that mounts one. Hosts not behind a proxy are unaffected."
+    find:
+      uses:
+        - gofastr/framework/pluginhost.NewAssetServer
+        - gofastr/framework/pluginhost.NewClientModule
+        - gofastr/framework/pluginhost.RegisterFrameClientRoute
+  - change: "BREAKING - X-Forwarded-Proto no longer changes the scheme of a framework/entityui record's Copy link, Copy API URL and drawer copy link unless the TCP peer is listed in AppConfig.TrustedProxies"
+    breaking: true
+    hits: review
+    guidance: "Behind a TLS-terminating proxy that forwards X-Forwarded-Proto, add the proxy to AppConfig.TrustedProxies (CIDRs allowed, e.g. 10.0.0.0/8); the App puts the list on each request's context and the record screens read it. Without it the copied links say http://. AppConfig.BaseURL does not reach these links. Hosts not behind a proxy are unaffected."
+    find:
+      uses:
+        - gofastr/framework.App.EntityUI
+        - gofastr/framework/entityui.New
+        - gofastr/framework/entityui.UI.Record
+  - change: "?fields= projections now return every required column beside the primary key, on list, cursor and get responses alike"
+    nodetect: "a response-shape fact of the CRUD routes; no app spelling differs, and only a caller that asserts the exact key set of a projected row changes answer"
+    guidance: "Required fields stay in a projection because the OpenAPI response schema holds them required; a client that needs slimmer rows reads the keys it names and ignores the rest."
+  - change: "BREAKING - localentity Define refuses a field Pattern using \\s, \\S or a bare . : JavaScript and Go read them differently, so the browser and the server validated different values"
+    breaking: true
+    nodetect: "the pattern is a string in the app's own data, and only the runtime refusal names it; no code spelling separates an ambiguous pattern from a clean one"
+    guidance: "Name the characters in a class instead: [ \\t\\r\\n]+ for whitespace, an explicit set where . stood. Define refuses the ambiguous spellings at startup with the reason."
+  - change: "BREAKING - sdk.SchemaHash takes the JSON case the artifacts speak: SchemaHash(named, jsonCase)"
+    breaking: true
+    hits: edit
+    find:
+      shapes:
+        - symbol: gofastr/framework/sdk.SchemaHash
+          type: '^func\(named \[\]sdk\.NamedConfig\) string$'
+    guidance: "Pass the case your artifacts use: string(framework.CaseCamel) for the generated clients, string(framework.CaseSnake) for an app served snake_case."
+  - change: "the SDK manifest's schema hash covers the JSON case now, so every manifest generated by an older CLI reports drift against this release"
+    nodetect: "a digest both sides recompute; no app code differs, and the drift banner itself is the signal"
+    guidance: "Re-run `gofastr generate sdk` to re-stamp the manifest. An app served snake_case keeps reporting drift until its artifacts speak its case; the hash is what says so."
+  - change: "gofastr upgrade --apply refuses a downgrade without --allow-downgrade, and a run whose BREAKING notes still have edit hits exits 1 (a refused downgrade exits 2); review hits never change the exit status"
+    nodetect: "a CLI exit-status fact; scripts reading $? are the only callers that can observe it"
+    guidance: "Pass --allow-downgrade to apply a downgrade deliberately, and fix the lines listed under \"Edit these\" to get exit 0 back; lines listed for review do not hold the exit status."
+  - change: "gofastr agents skill refuses to overwrite a .claude/skills/gofastr-host/SKILL.md that lacks the generated header, unless --force is passed"
+    nodetect: "an existing file's content decides, not the app's code; the refusal itself names the flag"
+    guidance: "Move or delete the hand-written SKILL.md, or pass --force (gofastr init --reinit --force overrides the same way). A SKILL.md an older CLI generated has no header either, so the first refresh after upgrading needs --force once."
+  - change: "BREAKING - entityui ListBuilder.NoLinks keeps New; it takes away only the record links and the row menu"
+    breaking: true
+    hits: review
+    guidance: "NoLinks is for an entity with no record screen, and a create lands back on the list, so New stays. A list that should offer no New either calls NoCreate as well: list.NoLinks().NoCreate(). RelatedAt with an empty base already does. Regenerate an app spec app: its generator now puts NoLinks on every list of an entity with no entity_detail screen, create: true lists included."
+    find:
+      uses:
+        - gofastr/framework/entityui.ListBuilder.NoLinks
+  - change: "BREAKING - core/static.Refuses no longer refuses a segment shaped like a Windows 8.3 short name (\"~\" then a digit); the new core/static.RefusesIn(fsys, path) does, and only when the segment's directory has no entry of exactly that name"
+    breaking: true
+    hits: review
+    guidance: "Refuses judges a spelling alone, which is right for a tree you walked: a walk yields real names. Code that serves a requested path calls RefusesIn with the filesystem it opens from, so WEB~1.CON stays refused while a real photo~1.png is served."
+    find:
+      uses:
+        - gofastr/core/static.Refuses
+  - change: "The static export keeps its prune list beside OutDir instead of in it: OutDir dist/site keeps it in dist/.site.gofastr-pages, and <OutDir>/.gofastr-pages is no longer written or read"
+    breaking: false
+    guidance: "Delete <OutDir>/.gofastr-pages; a host that published it keeps serving the old copy until it goes. The first build on this release finds no list beside OutDir and removes no stale page, so a page gated or dropped since the last build stays in the tree: clear OutDir once if that matters. An OutDir with no parent directory (a filesystem root) now fails the build."
+    nodetect: "the old file is build output in the export directory, not app source"
+  - change: "The Linux desktop shell asks AllowNavigation before every frame's request, iframes included: a foreign iframe now stays blank on Linux"
+    breaking: false
+    nodetect: "only an app that loosened the default CSP's frame-src to frame another origin sees a change, and that is a header value, often from configuration"
+    guidance: "Under the default CSP nothing changes: default-src 'self' already blocked foreign frames on every shell. An app that frames another origin on purpose and ships on Linux has no per-frame switch: Config.DangerouslyAllowForeignNavigation lets the frame load, and with it every main-frame navigation off the app's origin."
+  - change: "framework/gallery demo forms post to gallery.DemoFormPath, which a gallery host mounts with gallery.MountDemoFormRoute; without it a submitted demo form answers 404"
+    guidance: "Beside gallery.MountDemoWidgets, call gallery.MountDemoFormRoute(router, demoPage) once before mounting the UIHost. demoPage returns the local path of the page that shows a demo, such as func(slug string) string { return \"/components/\" + slug }; the route answers 303 there and keeps nothing."
+    find:
+      uses:
+        - gofastr/framework/gallery.MountDemoWidgets
+  - change: "migrate generate records a deferred NOT NULL column as nullable, so the next generation emits the tightening"
+    guidance: "Backfill NULL rows before applying the tightening. Older snapshots may already record NOT NULL even though the migration added a nullable column: compare the applied migration with table_ddl in schema.snapshot.json, remove that column's un-applied NOT NULL from table_ddl, then regenerate. Postgres emits SET NOT NULL; SQLite rebuilds the table."
+    nodetect: "the applied column constraint and committed snapshot, not app source, determine whether a deferral is pending"
+  - change: "migrate generate warns about DROP TABLE and DROP COLUMN in its Up output"
+    guidance: "Review the named drops before applying. Declare a rename instead of dropping and re-adding a renamed entity or field. A SQLite rebuild copies rows before dropping the old table; review that copy. Down restores the schema, not deleted data. SQL comments, quoted values and dollar-quoted routine bodies are not drop statements."
+    nodetect: "the schema delta and generated SQL determine whether a warning appears, not an app-source spelling"
+  - change: "BREAKING - WithIdempotency refuses a store whose in-flight TTL is at or below the request deadline"
+    breaking: true
+    hits: review
+    guidance: "Start names both durations. Raise the store TTL with WithSQLIdempotencyInFlightTTL or WithMemoryIdempotencyInFlightTTL, or lower RequestTimeout. An unset RequestTimeout still enforces 30s. The App creates its default memory store with the budget plus 10s and keeps that store separate for each App, even when an AppOption is reused. A custom store may implement middleware.InFlightTTLStore (InFlightTTL() time.Duration); a store without the method or an App without a request deadline logs a warning, including when both conditions hold."
+    find:
+      uses:
+        - gofastr/framework.WithIdempotency
+        - gofastr/core/middleware.NewSQLIdempotencyStore
+        - gofastr/core/middleware.NewMemoryIdempotencyStore
+  - change: "BREAKING - an explicit HTTPServerTimeouts.WriteTimeout below the enforced request deadline makes Start fail, including when RequestTimeout is unset"
+    breaking: true
+    hits: review
+    guidance: "The default request deadline is 30s. Set WriteTimeout at or above that deadline, set it to 0 to disable the write deadline, or configure a shorter RequestTimeout. With DisableRequestTimeout or WithoutDefaultMiddleware the pairing is not checked."
+    find:
+      uses:
+        - gofastr/framework.HTTPServerTimeoutsConfig
+        - gofastr/framework.WithHTTPServerTimeouts
+  - change: "webhook New raises a short lease only for a LeasedStore; failed SQLite claim rollbacks log a warning"
+    guidance: "The raise remains twice HTTPClient.Timeout for a LeasedStore. Non-leased stores neither change LeasePeriod nor log the adjustment. A rollback warning does not replace the original claim error. Queue and outbox rollback comments use the same SQLite rationale; connection handling does not change."
+    nodetect: "the concrete store capability, configured durations and rollback result determine the change"
+  - change: "queue, outbox and webhook SQL settles and claim releases retry SQLite contention by result code"
+    guidance: "SQLITE_BUSY and SQLITE_LOCKED, including extended codes, are retried until the write lands or the caller's deadline passes, ten seconds on a context with no deadline. The first operation retains its original context on both SQLite and Postgres. Every retry retains its claim fence; exhausted retries still use lease recovery."
+    nodetect: "the database lock state determines whether a settle retries"
+  - change: "the cron tick loop catches up missed minute boundaries across DST, bounded to two hours"
+    guidance: "Missed minutes run oldest first, including the current boundary at an exact one-interval delay. Older minutes beyond the cap are dropped. Tick leader election claims each minute separately. Stop or cancellation interrupts the walk before its next claim."
+    nodetect: "a late runtime tick, not an app-source spelling, triggers catch-up"
+  - change: "log_filter returns historical file-read errors, skips oversized lines, and file rotation touches only canonical backup suffixes"
+    guidance: "A line over 1 MiB is skipped even without a final newline; later readable entries remain available. An unreadable or symlinked history path returns a tool error. Rotation shifts server.log.1 but leaves server.log.01 and server.log.+1 untouched."
+    nodetect: "the log file contents, filesystem read result and backup names determine the change"
+  - change: "Webhook dedupe-key and owner callbacks refuse NUL or invalid UTF-8 with 400; A2A owner and tenant callbacks refuse those bytes with 401 before a store call"
+    guidance: "Return storable text from identity callbacks. The request used to fail at the PostgreSQL bind while SQLite accepted the bytes."
+    nodetect: "the callback result's runtime bytes determine the refusal"
+  - change: "BREAKING for a custom battery/semantic Store with Options.Keyword - the chunk-listing capability method ChunkIDsForDoc now returns ([]string, error); a store still returning just []string is rejected at Open with the cannot-list-chunks error"
+    breaking: true
+    guidance: "ChunkIDsForDoc fed the keyword purge on document removal, and a database failure folded into an empty list read as nothing-to-clean, orphaning keyword entries that pointed at a removed document. Stores now return the error and the index refuses the mutation instead. Add the error return — the failure path can return fmt.Errorf wrapping the query error, as PgVectorStore does; an in-memory store returns nil. EnsureSchema on PgVectorStore also creates the keyword search's GIN index (to_tsvector('simple', text)) automatically, so the manual CREATE INDEX the earlier pgvector note suggested is no longer needed after the next EnsureSchema, including for existing tables."
+    nodetect: "the capability interface (chunkLister) is unexported and satisfied structurally at Open; a source search for the old signature only finds the framework's own stores"
+  - change: "JSON encode failures on non-envelope replies are checked; HTTP response helpers answer 500 before committing a success status, and broker or queue operations propagate serialization errors"
+    guidance: "Make custom response values JSON-encodable: remove NaN and infinity, invalid RawMessage values, channels and functions. Check json.Marshal, json.MarshalIndent and Encoder.Encode errors; discardeddecode now reports dropped errors on fallible non-envelope values too."
+    nodetect: "the failure depends on the runtime response value; no caller spelling distinguishes it"

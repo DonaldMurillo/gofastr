@@ -438,7 +438,7 @@ sheet), `data-fui-network-retry-*`, `data-fui-plugin*`
 | `data-cui-page-meta` | Per-screen meta/link ownership marker. The navigator preserves unmarked site-wide head metadata. |
 | `data-cui-skip-label="<text>"` | Same carrier and same rule as `data-cui-lang`, for the app shell's skip-link text (`App.SkipLabelFor` / `WithSkipLabelFunc`; the default is the `app.skip_to_main` phrase in the request's language): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
 | `data-cui-strings="<json>"` | On the inert `template[data-cui-page-head]` a SPA partial carries (uihost), and on the carrier the runtime builds from a fully fetched page (from its `#gofastr-strings` block): the runtime strings in the destination reader's locale (`runtime.StringsJSON`). A soft navigation keeps the document, so after every swap whose payload has the page-head template the runtime replaces `say()`'s table with this map; an absent attribute means English and clears the previous page's words. |
-| `data-hui-disclosure` / `data-hui-disclosure-trap` / `data-hui-disclosure-dismiss` / `data-hui-disclosure-persist="<key>"` | On a `headless.Disclosure` / `framework/ui.Collapsible` `<details>` (and on menu dropdowns, which compose the same anatomy): `headless-disclosure` (a registered behaviour of `framework/headless`) mirrors `aria-expanded` onto the controller, closes the deepest open disclosure containing focus on Escape with focus returned to its controller, closes non-persistent disclosures on `gofastr:navigate` and when a link inside one is clicked (not a `data-cui-open` link, which opens a widget over the page, so the menu stays and the widget returns focus into it), restores/writes the open state of persistent ones under a namespaced, component-encoded session key, closes an open dismiss disclosure (every menu root, and `Disclosure.Dismiss`) on a click outside it or a touch or pen release on plain content outside it (iOS Safari sends no click for a tap on content with no click handler of its own; a tap on a control closes it through the control's click, so an in-flow panel never collapses before the browser aims that click), shifts an opened dismiss disclosure's panel back inside the viewport when it would cross an inline edge (writing `--hui-panel-shift`, which the kit's menu and dropdown panels read as a `translate`), floats an opened dismiss panel that a scrolling ancestor would clip (a table's last-row menu) as `position: fixed` at its trigger's edge, flipped above the trigger when the viewport has no room below and moved with it while anything scrolls, its inline styles cleared on close, and confines Tab inside the topmost open trap disclosure (the widget runtime's own containment technique over the kernel's focus selector). |
+| `data-hui-disclosure` / `data-hui-disclosure-trap` / `data-hui-disclosure-dismiss` / `data-hui-disclosure-persist="<key>"` | On a `headless.Disclosure` / `framework/ui.Collapsible` `<details>` (and on menu dropdowns, which compose the same anatomy): `headless-disclosure` (a registered behaviour of `framework/headless`) mirrors `aria-expanded` onto the controller, closes the deepest open disclosure containing focus on Escape with focus returned to its controller, closes non-persistent disclosures on `gofastr:navigate` and when a link inside one is clicked (not a `data-cui-open` link, which opens a widget over the page, so the menu stays and the widget returns focus into it), restores/writes the open state of persistent ones under a namespaced, component-encoded session key, closes an open dismiss disclosure (every menu root, and `Disclosure.Dismiss`) on a click outside it or a touch or pen release on plain content outside it (iOS Safari sends no click for a tap on content with no click handler of its own; a tap on a control closes it through the control's click, so an in-flow panel never collapses before the browser aims that click), shifts an opened dismiss disclosure's panel back inside the viewport when it would cross an inline edge (writing `--hui-panel-shift`, which the kit's menu and dropdown panels read as a `translate`), floats an opened dismiss panel that a scrolling ancestor would clip (a table's last-row menu) as `position: fixed` at its trigger's edge, flipped above the trigger when the viewport has no room below and moved with it while anything scrolls, its inline styles cleared on close, and confines Tab inside the topmost open trap disclosure, its summary included (the widget runtime's own containment technique over the kernel's focus selector), arming that containment also for a trap disclosure already open when the module loads. |
 | `X-Gofastr-Defer: 1` | On a client navigation's PAGE request (with `X-Gofastr-Navigate`/`X-Gofastr-From`) whose destination route has deferred outlets (`app.OutletSpec.Deferred`, listed per route in the manifest's `deferred` array): the server skips those outlets' loaders and ships their `Loading` content in place — kept layers as envelope fills, rendered layers inline in the cells. Without the header (a first load, a whole document) every fill renders inline: nothing depends on JavaScript. Deferral belongs to the OUTLET, not a fill (a candidate can decline at request time, so a per-fill flag cannot tell the manifest in advance).. |
 | `X-Gofastr-Part: <addr>` | One deferred outlet's fill, as its own request beside the page fetch: the same URL plus this header (plus `X-Gofastr-Navigate: 1`), read with `text()` so DevTools shows the request with its body, status and timing (streaming was removed for exactly this: Chrome keeps no body for a fetch read through a stream reader). The server runs the policy phase and ONLY the winning fill's loader — no screen `Load`, no other fills, no area builds — and answers one `<template data-cui-fill="<addr>">` plus an optional seed delta (never a session mint; `Cache-Control: no-store`). Parts fetch with priority `low` beside the page's `high`, at most three in flight, the rest queued; parts landing before the page commit wait in a buffer, the commit applies the page then the buffer, later parts apply on land through the region's `data-cui-loadstate` exit (never a second view transition). A whole-page disagreement — the route not resolving, the address not a deferred outlet of it, a policy Redirect/Block, a dead session — answers 409 with `X-Gofastr-Part-Reset: 1` and no body the client applies; the runtime reloads the URL as a whole document, at most once per navigation. A part that fails in transport (a non-2xx answer such as a proxy's 502, 503 or 429, or a dropped connection) is requested once more after a short pause; a second failure puts the region in `data-cui-loadstate="error"`. |
 | `X-Gofastr-Markup: 2` | On every navigation request the runtime makes (the click's partial fetch, the envelope navigator, hover/visible prefetch, intercepted overlays, deferred parts): the markup generation the live kernel reads, from `window.__gofastr._markup` (`runtime.MarkupVersion` in Go; 2 is the `data-cui-*` spelling, 1 the `data-fui-*` one through v0.86). Modules read the kernel's value, so a module loaded into an older kernel sends none. A tab opened before a deploy keeps its runtime, and swapping in markup that kernel cannot read leaves every interactive marker dead (a `data-cui-rpc` form submits as a native GET, its fields in the URL). So when a browser script fetch (`Sec-Fetch-Mode` `cors`, `same-origin` or `no-cors`) names another generation or none, uihost answers 409 with an HTML partial at the swap key the live DOM holds, carrying `<meta http-equiv="refresh">` to the destination and a reload link: every runtime applies an HTML partial the same way, inserting the meta starts the browser's own navigation, and the destination loads whole with the current runtime. Deferred parts reject that mismatch with the existing bodyless 409 `X-Gofastr-Part-Reset: 1` before rendering a fill, including when their page came from cache. A request without Fetch Metadata (curl, a Go test, a browser older than Safari 16.4) gets the ordinary partial. Not covered: an old runtime's cross-chain navigation, which fetches the whole document with no navigate header and cannot be told apart from app code fetching a page; bump the generation in `frag/kernel.js` and `core-ui/runtime/markup.go` together when the attribute vocabulary changes again. |
@@ -657,6 +657,7 @@ there gets them; a screen registered while the app serves does not.
 | `X-Gofastr-Title: <text>` | Percent-encoded title: `decodeURIComponent` it, then set `document.title` after the partial swap. (It's encoded because HTTP header values are Latin-1; a raw UTF-8 title like `Docs — GoFastr` would otherwise arrive mojibaked as `Docs â GoFastr`.) An untitled screen's header carries the app name, the same title its full document gets (uihost; a partial that omitted it left the previous page's title and announcement in place). With no header at all (another server) the runtime keeps the current `document.title` verbatim: only the header is decoded, and a header that fails to decode is used as sent. |
 | `X-Gofastr-Invalidate: <JSON string array>` | Evict entries from the SPA screen cache on a 2xx response (read on every mutation or navigation dispatch: RPC, widget RPC, nav partials, full-shell fetches, intercepted nav, toggle/optimistic actions, sortable reorders, never on poll replies). `"/orders"` drops that pathname **and** every cached query variant (`/orders?page=2`, …); `"/orders?page=2"` drops exactly that entry; `"*"` clears the cache. No prefix matching: `"/orders"` never touches `/orders/42`. Applied before `X-Gofastr-Location`, so a mutated-and-redirected response evicts first and the redirect target is fetched fresh. Set from Go with `ui.InvalidateScreens(w, paths...)` (accumulates like `AddToast`). |
 | `X-Gofastr-Document: <URL>` | Load the URL as a page (`location.replace`) and swap nothing. uihost sends it with a 200 and no body when a screen policy redirects a runtime fetch to an absolute http(s) URL: a nav partial, or the whole-page fetch of a cross-chain navigation (told apart from a document load by `Sec-Fetch-Mode`). fetch follows a 303 itself, and a site that refuses CORS, an identity provider's login for one, fails it. Anything but an `http://` or `https://` URL fails the navigation instead. A relative target keeps `X-Gofastr-Location`. |
+| `X-Gofastr-Session-Expires-In: <seconds>` | On a prefetch answer (`X-Gofastr-Prefetch: 1`) with a live session: the whole seconds until the session token stops verifying. The preload cache drops the entry then if that comes before its 30-second TTL, so a click after the session ends fetches the page (and uihost re-mints the session) instead of painting a page whose islands, actions and SSE would answer 401. Relative, so the browser's clock does not matter. An answer without it keeps the TTL alone. |
 
 **Layer-key encoding.** `X-Gofastr-Swap` percent-encodes C0 control bytes,
 DEL, non-ASCII bytes and literal percent signs. The runtime decodes it
@@ -2684,7 +2685,10 @@ refer to itself. A region that scrolls on its own (a bounded Box,
 ContentRow's pinned nav column and Viewport columns, ListDetail's list,
 the PaneHost drawer, the Workbench rail) resets it to `0px`, because its
 sticky parts pin to its top, not the window's. A new top-sticky part
-reads the variable; a new self-scrolling region resets it.
+reads the variable; a new self-scrolling region resets it. A focused control
+inside a `StickyHeader` stack or a `Sticky` ContentRow's workspace takes
+`scroll-margin-block-start` from the same variable, so Tab and
+Shift+Tab never leave it behind the bars (WCAG 2.4.11).
 
 `ui.ContentRow` owns an optional labelled aside and toolbar placement.
 Its aside observes an empty outlet by the same CSS rule. `ui.ListDetail`
@@ -2728,7 +2732,10 @@ skeleton) do not count: the browser renders none of it at first paint.
 Each sheet only template content needs gets a
 `<link rel="prefetch" href="/__gofastr/comp/<name>.css?v=<hash>">`
 instead, the exact URL the runtime builds from the catalog, so the
-clone the runtime makes later finds its sheet in the HTTP cache. A
+clone the runtime makes later finds its sheet in the HTTP cache. The
+toast stack is the exception: its sheets, the row template's included,
+load in the head with the page's own, because the toast that reports a
+lost connection is raised exactly when no sheet can be fetched. A
 declarative shadow root (`<template shadowrootmode>`) renders, so its
 markers count. After hydration, the runtime
 scans newly inserted DOM (cross-page swap, island response, widget
@@ -2912,6 +2919,12 @@ inlines it marked with the full sheet's URL:
 <style data-cui-bundle="a,b,c" data-cui-bundle-href="/__gofastr/comp-bundle.css?names=a,b,c&amp;v=…">/* the rules the page can match */</style>
 ```
 
+If the subset and color-scheme bootstrap fit the same 16 KiB inline
+budget but app.css takes them over it, the host keeps app.css linked
+after the subset. Its bytes can then be cached separately, while the
+component rules needed at first paint, including the offline toast,
+stay in the document. The policy allows only the blocks actually inlined.
+
 The `fullbundle` behaviour links that URL at boot, right after the
 `<style>` and so before `app.css`, so the states a click or a client
 navigation adds are styled once it arrives, in the cascade position the
@@ -2920,8 +2933,8 @@ component the subset covers waits on that link (the kernel finds it by
 `data-cui-bundle`, and while the marker is unspent it first waits, once
 and for at most 3 s, for the `fullbundle` module), so it commits and settles scroll only after
 it loads. Until then a class the page did not render
-at first paint has no rules. If the subset misses the budget too, the
-head links as before.
+at first paint has no rules. If the subset and bootstrap alone miss the
+budget, the head links as before.
 
 Every block is allowed by its `'sha256-…'` hash in the response's own
 `Content-Security-Policy`, never by `'unsafe-inline'`. The host patches
@@ -3274,9 +3287,12 @@ The live widget catalog decodes its escaped `page` path once before
 page-scoped matching, matching SSR's decoded request path. Malformed path
 escapes return 400 rather than selecting a different widget set.
 
-Gallery hosts call `gallery.MountDemoWidgets` before mounting their UIHost.
+Gallery hosts call `gallery.MountDemoWidgets` and
+`gallery.MountDemoFormRoute` before mounting their UIHost.
 The docs site and theme editor share these mounts so demo triggers always
-resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets.
+resolve to the same modal, drawer, bottom sheet and mobile sidebar widgets,
+and every demo form posts to the one gallery route, which answers 303
+back to the demo.
 
 `component.Widget.RenderCtx` forwards the request context to its child and
 prefers `RenderCtx` over `Render`. Context-free widget and composition
@@ -3356,7 +3372,11 @@ same epoch and URL. Comparing chrome-cache objects, the earlier test,
 read every commit as a leave and dropped such opens without a word
 (the `TestTrackerBellPopoverE2E` flake; pinned by
 `TestOpenDuringNavigationSurvivesCommit` and, for the stale side,
-`TestStaleChromeSkipsNextPage`).
+`TestStaleChromeSkipsNextPage`). The catalog pass for a page ends
+with `gofastr:widgets-synced` (`detail.path`), once the mounts and
+deep-link opens that pass started have settled;
+`TestOpenDuringNavigationSurvivesCommit` waits on it for the commit's
+re-fetch.
 
 ---
 

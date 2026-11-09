@@ -276,16 +276,21 @@ func (ds *UIHost) bundleBlockFor(names []string) bundleBlock {
 
 // firstPaintPlan is what one page inlines.
 type firstPaintPlan struct {
-	comp   *bundleBlock // nil when the page renders no component sheet
-	app    inlineBlock
-	scheme inlineBlock
+	comp    *bundleBlock // nil when the page renders no component sheet
+	app     inlineBlock
+	scheme  inlineBlock
+	linkApp bool // keep app.css cached separately when only the subset fits
 }
 
 func (p *firstPaintPlan) styleHashes() []string {
+	var hashes []string
 	if p.comp != nil {
-		return []string{p.comp.hash, p.app.hash}
+		hashes = append(hashes, p.comp.hash)
 	}
-	return []string{p.app.hash}
+	if !p.linkApp {
+		hashes = append(hashes, p.app.hash)
+	}
+	return hashes
 }
 
 func (p *firstPaintPlan) scriptHashes() []string { return []string{p.scheme.hash} }
@@ -293,7 +298,9 @@ func (p *firstPaintPlan) scriptHashes() []string { return []string{p.scheme.hash
 // planFirstPaint returns the blocks a page with these component sheets
 // inlines, or false when any block cannot be inlined or together they
 // exceed the budget. A page whose whole bundle does not fit inlines the
-// subset its markup can match, when that fits.
+// subset its markup can match, when that fits. If only app.css takes
+// that subset over budget, keep app.css linked rather than discarding
+// the subset and linking the much larger full component bundle.
 func (ds *UIHost) planFirstPaint(names []string, markup ...string) (*firstPaintPlan, bool) {
 	if ds.App == nil {
 		return nil, false
@@ -322,6 +329,10 @@ func (ds *UIHost) planFirstPaint(names []string, markup ...string) (*firstPaintP
 			p.comp = &b
 			total += b.gz
 		}
+	}
+	if total > firstPaintBudget && p.comp != nil && p.comp.href != "" {
+		p.linkApp = true
+		total -= app.gz
 	}
 	if total > firstPaintBudget {
 		return nil, false
