@@ -186,7 +186,11 @@ func TestConcurrentReplaceKeepsOneVersion(t *testing.T) {
 		}
 	}
 	var texts []string
-	for _, id := range store.ChunkIDsForDoc("d") {
+	ids, err := store.ChunkIDsForDoc("d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
 		c, _ := store.ChunkByID(id)
 		texts = append(texts, c.Text)
 	}

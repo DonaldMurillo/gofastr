@@ -183,9 +183,10 @@ func (s *FlatStore) Stats() Stats {
 }
 
 // ChunkIDsForDoc returns the IDs of every chunk belonging to docID. Part of
-// the chunkLister capability the hybrid/keyword index uses to purge a doc's
-// keyword entries when the doc is removed.
-func (s *FlatStore) ChunkIDsForDoc(docID string) []string {
+// the [chunkLister] capability the hybrid/keyword index uses to purge a
+// doc's keyword entries when the doc is removed. The in-memory map cannot
+// fail, so the error is always nil.
+func (s *FlatStore) ChunkIDsForDoc(docID string) ([]string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	positions := s.byDoc[docID]
@@ -193,7 +194,7 @@ func (s *FlatStore) ChunkIDsForDoc(docID string) []string {
 	for _, p := range positions {
 		out = append(out, s.chunks[p].ID)
 	}
-	return out
+	return out, nil
 }
 
 // ChunkByID returns the chunk with the given ID. Part of chunkLister; used to

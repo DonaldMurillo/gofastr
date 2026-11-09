@@ -245,6 +245,20 @@ few lines, and link the PR or the docs page for the rest.
   package declares (the d6167d1a `IdempotencyConfig.Principal` shape)
   is request text itself; a `strings.Builder` local's `String`/`Bytes`
   carry what `WriteString`/`Write` put in it until `Reset`.
+- **`discardeddecode` covers every dropped JSON encode error** (#669).
+  The encode arm — born scoped to JSON-RPC envelopes after
+  3516c4d9b's empty-200 MCP replies — now fires on any
+  `json.Marshal`/`MarshalIndent`/`Encoder.Encode` whose error is dropped
+  when the value can fail to encode (an `any`, a NaN, a
+  `json.RawMessage`, a chan/func, a float map key): a CRUD page, SSE
+  event loop, well-known document or JWKS that hits one was answering
+  200 with an empty body. All 53 sites the widened rule found across
+  the repo are fixed in the same batch — answers marshal before the
+  first byte is written (a 500 instead of an empty 200), propagated
+  errors where a caller could take them (crud batch, module broker,
+  redis queue's dead-letter/claim/nack re-homing), or checked-and-logged
+  where every element was already individually marshaled
+  (`widget.serveState`).
 - **A2A refuses an owner or tenant the store cannot bind** (#669). An
   `Owner` or `Tenant` callback that returns a NUL byte or invalid
   UTF-8 (read from the request) is refused with the transport's 401 at
@@ -254,6 +268,32 @@ few lines, and link the PR or the docs page for the rest.
   owner** (#669). A `DedupeKeyFunc` or `Owner` callback result holding
   a NUL or invalid UTF-8 is a 400 before anything persists, instead of
   a Postgres 500 on the first store write (SQLite stored it silently).
+- **`PgVectorStore` indexes the keyword leg and fails its chunk
+  listing** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [semantic search](framework/docs/content/semantic-search.md)).
+  `EnsureSchema` now creates the GIN index over
+  `to_tsvector('simple', text)` the hybrid keyword search filters on,
+  so it stops being a full table scan that recomputes the tsvector for
+  every row on every query; tables from earlier releases get it on
+  their next `EnsureSchema`. `ChunkIDsForDoc` — **BREAKING for a custom
+  Store with `Options.Keyword`** — now returns `([]string, error)`: a
+  database failure used to fold into an empty list the keyword purge
+  read as nothing-to-clean, orphaning entries that pointed at a removed
+  document; the index now refuses the mutation instead.
+- **Analyzer guards are mutation-tested** ([#656](https://github.com/DonaldMurillo/gofastr/issues/656),
+  [#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
+  `go run ./cmd/analyzermutate internal/analyzers/<pkg>…` negates every
+  non-literal `if` and mutes each `pass.Report` call in an analyzer,
+  one mutant at a time, and counts the mutants the package's own test
+  suite fails to kill. Baselines under that operator set — fixedtmp 80
+  mutants/3 survivors, timestampid 86/5, recoverlog 65/3, nowaitdelay
+  47/0, keytrim 32/1 — are now 0 across all five: eleven killing
+  fixtures (host-declared `json.RawMessage` aliases, local
+  `var x = expr` id bindings, constant- and variable-low buffer
+  slices, recover-logging function literals in package-level vars,
+  recover values inside composite literals, `fmt.Sprintf` temp roots
+  whose argument 1 is a minted Join) and two deletions of
+  verdict-invariant guards, each justified where it stood.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

@@ -395,12 +395,12 @@ It matches any query term against `to_tsvector('simple', text)` (no
 stemming) and ranks by `ts_rank`; fusion uses rank order only. Terms are
 split the way `MemoryKeyword` splits them, runs of letters and digits, so a
 token Postgres keeps whole (an email address, a URL, `3.14`) is not matched
-by its parts. The search scans the table; for a large one, add the index
-the query can use:
-
-```sql
-CREATE INDEX ON embed_chunks USING gin (to_tsvector('simple', text));
-```
+by its parts. `EnsureSchema` creates the GIN index over that exact
+`to_tsvector('simple', text)` expression, so the keyword leg is an index
+scan on every table it sets up; a table created before this was automatic
+gets it on the next `EnsureSchema` (`CREATE INDEX IF NOT EXISTS`). The
+index must match the search's predicate exactly, so leave the expression
+as is when tuning.
 
 `Open` refuses `MemoryKeyword` with a `PgVectorStore`: it would hold only
 the writes of the process that made it, so replicas' hybrid results would

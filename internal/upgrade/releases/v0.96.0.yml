@@ -1482,3 +1482,7 @@ notes:
     breaking: true
     guidance: "Nothing refused a second start before. Build a new App to run again, over the same database or data directory if the data should survive; a test that restarts an App builds one per run."
     nodetect: "whether one App value is started twice is a runtime flow; the Start, Serve or Run call that does it has no spelling of its own"
+  - change: "BREAKING for a custom battery/semantic Store with Options.Keyword - the chunk-listing capability method ChunkIDsForDoc now returns ([]string, error); a store still returning just []string is rejected at Open with the cannot-list-chunks error"
+    breaking: true
+    guidance: "ChunkIDsForDoc fed the keyword purge on document removal, and a database failure folded into an empty list read as nothing-to-clean, orphaning keyword entries that pointed at a removed document. Stores now return the error and the index refuses the mutation instead. Add the error return — the failure path can return fmt.Errorf wrapping the query error, as PgVectorStore does; an in-memory store returns nil. EnsureSchema on PgVectorStore also creates the keyword search's GIN index (to_tsvector('simple', text)) automatically, so the manual CREATE INDEX this file's earlier pgvector note suggested is no longer needed for new tables."
+    nodetect: "the capability interface (chunkLister) is unexported and satisfied structurally at Open; a source search for the old signature only finds the framework's own stores"

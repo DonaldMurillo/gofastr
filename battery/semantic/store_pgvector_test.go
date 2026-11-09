@@ -267,7 +267,10 @@ func TestPgVectorChunkListerRoundTrip(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	// ChunkIDsForDoc
-	ids := s.ChunkIDsForDoc("d1")
+	ids, err := s.ChunkIDsForDoc("d1")
+	if err != nil {
+		t.Fatalf("ChunkIDsForDoc(d1): %v", err)
+	}
 	if len(ids) != 2 || ids[0] != "a1" || ids[1] != "a2" {
 		t.Fatalf("ChunkIDsForDoc(d1)=%v, want [a1 a2]", ids)
 	}

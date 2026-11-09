@@ -32,8 +32,8 @@ func TestPgVectorConfiguredTableNames(t *testing.T) {
 			if !ok || got.Text != "second" {
 				t.Errorf("chunk after upsert = %+v (found %v), want text second", got, ok)
 			}
-			if ids := s.ChunkIDsForDoc("d1"); len(ids) != 1 {
-				t.Errorf("chunks for d1 = %v, want one", ids)
+			if ids, err := s.ChunkIDsForDoc("d1"); err != nil || len(ids) != 1 {
+				t.Errorf("chunks for d1 = %v (err %v), want one", ids, err)
 			}
 		})
 	}
