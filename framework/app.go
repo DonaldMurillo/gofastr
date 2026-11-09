@@ -3144,10 +3144,17 @@ func endpointMCPOptions(ent *entity.Entity, ep entity.Endpoint) []mcp.ToolOption
 // a slash-bearing value the route accepts, dot-dot and empty segments
 // and control bytes still refused. A tool registered by hand keeps
 // every path parameter strict.
+//
+// mcp.Decorate keeps an mcp.Gated MCPHandler's gates outside the twin,
+// where registration finds them: the server then runs them before
+// argument validation, so a refused caller gets the unknown-tool answer
+// whatever arguments it sends (#669).
 func endpointMCPTwin(pattern string, h mcp.ToolHandler) mcp.ToolHandler {
-	return func(ctx context.Context, params map[string]any) (any, error) {
-		return h(handler.WithRoutePattern(ctx, pattern), params)
-	}
+	return mcp.Decorate(h, func(inner mcp.ToolHandler) mcp.ToolHandler {
+		return func(ctx context.Context, params map[string]any) (any, error) {
+			return inner(handler.WithRoutePattern(ctx, pattern), params)
+		}
+	})
 }
 
 // openapi.EntityEndpointPath, convertColonParams, openapi.DefaultEndpointToolName moved to

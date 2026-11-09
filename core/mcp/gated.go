@@ -50,6 +50,33 @@ func Gated(gate func(ctx context.Context) error, h ToolHandler) ToolHandler {
 	return state.wrapper
 }
 
+// Decorate wraps a tool handler in decorate without hiding the gates of any
+// Gated wrappers h carries. A plain closure that calls a Gated handler is
+// opaque to registration, so the server cannot run its gate before argument
+// validation and a refused caller learns the tool's schema from the
+// validation error. Decorate peels the Gated layers off h, hands the inner
+// handler to decorate, and puts the same gates back outside the result, in
+// the same order. The decoration then runs only for callers every gate
+// allows. Use it for any wrapper placed around a ToolHandler someone else
+// supplied before it is registered.
+func Decorate(h ToolHandler, decorate func(ToolHandler) ToolHandler) ToolHandler {
+	if h == nil {
+		panic("mcp.Decorate: nil handler")
+	}
+	if decorate == nil {
+		panic("mcp.Decorate: nil decorator")
+	}
+	inner, gates := gatedParts(h)
+	out := decorate(inner)
+	if out == nil {
+		panic("mcp.Decorate: decorator returned a nil handler")
+	}
+	for i := len(gates) - 1; i >= 0; i-- {
+		out = Gated(gates[i], out)
+	}
+	return out
+}
+
 // gatedHandler keeps the original function's gate available at registration
 // without changing ToolHandler's public function type or executing app code.
 // The wrapper retains state, so its weak registry entry lives as long as any

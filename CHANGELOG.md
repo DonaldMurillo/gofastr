@@ -267,6 +267,13 @@ few lines, and link the PR or the docs page for the rest.
   `Gated` handler checks its gate before argument validation, like `WithToolGate`, so
   missing or malformed arguments still answer exactly as an unknown tool.
   Allowed calls keep schema validation before the handler runs.
+- **An endpoint's MCP twin keeps its `Gated` gate ahead of argument validation**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  framework wrapped `entity.Endpoint.MCPHandler` in a plain closure, so a
+  refused caller sending missing or mistyped arguments got the validation
+  error naming the required fields. The new `mcp.Decorate` wraps a handler
+  while keeping its gates outside, and the endpoint twin uses it on root and
+  grouped registration.
 - **Field masks run with the caller's permissions**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). CRUD
   removes back office elevation before every field mask, including
