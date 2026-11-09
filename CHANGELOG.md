@@ -224,7 +224,10 @@ few lines, and link the PR or the docs page for the rest.
 - **A registry note pairing `shapes` with `hits: review` no longer
   parses** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   A shapes hit is a use of the OLD shape, a dead spelling, so it is an
-  edit; the four shipped notes that said review moved to edit.
+  edit; the four shipped notes that said review moved to edit. The
+  v0.94 `print.AccessPolicy` note split in two: the old `RequireAuth`
+  and `Public` shapes are edits, and a use of `print.AccessPolicy` (a
+  policy of your own) stays a review hit, since the type survives.
 - **BREAKING: `localentity` refuses `\s`, `\S` and a bare `.` in a
   JavaScript's `\s` is Unicode whitespace where Go's is ASCII, and its
   `.` skips every line terminator where Go's skips only `\n`, so the
@@ -515,9 +518,9 @@ few lines, and link the PR or the docs page for the rest.
   sent an integer key as a string (`{"id": "42"}`) is now refused with
   invalid params; it sends the number. A key past 1e6 builds its route
   from its digits, not `1.234567e+06`.
-- **The SDK schema hash covers `JSONCase`**
+- **BREAKING: the SDK schema hash covers `JSONCase`**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
-  `sdk.SchemaHash` takes the case the artifacts speak ("camelCase" for
+  `sdk.SchemaHash(named, jsonCase)` takes the case the artifacts speak ("camelCase" for
   the generated clients, the app's own case in sdkdocs via
   `Config.SnakeCase`), so an app served snake_case no longer reports
   "in sync" for camel artifacts. Every existing manifest's digest changes

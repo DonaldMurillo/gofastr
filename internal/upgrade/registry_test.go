@@ -287,6 +287,7 @@ func TestParseRefuses(t *testing.T) {
 		{"change spells breaking", "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: 'Breaking: x'\n        breaking: true\n        guidance: g\n        nodetect: r\n", "breaking: true says so"},
 		{"breaking find without hits", note("        find:\n          uses: [gofastr/framework/ui.X]\n"), "hits: edit"},
 		{"hits not edit or review", note("        hits: maybe\n        find:\n          uses: [gofastr/framework/ui.X]\n"), "edit or review"},
+		{"hits on a nodetect note", note("        hits: edit\n        nodetect: reason\n"), "only a breaking note with find"},
 		{"shapes with review", note("        hits: review\n        find:\n          shapes:\n            - symbol: gofastr/core-ui/app.NewLayout\n              type: '^x$'\n"), "shapes matcher"},
 		{"hits on a non-breaking note", "through: v0.86.0\nreleases:\n  - version: v0.86.0\n    notes:\n      - change: c\n        guidance: g\n        hits: review\n        find:\n          uses: [gofastr/framework/ui.X]\n", "only a breaking note with find"},
 
