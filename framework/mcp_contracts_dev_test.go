@@ -13,6 +13,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 // The source-reading tools must be ABSENT without the dev loop, not
@@ -574,10 +575,10 @@ func TestContractsFixAdmitsPartialWritesOnFailure(t *testing.T) {
 		"b.go": "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +
 			"func wireB(r *router.Router) {\n\tr.Handle(\"put\", \"/b\", nil)\n}\n",
 	})
-	if err := os.Chmod(filepath.Join(dir, "b.go"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
+	// Root writes through mode bits: block root too (chflags uchg on
+	// macOS), or b.go is rewritten and the partial-write state never
+	// happens.
+	filepermtest.BlockWrite(t, filepath.Join(dir, "b.go"))
 
 	app := NewApp()
 	got, err := app.toolContractsFix(context.Background(), map[string]any{"rule": "GOFASTR1005"})

@@ -5,6 +5,8 @@ package filepermtest
 
 import (
 	"os"
+	"os/exec"
+	"runtime"
 	"testing"
 )
 
@@ -49,6 +51,42 @@ func MakeUnwritable(t testing.TB, path string) func() {
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
+	}
+	restore := func() {
+		if err := os.Chmod(path, info.Mode().Perm()); err != nil {
+			t.Errorf("restore permissions: %v", err)
+		}
+	}
+	t.Cleanup(restore)
+	if err := os.Chmod(path, info.Mode().Perm()&^0o222); err != nil {
+		t.Fatal(err)
+	}
+	return restore
+}
+
+// BlockWrite makes path unwritable by the test process, including one
+// running as root, and returns a function that lifts the block. Mode
+// bits alone do not stop root, so on macOS the user-immutable flag is
+// set (chflags uchg refuses root's open-for-write with EPERM); on other
+// POSIX systems the mode bits are the best available, and a root there
+// would see the test's own "write unexpectedly succeeded" fatal rather
+// than a false pass. A regular file is required: the flag and the bits
+// both sit on one.
+func BlockWrite(t testing.TB, path string) func() {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS == "darwin" {
+		chflags := func(args ...string) {
+			if out, cerr := exec.Command("chflags", args...).CombinedOutput(); cerr != nil {
+				t.Fatalf("chflags %v %s: %v %s", args, path, cerr, out)
+			}
+		}
+		chflags("uchg", path)
+		t.Cleanup(func() { chflags("nouchg", path) })
+		return func() { chflags("nouchg", path) }
 	}
 	restore := func() {
 		if err := os.Chmod(path, info.Mode().Perm()); err != nil {

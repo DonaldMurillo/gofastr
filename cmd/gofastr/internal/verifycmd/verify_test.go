@@ -11,6 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
+	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
 )
 
 func TestParseVerifyArgs(t *testing.T) {
@@ -510,10 +511,10 @@ func TestVerifyJSONFixFailureCarriesPartialWrites(t *testing.T) {
 		"b.go": "package main\n\nimport \"github.com/DonaldMurillo/gofastr/core/router\"\n\n" +
 			"func wireB(r *router.Router) {\n\tr.Handle(\"put\", \"/b\", nil)\n}\n",
 	})
-	if err := os.Chmod(filepath.Join(dir, "b.go"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
+	// Root writes through mode bits, so the block has to hold for root
+	// too (chflags uchg on macOS), or the fix pass rewrites b.go and the
+	// partial-write state never happens.
+	filepermtest.BlockWrite(t, filepath.Join(dir, "b.go"))
 
 	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--json", "--fix"})
 	if code != 2 {
@@ -609,10 +610,9 @@ func wireB(r *router.Router) {
 }
 `,
 	})
-	if err := os.Chmod(filepath.Join(dir, "b.go"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.Chmod(filepath.Join(dir, "b.go"), 0o644) })
+	// Root writes through mode bits: block root too, or b.go is rewritten
+	// and the partial-write state never happens.
+	filepermtest.BlockWrite(t, filepath.Join(dir, "b.go"))
 
 	out, code := captureVerify(t, []string{"--root", dir, "--no-vet", "--fix"})
 	if code != 2 {
