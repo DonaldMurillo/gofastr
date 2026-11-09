@@ -381,10 +381,13 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 	if f.Type == schema.Relation && labels.refused(name) {
 		return ""
 	}
-	if kind, ok := u.kindCell(m, f); ok {
-		return string(contain(ctx, m.name, "cell "+f.Name, func() (render.HTML, error) {
-			return kind.Cell(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row}), nil
-		}))
+	// A kind's Text fills the slot. Its Cell is markup, and a text slot
+	// would print the tags: with no Text the field type's text below is
+	// the value's text form.
+	if kind, ok := u.kindOf(m, f); ok && kind.Text != nil {
+		return kindText(ctx, m.name, f.Name, func() string {
+			return kind.Text(CellContext{Ctx: asCaller(ctx), Entity: m.name, Field: f, Value: m.rowValue(row, name), Row: row})
+		})
 	}
 	raw := m.rowValue(row, name)
 	val := cell(raw)
@@ -435,6 +438,16 @@ func (u *UI) plainText(ctx context.Context, s *listState, labels labelResolver, 
 // Display.Fields names one and the kind has a Cell: an app kind, else a
 // built-in one. Of the built-ins only money draws its own cell.
 func (u *UI) kindCell(m *meta, f schema.Field) (Kind, bool) {
+	k, ok := u.kindOf(m, f)
+	if !ok || k.Cell == nil {
+		return Kind{}, false
+	}
+	return k, true
+}
+
+// kindOf is the kind a field's Display Input names: the app's, else the
+// built-in of that name.
+func (u *UI) kindOf(m *meta, f schema.Field) (Kind, bool) {
 	in := m.hint(f.Name).Input
 	if in == "" {
 		return Kind{}, false
@@ -443,10 +456,7 @@ func (u *UI) kindCell(m *meta, f schema.Field) (Kind, bool) {
 	if !ok && isBuiltinKind(in) {
 		k, ok = builtinKind(in), true
 	}
-	if !ok || k.Cell == nil {
-		return Kind{}, false
-	}
-	return k, true
+	return k, ok
 }
 
 // numericField reports whether a column's values right-align.

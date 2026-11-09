@@ -168,6 +168,13 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A field kind's markup no longer prints as tags in a text slot**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A row
+  link's label and a card's title, subtitle and meta line took a kind's
+  `Cell` HTML as text, so a kind that drew `<strong>` showed the tags.
+  The new `entityui.Kind.Text` fills those slots; a kind without one
+  prints the field type's text. The built-in `money` kind has a `Text`,
+  so a money title reads `$1,234.50`.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of
