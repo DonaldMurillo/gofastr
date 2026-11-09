@@ -48,3 +48,22 @@ func TestKindTextInTextSlots(t *testing.T) {
 		})
 	}
 }
+
+// A row whose link column is empty still draws: ui.Link refuses empty
+// text, so the label falls back rather than panicking the list.
+func TestEmptyLinkLabelDraws(t *testing.T) {
+	for _, title := range []string{"name", "amount"} {
+		t.Run(title, func(t *testing.T) {
+			cfg := dealsConfig()
+			cfg.Display.TitleFields = []string{title}
+			x := newTestUIExt(t, map[string]entity.EntityConfig{"deals": cfg},
+				map[string][]map[string]any{"deals": {{"id": "d1", "name": "", "amount": "", "fee": "-5"}}},
+				Extensions{}, withAPI(map[string]string{"deals": "/api/deals"}))
+			ctx := x.userCtx("/deals", "", "u1")
+			body := string(x.ui.List("deals").Base("/deals").Columns(title, "fee").RenderCtx(ctx))
+			if !strings.Contains(body, `href="/deals/d1"`) {
+				t.Errorf("the row with an empty %s drew no record link:\n%s", title, body)
+			}
+		})
+	}
+}

@@ -175,6 +175,11 @@ few lines, and link the PR or the docs page for the rest.
   The new `entityui.Kind.Text` fills those slots; a kind without one
   prints the field type's text. The built-in `money` kind has a `Text`,
   so a money title reads `$1,234.50`.
+- **A list row with an empty title still draws**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An empty
+  value in a table's link column reached `ui.Link` as empty text, which
+  panicked and replaced the whole list with its failure markup. The link
+  now reads the record's id, as a card title already did.
 - **More unstorable text is refused before it reaches SQL.** A2A task,
   push-config and context IDs and API-token names and owner IDs that hold
   a NUL or invalid UTF-8 now get a refusal keyed to the field instead of

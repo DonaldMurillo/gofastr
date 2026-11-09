@@ -59,9 +59,15 @@ func (b *ListBuilder) table(ctx context.Context, s *listState, lb *listBulk, row
 				}
 			}
 			if name == linkCol && !noLinks {
+				// An empty value links by the id, as a card title does:
+				// ui.Link refuses empty text.
+				text := b.ui.plainText(ctx, s, labels, f, row, name)
+				if text == "" {
+					text = id
+				}
 				cells[name] = ui.Link(ui.LinkConfig{
 					Href:    s.recordHref(id),
-					Text:    b.ui.plainText(ctx, s, labels, f, row, name),
+					Text:    text,
 					Variant: ui.LinkTitle,
 				})
 			}
