@@ -230,12 +230,12 @@ few lines, and link the PR or the docs page for the rest.
   and `Public` shapes are edits, and a use of `print.AccessPolicy` (a
   policy of your own) stays a review hit, since the type survives.
 - **BREAKING: `localentity` refuses `\s`, `\S` and a bare `.` in a
+  field `Pattern`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   JavaScript's `\s` is Unicode whitespace where Go's is ASCII, and its
   `.` skips every line terminator where Go's skips only `\n`, so the
   browser and the server validated different values. Name the characters
   in a class instead (`[ \t\r\n]+`); `Define` refuses the ambiguous
   spellings at startup.
-
 - **BREAKING: magic-link send and forgot-password share one per-address
   mail budget** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   R8-AU-03). `AuthConfig.MailAddressRateLimit` (default: one mail per
