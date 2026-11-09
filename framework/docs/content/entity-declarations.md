@@ -2234,6 +2234,14 @@ live, err := posts.Query().Where(entities.PostsStatus.Eq(entities.PostsStatusLiv
   `has_one`, it updates the existing child if there is one).
 - Every write returns the row as stored, server-generated fields
   included.
+- The `Posts` model and the Go client's read struct carry
+  each optional scalar as a pointer: `*string`, `*int`, `*float64`,
+  `*bool`, and for an enum `*PostsStatusValue`. A nil pointer is a null on the
+  wire, so a column a PATCH cleared, or one a row predates, reads as
+  absent instead of as `""` or `0`. A `required:` field, a key column
+  and an auto-generated one (the injected timestamps among them) stay
+  values, and a `json` field stays `any`. The write payloads above
+  follow their own rules.
 - A timestamp column's `Eq`, `Gt`, `Gte`, `Lt` and `Lte` take a
   `time.Time`, a `*time.Time` or RFC 3339 text and bind it in the
   layout crud stores, so `…10:00:00Z` matches the row stored as
