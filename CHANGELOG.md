@@ -497,6 +497,14 @@ few lines, and link the PR or the docs page for the rest.
   `group_by` on a `json` field or a many-to-many relation, and a chart or
   `stat_card` source `entity` written as a route (`/customers`), which
   the boot checks read as an unknown entity.
+- **Meridian checks its hand-written stats and charts at boot**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). The
+  Overview screen, the admin Revenue page and the customer Billing panel
+  draw their figures with their own `StatValue`, `CountInt` and
+  `GroupBars` calls, which no generated check reached. Each surface now
+  keeps its figures in one list that its render reads, and the boot runs
+  `entityui.CheckStat` and `CheckChart` over it: a figure that could
+  never compute stops the start, naming the surface and the figure.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

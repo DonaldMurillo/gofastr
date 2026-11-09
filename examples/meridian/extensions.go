@@ -47,16 +47,43 @@ type billingPanel struct {
 	customer string
 }
 
-func (p billingPanel) RenderCtx(ctx context.Context) render.HTML {
-	mine := `customer_id = "` + dslEscape(p.customer) + `"`
-	stat := func(agg, field, where, format string) render.HTML {
-		return render.Text(p.ui.StatValue(ctx, "invoices", agg, field, mine+where, format))
+// billingFigures are the Billing panel's figures, each filtered to the
+// record's customer by billingWhere: RenderCtx draws them and
+// checkBillingPanel checks them once at boot.
+var billingFigures = []figureStat{
+	{label: billingOutstanding, entity: "invoices", agg: "sum", field: "amount", where: `status in ["open", "past_due"]`, format: "money"},
+	{label: billingPaidToDate, entity: "invoices", agg: "sum", field: "amount", where: `status = "paid"`, format: "money"},
+	{label: billingInvoices, entity: "invoices", agg: "count"},
+}
+
+// billingWhere narrows a figure's filter to one customer's invoices.
+func billingWhere(customer, where string) string {
+	mine := `customer_id = "` + dslEscape(customer) + `"`
+	if where == "" {
+		return mine
 	}
-	return ui.DetailList(ui.DetailListConfig{Spread: true, Items: []ui.DetailItem{
-		{Label: billingOutstanding.Text(ctx), Value: stat("sum", "amount", ` and status in ["open", "past_due"]`, "money")},
-		{Label: billingPaidToDate.Text(ctx), Value: stat("sum", "amount", ` and status = "paid"`, "money")},
-		{Label: billingInvoices.Text(ctx), Value: stat("count", "", "", "")},
-	}})
+	return mine + " and " + where
+}
+
+// checkBillingPanel reports the first Billing figure that could never
+// compute, filtered to a placeholder customer: the filter is checked
+// against the entity's fields, not run.
+func checkBillingPanel(u *entityui.UI) error {
+	stats := make([]figureStat, len(billingFigures))
+	for i, f := range billingFigures {
+		f.where = billingWhere("customer", f.where)
+		stats[i] = f
+	}
+	return checkFigures(u, `customers side panel "billing"`, stats, nil)
+}
+
+func (p billingPanel) RenderCtx(ctx context.Context) render.HTML {
+	items := make([]ui.DetailItem, 0, len(billingFigures))
+	for _, f := range billingFigures {
+		f.where = billingWhere(p.customer, f.where)
+		items = append(items, ui.DetailItem{Label: f.label.Text(ctx), Value: render.Text(f.value(ctx, p.ui))})
+	}
+	return ui.DetailList(ui.DetailListConfig{Spread: true, Items: items})
 }
 
 // dslEscape escapes a value for a double-quoted filter DSL string, whose

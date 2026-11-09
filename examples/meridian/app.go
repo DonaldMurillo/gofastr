@@ -354,6 +354,16 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	// main.go) and before any screen mounts. EntityUI panics at boot on a bad
 	// name in appExtensions, the way App.Entity refuses a bad declaration.
 	appUI = fwApp.EntityUI(appExtensions)
+	// The Billing panel (an appExtensions side panel) and the admin
+	// Revenue page (main.go hands revenuePage to battery/admin) draw stats
+	// and charts with hand-written readers no generated check reaches:
+	// judge them once here, so a figure that could never compute stops
+	// the boot naming it, as EntityUI does for a bad name above.
+	for _, check := range []func(*entityui.UI) error{checkBillingPanel, checkRevenueReport} {
+		if err := check(appUI); err != nil {
+			panic(err)
+		}
+	}
 	// mountGenerated mounts every screen; the screens render through the
 	// appUI builders, which resolve each entity at render time.
 	mountGenerated(fwApp, site, db)
