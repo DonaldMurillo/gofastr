@@ -473,6 +473,15 @@ few lines, and link the PR or the docs page for the rest.
   built a card that drew "—" forever, and an enum value outside the
   field's `values:` counted nothing. The load now checks the value in
   every comparison with the `entity_list` pin's type and enum rules.
+- **A generated app checks its stat cards at boot**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
+  [app spec](framework/docs/content/app-spec.md)). A `stat_card` the
+  spec load passed but that could never compute, such as a filter
+  naming a column the entity lacks, built an app whose card drew "—"
+  forever with no error. Each generated screen's mount now runs
+  `entityui.CheckStat` for every sourced card it renders and panics
+  naming the screen and the card, as `battery/admin` already does for
+  its metrics.
 - **The generated typed repositories chain `WithJSONCase` after
   `NewCrudHandler`** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)),
   the spelling `framework/app.go`'s `wireCrudHandler` uses, instead of

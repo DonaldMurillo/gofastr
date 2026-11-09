@@ -1248,7 +1248,13 @@ value in each comparison against its column, with the `entity_list`
 pin's rules: it refuses a value the column's type cannot hold
 (`featured = "yes"` on a bool), and on `=`, `!=` and `in` an enum value
 outside the field's `values:`. A `contains` comparison, and a filter
-the predicate parser refuses, pass through unchecked. For the chart kinds `source` (with both `entity` and
+the predicate parser refuses, pass through unchecked. The generated
+app checks every sourced `stat_card` again when its screen mounts:
+`entityui.CheckStat` judges the card against the entity the app
+registered, so a filter naming a column the entity lacks, or anything
+else that could never compute, panics at boot with the screen and the
+card's label (`screen "dashboard" stat_card "Billed": ...`) instead of
+drawing "—" forever. For the chart kinds `source` (with both `entity` and
 `group_by`, targeting a declared entity) is **required**: validation
 rejects a chart without one rather than letting the block silently vanish
 from the page. A chart with a
