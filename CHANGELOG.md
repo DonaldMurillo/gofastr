@@ -551,6 +551,23 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Navigating between two layouts raises no CSP violation**
+  ([runtime contract](framework/docs/content/runtime-contract.md)).
+  Under the default policy a client navigation across layout shells
+  (admin to a marketing page, any page to `/login`) logged one refused
+  `style-src` report per inline head sheet of the fetched page.
+- **A plain `enctype="application/json"` form sends every value of a
+  repeated field.** A checkbox group or `<select multiple>` posted only
+  its last value. A name that repeats is now an array, as on a
+  `data-cui-rpc` form.
+- **An intercepted plain POST form sends a re-submit once.** Three
+  quick submits of an `application/json` or `data-cui-spa` form made
+  three rows. The form now holds while its POST is in flight, as a
+  `data-cui-rpc` form does.
+- **`data-cui-signal-set="name"` sets the empty string**, as the
+  contract says; it did nothing.
+- **A non-form `data-cui-rpc` carrier leaves button inputs out of the
+  request.**
 - **`gofastr migrate generate` writes DDL for the spec's own database**
   ([migrations](framework/docs/content/migrations.md)). With no `--db`
   it always wrote SQLite DDL, which a spec on Postgres refused on its

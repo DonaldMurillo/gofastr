@@ -2049,7 +2049,7 @@ work the moment you drop a `<form>` into the page.
 
 | Trigger                                | Body sent by runtime                              | Server reads via                    |
 |----------------------------------------|---------------------------------------------------|--------------------------------------|
-| `enctype="application/json"`           | `application/json` of every form input            | `json.NewDecoder(r.Body)`            |
+| `enctype="application/json"`           | `application/json` of every form input; a name that repeats (a checkbox group, a multi-select) is an array, and a hidden input paired with one checkbox is one value | `json.NewDecoder(r.Body)`            |
 | `data-cui-spa` with `method="GET"` | Successful controls become the URL query; the client navigator fetches and swaps the screen | URL query, e.g. `app.QueryFromContext` |
 | `data-cui-spa` with no method or another method (no/urlencoded enctype) | `application/x-www-form-urlencoded`, sent with the form's method or POST | `r.ParseForm()` + `r.PostFormValue`  |
 | `data-cui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
@@ -2058,6 +2058,13 @@ Every other form, with no special attribute and a default or `urlencoded`
 or `multipart/form-data` enctype, is **NOT intercepted**. The browser
 submits it the standard way: POST body matches enctype, Set-Cookie
 headers apply, 303→Location is followed, file inputs upload natively.
+
+An intercepted plain form that POSTs is held while its request is in
+flight, as a `data-cui-rpc` POST form is: a re-submit of the payload
+already out is dropped (a double click creates one row), a changed one
+is sent when the first answers, and the form reads `aria-busy="true"`
+meanwhile. A request with no answer after 30 seconds lets the form go.
+Other methods replace state, so each submit is sent.
 
 A form's `action` names a handler registered for its method, never a
 bare screen path. A screen is a GET resource: any other method to a

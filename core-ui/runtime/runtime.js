@@ -1023,8 +1023,10 @@
 
     const set = node.getAttribute('data-cui-signal-set');
     if (set) {
+      // A bare name sets the empty string, as the contract says; it set
+      // nothing. A leading colon names no signal.
       const sep = set.indexOf(':');
-      if (sep > 0) G.setSignal(set.substring(0, sep), set.substring(sep + 1));
+      if (sep) G.setSignal(sep > 0 ? set.substring(0, sep) : set, sep > 0 ? set.substring(sep + 1) : '');
     }
 
     const inc = node.getAttribute('data-cui-signal-inc');
@@ -1270,6 +1272,15 @@
       document.head.append(copy);
     }
   };
+  // A fetched document is read here, never shown. A document parser
+  // still judges each inline <style> in it against the LIVE page's
+  // Content-Security-Policy, which lists the first document's hashes and
+  // not this one's: one refused style-src report per head sheet, on
+  // every navigation that fetches a whole page. Nothing reads those
+  // sheets (the destination's components link their own), so the ones
+  // ahead of <body> go before the parse. The body is left as it came.
+  const parseDoc = (h) => new DOMParser().parseFromString(h.replace(/^[^]*?<body/i, (s) => s.replace(/<style\b[^]*?<\/style>/gi, '')), 'text/html');
+  window.__gofastr._parseDoc = parseDoc;
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
     carrier.setAttribute('data-cui-page-head', Array.from(source.head.querySelectorAll(':is(meta,link)[data-cui-page-meta],meta[name="csrf-token"]'), node => node.outerHTML).join(''));
@@ -1810,7 +1821,7 @@
         const fr = await _fetch(path);
       if (!_navLive(myEpoch)) return;
         G._inval(fr);
-        const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+        const pdoc = parseDoc(await fr.text());
       if (!_navLive(myEpoch)) return;
         // The path keeps the search string: the cache key and the URL
         // bar must carry a redirect-added query (e.g. ?next=/admin).
@@ -1925,7 +1936,7 @@
         title = G._title(resp);
         body = html;
       } else {
-        const pdoc = new DOMParser().parseFromString(html, 'text/html');
+        const pdoc = parseDoc(html);
         const nm = pdoc.querySelector('main');
         title = pdoc.querySelector('title')?.textContent || document.title;
         body = docCarrier(pdoc) + docSeed(pdoc) + (nm?.innerHTML ?? '');

@@ -793,7 +793,7 @@ work the moment you drop a `<form>` into the page.
 
 | Trigger                                | Body sent by runtime                              | Server reads via                    |
 |----------------------------------------|---------------------------------------------------|--------------------------------------|
-| `enctype="application/json"`           | `application/json` of every form input            | `json.NewDecoder(r.Body)`            |
+| `enctype="application/json"`           | `application/json` of every form input; a name that repeats (a checkbox group, a multi-select) is an array, and a hidden input paired with one checkbox is one value | `json.NewDecoder(r.Body)`            |
 | `data-cui-spa` (no/urlencoded enctype) | `application/x-www-form-urlencoded`               | `r.ParseForm()` + `r.PostFormValue`  |
 | `data-cui-rpc="/some/endpoint"`        | Per the RPC contract (see Widgets section)        | RPC handler                          |
 | `data-search*` | `framework/ui`: the hooks `CommandPalette` (with `Search`) and `SearchResults` declare | `battery/sitesearch`'s runtime modules, which fill and update that markup | `data-search`, `data-search-all`, `data-search-page`, `data-search-ignore` |
@@ -801,6 +801,13 @@ work the moment you drop a `<form>` into the page.
 | `data-search-page="<path>"` / `-query` / `-count` / `-one` / `-none` / `-more` / `-limit` / `-input` / `-status` / `-list` / `-pager` | On the `<section>` `ui.SearchResults` renders and its parts. The root names the page's path and the query the server rendered, the status words (`{{n}}`, `{{q}}`) and the page size; the parts mark the input, the status line, the result list and the pager. The marker loads `battery/sitesearch`'s `sitesearch-page` module. As the reader types it fetches the page's own render for the new query with the router's partial headers and swaps in the status, list and pager, never the input; the address follows with `_pushURL(url, {replace: true})`, and a submit runs at once instead of reloading. On a static export (`data-cui-static`) it ranks with `sitesearch-static`, draws the rows with DOM calls, runs a `?q=` from the address on load, and pages with a "more" button worded by `-more`. Without the runtime the form GETs the page and the pager links page it. Tests: `battery/sitesearch/page_chromium_test.go`. |
 | `data-behavior="/__gofastr/widget/<id>.js"` | On a `[data-widget]` / `[data-component]` root: the behaviour script the runtime appends as `<script src>` on first hydration. **The runtime's most privileged attribute**: it is a script-loading sink, so the value is matched against exactly the shape `core-ui/component` emits and anything else is refused with a console warning. Never hand-write it. |
 | `data-bind="<key>"` | Two-way input binding: the runtime mirrors the element's value into the named state key on `input`. |
+
+An intercepted plain form that POSTs is held while its request is in
+flight, as a `data-cui-rpc` POST form is: a re-submit of the payload
+already out is dropped (a double click creates one row), a changed one
+is sent when the first answers, and the form reads `aria-busy="true"`
+meanwhile. A request with no answer after 30 seconds lets the form go.
+Other methods replace state, so each submit is sent.
 
 Every other form, with no special attribute and the default or
 `multipart/form-data` enctype, is **NOT intercepted**. The browser
