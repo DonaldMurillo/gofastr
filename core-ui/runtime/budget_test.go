@@ -715,7 +715,16 @@ const (
 	// with a fragment), in the navigator every entry goes through before
 	// either module's could take it (TestNavigateRelativeQueryKeysByPage,
 	// TestFragmentArrivalThenAnchorJumpKeepsPage): 16790 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19
+	// The same day's second fix adds 57: a whole document fetched for a
+	// navigation loses its head's inline sheets before it is parsed, so the
+	// parse raises no style-src report against the live page's policy
+	// (framework/uihost TestCrossShellNavigationRaisesNoPolicyViolation).
+	// Core's navigator parses such a document on a plain site, where no
+	// module is loaded to do it: 16847 measured + 2.
+	// A bare data-cui-signal-set name sets the empty string, as its contract
+	// row says (+7, TestSignalSetBareNameSetsEmptyString), in the click
+	// delegate that owns every signal mutation: 16854 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19 + 57 + 7
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1234,7 +1243,15 @@ const (
 	// on path+search; see coreGoalGZ) measures 19425 at level 1 (+7). Both
 	// run in core's navigator before a module could take the navigation.
 	// Two bytes of clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 19427
+	// The same day's inert document parse (a fetched page loses its head's
+	// inline sheets before DOMParser reads it; see coreGoalGZ) measures
+	// 19479 at level 1 (+54). It cannot carve: on a plain site core's own
+	// navigator is the one parsing the document, with no module loaded.
+	// Two bytes of clearance, cliff fixture re-run.
+	// The bare data-cui-signal-set name (see coreGoalGZ) measures 19465 at
+	// level 1 (-14: level 1 found a longer match around it). Two bytes of
+	// clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19467
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1406,6 +1423,11 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		// TestNavigateRelativeQueryStaysSoftUnderLocalePrefix and
 		// TestFragmentArrivalThenAnchorJumpKeepsPage's core arms.
 		"navigate() and loadPage key the router on path+search": 19, // (l1: 7)
+		// Measured 16790 → 16847 (2026-11-10): framework/uihost
+		// TestCrossShellNavigationRaisesNoPolicyViolation.
+		"a fetched document is parsed without its head sheets": 57, // (l1: 54)
+		// Measured 16847 → 16854 (2026-11-10): TestSignalSetBareNameSetsEmptyString.
+		"a bare signal-set name sets the empty string": 7, // (l1: -14)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1980,7 +2002,23 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// left the page's cached copy as fetched, and Back replayed it
 		// without the row just added. The eviction was the
 		// data-cui-rpc-navigate path's alone; it is one rule now.
-		"rpc": 4134,
+		// 4155 measured (4153 + 2) after a plain enctype="application/json"
+		// form builds its body as a data-cui-rpc form does (2026-11-10,
+		// TestPlainJSONForm_MultiValueFormKeys): the bridge kept only the
+		// last value of a checkbox group or a multi-select. The two paths
+		// share one encoder, which only this module's dispatch can hold.
+		// 4246 measured (4244 + 2) after the plain bridge holds a POST
+		// form the way the data-cui-rpc path does (2026-11-10,
+		// TestPlainFormPOSTResubmitInFlightSendsOnce): three quick
+		// submits of an enctype="application/json" or data-cui-spa form
+		// sent three POSTs. The hold, its queue and its 30s release are
+		// this module's dispatch state; the bridge now enters them.
+		// 4276 measured (4274 + 2) after a carrier that is not a form
+		// leaves its button, submit, reset and image inputs out of the
+		// body, as a form does (2026-11-10,
+		// TestNonFormCarrierLeavesButtonInputsOut). The carrier's walk
+		// is this module's own.
+		"rpc": 4276,
 	}
 	const coreOverride = 0
 

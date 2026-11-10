@@ -38,7 +38,7 @@ func (b *ListBuilder) render(ctx context.Context) (render.HTML, error) {
 	// screen for an entity whose GET /api/<entity> answers 401 or 403
 	// must not render its rows (the leak resource.canRead closed).
 	if !canRead(ctx, m.ch) {
-		return accessDenied(ctx, m.plural(ctx)), nil
+		return accessDenied(ctx, b.title(ctx, m), m.plural(ctx), b.headingLevel()), nil
 	}
 
 	// The key namespaces this list's params; a page with two unkeyed

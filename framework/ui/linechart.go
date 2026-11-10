@@ -38,7 +38,9 @@ type LineSeries struct {
 type LineChartConfig struct {
 	// Series are the lines (≥1, each with ≥2 finite Values). A NaN or
 	// Inf value is a reading that never arrived: the line joins the
-	// points either side of it.
+	// points either side of it. Every series shares one x-axis: value
+	// i sits at the same x in each, so a series with fewer values than
+	// the longest ends early.
 	Series []LineSeries
 	// Labels are optional x-axis tick labels. Label i sits over point i
 	// of the longest series; labels past its last point are dropped.
@@ -127,6 +129,18 @@ func LineChart(cfg LineChartConfig) render.HTML {
 		}
 	}
 
+	// One x-axis for every series: point j sits at the same x whichever
+	// series holds it, the x label j sits over. A series with fewer
+	// values than the longest ends early; scaled to its own length it
+	// stretched across the whole plot and its points sat under the
+	// wrong labels.
+	longest := 0
+	for _, s := range cfg.Series {
+		if len(s.Values) > longest {
+			longest = len(s.Values)
+		}
+	}
+
 	cls := "fui-line-chart"
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
@@ -185,14 +199,13 @@ func LineChart(cfg LineChartConfig) render.HTML {
 			isPalette = true
 		}
 
-		n := len(s.Values)
-		pts := make([]string, 0, n)
+		pts := make([]string, 0, len(s.Values))
 		firstX, lastX := -1.0, 0.0
 		for j, v := range s.Values {
 			if !finite(v) {
 				continue
 			}
-			x := float64(j) * plotW / float64(n-1)
+			x := float64(j) * plotW / float64(longest-1)
 			y := linePad + inner - chartFrac(v, min, max)*inner
 			pts = append(pts, ftoa(x)+","+ftoa(y))
 			if firstX < 0 {
@@ -251,13 +264,6 @@ func LineChart(cfg LineChartConfig) render.HTML {
 	// X-axis labels.
 	if len(cfg.Labels) > 0 {
 		ny := plotH + 12
-		// Use the longest series length to map labels to positions.
-		var longest int
-		for _, s := range cfg.Series {
-			if len(s.Values) > longest {
-				longest = len(s.Values)
-			}
-		}
 		// Label i sits over point i, so a short list lines up with its
 		// points instead of stretching, and one label never divides by
 		// zero. A label past the last point has no point to name.

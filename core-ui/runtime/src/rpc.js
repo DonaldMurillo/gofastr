@@ -60,7 +60,7 @@
     if (!f || f.tok !== tok) return;
     clearTimeout(f.timer);
     _formPosting.delete(form);
-    if (f.q && form.isConnected) _dispatchRPC(form, f.q);
+    if (f.q && form.isConnected) (form.hasAttribute('data-cui-rpc') ? _dispatchRPC : _dispatchPlainForm)(form, f.q);
   };
   // Input-triggered RPC debounce belongs with dispatch state, not the core
   // bridge. The bridge loads this module on the first input and asks this map
@@ -153,11 +153,21 @@
       if (!NS._leaveGuard || NS._leaveGuard.ok(document, navigate)) navigate();
       return;
     }
+    // A POST creates, on this bridge as on a data-cui-rpc form: the
+    // same hold drops a re-submit of the payload in flight and queues a
+    // changed one behind it. Three quick submits sent three POSTs here.
+    const postOnce = method === 'POST', tok = {};
+    if (postOnce) {
+      const sig = action + _formSig(form, opts);
+      if (_formHold(form, sig, opts)) return;
+      const f = { sig, tok, q: null };
+      f.timer = setTimeout(() => _formRelease(form, tok), POST_HOLD_MS);
+      _formPosting.set(form, f);
+      form.setAttribute('aria-busy', 'true');
+    }
     let body, headers;
     if (wantsJSON) {
-      const obj = {};
-      fd.forEach((v, k) => { obj[k] = v; });
-      body = JSON.stringify(obj);
+      body = _formJSON(fd, form);
       headers = { 'Content-Type': 'application/json' };
     } else if (enctype === 'multipart/form-data') {
       body = fd;
@@ -209,6 +219,14 @@
       console.error('[gofastr] form submit could not complete', err);
       if (typeof NS.toast === 'function') {
         NS.toast({ variant: 'error', title: NS.say('runtime.submit_failed', 'Could not complete that submission.'), ttl: 6000 });
+      }
+    } finally {
+      if (postOnce) {
+        // A dispatch the 30s release let go must not clear the busy
+        // mark of the newer one holding the form now.
+        const h = _formPosting.get(form);
+        if (!h || h.tok === tok) form.removeAttribute('aria-busy');
+        _formRelease(form, tok);
       }
     }
   }
@@ -288,7 +306,9 @@
       if (controls.length) {
         fd = new FormData();
         for (const c of controls) {
-          if (c.disabled) continue;
+          // A form submits a button input only as its submitter: here
+          // there is none, and each rode every request with its label.
+          if (c.disabled || /^(button|submit|reset|image)$/.test(c.type)) continue;
           if ((c.type === 'checkbox' || c.type === 'radio') && !c.checked) continue;
           if (c.tagName === 'SELECT' && c.multiple) {
             for (const o of c.selectedOptions) fd.append(c.name, o.value);
@@ -307,18 +327,7 @@
       } else if (formSource && (formSource.enctype === 'multipart/form-data' || formSource.querySelector('input[type="file"]'))) {
         body = fd;
       } else {
-        // Repeated keys become arrays; one value stays scalar. getAll avoids
-        // inherited names such as constructor and toString on the plain object.
-        // The one repeated shape that is NOT a list is the HTML checkbox
-        // idiom, a hidden input followed by a checkbox of the same name
-        // (hidden "false", checkbox "true"): the checkbox overrides the
-        // hidden when checked, so the pair is one value, the last one.
-        const obj = {};
-        for (const k of fd.keys()) {
-          const v = fd.getAll(k);
-          obj[k] = v.length > 1 && !_hiddenCheckboxPair(formSource, k) ? v : v[v.length - 1];
-        }
-        body = JSON.stringify(obj);
+        body = _formJSON(fd, formSource);
       }
     }
 
@@ -531,6 +540,24 @@
       }
       if (postOnce) _formRelease(node, tok);
     }
+  }
+
+  // _formJSON is a form's JSON body, for a data-cui-rpc form and for a
+  // plain enctype="application/json" one alike (the plain bridge wrote
+  // obj[k] = v, so a checkbox group or a multi-select posted its last
+  // value only). Repeated keys become arrays; one value stays scalar.
+  // getAll avoids inherited names such as constructor and toString on
+  // the plain object. The one repeated shape that is NOT a list is the
+  // HTML checkbox idiom, a hidden input followed by a checkbox of the
+  // same name (hidden "false", checkbox "true"): the checkbox overrides
+  // the hidden when checked, so the pair is one value, the last one.
+  function _formJSON(fd, form) {
+    const obj = {};
+    for (const k of fd.keys()) {
+      const v = fd.getAll(k);
+      obj[k] = v.length > 1 && !_hiddenCheckboxPair(form, k) ? v : v[v.length - 1];
+    }
+    return JSON.stringify(obj);
   }
 
   // _hiddenCheckboxPair reports whether name's controls in form are

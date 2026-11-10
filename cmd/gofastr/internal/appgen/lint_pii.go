@@ -186,3 +186,60 @@ func lintUnscopedEntities(bp appspec.AppSpec) []unscopedFinding {
 	}
 	return out
 }
+
+// signedOutFinding is an entity a screen draws in an app spec that wires
+// no sign-in.
+type signedOutFinding struct {
+	Entity  string
+	Screens []string
+}
+
+func (f signedOutFinding) Message() string {
+	return fmt.Sprintf(
+		"screen %s draws entity %q, which only a signed-in caller can read, but the app spec turns on no sign-in (app.auth.enabled): every visitor gets \"Not available\" in its place. Set app.auth.enabled: true, or public: true on the entity if anyone may read and write it",
+		strings.Join(f.Screens, ", "), f.Entity)
+}
+
+// LintSignedOutScreens flags a data block (entity_list, entity_detail,
+// entity_form) over an entity that needs a session in an app spec with
+// app.auth off. Nobody can sign in to such an app, so the generated
+// screen renders the "Not available" callout to every visitor: the
+// shortest spec there is (one entity, one list screen) generated an app
+// whose list never drew and whose own axe gate failed. A warning from
+// `gofastr validate` and `gofastr generate`, never an error: owned Go
+// can wire its own sign-in after generation. An entity with an access:
+// gate is left alone, since a blank read: there already opens its reads.
+func LintSignedOutScreens(bp appspec.AppSpec) []signedOutFinding {
+	if bp.App.Auth.Enabled {
+		return nil
+	}
+	gated := map[string]bool{}
+	for _, decl := range bp.Entities {
+		exposure := appspec.EntityDeclarationExposure(decl)
+		if !exposure.Public && !appspec.HasAccessGate(exposure.Access) {
+			gated[decl.Name] = true
+		}
+	}
+	screens := map[string][]string{}
+	var order []string
+	var walk func(screen string, blocks []appspec.AppSpecBlock)
+	walk = func(screen string, blocks []appspec.AppSpecBlock) {
+		for _, b := range blocks {
+			if gated[b.Entity] && !slices.Contains(screens[b.Entity], screen) {
+				if len(screens[b.Entity]) == 0 {
+					order = append(order, b.Entity)
+				}
+				screens[b.Entity] = append(screens[b.Entity], screen)
+			}
+			walk(screen, b.Children)
+		}
+	}
+	for _, s := range bp.Screens {
+		walk(fmt.Sprintf("%q", s.Name), s.Body)
+	}
+	var out []signedOutFinding
+	for _, name := range order {
+		out = append(out, signedOutFinding{Entity: name, Screens: screens[name]})
+	}
+	return out
+}

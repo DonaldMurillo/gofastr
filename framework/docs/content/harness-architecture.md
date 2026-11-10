@@ -2523,8 +2523,7 @@ honors this contract:
 - `/sk<TAB>` → `/skills:` (prefix expansion)
 - `/skills:gofa<TAB>` → `/skills:gofastr-ui` (or fuzzy-match list
   if multiple)
-- `/<TAB>` (empty after slash) → list of all top-level namespaces
-  + built-ins
+- `/<TAB>` (empty after slash) → list of all top-level namespaces + built-ins
 - Skill / agent / profile listings come from `GET /v1/slash-commands`
   cached for the session; the cache invalidates on `SkillRegistryChanged`
   (emitted when TOFU acks a new skill or `/skills:reload` runs).

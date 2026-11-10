@@ -132,3 +132,32 @@ func findCloseRune(runes []rune, start int, r rune) int {
 	}
 	return -1
 }
+
+// fenceTracker follows fenced code blocks down the scrollback. Code is
+// shown as written: styled as markdown, a shell comment in a block lost
+// its "#" and drew as a bold heading, and Python's **kwargs lost its
+// stars.
+type fenceTracker struct {
+	open bool
+}
+
+// next reports whether line is part of a fenced code block, a fence line
+// included. A line that opens a new entry (a prompt, a tool call, a
+// separator, the first line of a reply) ends a block its message left
+// open, so one unclosed fence does not turn the rest of the session
+// into code.
+func (f *fenceTracker) next(line string) bool {
+	content := line
+	for _, p := range []string{"← ", "→ ", "⚙ ", "✓ ", "✗ ", "… ", "── "} {
+		if rest, ok := strings.CutPrefix(line, p); ok {
+			f.open = false
+			content = rest
+			break
+		}
+	}
+	if strings.HasPrefix(strings.TrimLeft(content, " "), "```") {
+		f.open = !f.open
+		return true
+	}
+	return f.open
+}

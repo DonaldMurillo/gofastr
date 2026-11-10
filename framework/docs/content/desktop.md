@@ -1069,8 +1069,8 @@ primary. A nil sidebar renders the content column alone.
   background.
 - The sidebar zone (`.desktopui-frame__sidebar`) is `--desktop-sidebar-width` wide (default
   `desktopui.DefaultSidebarWidth`, 220) and reserves
-  `--desktop-sidebar-top-inset` (default `desktopui.SidebarTopInset`,
-  52) above its first row for the traffic lights. The zone is
+  `--desktop-sidebar-top-inset` (default `desktopui.SidebarTopInset`, 52) above
+  its first row for the traffic lights. The zone is
   transparent in light mode and a 2% wash of the text color in dark
   mode, where the dark sidebar material and the content background
   otherwise land on the same near-black.

@@ -631,12 +631,13 @@ func TestE2E_OpenAPI_EntityWithAllFieldTypes(t *testing.T) {
 	assertEqual(t, "authorId format", "uuid", authorProp["format"])
 	assertEqual(t, "authorId x-relation", "users", authorProp["x-relation"])
 
-	// Relation: many → array
+	// Relation: many → one id in the field's own column, the string
+	// schema.Validate takes (an array answers 400 not_reference), flagged
+	// x-many.
 	tagsProp := getNestedMap(props, "tagIds")
-	assertEqual(t, "tagIds type", opt("array"), tagsProp["type"])
-	tagsItems := getNestedMap(tagsProp, "items")
-	assertEqual(t, "tagIds items type", "string", tagsItems["type"])
-	assertEqual(t, "tagIds items format", "uuid", tagsItems["format"])
+	assertEqual(t, "tagIds type", opt("string"), tagsProp["type"])
+	assertEqual(t, "tagIds format", "uuid", tagsProp["format"])
+	assertEqual(t, "tagIds x-many", true, tagsProp["x-many"])
 
 	// Name should have minLength and maxLength
 	nameProp := getNestedMap(props, "name")

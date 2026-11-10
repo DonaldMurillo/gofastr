@@ -1270,6 +1270,18 @@ deliberately `SameSite=Lax` — see "The callback is bound to the
 browser that started the flow" under OAuth — because a Lax cookie is
 what still rides the provider's top-level redirect back.)
 
+An OAuth sign-in ends on a cross-site navigation too: the provider sent
+the browser to the callback, and a redirect from there would continue
+that navigation, so the browser would withhold the session cookie the
+callback just set and the landing page would render signed out. A
+callback that arrives cross-site (`Sec-Fetch-Site`) therefore answers
+`200` with the session cookie, a `Refresh: 0;url=…` header and a
+"Continue" link to the landing page (phrases
+`auth.oauth_signin_hop_title` and `auth.oauth_hop_continue`, drawn by
+`AuthConfig.Pages.Hop` when set). The page it loads starts on this site
+and carries the cookie. A client that sends no Fetch Metadata gets the
+plain `302`.
+
 ## Rate limiting
 
 ```go

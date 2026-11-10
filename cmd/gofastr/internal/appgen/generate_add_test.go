@@ -733,17 +733,24 @@ func TestAddScreenCollidesWithSynthesizedRoute(t *testing.T) {
 // Re-adding the SAME screen (same name + route) must be an idempotent skip,
 // not a hard route-collision error, matching entity redeclaration semantics.
 func TestAddSameScreenIsIdempotent(t *testing.T) {
+	// The first add writes screen_contact.go; the second must not
+	// hard-error, and the existing file is skipped.
+	reAddIsNoOp(t, addScreenFragment(), "screen_contact.go")
+}
+
+// reAddIsNoOp adds fragment to a generated app twice. The first add
+// must write file; the second must exit clean and leave it as written.
+func reAddIsNoOp(t *testing.T, fragment, file string) {
+	t.Helper()
 	dir, bp := clitest.AddSetup(t, clitest.AddScreenBaseAppSpec("example.com/addtest"))
 	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
 	frag := filepath.Join(dir, "fragment.yml")
-	os.WriteFile(frag, []byte(addScreenFragment()), 0o644)
-	// First add: writes screen_contact.go.
+	os.WriteFile(frag, []byte(fragment), 0o644)
 	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true}) })
-	if !clitest.FileExists(dir, "screen_contact.go") {
-		t.Fatal("first add did not write screen_contact.go")
+	if !clitest.FileExists(dir, file) {
+		t.Fatalf("first add did not write %s", file)
 	}
-	before := clitest.ReadFile(t, dir, "screen_contact.go")
-	// Second identical add: must NOT hard-error; the existing file is skipped.
+	before := clitest.ReadFile(t, dir, file)
 	code := clitest.CovT_capExit(t, func() {
 		clitest.CovT_capStdout(t, func() {
 			GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true})
@@ -752,8 +759,8 @@ func TestAddSameScreenIsIdempotent(t *testing.T) {
 	if code != -1 {
 		t.Fatalf("re-adding the same screen should be an idempotent skip (exit 0), got exit %d", code)
 	}
-	if clitest.ReadFile(t, dir, "screen_contact.go") != before {
-		t.Error("screen_contact.go rewritten on idempotent re-add")
+	if clitest.ReadFile(t, dir, file) != before {
+		t.Errorf("%s rewritten on idempotent re-add", file)
 	}
 }
 
@@ -916,5 +923,81 @@ func TestAddEndpointIntoExistingHandlerFile(t *testing.T) {
 		if !slices.Contains(doc.Updated, name) || slices.Contains(doc.Skipped, name) {
 			t.Errorf("%s: updated = %v, skipped = %v", name, doc.Updated, doc.Skipped)
 		}
+	}
+}
+
+// ---- --add and the screens an entity's shared crud file holds ----
+
+// addCrudScreensFragment adds one entity with a list screen. Its screens
+// land in screen_comments_crud.go, the file every screen over comments
+// shares.
+func addCrudScreensFragment() string {
+	return `entities:
+  - name: comments
+    fields:
+      - name: body
+        type: string
+        required: true
+screens:
+  - name: comments
+    route: /comments
+    title: Comments
+    body:
+      - kind: entity_list
+        entity: comments
+        fields: [body]
+        create: true
+`
+}
+
+// Re-running a fragment is a no-op for a standalone screen
+// (TestAddSameScreenIsIdempotent). A screen that draws an entity has no
+// file named after it, its home is the entity's shared crud file, so the
+// "is this the same screen" test never matched and the second run failed
+// on the screen's own route.
+func TestAddSameCrudScreenIsIdempotent(t *testing.T) {
+	reAddIsNoOp(t, addCrudScreensFragment(), "screen_comments_crud.go")
+}
+
+// A second screen over an entity that already has screens would be
+// written into the entity's shared crud file. That file exists, --add
+// skips existing files, and the screen was left out with nothing said
+// beyond the file's name in the skipped list: "Added 0 file(s)" for a
+// fragment whose only content was the screen. It is refused, naming the
+// screen and the file, and nothing is written.
+func TestAddScreenIntoExistingCrudFileRefused(t *testing.T) {
+	dir, bp := clitest.AddSetup(t, clitest.AddScreenBaseAppSpec("example.com/addtest"))
+	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
+	frag := filepath.Join(dir, "fragment.yml")
+	os.WriteFile(frag, []byte(addCrudScreensFragment()), 0o644)
+	clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true}) })
+	before := clitest.ReadFile(t, dir, "screen_comments_crud.go")
+
+	second := filepath.Join(dir, "second.yml")
+	os.WriteFile(second, []byte(`screens:
+  - name: recent_comments
+    route: /recent
+    title: Recent comments
+    body:
+      - kind: entity_list
+        entity: comments
+        fields: [body]
+  - name: credits
+    route: /credits
+    title: Credits
+`), 0o644)
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() {
+			GenerateFromAppSpec(GenerateOptions{Spec: second, add: true})
+		})
+	})
+	if code != 1 {
+		t.Fatalf("want exit 1 for a screen --add cannot write, got %d", code)
+	}
+	if clitest.ReadFile(t, dir, "screen_comments_crud.go") != before {
+		t.Error("screen_comments_crud.go changed")
+	}
+	if clitest.FileExists(dir, "screen_credits.go") {
+		t.Error("the fragment's other screen was written although the run was refused")
 	}
 }

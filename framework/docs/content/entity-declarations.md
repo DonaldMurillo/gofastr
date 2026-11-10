@@ -118,6 +118,12 @@ at the default `Pagination.MaxListLimit` — and it can be moved per handler
 with `WithMaxOffset`, never removed. A page within the ceiling past the
 last row answers 200 with no data.
 
+An explicit `?offset=` replaces the page-derived skip, and the
+envelope's `page` follows it: the page the first returned row is on
+(`offset / limit + 1`), whatever `?page=` was sent beside it. So
+`?offset=40&limit=20` answers `"page": 3`, on the buffered and the
+`?stream=true` path alike.
+
 MCP tools are the opposite. They are **off by default** and need
 `Exposure: &framework.ExposureConfig{MCP: true}`. The one exception is the dev
 loop: under `gofastr dev`, every CRUD-enabled entity also serves its data

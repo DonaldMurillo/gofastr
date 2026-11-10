@@ -441,8 +441,8 @@ handler)` + `ob.StartRelay(ctx)`.
   schedules an exponential backoff; the settle writes state only, never
   the counter — two overlapping runners under lease overrun both count
   because both claims counted. After `MaxAttempts` (default 10) the
-  delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default
-  100) and `WithPollInterval` (default 1s) keep their defaults when
+  delivery is marked `dead`. `WithMaxAttempts`, `WithBatchSize` (default 100) and
+  `WithPollInterval` (default 1s) keep their defaults when
   given zero or less. `Replay(rowID)` resets all dead/abandoned
   deliveries of a row; `ReplayConsumer(rowID, name)` resets one. A reset
   delivery's age starts over, so the handler grace below runs again from
@@ -541,5 +541,8 @@ handler)` + `ob.StartRelay(ctx)`.
   hands the rest of its batch back unstarted, attempts refunded; the
   first delivery of a batch always runs. A graceful shutdown mid-batch
   (the relay's context cancelled) hands back the unstarted rest the same
-  way; only a relay that dies outright leaves them leased.
+  way. A delivery whose handler the shutdown cancelled mid-run (it
+  returned an error on the cancelled context) goes back too: it runs
+  again after the restart with no attempt spent. Only a relay that dies
+  outright leaves them leased.
   There is no double-processing beyond the at-least-once caveat.

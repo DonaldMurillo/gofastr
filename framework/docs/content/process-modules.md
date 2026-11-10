@@ -659,6 +659,6 @@ bookkeeping.
   404; Ready lives in the proxy handler (503 + Retry-After) and the tool
   handler (retryable), so an enabled-but-down module is retryable, not
   uninstalled-looking.
-- **Expecting disable / uninstall to drop tables.** Disable leaves schema
-  + rows intact; uninstall removes registration only. `DROP SCHEMA …
+- **Expecting disable / uninstall to drop tables.** Disable leaves schema + rows
+  intact; uninstall removes registration only. `DROP SCHEMA …
   CASCADE` is a separate privileged action.

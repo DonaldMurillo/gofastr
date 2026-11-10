@@ -122,6 +122,11 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		if o > 0 {
 			qb.Offset(o)
 		}
+		// The envelope's page follows the skip, as in List. A host
+		// calling this directly may pass no limit; the page stays as sent.
+		if limit > 0 {
+			page = o/limit + 1
+		}
 	} else if offset := pagination.OffsetForPage(page, limit); offset > 0 {
 		qb.Offset(offset)
 	}

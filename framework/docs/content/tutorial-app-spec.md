@@ -84,9 +84,11 @@ screens:
 session middleware. You'll want a signed-in user in the next
 step. The `entity_list` gives you a server-rendered table with search,
 sort, and pagination without you writing any of that code. Once an
-entity has an enum, bool, or relation column, add `filters: [<column>, …]` to the block and the
-generated screen renders a `ui.FilterToolbar` of facet filters above the
-table; see the [`entity_list` reference](app-spec.md) for the details.
+entity has an enum, bool, or relation column, list it under the entity's
+`display: facets: [<column>, …]` and the list draws one-click filters
+for it above the table; see the [`entity_list` reference](app-spec.md)
+for the details. (`filters:` on the block is a removed key: the load
+refuses it and names `display: facets:`.)
 
 Validate, generate, run:
 

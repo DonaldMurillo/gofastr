@@ -30,6 +30,10 @@ var (
 	pageCheckFailed       = i18n.Define("setup.check_failed", "Every step ran, but the completion check failed: {{cause}}. Fix the underlying issue and reload this page: setup finishes automatically once the check passes.")
 )
 
+// pageHopTitle heads the page a cross-site arrival on the setup link
+// gets, which loads the link again from this origin (renderHop).
+var pageHopTitle = i18n.Define("setup.hop_title", "Opening setup")
+
 // The built-in steps' titles, labels and refusals.
 var (
 	adminStepTitle      = i18n.Define("setup.admin_step", "Create Admin")

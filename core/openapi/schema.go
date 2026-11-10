@@ -94,18 +94,19 @@ func FieldToSchema(field schema.Field) map[string]any {
 		// Accept any JSON value, no type constraint.
 
 	case schema.Relation:
-		if field.Many {
-			prop["type"] = "array"
-			prop["items"] = map[string]any{
-				"type":   "string",
-				"format": "uuid",
-			}
-		} else {
-			prop["type"] = "string"
-			prop["format"] = "uuid"
-		}
+		// A Many relation field stores one target id in its own column,
+		// as a single relation does (schema.Validate refuses anything but
+		// a string for either, and crud reads the column as one id). It
+		// was documented as an array of ids, a body the API answers with
+		// 400 not_reference. x-many carries the flag, as it does in
+		// schema.Schema.JSONSchema.
+		prop["type"] = "string"
+		prop["format"] = "uuid"
 		if field.To != "" {
 			prop["x-relation"] = field.To
+		}
+		if field.Many {
+			prop["x-many"] = true
 		}
 
 	case schema.Image:

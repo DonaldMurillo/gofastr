@@ -1183,8 +1183,9 @@ func readSchema(reg entity.Registry, ent *entity.Entity, base map[string]any, jc
 // every relation as a uuid string. A belongs_to foreign key to an
 // integer key holds that integer, and crud stores and answers it as a
 // JSON number (entity.ValueFields); a key of another type (a text slug, a
-// date) is a string without the uuid format. A many relation keeps its
-// string items and drops the uuid format the same way. A target the
+// date) is a string without the uuid format. A many relation, which stores
+// one id as a string whatever the key's type, drops the uuid format the
+// same way. A target the
 // registry does not resolve, or a composite-keyed one, keeps the
 // declared shape.
 func typeRelationKey(prop map[string]any, reg entity.Registry, ent *entity.Entity, f schema.Field) {
@@ -1212,17 +1213,10 @@ func typeRelationKey(prop map[string]any, reg entity.Registry, ent *entity.Entit
 	if key.Type == schema.UUID || key.Type == schema.Relation {
 		return // a uuid, or a chain RelationHoldsInt already ruled out of integers
 	}
-	at := prop
-	if f.Many {
-		at, _ = prop["items"].(map[string]any)
-		if at == nil {
-			return
-		}
-	}
-	at["type"] = "string"
-	delete(at, "format")
+	prop["type"] = "string"
+	delete(prop, "format")
 	if format, ok := openapi.FieldToSchema(key)["format"]; ok && !f.Many && key.Type != schema.Text {
-		at["format"] = format
+		prop["format"] = format
 	}
 }
 

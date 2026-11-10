@@ -167,7 +167,23 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		x2 := cx + r*math.Cos(end)
 		y2 := cy + r*math.Sin(end)
 
-		if ir > 0 {
+		if frac > 0.5 && ftoa(x1) == ftoa(x2) && ftoa(y1) == ftoa(y2) {
+			// A slice that is the whole pie (the only one with a value,
+			// or one beside slivers too thin to move the written
+			// coordinates) starts and ends on one point, and an arc
+			// between a point and itself draws nothing. Two half
+			// circles draw the disc; a donut's hole is the same pair
+			// wound the other way.
+			sb.WriteString(`<path d="`)
+			sb.WriteString(pieFullCircle(cx, cy, r, 1))
+			if ir > 0 {
+				sb.WriteString(` `)
+				sb.WriteString(pieFullCircle(cx, cy, r*ir, 0))
+			}
+			sb.WriteString(`" class="`)
+			sb.WriteString(cls)
+			sb.WriteString(`"`)
+		} else if ir > 0 {
 			// Donut: trace outer arc, line in, inner arc back, line out.
 			rin := r * ir
 			ix1 := cx + rin*math.Cos(start)
@@ -270,6 +286,14 @@ func PieChart(cfg PieChartConfig) render.HTML {
 
 	sb.WriteString(`</svg>`)
 	return pieChartStyle.WrapHTML(render.HTML(sb.String()))
+}
+
+// pieFullCircle is a closed circle as two half arcs from 12 o'clock,
+// wound clockwise (sweep 1) or counter-clockwise (sweep 0).
+func pieFullCircle(cx, cy, r float64, sweep int) string {
+	arc := " A" + ftoa(r) + "," + ftoa(r) + " 0 1 " + strconv.Itoa(sweep) + " "
+	top := ftoa(cx) + "," + ftoa(cy-r)
+	return "M" + top + arc + ftoa(cx) + "," + ftoa(cy+r) + arc + top + " Z"
 }
 
 func escapeXML(s string) string {

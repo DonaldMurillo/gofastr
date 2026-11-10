@@ -66,3 +66,38 @@ func TestCacheLetsWebSocketsUpgrade(t *testing.T) {
 		t.Fatalf("handler ran %d times, want 2: an upgrade was served from the cache", runs.Load())
 	}
 }
+
+// A hijack the client writer refuses (an outer middleware's writer that
+// cannot hijack, http.TimeoutHandler's for one) leaves the response with
+// the handler, which answers the failed upgrade with an error status.
+// The recorder marked itself streamed before it tried, so that status
+// and its headers were dropped and the client got the error text as a
+// 200.
+func TestCacheKeepsStatusWhenHijackFails(t *testing.T) {
+	h := CacheMiddleware(NewMemoryCache(WithTTL(time.Minute)), time.Minute)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := stream.Upgrade(w, r, stream.WSConfig{}); err == nil {
+			t.Error("Upgrade succeeded on a writer that cannot hijack")
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		http.Error(w, "upgrade failed", http.StatusInternalServerError)
+	}))
+	for i := range 2 {
+		req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		rec := httptest.NewRecorder() // no http.Hijacker
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("request %d: status %d, want the handler's 500", i, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+			t.Errorf("request %d: Content-Type %q, want the handler's text/plain", i, ct)
+		}
+		if got := rec.Header().Get("X-Cache"); got != "MISS" {
+			t.Errorf("request %d: X-Cache %q, want MISS (an error is never stored)", i, got)
+		}
+	}
+}

@@ -110,7 +110,7 @@ func (b *Battery) gatePolicy() appui.Policy {
 		if status == http.StatusUnauthorized && b.cfg.LoginPath != "" {
 			next := b.cfg.PathPrefix
 			if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
-				next = r.URL.EscapedPath()
+				next = loginNext(r)
 			}
 			return decide.Redirect(b.cfg.LoginPath + "?next=" + urlQueryEscape(next))
 		}

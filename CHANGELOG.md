@@ -551,6 +551,134 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A refused entity screen keeps its heading.** A list, record or
+  create screen the caller may not read drew the "Not available" notice
+  alone, with no `<h1>`, so an axe run failed `page-has-heading-one`
+  and an app spec with no sign-in generated an app whose own
+  `TestAxeEveryScreen` failed. The screen now draws the entity's
+  heading above the notice, at the level the list was given.
+- **Navigating between two layouts raises no CSP violation**
+  ([runtime contract](framework/docs/content/runtime-contract.md)).
+  Under the default policy a client navigation across layout shells
+  (admin to a marketing page, any page to `/login`) logged one refused
+  `style-src` report per inline head sheet of the fetched page.
+- **A plain `enctype="application/json"` form sends every value of a
+  repeated field.** A checkbox group or `<select multiple>` posted only
+  its last value. A name that repeats is now an array, as on a
+  `data-cui-rpc` form.
+- **An intercepted plain POST form sends a re-submit once.** Three
+  quick submits of an `application/json` or `data-cui-spa` form made
+  three rows. The form now holds while its POST is in flight, as a
+  `data-cui-rpc` form does.
+- **`data-cui-signal-set="name"` sets the empty string**, as the
+  contract says; it did nothing.
+- **A non-form `data-cui-rpc` carrier leaves button inputs out of the
+  request.**
+- **`gofastr migrate generate` writes DDL for the spec's own database**
+  ([migrations](framework/docs/content/migrations.md)). With no `--db`
+  it always wrote SQLite DDL, which a spec on Postgres refused on its
+  first `migrate up`. `app.db.driver` (or a `postgres://` URL) now
+  decides; the flag still wins.
+- **An app spec index over a column the entity does not have is
+  refused at load** ([app spec](framework/docs/content/app-spec.md)).
+  It loaded, and the generated migration failed with "no such column".
+- **`generate app --add` no longer drops a screen.** A fragment adding
+  a screen over an entity that already has its crud file printed
+  "Added" and wrote nothing; it is refused, naming the file. Re-running
+  a fragment with an `entity_list` is the no-op the docs promise, where
+  it failed on its own route.
+- **`/openapi.json` documents a `Many` relation field as one string
+  id** with `x-many: true`, the value the API takes. It documented an
+  array, a body the API answers with 400.
+- **The JS SDK's `ListParams.trashed` is a boolean.** It was typed and
+  documented as `only` or `with`, values the server ignores.
+- **`validate` and `generate` warn when a screen draws an entity nobody
+  can sign in to read.** One entity and one list screen with no
+  `app.auth` generated an app whose list showed "Not available" and
+  whose own axe test failed.
+- **CORS on a `Group` answers the preflight**
+  ([security](framework/docs/content/security.md)). `OPTIONS` to a
+  group path with no `OPTIONS` route ran the root middleware only, so
+  the browser blocked every preflighted call to
+  `Group("/api", middleware.CORS(cfg))`. A 405 now runs the middleware
+  of the group that holds the path's routes. **Behavior change**: auth
+  or rate-limit middleware on a group also sees a wrong-method request
+  to its paths, so a signed-out one answers 401 where it answered 405.
+- **An OAuth sign-in lands signed in**
+  ([auth](framework/docs/content/auth.md)). The callback's redirect
+  continued the provider's cross-site navigation, so the browser
+  withheld the new `SameSite=Strict` session cookie and the landing
+  page rendered signed out. A cross-site callback now answers with a
+  page from this origin that loads the target.
+- **A setup link clicked on another site keeps its token**
+  ([first run](framework/docs/content/first-run.md)). Opened from a
+  hosted log viewer or a chat message, the link spent its token and
+  then answered 403, and "already used" from then on.
+- **The setup wizard stores a password as typed.** It trimmed every
+  field, so an admin password with a space at either end never signed
+  in.
+- **The admin login redirect keeps the query string**, so a signed-out
+  link to a filtered list returns to that list.
+- **The list envelope's `page` follows `?offset=`**
+  ([entities](framework/docs/content/entity-declarations.md)).
+  `?offset=40&limit=20` answered the third page's rows as `"page": 1`.
+- **Markdown list items hold blocks**
+  ([core packages](framework/docs/content/core-packages.md)). A nested
+  `- item` showed its dash, a fenced block under a numbered step ran
+  together as one inline code span, and a blank line between items
+  split the list so steps counted 1, 1. An item now owns the lines
+  indented under it, and an ordered list that does not begin at 1
+  carries `start`. **Check your own markdown**: a wrapped prose line
+  under an item that begins with `+ `, `- ` or `2. ` now reads as a
+  nested list, as it does in CommonMark. Seven such lines in the docs
+  were rewrapped.
+- **Four more markdown fixes.** `\|` in a table cell is a literal pipe
+  (27 rows in the docs split on it); `## #1 priority` keeps its `#1`;
+  `2 * 3 * 4` is not emphasis; a link URL keeps its balanced
+  parentheses.
+- **Web Bot Auth: a Structured Field decimal serializes canonically.**
+  `1.5` came back `1.500` and `1.005` came back `1.004`, so a correct
+  signature over such a field failed.
+- **A static export under a subpath prefixes `srcset`**
+  ([static export](framework/docs/content/static-export.md)).
+  `<picture>` sources asked the apex and drew nothing on a GitHub Pages
+  project site.
+- **`gofastr docs` and `framework_docs_list` summaries are the first
+  paragraph**, not the first hard-wrapped line (one read "```bash").
+- **Singular headings for regular plurals.** "New Aliase", "New
+  Quizze", "New Cach" and "New Heroe" read Alias, Quiz, Cache and Hero.
+- **The harness TUI leaves fenced code as written.** A shell comment in
+  a fence drew as a heading and `**kwargs` lost its stars.
+- **Charts draw what they are given**
+  ([components](framework/docs/content/ui-new-components.md)).
+  `PieChart` drew an empty square when one slice was the whole pie;
+  `BarChart` dropped bars past the right edge once they hit the 3px
+  floor (40 bars in 320px drew 29, the tallest sometimes among the
+  lost); `LineChart` stretched a shorter series across the whole plot,
+  under the wrong x labels. `Sparkline` keeps its `ID` when it has no
+  trend to draw.
+- **A `DataTable` column with `Align: "center"` and `Truncate` is
+  centered and truncated.** The pair had no class, so one long value
+  widened the table.
+- **`llm.md` keeps highlighted code, table links and description
+  lists** ([agent-ready](framework/docs/content/agent-ready.md)). A
+  `<pre>` without `<code>` (every highlighted block) was flattened into
+  one line of prose, a link in a table cell came out escaped, a
+  `DetailList` read `NameAlice`, and a `<link>` tag became a bullet.
+- **A shutdown no longer dead-letters an outbox delivery**
+  ([events](framework/docs/content/events.md)). A handler cancelled by
+  the relay's shutdown was settled as a failure: it spent an attempt,
+  and with `WithMaxAttempts(1)` the delivery went to `dead` on every
+  deploy. It is handed back with the attempt refunded.
+- **`Resize` with `FitInside` or `FitOutside` keeps the side it binds
+  on.** With both sides given, a float scale lost a pixel: a 22×22
+  source inside 15×100 came out 14×14, and `FitOutside` could return
+  less than the box it must cover.
+- **The cache middleware keeps a handler's error when a WebSocket
+  upgrade cannot hijack.** The status and headers written after a
+  refused hijack reached the client as a bare 200.
+- **`WebhookOpts.Headers` cannot replace the log sink's
+  `Content-Type`.** A lowercase `content-type` key did.
 - **A refused GitHub token refresh no longer wipes the stored token**
   ([auth](framework/docs/content/auth.md)). GitHub answers a refused
   code or refresh token with HTTP 200 and an error document. The

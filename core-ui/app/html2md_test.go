@@ -281,3 +281,56 @@ func TestHTML2MD_ItalicDoesNotMatchInput(t *testing.T) {
 		t.Errorf("<input> should NOT be converted to italic, got: %q", got)
 	}
 }
+
+// A highlighted code block is a <pre> of per-line spans with no <code>
+// child (framework/ui's CodeBlock, and every fenced block ui.Markdown
+// renders). Its line breaks are the content: flattened like a text node
+// the whole program came out as one line of prose.
+func TestHTML2MD_PreWithoutCodeKeepsItsLines(t *testing.T) {
+	in := `<pre class="fui-code-block__body" tabindex="0"><span class="line"><span class="tk-kw">func</span> main() {
+</span><span class="line">	x := a &lt; b <span class="tk-com">// # not a heading</span>
+</span><span class="line">}</span></pre>`
+	got := htmlToMarkdown(in)
+	want := "````\nfunc main() {\n\tx := a < b // # not a heading\n}\n````"
+	if got != want {
+		t.Errorf("a <pre> without <code> lost its lines:\ngot:  %q\nwant: %q", got, want)
+	}
+	// One line is flowing text, as before: a diff viewer's per-line
+	// <pre> does not become a fence a line.
+	if got := htmlToMarkdown(`<div><pre>only line</pre></div>`); got != "only line" {
+		t.Errorf("a one-line <pre> should stay text, got %q", got)
+	}
+}
+
+// A link or an image inside a table cell stays one: the cell escaping
+// ran over the already-built markdown and wrote \[Alice\]\(/u/1\).
+func TestHTML2MD_TableCellKeepsLinks(t *testing.T) {
+	in := `<table><tr><th>Name</th><th>Pic</th></tr>` +
+		`<tr><td><a href="/u/1?a=1&amp;b=2|3"><span>Al|ice</span></a> [x](/evil)</td>` +
+		`<td><img src="/p.png" alt="P"> one<br>two</td></tr></table>`
+	got := htmlToMarkdown(in)
+	want := "| Name | Pic |\n| --- | --- |\n" +
+		`| [Al\|ice](/u/1?a=1&b=2%7C3) \[x\]\(/evil\) | ![P](/p.png) one two |`
+	if got != want {
+		t.Errorf("table cell links:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// A description list's term and description are two elements with
+// nothing between them: stripped to text they ran together
+// ("NameAlice"), which is what a record's detail page read as.
+func TestHTML2MD_DescriptionListSeparatesTermAndValue(t *testing.T) {
+	in := `<dl><div><dt class="l">Name</dt><dd class="v">Alice</dd></div><div><dt>Email</dt> <dd>a@b.c</dd></div></dl>`
+	got := htmlToMarkdown(in)
+	want := "Name: Alice\n\nEmail: a@b.c"
+	if got != want {
+		t.Errorf("description list:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// <link> is not a list item.
+func TestHTML2MD_LinkTagIsNotAListItem(t *testing.T) {
+	if got := htmlToMarkdown(`<p>one</p><link rel="preload" href="/x"><p>two</p>`); got != "one\n\ntwo" {
+		t.Errorf("a <link> became a bullet: %q", got)
+	}
+}

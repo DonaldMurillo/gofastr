@@ -240,7 +240,10 @@ middleware.CORS(middleware.CORSConfig{
 ```
 
 CORS is **not** in the default chain. Add it explicitly if your API
-serves browser clients on another origin.
+serves browser clients on another origin. It works on the whole router
+(`Use`) or on one group (`Group("/api", middleware.CORS(cfg))`): a
+preflight for a path with no `OPTIONS` route runs the middleware of the
+group that holds the path's routes.
 
 A browser client that sends headers you do not list one by one
 (`X-Request-Tag`, tracing headers) fails its preflight. Set

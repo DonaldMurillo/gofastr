@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -126,5 +127,25 @@ func TestLineChartPaletteColorIsClass(t *testing.T) {
 	}}))
 	if !strings.Contains(h, "fui-line-chart__line--success") || strings.Contains(h, `stroke="success"`) {
 		t.Errorf("palette color not a class: %s", h)
+	}
+}
+
+// Every series shares one x-axis indexed by position: a series with
+// fewer values than the longest ends early, drawn exactly as the same
+// series padded with readings that never arrived. Scaled to its own
+// length it stretched across the plot, its points under the wrong labels.
+func TestLineChartShortSeriesSharesTheXAxis(t *testing.T) {
+	long := LineSeries{Name: "Plan", Values: []float64{1, 2, 3, 4, 5}}
+	nan := math.NaN()
+	short := string(LineChart(LineChartConfig{Series: []LineSeries{long,
+		{Name: "Actual", Values: []float64{5, 1, 3}}}}))
+	padded := string(LineChart(LineChartConfig{Series: []LineSeries{long,
+		{Name: "Actual", Values: []float64{5, 1, 3, nan, nan}}}}))
+	if short != padded {
+		t.Errorf("a short series is not drawn on the shared x-axis:\nshort:  %s\npadded: %s", short, padded)
+	}
+	// Its last point sits over label 2 of 5 (x=180 of 360), not the plot's edge.
+	if !strings.Contains(short, `d="M0,4 L90,196 L180,100"`) {
+		t.Errorf("the short series' points are not at x 0, 90, 180:\n%s", short)
 	}
 }

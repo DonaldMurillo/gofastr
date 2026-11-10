@@ -711,7 +711,9 @@ the panic's type. Three refusals run before either:
 A signed-out caller gets `401`, a signed-in caller without the role
 `403`, on every page, route and shell widget (the nav drawer and the
 palette). With `Config.LoginPath` set, a signed-out GET redirects to
-`LoginPath?next=<path>` instead; a signed-out post is still a `401`.
+`LoginPath?next=<path and query>` instead, so a link to a filtered list
+or a later page comes back to the same view after sign-in; a signed-out
+post is still a `401`.
 
 <!-- gofastr:compile
 import "context"

@@ -18,6 +18,10 @@ import (
 // dropping content, exactly like maxBlockquoteDepth in the block layer.
 const maxInlineDepth = 64
 
+// maxURLParenDepth bounds how many balanced parentheses a link URL may
+// nest, so matching them is a constant number of lookups per link.
+const maxURLParenDepth = 32
+
 // renderInline runs the inline parser over a single block of text and emits
 // HTML. Order matters: code spans are extracted first so their contents are
 // not interpreted as bold/italic, then images, then links, then bold, then
@@ -156,6 +160,14 @@ func renderInlineAt(input string, depth int, links *linkIndex, base int) string 
 			i = j
 		case ch == '*' || ch == '_':
 			delim, run := scanRun(input, i, ch)
+			if i+run >= len(input) || isBlank(input[i+run]) {
+				// A run followed by whitespace opens nothing
+				// (CommonMark's left-flanking rule): "2 * 3 * 4" is
+				// arithmetic, and it used to italicise the 3.
+				sb.WriteString(input[i : i+run])
+				i += run
+				continue
+			}
 			key := int(delim)<<2 | run
 			closeIdx := -1
 			if noCloser == nil || !noCloser[key] {
@@ -258,7 +270,9 @@ func findClosingDelim(runs *backtickRuns, links *linkIndex, s string, base, star
 			for i+n < len(s) && s[i+n] == delim {
 				n++
 			}
-			if n == run && (delim != '_' || !wordByteAt(s, i+n)) {
+			// A run preceded by whitespace closes nothing, the mirror
+			// of the opener rule in renderInlineAt.
+			if n == run && !isBlank(s[i-1]) && (delim != '_' || !wordByteAt(s, i+n)) {
 				return i
 			}
 			i += n
@@ -347,6 +361,9 @@ type linkIndex struct {
 	opens  []int
 	match  []int
 	parens []int
+	// lparens lists every '(' offset in ascending order, so parseLink can
+	// count the ones inside a URL without scanning it.
+	lparens []int
 }
 
 // buildLinkIndex makes the index for s in one pass.
@@ -364,6 +381,8 @@ func buildLinkIndex(s string) *linkIndex {
 				l.match[stack[n-1]] = i
 				stack = stack[:n-1]
 			}
+		case '(':
+			l.lparens = append(l.lparens, i)
 		case ')':
 			l.parens = append(l.parens, i)
 		}
@@ -401,6 +420,18 @@ func (l *linkIndex) parseLink(s string, base, i int) (text, url string, end int,
 	if p == len(l.parens) || l.parens[p] >= limit {
 		return "", "", 0, false
 	}
+	// A ')' ends the URL only once every '(' inside it has closed, so
+	// [Go](https://en.wikipedia.org/wiki/Go_(game)) keeps its last
+	// parenthesis; cut at the first ')', the href lost it and the page
+	// showed a stray ")". Nesting is bounded like cmark's, and a URL
+	// whose parentheses never balance ends at its first ')' as before.
+	lo := sort.SearchInts(l.lparens, base+urlStart)
+	for q := p; q < len(l.parens) && l.parens[q] < limit && q-p <= maxURLParenDepth; q++ {
+		if sort.SearchInts(l.lparens, l.parens[q])-lo == q-p {
+			p = q
+			break
+		}
+	}
 	k := l.parens[p] - base
 	url = strings.TrimSpace(s[urlStart:k])
 	return text, url, k + 1, true
@@ -424,6 +455,10 @@ func wordByteAt(s string, i int) bool {
 	}
 	r, _ := utf8.DecodeRuneInString(s[i:])
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
+}
+
+func isBlank(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n'
 }
 
 func isPunct(b byte) bool {

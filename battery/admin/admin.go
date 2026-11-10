@@ -137,8 +137,8 @@ type Config struct {
 	AdminRole string
 
 	// LoginPath, when set, sends a signed-out page request to
-	// LoginPath?next=<path> instead of a 401. A signed-in caller without
-	// the role still gets 403.
+	// LoginPath?next=<path and query> instead of a 401. A signed-in
+	// caller without the role still gets 403.
 	LoginPath string
 
 	// SignOutPath is where the account menu's Sign out posts. Defaults to
@@ -614,7 +614,7 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 		if !b.authorized(r.Context()) {
 			status := b.authzStatus(r.Context())
 			if status == http.StatusUnauthorized && b.cfg.LoginPath != "" && r.Method == http.MethodGet {
-				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(r.URL.EscapedPath()), http.StatusSeeOther)
+				http.Redirect(w, r, b.cfg.LoginPath+"?next="+url.QueryEscape(loginNext(r)), http.StatusSeeOther)
 				return
 			}
 			i18n.HTTPError(w, r, status, i18n.StatusPhrase(status))
@@ -622,6 +622,18 @@ func (b *Battery) gate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// loginNext is the page a signed-out request asked for, as the login
+// redirect's next: its escaped path and its query. A list keeps its
+// filter, view, sort and page in the query, so the path alone brought a
+// signed-in admin back to a different page than the link named.
+func loginNext(r *http.Request) string {
+	next := r.URL.EscapedPath()
+	if r.URL.RawQuery != "" {
+		next += "?" + r.URL.RawQuery
+	}
+	return next
 }
 
 // isSafeAdminMethod reports a method that cannot mutate state, exempt

@@ -550,8 +550,8 @@ hand it directly to `storage.Save`).
   are out of scope for this package.
 - **Expecting WebP-lossless to match `cwebp` file sizes.** The pure-Go
   encoder tries five uniform predictor modes (1, 2, 11, 12, 13) per
-  image and emits the smallest output, plus subtract-green and LZ77
-  + an 8-bit color cache. Compared against `cwebp -z 9`
+  image and emits the smallest output, plus subtract-green and LZ77 + an
+  8-bit color cache. Compared against `cwebp -z 9`
   (libwebp 1.6) and `png.BestCompression`:
 
   | Content (256×256) | PNG-best | Ours WebP-LL | `cwebp -z 9` | ours vs PNG | ours vs cwebp |

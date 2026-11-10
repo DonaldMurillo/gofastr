@@ -938,7 +938,7 @@
         const fr = await NS.fetch(path);
         if (!NS._navLive(myEpoch)) return;
         NS._inval(fr);
-        const pdoc = new DOMParser().parseFromString(await fr.text(), 'text/html');
+        const pdoc = NS._parseDoc(await fr.text());
         if (!NS._navLive(myEpoch)) return;
         // A followed redirect into another document loads it (nav.js).
         const to = NS._followed(fr, path);
@@ -1093,7 +1093,7 @@
         title = NS._title(resp);
         body = html;
       } else {
-        const pdoc = new DOMParser().parseFromString(html, 'text/html');
+        const pdoc = NS._parseDoc(html);
         // A full document — a static host that ignores the navigate
         // headers — is read as an envelope first: swap at the deepest
         // shared layer, outlets outside it as fills, so a whole-document

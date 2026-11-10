@@ -792,8 +792,9 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// SameSite=Strict, the password-login mint's posture. The state
 		// cookie keeps its own Lax (it must ride the provider's
 		// top-level redirect back here); the session cookie has no such
-		// return trip, it is minted by this same-site response and only
-		// needed afterwards.
+		// return trip. It is first needed by the page this answer sends
+		// the browser to, which is why a cross-site arrival is answered
+		// with a hop below.
 		mintSessionCookie(w, cfg, sess.Token, sess.ExpiresAt)
 
 		// A pending session is refused everywhere but /2fa/challenge, so
@@ -802,6 +803,19 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		target := "/"
 		if pending {
 			target = safeRedirectURL(p.twoFactorURL)
+		}
+		// The IdP sent the browser here on a cross-site navigation, and a
+		// redirect continues that navigation: the browser stores the
+		// SameSite=Strict session cookie set above and then withholds it
+		// from the redirect's request, so the page a sign-in landed on
+		// rendered signed out (and one behind a login gate bounced the
+		// user back to the login form). A cross-site arrival is answered
+		// with a page from this origin that loads the target instead.
+		// That navigation starts here, so the cookie rides it. A client
+		// that sends no Fetch Metadata gets the redirect it always did.
+		if handler.IsCrossSiteRequest(r) {
+			writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthSignInTitle)
+			return
 		}
 		http.Redirect(w, r, target, http.StatusFound)
 	}

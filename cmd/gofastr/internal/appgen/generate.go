@@ -736,6 +736,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		for _, f := range LintOwnerScopedUnique(bp) {
 			cli.Warn("%s", f.Message())
 		}
+		for _, f := range LintSignedOutScreens(bp) {
+			cli.Warn("%s", f.Message())
+		}
 		// Surfaced before the "Next steps" block below, which would otherwise
 		// print `go mod init <colliding path>` as the remedy for a build that
 		// the collision makes impossible.
@@ -844,13 +847,25 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		// screen whose own file already exists is skipped by the write
 		// partition below (idempotent re-add, matching entity redeclaration),
 		// so it is exempt from the hard collision error here.
+		//
+		// A CRUD screen has no file of its own: an entity's list, record
+		// and create screens share screen_<entity>_crud.go. So "its file
+		// exists" is asked of that shared file, and answered by the mount
+		// func the file declares. Asked by the screen's own name it was
+		// never true, and re-running a fragment with an entity_list
+		// failed on its own route. And a new screen over an entity whose
+		// shared file already exists would be skipped with that file and
+		// never written: refuse it instead of dropping it.
 		taken := registeredScreenRoutes(writeRoot)
 		for _, s := range bp.Screens {
-			if !taken[s.Route] {
-				continue
+			file, declared, dropped := addScreenTarget(writeRoot, s)
+			if dropped && !taken[s.Route] {
+				cerr := fmt.Errorf("screen %q would be written to %s, which the project already has and which does not hold it. --add writes only new files and never edits one, so the screen would be left out. Write the screen into %s by hand (a type, a mount func and its line in init), or merge the fragment into the app spec and regenerate with --force", s.Name, file, file)
+				failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", cerr))
+				cli.OsExit(1)
 			}
-			if fileExistsUnder(writeRoot, appspec.ScreenFileName(s.Name)) {
-				continue // same screen being re-added → handled as skip-existing
+			if !taken[s.Route] || declared {
+				continue // a new route, or the same screen being re-added (skip-existing)
 			}
 			cerr := fmt.Errorf("screen %q route %q collides with a route already mounted in the project. Pick a different route (--add cannot replace an owned screen; use --force to regenerate the whole app)", s.Name, s.Route)
 			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", cerr))
@@ -2580,6 +2595,29 @@ func fileExistsUnder(writeRoot, rel string) bool {
 	defer root.Close()
 	_, err = root.Stat(rel)
 	return err == nil
+}
+
+// addScreenTarget says where --add would write a fragment's screen and
+// what is already there. file is the screen's generated file: its own
+// screen_<name>.go, or, for a screen that draws an entity, the entity's
+// shared screen_<entity>_crud.go. declared reports that the project
+// already holds this screen (its own file exists, or the shared file
+// declares its mount func), which makes the add a no-op. dropped reports
+// the shared file exists without the screen: the write partition would
+// skip the file and the screen with it.
+func addScreenTarget(writeRoot string, s appspec.AppSpecScreen) (file string, declared, dropped bool) {
+	entity, crud := appspec.ScreenEntityRef(s)
+	if !crud {
+		file = appspec.ScreenFileName(s.Name)
+		return file, fileExistsUnder(writeRoot, file), false
+	}
+	file = appspec.ScreenFileName(entity + "_crud")
+	src, err := readFileUnder(writeRoot, file)
+	if err != nil {
+		return file, false, false
+	}
+	declared = strings.Contains(string(src), "func mount"+appspec.ToCamelCase(s.Name)+"Screen(")
+	return file, declared, !declared
 }
 
 // readFileUnder reads rel under writeRoot through an *os.Root: a file

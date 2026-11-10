@@ -215,6 +215,20 @@ func (o *Outbox) processDelivery(ctx context.Context, d claimedDelivery) {
 	herr := o.runHandler(ctx, handler, ev, d)
 	settleCtx, cancel := o.settleContext(ctx)
 	defer cancel()
+	if herr != nil && ctx.Err() != nil {
+		// A shutdown cancelled the handler mid-run. The attempt says
+		// nothing about the event, so the delivery is handed back with
+		// the attempt refunded, as the unstarted rest of the batch is
+		// (pump) and as battery/queue hands back an interrupted job.
+		// Settled as a failure, a delivery on its last attempt was
+		// dead-lettered by a restart. The handler may have done part of
+		// its work; the next run is the at-least-once retry a consumer
+		// already has to dedupe.
+		slog.Default().Info("outbox: shutdown interrupted a handler; delivery handed back",
+			"row_id", d.RowID, "consumer", d.Consumer, "type", d.Type, "err", herr)
+		o.releaseUnstarted(settleCtx, []claimedDelivery{d})
+		return
+	}
 	if herr != nil {
 		o.markDeliveryFailure(settleCtx, d, herr)
 		o.completeParent(settleCtx, d.RowID, d.Type)

@@ -723,10 +723,15 @@ func (r *responseRecorder) FlushError() error {
 func (r *responseRecorder) Flush() { _ = r.FlushError() }
 
 // Hijack hands the connection to the handler (a websocket upgrade); the
-// response is the handler's from then on, and nothing is cached.
+// response is the handler's from then on, and nothing is cached. A
+// refused hijack changes nothing: the handler still answers through the
+// recorder, and its error status and headers reach the client.
 func (r *responseRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
-	r.overflow = true
-	return http.NewResponseController(r.w).Hijack()
+	conn, rw, err := http.NewResponseController(r.w).Hijack()
+	if err == nil {
+		r.overflow = true
+	}
+	return conn, rw, err
 }
 
 // Unwrap lets http.ResponseController reach the client writer's

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
@@ -124,6 +125,28 @@ func (r *Runner) serve(w http.ResponseWriter, req *http.Request, healthz, readyz
 // logs can't be replayed -- including as a cookie, which is why the
 // cookie carries a freshly minted secret rather than the token itself.
 func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, tok string) {
+	// A link clicked on another site (a hosted log viewer, a chat
+	// message) is a cross-site navigation. The browser stores the
+	// SameSite=Strict cookie the exchange sets, then withholds it from
+	// the redirect to /setup, because the navigation began elsewhere:
+	// the token was spent, /setup answered 403, and the logged link
+	// answered "already used" from then on. So a cross-site arrival is
+	// answered with a page from this origin that loads the same URL
+	// again. That navigation starts here, so the cookie rides its
+	// redirect. The hop checks and spends nothing.
+	// Any other cross-site GET (a frame, an image, a preview fetch, a
+	// path the hop will not echo) is refused without looking at the
+	// token: exchanged, it spent the one-time token on a request whose
+	// cookie the browser withholds, and the operator's later click
+	// answered "already used".
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) {
+		if target, ok := sameOriginTarget(req); ok && topLevelNavigation(req) {
+			r.renderHop(w, req, target)
+			return
+		}
+		i18n.HTTPError(w, req, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+		return
+	}
 	r.mu.Lock()
 	if !r.tokenEnabled || r.token == "" {
 		r.mu.Unlock()
@@ -225,10 +248,19 @@ func (r *Runner) handleSubmit(w http.ResponseWriter, req *http.Request) {
 	}
 	step := steps[stepIdx]
 
-	// Collect submitted values.
+	// Collect submitted values. A plain field loses the spaces around
+	// it, the way a pasted address or host name picks them up. A Secret
+	// is kept as typed: a password is its exact bytes, and the sign-in
+	// form compares what it is sent, so a trimmed admin password with a
+	// space at either end never signed in. The headless path reads the
+	// environment as it is, so both now store the same value.
 	values := make(map[string]string, len(step.Fields))
 	for _, f := range step.Fields {
-		values[f.Name] = strings.TrimSpace(req.FormValue(f.Name))
+		v := req.FormValue(f.Name)
+		if !f.Secret {
+			v = strings.TrimSpace(v)
+		}
+		values[f.Name] = v
 	}
 
 	// Validate.
@@ -443,4 +475,30 @@ func (r *Runner) recheckElsewhere(ctx context.Context) bool {
 	}
 	_, finished, err := r.completeAndSwap(ctx)
 	return err == nil && finished
+}
+
+// sameOriginTarget is the request's own path and query as a URL on this
+// origin, for the hop to load again. ok is false for a path that could
+// leave the origin: a scheme-relative "//host", or one that decodes to
+// a backslash or a second slash ("/%5C%5Chost", "/%2F%2Fhost"), the
+// spellings handler.IsSafeRelativePath refuses for every other redirect.
+// The exchange answers on any path and the reload carries the token, so
+// the path is held to that rule before it is echoed.
+func sameOriginTarget(req *http.Request) (string, bool) {
+	path := req.URL.EscapedPath()
+	if !handler.IsSafeRelativePath(path) {
+		return "", false
+	}
+	if req.URL.RawQuery != "" {
+		path += "?" + req.URL.RawQuery
+	}
+	return textsafe.ScrubControlBytes(path), true
+}
+
+// topLevelNavigation reports a request for a document in a tab, not in
+// a frame. A browser without Fetch Metadata sends no Sec-Fetch-Dest,
+// and it sends no Sec-Fetch-Site either, so it never reaches the hop.
+func topLevelNavigation(req *http.Request) bool {
+	dest := req.Header.Get("Sec-Fetch-Dest")
+	return dest == "" || dest == "document"
 }

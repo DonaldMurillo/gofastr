@@ -1182,11 +1182,20 @@ func (t *TUI) draw() {
 	// content off the right edge.
 	contentWidth := max(t.width-gutterWidth, 10)
 	visual := make([]string, 0, len(t.scrollback)*2)
+	// code marks the visual rows of a fenced code block, its fences
+	// included. It is worked out over the whole scrollback, since the
+	// fence that opens a block may sit above the window.
+	code := make([]bool, 0, len(t.scrollback)*2)
+	var fence fenceTracker
 	for _, line := range t.scrollback {
 		if strings.HasPrefix(line, spinnerLineMarker) {
 			line = string(spinnerGlyph(t.spinnerFrame)) + line[len(spinnerLineMarker):]
 		}
-		visual = append(visual, wrapLine(line, contentWidth)...)
+		inCode := fence.next(line)
+		for _, row := range wrapLine(line, contentWidth) {
+			visual = append(visual, row)
+			code = append(code, inCode)
+		}
 	}
 
 	// Clamp scrollOffset to [0, len(visual)-scrollRows] so Home key
@@ -1198,7 +1207,10 @@ func (t *TUI) draw() {
 	end := max(len(visual)-t.scrollOffset, 0)
 	start := max(end-scrollRows, 0)
 	for i := start; i < end; i++ {
-		styled := renderMarkdownInline(colorizeMarker(visual[i]))
+		styled := colorizeMarker(visual[i])
+		if !code[i] {
+			styled = renderMarkdownInline(styled)
+		}
 		_, _ = fmt.Fprintf(t.out, "%s%s\r\n", gutter(), styled)
 	}
 	// Pad remaining rows.

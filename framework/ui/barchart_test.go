@@ -308,3 +308,35 @@ func TestChartExtraAttrsOnEmptyPlaceholder(t *testing.T) {
 		t.Errorf("owned role overridden on placeholder:\n%s", root)
 	}
 }
+
+// Every bar is drawn inside the chart, however many there are. A 3px
+// floor on the bar over a fixed 8px gap ran the bars off the right edge
+// (40 bars in the default 320px drew 29), and the lost ones could
+// include the tallest, the bar the scale is cut to.
+func TestBarChartManyBarsStayInsideThePlot(t *testing.T) {
+	rect := regexp.MustCompile(`<rect x="([-0-9.]+)" y="[-0-9.]+" width="([-0-9.]+)"`)
+	for _, axis := range []bool{false, true} {
+		for _, n := range []int{1, 2, 29, 30, 40, 60, 200, 1000} {
+			bars := make([]BarChartBar, n)
+			for i := range bars {
+				bars[i] = BarChartBar{Label: "b", Value: float64(i + 1)}
+			}
+			h := string(BarChart(BarChartConfig{Bars: bars, ShowAxis: axis}))
+			rects := rect.FindAllStringSubmatch(h, -1)
+			if len(rects) != n {
+				t.Fatalf("%d bars: found %d rects", n, len(rects))
+			}
+			prevEnd := 0.0
+			for i, m := range rects {
+				x, _ := strconv.ParseFloat(m[1], 64)
+				w, _ := strconv.ParseFloat(m[2], 64)
+				if w <= 0 || x < prevEnd-0.011 || x+w > 320.011 {
+					t.Errorf("%d bars (axis %v): bar %d spans %v to %v, outside the 320px chart or over bar %d",
+						n, axis, i, x, x+w, i-1)
+					break
+				}
+				prevEnd = x + w
+			}
+		}
+	}
+}

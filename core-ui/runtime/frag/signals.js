@@ -215,8 +215,10 @@
 
     const set = node.getAttribute('data-cui-signal-set');
     if (set) {
+      // A bare name sets the empty string, as the contract says; it set
+      // nothing. A leading colon names no signal.
       const sep = set.indexOf(':');
-      if (sep > 0) G.setSignal(set.substring(0, sep), set.substring(sep + 1));
+      if (sep) G.setSignal(sep > 0 ? set.substring(0, sep) : set, sep > 0 ? set.substring(sep + 1) : '');
     }
 
     const inc = node.getAttribute('data-cui-signal-inc');

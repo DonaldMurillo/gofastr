@@ -52,10 +52,16 @@ func canDelete(ctx context.Context, m *meta, id string) bool {
 // symbol (AccessDeniedTitle.English()), not by copying prose.
 var AccessDeniedTitle = i18n.Define("entityui.access_denied_title", "Not available")
 
-// accessDenied names no data: only that this entity is not available.
-func accessDenied(ctx context.Context, plural string) render.HTML {
-	return ui.Callout(ui.CalloutConfig{Title: AccessDeniedTitle.Text(ctx), Variant: ui.StatusWarning},
-		render.Text(i18nui.EntityAccessDenied.Text(ctx, map[string]any{"entity": plural})))
+// accessDenied is a refused screen: the entity's heading at level, then
+// the notice. It names no data, only that this entity is not available.
+// The heading stays because a refused screen is still a page: drawn as
+// the notice alone it had no <h1>, and a list told to sit under a
+// page's own heading keeps the level it was given.
+func accessDenied(ctx context.Context, title, plural string, level int) render.HTML {
+	return render.Join(
+		ui.PageHeader(ui.PageHeaderConfig{Title: title, HeadingLevel: level}),
+		ui.Callout(ui.CalloutConfig{Title: AccessDeniedTitle.Text(ctx), Variant: ui.StatusWarning},
+			render.Text(i18nui.EntityAccessDenied.Text(ctx, map[string]any{"entity": plural}))))
 }
 
 // slotFailed is a failed slot's generic message; the log line carries the
