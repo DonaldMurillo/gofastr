@@ -18,7 +18,7 @@ import (
 func TestFeedWaitsForOutputLock(t *testing.T) {
 	if dir := os.Getenv("GOFASTR_TEST_FEED_LOCK"); dir != "" {
 		fmt.Println("writer ready")
-		if err := WriteFeed(dir, filepath.Join(dir, "update.key"), "1.2.0", "", "darwin-arm64", filepath.Join(dir, "Notes-1.2.0.zip"), "https://example.com/arm64.zip"); err != nil {
+		if err := WriteFeed(dir, filepath.Join(dir, "update.key"), "1.2.0", "", "darwin-arm64", filepath.Join(dir, "Notes-1.2.0.zip"), "https://example.com/arm64.zip", 0); err != nil {
 			t.Fatal(err)
 		}
 		return
@@ -72,7 +72,7 @@ func TestFeedWaitsForOutputLock(t *testing.T) {
 		t.Fatalf("waiting writer touched the manifest: %v", err)
 	}
 	entry := PlatformEntry{URL: "https://example.com/amd64.zip", SHA256: "retained", Size: 123}
-	manifest, signature, err := SignFeed(Feed{Version: "1.2.0", Platforms: map[string]PlatformEntry{"darwin-amd64": entry}}, privateKey)
+	manifest, signature, err := SignFeed(Feed{Expires: testExpires(), Version: "1.2.0", Platforms: map[string]PlatformEntry{"darwin-amd64": entry}}, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestFeedWaitsForOutputLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, err := ParseFeed(manifest, signature, pub)
+	feed, err := ParseFeed(manifest, signature, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +117,7 @@ func TestFeedConcurrentPlatformMerge(t *testing.T) {
 		pending.Go(func() {
 			<-start
 			platform := fmt.Sprintf("darwin-arch%d", index)
-			results <- WriteFeed(out, keyPath, "1.2.0", "", platform, archive, "https://example.com/"+platform+".zip")
+			results <- WriteFeed(out, keyPath, "1.2.0", "", platform, archive, "https://example.com/"+platform+".zip", 0)
 		})
 	}
 	close(start)
@@ -136,7 +136,7 @@ func TestFeedConcurrentPlatformMerge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, err := ParseFeed(manifest, signature, pub)
+	feed, err := ParseFeed(manifest, signature, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

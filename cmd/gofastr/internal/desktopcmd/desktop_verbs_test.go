@@ -239,6 +239,8 @@ func TestDesktopFeedRefusesBadInputs(t *testing.T) {
 		"bad platform":       append(append([]string{}, base[:2]...), "--version", "1.2.0", "--platform", "darwin arm64", "--archive", archive, "--url", "https://e.com/a.zip", "-o", out),
 		"plain http url":     append(append([]string{}, base...), "--version", "1.2.0", "--url", "http://example.com/Notes.zip"),
 		"version mismatch":   append(append([]string{}, base...), "--version", "1.3.0"),
+		"zero valid-days":    append(append([]string{}, base...), "--version", "1.2.0", "--valid-days", "0"),
+		"long valid-days":    append(append([]string{}, base...), "--version", "1.2.0", "--valid-days", "366"),
 	}
 	for name, args := range cases {
 		_, code := verbOutput(t, func() { runDesktopFeed(args) })

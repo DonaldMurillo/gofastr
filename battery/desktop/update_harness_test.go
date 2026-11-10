@@ -127,7 +127,7 @@ func TestUpdatesCheckAndInstallThroughThePage(t *testing.T) {
 	// The archive is a macOS bundle, so it is published under a darwin
 	// key and the updater is pointed at that key on every host.
 	if err := desktop.SignUpdateFeed(feedDir, keyPath, "1.2.0", "What changed",
-		"darwin-arm64", archivePath, archiveURL); err != nil {
+		"darwin-arm64", archivePath, archiveURL, 0); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err = os.ReadFile(filepath.Join(feedDir, "manifest.json"))

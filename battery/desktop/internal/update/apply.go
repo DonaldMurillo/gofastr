@@ -21,6 +21,10 @@ var ErrUnsupportedApply = errors.New("auto-update is not supported by this host"
 // fake to observe the codesign invocation without codesign present.
 type CommandRunner interface {
 	Run(name string, args ...string) error
+	// Output runs the command and returns its standard output. The
+	// macOS signature pin reads the running bundle's designated
+	// requirement this way.
+	Output(name string, args ...string) ([]byte, error)
 }
 
 // ExecRunner runs commands through os/exec, capturing the combined
@@ -31,6 +35,31 @@ type ExecRunner struct{}
 // Run implements CommandRunner.
 func (ExecRunner) Run(name string, args ...string) error {
 	return runCommand(name, args...)
+}
+
+// Output implements CommandRunner. Standard error is dropped: codesign
+// prints the bundle's absolute path there, and the failure is reported
+// by exit status alone.
+func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
+	out, err := exec.Command(name, args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("%s failed", name)
+	}
+	return out, nil
+}
+
+// SignaturePolicy is the macOS code-signing pin an install applies to
+// the downloaded bundle (UpdateConfig.MacOSTeamID and MacOSAllowAdHoc).
+// The zero value pins the update to the running app's own designated
+// requirement and refuses when the running app has no signing identity.
+type SignaturePolicy struct {
+	// TeamID, when set, is the Apple Developer Team ID every update
+	// must be signed by, instead of the running app's requirement.
+	TeamID string
+	// AllowAdHoc lets an app with no signing identity (ad-hoc signed or
+	// unsigned) install an update that only carries a valid signature
+	// of any kind. The install then rests on the feed signature alone.
+	AllowAdHoc bool
 }
 
 // Platform is the OS seam of the updater: where the running bundle
@@ -53,8 +82,9 @@ type Platform interface {
 	// running from a bundle.
 	Bundle() (name, dir string, ok bool)
 	// VerifySignature checks the extracted bundle's code signature and
-	// refuses a failed check: codesign --verify --deep --strict on
-	// darwin, Authenticode under CheckWindowsTrust on windows.
+	// refuses a failed check: codesign --verify --deep --strict against
+	// the SignaturePolicy's requirement on darwin, Authenticode under
+	// CheckWindowsTrust on windows.
 	VerifySignature(appDir string) error
 	// Relaunch starts the newly installed copy (open -n on darwin, the
 	// new executable with PredecessorEnv set on windows) so the new

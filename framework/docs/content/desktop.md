@@ -1696,6 +1696,7 @@ manifest bytes, base64-encoded in the `.sig` file.
 ```json
 {
   "version": "1.2.0",
+  "expires": "2026-12-09T15:04:05Z",
   "notes": "What changed",
   "platforms": {
     "darwin-arm64": {
@@ -1711,6 +1712,16 @@ manifest bytes, base64-encoded in the `.sig` file.
   (`darwin-arm64` or `windows-amd64` today).
 - The version is semver (`major.minor.patch`, an optional
   `-prerelease`; build metadata is refused).
+- `expires` is an RFC 3339 time, signed with the rest. From that
+  instant on the app refuses the manifest: the check answers "the
+  update feed has expired" and nothing installs. There is no grace
+  period, and a manifest with no `expires` is refused as invalid. A
+  signed manifest never stops verifying, so without an expiry whoever
+  can answer for the feed URL could replay an old one and keep an app
+  from ever seeing the next release. `gofastr desktop feed` stamps 30
+  days by default (see Release tooling for renewing). The check uses
+  the user's clock, so a machine whose clock runs far ahead refuses a
+  live feed until it is corrected.
 - A feed may carry a `channels` object whose entries have the same
   shape as the top level; `UpdateConfig.Channel` selects
   `channels[channel]` when present, and the top level otherwise.
@@ -1736,9 +1747,25 @@ d := native.New(desktop.Config{
 
 `FeedURL` names the manifest itself; the signature is fetched from
 `FeedURL + ".sig"`. `New` panics on a bad config (a non-https feed URL,
-a public key that is not 64 hex chars) the same way it panics on a bad
-menu. `PublicKey` is what `gofastr desktop keygen` wrote to the `.pub`
-file.
+a public key that is not 64 hex chars, a malformed `MacOSTeamID`) the
+same way it panics on a bad menu. `PublicKey` is what `gofastr desktop
+keygen` wrote to the `.pub` file.
+
+Two more fields decide whose code signature a macOS update must carry:
+
+| Field | Effect |
+|---|---|
+| neither set | The update must satisfy the running app's own designated requirement: the same bundle identifier, signed by the same identity. An app signed with `--sign "Developer ID Application: ..."` needs nothing else. |
+| `MacOSTeamID: "ABCDE12345"` | The update must be signed with an Apple-issued certificate of that team, whatever the running app carries. Set it one release ahead of a change of signing identity. |
+| `MacOSAllowAdHoc: true` | An app with no signing identity may install any bundle that carries a valid signature. A signed app is still held to its identity. |
+
+An ad-hoc signed bundle, which is what `gofastr desktop build` writes
+without `--sign`, has no identity to hold an update to. Its installs
+are refused until you sign releases or set `MacOSAllowAdHoc`. With that
+field the feed's ed25519 signature is the only proof of who published
+the update, and the log warns at start and at each install. Setting
+both fields is a config error. Windows needs no field: it holds an
+update to the running executable's Authenticode publisher (below).
 
 The battery checks the feed on a schedule: the first check 30 seconds
 after the window opens, then every `Interval` (6 hours by default;
@@ -1782,7 +1809,8 @@ the decision persists in `desktop_grants` like every other grant.
 `install` runs the full pipeline and then relaunches the new bundle:
 
 1. Fetch and verify the feed (signature first: a feed whose signature
-   does not verify is rejected before anything is parsed).
+   does not verify is rejected before anything is parsed), then refuse
+   it if its `expires` has passed.
 2. Compare semver against the running bundle's
    `CFBundleShortVersionString`. Unbundled runs never update.
 3. Download the archive to a 0700 directory under the app's data dir,
@@ -1797,8 +1825,13 @@ the decision persists in `desktop_grants` like every other grant.
    `CFBundleShortVersionString` is exactly the feed's version and its
    `CFBundleIdentifier` is the running app's. A mislabelled archive
    would otherwise reinstall on every check or downgrade silently.
-6. Run `codesign --verify --deep --strict` on the extracted bundle and
-   refuse on failure.
+6. Run `codesign --verify --deep --strict -R=<requirement>` on the
+   extracted bundle and refuse on failure. The requirement is the
+   signing pin from "Configuring the app": the running bundle's
+   designated requirement (read with `codesign -d -r-`), or the
+   `MacOSTeamID` rule. Without `-R`, codesign only proves that some
+   valid signature is present, and `codesign --sign -` makes one for
+   anybody.
 7. Swap: move the current bundle to `<Name>.app.old`, move the new one
    into place, `open -n` the new bundle, and quit. The next launch
    removes a leftover `.old`. When the second move fails, the old
@@ -1871,13 +1904,28 @@ gofastr desktop keygen -o path
 
 gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
-    --url https://example.com/notes/Notes-1.2.0.zip [-o dir]
+    --url https://example.com/notes/Notes-1.2.0.zip [-o dir] \
+    [--valid-days 30]
     merges this platform into an existing same-version manifest.json,
     preserving other platforms and channels, then re-signs it. A different
     existing version (including a missing version) is refused; use a fresh directory for a new release.
     Writes manifest.json and manifest.json.sig into dir (-o defaults
     to .), computing sha256 and size from the archive file
 ```
+
+The manifest expires `--valid-days` after the command runs: 30 by
+default, 1 to 365 accepted. Apps refuse it from then on, so a feed
+whose newest release is older than that needs renewing. Run the same
+command again with the same flags: it signs the same release with a
+new expiry. A scheduled job that does this weekly keeps the default
+safe. A shorter lifetime narrows the window in which a captured
+manifest can be replayed, and costs more frequent signing.
+
+`manifest.json` and `manifest.json.sig` are written 0644, and an
+output directory the command creates is 0755, so a static web server
+running as another user can serve the directory as it is. An existing
+directory keeps its mode. The `.manifest.lock` file beside them and the
+signing key stay 0600.
 
 Retained channels must also have valid semantic versions; an invalid channel
 refuses the merge without changing the existing manifest or signature.
@@ -2538,7 +2586,7 @@ build or launch fails, as well as on ordinary shutdown.
 | `uninstall --id=<reverse.dns>` on Linux | Removes an unchanged owned installation; preserves application and browser-profile data. |
 | `types [--pkg] [--out=desktop.d.ts]` | One headless manifest run of the built app, written out as a `.d.ts`. Its staging directory is removed on success and on build, run, decode, or output-write failure. |
 | `keygen -o=<path>` | Mints the auto-update signing pair: the private key (0600) and `<path>.pub`. Refuses when either path already exists, a symlink included, and leaves no half pair behind. |
-| `feed --key --version --platform --archive --url [--notes] [-o]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies; refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. |
+| `feed --key --version --platform --archive --url [--notes] [-o] [--valid-days]` | Writes the signed `manifest.json` and `manifest.json.sig` the updater verifies, 0644, with an expiry `--valid-days` out (30 by default); refuses a `--version` that differs from the bundle's `CFBundleShortVersionString`. Run it again to renew. |
 
 `--id` must be reverse-DNS (`[A-Za-z0-9.-]+` with a dot), `--name`
 printable with no path separator and at most 64 characters, and every

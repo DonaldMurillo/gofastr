@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 
@@ -43,6 +44,24 @@ type UpdateConfig struct {
 	// Channel optionally selects feed.channels[channel] when the feed
 	// carries it; the feed's top level otherwise.
 	Channel string
+
+	// MacOSTeamID is the Apple Developer Team ID (ten letters and
+	// digits, "ABCDE12345") every update must be signed by. Empty means
+	// the update must satisfy the running app's own designated
+	// requirement: the same bundle identifier and signing identity. Set
+	// it when the identity is about to change between two releases.
+	// macOS only; Windows holds an update to the running executable's
+	// Authenticode publisher on its own.
+	MacOSTeamID string
+
+	// MacOSAllowAdHoc lets an app with no signing identity update. An
+	// ad-hoc signed bundle (what `gofastr desktop build` writes without
+	// --sign) or an unsigned one has no identity to hold an update to,
+	// and its updates are refused unless this is set. With it, any
+	// bundle carrying a valid signature installs, so the feed's ed25519
+	// signature is the only proof of who published it; the log warns at
+	// start and at each install. It cannot be combined with MacOSTeamID.
+	MacOSAllowAdHoc bool
 }
 
 // Update is the outcome of one check. Version and Notes describe the
@@ -78,6 +97,7 @@ var (
 	errUpdateNeedsBundle   = &Error{Code: CodeUnsupported, Message: "updates need an app bundle; run from gofastr desktop build output"}
 	errUpdateFeedFetch     = &Error{Code: CodeInternal, Message: "the update feed could not be fetched"}
 	errUpdateFeedBad       = &Error{Code: CodeInternal, Message: "the update feed is invalid"}
+	errUpdateFeedExpired   = &Error{Code: CodeInternal, Message: "the update feed has expired"}
 	errUpdateNoEntry       = &Error{Code: CodeInternal, Message: "the update feed has no entry for this platform"}
 	errUpdateArchive       = &Error{Code: CodeInternal, Message: "the update archive failed verification"}
 	errUpdateApply         = &Error{Code: CodeInternal, Message: "the update could not be applied"}
@@ -109,7 +129,31 @@ func validateUpdateConfig(cfg *UpdateConfig) error {
 			return errors.New("desktop: Config.Update.Channel must not carry control characters")
 		}
 	}
+	if cfg.MacOSTeamID != "" {
+		if !validTeamID(cfg.MacOSTeamID) {
+			return errors.New("desktop: Config.Update.MacOSTeamID must be an Apple Team ID: ten uppercase letters and digits")
+		}
+		if cfg.MacOSAllowAdHoc {
+			return errors.New("desktop: Config.Update.MacOSTeamID and MacOSAllowAdHoc cannot both be set: one pins the signer, the other accepts any")
+		}
+	}
 	return nil
+}
+
+// validTeamID reports whether id has the shape of an Apple Developer
+// Team ID. The value is spliced into a codesign requirement, so the
+// grammar is also what keeps a quote or a space out of it.
+func validTeamID(id string) bool {
+	if len(id) != 10 {
+		return false
+	}
+	for i := range len(id) {
+		c := id[i]
+		if (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // updater is one battery's update state (Battery.updater).
@@ -184,12 +228,25 @@ func (u *updater) platformOrDefault() update.Platform {
 	}
 	u.defaultOnce.Do(func() {
 		p := update.DefaultPlatform(nil, update.ExecRunner{})
-		if w, ok := p.(interface{ SetWarn(func(string)) }); ok {
-			w.SetWarn(func(msg string) { u.b.logger.Warn("desktop: " + msg) })
-		}
+		u.configurePlatform(p)
 		u.defaultPlatform = p
 	})
 	return u.defaultPlatform
+}
+
+// configurePlatform hands the OS platform what it takes from the
+// battery: the logger for its warnings, and on macOS the signing pin
+// from UpdateConfig.
+func (u *updater) configurePlatform(p update.Platform) {
+	if w, ok := p.(interface{ SetWarn(func(string)) }); ok {
+		w.SetWarn(func(msg string) { u.b.logger.Warn("desktop: " + msg) })
+	}
+	s, ok := p.(interface {
+		SetSignaturePolicy(update.SignaturePolicy)
+	})
+	if cfg := u.b.cfg.Update; ok && cfg != nil {
+		s.SetSignaturePolicy(update.SignaturePolicy{TeamID: cfg.MacOSTeamID, AllowAdHoc: cfg.MacOSAllowAdHoc})
+	}
 }
 
 // CheckForUpdates runs one check against the configured feed now.
@@ -246,7 +303,13 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 		u.b.logger.Warn("desktop: update signature fetch failed", "error", err.Error())
 		return resolved{}, errUpdateFeedFetch
 	}
-	feed, err := update.ParseFeed(manifest, sig, u.pub)
+	feed, err := update.ParseFeed(manifest, sig, u.pub, time.Now())
+	if errors.Is(err, update.ErrFeedExpired) {
+		// Either the publisher has not signed the feed again in time, or
+		// something between the app and the feed is replaying an old one.
+		u.b.logger.Warn("desktop: update feed has expired; the publisher signs it again with gofastr desktop feed")
+		return resolved{}, errUpdateFeedExpired
+	}
 	if err != nil {
 		u.b.logger.Warn("desktop: update feed rejected", "error", err.Error())
 		return resolved{}, errUpdateFeedBad
@@ -289,8 +352,9 @@ func (u *updater) resolve(ctx context.Context) (resolved, error) {
 }
 
 // InstallUpdate downloads the newest version from the configured feed,
-// verifies it (ed25519 feed signature, sha256, size, single-bundle
-// zip, then codesign on macOS or Authenticode on Windows), swaps it in
+// verifies it (ed25519 feed signature and expiry, sha256, size,
+// single-bundle zip, then codesign against the pinned signing identity
+// on macOS or Authenticode on Windows), swaps it in
 // place of the running bundle, relaunches
 // it, and quits the current process. ErrUnsupported when unbundled or
 // on a host without an apply step.
@@ -505,6 +569,9 @@ func (b *Battery) startUpdater(ctx context.Context) {
 		return
 	}
 	u := b.updaterFor()
+	if b.cfg.Update.MacOSAllowAdHoc && runtime.GOOS == "darwin" {
+		b.logger.Warn("desktop: Config.Update.MacOSAllowAdHoc is set; an app with no signing identity installs any validly signed update, on the feed signature alone")
+	}
 	u.removeStaleOld()
 	if b.cfg.Update.Interval < 0 {
 		return
@@ -637,9 +704,21 @@ func (u *updater) notifyOnce(res Update) {
 // the sha256 and size computed from the archive file. It is the
 // `gofastr desktop feed` verb's engine, exported so the CLI and app
 // tests share the exact format with the verifier.
-func SignUpdateFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
-	return update.WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL)
+//
+// validFor is how long the manifest stays valid: zero means
+// DefaultFeedLifetime (30 days), and a negative one or one past
+// MaxFeedLifetime (365 days) is refused. A client refuses an expired
+// manifest, so a feed is signed again before it runs out, by calling
+// this again with the same arguments. The two files are written 0644.
+func SignUpdateFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string, validFor time.Duration) error {
+	return update.WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL, validFor)
 }
+
+// The lifetime bounds SignUpdateFeed applies.
+const (
+	DefaultFeedLifetime = update.DefaultFeedLifetime
+	MaxFeedLifetime     = update.MaxFeedLifetime
+)
 
 // ValidateAppVersion reports whether version is one the updater can
 // compare: semver major.minor.patch with an optional pre-release, no

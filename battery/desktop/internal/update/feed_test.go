@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // testFeed builds and signs one feed, returning the manifest bytes, the
@@ -23,8 +24,15 @@ func testFeed(t *testing.T, f Feed) (manifest, sig []byte, pub ed25519.PublicKey
 	return manifest, sig, pub, priv
 }
 
+// testExpires is an expiry an hour out, for fixtures that are not about
+// expiry.
+func testExpires() string {
+	return time.Now().Add(time.Hour).UTC().Format(time.RFC3339)
+}
+
 func sampleFeed() Feed {
 	return Feed{
+		Expires: testExpires(),
 		Version: "1.2.0",
 		Notes:   "What changed",
 		Platforms: map[string]PlatformEntry{
@@ -35,7 +43,7 @@ func sampleFeed() Feed {
 
 func TestParseFeedRoundTrip(t *testing.T) {
 	manifest, sig, pub, _ := testFeed(t, sampleFeed())
-	f, err := ParseFeed(manifest, sig, pub)
+	f, err := ParseFeed(manifest, sig, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,14 +63,14 @@ func TestParseFeedRejectsBadSignatureBeforeParse(t *testing.T) {
 	bad := append([]byte(nil), manifest...)
 	bad[0] = '{'
 	bad[len(bad)-2] = 'x' // corrupt the JSON tail
-	_, err := ParseFeed(bad, sig, pub)
+	_, err := ParseFeed(bad, sig, pub, time.Now())
 	if !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("err = %v, want ErrBadSignature before any parsing", err)
 	}
 	// A tampered but valid-JSON manifest fails the signature too.
 	tampered := append([]byte(nil), manifest...)
 	tampered[len(tampered)-3] = '9'
-	_, err = ParseFeed(tampered, sig, pub)
+	_, err = ParseFeed(tampered, sig, pub, time.Now())
 	if !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("tampered err = %v, want ErrBadSignature", err)
 	}
@@ -72,17 +80,17 @@ func TestParseFeedRejectsBadSignatureBeforeParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ParseFeed(manifest, wrongSig, pub); !errors.Is(err, ErrBadSignature) {
+	if _, err := ParseFeed(manifest, wrongSig, pub, time.Now()); !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("wrong-key err = %v, want ErrBadSignature", err)
 	}
 	// Garbage in the .sig file fails as a signature error, not a decode
 	// panic.
-	if _, err := ParseFeed(manifest, []byte("!!!not base64!!!"), pub); !errors.Is(err, ErrBadSignature) {
+	if _, err := ParseFeed(manifest, []byte("!!!not base64!!!"), pub, time.Now()); !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("garbage sig err = %v, want ErrBadSignature", err)
 	}
 	// A truncated (not 64-byte) signature fails.
 	short := []byte("QUJDRA==") // "ABCD"
-	if _, err := ParseFeed(manifest, short, pub); !errors.Is(err, ErrBadSignature) {
+	if _, err := ParseFeed(manifest, short, pub, time.Now()); !errors.Is(err, ErrBadSignature) {
 		t.Fatalf("short sig err = %v, want ErrBadSignature", err)
 	}
 }
@@ -95,7 +103,7 @@ func TestParseFeedRejectsOversizeManifest(t *testing.T) {
 		t.Fatalf("test manifest is %d bytes, need over %d", len(manifest), MaxManifestSize)
 	}
 	// Even a VALID signature over an oversize manifest is refused.
-	if _, err := ParseFeed(manifest, sig, pub); !errors.Is(err, ErrBadManifest) {
+	if _, err := ParseFeed(manifest, sig, pub, time.Now()); !errors.Is(err, ErrBadManifest) {
 		t.Fatalf("err = %v, want ErrBadManifest for oversize", err)
 	}
 	_ = priv
@@ -105,14 +113,14 @@ func TestParseFeedRejectsBadSemver(t *testing.T) {
 	f := sampleFeed()
 	f.Version = "1.2" // not major.minor.patch
 	manifest, sig, pub, _ := testFeed(t, f)
-	if _, err := ParseFeed(manifest, sig, pub); !errors.Is(err, ErrBadManifest) {
+	if _, err := ParseFeed(manifest, sig, pub, time.Now()); !errors.Is(err, ErrBadManifest) {
 		t.Fatalf("err = %v, want ErrBadManifest", err)
 	}
 	// A bad version inside a channel entry too.
 	f = sampleFeed()
 	f.Channels = map[string]Release{"beta": {Version: "beta", Platforms: f.Platforms}}
 	manifest, sig, pub, _ = testFeed(t, f)
-	if _, err := ParseFeed(manifest, sig, pub); !errors.Is(err, ErrBadManifest) {
+	if _, err := ParseFeed(manifest, sig, pub, time.Now()); !errors.Is(err, ErrBadManifest) {
 		t.Fatalf("channel err = %v, want ErrBadManifest", err)
 	}
 }
@@ -121,7 +129,7 @@ func TestParseFeedRejectsMissingVersion(t *testing.T) {
 	f := sampleFeed()
 	f.Version = ""
 	manifest, sig, pub, _ := testFeed(t, f)
-	if _, err := ParseFeed(manifest, sig, pub); !errors.Is(err, ErrBadManifest) {
+	if _, err := ParseFeed(manifest, sig, pub, time.Now()); !errors.Is(err, ErrBadManifest) {
 		t.Fatalf("err = %v, want ErrBadManifest", err)
 	}
 }
@@ -134,7 +142,7 @@ func TestFeedSelectPrefersChannelWhenPresent(t *testing.T) {
 		}},
 	}
 	manifest, sig, pub, _ := testFeed(t, f)
-	parsed, err := ParseFeed(manifest, sig, pub)
+	parsed, err := ParseFeed(manifest, sig, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}

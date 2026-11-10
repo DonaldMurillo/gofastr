@@ -135,3 +135,57 @@ func TestCopyTreeReadOnlyDirectory(t *testing.T) {
 		t.Fatalf("dst mode = %o, want 755", got)
 	}
 }
+
+// The feed pair is public: a static web server running as another user
+// reads it. The modes hold under a tight umask and over files an older
+// release wrote 0600, while the signing key and the lock stay private.
+func TestFeedFilesArePublic(t *testing.T) {
+	withUmask(t, 0o077)
+	dir := t.TempDir()
+	keyPath, _, _, _ := writeKeyFile(t, dir)
+	archive := writeArchive(t, dir)
+
+	fresh := filepath.Join(dir, "parent", "feed")
+	if err := WriteFeed(fresh, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	wantMode(t, fresh, 0o755)
+	wantMode(t, filepath.Join(fresh, "manifest.json"), 0o644)
+	wantMode(t, filepath.Join(fresh, "manifest.json.sig"), 0o644)
+	wantMode(t, filepath.Join(fresh, ".manifest.lock"), 0o600)
+	wantMode(t, keyPath, 0o600)
+
+	// A second write over the same files keeps them public.
+	if err := os.Chmod(filepath.Join(fresh, "manifest.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(fresh, "manifest.json.sig"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeed(fresh, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	wantMode(t, filepath.Join(fresh, "manifest.json"), 0o644)
+	wantMode(t, filepath.Join(fresh, "manifest.json.sig"), 0o644)
+
+	// A directory that already exists keeps the mode its owner chose.
+	private := filepath.Join(dir, "private")
+	if err := os.Mkdir(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeed(private, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	wantMode(t, private, 0o700)
+}
+
+func wantMode(t *testing.T, path string, want fs.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s mode = %o, want %o", filepath.Base(path), got, want)
+	}
+}

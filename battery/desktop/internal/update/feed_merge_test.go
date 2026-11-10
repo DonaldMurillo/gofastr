@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFeedRefusesInvalidChannelVersion(t *testing.T) {
@@ -15,13 +16,14 @@ func TestFeedRefusesInvalidChannelVersion(t *testing.T) {
 			keyPath, _, pub, privateKey := writeKeyFile(t, dir)
 			archive := writeArchive(t, dir)
 			manifest, signature, err := SignFeed(Feed{
+				Expires:  testExpires(),
 				Version:  "1.2.0",
 				Channels: map[string]Release{"preview": {Version: version}},
 			}, privateKey)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ParseFeed(manifest, signature, pub); err == nil {
+			if _, err := ParseFeed(manifest, signature, pub, time.Now()); err == nil {
 				t.Fatal("invalid channel fixture was accepted by the updater")
 			}
 			for name, data := range map[string][]byte{"manifest.json": manifest, "manifest.json.sig": signature} {
@@ -29,7 +31,7 @@ func TestFeedRefusesInvalidChannelVersion(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			err = WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip")
+			err = WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0)
 			if err == nil || !strings.Contains(err.Error(), `channel "preview" version`) {
 				t.Errorf("invalid channel version error = %v", err)
 			}
@@ -50,14 +52,14 @@ func TestFeedKeepsValidChannel(t *testing.T) {
 	channel := Release{Version: "1.3.0-beta.1", Notes: "preview notes", Platforms: map[string]PlatformEntry{
 		"darwin-amd64": {URL: "https://example.com/preview.zip", SHA256: strings.Repeat("a", 64), Size: 123},
 	}}
-	manifest, _, err := SignFeed(Feed{Version: "1.2.0", Channels: map[string]Release{"preview": channel}}, privateKey)
+	manifest, _, err := SignFeed(Feed{Expires: testExpires(), Version: "1.2.0", Channels: map[string]Release{"preview": channel}}, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip"); err != nil {
+	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err = os.ReadFile(filepath.Join(dir, "manifest.json"))
@@ -68,7 +70,7 @@ func TestFeedKeepsValidChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, err := ParseFeed(manifest, signature, pub)
+	feed, err := ParseFeed(manifest, signature, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +86,7 @@ func TestFeedKeepsOtherPlatforms(t *testing.T) {
 	archive := writeArchive(t, dir)
 	out := filepath.Join(dir, "feed")
 	for _, platform := range []string{"darwin-arm64", "darwin-amd64"} {
-		if err := WriteFeed(out, keyPath, "1.2.0", "notes", platform, archive, "https://example.com/"+platform+".zip"); err != nil {
+		if err := WriteFeed(out, keyPath, "1.2.0", "notes", platform, archive, "https://example.com/"+platform+".zip", 0); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -96,7 +98,7 @@ func TestFeedKeepsOtherPlatforms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	feed, err := ParseFeed(manifest, signature, pub)
+	feed, err := ParseFeed(manifest, signature, pub, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +111,7 @@ func TestFeedRefusesVersionMismatch(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _, _, privateKey := writeKeyFile(t, dir)
 	archive := writeArchive(t, dir)
-	manifest, _, err := SignFeed(Feed{Version: "1.1.0"}, privateKey)
+	manifest, _, err := SignFeed(Feed{Expires: testExpires(), Version: "1.1.0"}, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +119,7 @@ func TestFeedRefusesVersionMismatch(t *testing.T) {
 	if err := os.WriteFile(path, manifest, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip"); err == nil {
+	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err == nil {
 		t.Fatal("accepted a different existing version")
 	}
 	got, err := os.ReadFile(path)
@@ -138,7 +140,7 @@ func TestFeedRefusesMalformedManifest(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip"); err == nil {
+			if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err == nil {
 				t.Fatal("accepted a malformed existing manifest")
 			}
 		})

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // The feed format: manifest.json plus a detached manifest.json.sig.
@@ -21,6 +22,20 @@ var ErrBadSignature = errors.New("update feed signature is invalid")
 // ErrBadManifest is the sentinel for a manifest that verifies but does
 // not parse or validate.
 var ErrBadManifest = errors.New("update feed manifest is malformed")
+
+// ErrFeedExpired is the sentinel for a manifest that verifies and
+// parses but whose signed expiry has passed. A captured manifest stays
+// validly signed forever, so without an expiry whoever serves the feed
+// could hold a client on an old release by replaying it.
+var ErrFeedExpired = errors.New("update feed manifest has expired")
+
+// The lifetime WriteFeed signs into a manifest: the default when the
+// caller names none, and the longest it accepts. Past the expiry every
+// client refuses the manifest until the publisher signs a new one.
+const (
+	DefaultFeedLifetime = 30 * 24 * time.Hour
+	MaxFeedLifetime     = 365 * 24 * time.Hour
+)
 
 // PlatformEntry is one platform's download in the feed.
 type PlatformEntry struct {
@@ -39,9 +54,12 @@ type Release struct {
 
 // Feed is the parsed manifest. Channels is optional: a Channel
 // configured on the updater selects feed.channels[channel] when
-// present, and the top level otherwise.
+// present, and the top level otherwise. Expires is the RFC 3339 time
+// the manifest stops being valid; it covers every channel, and a
+// manifest without one is refused.
 type Feed struct {
 	Version   string                   `json:"version"`
+	Expires   string                   `json:"expires"`
 	Notes     string                   `json:"notes"`
 	Platforms map[string]PlatformEntry `json:"platforms"`
 	Channels  map[string]Release       `json:"channels,omitempty"`
@@ -74,8 +92,10 @@ func (r Release) Entry(platformKey string) (PlatformEntry, error) {
 
 // ParseFeed verifies the detached signature over the exact manifest
 // bytes FIRST (nothing is parsed, not even for the error message, when
-// the signature fails), then parses and shape-checks the manifest.
-func ParseFeed(manifest, sigFile []byte, pub ed25519.PublicKey) (*Feed, error) {
+// the signature fails), then parses and shape-checks the manifest, and
+// last refuses one whose expiry is missing, malformed, or not after
+// now. There is no grace period: the publisher chose the lifetime.
+func ParseFeed(manifest, sigFile []byte, pub ed25519.PublicKey, now time.Time) (*Feed, error) {
 	if len(manifest) > MaxManifestSize {
 		return nil, fmt.Errorf("%w: manifest exceeds %d bytes", ErrBadManifest, MaxManifestSize)
 	}
@@ -96,6 +116,16 @@ func ParseFeed(manifest, sigFile []byte, pub ed25519.PublicKey) (*Feed, error) {
 		if _, err := ParseVersion(ch.Version); err != nil {
 			return nil, fmt.Errorf("%w: channel %q version: %v", ErrBadManifest, name, err)
 		}
+	}
+	if f.Expires == "" {
+		return nil, fmt.Errorf("%w: no expires; sign the feed again with this version of gofastr desktop feed", ErrBadManifest)
+	}
+	expires, err := time.Parse(time.RFC3339, f.Expires)
+	if err != nil {
+		return nil, fmt.Errorf("%w: expires is not an RFC 3339 time", ErrBadManifest)
+	}
+	if !now.Before(expires) {
+		return nil, ErrFeedExpired
 	}
 	return &f, nil
 }

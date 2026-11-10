@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/update"
 )
@@ -88,6 +89,7 @@ func installFixture(t *testing.T, feedVersion string, archive []byte) (*Battery,
 	t.Cleanup(srv.Close)
 	var err error
 	manifest, sig, err = update.SignFeed(update.Feed{
+		Expires: time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
 		Version: feedVersion,
 		Platforms: map[string]update.PlatformEntry{
 			update.PlatformKey(): {URL: srv.URL + "/Notes.zip", SHA256: hex.EncodeToString(sum[:]), Size: int64(len(archive))},
