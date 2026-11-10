@@ -449,9 +449,17 @@ func TestRuntimeDocScriptBoundaryShape(t *testing.T) {
 	if navIdx == -1 {
 		t.Fatal("navigate() not found")
 	}
+	// navigate() asks about the destination it resolved (to: the
+	// path+search of its argument against the document base), so a
+	// relative "?p=2" is read in the page's own locale; the document
+	// load keeps the argument as written.
 	navBody := js[navIdx:min(navIdx+1400, len(js))]
-	if !strings.Contains(navBody, "crossesDocBoundary(path)") || !strings.Contains(navBody, "location.assign(path)") {
+	gate, push := strings.Index(navBody, "crossesDocBoundary(to)"), strings.Index(navBody, "_pushPub(path")
+	if gate == -1 || !strings.Contains(navBody, "location.assign(path)") {
 		t.Errorf("navigate() must hard-load across a document boundary; body: %q", truncate(navBody, 400))
+	}
+	if push == -1 || gate > push {
+		t.Errorf("navigate() must consult crossesDocBoundary before its history write; body: %q", truncate(navBody, 600))
 	}
 	if !strings.Contains(js, "crossesDocBoundary(path)") || !strings.Contains(js, "location.assign(path)") {
 		t.Error("loadPage has no document-boundary backstop (redirect legs and future callers rely on it)")

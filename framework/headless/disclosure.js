@@ -21,7 +21,9 @@
 //   - the optional trap posture: Tab containment over the kernel's
 //     shared focus selector (the widget runtime's own technique — see
 //     widgetfocus.js), armed while the disclosure is open and released
-//     on close and on detach.
+//     on close, on detach, and when the disclosure stops being drawn
+//     (its sheet hides the phone menu past a breakpoint), which also
+//     closes it.
 //
 // A menu disclosure's focus-on-open, lazy inflation and keyboard
 // contract live in headless-menu, which declares this module as a
@@ -117,8 +119,10 @@
       }
       inertNeighbors.set(d, made);
       activeTraps.add(d);
+      if (trapSizes) trapSizes.observe(d);
     } else {
       activeTraps.delete(d);
+      if (trapSizes) trapSizes.unobserve(d);
       const made = inertNeighbors.get(d);
       if (!made) return;
       for (const sib of made) sib.removeAttribute('inert');
@@ -133,12 +137,35 @@
   // gone from the focus order and the accessibility tree for the life
   // of the tab. Watch for the detach directly, and only while a trap
   // is actually engaged.
+  //
+  // An open trap that is no longer DRAWN is the same hazard with the
+  // element still attached: the site header's phone menu is hidden by
+  // its sheet from a breakpoint up, so a reader who opened it and then
+  // widened the window (or rotated the tablet) was left with a trap
+  // around nothing. Every Tab was swallowed and the rest of the page
+  // stayed inert, with no control on screen to close it. Such a trap is
+  // closed, the way the reader would have closed it. drawn is a box on
+  // screen: display:none (its own or an ancestor's) and
+  // content-visibility:hidden give none. The kernel's _rendered is not
+  // the test: it also reads an inert ancestor, and a layer opened over
+  // the page (an intercept pane) makes the page inert without hiding
+  // the menu.
+  const drawn = (d) => (d.checkVisibility ? d.checkVisibility() : d.getClientRects().length > 0);
   let trapWatcher = null;
   const releaseStaleTraps = () => {
     for (const d of Array.from(activeTraps)) {
       if (!d.isConnected || !d.open) applyTrap(d, false);
+      else if (!drawn(d)) {
+        applyTrap(d, false);
+        d.removeAttribute('open'); // its toggle mirrors and records
+      }
     }
   };
+  // The box going away (and coming back) is a size change, whatever
+  // caused it: a viewport or container breakpoint, a class on an
+  // ancestor. Observed per armed trap; a browser without the observer
+  // lets go at the next Tab (the handler below asks first).
+  const trapSizes = window.ResizeObserver ? new ResizeObserver(releaseStaleTraps) : null;
   const syncTrapWatcher = () => {
     if (activeTraps.size > 0 && !trapWatcher) {
       // childList only: releaseStaleTraps mutates attributes, so an
@@ -364,6 +391,10 @@
     // focus inside it while no modal widget is above it. The inert
     // containment above is the primary trap; this catches the rest.
     if (NS._modalStack && NS._modalStack.length > 0) return;
+    // A trap that stopped being drawn lets go (and closes) before this
+    // Tab moves: held for it, Tab had no stop to go to and every press
+    // was swallowed.
+    releaseStaleTraps();
     const traps = openTraps();
     if (traps.length === 0) return;
     const d = traps[traps.length - 1];

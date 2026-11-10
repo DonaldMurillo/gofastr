@@ -616,6 +616,27 @@ few lines, and link the PR or the docs page for the rest.
   reached the app with a nil body, so middleware that drains or closes
   `r.Body` panicked under Local while the same call worked on Remote.
   Regenerate the SDK to pick it up.
+- **Navigation keys on the resolved path**
+  ([runtime contract](framework/docs/content/runtime-contract.md)).
+  `__gofastr.navigate()`, a `data-cui-spa` GET form and an
+  `X-Gofastr-Location` redirect now give the router `pathname+search`,
+  as a link click does. Before, `navigate('?p=2')` could replay another
+  page's cached screen, `navigate('/b#frag')` lost widgets scoped to
+  `/b`, and an in-page `#anchor` link on a page reached with a fragment
+  fetched it again and dropped typed input. `gofastr:navigate`'s
+  `detail.path` and `__gofastr.currentPath` never hold a fragment.
+- **Back after an island write shows the write.** A successful
+  `data-cui-rpc`, toggle or optimistic action whose method is not `GET`
+  now evicts the page it ran on from the screen cache, so Back fetches
+  it. Before, a row an island RPC added was missing after a link away
+  and Back, until a reload. A read-only island sent as `POST` (a pager)
+  fetches on Back too; send it as `GET` to keep the cached replay.
+- **A hidden phone menu no longer traps the keyboard.** A
+  `headless.Disclosure{Trap: true}` (the generated site header's menu)
+  that its sheet hides while open, for example when the window widens
+  past the breakpoint, is now closed and its focus trap released.
+  Before, every Tab on the page was swallowed and the toast stack, route
+  announcer and skip link stayed `inert`.
 - **The `Sunset` header is an HTTP-date**
   ([API versioning](framework/docs/content/api-versioning.md)).
   `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local

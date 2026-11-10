@@ -42,8 +42,13 @@
     const meta = document.querySelector('meta[name="csrf-token"]');
     const token = meta && meta.getAttribute('content');
     if (token) headers['X-CSRF-Token'] = token;
+    method = (method || 'POST').toUpperCase();
+    // The page the action runs on, read before the request (the URL
+    // may have moved by the time it answers). No router (an embed), no
+    // screen cache to name it for.
+    const ranOn = NS.invalidate && NS._unlocalize(location.pathname) + location.search;
     return NS.fetch(NS._lp?.(url) ?? url, {
-      method: (method || 'POST').toUpperCase(),
+      method,
       credentials: 'same-origin',
       headers,
     }).then((res) => {
@@ -56,6 +61,9 @@
       }
       if (!res.ok) return false;
       if (NS._inval) NS._inval(res);
+      // As src/rpc.js: the write staled the cached copy of the page it
+      // ran on, which Back would replay with the pre-action state.
+      if (ranOn && method !== 'GET') NS.invalidate(ranOn);
       return true;
     }, () => false);
   }
