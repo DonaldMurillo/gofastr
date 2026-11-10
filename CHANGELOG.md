@@ -539,6 +539,16 @@ few lines, and link the PR or the docs page for the rest.
 - **A `[]byte` field sent text that is not base64 gets a refusal that
   says so.** The JSON error detail read "expected a string, got a
   string"; it now reads "the value could not be decoded".
+- **The `Sunset` header is an HTTP-date**
+  ([API versioning](framework/docs/content/api-versioning.md)).
+  `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local
+  wall time with "EST"), which an HTTP date parser refuses. It now
+  writes GMT, as RFC 8594 asks.
+- **The harness `Grep` tool says when it cut a search short.** A search
+  that stopped at 1000 matches, or at the 8 MiB cap in a file with CRLF
+  line endings, returned what it had with no notice, and a path that is
+  a symlink to a directory answered "(no matches)". The first two now
+  end with a truncation line and the third searches the directory.
 - **`contracts_verify` refuses an unknown capability before it reads the
   tree.** The MCP dev tool loaded the config and scanned every source
   file first, so a mistyped capability cost a full scan, and a broken

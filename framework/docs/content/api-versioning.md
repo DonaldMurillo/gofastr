@@ -300,7 +300,7 @@ deprecated version then carries:
 
 ```
 Deprecation: true
-Sunset: <RFC 1123 date>
+Sunset: <HTTP-date in GMT, e.g. Mon, 01 Mar 2027 00:00:00 GMT>
 Link: </api/v2>; rel="successor-version"
 ```
 

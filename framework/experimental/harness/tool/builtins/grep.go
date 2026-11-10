@@ -61,6 +61,7 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 
 	var out strings.Builder
 	matched := 0
+	capped := false
 	walk := func(path string, d fs.DirEntry, walkErr error) error {
 		// A cancelled turn (CancelTurn, shutdown) ends the walk: Grep
 		// over "/" otherwise keeps the turn busy until it finishes.
@@ -84,17 +85,23 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 			return nil
 		}
 		defer f.Close()
-		scanner := bufio.NewScanner(io.LimitReader(f, maxGrepFileBytes))
+		limited := &io.LimitedReader{R: f, N: maxGrepFileBytes}
+		scanner := bufio.NewScanner(limited)
 		scanner.Buffer(make([]byte, 1024*64), 1024*1024)
 		lineNo := 0
-		var read int64
 		defer func() {
 			// Scan stops on a line past the buffer cap and reports it
 			// only through Err. Silently returning the matches found so
 			// far tells the caller this file held nothing more.
+			if capped {
+				return // the match cap says so for the whole search
+			}
 			if err := scanner.Err(); err != nil {
 				fmt.Fprintf(&out, "%s: results truncated: %v\n", path, err)
-			} else if read >= maxGrepFileBytes {
+			} else if limited.N == 0 && moreToRead(f) {
+				// The byte cap is read off the reader, not summed from
+				// line lengths: a CRLF line is two bytes longer than its
+				// text, and a sum that assumed one never reached the cap.
 				fmt.Fprintf(&out, "%s: results truncated: read the first %d bytes\n", path, int64(maxGrepFileBytes))
 			}
 		}()
@@ -102,12 +109,12 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			read += int64(len(scanner.Bytes())) + 1
 			lineNo++
 			if re.MatchString(scanner.Text()) {
 				fmt.Fprintf(&out, "%s:%d: %s\n", path, lineNo, scanner.Text())
 				matched++
-				if matched >= 1000 { // cap output
+				if matched >= maxGrepMatches {
+					capped = true
 					return fs.SkipAll
 				}
 			}
@@ -121,6 +128,12 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	}
 	switch {
 	case info.IsDir():
+		// WalkDir does not follow a link it is handed as its root: it
+		// visits the link itself, which is no regular file, and the
+		// search of a linked directory answered "(no matches)".
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
 		_ = filepath.WalkDir(root, walk)
 	case info.Mode().IsRegular():
 		_ = walk(root, fs.FileInfoToDirEntry(info), nil)
@@ -129,6 +142,9 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 	}
 	if ctx.Err() != nil {
 		return errorResult(fmt.Sprintf("Grep: cancelled.\nPartial output:\n%s", out.String())), nil
+	}
+	if capped {
+		fmt.Fprintf(&out, "results truncated: stopped at %d matches; narrow the pattern or the path\n", maxGrepMatches)
 	}
 	if out.Len() == 0 {
 		return textResult("(no matches)"), nil
@@ -139,6 +155,18 @@ func (Grep) Run(ctx context.Context, call tool.ToolCall, _ tool.EventSink) (*too
 // maxGrepFileBytes caps how much of one file Grep reads, so a huge log
 // or a sparse file cannot hold the turn.
 const maxGrepFileBytes = 8 << 20
+
+// maxGrepMatches caps the matching lines one search returns. The search
+// stops there, across files, and says so.
+const maxGrepMatches = 1000
+
+// moreToRead reports whether f holds a byte past what was read from it.
+// A read that fails (end of file included) is no more to read.
+func moreToRead(f *os.File) bool {
+	var one [1]byte
+	n, err := f.Read(one[:])
+	return err == nil && n > 0
+}
 
 // openRegular opens path only when it is a regular file. FIFOs, devices
 // and sockets are skipped: opening a FIFO blocks until a writer appears,
