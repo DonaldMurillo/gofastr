@@ -4334,6 +4334,11 @@ func appSpecIndexableColumn(decl framework.EntityDeclaration, col string) bool {
 	if col == "id" {
 		return DeclKeyIsID(decl)
 	}
+	// The tenant column is the one tenant_field names: under a custom
+	// name the table has no tenant_id.
+	if col == "tenant_id" && scope.TenantField != "" {
+		return false
+	}
 	return true
 }
 

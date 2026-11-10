@@ -3,6 +3,9 @@ package appspec
 import (
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework"
+	fwentity "github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // An index over a column the entity does not have loaded clean, and the
@@ -79,5 +82,41 @@ func TestIndexRefusesIDUnderNaturalKey(t *testing.T) {
 `)
 	if err == nil || !strings.Contains(err.Error(), `names column "id"`) {
 		t.Fatalf("error = %v, want the id column refused", err)
+	}
+}
+
+// A multi-tenant entity's tenant column is the one tenant_field names.
+// With a custom name the table has no tenant_id, so an index cannot name
+// it. The load refuses every multi_tenant entity today (the generator
+// cannot emit a tenant resolver), so this asks the column rule itself:
+// it must already be right the day that refusal lifts.
+func TestIndexTenantColumnFollowsTenantField(t *testing.T) {
+	decl := func(tenantField string) framework.EntityDeclaration {
+		return framework.EntityDeclaration{
+			Name:   "posts",
+			Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}},
+			Scope:  &fwentity.ScopeDeclaration{MultiTenant: true, TenantField: tenantField},
+		}
+	}
+	for _, tc := range []struct {
+		tenantField, col string
+		want             bool
+	}{
+		{"", "tenant_id", true},
+		{"tenant_id", "tenant_id", true},
+		{"account_id", "account_id", true},
+		{"account_id", "tenant_id", false},
+		{"account_id", "title", true},
+	} {
+		if got := appSpecIndexableColumn(decl(tc.tenantField), tc.col); got != tc.want {
+			t.Errorf("tenant_field %q: index column %q indexable = %v, want %v", tc.tenantField, tc.col, got, tc.want)
+		}
+	}
+	// A field the entity declares under that name is a column whatever
+	// the tenant column is called.
+	d := decl("account_id")
+	d.Fields = append(d.Fields, framework.FieldDeclaration{Name: "tenant_id", Type: "string"})
+	if !appSpecIndexableColumn(d, "tenant_id") {
+		t.Error("a declared field named tenant_id is not indexable")
 	}
 }
