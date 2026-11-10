@@ -26,10 +26,13 @@ var (
 	pageNotCompleteTitle  = i18n.Define("setup.not_complete_title", "Setup is not complete")
 	pageIncompleteHeading = i18n.Define("setup.incomplete_heading", "Setup incomplete")
 	pageRetry             = i18n.Define("setup.retry", "Retry")
-	pageHopTitle          = i18n.Define("setup.hop_title", "Opening setup")
 	pageIncompleteWiring  = i18n.Define("setup.incomplete_wiring", "Every step ran, but setup still reports incomplete. The Complete predicate does not observe the steps' writes, e.g. AdminStep configured with a different users table than the auth store writes to. Fix the wiring and restart.")
 	pageCheckFailed       = i18n.Define("setup.check_failed", "Every step ran, but the completion check failed: {{cause}}. Fix the underlying issue and reload this page: setup finishes automatically once the check passes.")
 )
+
+// pageHopTitle heads the page a cross-site arrival on the setup link
+// gets, which loads the link again from this origin (renderHop).
+var pageHopTitle = i18n.Define("setup.hop_title", "Opening setup")
 
 // The built-in steps' titles, labels and refusals.
 var (
