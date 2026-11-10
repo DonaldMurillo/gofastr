@@ -85,7 +85,7 @@ func TestDarwinVerifyPinsTeamID(t *testing.T) {
 func TestDarwinVerifyRefusesNoIdentity(t *testing.T) {
 	for name, runner := range map[string]*fakeRunner{
 		"ad-hoc":    {out: adHocOutput},
-		"unsigned":  {outErr: &ExitError{Name: "codesign", Code: 1}},
+		"unsigned":  {outErr: &ExitError{Name: "codesign", Code: 1, Stderr: "/Applications/Notes.app: code object is not signed at all\n"}},
 		"no anchor": {out: "designated => identifier \"dev.gofastr.notes\"\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -136,6 +136,8 @@ func TestDarwinAllowAdHocWarns(t *testing.T) {
 func TestDarwinUnreadableIdentityRefuses(t *testing.T) {
 	for name, outErr := range map[string]error{
 		"did not run":     errFakeCommand,
+		"path is gone":    &ExitError{Name: "codesign", Code: 1, Stderr: "/Applications/Notes.app: No such file or directory\n"},
+		"unreadable":      &ExitError{Name: "codesign", Code: 1, Stderr: "/Applications/Notes.app: bundle format unrecognized, invalid, or unsuitable\n"},
 		"usage error":     &ExitError{Name: "codesign", Code: 2},
 		"killed, no code": &ExitError{Name: "codesign", Code: -1},
 	} {
@@ -254,6 +256,15 @@ func TestDarwinAdHocBundleFailsThePin(t *testing.T) {
 	bare.SetSignaturePolicy(SignaturePolicy{AllowAdHoc: true})
 	if err := bare.VerifySignature(download); err != nil {
 		t.Fatalf("AllowAdHoc on an unsigned app: %v", err)
+	}
+
+	// A running path that is gone (the user moved the app while it ran)
+	// also makes codesign exit 1. It says nothing about the identity,
+	// so the opt-out does not apply.
+	gone := &darwinPlatform{onMain: inlineMain, runner: ExecRunner{}, running: filepath.Join(t.TempDir(), "Moved.app")}
+	gone.SetSignaturePolicy(SignaturePolicy{AllowAdHoc: true})
+	if err := gone.VerifySignature(download); !errors.Is(err, ErrSignature) {
+		t.Fatalf("AllowAdHoc with the running bundle gone: err = %v, want ErrSignature", err)
 	}
 }
 

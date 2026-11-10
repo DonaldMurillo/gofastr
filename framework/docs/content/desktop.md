@@ -1757,7 +1757,7 @@ Two more fields decide whose code signature a macOS update must carry:
 |---|---|
 | neither set | The update must satisfy the running app's own designated requirement, the rule macOS uses to call two builds the same app. For a Developer ID signature that is the bundle identifier plus the team's Developer ID certificate, so a renewed certificate of the same team passes and another team's does not. An app signed with `--sign "Developer ID Application: ..."` needs nothing else. |
 | `MacOSTeamID: "ABCDE12345"` | The update must be signed with a Developer ID certificate of that team, whatever the running app carries. An Apple Development certificate of the team does not pass. Needed only when the team itself changes: ship one release with the new team here, signed the old way, then sign the next with the new team and clear the field. |
-| `MacOSAllowAdHoc: true` | An app with no signing identity may install any bundle that carries a valid signature. A signed app is still held to its identity, and when `codesign` cannot be run to read the running app the install is refused. |
+| `MacOSAllowAdHoc: true` | An app with no signing identity may install any bundle that carries a valid signature. A signed app is still held to its identity, and when `codesign` cannot read the running app (it will not run, or the app was moved while open) the install is refused. |
 
 An ad-hoc signed bundle, which is what `gofastr desktop build` writes
 without `--sign`, has no identity to hold an update to. Its installs
@@ -1927,9 +1927,14 @@ The command merges into a manifest already in `-o` only when
 else is refused with both files untouched: a manifest with no
 signature, one another key signed, one edited since. Signing what the
 directory holds would otherwise hand the key's signature to whoever
-can write there, which matters for a renewal job that pulls the live
-feed from its host first. Keep the renewal job's copy of the feed on
-the machine that holds the key.
+can write there.
+
+That check does not make it safe to renew a feed pulled back from its
+host. The host can hand the job an older pair this key once signed for
+the same version, and the job would sign it again with a new expiry,
+which is the replay the expiry exists to stop. Keep the renewal job's
+copy of the feed on the machine that holds the key, and only ever push
+from it.
 
 `manifest.json` and `manifest.json.sig` are written 0644, and every
 directory the command creates on the way to `-o` is 0755, so a static

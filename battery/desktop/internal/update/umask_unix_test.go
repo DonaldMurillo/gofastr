@@ -161,6 +161,21 @@ func TestFeedFilesArePublic(t *testing.T) {
 	wantMode(t, filepath.Join(fresh, ".manifest.lock"), 0o600)
 	wantMode(t, keyPath, 0o600)
 
+	// A second write replaces each file by rename: a reader holding the
+	// old one keeps a whole file, never a truncated one.
+	before, err := os.Stat(filepath.Join(fresh, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		after, err := os.Stat(filepath.Join(fresh, "manifest.json"))
+		if err == nil && os.SameFile(before, after) {
+			t.Error("manifest.json was rewritten in place, not replaced")
+		}
+		if left, _ := filepath.Glob(filepath.Join(fresh, ".manifest.json*.tmp-*")); len(left) > 0 {
+			t.Errorf("temporary files left in the served directory: %v", left)
+		}
+	})
 	// A second write over the same files keeps them public.
 	if err := os.Chmod(filepath.Join(fresh, "manifest.json"), 0o600); err != nil {
 		t.Fatal(err)

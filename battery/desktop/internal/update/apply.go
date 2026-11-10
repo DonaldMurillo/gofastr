@@ -39,16 +39,18 @@ func (ExecRunner) Run(name string, args ...string) error {
 }
 
 // ExitError is a command that ran to completion and exited non-zero.
+// Stderr is what it printed there, for the caller to match on; it can
+// name absolute paths, so Error leaves it out and it is never logged.
 type ExitError struct {
-	Name string
-	Code int
+	Name   string
+	Code   int
+	Stderr string
 }
 
 func (e *ExitError) Error() string { return fmt.Sprintf("%s exited %d", e.Name, e.Code) }
 
-// Output implements CommandRunner. Standard error is dropped: codesign
-// prints the bundle's absolute path there, and the failure is reported
-// by exit status alone.
+// Output implements CommandRunner. Standard error stays out of the
+// error text: codesign prints the bundle's absolute path there.
 func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 	out, err := exec.Command(name, args...).Output()
 	if err == nil {
@@ -56,7 +58,7 @@ func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 	}
 	var exit *exec.ExitError
 	if errors.As(err, &exit) && exit.Exited() {
-		return nil, &ExitError{Name: name, Code: exit.ExitCode()}
+		return nil, &ExitError{Name: name, Code: exit.ExitCode(), Stderr: string(exit.Stderr)}
 	}
 	return nil, fmt.Errorf("%s could not run", name)
 }

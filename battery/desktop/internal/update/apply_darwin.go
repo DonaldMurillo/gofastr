@@ -159,10 +159,14 @@ func (p *darwinPlatform) requirement() (string, error) {
 		}
 		running = filepath.Join(dir, name)
 	}
-	// codesign exits 1 on a bundle that is not signed at all. That and
-	// an ad-hoc signature are the same answer: no identity. Anything
-	// else that goes wrong (codesign missing, a fork failure) leaves the
-	// identity unknown, and an unknown identity pins nothing safely.
+	// A bundle that is not signed at all and an ad-hoc signature are
+	// the same answer: no identity. codesign says the first in words
+	// only. Its exit status is 1 for that and for a path that is gone
+	// or unreadable alike, so the words are the evidence. Anything else
+	// that goes wrong leaves the identity unknown, and an unknown
+	// identity pins nothing safely: an app the user moved while it ran
+	// must not lose its pin. If Apple rewords the message, an unsigned
+	// app refuses its updates, which is the safe way to be wrong.
 	out, err := p.runner.Output("codesign", "-d", "-r-", running)
 	var exit *ExitError
 	switch {
@@ -170,7 +174,7 @@ func (p *darwinPlatform) requirement() (string, error) {
 		if pin := designatedRequirement(string(out)); pin != "" {
 			return pin, nil
 		}
-	case errors.As(err, &exit) && exit.Code == 1:
+	case errors.As(err, &exit) && exit.Code == 1 && strings.Contains(exit.Stderr, notSignedMessage):
 	default:
 		return "", fmt.Errorf("%w: the running app's signing identity could not be read: %v", ErrSignature, err)
 	}
@@ -182,6 +186,10 @@ func (p *darwinPlatform) requirement() (string, error) {
 	}
 	return "", nil
 }
+
+// notSignedMessage is what codesign prints for a bundle that carries no
+// signature.
+const notSignedMessage = "code object is not signed at all"
 
 // teamRequirement is the code requirement for "signed with this team's
 // Developer ID certificate": the rule codesign writes into a Developer

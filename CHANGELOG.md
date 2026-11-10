@@ -281,8 +281,8 @@ few lines, and link the PR or the docs page for the rest.
   - `desktop.SignUpdateFeed` takes a trailing `validFor time.Duration`
     (0 is the 30-day default).
   - On macOS the update must satisfy the running bundle's designated
-    requirement (its bundle identifier and its team's Developer ID
-    certificate), or carry the Developer ID certificate of the team in
+    requirement (for a Developer ID signature, its bundle identifier
+    and its team's Developer ID certificate), or carry the Developer ID certificate of the team in
     the new `UpdateConfig.MacOSTeamID`.
     An ad-hoc signed or unsigned app has no identity to pin, so its
     installs are refused unless `UpdateConfig.MacOSAllowAdHoc` is set.
