@@ -62,11 +62,15 @@ func (s *homeScreen) Render() render.HTML {
 		ui.Button(ui.ButtonConfig{Label: "Increment"}),
 		interactive.Post("/spike/counter").OnSuccess(interactive.SetSignal(islandSignal)),
 	)
+	// The runtime opens the SSE stream only while the document holds a
+	// push target, so step 5 needs one on this screen.
+	live := render.Tag("div", map[string]string{"data-island": "spike-live"})
 	return render.Tag("div", nil,
 		render.Tag("h1", nil, render.Text("Spike Home Screen")),
 		ui.Link(ui.LinkConfig{Href: "/two", Text: "Go to screen two"}),
 		region,
 		btn,
+		live,
 	)
 }
 
