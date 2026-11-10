@@ -11,10 +11,12 @@
 //   - Fenced code blocks (three or more ` or ~, with an optional info string:
 //     a language, then options this package passes through in data-meta)
 //   - Unordered lists (-, *, +)
-//   - Ordered lists (1., 2., …)
+//   - Ordered lists (1., 2., …; one that does not begin at 1 carries start)
+//   - Nested lists, fenced code and further paragraphs under a list item,
+//     on lines indented two or more spaces past the item's marker
 //   - Blockquotes (>)
 //   - Horizontal rules (---, ***, ___)
-//   - GFM-style tables (| col | col |)
+//   - GFM-style tables (| col | col |; \| is a literal pipe in a cell)
 //   - YAML-ish frontmatter (--- key: value --- at the top of the document)
 //
 // Supported inline elements:

@@ -1493,8 +1493,8 @@ everywhere, not just enforced:
 
 - **Sign out**: the app sidebar footer and (on marketing pages) the header
   carry a `ui.SignOut` control that POSTs to `<base_path>/logout` and returns home.
-- **Auth-aware marketing header**: a signed-in visitor sees a *Dashboard* link
-  + *Sign out* instead of *Sign in*; the header re-renders per request from the
+- **Auth-aware marketing header**: a signed-in visitor sees a *Dashboard* link + *Sign
+  out* instead of *Sign in*; the header re-renders per request from the
   session (`app.NewContextComponent`).
 - **Guest-only auth screens**: the login and signup screens redirect an
   already-signed-in visitor to the app instead of showing a form they're past.

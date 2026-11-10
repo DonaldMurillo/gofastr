@@ -288,7 +288,8 @@ func TestMarkdown_TableAlignClassFixedSet(t *testing.T) {
 }
 
 // TestMarkdown_LinkURLBoundaryShapes pins that parseLink's URL capture —
-// which ends at the FIRST ')' and trims surrounding whitespace — always
+// which ends at the ')' that balances the URL's own parentheses (the
+// first one when they never balance) and trims surrounding whitespace — always
 // feeds the captured prefix through the scheme guard. Truncation and
 // padding are how a payload tries to arrive "split" across the boundary;
 // none of these shapes may yield an executable href.
@@ -310,8 +311,8 @@ func TestMarkdown_LinkURLBoundaryShapes(t *testing.T) {
 		}
 	}
 	// A genuinely safe URL must keep its href: the guard is a filter, not
-	// a blanket replacement.
-	if html := string(RenderHTML("[t](https://example.com/a(b))")); !strings.Contains(html, `href="https://example.com/a(b"`) {
+	// a blanket replacement. Its balanced parenthesis is part of the URL.
+	if html := string(RenderHTML("[t](https://example.com/a(b))")); !strings.Contains(html, `href="https://example.com/a(b)"`) {
 		t.Errorf("[markdown] safe URL with interior paren mangled: %s", html)
 	}
 }

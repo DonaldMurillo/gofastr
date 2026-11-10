@@ -22,7 +22,7 @@ var mdTags = map[string]bool{
 
 var mdAttrs = map[string]bool{
 	"href": true, "src": true, "alt": true, "id": true, "class": true,
-	"tabindex": true, "data-meta": true,
+	"tabindex": true, "data-meta": true, "start": true,
 }
 
 // checkRenderedSafe tokenizes out the way a browser does and fails on a

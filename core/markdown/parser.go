@@ -2,6 +2,7 @@ package markdown
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -197,7 +198,16 @@ func parseHeading(line string) (level int, text string) {
 	for level < len(line) && line[level] == '#' {
 		level++
 	}
-	return level, strings.TrimSpace(strings.TrimLeft(line, "# "))
+	// Only the opening run is syntax. Trimming every leading '#' and
+	// space ate the start of the text too: "## #1 priority" read as
+	// "1 priority".
+	text = strings.TrimSpace(line[level:])
+	// A closing run of '#' set off by a space is syntax as well
+	// ("## Setup ##"); "# C#" keeps its '#'.
+	if t := strings.TrimRight(text, "#"); t != text && (t == "" || strings.HasSuffix(t, " ")) {
+		text = strings.TrimSpace(t)
+	}
+	return level, text
 }
 
 func (p *parser) headingID(text string) string {
@@ -265,6 +275,13 @@ func renderFence(p *parser, sb *strings.Builder) {
 	sb.WriteString("</code></pre>\n")
 }
 
+// atBlockStart reports whether the current line opens a block other than
+// a paragraph, which ends the paragraph (or list item text) above it.
+func (p *parser) atBlockStart() bool {
+	return p.atFence() || p.atComment() || p.atHR() || p.atHeading() || p.atBlockquote() ||
+		p.atUnorderedList() || p.atOrderedList() || p.atTable()
+}
+
 func renderParagraph(p *parser, sb *strings.Builder) {
 	var lines []string
 	for !p.eof() {
@@ -272,8 +289,7 @@ func renderParagraph(p *parser, sb *strings.Builder) {
 		if strings.TrimSpace(raw) == "" {
 			break
 		}
-		if p.atFence() || p.atComment() || p.atHR() || p.atHeading() || p.atBlockquote() ||
-			p.atUnorderedList() || p.atOrderedList() || p.atTable() {
+		if p.atBlockStart() {
 			break
 		}
 		lines = append(lines, raw)
@@ -316,44 +332,127 @@ func renderBlockquote(p *parser, sb *strings.Builder) {
 	sb.WriteString("</blockquote>\n")
 }
 
+// renderList renders one list. An item owns the lines indented two or
+// more spaces past its marker, blank lines between them included, so it
+// can hold a nested list, a fenced code block or a second paragraph. Read
+// as inline text, which is what every continuation line used to be, a
+// nested "- item" showed its dash and a fence under a numbered step ran
+// together as one inline code span. Items separated by a blank line stay
+// one list, and an ordered list that does not begin at 1 says so in
+// start, so "2." after a code block does not count again from 1.
 func renderList(p *parser, sb *strings.Builder, ordered bool) {
 	tag := "ul"
 	if ordered {
 		tag = "ol"
 	}
-	sb.WriteString("<" + tag + ">\n")
+	base := leadingSpaces(p.line())
+	if n, ok := listStart(p.line()); ordered && ok && n != 1 {
+		fmt.Fprintf(sb, "<ol start=\"%d\">\n", n)
+	} else {
+		sb.WriteString("<" + tag + ">\n")
+	}
 	for !p.eof() {
-		marker, content, ok := splitListItem(p.line(), ordered)
+		line := p.line()
+		_, content, ok := splitListItem(line, ordered)
 		if !ok {
 			break
 		}
-		_ = marker
-		// Continuation lines: indented text under the same item.
-		var item []string
-		item = append(item, content)
+		// width is the column the item's text starts at; continuation
+		// lines lose up to that much indentation.
+		width := len(line) - len(content)
+		item := []string{content}
 		p.advance()
 		for !p.eof() {
 			next := p.line()
-			// A comment block under the item hides as it would at the
-			// top level; the item's text continues after it.
-			if strings.HasPrefix(next, "  ") {
-				if end := p.commentEnd(); end >= 0 {
-					p.pos = end + 1
-					continue
+			if strings.TrimSpace(next) == "" {
+				// A blank run stays in the item only when indented
+				// text follows it. The run is measured once, so a
+				// document of blank lines stays linear.
+				j := p.pos
+				for j < len(p.lines) && strings.TrimSpace(p.lines[j]) == "" {
+					j++
 				}
-			}
-			if strings.HasPrefix(next, "  ") && strings.TrimSpace(next) != "" {
-				item = append(item, strings.TrimPrefix(next, "  "))
-				p.advance()
+				if j == len(p.lines) || leadingSpaces(p.lines[j]) < base+2 {
+					break
+				}
+				for ; p.pos < j; p.advance() {
+					item = append(item, "")
+				}
 				continue
 			}
-			break
+			if leadingSpaces(next) < base+2 {
+				break
+			}
+			// A comment block under the item hides as it would at the
+			// top level; the item's text continues after it.
+			if end := p.commentEnd(); end >= 0 {
+				p.pos = end + 1
+				continue
+			}
+			item = append(item, stripIndent(next, width))
+			p.advance()
 		}
 		sb.WriteString("  <li>")
-		sb.WriteString(renderInline(strings.Join(item, "\n")))
+		writeListItem(p, sb, item)
 		sb.WriteString("</li>\n")
+		// A blank run between two items of this list does not end it.
+		j := p.pos
+		for j < len(p.lines) && strings.TrimSpace(p.lines[j]) == "" {
+			j++
+		}
+		if j > p.pos && j < len(p.lines) && leadingSpaces(p.lines[j]) < base+2 {
+			if _, _, sibling := splitListItem(p.lines[j], ordered); sibling {
+				p.pos = j
+			}
+		}
 	}
 	sb.WriteString("</" + tag + ">\n")
+}
+
+// writeListItem renders an item's lines. Text up to the first blank line
+// or block opener is inline, as a one-paragraph item always was; whatever
+// follows goes through the block parser. Past the nesting cap the whole
+// item is inline text, the same fail-closed stop a blockquote has.
+func writeListItem(p *parser, sb *strings.Builder, item []string) {
+	ip := &parser{lines: item, pos: 1}
+	for !ip.eof() && strings.TrimSpace(ip.line()) != "" && !ip.atBlockStart() {
+		ip.advance()
+	}
+	if ip.eof() || p.depth+1 >= maxBlockquoteDepth {
+		sb.WriteString(renderInline(strings.Join(item, "\n")))
+		return
+	}
+	sb.WriteString(renderInline(strings.Join(item[:ip.pos], "\n")))
+	sb.WriteByte('\n')
+	sub, _ := renderBodyDepth(strings.Join(item[ip.pos:], "\n"), p.depth+1, p.headingIDs, p.headingUsed)
+	sb.WriteString(string(sub))
+}
+
+func leadingSpaces(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " "))
+}
+
+// stripIndent removes up to n leading spaces.
+func stripIndent(line string, n int) string {
+	if lead := leadingSpaces(line); lead < n {
+		n = lead
+	}
+	return line[n:]
+}
+
+// listStart returns the number an ordered list item opens with. A number
+// too long to be a real step count reports false.
+func listStart(line string) (int, bool) {
+	t := strings.TrimLeft(line, " ")
+	i := 0
+	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
+		i++
+	}
+	if i == 0 || i > 9 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(t[:i])
+	return n, err == nil
 }
 
 func splitListItem(line string, ordered bool) (marker, content string, ok bool) {
@@ -415,15 +514,31 @@ func renderTable(p *parser, sb *strings.Builder) {
 	sb.WriteString("</tbody>\n</table>\n")
 }
 
+// splitTableRow cuts a row at its unescaped pipes. "\|" is a literal pipe
+// in the cell (GFM), inside a code span too: split on every pipe, a cell
+// documenting `text\|number` became two cells and pushed the rest of its
+// row one column right.
 func splitTableRow(line string) []string {
 	t := strings.TrimSpace(line)
 	t = strings.TrimPrefix(t, "|")
-	t = strings.TrimSuffix(t, "|")
-	parts := strings.Split(t, "|")
-	for i, p := range parts {
-		parts[i] = strings.TrimSpace(p)
+	if strings.HasSuffix(t, "|") && !strings.HasSuffix(t, `\|`) {
+		t = strings.TrimSuffix(t, "|")
 	}
-	return parts
+	var parts []string
+	var cell strings.Builder
+	for i := 0; i < len(t); i++ {
+		switch {
+		case t[i] == '\\' && i+1 < len(t) && t[i+1] == '|':
+			cell.WriteByte('|')
+			i++
+		case t[i] == '|':
+			parts = append(parts, strings.TrimSpace(cell.String()))
+			cell.Reset()
+		default:
+			cell.WriteByte(t[i])
+		}
+	}
+	return append(parts, strings.TrimSpace(cell.String()))
 }
 
 func writeCell(sb *strings.Builder, tag, text, align string) {

@@ -432,6 +432,15 @@ browser shows as a space, so source hard-wrapped at 72 columns reads as
 one flowing paragraph. A line that ends in two or more spaces, or in a
 backslash, is a hard break and renders as `<br>`.
 
+A list item owns the lines indented two or more spaces past its marker,
+so it can hold a nested list, a fenced code block or a second paragraph.
+Items separated by a blank line stay one list. An ordered list that does
+not begin at 1 carries `start`, so a list that resumes at `3.` after a
+paragraph keeps counting from 3. In a table cell `\|` is a literal
+pipe, inside a code span too. A link URL keeps its balanced parentheses
+(`[Go](https://en.wikipedia.org/wiki/Go_(game))`), and a `*` or `_` with
+a space after it is text, not emphasis (`2 * 3 * 4`).
+
 Fenced blocks follow CommonMark on two points that matter for
 documentation. A fence is three **or more** of the same character and
 closes only on a run at least as long, so a ` ```` ` block can hold a

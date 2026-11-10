@@ -551,6 +551,33 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Markdown list items hold blocks**
+  ([core packages](framework/docs/content/core-packages.md)). A nested
+  `- item` showed its dash, a fenced block under a numbered step ran
+  together as one inline code span, and a blank line between items
+  split the list so steps counted 1, 1. An item now owns the lines
+  indented under it, and an ordered list that does not begin at 1
+  carries `start`. **Check your own markdown**: a wrapped prose line
+  under an item that begins with `+ `, `- ` or `2. ` now reads as a
+  nested list, as it does in CommonMark. Seven such lines in the docs
+  were rewrapped.
+- **Four more markdown fixes.** `\|` in a table cell is a literal pipe
+  (27 rows in the docs split on it); `## #1 priority` keeps its `#1`;
+  `2 * 3 * 4` is not emphasis; a link URL keeps its balanced
+  parentheses.
+- **Web Bot Auth: a Structured Field decimal serializes canonically.**
+  `1.5` came back `1.500` and `1.005` came back `1.004`, so a correct
+  signature over such a field failed.
+- **A static export under a subpath prefixes `srcset`**
+  ([static export](framework/docs/content/static-export.md)).
+  `<picture>` sources asked the apex and drew nothing on a GitHub Pages
+  project site.
+- **`gofastr docs` and `framework_docs_list` summaries are the first
+  paragraph**, not the first hard-wrapped line (one read "```bash").
+- **Singular headings for regular plurals.** "New Aliase", "New
+  Quizze", "New Cach" and "New Heroe" read Alias, Quiz, Cache and Hero.
+- **The harness TUI leaves fenced code as written.** A shell comment in
+  a fence drew as a heading and `**kwargs` lost its stars.
 - **Charts draw what they are given**
   ([components](framework/docs/content/ui-new-components.md)).
   `PieChart` drew an empty square when one slice was the whole pie;

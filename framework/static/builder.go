@@ -1175,6 +1175,13 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 	}
 	// 1. Attributes: src="…"/href="…"/action="…" (assets, nav links, forms).
 	page = baseAttrURL.ReplaceAllString(page, "${1}${2}=\""+b.BasePath+"/${3}")
+	// 1b. srcset: a comma-separated list of URLs, so step 1's one URL per
+	// attribute does not fit it. It runs before step 2, which would
+	// otherwise prefix only a first candidate under /__gofastr/.
+	page = baseSrcsetAttr.ReplaceAllStringFunc(page, func(m string) string {
+		sub := baseSrcsetAttr.FindStringSubmatch(m)
+		return sub[1] + prefixSrcset(sub[2], b.BasePath) + `"`
+	})
 	// 2. Inline JSON values: the component catalog seeds
 	// "stylePath":"/__gofastr/comp/<name>.css" entries the runtime
 	// lazy-loads at runtime. Those aren't attributes, so the regex
@@ -1200,6 +1207,47 @@ func (b *Builder) rewriteBaseURLs(page string) string {
 		return baseLocales.FindStringSubmatch(m)[1] + `"base":` + string(base)
 	})
 	return page
+}
+
+// baseSrcsetAttr matches a whitespace-delimited srcset="…" or
+// imagesrcset="…" (a preload link's spelling of the same list).
+var baseSrcsetAttr = regexp.MustCompile(`([\s](?:srcset|imagesrcset)=")([^"]*)"`)
+
+// prefixSrcset puts base in front of every root-absolute URL in a srcset
+// value. A <picture>'s <source srcset> is what the browser loads, so with
+// only <img src> prefixed, ui.Image and ui.PipelineImage drew nothing on
+// a subpath deploy. The list is read the way the HTML parser reads it: a
+// URL runs to the next whitespace, so the comma inside a data: URL is
+// part of it, and its descriptors run to the next comma.
+func prefixSrcset(v, base string) string {
+	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
+	var sb strings.Builder
+	for i := 0; i < len(v); {
+		j := i
+		for j < len(v) && (space(v[j]) || v[j] == ',') {
+			j++
+		}
+		sb.WriteString(v[i:j])
+		i = j
+		for j < len(v) && !space(v[j]) {
+			j++
+		}
+		url := v[i:j]
+		if strings.HasPrefix(url, "/") && !strings.HasPrefix(url, "//") {
+			sb.WriteString(base)
+		}
+		sb.WriteString(url)
+		i = j
+		if strings.HasSuffix(url, ",") {
+			continue // no descriptors: the comma ended the candidate
+		}
+		for j < len(v) && v[j] != ',' {
+			j++
+		}
+		sb.WriteString(v[i:j])
+		i = j
+	}
+	return sb.String()
 }
 
 // baseLocales matches the base field of the locale set a page of an app

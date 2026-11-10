@@ -340,8 +340,8 @@ newer view. Two patterns handle this:
 1. **Version tokens.** A sortable column on the source row
    (`created_at`, `version`, `id`) ships in the SSE payload. The
    renderer keeps the highest-seen token per row and drops frames whose
-   token is older. This is what `ui.SortableList`'s `data-hui-sortable-version`
-   + 409 reconciliation path does for reorders.
+   token is older. This is what `ui.SortableList`'s `data-hui-sortable-version` + 409
+   reconciliation path does for reorders.
 2. **Authoritative refetch.** On any ambiguous signal (reconnect, a
    duplicate, an out-of-order id), refetch the rendered island HTML from
    the source of truth and replace the slot wholesale. Simpler than

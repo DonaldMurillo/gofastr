@@ -331,11 +331,21 @@ func (p *sfParser) parseNumber(it *sfItem) error {
 			return errSF
 		}
 		it.typ = sfDecimal
-		v, err := strconv.ParseFloat(text, 64)
+		// Thousandths, from the digits themselves. Through a float,
+		// 1.005 is 1004.9999999999999 thousandths and read as 1.004.
+		neg := strings.HasPrefix(intPart, "-")
+		whole, err := strconv.ParseInt(strings.TrimPrefix(intPart, "-"), 10, 64)
 		if err != nil {
 			return errSF
 		}
-		it.i = int64(v * 1000)
+		thousandths, err := strconv.ParseInt((frac + "00")[:3], 10, 64)
+		if err != nil {
+			return errSF
+		}
+		it.i = whole*1000 + thousandths
+		if neg {
+			it.i = -it.i
+		}
 		return nil
 	}
 	if len(text) > 16 {
@@ -495,7 +505,15 @@ func writeItem(b *strings.Builder, it sfItem) {
 			v = -v
 			b.WriteByte('-')
 		}
-		fmt.Fprintf(b, "%d.%03d", v/1000, v%1000)
+		// RFC 9651 section 4.1.5: the fraction drops its trailing
+		// zeros and keeps one digit, so 1.5 is "1.5" and 2.0 is "2.0".
+		// "1.500" is a different signature base from every other
+		// implementation's.
+		frac := strings.TrimRight(fmt.Sprintf("%03d", v%1000), "0")
+		if frac == "" {
+			frac = "0"
+		}
+		fmt.Fprintf(b, "%d.%s", v/1000, frac)
 	case sfBool:
 		if it.b {
 			b.WriteString("?1")

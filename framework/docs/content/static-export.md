@@ -535,7 +535,9 @@ A GitHub Pages **project** site (`https://<user>.github.io/<repo>/`) serves
 the artifact under a subpath. Pass `--export-base /<repo>` and the builder:
 
 - prefixes every root-absolute `src`/`href`/`action`/`data-cui-push-state` in
-  the HTML (assets, nav links, form targets, palette destinations);
+  the HTML (assets, nav links, form targets, palette destinations), and
+  each root-absolute URL in a `srcset` or `imagesrcset` list, so a
+  `<picture>` loads its sources from the subpath;
 - prefixes the inline component-catalog `stylePath` JSON values the runtime
   lazy-loads;
 - bakes the prefix into the emitted `runtime.js` (it constructs split-module

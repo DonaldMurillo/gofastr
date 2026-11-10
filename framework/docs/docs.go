@@ -43,8 +43,8 @@ type Topic struct {
 	// humanised file name when no heading is present.
 	Title string
 
-	// Summary is the first non-heading paragraph, truncated to ~200
-	// chars. Empty when the file has no prose body.
+	// Summary is the first paragraph of prose, its wrapped lines joined
+	// and truncated to ~200 bytes. Empty when the file has no prose body.
 	Summary string
 
 	// Bytes is the size of the underlying markdown in bytes.
@@ -281,20 +281,52 @@ func extractTitle(body []byte, fallback string) string {
 	return humanise(fallback)
 }
 
-// extractSummary returns the first non-empty, non-heading paragraph.
-// Truncated to ~200 chars so summaries fit on one terminal line.
+// extractSummary returns the first paragraph of prose, its lines joined,
+// cut to about 200 bytes on a rune boundary. Headings, fenced code and
+// HTML comment blocks before it are skipped, and a blockquote's "> "
+// markers are dropped: the docs are hard-wrapped, so the first line
+// alone stopped mid-sentence, and a topic that opens with a code block
+// summarized as "```bash".
 func extractSummary(body []byte) string {
+	var para []string
+	inFence, inComment := false, false
 	for ln := range strings.SplitSeq(string(body), "\n") {
 		t := strings.TrimSpace(ln)
-		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "<!--") {
+		if inComment {
+			inComment = !strings.Contains(t, "-->")
 			continue
 		}
-		if len(t) > 200 {
-			t = t[:200] + "…"
+		if fenceMarker(ln) {
+			if len(para) > 0 {
+				break
+			}
+			inFence = !inFence
+			continue
 		}
-		return t
+		if inFence {
+			continue
+		}
+		if t == "" || strings.HasPrefix(t, "#") || strings.HasPrefix(t, "<!--") {
+			if len(para) > 0 {
+				break
+			}
+			inComment = strings.HasPrefix(t, "<!--") && !strings.Contains(t, "-->")
+			continue
+		}
+		t = strings.TrimSpace(strings.TrimPrefix(t, ">"))
+		if t != "" {
+			para = append(para, t)
+		}
 	}
-	return ""
+	out := strings.Join(para, " ")
+	if len(out) > 200 {
+		cut := 200
+		for cut > 0 && !utf8.RuneStart(out[cut]) {
+			cut--
+		}
+		out = out[:cut] + "…"
+	}
+	return out
 }
 
 // matchSpan returns the byte span of line whose lowering is the first

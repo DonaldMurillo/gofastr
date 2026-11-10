@@ -12,7 +12,9 @@ import (
 // suffix rules: categories → category, statuses → status, boxes → box,
 // batches → batch, users → user. Houses and causes retain their final e;
 // cookies, movies, ties and the other ieNouns are regular -s plurals, not
-// -y stems, and series and species are the same in both numbers.
+// -y stems, and series, species and news are the same in both numbers.
+// A short list of regular plurals the rules would cut wrongly (aliases,
+// caches, quizzes, heroes, menus: see cutPlurals) is spelled out.
 // Words that already read as singular
 // (address, status, analysis) come back unchanged. It is naive by design:
 // entity names are identifiers, and an irregular plural (people) is left as
@@ -23,6 +25,11 @@ func Singular(s string) string {
 	}
 	if invariantPlural(s) {
 		return s
+	}
+	for _, cut := range []int{1, 2, 3} {
+		if endsInWord(s, cutPlurals[cut], "") {
+			return s[:len(s)-cut]
+		}
 	}
 	switch {
 	case strings.HasSuffix(s, "ies") && len(s) > 3:
@@ -62,7 +69,21 @@ func ieNounPlural(s string) bool {
 // invariantPlural reports whether s ends in a word spelled the same in
 // the singular, where the -ies rule would cut it.
 func invariantPlural(s string) bool {
-	return endsInWord(s, []string{"series", "species"}, "")
+	return endsInWord(s, []string{"series", "species", "news"}, "")
+}
+
+// cutPlurals are regular plurals the suffix rules cut wrongly, keyed by
+// how many letters come off: "caches" loses its s where the -ches rule
+// took "es" and left "cach", "aliases" loses "es" where the plain -s rule
+// left "aliase", and "quizzes" loses "zes". The same word boundary as
+// ieNouns applies, so "coaches" and "databases" stay on the rules.
+var cutPlurals = map[int][]string{
+	1: {"caches", "niches", "headaches", "menus"},
+	2: {
+		"aliases", "atlases", "biases", "canvases", "gases", "lenses",
+		"echoes", "heroes", "potatoes", "tomatoes",
+	},
+	3: {"quizzes"},
 }
 
 func endsInWord(s string, words []string, suffix string) bool {
