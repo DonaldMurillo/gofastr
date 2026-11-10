@@ -192,8 +192,9 @@ notes:
     hits: edit
     guidance: "Pass 0 for the 30-day default lifetime. Sign every live feed again with this release's gofastr desktop feed before shipping an app built on it, and run the same command again before the expiry (--valid-days, 1 to 365) to renew: an app refuses an expired manifest. Apps built on older releases ignore the new field. feed also refuses to merge into an existing manifest.json whose manifest.json.sig is not this key's signature over it: remove both files, or use a new output directory."
     find:
-      uses:
-        - gofastr/battery/desktop.SignUpdateFeed
+      shapes:
+        - symbol: gofastr/battery/desktop.SignUpdateFeed
+          type: '^func\(outDir string, keyPath string, version string, notes string, platform string, archivePath string, archiveURL string\) error$'
   - change: "BREAKING on macOS - a desktop update must satisfy the running bundle's designated requirement (for a Developer ID signature, the same bundle identifier and team); an ad-hoc signed or unsigned app refuses every update"
     breaking: true
     hits: review
