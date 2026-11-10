@@ -1,4 +1,4 @@
-//go:build desktop_e2e && darwin && arm64
+//go:build desktop_e2e && darwin && (arm64 || amd64)
 
 package objc
 

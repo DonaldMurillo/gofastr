@@ -344,7 +344,7 @@ Out-of-contract (NOT part of the layering rules below):
                              internal/ffi, internal/fakecgo,
                              internal/objc, internal/win32, and
                              internal/gtk packages are the pure-Go
-                             native layer (macOS arm64, Windows amd64,
+                             native layer (macOS arm64 and amd64, Windows amd64,
                              Linux amd64 and arm64); internal/ffi's
                              self-test guards the runtime hooks it
                              stands on.

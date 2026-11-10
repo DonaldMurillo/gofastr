@@ -41,7 +41,7 @@ The `battery/desktop` dogfood app: a local-first notes app whose one
 ## Run it
 
 ```bash
-go run ./examples/desktop-notes                    # native window (darwin/arm64)
+go run ./examples/desktop-notes                    # native window (macOS)       
 go run ./examples/desktop-notes --serve :8080      # same app in a browser
 gofastr desktop run  --pkg ./examples/desktop-notes        # build + run, dev tools on
 gofastr desktop build --id dev.gofastr.desktop-notes \

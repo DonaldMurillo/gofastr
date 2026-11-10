@@ -1,4 +1,4 @@
-//go:build darwin && arm64 && !desktop_e2e
+//go:build darwin && (arm64 || amd64) && !desktop_e2e
 
 package macos
 
