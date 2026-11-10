@@ -196,7 +196,7 @@ type signedOutFinding struct {
 
 func (f signedOutFinding) Message() string {
 	return fmt.Sprintf(
-		"screen %s draws entity %q, which only a signed-in caller can read, but the app spec turns on no sign-in (app.auth.enabled): every visitor gets \"Not available\" in its place, and a page that leaves with no heading fails the generated axe_test.go. Set app.auth.enabled: true, or public: true on the entity if anyone may read and write it",
+		"screen %s draws entity %q, which only a signed-in caller can read, but the app spec turns on no sign-in (app.auth.enabled): every visitor gets \"Not available\" in its place. Set app.auth.enabled: true, or public: true on the entity if anyone may read and write it",
 		strings.Join(f.Screens, ", "), f.Entity)
 }
 

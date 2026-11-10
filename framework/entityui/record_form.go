@@ -29,10 +29,10 @@ import (
 // that record; ?prefill_<field>=<value> prefills one field.
 func (b *RecordBuilder) createScreen(ctx context.Context, m *meta, base string) render.HTML {
 	if !canRead(ctx, m.ch) {
-		return accessDenied(ctx, m.plural(ctx))
+		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1)
 	}
 	if m.hasAPI && !m.ch.CanCreateScoped(ctx) {
-		return accessDenied(ctx, m.plural(ctx))
+		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1)
 	}
 	// A field's declared Default starts the form, so the form shows the
 	// value an omitted field would store; a prefill or a duplicate

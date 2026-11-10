@@ -551,6 +551,12 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A refused entity screen keeps its heading.** A list, record or
+  create screen the caller may not read drew the "Not available" notice
+  alone, with no `<h1>`, so an axe run failed `page-has-heading-one`
+  and an app spec with no sign-in generated an app whose own
+  `TestAxeEveryScreen` failed. The screen now draws the entity's
+  heading above the notice, at the level the list was given.
 - **Navigating between two layouts raises no CSP violation**
   ([runtime contract](framework/docs/content/runtime-contract.md)).
   Under the default policy a client navigation across layout shells

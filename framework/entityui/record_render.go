@@ -175,7 +175,7 @@ func currentURL(ctx context.Context) string {
 // recordScreen draws one record: gates, header, tabs.
 func (b *RecordBuilder) recordScreen(ctx context.Context, m *meta, base string) (render.HTML, error) {
 	if !canRead(ctx, m.ch) {
-		return accessDenied(ctx, m.plural(ctx)), nil
+		return accessDenied(ctx, m.plural(ctx), m.plural(ctx), 1), nil
 	}
 	// The per-record gate is asked before any read, so a denied id
 	// runs no query and no hook; it answers the same not-found body a
