@@ -509,6 +509,11 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`contracts_verify` refuses an unknown capability before it reads the
+  tree.** The MCP dev tool loaded the config and scanned every source
+  file first, so a mistyped capability cost a full scan, and a broken
+  `gofastr.settings.yml` answered with its own error instead of
+  "unknown capability".
 - **An embed below the fold sizes itself on arrival**
   ([embed](framework/docs/content/embed.md)). The frame reported its
   height on the next animation frame, and Chrome stops rendering a

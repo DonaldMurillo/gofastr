@@ -336,6 +336,23 @@ func TestContractsVerifyReportsABrokenConfig(t *testing.T) {
 	}
 }
 
+// An unknown capability is the caller's mistake whatever the tree holds.
+// contracts_verify refuses it before it loads the config or scans, so a
+// tree error never stands in for the refusal and the mistake costs no
+// scan (TestContractRefusalsReachTheAgent runs in the package directory:
+// a scan there read every source file under framework/).
+func TestContractsVerifyRefusesAnUnknownCapabilityBeforeScanning(t *testing.T) {
+	writeTreeAndChdir(t, map[string]string{
+		"main.go":              "package main\n\nfunc main() {}\n",
+		"gofastr.settings.yml": "rules:\n  - this is not\n   valid: yaml: at all\n",
+	})
+	_, err := NewApp().toolContractsVerify(context.Background(), map[string]any{"capability": "nope"})
+	var refusal *mcp.RPCError
+	if !errors.As(err, &refusal) || refusal.Code != mcp.ErrInvalidParams || !strings.Contains(refusal.Message, "unknown capability") {
+		t.Fatalf("contracts_verify with an unknown capability = %v; want the invalid-params refusal naming it", err)
+	}
+}
+
 // Registration is fallible, and App.Start only logs the failure. Pin the
 // error so a name collision cannot become a silently missing tool.
 func TestContractDevToolRegistrationSurfacesCollisions(t *testing.T) {
