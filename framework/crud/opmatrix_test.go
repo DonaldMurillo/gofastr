@@ -46,7 +46,7 @@ func appliesToCell(op filter.FilterOp) string {
 // nor denied one it accepts.
 func TestMCPSchemaMatchesOpMatrix(t *testing.T) {
 	for _, tpe := range everyType {
-		props, _ := listToolSchema(matrixEntity(tpe))["properties"].(map[string]any)
+		props, _ := listToolSchema(matrixEntity(tpe), nil)["properties"].(map[string]any)
 		if props == nil {
 			t.Fatalf("type %d: list schema missing properties", tpe)
 		}
@@ -66,7 +66,7 @@ func TestMCPLikeOnEnumTakesSubstring(t *testing.T) {
 		Name: "things", Table: "things",
 		Fields: []schema.Field{{Name: "f", Type: schema.Enum, Values: []string{"paid", "open"}}},
 	})
-	props, _ := listToolSchema(ent)["properties"].(map[string]any)
+	props, _ := listToolSchema(ent, nil)["properties"].(map[string]any)
 	like, _ := props["f_like"].(map[string]any)
 	if like == nil {
 		t.Fatal("schema does not offer f_like on an Enum")

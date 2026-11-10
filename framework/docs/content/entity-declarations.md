@@ -148,6 +148,15 @@ the tool refuses either rather than drop the filter or split the value. A
 JSON field's argument is any JSON value, compared as JSON: `{"payload": [1,
 2]}` matches the stored array `[1,2]`.
 
+Each tool argument is typed by the value its column holds. An Int field and
+an integer key take a JSON integer, and so does a reference to an integer
+key: with `items.shop_id` pointing at `shops.id`, the create and update
+tools and every `shop_id` filter take `1`, the number a get returns, and
+refuse the string `"1"` as invalid params. A reference to a text or uuid
+key takes a string. The schemas are built when the entity is registered, so
+a reference to an entity registered later is typed as integer or string,
+and the route refuses the wrong one with its usual 400.
+
 No generated route reaches the rows of a `CRUD: false` entity, including
 routes that belong to OTHER entities. Another entity's `?include=` of a
 relation that targets it, and a `?rel.field=` filter across such a relation,
@@ -436,7 +445,7 @@ Each entry under `fields:` accepts:
 | `auto_generate` | string | Auto-populate strategy: `uuid` (random UUID v4, the default `id`), `increment` (database-assigned integer, `BIGSERIAL` on Postgres, `INTEGER PRIMARY KEY` rowid alias on SQLite; the column is omitted from INSERT so the sequence/rowid assigns it), or `timestamp`. The generated field never appears in write forms. |
 | `read_only` | bool | Accepted from the DB/generator but silently skipped on client writes (create/update). Server code can persist it by wrapping the context with `crud.WithServerWrites` on the in-process API. |
 | `hidden` | bool | Excluded from generated UI grids, forms, MCP tool schemas, AND from API responses; silently skipped on client create/update. Server code can persist it via `crud.WithServerWrites` (the value is stored but still not returned; `visibleFields` shapes the projection). A Hidden relation field, or a Hidden foreign key under a `belongs_to`, makes that relation unincludable: `?include=` and nested filters on it answer as for a relation that does not exist ([includes](includes.md)). |
-| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. A field with a Go `Mask` is `no_query` without saying so. |
+| `no_query` | bool | Returned in responses, but rejected by filters, `?sort=` (including alongside `?cursor=`), `?where=`, `?q=` search, the DSL, and nested `?rel.field=`. Rejected at generate time in `search:`, `filters:`, a `stat_card` `source.filter` or summed `source.field`, and a chart `group_by`; `entity.Define` panics if it names one in `SearchFields` or a cursor field. For values the caller may only see in transformed form; see "Masked fields" below. A field with a Go `Mask` is `no_query` without saying so. A `belongs_to` whose foreign key is `no_query` is not includable and takes no nested filter or nested write ([includes](includes.md)). |
 | `to` | string | For `type: relation`, the target entity. |
 
 ### Defaults are validated at registration
@@ -521,6 +530,13 @@ For the same reason an aggregate under `crud.WithReadHooks` (`SumAll`,
 `crud.ErrAggregateMasked`: a total the database computes never passes
 through the mask.
 
+A masked foreign key closes its own relation as well. With `account_id`
+masked under a `belongs_to` named `account`, `?include=account` and
+`?account.id=` answer as for a relation that does not exist: the
+account's key is the stored `account_id`. An account's has-many back to
+its payments still loads, each payment with its key masked. See
+[includes](includes.md).
+
 `Mask` is Go only. An app spec masks with an `AfterGet` / `AfterList`
 hook instead, and marks the field `no_query` by hand, since a hook
 rewrites the value but leaves the query surface open:
@@ -561,7 +577,7 @@ field) declare how entities associate with one another:
 - `foreign_key_target`: for `many_to_many`, the column referencing the target entity in the pivot table.
 - `on_delete`: optional foreign key referential integrity action (`no_action`, `restrict`, `cascade`, `set_null`).
 - `cascade_write`: optional boolean enabling atomic nested mutations within a single transaction.
-- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`). A hidden relation also takes no nested write: a create, update or upsert body carrying its key is refused with 400 `validation.cascade_relation_hidden` before any row is written. The same holds for a relation behind a Hidden field of its name or a Hidden `belongs_to` foreign key (that one answers `validation.cascade_key_not_writable`, below). Server code writes through it under `crud.WithServerWrites`.
+- `hidden`: optional boolean (`Relation.Hidden` in Go) that keeps the relation out of every read surface: `?include=` and nested filters answer it as an unknown relation, and `/openapi.json` and llm.md leave it out. Use it for a has-many or has-one whose foreign key is Hidden on the target, which stays includable by default (see `includes.md`). A hidden relation also takes no nested write: a create, update or upsert body carrying its key is refused with 400 `validation.cascade_relation_hidden` before any row is written. The same holds for a relation behind a Hidden field of its name or a Hidden `belongs_to` foreign key (that one answers `validation.cascade_key_not_writable`, below), and for a `belongs_to` whose foreign key is `no_query`. Server code writes through it under `crud.WithServerWrites`.
 
 A Go `belongs_to` relation can share the name of its own single scalar
 foreign-key column when cascade writes are disabled. For example,

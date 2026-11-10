@@ -155,7 +155,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("\n")
 
 	// --- Relations / Includes ---
-	// A relation behind a Hidden field is no include: crud answers it as
+	// A relation behind a Hidden field, or a belongs_to over a NoQuery
+	// key, is no include (entity.HidesRelation): crud answers it as
 	// unknown, and its row would name the hidden column.
 	includable := make([]entity.Relation, 0, len(ent.Config.Relations))
 	for _, rel := range ent.Config.Relations {
@@ -706,7 +707,9 @@ func relationTypeLabel(t entity.RelationType) string {
 }
 
 // llmOpLabelSample pairs one operator with the label and the sample
-// value its example row shows. The _like sample is a PLAIN SUBSTRING:
+// value its example row shows when the example names a text field, or no
+// field at all (llmFilterSample picks the value for the other types).
+// The _like sample is a PLAIN SUBSTRING:
 // the server escapes LIKE wildcards (filter.EscapeLikePattern) and adds
 // the surrounding % itself, so `%` in the value matches a literal
 // percent sign — an example shaped `%search%` is a filter for the
@@ -731,6 +734,36 @@ func llmOpLabelSample(op filter.FilterOp) (label, sample string) {
 	return "equals", "active"
 }
 
+// llmFilterSample is the value an operator's example shows for a field of
+// type t: one the route's parser (filter.CoerceValue) reads as that type,
+// so the example is a request the route answers 200. The operator's own
+// sample is text ("active", "a,b,c"), which an Int, Bool or Timestamp
+// column answers with a 400.
+//
+// A Relation gets digits: its column holds an integer when its target's
+// key is one (entity.ValueFields) and text otherwise, and this document
+// is written without the registry that says which. Digits are a value of
+// both.
+func llmFilterSample(t schema.FieldType, op filter.FilterOp, text string) string {
+	var one, many string
+	switch t {
+	case schema.Int, schema.Float, schema.Decimal, schema.Relation:
+		one, many = "100", "1,2,3"
+	case schema.Bool:
+		one, many = "true", "true,false"
+	case schema.Timestamp:
+		one, many = "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z,2026-02-01T00:00:00Z"
+	case schema.Date:
+		one, many = "2026-01-01", "2026-01-01,2026-02-01"
+	default:
+		return text
+	}
+	if op == filter.OpIn {
+		return many
+	}
+	return one
+}
+
 // llmAllFieldTypes is every schema.FieldType, for deriving an
 // operator's "applies to" cell from filter.OpSuitsType instead of
 // hand-writing a type list that can drift from the predicate.
@@ -741,9 +774,10 @@ var llmAllFieldTypes = []schema.FieldType{
 }
 
 // writeLLMOpRow emits one operator row of llm.md's filter table. The
-// example names the first visible field whose type suits the operator
-// (a filter a caller can send against this entity); with none, the
-// <field> placeholder names no column of it.
+// example names the first visible field whose type suits the operator,
+// with a value of that field's type (a filter a caller can send against
+// this entity); with none, the <field> placeholder names no column of it
+// and keeps the operator's text sample.
 func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label, sample string, visible []schema.Field, spell filter.KeySpeller) {
 	var applies []string
 	for _, t := range llmAllFieldTypes {
@@ -755,6 +789,7 @@ func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label,
 	for _, f := range visible {
 		if filter.OpSuitsType(op, f.Type) {
 			key = spell.Key(f.Name, op)
+			sample = llmFilterSample(f.Type, op, sample)
 			break
 		}
 	}
@@ -771,8 +806,14 @@ func writeLLMAmbiguousKeys(b *strings.Builder, fields []schema.Field, spell filt
 		if f.Hidden {
 			continue
 		}
-		for _, name := range []string{f.Name, f.WireName} {
-			if name == "" || (name == f.WireName && name == f.Name) || !filter.IsAmbiguousKey(name, spell.Named) {
+		// A field's keys: its column name, and its wire name when that is
+		// another spelling. A WireName that repeats the name is one key.
+		names := []string{f.Name}
+		if f.WireName != "" && f.WireName != f.Name {
+			names = append(names, f.WireName)
+		}
+		for _, name := range names {
+			if !filter.IsAmbiguousKey(name, spell.Named) {
 				continue
 			}
 			for _, s := range filter.FilterSuffixes {

@@ -197,3 +197,10 @@ notes:
   - change: "auth: a provider refresh that reports success with no access token is an error and stores nothing, and GitHubProvider reads the error document GitHub sends with HTTP 200 on a refused code or refresh token"
     guidance: "A custom OAuthTokenRefresher must return an error when the provider refuses the grant. RefreshOAuthToken and ValidOAuthToken now return an error where they returned an empty token and nil."
     nodetect: "the difference depends on the provider's runtime answer; no host source spelling distinguishes it"
+  - change: "BREAKING - a belongs_to whose foreign key is no_query or has a Mask is hidden: it is no longer includable or nested-filterable over HTTP or in-process (GetOne/ListAll includes, TypedQuery.Include), and a cascade_write body through it answers 400 validation.cascade_relation_hidden; the include used to return the stored key beside the masked column"
+    breaking: true
+    guidance: "Load the related record by its key in Go, or drop no_query from the foreign key if the column was never meant to be masked. The has-many side stays includable; set Hidden on it to close that direction too."
+    nodetect: "depends on a relation and a field declared apart from each other, in Go or in an app spec; no single source spelling shows the pair"
+  - change: "MCP entity tools type a reference to an integer key as an integer in the create, update and list tools, matching the record's own key and /openapi.json; a reference to an entity registered later takes an integer or a string"
+    guidance: "An MCP caller that sent an integer reference as a string (\"shop_id\": \"1\") now gets invalid params; send the number the get tool returns."
+    nodetect: "a fact of what a remote MCP caller sends at runtime; no host source spelling shows it"

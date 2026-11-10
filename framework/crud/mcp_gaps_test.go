@@ -23,14 +23,14 @@ func TestMCPKeyArgsTypedFromKeyColumn(t *testing.T) {
 			{Name: "title", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	props := idToolSchema(ent, ent.KeyColumns())["properties"].(map[string]any)
+	props := idToolSchema(ent, nil, ent.KeyColumns())["properties"].(map[string]any)
 	serial := props["serial"].(map[string]any)
 	if serial["type"] != "integer" {
 		t.Fatalf("integer key typed %v, want integer", serial)
 	}
 
 	// The single-column key is named id and typed from its column too.
-	props = idToolSchema(ent, []string{"id"})["properties"].(map[string]any)
+	props = idToolSchema(ent, nil, []string{"id"})["properties"].(map[string]any)
 	id := props["id"].(map[string]any)
 	if id["type"] != "integer" {
 		t.Fatalf("single {id} typed %v, want integer from the key column", id)
@@ -54,7 +54,7 @@ func TestMCPKeyArgIdResolvesToKeyColumnNotIdField(t *testing.T) {
 			{Name: "title", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	props := idToolSchema(ent, []string{"id"})["properties"].(map[string]any)
+	props := idToolSchema(ent, nil, []string{"id"})["properties"].(map[string]any)
 	if got := props["id"].(map[string]any)["type"]; got != "integer" {
 		t.Fatalf("{id} typed %v, want integer from the serial key column", got)
 	}
@@ -72,7 +72,7 @@ func TestMCPKeyArgsMixedComposite(t *testing.T) {
 			{Name: "slug", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	props := idToolSchema(ent, ent.KeyColumns())["properties"].(map[string]any)
+	props := idToolSchema(ent, nil, ent.KeyColumns())["properties"].(map[string]any)
 	if got := props["n"].(map[string]any)["type"]; got != "integer" {
 		t.Errorf("n typed %v, want integer", got)
 	}
@@ -94,7 +94,7 @@ func TestMCPUpdateKeyArgsTypedFromKeyColumn(t *testing.T) {
 		},
 	}.WithTimestamps(false))
 	args := (&CrudHandler{Entity: ent}).toolKeyArgs()
-	props := updateToolSchema(ent, args)["properties"].(map[string]any)
+	props := updateToolSchema(ent, nil, args)["properties"].(map[string]any)
 	id := props["id"].(map[string]any)
 	if id["type"] != "integer" {
 		t.Fatalf("update tool id typed %v, want integer from the key column", id)
@@ -113,7 +113,7 @@ func TestMCPListToolDocumentsPerPageOffset(t *testing.T) {
 			{Name: "title", Type: schema.String},
 		},
 	}.WithTimestamps(false))
-	props := listToolSchema(ent)["properties"].(map[string]any)
+	props := listToolSchema(ent, nil)["properties"].(map[string]any)
 	for _, name := range []string{"per_page", "offset"} {
 		p, ok := props[name].(map[string]any)
 		if !ok {

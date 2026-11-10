@@ -539,6 +539,32 @@ few lines, and link the PR or the docs page for the rest.
 - **A `[]byte` field sent text that is not base64 gets a refusal that
   says so.** The JSON error detail read "expected a string, got a
   string"; it now reads "the value could not be decoded".
+- **BREAKING: a masked foreign key no longer leaks through its own
+  relation** ([includes](framework/docs/content/includes.md)). With
+  `account_id` masked (a field `Mask`, or `no_query` plus a hook) under a
+  `belongs_to`, `?include=account` answered the account with its full id
+  beside `"account_id":"****0001"`, and `?account.id_like=` selected
+  rows by the stored value. A `belongs_to` whose foreign key is
+  `no_query` is now hidden: include, nested filters and nested writes
+  answer as for a relation that does not exist, and llm.md and
+  `/openapi.json` leave it out. Load the related record by its key in Go.
+- **MCP entity tools take the integer reference they return**
+  ([entities](framework/docs/content/entity-declarations.md)). A
+  Relation field pointing at an integer key was described as a string,
+  so `items_update {shop_id: 1}`, `items_create` and
+  `items_list {shop_id: 1}` refused the number `items_get` had just
+  returned. The tools now type it as an integer, as the record's own key
+  already is; a caller that sent `"1"` sends `1`.
+- **`schema.Field` encodes as JSON again.** The `Mask` func field had no
+  `json:"-"` tag, so `json.Marshal` failed on every `schema.Field`, on
+  an `entity.Endpoint` with an input or output schema, and on the
+  `EntityDeclaration` holding one.
+- **llm.md's filter examples are requests the route accepts.** The
+  example value was fixed per operator, so an entity whose first field
+  is an integer key was documented with `id=active` and `id_in=a,b,c`,
+  each a 400. Examples now use a value of the field's type. The page
+  also warns about an ambiguous filter key when a field sets `WireName`
+  to its own name, which it used to skip.
 - **The `Sunset` header is an HTTP-date**
   ([API versioning](framework/docs/content/api-versioning.md)).
   `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local

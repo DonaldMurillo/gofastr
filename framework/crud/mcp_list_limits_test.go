@@ -12,7 +12,7 @@ func TestMCPListLimitMatchesRoute(t *testing.T) {
 		config := makeEntityConfig("items", "items", "", []schema.Field{{Name: "name", Type: schema.String}})
 		config.Pagination = &entity.PaginationConfig{MaxListLimit: maximum}
 		ent := entity.Define("items", config)
-		props := listToolSchema(ent)["properties"].(map[string]any)
+		props := listToolSchema(ent, nil)["properties"].(map[string]any)
 		limit := props["limit"].(map[string]any)
 		_, want := ListLimits(maximum)
 		if limit["maximum"] != want {

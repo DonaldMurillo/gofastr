@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"context"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -43,4 +44,38 @@ func TestHidesRelation(t *testing.T) {
 
 func relKind(t RelationType) string {
 	return map[RelationType]string{RelHasOne: "has_one", RelHasMany: "has_many", RelManyToOne: "belongs_to", RelManyToMany: "many_to_many"}[t]
+}
+
+// A belongs_to whose foreign key holds a NoQuery column is hidden too: the
+// related record's key is the column's stored value, which NoQuery keeps
+// off the query surface and a Mask keeps out of responses. Define marks a
+// field with a Mask NoQuery, so both spellings hide the relation. A
+// has_many's key lives on the target, and a relation merely named after a
+// NoQuery field holds no key of it: neither is hidden.
+func TestHidesRelationBehindNoQueryKey(t *testing.T) {
+	ent := Define("payments", EntityConfig{
+		Fields: []schema.Field{
+			{Name: "memo", Type: schema.String},
+			{Name: "account_id", Type: schema.String, Mask: func(_ context.Context, v any) any { return "****" }},
+			{Name: "payer_ref", Type: schema.Relation, To: "accounts", NoQuery: true},
+			{Name: "region", Type: schema.String, NoQuery: true},
+			{Name: "ledger_id", Type: schema.Relation, To: "ledgers"},
+		},
+	})
+	for _, tc := range []struct {
+		rel  Relation
+		want bool
+	}{
+		{BelongsTo("account", "accounts", "account_id"), true},
+		{BelongsTo("payer_ref", "accounts", "payer_ref"), true},
+		{BelongsTo("route", "routes", "region", "ledger_id"), true},
+		{BelongsTo("ledger_id", "ledgers", "ledger_id"), false},
+		{HasMany("refunds", "refunds", "account_id"), false},
+		{HasOne("receipt", "receipts", "payer_ref"), false},
+		{HasMany("region", "regions", "payment_id"), false},
+	} {
+		if got := ent.HidesRelation(tc.rel); got != tc.want {
+			t.Errorf("HidesRelation(%s %q fk %v) = %v, want %v", relKind(tc.rel.Type), tc.rel.Name, tc.rel.ForeignKey, got, tc.want)
+		}
+	}
 }

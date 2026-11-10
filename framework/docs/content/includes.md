@@ -65,10 +65,21 @@ filter across it (`?owner_ref.email=`) answers `nested_unknown_relation`,
 and no near-miss hint names it. `entity.HidesRelation` is the rule;
 `/openapi.json` and llm.md leave such a relation out too.
 
-A has-many or has-one whose foreign key is Hidden on the *target* stays
-includable: `users` has_many `notes` through a Hidden `notes.owner_ref`
-still answers `?include=notes` with the user's notes, which is usually
-the point ("my notes"). To keep such a relation out of reads, set
+A `belongs_to` whose foreign key is `no_query`, which every field with a
+`Mask` is, is refused the same way on all of those surfaces. The related
+record's key is the column's stored value, so `?include=account` would
+answer `"account": {"id": "ACCT-0001"}` beside `"account_id": "****0001"`,
+and `?account.id_like=0001` would filter on the column `no_query` keeps
+off the query surface. A nested write through the relation is refused
+too, with 400 `validation.cascade_relation_hidden`; the key itself stays
+writable, and server code writes through the relation under
+`crud.WithServerWrites`. To load the related record anyway, read it by
+its key in Go.
+
+A has-many or has-one whose foreign key is Hidden or `no_query` on the
+*target* stays includable: `users` has_many `notes` through a Hidden
+`notes.owner_ref` still answers `?include=notes` with the user's notes,
+which is usually the point ("my notes"). To keep such a relation out of reads, set
 `Hidden: true` on the relation (`hidden: true` under the relation in
 `gofastr.yml`): it is then refused like any hidden relation, on every
 surface above.
@@ -212,7 +223,8 @@ beside the message, which is in the request's locale (see
 
 - `unknown include "x"` (`unknown_include`, or `unknown_include_hint`
   when a near miss is suggested): the named relation does not exist on
-  the entity at that depth, or sits behind a Hidden field.
+  the entity at that depth, or sits behind a Hidden field or a
+  `no_query` foreign key.
 - `streaming list does not support include` (`stream_include`):
   `?stream=true` was combined with `?include=`.
 - `relation "y" targets entity "z", which is not registered`
