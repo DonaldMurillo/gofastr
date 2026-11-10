@@ -551,6 +551,22 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **Charts draw what they are given**
+  ([components](framework/docs/content/ui-new-components.md)).
+  `PieChart` drew an empty square when one slice was the whole pie;
+  `BarChart` dropped bars past the right edge once they hit the 3px
+  floor (40 bars in 320px drew 29, the tallest sometimes among the
+  lost); `LineChart` stretched a shorter series across the whole plot,
+  under the wrong x labels. `Sparkline` keeps its `ID` when it has no
+  trend to draw.
+- **A `DataTable` column with `Align: "center"` and `Truncate` is
+  centered and truncated.** The pair had no class, so one long value
+  widened the table.
+- **`llm.md` keeps highlighted code, table links and description
+  lists** ([agent-ready](framework/docs/content/agent-ready.md)). A
+  `<pre>` without `<code>` (every highlighted block) was flattened into
+  one line of prose, a link in a table cell came out escaped, a
+  `DetailList` read `NameAlice`, and a `<link>` tag became a bullet.
 - **A shutdown no longer dead-letters an outbox delivery**
   ([events](framework/docs/content/events.md)). A handler cancelled by
   the relay's shutdown was settled as a failure: it spent an attempt,

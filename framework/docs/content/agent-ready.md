@@ -382,6 +382,17 @@ in a group that `Requires` a resolver, is withheld, because a guard or
 a required resolver decides per URL. The per-URL doc of such a
 page still runs its guards and serves.
 
+### What the HTML conversion keeps
+
+The page's HTML becomes markdown: headings, paragraphs, lists, links,
+images, emphasis, tables and code. A `<pre>` block is fenced with its
+line breaks whether or not it wraps a `<code>` element, so a
+highlighted code block (a `<pre>` of per-line spans, which is what
+`ui.CodeBlock` and `ui.Markdown` render) reads as code; a one-line
+`<pre>` stays flowing text. A link or an image inside a table cell
+stays a link. A description list (`ui.DetailList`) reads one
+`term: description` pair a line.
+
 ### Rendered values cannot inject markdown structure
 
 Every value that goes into a served markdown document — page content

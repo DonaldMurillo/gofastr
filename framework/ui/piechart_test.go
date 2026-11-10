@@ -97,3 +97,32 @@ func TestPieChartExtraAttrsOnRoot(t *testing.T) {
 		t.Errorf("PieChart root missing data-test:\n%s", root)
 	}
 }
+
+// A slice that is the whole pie starts and ends on one point, and an SVG
+// arc between a point and itself draws nothing: a pie with one value, the
+// most common first dataset, was an empty square. It is drawn as a closed
+// circle (a donut's hole wound the other way), and so is a slice beside a
+// sliver too thin to move the written coordinates.
+func TestPieChartWholePieSliceDrawsACircle(t *testing.T) {
+	const disc = `d="M80,2 A78,78 0 1 1 80,158 A78,78 0 1 1 80,2 Z"`
+	for name, slices := range map[string][]PieSlice{
+		"one slice":             {{Label: "All", Value: 10}},
+		"one slice has a value": {{Value: 0}, {Label: "All", Value: 10}, {Value: 0}},
+		"a sliver beside it":    {{Label: "Most", Value: 1e6}, {Label: "Rest", Value: 1}},
+	} {
+		h := string(PieChart(PieChartConfig{Slices: slices}))
+		if !strings.Contains(h, disc) {
+			t.Errorf("%s: the whole-pie slice is not a closed circle:\n%s", name, h)
+		}
+	}
+	h := string(PieChart(PieChartConfig{InnerRadius: 0.5, Slices: []PieSlice{{Label: "All", Value: 10}}}))
+	const ring = `d="M80,2 A78,78 0 1 1 80,158 A78,78 0 1 1 80,2 Z M80,41 A39,39 0 1 0 80,119 A39,39 0 1 0 80,41 Z"`
+	if !strings.Contains(h, ring) {
+		t.Errorf("a whole donut is not a ring:\n%s", h)
+	}
+	// Two halves are two ordinary slices: neither is the whole pie.
+	h = string(PieChart(PieChartConfig{Slices: []PieSlice{{Value: 1}, {Value: 1}}}))
+	if strings.Count(h, "<path ") != 2 || strings.Contains(h, disc) {
+		t.Errorf("two equal slices must stay two half-pie paths:\n%s", h)
+	}
+}

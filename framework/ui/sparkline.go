@@ -105,6 +105,12 @@ func Sparkline(cfg SparklineConfig) render.HTML {
 		if cfg.Class != "" {
 			attrs["class"] = cfg.Class
 		}
+		// The ID rides along as it does on every chart's zero-data
+		// branch: an anchor or a label that names the chart by id still
+		// resolves when there is no trend to draw.
+		if cfg.ID != "" {
+			attrs["id"] = cfg.ID
+		}
 		return render.Tag("span", attrs, render.Text("—"))
 	}
 	switch cfg.Shape {

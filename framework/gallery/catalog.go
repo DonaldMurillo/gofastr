@@ -572,22 +572,27 @@ var Catalog = []Entry{
 		)
 	}},
 	{"formframe", "FormFrame", "Forms", "Record form in two columns: a wide main column beside a narrow side rail that drops under it when the form's own width is narrow — a drawer stacks, a full page sits side by side.", func() render.HTML {
-		frame := ui.FormFrame(ui.FormFrameConfig{
-			Main: []render.HTML{
-				ui.TextField(ui.TextFieldConfig{Name: "number", Label: "Number", ID: "demo-ff-number", Value: "INV-0042"}),
-				ui.TextField(ui.TextFieldConfig{Name: "memo", Label: "Memo", ID: "demo-ff-memo", Placeholder: "What this invoice is for"}),
-			},
-			Side: []render.HTML{
-				ui.Select(ui.SelectConfig{Name: "status", Label: "Status", ID: "demo-ff-status",
-					Options: []ui.SelectOption{{Value: "open", Text: "Open"}, {Value: "paid", Text: "Paid"}}}),
-			},
-		})
+		// Each copy takes its own field ids: two frames on one page
+		// sharing an id send the second frame's labels to the first
+		// frame's inputs.
+		frame := func(id string) render.HTML {
+			return ui.FormFrame(ui.FormFrameConfig{
+				Main: []render.HTML{
+					ui.TextField(ui.TextFieldConfig{Name: "number", Label: "Number", ID: id + "-number", Value: "INV-0042"}),
+					ui.TextField(ui.TextFieldConfig{Name: "memo", Label: "Memo", ID: id + "-memo", Placeholder: "What this invoice is for"}),
+				},
+				Side: []render.HTML{
+					ui.Select(ui.SelectConfig{Name: "status", Label: "Status", ID: id + "-status",
+						Options: []ui.SelectOption{{Value: "open", Text: "Open"}, {Value: "paid", Text: "Paid"}}}),
+				},
+			})
+		}
 		// The same frame at two container widths: the switch reads the
 		// frame's own inline size (a container query), so the wide box
 		// sits side by side and the narrow box stacks on the same page.
 		return stackWide(
-			ui.Container(ui.ContainerConfig{Start: true}, frame),
-			ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow, Start: true}, frame))
+			ui.Container(ui.ContainerConfig{Start: true}, frame("demo-ff")),
+			ui.Container(ui.ContainerConfig{Width: ui.ContainerNarrow, Start: true}, frame("demo-ff-narrow")))
 	}},
 	{"select", "Select", "Forms", "Native <select> styled to match the theme.", func() render.HTML {
 		return ui.Select(ui.SelectConfig{

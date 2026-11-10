@@ -121,3 +121,17 @@ func TestSparklineFullWidthEmitsPercentWidth(t *testing.T) {
 		t.Errorf("default sparkline keeps its px width:\n%s", fixed)
 	}
 }
+
+// The no-trend dash keeps the caller's ID, as every chart's zero-data
+// branch does: it was dropped, so an element naming the sparkline by id
+// pointed at nothing until a second reading arrived.
+func TestSparklineTooFewPointsKeepsID(t *testing.T) {
+	h := string(Sparkline(SparklineConfig{Values: []float64{1}, ID: "mrr-trend"}))
+	if !strings.Contains(h, `id="mrr-trend"`) {
+		t.Errorf("the no-trend dash dropped the ID:\n%s", h)
+	}
+	full := string(Sparkline(SparklineConfig{Values: []float64{1, 2}, ID: "mrr-trend"}))
+	if !strings.Contains(full, `id="mrr-trend"`) {
+		t.Errorf("the drawn sparkline dropped the ID:\n%s", full)
+	}
+}

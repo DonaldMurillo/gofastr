@@ -27,7 +27,7 @@ var (
 	reImgAltSrc = regexp.MustCompile(`(?is)<img[^>]*alt="([^"]*)"[^>]*src="([^"]*)"[^>]*/?\s*>`)
 	reImgSrcAlt = regexp.MustCompile(`(?is)<img[^>]*src="([^"]*)"[^>]*alt="([^"]*)"[^>]*/?\s*>`)
 	reHR        = regexp.MustCompile(`(?is)<hr[^>]*/?\s*>`)
-	reLiOpen    = regexp.MustCompile(`(?is)<li[^>]*>`)
+	reLiOpen    = regexp.MustCompile(`(?is)<li(?:\s[^>]*)?>`)
 	reLiClose   = regexp.MustCompile(`(?is)</li>`)
 	reOlBlock   = regexp.MustCompile(`(?is)(<ol[^>]*>)(.*?)(</ol>)`)
 	reOlTag     = regexp.MustCompile(`(?is)</?ol[^>]*>`)
@@ -44,12 +44,25 @@ var (
 	reTable   = regexp.MustCompile(`(?is)<table[^>]*>(.*?)</table>`)
 	reRow     = regexp.MustCompile(`(?is)<tr[^>]*>(.*?)</tr>`)
 	reCell    = regexp.MustCompile(`(?is)<t[hd][^>]*>(.*?)</t[hd]>`)
-	reOlInner = regexp.MustCompile(`(?is)<li[^>]*>`)
+	reOlInner = regexp.MustCompile(`(?is)<li(?:\s[^>]*)?>`)
+
+	// Description lists: a term and its description read "term: desc"
+	// on one line; a term or description on its own starts a line.
+	reDtDd    = regexp.MustCompile(`(?is)</dt>\s*<dd(?:\s[^>]*)?>`)
+	reDlBreak = regexp.MustCompile(`(?is)<d[td](?:\s[^>]*)?>|</d[td]>`)
+	// reCellSlot matches the \x00-parked links and images convertTables
+	// lifts out of a cell before the cell's text is escaped.
+	reCellSlot = regexp.MustCompile("\x00a([0-9]+)\x00")
 
 	// rePreBlock matches one <pre><code>…</code></pre> block whole, so
 	// its content can be fenced (and entity-decoded exactly once)
 	// before any inline pass runs over it.
 	rePreBlock = regexp.MustCompile(`(?is)<pre[^>]*>\s*<code[^>]*>(.*?)</code>\s*</pre>`)
+	// rePreBare matches any <pre> block. One without a <code> child (a
+	// highlighted block is a <pre> of per-line spans) is fenced too when
+	// it holds more than one line: its line breaks are the content, and
+	// the text-node pass would flatten them into one line of prose.
+	rePreBare = regexp.MustCompile(`(?is)<pre(?:\s[^>]*)?>(.*?)</pre>`)
 	// reFenceSlot matches the \x00-parked fenced-block placeholders
 	// extractFencedBlocks leaves in the document.
 	reFenceSlot = regexp.MustCompile("\x00f([0-9]+)\x00")
@@ -156,6 +169,11 @@ func htmlToMarkdown(h string) string {
 		return "*" + mdInlineText(submatch(m, reI, 1)) + "*"
 	})
 
+	// Tables first: a cell builds its own links and images, so the cell
+	// escaping that keeps a value inside its column does not also
+	// escape the link the cell holds.
+	s = convertTables(s)
+
 	// Links: text and destination escaped per slot; href decodes here
 	// (attribute values sit inside tags, which decodeTextNodes skips).
 	s = reLink.ReplaceAllStringFunc(s, func(m string) string {
@@ -176,9 +194,6 @@ func htmlToMarkdown(h string) string {
 	// Horizontal rules
 	s = reHR.ReplaceAllString(s, "\n---\n")
 
-	// Table handling
-	s = convertTables(s)
-
 	// Ordered lists: track ol/li, must run before generic <li> replacement
 	s = reOlBlock.ReplaceAllStringFunc(s, func(match string) string {
 		inner := reOlInner.ReplaceAllStringFunc(
@@ -194,6 +209,10 @@ func htmlToMarkdown(h string) string {
 	s = reLiClose.ReplaceAllString(s, "")
 
 	s = reUlTag.ReplaceAllString(s, "")
+
+	// Description lists: "term: description", one pair a line
+	s = reDtDd.ReplaceAllString(s, ": ")
+	s = reDlBreak.ReplaceAllString(s, "\n")
 
 	// Paragraphs → double newline
 	s = rePOpen.ReplaceAllString(s, "\n\n")
@@ -235,10 +254,7 @@ func convertTables(h string) string {
 
 			b.WriteString("| ")
 			for _, cell := range cells {
-				content := stripTags(cell[1])
-				content = strings.TrimSpace(content)
-				content = mdTableCell(content)
-				b.WriteString(content + " | ")
+				b.WriteString(mdTableCellHTML(cell[1]) + " | ")
 			}
 			b.WriteString("\n")
 
@@ -253,6 +269,43 @@ func convertTables(h string) string {
 		}
 		b.WriteString("\n")
 		return b.String()
+	})
+}
+
+// mdTableCellHTML turns one cell's HTML into its markdown: the links
+// and images it holds are built here, each slot escaped for a cell (a
+// pipe in link text or in a destination would add a column), and parked
+// while the rest of the cell's text is escaped, so a link in a table
+// stays a link and a value still cannot forge one.
+func mdTableCellHTML(cellHTML string) string {
+	var parked []string
+	park := func(md string) string {
+		parked = append(parked, md)
+		return fmt.Sprintf("\x00a%d\x00", len(parked)-1)
+	}
+	text := func(v string) string { return strings.ReplaceAll(mdLinkText(stripTags(v)), "|", `\|`) }
+	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(html.UnescapeString(v)), "|", "%7C") }
+	image := func(alt, src string) string {
+		return "![" + text(html.UnescapeString(alt)) + "](" + dest(src) + ")"
+	}
+	c := reImgAltSrc.ReplaceAllStringFunc(cellHTML, func(m string) string {
+		sub := reImgAltSrc.FindStringSubmatch(m)
+		return park(image(sub[1], sub[2]))
+	})
+	c = reImgSrcAlt.ReplaceAllStringFunc(c, func(m string) string {
+		sub := reImgSrcAlt.FindStringSubmatch(m)
+		return park(image(sub[2], sub[1]))
+	})
+	c = reLink.ReplaceAllStringFunc(c, func(m string) string {
+		sub := reLink.FindStringSubmatch(m)
+		return park("[" + strings.TrimSpace(text(sub[2])) + "](" + dest(sub[1]) + ")")
+	})
+	// A line break inside a cell separates words; the row stays one line.
+	c = reBR.ReplaceAllString(c, " ")
+	c = mdTableCell(strings.TrimSpace(stripTags(c)))
+	return reCellSlot.ReplaceAllStringFunc(c, func(m string) string {
+		idx, _ := strconv.Atoi(reCellSlot.FindStringSubmatch(m)[1])
+		return parked[idx]
 	})
 }
 
@@ -307,6 +360,15 @@ func extractFencedBlocks(s string) (string, []string) {
 	var blocks []string
 	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBlock.FindStringSubmatch(m)[1])
+		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
+		return fmt.Sprintf("\x00f%d\x00", len(blocks)-1)
+	})
+	s = rePreBare.ReplaceAllStringFunc(s, func(m string) string {
+		content := stripTags(rePreBare.FindStringSubmatch(m)[1])
+		if !strings.Contains(strings.TrimRight(content, "\r\n"), "\n") {
+			// One line reads the same as flowing text.
+			return m
+		}
 		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
 		return fmt.Sprintf("\x00f%d\x00", len(blocks)-1)
 	})

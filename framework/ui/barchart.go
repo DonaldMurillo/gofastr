@@ -150,9 +150,8 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	// Category-label band height depends on how many lines the labels wrap
 	// to at this width. Compute the wrapped lines up front so the gutter
 	// (and thus the plot height) accounts for them exactly.
-	barGap := 8.0
 	provPlotW := float64(w) - axisGutter
-	provBarW := (provPlotW - barGap*float64(n-1)) / float64(n)
+	provBarW, barGap := barSlots(provPlotW, n)
 	// A line gets its slot less 4px of air from its neighbour, at 7px a
 	// rune: 12px text runs 5-6.5px a rune, wider in capitals and accents
 	// (a translated or pseudo-localized label), and a label centred in
@@ -179,7 +178,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		bottomGutter = float64(maxLines)*lineH + labelGap + 4
 	}
 
-	plotW := float64(w) - axisGutter
 	plotH := float64(h) - topGutter - bottomGutter
 	if cfg.FitHeight && cfg.Height == 0 {
 		// Hug the tallest bar (see FitHeight): the plot is sized so
@@ -199,11 +197,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	}
 	baseY := topGutter + plotH
 
-	totalGap := barGap * float64(n-1)
-	barW := (plotW - totalGap) / float64(n)
-	if barW < 3 {
-		barW = 3
-	}
+	barW := provBarW
 	// Cap the bar thickness so a 1–2 category chart doesn't render giant
 	// slabs; center the (capped) bars within their slots. The mark spec is
 	// "never fill the slot; let the leftover be air".
@@ -372,6 +366,29 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	sb.WriteString(`</svg>`)
 	return barChartStyle.WrapHTML(render.HTML(sb.String()))
+}
+
+// barSlots divides plotW among n bars: each bar's width and the gap
+// between two. Bars stand 8px apart while that leaves each at least
+// 3px; past that the gap narrows first, then bar and gap share the slot
+// three to one. A fixed 3px bar on a fixed 8px gap ran the bars off the
+// right edge (40 bars in the default 320px drew 29), and the tallest
+// bar, the one the scale is cut to, could be among the lost ones.
+func barSlots(plotW float64, n int) (barW, gap float64) {
+	const fullGap, minBar = 8.0, 3.0
+	gap = fullGap
+	barW = (plotW - gap*float64(n-1)) / float64(n)
+	if barW >= minBar || n < 2 || plotW <= 0 {
+		return max(barW, minBar), gap
+	}
+	barW = minBar
+	gap = (plotW - minBar*float64(n)) / float64(n-1)
+	if gap < 1 {
+		slot := plotW / float64(n)
+		barW = slot * 0.75
+		gap = slot - barW
+	}
+	return barW, gap
 }
 
 // niceCeil rounds v up to a clean "nice" number (1/1.5/2/2.5/3/4/5/6/8 ×
