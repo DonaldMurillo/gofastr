@@ -270,7 +270,9 @@ func (s *webhookSink) postOnce(body []byte) (err error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	for k, v := range s.opts.Headers {
-		if k == "Content-Type" {
+		// Header.Set canonicalizes the key, so the skip must too:
+		// "content-type" replaced the forced type.
+		if http.CanonicalHeaderKey(k) == "Content-Type" {
 			continue
 		}
 		req.Header.Set(k, v)

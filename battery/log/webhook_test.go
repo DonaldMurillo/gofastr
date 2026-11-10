@@ -353,3 +353,40 @@ func TestWebhookRetriesOn5xx(t *testing.T) {
 		t.Fatalf("posted %d times, want 2 (a 502 then a retry)", n)
 	}
 }
+
+// WebhookOpts.Headers cannot override Content-Type, however the key is
+// spelled: the body is always the JSON envelope. The skip compared the
+// key to "Content-Type" exactly, so "content-type" replaced it and a
+// collector that routes on the media type refused or mis-parsed every
+// batch.
+func TestWebhookContentTypeIsForcedWhateverTheKeyCase(t *testing.T) {
+	got := make(chan http.Header, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		select {
+		case got <- r.Header.Clone():
+		default:
+		}
+	}))
+	defer srv.Close()
+
+	s := WebhookSink(srv.URL, WebhookOpts{
+		BatchSize: 1,
+		Headers:   map[string]string{"content-type": "text/plain", "x-source": "app"},
+	})
+	_ = s.Write([]byte(`{"i":1}`))
+	select {
+	case h := <-got:
+		if ct := h.Values("Content-Type"); len(ct) != 1 || ct[0] != "application/json" {
+			t.Errorf("Content-Type = %q, want exactly application/json", ct)
+		}
+		if h.Get("X-Source") != "app" {
+			t.Errorf("X-Source = %q, want the configured header", h.Get("X-Source"))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no batch arrived")
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+}

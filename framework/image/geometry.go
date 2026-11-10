@@ -146,19 +146,29 @@ func (i *Image) resizeBox(width, height int, o resizeOpts) (tw, th int, keep boo
 	}
 	tw, th = width, height
 	if !derived && (o.fit == FitInside || o.fit == FitOutside) {
-		sx := float64(tw) / float64(sw)
-		sy := float64(th) / float64(sh)
-		s := min(sx, sy)
-		if o.fit == FitOutside {
-			s = max(sx, sy)
+		// Whole-number arithmetic: the side the fit binds on stays the
+		// one given, and the other is derived from it as a width-only
+		// or height-only resize derives it. A float scale lost a pixel
+		// of both (22*(15/22) is 14.999999999999998, so 22x22 inside
+		// 15x100 came out 14x14).
+		byWidth, fits := mulDiv(sh, width, sw)
+		if o.fit == FitInside {
+			// A height past int is past the box: bind on the height.
+			if fits && byWidth <= height {
+				th = byWidth
+			} else if tw, ok = mulDiv(sw, height, sh); !ok {
+				return tooLarge()
+			}
+		} else {
+			if !fits {
+				return tooLarge()
+			}
+			if byWidth >= height {
+				th = byWidth
+			} else if tw, ok = mulDiv(sw, height, sh); !ok {
+				return tooLarge()
+			}
 		}
-		fw, fh := float64(sw)*s, float64(sh)*s
-		// A side past the cap is an area past it (the other side is at
-		// least 1), and checking first keeps the int conversion in range.
-		if limit := float64(i.maxPixels()); fw > limit || fh > limit {
-			return tooLarge()
-		}
-		tw, th = int(fw), int(fh)
 	}
 	if o.withoutEnlarge && (tw > sw || th > sh) {
 		return 0, 0, true, nil

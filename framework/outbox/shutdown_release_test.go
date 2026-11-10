@@ -73,3 +73,57 @@ func TestPumpShutdownRefundsUnstarted(t *testing.T) {
 		})
 	}
 }
+
+// A shutdown that cancels a handler mid-run says nothing about the
+// event: the delivery goes back to pending with its attempt refunded,
+// as battery/queue hands back an interrupted job. Settled as a failure
+// instead, a MaxAttempts 1 delivery was dead-lettered by a restart, and
+// any other lost an attempt and waited out a backoff.
+func TestPumpShutdownRefundsInterruptedHandler(t *testing.T) {
+	dialects := []struct {
+		name string
+		open func(t *testing.T, opts ...Option) (*sql.DB, *Outbox)
+	}{
+		{"sqlite", openOutbox},
+		{"postgres", pgOutbox},
+	}
+	for _, dl := range dialects {
+		t.Run(dl.name, func(t *testing.T) {
+			db, o := dl.open(t, WithMaxAttempts(1))
+			clock := time.Now().UTC().Truncate(time.Second)
+			o.now = func() time.Time { return clock }
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			runs := 0
+			o.Consume("c", "t", func(hctx context.Context, _ event.Event) error {
+				runs++
+				if runs == 1 {
+					cancel() // shutdown arrives while the handler runs
+					<-hctx.Done()
+					return hctx.Err()
+				}
+				return nil
+			})
+			id := appendCommitted(t, db, o, "t")
+			if n := o.pump(ctx); n != 1 {
+				t.Fatalf("pump claimed %d deliveries, want 1", n)
+			}
+			if d := findDelivery(t, mustDeliveries(t, o, id), "c"); d.Status != "pending" || d.Attempts != 0 || d.NextAttemptAt != nil {
+				t.Fatalf("delivery after a shutdown interrupted its handler: %q with %d attempts, next attempt %v (%s); want pending, 0 attempts, due now",
+					d.Status, d.Attempts, d.NextAttemptAt, d.LastError)
+			}
+
+			// The restarted relay runs it.
+			for range 3 {
+				if o.pump(context.Background()) == 0 {
+					break
+				}
+			}
+			if d := findDelivery(t, mustDeliveries(t, o, id), "c"); runs != 2 || d.Status != "dispatched" || d.Attempts != 1 {
+				t.Errorf("after the restart: handler ran %d times, delivery %q after %d attempts (%s); want 2 runs, dispatched after 1",
+					runs, d.Status, d.Attempts, d.LastError)
+			}
+		})
+	}
+}

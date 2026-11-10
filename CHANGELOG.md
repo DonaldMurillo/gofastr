@@ -551,6 +551,20 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A shutdown no longer dead-letters an outbox delivery**
+  ([events](framework/docs/content/events.md)). A handler cancelled by
+  the relay's shutdown was settled as a failure: it spent an attempt,
+  and with `WithMaxAttempts(1)` the delivery went to `dead` on every
+  deploy. It is handed back with the attempt refunded.
+- **`Resize` with `FitInside` or `FitOutside` keeps the side it binds
+  on.** With both sides given, a float scale lost a pixel: a 22×22
+  source inside 15×100 came out 14×14, and `FitOutside` could return
+  less than the box it must cover.
+- **The cache middleware keeps a handler's error when a WebSocket
+  upgrade cannot hijack.** The status and headers written after a
+  refused hijack reached the client as a bare 200.
+- **`WebhookOpts.Headers` cannot replace the log sink's
+  `Content-Type`.** A lowercase `content-type` key did.
 - **A refused GitHub token refresh no longer wipes the stored token**
   ([auth](framework/docs/content/auth.md)). GitHub answers a refused
   code or refresh token with HTTP 200 and an error document. The

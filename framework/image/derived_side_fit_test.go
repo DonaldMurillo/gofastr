@@ -107,3 +107,33 @@ func TestPlaceholderKeepsWidthOnBanner(t *testing.T) {
 		}
 	}
 }
+
+// TestFitKeepsBindingSideExact: with both sides given, the side the fit
+// binds on is the one asked for. The scale went through a float, and
+// 22*(15/22) is 14.999999999999998: a 22x22 source fitted inside 15x100
+// came out 14x14, and outside 100x15 came out 14x14 too, under the box
+// it must cover.
+func TestFitKeepsBindingSideExact(t *testing.T) {
+	cases := []struct {
+		sourceWidth, sourceHeight, width, height int
+		fit                                      frameworkimage.Fit
+		wantWidth, wantHeight                    int
+	}{
+		{22, 22, 15, 100, frameworkimage.FitInside, 15, 15},
+		{22, 22, 100, 15, frameworkimage.FitInside, 15, 15},
+		{44, 22, 30, 100, frameworkimage.FitInside, 30, 15},
+		{22, 22, 15, 1, frameworkimage.FitOutside, 15, 15},
+		{22, 22, 1, 15, frameworkimage.FitOutside, 15, 15},
+		{39, 39, 31, 31, frameworkimage.FitInside, 31, 31},
+		{39, 39, 31, 31, frameworkimage.FitOutside, 31, 31},
+	}
+	for _, testCase := range cases {
+		bounds := blankSource(testCase.sourceWidth, testCase.sourceHeight).
+			Resize(testCase.width, testCase.height, frameworkimage.WithFit(testCase.fit)).Bounds()
+		if bounds.Dx() != testCase.wantWidth || bounds.Dy() != testCase.wantHeight {
+			t.Errorf("%dx%d Resize(%d, %d) fit %d = %dx%d, want %dx%d",
+				testCase.sourceWidth, testCase.sourceHeight, testCase.width, testCase.height, testCase.fit,
+				bounds.Dx(), bounds.Dy(), testCase.wantWidth, testCase.wantHeight)
+		}
+	}
+}
