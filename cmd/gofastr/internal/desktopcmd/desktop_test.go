@@ -130,6 +130,7 @@ func desktopFixtureApp(t *testing.T, dir string) {
 }
 
 func TestDesktopBuildProducesBundleLayout(t *testing.T) {
+	t.Setenv("GOARCH", "arm64") // one slice: no lipo on the Linux CI hosts
 	fixture := t.TempDir()
 	desktopFixtureApp(t, fixture)
 
@@ -398,6 +399,7 @@ func TestDesktopBuildAdhocSignsBundle(t *testing.T) {
 	if _, err := exec.LookPath("codesign"); err != nil {
 		t.Skip("no codesign on this host")
 	}
+	t.Setenv("GOARCH", "arm64") // signing is the subject; TestMacBuildDefaultIsUniversal signs both slices
 	fixture := t.TempDir()
 	desktopFixtureApp(t, fixture)
 

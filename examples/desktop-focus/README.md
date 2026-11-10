@@ -76,7 +76,7 @@ and the exact commands live in `docs/desktop-sections/13-focus.md`.
 ## Run it
 
 ```bash
-go run ./examples/desktop-focus                    # native window (darwin/arm64)
+go run ./examples/desktop-focus                    # native window (macOS)       
 go run ./examples/desktop-focus --serve :8080      # same app in a browser
 gofastr desktop run  --pkg ./examples/desktop-focus         # build + run, dev tools on
 gofastr desktop build --id dev.gofastr.desktop-focus \

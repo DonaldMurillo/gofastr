@@ -1,4 +1,4 @@
-//go:build darwin && arm64
+//go:build darwin && (arm64 || amd64)
 
 package macos
 
@@ -32,7 +32,7 @@ func TestShellConstructsLazy(t *testing.T) {
 	}
 	s := New()
 	if _, ok := s.(*darwinShell); !ok {
-		t.Fatalf("New() = %T on darwin/arm64, want *darwinShell", s)
+		t.Fatalf("New() = %T on macOS, want *darwinShell", s)
 	}
 	// Constructing the shell changed nothing.
 	if got := objc.DlopenCount(); got != 0 {

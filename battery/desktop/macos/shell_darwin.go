@@ -1,4 +1,4 @@
-//go:build darwin && arm64
+//go:build darwin && (arm64 || amd64)
 
 package macos
 
@@ -18,8 +18,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// The darwin/arm64 desktop.Shell: a real AppKit + WKWebView host on top of
-// internal/objc. Every AppKit/WebKit call happens on the main thread
+// The macOS desktop.Shell (darwin/arm64 and darwin/amd64): a real AppKit
+// + WKWebView host on top of internal/objc. Every AppKit/WebKit call happens on the main thread
 // (asserted); every native callback lands there and hands off to Go
 // channels or goroutines immediately so the UI thread never waits on
 // Go.
@@ -428,7 +428,7 @@ type snapOutcome struct {
 	errText string
 }
 
-// New returns the darwin/arm64 shell: AppKit + WKWebView on the pure-Go
+// New returns the macOS shell: AppKit + WKWebView on the pure-Go
 // Objective-C bridge. It must stay lazy: no framework is loaded here
 // (TestShellConstructsLazy pins it), because cmd/gofastr blank-imports
 // the battery. On every other GOOS/GOARCH shell_other.go answers the
@@ -815,7 +815,7 @@ func (s *darwinShell) sendSnap(out snapOutcome) {
 const bridgeMessageHandlerName = "gofastr"
 
 // desktop.MainWindowID lives in shell.go: the test double and the portable
-// code need it on every GOOS/GOARCH, not only darwin/arm64.
+// code need it on every GOOS/GOARCH, not only on macOS.
 
 // darwinWindow implements desktop.Window around one NSWindow + WKWebView
 // pair. The main window and every secondary window carry their own

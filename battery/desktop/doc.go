@@ -17,7 +17,7 @@
 // of its own:
 //
 //   - battery/desktop/macos: the real shell (AppKit + WKWebView) on
-//     darwin/arm64, the unsupported shell elsewhere.
+//     darwin/arm64 and darwin/amd64, the unsupported shell elsewhere.
 //   - battery/desktop/windows: the real shell on windows/amd64
 //     (Win32 + WebView2); unsupported elsewhere.
 //   - battery/desktop/linux: the unsupported shell today (WebKitGTK

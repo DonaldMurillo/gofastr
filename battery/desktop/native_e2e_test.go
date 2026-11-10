@@ -1,4 +1,4 @@
-//go:build desktop_e2e && darwin && arm64
+//go:build desktop_e2e && darwin && (arm64 || amd64)
 
 package desktop_test
 
@@ -624,9 +624,8 @@ func phaseTwoWindows(t desktoptest.TB, h *desktoptest.NativeHarness) {
 	if closeErr != nil {
 		t.Fatalf("closing the reopened window: %v", closeErr)
 	}
-	var de *desktop.Error
-	if err := <-keyErr; !errors.As(err, &de) || de.Code != desktop.CodeUnsupported {
-		t.Fatalf("MakeKey on a window closed while it waited = %v; want the closed-window error", err)
+	if err := <-keyErr; !errors.Is(err, desktop.ErrWindowClosed) {
+		t.Fatalf("MakeKey on a window closed while it waited = %v; want desktop.ErrWindowClosed", err)
 	}
 	h.Wait("the reopened window to close", func() bool { return h.Window(again.ID) == nil })
 }
