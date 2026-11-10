@@ -800,8 +800,11 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// without ?page=), and it is a documented control param, honoring it
 		// here is what makes those requests return the intended window
 		// instead of silently serving page 1.
+		// The envelope's page then follows the skip: the page the first
+		// returned row sits on, not the ?page= the offset replaced.
 		if o, ok := explicitOffsetValues(q); ok {
 			offset = o
+			page = o/perPage + 1
 		}
 		qb.Limit(perPage)
 		qb.Offset(offset)

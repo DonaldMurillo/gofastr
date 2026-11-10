@@ -77,6 +77,12 @@ into an access log cannot be replayed. The cookie carries a freshly
 minted secret, not the URL token, so replaying the leaked value as a
 cookie does not work either. Lost the session? Restart the
 app: setup re-enters and a fresh token is printed.
+The link also works when it is clicked on another site's page, such as
+a hosted log viewer or a chat message. The browser would withhold the
+SameSite=Strict cookie from that navigation, so the wizard first
+answers with a page of its own that loads the link again
+(`setup.hop_title`), and the exchange happens on that second load. The
+first answer checks and spends nothing.
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are
 still origin-guarded either way. Under `framework.WithTLS` the setup URL
 is `https://`.
@@ -188,7 +194,9 @@ The 503 response on non-setup paths uses the same locale through
 
 Rejected validation and step execution preserve submitted non-secret values,
 including empty values, ahead of environment defaults. Fields with
-`Secret: true` render as password inputs and are never prefilled or logged. `setup.HealthStep(app)` runs the app's registered
+`Secret: true` render as password inputs and are never prefilled or logged.
+The wizard trims the spaces around a plain field; a secret is kept exactly
+as typed, so a password with a space at either end signs in afterwards. `setup.HealthStep(app)` runs the app's registered
 readiness checks (the same ones `/readyz` serves) and fails with a
 per-adapter, actionable error list. DB, storage, and email
 verification come free if those batteries registered checks.

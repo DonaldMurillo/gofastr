@@ -30,7 +30,7 @@ type Pages interface {
 	MagicLinkConfirm(w http.ResponseWriter, r *http.Request, d ConfirmPageData)
 	// Hop writes the page a cross-site arrival sees for a moment. The
 	// battery has already set a Refresh header that loads d.Target
-	// again from this origin, so the page only needs a link for a
+	// from this origin, so the page only needs a link for a
 	// browser that does not follow it. See HopPageData.
 	Hop(w http.ResponseWriter, r *http.Request, d HopPageData)
 }
@@ -49,9 +49,10 @@ type ConfirmWords struct {
 
 // HopPageData is what Pages.Hop renders.
 type HopPageData struct {
-	// Target is this request's own path and query, a same-origin URL
-	// to load again. It carries the request's credential (an
-	// authorization code and state, or a verification token).
+	// Target is a same-origin URL to load: this request's own path and
+	// query, carrying its credential (an authorization code and state,
+	// or a verification token), or the page a finished OAuth sign-in
+	// lands on.
 	Target string
 	// Title is the heading and Continue the link's text, in the
 	// caller's locale.

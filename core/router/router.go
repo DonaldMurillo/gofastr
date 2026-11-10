@@ -922,6 +922,12 @@ func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
 // headers, etc. as matched routes, and middleware added after
 // MethodNotAllowed still applies. Mirrors [NotFound] exactly, including
 // the cachedRoute memoisation.
+//
+// A 405, default or custom, runs the chain the path's routes share: the
+// root's, then each Group's down to the deepest one that holds every
+// route at the path. So middleware set on a Group (CORS, auth, a rate
+// limit) sees a wrong-method request to one of the group's paths, a CORS
+// preflight included, the way it sees the routes themselves.
 func (r *Router) MethodNotAllowed(handler http.Handler) {
 	route := newCachedRoute(handler, r, "", "")
 	r.mu.Lock()
@@ -1006,15 +1012,25 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			// gated methods) BEFORE dispatching, so the handler, custom
 			// or default, inherits it without recomputing the set.
 			w.Header().Set("Allow", strings.Join(allowed, ", "))
+			// The 405 runs the chain the path's routes share, a Group's
+			// middleware included: CORS set on Group("/api") must see the
+			// preflight of POST /api/items, which has no OPTIONS route.
+			// Run under the root chain alone, the preflight answered a
+			// bare 405 and the browser blocked every preflighted call to
+			// the group.
+			owner := r.sharedOwner(req, allowed)
 			if mna := r.fallbackFor(req, ownMethodNotAllowed, nil); mna != nil {
+				// A handler set above the owner (the root's, for a
+				// group's route) runs inside the owner's chain. One set
+				// on the owner or below it already has that chain.
+				if cr, ok := mna.(*cachedRoute); ok && cr.router != owner && owner.servedBy(cr.router) {
+					mna = newCachedRoute(cr.raw, owner, "", "")
+				}
 				mna.ServeHTTP(w, req)
 				return
 			}
-			// The default 405 runs through the middleware chain just like
-			// a custom handler (cachedRoute) would. CORS middleware must
-			// see preflights whose path has no OPTIONS route. Cold path,
-			// so the per-request wrap is fine.
-			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// Cold path, so the per-request wrap is fine.
+			owner.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
 			})).ServeHTTP(w, req)
 			return
@@ -1034,6 +1050,37 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		})).ServeHTTP(w, req)
 		return
 	}
+}
+
+// sharedOwner returns the deepest router that every live route at the
+// request's path was registered under: the routes' own Group when one
+// group holds them all, else the nearest ancestor two groups share. Its
+// chain is the middleware all of those routes run, so it is the chain a
+// 405 for the path runs. methods are the path's allowed methods. A route
+// outside r's tree (a sibling's, when a Group is served on its own)
+// leaves r itself.
+func (r *Router) sharedOwner(req *http.Request, methods []string) *Router {
+	probe := req.Clone(req.Context())
+	var owner *Router
+	for _, m := range methods {
+		probe.Method = m
+		h, _ := r.mux.Handler(probe)
+		cr, ok := h.(*cachedRoute)
+		if !ok {
+			return r
+		}
+		if owner == nil {
+			owner = cr.router
+			continue
+		}
+		for owner != nil && !cr.router.servedBy(owner) {
+			owner = owner.parent
+		}
+	}
+	if owner == nil || !owner.servedBy(r) {
+		return r
+	}
+	return owner
 }
 
 // PreRoute installs fn to run on every request the tree serves, before

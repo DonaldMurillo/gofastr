@@ -551,6 +551,32 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **CORS on a `Group` answers the preflight**
+  ([security](framework/docs/content/security.md)). `OPTIONS` to a
+  group path with no `OPTIONS` route ran the root middleware only, so
+  the browser blocked every preflighted call to
+  `Group("/api", middleware.CORS(cfg))`. A 405 now runs the middleware
+  of the group that holds the path's routes. **Behavior change**: auth
+  or rate-limit middleware on a group also sees a wrong-method request
+  to its paths, so a signed-out one answers 401 where it answered 405.
+- **An OAuth sign-in lands signed in**
+  ([auth](framework/docs/content/auth.md)). The callback's redirect
+  continued the provider's cross-site navigation, so the browser
+  withheld the new `SameSite=Strict` session cookie and the landing
+  page rendered signed out. A cross-site callback now answers with a
+  page from this origin that loads the target.
+- **A setup link clicked on another site keeps its token**
+  ([first run](framework/docs/content/first-run.md)). Opened from a
+  hosted log viewer or a chat message, the link spent its token and
+  then answered 403, and "already used" from then on.
+- **The setup wizard stores a password as typed.** It trimmed every
+  field, so an admin password with a space at either end never signed
+  in.
+- **The admin login redirect keeps the query string**, so a signed-out
+  link to a filtered list returns to that list.
+- **The list envelope's `page` follows `?offset=`**
+  ([entities](framework/docs/content/entity-declarations.md)).
+  `?offset=40&limit=20` answered the third page's rows as `"page": 1`.
 - **Markdown list items hold blocks**
   ([core packages](framework/docs/content/core-packages.md)). A nested
   `- item` showed its dash, a fenced block under a numbered step ran

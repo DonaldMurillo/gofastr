@@ -178,9 +178,14 @@ func TestOAuthLinkSurvivesStrictCookie(t *testing.T) {
 		}
 	})
 
-	t.Run("no hop for a login flow", func(t *testing.T) {
-		// Only the link branch needs the session; a login return mints
-		// one, so it completes on the first request as before.
+	t.Run("a login flow completes on its first request", func(t *testing.T) {
+		// Only the link branch needs the session before it can act; a
+		// login return mints one, so the first request spends the code
+		// and sets the cookie. Its answer is the page that loads the
+		// landing page from this origin, not a redirect: a redirect
+		// would continue the cross-site navigation and the browser would
+		// withhold the new Strict cookie from it
+		// (TestOAuthSignInLandsSignedIn).
 		_, r, _, _ := linkFixture(t, &OAuth2UserInfo{ID: "p-new", Email: "new@example.com", EmailVerified: true})
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/auth/oauth/stub", nil))
@@ -191,8 +196,9 @@ func TestOAuthLinkSurvivesStrictCookie(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: oauthStateCookie, Value: state})
 		w = httptest.NewRecorder()
 		r.ServeHTTP(w, req)
-		if w.Code != http.StatusFound || sessionCookie(w) == "" {
-			t.Fatalf("cross-site login return = %d %s, want 302 with a session", w.Code, w.Body.String())
+		if w.Code != http.StatusOK || sessionCookie(w) == "" || w.Header().Get("Refresh") != "0;url=/" {
+			t.Fatalf("cross-site login return = %d Refresh %q %s, want 200 with a session and a load of /",
+				w.Code, w.Header().Get("Refresh"), w.Body.String())
 		}
 	})
 

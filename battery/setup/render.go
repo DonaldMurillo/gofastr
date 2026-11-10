@@ -180,6 +180,27 @@ func (r *Runner) renderIncomplete(ctx context.Context, w http.ResponseWriter, re
 	r.writePage(ctx, w, body)
 }
 
+// renderHop answers a cross-site arrival on the setup link: a page from
+// this origin that loads target, the same link, again. The Refresh
+// header does the reload and the link is there for a browser that does
+// not follow it. target carries the setup token, so the page is kept out
+// of caches (writePage) and out of referrers.
+func (r *Runner) renderHop(w http.ResponseWriter, req *http.Request, target string) {
+	ctx := req.Context()
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	w.Header().Set("Refresh", "0;url="+target)
+	r.writePage(ctx, w, ui.AuthCard(ui.AuthCardConfig{
+		Title: r.cfg.Title.Text(ctx),
+		Body: ui.Stack(ui.StackConfig{Gap: ui.GapMD},
+			html.Heading(html.HeadingConfig{Level: 2}, render.Text(pageHopTitle.Text(ctx))),
+			html.Link(html.LinkConfig{
+				Href: target,
+				Text: pageContinue.Text(ctx),
+			}),
+		),
+	}))
+}
+
 // renderStepWithErrors writes the step page with validation errors.
 func (r *Runner) renderStepWithErrors(w http.ResponseWriter, req *http.Request, stepIdx int, errors, values map[string]string) {
 	body := r.buildStepForm(req.Context(), stepIdx, r.cfg.Steps, errors, values)
