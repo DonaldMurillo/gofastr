@@ -2007,8 +2007,7 @@ An `entity_list`, `entity_detail` or `entity_form` reads its entity
 through the entity's own gates. An entity that is not `public: true`
 needs a signed-in caller, and an app spec without `app.auth.enabled:
 true` has no way to sign in, so the generated screen shows "Not
-available" to every visitor, and a page that leaves with no heading
-fails the generated `axe_test.go`. Both commands warn, naming the entity
+available" under its heading to every visitor. Both commands warn, naming the entity
 and its screens; neither fails, since owned Go can wire its own sign-in.
 Turn on `app.auth`, or set `public: true` on an entity anyone may read
 and write. An entity with an `access:` gate is not flagged.
