@@ -121,6 +121,11 @@ func typeErrorDetail(te *json.UnmarshalTypeError) error {
 			return pick(jsonIntegerRange, jsonIntegerRangeRoot)
 		}
 		return pick(jsonNumberRange, jsonNumberRangeRoot)
+	case wantOK && got == want:
+		// The right JSON type again, and no range to name: a string that
+		// is not base64 for a []byte, a text a TextUnmarshaler refused.
+		// "expected a string, got a string" would name no fault.
+		return pick(jsonInvalidAt, jsonInvalid)
 	case wantOK:
 		params["expected"] = i18n.NewError(want)
 		params["got"] = i18n.NewError(got)

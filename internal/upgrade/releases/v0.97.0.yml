@@ -187,3 +187,13 @@ notes:
   - change: "JSON encode failures on non-envelope replies are checked; HTTP response helpers answer 500 before committing a success status, and broker or queue operations propagate serialization errors"
     guidance: "Make custom response values JSON-encodable: remove NaN and infinity, invalid RawMessage values, channels and functions. Check json.Marshal, json.MarshalIndent and Encoder.Encode errors; discardeddecode now reports dropped errors on fallible non-envelope values too."
     nodetect: "the failure depends on the runtime response value; no caller spelling distinguishes it"
+  - change: "BREAKING - auth: a TwoFactorURL that is not a same-origin path (NewCorePlugin().WithTwoFactorURL, MagicLinkConfig, PasskeyConfig and OAuth2Config.TwoFactorURL) fails Init; it used to pass and every two-factor sign-in was redirected to / instead, which refuses the pending session"
+    breaking: true
+    guidance: "Set the option to a path on the app's own origin, starting with one slash and carrying no scheme or host (/login/2fa, not https://app.example.com/login/2fa)."
+    nodetect: "the value is usually read from configuration, and a string literal passed to these options is a path in every ordinary call"
+  - change: "ExportData fails on a text cell whose bytes are not valid UTF-8, naming the table, row and column; it used to write the cell with U+FFFD in place of each bad byte, so a restore held different bytes"
+    guidance: "Only a raw SQL write can have stored such text. Correct the cell (re-encode it as UTF-8, or move binary data to a blob column) and export into a fresh directory."
+    nodetect: "a fact of the stored data; no host source spelling shows it"
+  - change: "auth: a provider refresh that reports success with no access token is an error and stores nothing, and GitHubProvider reads the error document GitHub sends with HTTP 200 on a refused code or refresh token"
+    guidance: "A custom OAuthTokenRefresher must return an error when the provider refuses the grant. RefreshOAuthToken and ValidOAuthToken now return an error where they returned an empty token and nil."
+    nodetect: "the difference depends on the provider's runtime answer; no host source spelling distinguishes it"

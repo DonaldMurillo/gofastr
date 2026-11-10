@@ -509,6 +509,36 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A refused GitHub token refresh no longer wipes the stored token**
+  ([auth](framework/docs/content/auth.md)). GitHub answers a refused
+  code or refresh token with HTTP 200 and an error document. The
+  provider read only the status, so the refusal came back as an empty
+  token with no error, and the refresh stored it over a token that could
+  still be good. `GitHubProvider` now returns an error naming GitHub's
+  code, and a refresh from any provider that returns no access token
+  stores nothing.
+- **A token refresh survives the caller hanging up.** The write that
+  stores a refreshed grant ran on the request's context. A client that
+  disconnected after the provider answered cancelled it, and with a
+  provider that rotates refresh tokens the row kept one the provider had
+  just spent, so the user had to reconnect. The write now runs on its
+  own bounded context.
+- **`ExportData` includes service accounts.** The archive carried
+  service tokens but not `auth_service_accounts`, so after a restore
+  every service token answered `owner_missing`.
+- **BREAKING: a two-factor URL that is not a same-origin path fails
+  `Init`.** `WithTwoFactorURL` and the `TwoFactorURL` option of the
+  magic-link, passkey and OAuth plugins accepted an absolute URL, then
+  redirected every two-factor sign-in to `/`, which refuses the pending
+  session. Set a path such as `/login/2fa`.
+- **`ExportData` refuses text that is not valid UTF-8**
+  ([data export](framework/docs/content/data-export.md)). It wrote the
+  cell with U+FFFD in place of each bad byte, so the archive passed its
+  checksum and restored different bytes. The export now fails and names
+  the table, row and column, as it does for a non-finite float.
+- **A `[]byte` field sent text that is not base64 gets a refusal that
+  says so.** The JSON error detail read "expected a string, got a
+  string"; it now reads "the value could not be decoded".
 - **`contracts_verify` refuses an unknown capability before it reads the
   tree.** The MCP dev tool loaded the config and scanned every source
   file first, so a mistyped capability cost a full scan, and a broken

@@ -618,6 +618,10 @@ func refreshOAuthToken(ctx context.Context, store OAuthTokenStore, provider OAut
 	return refreshFrom(ctx, store, provider, key, userID, seen)
 }
 
+// errOAuthRefreshNoToken is the failure of a refresh whose provider
+// reported success and returned no access token.
+var errOAuthRefreshNoToken = errors.New("provider returned no access token")
+
 // tokenMovedOn reports whether cur is a different grant than seen: another
 // refresh or a login stored it after seen was read.
 func tokenMovedOn(seen, cur OAuthTokenRecord) bool {
@@ -672,6 +676,13 @@ func refreshFrom(ctx context.Context, store OAuthTokenStore, provider OAuth2Prov
 		}
 	}
 	tok, err := refresher.RefreshToken(ctx, rec.RefreshToken)
+	if err == nil && (tok == nil || tok.AccessToken == "") {
+		// A refresher that reports success and hands back no access
+		// token did not refresh anything (GitHub answers a refused grant
+		// with HTTP 200 and an error document). Storing it would replace
+		// a token that may still be good with an empty one.
+		err = errOAuthRefreshNoToken
+	}
 	if err != nil {
 		if leased {
 			undo, cancel := undoContext(ctx)
@@ -708,12 +719,27 @@ func refreshFrom(ctx context.Context, store OAuthTokenStore, provider OAuth2Prov
 	// won. The comparison is on the refresh token we refreshed FROM: if
 	// the stored one is no longer that, someone else has moved the
 	// record on and their version is newer than ours by construction.
-	saved, err := store.SaveIfRefreshUnchanged(ctx, rec, refreshedFrom)
+	//
+	// The write settles an exchange the provider has already made, so it
+	// does not run on the caller's context: a client that hangs up after
+	// the provider answered would cancel it, and under rotation the row
+	// would keep a refresh token the provider has just spent.
+	settle, cancel := undoContext(ctx)
+	defer cancel()
+	saved, err := store.SaveIfRefreshUnchanged(settle, rec, refreshedFrom)
 	if err != nil {
+		if leased {
+			// Nothing was stored, so the lease guards nothing: without
+			// this the next caller waits out a refresh nobody is making.
+			if rerr := leaser.ReleaseRefresh(settle, userID, key, refreshedFrom); rerr != nil {
+				slog.Warn("auth: releasing an oauth refresh lease failed; it lapses on its own",
+					"user_hash", hashedIdentifier(userID), "err", rerr)
+			}
+		}
 		return OAuthTokenRecord{}, err
 	}
 	if !saved {
-		current, err := store.Get(ctx, userID, key)
+		current, err := store.Get(settle, userID, key)
 		if err != nil {
 			// The row vanished (unlink) rather than moved on; hand back
 			// our refreshed record rather than failing the caller.
