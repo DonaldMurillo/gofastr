@@ -120,6 +120,17 @@ func (a *App) registerContractDevTools() error {
 // to carry, and paying it down is the point, a fix tool that silently
 // skipped every baselined finding would look broken.
 func runContractsPass(capability string, applyBaseline bool) (*contracts.Report, error) {
+	// The argument is judged before the tree is touched: a capability
+	// that does not exist is refused whatever the config or the scan
+	// would say, and costs neither.
+	var opts contracts.RunOptions
+	if capability != "" {
+		parsed, err := contracts.ParseCapability(capability)
+		if err != nil {
+			return nil, contractRefusal("unknown capability %q; call contracts_capabilities for the list", capability)
+		}
+		opts.Capabilities = []contracts.Capability{parsed}
+	}
 	root, err := contractsSourceRoot()
 	if err != nil {
 		return nil, err
@@ -131,14 +142,6 @@ func runContractsPass(capability string, applyBaseline bool) (*contracts.Report,
 	pass, err := contracts.NewPass(root, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("scan %s: %w", root, err)
-	}
-	var opts contracts.RunOptions
-	if capability != "" {
-		parsed, err := contracts.ParseCapability(capability)
-		if err != nil {
-			return nil, contractRefusal("unknown capability %q; call contracts_capabilities for the list", capability)
-		}
-		opts.Capabilities = []contracts.Capability{parsed}
 	}
 	report, err := contracts.Run(pass, opts)
 	if err != nil {

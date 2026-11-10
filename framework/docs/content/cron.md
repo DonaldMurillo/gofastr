@@ -150,7 +150,11 @@ Supported within each field:
   if the current minute is a multiple of five. Under leader election
   the walk claims each minute in order, the current one included, so a
   replica that kept ticking refuses the late claims and nothing fires
-  twice.
+  twice. The walk waits for its own release of one minute before it
+  asks for the next, so it never loses a minute to its own lease. A
+  lease with `Acquire` alone records no minute: the walk takes it once,
+  runs every minute it owes under it, and releases it when the jobs it
+  started have finished.
   The current minute boundary is included even when the delay is
   exactly one interval. Cancellation or stop ends the walk before
   the next minute is claimed.
@@ -234,7 +238,8 @@ scheduler releases it as soon as `AcquireTick` holds. A lease with
 `Acquire` alone keeps mutual exclusion while it is held, and nothing
 more: the scheduler holds it until that tick's jobs finish (never a job
 from an earlier tick), so on such a lease a long job can block the
-ticks that come due while it runs.
+ticks that come due while it runs. A late tick that walks several
+minutes takes such a lease once for the whole walk.
 
 A custom lease's `Acquire` and the per-tick `release` it returns are
 treated like every other scheduler callback: a panic in either is

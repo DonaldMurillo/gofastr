@@ -59,7 +59,11 @@ type Job struct {
 	// CreatedAt: once a failed attempt's next retry would fall past
 	// CreatedAt+MaxAge, the job is dead-lettered instead, whatever
 	// attempts it has left. It is checked when an attempt fails, so a job
-	// that waited in a backlog still runs once. Zero means no age limit;
+	// that waited in a backlog still runs once. On DBQueue an attempt whose
+	// worker stopped before settling it (the lease ran out) is a failed
+	// attempt too: past CreatedAt+MaxAge the job is dead-lettered instead
+	// of re-delivered. RedisQueue checks the age in Nack only. Zero means
+	// no age limit;
 	// a negative MaxAge is refused at Enqueue. A Replay keeps CreatedAt,
 	// so a replayed job past its age gets the one attempt the replay
 	// asked for.

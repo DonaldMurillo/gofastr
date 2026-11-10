@@ -270,7 +270,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if created.Title != "hello" || created.ID == "" || created.Published {
+	if created.Title != "hello" || created.ID == "" || created.Published == nil || *created.Published {
 		t.Fatalf("create round-trip lost data: %+v", created)
 	}
 
@@ -286,7 +286,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if updated.Title != "edited" || updated.Views != 99 {
+	if updated.Title != "edited" || updated.Views == nil || *updated.Views != 99 {
 		t.Fatalf("update did not persist: %+v", updated)
 	}
 
@@ -303,7 +303,7 @@ func TestGeneratedClient_RoundTrip(t *testing.T) {
 	// The pointer-based Patch keeps non-nil pointers even when they point at
 	// a zero value, so the server applies the update. Title is left nil here
 	// (untouched) and must stay "edited".
-	if patched.Title != "edited" || patched.Views != 0 || patched.Published {
+	if patched.Title != "edited" || patched.Views == nil || *patched.Views != 0 || patched.Published == nil || *patched.Published {
 		t.Fatalf("patch did not set zero values / preserve untouched fields: %+v", patched)
 	}
 
@@ -515,7 +515,13 @@ func TestGeneratedClient_IntID(t *testing.T) {
 // method, then run `go test`. Anything that drifts between server contract
 // and generated client surfaces here.
 func TestGenerateClient_RoundTripAgainstLiveServer(t *testing.T) {
-	clitest.VariantBuild(t)
+	// The source this test compiles reads the generated structs field by
+	// field, so a change to what the emitters write breaks its build. Run
+	// it when one of them or this file changes, not only on a full run:
+	// v0.97's pointer read shapes left it red on main because the pull
+	// request never built it.
+	clitest.VariantBuild(t, "cmd/gofastr/internal/appgen/generate_client.go",
+		"cmd/gofastr/internal/appgen/generate_client_test.go")
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

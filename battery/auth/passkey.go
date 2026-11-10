@@ -292,6 +292,9 @@ func (p *PasskeyPlugin) Init(mgr *AuthManager) error {
 			p.challenges = NewMemoryMagicLinkTokenStore()
 		}
 	}
+	if err := checkTwoFactorURL("passkey", "PasskeyConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
+		return err
+	}
 	// Every plugin is registered before any Init runs, so a 2FA plugin
 	// later in the list is already visible here.
 	if p.config.TwoFactorURL == "" {

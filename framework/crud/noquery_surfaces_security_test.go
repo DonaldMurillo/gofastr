@@ -126,7 +126,7 @@ func TestNoQueryAbsentFromAgentSurfaces(t *testing.T) {
 	}
 
 	t.Run("mcp_list_tool_schema", func(t *testing.T) {
-		props, _ := listToolSchema(authors)["properties"].(map[string]any)
+		props, _ := listToolSchema(authors, nil)["properties"].(map[string]any)
 		if _, ok := props["secret"]; ok {
 			t.Error("MCP list tool advertises a filter arg for a NoQuery field")
 		}

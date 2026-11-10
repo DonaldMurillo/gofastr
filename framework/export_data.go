@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -1429,6 +1430,12 @@ func (w *ndjsonFile) write(row map[string]any) error {
 		value, floating := row[column].(float64)
 		if floating && (math.IsNaN(value) || math.IsInf(value, 0)) {
 			return fmt.Errorf("row %d column %q: non-finite float %v cannot be exported as JSON", w.rows+1, column, value)
+		}
+		// A string that is not UTF-8 has no JSON spelling either, and
+		// encoding/json does not refuse it: it writes U+FFFD for each bad
+		// byte, so the archive would checksum and restore different bytes.
+		if text, ok := row[column].(string); ok && !utf8.ValidString(text) {
+			return fmt.Errorf("row %d column %q: text that is not valid UTF-8 cannot be exported as JSON", w.rows+1, column)
 		}
 	}
 	if err := w.enc.Encode(row); err != nil {

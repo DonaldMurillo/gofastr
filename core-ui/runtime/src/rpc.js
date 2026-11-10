@@ -260,6 +260,11 @@
 
     let body = node.getAttribute('data-cui-rpc-body');
     let resolvedPath = path;
+    // The page this dispatch runs on, read before the request: by the
+    // time it answers, a push-state or a navigation may have moved the
+    // URL. Selectors carry no locale prefix (the kernel's _unlocalize).
+    // nav is absent from the embed composition: no cache, nothing to name.
+    const ranOn = NS.invalidate && NS._unlocalize(location.pathname) + location.search;
     const tok = {};
     _rpcLatest.set(node, tok);
     if (formSource) _rpcLatest.set(formSource, tok);
@@ -406,6 +411,12 @@
 
       // nav is absent from the embed composition, so invalidation is optional.
       NS._inval?.(r);
+      // A write leaves the page it ran on stale: the screen cache holds
+      // that page as fetched, before the write, and Back replayed it (a
+      // row an island had just added was gone, a deleted record was
+      // back). Evict it so the next visit fetches; the visible page is
+      // the island answer's or data-cui-rpc-navigate's to update.
+      if (ranOn && method !== 'GET') NS.invalidate(ranOn);
       const pushState = r.headers.get('X-Gofastr-Push-State') ||
         node.getAttribute('data-cui-push-state');
       if (pushState) {
@@ -484,11 +495,8 @@
       // A save inside an intercept layer returns to the layer (or the
       // page under the stack) it names instead of leaving the stack.
       if (dest && !stale() && !NS._interceptReturn?.(dest, node)) {
-        // A mutation leaves the page it ran on stale: after a delete,
-        // Back replayed the deleted record from the screen cache.
-        // Evict it before leaving; selectors carry no locale prefix
-        // (the kernel's _unlocalize strips it).
-        if (method !== 'GET') NS.invalidate?.(NS._unlocalize(location.pathname) + location.search);
+        // The page this ran on left the screen cache above, so Back
+        // after a delete fetches the record again.
         try { NS.navigate(dest, { force: true }); }
         catch (_) {}
       }

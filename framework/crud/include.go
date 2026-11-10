@@ -505,10 +505,11 @@ func scopedTyped(pf filter.ParsedFilter, col string, t schema.FieldType, pathFor
 const maxScopedINEntries = 256
 
 // relationByName looks up a Relation a caller may name on an entity. A
-// relation behind a Hidden field (entity.HidesRelation) is not found, the
-// answer a name that is no relation gets: its include would put the
-// related record, and the hidden key, in the response, and a nested
-// filter across it would test the record's values.
+// relation behind a Hidden field, or a belongs_to over a NoQuery key
+// (entity.HidesRelation), is not found, the answer a name that is no
+// relation gets: its include would put the related record, and the hidden
+// or masked key, in the response, and a nested filter across it would
+// test the record's values.
 func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 	for _, rel := range ent.Config.Relations {
 		if rel.Name == name && !ent.HidesRelation(rel) {

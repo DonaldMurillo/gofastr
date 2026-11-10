@@ -895,13 +895,18 @@ URL, and links and GET forms navigate (the runtime fetches the screen
 partial and keeps the shell).
 
 - `entity_list` renders `appUI.List("<entity>")` with: `fields:` →
-  `.Columns(...)`, `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
+  `.Columns(...)` (each entry a field of the entity, by its declared name
+  or its camelCase JSON spelling, which generates as the declared name;
+  refused when the field is `hidden`, is left out by the entity's
+  `display: fields: <name>: omit`, or is listed twice, since the list
+  could draw none of those), `limit:` → `.PageSize(n)`, `empty_text:` → `.Empty(...)`,
   `mode: cards` (or `table`) → `.As(...)`, `create: false` → `.NoCreate()`,
   `bulk: true` → `.Bulk()` (row selection, the bulk bar and Export CSV;
   refused on any other block kind), `filter: field=value` →
   `.Where(field, value)` (stat_card's filter spelling: one pinned
   equality, validated against the entity's fields: refused on a
-  hidden or `no_query` column, on a value the column's type cannot hold,
+  hidden or `no_query` column, on a `json` column (no filter matches on
+  one), on a value the column's type cannot hold,
   and on an enum value outside the field's `values:`) and a `text:` heading (level 2 when a block ahead of it on the screen
   renders the page's `<h1>`). One list per screen needs no key; two lists
   of **different** entities each get `.Key("<entity>")` so their query
@@ -1777,7 +1782,11 @@ without ever printing a success banner.
 
 Screen body blocks support the legacy sugar keys (`type`, `text`, `level`,
 `class`, `href`) and property-based nodes through `kind`, `props`, and
-`children`. Supported render kinds include structural tags, text tags, forms,
+`children`. A block with no `kind` that names a catalog kind under `type`
+(`type: card`, `type: page_header`, `type: stat_card`, a control) is read
+as that `kind`, so it draws the same component. `type: section` is the
+exception: it stays the plain `<section>` tag (`kind: section` is
+`ui.Section`). Supported render kinds include structural tags, text tags, forms,
 buttons, links, inputs, images, lists, tables, and raw nodes. `island` wraps a
 block in `island.NewIsland`; `widget` wraps it in `component.NewWidget`.
 `actions` generate GoFastr screen actions and add the required `data-action`

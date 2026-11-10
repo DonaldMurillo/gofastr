@@ -186,7 +186,7 @@ requests carry no content type. Multipart RPC forms let the browser set
 | `data-cui-page-meta` | Per-screen meta/link ownership marker. The navigator preserves unmarked site-wide head metadata. |
 | `data-cui-skip-label="<text>"` | Same carrier and same rule as `data-cui-lang`, for the app shell's skip-link text (`App.SkipLabelFor` / `WithSkipLabelFunc`; the default is the `app.skip_to_main` phrase in the request's language): after every SPA swap the runtime writes it into the `[data-skip-link]` link, the first string a keyboard user tabs to, so it speaks the destination page's language (#411). |
 | `data-cui-strings="<json>"` | On the page-head template a partial response carries, beside `data-cui-lang`: the runtime's own words (the `#gofastr-strings` table) in the destination reader's locale. After every swap the runtime replaces `say()`'s table with it; a page without it is English, which clears the previous page's table. A full fetch carries the `#gofastr-strings` block instead. |
-| `data-hui-disclosure-trap` | Opt-in modifier on a `data-hui-disclosure` `<details>` element (`headless.Disclosure`'s `Trap` prop): while open, the `headless-disclosure` module confines Tab inside the disclosure, its summary included, so the toggle that closes it stays a Tab stop. A trap disclosure already open when the module loads (rendered open, or opened before the module arrived) is confined from the module's arrival on. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). A followed link inside an open trap disclosure closes it, as it closes a `data-hui-disclosure-dismiss` popup. |
+| `data-hui-disclosure-trap` | Opt-in modifier on a `data-hui-disclosure` `<details>` element (`headless.Disclosure`'s `Trap` prop): while open, the `headless-disclosure` module confines Tab inside the disclosure, its summary included, so the toggle that closes it stays a Tab stop. A trap disclosure already open when the module loads (rendered open, or opened before the module arrived) is confined from the module's arrival on. Use for mobile drawer / full-sheet popover patterns that need modal-style focus containment (vs. the default non-trapping inline disclosure). A followed link inside an open trap disclosure closes it, as it closes a `data-hui-disclosure-dismiss` popup. A trap holds only while its disclosure is drawn: when its sheet stops drawing an open one (a phone menu hidden from a breakpoint up, after the window widens or a tablet rotates), the module closes it and releases the containment, so Tab and the regions the trap made inert come back. |
 | `data-hui-disclosure-dismiss` | Opt-in modifier on a `data-hui-disclosure` `<details>` element (`headless.Disclosure`'s `Dismiss` prop; every menu root carries it): a click outside the open disclosure closes it, and so does a touch or pen release on plain content outside it (iOS Safari sends no click for a tap on content with no click handler of its own). A tap on a control outside it (a link, button, field, label or summary) closes it through the control's click, so an in-flow panel never collapses before the browser aims that click. A click on a caller-owned menu trigger is the trigger's. Escape with focus in no disclosure closes the open dismiss popups and never a section without the modifier. A followed link inside the popup closes it (a same-page `#anchor` too, and a link the client router takes, on its `gofastr:beforenavigate`); a click a handler already took (`defaultPrevented`: a tab, an island anchor), a modified or middle click, a `target`/`download` link and a `data-cui-open` widget link leave it open. Use it for a panel that floats over the page; an accordion section leaves it off, and a link click inside one keeps it open. |
 | `data-cui-action="close"` | On any element inside a mounted widget: clicking it dismisses the widget (the widget's scoped click handler in `widgets.js`), with no request. `close` is the only value the runtime reads; `headless.ButtonProps.Action` (and so `ui.Button` `ExtraAttrs`) admits exactly that value and refuses any other at render. |
 | `data-cui-widget="<name>"` | Marks a registered widget instance; the runtime mounts behavior on it after first paint. |
@@ -416,9 +416,18 @@ attribute vocabulary changes again.
 
 **Screen cache + invalidation.** The router keeps a 20-entry LRU of
 rendered screens keyed by `pathname+search` (the initial page included)
-so back/forward is instant. Eviction never re-renders the visible page;
-an RPC that changed what the *current* screen shows should return island
-HTML or use `data-cui-rpc-navigate`; the header exists for screens you
+so back/forward is instant. Eviction never re-renders the visible page.
+An RPC that changed what the *current* screen shows should return island
+HTML or use `data-cui-rpc-navigate`: that updates what the reader sees.
+The cached copy of that screen is the runtime's to drop. A successful
+`data-cui-rpc` (in a widget too) or toggle/optimistic action whose
+method is not `GET` evicts the page it ran on: the URL when the request
+was sent, as that exact entry, or as every query variant when the URL
+has no query, on every locale. Back to that page then fetches it,
+instead of replaying the copy fetched before the write. A `GET` RPC is
+a read and evicts nothing, so a pager or sort island that wants Back to
+replay its page from the cache sends `GET`; sent as `POST`, its Back
+fetches. The header exists for screens you
 are **not** on (an admin action that stales `/pricing`, a create that
 stales every page of a list). The JS mirrors are
 `__gofastr.invalidate(...selectors)` (same selector rules as the header)
@@ -446,6 +455,16 @@ URL before writing history. An identical destination is a no-op, including
 an equivalent absolute URL. Changing or removing a fragment is a distinct
 navigation. `{force: true}` still fetches again and replaces the current
 entry when the complete destination is unchanged.
+
+`navigate()` resolves `path` once, against the document base, before it
+writes history: `?p=2` and `sub/page` name the URL a link with that
+`href` would. The fragment rides the URL, where the scroll after the
+swap reads it. The router's own path never holds one:
+`__gofastr.currentPath`, the screen-cache key and `gofastr:navigate`'s
+`detail.path` are `pathname+search`, whether the page was reached by a
+link, `navigate()`, a `data-cui-spa` GET form whose action carries a
+fragment, or an `X-Gofastr-Location` redirect to `/b#frag`. An in-page
+`#anchor` link on a page reached any of those ways fetches nothing.
 
 Combobox link options commit their input value and close their list even
 when the link router has already claimed the click. They do not start a

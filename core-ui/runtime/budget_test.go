@@ -709,8 +709,13 @@ const (
 	// i18n.Fill's name grammar (+27, TestRuntimeSayFillsLikeGo), and a
 	// swap renders a kept global into its fresh bindings (+160,
 	// TestSwappedGlobalBindingShowsStore), which the swap itself runs:
-	// 16771 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160
+	// 16771 measured + 2. The 2026-11-10 navigation fix adds 19: navigate()
+	// resolves its destination once and hands the router path+search, and
+	// loadPage reads the path of whatever it is handed (a redirect target
+	// with a fragment), in the navigator every entry goes through before
+	// either module's could take it (TestNavigateRelativeQueryKeysByPage,
+	// TestFragmentArrivalThenAnchorJumpKeepsPage): 16790 measured + 2.
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1225,7 +1230,11 @@ const (
 	// bindings; see coreGoalGZ) measure 19418 at level 1 (+258). Each runs
 	// in the kernel or the swap before a module could load. Two bytes of
 	// clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 19420
+	// The 2026-11-10 navigation fix (navigate() and loadPage key the router
+	// on path+search; see coreGoalGZ) measures 19425 at level 1 (+7). Both
+	// run in core's navigator before a module could take the navigation.
+	// Two bytes of clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19427
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1391,6 +1400,12 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"fallback toast reads a string message as its title":   16,  // (l1: 29)
 		"say() fills placeholders by i18n.Fill's name grammar": 27,  // (l1: 21)
 		"a swap renders kept globals into its fresh bindings":  160, // (l1: 208)
+		// Measured 16771 → 16790 (2026-11-10): TestNavigateRelativeQueryKeysByPage,
+		// TestNavigateFragmentKeepsPageScopedWidgets,
+		// TestNavigateRelativePathResolvesOnce,
+		// TestNavigateRelativeQueryStaysSoftUnderLocalePrefix and
+		// TestFragmentArrivalThenAnchorJumpKeepsPage's core arms.
+		"navigate() and loadPage key the router on path+search": 19, // (l1: 7)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {
@@ -1610,7 +1625,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// 8228 measured (+37 from 8191) after its swaps and fills render
 		// kept globals into fresh bindings (TestSwappedGlobalBindingShowsStore),
 		// plus 2 clearance.
-		"envelope": 8230,
+		// 8256 measured (+28) after its redirect leg reads the path of
+		// the server's target and leaves the fragment to the URL, as
+		// core's does (TestFragmentArrivalThenAnchorJumpKeepsPage's
+		// envelope/redirect-location arm,
+		// TestRedirectLocationOffOriginLoadsNothing), plus 2 clearance.
+		"envelope": 8258,
 		// widgets 3077 measured (2026-10-07): a widget-scoped form's
 		// data-cui-confirm gate cancels the submit and hands it to the
 		// confirm demand module, the same synchronous gate core runs for
@@ -1953,7 +1973,14 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// dropped B, and a hung POST locked the form until reload. The
 		// payload compare and the queue are dispatch state only this
 		// module holds.
-		"rpc": 4126,
+		// 4134 measured (4132 + 2) after every successful non-GET RPC
+		// evicts the page it ran on from the screen cache, read before
+		// the request (2026-11-10,
+		// TestBackAfterIslandMutationShowsServerState): an island write
+		// left the page's cached copy as fetched, and Back replayed it
+		// without the row just added. The eviction was the
+		// data-cui-rpc-navigate path's alone; it is one rule now.
+		"rpc": 4134,
 	}
 	const coreOverride = 0
 

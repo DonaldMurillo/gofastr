@@ -736,6 +736,10 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 	// forever: invisible to Stats-as-failed, ListJobs("failed"), and Replay.
 	// Lease expiry on the final attempt is the crash equivalent of a terminal
 	// Nack, so route it to the same dead-letter state.
+	// The same sweep dead-letters an expired claim past its MaxAge, which
+	// eligibleWhere would otherwise hand out again: MaxAge ends the
+	// retries whether the attempt failed through Nack or through a lost
+	// worker.
 	if err := q.deadLetterExpiredFinalClaims(ctx); err != nil {
 		return Job{}, err
 	}
@@ -765,28 +769,38 @@ func (q *DBQueue) dequeue(ctx context.Context, lane string, types []string) (Job
 const claimRetries = 3
 
 // deadLetterExpiredFinalClaims moves rows whose lease expired on their final
-// permitted attempt from 'claimed' to 'failed'. It runs before every claim
-// (the same "reclaim happens inside Dequeue" model as the eligibleWhere
-// lease-expiry clause), so a running worker loop sweeps stranded rows on its
-// next poll. Each swept job is logged at ERROR, a job that vanished because
-// its worker crashed must not disappear silently.
+// permitted attempt, or past their MaxAge, from 'claimed' to 'failed'. It
+// runs before every claim (the same "reclaim happens inside Dequeue" model
+// as the eligibleWhere lease-expiry clause), so a running worker loop sweeps
+// stranded rows on its next poll. Each swept job is logged at ERROR, a job
+// that vanished because its worker crashed must not disappear silently.
+//
+// The age half: an expired lease is a failed attempt nobody settled, and
+// MaxAge is otherwise read only in settleFailure, so a job whose workers
+// kept dying was re-delivered through eligibleWhere until its attempts ran
+// out, however far past CreatedAt+MaxAge it was. The age is compared here
+// in Go (the next attempt would start now), not in the claim's SQL: the
+// two dialects share one statement, and neither does date arithmetic.
 func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
-	cutoff := q.now().UTC().Add(-q.leaseTimeout())
+	now := q.now().UTC()
+	cutoff := now.Add(-q.leaseTimeout())
 	rows, err := q.db.QueryContext(ctx, fmt.Sprintf(
-		`SELECT id, type, attempts, max_attempts FROM %s
+		`SELECT id, type, attempts, max_attempts, max_age_ns, created_at FROM %s
 		WHERE status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $1
-		AND attempts >= max_attempts`, q.qt()), cutoff)
+		AND (attempts >= max_attempts OR max_age_ns > 0)`, q.qt()), cutoff)
 	if err != nil {
 		return err
 	}
 	type stranded struct {
 		id, jobType         string
 		attempts, maxAttspt int
+		maxAge              time.Duration
+		createdAt           any
 	}
 	var found []stranded
 	for rows.Next() {
 		var s stranded
-		if err := rows.Scan(&s.id, &s.jobType, &s.attempts, &s.maxAttspt); err != nil {
+		if err := rows.Scan(&s.id, &s.jobType, &s.attempts, &s.maxAttspt, &s.maxAge, &s.createdAt); err != nil {
 			rows.Close()
 			return err
 		}
@@ -797,23 +811,42 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 		return err
 	}
 	rows.Close()
+	// Re-check the full predicate inside the UPDATE: between the SELECT
+	// and now another path (Ack, Nack, release) may have transitioned the
+	// row, the sweep must never dead-letter a claim that is no longer
+	// expired-and-final.
+	// It records when and why, as every other settle does: left
+	// alone, the row listed the claim's updated_at and an earlier
+	// attempt's error, so a crashed worker read as a handler failure.
+	finalStmt := fmt.Sprintf(
+		`UPDATE %s SET status='failed', updated_at=$1, last_error=$2
+		WHERE id=$3 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4
+		AND attempts >= max_attempts`, q.qt())
+	// created_at and max_age_ns do not change while a row is claimed, so
+	// for the age half the staleness bound is the fence that matters: a
+	// claim re-taken since the SELECT has a newer claimed_at.
+	agedStmt := fmt.Sprintf(
+		`UPDATE %s SET status='failed', updated_at=$1, last_error=$2
+		WHERE id=$3 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4
+		AND max_age_ns > 0`, q.qt())
 	for _, s := range found {
-		// Re-check the full predicate inside the UPDATE: between the SELECT
-		// and now another path (Ack, Nack, release) may have transitioned the
-		// row, the sweep must never dead-letter a claim that is no longer
-		// expired-and-final.
-		// It records when and why, as every other settle does: left
-		// alone, the row listed the claim's updated_at and an earlier
-		// attempt's error, so a crashed worker read as a handler failure.
-		res, err := q.db.ExecContext(ctx, fmt.Sprintf(
-			`UPDATE %s SET status='failed', updated_at=$1, last_error=$2
-			WHERE id=$3 AND status='claimed' AND claimed_at IS NOT NULL AND claimed_at <= $4
-			AND attempts >= max_attempts`, q.qt()), q.now().UTC(), leaseExpiredError, s.id, cutoff)
+		stmt, reason, logMsg := finalStmt, leaseExpiredError, "queue: lease expired on final attempt; job dead-lettered"
+		if s.attempts < s.maxAttspt {
+			// A created_at the sweep cannot read is left to the claim,
+			// which reports the row it cannot decode; failing here would
+			// stop every dequeue on one bad row.
+			created, err := query.ParseDBTime(s.createdAt)
+			if err != nil || !pastMaxAge(Job{CreatedAt: created, MaxAge: s.maxAge}, now) {
+				continue
+			}
+			stmt, reason, logMsg = agedStmt, leaseExpiredPastMaxAgeError, "queue: lease expired past MaxAge; job dead-lettered"
+		}
+		res, err := q.db.ExecContext(ctx, stmt, now, reason, s.id, cutoff)
 		if err != nil {
 			return err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			q.logger.Error("queue: lease expired on final attempt; job dead-lettered",
+			q.logger.Error(logMsg,
 				"job_id", s.id,
 				"job_type", s.jobType,
 				"attempt", s.attempts,
@@ -826,6 +859,10 @@ func (q *DBQueue) deadLetterExpiredFinalClaims(ctx context.Context) error {
 // leaseExpiredError is the LastError the dead-letter sweep records on a
 // final-attempt claim whose lease ran out.
 const leaseExpiredError = "lease expired on the final attempt: the worker stopped (crash, kill, or a handler that outran the lease) before it settled the job"
+
+// leaseExpiredPastMaxAgeError is the LastError the sweep records on a
+// claim whose lease ran out once the job was past CreatedAt+MaxAge.
+const leaseExpiredPastMaxAgeError = "lease expired past MaxAge: the worker stopped (crash, kill, or a handler that outran the lease) before it settled the job, and the job is too old to retry"
 
 // pruneDone deletes done jobs older than the retention, at most once per
 // donePruneEvery. The terminal status guard is its fence: a done row has
@@ -972,6 +1009,8 @@ func (t sqliteConnTx) Commit(ctx context.Context) error {
 // lease has expired (the worker that claimed it crashed before Ack/Nack) and
 // it still has retry attempts left. The lease-expiry clause is what makes
 // in-flight work crash-safe: a claimed row is reclaimed instead of lost.
+// It does not read MaxAge: dequeue's sweep runs first and dead-letters an
+// expired claim that is past it.
 func (q *DBQueue) eligibleWhere(types []string, startIdx int, lane string) (string, []any) {
 	var args []any
 	now := q.now().UTC()

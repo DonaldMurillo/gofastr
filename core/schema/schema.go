@@ -86,7 +86,12 @@ type Field struct {
 	// Mask NoQuery, so no filter, sort or search reads the stored value.
 	// Return a placeholder for a value it cannot read: a Mask that panics
 	// reads as null, and the panic is logged.
-	Mask func(ctx context.Context, v any) any
+	//
+	// The tag keeps Field encodable: encoding/json refuses a func-typed
+	// struct field even when it is nil, and entity.Endpoint publishes
+	// []Field as its inputSchema/outputSchema. A func has no JSON form, so
+	// an encoded Field carries no Mask and a decoded one has none.
+	Mask func(ctx context.Context, v any) any `json:"-"`
 }
 
 // Schema is an ordered collection of Fields with convenience helpers.

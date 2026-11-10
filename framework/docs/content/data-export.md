@@ -4,6 +4,10 @@ Non-finite floating-point cells (`NaN`, `+Inf`, `-Inf`) fail export with the
 table, one-based row number, and column in the error. Correct the source cell
 and export into a fresh directory; an interrupted directory without a manifest
 is not a complete archive. Non-finite values are never silently coerced.
+A text cell whose bytes are not valid UTF-8 fails export the same way: JSON
+cannot carry it, and writing it would restore different bytes than the source
+held. The framework's own writes refuse such text, so only a raw SQL write
+can have stored it.
 
 `App.ExportData` / `App.ImportData` dump every entity's rows (plus every
 registered battery table) to a portable archive and restore it with

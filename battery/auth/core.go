@@ -75,6 +75,9 @@ func (c *CorePlugin) Name() string { return "core" }
 // login rate limiters from manager config.
 func (c *CorePlugin) Init(mgr *AuthManager) error {
 	c.mgr = mgr
+	if err := checkTwoFactorURL("core", "WithTwoFactorURL", c.twoFactorURL); err != nil {
+		return err
+	}
 	// Every plugin is registered before any Init runs, so a 2FA plugin
 	// later in the list is already visible.
 	if c.twoFactorURL == "" {

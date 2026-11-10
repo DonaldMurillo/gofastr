@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-//gofastr:test-reads crud/main.go
-//gofastr:test-reads full/main.go
+//gofastr:test-reads benchmarks/apps/crud/main.go
+//gofastr:test-reads benchmarks/apps/full/main.go
 func TestBenchRejectsInvalidEntities(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds benchmark binaries")

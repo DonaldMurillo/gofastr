@@ -304,6 +304,9 @@ func (p *MagicLinkPlugin) Init(mgr *AuthManager) error {
 			return err
 		}
 	}
+	if err := checkTwoFactorURL("magic-link", "MagicLinkConfig.TwoFactorURL", p.config.TwoFactorURL); err != nil {
+		return err
+	}
 	// The passkey plugin's rule: every plugin is registered before any
 	// Init runs, so a 2FA plugin later in the list is already visible.
 	if p.config.TwoFactorURL == "" {
@@ -883,4 +886,16 @@ func safeRedirectURL(u string) string {
 		return u
 	}
 	return "/"
+}
+
+// checkTwoFactorURL refuses a configured two-factor URL the sign-in could
+// never redirect to. Every sign-in sends it through safeRedirectURL,
+// which answers "/" for anything but a same-origin path, and "/" refuses
+// a pending session: the dead end the plugins' "set it next to a 2FA
+// plugin" rule exists to rule out, reached with the option set.
+func checkTwoFactorURL(plugin, option, value string) error {
+	if value == "" || handler.IsSafeRelativePath(value) {
+		return nil
+	}
+	return fmt.Errorf("auth: %s plugin: %s %q is not a same-origin path (one leading \"/\", no scheme or host), so a two-factor sign-in would be sent to \"/\", which refuses it", plugin, option, value)
 }

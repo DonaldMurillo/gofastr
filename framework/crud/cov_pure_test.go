@@ -152,10 +152,10 @@ func TestMcpFieldSchema_AllTypes(t *testing.T) {
 
 func TestMcpSchemas_Shapes(t *testing.T) {
 	ent := covRelEntity()
-	if s := idToolSchema(ent, []string{"id"}); s["type"] != "object" {
+	if s := idToolSchema(ent, nil, []string{"id"}); s["type"] != "object" {
 		t.Error("idToolSchema bad shape")
 	}
-	ls := listToolSchema(ent)
+	ls := listToolSchema(ent, nil)
 	props := ls["properties"].(map[string]any)
 	if _, ok := props["secret"]; ok {
 		t.Error("listToolSchema leaked Hidden field")
@@ -163,7 +163,7 @@ func TestMcpSchemas_Shapes(t *testing.T) {
 	if _, ok := props["title"]; !ok {
 		t.Error("listToolSchema missing visible field")
 	}
-	us := updateToolSchema(ent, []string{"id"})
+	us := updateToolSchema(ent, nil, []string{"id"})
 	uprops := us["properties"].(map[string]any)
 	if _, ok := uprops["id"]; !ok {
 		t.Error("updateToolSchema missing id")

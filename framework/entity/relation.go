@@ -43,7 +43,8 @@ type Relation struct {
 	// relation no Hidden field of this entity covers, such as a has_many
 	// whose foreign key is Hidden on the target: users has_many notes
 	// through a Hidden notes.owner_ref still loads a user's notes unless
-	// the relation sets Hidden. See HidesRelation.
+	// the relation sets Hidden. See HidesRelation, which also hides a
+	// belongs_to whose foreign key is Hidden or NoQuery.
 	Hidden bool `json:"hidden,omitempty"`
 }
 
@@ -102,15 +103,24 @@ func BelongsTo(name, ent, foreignKey string, more ...string) Relation {
 // the relation's name, so crud answers ?include= and nested filters on it
 // as it answers a relation that does not exist, and neither /openapi.json
 // nor llm.md names it.
+//
+// A belongs_to whose foreign key holds a NoQuery column, which Define
+// makes every field with a Mask, is hidden the same way. The column's stored
+// value is the related record's key: an include would answer it beside
+// the masked column, and a nested filter across the relation
+// (?account.id=) is a filter on the column NoQuery keeps off the query
+// surface. A relation merely named after a NoQuery field is not hidden:
+// the field's name is no secret, only its stored value.
 func (e *Entity) HidesRelation(rel Relation) bool {
 	if rel.Hidden {
 		return true
 	}
 	for _, f := range e.Config.Fields {
-		if !f.Hidden {
-			continue
+		holdsKey := rel.Type == RelManyToOne && slices.Contains(rel.ForeignKey, f.Name)
+		if f.Hidden && (f.Name == rel.Name || holdsKey) {
+			return true
 		}
-		if f.Name == rel.Name || (rel.Type == RelManyToOne && slices.Contains(rel.ForeignKey, f.Name)) {
+		if f.NoQuery && holdsKey {
 			return true
 		}
 	}

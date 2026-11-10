@@ -318,8 +318,23 @@ func (s *SQLServiceAccountStore) ensureSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS %s (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, roles TEXT NOT NULL DEFAULT '[]', disabled %s NOT NULL DEFAULT %s, created_at %s NOT NULL)`,
 		query.QuoteFolded(s.table), boolType, boolFalse, tsType,
 	)
-	_, err := s.db.ExecContext(ctx, stmt)
-	return err
+	if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+		return err
+	}
+	registerServiceAccounts(s.table)
+	return nil
+}
+
+// registerServiceAccounts declares the service-account table to
+// App.ExportData under its configured name. The token table is exported,
+// and a service token names its account by id: an archive without the
+// accounts restores tokens that answer owner_missing. No eraser goes
+// with it, because the table names no user.
+func registerServiceAccounts(table string) {
+	datexport.Register(datexport.DataExporter{
+		Name: datexport.ScopedName("auth_service_accounts", table), Source: "auth", Table: table, PrimaryKey: "id",
+		Columns: []string{"id", "name", "roles", "disabled", "created_at"},
+	})
 }
 
 func (s *SQLServiceAccountStore) q(stmt string) string {
