@@ -134,13 +134,18 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 	// answered with a page from this origin that loads the same URL
 	// again. That navigation starts here, so the cookie rides its
 	// redirect. The hop checks and spends nothing.
-	// Only a top-level navigation is a clicked link. A cross-site page
-	// that frames the link (Sec-Fetch-Dest: iframe) gets no hop.
-	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) && topLevelNavigation(req) {
-		if target, ok := sameOriginTarget(req); ok {
+	// Any other cross-site GET (a frame, an image, a preview fetch, a
+	// path the hop will not echo) is refused without looking at the
+	// token: exchanged, it spent the one-time token on a request whose
+	// cookie the browser withholds, and the operator's later click
+	// answered "already used".
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) {
+		if target, ok := sameOriginTarget(req); ok && topLevelNavigation(req) {
 			r.renderHop(w, req, target)
 			return
 		}
+		i18n.HTTPError(w, req, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+		return
 	}
 	r.mu.Lock()
 	if !r.tokenEnabled || r.token == "" {

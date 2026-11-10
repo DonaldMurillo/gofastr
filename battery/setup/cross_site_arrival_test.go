@@ -162,3 +162,45 @@ func TestSetupPagesRefuseFraming(t *testing.T) {
 		t.Errorf("hop Content-Security-Policy = %q, want frame-ancestors 'none'", got)
 	}
 }
+
+// tokenStillGood reloads link from this origin and wants the exchange's
+// 303 with the setup cookie: nothing before it spent the token.
+func tokenStillGood(t *testing.T, h http.Handler, link, after string) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, link, nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("after %s the link answered %d, want the exchange's 303: the token was spent", after, rec.Code)
+	}
+}
+
+// A cross-site request that is not a clicked link (a frame, an image, a
+// preview fetch) must not spend the one-time token either: it is
+// refused, and the link still works when the operator clicks it.
+func TestCrossSiteSubresourceDoesNotSpendToken(t *testing.T) {
+	for _, dest := range []string{"iframe", "image", "empty"} {
+		done := false
+		r := buildTestRunner(t, false, &done)
+		h := r.Handler(func() {}, nil, nil)
+		link := "/setup?token=" + r.token
+		req := httptest.NewRequest(http.MethodGet, link, nil)
+		req.Header.Set("Sec-Fetch-Site", "cross-site")
+		req.Header.Set("Sec-Fetch-Dest", dest)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden || len(w.Result().Cookies()) != 0 || w.Header().Get("Refresh") != "" {
+			t.Errorf("dest %s: status %d, cookies %d, Refresh %q; want a bare 403", dest, w.Code, len(w.Result().Cookies()), w.Header().Get("Refresh"))
+		}
+		tokenStillGood(t, h, link, "a cross-site "+dest+" request")
+	}
+	// The same for a path the hop will not echo.
+	done := false
+	r := buildTestRunner(t, false, &done)
+	h := r.Handler(func() {}, nil, nil)
+	if w := crossSiteGet(h, "/%5C%5Cevil.example/x?token="+r.token); w.Code != http.StatusForbidden {
+		t.Errorf("unsafe path: status %d, want 403", w.Code)
+	}
+	tokenStillGood(t, h, "/setup?token="+r.token, "a cross-site arrival on an unsafe path")
+}
