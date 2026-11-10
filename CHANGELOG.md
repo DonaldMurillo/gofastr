@@ -140,6 +140,18 @@ few lines, and link the PR or the docs page for the rest.
   the receiving side. See
   [webhooks](framework/docs/content/webhooks.md#signing-in-a-receivers-existing-format).
 
+- **macOS desktop apps run on Intel Macs, and `gofastr desktop build`
+  writes a universal app**
+  ([#604](https://github.com/DonaldMurillo/gofastr/issues/604)). The
+  macOS shell (`battery/desktop/macos`) now builds for darwin/amd64 as
+  well as darwin/arm64. On macOS the build compiles both, merges the
+  executables with `lipo` and signs the result, so one `.app` runs on
+  Apple silicon and on Intel. `GOARCH=arm64` or `GOARCH=amd64` builds
+  one architecture; before, `GOARCH=amd64` was refused. A universal
+  build needs `lipo` from the Xcode command line tools and stops before
+  touching the previous bundle when it is missing. See
+  [desktop](framework/docs/content/desktop.md#the-gofastr-desktop-verbs).
+
 ### Changed
 - **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).

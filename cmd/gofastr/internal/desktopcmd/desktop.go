@@ -499,14 +499,20 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 		return
 	}
 
-	archWarn, err := macDesktopArch(os.Getenv("GOARCH"), runtime.GOARCH)
+	archs, err := macDesktopArchs(os.Getenv("GOARCH"))
 	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	if archWarn != "" {
-		cli.Warn("%s", archWarn)
+	// Checked before the previous bundle is removed: a build that cannot
+	// merge its slices must not leave the output directory empty.
+	if len(archs) > 1 {
+		if _, err := lookTool("lipo"); err != nil {
+			cli.Fail("A universal macOS build merges its two executables with lipo, which is not on PATH (it ships with the Xcode command line tools: xcode-select --install). Set GOARCH=arm64 or GOARCH=amd64 to build one architecture.")
+			cli.OsExit(1)
+			return
+		}
 	}
 
 	appDir := filepath.Join(f.out, name+".app")
@@ -528,18 +534,13 @@ func runDesktopBuildForOS(args []string, targetOS string) {
 	}
 
 	exe := filepath.Join(macOS, name)
-	cli.Info("Building %s (darwin/arm64, CGO_ENABLED=0)...", f.pkg)
 	extra, err := extraLinkerFlags(f)
 	if err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
-	buildCmd := exec.Command("go", "build", "-trimpath", "-ldflags", "-s -w"+extra, "-o", exe, f.pkg)
-	buildCmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=darwin", "GOARCH=arm64")
-	buildCmd.Stdout = os.Stdout
-	buildCmd.Stderr = os.Stderr
-	if err := buildCmd.Run(); err != nil {
+	if err := buildMacExecutable(f.pkg, "-s -w"+extra, exe, archs); err != nil {
 		cli.Fail("Build failed: %v", err)
 		cli.OsExit(1)
 		return
@@ -849,17 +850,57 @@ func writeDesktopTypes(f desktopTypesFlags) error {
 	return nil
 }
 
-// macDesktopArch checks the macOS bundle's architecture. The shell
-// (battery/desktop/macos) is arm64-only, so the bundle is always
-// darwin/arm64: a GOARCH naming anything else is refused, and building
-// on an Intel host returns a warning that the bundle will not launch
-// there. Cross-building for Apple silicon from an Intel Mac stays legal.
-func macDesktopArch(envArch, hostArch string) (warn string, err error) {
-	if envArch != "" && envArch != "arm64" {
-		return "", fmt.Errorf("macOS desktop builds target arm64 only (Apple silicon), not GOARCH=%s", envArch)
+// lookTool finds an external tool of the build on PATH. Tests swap it
+// to build as a host without the tool.
+var lookTool = exec.LookPath
+
+// macDesktopArchs names the architectures a macOS bundle is built for,
+// from the caller's GOARCH. The shell (battery/desktop/macos) runs on
+// Apple silicon and on Intel, so no GOARCH means both, merged into one
+// universal executable; arm64 or amd64 means that one alone. Anything
+// else is refused: a bundle reported written must be one that launches.
+func macDesktopArchs(envArch string) ([]string, error) {
+	switch envArch {
+	case "":
+		return []string{"arm64", "amd64"}, nil
+	case "arm64", "amd64":
+		return []string{envArch}, nil
 	}
-	if hostArch != "arm64" {
-		return fmt.Sprintf("The bundle targets Apple silicon (arm64) and will not launch on this %s Mac.", hostArch), nil
+	return nil, fmt.Errorf("macOS desktop builds target arm64 (Apple silicon), amd64 (Intel), or both when GOARCH is unset, not GOARCH=%s", envArch)
+}
+
+// buildMacExecutable compiles pkg for darwin into exe. One architecture
+// is a plain cross-compile. Two are compiled into a temporary directory
+// and merged by lipo into one universal Mach-O; the caller signs the
+// bundle afterwards, which covers every slice.
+func buildMacExecutable(pkg, ldflags, exe string, archs []string) error {
+	build := func(arch, out string) error {
+		cli.Info("Building %s (darwin/%s, CGO_ENABLED=0)...", pkg, arch)
+		cmd := exec.Command("go", "build", "-trimpath", "-ldflags", ldflags, "-o", out, pkg)
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOOS=darwin", "GOARCH="+arch)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		return cmd.Run()
 	}
-	return "", nil
+	if len(archs) == 1 {
+		return build(archs[0], exe)
+	}
+	tmp, err := os.MkdirTemp("", "gofastr-desktop-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	args := []string{"-create", "-output", exe}
+	for _, arch := range archs {
+		slice := filepath.Join(tmp, arch)
+		if err := build(arch, slice); err != nil {
+			return err
+		}
+		args = append(args, slice)
+	}
+	cli.Info("Merging %s into a universal executable (lipo)...", strings.Join(archs, " and "))
+	if out, err := runTool("lipo", args...); err != nil {
+		return fmt.Errorf("lipo: %w", toolDetail(out, err))
+	}
+	return nil
 }

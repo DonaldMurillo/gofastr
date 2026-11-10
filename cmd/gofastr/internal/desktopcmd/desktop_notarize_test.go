@@ -55,6 +55,10 @@ func assertCalls(t *testing.T, got, want []fakeToolCall) {
 // code (-1 = returned normally), and the dist dir it built into.
 func buildFixtureBundle(t *testing.T, name string, extra ...string) (string, int, string) {
 	t.Helper()
+	// One architecture: these tests are about the bundle and its
+	// signing, and a universal build needs lipo, which the Linux CI
+	// hosts do not have. TestMacBuildDefaultIsUniversal owns that path.
+	t.Setenv("GOARCH", "arm64")
 	fixture := t.TempDir()
 	desktopFixtureApp(t, fixture)
 	oldWD, err := os.Getwd()
