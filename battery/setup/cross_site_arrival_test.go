@@ -110,3 +110,55 @@ func TestCrossSiteArrivalRefusesForeignTarget(t *testing.T) {
 		t.Fatalf("Refresh = %q for a scheme-relative path", got)
 	}
 }
+
+// The hop reloads the path it was asked for, and the token exchange
+// answers on any path. A path that decodes to a backslash or a second
+// slash ("/%5C%5Chost", "/%2F%2Fhost") is a spelling some clients read
+// as another origin, and the reload would carry the token there. The
+// rule every other redirect here uses (handler.IsSafeRelativePath)
+// refuses it; such an arrival gets no hop.
+func TestCrossSiteArrivalRefusesEncodedForeignTarget(t *testing.T) {
+	for _, path := range []string{"/%5C%5Cevil.example/x", "/%5Cevil.example", "/%2F%2Fevil.example/x"} {
+		done := false
+		r := buildTestRunner(t, false, &done)
+		h := r.Handler(func() {}, nil, nil)
+		w := crossSiteGet(h, path+"?token="+r.token)
+		if got := w.Header().Get("Refresh"); got != "" {
+			t.Errorf("%s: Refresh = %q, want no hop to a path that can leave this origin", path, got)
+		}
+		if strings.Contains(w.Body.String(), "evil.example") {
+			t.Errorf("%s: the answer links the foreign target:\n%s", path, w.Body.String())
+		}
+	}
+}
+
+// The hop is for a link someone clicked: a top-level navigation. A
+// cross-site page that frames the setup link gets none, and no setup
+// page may be drawn inside another site's frame.
+func TestSetupPagesRefuseFraming(t *testing.T) {
+	done := false
+	r := buildTestRunner(t, false, &done)
+	h := r.Handler(func() {}, nil, nil)
+	link := "/setup?token=" + r.token
+
+	framed := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, link, nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	req.Header.Set("Sec-Fetch-Dest", "iframe")
+	h.ServeHTTP(framed, req)
+	if got := framed.Header().Get("Refresh"); got != "" {
+		t.Errorf("a framed arrival got the hop (Refresh %q)", got)
+	}
+
+	hop := crossSiteGet(h, link)
+	if hop.Header().Get("Refresh") == "" {
+		t.Fatal("a clicked link got no hop")
+	}
+	if got := hop.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("hop X-Frame-Options = %q, want DENY", got)
+	}
+	if got := hop.Header().Get("Content-Security-Policy"); !strings.Contains(got, "frame-ancestors 'none'") {
+		t.Errorf("hop Content-Security-Policy = %q, want frame-ancestors 'none'", got)
+	}
+}

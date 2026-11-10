@@ -219,6 +219,11 @@ func (r *Runner) renderCompletionPage(w http.ResponseWriter, req *http.Request) 
 func (r *Runner) writePage(ctx context.Context, w http.ResponseWriter, body render.HTML) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	// Setup replaces the app's handler, so the app's security headers
+	// are not on these pages. None of them belongs in another site's
+	// frame: the wizard takes the admin password.
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
 
 	comps := registry.Scan(string(body))
 

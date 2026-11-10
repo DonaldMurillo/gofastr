@@ -82,7 +82,10 @@ a hosted log viewer or a chat message. The browser would withhold the
 SameSite=Strict cookie from that navigation, so the wizard first
 answers with a page of its own that loads the link again
 (`setup.hop_title`), and the exchange happens on that second load. The
-first answer checks and spends nothing.
+first answer checks and spends nothing. Only a link opened in a tab
+gets that page: one loaded in another site's frame does not, and every
+setup page refuses framing (`X-Frame-Options: DENY`,
+`frame-ancestors 'none'`).
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are
 still origin-guarded either way. Under `framework.WithTLS` the setup URL
 is `https://`.

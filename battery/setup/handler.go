@@ -134,7 +134,9 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 	// answered with a page from this origin that loads the same URL
 	// again. That navigation starts here, so the cookie rides its
 	// redirect. The hop checks and spends nothing.
-	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) {
+	// Only a top-level navigation is a clicked link. A cross-site page
+	// that frames the link (Sec-Fetch-Dest: iframe) gets no hop.
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) && topLevelNavigation(req) {
 		if target, ok := sameOriginTarget(req); ok {
 			r.renderHop(w, req, target)
 			return
@@ -471,16 +473,27 @@ func (r *Runner) recheckElsewhere(ctx context.Context) bool {
 }
 
 // sameOriginTarget is the request's own path and query as a URL on this
-// origin, for the hop to load again. ok is false for a path that would
-// leave the origin: a scheme-relative "//host" (EscapedPath writes a
-// backslash as %5C, so that needs no check).
+// origin, for the hop to load again. ok is false for a path that could
+// leave the origin: a scheme-relative "//host", or one that decodes to
+// a backslash or a second slash ("/%5C%5Chost", "/%2F%2Fhost"), the
+// spellings handler.IsSafeRelativePath refuses for every other redirect.
+// The exchange answers on any path and the reload carries the token, so
+// the path is held to that rule before it is echoed.
 func sameOriginTarget(req *http.Request) (string, bool) {
 	path := req.URL.EscapedPath()
-	if !strings.HasPrefix(path, "/") || strings.HasPrefix(path, "//") {
+	if !handler.IsSafeRelativePath(path) {
 		return "", false
 	}
 	if req.URL.RawQuery != "" {
 		path += "?" + req.URL.RawQuery
 	}
 	return textsafe.ScrubControlBytes(path), true
+}
+
+// topLevelNavigation reports a request for a document in a tab, not in
+// a frame. A browser without Fetch Metadata sends no Sec-Fetch-Dest,
+// and it sends no Sec-Fetch-Site either, so it never reaches the hop.
+func topLevelNavigation(req *http.Request) bool {
+	dest := req.Header.Get("Sec-Fetch-Dest")
+	return dest == "" || dest == "document"
 }
