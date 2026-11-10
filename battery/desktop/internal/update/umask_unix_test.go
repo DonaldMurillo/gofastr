@@ -145,11 +145,17 @@ func TestFeedFilesArePublic(t *testing.T) {
 	keyPath, _, _, _ := writeKeyFile(t, dir)
 	archive := writeArchive(t, dir)
 
-	fresh := filepath.Join(dir, "parent", "feed")
-	if err := WriteFeed(fresh, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+	// The trailing separator is what -o dir/feed/ hands over.
+	fresh := filepath.Join(dir, "grandparent", "parent", "feed")
+	if err := WriteFeed(fresh+string(filepath.Separator), keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
 		t.Fatal(err)
 	}
+	// Every directory the call made is walkable, not only the last.
+	wantMode(t, filepath.Join(dir, "grandparent"), 0o755)
+	wantMode(t, filepath.Join(dir, "grandparent", "parent"), 0o755)
 	wantMode(t, fresh, 0o755)
+	// The temp dir was there before and is not the feed's to open up.
+	wantMode(t, dir, 0o700)
 	wantMode(t, filepath.Join(fresh, "manifest.json"), 0o644)
 	wantMode(t, filepath.Join(fresh, "manifest.json.sig"), 0o644)
 	wantMode(t, filepath.Join(fresh, ".manifest.lock"), 0o600)

@@ -76,7 +76,7 @@ func TestDarwinVerifyPinsTeamID(t *testing.T) {
 	if err := p.VerifySignature("/tmp/Notes.app"); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{`codesign --verify --deep --strict -R=anchor apple generic and certificate leaf[subject.OU] = "ZYXWV98765" /tmp/Notes.app`}
+	want := []string{`codesign --verify --deep --strict -R=anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = "ZYXWV98765" /tmp/Notes.app`}
 	if !slices.Equal(runner.runs, want) {
 		t.Fatalf("commands = %q\nwant %q", runner.runs, want)
 	}
@@ -85,7 +85,7 @@ func TestDarwinVerifyPinsTeamID(t *testing.T) {
 func TestDarwinVerifyRefusesNoIdentity(t *testing.T) {
 	for name, runner := range map[string]*fakeRunner{
 		"ad-hoc":    {out: adHocOutput},
-		"unsigned":  {outErr: errFakeCommand},
+		"unsigned":  {outErr: &ExitError{Name: "codesign", Code: 1}},
 		"no anchor": {out: "designated => identifier \"dev.gofastr.notes\"\n"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -127,6 +127,39 @@ func TestDarwinAllowAdHocWarns(t *testing.T) {
 	}
 	if got := signed.runs[len(signed.runs)-1]; !strings.Contains(got, "-R="+developerIDReq) {
 		t.Fatalf("a signed app under AllowAdHoc verified unpinned: %q", got)
+	}
+}
+
+// codesign that cannot be run says nothing about the running app. The
+// opt-out is for an app known to have no identity, so it must not turn
+// "could not ask" into an unpinned install of a signed app's update.
+func TestDarwinUnreadableIdentityRefuses(t *testing.T) {
+	for name, outErr := range map[string]error{
+		"did not run":     errFakeCommand,
+		"usage error":     &ExitError{Name: "codesign", Code: 2},
+		"killed, no code": &ExitError{Name: "codesign", Code: -1},
+	} {
+		for _, allow := range []bool{false, true} {
+			runner := &fakeRunner{outErr: outErr}
+			p := &darwinPlatform{onMain: inlineMain, runner: runner, running: "/Applications/Notes.app"}
+			p.SetSignaturePolicy(SignaturePolicy{AllowAdHoc: allow})
+			if err := p.VerifySignature("/tmp/Notes.app"); !errors.Is(err, ErrSignature) {
+				t.Errorf("%s, AllowAdHoc=%v: err = %v, want ErrSignature", name, allow, err)
+			}
+			if len(runner.runs) != 1 {
+				t.Errorf("%s, AllowAdHoc=%v: the bundle was still verified: %q", name, allow, runner.runs)
+			}
+		}
+	}
+}
+
+// The Team ID requirement must be text codesign's own compiler takes.
+func TestDarwinTeamRequirementCompiles(t *testing.T) {
+	if _, err := exec.LookPath("csreq"); err != nil {
+		t.Skip("csreq not on PATH")
+	}
+	if out, err := exec.Command("csreq", "-r", "="+teamRequirement("ABCDE12345"), "-t").CombinedOutput(); err != nil {
+		t.Fatalf("csreq refused the requirement: %v: %s", err, out)
 	}
 }
 
@@ -189,14 +222,8 @@ func TestDarwinAdHocBundleFailsThePin(t *testing.T) {
 
 	pinned := &darwinPlatform{onMain: inlineMain, runner: ExecRunner{}, running: running}
 	pinned.SetSignaturePolicy(SignaturePolicy{TeamID: "ABCDE12345"})
-	err := pinned.VerifySignature(download)
-	if err == nil {
+	if err := pinned.VerifySignature(download); err == nil {
 		t.Fatal("an ad-hoc bundle passed a Team ID pin")
-	}
-	// codesign must have judged the signature, not choked on the
-	// requirement text.
-	if !strings.Contains(err.Error(), "failed to satisfy") {
-		t.Fatalf("codesign did not evaluate the requirement: %v", err)
 	}
 
 	// Default policy, ad-hoc running app: nothing to pin, refused.
@@ -212,6 +239,21 @@ func TestDarwinAdHocBundleFailsThePin(t *testing.T) {
 	open.SetWarn(func(string) { warned++ })
 	if err := open.VerifySignature(download); err != nil || warned != 1 {
 		t.Fatalf("AllowAdHoc: err = %v, warnings = %d", err, warned)
+	}
+
+	// A running bundle with no signature at all is the same case: the
+	// real codesign exits 1 on it, which reads as "no identity".
+	unsigned := signedBundle(t, "dev.gofastr.notes", "-")
+	if out, err := exec.Command("codesign", "--remove-signature", unsigned).CombinedOutput(); err != nil {
+		t.Fatalf("codesign --remove-signature: %v: %s", err, out)
+	}
+	bare := &darwinPlatform{onMain: inlineMain, runner: ExecRunner{}, running: unsigned}
+	if err := bare.VerifySignature(download); !errors.Is(err, ErrSignature) {
+		t.Fatalf("default policy on an unsigned app: err = %v, want ErrSignature", err)
+	}
+	bare.SetSignaturePolicy(SignaturePolicy{AllowAdHoc: true})
+	if err := bare.VerifySignature(download); err != nil {
+		t.Fatalf("AllowAdHoc on an unsigned app: %v", err)
 	}
 }
 

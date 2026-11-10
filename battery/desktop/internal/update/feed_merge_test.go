@@ -2,6 +2,8 @@ package update
 
 import (
 	"bytes"
+	"crypto/ed25519"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,13 +54,11 @@ func TestFeedKeepsValidChannel(t *testing.T) {
 	channel := Release{Version: "1.3.0-beta.1", Notes: "preview notes", Platforms: map[string]PlatformEntry{
 		"darwin-amd64": {URL: "https://example.com/preview.zip", SHA256: strings.Repeat("a", 64), Size: 123},
 	}}
-	manifest, _, err := SignFeed(Feed{Expires: testExpires(), Version: "1.2.0", Channels: map[string]Release{"preview": channel}}, privateKey)
+	manifest, signature, err := SignFeed(Feed{Expires: testExpires(), Version: "1.2.0", Channels: map[string]Release{"preview": channel}}, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeExistingFeed(t, dir, manifest, signature)
 	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestFeedKeepsValidChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	signature, err := os.ReadFile(filepath.Join(dir, "manifest.json.sig"))
+	signature, err = os.ReadFile(filepath.Join(dir, "manifest.json.sig"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,14 +111,12 @@ func TestFeedRefusesVersionMismatch(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _, _, privateKey := writeKeyFile(t, dir)
 	archive := writeArchive(t, dir)
-	manifest, _, err := SignFeed(Feed{Expires: testExpires(), Version: "1.1.0"}, privateKey)
+	manifest, signature, err := SignFeed(Feed{Expires: testExpires(), Version: "1.1.0"}, privateKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(dir, "manifest.json")
-	if err := os.WriteFile(path, manifest, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	writeExistingFeed(t, dir, manifest, signature)
 	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err == nil {
 		t.Fatal("accepted a different existing version")
 	}
@@ -135,13 +133,75 @@ func TestFeedRefusesMalformedManifest(t *testing.T) {
 	for _, manifest := range []string{"{", "{}", "null", `{"version":null}`} {
 		t.Run(manifest, func(t *testing.T) {
 			dir := t.TempDir()
-			keyPath, _, _, _ := writeKeyFile(t, dir)
+			keyPath, _, _, privateKey := writeKeyFile(t, dir)
 			archive := writeArchive(t, dir)
-			if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o600); err != nil {
-				t.Fatal(err)
-			}
+			// Signed by the right key, so the refusal is the parse's.
+			signature := base64.StdEncoding.EncodeToString(ed25519.Sign(privateKey, []byte(manifest)))
+			writeExistingFeed(t, dir, []byte(manifest), []byte(signature))
 			if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err == nil {
 				t.Fatal("accepted a malformed existing manifest")
+			}
+		})
+	}
+}
+
+// writeExistingFeed puts a manifest pair in dir, as an earlier run of
+// the feed verb would have left it.
+func writeExistingFeed(t *testing.T, dir string, manifest, signature []byte) {
+	t.Helper()
+	for name, data := range map[string][]byte{"manifest.json": manifest, "manifest.json.sig": signature} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Whoever can write to the output directory (the feed host, in a job
+// that pulls the live feed to renew it) must not get entries signed:
+// an existing manifest merges only when this key already signed it.
+func TestFeedRefusesForeignManifest(t *testing.T) {
+	planted := Feed{
+		Expires: testExpires(),
+		Version: "1.2.0",
+		Platforms: map[string]PlatformEntry{
+			"windows-amd64": {URL: "https://evil.example/x.zip", SHA256: strings.Repeat("e", 64), Size: 1},
+		},
+		Channels: map[string]Release{"beta": {Version: "99.0.0"}},
+	}
+	_, otherKey, _ := ed25519.GenerateKey(nil)
+	for name, sign := range map[string]func(manifest []byte, own ed25519.PrivateKey) []byte{
+		"no signature": func([]byte, ed25519.PrivateKey) []byte { return nil },
+		"garbage":      func([]byte, ed25519.PrivateKey) []byte { return []byte("not a signature") },
+		"another key": func(m []byte, _ ed25519.PrivateKey) []byte {
+			return []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(otherKey, m)))
+		},
+		"edited after": func(m []byte, own ed25519.PrivateKey) []byte {
+			return []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(own, append([]byte(" "), m...))))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			keyPath, _, _, privateKey := writeKeyFile(t, dir)
+			archive := writeArchive(t, dir)
+			manifest, _, err := SignFeed(planted, privateKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "manifest.json")
+			if err := os.WriteFile(path, manifest, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if signature := sign(manifest, privateKey); signature != nil {
+				if err := os.WriteFile(path+".sig", signature, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err == nil {
+				t.Fatal("merged and signed a manifest this key never signed")
+			}
+			got, err := os.ReadFile(path)
+			if err != nil || string(got) != string(manifest) {
+				t.Fatalf("the refusal changed the existing manifest (%v)", err)
 			}
 		})
 	}

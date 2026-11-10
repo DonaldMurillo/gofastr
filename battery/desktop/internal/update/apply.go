@@ -23,7 +23,8 @@ type CommandRunner interface {
 	Run(name string, args ...string) error
 	// Output runs the command and returns its standard output. The
 	// macOS signature pin reads the running bundle's designated
-	// requirement this way.
+	// requirement this way. A command that ran and exited non-zero
+	// reports an *ExitError; any other error means it did not run.
 	Output(name string, args ...string) ([]byte, error)
 }
 
@@ -37,15 +38,27 @@ func (ExecRunner) Run(name string, args ...string) error {
 	return runCommand(name, args...)
 }
 
+// ExitError is a command that ran to completion and exited non-zero.
+type ExitError struct {
+	Name string
+	Code int
+}
+
+func (e *ExitError) Error() string { return fmt.Sprintf("%s exited %d", e.Name, e.Code) }
+
 // Output implements CommandRunner. Standard error is dropped: codesign
 // prints the bundle's absolute path there, and the failure is reported
 // by exit status alone.
 func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 	out, err := exec.Command(name, args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("%s failed", name)
+	if err == nil {
+		return out, nil
 	}
-	return out, nil
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.Exited() {
+		return nil, &ExitError{Name: name, Code: exit.ExitCode()}
+	}
+	return nil, fmt.Errorf("%s could not run", name)
 }
 
 // SignaturePolicy is the macOS code-signing pin an install applies to
@@ -53,8 +66,9 @@ func (ExecRunner) Output(name string, args ...string) ([]byte, error) {
 // The zero value pins the update to the running app's own designated
 // requirement and refuses when the running app has no signing identity.
 type SignaturePolicy struct {
-	// TeamID, when set, is the Apple Developer Team ID every update
-	// must be signed by, instead of the running app's requirement.
+	// TeamID, when set, is the Apple Developer Team ID whose Developer
+	// ID certificate every update must be signed with, instead of the
+	// running app's requirement.
 	TeamID string
 	// AllowAdHoc lets an app with no signing identity (ad-hoc signed or
 	// unsigned) install an update that only carries a valid signature

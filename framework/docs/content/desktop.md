@@ -1755,9 +1755,9 @@ Two more fields decide whose code signature a macOS update must carry:
 
 | Field | Effect |
 |---|---|
-| neither set | The update must satisfy the running app's own designated requirement: the same bundle identifier, signed by the same identity. An app signed with `--sign "Developer ID Application: ..."` needs nothing else. |
-| `MacOSTeamID: "ABCDE12345"` | The update must be signed with an Apple-issued certificate of that team, whatever the running app carries. Set it one release ahead of a change of signing identity. |
-| `MacOSAllowAdHoc: true` | An app with no signing identity may install any bundle that carries a valid signature. A signed app is still held to its identity. |
+| neither set | The update must satisfy the running app's own designated requirement, the rule macOS uses to call two builds the same app. For a Developer ID signature that is the bundle identifier plus the team's Developer ID certificate, so a renewed certificate of the same team passes and another team's does not. An app signed with `--sign "Developer ID Application: ..."` needs nothing else. |
+| `MacOSTeamID: "ABCDE12345"` | The update must be signed with a Developer ID certificate of that team, whatever the running app carries. An Apple Development certificate of the team does not pass. Needed only when the team itself changes: ship one release with the new team here, signed the old way, then sign the next with the new team and clear the field. |
+| `MacOSAllowAdHoc: true` | An app with no signing identity may install any bundle that carries a valid signature. A signed app is still held to its identity, and when `codesign` cannot be run to read the running app the install is refused. |
 
 An ad-hoc signed bundle, which is what `gofastr desktop build` writes
 without `--sign`, has no identity to hold an update to. Its installs
@@ -1906,8 +1906,9 @@ gofastr desktop feed --key path --version 1.2.0 --notes "..." \
     --platform darwin-arm64 --archive Notes.zip \
     --url https://example.com/notes/Notes-1.2.0.zip [-o dir] \
     [--valid-days 30]
-    merges this platform into an existing same-version manifest.json,
-    preserving other platforms and channels, then re-signs it. A different
+    merges this platform into an existing same-version manifest.json
+    that this key signed, preserving other platforms and channels,
+    then re-signs it. A different
     existing version (including a missing version) is refused; use a fresh directory for a new release.
     Writes manifest.json and manifest.json.sig into dir (-o defaults
     to .), computing sha256 and size from the archive file
@@ -1921,18 +1922,31 @@ new expiry. A scheduled job that does this weekly keeps the default
 safe. A shorter lifetime narrows the window in which a captured
 manifest can be replayed, and costs more frequent signing.
 
-`manifest.json` and `manifest.json.sig` are written 0644, and an
-output directory the command creates is 0755, so a static web server
-running as another user can serve the directory as it is. An existing
-directory keeps its mode. The `.manifest.lock` file beside them and the
-signing key stay 0600.
+The command merges into a manifest already in `-o` only when
+`manifest.json.sig` there is this key's signature over it. Anything
+else is refused with both files untouched: a manifest with no
+signature, one another key signed, one edited since. Signing what the
+directory holds would otherwise hand the key's signature to whoever
+can write there, which matters for a renewal job that pulls the live
+feed from its host first. Keep the renewal job's copy of the feed on
+the machine that holds the key.
+
+`manifest.json` and `manifest.json.sig` are written 0644, and every
+directory the command creates on the way to `-o` is 0755, so a static
+web server running as another user can serve the directory as it is.
+An existing directory keeps its mode. Each file is replaced in one
+rename, so a reader never sees half of one, and a file an earlier
+release wrote owner-only does not keep those permissions. The
+`.manifest.lock` file beside them and the signing key stay 0600.
 
 Retained channels must also have valid semantic versions; an invalid channel
 refuses the merge without changing the existing manifest or signature.
 On macOS, Linux, and Windows, feed writers sharing an output directory serialize
 the entire read/merge/sign/write operation with an OS file lock. Publish the
 completed pair after all jobs finish; live readers can still observe the interval
-between the manifest write and its signature write.
+between the manifest write and its signature write. A writer that dies in that
+interval leaves a manifest its `.sig` no longer matches, and the next run refuses
+to merge it: remove both files and run each platform again.
 
 `feed` refuses a version that is not semver, a platform key outside
 the `GOOS-GOARCH` grammar, a non-https archive URL, an archive

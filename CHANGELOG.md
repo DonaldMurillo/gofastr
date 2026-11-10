@@ -281,12 +281,17 @@ few lines, and link the PR or the docs page for the rest.
   - `desktop.SignUpdateFeed` takes a trailing `validFor time.Duration`
     (0 is the 30-day default).
   - On macOS the update must satisfy the running bundle's designated
-    requirement, or the team in the new `UpdateConfig.MacOSTeamID`.
+    requirement (its bundle identifier and its team's Developer ID
+    certificate), or carry the Developer ID certificate of the team in
+    the new `UpdateConfig.MacOSTeamID`.
     An ad-hoc signed or unsigned app has no identity to pin, so its
     installs are refused unless `UpdateConfig.MacOSAllowAdHoc` is set.
     That covers every bundle built without `--sign`.
   - `feed` writes `manifest.json` and `manifest.json.sig` 0644 (they
-    were 0600), and a directory it creates 0755.
+    were 0600), and the directories it creates 0755.
+  - `feed` merges into an existing `manifest.json` only when its `.sig`
+    is this key's signature over it. It used to sign whatever manifest
+    the output directory held, entries and channels included.
 - **A refused MCP tool does not disclose its argument schema**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An outermost
   `Gated` handler checks its gate before argument validation, like `WithToolGate`, so

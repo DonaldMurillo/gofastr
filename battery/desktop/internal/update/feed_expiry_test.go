@@ -123,11 +123,7 @@ func TestWriteFeedRenewsExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, data := range map[string][]byte{"manifest.json": manifest, "manifest.json.sig": sig} {
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	writeExistingFeed(t, dir, manifest, sig)
 	if err := WriteFeed(dir, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
 		t.Fatal(err)
 	}

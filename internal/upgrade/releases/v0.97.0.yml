@@ -190,14 +190,14 @@ notes:
   - change: "BREAKING - desktop.SignUpdateFeed takes a trailing validFor time.Duration, and the desktop updater refuses a feed manifest with no expires or a passed one"
     breaking: true
     hits: edit
-    guidance: "Pass 0 for the 30-day default lifetime. Sign every live feed again with this release's gofastr desktop feed before shipping an app built on it, and run the same command again before the expiry (--valid-days, 1 to 365) to renew: an app refuses an expired manifest. Apps built on older releases ignore the new field."
+    guidance: "Pass 0 for the 30-day default lifetime. Sign every live feed again with this release's gofastr desktop feed before shipping an app built on it, and run the same command again before the expiry (--valid-days, 1 to 365) to renew: an app refuses an expired manifest. Apps built on older releases ignore the new field. feed also refuses to merge into an existing manifest.json whose manifest.json.sig is not this key's signature over it: remove both files, or use a new output directory."
     find:
       uses:
         - gofastr/battery/desktop.SignUpdateFeed
-  - change: "BREAKING on macOS - a desktop update must satisfy the running bundle's designated requirement (same bundle identifier and signing identity); an ad-hoc signed or unsigned app refuses every update"
+  - change: "BREAKING on macOS - a desktop update must satisfy the running bundle's designated requirement (for a Developer ID signature, the same bundle identifier and team); an ad-hoc signed or unsigned app refuses every update"
     breaking: true
     hits: review
-    guidance: "Sign releases with gofastr desktop build --sign and nothing else changes. To change signing identity, ship one release with UpdateConfig.MacOSTeamID set to the new team first. For an app that stays ad-hoc signed, set UpdateConfig.MacOSAllowAdHoc: true; its updates then rest on the feed signature alone and the log says so."
+    guidance: "Sign releases with gofastr desktop build --sign and nothing else changes. A renewed certificate of the same team passes. To change team, ship one release with UpdateConfig.MacOSTeamID set to the new team first, then clear it; that field admits only the team's Developer ID certificate. For an app that stays ad-hoc signed, set UpdateConfig.MacOSAllowAdHoc: true; its updates then rest on the feed signature alone and the log says so."
     find:
       uses:
         - gofastr/battery/desktop.UpdateConfig

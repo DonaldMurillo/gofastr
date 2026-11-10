@@ -48,8 +48,12 @@ type UpdateConfig struct {
 	// MacOSTeamID is the Apple Developer Team ID (ten letters and
 	// digits, "ABCDE12345") every update must be signed by. Empty means
 	// the update must satisfy the running app's own designated
-	// requirement: the same bundle identifier and signing identity. Set
-	// it when the identity is about to change between two releases.
+	// requirement: for a Developer ID signature, the same bundle
+	// identifier and the same team's Developer ID certificate, so a
+	// renewed certificate needs nothing. With the field set, the update
+	// must carry that team's Developer ID certificate instead. Set it
+	// only when the team is about to change, one release ahead, and
+	// clear it afterwards.
 	// macOS only; Windows holds an update to the running executable's
 	// Authenticode publisher on its own.
 	MacOSTeamID string

@@ -3,6 +3,7 @@
 package update
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -122,13 +123,16 @@ func (p *darwinPlatform) Bundle() (string, string, bool) {
 // an ad-hoc signature (codesign --sign -) passes it. So the check also
 // names a requirement (-R) the signature must satisfy:
 //
-//   - policy.TeamID set: an Apple-issued certificate of that team.
+//   - policy.TeamID set: a Developer ID certificate of that team.
 //   - otherwise the running bundle's own designated requirement, the
 //     rule macOS itself uses to call two builds the same app. It names
 //     the bundle identifier and the signing identity.
 //   - a running bundle with no signing identity (ad-hoc signed, or not
 //     signed) has nothing to pin, and the update is refused, unless
 //     policy.AllowAdHoc accepts any valid signature.
+//
+// When codesign cannot be run to read the running bundle, the update is
+// refused under every policy: "could not ask" is not "has no identity".
 func (p *darwinPlatform) VerifySignature(appDir string) error {
 	requirement, err := p.requirement()
 	if err != nil {
@@ -155,12 +159,20 @@ func (p *darwinPlatform) requirement() (string, error) {
 		}
 		running = filepath.Join(dir, name)
 	}
-	// A bundle that is not signed at all makes codesign fail here; that
-	// and an ad-hoc signature are the same answer: no identity.
-	if out, err := p.runner.Output("codesign", "-d", "-r-", running); err == nil {
+	// codesign exits 1 on a bundle that is not signed at all. That and
+	// an ad-hoc signature are the same answer: no identity. Anything
+	// else that goes wrong (codesign missing, a fork failure) leaves the
+	// identity unknown, and an unknown identity pins nothing safely.
+	out, err := p.runner.Output("codesign", "-d", "-r-", running)
+	var exit *ExitError
+	switch {
+	case err == nil:
 		if pin := designatedRequirement(string(out)); pin != "" {
 			return pin, nil
 		}
+	case errors.As(err, &exit) && exit.Code == 1:
+	default:
+		return "", fmt.Errorf("%w: the running app's signing identity could not be read: %v", ErrSignature, err)
 	}
 	if !p.policy.AllowAdHoc {
 		return "", fmt.Errorf("%w: the running app has no signing identity to hold the update to (it is ad-hoc signed or unsigned); sign releases with a Developer ID, or set UpdateConfig.MacOSTeamID or MacOSAllowAdHoc", ErrSignature)
@@ -171,12 +183,19 @@ func (p *darwinPlatform) requirement() (string, error) {
 	return "", nil
 }
 
-// teamRequirement is the code requirement for "signed with an
-// Apple-issued certificate of this team". teamID is validated at
-// construction (ten ASCII letters and digits), so it needs no quoting
-// beyond the literal's own.
+// teamRequirement is the code requirement for "signed with this team's
+// Developer ID certificate": the rule codesign writes into a Developer
+// ID signature's own designated requirement, without the bundle
+// identifier (the install checks that against Info.plist). The two
+// certificate fields are Apple's Developer ID intermediate and leaf
+// markers. Without them any certificate Apple issued to the team would
+// pass, including the Apple Development ones every team member can
+// mint. teamID is validated at construction (ten ASCII letters and
+// digits), so it needs no quoting beyond the literal's own.
 func teamRequirement(teamID string) string {
-	return `anchor apple generic and certificate leaf[subject.OU] = "` + teamID + `"`
+	return `anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists` +
+		` and certificate leaf[field.1.2.840.113635.100.6.1.13] exists` +
+		` and certificate leaf[subject.OU] = "` + teamID + `"`
 }
 
 // designatedRequirement picks the requirement out of `codesign -d -r-`

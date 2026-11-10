@@ -1,15 +1,18 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -442,6 +445,29 @@ func TestStartUpdaterNegativeIntervalStartsNoLoop(t *testing.T) {
 	// Nothing to observe directly without waiting 30 s for the first
 	// check; the guard is that startUpdater returns immediately (the
 	// test's runtime proves no synchronous check ran).
+}
+
+// The opt-out is announced once at start, so it is not left on by
+// accident in a release that has since gained a signing identity.
+func TestStartUpdaterWarnsOnAdHocOptOut(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the field only acts on macOS")
+	}
+	for _, allow := range []bool{false, true} {
+		var logs bytes.Buffer
+		b := New(Config{
+			ID:     "update.test.app",
+			Shell:  newFakeShell(),
+			Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+			Update: &UpdateConfig{FeedURL: "https://updates.example.com/manifest.json", PublicKey: strings.Repeat("ab", 32),
+				Interval: -1, MacOSAllowAdHoc: allow},
+		})
+		b.updaterFor().platform = &fakeUpdatePlatform{version: "1.0.0", name: "Notes.app", dir: t.TempDir()}
+		b.startUpdater(context.Background())
+		if warned := strings.Contains(logs.String(), "MacOSAllowAdHoc is set"); warned != allow {
+			t.Errorf("MacOSAllowAdHoc=%v: warned=%v; log: %s", allow, warned, logs.String())
+		}
+	}
 }
 
 // An unavailable page and an Eval refusal must both leave delivery retryable.
