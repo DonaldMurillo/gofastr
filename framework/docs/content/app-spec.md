@@ -601,7 +601,15 @@ union, so there is no need to re-declare the entity just to build UI on it.
 **Re-declaring an existing entity or screen** is a no-op: the file already
 exists, so it lands in the skipped list and the existing file is left
 untouched. There is no diffing or merging: `--add` only writes files that
-don't exist.
+don't exist. Running the same fragment twice is safe.
+
+**A new screen over an entity that already has screens** is refused. An
+entity's list, record and create screens share one file,
+`screen_<entity>_crud.go`; once the project has it, `--add` cannot put
+another screen in it, and it stops with the screen and the file named
+instead of leaving the screen out. Write the screen into that file by
+hand, or merge the fragment into the app spec and regenerate with
+`--force`. A screen over an entity with no screens yet is written.
 
 **`client.go` follows the entities.** `entities/client/client.go` is an
 aggregate over *all* entities, so `--add` rebuilds it to cover the new ones.
@@ -1882,6 +1890,11 @@ The generator rejects:
   and the CRUD routes write a keyword name quoted (`"order"`) and every
   other name bare. Go words such as `type`, `func` and `range` are fine
   too.
+- an index that names no column, names one twice, or names a column the
+  entity's table does not have: an index covers declared fields and the
+  columns the framework adds (`id` under the generated key, `created_at`,
+  `updated_at`, `deleted_at`, the tenant column). The generated migration
+  would fail its first `migrate up` with "no such column"
 - two field names of one entity that become one Go struct field or one
   Postgres column (`Title` and `title`, `_note` and `note`): the generated
   code would not compile, and Postgres folds the unquoted names
@@ -1987,6 +2000,18 @@ The match is heuristic and name-based: relation-typed FK columns are
 skipped (the target entity is checked on its own), and matching is
 per-token (`creditCard` and `credit_card` both match `card`;
 `cardinality` does not).
+
+### Screens nobody can sign in to (`gofastr validate` and `gofastr generate` warning)
+
+An `entity_list`, `entity_detail` or `entity_form` reads its entity
+through the entity's own gates. An entity that is not `public: true`
+needs a signed-in caller, and an app spec without `app.auth.enabled:
+true` has no way to sign in, so the generated screen shows "Not
+available" to every visitor, and a page that leaves with no heading
+fails the generated `axe_test.go`. Both commands warn, naming the entity
+and its screens; neither fails, since owned Go can wire its own sign-in.
+Turn on `app.auth`, or set `public: true` on an entity anyone may read
+and write. An entity with an `access:` gate is not flagged.
 
 ### Owner-scoped uniqueness (`gofastr validate` and `gofastr generate` warning)
 

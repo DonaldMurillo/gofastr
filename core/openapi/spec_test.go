@@ -214,11 +214,9 @@ func TestFieldToSchema(t *testing.T) {
 		{
 			name:  "relation many",
 			field: schema.Field{Name: "tags", Type: schema.Relation, To: "tags", Many: true},
-			want: map[string]any{
-				"type":       "array",
-				"items":      map[string]any{"type": "string", "format": "uuid"},
-				"x-relation": "tags",
-			},
+			// One id in the field's own column, the value schema.Validate
+			// takes: not an array (see TestManyRelationSchemaTakesWhatValidateTakes).
+			want: map[string]any{"type": "string", "format": "uuid", "x-relation": "tags", "x-many": true},
 		},
 		{
 			name:  "image",

@@ -2789,6 +2789,30 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: entity %q renames %q to %q while still declaring %q as a field: the diff would see both columns; remove the old field", decl.Name, old, next, old))
 			}
 		}
+		// An index is CREATE INDEX over the entity's own columns. A column
+		// the entity does not have passed the load and failed the first
+		// `migrate up` and the generated app's boot with "no such column",
+		// and an index with no column is no statement at all.
+		for i, idx := range decl.Indices {
+			label := idx.Name
+			if label == "" {
+				label = fmt.Sprintf("indices[%d]", i)
+			}
+			if len(idx.Columns) == 0 {
+				errs.add(fmt.Errorf("app spec: entity %q index %q names no columns: list at least one under columns:", decl.Name, label))
+			}
+			seenCol := map[string]bool{}
+			for _, col := range idx.Columns {
+				if seenCol[col] {
+					errs.add(fmt.Errorf("app spec: entity %q index %q lists column %q twice", decl.Name, label, col))
+					continue
+				}
+				seenCol[col] = true
+				if !appSpecIndexableColumn(decl, col) {
+					errs.add(fmt.Errorf("app spec: entity %q index %q names column %q, which the entity does not have: an index covers declared fields and the columns the framework adds (created_at, updated_at, deleted_at, the tenant column)", decl.Name, label, col))
+				}
+			}
+		}
 		// A relation name is an identifier, not a label: the entity emitter
 		// puts toCamelCase(name) in struct-field position AND inside the
 		// backtick `json:"…"` tag (a raw literal, which has no escape
@@ -4290,6 +4314,27 @@ func appSpecColumn(decl framework.EntityDeclaration, name string) (found *framew
 		return nil, true
 	}
 	return nil, false
+}
+
+// appSpecIndexableColumn reports whether col is a column of the entity's
+// table, the ones an index may cover. id exists only under the generated
+// key.
+func appSpecIndexableColumn(decl framework.EntityDeclaration, col string) bool {
+	scope := EntityDeclarationScope(decl)
+	if scope.MultiTenant && scope.TenantField != "" && col == scope.TenantField {
+		return true
+	}
+	found, ok := appSpecColumn(decl, col)
+	if !ok {
+		return false
+	}
+	if found != nil {
+		return true
+	}
+	if col == "id" {
+		return DeclKeyIsID(decl)
+	}
+	return true
 }
 
 // appSpecGroupKind names a field a chart cannot group by, for the

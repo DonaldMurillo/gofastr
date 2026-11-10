@@ -292,6 +292,11 @@ increments, not implicit applies. `migrate generate` produces them
 gofastr migrate generate add_published --from=gofastr.yml --driver=postgres
 ```
 
+`--db=` (or `--driver=`) picks the DDL dialect, `sqlite` or `postgres`.
+Without it the app spec decides: its `app.db.driver`, or Postgres when
+`app.db.url` starts with `postgres://` or `postgresql://`, and SQLite
+when the spec names no database. A driver that is neither is refused.
+
 It diffs the **entity declarations** in the `gofastr.yml` app spec against a
 committed **schema snapshot** (`migrations/schema.snapshot.json`) and
 writes the next numbered file, e.g. `migrations/0002_add_published.sql`,

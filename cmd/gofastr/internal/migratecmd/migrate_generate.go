@@ -53,6 +53,19 @@ func runMigrateGenerate(args []string) {
 		cli.Fail("Failed to load app spec %s: %v", opts.from, err)
 		cli.OsExit(1)
 	}
+	// With no --db/--driver the app spec's own database decides: a spec
+	// that declares Postgres got SQLite DDL (DATETIME, BOOLEAN DEFAULT 1),
+	// which its database refuses on the first `migrate up`.
+	if !opts.driverSet {
+		if d := specDriver(bp); d != "" {
+			dialect, err = generateDialect(d)
+			if err != nil {
+				cli.Fail("app spec %s sets app.db.driver %q: %v", opts.from, bp.App.DBDriver, err)
+				cli.OsExit(1)
+				return
+			}
+		}
+	}
 	decls := bp.Entities
 	if len(decls) == 0 {
 		cli.Fail("App spec %s declares no entities.", opts.from)
@@ -309,12 +322,27 @@ func generateDialect(driver string) (framework.Dialect, error) {
 	return "", fmt.Errorf("migrate generate writes SQLite or Postgres DDL; --db=%q is neither (use sqlite or postgres)", driver)
 }
 
+// specDriver is the driver an app spec names for its database: its
+// app.db.driver, or, when that is left out, the engine a postgres:// or
+// postgresql:// app.db.url points at (the rule `migrate up` applies to
+// its own URL). "" leaves the default.
+func specDriver(bp appspec.AppSpec) string {
+	if d := strings.TrimSpace(bp.App.DBDriver); d != "" {
+		return project.CanonicalDBDriver(d)
+	}
+	if isPostgresURL(strings.TrimSpace(bp.App.DBURL)) {
+		return "postgres"
+	}
+	return ""
+}
+
 type migrateGenOptions struct {
 	name          string
 	from          string
 	migrationsDir string
 	snapshotPath  string
 	driver        string
+	driverSet     bool // --db or --driver was passed; it wins over the app spec
 	group         string
 }
 
@@ -334,6 +362,7 @@ func parseMigrateGenOptions(args []string) migrateGenOptions {
 		case strings.HasPrefix(arg, "--db="), strings.HasPrefix(arg, "--driver="):
 			v, _ := migrateDriverFlag(arg)
 			opts.driver = project.CanonicalDBDriver(v)
+			opts.driverSet = true
 		case strings.HasPrefix(arg, "--group="):
 			opts.group = strings.TrimPrefix(arg, "--group=")
 		case strings.HasPrefix(arg, "--"):

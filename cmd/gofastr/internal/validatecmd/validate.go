@@ -91,6 +91,11 @@ func RunValidate(args []string) {
 	for _, f := range appgen.LintOwnerScopedUnique(bp) {
 		cli.Warn("%s: %s", path, f.Message())
 	}
+	// A screen over an entity that needs a session, in an app with no
+	// sign-in: the screen draws "Not available" for every visitor.
+	for _, f := range appgen.LintSignedOutScreens(bp) {
+		cli.Warn("%s: %s", path, f.Message())
+	}
 	cli.Success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }

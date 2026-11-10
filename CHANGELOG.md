@@ -551,6 +551,28 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **`gofastr migrate generate` writes DDL for the spec's own database**
+  ([migrations](framework/docs/content/migrations.md)). With no `--db`
+  it always wrote SQLite DDL, which a spec on Postgres refused on its
+  first `migrate up`. `app.db.driver` (or a `postgres://` URL) now
+  decides; the flag still wins.
+- **An app spec index over a column the entity does not have is
+  refused at load** ([app spec](framework/docs/content/app-spec.md)).
+  It loaded, and the generated migration failed with "no such column".
+- **`generate app --add` no longer drops a screen.** A fragment adding
+  a screen over an entity that already has its crud file printed
+  "Added" and wrote nothing; it is refused, naming the file. Re-running
+  a fragment with an `entity_list` is the no-op the docs promise, where
+  it failed on its own route.
+- **`/openapi.json` documents a `Many` relation field as one string
+  id** with `x-many: true`, the value the API takes. It documented an
+  array, a body the API answers with 400.
+- **The JS SDK's `ListParams.trashed` is a boolean.** It was typed and
+  documented as `only` or `with`, values the server ignores.
+- **`validate` and `generate` warn when a screen draws an entity nobody
+  can sign in to read.** One entity and one list screen with no
+  `app.auth` generated an app whose list showed "Not available" and
+  whose own axe test failed.
 - **CORS on a `Group` answers the preflight**
   ([security](framework/docs/content/security.md)). `OPTIONS` to a
   group path with no `OPTIONS` route ran the root middleware only, so

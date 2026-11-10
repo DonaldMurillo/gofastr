@@ -961,8 +961,12 @@ export interface ListParams {
   fields?: string | string[];
   /** Free-text search (entities with search_fields only). */
   q?: string;
-  /** Soft-deleted rows: "only" | "with" (soft-delete entities only). */
-  trashed?: string;
+  /**
+   * true lists soft-deleted rows along with the live ones (soft-delete
+   * entities only, and only for a signed-in caller). The server reads
+   * no other value.
+   */
+  trashed?: boolean;
   /**
    * Filter params keyed by snake_case column name (use the <entity>Fields
    * constants), with _ne/_gt/_gte/_lt/_lte/_like/_in operator suffixes.
