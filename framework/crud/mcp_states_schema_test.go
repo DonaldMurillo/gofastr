@@ -63,7 +63,7 @@ func schemaProps(t *testing.T, s map[string]any) map[string]any {
 // create may set, and offers no stamp; the update tool offers neither.
 // An agent told it can write status will burn a 422 otherwise.
 func TestWriteToolSchemaNarrowsStates(t *testing.T) {
-	create := writeToolSchema(invoicesEntity(false))
+	create := writeToolSchema(invoicesEntity(false), nil)
 	props := schemaProps(t, create)
 	status, ok := props["status"].(map[string]any)
 	if !ok {
@@ -82,7 +82,7 @@ func TestWriteToolSchemaNarrowsStates(t *testing.T) {
 		t.Error("create tool offers the paid_on stamp; the pay move sets it, never a create")
 	}
 
-	update := updateToolSchema(invoicesEntity(false), []string{"id"})
+	update := updateToolSchema(invoicesEntity(false), nil, []string{"id"})
 	uprops := schemaProps(t, update)
 	if _, has := uprops["status"]; has {
 		t.Error("update tool offers the state field; it changes only through the move tools")
@@ -98,7 +98,7 @@ func TestWriteToolSchemaNarrowsStates(t *testing.T) {
 // Without enforced states the schemas are unchanged: Advisory keeps the
 // field writable, and an entity with no states never narrows.
 func TestWriteToolSchemaUnchangedWithoutEnforcement(t *testing.T) {
-	advisory := writeToolSchema(invoicesEntity(true))
+	advisory := writeToolSchema(invoicesEntity(true), nil)
 	props := schemaProps(t, advisory)
 	status, _ := props["status"].(map[string]any)
 	enum := enumValues(status)
@@ -114,7 +114,7 @@ func TestWriteToolSchemaUnchangedWithoutEnforcement(t *testing.T) {
 			{Name: "status", Type: schema.Enum, Values: []string{"draft", "live"}},
 		},
 	})
-	plainProps := schemaProps(t, writeToolSchema(plain))
+	plainProps := schemaProps(t, writeToolSchema(plain, nil))
 	status, _ = plainProps["status"].(map[string]any)
 	enum = enumValues(status)
 	if len(enum) != 2 {

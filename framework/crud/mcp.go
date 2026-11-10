@@ -76,19 +76,21 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		permission  access.Permission
 	}
 	keyArgs := crud.toolKeyArgs()
+	// reg types a reference field by the key it points at (toolFieldsOf).
+	reg := crud.Registry
 	defs := []toolDef{
-		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity), crud.listTool(router), opRead, false, false, ""},
-		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(crud.Entity, keyArgs), crud.getTool(router), opRead, true, false, ""},
-		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity), crud.createTool(router), opCreate, false, true, ""},
-		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
-		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
+		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity, reg), crud.listTool(router), opRead, false, false, ""},
+		{toolName("get"), "Get one " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.getTool(router), opRead, true, false, ""},
+		{toolName("create"), "Create a " + ent + " record", writeToolSchema(crud.Entity, reg), crud.createTool(router), opCreate, false, true, ""},
+		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, reg, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
+		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
 	}
 	// One tool per non-system move, named by its key (the boot check
 	// keeps keys off the names above and the other reserved ones),
 	// posting to the move's route.
 	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
-		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
+		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, reg, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
 	}
 	for _, def := range defs {
 		// Every tool carries the Access permission its route enforces
@@ -595,10 +597,11 @@ func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string
 // key arguments (toolKeyArgs). Each argument is typed from the key column
 // it names: an integer key offers an integer prop, so a client sends a
 // number and not a quoted string (#669).
-func idToolSchema(ent *entity.Entity, args []string) map[string]any {
+func idToolSchema(ent *entity.Entity, reg entity.Registry, args []string) map[string]any {
+	tf := toolFieldsOf(reg, ent)
 	props := make(map[string]any, len(args))
 	for _, a := range args {
-		props[a] = keyArgSchema(ent, a)
+		props[a] = keyArgSchema(ent, tf, a)
 	}
 	return map[string]any{
 		"type":       "object",
@@ -612,25 +615,25 @@ func idToolSchema(ent *entity.Entity, args []string) map[string]any {
 // names the key column whatever it is called — and must resolve to THAT
 // column, never to an unrelated field that happens to be named "id"; a
 // name that matches no field stays a plain string.
-func keyArgSchema(ent *entity.Entity, arg string) map[string]any {
+func keyArgSchema(ent *entity.Entity, tf toolFields, arg string) map[string]any {
 	if arg == "id" && len(ent.KeyColumns()) == 1 {
 		col := ent.KeyColumns()[0]
-		for _, f := range ent.GetFields() {
+		for _, f := range tf.fields {
 			if f.Name == col || mcpFieldKey(f) == col {
-				return mcpFieldSchema(f)
+				return tf.schema(f)
 			}
 		}
 		return map[string]any{"type": "string"}
 	}
-	for _, f := range ent.GetFields() {
+	for _, f := range tf.fields {
 		if f.Name == arg || mcpFieldKey(f) == arg {
-			return mcpFieldSchema(f)
+			return tf.schema(f)
 		}
 	}
 	return map[string]any{"type": "string"}
 }
 
-func listToolSchema(ent *entity.Entity) map[string]any {
+func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 	_, maximum := ListLimits(ent.Config.Pagination.MaxListLimit)
 	props := map[string]any{
 		"page":     map[string]any{"type": "integer", "minimum": 1},
@@ -645,7 +648,8 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 	// Prop names are the query keys the tool forwards (listTool): the
 	// bracket spelling only where the bare key reads two ways.
 	spell := filter.SpellerFor(ent.GetFields())
-	for _, field := range ent.GetFields() {
+	tf := toolFieldsOf(reg, ent)
+	for _, field := range tf.fields {
 		// These props are the list tool's FILTER arguments, so NoQuery
 		// fields are omitted alongside Hidden ones, an agent offered a
 		// filter the parser rejects just burns a call on a 400.
@@ -653,7 +657,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 			continue
 		}
 		if filter.OpSuitsType(filter.OpEq, field.Type) {
-			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = mcpFieldSchema(field)
+			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = tf.schema(field)
 		}
 		// One prop per operator the field's type accepts, from the same
 		// filter.FilterSuffixes ∩ OpSuitsType derivation the forwarding
@@ -664,7 +668,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 			if !filter.OpSuitsType(s.Op, field.Type) {
 				continue
 			}
-			ps := mcpFieldSchema(field)
+			ps := tf.schema(field)
 			if s.Op == filter.OpLike {
 				// A substring, never a whole value: an Enum's value list
 				// would make a client refuse "pai" for "paid".
@@ -675,7 +679,7 @@ func listToolSchema(ent *entity.Entity) map[string]any {
 				// sends, and toolFilterValues expands it into the
 				// repeated query entries the route parses. An empty
 				// one is refused there, so the schema says so too.
-				ps = map[string]any{"type": "array", "items": mcpFieldSchema(field), "minItems": 1}
+				ps = map[string]any{"type": "array", "items": tf.schema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
 			props[spell.Key(mcpFieldKey(field), s.Op)] = ps
@@ -708,15 +712,16 @@ func mcpOperatorLabel(op filter.FilterOp) string {
 	return "matches"
 }
 
-func writeToolSchema(ent *entity.Entity) map[string]any {
-	return bodyToolSchema(ent, false)
+func writeToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
+	return bodyToolSchema(ent, reg, false)
 }
 
-func updateToolSchema(ent *entity.Entity, args []string) map[string]any {
-	out := bodyToolSchema(ent, true)
+func updateToolSchema(ent *entity.Entity, reg entity.Registry, args []string) map[string]any {
+	out := bodyToolSchema(ent, reg, true)
 	props := out["properties"].(map[string]any)
+	tf := toolFieldsOf(reg, ent)
 	for _, a := range args {
-		props[a] = keyArgSchema(ent, a)
+		props[a] = keyArgSchema(ent, tf, a)
 	}
 	out["required"] = slices.Clone(args)
 	return out
@@ -728,7 +733,7 @@ func updateToolSchema(ent *entity.Entity, args []string) map[string]any {
 // a create may set; an update drops the state field and the stamps —
 // they change only through the move tools. Without enforced states
 // (nil or Advisory) both are the plain writable-field walk.
-func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
+func bodyToolSchema(ent *entity.Entity, reg entity.Registry, update bool) map[string]any {
 	st := ent.Config.States
 	guarded := st != nil && !st.Advisory
 	stamps := map[string]bool{}
@@ -756,7 +761,8 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 	}
 	props := make(map[string]any)
 	var required []string
-	for _, field := range ent.GetFields() {
+	tf := toolFieldsOf(reg, ent)
+	for _, field := range tf.fields {
 		if field.AutoGenerate != schema.AutoNone || field.ReadOnly || field.Hidden || serverStamped[field.Name] {
 			continue
 		}
@@ -767,7 +773,7 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 		if update && key == stateKey {
 			continue
 		}
-		fs := mcpFieldSchema(field)
+		fs := tf.schema(field)
 		if !update && key == stateKey {
 			fs["enum"] = st.InitialValues(ent.GetFields())
 		}
@@ -777,7 +783,7 @@ func bodyToolSchema(ent *entity.Entity, update bool) map[string]any {
 			// The route takes null for an optional field. The state field
 			// reaches here only on a create, which must start it at an
 			// initial value.
-			coreoa.Nullable(fs)
+			nullableToolProp(fs)
 		}
 		props[key] = fs
 	}
@@ -796,6 +802,68 @@ func mcpFieldKey(field schema.Field) string {
 		return field.WireName
 	}
 	return field.Name
+}
+
+// toolFields is an entity's fields as its tool schemas type them.
+type toolFields struct {
+	// fields are typed by the values their columns hold
+	// (entity.ValueFields): a reference to an integer key is schema.Int,
+	// the JSON number every read answers and the route checks for.
+	fields []schema.Field
+	// pending names the reference fields whose target the registry did
+	// not hold when the schemas were built.
+	pending map[string]bool
+}
+
+// toolFieldsOf types ent's fields for its tool schemas. The schemas are
+// built once, when the tools are registered, and an entity may be
+// registered before the one it references: such a reference is pending,
+// its key type unknown until the target arrives. Without reg every field
+// is typed as declared, which is how the route checks it then.
+func toolFieldsOf(reg entity.Registry, ent *entity.Entity) toolFields {
+	tf := toolFields{fields: entity.ValueFields(reg, ent)}
+	if reg == nil {
+		return tf
+	}
+	for _, rel := range ent.Config.Relations {
+		if rel.Type != entity.RelManyToOne || len(rel.ForeignKey) != 1 {
+			continue
+		}
+		if target, err := entity.ResolveTarget(reg, ent, rel.Entity); err == nil && target != nil {
+			continue
+		}
+		for _, f := range tf.fields {
+			if f.Type == schema.Relation && f.RawType == "" && strings.EqualFold(f.Name, rel.ForeignKey[0]) {
+				if tf.pending == nil {
+					tf.pending = map[string]bool{}
+				}
+				tf.pending[f.Name] = true
+			}
+		}
+	}
+	return tf
+}
+
+// schema is one field's tool-argument schema. A pending reference takes
+// an integer or a string: the route types it once its target is
+// registered and refuses the wrong one, where a schema that guessed
+// string would refuse the integer key a read of the same record answers.
+func (tf toolFields) schema(field schema.Field) map[string]any {
+	if tf.pending[field.Name] {
+		return map[string]any{"type": []any{"integer", "string"}}
+	}
+	return mcpFieldSchema(field)
+}
+
+// nullableToolProp lets an optional argument be null. coreoa.Nullable
+// widens a one-type prop and an enum; a pending reference already holds
+// a type list, which takes "null" as one more entry.
+func nullableToolProp(prop map[string]any) {
+	if types, ok := prop["type"].([]any); ok {
+		prop["type"] = append(slices.Clone(types), "null")
+		return
+	}
+	coreoa.Nullable(prop)
 }
 
 func mcpFieldSchema(field schema.Field) map[string]any {

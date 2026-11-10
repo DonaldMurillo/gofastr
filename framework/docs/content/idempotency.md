@@ -155,6 +155,8 @@ yourself before returning.
 | Duplicate key + different body                    | `422 Unprocessable Entity`                     |
 | Duplicate key while first is still running        | `409 Conflict` + `Retry-After: 1`              |
 | First request returned non-2xx                    | Claim released; retry runs the handler again   |
+| Handler returned without writing after its request context ended (deadline, client hung up) | Claim released, nothing cached; retry runs the handler again |
+| Handler wrote a 2xx after its request context ended | Cached like any 2xx; the retry replays it      |
 | Handler panicked (`http.ErrAbortHandler` included) | Claim released, then the panic goes on to `Recovery`; retry runs the handler again |
 | Body larger than `MaxBodyBytes`                   | Pass through with `Idempotent-Bypass: body-too-large`; handler still sees full body. The bypass response appends `Vary: Idempotency-Key` (Add, not Set — an upstream middleware such as CORS may already have written `Vary`) so a shared cache cannot serve one caller's bypassed response at another's key |
 | Store backend failure (FailOpen=false, default)   | `503 Service Unavailable`, fail closed         |
@@ -173,6 +175,17 @@ They aren't part of the client's intent.
 
 Only `2xx` responses are cached. `4xx` / `5xx` release the claim so
 the client can retry against a recovered server.
+
+A handler that returns without writing normally means `200` with an
+empty body, and that is cached. When the request context has ended by
+then (the request deadline answered `504`, or the client hung up), it
+means the handler gave up, so the claim is released and the retry runs
+the handler again. A `2xx` the handler did write is cached even when the
+context had already ended: the work is done, the client never saw the
+answer, and the retry replays it instead of doing the work twice. So a
+handler that finishes its work and relies on the implicit `200` should
+write its status (`w.WriteHeader(http.StatusNoContent)`): if it
+overruns the deadline, that write is what records the work as done.
 
 ## Stores
 

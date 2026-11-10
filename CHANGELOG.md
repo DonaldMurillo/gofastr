@@ -539,6 +539,149 @@ few lines, and link the PR or the docs page for the rest.
   fix.
 
 ### Fixed
+- **A refused GitHub token refresh no longer wipes the stored token**
+  ([auth](framework/docs/content/auth.md)). GitHub answers a refused
+  code or refresh token with HTTP 200 and an error document. The
+  provider read only the status, so the refusal came back as an empty
+  token with no error, and the refresh stored it over a token that could
+  still be good. `GitHubProvider` now returns an error naming GitHub's
+  code, and a refresh from any provider that returns no access token
+  stores nothing.
+- **A token refresh survives the caller hanging up.** The write that
+  stores a refreshed grant ran on the request's context. A client that
+  disconnected after the provider answered cancelled it, and with a
+  provider that rotates refresh tokens the row kept one the provider had
+  just spent, so the user had to reconnect. The write now runs on its
+  own bounded context.
+- **`ExportData` includes service accounts.** The archive carried
+  service tokens but not `auth_service_accounts`, so after a restore
+  every service token answered `owner_missing`.
+- **BREAKING: a two-factor URL that is not a same-origin path fails
+  `Init`.** `WithTwoFactorURL` and the `TwoFactorURL` option of the
+  magic-link, passkey and OAuth plugins accepted an absolute URL, then
+  redirected every two-factor sign-in to `/`, which refuses the pending
+  session. Set a path such as `/login/2fa`.
+- **`ExportData` refuses text that is not valid UTF-8**
+  ([data export](framework/docs/content/data-export.md)). It wrote the
+  cell with U+FFFD in place of each bad byte, so the archive passed its
+  checksum and restored different bytes. The export now fails and names
+  the table, row and column, as it does for a non-finite float.
+- **A `[]byte` field sent text that is not base64 gets a refusal that
+  says so.** The JSON error detail read "expected a string, got a
+  string"; it now reads "the value could not be decoded".
+- **BREAKING: a masked foreign key no longer leaks through its own
+  relation** ([includes](framework/docs/content/includes.md)). With
+  `account_id` masked (a field `Mask`, or `no_query` plus a hook) under a
+  `belongs_to`, `?include=account` answered the account with its full id
+  beside `"account_id":"****0001"`, and `?account.id_like=` selected
+  rows by the stored value. A `belongs_to` whose foreign key is
+  `no_query` is now hidden: include, nested filters and nested writes
+  answer as for a relation that does not exist, and llm.md and
+  `/openapi.json` leave it out. Load the related record by its key in Go.
+- **MCP entity tools take the integer reference they return**
+  ([entities](framework/docs/content/entity-declarations.md)). A
+  Relation field pointing at an integer key was described as a string,
+  so `items_update {shop_id: 1}`, `items_create` and
+  `items_list {shop_id: 1}` refused the number `items_get` had just
+  returned. The tools now type it as an integer, as the record's own key
+  already is; a caller that sent `"1"` sends `1`.
+- **`schema.Field` encodes as JSON again.** The `Mask` func field had no
+  `json:"-"` tag, so `json.Marshal` failed on every `schema.Field`, on
+  an `entity.Endpoint` with an input or output schema, and on the
+  `EntityDeclaration` holding one.
+- **llm.md's filter examples are requests the route accepts.** The
+  example value was fixed per operator, so an entity whose first field
+  is an integer key was documented with `id=active` and `id_in=a,b,c`,
+  each a 400. Examples now use a value of the field's type. The page
+  also warns about an ambiguous filter key when a field sets `WireName`
+  to its own name, which it used to skip.
+- **Idempotency no longer caches a response the handler never wrote**
+  ([idempotency](framework/docs/content/idempotency.md)). A handler that
+  returned without writing after its request ended (the deadline
+  answered 504, or the client hung up) was recorded as `200` with an
+  empty body and replayed with `Idempotent-Replay: true` for the whole
+  TTL, for a write that never ran. The claim is now released and the
+  retry runs the handler. A 2xx the handler did write is still cached,
+  even when it was written after the deadline.
+- **cron: a late tick under leader election no longer loses minutes to
+  its own lease** ([cron](framework/docs/content/cron.md)). The catch-up
+  walk asked for the lease once per missed minute while its release of
+  the previous minute was still in flight, so a real lock refused it: a
+  late tick could skip the current minute and run no `* * * * *` job at
+  all, on a single replica. A tick lease is now taken for each minute
+  only after the previous release has returned; a lease with `Acquire`
+  alone is taken once for the whole walk and held until its jobs finish.
+- **`DBQueue` applies `MaxAge` when a worker dies**
+  ([queue](framework/docs/content/queue.md)). `MaxAge` was read only
+  when an attempt failed; a claim whose lease expired was handed out
+  again after every lost worker until its attempts ran out, however old
+  the job. The pre-claim sweep now dead-letters an expired claim past
+  `CreatedAt + MaxAge`.
+- **`MemoryQueue.Replay` runs the job now.** A job dead-lettered because
+  a handler's `RetryAfter` landed past its `MaxAge` kept that future due
+  time, so a replay did nothing until the stale delay ran out.
+- **`gofastr migrate generate` writes a SQLite migration that applies
+  when a unique field or a relation is removed**
+  ([migrations](framework/docs/content/migrations.md)). SQLite refuses
+  `DROP COLUMN` on a column that is UNIQUE, indexed or named by a foreign
+  key, so the bare `DROP COLUMN` failed `migrate up` with "cannot drop
+  UNIQUE column". Those columns now leave with a table rebuild, which
+  carries a `-- DROP COLUMN t.c by table rebuild` line, and the generate
+  warning names the column. `DiffSchema` does the same from the live
+  table's indexes and foreign keys.
+- **App spec: a catalog block spelled `type:` generates like `kind:`**
+  ([app spec](framework/docs/content/app-spec.md)). `type: card`,
+  `type: page_header`, `type: stat_card` and the controls loaded, then
+  generated a screen file that did not compile (`undefined:
+  noderender`). `type: section` stays the plain `<section>` tag and now
+  compiles with children.
+- **App spec: `entity_list` refuses what its list cannot draw.** A
+  `filter:` on a `json` field, and a `fields:` entry that is hidden,
+  omitted by the entity's `display.fields`, or listed twice, each loaded
+  and then rendered "Couldn't load this section" on every read. They are
+  refused at load. A `fields:` entry in camelCase (`authorName`) now
+  generates as its column.
+- **A generated Local repository hands handlers a non-nil `r.Body`**
+  ([SDK](framework/docs/content/sdk.md)). `List`, `Get` and `Delete`
+  reached the app with a nil body, so middleware that drains or closes
+  `r.Body` panicked under Local while the same call worked on Remote.
+  Regenerate the SDK to pick it up.
+- **Navigation keys on the resolved path**
+  ([runtime contract](framework/docs/content/runtime-contract.md)).
+  `__gofastr.navigate()`, a `data-cui-spa` GET form and an
+  `X-Gofastr-Location` redirect now give the router `pathname+search`,
+  as a link click does. Before, `navigate('?p=2')` could replay another
+  page's cached screen, `navigate('/b#frag')` lost widgets scoped to
+  `/b`, and an in-page `#anchor` link on a page reached with a fragment
+  fetched it again and dropped typed input. `gofastr:navigate`'s
+  `detail.path` and `__gofastr.currentPath` never hold a fragment.
+- **Back after an island write shows the write.** A successful
+  `data-cui-rpc`, toggle or optimistic action whose method is not `GET`
+  now evicts the page it ran on from the screen cache, so Back fetches
+  it. Before, a row an island RPC added was missing after a link away
+  and Back, until a reload. A read-only island sent as `POST` (a pager)
+  fetches on Back too; send it as `GET` to keep the cached replay.
+- **A hidden phone menu no longer traps the keyboard.** A
+  `headless.Disclosure{Trap: true}` (the generated site header's menu)
+  that its sheet hides while open, for example when the window widens
+  past the breakpoint, is now closed and its focus trap released.
+  Before, every Tab on the page was swallowed and the toast stack, route
+  announcer and skip link stayed `inert`.
+- **The `Sunset` header is an HTTP-date**
+  ([API versioning](framework/docs/content/api-versioning.md)).
+  `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local
+  wall time with "EST"), which an HTTP date parser refuses. It now
+  writes GMT, as RFC 8594 asks.
+- **The harness `Grep` tool says when it cut a search short.** A search
+  that stopped at 1000 matches, or at the 8 MiB cap in a file with CRLF
+  line endings, returned what it had with no notice, and a path that is
+  a symlink to a directory answered "(no matches)". The first two now
+  end with a truncation line and the third searches the directory.
+- **`contracts_verify` refuses an unknown capability before it reads the
+  tree.** The MCP dev tool loaded the config and scanned every source
+  file first, so a mistyped capability cost a full scan, and a broken
+  `gofastr.settings.yml` answered with its own error instead of
+  "unknown capability".
 - **An embed below the fold sizes itself on arrival**
   ([embed](framework/docs/content/embed.md)). The frame reported its
   height on the next animation frame, and Chrome stops rendering a

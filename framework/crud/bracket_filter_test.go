@@ -192,7 +192,7 @@ func TestMCPListToolSpellsCollidingKeys(t *testing.T) {
 		{Name: "stage_in", Type: schema.String},
 	})
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	props, _ := listToolSchema(ch.Entity)["properties"].(map[string]any)
+	props, _ := listToolSchema(ch.Entity, nil)["properties"].(map[string]any)
 	for _, k := range []string{"stage", "stage[in]", "stage_in[eq]", "stage_ne", "stage_in_ne", "stage_in_in", "user_id", "user_id_in"} {
 		if _, ok := props[k]; !ok {
 			t.Errorf("list tool schema has no %q param", k)

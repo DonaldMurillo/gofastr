@@ -47,8 +47,11 @@ type CronJob struct {
 // making cron safe to run across multiple replicas. Install one via
 // [Scheduler.WithLeaderElection]; when set, the tick loop acquires the lease
 // before firing and releases it after that tick's jobs finish, so a
-// non-leader replica skips the tick. A lease that also implements
-// [TickLeaderElection] is released as soon as its claim is made instead.
+// non-leader replica skips the tick. A late tick that walks the minutes it
+// missed takes the lease once for the whole walk and releases it after the
+// jobs the walk started finish. A lease that also implements
+// [TickLeaderElection] is released as soon as its claim is made instead,
+// and taken again for each walked minute once that release has returned.
 // The built-in [PostgresAdvisoryLease] uses a Postgres advisory lock; a
 // custom implementation can back it with Redis, etcd, etc.
 //
@@ -134,6 +137,10 @@ type Scheduler struct {
 	// leader, when set, gates the whole tick to the lease holder so cron is
 	// safe across replicas. nil = every replica fires (single-instance mode).
 	leader LeaderElection
+
+	// handedBack closes when the last lease released with no job holding
+	// it (handBack) is back with its driver. Guarded by mu.
+	handedBack chan struct{}
 }
 
 type scheduledJob struct {
@@ -206,59 +213,162 @@ func (s *Scheduler) WithLeaderElection(le LeaderElection) {
 // cluster-wide, until that one job ended. Extracted from the run loop so
 // the leader-gating is testable without the wall clock.
 func (s *Scheduler) runTick(ctx context.Context, now time.Time) bool {
-	return s.runTickJobs(ctx, now, false)
+	w := s.beginWalk()
+	defer w.end()
+	return w.fire(ctx, now, false)
 }
 
-// runTickJobs is runTick that, with fixedOnly, judges only the jobs whose
-// schedule is FixedTime. The catch-up walk replays past minutes this way;
-// the minute is still claimed as a whole, so a peer replica's claim of it
-// refuses ours exactly as it does for a full tick.
-func (s *Scheduler) runTickJobs(ctx context.Context, now time.Time, fixedOnly bool) bool {
+// walk is one pass of the tick loop over the minutes it owes: the tick's
+// own minute and, on a late tick, each minute missed before it. It carries
+// the leader lease across those minutes so the pass never contends with a
+// lease it took itself. Acquiring per minute did: each minute's lease was
+// handed back on a goroutine, the next minute's Acquire ran before that
+// goroutine had, a real try-lock refused it, and the minute was dropped
+// without a word. The current minute is the last one walked and the only
+// one where wildcard jobs are judged, so a late tick on a single replica
+// could run nothing at all.
+type walk struct {
+	s      *Scheduler
+	leader LeaderElection // nil: no leader election, every minute fires
+
+	// A plain lease is asked for once per walk and held until every job
+	// the walk started has finished: it is mutual exclusion only while
+	// held, so it must cover all of them, and a second Acquire inside the
+	// walk would meet the first.
+	asked   bool
+	held    bool
+	release func()
+	jobs    tickGroup
+}
+
+// tickGroup is the set of jobs one walk started. n counts them as they
+// start, so a dispatch that panics partway still leaves end knowing some
+// are running.
+type tickGroup struct {
+	sync.WaitGroup
+	n int
+}
+
+// beginWalk snapshots the installed lease for one pass. The caller defers
+// end, so a plain lease is handed back even when a minute's dispatch
+// panics.
+func (s *Scheduler) beginWalk() *walk {
 	s.mu.RLock()
 	leader := s.leader
 	s.mu.RUnlock()
-	if leader == nil {
+	return &walk{s: s, leader: leader}
+}
+
+// fire runs the jobs due at minute now under the walk's lease and reports
+// whether this replica fired. With fixedOnly it judges only the jobs whose
+// schedule is FixedTime: the catch-up walk replays past minutes this way.
+// Under a tick lease the minute is still claimed as a whole, so a peer
+// replica's claim of it refuses ours exactly as it does for a full tick.
+func (w *walk) fire(ctx context.Context, now time.Time, fixedOnly bool) bool {
+	s := w.s
+	if w.leader == nil {
 		s.runOnce(ctx, now, nil, fixedOnly)
 		return true
 	}
-	acquire := leader.Acquire
-	tl, claims := leader.(TickLeaderElection)
-	if claims {
+	if tl, claims := w.leader.(TickLeaderElection); claims {
+		// The lease records the minute it fired, and that claim is the
+		// guarantee, so each minute takes the lease for the claim alone,
+		// once the hand-back of the minute before it has landed.
+		if !s.awaitHandBack(ctx) {
+			return false
+		}
 		tick := now.UTC().Truncate(time.Minute)
-		acquire = func(ctx context.Context) (bool, func(), error) { return tl.AcquireTick(ctx, tick) }
-	}
-	held, release, err := s.acquireSafely(ctx, acquire)
-	if err != nil {
-		s.reportError("(leader-election)", err)
-		return false
-	}
-	if !held {
-		return false
-	}
-	if claims {
-		// Released off the run loop: release is driver code (a DB round
-		// trip for Postgres) and the loop must stay selectable on s.stop /
-		// ctx.Done() so StopContext's deadline holds.
-		go s.releaseSafely(release)
+		held, release, err := s.acquireSafely(ctx, func(ctx context.Context) (bool, func(), error) {
+			return tl.AcquireTick(ctx, tick)
+		})
+		if err != nil {
+			s.reportError("(leader-election)", err)
+			return false
+		}
+		if !held {
+			return false
+		}
+		s.handBack(release)
 		s.runOnce(ctx, now, nil, fixedOnly)
 		return true
 	}
-	// Hold the plain lease until this tick's jobs finish so a peer replica
-	// can't also fire this tick, but in a background goroutine, NOT inline:
-	// the run loop must stay selectable on s.stop / ctx.Done() so a job that
-	// ignores its context cannot pin the loop and defeat StopContext's
-	// deadline-bounded join. Registered BEFORE runOnce so a panic inside it
-	// (e.g. a panicking gate) still schedules the release instead of leaking
-	// the lease.
-	var tickJobs sync.WaitGroup
-	defer func() {
-		go func() {
-			tickJobs.Wait()
-			s.releaseSafely(release)
-		}()
-	}()
-	s.runOnce(ctx, now, &tickJobs, fixedOnly)
+	if !w.asked {
+		w.asked = true
+		if !s.awaitHandBack(ctx) {
+			return false
+		}
+		held, release, err := s.acquireSafely(ctx, w.leader.Acquire)
+		if err != nil {
+			s.reportError("(leader-election)", err)
+			return false
+		}
+		w.held, w.release = held, release
+	}
+	if !w.held {
+		return false
+	}
+	s.runOnce(ctx, now, &w.jobs, fixedOnly)
 	return true
+}
+
+// end hands a plain lease back once the jobs this walk started have
+// finished, so a peer replica cannot fire the same minutes while they run.
+// The wait is on a background goroutine, NOT inline: the run loop must stay
+// selectable on s.stop / ctx.Done() so a job that ignores its context
+// cannot pin the loop and defeat StopContext's deadline-bounded join.
+func (w *walk) end() {
+	if !w.held {
+		return
+	}
+	w.held = false
+	if w.jobs.n == 0 {
+		// Nothing to wait for: the release is already on its way, and the
+		// next walk waits for it like a tick lease's.
+		w.s.handBack(w.release)
+		return
+	}
+	go func() {
+		w.jobs.Wait()
+		w.s.releaseSafely(w.release)
+	}()
+}
+
+// handBack releases a lease no job is holding. It runs off the run loop:
+// release is driver code (a DB round trip for Postgres) and the loop must
+// stay selectable on s.stop / ctx.Done() so StopContext's deadline holds.
+// The channel it records closes when the release has returned;
+// awaitHandBack reads it before the next acquire.
+func (s *Scheduler) handBack(release func()) {
+	done := make(chan struct{})
+	s.mu.Lock()
+	s.handedBack = done
+	s.mu.Unlock()
+	go func() {
+		defer close(done)
+		s.releaseSafely(release)
+	}()
+}
+
+// awaitHandBack blocks until the scheduler's last jobless release has
+// returned, and reports false when the scheduler is stopped or ctx ends
+// first. Without it the next acquire races the scheduler's own release:
+// pg_try_advisory_lock on a new connection reports the lock taken while
+// the previous session's unlock is still in flight.
+func (s *Scheduler) awaitHandBack(ctx context.Context) bool {
+	s.mu.RLock()
+	done := s.handedBack
+	s.mu.RUnlock()
+	if done == nil {
+		return true
+	}
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-s.stop:
+		return false
+	}
 }
 
 // acquireSafely runs the leader-election Acquire (or AcquireTick) under
@@ -366,7 +476,7 @@ func (s *Scheduler) RunOnce(ctx context.Context, now time.Time) {
 // when it is non-nil, so a plain lease can be held for this tick's jobs
 // alone. With fixedOnly it skips every job whose schedule is not
 // FixedTime.
-func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.WaitGroup, fixedOnly bool) {
+func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *tickGroup, fixedOnly bool) {
 	// Snapshot the firing jobs AND the gate under the read lock, then
 	// evaluate the gate OUTSIDE it. Gates are registered callbacks
 	// (SetGate) free to do I/O, and a blocking gate holding s.mu
@@ -402,6 +512,7 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *sync.W
 		s.inflight.Add(1)
 		if tickJobs != nil {
 			tickJobs.Add(1)
+			tickJobs.n++
 		}
 		go func(j CronJob) {
 			defer s.inflight.Done()
@@ -516,7 +627,9 @@ const maxCatchUp = 2 * time.Hour
 // not 90 times at the same moment. Walking oldest-first keeps a
 // TickLeaderElection lease claiming minutes in order; a peer replica
 // that kept ticking refuses our older claims, so a shared schedule
-// still fires each minute at most once.
+// still fires each minute at most once. The walk shares one lease state
+// (walk): a plain lease is taken once for all of it, and a tick lease is
+// taken for each minute only after the last one was handed back.
 func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time.Time {
 	// Both ends stay on the tick grid: a tick that lands between
 	// boundaries fires the boundary's minute once (an unaligned `now`
@@ -530,6 +643,8 @@ func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time
 	if end.Sub(start) > maxCatchUp {
 		start = end.Add(-maxCatchUp)
 	}
+	w := s.beginWalk()
+	defer w.end()
 	for m := start.Add(s.tickEv); !m.After(end); m = m.Add(s.tickEv) {
 		select {
 		case <-ctx.Done():
@@ -538,7 +653,7 @@ func (s *Scheduler) catchUp(ctx context.Context, last, tick, now time.Time) time
 			return last
 		default:
 		}
-		s.runTickJobs(ctx, m, m.Before(end))
+		w.fire(ctx, m, m.Before(end))
 		last = m
 	}
 	return end

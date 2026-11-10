@@ -721,7 +721,7 @@ func TestMCP_ToolExposesOnlyVisibleFields(t *testing.T) {
 	})
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
 	_ = ch.getTool(http.NewServeMux())
-	writeSchema := writeToolSchema(ch.Entity)
+	writeSchema := writeToolSchema(ch.Entity, nil)
 	props, ok := writeSchema["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("write schema has no properties")
@@ -875,7 +875,7 @@ func TestMCP_ToolListPaginationEnforced(t *testing.T) {
 		{Name: "val", Type: schema.String},
 	})
 	ch, _ := setupSecurityTestHandler(t, cfg, ddl)
-	listSchema := listToolSchema(ch.Entity)
+	listSchema := listToolSchema(ch.Entity, nil)
 	props, ok := listSchema["properties"].(map[string]any)
 	if !ok {
 		t.Fatal("list schema missing properties")

@@ -229,6 +229,9 @@ func (p *OAuth2Plugin) TokenStore() OAuthTokenStore { return p.tokenStore }
 // callback gets a loud failure, not a silent email-trust login.
 func (p *OAuth2Plugin) Init(mgr *AuthManager) error {
 	p.mgr = mgr
+	if err := checkTwoFactorURL("oauth2", "OAuth2Config.TwoFactorURL", p.twoFactorURL); err != nil {
+		return err
+	}
 	// The passkey and magic-link rule: every plugin is registered before
 	// any Init runs, so a 2FA plugin later in the list is already visible.
 	if p.twoFactorURL == "" {
@@ -1726,8 +1729,12 @@ func (g *GitHubProvider) ExchangeCodeWithVerifier(ctx context.Context, code, ver
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
+		Error        string `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
+		return nil, err
+	}
+	if err := githubTokenRefusal("token exchange", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
 
@@ -1775,8 +1782,12 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 		AccessToken  string `json:"access_token"`
 		RefreshToken string `json:"refresh_token"`
 		ExpiresIn    int64  `json:"expires_in"`
+		Error        string `json:"error"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, oauthProviderMaxBody)).Decode(&body); err != nil {
+		return nil, err
+	}
+	if err := githubTokenRefusal("token refresh", body.Error, body.AccessToken); err != nil {
 		return nil, err
 	}
 
@@ -1785,6 +1796,31 @@ func (g *GitHubProvider) RefreshToken(ctx context.Context, refreshToken string) 
 		RefreshToken: body.RefreshToken,
 		Expiry:       tokenExpiry(body.ExpiresIn),
 	}, nil
+}
+
+// githubTokenRefusal reads a GitHub token response that arrived with
+// HTTP 200. GitHub answers a refused grant (a spent or wrong code, an
+// expired refresh token, bad client credentials) with 200 and an error
+// document, so the status alone says nothing: without this a refusal
+// came back as a token with an empty AccessToken and a nil error. The
+// error names GitHub's code when it is one of its plain identifiers, and
+// nothing else from the response body.
+func githubTokenRefusal(what, code, accessToken string) error {
+	if code == "" && accessToken != "" {
+		return nil
+	}
+	if code == "" {
+		return fmt.Errorf("github: %s returned no access token", what)
+	}
+	plain := len(code) <= 64
+	for i := 0; plain && i < len(code); i++ {
+		c := code[i]
+		plain = c == '_' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+	}
+	if !plain {
+		return fmt.Errorf("github: %s was refused", what)
+	}
+	return fmt.Errorf("github: %s was refused: %s", what, code)
 }
 
 func (g *GitHubProvider) FetchUserInfo(ctx context.Context, token string) (*OAuth2UserInfo, error) {

@@ -102,7 +102,7 @@ func (v *APIVersion) IsDeprecated() bool {
 // to every response from this version. Headers:
 //
 //	Deprecation: true
-//	Sunset: <RFC 1123 date>
+//	Sunset: <HTTP-date, in GMT>
 //	Link: <replacementURL>; rel="successor-version"
 //
 // Unsafe replacement URLs (non-http(s) schemes, embedded CR/LF) are
@@ -113,7 +113,7 @@ func (v *APIVersion) DeprecationMiddleware() router.Middleware {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Deprecation", "true")
 			if v.sunset != nil {
-				w.Header().Set("Sunset", v.sunset.Format(time.RFC1123))
+				w.Header().Set("Sunset", httpDate(*v.sunset))
 			}
 			if v.replace != nil {
 				if safe, ok := safeReplacementURL(*v.replace); ok {
@@ -152,7 +152,7 @@ func normalizeVersion(prefix string) string {
 func DeprecationHeaders(w http.ResponseWriter, sunset time.Time, replacement string) {
 	w.Header().Set("Deprecation", "true")
 	if !sunset.IsZero() {
-		w.Header().Set("Sunset", sunset.Format(time.RFC1123))
+		w.Header().Set("Sunset", httpDate(sunset))
 	}
 	if replacement != "" {
 		if safe, ok := safeReplacementURL(replacement); ok {
@@ -174,4 +174,11 @@ func safeReplacementURL(u string) (string, bool) {
 		return "", false
 	}
 	return u, true
+}
+
+// httpDate formats t as the HTTP-date RFC 8594 gives the Sunset header:
+// in GMT, spelled "GMT". time.RFC1123 writes the time's own zone
+// abbreviation ("UTC", "EST"), which http.ParseTime refuses.
+func httpDate(t time.Time) string {
+	return t.UTC().Format(http.TimeFormat)
 }

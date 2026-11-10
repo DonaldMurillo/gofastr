@@ -394,6 +394,17 @@ func Idempotency(cfg IdempotencyConfig) Middleware {
 			switch {
 			case rec.bodyOverflow, rec.streamed:
 				finish(nil)
+			case !rec.wroteHeader && r.Context().Err() != nil:
+				// The handler returned without writing and its request is
+				// over (a deadline, a client that hung up): it gave up, it
+				// did not answer. The recorder's starting 200 is net/http's
+				// implicit status, and caching it replayed an empty 200 to
+				// the retry of a request that had been answered 504, for a
+				// write that never ran. A handler that DID write a 2xx is
+				// cached below whatever the context says: the work is
+				// done, the client never saw the answer, and the retry is
+				// what the key is for.
+				finish(nil)
 			case rec.status >= 200 && rec.status < 300:
 				snap := &IdempotentResponse{
 					Status: rec.status,

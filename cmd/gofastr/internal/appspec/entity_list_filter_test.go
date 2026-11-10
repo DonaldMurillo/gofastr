@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
+	fwfilter "github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // The entity_list pinned filter (R8-EX3-01) carries stat_card's spelling,
@@ -151,6 +152,63 @@ func TestEntityListFilterRefusesMistypedValue(t *testing.T) {
 		_, value, _ := strings.Cut(bad, "=")
 		if !strings.Contains(err.Error(), value) {
 			t.Errorf("filter %q: error does not name the value: %v", bad, err)
+		}
+	}
+}
+
+// A pin on a json field is refused at load, whatever the value. The pin
+// becomes {field, eq, value} on every read of the list, and a JSON column
+// takes no filter operator at all (filter.OpSuitsType), so crud refuses
+// it each time. The bug: the load only asked whether the column's type
+// could hold the value, and any JSON text fits a json column, so
+// `filter: meta=5` loaded and the generated list failed every read.
+func TestEntityListFilterRefusesJSONColumn(t *testing.T) {
+	for _, value := range []string{"5", "true", "null"} {
+		yaml := `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: cards
+    crud: true
+    fields:
+      - name: label
+        type: string
+      - name: meta
+        type: json
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: entity_list
+        entity: cards
+        fields: [label]
+        filter: meta=` + value + `
+`
+		node, err := coreyaml.Parse(yaml)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		bp, err := DecodeAppSpec(node)
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		// The runtime's verdict on the predicate the pin becomes, over the
+		// fields the generated entity registers: refused, so the load must
+		// refuse it too.
+		fields, err := AppSpecEntityFields(bp.Entities[0])
+		if err != nil {
+			t.Fatalf("fields: %v", err)
+		}
+		pin := &fwfilter.Predicate{Field: "meta", Op: fwfilter.OpEq, Value: value}
+		if _, runtimeErr := fwfilter.ValidatePredicate(pin, fields); runtimeErr == nil {
+			t.Fatalf("setup: the runtime accepts meta=%s on a json column; this test no longer applies", value)
+		}
+
+		err = ValidateAppSpec(bp)
+		if err == nil || !strings.Contains(err.Error(), "meta") || !strings.Contains(err.Error(), "json") {
+			t.Errorf("filter: meta=%s on a json column: want a refusal naming the column and its type, got %v", value, err)
 		}
 	}
 }

@@ -568,13 +568,19 @@ func (q *MemoryQueue) processJob(rj *runningJob) {
 		retry := job.Attempts < job.MaxAttempts && !errors.Is(err, ErrPermanent)
 		if retry {
 			// A handler's RetryAfter delays the next attempt; with none
-			// the job is due at once, as before.
+			// the job is due at once, as before. The delay is written to
+			// the job only once the retry is decided: a job dead-lettered
+			// because the delay lands past MaxAge is retained as it was,
+			// not with a due time it will never be retried at.
 			next := q.now()
-			if d, ok := retryDelayFrom(err); ok {
+			d, delayed := retryDelayFrom(err)
+			if delayed {
 				next = next.Add(d)
-				job.ScheduledAt = next
 			}
 			retry = !pastMaxAge(job, next)
+			if retry && delayed {
+				job.ScheduledAt = next
+			}
 		}
 		if retry {
 			// Re-enqueue for retry on a FRESH context. `ctx` is the
@@ -942,7 +948,12 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	// destroyed the job outright: the caller sees an error and retries,
 	// but the retry now matches no dead entry and takes the documented
 	// idempotent no-op path, so the loss is permanent and silent.
+	//
+	// A replayed job is due now, as Replayable says and DBQueue.Replay
+	// writes (scheduled_at = now): whatever due time the dead job still
+	// carries belongs to the attempt that failed.
 	job.Attempts = 0
+	job.ScheduledAt = q.now()
 	if err := q.Enqueue(ctx, job); err != nil {
 		return err
 	}

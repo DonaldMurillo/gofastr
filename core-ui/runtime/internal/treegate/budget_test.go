@@ -59,7 +59,12 @@ func TestRegisteredBehaviorSizeBudgets(t *testing.T) {
 		// from the X-Gofastr-Sortable-Version header on a 2xx move and
 		// on a conflict refresh, so sequential moves stop conflicting:
 		// 3189 measured + 2.
-		"framework/headless/disclosure.js":   3176,
+		// TestE2E_TrapHiddenByBreakpointLetsGo: a trap disclosure its
+		// sheet stops drawing while open (the phone menu past its
+		// breakpoint) closes and lets the page go, watched by a
+		// ResizeObserver per armed trap and asked again at each Tab:
+		// 3255 measured + 2. The trap and its release are one posture.
+		"framework/headless/disclosure.js":   3257,
 		"framework/headless/sortablelist.js": 3191,
 		// core-ui/localdb's on-request API module, 3637 measured (2
 		// clearance). 3420 at landing; the second review round added

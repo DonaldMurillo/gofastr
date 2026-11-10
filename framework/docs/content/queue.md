@@ -18,7 +18,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Dead-letter capture | Yes (bounded, 1 000 jobs) | Yes (status `failed`) | Yes (Redis list) |
 | Unique jobs (`UniqueKey`) | Yes | Yes (partial unique index) | No (`ErrUniqueUnsupported`) |
 | Ordered jobs (`SequenceKey`) | No (`ErrSequenceUnsupported`) | Yes | No (`ErrSequenceUnsupported`) |
-| Age limit (`MaxAge`) | Yes | Yes | Yes (checked in `Nack`) |
+| Age limit (`MaxAge`) | Yes | Yes (failed attempts and expired leases) | Yes (checked in `Nack`) |
 | Handler retry errors (`Permanent`, `RetryAfter`) | Yes | Yes | No worker loop |
 | Retry schedule and jitter | No (retries at once) | Yes | No |
 | `Browsable` | Yes (dead-letter only) | Yes | Yes (dead-letter only) |
@@ -394,7 +394,13 @@ _ = queue.Job{Type: "deliver-webhook", MaxAttempts: 25, MaxAge: 96 * time.Hour}
 ```
 
 The age is checked when an attempt fails, so a job that waited in a
-backlog still runs once. `Enqueue` refuses a negative `MaxAge`. `Replay`
+backlog still runs once. On `DBQueue` an attempt whose worker stopped
+before settling it (a crash, a kill, a handler that outran the lease)
+counts as failed once its lease runs out: a job past
+`CreatedAt + MaxAge` is then dead-lettered, with a `LastError` that
+names the expired lease, instead of being handed to another worker.
+`RedisQueue` checks the age in `Nack` only, so a job `Reclaim` puts
+back runs again whatever its age. `Enqueue` refuses a negative `MaxAge`. `Replay`
 keeps `CreatedAt`, so a replayed job past its age gets the one attempt
 the replay asked for.
 
@@ -540,7 +546,10 @@ done, dead-lettered or replayed changes nothing.
 **DBQueue** reclaims stale-claimed jobs automatically inside `Dequeue`:
 a row in `claimed` status whose `claimed_at` has passed the configured
 lease timeout (default 5 min) becomes eligible again. No extra
-configuration needed.
+configuration needed. Two expired claims are not handed out again: one
+on its final attempt, and one whose job is past `CreatedAt + MaxAge`.
+Both are dead-lettered (status `failed`, logged at ERROR) the next time
+any worker polls.
 
 On shutdown (the context passed to `Start` cancelled), a DBQueue worker
 that has claimed a job but not started its handler hands the job back

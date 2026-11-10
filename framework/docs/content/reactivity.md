@@ -71,7 +71,9 @@ only reaches the tab that made the request; other tabs that need the
 fresh value are the polling rung's job, and SSE is never a
 cache-invalidation transport. For the *current* screen, use
 `data-cui-rpc-navigate` (or return island HTML); eviction alone never
-re-renders anything.
+re-renders anything. The runtime drops the current screen's cached copy
+itself after any successful RPC whose method is not `GET`, so Back to it
+fetches the page instead of replaying the copy from before the write.
 
 See [Interactive patterns](interactive-patterns.md) for the full attribute
 vocabulary and [Optimistic UI](optimistic-ui.md) for the mutation lifecycle.

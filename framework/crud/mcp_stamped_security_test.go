@@ -16,7 +16,7 @@ func TestMCPWriteOmitsScopeFields(t *testing.T) {
 	config.Scope.MultiTenant = true
 	ent := entity.Define("items", config)
 	for _, update := range []bool{false, true} {
-		props := bodyToolSchema(ent, update)["properties"].(map[string]any)
+		props := bodyToolSchema(ent, nil, update)["properties"].(map[string]any)
 		for _, name := range []string{"user_id", "tenant_id"} {
 			if _, exists := props[name]; exists {
 				t.Errorf("update=%v: server field %s is writable", update, name)

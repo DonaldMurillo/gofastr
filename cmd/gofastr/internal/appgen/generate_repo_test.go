@@ -234,6 +234,16 @@ import (
 	"example.com/repo/gen/entities"
 )
 
+// val reads an optional field. The read shape carries one as a pointer,
+// and a nil one fails here instead of passing as a zero value.
+func val[T any](t *testing.T, p *T) T {
+	t.Helper()
+	if p == nil {
+		t.Fatal("an optional field read as nil; want the stored value")
+	}
+	return *p
+}
+
 func TestGeneratedRepo(t *testing.T) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	if err != nil {
@@ -255,18 +265,18 @@ func TestGeneratedRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if p.ID == "" || p.Published || p.Views != 0 {
+	if p.ID == "" || val(t, p.Published) || val(t, p.Views) != 0 {
 		t.Fatalf("create dropped zero values: %+v", p)
 	}
-	if p.Status != entities.PostsStatusDraft {
-		t.Fatalf("status = %q, want the default %q", p.Status, entities.PostsStatusDraft)
+	if got := val(t, p.Status); got != entities.PostsStatusDraft {
+		t.Fatalf("status = %q, want the default %q", got, entities.PostsStatusDraft)
 	}
 	// Omitted optional fields take their defaults.
 	d, err := posts.Create(ctx, entities.PostsInput{Title: "defaults"})
 	if err != nil {
 		t.Fatalf("create defaults: %v", err)
 	}
-	if !d.Published || d.Views != 5 || d.Kind != entities.PostsKindNote {
+	if !val(t, d.Published) || val(t, d.Views) != 5 || d.Kind != entities.PostsKindNote {
 		t.Fatalf("omitted fields lost their defaults: %+v", d)
 	}
 
@@ -276,10 +286,10 @@ func TestGeneratedRepo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if u.Published || u.Views != 0 || u.Title != "defaults" {
+	if val(t, u.Published) || val(t, u.Views) != 0 || u.Title != "defaults" {
 		t.Fatalf("patch did not write zero values or touched title: %+v", u)
 	}
-	if got, err := posts.Get(ctx, d.ID); err != nil || got.Published || got.Views != 0 {
+	if got, err := posts.Get(ctx, d.ID); err != nil || val(t, got.Published) || val(t, got.Views) != 0 {
 		t.Fatalf("stored row after patch = %+v, %v", got, err)
 	}
 
@@ -297,11 +307,11 @@ func TestGeneratedRepo(t *testing.T) {
 
 	// Batch shapes and FirstOrCreate take Input and Patch too.
 	made, err := posts.BatchCreate(ctx, []entities.PostsInput{{Title: "b1", Published: new(false)}, {Title: "b2"}})
-	if err != nil || len(made) != 2 || made[0].Published || !made[1].Published {
+	if err != nil || len(made) != 2 || val(t, made[0].Published) || !val(t, made[1].Published) {
 		t.Fatalf("batch create = %+v, %v", made, err)
 	}
 	fixed, err := posts.BatchUpdate(ctx, []string{made[1].ID}, []entities.PostsPatch{{Published: new(false)}})
-	if err != nil || len(fixed) != 1 || fixed[0].Published || fixed[0].Title != "b2" {
+	if err != nil || len(fixed) != 1 || val(t, fixed[0].Published) || fixed[0].Title != "b2" {
 		t.Fatalf("batch update = %+v, %v", fixed, err)
 	}
 	again, err := posts.FirstOrCreate(ctx, entities.PostsInput{Title: "a"}, entities.PostsTitle.Eq("a"))
@@ -309,7 +319,7 @@ func TestGeneratedRepo(t *testing.T) {
 		t.Fatalf("first or create = %+v, %v", again, err)
 	}
 	fresh, err := posts.FirstOrCreate(ctx, entities.PostsInput{Title: "new", Published: new(false)}, entities.PostsTitle.Eq("new"))
-	if err != nil || fresh.ID == "" || fresh.ID == p.ID || fresh.Published {
+	if err != nil || fresh.ID == "" || fresh.ID == p.ID || val(t, fresh.Published) {
 		t.Fatalf("first or create on a miss = %+v, %v", fresh, err)
 	}
 
@@ -343,14 +353,14 @@ func TestGeneratedRepo(t *testing.T) {
 		t.Fatalf("create invoice: %v", err)
 	}
 	moved, err := invoices.Transition(ctx, inv.ID, entities.InvoicesMoveIssue)
-	if err != nil || moved.Status != entities.InvoicesStatusOpen {
+	if err != nil || val(t, moved.Status) != entities.InvoicesStatusOpen {
 		t.Fatalf("issue = %+v, %v", moved, err)
 	}
 	if _, err := invoices.Transition(ctx, inv.ID, entities.InvoicesMoveMarkOverdue); err != nil {
 		t.Fatalf("system move: %v", err)
 	}
 	paid, err := invoices.Transition(ctx, inv.ID, entities.InvoicesMovePay)
-	if err != nil || paid.Status != entities.InvoicesStatusPaid || paid.PaidOn == "" {
+	if err != nil || val(t, paid.Status) != entities.InvoicesStatusPaid || val(t, paid.PaidOn) == "" {
 		t.Fatalf("pay = %+v, %v", paid, err)
 	}
 	if _, err := invoices.Transition(ctx, inv.ID, entities.InvoicesMoveIssue); err == nil {
@@ -366,7 +376,13 @@ func TestGeneratedRepoRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a generated module; skipped under -short")
 	}
-	clitest.VariantBuild(t)
+	// The source this test compiles reads the generated structs field by
+	// field, so a change to what the emitters write breaks its build. Run
+	// it when one of them or this file changes, not only on a full run:
+	// v0.97's pointer read shapes left it red on main because the pull
+	// request never built it.
+	clitest.VariantBuild(t, "cmd/gofastr/internal/appgen/generate.go", "cmd/gofastr/internal/appgen/generate_typed.go",
+		"cmd/gofastr/internal/appgen/generate_repo.go", "cmd/gofastr/internal/appgen/generate_repo_test.go")
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

@@ -276,6 +276,11 @@ type fkDiffEnv struct {
 	// NULL and DEFAULT diff reads; nil (the live diff) or a missing
 	// table skips it.
 	tableDDL map[string]string
+	// indexed is, on SQLite, the live columns of each table that an index
+	// covers (readSQLiteIndexedColumnsQ), which SQLite will not DROP
+	// COLUMN; nil on Postgres and for a generated migration, whose index
+	// drops run before the table's column changes.
+	indexed map[string]map[string]bool
 }
 
 // renamesApplied maps each column a rename hint renames (lower case) to its

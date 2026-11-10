@@ -1025,13 +1025,18 @@
           return;
         }
         NS._pushURL(redirectTo, { replace: true });
-        NS._setCurrentPath(redirectTo);
+        // The URL keeps the target's #fragment; the router's path and
+        // the cache key are path+search (core's redirect leg). An
+        // off-origin target stays as sent.
+        let to = redirectTo;
+        if (NS._sameOrigin(to)) { const u = new URL(to, location.href); to = u.pathname + u.search; }
+        NS._setCurrentPath(to);
         _pend.delete(path);
         NS.doc.removeHtmlAttr('aria-busy');
         // A redirect discards the parts and their buffer: nothing this
         // navigation fetched for `path` may land.
         if (P && parts) P.kill(parts);
-        return retry(redirectTo, { bypassCache, from: prevPath, restore: ps });
+        return retry(to, { bypassCache, from: prevPath, restore: ps });
       }
       // The redirect legs above read no body: a 200 X-Gofastr-Location
       // or -Document answer carries none and no Content-Type.

@@ -99,10 +99,10 @@ func TestCompositeKeys(t *testing.T) {
 	if _, err := repo.Create(ctx, entities.EnrollmentsInput{StudentId: s, CourseId: c, Grade: new("A")}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got, err := repo.Get(ctx, s, c); err != nil || got.StudentId != s || got.CourseId != c || got.Grade != "A" {
+	if got, err := repo.Get(ctx, s, c); err != nil || got.StudentId != s || got.CourseId != c || got.Grade == nil || *got.Grade != "A" {
 		t.Fatalf("get = %+v, %v", got, err)
 	}
-	if got, err := repo.Update(ctx, s, c, entities.EnrollmentsPatch{Grade: new("B")}); err != nil || got.Grade != "B" {
+	if got, err := repo.Update(ctx, s, c, entities.EnrollmentsPatch{Grade: new("B")}); err != nil || got.Grade == nil || *got.Grade != "B" {
 		t.Fatalf("update = %+v, %v", got, err)
 	}
 	if ok, err := repo.Exists(ctx, s, c); !ok || err != nil {
@@ -111,13 +111,13 @@ func TestCompositeKeys(t *testing.T) {
 	if ok, err := repo.Exists(ctx, s, "other"); ok || err != nil {
 		t.Fatalf("exists on a missing key = %v, %v", ok, err)
 	}
-	if got, err := repo.Transition(ctx, s, c, entities.EnrollmentsMoveFinish); err != nil || got.Status != entities.EnrollmentsStatusDone {
+	if got, err := repo.Transition(ctx, s, c, entities.EnrollmentsMoveFinish); err != nil || got.Status == nil || *got.Status != entities.EnrollmentsStatusDone {
 		t.Fatalf("transition = %+v, %v", got, err)
 	}
 	if _, err := repo.Create(ctx, entities.EnrollmentsInput{StudentId: "r2", CourseId: c}); err != nil {
 		t.Fatalf("create r2: %v", err)
 	}
-	if got, err := repo.BatchUpdate(ctx, []string{entities.EnrollmentsID("r2", c)}, []entities.EnrollmentsPatch{{Grade: new("R")}}); err != nil || len(got) != 1 || got[0].Grade != "R" {
+	if got, err := repo.BatchUpdate(ctx, []string{entities.EnrollmentsID("r2", c)}, []entities.EnrollmentsPatch{{Grade: new("R")}}); err != nil || len(got) != 1 || got[0].Grade == nil || *got[0].Grade != "R" {
 		t.Fatalf("repo batch update = %+v, %v", got, err)
 	}
 	if err := repo.BatchDelete(ctx, []string{entities.EnrollmentsID("r2", c)}); err != nil {
@@ -127,26 +127,26 @@ func TestCompositeKeys(t *testing.T) {
 	srv := httptest.NewServer(app.Router())
 	defer srv.Close()
 	api := client.NewClient(srv.URL, nil)
-	if got, err := api.GetEnrollments(ctx, s, c); err != nil || got.StudentId != s || got.Grade != "B" {
+	if got, err := api.GetEnrollments(ctx, s, c); err != nil || got.StudentId != s || got.Grade == nil || *got.Grade != "B" {
 		t.Fatalf("client get = %+v, %v", got, err)
 	}
 	if _, err := api.CreateEnrollments(ctx, client.EnrollmentsInput{StudentId: "s2", CourseId: c}); err != nil {
 		t.Fatalf("client create: %v", err)
 	}
-	if got, err := api.PatchEnrollments(ctx, "s2", c, client.EnrollmentsPatch{Grade: new("C")}); err != nil || got.Grade != "C" {
+	if got, err := api.PatchEnrollments(ctx, "s2", c, client.EnrollmentsPatch{Grade: new("C")}); err != nil || got.Grade == nil || *got.Grade != "C" {
 		t.Fatalf("client patch = %+v, %v", got, err)
 	}
-	if got, err := api.UpdateEnrollments(ctx, "s2", c, client.EnrollmentsInput{StudentId: "s2", CourseId: c, Grade: new("D")}); err != nil || got.Grade != "D" {
+	if got, err := api.UpdateEnrollments(ctx, "s2", c, client.EnrollmentsInput{StudentId: "s2", CourseId: c, Grade: new("D")}); err != nil || got.Grade == nil || *got.Grade != "D" {
 		t.Fatalf("client update = %+v, %v", got, err)
 	}
-	if got, err := api.FinishEnrollments(ctx, "s2", c); err != nil || got.Status != "done" {
+	if got, err := api.FinishEnrollments(ctx, "s2", c); err != nil || got.Status == nil || *got.Status != "done" {
 		t.Fatalf("client transition = %+v, %v", got, err)
 	}
 	res, err := api.BatchUpdateEnrollments(ctx, []client.EnrollmentsBatchPatch{{StudentId: "s2", CourseId: c, Grade: new("E")}})
 	if err != nil || !res.Committed {
 		t.Fatalf("client batch update = %+v, %v", res, err)
 	}
-	if got, err := api.GetEnrollments(ctx, "s2", c); err != nil || got.Grade != "E" {
+	if got, err := api.GetEnrollments(ctx, "s2", c); err != nil || got.Grade == nil || *got.Grade != "E" {
 		t.Fatalf("after batch update = %+v, %v", got, err)
 	}
 	res, err = api.BatchDeleteEnrollments(ctx, []string{client.EnrollmentsID("s2", c)})
@@ -271,7 +271,14 @@ func TestCompositeKeyRoundTrip(t *testing.T) {
 	if testing.Short() {
 		t.Skip("builds a generated module; skipped under -short")
 	}
-	clitest.VariantBuild(t)
+	// The source this test compiles reads the generated structs field by
+	// field, so a change to what the emitters write breaks its build. Run
+	// it when one of them or this file changes, not only on a full run:
+	// v0.97's pointer read shapes left it red on main because the pull
+	// request never built it.
+	clitest.VariantBuild(t, "cmd/gofastr/internal/appgen/generate.go", "cmd/gofastr/internal/appgen/generate_typed.go",
+		"cmd/gofastr/internal/appgen/generate_repo.go", "cmd/gofastr/internal/appgen/generate_keys.go", "cmd/gofastr/internal/appgen/generate_client.go",
+		"cmd/gofastr/internal/appgen/generate_composite_key_test.go")
 	repoRoot, err := filepath.Abs(filepath.Join("..", "..", "..", ".."))
 	if err != nil {
 		t.Fatal(err)

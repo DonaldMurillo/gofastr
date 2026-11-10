@@ -182,6 +182,9 @@ listener. `framework.IsInProcessRequest(r)` is the read-only predicate for
 custom middleware; a custom `middleware.CSRF` can use it in `CSRFConfig.Skip`.
 Local requests have an empty `RemoteAddr`, so per-IP rate keys and
 allowlists see no client address; no synthetic peer is supplied.
+A Local request always carries a body, as a request from `net/http`
+does: a call with nothing to send (`List`, `Get`, `Delete`) reaches
+middleware with an empty `r.Body`, never a nil one.
 Redirects are
 returned as API errors rather than followed. The client sets a 30-second
 timeout or the caller's earlier deadline. Because dispatch is synchronous,

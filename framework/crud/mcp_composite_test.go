@@ -73,7 +73,7 @@ func TestMCPToolsTakeCompositeKey(t *testing.T) {
 		t.Fatalf("sibling row = %v, %v; want grade C intact", sib, err)
 	}
 
-	s := idToolSchema(ch.Entity, ch.toolKeyArgs())
+	s := idToolSchema(ch.Entity, nil, ch.toolKeyArgs())
 	if req := s["required"].([]string); !slices.Equal(req, []string{"student_id", "course_id"}) {
 		t.Errorf("get schema required = %v", req)
 	}

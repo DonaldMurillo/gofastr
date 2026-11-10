@@ -1669,6 +1669,14 @@
 
   const loadPage = (path, opts) => {
     if (!window.__gofastr._originOK(path)) return;
+    // The router keys on path+search: currentPath, the screen cache and
+    // gofastr:navigate's detail.path, in this navigator and the envelope
+    // module's. A link click and popstate arrive in that form; the
+    // redirect leg hands over the server's target as sent, and its
+    // #fragment made the page read as another one (an in-page #anchor
+    // jump re-fetched it). Past the origin gate above, so a target on
+    // another origin is refused as sent, never read as a local path.
+    path = resolvePath(path);
     if (crossesDocBoundary(path)) { location.assign(path); return; }
     // The opt-in hand-off: a document holding an outlet, area, or loading template
     // hands its navigations to the envelope module. Warm, the
@@ -1894,6 +1902,8 @@
         // must not serve the redirect target from the screen cache,
         // and keep the ORIGINAL origin so the redirect leg's subtree
         // partial renders against where the user actually came from.
+        // The target may carry a #fragment (the URL keeps it): loadPage
+        // reads its path, and refuses one on another origin as sent.
         return loadPage(redirectTo, { bypassCache, from: prevPath, restore: ps });
       }
 
@@ -2268,14 +2278,21 @@
       // for all programmatic SPA navigation, so the guard lives
       // here. Reuses the same gate as the signal-bound anchors etc.
       if (!this._originOK(path)) return;
-      const same = new URL(path, document.baseURI).href === location.href;
+      // Resolved once, against the document base like the history write
+      // below. to is what the router keys on (currentPath, the screen
+      // cache, gofastr:navigate's detail.path): path+search, as on a
+      // link click. The raw string went to loadPage before, so "?p=2"
+      // was one cache key on every page and a "#fragment" made the page
+      // read as another one; the fragment rides the URL only.
+      const u = new URL(path, document.baseURI), to = u.pathname + u.search;
+      const same = u.href === location.href;
       if (same && !force) return;
       replace ||= same;
       this._navAsk({ to: path, replace }, () => {
         // Document boundary: load a real document instead of swapping.
         // assign/replace keep the push/replace shape the caller asked
         // for.
-        if (crossesDocBoundary(path)) {
+        if (crossesDocBoundary(to)) {
           if (replace) { try { location.replace(path); } catch (_) {} }
           else location.assign(path);
           return;
@@ -2283,7 +2300,7 @@
         const origin = currentPath;
         _navRing = void 0; // programmatic: the browser's heuristic decides
         _pushPub(path, { replace });
-        loadPage(path, { bypassCache: force, from: origin });
+        loadPage(to, { bypassCache: force, from: origin });
       });
     },
 
