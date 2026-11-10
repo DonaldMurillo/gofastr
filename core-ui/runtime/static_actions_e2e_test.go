@@ -66,8 +66,14 @@ local: () => {window.localClicks++;}});</script></body></html>`)
 				chromedp.Evaluate(`document.body.innerText.includes('Needs the Go server.')`, &notice),
 				chromedp.Click("#local"),
 				chromedp.Evaluate(`window.localClicks`, &localClicks),
+				// The URL moves before the swap does. Inserting on the URL
+				// alone landed in the page being replaced about one run in
+				// five, and the swap took the late component with it (its
+				// module loaded, its mount never ran). gofastr:navigate is
+				// the runtime's word that the new page is in.
+				chromedp.Evaluate(`window.addEventListener('gofastr:navigate', () => { window.naved = true; }, {once: true})`, nil),
 				chromedp.Click("#next"),
-				chromedp.Poll(`location.pathname === '/next'`, nil),
+				chromedp.Poll(`window.naved === true && location.pathname === '/next'`, nil),
 				chromedp.Evaluate(`document.getElementById('insert').innerHTML = '<div data-component="late-comp"><i data-action-mount="mount"></i></div>'`, nil),
 				chromedp.Poll(`window.lateLoaded === true`, nil),
 			); err != nil {
