@@ -1,15 +1,18 @@
 package desktop
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -86,8 +89,16 @@ type updateFeedServer struct {
 
 func newUpdateFeedServer(t *testing.T, version string) *updateFeedServer {
 	t.Helper()
+	return newUpdateFeedServerExpiring(t, version, time.Now().Add(time.Hour))
+}
+
+// newUpdateFeedServerExpiring serves a feed signed with expires as its
+// expiry.
+func newUpdateFeedServerExpiring(t *testing.T, version string, expires time.Time) *updateFeedServer {
+	t.Helper()
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	f := update.Feed{
+		Expires: expires.UTC().Format(time.RFC3339),
 		Version: version,
 		Notes:   "What changed",
 		Platforms: map[string]update.PlatformEntry{
@@ -148,6 +159,24 @@ func TestUpdateConfigValidation(t *testing.T) {
 		"non-hex key":  func(c *UpdateConfig) { c.PublicKey = strings.Repeat("zz", 32) },
 		"long channel": func(c *UpdateConfig) { c.Channel = strings.Repeat("a", 65) },
 		"ctrl channel": func(c *UpdateConfig) { c.Channel = "a\nb" },
+		"short team":   func(c *UpdateConfig) { c.MacOSTeamID = "ABCDE1234" },
+		"long team":    func(c *UpdateConfig) { c.MacOSTeamID = "ABCDE123456" },
+		"lower team":   func(c *UpdateConfig) { c.MacOSTeamID = "abcde12345" },
+		"quoted team":  func(c *UpdateConfig) { c.MacOSTeamID = `ABCDE1234"` },
+		"spaced team":  func(c *UpdateConfig) { c.MacOSTeamID = "ABCDE 1234" },
+		"team and ad-hoc": func(c *UpdateConfig) {
+			c.MacOSTeamID, c.MacOSAllowAdHoc = "ABCDE12345", true
+		},
+	}
+	for name, ok := range map[string]func(*UpdateConfig){
+		"team":   func(c *UpdateConfig) { c.MacOSTeamID = "ABCDE12345" },
+		"ad-hoc": func(c *UpdateConfig) { c.MacOSAllowAdHoc = true },
+	} {
+		c := *good
+		ok(&c)
+		if err := validateUpdateConfig(&c); err != nil {
+			t.Errorf("%s refused: %v", name, err)
+		}
 	}
 	for name, mutate := range bad {
 		c := *good
@@ -165,6 +194,52 @@ func TestUpdateConfigValidation(t *testing.T) {
 	}()
 	New(Config{ID: "x.example.app", Shell: newFakeShell(), Logger: testLogger(t),
 		Update: &UpdateConfig{FeedURL: "http://example.com/m.json", PublicKey: "short"}})
+}
+
+// policyPlatform records the signing pin the battery hands the OS
+// platform.
+type policyPlatform struct {
+	fakeUpdatePlatform
+	policy update.SignaturePolicy
+	set    bool
+}
+
+func (p *policyPlatform) SetSignaturePolicy(policy update.SignaturePolicy) {
+	p.policy, p.set = policy, true
+}
+
+func TestSigningPinReachesPlatform(t *testing.T) {
+	for name, cfg := range map[string]UpdateConfig{
+		"default": {},
+		"team":    {MacOSTeamID: "ABCDE12345"},
+		"ad-hoc":  {MacOSAllowAdHoc: true},
+	} {
+		cfg.FeedURL, cfg.PublicKey = "https://updates.example.com/manifest.json", strings.Repeat("ab", 32)
+		b := New(Config{ID: "update.test.app", Title: "UpdateTest", Shell: newFakeShell(), Logger: testLogger(t), Update: &cfg})
+		p := &policyPlatform{}
+		b.updaterFor().configurePlatform(p)
+		want := update.SignaturePolicy{TeamID: cfg.MacOSTeamID, AllowAdHoc: cfg.MacOSAllowAdHoc}
+		if !p.set || p.policy != want {
+			t.Errorf("%s: platform got %+v (set=%v), want %+v", name, p.policy, p.set, want)
+		}
+	}
+}
+
+func TestCheckExpiredFeedRefused(t *testing.T) {
+	feed := newUpdateFeedServerExpiring(t, "9.9.9", time.Now().Add(-time.Minute))
+	b, _ := updateTestBattery(t, feed.srv.URL+"/manifest.json", feed.pubHex, "1.0.0", "Notes.app", t.TempDir())
+	// A replayed manifest naming a newer version must not surface as an
+	// available update once its expiry has passed.
+	res, err := b.CheckForUpdates(context.Background())
+	if err != errUpdateFeedExpired {
+		t.Fatalf("err = %v, want errUpdateFeedExpired", err)
+	}
+	if res.Available || res.Version != "" {
+		t.Fatalf("an expired feed still reported %+v", res)
+	}
+	if err := b.InstallUpdate(context.Background()); err != errUpdateFeedExpired {
+		t.Fatalf("install err = %v, want errUpdateFeedExpired", err)
+	}
 }
 
 func TestUpdatesCapabilityShape(t *testing.T) {
@@ -370,6 +445,29 @@ func TestStartUpdaterNegativeIntervalStartsNoLoop(t *testing.T) {
 	// Nothing to observe directly without waiting 30 s for the first
 	// check; the guard is that startUpdater returns immediately (the
 	// test's runtime proves no synchronous check ran).
+}
+
+// The opt-out is announced once at start, so it is not left on by
+// accident in a release that has since gained a signing identity.
+func TestStartUpdaterWarnsOnAdHocOptOut(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the field only acts on macOS")
+	}
+	for _, allow := range []bool{false, true} {
+		var logs bytes.Buffer
+		b := New(Config{
+			ID:     "update.test.app",
+			Shell:  newFakeShell(),
+			Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+			Update: &UpdateConfig{FeedURL: "https://updates.example.com/manifest.json", PublicKey: strings.Repeat("ab", 32),
+				Interval: -1, MacOSAllowAdHoc: allow},
+		})
+		b.updaterFor().platform = &fakeUpdatePlatform{version: "1.0.0", name: "Notes.app", dir: t.TempDir()}
+		b.startUpdater(context.Background())
+		if warned := strings.Contains(logs.String(), "MacOSAllowAdHoc is set"); warned != allow {
+			t.Errorf("MacOSAllowAdHoc=%v: warned=%v; log: %s", allow, warned, logs.String())
+		}
+	}
 }
 
 // An unavailable page and an Eval refusal must both leave delivery retryable.

@@ -31,7 +31,7 @@ func TestGitHubRefusedRefreshKeepsTheStoredToken(t *testing.T) {
 	// provider refuses must leave it in place.
 	stillValid := time.Now().Add(time.Hour).Truncate(time.Second)
 	if err := ts.Save(ctx, OAuthTokenRecord{UserID: "u", Provider: "github",
-		AccessToken: "at-still-valid", RefreshToken: "rt-0", Expiry: stillValid}); err != nil {
+		AccessToken: "at-still-valid", RefreshToken: "rt-0", Expiry: stillValid}); err != nil { // not-a-secret: fixture token for a fake provider
 		t.Fatal(err)
 	}
 

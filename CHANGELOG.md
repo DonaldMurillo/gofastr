@@ -274,6 +274,36 @@ few lines, and link the PR or the docs page for the rest.
   `AuthConfig.MailAddressRateLimit`.
 
 ### Security
+- **BREAKING: desktop update feeds expire, and a macOS update must carry
+  the running app's signing identity**
+  ([#649](https://github.com/DonaldMurillo/gofastr/issues/649),
+  [#650](https://github.com/DonaldMurillo/gofastr/issues/650),
+  [desktop](framework/docs/content/desktop.md#auto-update)). A signed
+  manifest verified forever, so a captured one could be replayed to
+  keep an app off the next release; and the macOS install ran
+  `codesign --verify` with no requirement, which an ad-hoc signature
+  from anyone passes.
+  - The manifest carries a signed `expires`. The app refuses it from
+    that instant ("the update feed has expired"), and refuses a
+    manifest without one. `gofastr desktop feed` stamps 30 days, or
+    `--valid-days` (1 to 365). **Sign every live feed again with this
+    release before shipping an app built on it**, and re-run the same
+    command to renew before the expiry. Apps built on older releases
+    ignore the new field.
+  - `desktop.SignUpdateFeed` takes a trailing `validFor time.Duration`
+    (0 is the 30-day default).
+  - On macOS the update must satisfy the running bundle's designated
+    requirement (for a Developer ID signature, its bundle identifier
+    and its team's Developer ID certificate), or carry the Developer ID certificate of the team in
+    the new `UpdateConfig.MacOSTeamID`.
+    An ad-hoc signed or unsigned app has no identity to pin, so its
+    installs are refused unless `UpdateConfig.MacOSAllowAdHoc` is set.
+    That covers every bundle built without `--sign`.
+  - `feed` writes `manifest.json` and `manifest.json.sig` 0644 (they
+    were 0600), and the directories it creates 0755.
+  - `feed` merges into an existing `manifest.json` only when its `.sig`
+    is this key's signature over it. It used to sign whatever manifest
+    the output directory held, entries and channels included.
 - **A refused MCP tool does not disclose its argument schema**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). An outermost
   `Gated` handler checks its gate before argument validation, like `WithToolGate`, so

@@ -135,3 +135,78 @@ func TestCopyTreeReadOnlyDirectory(t *testing.T) {
 		t.Fatalf("dst mode = %o, want 755", got)
 	}
 }
+
+// The feed pair is public: a static web server running as another user
+// reads it. The modes hold under a tight umask and over files an older
+// release wrote 0600, while the signing key and the lock stay private.
+func TestFeedFilesArePublic(t *testing.T) {
+	withUmask(t, 0o077)
+	dir := t.TempDir()
+	keyPath, _, _, _ := writeKeyFile(t, dir)
+	archive := writeArchive(t, dir)
+
+	// The trailing separator is what -o dir/feed/ hands over.
+	fresh := filepath.Join(dir, "grandparent", "parent", "feed")
+	if err := WriteFeed(fresh+string(filepath.Separator), keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	// Every directory the call made is walkable, not only the last.
+	wantMode(t, filepath.Join(dir, "grandparent"), 0o755)
+	wantMode(t, filepath.Join(dir, "grandparent", "parent"), 0o755)
+	wantMode(t, fresh, 0o755)
+	// The temp dir was there before and is not the feed's to open up.
+	wantMode(t, dir, 0o700)
+	wantMode(t, filepath.Join(fresh, "manifest.json"), 0o644)
+	wantMode(t, filepath.Join(fresh, "manifest.json.sig"), 0o644)
+	wantMode(t, filepath.Join(fresh, ".manifest.lock"), 0o600)
+	wantMode(t, keyPath, 0o600)
+
+	// A second write replaces each file by rename: a reader holding the
+	// old one keeps a whole file, never a truncated one.
+	before, err := os.Stat(filepath.Join(fresh, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		after, err := os.Stat(filepath.Join(fresh, "manifest.json"))
+		if err == nil && os.SameFile(before, after) {
+			t.Error("manifest.json was rewritten in place, not replaced")
+		}
+		if left, _ := filepath.Glob(filepath.Join(fresh, ".manifest.json*.tmp-*")); len(left) > 0 {
+			t.Errorf("temporary files left in the served directory: %v", left)
+		}
+	})
+	// A second write over the same files keeps them public.
+	if err := os.Chmod(filepath.Join(fresh, "manifest.json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(fresh, "manifest.json.sig"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeed(fresh, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	wantMode(t, filepath.Join(fresh, "manifest.json"), 0o644)
+	wantMode(t, filepath.Join(fresh, "manifest.json.sig"), 0o644)
+
+	// A directory that already exists keeps the mode its owner chose.
+	private := filepath.Join(dir, "private")
+	if err := os.Mkdir(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFeed(private, keyPath, "1.2.0", "", "darwin-arm64", archive, "https://example.com/a.zip", 0); err != nil {
+		t.Fatal(err)
+	}
+	wantMode(t, private, 0o700)
+}
+
+func wantMode(t *testing.T, path string, want fs.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Errorf("%s mode = %o, want %o", filepath.Base(path), got, want)
+	}
+}

@@ -15,7 +15,9 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 	"github.com/DonaldMurillo/gofastr/internal/filelock"
 	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
@@ -108,11 +110,31 @@ var rePlatformKey = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 // CFBundleShortVersionString. A windows-* archive's directory must hold
 // exactly <dir>.exe and WebView2Loader.dll, and the executable's
 // ProductVersion must be version. An existing manifest in outDir must
-// have the same version; its other platforms and channels are retained
-// and the merged manifest is signed again.
-func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string) error {
+// have the same version and a manifest.json.sig that verifies under
+// this key; its other platforms and channels are retained and the
+// merged manifest is signed again. An existing manifest this key did
+// not sign is refused: merging it would put this key's signature on
+// entries somebody else wrote into the directory.
+//
+// validFor is how long the manifest stays valid from now: zero means
+// DefaultFeedLifetime, and a negative one or one past MaxFeedLifetime
+// is refused. Every write stamps a new expiry, so running it again with
+// the same inputs is how a publisher renews a feed that has no newer
+// release.
+//
+// manifest.json and manifest.json.sig are written 0644, and every
+// directory this call creates is 0755: the pair is public by design,
+// served as it lies by a static web server running as another user.
+// The lock file beside them stays owner-only.
+func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveURL string, validFor time.Duration) error {
 	if _, err := ParseVersion(version); err != nil {
 		return fmt.Errorf("version %q: %w", version, err)
+	}
+	if validFor < 0 || validFor > MaxFeedLifetime {
+		return fmt.Errorf("feed lifetime %s must be between 0 (the default, %s) and %s", validFor, DefaultFeedLifetime, MaxFeedLifetime)
+	}
+	if validFor == 0 {
+		validFor = DefaultFeedLifetime
 	}
 	if !rePlatformKey.MatchString(platform) {
 		return fmt.Errorf("platform %q must be GOOS-GOARCH shaped (lowercase, dashes)", platform)
@@ -167,7 +189,7 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		}
 	}
 	sum := sha256.Sum256(data)
-	if err := os.MkdirAll(outDir, 0o700); err != nil {
+	if err := makeFeedDir(outDir); err != nil {
 		return err
 	}
 	lock, err := os.OpenFile(filepath.Join(outDir, ".manifest.lock"), os.O_CREATE|os.O_RDWR, 0o600)
@@ -186,6 +208,12 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		Notes:   notes,
 	}
 	if existing, err := os.ReadFile(filepath.Join(outDir, "manifest.json")); err == nil {
+		// The expiry is not checked: renewing an expired feed is the
+		// point. The signature is, before a byte of it is parsed.
+		existingSig, sigErr := os.ReadFile(filepath.Join(outDir, "manifest.json.sig"))
+		if sigErr != nil || VerifyFeedSignature(existing, existingSig, priv.Public().(ed25519.PublicKey)) != nil {
+			return errors.New("existing manifest: manifest.json.sig is missing or is not this key's signature over manifest.json; remove both files or use a new output directory")
+		}
 		feed = Feed{}
 		if err := json.Unmarshal(existing, &feed); err != nil {
 			return fmt.Errorf("existing manifest: %w", err)
@@ -202,6 +230,7 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 		}
 	}
 	feed.Notes = notes
+	feed.Expires = time.Now().UTC().Add(validFor).Truncate(time.Second).Format(time.RFC3339)
 	if feed.Platforms == nil {
 		feed.Platforms = make(map[string]PlatformEntry)
 	}
@@ -214,10 +243,50 @@ func WriteFeed(outDir, keyPath, version, notes, platform, archivePath, archiveUR
 	if err != nil {
 		return err
 	}
-	if err := fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json"), manifest); err != nil {
+	if err := writePublic(filepath.Join(outDir, "manifest.json"), manifest); err != nil {
 		return err
 	}
-	return fileperm.WriteOwnerOnly(filepath.Join(outDir, "manifest.json.sig"), sigFile)
+	return writePublic(filepath.Join(outDir, "manifest.json.sig"), sigFile)
+}
+
+// makeFeedDir makes the feed's output directory and any missing
+// parents. Each directory this call creates is 0755 whatever the umask,
+// since a web server walks down them to the feed; one that already
+// exists keeps the mode its owner gave it.
+func makeFeedDir(outDir string) error {
+	outDir = filepath.Clean(outDir)
+	err := os.Mkdir(outDir, 0o755)
+	if err == nil {
+		return os.Chmod(outDir, 0o755)
+	}
+	if st, statErr := os.Stat(outDir); statErr == nil {
+		if st.IsDir() {
+			return nil
+		}
+		return err
+	}
+	parent := filepath.Dir(outDir)
+	if parent == outDir || !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := makeFeedDir(parent); err != nil {
+		return err
+	}
+	if err := os.Mkdir(outDir, 0o755); err != nil {
+		if st, statErr := os.Stat(outDir); statErr == nil && st.IsDir() {
+			return nil // another writer made it between the two calls
+		}
+		return err
+	}
+	return os.Chmod(outDir, 0o755)
+}
+
+// writePublic writes one public feed file as 0644, on create and on
+// overwrite alike. The file is replaced, not rewritten: a reader never
+// sees half of it, and a file an older release wrote owner-only (0600,
+// or an owner-only ACL on Windows) is gone with its permissions.
+func writePublic(path string, data []byte) error {
+	return atomicfile.WriteFile(path, data, atomicfile.Mode(0o644))
 }
 
 // zipRootName names the archive's top-level directory and, when

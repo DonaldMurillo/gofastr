@@ -9,8 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/DonaldMurillo/gofastr/internal/fileperm/filepermtest"
+	"time"
 )
 
 // writeKeyFile writes a keygen-format key pair and returns the paths.
@@ -46,7 +45,7 @@ func TestWriteFeedProducesVerifiablePair(t *testing.T) {
 	archive := writeArchive(t, dir)
 	out := filepath.Join(dir, "feed")
 	err := WriteFeed(out, keyPath, "1.2.0", "What changed", "darwin-arm64", archive,
-		"https://example.com/Notes-1.2.0.zip")
+		"https://example.com/Notes-1.2.0.zip", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +57,7 @@ func TestWriteFeedProducesVerifiablePair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := ParseFeed(manifest, sig, pub)
+	f, err := ParseFeed(manifest, sig, pub, time.Now())
 	if err != nil {
 		t.Fatalf("the written pair does not verify: %v", err)
 	}
@@ -74,10 +73,6 @@ func TestWriteFeedProducesVerifiablePair(t *testing.T) {
 	if err := VerifyArchive(archiveBytes, e); err != nil {
 		t.Fatalf("entry does not match its archive: %v", err)
 	}
-	// The output files are owner-only.
-	for _, p := range []string{filepath.Join(out, "manifest.json"), filepath.Join(out, "manifest.json.sig")} {
-		filepermtest.AssertOwnerOnly(t, p, 0o600)
-	}
 }
 
 func TestWriteFeedRefusesBadInputs(t *testing.T) {
@@ -86,33 +81,33 @@ func TestWriteFeedRefusesBadInputs(t *testing.T) {
 	archive := writeArchive(t, dir)
 	ok := func() error {
 		return WriteFeed(filepath.Join(dir, "out"), keyPath, "1.2.0", "", "darwin-arm64", archive,
-			"https://example.com/Notes.zip")
+			"https://example.com/Notes.zip", 0)
 	}
 	if err := ok(); err != nil {
 		t.Fatalf("baseline write failed: %v", err)
 	}
 	bad := map[string]func() error{
 		"non-semver version": func() error {
-			return WriteFeed(filepath.Join(dir, "o1"), keyPath, "1.2", "", "darwin-arm64", archive, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o1"), keyPath, "1.2", "", "darwin-arm64", archive, "https://e.com/a.zip", 0)
 		},
 		"bad platform grammar": func() error {
-			return WriteFeed(filepath.Join(dir, "o2"), keyPath, "1.2.0", "", "darwin arm64", archive, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o2"), keyPath, "1.2.0", "", "darwin arm64", archive, "https://e.com/a.zip", 0)
 		},
 		"plain http url": func() error {
-			return WriteFeed(filepath.Join(dir, "o3"), keyPath, "1.2.0", "", "darwin-arm64", archive, "http://example.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o3"), keyPath, "1.2.0", "", "darwin-arm64", archive, "http://example.com/a.zip", 0)
 		},
 		"missing key file": func() error {
-			return WriteFeed(filepath.Join(dir, "o4"), filepath.Join(dir, "nope.key"), "1.2.0", "", "darwin-arm64", archive, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o4"), filepath.Join(dir, "nope.key"), "1.2.0", "", "darwin-arm64", archive, "https://e.com/a.zip", 0)
 		},
 		"missing archive": func() error {
-			return WriteFeed(filepath.Join(dir, "o5"), keyPath, "1.2.0", "", "darwin-arm64", filepath.Join(dir, "nope.zip"), "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o5"), keyPath, "1.2.0", "", "darwin-arm64", filepath.Join(dir, "nope.zip"), "https://e.com/a.zip", 0)
 		},
 		"not a zip": func() error {
 			p := filepath.Join(dir, "plain.txt")
 			if err := os.WriteFile(p, []byte("text"), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			return WriteFeed(filepath.Join(dir, "o6"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o6"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip", 0)
 		},
 		"no app root": func() error {
 			p := filepath.Join(dir, "plain.zip")
@@ -123,7 +118,7 @@ func TestWriteFeedRefusesBadInputs(t *testing.T) {
 			if err := os.WriteFile(p, data, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			return WriteFeed(filepath.Join(dir, "o7"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o7"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip", 0)
 		},
 		"two app roots": func() error {
 			p := filepath.Join(dir, "two.zip")
@@ -137,7 +132,7 @@ func TestWriteFeedRefusesBadInputs(t *testing.T) {
 			if err := os.WriteFile(p, data, 0o600); err != nil {
 				t.Fatal(err)
 			}
-			return WriteFeed(filepath.Join(dir, "o8"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip")
+			return WriteFeed(filepath.Join(dir, "o8"), keyPath, "1.2.0", "", "darwin-arm64", p, "https://e.com/a.zip", 0)
 		},
 	}
 	for name, fn := range bad {
@@ -249,7 +244,7 @@ func TestWriteFeedRefusesArchivesTheUpdaterRefuses(t *testing.T) {
 				t.Fatal(err)
 			}
 			out := filepath.Join(t.TempDir(), "feed")
-			err := WriteFeed(out, keyPath, "1.2.0", "", "darwin-arm64", p, "https://example.com/Notes.zip")
+			err := WriteFeed(out, keyPath, "1.2.0", "", "darwin-arm64", p, "https://example.com/Notes.zip", 0)
 			if !errors.Is(err, ErrBadArchive) {
 				t.Fatalf("WriteFeed = %v, want ErrBadArchive", err)
 			}

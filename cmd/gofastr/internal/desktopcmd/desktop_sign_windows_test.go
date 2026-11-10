@@ -145,7 +145,7 @@ func TestWindowsZipIsAFeedArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 	feedDir := t.TempDir()
-	if err := desktop.SignUpdateFeed(feedDir, key, "1.3.0", "", "windows-amd64", zipPath, "https://example.com/Notes.zip"); err != nil {
+	if err := desktop.SignUpdateFeed(feedDir, key, "1.3.0", "", "windows-amd64", zipPath, "https://example.com/Notes.zip", 0); err != nil {
 		t.Fatalf("feed refused the --zip archive: %v", err)
 	}
 	raw, err := os.ReadFile(filepath.Join(feedDir, "manifest.json"))
@@ -158,12 +158,12 @@ func TestWindowsZipIsAFeedArchive(t *testing.T) {
 	if err := json.Unmarshal(raw, &manifest); err != nil || manifest.Platforms["windows-amd64"] == nil {
 		t.Fatalf("manifest = %s, %v", raw, err)
 	}
-	err = desktop.SignUpdateFeed(t.TempDir(), key, "1.4.0", "", "windows-amd64", zipPath, "https://example.com/Notes.zip")
+	err = desktop.SignUpdateFeed(t.TempDir(), key, "1.4.0", "", "windows-amd64", zipPath, "https://example.com/Notes.zip", 0)
 	if err == nil || !strings.Contains(err.Error(), "ProductVersion") {
 		t.Fatalf("a mislabelled Windows archive: err = %v, want the ProductVersion mismatch", err)
 	}
 	// The same archive under a darwin key is not a .app bundle.
-	if err := desktop.SignUpdateFeed(t.TempDir(), key, "1.3.0", "", "darwin-arm64", zipPath, "https://example.com/Notes.zip"); err == nil {
+	if err := desktop.SignUpdateFeed(t.TempDir(), key, "1.3.0", "", "darwin-arm64", zipPath, "https://example.com/Notes.zip", 0); err == nil {
 		t.Fatal("a Windows archive was signed as a darwin bundle")
 	}
 }

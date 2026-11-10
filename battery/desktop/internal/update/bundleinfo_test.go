@@ -77,7 +77,7 @@ func TestWriteFeedRefusesVersionMismatch(t *testing.T) {
 	dir := t.TempDir()
 	keyPath, _, _, _ := writeKeyFile(t, dir)
 	archive := writeArchive(t, dir) // Info.plist says 1.2.0
-	err := WriteFeed(filepath.Join(dir, "out"), keyPath, "1.3.0", "", "darwin-arm64", archive, "https://e.com/a.zip")
+	err := WriteFeed(filepath.Join(dir, "out"), keyPath, "1.3.0", "", "darwin-arm64", archive, "https://e.com/a.zip", 0)
 	if err == nil || !strings.Contains(err.Error(), "CFBundleShortVersionString") {
 		t.Fatalf("feed labelled 1.3.0 over a 1.2.0 bundle: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestWriteFeedRefusesVersionMismatch(t *testing.T) {
 	if err := os.WriteFile(noPlist, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteFeed(filepath.Join(dir, "o2"), keyPath, "1.2.0", "", "darwin-arm64", noPlist, "https://e.com/a.zip"); !errors.Is(err, ErrBadBundleInfo) {
+	if err := WriteFeed(filepath.Join(dir, "o2"), keyPath, "1.2.0", "", "darwin-arm64", noPlist, "https://e.com/a.zip", 0); !errors.Is(err, ErrBadBundleInfo) {
 		t.Fatalf("archive without Info.plist accepted: %v", err)
 	}
 }
