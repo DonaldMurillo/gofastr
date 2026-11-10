@@ -40,7 +40,7 @@ its own.
 | Package | What it is |
 |---|---|
 | `battery/desktop` | The contract (`Shell`, `Window`, `NativeDriver`) and the OS-neutral half: capabilities, grants, handshake, app state, preferences, deep links, updates, and the unsupported shell. |
-| `battery/desktop/macos` | The real shell on darwin/arm64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
+| `battery/desktop/macos` | The real shell on darwin/arm64 and darwin/amd64 (AppKit + WKWebView through `internal/objc`); the unsupported shell elsewhere. |
 | `battery/desktop/windows` | The Windows/amd64 shell: Win32, WebView2, native capabilities, custom titlebar support, and DWM Mica/Mica Alt/Acrylic. |
 | `battery/desktop/linux` | GTK 3 / WebKitGTK 4.1 shell on linux/amd64 and linux/arm64; unsupported elsewhere. |
 | `battery/desktop/native` | `Shell()` picks the platform package by GOOS; `New(cfg)` is `desktop.New` with that shell as the nil-`Shell` default. The `gofastr_nodesktop` build tag leaves every platform package out (see [A server build that never opens a window](#a-server-build-that-never-opens-a-window)). |
