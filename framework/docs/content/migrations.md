@@ -383,12 +383,29 @@ because the tightening fails while any row holds NULL. A required field
 that has a default keeps `NOT NULL`, since every existing row gets the
 default.
 
+On SQLite a removed field does not always become a `DROP COLUMN`. SQLite
+refuses that statement on a column that is `UNIQUE`, that an index covers,
+or that a foreign key names, so removing a `unique` field or a relation's
+foreign-key field rebuilds the table without the column (the rebuild
+described below; a key column dropped in a key change leaves the same
+way). The rebuild holds no `DROP COLUMN` statement, so the file carries
+one comment line above it per column, `-- DROP COLUMN posts.slug by table
+rebuild: …`. A migration holding a rebuild has no `Down`, and generation
+refuses a rebuild of a table other tables reference, as below. A plain
+column still drops with `DROP COLUMN`, and Postgres drops every column
+that way. `DiffSchema` does the same from the live table's indexes and
+foreign keys, so its drop of such a column applies under
+`AllowDestructive`; the rebuild recreates the entity's indices only, so
+an index made by hand on the table goes with it.
+
 `gofastr migrate generate` warns on its own output when the Up section
-runs any `DROP TABLE` or `DROP COLUMN`, naming each one. A rename is
+runs any `DROP TABLE` or `DROP COLUMN`, naming each one, a column a
+SQLite rebuild leaves out included. A rename is
 indistinguishable from a removal, so an undeclared rename generates as a
 drop plus a create and loses every row; if the drop is a rename in
 disguise, declare it (`renames:` on the entity) and regenerate instead.
-The warning ignores SQL comments and quoted routine bodies. A SQLite
+The warning ignores quoted routine bodies and SQL comments, other than
+the rebuild's own `-- DROP COLUMN … by table rebuild` line. A SQLite
 rebuild also drops the old table after copying its rows; review that
 copy rather than treating every `DROP TABLE` as a table removal.
 
@@ -1357,7 +1374,8 @@ column its writes scope by.
 For destructive changes (drops, renames, type changes), use `gofastr
 migrate generate <name>` to emit a reviewable versioned migration, where a
 removed field generates a `DROP COLUMN` whose `Down` re-adds the column
-but does not restore row data, then `gofastr migrate up`, or write a
+but does not restore row data (on SQLite, a table rebuild with no `Down`
+when the column is unique, indexed or a foreign key), then `gofastr migrate up`, or write a
 numbered SQL file by hand and stop using auto-migrate for that table.
 
 `AutoMigrateContext(ctx, db, registry)` is the context-aware variant.

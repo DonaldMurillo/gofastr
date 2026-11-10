@@ -34,6 +34,11 @@ func (local transport) RoundTrip(request *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 	incoming := request.Clone(request.Context())
+	// A server never hands a handler a nil Body, and a client request
+	// with nothing to send (a GET, a DELETE) carries one.
+	if incoming.Body == nil {
+		incoming.Body = http.NoBody
+	}
 	if incoming.Host == "" {
 		incoming.Host = incoming.URL.Host
 	}

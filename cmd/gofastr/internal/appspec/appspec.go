@@ -2364,9 +2364,20 @@ func decodeBlocks(node *coreyaml.Node) ([]AppSpecBlock, error) {
 		if err != nil {
 			return nil, err
 		}
+		// A catalog kind spelled `type:` is that kind: the block decodes
+		// as if `kind:` had named it, so the validator, the import scan
+		// and the emitter all read one field. They read different ones
+		// before: the load validated `type: card` as a card, and the
+		// emitter, which draws the catalog from Kind alone, sent it to the
+		// node renderer in a file that did not import it. `type: section`
+		// keeps its older meaning, the plain <section> tag.
+		blockType, blockKind := stringValue(m["type"]), stringValue(m["kind"])
+		if strings.TrimSpace(blockKind) == "" && typeNamesCatalogKind(blockType) {
+			blockType, blockKind = "", blockType
+		}
 		out = append(out, AppSpecBlock{
-			Type:      stringValue(m["type"]),
-			Kind:      stringValue(m["kind"]),
+			Type:      blockType,
+			Kind:      blockKind,
 			Text:      stringValue(m["text"]),
 			Level:     intValue(m["level"]),
 			Class:     stringValue(m["class"]),
@@ -3476,18 +3487,26 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		if len(block.Fields) == 0 {
 			return fmt.Errorf("app spec: screen %q entity_list block fields are required", screenName)
 		}
-		validFields := map[string]bool{}
-		if DeclKeyIsID(decl) {
-			validFields["id"] = true
-		}
-		for _, field := range decl.Fields {
-			validFields[field.Name] = true
-			validFields[ToCamelJSON(field.Name)] = true
-		}
+		// Each entry resolves to one declared column, the one the generator
+		// emits into .Columns(...). entityui draws a column once and only
+		// for a visible, non-omitted field, and fails the whole list
+		// otherwise, so a hidden, omitted or repeated one is refused here.
+		listed := map[string]bool{}
 		for _, field := range block.Fields {
-			if !validFields[field] {
+			col, ok := EntityListColumn(decl, field)
+			if !ok {
 				return fmt.Errorf("app spec: screen %q entity_list field %q is not defined on entity %q", screenName, field, block.Entity)
 			}
+			if col.Hidden {
+				return fmt.Errorf("app spec: screen %q entity_list field %q is hidden on entity %q: a list cannot show it", screenName, field, block.Entity)
+			}
+			if decl.Display != nil && decl.Display.Fields[col.Name].Omit {
+				return fmt.Errorf("app spec: screen %q entity_list field %q is omitted by entity %q's display.fields: a list cannot show it", screenName, field, block.Entity)
+			}
+			if listed[col.Name] {
+				return fmt.Errorf("app spec: screen %q entity_list field %q is listed twice", screenName, field)
+			}
+			listed[col.Name] = true
 		}
 		if err := validateEntityListFilter(screenName, decl, block.Filter); err != nil {
 			return err
@@ -3758,7 +3777,8 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 // The pin lands on entityui's ListBuilder.Where, which pins field =
 // value on every read inside the caller's scope — the same one-bit
 // oracle the stat_card filter guard closes, so the same columns are
-// barred here.
+// barred here. So is a column whose type takes no equality filter (a
+// json field): crud refuses the pin on every read, whatever the value.
 func validateEntityListFilter(screenName string, decl framework.EntityDeclaration, filter string) error {
 	if filter == "" {
 		return nil
@@ -3777,6 +3797,13 @@ func validateEntityListFilter(screenName string, decl framework.EntityDeclaratio
 		if f.NoQuery {
 			return fmt.Errorf("app spec: screen %q entity_list filter column %q is no_query (the pinned list would match on the stored value)", screenName, f.Name)
 		}
+		sf, err := f.Field()
+		if err != nil {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q: %w", screenName, f.Name, err)
+		}
+		if !fwfilter.OpSuitsType(fwfilter.OpEq, sf.Type) {
+			return fmt.Errorf("app spec: screen %q entity_list filter column %q is a %s field, which no filter can match on", screenName, f.Name, f.Type)
+		}
 		return validateFilterValue(screenName, "entity_list filter", f, value, true)
 	}
 	return fmt.Errorf("app spec: screen %q entity_list filter column %q is not defined on entity %q", screenName, field, decl.Name)
@@ -3793,6 +3820,23 @@ func EntityListPinColumn(decl framework.EntityDeclaration, field string) (framew
 		if f.Name == field || ToCamelJSON(f.Name) == field {
 			return f, true
 		}
+	}
+	return framework.FieldDeclaration{}, false
+}
+
+// EntityListColumn resolves one entry of an entity_list's `fields:` to
+// the declared column it names: by its name or its camel JSON spelling
+// (EntityListPinColumn, the pin's resolution), or the generated "id" of
+// an entity keyed on it. The load checks each entry through it and the
+// generator emits the column it returns in .Columns(...), because
+// entityui's list resolves columns by declared name: the camel spelling
+// emitted as written failed the whole list.
+func EntityListColumn(decl framework.EntityDeclaration, field string) (framework.FieldDeclaration, bool) {
+	if f, ok := EntityListPinColumn(decl, field); ok {
+		return f, true
+	}
+	if field == "id" && DeclKeyIsID(decl) {
+		return framework.FieldDeclaration{Name: "id"}, true
 	}
 	return framework.FieldDeclaration{}, false
 }
@@ -4662,6 +4706,15 @@ func AppSpecCatalogKind(kind string) bool {
 		return true
 	}
 	return AppSpecControlKind(kind)
+}
+
+// typeNamesCatalogKind reports whether a block's `type:` names a kind the
+// generator draws from the framework/ui catalog and nothing older:
+// decodeBlocks reads such a `type:` as the block's `kind:`. `section` is
+// left out. It is a catalog kind under `kind:` (ui.Section), and under
+// `type:` the plain <section> tag the sugar keys have always drawn.
+func typeNamesCatalogKind(blockType string) bool {
+	return AppSpecCatalogKind(blockType) && !strings.EqualFold(strings.TrimSpace(blockType), "section")
 }
 
 func AppSpecBlockUsesNodeRenderer(block AppSpecBlock) bool {

@@ -116,22 +116,31 @@ func runMigrateGenerate(args []string) {
 // which is the rollback, not a loss. Statements are split with string
 // literals, quoted identifiers and comments respected, so a DEFAULT
 // carrying the words DROP TABLE is not a drop.
+//
+// A SQLite rebuild drops a column with no DROP COLUMN statement: the new
+// table leaves it out. The generator writes one comment line above the
+// rebuild for each such column (rebuildDropNote), and that line, the one
+// comment read here, is named like the statement it stands in for.
 func destructiveDrops(content string) []string {
 	up, ok := upSection(content)
 	if !ok {
 		return nil
 	}
 	var drops []string
-	for _, stmt := range splitSQLStatements(up) {
+	walkSQL(up, func(stmt string) {
 		stmt = strings.TrimSpace(stmt)
 		if t, ok := dropTableTarget(stmt); ok {
 			drops = append(drops, "DROP TABLE "+t)
-			continue
+			return
 		}
 		if t, c, ok := dropColumnTarget(stmt); ok {
 			drops = append(drops, "DROP COLUMN "+t+"."+c)
 		}
-	}
+	}, func(comment string) {
+		if m := rebuildDropNote.FindStringSubmatch(comment); m != nil {
+			drops = append(drops, "DROP COLUMN "+unquoteIdent(m[1])+"."+unquoteIdent(m[2]))
+		}
+	})
 	return drops
 }
 
@@ -156,10 +165,11 @@ func upSection(content string) (string, bool) {
 	return b.String(), in
 }
 
-// splitSQLStatements splits SQL on ";" outside single-quoted strings,
-// double-quoted identifiers, dollar-quoted bodies and comments.
-func splitSQLStatements(sql string) []string {
-	var stmts []string
+// walkSQL splits SQL on ";" outside single-quoted strings, double-quoted
+// identifiers, dollar-quoted bodies and comments, and hands each statement
+// to stmt in order. Each "--" comment outside those goes to lineComment,
+// whole, as it is met.
+func walkSQL(sql string, stmt, lineComment func(string)) {
 	var cur []byte
 	var quote byte
 	var escapes bool
@@ -205,8 +215,10 @@ func splitSQLStatements(sql string) []string {
 				i += length - 1
 			}
 		case c == '-' && i+1 < len(sql) && sql[i+1] == '-':
+			start := i
 			for ; i < len(sql) && sql[i] != '\n'; i++ {
 			}
+			lineComment(sql[start:i])
 			cur = append(cur, ' ')
 		case c == '/' && i+1 < len(sql) && sql[i+1] == '*':
 			depth := 1
@@ -226,16 +238,15 @@ func splitSQLStatements(sql string) []string {
 			i--
 			cur = append(cur, ' ')
 		case c == ';':
-			stmts = append(stmts, string(cur))
+			stmt(string(cur))
 			cur = cur[:0]
 		default:
 			cur = append(cur, c)
 		}
 	}
 	if s := strings.TrimSpace(string(cur)); s != "" {
-		stmts = append(stmts, string(cur))
+		stmt(string(cur))
 	}
-	return stmts
 }
 
 // identPart and qualName match the spellings query.QuoteKeyword emits:
@@ -250,6 +261,12 @@ var (
 	dollarQuoteRe = regexp.MustCompile(`^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$`)
 	dropTableRe   = regexp.MustCompile(`(?i)^DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(` + qualName + `)`)
 	dropColumnRe  = regexp.MustCompile(`(?i)^ALTER\s+TABLE\s+(` + qualName + `)\s+DROP\s+COLUMN\s+(?:IF\s+EXISTS\s+)?(` + identPart + `)`)
+	// rebuildDropNote matches the comment framework/migrate writes above a
+	// SQLite rebuild for each column the rebuild leaves out
+	// ("-- DROP COLUMN posts.slug by table rebuild: …"). The table is
+	// greedy and the column one part, so a schema-qualified table keeps
+	// its dots.
+	rebuildDropNote = regexp.MustCompile(`^-- DROP COLUMN (` + qualName + `)\.(` + identPart + `) by table rebuild`)
 )
 
 func dropTableTarget(stmt string) (string, bool) {

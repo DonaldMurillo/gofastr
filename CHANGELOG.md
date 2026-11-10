@@ -590,6 +590,32 @@ few lines, and link the PR or the docs page for the rest.
 - **`MemoryQueue.Replay` runs the job now.** A job dead-lettered because
   a handler's `RetryAfter` landed past its `MaxAge` kept that future due
   time, so a replay did nothing until the stale delay ran out.
+- **`gofastr migrate generate` writes a SQLite migration that applies
+  when a unique field or a relation is removed**
+  ([migrations](framework/docs/content/migrations.md)). SQLite refuses
+  `DROP COLUMN` on a column that is UNIQUE, indexed or named by a foreign
+  key, so the bare `DROP COLUMN` failed `migrate up` with "cannot drop
+  UNIQUE column". Those columns now leave with a table rebuild, which
+  carries a `-- DROP COLUMN t.c by table rebuild` line, and the generate
+  warning names the column. `DiffSchema` does the same from the live
+  table's indexes and foreign keys.
+- **App spec: a catalog block spelled `type:` generates like `kind:`**
+  ([app spec](framework/docs/content/app-spec.md)). `type: card`,
+  `type: page_header`, `type: stat_card` and the controls loaded, then
+  generated a screen file that did not compile (`undefined:
+  noderender`). `type: section` stays the plain `<section>` tag and now
+  compiles with children.
+- **App spec: `entity_list` refuses what its list cannot draw.** A
+  `filter:` on a `json` field, and a `fields:` entry that is hidden,
+  omitted by the entity's `display.fields`, or listed twice, each loaded
+  and then rendered "Couldn't load this section" on every read. They are
+  refused at load. A `fields:` entry in camelCase (`authorName`) now
+  generates as its column.
+- **A generated Local repository hands handlers a non-nil `r.Body`**
+  ([SDK](framework/docs/content/sdk.md)). `List`, `Get` and `Delete`
+  reached the app with a nil body, so middleware that drains or closes
+  `r.Body` panicked under Local while the same call worked on Remote.
+  Regenerate the SDK to pick it up.
 - **The `Sunset` header is an HTTP-date**
   ([API versioning](framework/docs/content/api-versioning.md)).
   `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local

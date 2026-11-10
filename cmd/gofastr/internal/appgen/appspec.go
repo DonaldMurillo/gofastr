@@ -2990,10 +2990,14 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	if countEntityListBlocks(screen) > 1 {
 		expr += fmt.Sprintf(".Key(%q)", entity)
 	}
+	// Each fields: entry goes out as its declared column, not the author's
+	// spelling (camelJSON resolves), because the builder resolves byName.
+	// An entry that names no field is validateAppSpec's to refuse; an
+	// unvalidated render emits it as written.
 	if len(block.Fields) > 0 {
 		args := make([]string, len(block.Fields))
 		for i, f := range block.Fields {
-			args[i] = fmt.Sprintf("%q", f)
+			args[i] = fmt.Sprintf("%q", appSpecEntityListColumn(bp, entity, f))
 		}
 		expr += ".Columns(" + strings.Join(args, ", ") + ")"
 	}
@@ -3049,6 +3053,21 @@ func appSpecEntityListExpr(bp appspec.AppSpec, screen appspec.AppSpecScreen, blo
 	}
 	// The builder is a component; the screen's stack takes HTML.
 	return expr + ".RenderCtx(ctx)"
+}
+
+// appSpecEntityListColumn resolves one entity_list fields: entry to the
+// declared column name (appspec.EntityListColumn), or returns it as
+// written when the entity or the field is unknown.
+func appSpecEntityListColumn(bp appspec.AppSpec, entity, field string) string {
+	for _, decl := range bp.Entities {
+		if decl.Name != entity {
+			continue
+		}
+		if fd, ok := appspec.EntityListColumn(decl, field); ok {
+			return fd.Name
+		}
+	}
+	return field
 }
 
 // appSpecEntityListFilterParts splits an entity_list's pinned filter into
@@ -3156,10 +3175,6 @@ func appSpecScreensImportNeeds(bp appspec.AppSpec, screens []appspec.AppSpecScre
 		var scan func([]appspec.AppSpecBlock, bool)
 		scan = func(blocks []appspec.AppSpecBlock, top bool) {
 			for _, block := range blocks {
-				kind := block.Kind
-				if kind == "" {
-					kind = block.Type
-				}
 				if isLoginFormBlock(block) || isSignupFormBlock(block) {
 					// Auth forms compose ui.AuthCard + ui.Form + FormField
 					// builders with ui.Control.
@@ -3185,7 +3200,11 @@ func appSpecScreensImportNeeds(bp appspec.AppSpec, screens []appspec.AppSpecScre
 					// package-level in the app: no import needed here.
 					continue
 				}
-				if appspec.AppSpecCatalogKind(kind) {
+				// Kind alone, as renderAppSpecCatalogBlock dispatches: a
+				// `type: section` with children is a node block, and reading
+				// it as the catalog section here left its screen file using
+				// noderender with no import.
+				if appspec.AppSpecCatalogKind(block.Kind) {
 					needs.ui = true
 					scan(block.Children, false)
 					continue

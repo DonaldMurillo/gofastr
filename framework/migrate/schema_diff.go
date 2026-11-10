@@ -138,6 +138,11 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 	}
 	canonicalRefTables(fksByTable, all, dialect)
 	env := &fkDiffEnv{fks: fksByTable, tables: liveByTable, keyChanged: map[string][]string{}}
+	if dialect == DialectSQLite {
+		if env.indexed, err = readSQLiteIndexedColumnsQ(ctx, db, existing); err != nil {
+			return nil, err
+		}
+	}
 	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue
@@ -598,6 +603,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	}
 	keyChanged := lk != nil && !sameKey(lk.cols, ent.KeyColumns())
 	var rebuildDrops []string
+	rebuildDropNotes := ""
 	if keyChanged && dialect == DialectPostgres {
 		var tables map[string]map[string]string
 		var extraKeep []string
@@ -629,7 +635,13 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	}
 
 	// DROP COLUMN for live-but-undeclared (skip framework-managed columns).
-	// Sorted for stable output.
+	// Sorted for stable output. SQLite refuses DROP COLUMN on a column that
+	// is UNIQUE, indexed or named by a foreign key, as on a key column, so
+	// those leave with the rebuild below (see sqlite_drop_column.go).
+	var sqliteHeld map[string]bool
+	if dialect == DialectSQLite {
+		sqliteHeld = sqliteHeldColumns(ent, env)
+	}
 	liveNames := make([]string, 0, len(live))
 	for name := range live {
 		liveNames = append(liveNames, name)
@@ -645,13 +657,14 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if renameSources[strings.ToLower(name)] {
 			continue // handled by RENAME COLUMN above
 		}
-		if keyChanged && dialect == DialectSQLite && keyHas(lk.cols, name) {
-			rebuildDrops = append(rebuildDrops, name)
-			continue
-		}
 		qcol, err := query.SafeIdent(name)
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", name, err)
+		}
+		if dialect == DialectSQLite && ((keyChanged && keyHas(lk.cols, name)) || sqliteHeld[strings.ToLower(name)]) {
+			rebuildDrops = append(rebuildDrops, name)
+			rebuildDropNotes += sqliteRebuildDropNote(qtable, qcol)
+			continue
 		}
 		ddl := fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", ddlIdent(qtable), ddlIdent(qcol))
 		// Inverse re-adds the column with the type it had in the previous
@@ -720,7 +733,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 	// entity, so it must see the column set the renames/adds/drops above
 	// already converged. One change per table, no matter how many columns
 	// retyped — the rebuild converges every declared type at once.
-	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || fkDiffer || uniqueRebuild || constraintRebuild {
+	if len(sqliteRetypes) > 0 || (keyChanged && dialect == DialectSQLite) || len(rebuildDrops) > 0 || fkDiffer || uniqueRebuild || constraintRebuild {
 		var parts []string
 		for _, r := range sqliteRetypes {
 			parts = append(parts, fmt.Sprintf("%s type %s → %s", r.name, r.liveType, r.declaredType))
@@ -733,7 +746,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			summary = strings.TrimPrefix(summary+"; "+keyChangeSummary(lk.cols, ent.KeyColumns()), "; ")
 		}
 		for _, name := range rebuildDrops {
-			summary += "; drop column " + name
+			summary = strings.TrimPrefix(summary+"; drop column "+name, "; ")
 		}
 		if fkDiffer {
 			summary = strings.TrimPrefix(summary+"; change foreign keys to the declared relations", "; ")
@@ -764,6 +777,7 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, err
 		}
+		rebuild.SQL = rebuildDropNotes + rebuild.SQL
 		changes = append(changes, rebuild)
 	}
 
@@ -1001,7 +1015,7 @@ func sqliteRebuildChange(ent *entity.Entity, all map[string]*entity.Entity, dial
 	for name, typ := range live {
 		low := strings.ToLower(name)
 		if declaredLower[low] || (!keepUndeclared && !isFrameworkManagedColumn(low, ent)) {
-			continue // undeclared non-managed columns were dropped by the DROP loop
+			continue // undeclared non-managed columns were dropped by the DROP loop, or leave here (rebuildDrops)
 		}
 		managed = append(managed, name)
 		_ = typ

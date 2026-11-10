@@ -549,6 +549,25 @@ screens:
                   text: Moves with stamps.
           - kind: markdown
             text: "## Union\n\nA **markdown** block with a list:\n\n- one\n- two"
+  # Catalog kinds spelled `type:` read as `kind:`. `type: section` is the
+  # exception: with children it is the node renderer's plain <section>.
+  - name: type_spelled
+    route: /type-spelled
+    title: Type spelled
+    body:
+      - type: page_header
+        props:
+          title: Type spelled
+      - type: card
+        props:
+          heading: A card
+        children:
+          - type: paragraph
+            text: Inside the card.
+      - type: section
+        children:
+          - type: paragraph
+            text: Inside the section.
   # Control blocks: a form with every input kind, tables, a list, a
   # button and a link group.
   - name: contact
@@ -765,9 +784,11 @@ screens:
     route: /products
     title: Products
     body:
+      # launchedOn is launched_on by its JSON spelling: the list takes
+      # either and draws the declared column.
       - kind: entity_list
         entity: products
-        fields: [name, price, stock, active]
+        fields: [name, price, stock, active, launchedOn]
         mode: table
   # A standalone create form for an entity with a relation.
   - name: product_new
