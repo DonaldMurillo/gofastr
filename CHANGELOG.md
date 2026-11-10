@@ -565,6 +565,31 @@ few lines, and link the PR or the docs page for the rest.
   each a 400. Examples now use a value of the field's type. The page
   also warns about an ambiguous filter key when a field sets `WireName`
   to its own name, which it used to skip.
+- **Idempotency no longer caches a response the handler never wrote**
+  ([idempotency](framework/docs/content/idempotency.md)). A handler that
+  returned without writing after its request ended (the deadline
+  answered 504, or the client hung up) was recorded as `200` with an
+  empty body and replayed with `Idempotent-Replay: true` for the whole
+  TTL, for a write that never ran. The claim is now released and the
+  retry runs the handler. A 2xx the handler did write is still cached,
+  even when it was written after the deadline.
+- **cron: a late tick under leader election no longer loses minutes to
+  its own lease** ([cron](framework/docs/content/cron.md)). The catch-up
+  walk asked for the lease once per missed minute while its release of
+  the previous minute was still in flight, so a real lock refused it: a
+  late tick could skip the current minute and run no `* * * * *` job at
+  all, on a single replica. A tick lease is now taken for each minute
+  only after the previous release has returned; a lease with `Acquire`
+  alone is taken once for the whole walk and held until its jobs finish.
+- **`DBQueue` applies `MaxAge` when a worker dies**
+  ([queue](framework/docs/content/queue.md)). `MaxAge` was read only
+  when an attempt failed; a claim whose lease expired was handed out
+  again after every lost worker until its attempts ran out, however old
+  the job. The pre-claim sweep now dead-letters an expired claim past
+  `CreatedAt + MaxAge`.
+- **`MemoryQueue.Replay` runs the job now.** A job dead-lettered because
+  a handler's `RetryAfter` landed past its `MaxAge` kept that future due
+  time, so a replay did nothing until the stale delay ran out.
 - **The `Sunset` header is an HTTP-date**
   ([API versioning](framework/docs/content/api-versioning.md)).
   `apiversions` wrote the time's own zone ("... 00:00:00 UTC", or a local
