@@ -291,6 +291,43 @@ func TestClosedOrderRefusesChanges(t *testing.T) {
 	s.must(http.StatusCreated, "POST", "/api/order_items", itemBody(openID, headphones, "1"))
 }
 
+// TestOrderCreateNeedsNoTotals: subtotal and total are derived, so a
+// create need not send them, and a value sent is not stored.
+func TestOrderCreateNeedsNoTotals(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and boots the storefront")
+	}
+	s := newShop(t)
+	bare := s.must(http.StatusCreated, "POST", "/api/orders", `{"customerName":"Bare","customerEmail":"bare@shop.test"}`)
+	spoofed := s.must(http.StatusCreated, "POST", "/api/orders", `{"customerName":"Spoof","customerEmail":"spoof@shop.test","subtotal":"99999","total":"99999"}`)
+	for name, row := range map[string]map[string]any{"bare": bare, "spoofed": spoofed} {
+		stored := s.must(http.StatusOK, "GET", "/api/orders/"+fmt.Sprint(row["id"]), "")
+		if s.money(stored["subtotal"]).Sign() != 0 || s.money(stored["total"]).Sign() != 0 {
+			t.Errorf("%s empty order stores subtotal %v total %v, want 0 and 0", name, stored["subtotal"], stored["total"])
+		}
+	}
+	// The API contract says so too: a readOnly property is one a
+	// request does not send (OpenAPI 3: required applies to responses).
+	code, _, raw := s.do("GET", "/openapi.json", "")
+	var spec struct {
+		Components struct {
+			Schemas map[string]struct {
+				Properties map[string]struct {
+					ReadOnly bool `json:"readOnly"`
+				} `json:"properties"`
+			} `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil || code != http.StatusOK {
+		t.Fatalf("GET /openapi.json = %d (%v)", code, err)
+	}
+	for _, field := range []string{"subtotal", "total"} {
+		if !spec.Components.Schemas["orders"].Properties[field].ReadOnly {
+			t.Errorf("OpenAPI orders.%s is not readOnly: clients are told to send it", field)
+		}
+	}
+}
+
 // relRedAdmin signs in the seeded admin, whose role holds catalog:write.
 func relRedAdmin(t *testing.T, base string) *http.Client {
 	t.Helper()

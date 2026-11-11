@@ -219,6 +219,8 @@ entities:
       - name: subtotal
         type: decimal
         required: true
+        read_only: true
+        default: 0
         min: 0
       - name: tax
         type: decimal
@@ -231,6 +233,8 @@ entities:
       - name: total
         type: decimal
         required: true
+        read_only: true
+        default: 0
         min: 0
       - name: notes
         type: text
@@ -580,7 +584,7 @@ seed:
 
 # Money integrity: subtotal/total are server-derived from the order_items
 # rows on every order and order_items mutation (the handlers live in
-# app/order_totals.go), never trusted from the request body. tax and
+# app/entities/order_totals_hooks.go), never trusted from the request body. tax and
 # shipping_cost stay schema-validated inputs; total = subtotal + tax +
 # shipping_cost.
 hooks:

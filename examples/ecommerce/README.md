@@ -38,7 +38,9 @@ columns' four-decimal scale, including tax and shipping; SQLite's floating-point
 SUM never computes money. On SQLite, a derived line price, subtotal or total
 beyond the decimal exactness limit (15 significant digits) is refused before
 persistence, and the write and its parent-total changes roll back.
-Clients can omit both price fields; supplied values cannot set a price.
+Clients can omit both price fields; supplied values cannot set a price. The
+order's `subtotal` and `total` are read-only the same way: a create need not
+send them, and a value sent is not stored.
 Quantity-only edits and product changes reprice against the current catalog.
 Only an active product can be ordered: a line that names a draft, archived or
 deleted product is refused, on create and on any later edit. The demo keeps no
