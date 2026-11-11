@@ -78,8 +78,11 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   `pagination.ErrCursorKeyMissing`, since `HasMore` with an empty cursor
   sends a client that echoes it back to page 1. Neither is an error on
   the last page, which mints no cursor.
-- `direction` defaults to `"forward"`; only `"forward"` and
-  `"backward"` are accepted.
+- `direction` defaults to `"forward"` when absent or empty; only
+  `"forward"` and `"backward"`, spelled exactly, are accepted. Any other
+  value (`back`, `Backward`) answers 400 `bad_direction`. The
+  `pagination.ParseCursorPagination` helper itself still reads an
+  unknown value as `"forward"`; the crud list checks the raw parameter.
 
 ## Cursor field configuration
 

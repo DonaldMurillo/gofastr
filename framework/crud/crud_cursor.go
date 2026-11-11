@@ -61,7 +61,11 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	w.Header().Set("Cache-Control", "no-store")
 	cursor, _, direction := pagination.ParseCursorPagination(r)
 	_, limit := parsePagination(r, ch.Entity.Config.Pagination.MaxListLimit)
-	if direction != "forward" && direction != "backward" {
+	// ParseCursorPagination folds every value it does not know into
+	// "forward", so a typo (back, Backward) paged forward with a 200. The
+	// raw parameter decides: absent or empty is forward, and anything but
+	// the two exact words is refused.
+	if raw := r.URL.Query().Get("direction"); raw != "" && raw != "forward" && raw != "backward" {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
