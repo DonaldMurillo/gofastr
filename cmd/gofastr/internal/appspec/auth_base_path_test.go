@@ -66,3 +66,23 @@ func TestAuthFormActionFollowsBasePath(t *testing.T) {
 		}
 	}
 }
+
+// app.base_url is the sitemap origin, and the generated app's always-on
+// strict mode panics at boot on one it cannot use: validate refuses the
+// same shapes first.
+func TestBaseURLMustBeHTTPOrigin(t *testing.T) {
+	for _, u := range []string{"", "https://demo.example", "http://localhost:8080", "https://demo.example/"} {
+		bp := AppSpec{}
+		bp.App.BaseURL = strings.TrimRight(u, "/")
+		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), "base_url") {
+			t.Errorf("%q refused: %v", u, err)
+		}
+	}
+	for _, u := range []string{"javascript:alert(1)//", "ftp://demo.example", "demo.example", "//demo.example", "https://", "https://u:p@demo.example", "https://demo.example?x=1", "https://demo.example#f", "https://demo.example/app"} {
+		bp := AppSpec{}
+		bp.App.BaseURL = strings.TrimRight(u, "/")
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "base_url") {
+			t.Errorf("%q accepted: %v", u, err)
+		}
+	}
+}

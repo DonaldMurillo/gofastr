@@ -852,10 +852,12 @@ and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
 override is not substituted for that authored fallback; the default
 `http://localhost:8080` fallback is omitted from the packed spec.
 Trailing `/` characters in `app.base_url` are removed while parsing:
-the value is a base prefix for absolute sitemap URLs, so
+the value is the origin of absolute sitemap URLs, so
 `https://slash.example/` and `https://slash.example` have the same
-canonical form, as do base prefixes ending in a path. Pack retains that
-canonical form. Descriptions equal to the generator's name/entity-derived
+canonical form. Pack retains that canonical form. Validate refuses a
+`base_url` that is not a bare `http`/`https` origin (another scheme, no
+host, userinfo, a query, a fragment or a path): the generated app's
+strict mode refuses to boot on each. Descriptions equal to the generator's name/entity-derived
 default are omitted rather than treated as authored metadata; custom
 descriptions are retained. The generator and pack share this derivation
 through `appgen.AppSpecSiteDescription`.
@@ -2026,6 +2028,9 @@ The generator rejects:
   battery's mounted `<base_path>/login` or `<base_path>/register`: an
   explicit action wins over the default, so one left at `/auth/login`
   after `base_path` moved posts to a 404 (drop `action` to default it)
+- an `app.base_url` that is not a bare `http`/`https` origin: it roots
+  every sitemap URL, and the generated app's strict mode refuses to boot
+  on it
 - unsafe output directories
 - two declared names that meet in one generated identifier, such as
   a field whose Go name matches a method the generator writes on the

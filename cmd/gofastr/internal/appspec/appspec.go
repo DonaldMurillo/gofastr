@@ -2603,6 +2603,11 @@ func ValidateAppSpec(bp AppSpec) error {
 	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL); why != "" {
 		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
 	}
+	// The sitemap origin: the generated app's always-on strict mode
+	// panics at boot on a base_url it cannot use.
+	if why := baseURLProblem(bp.App.BaseURL); why != "" {
+		errs.add(fmt.Errorf("app spec: app.base_url %q %s: it is the origin of every sitemap URL, and the generated app refuses to boot on it; write an origin such as https://demo.example", bp.App.BaseURL, why))
+	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
 	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
