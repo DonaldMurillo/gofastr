@@ -133,3 +133,26 @@ func TestSubscriptionLifecycleIsEnforced(t *testing.T) {
 		t.Fatal("activate from canceled must be refused: canceled is terminal")
 	}
 }
+
+// Issuing an invoice records the day, the way mark_paid records paid_on:
+// every seeded issued invoice carries issued_on, and an invoice a user
+// issued showed a blank "Issued On" column forever.
+func TestIssueStampsIssuedOn(t *testing.T) {
+	ctx, app := lifecycleApp(t)
+	f := lifecycleFixturesFrom(ctx)
+	invoices := entities.NewInvoicesRepo(app)
+	inv, err := invoices.Create(ctx, entities.InvoicesInput{CustomerId: f.customer, Number: "T-3", Amount: "10"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if inv.IssuedOn != nil {
+		t.Fatalf("a draft carries issued_on %q before it is issued", *inv.IssuedOn)
+	}
+	issued, err := invoices.Transition(ctx, inv.ID, entities.InvoicesMoveIssue)
+	if err != nil {
+		t.Fatalf("issue: %v", err)
+	}
+	if issued.IssuedOn == nil || *issued.IssuedOn == "" {
+		t.Fatalf("issue left issued_on blank: %+v", issued)
+	}
+}

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=75b312dcb32b4cb7
+//gofastr:generated generator=app kind=scaffold version=dev sum=273b8ae83ad2a8d4
 
 package entities
 
@@ -52,7 +52,6 @@ type InvoicesInput struct {
 	Number     string               `json:"number"`
 	Amount     string               `json:"amount"`
 	Status     *InvoicesStatusValue `json:"status,omitempty"`
-	IssuedOn   *string              `json:"issuedOn,omitempty"`
 	DueOn      *string              `json:"dueOn,omitempty"`
 	UserId     *string              `json:"userId,omitempty"`
 }
@@ -65,7 +64,6 @@ type InvoicesPatch struct {
 	CustomerId *string `json:"customerId,omitempty"`
 	Number     *string `json:"number,omitempty"`
 	Amount     *string `json:"amount,omitempty"`
-	IssuedOn   *string `json:"issuedOn,omitempty"`
 	DueOn      *string `json:"dueOn,omitempty"`
 }
 
@@ -327,7 +325,7 @@ func registerInvoices(app *framework.App) {
 		Indices: []framework.Index{
 			{Name: "idx_invoices_owner_number", Columns: []string{"user_id", "number"}, Unique: true},
 		},
-		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "issue", Label: "Issue", From: []string{"draft"}, To: "open", Variant: "primary"}, {Key: "mark_paid", Label: "Mark paid", From: []string{"open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "mark_past_due", Label: "Mark past due", From: []string{"open"}, To: "past_due", Variant: "danger"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}},
+		States:     &framework.StatesConfig{Field: "status", Transitions: []framework.Transition{{Key: "issue", Label: "Issue", From: []string{"draft"}, To: "open", Stamp: "issued_on", Variant: "primary"}, {Key: "mark_paid", Label: "Mark paid", From: []string{"open", "past_due"}, To: "paid", Stamp: "paid_on", Variant: "primary"}, {Key: "mark_past_due", Label: "Mark past due", From: []string{"open"}, To: "past_due", Variant: "danger"}, {Key: "void", Label: "Void", From: []string{"draft", "open", "past_due"}, To: "void", Variant: "danger"}}},
 		Display:    &framework.DisplayConfig{TitleFields: []string{"number"}, Description: "Every invoice issued, paid or not.", Columns: []string{"number", "customer_id", "amount", "status", "issued_on", "due_on"}, Nav: &framework.EntityNav{Group: "billing", Icon: "receipt", Order: 3}, Views: []framework.ListView{{Key: "past_due", Label: "Past due", Where: "status = \"past_due\"", Sort: "due_on ASC"}, {Key: "open", Label: "Open", Where: "status = \"open\"", Sort: "due_on ASC"}}, Facets: []string{"status", "customer_id"}, Fields: map[string]framework.FieldDisplay{"amount": {Input: "money"}}},
 		Properties: map[string]any{"label": "Invoices"},
 	})

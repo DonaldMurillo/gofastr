@@ -323,6 +323,7 @@ entities:
           from: [draft]
           to: open
           variant: primary
+          stamp: issued_on
         - key: mark_paid
           label: Mark paid
           from: [open, past_due]
