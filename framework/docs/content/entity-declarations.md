@@ -2111,9 +2111,16 @@ text. Against rows another writer stored as `2026-03-03 10:00:00` or
 it runs crud reads one row of the column that is not in that layout,
 and if it finds one the list answers 500 `timestamp_layout` naming the
 field (the Go API returns the error), with a log line naming the table.
-The check scans the column on every such request, so the fix is the
-data: rewrite the column in `schema.TimestampLayout`, or point the
-entity at a view that does. `like` is not checked, and Postgres, which
+The check reads the column on every such request and stops at the
+first row outside the layout, so on a table whose rows are all in the
+layout it reads every row, each time. No index serves it, since
+`NOT GLOB` cannot use one. No verdict is cached either: another writer
+can add a legacy row at any moment, and a cached "clean" answer would
+return wrong rows until it expired. The refusal's fix is the data:
+rewrite the column in `schema.TimestampLayout`, or point the entity at
+a view that does. Rewriting removes the refusal but not the read. An
+entity crud manages (not `Unmanaged`) skips the check, because every
+row crud writes is in the layout. `like` is not checked, and Postgres, which
 compares a timestamp as an instant, is not checked either. Cursor
 pages on such a column keep working: see
 [cursor pagination](cursor-pagination.md).
