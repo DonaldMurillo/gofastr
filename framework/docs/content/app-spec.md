@@ -1179,6 +1179,13 @@ Any screen body can compose the framework's UI components directly via block
 `checkbox` · `switch` · `select_field` · `radio_group` · `action_button` ·
 `data_table` · `item_list`.
 
+Every screen gets one `<h1>`. When nothing in the body draws one (a
+`page_header`, `hero`, auth or entity form, `entity_detail`, level-1
+`heading`, entity list, or a markdown `#` heading), the generator puts a
+`ui.PageHeader` titled with the screen's `title` first in the body.
+`gofastr pack` skips that header, so the packed spec regenerates it
+instead of keeping it as an authored block.
+
 The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
 `no_wrap`). An unset `align` or `justify` keeps the component's default: a

@@ -2450,6 +2450,12 @@ func appSpecScreenBody(bp appspec.AppSpec, screen appspec.AppSpecScreen, entityM
 		} else {
 			sb.WriteString(fmt.Sprintf("\treturn %s\n", AppSpecScreenStackOpen))
 		}
+		// A screen nothing on draws an <h1> (a dashboard of stat cards and
+		// charts) opens with a page header of its title: the page needs
+		// one level-1 heading, and the generated axe gate asserts it.
+		if !AppSpecScreenDrawsH1(screen.Body) {
+			sb.WriteString(fmt.Sprintf("\t\tui.PageHeader(ui.PageHeaderConfig{Title: %s}),\n", appSpecTx(bp, screen.TitleOrName())))
+		}
 		for i, block := range screen.Body {
 			var expr string
 			switch {
@@ -3800,7 +3806,73 @@ func appSpecBlockRendersH1(b appspec.AppSpecBlock) bool {
 	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail", "h1":
 		return true
 	case "heading":
-		return b.Level == 0 || b.Level == 1
+		return appSpecHeadingLevel(b) == 1
+	}
+	return false
+}
+
+// appSpecHeadingLevel is the level a heading block renders at: its
+// level:, else a node heading's level prop, else 1 (the node renderer's
+// and html.Heading's default). Reading level: alone took
+// `kind: heading, props: {level: 3}` for an <h1>.
+func appSpecHeadingLevel(b appspec.AppSpecBlock) int {
+	if b.Level != 0 {
+		return b.Level
+	}
+	switch v := b.Props["level"].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return int(n)
+		}
+	}
+	return 1
+}
+
+// AppSpecScreenDrawsH1 reports whether any block on a screen, at any
+// depth, renders an <h1>: one appSpecBlockRendersH1 counts, an entity
+// list (its title is level 1 unless an earlier <h1> drops it), a
+// synthesized create screen's form, or markdown with a level-1 heading.
+func AppSpecScreenDrawsH1(blocks []appspec.AppSpecBlock) bool {
+	for _, b := range appspec.AppSpecBlocksDeep(blocks) {
+		switch {
+		case appSpecBlockRendersH1(b), appspec.IsEntityListBlock(b), appspec.IsEntityCreateBlock(b), appspec.IsEditFormBlock(b):
+			return true
+		case appspec.AppSpecBlockKindIs(b, "markdown") && appSpecMarkdownHasH1(b.Text):
+			return true
+		}
+	}
+	return false
+}
+
+// appSpecMarkdownHasH1 reports an ATX `# Title` line or a setext title
+// underlined with `=`, outside fenced code.
+func appSpecMarkdownHasH1(src string) bool {
+	fenced := false
+	prev := ""
+	for _, line := range strings.Split(src, "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
+			fenced = !fenced
+			prev = ""
+			continue
+		}
+		if fenced {
+			continue
+		}
+		indented := len(line)-len(strings.TrimLeft(line, " ")) > 3
+		if !indented && (t == "#" || strings.HasPrefix(t, "# ")) {
+			return true
+		}
+		if !indented && prev != "" && t != "" && strings.Trim(t, "=") == "" {
+			return true
+		}
+		prev = t
 	}
 	return false
 }

@@ -182,3 +182,26 @@ func packAttachActions(blocks []appspec.AppSpecBlock, actions []packScreenAction
 		}
 	}
 }
+
+// packIsSynthesizedHeader reports whether e is the page header the
+// generator puts first on a screen nothing else draws an <h1> on:
+// ui.PageHeader(ui.PageHeaderConfig{Title: …}) with Title its only
+// field. A page_header block always writes Title, Subtitle and Eyebrow,
+// so the spellings never meet. Read as a block, the header would come
+// back as an authored one; skipped, the next generate writes it again.
+func packIsSynthesizedHeader(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || callSel(call) != "ui.PageHeader" || len(call.Args) != 1 {
+		return false
+	}
+	lit, ok := call.Args[0].(*ast.CompositeLit)
+	if !ok || len(lit.Elts) != 1 {
+		return false
+	}
+	kv, ok := lit.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return false
+	}
+	key, ok := kv.Key.(*ast.Ident)
+	return ok && key.Name == "Title"
+}

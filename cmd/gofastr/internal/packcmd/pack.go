@@ -2311,9 +2311,21 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []appspec.
 			}
 		}
 		var out []appspec.AppSpecBlock
-		for _, arg := range call.Args[firstChild:] {
+		children := call.Args[firstChild:]
+		synthesized := len(children) > 0 && packIsSynthesizedHeader(children[0])
+		if synthesized {
+			children = children[1:]
+		}
+		for _, arg := range children {
 			if b, ok := reverseBlock(arg, helpers); ok {
 				out = append(out, b)
+			}
+		}
+		if synthesized && appgen.AppSpecScreenDrawsH1(out) {
+			// Something else draws the <h1>, so the generator would not
+			// add this header: keep it as the author's.
+			if b, ok := reverseBlock(call.Args[firstChild], helpers); ok {
+				out = append([]appspec.AppSpecBlock{b}, out...)
 			}
 		}
 		return out
