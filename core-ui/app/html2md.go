@@ -303,9 +303,22 @@ func mdTableCellHTML(cellHTML string) string {
 	// A line break inside a cell separates words; the row stays one line.
 	c = reBR.ReplaceAllString(c, " ")
 	c = mdTableCell(strings.TrimSpace(stripTags(c)))
-	return reCellSlot.ReplaceAllStringFunc(c, func(m string) string {
-		idx, _ := strconv.Atoi(reCellSlot.FindStringSubmatch(m)[1])
-		return parked[idx]
+	return restoreCellSlots(c, parked, len(parked))
+}
+
+// restoreCellSlots puts back the parked markdown of every slot in s
+// below limit. A link's text can hold an image parked before it, so a
+// restored entry is restored in turn: one pass left that image's slot,
+// two NUL bytes and an index, in the row. A slot only ever names an
+// entry parked earlier (input control bytes are scrubbed first), and
+// limit says so, so the walk ends.
+func restoreCellSlots(s string, parked []string, limit int) string {
+	return reCellSlot.ReplaceAllStringFunc(s, func(m string) string {
+		idx, err := strconv.Atoi(reCellSlot.FindStringSubmatch(m)[1])
+		if err != nil || idx >= limit {
+			return ""
+		}
+		return restoreCellSlots(parked[idx], parked, idx)
 	})
 }
 

@@ -334,3 +334,20 @@ func TestHTML2MD_LinkTagIsNotAListItem(t *testing.T) {
 		t.Errorf("a <link> became a bullet: %q", got)
 	}
 }
+
+// An image inside a link inside a cell: the link was parked with the
+// image's slot in its text, and one restore pass left the slot itself,
+// two NUL bytes and an index, in the row: | [\x00a0\x00](/users/7) |.
+func TestHTML2MD_TableCellLinkedImage(t *testing.T) {
+	in := `<table><tr><th>User</th></tr>` +
+		`<tr><td><a href="/users/7"><img alt="avatar" src="/a/7.png"></a></td></tr></table>`
+	got := htmlToMarkdown(in)
+	want := "| User |\n| --- |\n| [![avatar](/a/7.png)](/users/7) |"
+	if got != want {
+		t.Errorf("linked image in a cell:\ngot:  %q\nwant: %q", got, want)
+	}
+	// A NUL in the page is no slot: it cannot name a parked link.
+	if got := htmlToMarkdown("<table><tr><td><a href=\"/x\">a\x00a0\x00</a></td></tr></table>"); strings.Contains(got, "\x00") {
+		t.Errorf("a NUL in a cell reached the markdown: %q", got)
+	}
+}
