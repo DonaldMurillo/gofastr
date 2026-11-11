@@ -194,10 +194,13 @@ It preserves objects and renditions still named by the updated rows.
 
 ## Field-name casing
 
-Multipart field names are **taken literally** as column names; there
-is no JSON-case translation. If your entity's column is `avatar_url`,
-the multipart field must be `avatar_url`, regardless of `JSONCase`
-config. (JSON requests are reverse-cased; multipart is not.)
+Multipart field names, for values and file parts alike, resolve to
+columns exactly as JSON keys do: through the entity's wire names
+(`WireName` overrides and the `JSONCase` spelling), then the case
+conversion. With the default camel case, a column `avatar_url` takes
+the multipart field `avatarUrl` or `avatar_url`. Two names that resolve
+to one column in the same body (`avatarUrl` and `avatar_url`) answer
+400 `keys_fold`, as the JSON path does.
 
 ## Field types
 
