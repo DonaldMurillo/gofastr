@@ -912,6 +912,48 @@ func (r *Router) WrapNotFound(mw func(next http.Handler) http.Handler) {
 	r.registerFallback()
 }
 
+// WrapMethodNotAllowed is WrapNotFound for the 405 fall-through: it
+// wraps the MethodNotAllowed handler set before it (next), or the plain
+// 405 when none was set, so a wrapper can claim some wrong-method
+// requests and hand the rest on. The router sets the Allow header before
+// the wrapper runs, and the wrapper runs inside the chain of the group
+// that owns the path, as any 405 does. On a Group with no handler of its
+// own, next is resolved per request the way a miss's is.
+func (r *Router) WrapMethodNotAllowed(mw func(next http.Handler) http.Handler) {
+	r.mu.Lock()
+	prev := r.methodNotAllowed
+	var next http.Handler = http.HandlerFunc(plainMethodNotAllowed)
+	switch {
+	case prev != nil:
+		if cr, ok := prev.(*cachedRoute); ok {
+			next = cr.raw
+		} else {
+			next = prev
+		}
+	case r.parent != nil:
+		g := r
+		next = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			h := g.root.fallbackFor(req, ownMethodNotAllowed, g)
+			if cr, ok := h.(*cachedRoute); ok {
+				h = cr.raw
+			}
+			if h == nil {
+				h = http.HandlerFunc(plainMethodNotAllowed)
+			}
+			h.ServeHTTP(w, req)
+		})
+	}
+	r.methodNotAllowed = newCachedRoute(mw(next), r, "", "")
+	r.mu.Unlock()
+	r.registerFallback()
+}
+
+// plainMethodNotAllowed is the 405 a router answers with no
+// MethodNotAllowed handler set.
+func plainMethodNotAllowed(w http.ResponseWriter, req *http.Request) {
+	i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
+}
+
 // MethodNotAllowed sets a custom handler for 405 (Method Not Allowed)
 // responses. The router sets the RFC-compliant Allow header (filtered
 // to exclude gated methods) BEFORE dispatching, so the handler inherits
@@ -1030,9 +1072,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				return
 			}
 			// Cold path, so the per-request wrap is fine.
-			owner.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				i18n.HTTPError(w, req, http.StatusMethodNotAllowed, i18n.StatusPhrase(http.StatusMethodNotAllowed))
-			})).ServeHTTP(w, req)
+			owner.wrap(http.HandlerFunc(plainMethodNotAllowed)).ServeHTTP(w, req)
 			return
 		}
 		// No non-gated methods match → 404. Use the custom NotFound

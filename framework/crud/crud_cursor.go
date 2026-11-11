@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -61,7 +62,11 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	w.Header().Set("Cache-Control", "no-store")
 	cursor, _, direction := pagination.ParseCursorPagination(r)
 	_, limit := parsePagination(r, ch.Entity.Config.Pagination.MaxListLimit)
-	if direction != "forward" && direction != "backward" {
+	// ParseCursorPagination folds every value it does not know into
+	// "forward", so a typo (back, Backward) paged forward with a 200. The
+	// raw parameter decides: absent or empty is forward, and anything but
+	// the two exact words is refused.
+	if !directionParamValid(r.URL.RawQuery) {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
@@ -487,3 +492,25 @@ func buildCursorPage(data []map[string]any, fields, keys []string, convertKey fu
 // errCursorKeyTooLong is buildCursorPage's refusal of a key whose cursor
 // would not fit the decoder's size cap.
 var errCursorKeyTooLong = errors.New("the last row's key is too long for a cursor")
+
+// directionParamValid reads every direction pair in the raw query. It
+// does not go through URL.Query, which drops a pair whose value does not
+// decode (%ZZ, a bare %, a ';'): that pair read as absent and the page
+// went forward with a 200. Each pair must decode to "", "forward" or
+// "backward".
+func directionParamValid(rawQuery string) bool {
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		key, val, _ := strings.Cut(pair, "=")
+		if k, err := url.QueryUnescape(key); err != nil || k != "direction" {
+			continue
+		}
+		v, err := url.QueryUnescape(val)
+		if err != nil || strings.Contains(val, ";") {
+			return false
+		}
+		if v != "" && v != "forward" && v != "backward" {
+			return false
+		}
+	}
+	return true
+}

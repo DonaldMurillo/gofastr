@@ -626,13 +626,14 @@ go get command that must be run before go mod tidy.`)
 // frameworkGoDirective and frameworkToolchain are the go and toolchain
 // lines of GoFastr's own go.mod (TestFrameworkGoMatchesGoMod holds them
 // to it). go mod init writes the local toolchain's version instead, which
-// can be older than the framework needs. The floor is 1.27.3 because
-// earlier 1.27 releases build crypto/x509 with GO-2026-6809; a toolchain
+// can be older than the framework needs. The floor is 1.27.4 because
+// earlier 1.27 releases build crypto/x509 with GO-2026-6809 (through
+// 1.27.2) or net/http with GO-2026-6859 (through 1.27.3); a toolchain
 // equal to the go line is written as no toolchain line, as go mod tidy
 // leaves it.
 const (
-	frameworkGoDirective = "1.27.3"
-	frameworkToolchain   = "go1.27.3"
+	frameworkGoDirective = "1.27.4"
+	frameworkToolchain   = "go1.27.4"
 )
 
 // writeMainGo generates the application entry point.
@@ -825,9 +826,11 @@ func main() {
 	if err := authMgr.Init(fwApp); err != nil {
 		log.Fatal(err)
 	}
-	// A failed form post with no usable Referer lands back on /login
-	// with ?error= instead of a raw JSON body.
+	// A failed form post with no usable Referer lands back on its own
+	// form with ?error= instead of a raw JSON body: sign-in on /login,
+	// sign-up on /register.
 	auth.SetDefaultLoginErrorPath("/login")
+	auth.SetDefaultRegisterErrorPath("/register")
 	fwApp.Use(auth.SessionMiddleware(authMgr))
 
 	// Wire the UI layer: site app + screens + host.

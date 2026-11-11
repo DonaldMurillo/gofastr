@@ -310,6 +310,10 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // statePath is only emitted when the widget declared signals, the
 // runtime skips the /state hydrate fetch when this field is absent.
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
+	// The answer is per caller (a host gates it on its session), so no
+	// cache keeps one caller's catalog for the next.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Cookie")
 	page, err := url.PathUnescape(r.URL.Query().Get("page"))
 	if err != nil {
 		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidPage)
@@ -323,6 +327,13 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
+		// Only what this caller is offered (OfferedTo): a widget its gate
+		// refuses would only name itself here and 403 on /chrome, and one
+		// its ListedFor turns away stays out of the listing. ListedFor
+		// scopes the listing only; /chrome and /state check the gate.
+		if !d.OfferedTo(r) {
+			continue
+		}
 		cfg := map[string]any{
 			"name":           d.Name,
 			"position":       string(d.Position),

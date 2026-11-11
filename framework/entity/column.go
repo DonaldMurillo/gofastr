@@ -24,6 +24,9 @@ import (
 type Condition struct {
 	sql  string
 	args []any
+	// timestamps names the TimestampColumn columns the fragment compares
+	// with a bound value, so crud can check their stored layout first.
+	timestamps []string
 }
 
 // Apply appends this condition to the query builder.
@@ -38,6 +41,12 @@ func (c Condition) SQL() string { return c.sql }
 
 // Args returns the bound arguments for the fragment. Pair with SQL().
 func (c Condition) Args() []any { return c.args }
+
+// ComparedTimestamps names the columns a TimestampColumn comparison (Eq,
+// Gt, Gte, Lt, Lte) in this fragment compares with a bound value, And, Or
+// and Not included. crud reads it to refuse a comparison on a column that
+// holds text outside schema.TimestampLayout, as its filter surfaces do.
+func (c Condition) ComparedTimestamps() []string { return c.timestamps }
 
 // Order is an order-by-clause fragment.
 type Order struct {
@@ -95,19 +104,22 @@ func combineConditions(conds []Condition, sep, emptySQL string) Condition {
 	}
 	parts := make([]string, 0, len(conds))
 	var args []any
+	var timestamps []string
 	for _, c := range conds {
 		parts = append(parts, c.sql)
 		args = append(args, c.args...)
+		timestamps = append(timestamps, c.timestamps...)
 	}
 	return Condition{
-		sql:  "(" + strings.Join(parts, sep) + ")",
-		args: args,
+		sql:        "(" + strings.Join(parts, sep) + ")",
+		args:       args,
+		timestamps: timestamps,
 	}
 }
 
 // Not wraps a condition in NOT (...).
 func Not(c Condition) Condition {
-	return Condition{sql: "NOT (" + c.sql + ")", args: c.args}
+	return Condition{sql: "NOT (" + c.sql + ")", args: c.args, timestamps: c.timestamps}
 }
 
 // inFragment builds a "col IN ($1, $2, …)" condition from a slice of args.
@@ -268,20 +280,16 @@ func NewTimestampColumn(name string) TimestampColumn {
 	return TimestampColumn{rawColumn: rawColumn(name)}
 }
 
-func (c TimestampColumn) Eq(v any) Condition {
-	return Condition{sql: c.name() + " = $1", args: []any{timestampArg(v)}}
-}
-func (c TimestampColumn) Gt(v any) Condition {
-	return Condition{sql: c.name() + " > $1", args: []any{timestampArg(v)}}
-}
-func (c TimestampColumn) Gte(v any) Condition {
-	return Condition{sql: c.name() + " >= $1", args: []any{timestampArg(v)}}
-}
-func (c TimestampColumn) Lt(v any) Condition {
-	return Condition{sql: c.name() + " < $1", args: []any{timestampArg(v)}}
-}
-func (c TimestampColumn) Lte(v any) Condition {
-	return Condition{sql: c.name() + " <= $1", args: []any{timestampArg(v)}}
+func (c TimestampColumn) Eq(v any) Condition  { return c.compare(" = $1", v) }
+func (c TimestampColumn) Gt(v any) Condition  { return c.compare(" > $1", v) }
+func (c TimestampColumn) Gte(v any) Condition { return c.compare(" >= $1", v) }
+func (c TimestampColumn) Lt(v any) Condition  { return c.compare(" < $1", v) }
+func (c TimestampColumn) Lte(v any) Condition { return c.compare(" <= $1", v) }
+
+// compare is the column compared by op with v, naming the column in
+// ComparedTimestamps.
+func (c TimestampColumn) compare(op string, v any) Condition {
+	return Condition{sql: c.name() + op, args: []any{timestampArg(v)}, timestamps: []string{string(c.rawColumn)}}
 }
 
 // timestampArg is v in schema.TimestampLayout when v is an instant.

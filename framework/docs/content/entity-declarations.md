@@ -460,6 +460,10 @@ A `default` is the value the create path writes when the request body omits
 the field. It goes into the same column a client-sent value would, so it is
 checked against the same field rules, `values`, `pattern`, `min`/`max`,
 `required`, and the type itself, when the entity is registered.
+Generators run the same check over a declaration that never reached
+registration with `entity.ValidateDefaults(name, cfg)`: `gofastr
+validate` and `gofastr generate` refuse an app spec field whose
+`default:` the app would refuse at boot.
 
 A default that fails those rules fails the declaration. `app.Entity` panics
 and `app.TryEntity` returns the error, both naming the field:
@@ -1326,8 +1330,14 @@ The same holds for a record id in the path: `GET`, `PUT`, `PATCH` and
 `DELETE /{id}` answer 400 for an id that is not storable text instead of
 reaching the store.
 
-**Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
-as before: no behavioural change.
+**No search fields, no search.** On an entity WITHOUT `SearchFields` a
+non-blank `?q=` answers 400 `search_not_configured`, the way `ListAll`
+refuses `Search` there: dropping it would answer every row to a client
+that believes it is searching. A blank `?q=` is no search. If the entity
+has its own queryable column named `q`, or whose `WireName` is `q` (or
+lists `q` in `AllowedFilterParams`), `?q=value` is that filter, as
+before. A `Hidden` column named `q` is no filter, so `?q=` there still
+answers 400.
 
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
@@ -1814,7 +1824,11 @@ request:
   `Default`. `entity.ValidKey(s)` reports whether a string follows this
   grammar. `States` move keys follow a stricter one, checked with the rest
   of the states block by `entity.ValidateStates` (see
-  [States](states.md)).
+  [States](states.md)). Generators run these Display checks over a
+  declaration that never reached registration with
+  `entity.ValidateDisplay`, or with `framework.ValidateDisplay`, which
+  also parses the view and `ShowWhen` queries; `gofastr validate` uses
+  the latter on every app spec `display:` block.
 - **The form.** Each item sets exactly one of field, row or section; a row
   holds one to three distinct fields; only a section carries `Items`,
   `Help` and `Collapsed`, and holds at least one item; sections nest at
@@ -2096,25 +2110,39 @@ as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
 owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
 
 A filter on an `Unmanaged` entity's `timestamp` column over SQLite
-(`?at_gt=`, `?where=`, `ListOptions.Filters` and `Where`) binds its
+(`?at_gt=`, `?where=`, `ListOptions.Filters`, and a `TypedQuery`'s
+`Where` under `Find`, `First`, `Count`, `Exists`, `UpdateAll` and
+`DeleteAll`) binds its
 value in `schema.TimestampLayout`, and SQLite compares the column as
 text. Against rows another writer stored as `2026-03-03 10:00:00` or
 `2026-01-02T12:00:00Z` that comparison drops or adds rows, so before
 it runs crud reads one row of the column that is not in that layout,
 and if it finds one the list answers 500 `timestamp_layout` naming the
 field (the Go API returns the error), with a log line naming the table.
-The check scans the column on every such request, so the fix is the
-data: rewrite the column in `schema.TimestampLayout`, or point the
-entity at a view that does. `like` is not checked, and Postgres, which
+The check reads the column on every such request and stops at the
+first row outside the layout, so on a table whose rows are all in the
+layout it reads every row, each time. No index serves it, since
+`NOT GLOB` cannot use one. No verdict is cached either: another writer
+can add a legacy row at any moment, and a cached "clean" answer would
+return wrong rows until it expired. The refusal's fix is the data:
+rewrite the column in `schema.TimestampLayout`, or point the entity at
+a view that does. Rewriting removes the refusal but not the read. An
+entity crud manages (not `Unmanaged`) skips the check, because every
+row crud writes is in the layout. `like` is not checked, and Postgres, which
 compares a timestamp as an instant, is not checked either. Cursor
 pages on such a column keep working: see
 [cursor pagination](cursor-pagination.md).
 
 This check covers base CRUD filters on the entity's own columns, including
-the `ListAll`, aggregate and `CountAll` paths. It does not normalize legacy
-rows, inspect nested relation targets, or guard separate DSL predicates,
-typed queries or read-scope bindings. Keep those timestamp columns canonical
-before using those comparison surfaces. A managed table filled by a direct
+the `ListAll`, aggregate and `CountAll` paths, and a `TypedQuery` (the
+generated repositories' query path): a `TimestampColumn` comparison (`Eq`,
+`Gt`, `Gte`, `Lt`, `Lte`, inside `And`, `Or` or `Not` too, read through
+`Condition.ComparedTimestamps`) makes `Find`, `First`, `Count`, `Exists`,
+`UpdateAll` and `DeleteAll` return the same error before any row is read or
+written. It does not normalize legacy rows, inspect nested relation targets
+(`WhereNested`), or guard separate DSL predicates or read-scope bindings.
+Keep those timestamp columns canonical before using those comparison
+surfaces. A managed table filled by a direct
 SQL writer is also outside this unmanaged-table check.
 
 ### What a composite key cannot do
@@ -2462,7 +2490,14 @@ API gets a machine-readable answer. It stays a problem document, the
 standard format for a miss no route owns, and carries the same `reason`
 member the envelope does. The guarded namespace is
 `AppConfig.APIPrefix` (`WithAPIPrefix`), `/api` by default; misses outside
-it keep the host's normal 404 rendering.
+it keep the host's normal 404 rendering. A wrong method on a route in the
+same namespace (`PUT /api/posts`) answers `405` the same way: a problem
+document whose `reason` is `api_method_not_allowed`, with the router's
+`Allow` header, and no session cookie (the UI host's 405 page minted one).
+Outside the namespace the host's 405 page still answers. The namespace
+is the API's, not the UI host's: a screen declared under it is not
+served there (no route at its path is a `404` problem document, a route
+for another method a `405`), so keep screens outside the API prefix.
 
 ### `json` fields round-trip
 

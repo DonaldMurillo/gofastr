@@ -149,10 +149,16 @@ func selectCell(ctx context.Context, s *listState, lb *listBulk, row map[string]
 // exportLink is the header's Export CSV link: <api>/_export.csv with the
 // list's narrowing (its view, search, filter and facets, a builder's View
 // included) and key, so the file holds the rows the list narrowed to.
-// It is a download, which the client router leaves to the browser.
+// Another keyed list's params on the page stay off it: the export
+// refuses them. It is a download, which the client router leaves to the
+// browser.
 func exportLink(ctx context.Context, s *listState) render.HTML {
 	q := s.carry()
-	q.Del(exportKeyParam)
+	for name := range q {
+		if !s.exportParam(name) {
+			q.Del(name)
+		}
+	}
 	if s.key != "" {
 		q.Set(exportKeyParam, s.key)
 	}

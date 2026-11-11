@@ -896,9 +896,19 @@ watermarks must survive restart.
 
 ## Handler registration
 
-Handlers are registered by job type. Unregistered types are acknowledged
-(dropped) so they never loop. Handlers are safe to register concurrently
-with a running worker loop.
+Handlers are registered by job type. A job of a type with no handler is
+not dropped at once. `DBQueue` claims only registered types, so such a job
+stays pending until a worker that has its handler claims it (a
+producer-first deploy loses nothing). `MemoryQueue` dead-letters it: the
+job is kept as `failed`, visible in `ListJobs("failed")` and `Stats`, an
+ERROR `queue: no handler registered; job dead-lettered` is logged, and
+`Replay` re-runs it once the handler ships. That dead-letter store holds
+1 000 jobs and evicts the oldest past that (see
+[Dead-letter and replay](#dead-letter-and-replay)), so on `MemoryQueue`
+an old unhandled job can still be lost. A `DBQueue` claim whose
+handler is gone by the time the worker looks it up is dead-lettered the
+same way. Handlers are safe to register concurrently with a running
+worker loop.
 
 ```go
 q.RegisterHandler("resize-image", func(ctx context.Context, job queue.Job) error {

@@ -144,6 +144,21 @@ func DiffSchema(ctx context.Context, db *sql.DB, registry entity.Registry) ([]Sc
 		}
 	}
 	for _, ent := range ordered {
+		if ent.Config.Unmanaged || len(liveByTable[ent.GetTable()]) == 0 {
+			continue
+		}
+		stale, err := readStaleUniques(ctx, db, ent, dialect)
+		if err != nil {
+			return nil, err
+		}
+		if len(stale) > 0 {
+			if env.staleUniques == nil {
+				env.staleUniques = map[string][]string{}
+			}
+			env.staleUniques[ent.GetTable()] = stale
+		}
+	}
+	for _, ent := range ordered {
 		if ent.Config.Unmanaged {
 			continue
 		}
@@ -709,6 +724,35 @@ func diffEntity(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			uniqueCleared = cleared
 			changes = append(changes, drops...)
 			changes = append(changes, adds...)
+		}
+	}
+	// A single-column UNIQUE the live table keeps on a column the entity
+	// declares unique only within a composite index (see unique.go):
+	// dropped on Postgres, rebuilt away on SQLite.
+	if env != nil {
+		if stale, ok := lookupKeyCase(env.staleUniques, ent.GetTable()); ok {
+			for _, col := range stale {
+				if slices.ContainsFunc(uniqueCleared, func(c string) bool { return strings.EqualFold(c, col) }) {
+					continue
+				}
+				uniqueCleared = append(uniqueCleared, col)
+				if dialect == DialectSQLite {
+					continue
+				}
+				qcol, err := query.SafeIdent(col)
+				if err != nil {
+					return nil, fmt.Errorf("invalid column name %q: %w", col, err)
+				}
+				name, err := uniqueIndexName(ent, col)
+				if err != nil {
+					return nil, err
+				}
+				changes = append(changes, SchemaChange{
+					Summary: fmt.Sprintf("%s: drop unique on %s alone", ent.GetName(), col),
+					SQL:     dropSingleColumnUniquesSQL(qtable, col),
+					Down:    createIndexSQL(dialect, true, name, qtable, ddlIdent(qcol)),
+				})
+			}
 		}
 	}
 	uniqueRebuild := len(uniqueCleared) > 0 && dialect == DialectSQLite

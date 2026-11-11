@@ -99,8 +99,13 @@ func mountOAuth2Routes(mgr *AuthManager) *router.Router {
 // is the login-CSRF replay shape TestOAuthCallbackNeedsBrowserBinding
 // pins, so every test that means "a real browser finishing its own flow"
 // has to include it.
+//
+// It says Sec-Fetch-Site: same-origin, the arrival that gets the plain
+// redirect. A cross-site arrival and one with no Fetch Metadata get the
+// same-site hop page (oauth_landing_test.go).
 func oauthCallbackReq(target, state string) *http.Request {
 	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.AddCookie(&http.Cookie{Name: oauthStateCookie, Value: state})
 	return req
 }
@@ -850,6 +855,7 @@ func runCallback(t *testing.T, mgr *AuthManager, r *router.Router, providerName 
 		t.Fatalf("generateState: %v", err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/"+providerName+"/callback?state="+state+"&code=fakecode", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin") // the plain-redirect arrival, as oauthCallbackReq
 	req.AddCookie(&http.Cookie{Name: op.stateCookieName(), Value: state})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)

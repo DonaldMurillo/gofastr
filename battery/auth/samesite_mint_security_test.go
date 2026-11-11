@@ -82,6 +82,7 @@ func TestOauthCallbackRedCookieStrict(t *testing.T) {
 	}
 
 	cb := httptest.NewRequest(http.MethodGet, "/auth/oauth/mock/callback?state="+url.QueryEscape(state)+"&code=abc", nil)
+	cb.Header.Set("Sec-Fetch-Site", "same-origin") // the plain-redirect arrival
 	for _, c := range w.Result().Cookies() {
 		cb.AddCookie(c)
 	}

@@ -102,3 +102,61 @@ screens:
 		}
 	})
 }
+
+// The generated app pointed every form auth error at the login screen,
+// and its pages send no Referer, so a failed signup landed on login. An
+// app spec with a signup_form screen now also sets the battery's register
+// error path to that screen; one without a signup form sets none.
+func TestAppSpecSetsRegisterErrorPath(t *testing.T) {
+	const base = `
+app:
+  name: Shop
+  module: github.com/example/shop
+  auth:
+    enabled: true
+    dev_mode: true
+entities:
+  - name: notes
+    crud: true
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: signin
+    route: /signin
+    title: Sign in
+    body:
+      - kind: login_form
+%SIGNUP%`
+	render := func(t *testing.T, signup string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "gofastr.yml")
+		clitest.WriteTestFile(t, path, strings.Replace(base, "%SIGNUP%", signup, 1))
+		bp, err := appspec.LoadAppSpec(path)
+		if err != nil {
+			t.Fatalf("LoadAppSpec: %v", err)
+		}
+		if err := appspec.ValidateAppSpec(bp); err != nil {
+			t.Fatalf("ValidateAppSpec: %v", err)
+		}
+		var all strings.Builder
+		for _, f := range mustRenderAppSpecFiles(t, bp) {
+			all.WriteString(f.Content)
+		}
+		return all.String()
+	}
+	const signup = `  - name: join
+    route: /join
+    title: Join
+    body:
+      - kind: section
+        children:
+          - kind: signup_form
+`
+	if out := render(t, signup); !strings.Contains(out, `auth.SetDefaultRegisterErrorPath("/join")`) {
+		t.Error("an app spec with a signup form at /join does not set the register error path to it")
+	}
+	if out := render(t, ""); strings.Contains(out, "SetDefaultRegisterErrorPath") {
+		t.Error("an app spec with no signup form sets a register error path")
+	}
+}

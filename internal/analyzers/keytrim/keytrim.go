@@ -26,8 +26,13 @@
 //     tenant/actor token alone or joined to ID/Key tokens (tenant,
 //     tenantKey, tenant_id, actorID);
 //   - a request or form read with a literal key of that shape:
-//     url.Values Get, Request FormValue / PostFormValue, Query().Get
-//     ("user_id", "tenantID", "id").
+//     url.Values Get, Request FormValue / PostFormValue / PathValue,
+//     Query().Get, Header.Get ("user_id", "tenantID", "id",
+//     "X-Tenant-Id"). PathValue and Header.Get joined in round 9
+//     (2026-11-10): strings.TrimSpace(r.PathValue("id")) is the reader
+//     router.Param wraps, and it was silent. A Header.Get key is
+//     matched in canonical form, as Get reads it ("x-user-id" is
+//     X-User-Id).
 //
 // Silent postures, deliberately:
 //   - a presence check: the trimmed value only compared with "" or
@@ -57,6 +62,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"net/textproto"
 	"regexp"
 	"strconv"
 	"strings"
@@ -82,7 +88,7 @@ var identityKey = regexp.MustCompile(`^(?:(?i:id|ids)|.*(?:_id|_ids|ID|IDs|Id|Id
 
 // requestReads are the accessor methods whose literal argument names
 // the value read.
-var requestReads = map[string]bool{"Get": true, "FormValue": true, "PostFormValue": true}
+var requestReads = map[string]bool{"Get": true, "FormValue": true, "PostFormValue": true, "PathValue": true}
 
 func run(pass *analysis.Pass) (any, error) {
 	for _, f := range pass.Files {
@@ -260,7 +266,14 @@ func isIdentity(pass *analysis.Pass, e ast.Expr) bool {
 			return false
 		}
 		key, err := strconv.Unquote(lit.Value)
-		if err != nil || !identityKey.MatchString(key) {
+		if err != nil {
+			return false
+		}
+		if isHeader(pass, sel.X) {
+			// Header.Get canonicalizes the key: x-user-id reads X-User-Id.
+			key = textproto.CanonicalMIMEHeaderKey(key)
+		}
+		if !identityKey.MatchString(key) {
 			return false
 		}
 		return isRequestReceiver(pass, sel.X)
@@ -268,8 +281,9 @@ func isIdentity(pass *analysis.Pass, e ast.Expr) bool {
 	return false
 }
 
-// isRequestReceiver: e is a url.Values or an *http.Request (FormValue),
-// so a Get on some unrelated map-like type does not count.
+// isRequestReceiver: e is a url.Values, an *http.Request (FormValue,
+// PathValue) or an http.Header, so a Get on some unrelated map-like type
+// does not count.
 func isRequestReceiver(pass *analysis.Pass, e ast.Expr) bool {
 	t := pass.TypesInfo.TypeOf(e)
 	if t == nil {
@@ -283,10 +297,16 @@ func isRequestReceiver(pass *analysis.Pass, e ast.Expr) bool {
 		return false
 	}
 	switch n.Obj().Pkg().Path() + "." + n.Obj().Name() {
-	case "net/url.Values", "net/http.Request":
+	case "net/url.Values", "net/http.Request", "net/http.Header":
 		return true
 	}
 	return false
+}
+
+// isHeader: e is an http.Header, whose Get canonicalizes its key.
+func isHeader(pass *analysis.Pass, e ast.Expr) bool {
+	n, ok := pass.TypesInfo.TypeOf(e).(*types.Named)
+	return ok && n.Obj().Pkg() != nil && n.Obj().Pkg().Path() == "net/http" && n.Obj().Name() == "Header"
 }
 
 // presenceOnly reports whether the TrimSpace result is only tested for

@@ -212,3 +212,67 @@ func TestLegacyTimestampPostgresUnchanged(t *testing.T) {
 		t.Errorf("at_gt: %v, want %v", filtered, want[2:])
 	}
 }
+
+// A TypedQuery binds a TimestampColumn comparison in schema.TimestampLayout
+// too, so on a column holding "2026-03-03 10:00:00" its Gt(09:30) missed
+// that row on Find and UpdateAll touched nothing, while ListAll refused.
+// Every typed surface refuses the same way, through And, Or and Not; the
+// canonical table still filters, and a comparison on another column or an
+// IsNull test runs no check.
+func TestTypedQueryRefusesLegacyTimestamps(t *testing.T) {
+	space := []string{"2026-03-03 09:00:00", "2026-03-03 10:00:00"}
+	at := entity.NewTimestampColumn("at")
+	bound := time.Date(2026, 3, 3, 9, 30, 0, 0, time.UTC)
+	surfaces := map[string]func(*crud.CrudHandler, entity.Condition) (int, error){
+		"Find": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			rows, err := crud.NewTypedQuery[map[string]any](h).Where(c).Find(t.Context())
+			return len(rows), err
+		},
+		"First": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			_, err := crud.NewTypedQuery[map[string]any](h).Where(c).First(t.Context())
+			return 1, err
+		},
+		"Count": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			return crud.NewTypedQuery[map[string]any](h).Where(c).Count(t.Context())
+		},
+		"Exists": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			ok, err := crud.NewTypedQuery[map[string]any](h).Where(c).Exists(t.Context())
+			if ok {
+				return 1, err
+			}
+			return 0, err
+		},
+		"UpdateAll": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			return crud.NewTypedQuery[map[string]any](h).Where(c).UpdateAll(t.Context(), map[string]any{"at": "2026-03-03T12:00:00.000000Z"})
+		},
+		"DeleteAll": func(h *crud.CrudHandler, c entity.Condition) (int, error) {
+			return crud.NewTypedQuery[map[string]any](h).Where(c).DeleteAll(t.Context())
+		},
+	}
+	conditions := map[string]entity.Condition{
+		"gt":  at.Gt(bound),
+		"or":  entity.Or(at.Lt(bound), entity.NewStringColumn("id").Eq("m9")),
+		"not": entity.Not(entity.And(at.Gte(bound))),
+	}
+	for _, surface := range slices.Sorted(maps.Keys(surfaces)) {
+		for _, name := range slices.Sorted(maps.Keys(conditions)) {
+			t.Run(surface+"/"+name, func(t *testing.T) {
+				_, err := surfaces[surface](legacyTimestampHandler(t, "TEXT", space), conditions[name])
+				if err == nil || !strings.Contains(err.Error(), "outside schema.TimestampLayout") {
+					t.Errorf("err = %v, want the timestamp layout refusal", err)
+				}
+			})
+		}
+		t.Run(surface+"/canonical", func(t *testing.T) {
+			n, err := surfaces[surface](legacyTimestampHandler(t, "TEXT", canonicalTimestamps(t, space)), at.Gt(bound))
+			if err != nil || n != 1 {
+				t.Errorf("canonical Gt(09:30): n = %d, err = %v, want 1 row", n, err)
+			}
+		})
+		t.Run(surface+"/unchecked", func(t *testing.T) {
+			if _, err := surfaces[surface](legacyTimestampHandler(t, "TEXT", space), entity.And(at.IsNotNull(), entity.NewStringColumn("id").Eq("m2"))); err != nil {
+				t.Errorf("no timestamp comparison: err = %v", err)
+			}
+		})
+	}
+}

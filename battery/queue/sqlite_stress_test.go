@@ -177,7 +177,7 @@ func (l *settleFailureLog) list() []string {
 
 // isSettleFailure matches the worker loop's settle-failure warnings.
 func isSettleFailure(msg string) bool {
-	for _, m := range []string{"queue: ack failed", "queue: nack failed", "queue: handing back", "queue: dropping a job with no handler failed"} {
+	for _, m := range []string{"queue: ack failed", "queue: nack failed", "queue: handing back", "queue: dead-lettering a job with no handler failed"} {
 		if strings.HasPrefix(msg, m) {
 			return true
 		}

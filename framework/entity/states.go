@@ -368,6 +368,29 @@ func ValidateStates(name string, cfg EntityConfig) (err error) {
 	return e.Config.States.validate(e.Config)
 }
 
+// ValidateDisplay is ValidateStates' twin for the display block: it runs
+// the display checks registration runs (every field name it holds is
+// declared and shown, facets are Enum, Bool or Relation fields, keys
+// follow the key grammar, the form's shape), over an EntityConfig that
+// never passed registration. Define runs first so the check sees the
+// framework-managed columns (created_at, updated_at) the app sees, and
+// a Define panic comes back as the error. The query strings Display
+// holds (a view's Where and Sort, a field's ShowWhen) need the DSL,
+// which this package cannot import: framework.ValidateDisplay runs
+// this and those.
+func ValidateDisplay(name string, cfg EntityConfig) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	e := Define(name, cfg)
+	if e.Config.Display == nil {
+		return nil
+	}
+	return e.Config.Display.validate(e.Config.Name, e.Config.Fields, e.Config.Pagination)
+}
+
 // checkGuardedColumn refuses a state field or stamp that is also a column
 // the framework manages itself: the primary key, the owner and tenant
 // scope columns, the soft-delete column, and every auto-generated column

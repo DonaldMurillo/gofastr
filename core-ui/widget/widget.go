@@ -3,6 +3,7 @@ package widget
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // RouteMatcher decides whether a widget is available on a given
@@ -207,6 +209,17 @@ type Definition struct {
 	// Constructed via the Builder methods .Pages, .PagesPrefix,
 	// .PagesMatch (or manually for advanced cases).
 	Routes []RouteMatcher
+
+	// ListedFor reports whether this caller is offered the widget: the
+	// runtime catalog lists it, and the SSR layer inlines its chrome,
+	// only when it returns true. Use it for a widget only some signed-in
+	// callers may use (the admin drawer lists to admins alone), so its
+	// name stays out of everyone else's catalog. nil offers the widget
+	// to every caller its session gate admits. A panic counts as false.
+	// It scopes what is listed; the gate on /state, /chrome and RPC
+	// (RequireSession, RequireAuthenticated, or the router the widget
+	// mounts on) is still what refuses a request.
+	ListedFor func(r *http.Request) bool
 
 	// DragDismiss enables pointer-driven drag-to-dismiss for bottom-edge
 	// widgets. The chrome renders a visible drag-handle bar at the top
@@ -535,6 +548,13 @@ func (b *Builder) PagesMatch(fn func(path string) bool) *Builder {
 	return b
 }
 
+// ListedFor sets Definition.ListedFor: the widget is listed in the
+// catalog, and inlined on the page, only for callers fn accepts.
+func (b *Builder) ListedFor(fn func(r *http.Request) bool) *Builder {
+	b.def.ListedFor = fn
+	return b
+}
+
 // DeepLink wires this widget to a query-string pair. When the URL
 // includes `?key=value`, the SSR layer opens the widget at first paint
 // and the runtime mirrors open/close as pushState updates, so refresh,
@@ -708,6 +728,31 @@ func gateSatisfied(level gateLevel, d *Definition, r *http.Request) bool {
 // baked into the anonymous page.
 func GateSatisfied(def *Definition, r *http.Request) bool {
 	return gateSatisfied(def.gateLevelOf(), def, r)
+}
+
+// OfferedTo reports whether r's caller is offered the widget: its
+// session gate admits them (GateSatisfied) and ListedFor, when set,
+// accepts them. The catalog lists, and the SSR layer inlines, only the
+// widgets a request is offered.
+func (d *Definition) OfferedTo(r *http.Request) bool {
+	return GateSatisfied(d, r) && d.listedFor(r)
+}
+
+// listedFor runs the host's ListedFor. A panic fails closed: the widget
+// is not listed, the panic is logged so the host bug that hid it shows,
+// and the request goes on.
+func (d *Definition) listedFor(r *http.Request) (ok bool) {
+	if d.ListedFor == nil {
+		return true
+	}
+	defer func() {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("widget: ListedFor hook panicked; not listing the widget",
+				"widget", d.Name, "panic", textsafe.Recovered(rec))
+			ok = false
+		}
+	}()
+	return d.ListedFor(r)
 }
 
 // gateSession wraps h so it only runs for callers passing the level's

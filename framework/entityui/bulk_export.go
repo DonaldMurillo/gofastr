@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,7 +29,8 @@ const exportIDParam = "_id"
 // ExportHandler serves GET <api>/_export.csv for the entity: every row the
 // list's query matches, as CSV, at most EveryMatchCap. The bulk bar links
 // to it with the list's own query, so the file holds what the list
-// narrowed to. Rows are read through the scoped CRUD handler with read
+// narrowed to; a parameter that is not the list's own (a REST filter,
+// another list's param) answers 400 rather than being ignored. Rows are read through the scoped CRUD handler with read
 // hooks, the same values the list shows; NoQuery fields (masked columns
 // among them), omitted and JSON fields are left out. A cell that a
 // spreadsheet would run as a formula is prefixed with a quote. It
@@ -53,6 +55,16 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		q := r.URL.Query()
 		key := q.Get(exportKeyParam)
 		q.Del(exportKeyParam)
+		// The export reads the list's own params only. A REST filter
+		// (?status=paid), another list's param or a typo was ignored, and
+		// the file held every row the caller may read, so it is refused.
+		own := &listState{m: m, key: key, p: listParamsFor(key)}
+		for _, name := range slices.Sorted(maps.Keys(q)) {
+			if name != exportIDParam && !own.exportParam(name) {
+				writeBulkError(w, r, http.StatusBadRequest, reasonExportUnknownParam, map[string]any{"name": name})
+				return
+			}
+		}
 		cols := exportColumns(m)
 		fields := append(slices.Clone(m.keys), cols...)
 		var rows []map[string]any
@@ -94,6 +106,29 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		}
 		cw.Flush()
 	})
+}
+
+// exportParam reports whether name is a param of this list an export
+// link may carry: its own narrowing and the view state it ignores. A
+// facet param must name a configured facet: ownsParam takes f_ of any
+// field, and the export narrows by facets() alone, so ?f_status=paid on
+// a list with no status facet exported every row.
+func (s *listState) exportParam(name string) bool {
+	switch name {
+	case s.p.cols, s.p.saved, s.p.as, s.p.per:
+		return true
+	}
+	if field, ok := strings.CutPrefix(name, param(s.key, "f_")); ok {
+		if slices.Contains(s.facets(), field) {
+			return true
+		}
+		// A keyed list's own param can start with the unkeyed facet
+		// prefix; ownsParam still decides those.
+		if _, isField := s.m.byName[field]; isField {
+			return false
+		}
+	}
+	return s.ownsParam(name)
 }
 
 // exportColumns are the fields an export carries after the key columns:

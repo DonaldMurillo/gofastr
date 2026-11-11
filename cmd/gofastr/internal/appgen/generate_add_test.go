@@ -1001,3 +1001,53 @@ func TestAddScreenIntoExistingCrudFileRefused(t *testing.T) {
 		t.Error("the fragment's other screen was written although the run was refused")
 	}
 }
+
+// A fragment has no app: section, so --add rendered its screens' phrases
+// under the fallback "app" namespace while every other file in the
+// project used the app's own; pack -> regenerate then moved the keys
+// and any locale entry for them stopped applying. A named project with
+// no phrases yet reads its namespace from app.go's appName; a project
+// with no app.name keys its phrases under "app" while app.go says
+// "GoFastr", so its existing keys decide.
+func TestAddPhrasesUseProjectAppName(t *testing.T) {
+	nameless := strings.Replace(addTestAppSpec("example.com/addtest"), "  name: AddTest\n", "", 1) + `screens:
+  - name: home
+    route: /
+    body:
+      - type: heading
+        text: Home
+`
+	for _, tc := range []struct{ name, spec, ns string }{
+		{"named", addTestAppSpec("example.com/addtest"), "addtest"},
+		{"nameless", nameless, "app"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, bp := clitest.AddSetup(t, tc.spec)
+			clitest.CovT_capStdout(t, func() { GenerateFromAppSpec(GenerateOptions{Spec: bp}) })
+			frag := filepath.Join(dir, "fragment.yml")
+			os.WriteFile(frag, []byte(`screens:
+  - name: about
+    route: /about
+    body:
+      - type: heading
+        text: About us
+  - name: tag_list
+    route: /tags
+    body:
+      - kind: entity_list
+        entity: tags
+        fields: [label]
+        create: true
+`), 0o644)
+			clitest.CovT_capStdout(t, func() {
+				GenerateFromAppSpec(GenerateOptions{Spec: frag, add: true})
+			})
+			for _, file := range []string{"screen_about.go", "screen_tags_crud.go"} {
+				src := clitest.ReadFile(t, dir, file)
+				if !strings.Contains(src, `i18n.Define("`+tc.ns+`.screens.`) || strings.Count(src, `i18n.Define("`) != strings.Count(src, `i18n.Define("`+tc.ns+`.`) {
+					t.Errorf("%s phrases are not under %s.screens:\n%s", file, tc.ns, src)
+				}
+			}
+		})
+	}
+}

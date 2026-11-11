@@ -82,7 +82,9 @@ deep-link URL, opens them.
 `Mount` registers the widget's HTTP routes and adds it to the process-wide
 registry. Any page that carries the framework runtime auto-mounts every
 registered widget: the runtime fetches `/__gofastr/widgets` on boot and
-builds each one. Pages served through `framework/uihost` get the runtime
+builds each one. The catalog answers `Cache-Control: no-store` with
+`Vary: Cookie`: a host gates it per caller, so no cache keeps one
+caller's catalog for the next. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
 
@@ -538,6 +540,18 @@ SSR-inlined chrome honors the same verdict
 (`widget.GateSatisfied`), so a gated widget's chrome is not baked into a
 page its endpoints would refuse. See
 [Security](security.md) → "Widget signal exposure".
+
+The catalog lists, and the SSR layer inlines, only the widgets a request
+is offered (`Definition.OfferedTo`): its page scope, its gate, and
+`Definition.ListedFor` (builder `.ListedFor(fn)`), when set, must all
+accept the caller. Because a page view mints the session the catalog
+asks for, anonymous visitors read it too; a widget only some signed-in
+callers may use sets `ListedFor` so its name stays out of everyone
+else's catalog. `ListedFor` scopes what is listed, never what is
+served: the gate (or the router the widget mounts on) still refuses
+the request. A panicking `ListedFor` counts as false. `battery/admin`
+sets it on its drawer, palette and shortcut sheet, so they list only to
+a caller its gate admits.
 
 ## Chrome context (`data-cui-ctx`)
 

@@ -598,7 +598,7 @@ func invalidSitemapBaseURL(base string) string {
 		return "has no host"
 	case u.User != nil:
 		return "must not carry userinfo"
-	case u.RawQuery != "" || u.Fragment != "":
+	case u.RawQuery != "" || u.Fragment != "" || u.ForceQuery:
 		return "must not carry a query or fragment"
 	case u.Path != "" && u.Path != "/":
 		return "must be a bare origin: a deployment path prefix belongs in the static Builder's BasePath, not here (it would be prefixed twice)"

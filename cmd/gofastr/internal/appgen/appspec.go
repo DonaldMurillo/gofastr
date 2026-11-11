@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/markdown"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
@@ -41,6 +42,27 @@ func appSpecHasEntityAccess(bp appspec.AppSpec) bool {
 		}
 	}
 	return false
+}
+
+// appSpecSignupRoute returns the route of the screen hosting the signup
+// form, if the app spec has one, so the auth battery's register-error
+// redirect lands back on that form.
+func appSpecSignupRoute(bp appspec.AppSpec) (string, bool) {
+	var hasSignup func([]appspec.AppSpecBlock) bool
+	hasSignup = func(blocks []appspec.AppSpecBlock) bool {
+		for _, b := range blocks {
+			if isSignupFormBlock(b) || hasSignup(b.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range bp.Screens {
+		if hasSignup(s.Body) {
+			return s.Route, true
+		}
+	}
+	return "", false
 }
 
 // appSpecHasOwnerScopedEntity reports whether any entity declares an
@@ -190,6 +212,11 @@ func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
 	}
+	// bp is a copy, but its Seed slice and each Rows slice still share
+	// the caller's arrays. Expand into fresh ones: writing through them
+	// left the caller's spec expanded, and a second render of it doubled
+	// the generated rows.
+	bp.Seed = slices.Clone(bp.Seed)
 	for i := range bp.Seed {
 		s := &bp.Seed[i]
 		if s.Count <= 0 {
@@ -200,7 +227,7 @@ func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 			continue
 		}
 		s.Authored = len(s.Rows)
-		s.Rows = append(s.Rows, appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
+		s.Rows = append(slices.Clip(s.Rows), appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
 	}
 	return bp
 }
@@ -687,6 +714,17 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 		}
 	}
 	return public, gated
+}
+
+// appSpecHasHomeScreen reports whether a screen is routed at /, the
+// one page the generated e2e asserts the brand on.
+func appSpecHasHomeScreen(bp appspec.AppSpec) bool {
+	for _, s := range bp.Screens {
+		if s.Route == "/" {
+			return true
+		}
+	}
+	return false
 }
 
 // appSpecSeedAdminRoles are the roles the bootstrap admin is created with:
@@ -1317,7 +1355,12 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\tt.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })\n")
 	b.WriteString("\tbase := \"http://\" + addr\n")
 	b.WriteString("\te2eWaitReady(t, base)\n\n")
-	b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
+	// The home page carries the brand, when a screen sits at /. With none
+	// there, / is a 404 the app was never meant to serve, and the public
+	// screens below are what renders.
+	if appSpecHasHomeScreen(bp) {
+		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
+	}
 
 	// Every static public screen renders.
 	b.WriteString("\n\t// Public screens render for anonymous visitors.\n")
@@ -1646,7 +1689,7 @@ func appSpecNeedsAuthHooks(bp appspec.AppSpec) bool {
 // The copy is phrases under <app>.auth, so the app's catalog translates
 // it like every other word the app says.
 func appSpecAuthHooksGo(bp appspec.AppSpec) string {
-	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.App.Name))
+	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.PhraseApp()))
 }
 
 const appSpecAuthHooksTemplate = `package main
@@ -2249,7 +2292,7 @@ func RenderAppSpecScreens(bp appspec.AppSpec) string {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, "screens", "screens"))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), "screens", "screens"))
 	var bodies strings.Builder
 	for _, screen := range bp.Screens {
 		bodies.WriteString(appSpecScreenBody(bp, screen, entityMap, apiBase))
@@ -2433,6 +2476,12 @@ func appSpecScreenBody(bp appspec.AppSpec, screen appspec.AppSpecScreen, entityM
 			closer = "\t))\n"
 		} else {
 			sb.WriteString(fmt.Sprintf("\treturn %s\n", AppSpecScreenStackOpen))
+		}
+		// A screen nothing on draws an <h1> (a dashboard of stat cards and
+		// charts) opens with a page header of its title: the page needs
+		// one level-1 heading, and the generated axe gate asserts it.
+		if !AppSpecScreenDrawsH1(screen.Body) {
+			sb.WriteString(fmt.Sprintf("\t\tui.PageHeader(ui.PageHeaderConfig{Title: %s}),\n", appSpecTx(bp, screen.TitleOrName())))
 		}
 		for i, block := range screen.Body {
 			var expr string
@@ -2695,7 +2744,7 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, screen.Name, appSpecScreenScope(bp, screen.Name)))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), screen.Name, appSpecScreenScope(bp, screen.Name)))
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
 	needs := appSpecScreensImportNeeds(bp, []appspec.AppSpecScreen{screen}, entityMap, apiBase)
 	needs.readCode(body, bp.PhraseCollector())
@@ -2815,7 +2864,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 		}
 	}
 	screens = kept
-	bp.SetPhraseCollector(appSpecCrudPhrases(bp.App.Name, entity, appSpecCrudScope(bp, entity)))
+	bp.SetPhraseCollector(appSpecCrudPhrases(bp.PhraseApp(), entity, appSpecCrudScope(bp, entity)))
 	var bodies strings.Builder
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
@@ -3781,12 +3830,69 @@ func appSpecBlockRendersH1(b appspec.AppSpecBlock) bool {
 		kind = strings.ToLower(strings.TrimSpace(b.Type))
 	}
 	switch kind {
-	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail", "h1":
+	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail":
 		return true
 	case "heading":
-		return b.Level == 0 || b.Level == 1
+		return appSpecHeadingLevel(b) == 1
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		// type: hN renders at level: when one is set (an h1 at level 3 is
+		// an <h3>), else at N.
+		if b.Level != 0 {
+			return b.Level == 1
+		}
+		return kind == "h1"
 	}
 	return false
+}
+
+// appSpecHeadingLevel is the level a heading block renders at: its
+// level:, else a node heading's level prop, else 1 (the node renderer's
+// and html.Heading's default). Reading level: alone took
+// `kind: heading, props: {level: 3}` for an <h1>.
+func appSpecHeadingLevel(b appspec.AppSpecBlock) int {
+	if b.Level != 0 {
+		return b.Level
+	}
+	switch v := b.Props["level"].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case json.Number:
+		if n, err := v.Int64(); err == nil {
+			return int(n)
+		}
+	}
+	return 1
+}
+
+// AppSpecScreenDrawsH1 reports whether any block on a screen, at any
+// depth, renders an <h1>: one appSpecBlockRendersH1 counts, an entity
+// list (its title is level 1 unless an earlier <h1> drops it), a
+// synthesized create screen's form, or markdown with a level-1 heading.
+func AppSpecScreenDrawsH1(blocks []appspec.AppSpecBlock) bool {
+	for _, b := range appspec.AppSpecBlocksDeep(blocks) {
+		switch {
+		case appSpecBlockRendersH1(b), appspec.IsEntityListBlock(b), appspec.IsEntityCreateBlock(b), appspec.IsEditFormBlock(b):
+			return true
+		case appspec.AppSpecBlockKindIs(b, "markdown") && appSpecMarkdownHasH1(b.Text):
+			return true
+		}
+	}
+	return false
+}
+
+// appSpecMarkdownHasH1 reports whether src renders an <h1> through
+// core/markdown, the renderer ui.Markdown uses. It asks the renderer
+// rather than re-deriving its rules: core/markdown reads "# " only at
+// the start of a line and has no setext headings, so a gate written to
+// CommonMark took "   # Title", "\t# Title" and an "=" underline for an
+// <h1> the page never drew, and dropped the page header. The renderer
+// escapes raw HTML, so "<h1" in its output is a heading it made.
+func appSpecMarkdownHasH1(src string) bool {
+	return strings.Contains(string(markdown.RenderHTML(src)), "<h1")
 }
 
 func isLoginFormBlock(block appspec.AppSpecBlock) bool {
@@ -4408,7 +4514,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// The chrome's words (nav labels, the header's auth action, footer
 	// columns) are phrases under <app>.chrome; the brand name stays as
 	// written.
-	bp.SetPhraseCollector(appSpecChromePhrases(bp.App.Name))
+	bp.SetPhraseCollector(appSpecChromePhrases(bp.PhraseApp()))
 	tx := func(s string) string { return appSpecTx(bp, s) }
 	adminSeed := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
 	hasMarketing := appSpecHasMarketing(bp)
@@ -4919,6 +5025,11 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		// failed form login (wrong password, no Referer) lands back on the login
 		// form with ?error=… instead of rendering the raw JSON error body.
 		sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultLoginErrorPath(%q)\n", appSpecLoginRoute(bp)))
+		// A signup form gets its own: the pages send no Referer, so without
+		// it a failed signup (weak password, missing field) lands on login.
+		if route, ok := appSpecSignupRoute(bp); ok {
+			sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultRegisterErrorPath(%q)\n", route))
+		}
 		if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
 			sb.WriteString("\t\t// Bootstrap the admin account after auto-migration. The hook runs\n")
 			sb.WriteString("\t\t// before the server accepts traffic and returns errors to Start,\n")

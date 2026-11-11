@@ -73,13 +73,19 @@ func (b *Battery) mount() {
 	// The drawer and the palette are widgets: each registers its own
 	// routes, so both mount on the gated group, and each is offered only
 	// on admin pages.
-	mounter := adminMounter{r: r, under: b.underPrefix}
+	// The catalog lists them only to a caller the admin admits: a signed-in
+	// non-admin on an admin path would otherwise read their names.
+	mounter := adminMounter{r: r, under: b.underPrefix, listed: b.offered}
 	ui.MountSidebarFunc(mounter, b.sidebar)
 	palette := ui.CommandPaletteFunc(b.paletteConfig)
-	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix))
+	widget.MountBuilder(r, palette.PagesMatch(b.underPrefix).ListedFor(b.offered))
 	keys := ui.ShortcutSheetFunc(b.keysConfig)
-	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix))
+	widget.MountBuilder(r, keys.PagesMatch(b.underPrefix).ListedFor(b.offered))
 }
+
+// offered reports whether the admin's widgets are listed to r's caller:
+// the admin gate admits them.
+func (b *Battery) offered(r *http.Request) bool { return b.authorized(r.Context()) }
 
 // underPrefix reports a path inside the admin.
 func (b *Battery) underPrefix(path string) bool {
@@ -89,12 +95,14 @@ func (b *Battery) underPrefix(path string) bool {
 // adminMounter mounts a widget on the gated router, offered only on
 // admin pages.
 type adminMounter struct {
-	r     *router.Router
-	under func(string) bool
+	r      *router.Router
+	under  func(string) bool
+	listed func(*http.Request) bool
 }
 
 func (m adminMounter) MountWidget(def *widget.Definition) {
 	def.Routes = append(def.Routes, m.under)
+	def.ListedFor = m.listed
 	widget.Mount(m.r, def)
 }
 

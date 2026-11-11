@@ -326,3 +326,130 @@ func liveUniqueColumns(ctx context.Context, q queryer, table string, dialect Dia
 	}
 	return out, nil
 }
+
+// Uniqueness moved into a composite index
+//
+// A column once unique on its own (a field-level Unique, or a unique
+// index on it alone) whose entity now declares it unique only within a
+// composite unique index, (user_id, email) say, leaves the table holding
+// the old single-column UNIQUE: boot adds the composite index beside it,
+// and the old one still refuses a value one row holds for every other.
+// On an owner- or tenant-scoped table that refusal is a conflict telling
+// one account what another stores. Boot drops no constraint, so it
+// refuses the table; the live diff drops the stale UNIQUE on Postgres
+// and rebuilds the SQLite table, whose inline UNIQUE only a rebuild
+// removes.
+
+// hasCompositeUnique reports whether ent declares a unique index over
+// more than one column.
+func hasCompositeUnique(ent *entity.Entity) bool {
+	return slices.ContainsFunc(ent.Config.Indices, func(idx entity.Index) bool {
+		return idx.Unique && idx.Expression == "" && len(idx.Columns) > 1
+	})
+}
+
+// staleUniqueColumns returns the columns of ent's composite unique
+// indexes that liveUnique (liveUniqueColumns' lower-cased set) holds
+// unique on their own while ent declares them unique alone nowhere: no
+// field-level Unique, no unique index on the column alone, and not the
+// table's only key column.
+func staleUniqueColumns(ent *entity.Entity, liveUnique map[string]bool, dialect Dialect) []string {
+	alone := map[string]bool{}
+	for _, f := range ent.GetFields() {
+		if f.Unique {
+			alone[strings.ToLower(f.Name)] = true
+		}
+	}
+	if key := ent.KeyColumns(); len(key) == 1 {
+		alone[strings.ToLower(key[0])] = true
+	}
+	for _, idx := range ent.Config.Indices {
+		if idx.Unique && idx.Expression == "" && len(idx.Columns) == 1 {
+			alone[strings.ToLower(idx.Columns[0])] = true
+		}
+	}
+	var out []string
+	for _, idx := range ent.Config.Indices {
+		if !idx.Unique || idx.Expression != "" || len(idx.Columns) < 2 {
+			continue
+		}
+		for _, c := range idx.Columns {
+			low := strings.ToLower(c)
+			if alone[low] {
+				continue
+			}
+			if liveUnique[low] || (dialect == DialectPostgres && liveUnique[pgIdentCut(low)]) {
+				alone[low] = true // report each column once
+				out = append(out, c)
+			}
+		}
+	}
+	return out
+}
+
+// readStaleUniques reads the live unique columns of ent's table and
+// returns the stale ones (staleUniqueColumns). An entity with no
+// composite unique index costs no query.
+func readStaleUniques(ctx context.Context, q queryer, ent *entity.Entity, dialect Dialect) ([]string, error) {
+	if !hasCompositeUnique(ent) {
+		return nil, nil
+	}
+	qtable, err := query.SafeIdent(ent.GetTable())
+	if err != nil {
+		return nil, fmt.Errorf("invalid table name %q: %w", ent.GetTable(), err)
+	}
+	covered, err := liveUniqueColumns(ctx, q, qtable, dialect)
+	if err != nil {
+		return nil, fmt.Errorf("read unique indexes of %s: %w", ent.GetTable(), err)
+	}
+	return staleUniqueColumns(ent, covered, dialect), nil
+}
+
+// refuseStaleUniques is boot's half: an existing table holding a stale
+// single-column UNIQUE stops the boot, naming the column and the way out.
+func refuseStaleUniques(ctx context.Context, q queryer, ent *entity.Entity, dialect Dialect) error {
+	stale, err := readStaleUniques(ctx, q, ent, dialect)
+	if err != nil || len(stale) == 0 {
+		return err
+	}
+	cols := make([]string, len(stale))
+	for i, c := range stale {
+		cols[i] = ent.GetTable() + "." + c
+	}
+	return fmt.Errorf("%s is unique on its own in the database, but the entity declares it unique only within a composite unique index, "+
+		"so a value one row holds is refused for every other owner or tenant: boot does not drop a unique constraint; "+
+		"apply DiffSchema's changes with ApplySchemaDiffWithOptions (AllowDestructive on SQLite, where the table is rebuilt), "+
+		"or drop it in a reviewed migration",
+		strings.Join(cols, ", "))
+}
+
+// dropSingleColumnUniquesSQL renders a Postgres block that drops every
+// UNIQUE constraint and every other non-partial unique index on qtable
+// covering col alone, whatever its name: a table an older build created
+// holds the inline constraint, a later boot's ADD COLUMN index, or a
+// unique index declared on the column alone, each under its own name.
+// The primary key is left alone.
+func dropSingleColumnUniquesSQL(qtable, col string) string {
+	return fmt.Sprintf(`DO $$
+DECLARE r record;
+BEGIN
+	FOR r IN SELECT con.conname FROM pg_constraint con
+		JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = con.conkey[1]
+		WHERE con.conrelid = %[1]s::regclass AND con.contype = 'u' AND cardinality(con.conkey) = 1
+			AND a.attname = %[2]s
+	LOOP
+		EXECUTE format('ALTER TABLE %%s DROP CONSTRAINT %%I', %[1]s::regclass, r.conname);
+	END LOOP;
+	FOR r IN SELECT n.nspname, ic.relname FROM pg_index i
+		JOIN pg_class ic ON ic.oid = i.indexrelid
+		JOIN pg_namespace n ON n.oid = ic.relnamespace
+		JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
+		WHERE i.indrelid = %[1]s::regclass AND i.indisunique AND NOT i.indisprimary
+			AND i.indnkeyatts = 1 AND i.indpred IS NULL AND i.indexprs IS NULL
+			AND a.attname = %[2]s
+			AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = i.indexrelid)
+	LOOP
+		EXECUTE format('DROP INDEX %%I.%%I', r.nspname, r.relname);
+	END LOOP;
+END $$`, quoteSQLLiteral(qtable), quoteSQLLiteral(asciicase.Lower(col)))
+}

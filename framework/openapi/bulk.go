@@ -65,6 +65,7 @@ func addBulkPaths(s *openapi.Spec, path, entityName, schemaName, tagName string,
 		"description": "CSV, one header row then one row per record",
 		"content":     map[string]any{"text/csv": map[string]any{"schema": map[string]any{"type": "string"}}},
 	}
+	exportOp.AddResponse(400, "A query parameter that is not the list's own: a REST filter, a cursor, another list's parameter", errorRef)
 	exportOp.AddResponse(422, "A list key or filter the list refuses, or more matches than the cap", errorRef)
 	exportOp.AddResponse(403, "Forbidden", errorRef)
 	exportOp.AddResponse(404, entityName+" has no export", errorRef)

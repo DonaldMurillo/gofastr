@@ -129,8 +129,12 @@ func newClaimRig(t *testing.T, wrap ...func(*EntityUserStore) UserStore) *claimR
 	return rig
 }
 
+// do sends a request from this app's own page (Sec-Fetch-Site:
+// same-origin): a GET with no Fetch Metadata at all would get the
+// same-site hop page on the links that set or need the session cookie.
 func (c *claimRig) do(method, path, body, ctype, cookie string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	if ctype != "" {
 		req.Header.Set("Content-Type", ctype)
 	}
@@ -205,6 +209,7 @@ func (c *claimRig) oauth(provider string) (string, int) {
 	loc := w1.Header().Get("Location")
 	state := loc[strings.LastIndex(loc, "state=")+len("state="):]
 	req := httptest.NewRequest(http.MethodGet, "/auth/oauth/"+provider+"/callback?state="+url.QueryEscape(state)+"&code=c", nil)
+	req.Header.Set("Sec-Fetch-Site", "same-origin") // the plain-redirect arrival, as oauthCallbackReq
 	for _, ck := range w1.Result().Cookies() {
 		if ck.Name == oauthStateCookie {
 			req.AddCookie(ck)

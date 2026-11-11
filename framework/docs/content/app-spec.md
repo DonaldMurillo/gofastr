@@ -434,6 +434,14 @@ screens/middleware/plugins through `RegisterGenerated` (in
 `app.go`, same `package main`), mounts the UI host, and serves
 `app.static_dir` through the generated UI host.
 
+Every file under `static_dir` is public, so validation refuses a
+directory that holds the app's own files: the app root or any directory
+above it (`.`, `..`, `/`), a directory the generator writes Go into
+(`cmd/`, `entities/`, `gen/`, `siteheader/`, `sitefooter/`,
+`docpage/`, `helpdocs/`), the `app.output_dir` the generator owns (or a directory
+inside or above it), and the directory holding the SQLite file
+`app.db.url` names. Use a directory of its own, such as `static`.
+
 The generated app mounts MCP by default: `framework.WithMCP()` mounts
 `/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
 (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,
@@ -510,7 +518,10 @@ The key is `<app>.screens.<screen>.<slug>` in a screen file,
 English twice in one file is one phrase. `<screen>` is the name
 lower-cased to ASCII letters and digits; when two screens fold to the
 same one (`PostsList` and `postslist`), the later one in the spec gets
-`_2`. Field labels go through
+`_2`. `<app>` is `app.name` folded the same way (`app` with no name).
+A fragment added with `generate app --add` has no `app:` section, so
+its files take the namespace the project's own phrase keys already
+use (or, before it has any, `app.go`'s `appName`). Field labels go through
 `i18nui.FieldLabel` and enum values through `i18nui.FieldValueLabel`, so
 they read the `entity.*` keys the admin reads.
 
@@ -710,7 +721,8 @@ Mapping rules worth knowing:
   named `group` (fieldset) holding a control, stay inside the same form.
   Its last button becomes the submit; with no button the submit is
   hidden. The form posts to the screen's own route, which has no POST
-  handler yet: point `action` at your handler. Forms never nest: a `form`
+  handler yet (generate warns that it would answer 405): point `action`
+  at your handler. Forms never nest: a `form`
   inside a form gives its fields to the outer one.
 * A `text` node that repeats the next control's name (its visible label)
   is dropped, since the generated field renders its own label.
@@ -756,11 +768,21 @@ reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 also preserves the control catalog: custom forms and their text, number,
 toggle, select and radio controls; action buttons; static table columns
 and cells; ordered/unordered item lists; and labeled navigation links.
+Node blocks (a `type: section`, a heading, a div or any other tag the
+node renderer draws, with its `island:` or `widget:` wrapper) read back
+from their `uinode.Node` literal with the kind, props and children the
+generator wrote, and each `actions:` entry comes back from the screen's
+`component.On` registration.
 Control properties round-trip in canonical form, not their original
 spelling: action-button variants and types are case-insensitive and
 lowercased while parsing. Default `variant: primary`, `type: button`,
 and navigation-link `gap: md` values are omitted both when parsing and
 packing, so a control gains no authored properties from generated defaults.
+An omitted screen layout and `layout: app` mount the same way, so pack
+cannot tell them apart from the mount alone. It reads the app home back
+from the sign-in and sign-up policies (or the signed-in header's
+Dashboard link) and writes `layout: app` on that screen, with no layout
+on the screens before it, so the packed spec keeps the same home.
 The result
 prints to stdout, or to a file with `-o`:
 
@@ -831,10 +853,12 @@ and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
 override is not substituted for that authored fallback; the default
 `http://localhost:8080` fallback is omitted from the packed spec.
 Trailing `/` characters in `app.base_url` are removed while parsing:
-the value is a base prefix for absolute sitemap URLs, so
+the value is the origin of absolute sitemap URLs, so
 `https://slash.example/` and `https://slash.example` have the same
-canonical form, as do base prefixes ending in a path. Pack retains that
-canonical form. Descriptions equal to the generator's name/entity-derived
+canonical form. Pack retains that canonical form. Validate refuses a
+`base_url` that is not a bare `http`/`https` origin (another scheme, no
+host, userinfo, a query, a fragment or a path): the generated app's
+strict mode refuses to boot on each. Descriptions equal to the generator's name/entity-derived
 default are omitted rather than treated as authored metadata; custom
 descriptions are retained. The generator and pack share this derivation
 through `appgen.AppSpecSiteDescription`.
@@ -955,7 +979,13 @@ partial and keeps the shell).
 - `create: true` on a list synthesizes the create screen at
   **`<home list>/create`** (not `/new`), rendering
   `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
-  screen's `layout` + `access` and is not added to `nav`.
+  screen's `layout` + `access` and is not added to `nav`. Two entities
+  whose home list is the same screen, both with `create: true`, would
+  share that one route, so the load refuses the spec and names both:
+  move one list to its own screen or drop its `create: true`. An
+  authored screen at that route is refused too, since it would replace
+  the create form: move it, or drop the list's `create: true` to keep
+  your own create page.
 - `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<table>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
   related entity's route, each option's value its key column, so a
@@ -1115,6 +1145,20 @@ named after a key column; rename it. The generated `e2e_test.go` reads
 every key column out of the create response to address the record, and
 `gofastr pack` folds the expanded route back to `{id}`.
 
+On an owner-scoped entity (`owner_field:`) the key must hold the owner
+column, unless one of its columns is server-generated (`auto_generate`).
+A key without the owner is shared by every account: a second user
+creating a key another user holds gets 409 for a row they cannot see,
+which also tells them the key exists. Validation refuses it. Put the
+owner in the key and declare it as a field (a key column must be one
+the API returns), as in `primary_key: [user_id, student_id, course_id]`,
+or drop `primary_key` and declare a unique index over the owner and the
+other columns. A value meant to be unique across all accounts goes in a
+unique field or index, where generation warns about it instead.
+With no `primary_key` the key is `id`: the framework generates it
+unless the entity declares an `id` field, and a declared `id` needs
+`auto_generate` on an owner-scoped entity, for the same reason.
+
 A relation to a composite-keyed entity names one foreign-key column per
 key column, in key order, as a list:
 
@@ -1167,6 +1211,13 @@ Any screen body can compose the framework's UI components directly via block
 `markdown` · `pricing` · `custom_form` · `text_field` · `number_field` ·
 `checkbox` · `switch` · `select_field` · `radio_group` · `action_button` ·
 `data_table` · `item_list`.
+
+Every screen gets one `<h1>`. When nothing in the body draws one (a
+`page_header`, `hero`, auth or entity form, `entity_detail`, level-1
+`heading`, entity list, or a markdown `#` heading), the generator puts a
+`ui.PageHeader` titled with the screen's `title` first in the body.
+`gofastr pack` skips that header, so the packed spec regenerates it
+instead of keeping it as an authored block.
 
 The layout blocks map directly to `framework/ui`: `stack` and `cluster` accept
 semantic `gap`, `align`, and `justify` props (`cluster` also accepts
@@ -1246,6 +1297,16 @@ A raw `textarea` takes its text from `props.value` (or `text`, then
 `content`), rendered as the element's content; children are not drawn.
 A `type: link` block renders through `ui.Link`, the styled anchor;
 validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
+
+Validation also refuses a catalog block missing what its component needs
+to render, which would otherwise answer every request for the screen
+with a 500. A `stat_card` needs `props.label` (`text:` is the
+`entity_list` heading key and a stat card ignores it), and a `value`
+unless it has a `source:`. A `link_button` needs `label` and a safe
+`href`, a hero's `cta_text` needs a safe `cta_href` (and
+`secondary_text` a safe `secondary_href`), and a `markdown` block needs
+its `text:`. These props are text: quote a number (`value: "42"`), since
+an unquoted one reads as no value at all.
 
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
 that computes a live metric server-side:
@@ -1609,7 +1670,7 @@ screens:
       - kind: login_form
         text: Sign in            # form heading
         props:
-          action: /auth/login    # default <base_path>/login
+          action: /auth/login    # default <base_path>/login; any other path is refused
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
 ```
@@ -1631,7 +1692,7 @@ pack` drops the added screen, as it drops a synthesized create screen.
 app:
   admin:
     enabled: true
-    path: /admin                # default /admin
+    path: /admin                # default /admin; an absolute path, never /
     role: admin                 # required role (default "admin")
     login_path: /login          # unauthenticated GET → redirect here
     seed_email: admin@you.com   # bootstrap admin account (created if absent)
@@ -1756,6 +1817,18 @@ because it pins the plain paths to English: without it the browser's
 `Accept-Language` picks the locale. The [i18n guide](i18n.md#locale-in-the-url)
 covers the routing rules and the language switcher.
 
+No route may start with a locale's segment: the router strips `/es`
+before matching, so a screen at `/es` or `/es/promo` is unreachable,
+and the app panics at Start once `es` is a catalog locale (the default
+`en` always is). That includes `app.auth.base_path`, `app.admin.path`
+and `app.api_prefix` (with no prefix, each CRUD entity's table).
+Because `locales/<tag>.json` is added after generation, `gofastr validate`
+and `gofastr generate` warn on any such route whose first segment reads
+as a tag rather than refusing it: a two-letter language, an optional
+four-letter script and an optional two-letter or three-digit region
+(`pt-br`, `zh-hant`, `es-419`), naming a language Go's `x/text` knows.
+`/my-orders` and `/go-live` do not warn.
+
 ### app.module and the enclosing go.mod
 
 Generated imports are `<app.module>/<output-dir>`. By default the output
@@ -1823,6 +1896,13 @@ screens:
 them as one-click filters and applies each as a server-side equality
 filter that composes with search, sort, and pagination.
 
+Validation runs the boot check over every `display:` block
+(`framework.ValidateDisplay`): a title field, column, facet or form slot
+naming a field the entity does not declare (or a hidden one), a facet on
+any other type, a bad view key, and a view `where:`/`sort:` or a field
+`show_when:` that does not parse are refused at `gofastr validate`
+instead of panicking the generated app at boot.
+
 Supported UI action events are `click`, `input`, `change`, and `submit`.
 `client_js` is copied into generated Go as a string and compiled by the normal
 GoFastr action compiler. Use the public `G` runtime helper (`window.__gofastr`)
@@ -1868,6 +1948,21 @@ The generator rejects:
   refuses to boot on the mount itself, and under it the CRUD routes
   (`{id}`, `llm.md`, `_events`) answer instead of the screen. A fragment with no `app:` section (`generate app --add`) is
   not checked for it, since it does not carry the project's `api_prefix`
+- a screen route the framework serves itself: `/robots.txt`,
+  `/sitemap.xml`, `/sitemap/*`, `/favicon.ico`, and anything at or under
+  `/mcp`, `/.well-known` or `/__gofastr`; with entities, `/openapi.json`
+  and `/api/docs`; with `pwa`, `/manifest.webmanifest` and
+  `/service-worker.js`; with `llm_md`, `/llm-pages.md` and any route
+  ending in `/llm.md`; with `admin`, anything at or under the admin path
+  (default `/admin`), where the back-office serves every entity at
+  `<path>/e/<table>`. The framework's route answers instead of the
+  screen, or, where it answers only some callers, the screen takes it
+  over: a screen at `/openapi.json` served HTML to anonymous callers in
+  place of the gated schema
+- a field `default:` the field's own rules refuse: an `enum` value not in
+  `values:`, `notanumber` on an `int`, `maybe` on a `bool`, `""` on a
+  `required` field. Registration refuses it, so the generated app would
+  panic at boot; validation runs that check (`entity.ValidateDefaults`)
 - two screen routes that differ only in parameter names or syntax
   (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
   dynamic routes in registration order, so the second would never render
@@ -1942,9 +2037,21 @@ The generator rejects:
 - an `app.auth.base_path` that is not an absolute path with no trailing
   slash (`/auth/`, `auth`, `//host`, `/a//b` and `/..` are refused): the
   battery mounts its routes at it, and the generated forms post there
+- an `app.admin.path` that fails the same rule as `base_path`, `/`
+  included: the admin battery mounts every route under it, and `/`
+  leaves it no prefix
 - a `login_form`/`signup_form` `action:` that is not a safe link
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)
+- a `login_form`/`signup_form` `action:` whose path is not the auth
+  battery's mounted `<base_path>/login` or `<base_path>/register`: an
+  explicit action wins over the default, so one left at `/auth/login`
+  after `base_path` moved posts to a 404 (drop `action` to default it).
+  An absolute action must also name `app.base_url`'s scheme and host,
+  and is refused when `base_url` is unset
+- an `app.base_url` that is not a bare `http`/`https` origin: it roots
+  every sitemap URL, and the generated app's strict mode refuses to boot
+  on it
 - unsafe output directories
 - two declared names that meet in one generated identifier, such as
   a field whose Go name matches a method the generator writes on the
@@ -2011,6 +2118,39 @@ available" under its heading to every visitor. Both commands warn, naming the en
 and its screens; neither fails, since owned Go can wire its own sign-in.
 Turn on `app.auth`, or set `public: true` on an entity anyone may read
 and write. An entity with an `access:` gate is not flagged.
+
+### Forms that post to a screen (`gofastr validate` and `gofastr generate` warning)
+
+A screen route answers `GET` and `HEAD` only; every other method gets
+`405 Method Not Allowed`. A `custom_form` whose `method` is `post` (the
+default) and whose `action` lands on a screen route, its own or another,
+therefore never submits. Both commands warn, naming the screen, the
+action and the route; neither fails, since `generate screen --from-a11y`
+writes such a form on purpose for you to point at a handler. Set `action`
+to a route that takes a `POST` (an [endpoint](endpoints.md) or a handler you
+write), or set `method: get` for a form that only reads.
+
+### Upload fields with no file storage (`gofastr validate` and `gofastr generate` warning)
+
+An `image` or `file` field gets an upload control on the generated form
+and a multipart body on its API, but the app spec has no storage key and
+the generated `main.go` passes no `framework.WithFileStorage`, so until
+you add one every upload answers `400` ("server has no file storage configured"). Both
+commands warn, naming the entity and its upload fields; neither fails,
+since `main.go` is your file after the first generate. Add the option
+there:
+
+```go
+options := []framework.AppOption{
+	// ...
+	framework.WithFileStorage(upload.NewLocalStorage("uploads")), // core/upload
+}
+```
+
+`upload.NewLocalStorage` writes files `0600` under `0700` directories,
+with writes confined to its root. Meridian wires it this way
+(`examples/meridian/admin_files.go`); the warning stays on for an app
+that already does, since the app spec cannot see `main.go`.
 
 ### Owner-scoped uniqueness (`gofastr validate` and `gofastr generate` warning)
 

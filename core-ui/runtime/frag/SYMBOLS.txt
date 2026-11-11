@@ -320,6 +320,7 @@ nav	4	names
 nav	4	navHash
 nav	4	nodes
 nav	4	out
+nav	4	out
 nav	4	p
 nav	4	p0
 nav	4	page
@@ -329,6 +330,7 @@ nav	4	prevPath
 nav	4	ps
 nav	4	r
 nav	4	r
+nav	4	re
 nav	4	s
 nav	4	s
 nav	4	set
@@ -441,6 +443,7 @@ widgets-boot	8	G
 widgets-boot-static	10	cat
 widgets-boot-static	10	cfg
 widgets-boot-static	10	eq
+widgets-boot-static	2	_bootPath
 widgets-boot-static	2	_installEagerWidgetDelegators
 widgets-boot-static	2	_wcr
 widgets-boot-static	2	_wready

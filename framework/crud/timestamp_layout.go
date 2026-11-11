@@ -10,6 +10,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
@@ -127,6 +128,30 @@ func (ch *CrudHandler) refuseLegacyTimestampComparisons(ctx context.Context, fil
 		note(parsed.Field, parsed.Op)
 	}
 	walkPredicateLeaves(where, note)
+	return ch.refuseLegacyTimestampColumns(ctx, compared)
+}
+
+// refuseLegacyTimestampConditions is refuseLegacyTimestampComparisons for
+// a TypedQuery's Where chain: the columns its TimestampColumn comparisons
+// name (entity.Condition.ComparedTimestamps). The typed reads and the
+// bulk UpdateAll/DeleteAll bound the same canonical text, so they
+// silently missed the row stored as "2026-03-03 10:00:00", or wrote the
+// wrong set, while the filter surfaces refused.
+func (ch *CrudHandler) refuseLegacyTimestampConditions(ctx context.Context, conds []entity.Condition) error {
+	var compared []string
+	for _, cond := range conds {
+		for _, field := range cond.ComparedTimestamps() {
+			if ch.queryField(field).Type == schema.Timestamp && !slices.Contains(compared, field) {
+				compared = append(compared, field)
+			}
+		}
+	}
+	return ch.refuseLegacyTimestampColumns(ctx, compared)
+}
+
+// refuseLegacyTimestampColumns runs the one-row probe over each Timestamp
+// column in compared, when legacyTimestampsPossible.
+func (ch *CrudHandler) refuseLegacyTimestampColumns(ctx context.Context, compared []string) error {
 	if len(compared) == 0 || !ch.legacyTimestampsPossible(ctx) {
 		return nil
 	}

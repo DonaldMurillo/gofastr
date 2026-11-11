@@ -553,6 +553,10 @@ func (c *CorePlugin) meHandler() http.HandlerFunc {
 // without the created user object. Clients follow up with /auth/login.
 func (c *CorePlugin) registerHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Marked first, so every form error below, the cross-site and
+		// throttle refusals included, falls back to the register error
+		// path rather than the login one.
+		r = asRegisterForm(r)
 		// Cross-site rejection first, a 403'd request must not burn the
 		// victim's per-IP budget (see loginHandler). Then the per-IP
 		// throttle: unthrottled registration is account-table flooding +

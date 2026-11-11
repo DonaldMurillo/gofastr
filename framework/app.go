@@ -262,7 +262,7 @@ const (
 	defaultServerIdleTimeout       = 120 * time.Second
 
 	// requestTimeoutWriteSlack is how far past a raised RequestTimeout an
-	// unset WriteTimeout is moved, so the timeout middleware's own 503
+	// unset WriteTimeout is moved, so the timeout middleware's own 504
 	// (or a response finished just inside the budget) is still written.
 	requestTimeoutWriteSlack = 10 * time.Second
 
@@ -335,7 +335,7 @@ func (a *App) requestBudget() time.Duration {
 // RequestTimeout, or its 30s default when unset). Each is valid alone;
 // together a buffered response finished between the two is never
 // delivered (the client sees the connection drop, not the response or
-// the timeout middleware's 503) while its handler runs on to the
+// the timeout middleware's 504) while its handler runs on to the
 // budget. An unset WriteTimeout is raised instead (see Start); 0
 // disables the deadline.
 func (a *App) checkRequestWriteTimeouts() error {
@@ -4161,10 +4161,11 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 
 	// Machine-readable misses in the API namespace (agent-readiness): a
 	// path under the configured APIPrefix (default /api) that no route
-	// owns must answer application/problem+json, not the UI host's HTML
-	// 404. Installed after every mount above so the wrapped fall-through
-	// is the final one. See api_miss.go.
-	a.installAPIMissProblem404()
+	// owns, or that a route owns under another method, must answer
+	// application/problem+json, not the UI host's HTML 404 or 405.
+	// Installed after every mount above so the wrapped fall-throughs are
+	// the final ones. See api_miss.go.
+	a.installAPIMissProblems()
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins
 	// and batteries that implement ReadinessRegistrar were given a chance

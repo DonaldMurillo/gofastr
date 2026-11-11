@@ -1513,13 +1513,21 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 		}
 		h, ok := q.handlerFor(job.Type)
 		if !ok {
-			// No handler, drop the row so it doesn't loop forever. The
-			// drop is a settle like any other: detached from shutdown,
-			// and a failure is logged, not discarded.
+			// No handler. The claim asks only for registered types, so
+			// this is a handler gone between the claim and here. Acking
+			// it deleted the job with no trace; like MemoryQueue it is
+			// dead-lettered instead, where ListJobs shows it and Replay
+			// re-runs it once a handler is back. The settle is detached
+			// from shutdown, and a failure is logged, not discarded.
 			settleCtx, cancel := settleContext(ctx)
-			if err := q.Ack(settleCtx, job); err != nil {
-				q.logger.Warn("queue: dropping a job with no handler failed; it reruns when its lease expires",
+			// A claim another worker settled or re-took meanwhile settles
+			// nothing (dead is false): no dead-letter to report.
+			if dead, err := q.settleFailure(settleCtx, job, fmt.Errorf("%w: no handler registered for job type %q", ErrPermanent, job.Type)); err != nil {
+				q.logger.Warn("queue: dead-lettering a job with no handler failed; it reruns when its lease expires",
 					"job_id", job.ID, "err", err)
+			} else if dead {
+				q.logger.Error("queue: no handler registered; job dead-lettered",
+					"job_id", job.ID, "job_type", job.Type)
 			}
 			cancel()
 			continue

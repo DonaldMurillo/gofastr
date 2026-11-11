@@ -403,6 +403,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 			log.Fatal(err)
 		}
 		auth.SetDefaultLoginErrorPath("/login")
+		auth.SetDefaultRegisterErrorPath("/signup")
 		// Bootstrap admin account so the back-office is reachable on a
 		// fresh database. Created only when absent (idempotent). The
 		// password comes from ADMIN_SEED_PASSWORD (see the generated

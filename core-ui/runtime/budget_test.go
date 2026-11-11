@@ -724,7 +724,7 @@ const (
 	// A bare data-cui-signal-set name sets the empty string, as its contract
 	// row says (+7, TestSignalSetBareNameSetsEmptyString), in the click
 	// delegate that owns every signal mutation: 16854 measured + 2.
-	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19 + 57 + 7
+	coreGoalGZ = 12718 + 60 + 30 + 113 + 79 + 55 + 33 + 65 + 71 + 73 + 79 + 67 + 33 + 26 + 174 + 3 + 8 + 519 + 97 + 49 + 11 + 3 + 421 + 46 + 211 + 13 + 19 + 8 + 28 + 28 + 114 + 40 + 118 + 37 + 16 + 30 + 84 + 100 + 18 + 52 + 10 + 127 + 4 + 20 + 8 + 35 + 7 + 21 + 42 + 22 + 1 + 6 + 8 + 3 + 2 + 84 + 22 + 139 - 8 + 15 + 51 + 3 + 11 - 2 + 62 + 94 + 50 - 16 + 16 + 27 + 160 + 19 + 57 + 7 + 88
 	// The window is still the constraint that matters, and the artifact still
 	// fits inside it in every deployment: nothing in the framework compresses
 	// runtime.js, so the bytes a browser receives are compressed by nginx, a
@@ -1251,7 +1251,15 @@ const (
 	// The bare data-cui-signal-set name (see coreGoalGZ) measures 19465 at
 	// level 1 (-14: level 1 found a longer match around it). Two bytes of
 	// clearance, cliff fixture re-run.
-	coreCongestionWindowGZ = 19467
+	// The fetched-document parse stepping over head script, comment and
+	// title text (a "<style>" in a head script ate the metas up to the
+	// next real </style>; see coreGoalGZ) measures 19586 at level 1
+	// (+121). It cannot carve, for the reason the strip itself could not:
+	// core's navigator parses the page with no module loaded. The
+	// attribute-value arm was measured (+30 more) and left out: the
+	// framework's renderers escape "<" in attribute values. Two bytes of
+	// clearance, cliff fixture re-run.
+	coreCongestionWindowGZ = 19588
 )
 
 // TestCoreBudgetAtPreLayout pins the opt-in budget derivation
@@ -1428,6 +1436,8 @@ func TestCoreBudgetAtPreLayout(t *testing.T) {
 		"a fetched document is parsed without its head sheets": 57, // (l1: 54)
 		// Measured 16847 → 16854 (2026-11-10): TestSignalSetBareNameSetsEmptyString.
 		"a bare signal-set name sets the empty string": 7, // (l1: -14)
+		// Measured 16854 → 16942 (2026-11-10): TestParseDocSkipsHeadScriptText.
+		"a head script's text is not read as tags": 88, // (l1: 121)
 	}
 	sum := preLayoutCoreGZ + clearanceGZ
 	for _, v := range itemised {

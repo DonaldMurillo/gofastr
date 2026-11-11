@@ -224,11 +224,15 @@ func (p *EmailVerificationPlugin) verifyHandler(w http.ResponseWriter, r *http.R
 		// browser withholds the SameSite=Strict session cookie on it.
 		// Answer it with a page from this origin that loads the same
 		// link again: that navigation starts on this site, so the cookie
-		// rides it. The hop redeems nothing, and its follow-up is
-		// same-origin, so a browser with no session gets this 401 then.
-		if handler.IsCrossSiteRequest(r) {
+		// rides it. The hop redeems nothing. A request with no Fetch
+		// Metadata hops too (handler.NeedsSameSiteHop): a browser sends
+		// none to a plain-HTTP LAN address. The follow-up is same-origin,
+		// or carries the hop marker when it will send no Fetch Metadata
+		// either (handler.SameSiteHopTarget), so a browser with no
+		// session gets this 401 then.
+		if handler.NeedsSameSiteHop(r) {
 			if target, ok := sameOriginTarget(r); ok {
-				writeSameSiteHop(w, r, p.mgr.config.Pages, target, verifyHopTitle)
+				writeSameSiteHop(w, r, p.mgr.config.Pages, handler.SameSiteHopTarget(r, target), verifyHopTitle)
 				return
 			}
 		}

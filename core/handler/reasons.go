@@ -6,6 +6,7 @@ import "github.com/DonaldMurillo/gofastr/core/i18n"
 // detail param is a JSONErrorDetail phrase, never the decoder's own text.
 var (
 	ReasonInvalidJSON          = i18n.Define("error.invalid_json", "invalid JSON: {{detail}}")
+	ReasonJSONNotUTF8          = i18n.Define("error.json_not_utf8", "invalid JSON: the body is not valid UTF-8")
 	ReasonJSONMultipleValues   = i18n.Define("error.json_multiple_values", "invalid JSON: body must contain exactly one JSON value")
 	ReasonJSONDuplicateKey     = i18n.Define("error.json_duplicate_key", "invalid JSON: duplicate key {{key}}")
 	ReasonJSONUnknownField     = i18n.Define("error.json_unknown_field", "invalid JSON: unknown field {{key}}")

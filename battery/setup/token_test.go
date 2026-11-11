@@ -30,9 +30,13 @@ func buildTestRunner(t *testing.T, disableToken bool, completeVal *bool) *Runner
 	})
 }
 
+// doGet is the operator pasting a URL into the address bar, which a
+// browser sends with Sec-Fetch-Site: none. A request with no Fetch
+// Metadata at all gets the same-site hop first (TestNoFetchMetadataClickHops).
 func doGet(handler http.Handler, target string) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("Sec-Fetch-Site", "none")
 	handler.ServeHTTP(w, req)
 	return w
 }
@@ -337,8 +341,19 @@ func TestCookie_HTTPExchangeFlowWithJar(t *testing.T) {
 		},
 	}
 
-	// Exchange: GET /setup?token=... → 303 + Set-Cookie.
+	// The client sends no Fetch Metadata, as a browser does to a
+	// plain-HTTP LAN address: the link answers with the hop page, whose
+	// Refresh target exchanges (303 + Set-Cookie).
 	resp, err := client.Get(server.URL + "/setup?token=" + tok)
+	if err != nil {
+		t.Fatalf("hop: %v", err)
+	}
+	resp.Body.Close()
+	reload, ok := strings.CutPrefix(resp.Header.Get("Refresh"), "0;url=")
+	if resp.StatusCode != http.StatusOK || !ok {
+		t.Fatalf("first load expected the 200 hop page, got %d Refresh %q", resp.StatusCode, resp.Header.Get("Refresh"))
+	}
+	resp, err = client.Get(server.URL + reload)
 	if err != nil {
 		t.Fatalf("exchange: %v", err)
 	}

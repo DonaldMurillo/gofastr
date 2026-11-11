@@ -27,18 +27,28 @@ user, failing closed with 401 when no owner can be derived.
 `TestOrdersOwnerScoped` pins this. (The first cut shipped insecure;
 git history has the full story of the fix.)
 
-Line prices are server-owned: `order_items.unit_price` and `total_price`
-are read-only in the app spec and generated request types. After each item
-create/update, the owned lifecycle hook reads the stored product and quantity,
-copies the product's current price, multiplies it using exact decimal
+Line prices and names are server-owned: `order_items.unit_price`,
+`total_price` and `product_name` are read-only in the app spec and generated
+request types. After each item create/update, the owned lifecycle hook reads
+the stored product and quantity, copies the product's current name and price,
+multiplies the price using exact decimal
 arithmetic at four decimal places, and then recomputes the parent order.
 Pricing and totals share the CRUD transaction, so failures roll back the write.
-Order subtotals and totals round to the columns' four-decimal scale, including
-tax and shipping, so SQLite's floating-point SUM artifacts do not reach the API.
-On SQLite, a derived line price beyond the decimal exactness limit is refused
-before persistence, and the item write and its parent-total changes roll back.
-Clients can omit both price fields; supplied values cannot set a price.
+Order subtotals and totals are summed in Go with exact decimal arithmetic at the
+columns' four-decimal scale, including tax and shipping; SQLite's floating-point
+SUM never computes money. On SQLite, a derived line price, subtotal or total
+beyond the decimal exactness limit (15 significant digits) is refused before
+persistence, and the write and its parent-total changes roll back.
+Clients can omit both price fields; supplied values cannot set a price. The
+order's `subtotal` and `total` are read-only the same way: a create need not
+send them, and a value sent is not stored.
 Quantity-only edits and product changes reprice against the current catalog.
+Only an active product can be ordered: a line that names a draft, archived or
+deleted product is refused, on create and on any later edit. The demo keeps no
+stock count.
+Once an order ships, is cancelled or is refunded, its items, tax and shipping
+cost are settled: adding, editing, moving or deleting a line, or editing either
+charge, is refused, while other order fields stay editable.
 Keep the owned hook file when scaffolding; generated hook stubs are not its
 implementation. `TestOrderPricesComeFromProducts` exercises this through REST.
 

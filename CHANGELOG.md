@@ -151,6 +151,23 @@ few lines, and link the PR or the docs page for the rest.
   build needs `lipo` from the Xcode command line tools and stops before
   touching the previous bundle when it is missing. See
   [desktop](framework/docs/content/desktop.md#the-gofastr-desktop-verbs).
+- **`router.WrapMethodNotAllowed`** wraps a router's 405 fall-through
+  the way `WrapNotFound` wraps its 404, so a wrapper can answer some
+  wrong-method requests and pass the rest on. The router sets `Allow`
+  before the wrapper runs.
+- **`widget.Definition.ListedFor`** (and `Builder.ListedFor`) keeps a
+  widget out of the catalog and the SSR inline for a caller it turns
+  away ([widgets](framework/docs/content/widgets.md)). battery/admin
+  sets it on its drawer, palette and shortcut sheet.
+- **`auth.SetDefaultRegisterErrorPath`**
+  ([auth](framework/docs/content/auth.md)). A failed signup form post
+  with no Referer redirects there, back to the form, instead of to the
+  login error path. The app spec generator sets it to the screen
+  holding the `signup_form`, and `gofastr init` sets `/register`.
+- **`framework.ValidateDisplay` and `entity.ValidateDefaults`** run the
+  boot checks for a `Display` block and for field defaults over a
+  config that never passed registration. They are for code generators;
+  `gofastr validate` uses both.
 
 ### Changed
 - **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
@@ -272,8 +289,86 @@ few lines, and link the PR or the docs page for the rest.
   `AddressRateLimit` fields on `MagicLinkConfig` and
   `PasswordResetConfig` are removed; move any explicit setting to
   `AuthConfig.MailAddressRateLimit`.
+- **BREAKING: `?q=` on an entity with no `SearchFields` answers 400
+  `search_not_configured`** ([search](framework/docs/content/search.md)).
+  The list ignored it and answered every row to a client that believed
+  it was searching, while `ListAll` already refused the same search. A
+  blank `?q=` is still no search, and an entity with its own column or
+  filter param named `q` keeps `?q=` as that filter.
+- **BREAKING: a cursor list refuses an unknown `direction`** with 400
+  `bad_direction`
+  ([cursor pagination](framework/docs/content/cursor-pagination.md)).
+  `back`, `Backward` and a value that does not decode (`%ZZ`) paged
+  forward with a 200, as did a typo in a repeated `direction` pair.
+  Absent or empty is still forward.
+- **BREAKING: the entityui CSV export refuses a parameter its list does
+  not own** with 400 `export_unknown_param`
+  ([entityui](framework/docs/content/entityui.md)). A REST filter such as
+  `?status=paid` was ignored, and the file held every row the caller
+  could read; so was an `f_` param naming a field the list has no facet
+  for. The bulk bar's Export link now carries only the list's own
+  params.
+- **BREAKING: a JSON body that is not valid UTF-8 answers 400
+  `json_not_utf8`**
+  ([core packages](framework/docs/content/core-packages.md)).
+  `encoding/json` turned each bad byte into U+FFFD, so the row stored
+  text the client never sent. `handler.Bind`, `UnmarshalStrict`,
+  `DecodeStrict` and every JSON body crud reads run the new
+  `handler.CheckUTF8` first.
+- **A wrong method under `/api` answers a 405 problem document**, with
+  the router's `Allow` header. It got the UI host's HTML 405 page, and a
+  guest session cookie with it.
+- **A setup, OAuth callback or email-verify link that arrives with no
+  Fetch Metadata gets the same-site hop page**
+  ([security](framework/docs/content/security.md),
+  [first run](framework/docs/content/first-run.md)). Browsers send no
+  `Sec-Fetch-Site` to a plain-HTTP origin other than localhost. A setup
+  link to `http://192.168.1.5:8080` clicked in a chat app spent its
+  token on a redirect that dropped the `SameSite=Strict` cookie, and
+  every later click said "already used". `handler.NeedsSameSiteHop` and
+  `SameSiteHopTarget` make the call for all four sites. curl and test
+  clients now get the 200 hop page first: follow its `Refresh` header,
+  or send `Sec-Fetch-Site: none`.
+- **DBQueue dead-letters a claimed job whose handler is gone**
+  ([queue](framework/docs/content/queue.md)), as MemoryQueue does. It
+  acked the job, and the row vanished. `ListJobs` now shows it and
+  `Replay` reruns it.
+- **`gofastr validate` refuses more specs the generated app would refuse
+  at boot or serve wrong** ([app spec](framework/docs/content/app-spec.md)):
+  - an `app.static_dir` at the app root or above it, inside a directory
+    the generator writes Go into, or holding the SQLite file;
+  - a screen at a route the framework serves itself (`/robots.txt`,
+    `/sitemap.xml`, `/mcp`, `/.well-known/*`, `/openapi.json`, and the
+    PWA and llm.md files when those are on) or under the admin path;
+  - a field `default` the field's own validator refuses;
+  - a `display:` block naming a field the entity lacks, faceting a
+    string field, or holding a view query on a missing column;
+  - an authored screen at a list's `<list>/create` route;
+  - a `stat_card`, `link_button`, hero CTA or `markdown` block missing a
+    prop its component cannot render without, or holding a bare number
+    where it takes text;
+  - an owner-scoped entity whose `primary_key` leaves the owner out, or
+    whose implicit `id` key is a declared field with no `auto_generate`;
+  - a `login_form` or `signup_form` action off the mounted auth base, or
+    an absolute one not on `app.base_url`'s origin;
+  - an `app.base_url` that is not a bare http(s) origin (a bare trailing
+    `?` included, which uihost strict mode now refuses at boot too), and an
+    `app.admin.path` that is not a clean prefix (`/` included);
+  - two entities whose create-flagged lists share one screen.
+
+  It also warns on a `custom_form` that POSTs to a screen route, an
+  image or file field with no file storage wired, and a screen, auth or
+  admin mount, or entity API route whose first segment is a locale tag
+  under `locale_prefixes`.
 
 ### Security
+- **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,
+  up from `go 1.27.3`. Go 1.27.3's net/http carries GO-2026-6859, an
+  HTTP/1 server crash through a `MaxBytesReader` header race, and every
+  GoFastr app serves HTTP. `go get` of this release raises an app's `go`
+  line, and the default `GOTOOLCHAIN=auto` downloads 1.27.4; with
+  `GOTOOLCHAIN=local`, install 1.27.4 first. `gofastr init` writes
+  `go 1.27.4`, and `gofastr upgrade` flags a go.mod below it.
 - **BREAKING: desktop update feeds expire, and a macOS update must carry
   the running app's signing identity**
   ([#649](https://github.com/DonaldMurillo/gofastr/issues/649),
@@ -549,6 +644,26 @@ few lines, and link the PR or the docs page for the rest.
   the `os.Mkdir` that made it. Code that `gofastr verify` or
   `make analyze` passed before can now fail; the messages name the
   fix.
+- **BREAKING: boot refuses a table that still holds a single-column
+  UNIQUE a composite index replaced**
+  ([migrations](framework/docs/content/migrations.md)). A column that
+  moved from unique on its own into a composite unique index such as
+  `(user_id, email)` kept the old constraint. One account's value was
+  then refused for every other account, and the 409 told the caller
+  what another account stored. Boot now stops and names the column.
+  `DiffSchema` drops the stale constraint on Postgres and rebuilds the
+  table on SQLite; apply it with `ApplySchemaDiffWithOptions`
+  (`AllowDestructive` on SQLite), or drop it in a reviewed migration.
+- **An admin cannot remove their own admin role**
+  ([admin](framework/docs/content/admin.md)). Under the default gate the
+  only admin could drop it in one request and lock every admin out, with
+  no way back short of SQL. Another admin can still remove it.
+- **The widget catalog lists only the widgets a caller can reach, and is
+  never cached** ([widgets](framework/docs/content/widgets.md)). Any
+  session, the guest session an anonymous page view mints included,
+  could ask for `?page=/admin` and read the names of the admin drawer,
+  palette and shortcut sheet. `/__gofastr/widgets` also answers
+  `Cache-Control: no-store` with `Vary: Cookie`.
 
 ### Fixed
 - **A refused entity screen keeps its heading.** A list, record or
@@ -1367,6 +1482,55 @@ few lines, and link the PR or the docs page for the rest.
   now arms the trap for one it finds open on arrival. The acme-site
   phone menu gains a test that Tab walks its links and its close button
   and that Escape closes it.
+- **A TypedQuery comparison on a legacy-layout timestamp is refused**, as
+  the filter surfaces refuse it. On an Unmanaged SQLite table holding
+  `2026-03-03 10:00:00`, `Find` missed the row and `UpdateAll` touched
+  nothing, with no error.
+- **llm.md table cells keep a linked image and a line break inside a
+  link.** An avatar column read `[\x00a0\x00](/users/7)` with two NUL
+  bytes, and `<a>one<br>two</a>` read `[onetwo]`.
+- **A soft navigation keeps the next page's CSRF token when a head script
+  holds a literal `<style>` or `<body`**
+  ([runtime contract](framework/docs/content/runtime-contract.md)). The
+  head-style strip read script text as markup and deleted the metas in
+  between. It now walks the head span by span. The core runtime's gzip
+  budget moves from 19467 to 19588 bytes.
+- **The static boot pass's `gofastr:widgets-synced` names the page it ran
+  for**, not the page a navigation reached while its fetch was out.
+- **A recovered boot panic names the file that holds its stack**
+  ([log](framework/docs/content/log.md)). battery/log's default sink
+  writes to a file under the OS state dir, and the error said only "its
+  stack is logged".
+- **`gofastr pack` round-trips the union spec byte for byte.** It dropped
+  node blocks with their actions and line charts, dropped entity-form
+  fields with multi-word names, and lost the app home the login links
+  point at. Rendering one spec twice also expanded its seed recipe twice.
+  `TestPackUnionRegeneratesSameFiles` holds the round trip.
+- **`generate app --add` keys the added screens' phrases under the
+  project's app name**, not the fallback `app.` namespace.
+- **Every generated screen has an `<h1>`**: a body that draws none starts
+  with a `ui.PageHeader` holding the screen title. The generated e2e test
+  checks `GET /` only when a screen sits there.
+- **Meridian** stamps `issued_on` when an invoice is issued, and its
+  `/es/` pages translate the skip link and the 404, 405, 500 and offline
+  pages.
+- **The ecommerce example** sums order totals exactly or refuses them,
+  takes orders only for active products, refuses item and charge changes
+  on a shipped, delivered, cancelled or refunded order, no longer demands
+  the subtotal and total it derives on create, and copies a line's name
+  from its product.
+- **The `keytrim` analyzer reads `r.PathValue` and identity headers** as
+  request input, so a trimmed path or `X-Tenant-Id` value fires.
+- **Docs:** crud lists default to 20 rows and the pagination parse
+  helpers to 25 ([cursor pagination](framework/docs/content/cursor-pagination.md));
+  `BoolDefault` answers its fallback when the flag store errors
+  ([feature flags](framework/docs/content/feature-flags.md)); the timeout
+  middleware answers 504 ([deploy](framework/docs/content/deploy.md));
+  multipart field names fold like JSON keys and the record stores the
+  storage key, not a URL ([uploads](framework/docs/content/uploads.md));
+  the locale tag bound applies after lower-casing and trimming
+  ([i18n](framework/docs/content/i18n.md)); and the legacy-timestamp
+  check reads the whole column on every filtered request.
 
 ## [0.96.0] - 2026-11-06
 

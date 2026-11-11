@@ -82,9 +82,16 @@ a hosted log viewer or a chat message. The browser would withhold the
 SameSite=Strict cookie from that navigation, so the wizard first
 answers with a page of its own that loads the link again
 (`setup.hop_title`), and the exchange happens on that second load. The
-first answer checks and spends nothing. Only a link opened in a tab
-gets that page: one another site loads in a frame, as an image or by
-script is answered 403 with the token unspent, and every
+first answer checks and spends nothing. A browser sends no Fetch
+Metadata to a plain-HTTP address that is not localhost (a LAN address
+such as `http://192.168.1.5:8080`), so a request with none gets the
+same page: its reload carries `gofastr_hop=1`
+(`handler.SameSiteHopParam`), and that load exchanges. curl and other
+scripts follow the page's `Refresh` header or its link, or send
+`Sec-Fetch-Site: none`. Only a top-level navigation gets that page
+(a link opened in a tab, or a client such as curl that names no
+destination): a request another site makes from a frame, as an image
+or by script is answered 403 with the token unspent, and every
 setup page refuses framing (`X-Frame-Options: DENY`,
 `frame-ancestors 'none'`).
 `Config.DisableToken` opts out for trusted networks; wizard POSTs are

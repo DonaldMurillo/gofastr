@@ -41,12 +41,17 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 ## Defaults & caps
 
-- `DefaultPageSize = 20` (the shared entity list default)
-- `MaxPageSize = 100` (`limit` is clamped silently)
-- `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
-  the entity's cap is clamped to it, same as the offset and streaming
-  list paths. (An oversized `limit` is clamped, never reset to the
-  default.)
+- The crud list routes (offset and cursor) default to 20 rows when no
+  `limit` is sent. `pagination.DefaultPageSize` is 25: it is the
+  default of the standalone parse helpers
+  (`pagination.ParsePagination`, `pagination.ParseCursorPagination`) a
+  handler of your own calls, not of the entity list routes.
+- `pagination.MaxPageSize = 100` caps the standalone parse helpers
+  (`limit` is clamped silently). The crud list routes clamp to the
+  entity's `Pagination.MaxListLimit` instead (100 when unset, at most
+  1000), on the cursor path as on the offset and streaming list paths.
+  (An oversized `limit` is clamped, never reset to the default; a cap
+  below 20 also lowers the default to the cap.)
 - A `cursor` longer than 16 KiB, or a multi-field cursor carrying more
   than 64 fields, is rejected as invalid (400 on the list routes).
   Cursors are client-echoed input, so decode work is bounded by these
@@ -78,8 +83,13 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
   `pagination.ErrCursorKeyMissing`, since `HasMore` with an empty cursor
   sends a client that echoes it back to page 1. Neither is an error on
   the last page, which mints no cursor.
-- `direction` defaults to `"forward"`; only `"forward"` and
-  `"backward"` are accepted.
+- `direction` defaults to `"forward"` when absent or empty; only
+  `"forward"` and `"backward"`, spelled exactly, are accepted. Any other
+  value (`back`, `Backward`, or one that does not decode, such as
+  `%ZZ`) answers 400 `bad_direction`, and so does a second `direction`
+  pair that is not one of the two words. The
+  `pagination.ParseCursorPagination` helper itself still reads an
+  unknown value as `"forward"`; the crud list checks the raw parameter.
 
 ## Cursor field configuration
 

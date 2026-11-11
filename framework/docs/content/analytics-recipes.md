@@ -407,9 +407,14 @@ Each return is load-bearing:
   the "genuinely absent" answer `BoolDefault` needs to honor its
   fallback, so a typo'd kill-switch key still fails safe to the default
   you chose.
-- **Any other outcome returns the error.** The evaluator fails closed:
-  `Bool` and `BoolDefault` both answer false on storage errors, so a
-  vendor outage disables gated code instead of opening it.
+- **Any other outcome returns the error.** `Bool` answers false on a
+  storage error, so a vendor outage turns the gated code off.
+  `BoolDefault` answers its fallback instead, as it does for a key the
+  vendor proves absent, so the fallback is also the outage answer:
+  `BoolDefault(ctx, "new-checkout", false)` keeps the new code off
+  while the vendor is down, and `BoolDefault(ctx, "kill-payments", true)`
+  keeps payments blocked. A fallback of `true` on a flag that turns code
+  on opens that code for everyone during an outage.
 
 Wire it before the first flag check, and attach the caller once per
 request:

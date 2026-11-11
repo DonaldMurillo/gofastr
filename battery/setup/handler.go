@@ -139,9 +139,14 @@ func (r *Runner) handleTokenExchange(w http.ResponseWriter, req *http.Request, t
 	// token: exchanged, it spent the one-time token on a request whose
 	// cookie the browser withholds, and the operator's later click
 	// answered "already used".
-	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.IsCrossSiteRequest(req) {
+	// A request with no Fetch Metadata at all hops too: a browser sends
+	// none to a plain-HTTP LAN address, so a click there looks like curl
+	// (handler.NeedsSameSiteHop). Its reload sends no Fetch Metadata
+	// either and carries the hop marker instead (handler.SameSiteHopTarget),
+	// which is what lets it exchange.
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && handler.NeedsSameSiteHop(req) {
 		if target, ok := sameOriginTarget(req); ok && topLevelNavigation(req) {
-			r.renderHop(w, req, target)
+			r.renderHop(w, req, handler.SameSiteHopTarget(req, target))
 			return
 		}
 		i18n.HTTPError(w, req, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
@@ -496,8 +501,8 @@ func sameOriginTarget(req *http.Request) (string, bool) {
 }
 
 // topLevelNavigation reports a request for a document in a tab, not in
-// a frame. A browser without Fetch Metadata sends no Sec-Fetch-Dest,
-// and it sends no Sec-Fetch-Site either, so it never reaches the hop.
+// a frame. A request with no Fetch Metadata sends no Sec-Fetch-Dest
+// either, and is treated as one: the hop page it gets spends nothing.
 func topLevelNavigation(req *http.Request) bool {
 	dest := req.Header.Get("Sec-Fetch-Dest")
 	return dest == "" || dest == "document"

@@ -62,6 +62,13 @@ type AppSpec struct {
 	// whose App holds no api_prefix default, so the checks that need the
 	// project's app settings skip it. Unexported for the reason phrases is.
 	appless bool
+
+	// phraseApp is the app name a fragment's phrase keys take, read from
+	// the project the fragment joins: a fragment's App.Name is empty, and
+	// keys under the fallback "app" namespace would differ from the rest
+	// of the project's. Unexported for the reason phrases is; App.Name
+	// itself stays empty, since it decides whether app.go is emitted.
+	phraseApp string
 }
 
 // PhraseCollector returns the phrase collector of the file being
@@ -78,6 +85,19 @@ func (bp *AppSpec) MarkFragment() { bp.appless = true }
 // marked with MarkFragment). A serializer writes no app: section for one,
 // so the fragment stays a fragment on the next decode.
 func (bp *AppSpec) IsFragment() bool { return bp.appless }
+
+// SetPhraseApp records the project's app name for a fragment's phrase
+// keys (generate app --add). An empty name changes nothing.
+func (bp *AppSpec) SetPhraseApp(name string) { bp.phraseApp = name }
+
+// PhraseApp is the app name phrase keys are namespaced under: the
+// project's name recorded by SetPhraseApp, else App.Name.
+func (bp *AppSpec) PhraseApp() string {
+	if bp.phraseApp != "" {
+		return bp.phraseApp
+	}
+	return bp.App.Name
+}
 
 // SetPhraseCollector installs the phrase collector a file renderer
 // emits through, on that renderer's own copy of the spec.
@@ -2580,6 +2600,19 @@ func ValidateAppSpec(bp AppSpec) error {
 	if p := bp.App.Auth.BasePath; p != "" && !authBasePathRE.MatchString(p) {
 		errs.add(fmt.Errorf("app spec: app.auth.base_path %q must be an absolute path such as /account: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash", p))
 	}
+	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL, bp.App.OutputDir); why != "" {
+		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
+	}
+	// The admin battery mounts every route under admin.path the same way:
+	// "/" trims to an empty prefix and panics its Init at boot.
+	if p := bp.App.Admin.Path; p != "" && !authBasePathRE.MatchString(p) {
+		errs.add(fmt.Errorf("app spec: app.admin.path %q must be an absolute path such as /admin: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash; / is refused because the back office needs a prefix of its own", p))
+	}
+	// The sitemap origin: the generated app's always-on strict mode
+	// panics at boot on a base_url it cannot use.
+	if why := baseURLProblem(bp.App.BaseURL); why != "" {
+		errs.add(fmt.Errorf("app spec: app.base_url %q %s: it is the origin of every sitemap URL, and the generated app refuses to boot on it; write an origin such as https://demo.example", bp.App.BaseURL, why))
+	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
 	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
@@ -2612,10 +2645,37 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		walk(s.Body)
 	}
+	// Every create-flagged list's New opens <home list route>/create, the
+	// one create screen AppSpecSynthesizeCRUDScreens adds per entity. Two
+	// entities whose home list is the same screen would share that route:
+	// the second create screen was dropped and its New opened the first
+	// entity's form, so a team was saved as a player.
+	createFor := map[string]string{}
+	for _, s := range bp.Screens {
+		for _, b := range AppSpecBlocksDeep(s.Body) {
+			e := strings.Trim(b.Entity, "/")
+			if !IsEntityListBlock(b) || !b.Create || e == "" {
+				continue
+			}
+			home := AppSpecEntityListScreen(bp, e)
+			if home == nil {
+				continue
+			}
+			route := strings.TrimRight(home.Route, "/") + "/create"
+			if other, ok := createFor[route]; ok && other != e {
+				errs.add(fmt.Errorf("app spec: entities %q and %q both create from lists on screen %q, so both create screens would sit at %s and one entity's New would open the other's form; move one list to its own screen or drop its create: true", other, e, home.Name, route))
+				continue
+			}
+			createFor[route] = e
+		}
+	}
 	// entityui links a record at <base>/<id> with <base> the list's route,
 	// so a detail screen must sit exactly at <list route>/{id} when the
 	// entity also has a list screen. Anything else strands the links.
 	errs.add(validateDetailRoutes(bp))
+	// An explicit login_form/signup_form action must be the mounted
+	// auth route, or the generated sign-in form posts to a 404.
+	validateAuthFormActions(bp, &errs)
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
 		case "", "standalone", "fullscreen", "minimal-ui", "browser":
@@ -2704,6 +2764,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			}
 			seenField[f.Name] = true
 		}
+		errs.add(ownerScopedKeyProblem(decl))
 		// Field names and enum values are transcribed into emitted Go,
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,
@@ -2739,8 +2800,26 @@ func ValidateAppSpec(bp AppSpec) error {
 				}
 			}
 		}
-		if _, err := decl.Config(); err != nil {
+		cfg, err := decl.Config()
+		if err != nil {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
+			continue
+		}
+		// The display: block names fields, facets, views and form slots
+		// registration checks against the entity; run that check here.
+		if decl.Display != nil {
+			if err := framework.ValidateDisplay(decl.Name, cfg); err != nil {
+				errs.add(fmt.Errorf("app spec: %w", err))
+			}
+		}
+		// A field default the field's own validator refuses (an enum
+		// value not in values:, "notanumber" on an int, "" on a required
+		// field) fails registration, which panicked the generated app at
+		// boot. Run that one check here, from framework/entity.
+		if slices.ContainsFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Default != nil }) {
+			if err := fwentity.ValidateDefaults(decl.Name, cfg); err != nil {
+				errs.add(fmt.Errorf("app spec: %w", err))
+			}
 		}
 	}
 	errs.add(validateAppSpecSQLNames(bp))
@@ -2899,6 +2978,10 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
+		if owner := screenRouteOnFrameworkRoute(bp, screen.Route); owner != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, a route the framework serves itself: the screen would never render, or would take the route over; move the screen", screen.Name, screen.Route, owner))
+			continue
+		}
 		if bp.App.Auth.Enabled {
 			base := bp.App.Auth.BasePath
 			if base == "" {
@@ -2984,6 +3067,15 @@ func ValidateAppSpec(bp AppSpec) error {
 		typeName := ToCamelCase(screen.Name) + "Screen"
 		if prev, dup := screenTypes[typeName]; dup {
 			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
+		}
+	}
+	// The render adds a create screen only where no authored screen sits,
+	// so an authored screen at <list>/create replaced the create form:
+	// the list's New opened a page with no form, and the generated e2e
+	// stayed green because it creates through the API.
+	for _, screen := range bp.Screens {
+		if e, ok := createFor[strings.TrimRight(screen.Route, "/")]; ok {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is where the %s list's create: true adds the create screen, so the authored screen would replace the create form and New would open a page without one; move the screen, or drop the list's create: true to keep your own", screen.Name, screen.Route, e))
 		}
 	}
 	errs.add(ValidateAppSpecEndpoints(bp))
@@ -3667,6 +3759,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			return fmt.Errorf("app spec: screen %q %s %q: %w", screenName, kind, AppSpecBlockName(block, "title", srcEntity), err)
 		}
 	case "stat_card":
+		if err := validateCatalogRequired(screenName, "stat_card", block); err != nil {
+			return err
+		}
 		// A stat_card with a source binds to live entity data; without a
 		// registered CRUD handler statValue would render a silent "—".
 		// Reject an unknown or crud-disabled source upfront. (A static
@@ -3768,7 +3863,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		"link_button", "callout",
 		"markdown", "pricing", "divider":
 		// framework/ui catalog blocks. Props are validated leniently (the
-		// generator reads only the props each component understands).
+		// generator reads only the props each component understands),
+		// except what a component panics without at render.
+		if err := validateCatalogRequired(screenName, strings.ToLower(strings.TrimSpace(kind)), block); err != nil {
+			return err
+		}
 	case "action_button", "custom_form", "text_field", "number_field",
 		"checkbox", "switch", "select_field", "radio_group", "data_table",
 		"item_list", "nav_links":
@@ -4141,7 +4240,9 @@ func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 	if s, ok := AppSpecLoginScreen(bp); ok {
 		add(s)
 	}
-	bp.Screens = append(bp.Screens, extra...)
+	// Clip: an append into spare capacity would write the synthesized
+	// screens into the caller's array.
+	bp.Screens = append(slices.Clip(bp.Screens), extra...)
 	return bp
 }
 

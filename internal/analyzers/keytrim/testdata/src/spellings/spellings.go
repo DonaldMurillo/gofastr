@@ -7,6 +7,7 @@ package spellings
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"strings"
 	"unicode"
@@ -31,6 +32,25 @@ func trimBytes(recordID []byte) []byte {
 func throughLocal(vals url.Values) string {
 	raw := vals.Get("user_id")
 	return strings.TrimSpace(raw) // want `keytrim: strings\.TrimSpace rewrites the identity value raw`
+}
+
+// pathValue trims an identity read from the request: a path id or a
+// tenant header. Both are reported, since the value is used as a key.
+func pathValue(r *http.Request) (string, string) {
+	return strings.TrimSpace(r.PathValue("id")), // want `keytrim: strings\.TrimSpace rewrites the identity value r\.PathValue\("id"\)`
+		strings.TrimSpace(r.Header.Get("X-Tenant-Id")) // want `keytrim: strings\.TrimSpace rewrites the identity value r\.Header\.Get\("X-Tenant-Id"\)`
+}
+
+// lowerHeader names the same header in lower case: Header.Get
+// canonicalizes the key, so x-user-id reads X-User-Id.
+func lowerHeader(h http.Header) string {
+	return strings.TrimSpace(h.Get("x-user-id")) // want `keytrim: strings\.TrimSpace rewrites the identity value h\.Get\("x-user-id"\)`
+}
+
+// Silent: a path segment or header that names no identity, and a
+// presence check on one that does.
+func pathQuiet(r *http.Request) (string, string, bool) {
+	return strings.TrimSpace(r.PathValue("slug")), strings.TrimSpace(r.Header.Get("Accept")), strings.TrimSpace(r.PathValue("id")) == ""
 }
 
 // Silent: a non-identity operand, a presence check, file contents.

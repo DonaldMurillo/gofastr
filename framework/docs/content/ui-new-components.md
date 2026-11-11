@@ -529,8 +529,9 @@ and tools on one row, including on phones. Search takes the remaining width.
 > endpoint: the `?q=` param the toolbar emits is exactly what the
 > auto-CRUD List handler free-text-searches. No manual wiring needed:
 > the server-side search is automatic. Without `SearchFields`, the
-> `?q=` param is ignored by the CRUD layer and the screen must filter
-> rows itself (the pre-existing "wired manually" behaviour).
+> CRUD list refuses a non-blank `?q=` (400 `search_not_configured`), so
+> a screen that filters rows itself reads `q` from its own query string
+> and does not forward it to the list endpoint.
 
 
 ---

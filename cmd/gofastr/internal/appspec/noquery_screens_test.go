@@ -88,6 +88,7 @@ func TestChartGroupByRefusesUnknownColumn(t *testing.T) {
 func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 	err := r5AppSpec(t, `      - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: sum
@@ -95,6 +96,9 @@ func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 `)
 	if err == nil {
 		t.Fatal("stat_card agg:sum over a no_query column was accepted")
+	}
+	if !strings.Contains(err.Error(), "no_query") || !strings.Contains(err.Error(), "number") {
+		t.Errorf("error should name no_query and the number column, got: %v", err)
 	}
 }
 
@@ -106,6 +110,7 @@ func TestStatCardAggIsExact(t *testing.T) {
 	stat := func(agg, field string) error {
 		return r5AppSpec(t, `      - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: "`+agg+`"
@@ -238,6 +243,7 @@ screens:
     body:
       - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: sum

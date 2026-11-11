@@ -303,6 +303,7 @@ func (p *Plugin) Init(app *framework.App) error {
 		Level:     p.level,
 		AddSource: cfg.AddSource,
 	})
+	handler.location = p.resolvedFilePath
 	p.handler.Store(handler)
 	p.logger = slog.New(handler)
 	p.cfg = cfg
@@ -393,7 +394,18 @@ type fanoutHandler struct {
 	// metrics is shared across derived handlers so counters on a
 	// WithAttrs/WithGroup chain roll up to the original.
 	metrics *fanoutMetrics
+	// location is the default file sink's path, "" when the host
+	// configured its own sinks. LogLocation hands it to framework, whose
+	// recovered-panic error names where the stack went.
+	location string
 }
+
+// LogLocation reports where this handler's records land: the default
+// file sink's path, or "" when the host configured its own sinks.
+// framework's recoveredPanic reads it to say where a recovered boot
+// panic's stack is: that file holds it in full, while a terminal shows
+// at most the console sink's escaped one-line copy.
+func (h *fanoutHandler) LogLocation() string { return h.location }
 
 // handlerStep is one WithAttrs (attrs set) or WithGroup (group set) call.
 type handlerStep struct {
@@ -548,10 +560,11 @@ func (h *fanoutHandler) with(st handlerStep) *fanoutHandler {
 	steps = append(steps, h.steps...)
 	steps = append(steps, st)
 	return &fanoutHandler{
-		sinks:   h.sinks,
-		opts:    h.opts,
-		steps:   steps,
-		metrics: h.metrics, // shared pointer so counters aggregate
+		sinks:    h.sinks,
+		opts:     h.opts,
+		steps:    steps,
+		metrics:  h.metrics, // shared pointer so counters aggregate
+		location: h.location,
 	}
 }
 

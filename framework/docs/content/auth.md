@@ -177,7 +177,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. Codes are six digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
-| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
+| `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. A click with no Fetch Metadata (a browser sends none to a plain-HTTP LAN address) gets the page too, and its reload carries `gofastr_hop=1`. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
 | `PasswordResetPlugin` | `POST /auth/forgot-password`, `POST /auth/reset-password` | Forgot-password always returns 200 (no enumeration). Calls `SetPassword` on the store, then revokes the user's other reset links, every passkey, every session (`SessionUserPurger`), every outstanding magic link (`magiclink_tokens.purged`), every API token issued through the `TokensPlugin` store (`token.revoked`, `reason=password_reset`) and every OAuth link with its stored provider tokens (`oauth.unlinked`, `reason=password_reset`), so an IdP identity linked from a stolen session cannot sign back in. If any of these stores errors, the reset still runs the other purges, then answers 500 and asks for another link instead of reporting success. On success it mails the account's address a notice naming the unlinked providers (`NoticeTemplate` overrides the body). On an account whose address was unverified it also claims the account and marks the address verified. |
 | `PasskeyPlugin` | `POST /auth/passkey/{login/options,login,register/options,register,delete}`, `GET /auth/passkey/list` | Passkey (WebAuthn) sign-in and self-service enrolment. Sign-in needs no username. A passkey sign-in still stops at the second factor when the account has one. See [Passkeys](#passkeys). |
 | `TokensPlugin` | `POST/GET /auth/tokens`, `DELETE /auth/tokens/{id}` | Self-service scoped API tokens (PATs) for logged-in users. Owner forced from the session; plaintext shown once. See [Service accounts & API tokens](#service-accounts--scoped-api-tokens). |
@@ -398,6 +398,22 @@ auth endpoint — a duplicate or case-folded key, or an unknown top-level
 key, is a `400` before the handler acts. Extra keys that match no field
 are refused, not ignored: a body a reviewer reads differently from the
 handler is the attack, whichever key caused it.
+
+A failed form post (wrong password, weak password, missing field, a
+cross-site or throttled post) answers `303` back to the form with
+`?error=<code>`. The target is the same-origin `Referer` when the
+request carries one. Pages served with `Referrer-Policy: no-referrer`
+never send it, so the battery falls back to a configured path, and to a
+JSON body when none is set:
+
+```go
+auth.SetDefaultLoginErrorPath("/login")       // sign-in errors
+auth.SetDefaultRegisterErrorPath("/register") // sign-up errors
+```
+
+`/auth/register` uses the register path when it is set and the login
+path otherwise. Generated apps set the login path to their login screen,
+and the register path to their `signup_form` screen when they have one.
 
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
@@ -1279,8 +1295,11 @@ callback that arrives cross-site (`Sec-Fetch-Site`) therefore answers
 "Continue" link to the landing page (phrases
 `auth.oauth_signin_hop_title` and `auth.oauth_hop_continue`, drawn by
 `AuthConfig.Pages.Hop` when set). The page it loads starts on this site
-and carries the cookie. A client that sends no Fetch Metadata gets the
-plain `302`.
+and carries the cookie. A callback with no Fetch Metadata at all gets
+the same page, because a browser sends none to a plain-HTTP address
+that is not localhost, and a click there looks like curl
+(`handler.NeedsSameSiteHop`). A callback that carries Fetch Metadata
+and is not cross-site gets the plain `302`.
 
 ## Rate limiting
 
@@ -1772,7 +1791,9 @@ supported way to add that provider is the **authenticated link flow**:
    "Continue" link (phrases `auth.oauth_hop_title` and
    `auth.oauth_hop_continue`), drawn by `AuthConfig.Pages` when set.
    That second request carries the session cookie and completes the
-   link.
+   link. A callback with no Fetch Metadata gets the page too, and its
+   reload carries `gofastr_hop=1` (`handler.SameSiteHopTarget`), so it
+   never hops twice.
 
 The user has proven ownership of both the account (session) and the
 provider (the OAuth round-trip), so this is the ONLY path that may link a

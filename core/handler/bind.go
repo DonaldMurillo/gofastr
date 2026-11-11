@@ -152,6 +152,9 @@ func bindBody(r *http.Request, dst any) error {
 	if len(body) == 0 {
 		return nil
 	}
+	if err := CheckUTF8(body); err != nil {
+		return err
+	}
 
 	// Pre-validate the top-level object: reject duplicate keys,
 	// case-folded matches against struct json tags, and unknown

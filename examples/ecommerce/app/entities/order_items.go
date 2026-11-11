@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=3d85def0707bb534
+//gofastr:generated generator=app kind=scaffold version=dev sum=89adc5e7a5d989a5
 
 package entities
 
@@ -15,7 +15,7 @@ type OrderItems struct {
 	UserId      *string   `json:"userId,omitempty"`
 	OrderId     string    `json:"orderId,omitempty"`
 	ProductId   string    `json:"productId,omitempty"`
-	ProductName string    `json:"productName,omitempty"`
+	ProductName *string   `json:"productName,omitempty"`
 	Quantity    int       `json:"quantity,omitempty"`
 	UnitPrice   string    `json:"unitPrice,omitempty"`
 	TotalPrice  string    `json:"totalPrice,omitempty"`
@@ -30,7 +30,7 @@ type OrderItemsInput struct {
 	UserId      *string `json:"userId,omitempty"`
 	OrderId     string  `json:"orderId"`
 	ProductId   string  `json:"productId"`
-	ProductName string  `json:"productName"`
+	ProductName *string `json:"productName,omitempty"`
 	Quantity    int     `json:"quantity"`
 	UnitPrice   *string `json:"unitPrice,omitempty"`
 	TotalPrice  *string `json:"totalPrice,omitempty"`
@@ -275,7 +275,7 @@ func registerOrderItems(app *framework.App) {
 			{Name: "user_id", Type: schema.String},
 			{Name: "order_id", Type: schema.Relation, Required: true, To: "orders"},
 			{Name: "product_id", Type: schema.Relation, Required: true, To: "products"},
-			{Name: "product_name", Type: schema.String, Required: true, Max: floatPtr(200)},
+			{Name: "product_name", Type: schema.String, ReadOnly: true, Max: floatPtr(200)},
 			{Name: "quantity", Type: schema.Int, Required: true, Min: floatPtr(1)},
 			{Name: "unit_price", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},
 			{Name: "total_price", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},

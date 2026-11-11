@@ -300,11 +300,25 @@ func callModuleSafe(log *slog.Logger, kind, name, phase string, call func() erro
 // logged stack is the only record of where it happened. The caller
 // passes the value's type name (%T), never the value, so a
 // panic(config) leaks no secret and panicked-on bytes forge no log line.
+//
+// The error names where the stack went when the logger's handler says
+// (a LogLocation method, which battery/log's fan-out handler answers
+// with its default file's path): that file under the OS state dir holds
+// the full stack, while a terminal shows at most the console sink's
+// escaped one-line copy, so a bare "its stack is logged" sent a
+// developer whose boot died looking at stderr for a readable record.
+// The location is %q-quoted: a state path or a custom handler can carry
+// terminal controls, and the boot error reaches the operator's terminal.
 func recoveredPanic(log *slog.Logger, what, panicType string) error {
 	if log == nil {
 		log = slog.Default()
 	}
 	log.Error("framework: recovered panic", "in", what, "panic_type", panicType, "stack", string(debug.Stack()))
+	if loc, ok := log.Handler().(interface{ LogLocation() string }); ok {
+		if where := loc.LogLocation(); where != "" {
+			return fmt.Errorf("%s panicked (panic type %s); its stack is logged to %q", what, panicType, where)
+		}
+	}
 	return fmt.Errorf("%s panicked (panic type %s); its stack is logged", what, panicType)
 }
 

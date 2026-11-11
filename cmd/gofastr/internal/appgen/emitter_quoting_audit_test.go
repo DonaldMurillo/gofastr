@@ -425,7 +425,7 @@ var auditControlValues = map[string]string{
 	"__TRANS_STATUS__":      "published",
 	"__TRANS_VARIANT__":     "primary",
 	"__DISPLAY_SINGULAR__":  "Ticket",
-	"__LIST_SEARCH__":       "ctrlmark",
+	"__LIST_SEARCH__":       "status", // a facet takes an Enum, Bool or Relation field
 	"__FIELDHINT_LABEL__":   "Mark",
 	"__FORM_MODE__":         "create",
 	"__LOGIN_TEXT__":        "Sign in",

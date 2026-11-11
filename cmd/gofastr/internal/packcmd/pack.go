@@ -1927,10 +1927,14 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	}
 	helpers := packHelperReturns(helperFiles...)
 	// Render bodies need the helpers map; rescan now that helpers are known.
+	actions := map[string][]packScreenAction{}
 	for _, name := range screenNames {
 		file, _ := parseRoot(name)
 		if file == nil {
 			continue
+		}
+		for recv, acts := range packScreenActions(file) {
+			actions[recv] = acts
 		}
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
@@ -1947,6 +1951,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	var out []appspec.AppSpecScreen
 	for _, r := range orderedRegs {
 		body := bodies[r.reg.typeName]
+		packAttachActions(body, actions[r.reg.typeName])
 		if isSynthesizedBody(body) {
 			continue
 		}
@@ -2110,9 +2115,11 @@ func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 			bodies[recv] = reverseRenderBody(fn, helpers)
 		}
 	}
+	actions := packScreenActions(scrFile)
 	var out []appspec.AppSpecScreen
 	for _, r := range regs {
 		body := bodies[r.typeName]
+		packAttachActions(body, actions[r.typeName])
 		if isSynthesizedBody(body) {
 			continue
 		}
@@ -2192,6 +2199,152 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 			}
 		}
 		packWalkScreenChain(sel.X, r)
+	}
+}
+
+// packReadAppHome recovers the app home the generator wrote: the route a
+// guest-only screen's guestPolicy("<route>") sends a signed-in visitor
+// to, else the signed-in header's Dashboard link in app.go's
+// marketingHeader. "" when the app emits neither, and then no generated
+// file depends on it. Reads go through an *os.Root over dir, like the
+// per-screen reader, so nothing outside dir is read, and only regular
+// files are parsed, so a symlinked leaf is not either.
+func packReadAppHome(dir string) string {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	entries, err := appgen.RootReadDirEntries(root, ".")
+	if err != nil {
+		return ""
+	}
+	parse := func(name string) *ast.File {
+		// os.Root follows a symlink that stays inside dir: only a
+		// regular file is parsed, as the directory loop below requires.
+		if info, err := root.Lstat(name); err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
+		src, err := root.ReadFile(name)
+		if err != nil {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, src, 0)
+		if err != nil {
+			return nil
+		}
+		return file
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		file := parse(name)
+		if file == nil {
+			continue
+		}
+		home := ""
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if home != "" || !ok {
+				return home == ""
+			}
+			if appgen.IdentName(call.Fun) == "guestPolicy" && len(call.Args) == 1 {
+				if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					home = appspec.AstString(lit)
+				}
+			}
+			return home == ""
+		})
+		if home != "" {
+			return home
+		}
+	}
+	file := parse("app.go")
+	if file == nil {
+		return ""
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "marketingHeader" || fn.Body == nil {
+			continue
+		}
+		for _, stmt := range fn.Body.List {
+			ifs, ok := stmt.(*ast.IfStmt)
+			if !ok || !callsGetUser(ifs.Init) {
+				continue
+			}
+			home := ""
+			ast.Inspect(ifs.Body, func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if home != "" || !ok {
+					return home == ""
+				}
+				if sel, ok := lit.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "Link" {
+					home = appspec.AstString(appspec.FieldVals(lit)["Href"])
+				}
+				return home == ""
+			})
+			return home
+		}
+	}
+	return ""
+}
+
+// callsGetUser reports whether stmt calls handler.GetUser.
+func callsGetUser(stmt ast.Stmt) bool {
+	found := false
+	if stmt == nil {
+		return false
+	}
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && callSel(call) == "handler.GetUser" {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// packReconcileAppHome makes the packed screens name the app home the
+// generator used. The home is the first screen with layout "app", else
+// "/". Pack cannot tell an omitted layout from "app" by the mount alone
+// (both draw appLayout with nav, nothing without), so it reads one of
+// them back and can move the home: a screen listed before the dashboard
+// becomes it, or the dashboard's "app" is lost. Swapping "" and "app" on
+// a non-marketing screen changes no other output, so the screens before
+// the home drop "app" and the home takes it.
+func packReconcileAppHome(screens []appspec.AppSpecScreen, home string) {
+	if home == "" {
+		return
+	}
+	current := "/"
+	for _, s := range screens {
+		if s.Layout == "app" {
+			current = s.Route
+			break
+		}
+	}
+	if current == home {
+		return
+	}
+	idx := slices.IndexFunc(screens, func(s appspec.AppSpecScreen) bool {
+		return s.Route == home && s.Layout != "marketing"
+	})
+	if idx < 0 && home != "/" {
+		return // no authored screen holds it; nothing the spec can say
+	}
+	for i := range screens {
+		if (idx < 0 || i < idx) && screens[i].Layout == "app" {
+			screens[i].Layout = ""
+		}
+	}
+	if idx >= 0 {
+		screens[idx].Layout = "app"
 	}
 }
 
@@ -2304,9 +2457,21 @@ func reverseRenderBody(fn *ast.FuncDecl, helpers map[string]ast.Expr) []appspec.
 			}
 		}
 		var out []appspec.AppSpecBlock
-		for _, arg := range call.Args[firstChild:] {
+		children := call.Args[firstChild:]
+		synthesized := len(children) > 0 && packIsSynthesizedHeader(children[0])
+		if synthesized {
+			children = children[1:]
+		}
+		for _, arg := range children {
 			if b, ok := reverseBlock(arg, helpers); ok {
 				out = append(out, b)
+			}
+		}
+		if synthesized && appgen.AppSpecScreenDrawsH1(out) {
+			// Something else draws the <h1>, so the generator would not
+			// add this header: keep it as the author's.
+			if b, ok := reverseBlock(call.Args[firstChild], helpers); ok {
+				out = append([]appspec.AppSpecBlock{b}, out...)
 			}
 		}
 		return out
@@ -2390,6 +2555,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	if control, ok := reverseControlBlock(call, helpers); ok {
 		return control, true
 	}
+	if node, ok := reverseNodeBlock(call); ok {
+		return node, true
+	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
@@ -2420,7 +2588,7 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 			}
 		}
 		return b, true
-	case "ui.BarChart", "ui.PieChart", "lineChart":
+	case "ui.BarChart", "ui.PieChart", "appUI.LineChart", "lineChart":
 		// Untitled chart (no wrapping ui.Card).
 		if b, ok := reverseChartCall(call); ok {
 			return b, true
@@ -2525,23 +2693,48 @@ func reverseEntityForm(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 		Text:   appspec.AstString(cfgOf(header, 0)["Title"]),
 	}
 	for _, arg := range form.Args[1:] {
-		name := ""
-		ast.Inspect(arg, func(n ast.Node) bool {
-			kv, ok := n.(*ast.KeyValueExpr)
-			if name != "" || !ok {
-				return name == ""
-			}
-			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Name" {
-				name = appspec.AstString(kv.Value)
-			}
-			return name == ""
-		})
+		name := entityFormControlField(arg)
 		if name == "" {
 			return appspec.AppSpecBlock{}, false
 		}
 		b.Fields = append(b.Fields, name)
 	}
 	return b, true
+}
+
+// entityFormControlField names the entity field one form control draws.
+// The generator writes the field twice: as the control's wire key (Name,
+// camelCase: launchedOn) and as its element id ("field-" plus the
+// declared name: field-launched_on). Only the id spells the field the
+// entity declares, so it wins; Name is the fallback for a control that
+// carries no id.
+func entityFormControlField(control ast.Expr) string {
+	id, wire := "", ""
+	ast.Inspect(control, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if id != "" || !ok {
+			return id == ""
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		switch key.Name {
+		case "ID", "For":
+			if v, found := strings.CutPrefix(appspec.AstString(kv.Value), "field-"); found && v != "" {
+				id = v
+			}
+		case "Name":
+			if wire == "" {
+				wire = appspec.AstString(kv.Value)
+			}
+		}
+		return id == ""
+	})
+	if id != "" {
+		return id
+	}
+	return wire
 }
 
 func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) appspec.AppSpecBlock {
@@ -3029,8 +3222,10 @@ func reverseChartCall(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 			p["source"] = chartSource(dataCall)
 		}
 		return appspec.AppSpecBlock{Kind: kind, Props: p}, true
-	case "lineChart":
-		// lineChart(ctx, entity, group_by)
+	case "appUI.LineChart", "lineChart":
+		// appUI.LineChart(ctx, entity, group_by), the spelling the
+		// generator emits; lineChart(ctx, entity, group_by) is the app-local
+		// helper older apps carry.
 		return appspec.AppSpecBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
 	}
 	return appspec.AppSpecBlock{}, false
@@ -3130,6 +3325,7 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
 		return appspec.IsSynthesizedLoginScreen(read, s)
 	})
+	packReconcileAppHome(bp.Screens, packReadAppHome(dir))
 	packResolveOmits(bp)
 	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {

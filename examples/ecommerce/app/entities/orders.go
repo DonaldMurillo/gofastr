@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=9710dbeb9bb3cd49
+//gofastr:generated generator=app kind=scaffold version=dev sum=0736fbc30147c9b2
 
 package entities
 
@@ -66,10 +66,10 @@ type OrdersInput struct {
 	CustomerPhone   *string            `json:"customerPhone,omitempty"`
 	ShippingAddress *any               `json:"shippingAddress,omitempty"`
 	BillingAddress  *any               `json:"billingAddress,omitempty"`
-	Subtotal        string             `json:"subtotal"`
+	Subtotal        *string            `json:"subtotal,omitempty"`
 	Tax             *string            `json:"tax,omitempty"`
 	ShippingCost    *string            `json:"shippingCost,omitempty"`
-	Total           string             `json:"total"`
+	Total           *string            `json:"total,omitempty"`
 	Notes           *string            `json:"notes,omitempty"`
 }
 
@@ -340,10 +340,10 @@ func registerOrders(app *framework.App) {
 			{Name: "customer_phone", Type: schema.String, Max: floatPtr(30)},
 			{Name: "shipping_address", Type: schema.JSON},
 			{Name: "billing_address", Type: schema.JSON},
-			{Name: "subtotal", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "subtotal", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},
 			{Name: "tax", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
 			{Name: "shipping_cost", Type: schema.Decimal, Default: 0, Min: floatPtr(0)},
-			{Name: "total", Type: schema.Decimal, Required: true, Min: floatPtr(0)},
+			{Name: "total", Type: schema.Decimal, Required: true, ReadOnly: true, Default: 0, Min: floatPtr(0)},
 			{Name: "notes", Type: schema.Text},
 			{Name: "shipped_at", Type: schema.Timestamp},
 			{Name: "delivered_at", Type: schema.Timestamp},

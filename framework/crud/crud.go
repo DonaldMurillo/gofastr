@@ -880,9 +880,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 }
 
 // searchWhereClauses builds hook.WhereClause entries from ?q= when the
-// entity declares SearchFields. Returns nil when SearchFields is empty
-// or ?q= is blank, the entity then ignores ?q= exactly as before
-// (back-compat). The conditions AND-compose safely with owner/tenant/
+// entity declares SearchFields. Returns nil when ?q= is blank. On an
+// entity with no SearchFields a non-blank ?q= is refused (400
+// search_not_configured), the way ListAll refuses Search there:
+// dropping it answered every row to a client that believed it was
+// searching. The exception is an entity whose own column (or allowed
+// filter param) is named q, where ?q= is that filter. The conditions AND-compose safely with owner/tenant/
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
 func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, error) {
@@ -893,10 +896,13 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, 
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
-	if len(ch.Entity.Config.SearchFields) == 0 {
-		return nil, nil
-	}
 	qVal := q.Get("q")
+	if len(ch.Entity.Config.SearchFields) == 0 {
+		if strings.TrimSpace(qVal) == "" || ch.ownsQParam() {
+			return nil, nil
+		}
+		return nil, &i18n.Error{Reason: reasonSearchNotConfigured}
+	}
 	conds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, qVal)
 	if err != nil || len(conds) == 0 {
 		return nil, err
@@ -906,6 +912,23 @@ func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, er
 		wheres[i] = hook.WhereClause{SQL: c.SQL, Args: c.Args}
 	}
 	return wheres, nil
+}
+
+// ownsQParam reports whether ?q= names one of the entity's own filters:
+// a queryable column whose name or WireName is q, or q in
+// AllowedFilterParams. It reads names the way the filter parser does: a
+// Hidden column is no filter (a Hidden q left ?q= answering every row),
+// and a NoQuery one is refused, never filtered.
+func (ch *CrudHandler) ownsQParam() bool {
+	for _, f := range ch.queryFields() {
+		if f.Hidden || f.NoQuery {
+			continue
+		}
+		if f.Name == "q" || f.WireName == "q" {
+			return true
+		}
+	}
+	return slices.Contains(ch.Entity.Config.AllowedFilterParams, "q")
 }
 
 // whereTreeClauses parses a ?where=<json> nested predicate tree, validates

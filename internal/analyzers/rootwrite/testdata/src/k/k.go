@@ -1721,3 +1721,35 @@ func perIteration(baseDir, name, nextDir string, data []byte) error {
 	}
 	return nil
 }
+
+// checkedRealWritesOriginal resolves the leaf into its own local and
+// checks THAT against the root, then writes the original spelling: a
+// link swapped in after the check wins (#665's third shape, on the leaf
+// rather than its Dir). Round 9 (2026-11-10) reported it quiet; it
+// fires, and this pins it.
+func checkedRealWritesOriginal(baseDir, name string, data []byte) error {
+	p := filepath.Join(baseDir, name)
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(baseDir, real)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return errEscape
+	}
+	return os.WriteFile(p, data, 0o600) // want `write under a root with lexical containment only`
+}
+
+// prefixedRealCreatesOriginal is the HasPrefix spelling of the same
+// check, with os.Create through the original.
+func prefixedRealCreatesOriginal(baseDir, name string) (*os.File, error) {
+	p := filepath.Join(baseDir, name)
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.HasPrefix(real, baseDir+string(filepath.Separator)) {
+		return nil, errEscape
+	}
+	return os.Create(p) // want `write under a root with lexical containment only`
+}

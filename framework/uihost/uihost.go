@@ -1894,7 +1894,9 @@ func widgetSSRHTML(r *http.Request) (string, []string) {
 		// any-session level still inlines for every visitor (a page load
 		// mints the session that satisfies it); the authenticated level
 		// inlines only when the request resolved a signed-in user.
-		if !widget.GateSatisfied(d, r) {
+		// ListedFor rides the same verdict (OfferedTo): a widget the
+		// catalog keeps from this caller is not baked into their page.
+		if !d.OfferedTo(r) {
 			continue
 		}
 		// Render with the REQUEST context so context-aware slots (role-aware
@@ -4104,9 +4106,11 @@ func (ds *UIHost) Mount(r *router.Router) {
 	// runtime; the registry returns an empty list when nothing has
 	// been registered, so plain framework apps still get the safe
 	// "no widgets" response that prevents a 404 in the console.
-	// Widget catalog enumerates every server-registered widget surface,
-	// useful infrastructure for the runtime, but a recon target for
-	// anonymous callers. Gate behind the session cookie.
+	// The session cookie this asks for is no sign-in: any page view
+	// mints one, so an anonymous visitor reads the catalog too. What
+	// keeps it from naming more than the caller may use is the catalog
+	// itself: it lists only the widgets the page offers this caller
+	// (widget.Definition.OfferedTo: the session gate and ListedFor).
 	r.Get("/__gofastr/widgets", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// An embedded surface has no session cookie, none is ever sent from
 		// inside a frame, so a cookie-only gate meant every widget in an

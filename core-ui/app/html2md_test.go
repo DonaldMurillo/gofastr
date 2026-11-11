@@ -334,3 +334,75 @@ func TestHTML2MD_LinkTagIsNotAListItem(t *testing.T) {
 		t.Errorf("a <link> became a bullet: %q", got)
 	}
 }
+
+// An image inside a link inside a cell: the link was parked with the
+// image's slot in its text, and one restore pass left the slot itself,
+// two NUL bytes and an index, in the row: | [\x00a0\x00](/users/7) |.
+func TestHTML2MD_TableCellLinkedImage(t *testing.T) {
+	in := `<table><tr><th>User</th></tr>` +
+		`<tr><td><a href="/users/7"><img alt="avatar" src="/a/7.png"></a></td></tr></table>`
+	got := htmlToMarkdown(in)
+	want := "| User |\n| --- |\n| [![avatar](/a/7.png)](/users/7) |"
+	if got != want {
+		t.Errorf("linked image in a cell:\ngot:  %q\nwant: %q", got, want)
+	}
+	// A NUL in the page is no slot: it cannot name a parked link.
+	if got := htmlToMarkdown("<table><tr><td><a href=\"/x\">a\x00a0\x00</a></td></tr></table>"); strings.Contains(got, "\x00") {
+		t.Errorf("a NUL in a cell reached the markdown: %q", got)
+	}
+}
+
+// A line break inside a cell link's text separates its words, as it
+// does in the rest of the cell and in a link outside a table: the
+// parked text was stripped of the <br> and read "onetwo".
+func TestHTML2MD_TableCellLinkBreak(t *testing.T) {
+	in := `<table><tr><th>A</th></tr><tr><td><a href="/a">one<br>two</a></td></tr></table>`
+	got := htmlToMarkdown(in)
+	want := "| A |\n| --- |\n| [one two](/a) |"
+	if got != want {
+		t.Errorf("break in a cell link:\ngot:  %q\nwant: %q", got, want)
+	}
+}
+
+// Inline code's angle brackets were parked as \x00lt\x00 and \x00gt\x00,
+// which share their NULs with the link and fence slots: code reading
+// <a1> in a cell formed a false link slot and came out "\x00ltgt\x00",
+// and <f0> next to a fenced block pasted that block a second time.
+func TestHTML2MD_CodeBracketsAreNoSlot(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`<table><tr><td><code>&lt;a1&gt;</code></td></tr></table>`, "| `<a1>` |\n| --- |"},
+		{`<table><tr><td><a href="/q">l</a> <code>&lt;a0&gt;</code></td></tr></table>`, "| [l](/q) `<a0>` |\n| --- |"},
+		{"<pre><code>x\ny</code></pre><p><code>&lt;f0&gt;</code> <code>&lt;f9&gt;</code></p>", "````\nx\ny\n````\n\n\n`<f0>` `<f9>`"},
+	} {
+		if got := htmlToMarkdown(tc.in); got != tc.want {
+			t.Errorf("%s:\ngot:  %q\nwant: %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// An image's alt is attribute text, not markup: a <br> written in it is
+// literal, as decoded text elsewhere keeps it (&lt;br>). In a cell it
+// read "one two", and outside a table the break pass split the alt
+// across two lines.
+func TestHTML2MD_ImageAltBreakIsText(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{`<table><tr><td><img alt="one&lt;br&gt;two" src="/x.png"></td></tr></table>`, "| ![one&lt;br>two](/x.png) |\n| --- |"},
+		{`<p><img alt="one&lt;br&gt;two" src="/x.png"></p>`, "![one&lt;br>two](/x.png)"},
+		{`<p><img src="/x.png" alt="a&lt;b&gt;c"></p>`, "![a&lt;b>c](/x.png)"},
+	} {
+		if got := htmlToMarkdown(tc.in); got != tc.want {
+			t.Errorf("%s:\ngot:  %q\nwant: %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// An alt's control-byte entities decode after the document's control
+// scrub ran, so &#2; and &#3; became the parked-bracket markers the final
+// pass turns into < and >, and &#1; a slot close. The decoded alt is
+// scrubbed too.
+func TestHTML2MD_ImageAltControlEntities(t *testing.T) {
+	got := htmlToMarkdown(`<p><img src="/x.png" alt="a&#2;script&#3;b&#1;c"></p>`)
+	if want := "![ascriptbc](/x.png)"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

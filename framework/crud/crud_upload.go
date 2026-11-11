@@ -176,6 +176,13 @@ func readBodyBytes(r *http.Request) ([]byte, error) {
 		}
 		return nil, bodyReadError(err)
 	}
+	// Every JSON body read through readBodyBytes: refuse one that is not
+	// UTF-8 before a decode turns its bad bytes into U+FFFD. The batch
+	// envelope reads its own body (decodeBatchEnvelope) and relies on
+	// handler.UnmarshalStrict's check.
+	if err := handler.CheckUTF8(data); err != nil {
+		return nil, err
+	}
 	return data, nil
 }
 

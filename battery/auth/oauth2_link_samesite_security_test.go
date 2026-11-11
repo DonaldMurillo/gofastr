@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // hopTarget pulls the meta-refresh target out of a hop page.
@@ -117,6 +119,42 @@ func TestOAuthLinkSurvivesStrictCookie(t *testing.T) {
 		w := follow(t, f, idpReturn(f), false)
 		if w.Code != http.StatusUnauthorized || f.store.linkCalls != 0 {
 			t.Fatalf("follow-up with no session = %d (links %d), want 401 and none", w.Code, f.store.linkCalls)
+		}
+	})
+
+	// A browser sends no Fetch Metadata to a plain-HTTP LAN address, on
+	// the IdP's return or on the hop's reload. The return hops, and the
+	// reload's marker ends the hop: it links with the session and answers
+	// 401 without one, rather than hopping forever.
+	t.Run("no Fetch Metadata hops once", func(t *testing.T) {
+		for _, withSession := range []bool{true, false} {
+			f := start(t)
+			req := httptest.NewRequest(http.MethodGet, "/auth/oauth/stub/callback?state="+url.QueryEscape(f.state)+"&code=c", nil)
+			req.AddCookie(f.stateCookie)
+			hop := httptest.NewRecorder()
+			f.r.ServeHTTP(hop, req)
+			m := hopTarget.FindStringSubmatch(hop.Body.String())
+			if hop.Code != http.StatusOK || m == nil || f.store.linkCalls != 0 {
+				t.Fatalf("no-Fetch-Metadata return = %d (links %d), want the 200 hop page", hop.Code, f.store.linkCalls)
+			}
+			target := strings.ReplaceAll(m[1], "&amp;", "&")
+			if !strings.Contains(target, handler.SameSiteHopParam+"=1") {
+				t.Fatalf("hop target %q carries no hop marker", target)
+			}
+			req = httptest.NewRequest(http.MethodGet, target, nil)
+			req.AddCookie(f.stateCookie)
+			if withSession {
+				req.AddCookie(&http.Cookie{Name: "session_id", Value: f.session})
+			}
+			w := httptest.NewRecorder()
+			f.r.ServeHTTP(w, req)
+			want, links := http.StatusUnauthorized, 0
+			if withSession {
+				want, links = http.StatusFound, 1
+			}
+			if w.Code != want || f.store.linkCalls != links {
+				t.Fatalf("reload (session %v) = %d (links %d), want %d and %d", withSession, w.Code, f.store.linkCalls, want, links)
+			}
 		}
 	})
 

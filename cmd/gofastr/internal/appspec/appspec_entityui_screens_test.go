@@ -88,13 +88,13 @@ screens:
 		"one name, two entities":  {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("customers"), "OverviewScreen"},
 		"one name, one entity":    {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("posts"), "OverviewScreen"},
 		// A list with create: true adds a posts_create screen at
-		// /posts/create, unless a screen already holds that route.
+		// /posts/create; an authored screen there would replace it.
 		"authored vs synthesized create": {"  - name: posts_create\n    route: /new\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "PostsCreateScreen"},
 		// The dashboard files under posts, its first list; the create
 		// screen it adds for customers writes screen_customers_crud.go.
 		"authored vs synthesized file": {"  - name: Dash\n    route: /dash\n" + list("posts") + "      - kind: entity_list\n        entity: customers\n        fields: [title]\n        create: true\n" +
 			"  - name: customers_crud\n    route: /c\n" + text, "screen_customers_crud.go"},
-		"authored create route": {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", ""},
+		"authored create route": {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "replace the create form"},
 		// Both write screen_posts_crud.go, as one file, as two types.
 		"one entity's screens": {"  - name: API\n    route: /a\n" + list("posts") + "  - name: Api\n    route: /b\n" + list("posts"), ""},
 	} {
@@ -107,6 +107,90 @@ screens:
 				t.Fatalf("want an error naming %q, got: %v", c.want, err)
 			case c.want == "" && err != nil:
 				t.Fatalf("one entity's screens share their file: %v", err)
+			}
+		})
+	}
+}
+
+// Every create-flagged list's New opens <home list route>/create, one
+// synthesized screen per entity. Two entities whose home list is the
+// same screen would share that route: the second create screen was
+// dropped and its New opened the first entity's form. Refused at load.
+func TestAppSpecRejectsSharedCreateRoute(t *testing.T) {
+	const head = `app:
+  name: Roster
+  module: example.com/roster
+entities:
+  - name: teams
+    crud: true
+    fields:
+      - name: name
+        type: string
+  - name: players
+    crud: true
+    fields:
+      - name: fullName
+        type: string
+screens:
+  - name: roster
+    route: /roster
+    body:
+`
+	for _, tc := range []struct {
+		name, body string
+		refused    bool
+	}{
+		{"both create", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+      - kind: card
+        props:
+          heading: Teams
+        children:
+          - kind: entity_list
+            entity: teams
+            fields: [name]
+            create: true
+`, true},
+		{"one create", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+      - kind: entity_list
+        entity: teams
+        fields: [name]
+`, false},
+		{"separate homes", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+  - name: teams
+    route: /teams
+    body:
+      - kind: entity_list
+        entity: teams
+        fields: [name]
+        create: true
+`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "gofastr.yml")
+			clitest.WriteTestFile(t, path, head+tc.body)
+			_, err := LoadAppSpec(path)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("load: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("two entities sharing /roster/create must be refused")
+			}
+			for _, want := range []string{`"players"`, `"teams"`, "/roster/create"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error should name %s, got: %v", want, err)
+				}
 			}
 		})
 	}

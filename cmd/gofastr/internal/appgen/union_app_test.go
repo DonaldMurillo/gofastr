@@ -24,8 +24,9 @@ const unionCatalog = `{"union":{"screens":{"enrollments_crud":{"enrollment_recor
 // then plain `gofastr generate` do, vets the module with go vet and with
 // the repo's vettool (emitted code must pass the repo's own analyzers),
 // and runs the app's own tests (the e2e suite and the catalog check)
-// plus four probes: ownedJoinProbe (an owner-scoped record keyed on two
-// foreign keys, read in Spanish, hidden from a second user),
+// plus four probes: ownedJoinProbe (an owner-scoped record keyed on its
+// owner and two foreign keys, read in Spanish, hidden from a second
+// user, who enrolls the same pair as a row of their own),
 // editSaveTest (an edit screen whose key values need escaping saves back
 // to its record) and intIDProbe (consumer code passing an integer id
 // between the repo, the id column, events, cascades and the client) and

@@ -811,9 +811,11 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		// rendered signed out (and one behind a login gate bounced the
 		// user back to the login form). A cross-site arrival is answered
 		// with a page from this origin that loads the target instead.
-		// That navigation starts here, so the cookie rides it. A client
-		// that sends no Fetch Metadata gets the redirect it always did.
-		if handler.IsCrossSiteRequest(r) {
+		// That navigation starts here, so the cookie rides it. A request
+		// with no Fetch Metadata hops too (handler.NeedsSameSiteHop): a
+		// browser sends none to a plain-HTTP LAN address. The target is
+		// not this callback, so its load never hops again.
+		if handler.NeedsSameSiteHop(r) {
 			writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthSignInTitle)
 			return
 		}
@@ -838,10 +840,14 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 // unexpired, unspent link state, and only when no session resolved. A
 // link flow starts only from a same-site request carrying the session
 // (linkHandler), so the hop cannot turn a third party's navigation into
-// an authenticated one. The follow-up is same-origin, so it never hops
-// again, and without a session it gets the 401 it always did.
+// an authenticated one. A request with no Fetch Metadata hops as a
+// cross-site one does (handler.NeedsSameSiteHop): a browser sends none to
+// a plain-HTTP LAN address. The follow-up is same-origin, or carries the
+// hop marker when it will send no Fetch Metadata either
+// (handler.SameSiteHopTarget), so it never hops again, and without a
+// session it gets the 401 it always did.
 func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state, providerName string) bool {
-	if !handler.IsCrossSiteRequest(r) {
+	if !handler.NeedsSameSiteHop(r) {
 		return false
 	}
 	if _, err := p.mgr.requestSession(r, false); err == nil {
@@ -859,7 +865,7 @@ func (p *OAuth2Plugin) sameSiteHop(w http.ResponseWriter, r *http.Request, state
 	if !ok {
 		return false
 	}
-	writeSameSiteHop(w, r, p.mgr.config.Pages, target, oauthHopTitle)
+	writeSameSiteHop(w, r, p.mgr.config.Pages, handler.SameSiteHopTarget(r, target), oauthHopTitle)
 	return true
 }
 

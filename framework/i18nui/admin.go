@@ -209,6 +209,7 @@ var (
 	AdminRolesSaved        = i18n.Define("ui.admin.rolesSaved", "Roles saved.")
 	AdminGrantRefused      = i18n.Define("ui.admin.grantRefused", "You can only grant or revoke a permission you hold.")
 	AdminAssignRefused     = i18n.Define("ui.admin.assignRefused", "You cannot assign a role above your own.")
+	AdminOwnAdminRefused   = i18n.Define("ui.admin.ownAdminRefused", "You cannot remove your own admin role. Another admin can.")
 	AdminUnknownCapability = i18n.Define("ui.admin.unknownCapability", "That permission is not one the app declares.")
 	AdminRevokedByWildcard = i18n.Define("ui.admin.revokedByWildcard", "A wildcard revocation covers that permission. Grant the wildcard, then revoke what the role should not hold.")
 )

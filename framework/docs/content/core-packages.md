@@ -108,7 +108,11 @@ needs a `//gofastr:allow(GOFASTR1407) <why>` marker and a reason.
 
 A body these helpers refuse answers 400 with `reason` `invalid_json`
 (or the key refusal's own code: `json_duplicate_key`,
-`json_folded_keys`, `json_unknown_field`, `json_multiple_values`). The
+`json_folded_keys`, `json_unknown_field`, `json_multiple_values`, or
+`json_not_utf8` for a body that is not valid UTF-8: `encoding/json`
+would turn each bad byte into U+FFFD, so the value stored would not be
+the one sent; `handler.CheckUTF8` is the same check for a site that
+decodes by other means, and crud's JSON bodies run it too). The
 message says what was wrong in JSON's terms and never quotes
 `encoding/json`, whose text names the server's Go types and structs:
 

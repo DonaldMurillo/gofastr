@@ -605,6 +605,9 @@ func migrateEntity(ctx context.Context, exec execQueryer, ent *entity.Entity, al
 		if err := ensureUniqueIndexes(ctx, exec, ent, dialect); err != nil {
 			return err
 		}
+		if err := refuseStaleUniques(ctx, exec, ent, dialect); err != nil {
+			return err
+		}
 	}
 
 	safeTable, err := query.SafeIdent(ent.GetTable())
