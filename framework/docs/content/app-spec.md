@@ -1853,6 +1853,13 @@ screens:
 them as one-click filters and applies each as a server-side equality
 filter that composes with search, sort, and pagination.
 
+Validation runs the boot check over every `display:` block
+(`framework.ValidateDisplay`): a title field, column, facet or form slot
+naming a field the entity does not declare (or a hidden one), a facet on
+any other type, a bad view key, and a view `where:`/`sort:` or a field
+`show_when:` that does not parse are refused at `gofastr validate`
+instead of panicking the generated app at boot.
+
 Supported UI action events are `click`, `input`, `change`, and `submit`.
 `client_js` is copied into generated Go as a string and compiled by the normal
 GoFastr action compiler. Use the public `G` runtime helper (`window.__gofastr`)

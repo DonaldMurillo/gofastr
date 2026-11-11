@@ -1818,7 +1818,11 @@ request:
   `Default`. `entity.ValidKey(s)` reports whether a string follows this
   grammar. `States` move keys follow a stricter one, checked with the rest
   of the states block by `entity.ValidateStates` (see
-  [States](states.md)).
+  [States](states.md)). Generators run these Display checks over a
+  declaration that never reached registration with
+  `entity.ValidateDisplay`, or with `framework.ValidateDisplay`, which
+  also parses the view and `ShowWhen` queries; `gofastr validate` uses
+  the latter on every app spec `display:` block.
 - **The form.** Each item sets exactly one of field, row or section; a row
   holds one to three distinct fields; only a section carries `Items`,
   `Help` and `Collapsed`, and holds at least one item; sections nest at

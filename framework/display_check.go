@@ -11,6 +11,27 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
+// ValidateDisplay runs the whole display boot check App.Entity runs, over
+// a declaration that never passed registration, for code generators (an
+// app spec's display: block): entity.ValidateDisplay's name, type and
+// key checks, then the view and ShowWhen queries. A display the app
+// would refuse at boot comes back as the error, naming the entity.
+func ValidateDisplay(name string, cfg EntityConfig) (err error) {
+	if err := entity.ValidateDisplay(name, cfg); err != nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	ent := entity.Define(name, cfg)
+	if err := validateDisplayQueries(ent); err != nil {
+		return fmt.Errorf("entity %q: %w", ent.Config.Name, err)
+	}
+	return nil
+}
+
 // validateDisplayQueries parses the query strings an entity's Display
 // holds, the half of the Display boot check framework/entity cannot run
 // because it cannot import the DSL: every view's Where and Sort, and
