@@ -34,13 +34,17 @@ func throughLocal(vals url.Values) string {
 	return strings.TrimSpace(raw) // want `keytrim: strings\.TrimSpace rewrites the identity value raw`
 }
 
-// pathValue is the reader router.Param wraps: a row id from the path,
-// trimmed, names " u1 "'s twin. A header naming a tenant is the same
-// read (round 9, 2026-11-10: keytrim knew only Get, FormValue and
-// PostFormValue on url.Values and *http.Request).
+// pathValue trims an identity read from the request: a path id or a
+// tenant header. Both are reported, since the value is used as a key.
 func pathValue(r *http.Request) (string, string) {
 	return strings.TrimSpace(r.PathValue("id")), // want `keytrim: strings\.TrimSpace rewrites the identity value r\.PathValue\("id"\)`
 		strings.TrimSpace(r.Header.Get("X-Tenant-Id")) // want `keytrim: strings\.TrimSpace rewrites the identity value r\.Header\.Get\("X-Tenant-Id"\)`
+}
+
+// lowerHeader names the same header in lower case: Header.Get
+// canonicalizes the key, so x-user-id reads X-User-Id.
+func lowerHeader(h http.Header) string {
+	return strings.TrimSpace(h.Get("x-user-id")) // want `keytrim: strings\.TrimSpace rewrites the identity value h\.Get\("x-user-id"\)`
 }
 
 // Silent: a path segment or header that names no identity, and a
