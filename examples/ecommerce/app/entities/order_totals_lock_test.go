@@ -2,16 +2,12 @@ package entities
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
-	"encoding/hex"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/framework/db"
-	_ "github.com/lib/pq"
+	"github.com/DonaldMurillo/gofastr/internal/pgtest"
 )
 
 // Two line items added to one order in concurrent transactions each
@@ -21,34 +17,12 @@ import (
 // writes a total missing the first item. The recompute locks the
 // order before it reads.
 func TestOrderTotalsLockBeforeRead(t *testing.T) {
-	dsn := os.Getenv("TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("TEST_POSTGRES_DSN not set")
-	}
 	ctx := context.Background()
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		t.Fatal(err)
-	}
-	schemaName := "ordertotals_" + hex.EncodeToString(b)
-	admin, err := sql.Open("postgres", dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	if _, err := admin.ExecContext(ctx, "CREATE SCHEMA "+schemaName); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _, _ = admin.Exec("DROP SCHEMA " + schemaName + " CASCADE") })
-	sep := "?"
-	if strings.Contains(dsn, "?") {
-		sep = "&"
-	}
-	pool, err := sql.Open("postgres", dsn+sep+"search_path="+schemaName)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	// pgtest scopes the pool to a fresh schema through the DSN's options,
+	// so every pooled connection sees it, and drops it on cleanup. Two
+	// transactions run at once here, so the pool needs a second session.
+	pool := pgtest.DB(t)
+	pool.SetMaxOpenConns(4)
 	for _, ddl := range []string{
 		`CREATE TABLE orders (id TEXT PRIMARY KEY, status TEXT, tax NUMERIC, shipping_cost NUMERIC, subtotal NUMERIC, total NUMERIC)`,
 		`CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES orders(id), unit_price NUMERIC, quantity INT)`,
@@ -81,7 +55,7 @@ func TestOrderTotalsLockBeforeRead(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var waiting int
-		if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`).Scan(&waiting); err != nil {
+		if err := pool.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
 		if waiting > 0 {
