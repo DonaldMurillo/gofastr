@@ -310,6 +310,10 @@ func ServeWidgetList(w http.ResponseWriter, r *http.Request) { serveWidgetList(w
 // statePath is only emitted when the widget declared signals, the
 // runtime skips the /state hydrate fetch when this field is absent.
 func serveWidgetList(w http.ResponseWriter, r *http.Request) {
+	// The answer is per caller (a host gates it on its session), so no
+	// cache keeps one caller's catalog for the next.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Add("Vary", "Cookie")
 	page, err := url.PathUnescape(r.URL.Query().Get("page"))
 	if err != nil {
 		i18n.HTTPError(w, r, http.StatusBadRequest, reasonInvalidPage)

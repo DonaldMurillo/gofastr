@@ -82,7 +82,9 @@ deep-link URL, opens them.
 `Mount` registers the widget's HTTP routes and adds it to the process-wide
 registry. Any page that carries the framework runtime auto-mounts every
 registered widget: the runtime fetches `/__gofastr/widgets` on boot and
-builds each one. Pages served through `framework/uihost` get the runtime
+builds each one. The catalog answers `Cache-Control: no-store` with
+`Vary: Cookie`: a host gates it per caller, so no cache keeps one
+caller's catalog for the next. Pages served through `framework/uihost` get the runtime
 injected automatically; a bare-router host calls `widget.MountRuntime(r)`
 once and embeds `widget.RuntimeTag()` in its page HTML.
 
