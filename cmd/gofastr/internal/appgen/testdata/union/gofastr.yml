@@ -667,7 +667,7 @@ screens:
       - kind: login_form
         text: Sign in to Union
         props:
-          action: /auth/login
+          action: /account/login
           next: /app
           register_href: /signup
   - name: signup
@@ -678,7 +678,7 @@ screens:
       - kind: signup_form
         text: Create your Union account
         props:
-          action: /auth/register
+          action: /account/register
           next: /app
           login_href: /login
 

@@ -1,0 +1,49 @@
+package appspec
+
+import (
+	"fmt"
+	"net/url"
+)
+
+// validateAuthFormActions refuses a login_form or signup_form whose
+// explicit action is not the auth battery's mounted route. The renderer
+// defaults the action to <base_path>/login or /register, and an explicit
+// one wins verbatim, so a spec that moves base_path to /account and keeps
+// action: /auth/login generates a sign-in form that posts to a 404: the
+// generated e2e test posts to the mounted route directly and stays green.
+// Only the path is compared: a query string (next=) or an absolute URL on
+// the app's own host stays valid.
+func validateAuthFormActions(bp AppSpec, errs *schemaErrors) {
+	base := bp.App.Auth.BasePath
+	if base == "" {
+		base = "/auth"
+	}
+	var walk func(screen string, blocks []AppSpecBlock)
+	walk = func(screen string, blocks []AppSpecBlock) {
+		for _, b := range blocks {
+			walk(screen, b.Children)
+			var kind, want string
+			switch {
+			case AppSpecBlockKindIs(b, "login_form"):
+				kind, want = "login_form", base+"/login"
+			case AppSpecBlockKindIs(b, "signup_form"):
+				kind, want = "signup_form", base+"/register"
+			default:
+				continue
+			}
+			// Absent or empty, the renderer defaults it.
+			//gofastr:allow(laxcoerce) a non-string action is refused by validateAppSpecBlock's login_form/signup_form arm, which walks the same blocks
+			action, ok := b.Props["action"].(string)
+			if !ok || action == "" {
+				continue
+			}
+			if u, err := url.Parse(action); err == nil && u.Path == want && u.Opaque == "" {
+				continue
+			}
+			errs.add(fmt.Errorf("app spec: screen %q %s action %q is not the auth battery's mounted route %s (app.auth.base_path %s): the form would post to a route that does not exist; drop action to default it, or set it to %s", screen, kind, action, want, base, want))
+		}
+	}
+	for _, s := range bp.Screens {
+		walk(s.Name, s.Body)
+	}
+}

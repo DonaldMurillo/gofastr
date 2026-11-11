@@ -71,7 +71,7 @@ func TestAuthFormActionRedValidated(t *testing.T) {
 	}
 
 	// Controls: the documented shapes stay valid.
-	for _, action := range []string{"/auth/login", "https://host/login"} {
+	for _, action := range []string{"/auth/login", "https://host/auth/login"} {
 		if err := ValidateAppSpec(authFormBp(action)); err != nil {
 			t.Fatalf("setup broken: login_form action %q must stay valid: %v", action, err)
 		}

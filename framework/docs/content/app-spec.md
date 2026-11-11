@@ -1663,7 +1663,7 @@ screens:
       - kind: login_form
         text: Sign in            # form heading
         props:
-          action: /auth/login    # default <base_path>/login
+          action: /auth/login    # default <base_path>/login; any other path is refused
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
 ```
@@ -2021,6 +2021,10 @@ The generator rejects:
 - a `login_form`/`signup_form` `action:` that is not a safe link
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)
+- a `login_form`/`signup_form` `action:` whose path is not the auth
+  battery's mounted `<base_path>/login` or `<base_path>/register`: an
+  explicit action wins over the default, so one left at `/auth/login`
+  after `base_path` moved posts to a 404 (drop `action` to default it)
 - unsafe output directories
 - two declared names that meet in one generated identifier, such as
   a field whose Go name matches a method the generator writes on the

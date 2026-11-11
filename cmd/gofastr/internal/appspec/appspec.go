@@ -2663,6 +2663,9 @@ func ValidateAppSpec(bp AppSpec) error {
 	// so a detail screen must sit exactly at <list route>/{id} when the
 	// entity also has a list screen. Anything else strands the links.
 	errs.add(validateDetailRoutes(bp))
+	// An explicit login_form/signup_form action must be the mounted
+	// auth route, or the generated sign-in form posts to a 404.
+	validateAuthFormActions(bp, &errs)
 	if bp.App.PWA.Enabled {
 		switch bp.App.PWA.Display {
 		case "", "standalone", "fullscreen", "minimal-ui", "browser":
