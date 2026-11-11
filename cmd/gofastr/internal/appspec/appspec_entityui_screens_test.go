@@ -88,13 +88,13 @@ screens:
 		"one name, two entities":  {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("customers"), "OverviewScreen"},
 		"one name, one entity":    {"  - name: Overview\n    route: /a\n" + list("posts") + "  - name: Overview\n    route: /b\n" + list("posts"), "OverviewScreen"},
 		// A list with create: true adds a posts_create screen at
-		// /posts/create, unless a screen already holds that route.
+		// /posts/create; an authored screen there would replace it.
 		"authored vs synthesized create": {"  - name: posts_create\n    route: /new\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "PostsCreateScreen"},
 		// The dashboard files under posts, its first list; the create
 		// screen it adds for customers writes screen_customers_crud.go.
 		"authored vs synthesized file": {"  - name: Dash\n    route: /dash\n" + list("posts") + "      - kind: entity_list\n        entity: customers\n        fields: [title]\n        create: true\n" +
 			"  - name: customers_crud\n    route: /c\n" + text, "screen_customers_crud.go"},
-		"authored create route": {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", ""},
+		"authored create route": {"  - name: posts_create\n    route: /posts/create\n" + text + "  - name: Posts\n    route: /posts\n" + list("posts") + "        create: true\n", "replace the create form"},
 		// Both write screen_posts_crud.go, as one file, as two types.
 		"one entity's screens": {"  - name: API\n    route: /a\n" + list("posts") + "  - name: Api\n    route: /b\n" + list("posts"), ""},
 	} {

@@ -978,7 +978,10 @@ partial and keeps the shell).
   screen's `layout` + `access` and is not added to `nav`. Two entities
   whose home list is the same screen, both with `create: true`, would
   share that one route, so the load refuses the spec and names both:
-  move one list to its own screen or drop its `create: true`.
+  move one list to its own screen or drop its `create: true`. An
+  authored screen at that route is refused too, since it would replace
+  the create form: move it, or drop the list's `create: true` to keep
+  your own create page.
 - `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<table>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
   related entity's route, each option's value its key column, so a

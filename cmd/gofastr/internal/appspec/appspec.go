@@ -3055,6 +3055,15 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q (%s) and the create screen a writable %s list adds at %s both generate the type %s, so the app would not build; rename the screen", prev, routesOf[prev], screen.Body[0].Entity, screen.Route, typeName))
 		}
 	}
+	// The render adds a create screen only where no authored screen sits,
+	// so an authored screen at <list>/create replaced the create form:
+	// the list's New opened a page with no form, and the generated e2e
+	// stayed green because it creates through the API.
+	for _, screen := range bp.Screens {
+		if e, ok := createFor[strings.TrimRight(screen.Route, "/")]; ok {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is where the %s list's create: true adds the create screen, so the authored screen would replace the create form and New would open a page without one; move the screen, or drop the list's create: true to keep your own", screen.Name, screen.Route, e))
+		}
+	}
 	errs.add(ValidateAppSpecEndpoints(bp))
 	// Hooks are the sibling construct of endpoints: a surface the generated
 	// app must implement in owned Go (the handler stub) and the registry
