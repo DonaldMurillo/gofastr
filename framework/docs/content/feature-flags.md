@@ -191,4 +191,5 @@ required; add `MutableStore` for admin-edit support.
   accidental delete returns `false`, so for `if !IsEnabled(...) { dangerous() }`
   you'd silently enable the dangerous path. Use the explicit
   `Flags().BoolDefault(ctx, key, defaultIfMissing)` form to set the
-  safe default per call site.
+  safe default per call site. It is also the answer when the store
+  errors, so pick the value that is safe during an outage too.
