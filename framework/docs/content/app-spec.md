@@ -510,7 +510,10 @@ The key is `<app>.screens.<screen>.<slug>` in a screen file,
 English twice in one file is one phrase. `<screen>` is the name
 lower-cased to ASCII letters and digits; when two screens fold to the
 same one (`PostsList` and `postslist`), the later one in the spec gets
-`_2`. Field labels go through
+`_2`. `<app>` is `app.name` folded the same way (`app` with no name).
+A fragment added with `generate app --add` has no `app:` section, so
+its files take the namespace the project's own phrase keys already
+use (or, before it has any, `app.go`'s `appName`). Field labels go through
 `i18nui.FieldLabel` and enum values through `i18nui.FieldValueLabel`, so
 they read the `entity.*` keys the admin reads.
 

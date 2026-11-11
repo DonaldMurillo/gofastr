@@ -872,6 +872,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 			cli.OsExit(1)
 		}
 		bp.MarkFragment()
+		// The fragment's phrase keys take the project's namespace, the one
+		// its other files and a pack -> regenerate use.
+		bp.SetPhraseApp(projectPhraseApp(writeRoot))
 		if verr := appspec.ValidateAppSpec(bp); verr != nil {
 			failGenerate(options.json, fmt.Errorf("Failed to load app spec: %v", verr))
 			cli.OsExit(1)
@@ -2630,6 +2633,76 @@ func readFileUnder(writeRoot, rel string) ([]byte, error) {
 	}
 	defer root.Close()
 	return root.ReadFile(rel)
+}
+
+// projectPhraseApp is the phrase namespace the project under writeRoot
+// already uses, for a fragment's keys to join it: the <ns> of the first
+// i18n.Define("<ns>.screens.…") or ("<ns>.chrome.…") key in the root's
+// Go files, in name order, else app.go's appName constant (what pack
+// recovers as app.name), else "". The keys come first because a
+// project generated with no app.name writes "GoFastr" as appName but
+// keys its phrases under "app".
+func projectPhraseApp(writeRoot string) string {
+	root, err := os.OpenRoot(writeRoot)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	entries, err := RootReadDirEntries(root, ".")
+	if err != nil {
+		return ""
+	}
+	slices.SortFunc(entries, func(a, b os.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	appName := ""
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		src, rerr := root.ReadFile(name)
+		if rerr != nil {
+			continue // unreadable leaf (symlink outside the root): skip
+		}
+		file, perr := parser.ParseFile(token.NewFileSet(), name, src, 0)
+		if perr != nil {
+			continue
+		}
+		ns := ""
+		ast.Inspect(file, func(n ast.Node) bool {
+			if ns != "" {
+				return false
+			}
+			call, ok := n.(*ast.CallExpr)
+			if !ok || len(call.Args) != 2 {
+				return true
+			}
+			if sel, ok := call.Fun.(*ast.SelectorExpr); !ok || sel.Sel.Name != "Define" || IdentName(sel.X) != "i18n" {
+				return true
+			}
+			parts := strings.SplitN(appspec.AstString(call.Args[0]), ".", 3)
+			if len(parts) == 3 && parts[0] != "" && (parts[1] == "screens" || parts[1] == "chrome") {
+				ns = parts[0]
+			}
+			return ns == ""
+		})
+		if ns != "" {
+			return ns
+		}
+		if name == "app.go" {
+			for _, d := range file.Decls {
+				gd, ok := d.(*ast.GenDecl)
+				if !ok || gd.Tok != token.CONST {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok && len(vs.Names) == 1 && vs.Names[0].Name == "appName" && len(vs.Values) == 1 {
+						appName = appspec.AstString(vs.Values[0])
+					}
+				}
+			}
+		}
+	}
+	return appName
 }
 
 // readLegacyRegisterUnder reads entities/register.go under writeRoot for

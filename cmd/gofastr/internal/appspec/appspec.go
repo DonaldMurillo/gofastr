@@ -62,6 +62,13 @@ type AppSpec struct {
 	// whose App holds no api_prefix default, so the checks that need the
 	// project's app settings skip it. Unexported for the reason phrases is.
 	appless bool
+
+	// phraseApp is the app name a fragment's phrase keys take, read from
+	// the project the fragment joins: a fragment's App.Name is empty, and
+	// keys under the fallback "app" namespace would differ from the rest
+	// of the project's. Unexported for the reason phrases is; App.Name
+	// itself stays empty, since it decides whether app.go is emitted.
+	phraseApp string
 }
 
 // PhraseCollector returns the phrase collector of the file being
@@ -78,6 +85,19 @@ func (bp *AppSpec) MarkFragment() { bp.appless = true }
 // marked with MarkFragment). A serializer writes no app: section for one,
 // so the fragment stays a fragment on the next decode.
 func (bp *AppSpec) IsFragment() bool { return bp.appless }
+
+// SetPhraseApp records the project's app name for a fragment's phrase
+// keys (generate app --add). An empty name changes nothing.
+func (bp *AppSpec) SetPhraseApp(name string) { bp.phraseApp = name }
+
+// PhraseApp is the app name phrase keys are namespaced under: the
+// project's name recorded by SetPhraseApp, else App.Name.
+func (bp *AppSpec) PhraseApp() string {
+	if bp.phraseApp != "" {
+		return bp.phraseApp
+	}
+	return bp.App.Name
+}
 
 // SetPhraseCollector installs the phrase collector a file renderer
 // emits through, on that renderer's own copy of the spec.

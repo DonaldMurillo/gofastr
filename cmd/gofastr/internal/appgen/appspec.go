@@ -1646,7 +1646,7 @@ func appSpecNeedsAuthHooks(bp appspec.AppSpec) bool {
 // The copy is phrases under <app>.auth, so the app's catalog translates
 // it like every other word the app says.
 func appSpecAuthHooksGo(bp appspec.AppSpec) string {
-	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.App.Name))
+	return strings.ReplaceAll(appSpecAuthHooksTemplate, "{{app}}", appSpecPhraseApp(bp.PhraseApp()))
 }
 
 const appSpecAuthHooksTemplate = `package main
@@ -2249,7 +2249,7 @@ func RenderAppSpecScreens(bp appspec.AppSpec) string {
 	apiBase := appSpecAPIBase(bp.App.APIPrefix)
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, "screens", "screens"))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), "screens", "screens"))
 	var bodies strings.Builder
 	for _, screen := range bp.Screens {
 		bodies.WriteString(appSpecScreenBody(bp, screen, entityMap, apiBase))
@@ -2695,7 +2695,7 @@ func renderAppSpecStandaloneScreenFile(screen appspec.AppSpecScreen, bp appspec.
 	}
 	var sb strings.Builder
 	sb.WriteString("package main\n\n")
-	bp.SetPhraseCollector(appSpecScreenPhrases(bp.App.Name, screen.Name, appSpecScreenScope(bp, screen.Name)))
+	bp.SetPhraseCollector(appSpecScreenPhrases(bp.PhraseApp(), screen.Name, appSpecScreenScope(bp, screen.Name)))
 	body := appSpecScreenBody(bp, screen, entityMap, apiBase)
 	needs := appSpecScreensImportNeeds(bp, []appspec.AppSpecScreen{screen}, entityMap, apiBase)
 	needs.readCode(body, bp.PhraseCollector())
@@ -2815,7 +2815,7 @@ func renderAppSpecCrudFile(entity string, screens []appspec.AppSpecScreen, bp ap
 		}
 	}
 	screens = kept
-	bp.SetPhraseCollector(appSpecCrudPhrases(bp.App.Name, entity, appSpecCrudScope(bp, entity)))
+	bp.SetPhraseCollector(appSpecCrudPhrases(bp.PhraseApp(), entity, appSpecCrudScope(bp, entity)))
 	var bodies strings.Builder
 	for _, s := range screens {
 		bodies.WriteString(appSpecScreenBody(bp, s, entityMap, apiBase))
@@ -4408,7 +4408,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// The chrome's words (nav labels, the header's auth action, footer
 	// columns) are phrases under <app>.chrome; the brand name stays as
 	// written.
-	bp.SetPhraseCollector(appSpecChromePhrases(bp.App.Name))
+	bp.SetPhraseCollector(appSpecChromePhrases(bp.PhraseApp()))
 	tx := func(s string) string { return appSpecTx(bp, s) }
 	adminSeed := bp.App.Auth.Enabled && bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != ""
 	hasMarketing := appSpecHasMarketing(bp)
