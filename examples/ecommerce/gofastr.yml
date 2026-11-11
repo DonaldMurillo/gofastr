@@ -303,9 +303,11 @@ entities:
         type: relation
         to: products
         required: true
+      # Copied from the product with its price (app/entities/
+      # order_totals_hooks.go), so a client neither sends nor sets it.
       - name: product_name
         type: string
-        required: true
+        read_only: true
         max: 200
       - name: quantity
         type: int

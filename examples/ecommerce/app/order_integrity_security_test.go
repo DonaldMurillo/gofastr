@@ -306,8 +306,14 @@ func TestOrderCreateNeedsNoTotals(t *testing.T) {
 			t.Errorf("%s empty order stores subtotal %v total %v, want 0 and 0", name, stored["subtotal"], stored["total"])
 		}
 	}
-	// The API contract says so too: a readOnly property is one a
-	// request does not send (OpenAPI 3: required applies to responses).
+	s.readOnlyInOpenAPI("orders", "subtotal", "total")
+}
+
+// readOnlyInOpenAPI fails unless each field of the entity's OpenAPI
+// schema is readOnly: a property a request does not send (OpenAPI 3:
+// required then applies to responses only).
+func (s *shop) readOnlyInOpenAPI(entity string, fields ...string) {
+	s.t.Helper()
 	code, _, raw := s.do("GET", "/openapi.json", "")
 	var spec struct {
 		Components struct {
@@ -319,13 +325,52 @@ func TestOrderCreateNeedsNoTotals(t *testing.T) {
 		} `json:"components"`
 	}
 	if err := json.Unmarshal([]byte(raw), &spec); err != nil || code != http.StatusOK {
-		t.Fatalf("GET /openapi.json = %d (%v)", code, err)
+		s.t.Fatalf("GET /openapi.json = %d (%v)", code, err)
 	}
-	for _, field := range []string{"subtotal", "total"} {
-		if !spec.Components.Schemas["orders"].Properties[field].ReadOnly {
-			t.Errorf("OpenAPI orders.%s is not readOnly: clients are told to send it", field)
+	for _, field := range fields {
+		if !spec.Components.Schemas[entity].Properties[field].ReadOnly {
+			s.t.Errorf("OpenAPI %s.%s is not readOnly: clients are told to send it", entity, field)
 		}
 	}
+}
+
+// TestLineNameComesFromProduct: a line's product_name is the catalog
+// name of the product it names, like its price: a create need not send
+// it, a sent name is not stored, and a product switch renames the line.
+func TestLineNameComesFromProduct(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and boots the storefront")
+	}
+	s := newShop(t)
+	headphones, hub := s.product("Wireless Headphones"), s.product("USB-C Hub")
+	orderID := s.order("0", "0")
+	named := func(what string, row map[string]any, want map[string]any) {
+		t.Helper()
+		stored := s.must(http.StatusOK, "GET", "/api/order_items/"+fmt.Sprint(row["id"]), "")
+		for label, r := range map[string]map[string]any{"response": row, "stored": stored} {
+			if r["productName"] != want["name"] {
+				t.Errorf("%s: %s productName %v, want %v", what, label, r["productName"], want["name"])
+			}
+		}
+	}
+	spoofed := s.must(http.StatusCreated, "POST", "/api/order_items", fmt.Sprintf(
+		`{"orderId":%q,"productId":%q,"productName":"FREE GIFT CARD","quantity":1}`, orderID, headphones["id"]))
+	named("spoofed create", spoofed, headphones)
+	bare := s.must(http.StatusCreated, "POST", "/api/order_items", fmt.Sprintf(
+		`{"orderId":%q,"productId":%q,"quantity":1}`, orderID, headphones["id"]))
+	named("nameless create", bare, headphones)
+	path := "/api/order_items/" + fmt.Sprint(spoofed["id"])
+	named("product switch", s.must(http.StatusOK, "PATCH", path, fmt.Sprintf(`{"productId":%q}`, hub["id"])), hub)
+	code, row, raw := s.do("PATCH", path, `{"productName":"Renamed"}`)
+	switch code {
+	case http.StatusOK:
+		named("rename", row, hub)
+	case http.StatusBadRequest:
+		named("rename", s.must(http.StatusOK, "GET", path, ""), hub)
+	default:
+		t.Fatalf("rename = %d, want 200 (ignored) or 400; body=%.300s", code, raw)
+	}
+	s.readOnlyInOpenAPI("order_items", "productName")
 }
 
 // relRedAdmin signs in the seeded admin, whose role holds catalog:write.

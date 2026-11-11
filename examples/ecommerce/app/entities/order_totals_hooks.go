@@ -141,13 +141,13 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	if id == "" {
 		return fmt.Errorf("order pricing: missing line item id")
 	}
-	var price string
+	var price, name string
 	var quantity int64
 	var onSale bool
-	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), order_items.quantity,
+	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), products.name, order_items.quantity,
 			products.status = 'active' AND products.deleted_at IS NULL
 		FROM order_items JOIN products ON products.id = order_items.product_id
-		WHERE order_items.id = $1`, id).Scan(&price, &quantity, &onSale)
+		WHERE order_items.id = $1`, id).Scan(&price, &name, &quantity, &onSale)
 	if err != nil {
 		return fmt.Errorf("order pricing: load product price: %w", err)
 	}
@@ -168,10 +168,13 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	if err := refuseInexact(ctx, exec, map[string]string{"total_price": totalPrice}); err != nil {
 		return err
 	}
-	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2 WHERE id = $3`, unitPrice, totalPrice, id); err != nil {
+	// The line's name is the catalog's too, copied with the price, so a
+	// receipt never shows a name the client chose or one left behind by
+	// a product switch.
+	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2, product_name = $3 WHERE id = $4`, unitPrice, totalPrice, name, id); err != nil {
 		return fmt.Errorf("order pricing: persist line prices: %w", err)
 	}
-	for key, value := range map[string]string{"unitPrice": unitPrice, "totalPrice": totalPrice} {
+	for key, value := range map[string]string{"unitPrice": unitPrice, "totalPrice": totalPrice, "productName": name} {
 		if _, exists := row[key]; exists {
 			row[key] = value
 		} else {

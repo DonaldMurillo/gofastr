@@ -27,10 +27,11 @@ user, failing closed with 401 when no owner can be derived.
 `TestOrdersOwnerScoped` pins this. (The first cut shipped insecure;
 git history has the full story of the fix.)
 
-Line prices are server-owned: `order_items.unit_price` and `total_price`
-are read-only in the app spec and generated request types. After each item
-create/update, the owned lifecycle hook reads the stored product and quantity,
-copies the product's current price, multiplies it using exact decimal
+Line prices and names are server-owned: `order_items.unit_price`,
+`total_price` and `product_name` are read-only in the app spec and generated
+request types. After each item create/update, the owned lifecycle hook reads
+the stored product and quantity, copies the product's current name and price,
+multiplies the price using exact decimal
 arithmetic at four decimal places, and then recomputes the parent order.
 Pricing and totals share the CRUD transaction, so failures roll back the write.
 Order subtotals and totals are summed in Go with exact decimal arithmetic at the
