@@ -2202,6 +2202,146 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 	}
 }
 
+// packReadAppHome recovers the app home the generator wrote: the route a
+// guest-only screen's guestPolicy("<route>") sends a signed-in visitor
+// to, else the signed-in header's Dashboard link in app.go's
+// marketingHeader. "" when the app emits neither, and then no generated
+// file depends on it. Reads go through an *os.Root over dir, like the
+// per-screen reader, so a symlinked leaf is never parsed.
+func packReadAppHome(dir string) string {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	entries, err := appgen.RootReadDirEntries(root, ".")
+	if err != nil {
+		return ""
+	}
+	parse := func(name string) *ast.File {
+		src, err := root.ReadFile(name)
+		if err != nil {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, src, 0)
+		if err != nil {
+			return nil
+		}
+		return file
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+			names = append(names, e.Name())
+		}
+	}
+	slices.Sort(names)
+	for _, name := range names {
+		file := parse(name)
+		if file == nil {
+			continue
+		}
+		home := ""
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if home != "" || !ok {
+				return home == ""
+			}
+			if appgen.IdentName(call.Fun) == "guestPolicy" && len(call.Args) == 1 {
+				if lit, ok := call.Args[0].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+					home = appspec.AstString(lit)
+				}
+			}
+			return home == ""
+		})
+		if home != "" {
+			return home
+		}
+	}
+	file := parse("app.go")
+	if file == nil {
+		return ""
+	}
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != "marketingHeader" || fn.Body == nil {
+			continue
+		}
+		for _, stmt := range fn.Body.List {
+			ifs, ok := stmt.(*ast.IfStmt)
+			if !ok || !callsGetUser(ifs.Init) {
+				continue
+			}
+			home := ""
+			ast.Inspect(ifs.Body, func(n ast.Node) bool {
+				lit, ok := n.(*ast.CompositeLit)
+				if home != "" || !ok {
+					return home == ""
+				}
+				if sel, ok := lit.Type.(*ast.SelectorExpr); ok && sel.Sel.Name == "Link" {
+					home = appspec.AstString(appspec.FieldVals(lit)["Href"])
+				}
+				return home == ""
+			})
+			return home
+		}
+	}
+	return ""
+}
+
+// callsGetUser reports whether stmt calls handler.GetUser.
+func callsGetUser(stmt ast.Stmt) bool {
+	found := false
+	if stmt == nil {
+		return false
+	}
+	ast.Inspect(stmt, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && callSel(call) == "handler.GetUser" {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// packReconcileAppHome makes the packed screens name the app home the
+// generator used. The home is the first screen with layout "app", else
+// "/". Pack cannot tell an omitted layout from "app" by the mount alone
+// (both draw appLayout with nav, nothing without), so it reads one of
+// them back and can move the home: a screen listed before the dashboard
+// becomes it, or the dashboard's "app" is lost. Swapping "" and "app" on
+// a non-marketing screen changes no other output, so the screens before
+// the home drop "app" and the home takes it.
+func packReconcileAppHome(screens []appspec.AppSpecScreen, home string) {
+	if home == "" {
+		return
+	}
+	current := "/"
+	for _, s := range screens {
+		if s.Layout == "app" {
+			current = s.Route
+			break
+		}
+	}
+	if current == home {
+		return
+	}
+	idx := slices.IndexFunc(screens, func(s appspec.AppSpecScreen) bool {
+		return s.Route == home && s.Layout != "marketing"
+	})
+	if idx < 0 && home != "/" {
+		return // no authored screen holds it; nothing the spec can say
+	}
+	for i := range screens {
+		if (idx < 0 || i < idx) && screens[i].Layout == "app" {
+			screens[i].Layout = ""
+		}
+	}
+	if idx >= 0 {
+		screens[idx].Layout = "app"
+	}
+}
+
 func layoutVarToName(e ast.Expr) string {
 	switch appgen.IdentName(e) {
 	case "marketingLayout":
@@ -3179,6 +3319,7 @@ func packAppSpec(dir string) (appspec.AppSpec, error) {
 	bp.Screens = slices.DeleteFunc(slices.Clone(bp.Screens), func(s appspec.AppSpecScreen) bool {
 		return appspec.IsSynthesizedLoginScreen(read, s)
 	})
+	packReconcileAppHome(bp.Screens, packReadAppHome(dir))
 	packResolveOmits(bp)
 	packFoldRecordKeys(bp)
 	if bp.Nav, err = packReadNav(dir); err != nil {

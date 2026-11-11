@@ -769,6 +769,11 @@ spelling: action-button variants and types are case-insensitive and
 lowercased while parsing. Default `variant: primary`, `type: button`,
 and navigation-link `gap: md` values are omitted both when parsing and
 packing, so a control gains no authored properties from generated defaults.
+An omitted screen layout and `layout: app` mount the same way, so pack
+cannot tell them apart from the mount alone. It reads the app home back
+from the sign-in and sign-up policies (or the signed-in header's
+Dashboard link) and writes `layout: app` on that screen, with no layout
+on the screens before it, so the packed spec keeps the same home.
 The result
 prints to stdout, or to a file with `-o`:
 
