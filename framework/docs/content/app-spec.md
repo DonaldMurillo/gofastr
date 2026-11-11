@@ -1141,6 +1141,17 @@ named after a key column; rename it. The generated `e2e_test.go` reads
 every key column out of the create response to address the record, and
 `gofastr pack` folds the expanded route back to `{id}`.
 
+On an owner-scoped entity (`owner_field:`) the key must hold the owner
+column, unless one of its columns is server-generated (`auto_generate`).
+A key without the owner is shared by every account: a second user
+creating a key another user holds gets 409 for a row they cannot see,
+which also tells them the key exists. Validation refuses it. Put the
+owner in the key and declare it as a field (a key column must be one
+the API returns), as in `primary_key: [user_id, student_id, course_id]`,
+or drop `primary_key` and declare a unique index over the owner and the
+other columns. A value meant to be unique across all accounts goes in a
+unique field or index, where generation warns about it instead.
+
 A relation to a composite-keyed entity names one foreign-key column per
 key column, in key order, as a list:
 

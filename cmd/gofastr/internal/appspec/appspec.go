@@ -2751,6 +2751,7 @@ func ValidateAppSpec(bp AppSpec) error {
 			}
 			seenField[f.Name] = true
 		}
+		errs.add(ownerScopedKeyProblem(decl))
 		// Field names and enum values are transcribed into emitted Go,
 		// SQL identifiers and CSS. Nothing downstream re-escapes them,
 		// so they are validated here, at the generate-time boundary,

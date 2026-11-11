@@ -2,13 +2,16 @@ package appgen
 
 // ownedJoinProbe joins the generated app's e2e package; TestUnionApp
 // writes it into the union app, whose enrollments join students and
-// courses on a two-column key, each column a foreign key, and belong to
-// the user who created them. Two users sign up; the first enrolls a
+// courses and belong to the user who created them, keyed on the owner
+// and the two foreign keys. Two users sign up; the first enrolls a
 // student whose code holds a "/" and reads the record in Spanish at one
-// segment per key column, the second cannot see it at all.
+// segment per key column, the second cannot see it at all, and enrolls
+// the same student in the same course as a row of their own: a key that
+// left the owner out answered them 409 for a row they cannot see.
 const ownedJoinProbe = `package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -51,16 +54,28 @@ func TestOwnedJoinRecord(t *testing.T) {
 		return c
 	}
 	ann, bob := user("ann@example.com"), user("bob@example.com")
+	var created string
 	for _, c := range [][2]string{
 		{"/api/students", ` + "`" + `{"code": "ann/lee", "name": "Ann Lee"}` + "`" + `},
 		{"/api/courses", ` + "`" + `{"code": "c 1", "title": "Chemistry"}` + "`" + `},
 		{"/api/enrollments", ` + "`" + `{"student_id": "ann/lee", "course_id": "c 1", "grade": "B-probe"}` + "`" + `},
 	} {
-		if code, out := e2eDo(t, ann, "POST", base+c[0], c[1]); code != http.StatusCreated {
+		code, out := e2eDo(t, ann, "POST", base+c[0], c[1])
+		if code != http.StatusCreated {
 			t.Fatalf("POST %s = %d: %s", c[0], code, out)
 		}
+		created = out
 	}
-	const record = "/enrollments/ann%2Flee/c%201"
+	// The key's first column is the owner, which the server stamps.
+	var env struct{ Data map[string]any ` + "`" + `json:"data"` + "`" + ` }
+	if err := json.Unmarshal([]byte(created), &env); err != nil {
+		t.Fatalf("decode the created enrollment: %v: %s", err, created)
+	}
+	owner, _ := env.Data["userId"].(string)
+	if owner == "" {
+		t.Fatalf("the created enrollment carries no userId: %s", created)
+	}
+	record := "/enrollments/" + url.PathEscape(owner) + "/ann%2Flee/c%201"
 	code, page := e2eDo(t, ann, "GET", base+"/es"+record, "")
 	if code != http.StatusOK {
 		t.Fatalf("GET /es%s = %d", record, code)
@@ -79,6 +94,9 @@ func TestOwnedJoinRecord(t *testing.T) {
 	}
 	if _, out := e2eDo(t, bob, "GET", base+"/api/enrollments", ""); strings.Contains(out, "B-probe") {
 		t.Errorf("another user lists the record: %s", out)
+	}
+	if code, out := e2eDo(t, bob, "POST", base+"/api/enrollments", ` + "`" + `{"student_id": "ann/lee", "course_id": "c 1", "grade": "C-bob"}` + "`" + `); code != http.StatusCreated {
+		t.Errorf("another user enrolls the same pair = %d, want 201: %s", code, out)
 	}
 	// The record screen answers 404 with its not-found state for a row
 	// the reader cannot see.

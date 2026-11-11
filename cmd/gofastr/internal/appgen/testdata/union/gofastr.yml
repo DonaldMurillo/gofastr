@@ -126,7 +126,8 @@ entities:
         entity: posts
         foreign_key: post_id
 
-  # A composite key of two foreign keys, owned per user.
+  # A composite key of the owner and two foreign keys: each user's
+  # enrollments are their own rows, so two users enroll the same pair.
   - name: students
     crud: true
     primary_key: [code]
@@ -150,7 +151,7 @@ entities:
   - name: enrollments
     crud: true
     owner_field: user_id
-    primary_key: [student_id, course_id]
+    primary_key: [user_id, student_id, course_id]
     fields:
       - name: student_id
         type: string
@@ -176,10 +177,11 @@ entities:
   # A composite key whose values need escaping. It sorts first among the
   # entities with a create screen, so the generated e2e test runs its
   # create-read-update-delete pass on it, creating with the first enum
-  # value: the comma must survive reading the record's id back.
+  # value: the comma must survive reading the record's id back. It is
+  # not owner-scoped: an owner-scoped key must hold the owner, and the
+  # edit-screen probe keys bookings on these two columns.
   - name: bookings
     crud: true
-    owner_field: user_id
     primary_key: [student_id, course_id]
     fields:
       - name: student_id
@@ -193,8 +195,6 @@ entities:
         type: string
         required: true
       - name: contact_email
-        type: string
-      - name: user_id
         type: string
 
   # A state machine with a stamp and a system move, display views and
