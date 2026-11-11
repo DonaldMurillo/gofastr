@@ -67,6 +67,19 @@ func TestAuthFormActionFollowsBasePath(t *testing.T) {
 	}
 }
 
+// A fragment (generate app --add) carries no app: section, so it cannot
+// say where the project mounted auth: an action at the project's real
+// base is not refused against the /auth default.
+func TestFragmentAuthActionNotRefused(t *testing.T) {
+	bp := AppSpec{Screens: []AppSpecScreen{{Name: "signin", Route: "/signin", Type: "page", Body: []AppSpecBlock{
+		{Kind: "login_form", Props: map[string]any{"action": "/account/login"}},
+	}}}}
+	bp.MarkFragment()
+	if err := ValidateAppSpec(bp); err != nil {
+		t.Fatalf("fragment login_form action /account/login refused: %v", err)
+	}
+}
+
 // app.base_url is the sitemap origin, and the generated app's always-on
 // strict mode panics at boot on one it cannot use: validate refuses the
 // same shapes first.

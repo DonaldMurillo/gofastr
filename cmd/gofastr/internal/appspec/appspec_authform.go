@@ -12,8 +12,12 @@ import (
 // action: /auth/login generates a sign-in form that posts to a 404: the
 // generated e2e test posts to the mounted route directly and stays green.
 // Only the path is compared: a query string (next=) or an absolute URL on
-// the app's own host stays valid.
+// the app's own host stays valid. A fragment (generate app --add) has no
+// app: section to say the project's base_path, so it is not checked.
 func validateAuthFormActions(bp AppSpec, errs *schemaErrors) {
+	if bp.appless {
+		return
+	}
 	base := bp.App.Auth.BasePath
 	if base == "" {
 		base = "/auth"
