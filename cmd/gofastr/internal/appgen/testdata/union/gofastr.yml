@@ -576,7 +576,9 @@ screens:
     body:
       - kind: custom_form
         props:
+          # A screen answers GET only: a POST here would always 405.
           action: /contact
+          method: get
           submit: Send
         children:
           - kind: text_field

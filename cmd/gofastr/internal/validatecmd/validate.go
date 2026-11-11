@@ -96,6 +96,10 @@ func RunValidate(args []string) {
 	for _, f := range appgen.LintSignedOutScreens(bp) {
 		cli.Warn("%s: %s", path, f.Message())
 	}
+	// A custom_form that POSTs to a screen route: screens answer GET only.
+	for _, f := range appgen.LintPostFormsOnScreens(bp) {
+		cli.Warn("%s: %s", path, f.Message())
+	}
 	cli.Success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }

@@ -720,7 +720,8 @@ Mapping rules worth knowing:
   named `group` (fieldset) holding a control, stay inside the same form.
   Its last button becomes the submit; with no button the submit is
   hidden. The form posts to the screen's own route, which has no POST
-  handler yet: point `action` at your handler. Forms never nest: a `form`
+  handler yet (generate warns that it would answer 405): point `action`
+  at your handler. Forms never nest: a `form`
   inside a form gives its fields to the outer one.
 * A `text` node that repeats the next control's name (its visible label)
   is dropped, since the generated field renders its own label.
@@ -2091,6 +2092,17 @@ available" under its heading to every visitor. Both commands warn, naming the en
 and its screens; neither fails, since owned Go can wire its own sign-in.
 Turn on `app.auth`, or set `public: true` on an entity anyone may read
 and write. An entity with an `access:` gate is not flagged.
+
+### Forms that post to a screen (`gofastr validate` and `gofastr generate` warning)
+
+A screen route answers `GET` and `HEAD` only; every other method gets
+`405 Method Not Allowed`. A `custom_form` whose `method` is `post` (the
+default) and whose `action` lands on a screen route, its own or another,
+therefore never submits. Both commands warn, naming the screen, the
+action and the route; neither fails, since `generate screen --from-a11y`
+writes such a form on purpose for you to point at a handler. Set `action`
+to a route that takes a `POST` (an [endpoint](endpoints.md) or a handler you
+write), or set `method: get` for a form that only reads.
 
 ### Owner-scoped uniqueness (`gofastr validate` and `gofastr generate` warning)
 
