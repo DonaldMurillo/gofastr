@@ -273,7 +273,8 @@ func sameDecimal(before any, now string) bool {
 }
 
 // recomputeOrderTotals rewrites subtotal and total from the order's
-// current line items, inside the caller's transaction. The sums are
+// current line items, inside the caller's transaction, holding the
+// order's row lock from before the first read. The sums are
 // exact decimal arithmetic in Go, never SQL: SQLite evaluates SUM over
 // float columns, and past 2^53 no ROUND can restore the digits it drops
 // (39990000000000005.01 summed to 39990000000000008). A total the
@@ -283,6 +284,16 @@ func recomputeOrderTotals(ctx context.Context, orderID string) error {
 	exec, ok := framework.TxFromContext(ctx)
 	if !ok {
 		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
+	}
+	// Lock the order before reading its items. On Postgres (read
+	// committed) a concurrent item write recomputing the same order
+	// waits here until the first commits, and its reads below then see
+	// that item; reading first summed a stale set and the later UPDATE
+	// overwrote the other writer's total. The no-op UPDATE takes the row
+	// lock on both dialects, and as a non-key update it does not conflict
+	// with the KEY SHARE lock each item's foreign key holds on the order.
+	if _, err := exec.ExecContext(ctx, `UPDATE orders SET subtotal = subtotal WHERE id = $1`, orderID); err != nil {
+		return fmt.Errorf("order totals: lock order %s: %w", orderID, err)
 	}
 	var taxText, shippingText string
 	err := exec.QueryRowContext(ctx, `SELECT COALESCE(CAST(tax AS TEXT), '0'), COALESCE(CAST(shipping_cost AS TEXT), '0')
