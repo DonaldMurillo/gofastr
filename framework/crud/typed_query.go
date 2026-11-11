@@ -78,6 +78,9 @@ func (q *TypedQuery[T]) Include(rels ...string) *TypedQuery[T] {
 // buildSelect materialises a fresh SELECT QueryBuilder reflecting the
 // query's wheres, orders, and nested-filter EXISTS clauses.
 func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, error) {
+	if err := q.handler.refuseLegacyTimestampConditions(ctx, q.wheres); err != nil {
+		return nil, err
+	}
 	cols := q.handler.visibleFields()
 	qb := query.Select(cols...).From(q.handler.Entity.GetTable())
 	for _, c := range q.wheres {
@@ -250,6 +253,9 @@ func (q *TypedQuery[T]) First(ctx context.Context) (*T, error) {
 // limit/offset/order, pure SELECT COUNT(*) over the same WHERE predicate.
 func (q *TypedQuery[T]) Count(ctx context.Context) (int, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
+		return 0, err
+	}
+	if err := q.handler.refuseLegacyTimestampConditions(ctx, q.wheres); err != nil {
 		return 0, err
 	}
 	cb := query.Count(q.handler.Entity.GetTable())
@@ -476,6 +482,9 @@ func (q *TypedQuery[T]) UpdateAll(ctx context.Context, fields map[string]any) (i
 	if len(fields) == 0 {
 		return 0, fmt.Errorf("UpdateAll: no fields to set")
 	}
+	if err := q.handler.refuseLegacyTimestampConditions(ctx, q.wheres); err != nil {
+		return 0, err
+	}
 	// Name columns the way CreateOne and UpdateOne do: a wire key, or the
 	// snake key MarshalEntity derives (line2 for line_2). bodyColumns
 	// renames in place, so it works on a copy of the caller's map.
@@ -597,6 +606,9 @@ func (q *TypedQuery[T]) exec(ctx context.Context) DBExecutor {
 // SoftDelete entities, sets deleted_at instead of issuing a DELETE.
 func (q *TypedQuery[T]) DeleteAll(ctx context.Context) (int, error) {
 	if err := q.requireTenantCtx(ctx); err != nil {
+		return 0, err
+	}
+	if err := q.handler.refuseLegacyTimestampConditions(ctx, q.wheres); err != nil {
 		return 0, err
 	}
 	req := syntheticRequest(ctx, "DELETE", "/")

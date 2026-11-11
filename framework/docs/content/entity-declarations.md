@@ -2119,10 +2119,15 @@ pages on such a column keep working: see
 [cursor pagination](cursor-pagination.md).
 
 This check covers base CRUD filters on the entity's own columns, including
-the `ListAll`, aggregate and `CountAll` paths. It does not normalize legacy
-rows, inspect nested relation targets, or guard separate DSL predicates,
-typed queries or read-scope bindings. Keep those timestamp columns canonical
-before using those comparison surfaces. A managed table filled by a direct
+the `ListAll`, aggregate and `CountAll` paths, and a `TypedQuery` (the
+generated repositories' query path): a `TimestampColumn` comparison (`Eq`,
+`Gt`, `Gte`, `Lt`, `Lte`, inside `And`, `Or` or `Not` too, read through
+`Condition.ComparedTimestamps`) makes `Find`, `First`, `Count`, `Exists`,
+`UpdateAll` and `DeleteAll` return the same error before any row is read or
+written. It does not normalize legacy rows, inspect nested relation targets
+(`WhereNested`), or guard separate DSL predicates or read-scope bindings.
+Keep those timestamp columns canonical before using those comparison
+surfaces. A managed table filled by a direct
 SQL writer is also outside this unmanaged-table check.
 
 ### What a composite key cannot do
