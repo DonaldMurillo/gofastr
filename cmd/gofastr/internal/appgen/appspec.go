@@ -689,6 +689,17 @@ func appSpecE2EScreenRoutes(bp appspec.AppSpec) (public, gated []string) {
 	return public, gated
 }
 
+// appSpecHasHomeScreen reports whether a screen is routed at /, the
+// one page the generated e2e asserts the brand on.
+func appSpecHasHomeScreen(bp appspec.AppSpec) bool {
+	for _, s := range bp.Screens {
+		if s.Route == "/" {
+			return true
+		}
+	}
+	return false
+}
+
 // appSpecSeedAdminRoles are the roles the bootstrap admin is created with:
 // the admin role (default "admin") and "user".
 func appSpecSeedAdminRoles(bp appspec.AppSpec) []string {
@@ -1317,7 +1328,12 @@ func renderAppSpecE2ETest(bp appspec.AppSpec) string {
 	b.WriteString("\tt.Cleanup(func() { _ = srv.Process.Kill(); _, _ = srv.Process.Wait() })\n")
 	b.WriteString("\tbase := \"http://\" + addr\n")
 	b.WriteString("\te2eWaitReady(t, base)\n\n")
-	b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
+	// The home page carries the brand, when a screen sits at /. With none
+	// there, / is a 404 the app was never meant to serve, and the public
+	// screens below are what renders.
+	if appSpecHasHomeScreen(bp) {
+		b.WriteString(fmt.Sprintf("\tif code, body := e2eDo(t, e2eClient, \"GET\", base+\"/\", \"\"); code != http.StatusOK || !strings.Contains(body, %q) {\n\t\tt.Errorf(\"home page = %%d, missing brand? %%v\", code, !strings.Contains(body, %q))\n\t}\n", appName, appName))
+	}
 
 	// Every static public screen renders.
 	b.WriteString("\n\t// Public screens render for anonymous visitors.\n")
