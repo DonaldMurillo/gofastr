@@ -88,6 +88,7 @@ func TestChartGroupByRefusesUnknownColumn(t *testing.T) {
 func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 	err := r5AppSpec(t, `      - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: sum
@@ -106,6 +107,7 @@ func TestStatCardAggIsExact(t *testing.T) {
 	stat := func(agg, field string) error {
 		return r5AppSpec(t, `      - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: "`+agg+`"
@@ -238,6 +240,7 @@ screens:
     body:
       - kind: stat_card
         props:
+          label: Total
           source:
             entity: cards
             agg: sum

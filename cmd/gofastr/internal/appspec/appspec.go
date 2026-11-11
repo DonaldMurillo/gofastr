@@ -3745,6 +3745,9 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			return fmt.Errorf("app spec: screen %q %s %q: %w", screenName, kind, AppSpecBlockName(block, "title", srcEntity), err)
 		}
 	case "stat_card":
+		if err := validateCatalogRequired(screenName, "stat_card", block); err != nil {
+			return err
+		}
 		// A stat_card with a source binds to live entity data; without a
 		// registered CRUD handler statValue would render a silent "—".
 		// Reject an unknown or crud-disabled source upfront. (A static
@@ -3846,7 +3849,11 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		"link_button", "callout",
 		"markdown", "pricing", "divider":
 		// framework/ui catalog blocks. Props are validated leniently (the
-		// generator reads only the props each component understands).
+		// generator reads only the props each component understands),
+		// except what a component panics without at render.
+		if err := validateCatalogRequired(screenName, strings.ToLower(strings.TrimSpace(kind)), block); err != nil {
+			return err
+		}
 	case "action_button", "custom_form", "text_field", "number_field",
 		"checkbox", "switch", "select_field", "radio_group", "data_table",
 		"item_list", "nav_links":

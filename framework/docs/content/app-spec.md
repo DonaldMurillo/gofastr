@@ -1280,6 +1280,16 @@ A raw `textarea` takes its text from `props.value` (or `text`, then
 A `type: link` block renders through `ui.Link`, the styled anchor;
 validation refuses an unsafe `href` (`javascript:`, `data:`, `//host`).
 
+Validation also refuses a catalog block missing what its component needs
+to render, which would otherwise answer every request for the screen
+with a 500. A `stat_card` needs `props.label` (`text:` is the
+`entity_list` heading key and a stat card ignores it), and a `value`
+unless it has a `source:`. A `link_button` needs `label` and a safe
+`href`, a hero's `cta_text` needs a safe `cta_href` (and
+`secondary_text` a safe `secondary_href`), and a `markdown` block needs
+its `text:`. These props are text: quote a number (`value: "42"`), since
+an unquoted one reads as no value at all.
+
 **Data-bound dashboard widgets:** `stat_card` and the charts accept a `source:`
 that computes a live metric server-side:
 `source: {entity: customers, agg: sum, field: mrr}` (or `agg: count` with an
