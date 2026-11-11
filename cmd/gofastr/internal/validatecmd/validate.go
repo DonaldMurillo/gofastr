@@ -100,6 +100,10 @@ func RunValidate(args []string) {
 	for _, f := range appgen.LintPostFormsOnScreens(bp) {
 		cli.Warn("%s: %s", path, f.Message())
 	}
+	// Image or file fields with no file storage wired: uploads answer 400.
+	for _, f := range appgen.LintUploadFields(bp) {
+		cli.Warn("%s: %s", path, f.Message())
+	}
 	cli.Success("App spec %s is valid: %d entity(ies), %d screen(s), %d endpoint(s), %d hook(s)",
 		path, len(bp.Entities), len(bp.Screens), len(bp.Endpoints), len(bp.Hooks))
 }

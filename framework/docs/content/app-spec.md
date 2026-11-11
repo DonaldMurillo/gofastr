@@ -2104,6 +2104,28 @@ writes such a form on purpose for you to point at a handler. Set `action`
 to a route that takes a `POST` (an [endpoint](endpoints.md) or a handler you
 write), or set `method: get` for a form that only reads.
 
+### Upload fields with no file storage (`gofastr validate` and `gofastr generate` warning)
+
+An `image` or `file` field gets an upload control on the generated form
+and a multipart body on its API, but the app spec has no storage key and
+the generated `main.go` passes no `framework.WithFileStorage`, so every
+upload answers `400` ("server has no file storage configured"). Both
+commands warn, naming the entity and its upload fields; neither fails,
+since `main.go` is your file after the first generate. Add the option
+there:
+
+```go
+options := []framework.AppOption{
+	// ...
+	framework.WithFileStorage(upload.NewLocalStorage("uploads")), // core/upload
+}
+```
+
+`upload.NewLocalStorage` writes files `0600` under `0700` directories,
+with writes confined to its root. Meridian wires it this way
+(`examples/meridian/admin_files.go`); the warning stays on for an app
+that already does, since the app spec cannot see `main.go`.
+
 ### Owner-scoped uniqueness (`gofastr validate` and `gofastr generate` warning)
 
 On an entity with `owner_field`, a field-level `unique: true` or a
