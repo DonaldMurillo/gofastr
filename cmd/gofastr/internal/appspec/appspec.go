@@ -2946,6 +2946,10 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, where an entity's CRUD API mounts: the app would refuse to boot or its API would answer instead of the screen; move the screen", screen.Name, screen.Route, mount))
 			continue
 		}
+		if owner := screenRouteOnFrameworkRoute(bp, screen.Route); owner != "" {
+			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, a route the framework serves itself: the screen would never render, or would take the route over; move the screen", screen.Name, screen.Route, owner))
+			continue
+		}
 		if bp.App.Auth.Enabled {
 			base := bp.App.Auth.BasePath
 			if base == "" {

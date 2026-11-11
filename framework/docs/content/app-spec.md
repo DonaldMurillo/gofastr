@@ -1898,6 +1898,17 @@ The generator rejects:
   refuses to boot on the mount itself, and under it the CRUD routes
   (`{id}`, `llm.md`, `_events`) answer instead of the screen. A fragment with no `app:` section (`generate app --add`) is
   not checked for it, since it does not carry the project's `api_prefix`
+- a screen route the framework serves itself: `/robots.txt`,
+  `/sitemap.xml`, `/sitemap/*`, `/favicon.ico`, and anything at or under
+  `/mcp`, `/.well-known` or `/__gofastr`; with entities, `/openapi.json`
+  and `/api/docs`; with `pwa`, `/manifest.webmanifest` and
+  `/service-worker.js`; with `llm_md`, `/llm-pages.md` and any route
+  ending in `/llm.md`; with `admin`, anything at or under the admin path
+  (default `/admin`), where the back-office serves every entity at
+  `<path>/e/<table>`. The framework's route answers instead of the
+  screen, or, where it answers only some callers, the screen takes it
+  over: a screen at `/openapi.json` served HTML to anonymous callers in
+  place of the gated schema
 - two screen routes that differ only in parameter names or syntax
   (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
   dynamic routes in registration order, so the second would never render
