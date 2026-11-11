@@ -825,9 +825,11 @@ func main() {
 	if err := authMgr.Init(fwApp); err != nil {
 		log.Fatal(err)
 	}
-	// A failed form post with no usable Referer lands back on /login
-	// with ?error= instead of a raw JSON body.
+	// A failed form post with no usable Referer lands back on its own
+	// form with ?error= instead of a raw JSON body: sign-in on /login,
+	// sign-up on /register.
 	auth.SetDefaultLoginErrorPath("/login")
+	auth.SetDefaultRegisterErrorPath("/register")
 	fwApp.Use(auth.SessionMiddleware(authMgr))
 
 	// Wire the UI layer: site app + screens + host.

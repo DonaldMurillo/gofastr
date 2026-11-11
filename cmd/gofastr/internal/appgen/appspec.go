@@ -43,6 +43,27 @@ func appSpecHasEntityAccess(bp appspec.AppSpec) bool {
 	return false
 }
 
+// appSpecSignupRoute returns the route of the screen hosting the signup
+// form, if the app spec has one, so the auth battery's register-error
+// redirect lands back on that form.
+func appSpecSignupRoute(bp appspec.AppSpec) (string, bool) {
+	var hasSignup func([]appspec.AppSpecBlock) bool
+	hasSignup = func(blocks []appspec.AppSpecBlock) bool {
+		for _, b := range blocks {
+			if isSignupFormBlock(b) || hasSignup(b.Children) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, s := range bp.Screens {
+		if hasSignup(s.Body) {
+			return s.Route, true
+		}
+	}
+	return "", false
+}
+
 // appSpecHasOwnerScopedEntity reports whether any entity declares an
 // owner_field. When it does and an admin account is bootstrapped, the seed
 // runs *as* that admin so demo rows belong to them and a fresh signup starts
@@ -5012,6 +5033,11 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 		// failed form login (wrong password, no Referer) lands back on the login
 		// form with ?error=… instead of rendering the raw JSON error body.
 		sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultLoginErrorPath(%q)\n", appSpecLoginRoute(bp)))
+		// A signup form gets its own: the pages send no Referer, so without
+		// it a failed signup (weak password, missing field) lands on login.
+		if route, ok := appSpecSignupRoute(bp); ok {
+			sb.WriteString(fmt.Sprintf("\t\tauth.SetDefaultRegisterErrorPath(%q)\n", route))
+		}
 		if bp.App.Admin.SeedEmail != "" && bp.App.Admin.SeedPassword != "" {
 			sb.WriteString("\t\t// Bootstrap the admin account after auto-migration. The hook runs\n")
 			sb.WriteString("\t\t// before the server accepts traffic and returns errors to Start,\n")

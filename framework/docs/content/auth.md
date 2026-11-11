@@ -399,6 +399,22 @@ key, is a `400` before the handler acts. Extra keys that match no field
 are refused, not ignored: a body a reviewer reads differently from the
 handler is the attack, whichever key caused it.
 
+A failed form post (wrong password, weak password, missing field, a
+cross-site or throttled post) answers `303` back to the form with
+`?error=<code>`. The target is the same-origin `Referer` when the
+request carries one. Pages served with `Referrer-Policy: no-referrer`
+never send it, so the battery falls back to a configured path, and to a
+JSON body when none is set:
+
+```go
+auth.SetDefaultLoginErrorPath("/login")       // sign-in errors
+auth.SetDefaultRegisterErrorPath("/register") // sign-up errors
+```
+
+`/auth/register` uses the register path when it is set and the login
+path otherwise. Generated apps set the login path to their login screen,
+and the register path to their `signup_form` screen when they have one.
+
 Open-redirect protection: the `?next=` (query or form) override is
 honored only for same-origin paths starting with `/`. `//evil.example`
 and full URLs are rejected, falling back to `/`.

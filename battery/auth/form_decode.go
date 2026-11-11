@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -311,18 +312,65 @@ func getDefaultLoginErrorPath() string {
 	return ""
 }
 
+// defaultRegisterErrorPath is the register form's own fallback, read in
+// place of defaultLoginErrorPath for a request registerHandler marked.
+var defaultRegisterErrorPath atomic.Pointer[string]
+
+// SetDefaultRegisterErrorPath configures the path that form-encoded
+// register errors (a weak password, a missing field, a cross-site or
+// throttled post) redirect to when the request has no usable Referer.
+// Pages served with Referrer-Policy: no-referrer never send one, so
+// without it a failed signup lands on the login error path. Set it to
+// your signup page (e.g. "/register"). Pass "" to fall back to the
+// login error path again. Safe to call concurrently.
+func SetDefaultRegisterErrorPath(path string) {
+	if path == "" {
+		defaultRegisterErrorPath.Store(nil)
+		return
+	}
+	defaultRegisterErrorPath.Store(&path)
+}
+
+// getDefaultRegisterErrorPath is the atomic-pointer read mirror.
+func getDefaultRegisterErrorPath() string {
+	if p := defaultRegisterErrorPath.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
+// registerFormKey marks a request registerHandler is serving, so
+// writeFormAuthError picks the register error path.
+type registerFormKey struct{}
+
+// asRegisterForm returns r marked as a register form post.
+func asRegisterForm(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), registerFormKey{}, true))
+}
+
+// errorFallbackPath is the configured fallback for r: the register path
+// for a register form when one is set, the login path otherwise.
+func errorFallbackPath(r *http.Request) string {
+	if on, _ := r.Context().Value(registerFormKey{}).(bool); on {
+		if p := getDefaultRegisterErrorPath(); p != "" {
+			return p
+		}
+	}
+	return getDefaultLoginErrorPath()
+}
+
 // writeFormAuthError responds to a form-encoded auth request with a 303
 // redirect back to the referring page with an ?error= query string.
 // Only same-origin Referers are honored, a cross-origin Referer would
 // otherwise turn the auth endpoint into a phishing relay.
 //
-// When no usable Referer is available, falls back to
-// defaultLoginErrorPath (if configured via SetDefaultLoginErrorPath)
-// or JSON otherwise.
+// When no usable Referer is available, falls back to the configured
+// error path (SetDefaultRegisterErrorPath for a register form when set,
+// SetDefaultLoginErrorPath otherwise) or JSON when neither is set.
 func writeFormAuthError(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
 	target := safeReferer(r)
 	if target == "" {
-		fallback := getDefaultLoginErrorPath()
+		fallback := errorFallbackPath(r)
 		if fallback != "" && handler.IsSafeRelativePath(fallback) {
 			target = fallback
 		}
