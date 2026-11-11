@@ -625,7 +625,11 @@ the policy grants nothing, or does not know, is checked by name
 (`auth.RequireRole`), so only a caller holding it or the wildcard
 assigns or removes it. An unknown account is a 400. A refusal is a 403
 with a `grant-refused`, `revoke-refused` or `assign-roles-refused`
-row, so a narrower admin tier cannot mint a role above its own. An
+row, so a narrower admin tier cannot mint a role above its own.
+Under the default gate a caller cannot remove their own `AdminRole`:
+the post is refused with `own-admin-refused` and an
+`assign-roles-refused` row, because the last admin dropping it leaves
+nobody who can grant it back. Another admin can remove it. An
 `access.Decider` on the request is asked about each permission first: its
 `DecisionDeny` refuses the change even when the policy grants it, and its
 `DecisionAllow` admits nothing the policy does not. A grid save is checked whole

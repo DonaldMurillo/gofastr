@@ -591,7 +591,7 @@ func gridCell(v string, roles, perms int) (int, int, bool) {
 // what changes, the roles added and the roles the new set takes away:
 // a tier that could not grant a role cannot strip it either, and a role
 // the account keeps is no change. A refusal is audited with the role
-// that stopped it.
+// that stopped it. A caller never removes their own admin role.
 func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/rbac/users"
 	vals, read := b.readOps(w, r, page)
@@ -639,6 +639,18 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 		if !slices.Contains(roles, role) && !slices.Contains(changed, role) {
 			changed = append(changed, role)
 		}
+	}
+	// The caller's own admin role is not theirs to remove: the default
+	// gate admits only holders of it, so the last admin dropping it
+	// leaves the deployment with none, and nonAssignableRole then
+	// refuses granting it back from the tier that remains. Another admin
+	// may still remove it. A custom Authorize gates on something else.
+	if b.cfg.Authorize == nil && userID == callerUserID(r.Context()) &&
+		slices.Contains(current, b.adminRole()) && !slices.Contains(roles, b.adminRole()) {
+		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,
+			map[string]any{"roles": roles, "refused_role": b.adminRole()})
+		b.refuse(w, r, page, http.StatusForbidden, "own-admin-refused")
+		return
 	}
 	if offending := b.nonAssignableRole(r.Context(), changed); offending != "" {
 		b.appendAudit(r.Context(), "access", "assign-roles-refused", userID, actor,

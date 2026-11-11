@@ -740,6 +740,7 @@ var results = map[string]result{
 	"bad-input":           {i18nui.AdminBadInput, false},
 	"grant-refused":       {i18nui.AdminGrantRefused, false},
 	"assign-refused":      {i18nui.AdminAssignRefused, false},
+	"own-admin-refused":   {i18nui.AdminOwnAdminRefused, false},
 	"name-refused":        {i18nui.AdminNameRefused, false},
 	"unknown-capability":  {i18nui.AdminUnknownCapability, false},
 	"revoked-by-wildcard": {i18nui.AdminRevokedByWildcard, false},
