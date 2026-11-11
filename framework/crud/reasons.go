@@ -101,3 +101,7 @@ var (
 	reasonUnsafeURL        = i18n.Define("validation.unsafe_url", "unsafe URL or path")
 	reasonKeyNotUploaded   = i18n.Define("validation.key_not_uploaded", "storage key was not uploaded by this request")
 )
+
+// reasonSearchNotConfigured refuses a non-blank ?q= on an entity that
+// declares no SearchFields.
+var reasonSearchNotConfigured = i18n.Define("error.search_not_configured", "?q= search is not configured for this entity: it declares no search fields")

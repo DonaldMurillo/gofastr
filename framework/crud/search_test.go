@@ -140,37 +140,6 @@ func TestSearch_StreamHonorsQ(t *testing.T) {
 	}
 }
 
-// TestSearch_NoSearchFieldsBackCompat: entity without SearchFields ignores ?q=.
-func TestSearch_NoSearchFieldsBackCompat(t *testing.T) {
-	installOwnerExtractor(t)
-	db := setupDB(t, `CREATE TABLE splain (
-		id TEXT PRIMARY KEY,
-		user_id TEXT,
-		note TEXT
-	)`)
-	ent := entity.Define("splain", entity.EntityConfig{Table: "splain",
-		Fields: []schema.Field{{Name: "user_id", Type: schema.String}, {Name: "note", Type: schema.String}}, Scope: &entity.ScopeConfig{OwnerField: "user_id"},
-	}.WithTimestamps(false))
-	ent.SetDB(db)
-	ch := NewCrudHandler(ent, db).WithJSONCase(CaseSnake)
-	seedRows(t, db, "splain", []map[string]any{
-		{"id": "p1", "user_id": "alice", "note": "hello world"},
-		{"id": "p2", "user_id": "alice", "note": "goodbye"},
-	})
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/splain?q=hello", nil), "alice")
-	rec := httptest.NewRecorder()
-	ch.List()(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
-	}
-	lr := decodeListResponse(t, rec.Body.String())
-	// Without SearchFields, ?q= is ignored, both rows return.
-	if len(lr.Data) != 2 {
-		t.Fatalf("no-SearchFields entity returned %d rows, want 2 (?q= ignored)", len(lr.Data))
-	}
-}
-
 // TestSearch_QColumnEdge: an entity WITH SearchFields that also has a
 // physical column named "q", plain ?q= means search, not column filter.
 func TestSearch_QColumnEdge(t *testing.T) {

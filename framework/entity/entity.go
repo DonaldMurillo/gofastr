@@ -53,10 +53,10 @@ type EntityConfig struct {
 	// at filter.MaxSearchTerms) and AND-composes one LOWER(col) LIKE
 	// pattern per token across the listed fields. Matching is
 	// ASCII-case-insensitive everywhere (Unicode-folding on Postgres).
-	// Leave nil to keep pre-existing behaviour (?q= is ignored). Column
-	// names must be known, non-Hidden, and String/Text-typed; Define panics
-	// otherwise. An entity WITHOUT SearchFields ignores ?q= exactly as
-	// before (back-compat).
+	// Column names must be known, non-Hidden, and String/Text-typed;
+	// Define panics otherwise. An entity WITHOUT SearchFields answers a
+	// non-blank ?q= with 400 search_not_configured, unless it has its own
+	// queryable column (or allowed filter param) named q.
 	SearchFields []string
 
 	// Seed runs once per entity after AutoMigrate creates the table. The

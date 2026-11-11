@@ -1330,8 +1330,12 @@ The same holds for a record id in the path: `GET`, `PUT`, `PATCH` and
 `DELETE /{id}` answer 400 for an id that is not storable text instead of
 reaching the store.
 
-**Back-compat.** An entity WITHOUT `SearchFields` ignores `?q=` exactly
-as before: no behavioural change.
+**No search fields, no search.** On an entity WITHOUT `SearchFields` a
+non-blank `?q=` answers 400 `search_not_configured`, the way `ListAll`
+refuses `Search` there: dropping it would answer every row to a client
+that believes it is searching. A blank `?q=` is no search. If the entity
+has its own queryable column named `q` (or lists `q` in
+`AllowedFilterParams`), `?q=value` is that filter, as before.
 
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
