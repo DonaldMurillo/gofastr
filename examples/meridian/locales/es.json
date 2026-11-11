@@ -1,4 +1,11 @@
 {
+  "app": {
+    "error_doc_title": "Algo salió mal",
+    "not_found_body": "Esta página no existe.",
+    "not_found_doc_title": "Página no encontrada",
+    "not_found_title": "404: Página no encontrada",
+    "skip_to_main": "Saltar al contenido principal"
+  },
   "entity": {
     "customers": {
       "description": "Todas las cuentas que te pagan.",
@@ -1188,6 +1195,39 @@
       "problem": "Hay un problema",
       "title": "Corrige los siguientes errores:"
     }
+  },
+  "uihost": {
+    "action_acknowledged": "Acción del servidor recibida (sin controlador)",
+    "action_processed": "Acción del servidor procesada",
+    "app_updated": "Esta aplicación se actualizó.",
+    "back_home": "Volver al inicio",
+    "error_body": "No se pudo cargar esta página. Inténtalo de nuevo en un momento.",
+    "error_title": "Algo salió mal",
+    "method_allowed": "Métodos permitidos: {{methods}}.",
+    "method_body": "El método {{method}} no está permitido en {{path}}.",
+    "method_title": "405: Método no permitido",
+    "no_route": "Ninguna ruta coincide con {{path}}.",
+    "not_found_body": "Esta página no existe.",
+    "not_found_doc_title": "No encontrada: {{app}}",
+    "not_found_title": "404: Página no encontrada",
+    "offline_body": "Esta página no está disponible sin conexión. Vuelve a conectarte e inténtalo de nuevo.",
+    "offline_doc_title": "Sin conexión — {{app}}",
+    "offline_title": "Estás sin conexión",
+    "problem_method_not_allowed": "Método no permitido",
+    "problem_method_refused": "Esta dirección no acepta el método de la solicitud; la cabecera Allow indica los que sí acepta.",
+    "problem_no_route": "Ninguna ruta coincide con esta solicitud.",
+    "problem_not_found": "No encontrado",
+    "problem_render_failed": "No se pudo generar la página.",
+    "problem_server_error": "Error interno del servidor",
+    "pwa_not_configured": "pwa no configurada",
+    "reload_page": "Vuelve a cargar la página.",
+    "robots_not_configured": "robots no configurado",
+    "server_error_doc_title": "Error del servidor: {{app}}",
+    "server_error_title": "500: Error del servidor",
+    "session_missing": "falta el parámetro de sesión",
+    "sitemap_not_configured": "sitemap no configurado",
+    "unknown_session": "sesión desconocida",
+    "widget_not_found": "widget no encontrado: {{id}}"
   },
   "validation": {
     "max": "debe ser como máximo {{max}}",
