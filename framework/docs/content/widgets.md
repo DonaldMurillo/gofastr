@@ -541,6 +541,18 @@ SSR-inlined chrome honors the same verdict
 page its endpoints would refuse. See
 [Security](security.md) → "Widget signal exposure".
 
+The catalog lists, and the SSR layer inlines, only the widgets a request
+is offered (`Definition.OfferedTo`): its page scope, its gate, and
+`Definition.ListedFor` (builder `.ListedFor(fn)`), when set, must all
+accept the caller. Because a page view mints the session the catalog
+asks for, anonymous visitors read it too; a widget only some signed-in
+callers may use sets `ListedFor` so its name stays out of everyone
+else's catalog. `ListedFor` scopes what is listed, never what is
+served: the gate (or the router the widget mounts on) still refuses
+the request. A panicking `ListedFor` counts as false. `battery/admin`
+sets it on its drawer, palette and shortcut sheet, so they list only to
+a caller its gate admits.
+
 ## Chrome context (`data-cui-ctx`)
 
 One widget definition is one chrome. Before #321 a per-entity dialog — a

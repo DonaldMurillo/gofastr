@@ -327,6 +327,12 @@ func serveWidgetList(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]map[string]any, 0, len(defs))
 	for _, d := range defs {
+		// Only what this caller may use: a widget its gate refuses, or
+		// its ListedFor turns away, would only name itself here and 403
+		// on /chrome.
+		if !d.OfferedTo(r) {
+			continue
+		}
 		cfg := map[string]any{
 			"name":           d.Name,
 			"position":       string(d.Position),
