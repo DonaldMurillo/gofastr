@@ -61,7 +61,7 @@ func TestRunInitPinsFrameworkToCLIRelease(t *testing.T) {
 }
 
 // go mod init writes the local toolchain's version, which can sit below
-// the framework's own go directive (go 1.25.5 against 1.27.3). The
+// the framework's own go directive (go 1.25.5 against 1.27.4). The
 // scaffold states the framework's minimum instead, and a toolchain line
 // only when it would not repeat the go line.
 func TestInitGoModNamesFrameworkGo(t *testing.T) {

@@ -265,7 +265,7 @@ notes:
     guidance: "Rewrap such a line so the marker does not start it. Also new: \\| is a literal pipe in a table cell, a link URL keeps balanced parentheses, and * or _ beside whitespace is text."
     nodetect: "markdown content, which the Go source scan does not read"
   - change: "battery/auth: an OAuth callback that arrives cross-site answers 200 with a page that loads the landing URL (a Refresh header), where it answered 302; the SameSite=Strict session cookie was withheld from the redirect"
-    guidance: "A test or client that follows the callback's 302 reads the Refresh header's URL instead. A request without Fetch Metadata still gets the 302."
+    guidance: "A test or client that follows the callback's 302 reads the Refresh header's URL instead. A request with no Fetch Metadata at all (curl, a test client, a browser on a plain-HTTP origin other than localhost) gets the same hop page, as do the setup token link and the email-verify link; send Sec-Fetch-Site: none, or follow the Refresh header, which carries gofastr_hop=1."
     nodetect: "a response status of the framework's own callback route; no host source spelling shows it"
   - change: "runtime: a plain enctype=\"application/json\" form posts a repeated field name (a checkbox group, a select multiple) as an array of its values, where it posted the last value only"
     guidance: "A handler that read such a field as one string reads an array. A hidden input paired with one checkbox of the same name stays one value."
@@ -273,3 +273,30 @@ notes:
   - change: "runtime: an intercepted plain POST form (application/json or data-cui-spa) drops a re-submit of the payload in flight and queues a changed one behind it, as data-cui-rpc forms do; the form reads aria-busy meanwhile"
     guidance: "Nothing to change. A form that relied on sending the same POST twice in a row must wait for the first to answer."
     nodetect: "browser submit timing; no host source spelling shows it"
+  - change: "the module requires Go 1.27.4"
+    breaking: true
+    hits: edit
+    guidance: "go.mod names go 1.27.4, up from 1.27.3. Go 1.27.3 builds net/http with GO-2026-6859, an HTTP/1 server crash through a MaxBytesReader header race, and every GoFastr app serves HTTP. `go get` of this release raises your go directive to 1.27.4, and GOTOOLCHAIN=auto (the default) downloads that toolchain. With GOTOOLCHAIN=local, install Go 1.27.4 first. Nothing in your code changes."
+    find:
+      gomod:
+        go_below: "1.27.4"
+  - change: "BREAKING - a non-blank ?q= on an entity that declares no SearchFields answers 400 search_not_configured, where the list ignored it and answered every row"
+    breaking: true
+    guidance: "Declare SearchFields on the entity, or stop sending q. A blank q is still no search, and an entity whose own column or AllowedFilterParams entry is named q keeps ?q= as that filter."
+    nodetect: "a query parameter a client sends; no host source spelling shows it"
+  - change: "BREAKING - a cursor list refuses a direction other than forward or backward with 400 bad_direction, where an unknown value paged forward"
+    breaking: true
+    guidance: "Send direction=forward or direction=backward exactly, or leave it out for forward."
+    nodetect: "a query parameter a client sends; no host source spelling shows it"
+  - change: "BREAKING - the entityui CSV export (<api>/<entity>/_export.csv) refuses a query parameter its list does not own with 400 export_unknown_param, where it ignored it and exported every row the caller may read"
+    breaking: true
+    guidance: "Narrow an export with the list's own params (its search, filters, view and facets), as the bulk bar's Export link does. A REST filter such as ?status=paid belongs on the list API, not the export."
+    nodetect: "a URL a client builds; no host source spelling shows it"
+  - change: "BREAKING - a JSON request body that is not valid UTF-8 answers 400 json_not_utf8 from handler.Bind, UnmarshalStrict, DecodeStrict and every crud JSON route, where encoding/json stored U+FFFD for each bad byte"
+    breaking: true
+    guidance: "Send UTF-8 (RFC 8259 requires it). A handler that decodes a body itself can run handler.CheckUTF8 first for the same answer."
+    nodetect: "the bytes of a request body; no host source spelling shows it"
+  - change: "BREAKING - boot refuses a table that still holds a single-column UNIQUE on a column the entity now declares unique only within a composite unique index, naming the column"
+    breaking: true
+    guidance: "Apply DiffSchema's changes with ApplySchemaDiffWithOptions (AllowDestructive on SQLite, where the table is rebuilt), or drop the stale constraint in a reviewed migration. The old constraint refused one account's value for every other account, and its 409 told the caller what another account stored."
+    nodetect: "a fact of the live database schema, not of the host source"

@@ -8,7 +8,7 @@
 // isolated. The parent module is referenced via a local replace.
 module github.com/DonaldMurillo/gofastr/battery/print/chromepdf
 
-go 1.27.3
+go 1.27.4
 
 require (
 	github.com/DonaldMurillo/gofastr v0.0.0

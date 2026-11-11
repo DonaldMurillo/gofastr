@@ -72,11 +72,11 @@ func TestInitKeepsHigherExistingGoRequirements(t *testing.T) {
 	cli.Version = "dev"
 	t.Cleanup(func() { cli.Version = oldVersion })
 	t.Setenv("GOTOOLCHAIN", "local")
-	for _, toolchain := range []string{"go1.27.4", "default"} {
+	for _, toolchain := range []string{"go1.27.5", "default"} {
 		t.Run(toolchain, func(t *testing.T) {
 			dir := t.TempDir()
 			clitest.CovT_chdir(t, dir)
-			initial := "module local/existing\n\ngo 1.27.3\n\ntoolchain " + toolchain + "\n\nrequire example.com/existing v1.0.0\n"
+			initial := "module local/existing\n\ngo 1.27.4\n\ntoolchain " + toolchain + "\n\nrequire example.com/existing v1.0.0\n"
 			if err := os.WriteFile("go.mod", []byte(initial), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -89,7 +89,7 @@ func TestInitKeepsHigherExistingGoRequirements(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if mod.Go.Version != "1.27.3" || mod.Toolchain == nil || mod.Toolchain.Name != toolchain {
+			if mod.Go.Version != "1.27.4" || mod.Toolchain == nil || mod.Toolchain.Name != toolchain {
 				t.Fatalf("init . changed existing Go requirements:\n%s", data)
 			}
 			if len(mod.Require) != 1 || mod.Require[0].Mod.Path != "example.com/existing" {

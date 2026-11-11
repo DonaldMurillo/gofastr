@@ -356,6 +356,13 @@ few lines, and link the PR or the docs page for the rest.
   first segment is a locale tag under `locale_prefixes`.
 
 ### Security
+- **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,
+  up from `go 1.27.3`. Go 1.27.3's net/http carries GO-2026-6859, an
+  HTTP/1 server crash through a `MaxBytesReader` header race, and every
+  GoFastr app serves HTTP. `go get` of this release raises an app's `go`
+  line, and the default `GOTOOLCHAIN=auto` downloads 1.27.4; with
+  `GOTOOLCHAIN=local`, install 1.27.4 first. `gofastr init` writes
+  `go 1.27.4`, and `gofastr upgrade` flags a go.mod below it.
 - **BREAKING: desktop update feeds expire, and a macOS update must carry
   the running app's signing identity**
   ([#649](https://github.com/DonaldMurillo/gofastr/issues/649),
