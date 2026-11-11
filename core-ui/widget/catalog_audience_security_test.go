@@ -1,6 +1,8 @@
 package widget_test
 
 import (
+	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -16,6 +18,11 @@ import (
 // themselves to a caller whose /chrome would 403. It now lists only
 // what the caller passes: the widget's gate and its ListedFor.
 func TestCatalogListsOnlyReachable(t *testing.T) {
+	widget.IsolateForTest(t)
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
 	widget.SetAuthenticatedCheck(func(r *http.Request) bool { return r.Header.Get("X-Signed-In") == "1" })
 	t.Cleanup(func() { widget.SetAuthenticatedCheck(nil) })
 
@@ -61,6 +68,11 @@ func TestCatalogListsOnlyReachable(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	// The panic that hid the widget is logged, not swallowed.
+	if !strings.Contains(logs.String(), "ListedFor hook panicked") || !strings.Contains(logs.String(), "audience-panics") {
+		t.Errorf("a panicking ListedFor left no log: %s", logs.String())
 	}
 
 	if !staff.OfferedTo(withHeader("X-Staff", "1")) || staff.OfferedTo(withHeader("X-Staff", "0")) {

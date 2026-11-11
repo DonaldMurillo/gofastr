@@ -117,7 +117,15 @@ func TestModulePanicNamesLogFile(t *testing.T) {
 
 	plain := NewApp(WithLogger(slog.New(slog.NewTextHandler(&buf, nil))))
 	_ = plain.Batteries.Register(&panicBattery{name: "panicky"})
-	if err := plain.Batteries.InitAll(plain); err == nil || strings.Contains(err.Error(), " to ") {
+	if err := plain.Batteries.InitAll(plain); err == nil || strings.Contains(err.Error(), "logged to") {
 		t.Errorf("a logger with no location named one: %v", err)
+	}
+
+	// The location is quoted: a path or custom handler carrying terminal
+	// controls must not write them live into the boot error.
+	forged := NewApp(WithLogger(slog.New(locatedHandler{slog.NewTextHandler(&buf, nil), "/state/\x1b[2J\nok/server.log"})))
+	_ = forged.Batteries.Register(&panicBattery{name: "panicky"})
+	if err := forged.Batteries.InitAll(forged); err == nil || strings.ContainsAny(err.Error(), "\x1b\n") {
+		t.Errorf("the boot error carries a live control byte: %q", err)
 	}
 }

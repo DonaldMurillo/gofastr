@@ -591,7 +591,8 @@ func gridCell(v string, roles, perms int) (int, int, bool) {
 // what changes, the roles added and the roles the new set takes away:
 // a tier that could not grant a role cannot strip it either, and a role
 // the account keeps is no change. A refusal is audited with the role
-// that stopped it. A caller never removes their own admin role.
+// that stopped it. Under the default gate (no Config.Authorize) a
+// caller never removes their own admin role.
 func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	page := b.cfg.PathPrefix + "/rbac/users"
 	vals, read := b.readOps(w, r, page)

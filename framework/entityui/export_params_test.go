@@ -6,6 +6,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 // The export sits under the REST list's path but read only entityui's
@@ -46,5 +49,38 @@ func TestExportRefusesForeignParams(t *testing.T) {
 	rec, rows := getExport(t, x, bulkCtx("u1", nil), query)
 	if rec.Code != http.StatusOK || len(rows) != 2 {
 		t.Errorf("export link ?%s = %d with %d lines, want 200 with the header and A-2", query, rec.Code, len(rows))
+	}
+}
+
+// An f_ param naming a field that is no facet of the list was taken as
+// the list's own, and the export, which narrows only by configured
+// facets, ignored it: ?f_status=paid answered every row with a 200. It
+// is refused now; a configured facet still narrows.
+func TestExportRefusesNonFacetParam(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	for _, query := range []string{"f_status=paid", "_list=inv&inv_f_status=paid"} {
+		rec, _ := getExport(t, x, bulkCtx("u1", nil), query)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "export_unknown_param") {
+			t.Errorf("?%s = %d %s, want 400 export_unknown_param", query, rec.Code, rec.Body)
+		}
+	}
+
+	installOwnerExtractor(t)
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(inv.Fields, schema.Field{Name: "owner_id", Type: schema.String, Hidden: true})
+	inv.Scope = &entity.ScopeConfig{OwnerField: "owner_id"}
+	display := *inv.Display
+	display.Facets = []string{"status"}
+	inv.Display = &display
+	ents["invoices"] = inv
+	rows := invoiceRows()
+	rows["invoices"] = []map[string]any{
+		{"id": "a1", "number": "A-1", "status": "draft", "owner_id": "u1"},
+		{"id": "a2", "number": "A-2", "status": "paid", "owner_id": "u1"},
+	}
+	faceted := newTestUIExt(t, ents, rows, Extensions{}, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	if rec, rows := getExport(t, faceted, bulkCtx("u1", nil), "f_status=paid"); rec.Code != http.StatusOK || len(rows) != 2 {
+		t.Errorf("facet ?f_status=paid = %d with %d lines, want 200 with the header and A-2", rec.Code, len(rows))
 	}
 }

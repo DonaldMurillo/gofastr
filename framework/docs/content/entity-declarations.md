@@ -1334,8 +1334,10 @@ reaching the store.
 non-blank `?q=` answers 400 `search_not_configured`, the way `ListAll`
 refuses `Search` there: dropping it would answer every row to a client
 that believes it is searching. A blank `?q=` is no search. If the entity
-has its own queryable column named `q` (or lists `q` in
-`AllowedFilterParams`), `?q=value` is that filter, as before.
+has its own queryable column named `q`, or whose `WireName` is `q` (or
+lists `q` in `AllowedFilterParams`), `?q=value` is that filter, as
+before. A `Hidden` column named `q` is no filter, so `?q=` there still
+answers 400.
 
 **The `q`-column edge case.** An entity WITH `SearchFields` that also
 has a physical column named `q`: plain `?q=value` means **search** (the
@@ -2108,7 +2110,9 @@ as an FTS5 index, first reads the rows the delete's own `WHERE` (key,
 owner, tenant, live or trashed) reaches, inside the same transaction. Send ids as the API returns them.
 
 A filter on an `Unmanaged` entity's `timestamp` column over SQLite
-(`?at_gt=`, `?where=`, `ListOptions.Filters` and `Where`) binds its
+(`?at_gt=`, `?where=`, `ListOptions.Filters`, and a `TypedQuery`'s
+`Where` under `Find`, `First`, `Count`, `Exists`, `UpdateAll` and
+`DeleteAll`) binds its
 value in `schema.TimestampLayout`, and SQLite compares the column as
 text. Against rows another writer stored as `2026-03-03 10:00:00` or
 `2026-01-02T12:00:00Z` that comparison drops or adds rows, so before
@@ -2490,7 +2494,10 @@ it keep the host's normal 404 rendering. A wrong method on a route in the
 same namespace (`PUT /api/posts`) answers `405` the same way: a problem
 document whose `reason` is `api_method_not_allowed`, with the router's
 `Allow` header, and no session cookie (the UI host's 405 page minted one).
-Outside the namespace the host's 405 page still answers.
+Outside the namespace the host's 405 page still answers. The namespace
+is the API's, not the UI host's: a screen declared under it is not
+served there (no route at its path is a `404` problem document, a route
+for another method a `405`), so keep screens outside the API prefix.
 
 ### `json` fields round-trip
 

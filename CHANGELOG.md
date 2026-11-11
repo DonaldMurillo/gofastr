@@ -298,13 +298,15 @@ few lines, and link the PR or the docs page for the rest.
 - **BREAKING: a cursor list refuses an unknown `direction`** with 400
   `bad_direction`
   ([cursor pagination](framework/docs/content/cursor-pagination.md)).
-  `back`, `Backward` and other typos paged forward with a 200. Absent or
-  empty is still forward.
+  `back`, `Backward` and a value that does not decode (`%ZZ`) paged
+  forward with a 200, as did a typo in a repeated `direction` pair.
+  Absent or empty is still forward.
 - **BREAKING: the entityui CSV export refuses a parameter its list does
   not own** with 400 `export_unknown_param`
   ([entityui](framework/docs/content/entityui.md)). A REST filter such as
   `?status=paid` was ignored, and the file held every row the caller
-  could read. The bulk bar's Export link now carries only the list's own
+  could read; so was an `f_` param naming a field the list has no facet
+  for. The bulk bar's Export link now carries only the list's own
   params.
 - **BREAKING: a JSON body that is not valid UTF-8 answers 400
   `json_not_utf8`**
@@ -345,15 +347,19 @@ few lines, and link the PR or the docs page for the rest.
   - a `stat_card`, `link_button`, hero CTA or `markdown` block missing a
     prop its component cannot render without, or holding a bare number
     where it takes text;
-  - an owner-scoped entity whose `primary_key` leaves the owner out;
-  - a `login_form` or `signup_form` action off the mounted auth base;
-  - an `app.base_url` that is not a bare http(s) origin, and an
+  - an owner-scoped entity whose `primary_key` leaves the owner out, or
+    whose implicit `id` key is a declared field with no `auto_generate`;
+  - a `login_form` or `signup_form` action off the mounted auth base, or
+    an absolute one not on `app.base_url`'s origin;
+  - an `app.base_url` that is not a bare http(s) origin (a bare trailing
+    `?` included, which uihost strict mode now refuses at boot too), and an
     `app.admin.path` that is not a clean prefix (`/` included);
   - two entities whose create-flagged lists share one screen.
 
   It also warns on a `custom_form` that POSTs to a screen route, an
-  image or file field with no file storage wired, and a screen whose
-  first segment is a locale tag under `locale_prefixes`.
+  image or file field with no file storage wired, and a screen, auth or
+  admin mount, or entity API route whose first segment is a locale tag
+  under `locale_prefixes`.
 
 ### Security
 - **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,

@@ -915,10 +915,16 @@ func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, er
 }
 
 // ownsQParam reports whether ?q= names one of the entity's own filters:
-// a queryable column called q, or q in AllowedFilterParams.
+// a queryable column whose name or WireName is q, or q in
+// AllowedFilterParams. It reads names the way the filter parser does: a
+// Hidden column is no filter (a Hidden q left ?q= answering every row),
+// and a NoQuery one is refused, never filtered.
 func (ch *CrudHandler) ownsQParam() bool {
 	for _, f := range ch.queryFields() {
-		if f.Name == "q" {
+		if f.Hidden || f.NoQuery {
+			continue
+		}
+		if f.Name == "q" || f.WireName == "q" {
 			return true
 		}
 	}

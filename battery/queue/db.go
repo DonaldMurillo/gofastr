@@ -1520,10 +1520,12 @@ func (q *DBQueue) workerLoop(ctx context.Context, lane string) {
 			// re-runs it once a handler is back. The settle is detached
 			// from shutdown, and a failure is logged, not discarded.
 			settleCtx, cancel := settleContext(ctx)
-			if _, err := q.settleFailure(settleCtx, job, fmt.Errorf("%w: no handler registered for job type %q", ErrPermanent, job.Type)); err != nil {
+			// A claim another worker settled or re-took meanwhile settles
+			// nothing (dead is false): no dead-letter to report.
+			if dead, err := q.settleFailure(settleCtx, job, fmt.Errorf("%w: no handler registered for job type %q", ErrPermanent, job.Type)); err != nil {
 				q.logger.Warn("queue: dead-lettering a job with no handler failed; it reruns when its lease expires",
 					"job_id", job.ID, "err", err)
-			} else {
+			} else if dead {
 				q.logger.Error("queue: no handler registered; job dead-lettered",
 					"job_id", job.ID, "job_type", job.Type)
 			}

@@ -1,8 +1,10 @@
 package queue
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -69,5 +71,39 @@ func assertNoHandlerDeadLetters(t *testing.T, db *sql.DB, q *DBQueue) {
 	}
 	if err := db.QueryRow("SELECT status FROM " + q.qt() + " WHERE id = 'j'").Scan(&status); err != nil || status != "pending" {
 		t.Fatalf("after Replay: %q, %v; want pending", status, err)
+	}
+}
+
+// A claim whose handler is gone, and that another worker reclaimed in the
+// meantime, settles nothing: the fenced settle finds no row it owns. The
+// worker logged "job dead-lettered" at ERROR anyway; it now logs that
+// only when the settle dead-lettered the row.
+func TestStaleNoHandlerClaimLogsNothing(t *testing.T) {
+	var logs bytes.Buffer
+	db, q := openDBQueueOpts(t, WithWorkers(0), WithDBLogger(slog.New(slog.NewTextHandler(&logs, nil))))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q.RegisterHandler("t", func(context.Context, Job) error { return nil })
+	q.afterClaim = func(Job) {
+		q.mu.Lock()
+		delete(q.handlers, "t")
+		q.mu.Unlock()
+		// Another worker reclaimed the row: the token this claim holds
+		// no longer matches.
+		if _, err := db.Exec("UPDATE " + q.qt() + " SET claim_token = 'other' WHERE id = 'j'"); err != nil {
+			t.Error(err)
+		}
+		cancel()
+	}
+	if err := q.Enqueue(context.Background(), Job{ID: "j", Type: "t", MaxAttempts: 5}); err != nil {
+		t.Fatal(err)
+	}
+	q.workerLoop(ctx, "")
+	if strings.Contains(logs.String(), "dead-lettered") {
+		t.Errorf("a stale claim logged a dead-letter that never happened:\n%s", logs.String())
+	}
+	var status string
+	if err := db.QueryRow("SELECT status FROM " + q.qt() + " WHERE id = 'j'").Scan(&status); err != nil || status != "claimed" {
+		t.Errorf("status = %q, %v; want the other worker's claim left alone", status, err)
 	}
 }

@@ -50,9 +50,11 @@ var (
 	// on one line; a term or description on its own starts a line.
 	reDtDd    = regexp.MustCompile(`(?is)</dt>\s*<dd(?:\s[^>]*)?>`)
 	reDlBreak = regexp.MustCompile(`(?is)<d[td](?:\s[^>]*)?>|</d[td]>`)
-	// reCellSlot matches the \x00-parked links and images convertTables
-	// lifts out of a cell before the cell's text is escaped.
-	reCellSlot = regexp.MustCompile("\x00a([0-9]+)\x00")
+	// reCellSlot matches the parked links and images convertTables lifts
+	// out of a cell before the cell's text is escaped. A slot opens with
+	// \x00 and closes with \x01 (see slotOpen), so one slot's closing
+	// byte can never open a match with the text after it.
+	reCellSlot = regexp.MustCompile(slotOpen + "a([0-9]+)" + slotClose)
 
 	// rePreBlock matches one <pre><code>…</code></pre> block whole, so
 	// its content can be fenced (and entity-decoded exactly once)
@@ -63,9 +65,9 @@ var (
 	// it holds more than one line: its line breaks are the content, and
 	// the text-node pass would flatten them into one line of prose.
 	rePreBare = regexp.MustCompile(`(?is)<pre(?:\s[^>]*)?>(.*?)</pre>`)
-	// reFenceSlot matches the \x00-parked fenced-block placeholders
+	// reFenceSlot matches the parked fenced-block placeholders
 	// extractFencedBlocks leaves in the document.
-	reFenceSlot = regexp.MustCompile("\x00f([0-9]+)\x00")
+	reFenceSlot = regexp.MustCompile(slotOpen + "f([0-9]+)" + slotClose)
 	// reTagStart matches a '<' that begins something tag-shaped, so a
 	// decoded entity (&lt;script&gt;) can be re-neutralized without
 	// touching comparison operators ("1 < 2").
@@ -91,6 +93,20 @@ var (
 
 	// Heading regexes built once
 	headingRes [7]*regexp.Regexp // index 1-6 used
+)
+
+// The markers htmlToMarkdown parks content behind are C0 control bytes,
+// which scrubControls removes from the input, so none can come from the
+// page. A slot is slotOpen, a kind letter, an index and slotClose: the
+// open and close bytes differ, so no match can start at a slot's end.
+// Inline code's angle brackets park as single bytes of their own, never
+// as a run a slot regex can read (\x00lt\x00 around <a1> formed a false
+// \x00a1\x00 link slot, and <f0> a fence slot).
+const (
+	slotOpen  = "\x00"
+	slotClose = "\x01"
+	parkedLT  = "\x02"
+	parkedGT  = "\x03"
 )
 
 func init() {
@@ -141,7 +157,7 @@ func htmlToMarkdown(h string) string {
 	s = reCode.ReplaceAllStringFunc(s, func(string) string {
 		content := inlineCode[inlineIndex]
 		inlineIndex++
-		return mdCodeSpan(strings.NewReplacer("<", "\x00lt\x00", ">", "\x00gt\x00").Replace(content))
+		return mdCodeSpan(strings.NewReplacer("<", parkedLT, ">", parkedGT).Replace(content))
 	})
 
 	// Headings: h1-h6
@@ -184,11 +200,11 @@ func htmlToMarkdown(h string) string {
 	// Images: alt text and src treated exactly like link text/dest.
 	s = reImgAltSrc.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgAltSrc.FindStringSubmatch(m)
-		return "![" + mdLinkText(html.UnescapeString(sub[1])) + "](" + mdLinkDest(html.UnescapeString(sub[2])) + ")"
+		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(html.UnescapeString(sub[2])) + ")"
 	})
 	s = reImgSrcAlt.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgSrcAlt.FindStringSubmatch(m)
-		return "![" + mdLinkText(html.UnescapeString(sub[2])) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
+		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
 	})
 
 	// Horizontal rules
@@ -231,7 +247,7 @@ func htmlToMarkdown(h string) string {
 	// Collapse whitespace, put the fenced blocks back, trim
 	s = collapseWhitespace(s)
 	s = restoreFences(s, fences)
-	s = strings.NewReplacer("\x00lt\x00", "<", "\x00gt\x00", ">").Replace(s)
+	s = strings.NewReplacer(parkedLT, "<", parkedGT, ">").Replace(s)
 	return strings.TrimSpace(s)
 }
 
@@ -281,7 +297,7 @@ func mdTableCellHTML(cellHTML string) string {
 	var parked []string
 	park := func(md string) string {
 		parked = append(parked, md)
-		return fmt.Sprintf("\x00a%d\x00", len(parked)-1)
+		return fmt.Sprintf(slotOpen+"a%d"+slotClose, len(parked)-1)
 	}
 	// A break inside a link's text separates words, as in the rest of
 	// the cell: the link is parked before the cell's own break pass.
@@ -289,8 +305,10 @@ func mdTableCellHTML(cellHTML string) string {
 		return strings.ReplaceAll(mdLinkText(stripTags(reBR.ReplaceAllString(v, " "))), "|", `\|`)
 	}
 	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(html.UnescapeString(v)), "|", "%7C") }
+	// An alt is attribute text, not child markup: no tag strip, no break
+	// pass, only the cell's pipe escape on top of mdImageAlt.
 	image := func(alt, src string) string {
-		return "![" + text(html.UnescapeString(alt)) + "](" + dest(src) + ")"
+		return "![" + strings.ReplaceAll(mdImageAlt(alt), "|", `\|`) + "](" + dest(src) + ")"
 	}
 	c := reImgAltSrc.ReplaceAllStringFunc(cellHTML, func(m string) string {
 		sub := reImgAltSrc.FindStringSubmatch(m)
@@ -313,9 +331,9 @@ func mdTableCellHTML(cellHTML string) string {
 // restoreCellSlots puts back the parked markdown of every slot in s
 // below limit. A link's text can hold an image parked before it, so a
 // restored entry is restored in turn: one pass left that image's slot,
-// two NUL bytes and an index, in the row. A slot only ever names an
-// entry parked earlier (input control bytes are scrubbed first), and
-// limit says so, so the walk ends.
+// a NUL byte and an index, in the row. A slot only ever names an entry
+// parked earlier (input control bytes are scrubbed first, and only a
+// slot writes slotOpen), and limit says so, so the walk ends.
 func restoreCellSlots(s string, parked []string, limit int) string {
 	return reCellSlot.ReplaceAllStringFunc(s, func(m string) string {
 		idx, err := strconv.Atoi(reCellSlot.FindStringSubmatch(m)[1])
@@ -357,8 +375,9 @@ func collapseWhitespace(s string) string {
 // front-matter is framework/uihost/llmmd_seo.go::yamlDoubleQuote.
 
 // scrubControls drops C0 control bytes other than tab, newline and CR.
-// They are invalid in HTML text, and \x00 doubles as the fence-slot
-// marker below, so an input-borne control byte must not reach it.
+// They are invalid in HTML text, and the slot and parked-bracket markers
+// (slotOpen, parkedLT, …) are control bytes, so an input-borne one must
+// not reach them.
 func scrubControls(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
@@ -378,7 +397,7 @@ func extractFencedBlocks(s string) (string, []string) {
 	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBlock.FindStringSubmatch(m)[1])
 		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
-		return fmt.Sprintf("\x00f%d\x00", len(blocks)-1)
+		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
 	})
 	s = rePreBare.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBare.FindStringSubmatch(m)[1])
@@ -387,7 +406,7 @@ func extractFencedBlocks(s string) (string, []string) {
 			return m
 		}
 		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
-		return fmt.Sprintf("\x00f%d\x00", len(blocks)-1)
+		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
 	})
 	return s, blocks
 }
@@ -498,6 +517,15 @@ func mdInlineText(s string) string {
 // which are bracket-adjacent in this slot.
 func mdLinkText(s string) string {
 	return mdLinkTextEscaper.Replace(textWS.Replace(s))
+}
+
+// mdImageAlt prepares an image's alt attribute (still entity-encoded,
+// as the regex extracts it) as alt text: decoded once, a '<' that begins
+// something tag-shaped re-encoded as &lt; the way decodeTextNode does for
+// text, then mdLinkText. A <br> written in an alt is literal text, so the
+// tag passes that run after it (break, strip) must not read it as one.
+func mdImageAlt(alt string) string {
+	return mdLinkText(reTagStart.ReplaceAllString(html.UnescapeString(alt), "&lt;$1"))
 }
 
 // mdLinkDest percent-encodes the bytes that can terminate a markdown

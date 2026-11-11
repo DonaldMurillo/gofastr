@@ -985,7 +985,8 @@ and so does an entity with no REST write routes.
   to `EveryMatchCap`, read through the same scoped handler and read hooks
   the list uses. The export speaks the list's grammar, not the REST
   list's: a parameter that is not the list's own (`?status=paid`, a
-  `cursor`, another keyed list's params, a typo) answers 400
+  `cursor`, an `f_` param for a field that is not one of the list's
+  `Facets`, another keyed list's params, a typo) answers 400
   `export_unknown_param` instead of being ignored, and the Export link
   carries only the list's own params. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A

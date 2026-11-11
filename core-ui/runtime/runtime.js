@@ -1279,9 +1279,15 @@
   // every navigation that fetches a whole page. Nothing reads those
   // sheets (the destination's components link their own), so the ones
   // ahead of <body> go before the parse. The walk steps over script,
-  // comment and title text: a "<style>" there is not a tag.
+  // comment and title text: a "<style>" there is not a tag. Each span
+  // ends at its close or at the end of the response: one that could only
+  // end at its close was retried from every later unclosed opener, a
+  // read of the rest of the response each time (40k unclosed "<!--" in
+  // 1 MB held the main thread 4.5 s). An unclosed span holds the rest of
+  // the document, as the parser reads it, so the response then parses as
+  // it came, as it does with no <body>.
   const parseDoc = (h) => {
-    const re = /<script\b[^]*?<\/script\s*>|<!--[^]*?-->|<title\b[^]*?<\/title\s*>|(<style\b[^]*?<\/style\s*>)|(<body\b)/gi;
+    const re = /<script\b[^]*?(?:<\/script\s*>|$)|<!--[^]*?(?:-->|$)|<title\b[^]*?(?:<\/title\s*>|$)|(<style\b[^]*?(?:<\/style\s*>|$))|(<body\b)/gi;
     let out = '', i = 0, m;
     while ((m = re.exec(h)) && !m[2]) if (m[1]) { out += h.slice(i, m.index); i = re.lastIndex; }
     return new DOMParser().parseFromString(m ? out + h.slice(i) : h, 'text/html');

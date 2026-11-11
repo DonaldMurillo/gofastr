@@ -103,8 +103,8 @@ A plugin's `Init` panic (or an error return) is caught and attributed
 to the plugin by name in the resulting error. A panic's value stays out
 of the error (it may hold a secret); its stack goes to the App's logger,
 and the error says where when the logger's handler has a
-`LogLocation() string` method: `battery/log`'s default file sink answers
-with its `server.log` path. Already-initialised
+`LogLocation() string` method: the `battery/log` fan-out handler answers
+with its default file's `server.log` path. Already-initialised
 plugins are skipped on retry so a partial-init-then-fix retry doesn't
 double-register routes / middleware.
 

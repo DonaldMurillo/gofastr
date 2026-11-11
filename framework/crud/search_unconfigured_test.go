@@ -17,7 +17,11 @@ import (
 // no search, and an entity whose own column is named q still filters it.
 func TestSearchWithoutFieldsRefused(t *testing.T) {
 	database := setupDB(t, `CREATE TABLE plain_items (id TEXT PRIMARY KEY, title TEXT);
-		CREATE TABLE q_items (id TEXT PRIMARY KEY, q TEXT)`)
+		CREATE TABLE q_items (id TEXT PRIMARY KEY, q TEXT);
+		INSERT INTO q_items VALUES ('1', 'x'), ('2', 'y');
+		CREATE TABLE hidq_items (id TEXT PRIMARY KEY, q TEXT);
+		CREATE TABLE wireq_items (id TEXT PRIMARY KEY, tag TEXT);
+		INSERT INTO wireq_items VALUES ('1', 'x'), ('2', 'y')`)
 	serve := func(table string, fields []schema.Field, query string) *httptest.ResponseRecorder {
 		def := entity.Define(table, entity.EntityConfig{Name: table, Table: table, Fields: fields}.WithTimestamps(false))
 		def.SetDB(database)
@@ -39,7 +43,28 @@ func TestSearchWithoutFieldsRefused(t *testing.T) {
 			t.Errorf("GET %q = %d %s, want 200", query, rec.Code, rec.Body)
 		}
 	}
-	if rec := serve("q_items", []schema.Field{{Name: "q", Type: schema.String}}, "?q=x"); rec.Code != http.StatusOK {
-		t.Errorf("?q= on a column named q = %d %s, want the filter", rec.Code, rec.Body)
+	// A column named q, by name or by WireName, filters: only the
+	// matching row comes back.
+	for _, tc := range []struct {
+		table string
+		field schema.Field
+	}{
+		{"q_items", schema.Field{Name: "q", Type: schema.String}},
+		{"wireq_items", schema.Field{Name: "tag", WireName: "q", Type: schema.String}},
+	} {
+		rec := serve(tc.table, []schema.Field{tc.field}, "?q=x")
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s ?q=x = %d %s, want the filter", tc.table, rec.Code, rec.Body)
+			continue
+		}
+		if body := rec.Body.String(); !strings.Contains(body, `"id":"1"`) || strings.Contains(body, `"id":"2"`) {
+			t.Errorf("%s ?q=x = %s, want only row 1", tc.table, body)
+		}
+	}
+	// A Hidden column named q is no filter a client can name, so ?q= is
+	// a search the entity does not offer.
+	rec := serve("hidq_items", []schema.Field{{Name: "q", Type: schema.String, Hidden: true}}, "?q=x")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "search_not_configured") {
+		t.Errorf("?q= on a Hidden column named q = %d %s, want 400 search_not_configured", rec.Code, rec.Body)
 	}
 }

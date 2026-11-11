@@ -403,7 +403,8 @@ type fanoutHandler struct {
 // LogLocation reports where this handler's records land: the default
 // file sink's path, or "" when the host configured its own sinks.
 // framework's recoveredPanic reads it to say where a recovered boot
-// panic's stack is, since that sink writes to a file, not the terminal.
+// panic's stack is: that file holds it in full, while a terminal shows
+// at most the console sink's escaped one-line copy.
 func (h *fanoutHandler) LogLocation() string { return h.location }
 
 // handlerStep is one WithAttrs (attrs set) or WithGroup (group set) call.

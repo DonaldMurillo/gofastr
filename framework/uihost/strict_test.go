@@ -388,7 +388,7 @@ func TestStrictFlagsInvalidSitemapBaseURL(t *testing.T) {
 	}
 	// Path-bearing bases are rejected too: the static exporter adds its
 	// own BasePath, so a path here gets prefixed twice.
-	for _, bad := range []string{"", "example.com", "ftp://example.com", "https://user:pw@example.com", "https://example.com?x=1", "https://example.com/app"} {
+	for _, bad := range []string{"", "example.com", "ftp://example.com", "https://user:pw@example.com", "https://example.com?x=1", "https://example.com?", "https://example.com/app"} {
 		if msg := mountPanic(t, newHost(bad)); !strings.Contains(msg, "BaseURL") {
 			t.Fatalf("invalid sitemap BaseURL %q not flagged:\n%s", bad, msg)
 		}

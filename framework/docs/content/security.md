@@ -378,12 +378,18 @@ only to a potentially trustworthy origin, so a link to
 `http://192.168.1.5:8080` clicked on a chat page arrives with neither
 `Sec-Fetch-Site` nor `Origin`, the same as curl. Deciding on
 `IsCrossSiteRequest` alone spent the setup token on that click.
-`handler.SameSiteHopTarget` is the URL the page loads. When the
-arrival had no Fetch Metadata, the reload won't have any either, so
-the target gets `gofastr_hop=1` (`handler.SameSiteHopParam`), and
-`NeedsSameSiteHop` lets the marked reload through. The marker grants
-nothing: a link that carries it gets the plain answer every request got
-before the hop existed.
+A hop whose page loads the same guarded URL again (the setup token
+exchange, the OAuth link flow, the email-verify link) builds that URL
+with `handler.SameSiteHopTarget`. When the arrival had no Fetch
+Metadata, the reload won't have any either, so the target gets
+`gofastr_hop=1` (`handler.SameSiteHopParam`), and `NeedsSameSiteHop`
+lets the marked reload through. A hop that leaves the guarded URL needs
+no marker: the OAuth sign-in hop loads the landing page, which never
+hops. The marker grants nothing: a link that carries it gets the plain
+answer every request got before the hop existed. A client that sends no
+Fetch Metadata, such as curl or a script, gets the hop page first: it
+follows the page's `Refresh` header or its link, or sends
+`Sec-Fetch-Site: none` to skip the hop.
 
 ### Routes you mount yourself
 

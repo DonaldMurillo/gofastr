@@ -1298,8 +1298,8 @@ callback that arrives cross-site (`Sec-Fetch-Site`) therefore answers
 and carries the cookie. A callback with no Fetch Metadata at all gets
 the same page, because a browser sends none to a plain-HTTP address
 that is not localhost, and a click there looks like curl
-(`handler.NeedsSameSiteHop`). Only a callback that says `same-origin`
-or `none` gets the plain `302`.
+(`handler.NeedsSameSiteHop`). A callback that carries Fetch Metadata
+and is not cross-site gets the plain `302`.
 
 ## Rate limiting
 

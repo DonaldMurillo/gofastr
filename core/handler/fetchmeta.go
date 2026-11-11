@@ -151,7 +151,10 @@ func NeedsSameSiteHop(r *http.Request) bool {
 // Metadata either, so the marker is what ends the hop. A browser that
 // sends Fetch Metadata says "same-origin" on the reload, and its URL is
 // left as it came. The marker is no credential: a link that carries it
-// gets what every request got before the hop existed.
+// gets what every request got before the hop existed. Whoever adds it
+// already holds the URL, and where the URL is the secret (the setup
+// token) the holder could spend it directly; a cross-site request with
+// Fetch Metadata hops whatever its query says.
 func SameSiteHopTarget(r *http.Request, target string) string {
 	if r.Header.Get("Sec-Fetch-Site") != "" {
 		return target

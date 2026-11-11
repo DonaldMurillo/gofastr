@@ -2,8 +2,9 @@
 
 CRUD endpoints accept `multipart/form-data` for entities with `Image`
 or `File` fields. Uploads are streamed through the configured
-`upload.Storage` backend; only the resulting URL is stored on the
-record.
+`upload.Storage` backend; only the resulting storage key is stored on
+the record (or an absolute `http(s)` URL a JSON write sets as an
+external link).
 
 A browser sends `multipart/form-data` from another site with no CORS
 preflight and the user's cookies, so a multipart create or update must
@@ -63,7 +64,7 @@ The framework:
    `schema.JSON` column is the list-valued shape (an HTML multi-select
    submits one part per selected value), so repeats collect into a JSON
    array. Two file parts under one `Image`/`File` key are refused too;
-   those columns hold a single URL. The refusals carry their own codes
+   those columns hold a single storage key. The refusals carry their own codes
    (`duplicate_form_key`, `duplicate_file_part`, `malformed_multipart`
    for a body that does not parse) and name the first offending key in
    sorted order, so one body always answers the same bytes.
@@ -208,8 +209,8 @@ to one column in the same body (`avatarUrl` and `avatar_url`) answer
 
 | Type            | Wire form           | DB column     |
 |-----------------|---------------------|---------------|
-| `schema.Image`  | multipart file part | `TEXT` URL    |
-| `schema.File`   | multipart file part | `TEXT` URL    |
+| `schema.Image`  | multipart file part | `TEXT` key    |
+| `schema.File`   | multipart file part | `TEXT` key    |
 
 The two differ in three ways: the UI host emits an image-aware widget for
 `Image` fields, only `Image` fields run the image pipeline described
@@ -232,7 +233,7 @@ Leaving the input empty keeps the stored file. Set
 
 ## Automatic renditions and placeholders
 
-By default an upload is stored as-is: one file, one URL. Adding
+By default an upload is stored as-is: one file, one key. Adding
 `WithImagePipeline` makes every `schema.Image` upload also produce
 resized renditions and a placeholder, with no per-entity upload handler:
 
@@ -739,8 +740,8 @@ characters.
   a relative key the same request did not upload, including one
   `upload.Handler` returned. See
   [Storage keys on JSON and in-process writes](#storage-keys-on-json-and-in-process-writes).
-- **Trusting client-supplied URLs.** Multipart writes the URL the
-  server gets back from `Storage.Save`, not anything the client sent.
+- **Trusting client-supplied URLs.** Multipart writes the storage key
+  the server saved the file under, not anything the client sent.
   A JSON request can set an absolute `http(s)` URL, which the server
   stores as an external link without fetching or uploading anything.
 - **Camelcasing multipart names.** They are literal column names. Use

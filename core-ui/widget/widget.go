@@ -3,6 +3,7 @@ package widget
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -16,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // RouteMatcher decides whether a widget is available on a given
@@ -737,13 +739,16 @@ func (d *Definition) OfferedTo(r *http.Request) bool {
 }
 
 // listedFor runs the host's ListedFor. A panic fails closed: the widget
-// is not listed, and the request goes on.
+// is not listed, the panic is logged so the host bug that hid it shows,
+// and the request goes on.
 func (d *Definition) listedFor(r *http.Request) (ok bool) {
 	if d.ListedFor == nil {
 		return true
 	}
 	defer func() {
-		if recover() != nil {
+		if rec := recover(); rec != nil {
+			slog.Default().Error("widget: ListedFor hook panicked; not listing the widget",
+				"widget", d.Name, "panic", textsafe.Recovered(rec))
 			ok = false
 		}
 	}()
