@@ -1,8 +1,10 @@
 package packcmd
 
 import (
+	"maps"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
@@ -141,5 +143,51 @@ func TestPackUnionKeepsSeedRecipe(t *testing.T) {
 		if got.Rows[i]["number"] != authored[i]["number"] || got.Rows[i]["status"] != authored[i]["status"] {
 			t.Errorf("row %d = %v, want %v", i, got.Rows[i], authored[i])
 		}
+	}
+}
+
+// The union spec exercises every generator feature, so generate, pack
+// and generate again must write the same files byte for byte. Each loss
+// fixed one at a time (the app home, multi-word form fields, the seed
+// recipe) showed up here first as one differing file; this keeps the
+// next one from landing unseen.
+func TestPackUnionRegeneratesSameFiles(t *testing.T) {
+	spec := reviewUnionSpec(t)
+	packed, err := packAppSpec(materializeAppSpec(t, spec))
+	if err != nil {
+		t.Fatal(err)
+	}
+	yml, err := encodeAppSpecYAML(packed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, err := decodeAppSpecString(yml)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := appgen.RenderAppSpecCode(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := appgen.RenderAppSpecCode(back)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := make(map[string]string, len(after))
+	for _, f := range after {
+		rendered[f.Name] = f.Content
+	}
+	for _, f := range before {
+		got, ok := rendered[f.Name]
+		switch {
+		case !ok:
+			t.Errorf("%s is missing after generate, pack, generate", f.Name)
+		case got != f.Content:
+			t.Errorf("%s differs after generate, pack, generate", f.Name)
+		}
+		delete(rendered, f.Name)
+	}
+	for _, name := range slices.Sorted(maps.Keys(rendered)) {
+		t.Errorf("%s appears only after generate, pack, generate", name)
 	}
 }
