@@ -223,6 +223,74 @@ func TestOnlyActiveProductsCanBeOrdered(t *testing.T) {
 	}
 }
 
+// TestClosedOrderRefusesChanges: once an order ships, is cancelled or
+// is refunded, its items, tax and shipping_cost are settled. Adding,
+// editing, deleting or moving a line, or editing a charge, is refused
+// and changes nothing; a non-money edit and an open order still work.
+func TestClosedOrderRefusesChanges(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and boots the storefront")
+	}
+	s := newShop(t)
+	headphones := s.product("Wireless Headphones")
+	withItem := func() (orderID, itemPath string) {
+		orderID = s.order("0", "0")
+		item := s.must(http.StatusCreated, "POST", "/api/order_items", itemBody(orderID, headphones, "1"))
+		return orderID, "/api/order_items/" + fmt.Sprint(item["id"])
+	}
+	move := func(orderID string, keys ...string) {
+		for _, key := range keys {
+			s.must(http.StatusOK, "POST", "/api/orders/"+orderID+"/transitions/"+key, "")
+		}
+	}
+	refused := func(what, method, path, body string) {
+		t.Helper()
+		if code, _, raw := s.do(method, path, body); code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400; body=%.300s", what, code, raw)
+		}
+	}
+	snapshot := func(orderID string) string {
+		t.Helper()
+		o := s.must(http.StatusOK, "GET", "/api/orders/"+orderID+"?include=items", "")
+		items, _ := o["items"].([]any)
+		return fmt.Sprintf("items=%d subtotal=%v tax=%v shipping=%v total=%v", len(items), o["subtotal"], o["tax"], o["shippingCost"], o["total"])
+	}
+
+	refundedID, refundedItem := withItem()
+	move(refundedID, "confirm", "ship", "deliver", "refund")
+	openID, openItem := withItem()
+	before, openBefore := snapshot(refundedID), snapshot(openID)
+
+	refused("add a line to a refunded order", "POST", "/api/order_items", itemBody(refundedID, headphones, "5"))
+	refused("edit a refunded line", "PATCH", refundedItem, `{"quantity":5}`)
+	refused("move a refunded line out", "PATCH", refundedItem, fmt.Sprintf(`{"orderId":%q}`, openID))
+	refused("move a line into a refunded order", "PATCH", openItem, fmt.Sprintf(`{"orderId":%q}`, refundedID))
+	refused("delete a refunded line", "DELETE", refundedItem, "")
+	refused("edit a refunded order's tax", "PATCH", "/api/orders/"+refundedID, `{"tax":"100"}`)
+	refused("edit a refunded order's shipping", "PATCH", "/api/orders/"+refundedID, `{"shippingCost":"9"}`)
+	s.must(http.StatusOK, "PATCH", "/api/orders/"+refundedID, `{"notes":"refund sent"}`)
+	if after := snapshot(refundedID); after != before {
+		t.Errorf("refunded order changed:\n before %s\n after  %s", before, after)
+	}
+	if after := snapshot(openID); after != openBefore {
+		t.Errorf("open order changed by refused moves:\n before %s\n after  %s", openBefore, after)
+	}
+
+	cancelledID := s.order("0", "0")
+	move(cancelledID, "cancel")
+	refused("add a line to a cancelled order", "POST", "/api/order_items", itemBody(cancelledID, headphones, "1"))
+	shippedID, shippedItem := withItem()
+	move(shippedID, "confirm", "ship")
+	refused("edit a shipped line", "PATCH", shippedItem, `{"quantity":2}`)
+	refused("edit a shipped order's tax", "PATCH", "/api/orders/"+shippedID, `{"tax":"1"}`)
+
+	// An order that has not shipped still takes changes.
+	s.must(http.StatusOK, "PATCH", openItem, `{"quantity":2}`)
+	s.must(http.StatusOK, "PATCH", "/api/orders/"+openID, `{"tax":"1.50"}`)
+	move(openID, "confirm")
+	s.must(http.StatusCreated, "POST", "/api/order_items", itemBody(openID, headphones, "1"))
+}
+
 // relRedAdmin signs in the seeded admin, whose role holds catalog:write.
 func relRedAdmin(t *testing.T, base string) *http.Client {
 	t.Helper()

@@ -43,6 +43,9 @@ Quantity-only edits and product changes reprice against the current catalog.
 Only an active product can be ordered: a line that names a draft, archived or
 deleted product is refused, on create and on any later edit. The demo keeps no
 stock count.
+Once an order ships, is cancelled or is refunded, its items, tax and shipping
+cost are settled: adding, editing, moving or deleting a line, or editing either
+charge, is refused, while other order fields stay editable.
 Keep the owned hook file when scaffolding; generated hook stubs are not its
 implementation. `TestOrderPricesComeFromProducts` exercises this through REST.
 

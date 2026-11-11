@@ -43,6 +43,16 @@ import (
 // not sell.
 var reasonNotForSale = i18n.Define("shopfront.orders.not_for_sale", "is not for sale")
 
+// reasonOrderClosed refuses a change to the items or charges of an order
+// whose goods have shipped or whose money has settled.
+var reasonOrderClosed = i18n.Define("shopfront.orders.closed", "cannot change: the order is {{status}}")
+
+// closedOrderStatuses are the states whose contents and charges are
+// settled: the goods left (shipped, delivered) or the order ended
+// (cancelled, refunded). An order's items, tax and shipping_cost change
+// only before it ships.
+var closedOrderStatuses = []string{"shipped", "delivered", "cancelled", "refunded"}
+
 func init() {
 	registrars = append(registrars, registrar{order: 99, fn: registerOrderTotalsHooks})
 }
@@ -70,7 +80,13 @@ func registerOrderTotalsHooks(app *framework.App) {
 		return recomputeOrderTotals(ctx, id)
 	}
 	app.HookRegistry("orders").RegisterHook(framework.AfterCreate, order)
-	app.HookRegistry("orders").RegisterHook(framework.AfterUpdate, order)
+	app.HookRegistry("orders").RegisterHook(framework.AfterUpdate, func(ctx context.Context, data any) error {
+		if err := order(ctx, data); err != nil {
+			return err
+		}
+		row, _ := rowOf("orders", data) // order checked the payload
+		return refuseClosedCharges(ctx, idFromRow(row))
+	})
 
 	item := func(ctx context.Context, data any) error {
 		row, err := rowOf("order_items", data)
@@ -95,7 +111,7 @@ func registerOrderTotalsHooks(app *framework.App) {
 		// the old parent too (the pre-image carries the old order_id).
 		if pre := crud.AuditPreImageSnakeFromContext(ctx); pre != nil {
 			if old, ok := idFromKey(pre, "order_id"); ok && old != "" && old != orderIDFromRow(row) {
-				if err := recomputeOrderTotals(ctx, old); err != nil {
+				if err := recomputeOpenOrder(ctx, old); err != nil {
 					return err
 				}
 			}
@@ -112,7 +128,7 @@ func registerOrderTotalsHooks(app *framework.App) {
 		if !ok || orderID == "" {
 			return fmt.Errorf("order totals: deleted order_items pre-image carries no order_id")
 		}
-		return recomputeOrderTotals(ctx, orderID)
+		return recomputeOpenOrder(ctx, orderID)
 	})
 }
 
@@ -165,13 +181,92 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	return nil
 }
 
-// recomputeFromItemRow recomputes the parent order named by an item row.
+// recomputeFromItemRow recomputes the parent order named by an item row,
+// refusing the item write when that order is closed.
 func recomputeFromItemRow(ctx context.Context, row map[string]any) error {
 	orderID := orderIDFromRow(row)
 	if orderID == "" {
 		return fmt.Errorf("order totals: order_items payload carries no order id")
 	}
-	return recomputeOrderTotals(ctx, orderID)
+	return recomputeOpenOrder(ctx, orderID)
+}
+
+// recomputeOpenOrder recomputes an order whose items just changed, and
+// refuses the change when the order is closed. The check runs after the
+// recompute's UPDATE: on Postgres that UPDATE waits for a move racing it
+// on the same row, so the status read next is the one that move left.
+func recomputeOpenOrder(ctx context.Context, orderID string) error {
+	if err := recomputeOrderTotals(ctx, orderID); err != nil {
+		return err
+	}
+	exec, ok := framework.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
+	}
+	status, err := orderStatus(ctx, exec, orderID)
+	if err != nil || !slices.Contains(closedOrderStatuses, status) {
+		return err
+	}
+	return crud.NewValidationError(map[string][]schema.Violation{
+		"order_id": {{Reason: reasonOrderClosed, Params: map[string]any{"status": status}}},
+	})
+}
+
+// refuseClosedCharges refuses an order update that changed tax or
+// shipping_cost on a closed order. A move changes neither (it writes the
+// status and its stamp), so it is let through without the pre-image; any
+// other update of a closed order with no pre-image to compare is refused.
+func refuseClosedCharges(ctx context.Context, orderID string) error {
+	if crud.TransitionFromContext(ctx) != "" {
+		return nil
+	}
+	exec, ok := framework.TxFromContext(ctx)
+	if !ok {
+		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
+	}
+	status, err := orderStatus(ctx, exec, orderID)
+	if err != nil || !slices.Contains(closedOrderStatuses, status) {
+		return err
+	}
+	var tax, shipping string
+	if err := exec.QueryRowContext(ctx, `SELECT COALESCE(CAST(tax AS TEXT), '0'), COALESCE(CAST(shipping_cost AS TEXT), '0')
+		FROM orders WHERE id = $1`, orderID).Scan(&tax, &shipping); err != nil {
+		return fmt.Errorf("order totals: load charges of order %s: %w", orderID, err)
+	}
+	pre := crud.AuditPreImageSnakeFromContext(ctx)
+	for _, charge := range [...]struct{ column, now string }{{"tax", tax}, {"shipping_cost", shipping}} {
+		if pre == nil || !sameDecimal(pre[charge.column], charge.now) {
+			return crud.NewValidationError(map[string][]schema.Violation{
+				charge.column: {{Reason: reasonOrderClosed, Params: map[string]any{"status": status}}},
+			})
+		}
+	}
+	return nil
+}
+
+// orderStatus reads an order's state; a missing order reads as "".
+func orderStatus(ctx context.Context, exec *sql.Tx, orderID string) (string, error) {
+	var status sql.NullString
+	err := exec.QueryRowContext(ctx, `SELECT status FROM orders WHERE id = $1`, orderID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("order totals: load status of order %s: %w", orderID, err)
+	}
+	return status.String, nil
+}
+
+// sameDecimal reports whether a pre-image value (nil, a number or its
+// text) is the decimal stored now.
+func sameDecimal(before any, now string) bool {
+	text := "0"
+	if before != nil {
+		text = fmt.Sprint(before)
+	}
+	a, okA := new(big.Rat).SetString(text)
+	b, okB := new(big.Rat).SetString(now)
+	return okA && okB && a.Cmp(b) == 0
 }
 
 // recomputeOrderTotals rewrites subtotal and total from the order's
