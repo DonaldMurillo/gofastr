@@ -7,6 +7,7 @@ package spellings
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"strings"
 	"unicode"
@@ -31,6 +32,21 @@ func trimBytes(recordID []byte) []byte {
 func throughLocal(vals url.Values) string {
 	raw := vals.Get("user_id")
 	return strings.TrimSpace(raw) // want `keytrim: strings\.TrimSpace rewrites the identity value raw`
+}
+
+// pathValue is the reader router.Param wraps: a row id from the path,
+// trimmed, names " u1 "'s twin. A header naming a tenant is the same
+// read (round 9, 2026-11-10: keytrim knew only Get, FormValue and
+// PostFormValue on url.Values and *http.Request).
+func pathValue(r *http.Request) (string, string) {
+	return strings.TrimSpace(r.PathValue("id")), // want `keytrim: strings\.TrimSpace rewrites the identity value r\.PathValue\("id"\)`
+		strings.TrimSpace(r.Header.Get("X-Tenant-Id")) // want `keytrim: strings\.TrimSpace rewrites the identity value r\.Header\.Get\("X-Tenant-Id"\)`
+}
+
+// Silent: a path segment or header that names no identity, and a
+// presence check on one that does.
+func pathQuiet(r *http.Request) (string, string, bool) {
+	return strings.TrimSpace(r.PathValue("slug")), strings.TrimSpace(r.Header.Get("Accept")), strings.TrimSpace(r.PathValue("id")) == ""
 }
 
 // Silent: a non-identity operand, a presence check, file contents.
