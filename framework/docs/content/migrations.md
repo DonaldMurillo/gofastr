@@ -15,7 +15,13 @@ GoFastr has two migration paths:
    (table `t_a` column `b` and table `t` column `a_b` both name
    `t_a_b_key`, and index names share a schema): create a unique index
    of another name on the column, which counts as covering it.
-   Clearing `Unique` is left to `migrate generate`. Type changes and renames are surfaced by the
+   Clearing `Unique` is left to `migrate generate`. A column the table
+   still holds unique on its own while the entity declares it unique
+   only within a composite unique index (`Unique` moved into
+   `(user_id, email)`, say) stops the boot with an error naming the
+   column: the old constraint would refuse one owner's value for every
+   other owner. `DiffSchema` drops it (on SQLite it rebuilds the table,
+   a destructive change). Type changes and renames are surfaced by the
    declarative diff (`DiffSchema` / `migrate generate`): type changes as
    destructive changes refused by default, renames as non-destructive
    `RENAME COLUMN` when declared via `EntityConfig.Renames`. But

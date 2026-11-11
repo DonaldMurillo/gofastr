@@ -272,6 +272,10 @@ type fkDiffEnv struct {
 	// uniques is the snapshot's unique columns per table (snapshotUniques);
 	// nil (the live diff) or a missing table skips the comparison.
 	uniques map[string][]string
+	// staleUniques is, for the live diff, each table's columns the
+	// database keeps unique on their own while the entity declares them
+	// unique only within a composite index (readStaleUniques).
+	staleUniques map[string][]string
 	// tableDDL is the snapshot's CREATE TABLE per table, which the NOT
 	// NULL and DEFAULT diff reads; nil (the live diff) or a missing
 	// table skips it.
