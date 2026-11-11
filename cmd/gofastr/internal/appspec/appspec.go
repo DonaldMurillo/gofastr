@@ -2786,8 +2786,19 @@ func ValidateAppSpec(bp AppSpec) error {
 				}
 			}
 		}
-		if _, err := decl.Config(); err != nil {
+		cfg, err := decl.Config()
+		if err != nil {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
+			continue
+		}
+		// A field default the field's own validator refuses (an enum
+		// value not in values:, "notanumber" on an int, "" on a required
+		// field) fails registration, which panicked the generated app at
+		// boot. Run that one check here, from framework/entity.
+		if slices.ContainsFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Default != nil }) {
+			if err := fwentity.ValidateDefaults(decl.Name, cfg); err != nil {
+				errs.add(fmt.Errorf("app spec: %w", err))
+			}
 		}
 	}
 	errs.add(validateAppSpecSQLNames(bp))

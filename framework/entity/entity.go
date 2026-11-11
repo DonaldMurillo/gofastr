@@ -1122,10 +1122,8 @@ func (e *Entity) Validate() error {
 		// value, so their Default is never an insert value. It survives only
 		// as the column's DDL DEFAULT (migrate.ColumnDefaultClause), where an
 		// explicit Default deliberately outranks gen_random_uuid().
-		if f.Default != nil && f.AutoGenerate == schema.AutoNone {
-			if err := schema.Validate(f, defaultAsWireValue(f)); err != nil {
-				return fmt.Errorf("entity %q: field %q has an invalid Default %#v: %v", e.Config.Name, f.Name, f.Default, err)
-			}
+		if err := checkDefault(e.Config.Name, f); err != nil {
+			return err
 		}
 	}
 
@@ -1142,6 +1140,41 @@ func (e *Entity) Validate() error {
 	}
 	if e.Config.States != nil {
 		if err := e.Config.States.validate(e.Config); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// checkDefault refuses a Default the field's own validator refuses. Auto-
+// generated fields are skipped: their Default is never an insert value
+// (see the comment at its call in Validate).
+func checkDefault(entity string, f schema.Field) error {
+	if f.Default == nil || f.AutoGenerate != schema.AutoNone {
+		return nil
+	}
+	if err := schema.Validate(f, defaultAsWireValue(f)); err != nil {
+		return fmt.Errorf("entity %q: field %q has an invalid Default %#v: %v", entity, f.Name, f.Default, err)
+	}
+	return nil
+}
+
+// ValidateDefaults runs registration's Default check over an
+// EntityConfig the way App.Entity would, for code generators whose
+// declarations (an app spec, hand-written entities/*.go) never passed
+// registration: a Default the field's validator refuses fails there
+// instead of panicking the generated app at boot. Define runs first,
+// as in ValidateStates, so the check sees the field set the app sees,
+// and a Define panic comes back as the error.
+func ValidateDefaults(name string, cfg EntityConfig) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("%v", r)
+		}
+	}()
+	e := Define(name, cfg)
+	for _, f := range e.Config.Fields {
+		if err := checkDefault(e.Config.Name, f); err != nil {
 			return err
 		}
 	}

@@ -460,6 +460,10 @@ A `default` is the value the create path writes when the request body omits
 the field. It goes into the same column a client-sent value would, so it is
 checked against the same field rules, `values`, `pattern`, `min`/`max`,
 `required`, and the type itself, when the entity is registered.
+Generators run the same check over a declaration that never reached
+registration with `entity.ValidateDefaults(name, cfg)`: `gofastr
+validate` and `gofastr generate` refuse an app spec field whose
+`default:` the app would refuse at boot.
 
 A default that fails those rules fails the declaration. `app.Entity` panics
 and `app.TryEntity` returns the error, both naming the field:

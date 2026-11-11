@@ -1909,6 +1909,10 @@ The generator rejects:
   screen, or, where it answers only some callers, the screen takes it
   over: a screen at `/openapi.json` served HTML to anonymous callers in
   place of the gated schema
+- a field `default:` the field's own rules refuse: an `enum` value not in
+  `values:`, `notanumber` on an `int`, `maybe` on a `bool`, `""` on a
+  `required` field. Registration refuses it, so the generated app would
+  panic at boot; validation runs that check (`entity.ValidateDefaults`)
 - two screen routes that differ only in parameter names or syntax
   (`/posts/{id}` and `/posts/{slug}` or `/posts/:id`): the router tries
   dynamic routes in registration order, so the second would never render
