@@ -2547,23 +2547,48 @@ func reverseEntityForm(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 		Text:   appspec.AstString(cfgOf(header, 0)["Title"]),
 	}
 	for _, arg := range form.Args[1:] {
-		name := ""
-		ast.Inspect(arg, func(n ast.Node) bool {
-			kv, ok := n.(*ast.KeyValueExpr)
-			if name != "" || !ok {
-				return name == ""
-			}
-			if key, ok := kv.Key.(*ast.Ident); ok && key.Name == "Name" {
-				name = appspec.AstString(kv.Value)
-			}
-			return name == ""
-		})
+		name := entityFormControlField(arg)
 		if name == "" {
 			return appspec.AppSpecBlock{}, false
 		}
 		b.Fields = append(b.Fields, name)
 	}
 	return b, true
+}
+
+// entityFormControlField names the entity field one form control draws.
+// The generator writes the field twice: as the control's wire key (Name,
+// camelCase: launchedOn) and as its element id ("field-" plus the
+// declared name: field-launched_on). Only the id spells the field the
+// entity declares, so it wins; Name is the fallback for a control that
+// carries no id.
+func entityFormControlField(control ast.Expr) string {
+	id, wire := "", ""
+	ast.Inspect(control, func(n ast.Node) bool {
+		kv, ok := n.(*ast.KeyValueExpr)
+		if id != "" || !ok {
+			return id == ""
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		switch key.Name {
+		case "ID", "For":
+			if v, found := strings.CutPrefix(appspec.AstString(kv.Value), "field-"); found && v != "" {
+				id = v
+			}
+		case "Name":
+			if wire == "" {
+				wire = appspec.AstString(kv.Value)
+			}
+		}
+		return id == ""
+	})
+	if id != "" {
+		return id
+	}
+	return wire
 }
 
 func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.Expr) appspec.AppSpecBlock {
