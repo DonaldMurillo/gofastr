@@ -283,7 +283,11 @@ func mdTableCellHTML(cellHTML string) string {
 		parked = append(parked, md)
 		return fmt.Sprintf("\x00a%d\x00", len(parked)-1)
 	}
-	text := func(v string) string { return strings.ReplaceAll(mdLinkText(stripTags(v)), "|", `\|`) }
+	// A break inside a link's text separates words, as in the rest of
+	// the cell: the link is parked before the cell's own break pass.
+	text := func(v string) string {
+		return strings.ReplaceAll(mdLinkText(stripTags(reBR.ReplaceAllString(v, " "))), "|", `\|`)
+	}
 	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(html.UnescapeString(v)), "|", "%7C") }
 	image := func(alt, src string) string {
 		return "![" + text(html.UnescapeString(alt)) + "](" + dest(src) + ")"

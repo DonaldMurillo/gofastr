@@ -351,3 +351,15 @@ func TestHTML2MD_TableCellLinkedImage(t *testing.T) {
 		t.Errorf("a NUL in a cell reached the markdown: %q", got)
 	}
 }
+
+// A line break inside a cell link's text separates its words, as it
+// does in the rest of the cell and in a link outside a table: the
+// parked text was stripped of the <br> and read "onetwo".
+func TestHTML2MD_TableCellLinkBreak(t *testing.T) {
+	in := `<table><tr><th>A</th></tr><tr><td><a href="/a">one<br>two</a></td></tr></table>`
+	got := htmlToMarkdown(in)
+	want := "| A |\n| --- |\n| [one two](/a) |"
+	if got != want {
+		t.Errorf("break in a cell link:\ngot:  %q\nwant: %q", got, want)
+	}
+}
