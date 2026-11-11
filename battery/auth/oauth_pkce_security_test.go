@@ -77,6 +77,9 @@ func TestOAuthStolenCodeDoesNotRedeemInAnotherFlow(t *testing.T) {
 	}
 	callback := func(state, code string, ck *http.Cookie) int {
 		req := httptest.NewRequest(http.MethodGet, "/auth/oauth/pkce/callback?code="+code+"&state="+url.QueryEscape(state), nil)
+		// The plain-redirect arrival: a hop page would answer 200 for a
+		// redeemed code too, and the refusal check below would pass vacuously.
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
 		req.AddCookie(ck)
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, req)

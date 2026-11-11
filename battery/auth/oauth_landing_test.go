@@ -99,11 +99,30 @@ func TestOAuthCrossSiteCallbackHopsToLanding(t *testing.T) {
 	}
 }
 
-// A client that sends no Fetch Metadata keeps the plain redirect.
-func TestOAuthCallbackRedirectsWithoutFetchMetadata(t *testing.T) {
+// A browser sends no Fetch Metadata to a plain-HTTP LAN address, so an
+// IdP's return there looks like curl. It gets the hop too: the plain
+// redirect carried the Strict session cookie it had just set to a page
+// that rendered signed out. The hop's target is the landing page, not
+// this callback, so it carries no marker and never hops again.
+func TestOAuthCallbackHopsWithoutFetchMeta(t *testing.T) {
 	r := landingApp(t, "https://idp.example/authorize?state=%s")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, startedFlow(t, r))
+	if rec.Code != http.StatusOK || rec.Header().Get("Refresh") != "0;url=/" {
+		t.Fatalf("got %d Refresh %q, want the 200 hop page loading /", rec.Code, rec.Header().Get("Refresh"))
+	}
+	if sessionCookie(rec) == "" {
+		t.Fatal("the hop page set no session cookie")
+	}
+}
+
+// An arrival that says same-origin keeps the plain redirect.
+func TestOAuthSameOriginCallbackRedirects(t *testing.T) {
+	r := landingApp(t, "https://idp.example/authorize?state=%s")
+	req := startedFlow(t, r)
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/" {
 		t.Fatalf("got %d Location %q, want 302 to /", rec.Code, rec.Header().Get("Location"))
 	}

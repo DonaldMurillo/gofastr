@@ -365,6 +365,26 @@ and is refused. The auth battery's cross-site guards, setup tokens,
 the admin console, and kiln all route through these helpers; writing
 a fourth copy of the check is what `GOFASTR1411` fires on.
 
+### Same-site hop pages
+
+A navigation that began on another site keeps a `SameSite=Strict`
+cookie off itself and off every redirect that continues it. A handler
+that sets or needs one on such an arrival (the setup token exchange,
+the OAuth callback, the email-verify link) answers first with a page
+from this origin that loads the URL again. `handler.NeedsSameSiteHop`
+decides when: a cross-site request (`IsCrossSiteRequest`), and a
+request with no `Sec-Fetch-Site` at all. A browser sends Fetch Metadata
+only to a potentially trustworthy origin, so a link to
+`http://192.168.1.5:8080` clicked on a chat page arrives with neither
+`Sec-Fetch-Site` nor `Origin`, the same as curl. Deciding on
+`IsCrossSiteRequest` alone spent the setup token on that click.
+`handler.SameSiteHopTarget` is the URL the page loads. When the
+arrival had no Fetch Metadata, the reload won't have any either, so
+the target gets `gofastr_hop=1` (`handler.SameSiteHopParam`), and
+`NeedsSameSiteHop` lets the marked reload through. The marker grants
+nothing: a link that carries it gets the plain answer every request got
+before the hop existed.
+
 ### Routes you mount yourself
 
 Entity endpoints and CRUD routes refuse a forged cross-site write

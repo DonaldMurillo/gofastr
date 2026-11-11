@@ -116,3 +116,52 @@ func RefuseCrossSite(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	})
 }
+
+// SameSiteHopParam is the query parameter SameSiteHopTarget adds to the
+// URL a hop page loads again, so NeedsSameSiteHop does not answer that
+// reload with another hop.
+const SameSiteHopParam = "gofastr_hop"
+
+// NeedsSameSiteHop reports whether a top-level GET that sets or needs a
+// SameSite=Strict cookie should first be answered with a page from this
+// origin that loads the URL again (SameSiteHopTarget). A navigation that
+// began on another site keeps a Strict cookie off itself and off every
+// redirect that continues it; the page's own reload starts here and
+// carries the cookie.
+//
+// It is true when IsCrossSiteRequest is, and when the request carries
+// no Sec-Fetch-Site at all and is not a hop's reload. A browser sends
+// Fetch Metadata only to a potentially trustworthy origin, so a link in
+// a chat page to a plain-HTTP address such as http://192.168.1.5:8080
+// arrives with neither Sec-Fetch-Site nor Origin, the same as curl.
+// Deciding on IsCrossSiteRequest alone spent the first-run setup token
+// on that click, and the operator landed on 403. A client that sends no
+// Fetch Metadata therefore gets the hop page, which spends nothing, and
+// follows its Refresh header or its link.
+func NeedsSameSiteHop(r *http.Request) bool {
+	if IsCrossSiteRequest(r) {
+		return true
+	}
+	return r.Header.Get("Sec-Fetch-Site") == "" && !r.URL.Query().Has(SameSiteHopParam)
+}
+
+// SameSiteHopTarget is the URL a hop page answering r loads again:
+// target, r's same-origin path and query, with SameSiteHopParam added
+// when r carried no Sec-Fetch-Site. That reload carries no Fetch
+// Metadata either, so the marker is what ends the hop. A browser that
+// sends Fetch Metadata says "same-origin" on the reload, and its URL is
+// left as it came. The marker is no credential: a link that carries it
+// gets what every request got before the hop existed.
+func SameSiteHopTarget(r *http.Request, target string) string {
+	if r.Header.Get("Sec-Fetch-Site") != "" {
+		return target
+	}
+	path, query, _ := strings.Cut(target, "?")
+	if values, err := url.ParseQuery(query); err == nil && values.Has(SameSiteHopParam) {
+		return target
+	}
+	if query == "" {
+		return path + "?" + SameSiteHopParam + "=1"
+	}
+	return target + "&" + SameSiteHopParam + "=1"
+}
