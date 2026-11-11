@@ -434,6 +434,13 @@ screens/middleware/plugins through `RegisterGenerated` (in
 `app.go`, same `package main`), mounts the UI host, and serves
 `app.static_dir` through the generated UI host.
 
+Every file under `static_dir` is public, so validation refuses a
+directory that holds the app's own files: the app root or any directory
+above it (`.`, `..`, `/`), a directory the generator writes Go into
+(`cmd/`, `entities/`, `gen/`, `siteheader/`, `sitefooter/`,
+`helpdocs/`), and the directory holding the SQLite file `app.db.url`
+names. Use a directory of its own, such as `static`.
+
 The generated app mounts MCP by default: `framework.WithMCP()` mounts
 `/mcp` (POST JSON-RPC + GET SSE) plus the discovery well-knowns
 (`/mcp/server-card`, `/.well-known/mcp/server-card.json`,

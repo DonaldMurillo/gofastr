@@ -2600,6 +2600,9 @@ func ValidateAppSpec(bp AppSpec) error {
 	if p := bp.App.Auth.BasePath; p != "" && !authBasePathRE.MatchString(p) {
 		errs.add(fmt.Errorf("app spec: app.auth.base_path %q must be an absolute path such as /account: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash", p))
 	}
+	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL); why != "" {
+		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
+	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
 	// generator can't emit it, and ApplyTenantScope is fail-closed, so a
