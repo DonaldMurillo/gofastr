@@ -4185,7 +4185,9 @@ func AppSpecSynthesizeCRUDScreens(bp AppSpec) AppSpec {
 	if s, ok := AppSpecLoginScreen(bp); ok {
 		add(s)
 	}
-	bp.Screens = append(bp.Screens, extra...)
+	// Clip: an append into spare capacity would write the synthesized
+	// screens into the caller's array.
+	bp.Screens = append(slices.Clip(bp.Screens), extra...)
 	return bp
 }
 

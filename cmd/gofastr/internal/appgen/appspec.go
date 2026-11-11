@@ -190,6 +190,11 @@ func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 	for _, d := range bp.Entities {
 		entityMap[d.Name] = d
 	}
+	// bp is a copy, but its Seed slice and each Rows slice still share
+	// the caller's arrays. Expand into fresh ones: writing through them
+	// left the caller's spec expanded, and a second render of it doubled
+	// the generated rows.
+	bp.Seed = slices.Clone(bp.Seed)
 	for i := range bp.Seed {
 		s := &bp.Seed[i]
 		if s.Count <= 0 {
@@ -200,7 +205,7 @@ func ExpandAppSpecSeed(bp appspec.AppSpec) appspec.AppSpec {
 			continue
 		}
 		s.Authored = len(s.Rows)
-		s.Rows = append(s.Rows, appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
+		s.Rows = append(slices.Clip(s.Rows), appspec.AppSpecGenerateSeedRows(decl, s.Count, s.Weights)...)
 	}
 	return bp
 }

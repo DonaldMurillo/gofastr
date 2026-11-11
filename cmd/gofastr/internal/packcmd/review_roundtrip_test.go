@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appgen"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 )
 
@@ -119,7 +120,7 @@ func TestPackUnionKeepsSeedRecipe(t *testing.T) {
 		}
 		return nil
 	}
-	want, got := find(spec.Seed), find(packed.Seed)
+	want, got := find(appgen.ExpandAppSpecSeed(spec).Seed), find(packed.Seed)
 	if want == nil || want.Count == 0 {
 		t.Fatal("the union spec's invoices seed no longer carries a recipe; the test reads nothing")
 	}
@@ -129,8 +130,9 @@ func TestPackUnionKeepsSeedRecipe(t *testing.T) {
 	if got.Count != want.Count || !reflect.DeepEqual(got.Weights, want.Weights) {
 		t.Errorf("recipe = count %d weights %v, want count %d weights %v", got.Count, got.Weights, want.Count, want.Weights)
 	}
-	// Load expands the recipe into Rows; Authored counts the leading
-	// rows the author wrote, which is all pack keeps beside the recipe.
+	// Rendering expands the recipe into Rows (on its own copy, never the
+	// caller's spec); Authored counts the leading rows the author wrote,
+	// which is all pack keeps beside the recipe.
 	authored := want.Rows[:want.Authored]
 	if want.Authored == 0 || len(got.Rows) != len(authored) {
 		t.Fatalf("packed %d rows, want the %d authored ones", len(got.Rows), want.Authored)
