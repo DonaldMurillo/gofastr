@@ -4,10 +4,12 @@ package entities
 // the CONTRACT the round-5 totals probe pinned: subtotal and total are
 // computed from the order_items rows on EVERY order and order_items
 // mutation (lifecycle hooks, the host-app way), never trusted from the
-// request body. Nothing is refused — the totals are derived. tax and
-// shipping_cost stay stored columns (schema-validated min-0 inputs);
-// subtotal = Σ(unit_price × quantity) over the order's items, and
-// total = subtotal + tax + shipping_cost.
+// request body. tax and shipping_cost stay stored columns
+// (schema-validated min-0 inputs); subtotal = Σ(unit_price × quantity)
+// over the order's items, and total = subtotal + tax + shipping_cost,
+// both in exact decimal arithmetic. The only refusal is a derived value
+// the database cannot store exactly (SQLite keeps 15 significant
+// digits of a decimal).
 //
 // The hooks run inside the CRUD transaction (framework.TxFromContext),
 // so a recompute failure fails the write: money integrity is not
@@ -23,8 +25,12 @@ package entities
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"maps"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -128,13 +134,8 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	}
 	total := new(big.Rat).Mul(unit, new(big.Rat).SetInt64(quantity))
 	unitPrice, totalPrice := unit.FloatString(4), total.FloatString(4)
-	if !schema.DecimalExactOnSQLite("DECIMAL(19,4)", totalPrice) {
-		var version string
-		if err := exec.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil || !strings.Contains(strings.ToLower(version), "postgresql") {
-			return crud.NewValidationError(map[string][]schema.Violation{
-				"total_price": {{Reason: schema.ReasonDecimalSignificantDigits, Params: map[string]any{"max": schema.SQLiteDecimalDigits}}},
-			})
-		}
+	if err := refuseInexact(ctx, exec, map[string]string{"total_price": totalPrice}); err != nil {
+		return err
 	}
 	if _, err := exec.ExecContext(ctx, `UPDATE order_items SET unit_price = $1, total_price = $2 WHERE id = $3`, unitPrice, totalPrice, id); err != nil {
 		return fmt.Errorf("order pricing: persist line prices: %w", err)
@@ -159,19 +160,94 @@ func recomputeFromItemRow(ctx context.Context, row map[string]any) error {
 }
 
 // recomputeOrderTotals rewrites subtotal and total from the order's
-// current line items, inside the caller's transaction, rounded to the
-// columns' four-place scale even when SQLite evaluates sums as floats.
+// current line items, inside the caller's transaction. The sums are
+// exact decimal arithmetic in Go, never SQL: SQLite evaluates SUM over
+// float columns, and past 2^53 no ROUND can restore the digits it drops
+// (39990000000000005.01 summed to 39990000000000008). A total the
+// database cannot store exactly is refused, rolling the write back, the
+// way priceOrderItem refuses a line price.
 func recomputeOrderTotals(ctx context.Context, orderID string) error {
 	exec, ok := framework.TxFromContext(ctx)
 	if !ok {
 		return fmt.Errorf("order totals: no transaction on context for order %s", orderID)
 	}
-	const q = `UPDATE orders SET
-		subtotal = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0), 4),
-		total = ROUND(COALESCE((SELECT SUM(unit_price * quantity) FROM order_items WHERE order_id = $1), 0) + COALESCE(tax, 0) + COALESCE(shipping_cost, 0), 4)
-		WHERE id = $1`
-	if _, err := exec.ExecContext(ctx, q, orderID); err != nil {
+	var taxText, shippingText string
+	err := exec.QueryRowContext(ctx, `SELECT COALESCE(CAST(tax AS TEXT), '0'), COALESCE(CAST(shipping_cost AS TEXT), '0')
+		FROM orders WHERE id = $1`, orderID).Scan(&taxText, &shippingText)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // no such order: nothing to derive
+	}
+	if err != nil {
+		return fmt.Errorf("order totals: load order %s: %w", orderID, err)
+	}
+	subtotal, err := sumOrderLines(ctx, exec, orderID)
+	if err != nil {
+		return err
+	}
+	total := new(big.Rat).Set(subtotal)
+	for _, text := range []string{taxText, shippingText} {
+		amount, ok := new(big.Rat).SetString(text)
+		if !ok {
+			return fmt.Errorf("order totals: order %s stores a charge that is not a decimal", orderID)
+		}
+		total.Add(total, amount)
+	}
+	subtotalText, totalText := subtotal.FloatString(4), total.FloatString(4)
+	if err := refuseInexact(ctx, exec, map[string]string{"subtotal": subtotalText, "total": totalText}); err != nil {
+		return err
+	}
+	if _, err := exec.ExecContext(ctx, `UPDATE orders SET subtotal = $1, total = $2 WHERE id = $3`, subtotalText, totalText, orderID); err != nil {
 		return fmt.Errorf("order totals: recompute order %s: %w", orderID, err)
+	}
+	return nil
+}
+
+// sumOrderLines is Σ(unit_price × quantity) over the order's items,
+// exactly. Each stored unit price is one priceOrderItem accepted, so its
+// text reads back as the decimal that was written.
+func sumOrderLines(ctx context.Context, exec *sql.Tx, orderID string) (*big.Rat, error) {
+	rows, err := exec.QueryContext(ctx, `SELECT CAST(unit_price AS TEXT), quantity FROM order_items WHERE order_id = $1`, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("order totals: load items of order %s: %w", orderID, err)
+	}
+	defer rows.Close()
+	sum := new(big.Rat)
+	for rows.Next() {
+		var price sql.NullString
+		var quantity int64
+		if err := rows.Scan(&price, &quantity); err != nil {
+			return nil, fmt.Errorf("order totals: read item of order %s: %w", orderID, err)
+		}
+		if !price.Valid {
+			continue // an unpriced line counts as zero, as SUM skipped NULL
+		}
+		unit, ok := new(big.Rat).SetString(price.String)
+		if !ok {
+			return nil, fmt.Errorf("order totals: order %s has an item whose price is not a decimal", orderID)
+		}
+		sum.Add(sum, unit.Mul(unit, new(big.Rat).SetInt64(quantity)))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("order totals: read items of order %s: %w", orderID, err)
+	}
+	return sum, nil
+}
+
+// refuseInexact answers a validation error naming the first column (in
+// name order) whose derived decimal a SQLite DECIMAL(19,4) column would
+// not store as computed: it keeps 15 significant digits. Postgres
+// NUMERIC stores every value exactly, so nothing is refused there.
+func refuseInexact(ctx context.Context, exec *sql.Tx, values map[string]string) error {
+	for _, column := range slices.Sorted(maps.Keys(values)) {
+		violation, refused := schema.SQLiteDecimalRefusal(schema.DecimalColumnType, values[column])
+		if !refused {
+			continue
+		}
+		var version string
+		if err := exec.QueryRowContext(ctx, "SELECT version()").Scan(&version); err == nil && strings.Contains(strings.ToLower(version), "postgresql") {
+			return nil
+		}
+		return crud.NewValidationError(map[string][]schema.Violation{column: {violation}})
 	}
 	return nil
 }
