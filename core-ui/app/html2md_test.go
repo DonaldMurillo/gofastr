@@ -395,3 +395,14 @@ func TestHTML2MD_ImageAltBreakIsText(t *testing.T) {
 		}
 	}
 }
+
+// An alt's control-byte entities decode after the document's control
+// scrub ran, so &#2; and &#3; became the parked-bracket markers the final
+// pass turns into < and >, and &#1; a slot close. The decoded alt is
+// scrubbed too.
+func TestHTML2MD_ImageAltControlEntities(t *testing.T) {
+	got := htmlToMarkdown(`<p><img src="/x.png" alt="a&#2;script&#3;b&#1;c"></p>`)
+	if want := "![ascriptbc](/x.png)"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}

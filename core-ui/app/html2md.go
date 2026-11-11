@@ -520,12 +520,14 @@ func mdLinkText(s string) string {
 }
 
 // mdImageAlt prepares an image's alt attribute (still entity-encoded,
-// as the regex extracts it) as alt text: decoded once, a '<' that begins
+// as the regex extracts it) as alt text: decoded once and scrubbed of
+// control bytes (the document scrub ran before this decode, and &#2; or
+// &#3; would become the parked-bracket markers), a '<' that begins
 // something tag-shaped re-encoded as &lt; the way decodeTextNode does for
 // text, then mdLinkText. A <br> written in an alt is literal text, so the
 // tag passes that run after it (break, strip) must not read it as one.
 func mdImageAlt(alt string) string {
-	return mdLinkText(reTagStart.ReplaceAllString(html.UnescapeString(alt), "&lt;$1"))
+	return mdLinkText(reTagStart.ReplaceAllString(scrubControls(html.UnescapeString(alt)), "&lt;$1"))
 }
 
 // mdLinkDest percent-encodes the bytes that can terminate a markdown
