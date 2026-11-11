@@ -4,7 +4,11 @@ The `battery/log` plugin wires structured JSON-line server logs into the
 app. A single `*slog.Logger` writes to one or more **sinks**; built-in
 sinks cover four destinations:
 
-1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`).
+1. A **default file** under the OS state dir (`$XDG_STATE_HOME/<app>/server.log`,
+   `~/.local/state/<app>/server.log` when the variable is unset). A
+   battery or plugin whose `Init` panics after this plugin's ends the boot
+   with an error that names this file, since the stack is there and not on
+   the terminal.
 2. A **chosen file** at an explicit path, with size+count rotation.
 3. A **webhook** URL that receives batched JSON.
 4. A **JSON stream** on stdout (or any `io.Writer`) for container deploys.
