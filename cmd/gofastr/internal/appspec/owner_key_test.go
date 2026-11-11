@@ -40,12 +40,23 @@ entities:
 			t.Errorf("error should name %s: %v", want, err)
 		}
 	}
+	// The implicit key is id: a declared id the client sets is shared
+	// across accounts the same way.
+	const clientID = "      - name: id\n        type: string\n        required: true\n"
+	err = r5YAMLAppSpec(t, spec(owner, "", userCol+clientID))
+	if err == nil {
+		t.Fatal("an owner-scoped entity keyed on a client-set id was accepted")
+	} else if !strings.Contains(err.Error(), "auto_generate") {
+		t.Errorf("error should name auto_generate: %v", err)
+	}
+	const genID = "      - name: id\n        type: uuid\n        auto_generate: uuid\n        read_only: true\n"
 	for name, ok := range map[string]string{
-		"key holds owner": spec(owner, "    primary_key: [user_id, student_id, course_id]\n", userCol),
-		"generated id":    spec(owner, "", userCol),
-		"server-made key": spec(owner, "    primary_key: [ref, course_id]\n", uuidCol),
-		"no owner_field":  spec("", "    primary_key: [student_id, course_id]\n", ""),
-		"unique index":    spec(owner, "    indices:\n      - name: one_per_user\n        columns: [user_id, student_id, course_id]\n        unique: true\n", ""),
+		"declared generated id": spec(owner, "", userCol+genID),
+		"key holds owner":       spec(owner, "    primary_key: [user_id, student_id, course_id]\n", userCol),
+		"generated id":          spec(owner, "", userCol),
+		"server-made key":       spec(owner, "    primary_key: [ref, course_id]\n", uuidCol),
+		"no owner_field":        spec("", "    primary_key: [student_id, course_id]\n", ""),
+		"unique index":          spec(owner, "    indices:\n      - name: one_per_user\n        columns: [user_id, student_id, course_id]\n        unique: true\n", ""),
 	} {
 		if err := r5YAMLAppSpec(t, ok); err != nil {
 			t.Errorf("%s: refused: %v", name, err)

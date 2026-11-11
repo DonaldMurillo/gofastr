@@ -9,8 +9,10 @@ import (
 // generatedSourceDirs are the directories, relative to the app's root,
 // that `gofastr generate` writes Go into beside the root package: the
 // entity packages, the CLI, the codegen output (gofastr.settings.yml
-// writes under gen/), and the owned marketing chrome and docs packages.
-var generatedSourceDirs = []string{"cmd", "entities", "gen", "siteheader", "sitefooter", "helpdocs"}
+// writes under gen/), the owned marketing chrome and docs packages, and
+// the packages `gofastr generate package` copies into ./<name> by
+// default (siteheader, sitefooter, docpage).
+var generatedSourceDirs = []string{"cmd", "entities", "gen", "siteheader", "sitefooter", "docpage", "helpdocs"}
 
 // staticDirProblem says why the generated app must not serve dir as its
 // public static mount, or returns "". UIHost serves every file under it

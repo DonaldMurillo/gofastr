@@ -18,6 +18,9 @@ func TestUploadFieldWithoutStorageWarns(t *testing.T) {
 			{Name: "name", Type: "string"},
 			{Name: "logo", Type: "image"},
 			{Name: "contract", Type: " File "},
+			// No client upload reaches a hidden or read-only field.
+			{Name: "thumb", Type: "image", ReadOnly: true},
+			{Name: "scan", Type: "file", Hidden: true},
 		}},
 		{Name: "notes", Fields: []framework.FieldDeclaration{{Name: "body", Type: "text"}}},
 	}}
@@ -31,10 +34,16 @@ func TestUploadFieldWithoutStorageWarns(t *testing.T) {
 			t.Errorf("message lacks %q: %s", want, msg)
 		}
 	}
-	if strings.Contains(msg, "name,") || strings.Contains(msg, "notes") {
+	if strings.Contains(msg, "name,") || strings.Contains(msg, "notes") || strings.Contains(msg, "thumb") || strings.Contains(msg, "scan") {
 		t.Errorf("message names a non-upload field or entity: %s", msg)
 	}
-	bp.Entities = bp.Entities[1:]
+	bp.Entities = []framework.EntityDeclaration{{Name: "avatars", Fields: []framework.FieldDeclaration{
+		{Name: "thumb", Type: "image", ReadOnly: true},
+	}}}
+	if got := LintUploadFields(bp); len(got) != 0 {
+		t.Errorf("entity with only a read-only image warned: %v", got)
+	}
+	bp.Entities = []framework.EntityDeclaration{{Name: "notes", Fields: []framework.FieldDeclaration{{Name: "body", Type: "text"}}}}
 	if got := LintUploadFields(bp); len(got) != 0 {
 		t.Errorf("spec without upload fields warned: %v", got)
 	}

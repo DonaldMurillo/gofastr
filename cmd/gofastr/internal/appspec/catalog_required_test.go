@@ -68,6 +68,22 @@ screens:
           title: Hi
           secondary_text: Learn
 `, "secondary_href"},
+		{"hero number cta", `      - kind: hero
+        props:
+          title: Hi
+          cta_text: 42
+          cta_href: /start
+`, "quote"},
+		{"hero bool second", `      - kind: hero
+        props:
+          title: Hi
+          secondary_text: true
+          secondary_href: /learn
+`, "quote"},
+		{"hero number title", `      - kind: hero
+        props:
+          title: 2026
+`, "quote"},
 		{"markdown no text", `      - kind: markdown
 `, "text"},
 	} {

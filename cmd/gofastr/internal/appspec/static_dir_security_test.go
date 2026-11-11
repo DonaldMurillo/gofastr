@@ -23,6 +23,7 @@ func TestStaticDirRefusesProjectFiles(t *testing.T) {
 		{"cmd", ""},
 		{"gen/js", ""},
 		{"siteheader", ""},
+		{"docpage", ""},
 		{"data", "file:data/app.db"},
 		{"data", "data/app.db?_pragma=busy_timeout(5000)"},
 		{"./data/", "file:./data/app.db"},

@@ -72,6 +72,28 @@ func TestScreenWithNoH1GetsPageHeader(t *testing.T) {
 		{"markdown h1", `      - kind: markdown
         text: "# Metrics\n\nBody."
 `, 0},
+		// type: hN renders at level: when one is set, so an h1 set to
+		// level 3 is an <h3> and an h2 set to level 1 is an <h1>.
+		{"h1 at level 3", `      - type: h1
+        level: 3
+        text: Metrics
+`, 1},
+		{"h2 at level 1", `      - type: h2
+        level: 1
+        text: Metrics
+`, 0},
+		// core/markdown reads "# " only at the start of a line and has
+		// no setext headings: none of these draws an <h1>.
+		{"markdown tab-indented", `      - kind: markdown
+        text: "Example:\n\n\t# not a heading\n"
+`, 1},
+		{"markdown space-indented", `      - kind: markdown
+        text: "   # not a heading\n"
+`, 1},
+		{"markdown setext", `      - kind: markdown
+        text: "Metrics\n=======\n"
+`, 1},
+		{"markdown fenced", "      - kind: markdown\n        text: \"```\\n# code\\n```\\n\"\n", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := loadH1Spec(t, "  - name: metrics\n    route: /metrics\n    title: Key Metrics\n    body:\n"+tc.body)

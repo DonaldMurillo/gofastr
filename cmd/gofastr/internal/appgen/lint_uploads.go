@@ -20,7 +20,8 @@ func (f uploadFieldFinding) Message() string {
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 
-// LintUploadFields flags every entity holding an image or file field.
+// LintUploadFields flags every entity holding an image or file field a
+// client can write (not hidden, not read-only).
 // The generator renders an upload control for such a field and crud
 // accepts a multipart body for it, but the app spec has no storage key
 // and main.go passes no framework.WithFileStorage, so crud refuses every
@@ -33,6 +34,11 @@ func LintUploadFields(bp appspec.AppSpec) []uploadFieldFinding {
 	for _, decl := range bp.Entities {
 		var fields []string
 		for _, f := range decl.Fields {
+			// crud takes no client upload for a hidden or read-only
+			// field, and the generated form draws no control for one.
+			if f.Hidden || f.ReadOnly {
+				continue
+			}
 			switch strings.ToLower(strings.TrimSpace(f.Type)) {
 			case "image", "file":
 				fields = append(fields, f.Name)

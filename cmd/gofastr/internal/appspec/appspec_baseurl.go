@@ -5,8 +5,9 @@ import "net/url"
 // baseURLProblem says why app.base_url cannot be the generated app's
 // sitemap origin ("" when it can). The generated app always runs uihost
 // strict mode, whose invalidSitemapBaseURL panics the boot on the same
-// shapes; keep the two in step. Empty is fine here: the generated
-// appBaseURL() falls back to localhost.
+// shapes, a bare trailing "?" (ForceQuery) included; keep the two in
+// step. Empty is fine here: the generated appBaseURL() falls back to
+// localhost.
 func baseURLProblem(base string) string {
 	if base == "" {
 		return ""

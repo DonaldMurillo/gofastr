@@ -126,8 +126,6 @@ entities:
         entity: posts
         foreign_key: post_id
 
-  # A composite key of the owner and two foreign keys: each user's
-  # enrollments are their own rows, so two users enroll the same pair.
   - name: students
     crud: true
     primary_key: [code]
@@ -148,6 +146,8 @@ entities:
       - name: title
         type: string
         required: true
+  # A composite key of the owner and two foreign keys: each user's
+  # enrollments are their own rows, so two users enroll the same pair.
   - name: enrollments
     crud: true
     owner_field: user_id

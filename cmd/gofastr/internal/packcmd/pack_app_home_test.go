@@ -1,6 +1,8 @@
 package packcmd
 
 import (
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -103,10 +105,21 @@ func TestPackKeepsTheAppHome(t *testing.T) {
 			for _, f := range after {
 				rendered[f.Name] = f.Content
 			}
+			if len(after) != len(rendered) {
+				t.Fatalf("the regenerated app renders %d files under %d names", len(after), len(rendered))
+			}
 			for _, f := range before {
-				if rendered[f.Name] != f.Content {
+				got, ok := rendered[f.Name]
+				switch {
+				case !ok:
+					t.Errorf("%s is missing after generate, pack, generate", f.Name)
+				case got != f.Content:
 					t.Errorf("%s differs after generate, pack, generate", f.Name)
 				}
+				delete(rendered, f.Name)
+			}
+			for _, name := range slices.Sorted(maps.Keys(rendered)) {
+				t.Errorf("%s appears only after generate, pack, generate", name)
 			}
 		})
 	}

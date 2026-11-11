@@ -38,7 +38,7 @@ func TestFieldDefaultCheckedAtValidate(t *testing.T) {
 		"      - name: flag\n        type: bool\n        default: true\n",
 		"      - name: label\n        type: string\n        default: \"\"\n",
 	} {
-		if err := load(field); err != nil && strings.Contains(err.Error(), "Default") {
+		if err := load(field); err != nil {
 			t.Errorf("field\n%s: refused: %v", field, err)
 		}
 	}

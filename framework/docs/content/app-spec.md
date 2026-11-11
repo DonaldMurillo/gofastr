@@ -438,7 +438,7 @@ Every file under `static_dir` is public, so validation refuses a
 directory that holds the app's own files: the app root or any directory
 above it (`.`, `..`, `/`), a directory the generator writes Go into
 (`cmd/`, `entities/`, `gen/`, `siteheader/`, `sitefooter/`,
-`helpdocs/`), the `app.output_dir` the generator owns (or a directory
+`docpage/`, `helpdocs/`), the `app.output_dir` the generator owns (or a directory
 inside or above it), and the directory holding the SQLite file
 `app.db.url` names. Use a directory of its own, such as `static`.
 
@@ -1155,6 +1155,9 @@ the API returns), as in `primary_key: [user_id, student_id, course_id]`,
 or drop `primary_key` and declare a unique index over the owner and the
 other columns. A value meant to be unique across all accounts goes in a
 unique field or index, where generation warns about it instead.
+With no `primary_key` the key is `id`: the framework generates it
+unless the entity declares an `id` field, and a declared `id` needs
+`auto_generate` on an owner-scoped entity, for the same reason.
 
 A relation to a composite-keyed entity names one foreign-key column per
 key column, in key order, as a list:
@@ -1817,11 +1820,14 @@ covers the routing rules and the language switcher.
 No route may start with a locale's segment: the router strips `/es`
 before matching, so a screen at `/es` or `/es/promo` is unreachable,
 and the app panics at Start once `es` is a catalog locale (the default
-`en` always is). That includes `app.auth.base_path` and `app.admin.path`.
+`en` always is). That includes `app.auth.base_path`, `app.admin.path`
+and `app.api_prefix` (with no prefix, each CRUD entity's table).
 Because `locales/<tag>.json` is added after generation, `gofastr validate`
-and `gofastr generate` warn on any such route whose first segment is
-shaped like a tag (two letters, optional subtags such as `pt-br`) rather
-than refusing it.
+and `gofastr generate` warn on any such route whose first segment reads
+as a tag rather than refusing it: a two-letter language, an optional
+four-letter script and an optional two-letter or three-digit region
+(`pt-br`, `zh-hant`, `es-419`), naming a language Go's `x/text` knows.
+`/my-orders` and `/go-live` do not warn.
 
 ### app.module and the enclosing go.mod
 
@@ -2040,7 +2046,9 @@ The generator rejects:
 - a `login_form`/`signup_form` `action:` whose path is not the auth
   battery's mounted `<base_path>/login` or `<base_path>/register`: an
   explicit action wins over the default, so one left at `/auth/login`
-  after `base_path` moved posts to a 404 (drop `action` to default it)
+  after `base_path` moved posts to a 404 (drop `action` to default it).
+  An absolute action must also name `app.base_url`'s scheme and host,
+  and is refused when `base_url` is unset
 - an `app.base_url` that is not a bare `http`/`https` origin: it roots
   every sitemap URL, and the generated app's strict mode refuses to boot
   on it

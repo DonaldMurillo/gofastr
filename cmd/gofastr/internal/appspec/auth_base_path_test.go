@@ -29,7 +29,7 @@ func TestAuthBasePathMustBeClean(t *testing.T) {
 // form posts to a 404 and nobody can sign in.
 func TestAuthFormActionFollowsBasePath(t *testing.T) {
 	spec := func(base, kind, action string) AppSpec {
-		bp := AppSpec{App: AppSpecApp{Name: "app", Module: "m"}}
+		bp := AppSpec{App: AppSpecApp{Name: "app", Module: "m", BaseURL: "https://app.example"}}
 		bp.App.Auth.Enabled = true
 		bp.App.Auth.DevMode = true
 		bp.App.Auth.BasePath = base
@@ -59,11 +59,28 @@ func TestAuthFormActionFollowsBasePath(t *testing.T) {
 		{"/account", "login_form", "https://app.example/auth/login"},
 		{"/account", "login_form", "login"},
 		{"/account", "login_form", "#"},
+		{"/account", "login_form", "https://attacker.example/account/login"},
+		{"/account", "login_form", "http://app.example/account/login"},
 	} {
 		err := ValidateAppSpec(spec(c.base, c.kind, c.action))
-		if err == nil || !strings.Contains(err.Error(), "mounted") {
+		if err == nil || !strings.Contains(err.Error(), "mounted") && !strings.Contains(err.Error(), "base_url") {
 			t.Errorf("%s action %q under base %q accepted: %v", c.kind, c.action, c.base, err)
 		}
+	}
+}
+
+// An absolute action is checked against app.base_url, the app's own
+// origin. With no base_url there is nothing to compare it to, so it is
+// refused: the form would send the password wherever the URL names.
+func TestAuthFormAbsoluteActionNeedsBaseURL(t *testing.T) {
+	bp := AppSpec{App: AppSpecApp{Name: "app", Module: "m"}}
+	bp.App.Auth.Enabled = true
+	bp.App.Auth.DevMode = true
+	bp.Screens = []AppSpecScreen{{Name: "signin", Route: "/signin", Type: "page", Body: []AppSpecBlock{
+		{Kind: "login_form", Props: map[string]any{"action": "https://app.example/auth/login"}},
+	}}}
+	if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "base_url") {
+		t.Fatalf("absolute action with no app.base_url accepted: %v", err)
 	}
 }
 

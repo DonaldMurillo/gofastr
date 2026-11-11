@@ -1,6 +1,7 @@
 package appgen
 
 import (
+	"maps"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -53,11 +54,48 @@ func TestRenderLeavesSeedRecipeAlone(t *testing.T) {
 	}
 }
 
+// deepCopySeed copies every level a render could write through: the
+// rows slice, each row map and its nested values, and the weights.
 func deepCopySeed(in []appspec.AppSpecSeedEntity) []appspec.AppSpecSeedEntity {
 	out := make([]appspec.AppSpecSeedEntity, len(in))
 	for i, s := range in {
 		out[i] = s
-		out[i].Rows = append([]map[string]any(nil), s.Rows...)
+		if s.Rows != nil {
+			out[i].Rows = make([]map[string]any, len(s.Rows))
+			for j, row := range s.Rows {
+				out[i].Rows[j], _ = deepCopyValue(row).(map[string]any)
+			}
+		}
+		if s.Weights != nil {
+			out[i].Weights = make(map[string]map[string]int, len(s.Weights))
+			for col, w := range s.Weights {
+				out[i].Weights[col] = maps.Clone(w)
+			}
+		}
 	}
 	return out
+}
+
+func deepCopyValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		if x == nil {
+			return x
+		}
+		out := make(map[string]any, len(x))
+		for k, e := range x {
+			out[k] = deepCopyValue(e)
+		}
+		return out
+	case []any:
+		if x == nil {
+			return x
+		}
+		out := make([]any, len(x))
+		for i, e := range x {
+			out[i] = deepCopyValue(e)
+		}
+		return out
+	}
+	return v
 }

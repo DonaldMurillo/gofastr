@@ -24,7 +24,22 @@ import (
 // (or index) beside the generated id, where the warning names it.
 func ownerScopedKeyProblem(decl framework.EntityDeclaration) error {
 	owner := EntityDeclarationScope(decl).OwnerField
-	if owner == "" || len(decl.PrimaryKey) == 0 || slices.Contains(decl.PrimaryKey, owner) {
+	if owner == "" {
+		return nil
+	}
+	if len(decl.PrimaryKey) == 0 {
+		// The implicit key is id. Define generates it unless Fields
+		// declares it, and a declared id without auto_generate is set by
+		// the client and shared across accounts like any other key.
+		for _, f := range decl.Fields {
+			if f.Name == "id" && f.AutoGenerate == "" {
+				return fmt.Errorf("app spec: entity %q is owner-scoped (owner_field: %s) but declares an id field without auto_generate, so the client sets the key and every account shares it: a second user creating an id another user holds gets 409 for a row they cannot see, which also tells them it exists. Give id auto_generate: uuid, or drop the id field and let the framework generate it",
+					decl.Name, owner)
+			}
+		}
+		return nil
+	}
+	if slices.Contains(decl.PrimaryKey, owner) {
 		return nil
 	}
 	for _, f := range decl.Fields {

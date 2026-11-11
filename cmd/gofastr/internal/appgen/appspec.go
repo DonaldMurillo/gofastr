@@ -26,6 +26,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
+	"github.com/DonaldMurillo/gofastr/core/markdown"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/internal/dsnredact"
@@ -3829,10 +3830,17 @@ func appSpecBlockRendersH1(b appspec.AppSpecBlock) bool {
 		kind = strings.ToLower(strings.TrimSpace(b.Type))
 	}
 	switch kind {
-	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail", "h1":
+	case "page_header", "hero", "login_form", "signup_form", "entity_form", "entity_detail":
 		return true
 	case "heading":
 		return appSpecHeadingLevel(b) == 1
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		// type: hN renders at level: when one is set (an h1 at level 3 is
+		// an <h3>), else at N.
+		if b.Level != 0 {
+			return b.Level == 1
+		}
+		return kind == "h1"
 	}
 	return false
 }
@@ -3876,31 +3884,15 @@ func AppSpecScreenDrawsH1(blocks []appspec.AppSpecBlock) bool {
 	return false
 }
 
-// appSpecMarkdownHasH1 reports an ATX `# Title` line or a setext title
-// underlined with `=`, outside fenced code.
+// appSpecMarkdownHasH1 reports whether src renders an <h1> through
+// core/markdown, the renderer ui.Markdown uses. It asks the renderer
+// rather than re-deriving its rules: core/markdown reads "# " only at
+// the start of a line and has no setext headings, so a gate written to
+// CommonMark took "   # Title", "\t# Title" and an "=" underline for an
+// <h1> the page never drew, and dropped the page header. The renderer
+// escapes raw HTML, so "<h1" in its output is a heading it made.
 func appSpecMarkdownHasH1(src string) bool {
-	fenced := false
-	prev := ""
-	for _, line := range strings.Split(src, "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			fenced = !fenced
-			prev = ""
-			continue
-		}
-		if fenced {
-			continue
-		}
-		indented := len(line)-len(strings.TrimLeft(line, " ")) > 3
-		if !indented && (t == "#" || strings.HasPrefix(t, "# ")) {
-			return true
-		}
-		if !indented && prev != "" && t != "" && strings.Trim(t, "=") == "" {
-			return true
-		}
-		prev = t
-	}
-	return false
+	return strings.Contains(string(markdown.RenderHTML(src)), "<h1")
 }
 
 func isLoginFormBlock(block appspec.AppSpecBlock) bool {

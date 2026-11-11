@@ -97,6 +97,9 @@ func TestStatCardSumRefusesMaskedColumn(t *testing.T) {
 	if err == nil {
 		t.Fatal("stat_card agg:sum over a no_query column was accepted")
 	}
+	if !strings.Contains(err.Error(), "no_query") || !strings.Contains(err.Error(), "number") {
+		t.Errorf("error should name no_query and the number column, got: %v", err)
+	}
 }
 
 // agg is StatValue's exact spelling, and a sum totals a numeric field:

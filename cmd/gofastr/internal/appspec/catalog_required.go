@@ -23,15 +23,22 @@ import (
 //
 // A number or bool where the component takes text decodes as int64 or
 // bool, which the generator reads as "": refused with a hint to quote it.
+// A hero's optional text (eyebrow, title, subtitle and both CTA labels)
+// is checked the same way, since a dropped CTA label drops the CTA.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
-	need := func(key string) error {
-		v, ok := block.Props[key]
-		if ok && v != nil {
+	text := func(key string) error {
+		if v, ok := block.Props[key]; ok && v != nil {
 			if _, isText := v.(string); !isText {
 				return fmt.Errorf("app spec: screen %q %s block %s must be text; quote %v", screenName, kind, key, v)
 			}
 		}
-		if s, _ := v.(string); strings.TrimSpace(s) == "" {
+		return nil
+	}
+	need := func(key string) error {
+		if err := text(key); err != nil {
+			return err
+		}
+		if s, _ := block.Props[key].(string); strings.TrimSpace(s) == "" {
 			return fmt.Errorf("app spec: screen %q %s block %s is required: the component refuses to render without it", screenName, kind, key)
 		}
 		return nil
@@ -62,6 +69,11 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 		}
 		return href("href")
 	case "hero":
+		for _, key := range []string{"eyebrow", "title", "subtitle", "cta_text", "secondary_text"} {
+			if err := text(key); err != nil {
+				return err
+			}
+		}
 		for _, cta := range [][2]string{{"cta_text", "cta_href"}, {"secondary_text", "secondary_href"}} {
 			if s, _ := block.Props[cta[0]].(string); s != "" {
 				if err := href(cta[1]); err != nil {

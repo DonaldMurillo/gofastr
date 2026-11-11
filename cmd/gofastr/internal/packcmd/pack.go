@@ -2207,7 +2207,8 @@ func packWalkScreenChain(e ast.Expr, r *screenReg) {
 // to, else the signed-in header's Dashboard link in app.go's
 // marketingHeader. "" when the app emits neither, and then no generated
 // file depends on it. Reads go through an *os.Root over dir, like the
-// per-screen reader, so a symlinked leaf is never parsed.
+// per-screen reader, so nothing outside dir is read, and only regular
+// files are parsed, so a symlinked leaf is not either.
 func packReadAppHome(dir string) string {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -2219,6 +2220,11 @@ func packReadAppHome(dir string) string {
 		return ""
 	}
 	parse := func(name string) *ast.File {
+		// os.Root follows a symlink that stays inside dir: only a
+		// regular file is parsed, as the directory loop below requires.
+		if info, err := root.Lstat(name); err != nil || !info.Mode().IsRegular() {
+			return nil
+		}
 		src, err := root.ReadFile(name)
 		if err != nil {
 			return nil

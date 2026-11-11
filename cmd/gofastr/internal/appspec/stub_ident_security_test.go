@@ -47,7 +47,7 @@ import (
 func TestAuthFormActionRedValidated(t *testing.T) {
 	authFormBp := func(action string) AppSpec {
 		return AppSpec{
-			App: AppSpecApp{Name: "app", Module: "m"},
+			App: AppSpecApp{Name: "app", Module: "m", BaseURL: "https://host"},
 			Screens: []AppSpecScreen{{
 				Name:  "signin",
 				Route: "/signin",
