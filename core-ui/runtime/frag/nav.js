@@ -209,8 +209,14 @@
   // not this one's: one refused style-src report per head sheet, on
   // every navigation that fetches a whole page. Nothing reads those
   // sheets (the destination's components link their own), so the ones
-  // ahead of <body> go before the parse. The body is left as it came.
-  const parseDoc = (h) => new DOMParser().parseFromString(h.replace(/^[^]*?<body/i, (s) => s.replace(/<style\b[^]*?<\/style>/gi, '')), 'text/html');
+  // ahead of <body> go before the parse. The walk steps over script,
+  // comment and title text: a "<style>" there is not a tag.
+  const parseDoc = (h) => {
+    const re = /<script\b[^]*?<\/script\s*>|<!--[^]*?-->|<title\b[^]*?<\/title\s*>|(<style\b[^]*?<\/style\s*>)|(<body\b)/gi;
+    let out = '', i = 0, m;
+    while ((m = re.exec(h)) && !m[2]) if (m[1]) { out += h.slice(i, m.index); i = re.lastIndex; }
+    return new DOMParser().parseFromString(m ? out + h.slice(i) : h, 'text/html');
+  };
   window.__gofastr._parseDoc = parseDoc;
   const docCarrier = (source) => {
     const carrier = source.createElement('template');
