@@ -20,7 +20,8 @@ func TestOrderTotalsLockBeforeRead(t *testing.T) {
 	ctx := context.Background()
 	// pgtest scopes the pool to a fresh schema through the DSN's options,
 	// so every pooled connection sees it, and drops it on cleanup. Two
-	// transactions run at once here, so the pool needs a second session.
+	// open transactions and the pg_stat_activity poll each hold a
+	// session, so the pool needs at least three.
 	pool := pgtest.DB(t)
 	pool.SetMaxOpenConns(4)
 	for _, ddl := range []string{

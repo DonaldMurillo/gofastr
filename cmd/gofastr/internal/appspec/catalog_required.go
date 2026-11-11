@@ -19,6 +19,7 @@ import (
 //     unsafe or protocol-relative Href.
 //   - hero: each CTA is a ui.LinkButton, drawn when its text is set, so
 //     cta_text needs cta_href and secondary_text needs secondary_href.
+//   - page_header: headless.PageHeader requires Title.
 //   - markdown: ui.Markdown requires Source, the block's text:.
 //
 // A number or bool where the component takes text decodes as int64 or
@@ -70,7 +71,10 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 		}
 		return href("href")
 	case "page_header":
-		for _, key := range []string{"eyebrow", "title", "subtitle"} {
+		if err := need("title"); err != nil {
+			return err
+		}
+		for _, key := range []string{"eyebrow", "subtitle"} {
 			if err := text(key); err != nil {
 				return err
 			}

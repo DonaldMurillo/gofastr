@@ -88,6 +88,14 @@ screens:
         props:
           title: 2026
 `, "quote"},
+		{"page_header no title", `      - kind: page_header
+        props:
+          subtitle: Every plan
+`, "title is required"},
+		{"page_header blank title", `      - kind: page_header
+        props:
+          title: "  "
+`, "title is required"},
 		{"page_header number eyebrow", `      - kind: page_header
         props:
           title: Plans
