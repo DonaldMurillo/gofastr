@@ -71,7 +71,9 @@ The framework:
    `Storage`, scoped by entity name and field name. A part for a
    read-only or hidden field is ignored, as the write ignores a value
    for it, so no stored object goes unreferenced.
-4. Stores the returned URL string on the record.
+4. Stores the storage key (`uploads/<entity>/<field>/<name>`) on the
+   record, not a URL. A link to the file is the path you serve stored
+   files under plus the key (`entityui.Extensions.FilesURL`, below).
 
 The generated Go client, JS SDK and CLI send this request for you: see
 [SDKs](sdk.md) and [App CLI](app-cli.md).
@@ -80,8 +82,8 @@ The record persisted to the database looks like:
 
 ```json
 { "id": "u1", "name": "Carol",
-  "avatar": "/uploads/users/avatar/abc123.png",
-  "resume": "/uploads/users/resume/def456.pdf" }
+  "avatar": "uploads/users/avatar/abc123.png",
+  "resume": "uploads/users/resume/def456.pdf" }
 ```
 
 ## Upload response (standalone handler)
