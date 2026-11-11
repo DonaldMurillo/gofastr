@@ -7,6 +7,8 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/http/cookiejar"
+	"os"
 	"strings"
 	"testing"
 )
@@ -166,4 +168,81 @@ func TestOrderTotalIsExactOrRefused(t *testing.T) {
 	default:
 		t.Fatalf("tax edit = %d, want 200 with an exact total or 400; body=%.400s", code, raw)
 	}
+}
+
+// TestOnlyActiveProductsCanBeOrdered: a line item names a product the
+// catalog sells. Webcam HD is seeded as a draft; a draft, an archived
+// or a deleted product is refused on create and on a product switch,
+// and the order keeps no trace of the refused line.
+func TestOnlyActiveProductsCanBeOrdered(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and boots the storefront")
+	}
+	s := newShop(t)
+	headphones, draft := s.product("Wireless Headphones"), s.product("Webcam HD")
+	if draft["status"] != "draft" {
+		t.Fatalf("fixture drift: Webcam HD status %v, want draft", draft["status"])
+	}
+	orderID := s.order("0", "0")
+	items := func() int {
+		t.Helper()
+		order := s.must(http.StatusOK, "GET", "/api/orders/"+orderID+"?include=items", "")
+		list, _ := order["items"].([]any)
+		return len(list)
+	}
+
+	if code, _, raw := s.do("POST", "/api/order_items", itemBody(orderID, draft, "1")); code != http.StatusBadRequest {
+		t.Errorf("draft product line = %d, want 400; body=%.300s", code, raw)
+	}
+	if n := items(); n != 0 {
+		t.Errorf("refused draft line left %d items", n)
+	}
+
+	item := s.must(http.StatusCreated, "POST", "/api/order_items", itemBody(orderID, headphones, "2"))
+	path := "/api/order_items/" + fmt.Sprint(item["id"])
+	if code, _, raw := s.do("PATCH", path, fmt.Sprintf(`{"productId":%q}`, draft["id"])); code != http.StatusBadRequest {
+		t.Errorf("switch to draft product = %d, want 400; body=%.300s", code, raw)
+	}
+	if row := s.must(http.StatusOK, "GET", path, ""); row["productId"] != headphones["id"] {
+		t.Errorf("refused switch stored product %v, want %v", row["productId"], headphones["id"])
+	}
+	s.must(http.StatusOK, "PATCH", path, `{"quantity":3}`) // an active line still edits
+
+	// Archived and soft-deleted products are off sale too.
+	admin := &shop{t: t, base: s.base, client: relRedAdmin(t, s.base)}
+	hub, keyboard := s.product("USB-C Hub"), s.product("Mechanical Keyboard")
+	admin.must(http.StatusOK, "PATCH", "/api/products/"+fmt.Sprint(hub["id"]), `{"status":"archived"}`)
+	admin.must(http.StatusNoContent, "DELETE", "/api/products/"+fmt.Sprint(keyboard["id"]), "")
+	for name, p := range map[string]map[string]any{"archived": hub, "deleted": keyboard} {
+		if code, _, raw := s.do("POST", "/api/order_items", itemBody(orderID, p, "1")); code < 400 || code >= 500 {
+			t.Errorf("%s product line = %d, want a 4xx refusal; body=%.300s", name, code, raw)
+		}
+	}
+	if n := items(); n != 1 {
+		t.Errorf("order holds %d items after the refusals, want 1", n)
+	}
+}
+
+// relRedAdmin signs in the seeded admin, whose role holds catalog:write.
+func relRedAdmin(t *testing.T, base string) *http.Client {
+	t.Helper()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &http.Client{Jar: jar, Timeout: e2eClient.Timeout}
+	creds := fmt.Sprintf(`{"email":"admin@shop.example","password":%q}`, seedAdminPassword())
+	if code, body := e2eDo(t, client, "POST", base+"/auth/login", creds); code != http.StatusOK {
+		t.Fatalf("admin login = %d; body=%.300s", code, body)
+	}
+	return client
+}
+
+// seedAdminPassword is the password bootSeededStorefront seeds the admin
+// with.
+func seedAdminPassword() string {
+	if pw := os.Getenv("ADMIN_SEED_PASSWORD"); pw != "" {
+		return pw
+	}
+	return "guard-seed-admin-pw" // not-a-secret: bootSeededStorefront's throwaway default
 }

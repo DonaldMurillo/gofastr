@@ -40,6 +40,9 @@ beyond the decimal exactness limit (15 significant digits) is refused before
 persistence, and the write and its parent-total changes roll back.
 Clients can omit both price fields; supplied values cannot set a price.
 Quantity-only edits and product changes reprice against the current catalog.
+Only an active product can be ordered: a line that names a draft, archived or
+deleted product is refused, on create and on any later edit. The demo keeps no
+stock count.
 Keep the owned hook file when scaffolding; generated hook stubs are not its
 implementation. `TestOrderPricesComeFromProducts` exercises this through REST.
 

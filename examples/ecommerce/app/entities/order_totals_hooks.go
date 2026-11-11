@@ -33,10 +33,15 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 )
+
+// reasonNotForSale refuses a line item naming a product the catalog does
+// not sell.
+var reasonNotForSale = i18n.Define("shopfront.orders.not_for_sale", "is not for sale")
 
 func init() {
 	registrars = append(registrars, registrar{order: 99, fn: registerOrderTotalsHooks})
@@ -122,11 +127,21 @@ func priceOrderItem(ctx context.Context, row map[string]any) error {
 	}
 	var price string
 	var quantity int64
-	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), order_items.quantity
+	var onSale bool
+	err := exec.QueryRowContext(ctx, `SELECT CAST(products.price AS TEXT), order_items.quantity,
+			products.status = 'active' AND products.deleted_at IS NULL
 		FROM order_items JOIN products ON products.id = order_items.product_id
-		WHERE order_items.id = $1`, id).Scan(&price, &quantity)
+		WHERE order_items.id = $1`, id).Scan(&price, &quantity, &onSale)
 	if err != nil {
 		return fmt.Errorf("order pricing: load product price: %w", err)
+	}
+	if !onSale {
+		// A draft, archived or deleted product is not for sale, whatever
+		// its price says: refused on create, on a switch to it, and on
+		// any edit of a line that names it.
+		return crud.NewValidationError(map[string][]schema.Violation{
+			"product_id": {{Reason: reasonNotForSale}},
+		})
 	}
 	unit, ok := new(big.Rat).SetString(price)
 	if !ok || unit.Sign() < 0 || quantity < 1 {
