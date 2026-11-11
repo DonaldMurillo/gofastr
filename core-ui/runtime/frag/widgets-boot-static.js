@@ -61,6 +61,9 @@
   // and absent on a serverless host; the static exporter dumps the
   // canonical registry shape to /__gofastr/widgets.json. Processing is
   // identical to widgets-boot.
+  // The page this pass runs for, read before the fetch: a navigation
+  // that lands while it is out must not rename the pass's event.
+  const _bootPath = location.pathname;
   _fetch('/__gofastr/widgets.json',
         { headers: { 'X-Gofastr-Widget-Discovery': '1' } })
     // A followed 3xx is another URL's list: no catalog.
@@ -101,7 +104,7 @@
       _wcr();
     })
     .catch(() => { _wcr(); })
-    .then(() => _wsynced(location.pathname));
+    .then(() => _wsynced(_bootPath));
 
   // === EAGER WIDGET DELEGATORS =========================================
   // Identical to widgets-boot's _installEagerWidgetDelegators (the

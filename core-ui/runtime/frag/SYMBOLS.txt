@@ -441,6 +441,7 @@ widgets-boot	8	G
 widgets-boot-static	10	cat
 widgets-boot-static	10	cfg
 widgets-boot-static	10	eq
+widgets-boot-static	2	_bootPath
 widgets-boot-static	2	_installEagerWidgetDelegators
 widgets-boot-static	2	_wcr
 widgets-boot-static	2	_wready
