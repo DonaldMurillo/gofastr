@@ -36,3 +36,7 @@ var (
 	reasonOverrideNoAudit  = i18n.Define("entityui.override_no_audit", "A status override needs an audit log on this entity.")
 	reasonOverrideDenied   = i18n.Define("entityui.override_denied", "You may not override the status of this {{entity}}.")
 )
+
+// reasonExportUnknownParam refuses an export query parameter that is not
+// one of the list's own: a REST filter, another list's param, a typo.
+var reasonExportUnknownParam = i18n.Define("entityui.export_unknown_param", "{{name}} is not a parameter of this list, so the export cannot narrow to it.")
