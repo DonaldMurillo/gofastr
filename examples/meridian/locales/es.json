@@ -524,6 +524,7 @@
       "name": "Nombre",
       "nameHelp": "Se muestra en el menú de la cuenta. Déjalo vacío para mostrar tu correo.",
       "nameRefused": "Usa un nombre de 100 caracteres como máximo, sin caracteres de control.",
+      "ownAdminRefused": "No puedes quitarte tu propio rol de administrador. Otro administrador sí puede.",
       "nameSaved": "Nombre guardado",
       "nav": "Navegación del panel",
       "needsReplay": "Hay que repetirlos",
