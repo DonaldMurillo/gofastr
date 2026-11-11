@@ -10,7 +10,7 @@ import (
 // alone. A request budget at or past the write deadline is dead config: a
 // buffered response finished after the write deadline is never delivered
 // (the client sees the connection drop, not the response and not the
-// timeout middleware's 503), while the handler keeps running to the
+// timeout middleware's 504), while the handler keeps running to the
 // budget. Raising RequestTimeout past the 60s default write deadline was
 // the common way in: the slow handler it was raised for still lost its
 // response at 60s.
@@ -55,7 +55,7 @@ func TestRequestTimeoutPastExplicitWriteTimeoutRefused(t *testing.T) {
 }
 
 // The implicit 30s budget is enforced like an explicit one: a write cut
-// under it is refused, because the timeout middleware's own 503 at 30s
+// under it is refused, because the timeout middleware's own 504 at 30s
 // could never pass a 20s write deadline.
 func TestImplicitDefaultBudgetPastExplicitWriteTimeoutRefused(t *testing.T) {
 	app := NewApp(WithConfig(AppConfig{
@@ -96,7 +96,7 @@ func TestRequestTimeoutWriteTimeoutPairsKept(t *testing.T) {
 			HTTPServerTimeouts: HTTPServerTimeoutsConfig{WriteTimeout: new(time.Second)}}, time.Second},
 		// The framework's own 30s default budget is enforced like any
 		// other: a write cut under it can drop the timeout middleware's
-		// own 503, so the pair is refused (see the refusal test below).
+		// own 504, so the pair is refused (see the refusal test below).
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			app := NewApp(WithConfig(tc.cfg))

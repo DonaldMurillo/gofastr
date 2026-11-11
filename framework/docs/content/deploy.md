@@ -317,7 +317,7 @@ A `RequestTimeout` raised past the write deadline raises an unset
 longer than the enforced request deadline — your `RequestTimeout`, or
 its 30s default when unset — makes `Start` return an error, since every
 buffered response finished after the write deadline (the timeout
-middleware's own 503 included) would be lost. `0` still disables it.
+middleware's own 504 included) would be lost. `0` still disables it.
 
 The per-request middleware deadline (`AppConfig.RequestTimeout`, default
 30s) can be overridden per route or per group instead of app-wide:
