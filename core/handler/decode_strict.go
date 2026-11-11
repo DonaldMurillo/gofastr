@@ -71,6 +71,9 @@ func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
 	for _, o := range opts {
 		o(&cfg)
 	}
+	if err := CheckUTF8(data); err != nil {
+		return err
+	}
 	if err := validateBodyKeys(data, dst); err != nil {
 		return err
 	}
@@ -100,6 +103,19 @@ func UnmarshalStrict(data []byte, dst any, opts ...StrictOption) error {
 	var trailing json.RawMessage
 	if err := dec.Decode(&trailing); err != io.EOF {
 		return Fail(400, ReasonJSONMultipleValues)
+	}
+	return nil
+}
+
+// CheckUTF8 refuses a JSON body that is not valid UTF-8 with a 400
+// json_not_utf8. JSON text is UTF-8 (RFC 8259), and encoding/json
+// replaces each malformed byte with U+FFFD, so the decoded value would
+// differ from what the client sent: a stored id or text the client
+// never wrote. Bind and UnmarshalStrict (DecodeStrict too) call it; a
+// site that decodes a body by other means calls it first.
+func CheckUTF8(data []byte) error {
+	if !utf8.Valid(data) {
+		return Fail(400, ReasonJSONNotUTF8)
 	}
 	return nil
 }

@@ -176,6 +176,11 @@ func readBodyBytes(r *http.Request) ([]byte, error) {
 		}
 		return nil, bodyReadError(err)
 	}
+	// Every JSON body crud reads comes through here: refuse one that is
+	// not UTF-8 before a decode turns its bad bytes into U+FFFD.
+	if err := handler.CheckUTF8(data); err != nil {
+		return nil, err
+	}
 	return data, nil
 }
 
