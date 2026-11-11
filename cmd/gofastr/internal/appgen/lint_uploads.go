@@ -16,7 +16,7 @@ type uploadFieldFinding struct {
 
 func (f uploadFieldFinding) Message() string {
 	return fmt.Sprintf(
-		"entity %q has upload fields (%s), but the generated main.go wires no file storage: every upload through the generated form or the API answers 400 \"server has no file storage configured\". Add framework.WithFileStorage(upload.NewLocalStorage(\"uploads\")) to the options in main.go (core/upload; the local store writes 0600 files under 0700 directories), or another upload.Storage",
+		"entity %q has upload fields (%s), and the generated main.go wires no file storage: unless the app's own main.go adds one, every upload through the generated form or the API answers 400 \"server has no file storage configured\". Add framework.WithFileStorage(upload.NewLocalStorage(\"uploads\")) to the options in main.go (core/upload; the local store writes 0600 files under 0700 directories), or another upload.Storage",
 		f.Entity, strings.Join(f.Fields, ", "))
 }
 

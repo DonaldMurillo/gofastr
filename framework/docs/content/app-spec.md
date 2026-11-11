@@ -2126,8 +2126,8 @@ write), or set `method: get` for a form that only reads.
 
 An `image` or `file` field gets an upload control on the generated form
 and a multipart body on its API, but the app spec has no storage key and
-the generated `main.go` passes no `framework.WithFileStorage`, so every
-upload answers `400` ("server has no file storage configured"). Both
+the generated `main.go` passes no `framework.WithFileStorage`, so until
+you add one every upload answers `400` ("server has no file storage configured"). Both
 commands warn, naming the entity and its upload fields; neither fails,
 since `main.go` is your file after the first generate. Add the option
 there:
