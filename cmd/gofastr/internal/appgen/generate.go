@@ -745,6 +745,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		for _, f := range LintUploadFields(bp) {
 			cli.Warn("%s", f.Message())
 		}
+		for _, f := range LintLocaleRoutes(bp) {
+			cli.Warn("%s", f.Message())
+		}
 		// Surfaced before the "Next steps" block below, which would otherwise
 		// print `go mod init <colliding path>` as the remedy for a build that
 		// the collision makes impossible.

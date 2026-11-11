@@ -1813,6 +1813,15 @@ because it pins the plain paths to English: without it the browser's
 `Accept-Language` picks the locale. The [i18n guide](i18n.md#locale-in-the-url)
 covers the routing rules and the language switcher.
 
+No route may start with a locale's segment: the router strips `/es`
+before matching, so a screen at `/es` or `/es/promo` is unreachable,
+and the app panics at Start once `es` is a catalog locale (the default
+`en` always is). That includes `app.auth.base_path` and `app.admin.path`.
+Because `locales/<tag>.json` is added after generation, `gofastr validate`
+and `gofastr generate` warn on any such route whose first segment is
+shaped like a tag (two letters, optional subtags such as `pt-br`) rather
+than refusing it.
+
 ### app.module and the enclosing go.mod
 
 Generated imports are `<app.module>/<output-dir>`. By default the output
