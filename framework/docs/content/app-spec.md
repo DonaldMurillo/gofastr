@@ -960,7 +960,10 @@ partial and keeps the shell).
 - `create: true` on a list synthesizes the create screen at
   **`<home list>/create`** (not `/new`), rendering
   `appUI.Create("<entity>").Base(<home route>)`. It inherits the home
-  screen's `layout` + `access` and is not added to `nav`.
+  screen's `layout` + `access` and is not added to `nav`. Two entities
+  whose home list is the same screen, both with `create: true`, would
+  share that one route, so the load refuses the spec and names both:
+  move one list to its own screen or drop its `create: true`.
 - `entity_form` renders a plain `<form data-cui-rpc="<api_prefix>/<table>">`
   (enum → `<select>` of values; relation → `<select>` populated from the
   related entity's route, each option's value its key column, so a

@@ -2612,6 +2612,30 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		walk(s.Body)
 	}
+	// Every create-flagged list's New opens <home list route>/create, the
+	// one create screen AppSpecSynthesizeCRUDScreens adds per entity. Two
+	// entities whose home list is the same screen would share that route:
+	// the second create screen was dropped and its New opened the first
+	// entity's form, so a team was saved as a player.
+	createFor := map[string]string{}
+	for _, s := range bp.Screens {
+		for _, b := range AppSpecBlocksDeep(s.Body) {
+			e := strings.Trim(b.Entity, "/")
+			if !IsEntityListBlock(b) || !b.Create || e == "" {
+				continue
+			}
+			home := AppSpecEntityListScreen(bp, e)
+			if home == nil {
+				continue
+			}
+			route := strings.TrimRight(home.Route, "/") + "/create"
+			if other, ok := createFor[route]; ok && other != e {
+				errs.add(fmt.Errorf("app spec: entities %q and %q both create from lists on screen %q, so both create screens would sit at %s and one entity's New would open the other's form; move one list to its own screen or drop its create: true", other, e, home.Name, route))
+				continue
+			}
+			createFor[route] = e
+		}
+	}
 	// entityui links a record at <base>/<id> with <base> the list's route,
 	// so a detail screen must sit exactly at <list route>/{id} when the
 	// entity also has a list screen. Anything else strands the links.

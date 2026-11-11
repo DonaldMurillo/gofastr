@@ -111,3 +111,87 @@ screens:
 		})
 	}
 }
+
+// Every create-flagged list's New opens <home list route>/create, one
+// synthesized screen per entity. Two entities whose home list is the
+// same screen would share that route: the second create screen was
+// dropped and its New opened the first entity's form. Refused at load.
+func TestAppSpecRejectsSharedCreateRoute(t *testing.T) {
+	const head = `app:
+  name: Roster
+  module: example.com/roster
+entities:
+  - name: teams
+    crud: true
+    fields:
+      - name: name
+        type: string
+  - name: players
+    crud: true
+    fields:
+      - name: fullName
+        type: string
+screens:
+  - name: roster
+    route: /roster
+    body:
+`
+	for _, tc := range []struct {
+		name, body string
+		refused    bool
+	}{
+		{"both create", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+      - kind: card
+        props:
+          heading: Teams
+        children:
+          - kind: entity_list
+            entity: teams
+            fields: [name]
+            create: true
+`, true},
+		{"one create", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+      - kind: entity_list
+        entity: teams
+        fields: [name]
+`, false},
+		{"separate homes", `      - kind: entity_list
+        entity: players
+        fields: [fullName]
+        create: true
+  - name: teams
+    route: /teams
+    body:
+      - kind: entity_list
+        entity: teams
+        fields: [name]
+        create: true
+`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "gofastr.yml")
+			clitest.WriteTestFile(t, path, head+tc.body)
+			_, err := LoadAppSpec(path)
+			if !tc.refused {
+				if err != nil {
+					t.Fatalf("load: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("two entities sharing /roster/create must be refused")
+			}
+			for _, want := range []string{`"players"`, `"teams"`, "/roster/create"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Fatalf("error should name %s, got: %v", want, err)
+				}
+			}
+		})
+	}
+}
