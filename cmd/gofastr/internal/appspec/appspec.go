@@ -2805,10 +2805,6 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 			continue
 		}
-		// A field default the field's own validator refuses (an enum
-		// value not in values:, "notanumber" on an int, "" on a required
-		// field) fails registration, which panicked the generated app at
-		// boot. Run that one check here, from framework/entity.
 		// The display: block names fields, facets, views and form slots
 		// registration checks against the entity; run that check here.
 		if decl.Display != nil {
@@ -2816,6 +2812,10 @@ func ValidateAppSpec(bp AppSpec) error {
 				errs.add(fmt.Errorf("app spec: %w", err))
 			}
 		}
+		// A field default the field's own validator refuses (an enum
+		// value not in values:, "notanumber" on an int, "" on a required
+		// field) fails registration, which panicked the generated app at
+		// boot. Run that one check here, from framework/entity.
 		if slices.ContainsFunc(decl.Fields, func(f framework.FieldDeclaration) bool { return f.Default != nil }) {
 			if err := fwentity.ValidateDefaults(decl.Name, cfg); err != nil {
 				errs.add(fmt.Errorf("app spec: %w", err))
