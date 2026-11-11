@@ -100,7 +100,11 @@ framework gates their listing on the entity's `Access` permission.)
 never get to run, which would silently break the caller's expectations.
 
 A plugin's `Init` panic (or an error return) is caught and attributed
-to the plugin by name in the resulting error. Already-initialised
+to the plugin by name in the resulting error. A panic's value stays out
+of the error (it may hold a secret); its stack goes to the App's logger,
+and the error says where when the logger's handler has a
+`LogLocation() string` method: `battery/log`'s default file sink answers
+with its `server.log` path. Already-initialised
 plugins are skipped on retry so a partial-init-then-fix retry doesn't
 double-register routes / middleware.
 

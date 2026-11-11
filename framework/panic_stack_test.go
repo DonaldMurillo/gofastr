@@ -85,3 +85,39 @@ func TestModulePanicLogsToAppLogger(t *testing.T) {
 		t.Errorf("a recovered panic went to slog.Default:\n%s", deflt.String())
 	}
 }
+
+// locatedHandler is a slog handler that says where its records land, the
+// way battery/log's default file sink does.
+type locatedHandler struct {
+	slog.Handler
+	where string
+}
+
+func (h locatedHandler) LogLocation() string { return h.where }
+
+// The error says where the stack went. battery/log writes it to a file
+// under the OS state dir, not to the terminal, so "its stack is logged"
+// sent a developer whose boot died looking at stderr for a record that
+// sat in ~/.local/state/<app>/server.log.
+func TestModulePanicNamesLogFile(t *testing.T) {
+	var buf bytes.Buffer
+	where := "/state/Shop/server.log"
+	app := NewApp(WithLogger(slog.New(locatedHandler{slog.NewTextHandler(&buf, nil), where})))
+	_ = app.Batteries.Register(&panicBattery{name: "panicky"})
+	err := app.Batteries.InitAll(app)
+	if err == nil {
+		t.Fatal("a panicking Init returned no error")
+	}
+	if !strings.Contains(err.Error(), where) {
+		t.Errorf("the error does not name the log file: %v", err)
+	}
+	if !strings.Contains(buf.String(), "panicBattery).Init") {
+		t.Errorf("the stack did not reach the logger:\n%s", buf.String())
+	}
+
+	plain := NewApp(WithLogger(slog.New(slog.NewTextHandler(&buf, nil))))
+	_ = plain.Batteries.Register(&panicBattery{name: "panicky"})
+	if err := plain.Batteries.InitAll(plain); err == nil || strings.Contains(err.Error(), " to ") {
+		t.Errorf("a logger with no location named one: %v", err)
+	}
+}
