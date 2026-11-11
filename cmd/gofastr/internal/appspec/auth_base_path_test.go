@@ -86,3 +86,23 @@ func TestBaseURLMustBeHTTPOrigin(t *testing.T) {
 		}
 	}
 }
+
+// admin.path is the admin battery's mount prefix, joined onto its routes
+// the way base_path is: "/" trimmed to an empty prefix panicked the
+// battery's Init and aborted the boot.
+func TestAdminPathMustBeClean(t *testing.T) {
+	for _, p := range []string{"", "/admin", "/back-office", "/ops/admin"} {
+		bp := AppSpec{}
+		bp.App.Admin.Path = p
+		if err := ValidateAppSpec(bp); err != nil && strings.Contains(err.Error(), "admin.path") {
+			t.Errorf("%q refused: %v", p, err)
+		}
+	}
+	for _, p := range []string{"/", "admin", "/admin/", "//evil.example", "/a//b", "/..", "/a b", "/a?x=1"} {
+		bp := AppSpec{}
+		bp.App.Admin.Path = p
+		if err := ValidateAppSpec(bp); err == nil || !strings.Contains(err.Error(), "admin.path") {
+			t.Errorf("%q accepted: %v", p, err)
+		}
+	}
+}

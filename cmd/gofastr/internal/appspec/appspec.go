@@ -2603,6 +2603,11 @@ func ValidateAppSpec(bp AppSpec) error {
 	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL); why != "" {
 		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
 	}
+	// The admin battery mounts every route under admin.path the same way:
+	// "/" trims to an empty prefix and panics its Init at boot.
+	if p := bp.App.Admin.Path; p != "" && !authBasePathRE.MatchString(p) {
+		errs.add(fmt.Errorf("app spec: app.admin.path %q must be an absolute path such as /admin: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash; / is refused because the back office needs a prefix of its own", p))
+	}
 	// The sitemap origin: the generated app's always-on strict mode
 	// panics at boot on a base_url it cannot use.
 	if why := baseURLProblem(bp.App.BaseURL); why != "" {

@@ -1688,7 +1688,7 @@ pack` drops the added screen, as it drops a synthesized create screen.
 app:
   admin:
     enabled: true
-    path: /admin                # default /admin
+    path: /admin                # default /admin; an absolute path, never /
     role: admin                 # required role (default "admin")
     login_path: /login          # unauthenticated GET → redirect here
     seed_email: admin@you.com   # bootstrap admin account (created if absent)
@@ -2030,6 +2030,9 @@ The generator rejects:
 - an `app.auth.base_path` that is not an absolute path with no trailing
   slash (`/auth/`, `auth`, `//host`, `/a//b` and `/..` are refused): the
   battery mounts its routes at it, and the generated forms post there
+- an `app.admin.path` that fails the same rule as `base_path`, `/`
+  included: the admin battery mounts every route under it, and `/`
+  leaves it no prefix
 - a `login_form`/`signup_form` `action:` that is not a safe link
   target (it must pass `urlsafe.Anchor`: http(s), relative, or
   fragment schemes only — the form posts its credentials there)
