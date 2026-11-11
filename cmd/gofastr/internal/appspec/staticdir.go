@@ -20,11 +20,13 @@ var generatedSourceDirs = []string{"cmd", "entities", "gen", "siteheader", "site
 //     built binary and the SQLite database beside them;
 //   - a directory the generator writes Go into serves that source;
 //   - the directory holding the configured SQLite file serves the live
-//     database, every row of it.
+//     database, every row of it;
+//   - with app.output_dir set, the generator owns that directory outright,
+//     so a dir at it, under it or above it serves the app's Go.
 //
 // An absolute dir other than "/" is the deployer's to place and is left
 // alone, as is a relative one outside the app (../shared/static).
-func staticDirProblem(dir, dbURL string) string {
+func staticDirProblem(dir, dbURL, outputDir string) string {
 	raw := strings.TrimSpace(dir)
 	if raw == "" {
 		return ""
@@ -35,6 +37,9 @@ func staticDirProblem(dir, dbURL string) string {
 	}
 	if path.IsAbs(p) || strings.HasPrefix(p, "../") {
 		return ""
+	}
+	if out := cleanRelDir(outputDir); out != "" && (p == out || strings.HasPrefix(p, out+"/") || strings.HasPrefix(out, p+"/")) {
+		return fmt.Sprintf("overlaps app.output_dir %s, where the generator writes the app's Go, so the app would serve its own source; use a directory of its own such as static", out)
 	}
 	first, _, _ := strings.Cut(p, "/")
 	for _, d := range generatedSourceDirs {
@@ -63,6 +68,20 @@ func sqliteFilePath(dsn string) string {
 	}
 	p := path.Clean(strings.ReplaceAll(s, `\`, "/"))
 	if path.IsAbs(p) || p == "." || strings.HasPrefix(p, "../") {
+		return ""
+	}
+	return p
+}
+
+// cleanRelDir is dir cleaned to a slash path relative to the project
+// root, or "" when it is empty, the root itself, absolute, or outside.
+func cleanRelDir(dir string) string {
+	raw := strings.TrimSpace(dir)
+	if raw == "" {
+		return ""
+	}
+	p := path.Clean(strings.ReplaceAll(raw, `\`, "/"))
+	if p == "." || path.IsAbs(p) || p == ".." || strings.HasPrefix(p, "../") {
 		return ""
 	}
 	return p

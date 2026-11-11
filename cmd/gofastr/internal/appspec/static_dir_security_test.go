@@ -59,3 +59,31 @@ func TestStaticDirRefusesProjectFiles(t *testing.T) {
 		}
 	}
 }
+
+// With app.output_dir the generator owns that directory outright (the
+// ecommerce layout, output_dir: app), so a static_dir at it, inside it
+// or above it served the generated main.go, entities/ and cmd/.
+func TestStaticDirRefusesOutputDir(t *testing.T) {
+	for _, c := range []struct {
+		dir, out string
+		refused  bool
+	}{
+		{"app", "app", true},
+		{"./app/", "app", true},
+		{"app/public", "app", true},
+		{"src", "src/app", true},
+		{"static", "app", false},
+		{"apps", "app", false},
+		{"app", "", false},
+		{"app", ".", false},
+	} {
+		bp := AppSpec{}
+		bp.App.StaticDir = c.dir
+		bp.App.OutputDir = c.out
+		err := ValidateAppSpec(bp)
+		got := err != nil && strings.Contains(err.Error(), "static_dir")
+		if got != c.refused {
+			t.Errorf("static_dir %q with output_dir %q: refused=%v, want %v (%v)", c.dir, c.out, got, c.refused, err)
+		}
+	}
+}

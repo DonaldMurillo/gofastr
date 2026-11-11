@@ -2600,7 +2600,7 @@ func ValidateAppSpec(bp AppSpec) error {
 	if p := bp.App.Auth.BasePath; p != "" && !authBasePathRE.MatchString(p) {
 		errs.add(fmt.Errorf("app spec: app.auth.base_path %q must be an absolute path such as /account: segments of letters, digits, '-', '_' and '.', none starting with a dot, and no trailing slash", p))
 	}
-	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL); why != "" {
+	if why := staticDirProblem(bp.App.StaticDir, bp.App.DBURL, bp.App.OutputDir); why != "" {
 		errs.add(fmt.Errorf("app spec: app.static_dir %q %s", bp.App.StaticDir, why))
 	}
 	// The admin battery mounts every route under admin.path the same way:
