@@ -31,17 +31,32 @@ func (a *App) apiNamespacePrefix() string {
 	return "/api"
 }
 
-// installAPIMissProblem404 wraps the router's NotFound fall-through (after
-// every mount installed its own handler) so a request under the API
-// namespace that matched no route answers application/problem+json instead
-// of the previous handler's HTML 404. Method mismatches on existing API
-// routes keep their 405 + Allow semantics; only genuine misses are claimed.
-func (a *App) installAPIMissProblem404() {
+// installAPIMissProblems wraps the router's NotFound and MethodNotAllowed
+// fall-throughs (after every mount installed its own handler) so a request
+// under the API namespace that matched no route, or matched one under
+// another method, answers application/problem+json instead of the previous
+// handler's HTML page. The UI host's 405 page also minted a guest session
+// for an API client; the problem document mints nothing. A 405 keeps the
+// Allow header the router set.
+func (a *App) installAPIMissProblems() {
 	prefix := a.apiNamespacePrefix()
+	inAPI := func(r *http.Request) bool {
+		p := r.URL.Path
+		return p == prefix || strings.HasPrefix(p, prefix+"/")
+	}
 	a.router.WrapNotFound(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if p := r.URL.Path; p == prefix || strings.HasPrefix(p, prefix+"/") {
+			if inAPI(r) {
 				writeProblemNotFound(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	})
+	a.router.WrapMethodNotAllowed(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if inAPI(r) {
+				writeProblemMethodNotAllowed(w, r)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -49,12 +64,29 @@ func (a *App) installAPIMissProblem404() {
 	})
 }
 
-// The problem document an unmatched API path answers with; the reason
-// member carries the detail's stable code.
+// The problem documents an API miss answers with; the reason member
+// carries the detail's stable code.
 var (
-	problemNotFound = i18n.Define("framework.api_not_found", "Not Found")
-	problemNoRoute  = i18n.Define("framework.api_no_route", "no route matched {{path}}")
+	problemNotFound         = i18n.Define("framework.api_not_found", "Not Found")
+	problemNoRoute          = i18n.Define("framework.api_no_route", "no route matched {{path}}")
+	problemMethodNotAllowed = i18n.Define("framework.api_method_title", "Method Not Allowed")
+	problemWrongMethod      = i18n.Define("framework.api_method_not_allowed", "{{path}} does not take {{method}}; the Allow header lists the methods it takes")
 )
+
+// writeProblemMethodNotAllowed answers a wrong method on an API route
+// with an RFC 9457 problem document. The Allow header is the router's.
+func writeProblemMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	ctx := r.Context()
+	json.NewEncoder(w).Encode(map[string]any{
+		"type":   "about:blank",
+		"title":  problemMethodNotAllowed.Text(ctx),
+		"status": http.StatusMethodNotAllowed,
+		"detail": problemWrongMethod.Text(ctx, map[string]any{"path": r.URL.Path, "method": r.Method}),
+		"reason": problemWrongMethod.Code(),
+	})
+}
 
 // writeProblemNotFound answers an unmatched API path with an RFC 9457
 // problem document. The request path appears only inside the JSON-encoded

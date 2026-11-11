@@ -363,7 +363,11 @@ marked no-store before any branch can return.
 > header. `Router.MethodNotAllowed` works just like `Router.NotFound`:
 > the middleware chain wraps the handler at request time, and the
 > router sets the RFC-compliant Allow header (filtered to exclude
-> gated methods) before dispatching.
+> gated methods) before dispatching. `Router.WrapMethodNotAllowed`
+> is the twin of `Router.WrapNotFound`: it wraps the handler already
+> set, so a wrapper can claim some wrong-method requests and pass the
+> rest on. The framework uses it to answer a problem document under
+> the API prefix.
 - **Posting a form to a screen's own path.** A screen answers GET and
   HEAD only. A POST, PUT, PATCH or DELETE to a screen path that no
   registered route takes answers **405** with `Allow: GET, HEAD` and the

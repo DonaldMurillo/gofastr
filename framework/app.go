@@ -4161,10 +4161,11 @@ func (a *App) finalizeRoutes() (hasAPI, hasLLMMD bool, err error) {
 
 	// Machine-readable misses in the API namespace (agent-readiness): a
 	// path under the configured APIPrefix (default /api) that no route
-	// owns must answer application/problem+json, not the UI host's HTML
-	// 404. Installed after every mount above so the wrapped fall-through
-	// is the final one. See api_miss.go.
-	a.installAPIMissProblem404()
+	// owns, or that a route owns under another method, must answer
+	// application/problem+json, not the UI host's HTML 404 or 405.
+	// Installed after every mount above so the wrapped fall-throughs are
+	// the final ones. See api_miss.go.
+	a.installAPIMissProblems()
 
 	// Auto-register a db readiness probe if a DB is configured. Plugins
 	// and batteries that implement ReadinessRegistrar were given a chance

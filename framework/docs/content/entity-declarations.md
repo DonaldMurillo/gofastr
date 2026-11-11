@@ -2482,7 +2482,11 @@ API gets a machine-readable answer. It stays a problem document, the
 standard format for a miss no route owns, and carries the same `reason`
 member the envelope does. The guarded namespace is
 `AppConfig.APIPrefix` (`WithAPIPrefix`), `/api` by default; misses outside
-it keep the host's normal 404 rendering.
+it keep the host's normal 404 rendering. A wrong method on a route in the
+same namespace (`PUT /api/posts`) answers `405` the same way: a problem
+document whose `reason` is `api_method_not_allowed`, with the router's
+`Allow` header, and no session cookie (the UI host's 405 page minted one).
+Outside the namespace the host's 405 page still answers.
 
 ### `json` fields round-trip
 
