@@ -41,8 +41,12 @@ curl 'http://localhost:8080/posts?cursor=<opaque>&direction=backward'
 
 ## Defaults & caps
 
-- `DefaultPageSize = 20` (the shared entity list default)
-- `MaxPageSize = 100` (`limit` is clamped silently)
+- The crud list routes (offset and cursor) default to 20 rows when no
+  `limit` is sent. `pagination.DefaultPageSize` is 25: it is the
+  default of the standalone parse helpers
+  (`pagination.ParsePagination`, `pagination.ParseCursorPagination`) a
+  handler of your own calls, not of the entity list routes.
+- `pagination.MaxPageSize = 100` (`limit` is clamped silently)
 - `Pagination.MaxListLimit` caps the cursor path too: a `limit` above
   the entity's cap is clamped to it, same as the offset and streaming
   list paths. (An oversized `limit` is clamped, never reset to the
