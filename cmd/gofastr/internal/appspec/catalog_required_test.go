@@ -84,6 +84,15 @@ screens:
         props:
           title: 2026
 `, "quote"},
+		{"page_header number title", `      - kind: page_header
+        props:
+          title: 2026
+`, "quote"},
+		{"page_header number eyebrow", `      - kind: page_header
+        props:
+          title: Plans
+          eyebrow: 3
+`, "quote"},
 		{"markdown no text", `      - kind: markdown
 `, "text"},
 	} {

@@ -23,8 +23,9 @@ import (
 //
 // A number or bool where the component takes text decodes as int64 or
 // bool, which the generator reads as "": refused with a hint to quote it.
-// A hero's optional text (eyebrow, title, subtitle and both CTA labels)
-// is checked the same way, since a dropped CTA label drops the CTA.
+// A hero's and a page_header's optional text (eyebrow, title, subtitle,
+// and a hero's CTA labels) is checked the same way, since a dropped CTA
+// label drops the CTA.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
 	text := func(key string) error {
 		if v, ok := block.Props[key]; ok && v != nil {
@@ -68,6 +69,12 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 			return err
 		}
 		return href("href")
+	case "page_header":
+		for _, key := range []string{"eyebrow", "title", "subtitle"} {
+			if err := text(key); err != nil {
+				return err
+			}
+		}
 	case "hero":
 		for _, key := range []string{"eyebrow", "title", "subtitle", "cta_text", "secondary_text"} {
 			if err := text(key); err != nil {
