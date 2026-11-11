@@ -756,6 +756,11 @@ reversing the emitted `framework/ui` grammar (`ui.Hero` → `hero`,
 also preserves the control catalog: custom forms and their text, number,
 toggle, select and radio controls; action buttons; static table columns
 and cells; ordered/unordered item lists; and labeled navigation links.
+Node blocks (a `type: section`, a heading, a div or any other tag the
+node renderer draws, with its `island:` or `widget:` wrapper) read back
+from their `uinode.Node` literal with the kind, props and children the
+generator wrote, and each `actions:` entry comes back from the screen's
+`component.On` registration.
 Control properties round-trip in canonical form, not their original
 spelling: action-button variants and types are case-insensitive and
 lowercased while parsing. Default `variant: primary`, `type: button`,

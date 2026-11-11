@@ -1927,10 +1927,14 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	}
 	helpers := packHelperReturns(helperFiles...)
 	// Render bodies need the helpers map; rescan now that helpers are known.
+	actions := map[string][]packScreenAction{}
 	for _, name := range screenNames {
 		file, _ := parseRoot(name)
 		if file == nil {
 			continue
+		}
+		for recv, acts := range packScreenActions(file) {
+			actions[recv] = acts
 		}
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
@@ -1947,6 +1951,7 @@ func packReadPerScreenFiles(dir string) ([]appspec.AppSpecScreen, error) {
 	var out []appspec.AppSpecScreen
 	for _, r := range orderedRegs {
 		body := bodies[r.reg.typeName]
+		packAttachActions(body, actions[r.reg.typeName])
 		if isSynthesizedBody(body) {
 			continue
 		}
@@ -2110,9 +2115,11 @@ func packReadLegacyScreens(dir string) ([]appspec.AppSpecScreen, error) {
 			bodies[recv] = reverseRenderBody(fn, helpers)
 		}
 	}
+	actions := packScreenActions(scrFile)
 	var out []appspec.AppSpecScreen
 	for _, r := range regs {
 		body := bodies[r.typeName]
+		packAttachActions(body, actions[r.typeName])
 		if isSynthesizedBody(body) {
 			continue
 		}
@@ -2390,6 +2397,9 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	if control, ok := reverseControlBlock(call, helpers); ok {
 		return control, true
 	}
+	if node, ok := reverseNodeBlock(call); ok {
+		return node, true
+	}
 	switch callSel(call) {
 	case "ui.Hero":
 		return reverseHero(call), true
@@ -2420,7 +2430,7 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 			}
 		}
 		return b, true
-	case "ui.BarChart", "ui.PieChart", "lineChart":
+	case "ui.BarChart", "ui.PieChart", "appUI.LineChart", "lineChart":
 		// Untitled chart (no wrapping ui.Card).
 		if b, ok := reverseChartCall(call); ok {
 			return b, true
@@ -3029,8 +3039,10 @@ func reverseChartCall(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 			p["source"] = chartSource(dataCall)
 		}
 		return appspec.AppSpecBlock{Kind: kind, Props: p}, true
-	case "lineChart":
-		// lineChart(ctx, entity, group_by)
+	case "appUI.LineChart", "lineChart":
+		// appUI.LineChart(ctx, entity, group_by), the spelling the
+		// generator emits; lineChart(ctx, entity, group_by) is the app-local
+		// helper older apps carry.
 		return appspec.AppSpecBlock{Kind: "line_chart", Props: map[string]any{"source": chartSource(call)}}, true
 	}
 	return appspec.AppSpecBlock{}, false
