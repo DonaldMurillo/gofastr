@@ -276,9 +276,12 @@ keeps the UI unchanged; without a callback the default stays
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
-  takes; the form then posts multipart (the runtime does so for any
-  form with a file input), and an empty input keeps the stored file. Without storage the stored URL stays an editable text
-  box. A stored key draws at `Extensions.FilesURL` + key (each segment
+  takes, and an empty input keeps the stored file. Without storage the
+  stored URL stays an editable text box. Every record form says
+  `enctype="multipart/form-data"`: the CRUD route reads JSON or
+  multipart and refuses urlencoded, so a browser without the runtime
+  still submits a body the route reads (behind its cross-site guard),
+  and the runtime sends the same form as FormData. A stored key draws at `Extensions.FilesURL` + key (each segment
   escaped; a key with `..` or a scheme other than http(s) draws
   nothing).
 - **A create screen** (`appUI.Create("invoices")`): the same form,

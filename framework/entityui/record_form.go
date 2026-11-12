@@ -242,12 +242,18 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 		OnSuccess(interactive.Navigate(dest)).
 		Attrs()
 	// The header's Save submits it (saveButton): the form draws none.
+	// Multipart: the CRUD route reads JSON or multipart and refuses the
+	// urlencoded body a browser without the runtime would send, so the
+	// form asks for the one the route reads natively (behind its
+	// cross-site guard). The runtime sends FormData for it, as it does
+	// for any form with a file input.
 	forms := []render.HTML{ui.Form(ui.FormConfig{
 		Action:           action,
 		Method:           "POST",
 		ID:               recordFormID(m),
 		Ctx:              ctx,
 		HideSubmit:       true,
+		Multipart:        true,
 		Wide:             len(side) > 0,
 		ExtraAttrs:       attrs,
 		LeaveGuard:       i18nui.EntityLeaveGuard.Text(ctx),
@@ -264,6 +270,7 @@ func (b *RecordBuilder) drawForm(ctx context.Context, m *meta, raw, hooked map[s
 			ID:         fb.replaceFormID(name),
 			Ctx:        ctx,
 			HideSubmit: true,
+			Multipart:  true,
 			ExtraAttrs: interactive.Put(action).
 				OnSuccessToast(i18nui.EntitySaved.Text(ctx)).
 				OnSuccess(interactive.Navigate(dest)).

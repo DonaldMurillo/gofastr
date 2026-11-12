@@ -92,6 +92,13 @@ type FormConfig struct {
 	// form that validates on the server and reports through Errors.
 	NoValidate bool
 
+	// Multipart sets enctype="multipart/form-data": a file upload needs
+	// it, and so does a form that posts to a route reading JSON or
+	// multipart only (the CRUD routes refuse urlencoded bodies), so a
+	// browser without the runtime submits a body the route reads. The
+	// runtime then sends the form as FormData instead of JSON.
+	Multipart bool
+
 	// Ctx, when non-nil, lets Form auto-stamp the hidden CSRF input
 	// (the framework's "_csrf" field) on unsafe-method submits. It
 	// reads middleware.TokenFromContext(Ctx), i.e. the token the CSRF
@@ -220,6 +227,7 @@ func Form(cfg FormConfig, fields ...render.HTML) render.HTML {
 		Errors:           errorsHTML,
 		Actions:          actions,
 		NoValidate:       cfg.NoValidate,
+		Multipart:        cfg.Multipart,
 		LeaveGuard:       cfg.LeaveGuard,
 		LeaveGuardTitle:  cfg.LeaveGuardTitle,
 		LeaveGuardAccept: cfg.LeaveGuardAccept,
