@@ -19,8 +19,10 @@
 //   - Horizontal rules (---, ***, ___)
 //   - GFM-style tables (| col | col |; \| is a literal pipe in a cell)
 //   - YAML-ish frontmatter (--- key: value --- at the top of the document;
-//     a block holding a line that is neither a pair nor a # comment is
-//     body, a thematic break and its text)
+//     an indented or `- item` line after a key continues that key and is
+//     skipped, so the key reads as empty; a block holding any other line
+//     that is neither a pair nor a # comment is body, a thematic break
+//     and its text)
 //
 // Supported inline elements:
 //   - Bold (**…** or __…__)

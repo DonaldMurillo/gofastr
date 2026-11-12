@@ -1572,7 +1572,10 @@ few lines, and link the PR or the docs page for the rest.
   spaces at its ends, and a code block inside a paragraph that also
   holds an entity stays a code block.
 - **Markdown:** a leading `---` with prose under it is body, not
-  frontmatter, and a ten-digit ordinal is paragraph text, not a list.
+  frontmatter, and so is a block holding any line that is not a
+  `key: value` pair with a key, a `#` comment or an indented or `- item`
+  continuation ([core packages](framework/docs/content/core-packages.md)).
+  A ten-digit ordinal is paragraph text, not a list.
 - **A long Postgres isolation database name is cut on a rune boundary**,
   and an isolation id longer than 63 bytes no longer panics: its suffix
   becomes a hash of the id. A shorter id keeps its database name.

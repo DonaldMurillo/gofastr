@@ -17,8 +17,8 @@ import (
 // continuation, so the key reads as empty.
 //
 // A closed leading `---` pair is frontmatter only when every non-blank
-// line between the two is a `key: value` pair, a `#` comment or such a
-// continuation. A document that opens with a thematic break, then prose,
+// line between the two is a `key: value` pair with a non-blank key, a `#`
+// comment or such a continuation. A document that opens with a thematic break, then prose,
 // then another `---` is body: reading it as frontmatter dropped the prose
 // without a word.
 func splitFrontmatter(input string) (map[string]string, string) {
@@ -45,7 +45,9 @@ func splitFrontmatter(input string) (map[string]string, string) {
 		if sawKey && isFrontmatterContinuation(line) {
 			continue
 		}
-		if strings.Index(line, ":") <= 0 {
+		// A pair needs a key: ` : x` has none, and reading the block as
+		// frontmatter would drop that line and the text with it.
+		if k, _, ok := strings.Cut(line, ":"); !ok || strings.TrimSpace(k) == "" {
 			return nil, input
 		}
 		sawKey = true

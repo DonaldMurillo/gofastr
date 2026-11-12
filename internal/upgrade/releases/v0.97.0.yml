@@ -344,3 +344,6 @@ notes:
     breaking: true
     guidance: "A client that read a 403 from these routes as \"sign in\" now gets 401; read reason and code from the CRUD envelope, as for the list route. A handler of your own that serves rows outside the CRUD routes can refuse the same way with CrudHandler.RequireRead(w, r)."
     nodetect: "a status a client reads; no host source spelling shows it"
+  - change: "core/markdown: a leading --- block holding a line that is not a key: value pair, a # comment or a continuation of the key above it (an indented or - item line) is no longer frontmatter; the block renders as body, a thematic break and its text. v0.96.0 skipped such a line and read the other keys"
+    guidance: "Fix the stray line into a key: value pair, comment it out with #, or indent it under the key it belongs to, and the block reads as frontmatter again. A page whose title went missing and whose YAML shows as text is the sign. The change keeps prose between two leading --- rules on the page, where v0.96.0 dropped it as frontmatter."
+    nodetect: "the content of markdown files and strings decides it; no Go source spelling shows a stray frontmatter line"

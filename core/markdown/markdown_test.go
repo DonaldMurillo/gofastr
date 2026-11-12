@@ -291,3 +291,17 @@ func TestTenDigitOrdinalIsNotAList(t *testing.T) {
 		t.Errorf("a 10-digit line joined the list as an item: %q", got)
 	}
 }
+
+// A line whose key is blank (` : x`) is no pair: the parser dropped it
+// and the block, read as frontmatter, swallowed the text under it.
+func TestFrontmatterBlankKeyIsBody(t *testing.T) {
+	for _, in := range []string{"---\n : kept text\n---\nbody\n", "---\n# note\n\t: kept text\n---\nbody\n"} {
+		doc := Render(in)
+		if len(doc.Frontmatter) != 0 {
+			t.Errorf("%q: a blank-key block parsed as frontmatter: %#v", in, doc.Frontmatter)
+		}
+		if got := string(doc.HTML); !strings.Contains(got, "kept text") || !strings.Contains(got, "body") {
+			t.Errorf("%q: a blank-key block dropped its text: %q", in, got)
+		}
+	}
+}
