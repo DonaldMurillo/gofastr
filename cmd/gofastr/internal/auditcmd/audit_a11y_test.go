@@ -45,3 +45,22 @@ func TestParseA11yCredentials(t *testing.T) {
 		t.Fatalf("credentials not parsed: %+v", opts)
 	}
 }
+
+// TestA11yValueFlagRefusesNextFlag: `--pages --url X` took "--url" as
+// the pages list and audited a directory named after the URL.
+func TestA11yValueFlagRefusesNextFlag(t *testing.T) {
+	for _, args := range [][]string{
+		{"--pages", "--url", "http://127.0.0.1:1/x"},
+		{"--url", "--pages=/a"},
+		{"--email", "--password", "-"},
+		{"--url"},
+	} {
+		opts := parseA11yArgs(args)
+		if opts.missingValue != args[0] {
+			t.Errorf("%q: missingValue = %q, want %q", args, opts.missingValue, args[0])
+		}
+	}
+	if opts := parseA11yArgs([]string{"--email", "a@b.c", "--password", "-"}); opts.missingValue != "" || opts.email != "a@b.c" {
+		t.Errorf("a lone - is a value: %+v", opts)
+	}
+}

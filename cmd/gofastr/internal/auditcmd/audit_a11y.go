@@ -44,6 +44,10 @@ func runAuditA11y(args []string) {
 		cli.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", opts.badFlag)
 		cli.OsExit(2)
 	}
+	if opts.missingValue != "" {
+		cli.Fprintf(os.Stderr, "audit a11y: %v\n", cli.NeedsValue(opts.missingValue))
+		cli.OsExit(2)
+	}
 	if (opts.email == "") != (opts.password == "") {
 		fmt.Fprintln(os.Stderr, "audit a11y: --email and --password must be provided together")
 		cli.OsExit(2)
@@ -90,13 +94,22 @@ type a11yArgs struct {
 	pages                          []string
 	help                           bool
 	badFlag                        string
+	// missingValue is the first valued flag given no value, or given the
+	// next flag where its value belongs.
+	missingValue string
 }
 
 func parseA11yArgs(args []string) a11yArgs {
 	out := a11yArgs{root: "."}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if (arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password") && i+1 < len(args) {
+		if arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password" {
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				if out.missingValue == "" {
+					out.missingValue = arg
+				}
+				continue
+			}
 			arg = arg + "=" + args[i+1]
 			i++
 		}

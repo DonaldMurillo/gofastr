@@ -295,6 +295,9 @@ type upgradeOpts struct {
 	to             string
 	apply          bool
 	allowDowngrade bool
+	// missingValue is the first of --from/--to given no value, or given
+	// the next flag where its value belongs.
+	missingValue string
 }
 
 // runStep runs one --apply step; a var so tests can stub the exec while
@@ -314,7 +317,13 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 	opts := upgradeOpts{root: "."}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if (arg == "--to" || arg == "--from") && i+1 < len(args) {
+		if arg == "--to" || arg == "--from" {
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				if opts.missingValue == "" {
+					opts.missingValue = arg
+				}
+				continue
+			}
 			arg += "=" + args[i+1]
 			i++
 		}
@@ -366,6 +375,10 @@ func RunUpgrade(args []string) {
 	}
 	if bad != "" {
 		cli.Fprintf(os.Stderr, "upgrade: unknown flag %s\n", bad)
+		cli.OsExit(2)
+	}
+	if opts.missingValue != "" {
+		cli.Fprintf(os.Stderr, "upgrade: %v\n", cli.NeedsValue(opts.missingValue))
 		cli.OsExit(2)
 	}
 

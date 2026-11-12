@@ -390,3 +390,14 @@ func TestUpgradeReportScrubsHitText(t *testing.T) {
 		t.Errorf("scrubbed hit text missing, got:\n%s", report)
 	}
 }
+
+// TestUpgradeValueFlagRefusesNextFlag: `--to --apply` took "--apply" as
+// the target version and dropped the apply.
+func TestUpgradeValueFlagRefusesNextFlag(t *testing.T) {
+	for _, args := range [][]string{{"--to", "--apply"}, {"--from", "--to=v1.0.0"}, {"--to"}} {
+		opts, _ := parseUpgradeArgs(args)
+		if opts.missingValue != args[0] {
+			t.Errorf("%q: missingValue = %q, want %q", args, opts.missingValue, args[0])
+		}
+	}
+}
