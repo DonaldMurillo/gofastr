@@ -332,3 +332,7 @@ notes:
     breaking: true
     guidance: "Percent-encode the export URL's values (send ';' as %3B). The bulk bar's Export link is always encoded."
     nodetect: "a URL a client builds; no host source spelling shows it"
+  - change: "BREAKING - a CRUD list or read-one that repeats the include key (?include=author&include=comments) answers 400 include_repeated, where it loaded the first value and ignored the rest unvalidated"
+    breaking: true
+    guidance: "Name every path in one include value, comma-separated: ?include=author,comments."
+    nodetect: "a query parameter a client sends; no host source spelling shows it"

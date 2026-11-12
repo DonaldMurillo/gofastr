@@ -244,6 +244,10 @@ beside the message, which is in the request's locale (see
 - `include exceeds the maximum number of related rows`
   (`include_budget`): the assembled response would carry more than
   20,000 related-row references.
+- `include is sent N times; send it once with comma-separated paths`
+  (`include_repeated`): the query repeated the `include` key
+  (`?include=author&include=comments`); name every path in one value,
+  `?include=author,comments`.
 - `too many include paths: N (max 32)` (`include_too_many_paths`): the
   request named more comma-separated include paths than one response
   may eager-load.
