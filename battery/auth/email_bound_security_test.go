@@ -54,7 +54,10 @@ func TestEmailLengthCap_EmailEndpoints(t *testing.T) {
 	// Boundary: exactly maxEmailLen is the RFC 5321 ceiling and must
 	// still be processed — the demanded control is the length bound, not
 	// blanket rejection.
-	body, _ = json.Marshal(map[string]string{"email": strings.Repeat("b", maxEmailLen)})
+	// The address is shaped local@domain so the default canonicalizer's
+	// address check passes and only the length is under test.
+	atLimit := strings.Repeat("b", maxEmailLen-len("@x.io")) + "@x.io"
+	body, _ = json.Marshal(map[string]string{"email": atLimit})
 	req = httptest.NewRequest(http.MethodPost, "/auth/magic-link/send", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()

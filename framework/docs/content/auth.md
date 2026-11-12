@@ -1026,6 +1026,22 @@ of `AuthConfig.CanonicalizeEmail`; an override cannot silently repair or
 introduce unstorable bytes. Other override errors retain the composed-email
 fallback, unless the error carries its own localized phrase.
 
+**Address shape**: after folding, the default refuses a value that is
+not one `local@domain` pair (exactly one `@`, text on both sides, no
+white space) with 400 `invalid_email`. Registration, login, magic links,
+password reset and OAuth all go through it, so `notanemail` can no longer
+become an account nobody can mail. It is a shape check, not RFC 5322
+parsing. A host that keys accounts on something else (bare operator
+names, quoted local parts) installs `AuthConfig.CanonicalizeEmail`,
+which replaces the default and its shape check. An existing row without
+an `@` stops matching at login and password change once you upgrade;
+find them first:
+
+```sql
+SELECT id, email FROM auth_users
+WHERE email NOT LIKE '%_@_%' OR email LIKE '%@%@%';
+```
+
 **Invisible characters**: NFC cannot fold zero-width and bidi codepoints,
 so `ow\u200Bner@example.com` (zero-width space), a trailing BOM, or a
 right-to-left override inside the local part would otherwise register as

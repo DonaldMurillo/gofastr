@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"unicode"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -177,6 +178,12 @@ var ErrEmailNotComposed = errors.New("auth: email address is not in composed Uni
 // golang.org/x/text/unicode/norm is a Go-team module already in the
 // dependency graph.
 //
+// The default then refuses a non-empty result that is not one
+// local@domain pair (exactly one "@", text on both sides, no white
+// space) with invalid_email, so "notanemail" never becomes an account.
+// An empty input stays empty: the handlers answer that with their own
+// "credentials required" reason.
+//
 // Deployments with other rules (a provider that treats dots or plus
 // tags as insignificant, a legacy store keyed on the raw bytes) install
 // AuthConfig.CanonicalizeEmail; it replaces this default at every
@@ -205,7 +212,24 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		}
 		return canonical, nil
 	}
-	return norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email)))), nil
+	canonical := norm.NFC.String(strings.ToLower(strings.TrimSpace(stripInvisibleEmailRunes(email))))
+	if canonical != "" && !addressShaped(canonical) {
+		return "", i18n.NewError(reasonInvalidEmail)
+	}
+	return canonical, nil
+}
+
+// addressShaped reports whether email is one local@domain pair: exactly
+// one "@", text on both sides, no white space. The default canonicalizer
+// refuses anything else, so "notanemail" never becomes an account key
+// nobody can mail. It is a shape check, not RFC 5322 parsing; a host with
+// other rules (bare operator names, quoted local parts) installs
+// AuthConfig.CanonicalizeEmail, which replaces it.
+func addressShaped(email string) bool {
+	local, domain, ok := strings.Cut(email, "@")
+	return ok && local != "" && domain != "" &&
+		!strings.Contains(domain, "@") &&
+		!strings.ContainsFunc(email, unicode.IsSpace)
 }
 
 // stripInvisibleEmailRunes removes the zero-width/bidi set and the C1
