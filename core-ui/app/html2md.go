@@ -70,8 +70,10 @@ var (
 	reFenceSlot = regexp.MustCompile(slotOpen + "f([0-9]+)" + slotClose)
 	// reTagStart matches a '<' that begins something tag-shaped, so a
 	// decoded entity (&lt;script&gt;) can be re-neutralized without
-	// touching comparison operators ("1 < 2").
-	reTagStart = regexp.MustCompile(`<([a-zA-Z!/])`)
+	// touching comparison operators ("1 < 2"). A '<' right before a
+	// parked slot counts too: the tag strip would read it, the slot and
+	// the text up to the next '>' as one tag.
+	reTagStart = regexp.MustCompile(`<([a-zA-Z!/` + slotOpen + `])`)
 
 	// textWS flattens line breaks and tabs to single spaces: HTML
 	// renders them that way, and a flattened value cannot start a

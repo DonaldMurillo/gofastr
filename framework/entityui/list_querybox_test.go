@@ -246,3 +246,26 @@ func TestUndecodablePairWarnsItsOwnList(t *testing.T) {
 		t.Errorf("a key that does not decode drew no warning")
 	}
 }
+
+// A dropped sort, page, layout or column pair changes how the rows look,
+// not which rows show, so it draws no warning; neither does ?q= on an
+// entity with no search fields, which the list ignores either way.
+func TestUndecodableLookParamNoWarning(t *testing.T) {
+	noSearch := ordersConfig()
+	noSearch.SearchFields = nil
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig(), "plain": noSearch},
+		map[string][]map[string]any{"orders": ordersRows(), "plain": ordersRows()},
+	)
+	for _, q := range []string{"?sort=%ZZ", "?page=%ZZ", "?as=%ZZ", "?cols=a;b", "?per=%"} {
+		if strings.Contains(listHTML(t, x.ui.List("orders"), x.ctx("/orders", q)), "Filter not applied") {
+			t.Errorf("%s: warned for a pair that does not narrow the list", q)
+		}
+	}
+	if strings.Contains(listHTML(t, x.ui.List("plain"), x.ctx("/plain", "?q=%ZZ")), "Filter not applied") {
+		t.Error("?q= on an entity with no search fields drew the warning")
+	}
+	if !strings.Contains(listHTML(t, x.ui.List("orders"), x.ctx("/orders", "?saved=%ZZ")), "Filter not applied") {
+		t.Error("a dropped saved view widens the list and drew no warning")
+	}
+}

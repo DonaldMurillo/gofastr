@@ -43,6 +43,9 @@ func TestHTML2MD_FenceSlotBesideEntity(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"<p>a &amp; b<pre>x\ny</pre>c</p>", "a & b\n````\nx\ny\n````\nc"},
 		{"<p>a &amp; b</p><pre>x\ny</pre>c &amp; d", "a & b\n\n````\nx\ny\n````\nc & d"},
+		// A decoded '<' right before the slot: the tag strip must not read
+		// "<" + slot + text up to the next '>' as one tag.
+		{"<p>a &lt;<pre>x\ny</pre>c &gt; d</p>", "a &lt;\n````\nx\ny\n````\nc > d"},
 	} {
 		if got := htmlToMarkdown(tc.in); got != tc.want {
 			t.Errorf("got  %q\nwant %q", got, tc.want)
