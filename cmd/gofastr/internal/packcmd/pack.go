@@ -2619,13 +2619,18 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.Cluster":
 		return reverseLayoutBlock("cluster", call, helpers), true
 	case "ui.Grid":
-		// A grid of pricing cards is a `pricing` block; a grid of stat cards
-		// is a stat_row. Every other grid preserves the explicit layout block.
+		// A grid of pricing cards is a `pricing` block. stat_row is the
+		// one grid the generator emits with no Gap (Min "12rem", whatever
+		// its children); grid and stat_grid always carry Min and Gap, and
+		// one holding only stat cards reads back as a stat_grid with its
+		// layout. Every other grid preserves the explicit layout block.
 		if len(call.Args) > 1 {
 			if first, ok := call.Args[1].(*ast.CallExpr); ok && callSel(first) == "ui.PricingCard" {
 				return reversePricing(call), true
 			}
 		}
+		cfg := cfgOf(call, 0)
+		_, hasGap := cfg["Gap"]
 		allStats := len(call.Args) > 1
 		for _, arg := range call.Args[1:] {
 			child, ok := arg.(*ast.CallExpr)
@@ -2634,10 +2639,13 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 				break
 			}
 		}
-		if allStats {
+		if !hasGap && (allStats || appspec.AstString(cfg["Min"]) == "12rem") {
 			b := reverseLayoutBlock("stat_row", call, helpers)
 			b.Props = nil
 			return b, true
+		}
+		if allStats {
+			return reverseLayoutBlock("stat_grid", call, helpers), true
 		}
 		return reverseLayoutBlock("grid", call, helpers), true
 	case "ui.StatCard":
@@ -2754,6 +2762,11 @@ func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.
 	cfg := cfgOf(call, 0)
 	if kind == "grid" {
 		putStr(b.Props, "min", appspec.AstString(cfg["Min"]))
+	}
+	if min := appspec.AstString(cfg["Min"]); kind == "stat_grid" && min != "12rem" {
+		// "12rem" is stat_grid's default minimum, which the generator
+		// writes out when the block set none.
+		putStr(b.Props, "min", min)
 	}
 	if gap := reverseGap(appspec.AstSelName(cfg["Gap"])); gap != "" && gap != "md" {
 		b.Props["gap"] = gap
@@ -3087,6 +3100,10 @@ func reverseStatCard(call *ast.CallExpr) appspec.AppSpecBlock {
 			p["source"] = src
 			putStr(p, "format", appspec.AstString(vc.Args[5]))
 		}
+	}
+	if _, sourced := p["source"]; !sourced {
+		// A static card: the generator writes props.value as a literal.
+		putStr(p, "value", appspec.AstString(c["Value"]))
 	}
 	return appspec.AppSpecBlock{Kind: "stat_card", Props: p}
 }

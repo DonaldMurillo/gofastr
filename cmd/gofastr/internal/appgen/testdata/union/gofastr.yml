@@ -735,6 +735,17 @@ screens:
                 entity: invoices
                 agg: count
                 filter: 'created_at >= "2026-01-01T00:00:00Z"'
+      # stat_grid keeps its min and gap through pack; a static card keeps
+      # its value.
+      - kind: stat_grid
+        props:
+          min: 14rem
+          gap: lg
+        children:
+          - kind: stat_card
+            props:
+              label: Uptime
+              value: "99.9%"
       - kind: bar_chart
         props:
           title: Invoices by status
