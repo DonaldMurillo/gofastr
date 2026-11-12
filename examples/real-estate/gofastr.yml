@@ -345,6 +345,31 @@ entities:
         name: property
         entity: properties
         foreign_key: property_id
+    # status is the staff workflow, not a visitor's to set: a create starts
+    # at requested (a visitor cannot book a tour that is already
+    # confirmed), and staff holding tours:write move it from there.
+    states:
+      field: status
+      initial: [requested]
+      transitions:
+        - key: confirm
+          label: Confirm
+          from: [requested]
+          to: confirmed
+          variant: primary
+        - key: complete
+          label: Mark completed
+          from: [confirmed]
+          to: completed
+        - key: no_show
+          label: Mark no-show
+          from: [confirmed]
+          to: no_show
+        - key: cancel
+          label: Cancel
+          from: [requested, confirmed]
+          to: cancelled
+          variant: danger
 
   - name: inquiries
     crud: true
@@ -391,6 +416,35 @@ entities:
         name: property
         entity: properties
         foreign_key: property_id
+    # The lead pipeline is staff's: a visitor's inquiry starts new, and
+    # staff holding inquiries:write move it through the steps below.
+    states:
+      field: status
+      initial: [new]
+      transitions:
+        - key: contact
+          label: Mark contacted
+          from: [new]
+          to: contacted
+          variant: primary
+        - key: qualify
+          label: Qualify
+          from: [contacted]
+          to: qualified
+        - key: convert
+          label: Convert
+          from: [qualified]
+          to: converted
+          variant: primary
+        - key: lose
+          label: Mark lost
+          from: [new, contacted, qualified]
+          to: lost
+          variant: danger
+        - key: reopen
+          label: Reopen
+          from: [lost]
+          to: contacted
 
 nav:
   - label: Home
