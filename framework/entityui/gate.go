@@ -2,6 +2,7 @@ package entityui
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -19,6 +20,17 @@ import (
 // tenant scope, the default-posture sign-in requirement, and RBAC.
 func canRead(ctx context.Context, ch *crud.CrudHandler) bool {
 	return ch != nil && ch.CanReadScoped(ctx)
+}
+
+// requireRead is canRead at an HTTP surface: a refused caller gets the
+// answer the entity's list route gives (crud.CrudHandler.RequireRead),
+// the same status and envelope, the missing permission named.
+func requireRead(w http.ResponseWriter, r *http.Request, ctx context.Context, m *meta) bool {
+	if m.ch == nil {
+		writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		return false
+	}
+	return m.ch.RequireRead(w, r.WithContext(ctx))
 }
 
 // canReadRelated is canRead for an entity reached through a relation:

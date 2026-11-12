@@ -476,6 +476,27 @@ func (ch *CrudHandler) sessionGated() bool {
 	return cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public
 }
 
+// RequireRead runs the collection read gates the entity's list route runs
+// (owner, tenant, the baseline session, RBAC asked about no one record)
+// and, when one refuses, writes the answer that route writes: the same
+// status and the same envelope, a missing permission named. ok=true means
+// the caller may read; it answers what CanReadScoped answers. A surface
+// that serves the entity's rows outside its CRUD routes (entityui's CSV
+// export, bulk bar, trash and saved views) gates on it so one refusal
+// reads the same on every sibling.
+func (ch *CrudHandler) RequireRead(w http.ResponseWriter, r *http.Request) bool {
+	if _, ok := ch.RequireOwner(w, r); !ok {
+		return false
+	}
+	if !ch.RequireTenant(w, r) {
+		return false
+	}
+	if !ch.requireAuthenticated(w, r, opRead) {
+		return false
+	}
+	return ch.requirePermission(w, r, opRead, "")
+}
+
 // requireScope runs every secure-by-default access gate for an HTTP request in
 // one place: owner (OwnerField entities), tenant (MultiTenant entities), the
 // baseline session requirement (requireAuthenticated), and RBAC

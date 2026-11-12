@@ -49,8 +49,9 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		// The list route's own gate and refusal, so a refused export
+		// answers what GET <api>/<entity> answers for the same caller.
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
 		// Strictly: URL.Query drops a pair that does not decode, so

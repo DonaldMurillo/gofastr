@@ -489,6 +489,19 @@ applies to any entity declaring no `OwnerField`, no `Access`, and no `Public`;
 owner scoping (`Scope.OwnerField`); tenant scoping; and finally RBAC
 (`Exposure.Access`).
 
+An HTTP handler that serves the entity's rows outside its CRUD routes calls
+`CrudHandler.RequireRead(w, r)` instead. It asks the same question and, when the
+answer is no, writes what `GET /api/<entity>` writes for that caller: the same
+status (401 for a missing session or tenant, 403 for a missing permission) and
+the same envelope, the missing permission named. EntityUI's `_export.csv`,
+`_bulk`, trash and saved-view routes refuse this way.
+
+```go
+if !crudHandler.RequireRead(w, r) {
+    return // the list route's refusal is already written
+}
+```
+
 `CanRead(ctx)` answers only the RBAC question. That is not the whole posture:
 an entity in the default secure-by-default shape declares no `Access` at all, so
 `CanRead` returns true for an anonymous caller while `GET /api/<entity>` answers

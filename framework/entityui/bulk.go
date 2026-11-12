@@ -657,8 +657,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
 		offered := u.bulkActions
