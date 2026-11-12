@@ -9,9 +9,10 @@ import (
 // empty required field, so a block missing it passed validate and 500'd
 // its whole screen. stat_card's label was the reported one (spelled
 // text:, the entity_list key, it was dropped); a static card's value, a
-// link_button's label and href, a hero CTA's href and a markdown block's
-// text panic the same way. A number where the component takes text
-// decoded as int64, read as "" and panicked too.
+// link_button's label and href, a hero CTA's href, a markdown block's
+// text, a callout with neither title nor text and a pricing plan's CTA
+// with no safe cta_href panic the same way. A number where the component
+// takes text decoded as int64, read as "" and panicked too.
 func TestCatalogBlockNeedsRequiredProps(t *testing.T) {
 	const head = `
 app:
@@ -103,6 +104,37 @@ screens:
 `, "quote"},
 		{"markdown no text", `      - kind: markdown
 `, "text"},
+		{"callout empty", `      - kind: callout
+`, "callout block needs"},
+		{"callout blank", `      - kind: callout
+        text: "  "
+        props:
+          title: " "
+`, "callout block needs"},
+		{"callout number title", `      - kind: callout
+        props:
+          title: 404
+`, "quote"},
+		{"pricing cta no href", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+`, "cta_href is required"},
+		{"pricing bad href", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_href: "javascript:alert(1)"
+`, "not a safe link"},
+		{"pricing number price", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: 9
+`, "quote"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := r5YAMLAppSpec(t, head+tc.block)
@@ -140,6 +172,23 @@ screens:
 `,
 		`      - kind: markdown
         text: "# Hi"
+`,
+		`      - kind: callout
+        props:
+          title: Heads up
+`,
+		`      - kind: callout
+        text: Backups run nightly.
+`,
+		`      - kind: pricing
+        props:
+          plans:
+            - name: Free
+              price: "$0"
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+              cta_href: /buy
 `,
 	} {
 		if err := r5YAMLAppSpec(t, head+ok); err != nil {

@@ -1234,7 +1234,11 @@ variant with a `12rem` default minimum. Spacing must use the shared
 column on marketing pages. **Pricing**: a `pricing` block takes
 `props: {plans: [{name, price, period, description, features: […], cta_text,
 cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
-highlighted), so a pricing page reads like marketing, not an admin grid.
+highlighted), so a pricing page reads like marketing, not an admin grid. A
+plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
+or a fragment), and a numeric `price` is quoted (`price: "29"`); validation
+refuses either. A `callout` takes `props.title` and `text:` as its body and
+needs at least one of them.
 
 **Controls, tables and lists:** these kinds carry a form that is not bound
 to an entity (for that, use `entity_form`). Validation rejects a block

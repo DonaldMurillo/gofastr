@@ -21,6 +21,11 @@ import (
 //     cta_text needs cta_href and secondary_text needs secondary_href.
 //   - page_header: headless.PageHeader requires Title.
 //   - markdown: ui.Markdown requires Source, the block's text:.
+//   - callout: headless.Alert requires a Title or a body; ui.Callout
+//     gets props.title and the block's text: as its body, so one of
+//     the two must say something.
+//   - pricing: each plan's CTA is a ui.LinkButton, drawn when cta_text
+//     or cta_href is set, so it needs a safe cta_href.
 //
 // A number or bool where the component takes text decodes as int64 or
 // bool, which the generator reads as "": refused with a hint to quote it.
@@ -90,6 +95,36 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 				if err := href(cta[1]); err != nil {
 					return err
 				}
+			}
+		}
+	case "callout":
+		if err := text("title"); err != nil {
+			return err
+		}
+		if s, _ := block.Props["title"].(string); strings.TrimSpace(s) == "" && strings.TrimSpace(block.Text) == "" {
+			return fmt.Errorf("app spec: screen %q callout block needs props.title or text: headless.Alert refuses to render a callout that says nothing", screenName)
+		}
+	case "pricing":
+		plans, _ := block.Props["plans"].([]any)
+		for i, p := range plans {
+			plan, _ := p.(map[string]any)
+			for _, key := range []string{"name", "price", "period", "description", "cta_text"} {
+				if v, ok := plan[key]; ok && v != nil {
+					if _, isText := v.(string); !isText {
+						return fmt.Errorf("app spec: screen %q pricing block plan %d %s must be text; quote %v", screenName, i+1, key, v)
+					}
+				}
+			}
+			label, _ := plan["cta_text"].(string)
+			h, _ := plan["cta_href"].(string)
+			if label == "" && h == "" {
+				continue
+			}
+			if strings.TrimSpace(h) == "" {
+				return fmt.Errorf("app spec: screen %q pricing block plan %d cta_href is required with cta_text: the component refuses to render without it", screenName, i+1)
+			}
+			if !urlsafe.OK(h, urlsafe.Anchor) {
+				return fmt.Errorf("app spec: screen %q pricing block plan %d cta_href %q is not a safe link: use an http(s), mailto, fragment or root-relative URL", screenName, i+1, h)
 			}
 		}
 	case "markdown":
