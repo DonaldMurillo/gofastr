@@ -23,21 +23,6 @@ import (
 // gate admits passes with nothing written. Each case is built so that one
 // gate alone refuses it: a removed gate lets its case through.
 func TestRequireReadRefusesAsListRoute(t *testing.T) {
-	newHandler := func(t *testing.T, cfg entity.EntityConfig) *CrudHandler {
-		t.Helper()
-		db, err := sql.Open("sqlite3", ":memory:")
-		if err != nil {
-			t.Skip("sqlite3 driver not available")
-		}
-		t.Cleanup(func() { db.Close() })
-		if _, err := db.Exec(`CREATE TABLE things (id TEXT PRIMARY KEY, owner_id TEXT, tenant_id TEXT, title TEXT)`); err != nil {
-			t.Fatal(err)
-		}
-		cfg.Fields = append(cfg.Fields, schema.Field{Name: "title", Type: schema.String})
-		ent := entity.Define("things", cfg.WithTimestamps(false))
-		ent.SetDB(db)
-		return NewCrudHandler(ent, db)
-	}
 	reader := access.NewRolePolicy()
 	reader.Grant("member", "things:read")
 	cases := []struct {
@@ -60,7 +45,7 @@ func TestRequireReadRefusesAsListRoute(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			ch := newHandler(t, c.cfg)
+			ch := thingsHandler(t, c.cfg)
 			req := httptest.NewRequest(http.MethodGet, "/api/things", nil).WithContext(c.ctx)
 			gate := httptest.NewRecorder()
 			if ch.RequireRead(gate, req) {
@@ -81,7 +66,7 @@ func TestRequireReadRefusesAsListRoute(t *testing.T) {
 		})
 	}
 	t.Run("admitted caller", func(t *testing.T) {
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Scope:    &entity.ScopeConfig{MultiTenant: true},
 			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "things:read"}},
 		})
@@ -94,4 +79,23 @@ func TestRequireReadRefusesAsListRoute(t *testing.T) {
 			t.Errorf("an admitted caller got a body: %s", rec.Body.String())
 		}
 	})
+}
+
+// thingsHandler is a CrudHandler over an in-memory "things" table with
+// owner_id, tenant_id and title columns, for posture tests that vary only
+// the entity config.
+func thingsHandler(t *testing.T, cfg entity.EntityConfig) *CrudHandler {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := db.Exec(`CREATE TABLE things (id TEXT PRIMARY KEY, owner_id TEXT, tenant_id TEXT, title TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Fields = append(cfg.Fields, schema.Field{Name: "title", Type: schema.String})
+	ent := entity.Define("things", cfg.WithTimestamps(false))
+	ent.SetDB(db)
+	return NewCrudHandler(ent, db)
 }

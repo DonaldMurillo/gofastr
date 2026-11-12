@@ -180,26 +180,10 @@ func TestOpenReadGatedWrite_AnonymousCreateDeniedWithPolicyInstalled(t *testing.
 // init` and most app specs produce, render every row to an anonymous caller
 // while its JSON route answered 401.
 func TestCanReadScoped_PostureMatrix(t *testing.T) {
-	newHandler := func(t *testing.T, cfg entity.EntityConfig) *CrudHandler {
-		t.Helper()
-		db, err := sql.Open("sqlite3", ":memory:")
-		if err != nil {
-			t.Skip("sqlite3 driver not available")
-		}
-		t.Cleanup(func() { db.Close() })
-		if _, err := db.Exec(`CREATE TABLE things (id TEXT PRIMARY KEY, owner_id TEXT, title TEXT)`); err != nil {
-			t.Fatal(err)
-		}
-		cfg.Fields = append(cfg.Fields, schema.Field{Name: "title", Type: schema.String})
-		ent := entity.Define("things", cfg.WithTimestamps(false))
-		ent.SetDB(db)
-		return NewCrudHandler(ent, db)
-	}
-
 	t.Run("default posture refuses an anonymous caller", func(t *testing.T) {
 		// No OwnerField, no Access, no Public: auto-CRUD requires a session for
 		// every operation, so a screen must not render rows either.
-		ch := newHandler(t, entity.EntityConfig{})
+		ch := thingsHandler(t, entity.EntityConfig{})
 		if ch.CanReadScoped(context.Background()) {
 			t.Error("CanReadScoped allowed an anonymous read of a session-required entity")
 		}
@@ -209,7 +193,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	})
 
 	t.Run("public entity allows an anonymous read", func(t *testing.T) {
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Exposure: &entity.ExposureConfig{Public: true},
 		})
 		if !ch.CanReadScoped(context.Background()) {
@@ -218,7 +202,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	})
 
 	t.Run("blank Read beside real write permissions allows an anonymous read", func(t *testing.T) {
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{
 				Read: "", Create: "things:write", Update: "things:write", Delete: "things:admin",
 			}},
@@ -229,7 +213,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	})
 
 	t.Run("gated Read refuses without the permission and allows with it", func(t *testing.T) {
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Exposure: &entity.ExposureConfig{Access: entity.AccessControl{Read: "things:read"}},
 		})
 		if ch.CanReadScoped(context.Background()) {
@@ -244,7 +228,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 	})
 
 	t.Run("owner-scoped entity refuses a caller with no owner in context", func(t *testing.T) {
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Scope: &entity.ScopeConfig{OwnerField: "owner_id"},
 		})
 		if ch.CanReadScoped(context.Background()) {
@@ -262,7 +246,7 @@ func TestCanReadScoped_PostureMatrix(t *testing.T) {
 		// default-posture fixture the anonymous refusal below would be the
 		// session check, and the tenant rule would never be reached. That is
 		// the trap this whole matrix exists to avoid.
-		ch := newHandler(t, entity.EntityConfig{
+		ch := thingsHandler(t, entity.EntityConfig{
 			Scope:    &entity.ScopeConfig{MultiTenant: true},
 			Exposure: &entity.ExposureConfig{Public: true},
 		})
