@@ -362,3 +362,20 @@ func tokenMapsEqual(a, b map[string]string) bool {
 	}
 	return true
 }
+
+// TestDarkCodeTakesLightGrammar: a dark tk-* override answers to the
+// same free-form check as its light twin, so a value the light side
+// accepts survives the ThemeToTokens -> ApplyTokens round trip.
+func TestDarkCodeTakesLightGrammar(t *testing.T) {
+	base := style.DefaultTheme()
+	if _, err := style.ApplyTokens(base, map[string]string{"tk-kw": "inherit"}); err != nil {
+		t.Fatalf("light tk-kw: %v", err)
+	}
+	got, err := style.ApplyTokens(base, map[string]string{"dark.tk-kw": "inherit"})
+	if err != nil {
+		t.Fatalf("dark tk-kw refused a value light tk-kw takes: %v", err)
+	}
+	if _, err := style.ApplyTokens(base, style.ThemeToTokens(got)); err != nil {
+		t.Fatalf("round trip refused: %v", err)
+	}
+}
