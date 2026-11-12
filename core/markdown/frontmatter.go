@@ -13,6 +13,12 @@ import (
 // top level. Quoted strings are unwrapped; everything else is kept verbatim.
 // Lists, nested maps, and multi-line strings are not supported; if you need
 // them, write a JSON sidecar or wrap goldmark instead.
+//
+// A closed leading `---` pair is frontmatter only when every non-blank
+// line between the two is a `key: value` pair or a `#` comment. A
+// document that opens with a thematic break, then prose, then another
+// `---` is body: reading it as frontmatter dropped the prose without a
+// word.
 func splitFrontmatter(input string) (map[string]string, string) {
 	lines := splitLines(input)
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
@@ -28,15 +34,22 @@ func splitFrontmatter(input string) (map[string]string, string) {
 	if end < 0 {
 		return nil, input
 	}
+	for _, line := range lines[1:end] {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if strings.Index(line, ":") <= 0 {
+			return nil, input
+		}
+	}
 	fm := make(map[string]string)
 	for _, line := range lines[1:end] {
-		if strings.TrimSpace(line) == "" {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
 			continue
 		}
 		idx := strings.Index(line, ":")
-		if idx <= 0 {
-			continue
-		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
 		val = Unquote(val)

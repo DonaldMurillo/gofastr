@@ -233,3 +233,27 @@ func TestEmphasisCloserSkipsLinks(t *testing.T) {
 		t.Errorf("renderInline(%q) = %q, want %q", in, got, want)
 	}
 }
+
+func TestLeadingRuleWithProseIsNotFrontmatter(t *testing.T) {
+	doc := Render("---\n\nintro text that matters\n\n---\n\nafter divider\n")
+	got := string(doc.HTML)
+	if !strings.Contains(got, "intro text that matters") {
+		t.Errorf("prose between two leading rules was dropped: %q", got)
+	}
+	if !strings.Contains(got, "after divider") {
+		t.Errorf("text after the second rule was dropped: %q", got)
+	}
+	if len(doc.Frontmatter) != 0 {
+		t.Errorf("a prose block parsed as frontmatter: %#v", doc.Frontmatter)
+	}
+}
+
+func TestFrontmatterKeepsYAMLComments(t *testing.T) {
+	doc := Render("---\n# generated\ntitle: Hello\n---\n\nbody\n")
+	if doc.Frontmatter["title"] != "Hello" {
+		t.Errorf("a commented frontmatter block was not read: %#v", doc.Frontmatter)
+	}
+	if strings.Contains(string(doc.HTML), "generated") {
+		t.Errorf("the frontmatter comment leaked into the body: %q", doc.HTML)
+	}
+}
