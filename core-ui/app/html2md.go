@@ -96,8 +96,9 @@ var (
 )
 
 // The markers htmlToMarkdown parks content behind are C0 control bytes,
-// which scrubControls removes from the input, so none can come from the
-// page. A slot is slotOpen, a kind letter, an index and slotClose: the
+// which scrubControls removes from the input and decodeEntities from
+// every decoded value, so none can come from the page. A slot is
+// slotOpen, a kind letter, an index and slotClose: the
 // open and close bytes differ, so no match can start at a slot's end.
 // Inline code's angle brackets park as single bytes of their own, never
 // as a run a slot regex can read (\x00lt\x00 around <a1> formed a false
@@ -142,7 +143,7 @@ func htmlToMarkdown(h string) string {
 	s, fences := extractFencedBlocks(s)
 	var inlineCode []string
 	s = reCode.ReplaceAllStringFunc(s, func(match string) string {
-		inlineCode = append(inlineCode, textWS.Replace(html.UnescapeString(stripTags(submatch(match, reCode, 1)))))
+		inlineCode = append(inlineCode, textWS.Replace(decodeEntities(stripTags(submatch(match, reCode, 1)))))
 		return "<code></code>"
 	})
 
@@ -194,17 +195,17 @@ func htmlToMarkdown(h string) string {
 	// (attribute values sit inside tags, which decodeTextNodes skips).
 	s = reLink.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reLink.FindStringSubmatch(m)
-		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
+		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
 	})
 
 	// Images: alt text and src treated exactly like link text/dest.
 	s = reImgAltSrc.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgAltSrc.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(html.UnescapeString(sub[2])) + ")"
+		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(decodeEntities(sub[2])) + ")"
 	})
 	s = reImgSrcAlt.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgSrcAlt.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
+		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
 	})
 
 	// Horizontal rules
@@ -304,7 +305,7 @@ func mdTableCellHTML(cellHTML string) string {
 	text := func(v string) string {
 		return strings.ReplaceAll(mdLinkText(stripTags(reBR.ReplaceAllString(v, " "))), "|", `\|`)
 	}
-	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(html.UnescapeString(v)), "|", "%7C") }
+	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(decodeEntities(v)), "|", "%7C") }
 	// An alt is attribute text, not child markup: no tag strip, no break
 	// pass, only the cell's pipe escape on top of mdImageAlt.
 	image := func(alt, src string) string {
@@ -387,6 +388,15 @@ func scrubControls(s string) string {
 	}, s)
 }
 
+// decodeEntities decodes HTML entities once and scrubs the control
+// bytes the decode produced. The document scrub ran while entities were
+// still encoded, so &#2; and &#3; would otherwise become the parked-
+// bracket markers the last pass turns into a raw < and >, and &#0;/&#1;
+// slot bytes. Every decode in this file goes through it.
+func decodeEntities(s string) string {
+	return scrubControls(html.UnescapeString(s))
+}
+
 // extractFencedBlocks replaces every <pre><code> block with a slot
 // marker and returns the built fenced markdown alongside. Content is
 // tag-stripped, decoded exactly once, and fenced one backtick longer
@@ -396,7 +406,7 @@ func extractFencedBlocks(s string) (string, []string) {
 	var blocks []string
 	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBlock.FindStringSubmatch(m)[1])
-		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
+		blocks = append(blocks, mdFencedBlock(decodeEntities(content)))
 		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
 	})
 	s = rePreBare.ReplaceAllStringFunc(s, func(m string) string {
@@ -405,7 +415,7 @@ func extractFencedBlocks(s string) (string, []string) {
 			// One line reads the same as flowing text.
 			return m
 		}
-		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
+		blocks = append(blocks, mdFencedBlock(decodeEntities(content)))
 		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
 	})
 	return s, blocks
@@ -465,7 +475,7 @@ func decodeTextNode(t string) string {
 	}
 	d := t
 	if strings.Contains(d, "&") {
-		d = reTagStart.ReplaceAllString(html.UnescapeString(d), "&lt;$1")
+		d = reTagStart.ReplaceAllString(decodeEntities(d), "&lt;$1")
 	}
 	d = textWS.Replace(d)
 	head, rest := escapeLeadingSplit(d)
@@ -527,7 +537,7 @@ func mdLinkText(s string) string {
 // text, then mdLinkText. A <br> written in an alt is literal text, so the
 // tag passes that run after it (break, strip) must not read it as one.
 func mdImageAlt(alt string) string {
-	return mdLinkText(reTagStart.ReplaceAllString(scrubControls(html.UnescapeString(alt)), "&lt;$1"))
+	return mdLinkText(reTagStart.ReplaceAllString(decodeEntities(alt), "&lt;$1"))
 }
 
 // mdLinkDest percent-encodes the bytes that can terminate a markdown
