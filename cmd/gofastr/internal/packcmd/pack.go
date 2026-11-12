@@ -2599,6 +2599,18 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.LinkButton":
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", appspec.AstString(c["Label"]), "href", appspec.AstString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
+	case "ui.Callout":
+		// ui.Callout(CalloutConfig{Title}, render.Text(text)).
+		b := block("callout", props2("title", appspec.AstString(cfgOf(call, 0)["Title"])))
+		if len(b.Props) == 0 {
+			b.Props = nil
+		}
+		if len(call.Args) > 1 {
+			b.Text = renderTextArg(call.Args[1])
+		}
+		return b, true
+	case "ui.Divider":
+		return appspec.AppSpecBlock{Kind: "divider"}, true
 	case "ui.Link":
 		config := cfgOf(call, 0)
 		return appspec.AppSpecBlock{Type: "link", Href: appspec.AstString(config["Href"]), Text: appspec.AstString(config["Text"]), Class: appspec.AstString(config["Class"])}, true

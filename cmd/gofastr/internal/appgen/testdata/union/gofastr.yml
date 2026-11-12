@@ -549,6 +549,11 @@ screens:
                   text: Moves with stamps.
           - kind: markdown
             text: "## Union\n\nA **markdown** block with a list:\n\n- one\n- two"
+          - kind: divider
+          - kind: callout
+            props:
+              title: Heads up
+            text: The callout block draws a ui.Callout.
   # Catalog kinds spelled `type:` read as `kind:`. `type: section` is the
   # exception: with children it is the node renderer's plain <section>.
   - name: type_spelled
