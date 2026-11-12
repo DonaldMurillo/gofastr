@@ -61,7 +61,10 @@ func projectRouteApp(writeRoot string) (app appspec.AppSpecApp, ok bool) {
 					app.Auth.Enabled = true
 					app.Auth.BasePath = appspec.AstString(fields["BasePath"])
 				case "Config":
-					if prefix, isAdmin := fields["PathPrefix"]; isAdmin {
+					// Several batteries take a Config with a PathPrefix
+					// (print.Config); only the generator's admin.Config
+					// names the back office's path.
+					if prefix, has := fields["PathPrefix"]; has && selPkg(t.Type) == "admin" {
 						app.Admin.Enabled = true
 						app.Admin.Path = appspec.AstString(prefix)
 					}
@@ -86,6 +89,17 @@ func projectRouteApp(writeRoot string) (app appspec.AppSpecApp, ok bool) {
 		})
 	}
 	return app, true
+}
+
+// selPkg is the package qualifier of a selector expression (admin.Config →
+// "admin"), or "" for anything else.
+func selPkg(e ast.Expr) string {
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			return id.Name
+		}
+	}
+	return ""
 }
 
 // selLast is the trailing identifier of a selector or ident expression

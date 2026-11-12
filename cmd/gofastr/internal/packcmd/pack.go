@@ -1621,7 +1621,9 @@ func packReadApp(dir string) (appspec.AppSpecApp, error) {
 				switch astSelLast(t.Type) {
 				case "Config":
 					cv := appspec.FieldVals(t)
-					if _, ok := cv["PathPrefix"]; !ok {
+					// print.Config and other batteries' configs carry a
+					// PathPrefix too; only admin.Config names the admin path.
+					if _, ok := cv["PathPrefix"]; !ok || astSelPkg(t.Type) != "admin" {
 						return true // not an admin.Config
 					}
 					app.Admin.Enabled = true
@@ -1719,6 +1721,17 @@ func packPWADisplay(constName string) string {
 		return "minimal-ui"
 	case "PWADisplayBrowser":
 		return "browser"
+	}
+	return ""
+}
+
+// astSelPkg is the package qualifier of a selector expression
+// (admin.Config → "admin"), or "" for anything else.
+func astSelPkg(e ast.Expr) string {
+	if sel, ok := e.(*ast.SelectorExpr); ok {
+		if id, ok := sel.X.(*ast.Ident); ok {
+			return id.Name
+		}
 	}
 	return ""
 }
