@@ -35,8 +35,9 @@ const exportIDParam = "_id"
 // hooks, the same values the list shows; NoQuery fields (masked columns
 // among them), omitted and JSON fields are left out. A cell that a
 // spreadsheet would run as a formula is prefixed with a quote. It
-// answers 404 where BulkHandler does and 403 when the caller may not
-// read the entity.
+// answers 404 where BulkHandler does, and refuses a caller who may not
+// read the entity as GET <api>/<entity> does (CrudHandler.RequireRead:
+// 401 with no session or tenant, 403 without the permission).
 func (u *UI) ExportHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")

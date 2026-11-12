@@ -1558,7 +1558,8 @@ few lines, and link the PR or the docs page for the rest.
   filter, both with a 200. The crud list and the entity CSV export read
   their query through the new `filter.ParseQueryStrict` and answer
   `query_undecodable`; an entityui list screen shows its "Filter not
-  applied" warning.
+  applied" warning when the pair is one of its own params, so a keyed
+  list does not warn for its neighbour's.
 - **A `?where=` leaf with a null or missing value answers 400.**
   `{"field":"title","value":null}` compiled to `title = ''` on a text
   column; it and a null `in` entry now answer

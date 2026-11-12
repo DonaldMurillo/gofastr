@@ -221,3 +221,28 @@ func TestListWarnsUndecodableQuery(t *testing.T) {
 		t.Errorf("a decodable filter drew the warning:\n%s", got)
 	}
 }
+
+// Two keyed lists share one query string: a pair that does not decode
+// warns the list that reads it, never its neighbour. A key that does not
+// decode belongs to no list anyone can name, so every list warns.
+func TestUndecodablePairWarnsItsOwnList(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	a, b := x.ui.List("orders").Key("a"), x.ui.List("orders").Key("b")
+	for _, q := range []string{"?a_sort=name&b_q=%ZZ", "?b_filter=a;b", "?b_f_status=paid%ZZ", "?other=%ZZ"} {
+		ctx := x.ctx("/page", q)
+		if strings.Contains(listHTML(t, a, ctx), "Filter not applied") {
+			t.Errorf("%s: list a warned for a pair it does not read", q)
+		}
+	}
+	for _, q := range []string{"?b_q=%ZZ", "?b_filter=a;b", "?b_f_status=paid%ZZ"} {
+		if !strings.Contains(listHTML(t, b, x.ctx("/page", q)), "Filter not applied") {
+			t.Errorf("%s: list b drew no warning for its own pair", q)
+		}
+	}
+	if !strings.Contains(listHTML(t, a, x.ctx("/page", "?b_q%ZZ=x")), "Filter not applied") {
+		t.Errorf("a key that does not decode drew no warning")
+	}
+}

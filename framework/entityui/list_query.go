@@ -506,6 +506,42 @@ func (s *listState) ownsParam(name string) bool {
 	return own
 }
 
+// readsParam reports whether name is a param this list reads: its own
+// filter and facet params (ownsParam) and the layout, column, saved-view
+// and page-size params beside them.
+func (s *listState) readsParam(name string) bool {
+	switch name {
+	case s.p.cols, s.p.saved, s.p.as, s.p.per:
+		return true
+	}
+	return s.ownsParam(name)
+}
+
+// ownPairUndecodable reports whether rawQuery holds a pair url.ParseQuery
+// drops that this list would read: one of its own params whose value does
+// not decode or carries a ';'. Another keyed list's malformed pair is that
+// list's warning, not this one's. A key that does not decode names no list
+// anyone can tell, so it warns every list on the page.
+func (s *listState) ownPairUndecodable(rawQuery string) bool {
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(pair, "=")
+		name, err := url.QueryUnescape(k)
+		if err != nil || strings.Contains(k, ";") {
+			return true
+		}
+		if !s.readsParam(name) {
+			continue
+		}
+		if _, err := url.QueryUnescape(v); err != nil || strings.Contains(v, ";") {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultPageSizes are the rows-per-page choices an entity with no
 // Display.PageSizes offers.
 var defaultPageSizes = []int{25, 50, 100}
