@@ -55,6 +55,10 @@ func errRequiredIndex(field string, idx int) error {
 	return errf("required", "%s[%d] missing required field", field, idx)
 }
 
+func errDupColumnKey(key string) error {
+	return errf("unique", "data-table.columns key %q appears twice", truncateErrInput(key))
+}
+
 func errBadEnum(field, value string) error {
 	return errf("enum", "%s=%q is not a permitted value", field, truncateErrInput(value))
 }

@@ -283,6 +283,24 @@ func TestRenderDataTableEmptyColumns(t *testing.T) {
 	mustContain(t, h, "fui-empty-state")
 }
 
+func TestDataTableDupKeysErrNoPanic(t *testing.T) {
+	// A hand-built Tree skips the validator; a repeated or empty column
+	// key would panic inside headless.Table, so the renderer refuses it.
+	for _, cols := range [][]uinodev1.DataColumn{
+		{{Key: "a", Label: "First"}, {Key: "a", Label: "Second"}},
+		{{Key: "", Label: "Blank"}},
+	} {
+		r := New(context.Background(), nil)
+		_, err := r.Render(tree(node(uinodev1.CompDataTable, uinodev1.DataTableProps{
+			Columns: cols,
+			Rows:    []uinodev1.DataRow{{Cells: []uinodev1.DataCell{{Text: "x"}, {Text: "y"}}}},
+		})))
+		if err == nil {
+			t.Fatalf("columns %v: want an error, got nil", cols)
+		}
+	}
+}
+
 func TestRenderDataTableEmptyRows(t *testing.T) {
 	// Empty rows are handled by ui.DataTable itself; the renderer passes
 	// them through and must not panic.

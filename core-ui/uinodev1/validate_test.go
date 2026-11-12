@@ -196,3 +196,16 @@ func itoa(n int) string {
 	}
 	return string(buf[i:])
 }
+
+// TestValidateRejectsDupColumnKeys: the host renderer matches cells to
+// columns by key and panics on a repeated one, so Validate refuses it.
+func TestValidateRejectsDupColumnKeys(t *testing.T) {
+	j := `{"component":"data-table","props":{"columns":[{"key":"a","label":"First"},{"key":"a","label":"Second"}],"rows":[{"cells":[{"text":"x"},{"text":"y"}]}]}}`
+	if _, err := Validate([]byte(j), DefaultLimits()); err == nil {
+		t.Fatal("duplicate data-table column keys must reject")
+	}
+	ok := `{"component":"data-table","props":{"columns":[{"key":"a","label":"First"},{"key":"A","label":"Second"}],"rows":[{"cells":[{"text":"x"},{"text":"y"}]}]}}`
+	if _, err := Validate([]byte(ok), DefaultLimits()); err != nil {
+		t.Fatalf("distinct keys must accept: %v", err)
+	}
+}

@@ -472,6 +472,8 @@ and action_ref shape. A forged tree is whole-tree rejected.
 `Limits.MaxPropItems` bounds table rows, columns and cells per row, plus
 detail-list and key-value items, even when their text is empty. Hosts can
 override that cap; zero selects the default. Overflow rejects the whole tree.
+A data-table whose columns repeat a key is rejected too: rows fill cells by
+column key, so two columns under one key would claim one cell.
 
 The proxy renders a validated tree through
 [`framework/uihost/uinoderender`](../../uihost/uinoderender): each component

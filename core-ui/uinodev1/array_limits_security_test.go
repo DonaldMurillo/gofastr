@@ -23,7 +23,8 @@ func TestPropArraysAreBounded(t *testing.T) {
 				case "columns":
 					many := make([]DataColumn, length)
 					for index := range many {
-						many[index] = columns[0]
+						key := "c" + strconv.Itoa(index)
+						many[index] = DataColumn{Key: key, Label: key}
 					}
 					props = DataTableProps{Columns: many, Rows: rows}
 				case "cells":
