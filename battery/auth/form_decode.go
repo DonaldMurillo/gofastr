@@ -180,7 +180,7 @@ var ErrEmailNotComposed = errors.New("auth: email address is not in composed Uni
 //
 // The default then refuses a non-empty result that is not one
 // local@domain pair (exactly one "@", text on both sides, no white
-// space) with invalid_email, so "notanemail" never becomes an account.
+// space, no control character) with invalid_email, so "notanemail" never becomes an account.
 // An empty input stays empty: the handlers answer that with their own
 // "credentials required" reason.
 //
