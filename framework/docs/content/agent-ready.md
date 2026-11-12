@@ -390,7 +390,8 @@ line breaks whether or not it wraps a `<code>` element, so a
 highlighted code block (a `<pre>` of per-line spans, which is what
 `ui.CodeBlock` and `ui.Markdown` render) reads as code; a one-line
 `<pre>` stays flowing text. A link or an image inside a table cell
-stays a link. A description list (`ui.DetailList`) reads one
+stays a link, and a code block inside one becomes a single code span,
+since a fence's line breaks would split the row. A description list (`ui.DetailList`) reads one
 `term: description` pair a line.
 
 ### Rendered values cannot inject markdown structure

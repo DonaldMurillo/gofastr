@@ -189,7 +189,7 @@ func htmlToMarkdown(h string) string {
 	// Tables first: a cell builds its own links and images, so the cell
 	// escaping that keeps a value inside its column does not also
 	// escape the link the cell holds.
-	s = convertTables(s)
+	s = convertTables(s, fences)
 
 	// Links: text and destination escaped per slot; href decodes here
 	// (attribute values sit inside tags, which decodeTextNodes skips).
@@ -254,8 +254,9 @@ func htmlToMarkdown(h string) string {
 
 // convertTables converts HTML tables to markdown tables. Cell content
 // arrives already entity-decoded (decodeTextNodes); mdTableCell keeps
-// it inside its cell.
-func convertTables(h string) string {
+// it inside its cell. A code block in a cell becomes one code span:
+// fences is read for its code.
+func convertTables(h string, fences []fencedBlock) string {
 	return reTable.ReplaceAllStringFunc(h, func(table string) string {
 		var b strings.Builder
 		b.WriteString("\n")
@@ -271,7 +272,7 @@ func convertTables(h string) string {
 
 			b.WriteString("| ")
 			for _, cell := range cells {
-				b.WriteString(mdTableCellHTML(cell[1]) + " | ")
+				b.WriteString(mdTableCellHTML(cell[1], fences) + " | ")
 			}
 			b.WriteString("\n")
 
@@ -294,12 +295,24 @@ func convertTables(h string) string {
 // pipe in link text or in a destination would add a column), and parked
 // while the rest of the cell's text is escaped, so a link in a table
 // stays a link and a value still cannot forge one.
-func mdTableCellHTML(cellHTML string) string {
+func mdTableCellHTML(cellHTML string, fences []fencedBlock) string {
 	var parked []string
 	park := func(md string) string {
 		parked = append(parked, md)
 		return fmt.Sprintf(slotOpen+"a%d"+slotClose, len(parked)-1)
 	}
+	// A fenced block is lines, and a newline would split the row: the
+	// cell holds its code as one span, flattened like the rest of the
+	// cell, pipes escaped, and brackets parked so the tag passes after
+	// this one cannot read it.
+	cellHTML = reFenceSlot.ReplaceAllStringFunc(cellHTML, func(m string) string {
+		idx, err := strconv.Atoi(reFenceSlot.FindStringSubmatch(m)[1])
+		if err != nil || idx >= len(fences) {
+			return ""
+		}
+		code := strings.ReplaceAll(textWS.Replace(strings.TrimRight(fences[idx].code, "\r\n")), "|", `\|`)
+		return park(strings.NewReplacer("<", parkedLT, ">", parkedGT).Replace(mdCodeSpan(code)))
+	})
 	// A break inside a link's text separates words, as in the rest of
 	// the cell: the link is parked before the cell's own break pass.
 	text := func(v string) string {
@@ -397,17 +410,26 @@ func decodeEntities(s string) string {
 	return scrubControls(html.UnescapeString(s))
 }
 
+// fencedBlock is one parked code block: its fenced markdown and the
+// decoded code it fences, which a table cell reads to inline it.
+type fencedBlock struct {
+	md, code string
+}
+
 // extractFencedBlocks replaces every <pre><code> block with a slot
 // marker and returns the built fenced markdown alongside. Content is
 // tag-stripped, decoded exactly once, and fenced one backtick longer
 // than the longest run it contains, so no line of it can close the
 // fence.
-func extractFencedBlocks(s string) (string, []string) {
-	var blocks []string
-	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
-		content := stripTags(rePreBlock.FindStringSubmatch(m)[1])
-		blocks = append(blocks, mdFencedBlock(decodeEntities(content)))
+func extractFencedBlocks(s string) (string, []fencedBlock) {
+	var blocks []fencedBlock
+	add := func(content string) string {
+		code := decodeEntities(content)
+		blocks = append(blocks, fencedBlock{md: mdFencedBlock(code), code: code})
 		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
+	}
+	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
+		return add(stripTags(rePreBlock.FindStringSubmatch(m)[1]))
 	})
 	s = rePreBare.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBare.FindStringSubmatch(m)[1])
@@ -415,8 +437,7 @@ func extractFencedBlocks(s string) (string, []string) {
 			// One line reads the same as flowing text.
 			return m
 		}
-		blocks = append(blocks, mdFencedBlock(decodeEntities(content)))
-		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
+		return add(content)
 	})
 	return s, blocks
 }
@@ -425,7 +446,7 @@ func extractFencedBlocks(s string) (string, []string) {
 // with a newline, so whatever follows one starts a line:
 // escapeLeadingSplit neutralizes a structure initiator at its head,
 // mirroring decodeTextNode for text nodes after tags.
-func restoreFences(s string, blocks []string) string {
+func restoreFences(s string, blocks []fencedBlock) string {
 	if len(blocks) == 0 {
 		return s
 	}
@@ -438,7 +459,7 @@ func restoreFences(s string, blocks []string) string {
 		}
 		idx, _ := strconv.Atoi(s[m[2]:m[3]])
 		b.WriteString(s[:m[0]])
-		b.WriteString(blocks[idx])
+		b.WriteString(blocks[idx].md)
 		head, rest := escapeLeadingSplit(s[m[1]:])
 		b.WriteString(head)
 		s = rest
