@@ -158,6 +158,17 @@ func TestLmsLessonsRedCreateGated(t *testing.T) {
 		strings.Contains(failure, "authentication required") ||
 		strings.Contains(failure, "missing permission") ||
 		strings.Contains(failure, "access denied")
+	// An anonymous caller is judged like a signed-in non-holder: the gated
+	// tool is hidden, so the call answers "not found". That counts as
+	// refused only while the anonymous tools/list still names the public
+	// modules_list tool, so a tool rename cannot read as a gate.
+	if !refused && strings.Contains(failure, `tool "lessons_create" not found`) {
+		_, lbody := postMCP(t, baseURL, `{"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}`)
+		if !strings.Contains(lbody, `"modules_list"`) {
+			t.Fatalf("setup broken: anonymous tools/list does not name modules_list, so a missing lessons_create proves nothing: %s", clitest.Truncate(lbody, 400))
+		}
+		refused = true
+	}
 	if failure != "" && !refused {
 		t.Fatalf("setup broken: anonymous tools/call lessons_create failed for a non-authorization reason (arguments/schema drift?): %s\n%s", failure, cbody)
 	}
