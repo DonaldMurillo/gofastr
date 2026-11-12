@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -335,7 +336,18 @@ func valueString(v any) string {
 	case int64:
 		return strconv.FormatInt(t, 10)
 	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
+		// encoding/json formats a finite float the way ECMAScript's
+		// Number::toString does (exponential below 1e-6 and from 1e21),
+		// which is what the runtime paints; 'f' formatting printed 1e-7
+		// as 0.0000001 and the text changed on the first client write.
+		if math.IsNaN(t) || math.IsInf(t, 0) {
+			return strconv.FormatFloat(t, 'f', -1, 64)
+		}
+		b, err := json.Marshal(t)
+		if err != nil {
+			return ""
+		}
+		return string(b)
 	default:
 		b, err := json.Marshal(v)
 		if err != nil {
