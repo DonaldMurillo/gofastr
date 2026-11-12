@@ -340,3 +340,7 @@ notes:
     breaking: true
     guidance: "Find stored rows that are not addresses before upgrading (SELECT id, email FROM auth_users WHERE email NOT LIKE '%_@_%' OR email LIKE '%@%@%') and give them an address; they stop matching at login once you upgrade. A host that keys accounts on something else (bare operator names) installs AuthConfig.CanonicalizeEmail, which replaces the default and its shape check. An OAuth provider that reports a non-address email now fails the callback with invalid_email."
     nodetect: "the stored rows and submitted values decide it; no host source spelling shows an account keyed on a non-address"
+  - change: "BREAKING - the entityui CSV export, bulk, trash, saved-view and relation-picker routes refuse a caller the way GET /api/<entity> does: 401 for a missing session or tenant where they answered 403, and the CRUD refusal envelope (code, success, reason, the missing permission named) in place of {\"error\":\"access denied\",\"reason\":\"access_denied\"}"
+    breaking: true
+    guidance: "A client that read a 403 from these routes as \"sign in\" now gets 401; read reason and code from the CRUD envelope, as for the list route. A handler of your own that serves rows outside the CRUD routes can refuse the same way with CrudHandler.RequireRead(w, r)."
+    nodetect: "a status a client reads; no host source spelling shows it"

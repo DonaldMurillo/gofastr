@@ -494,7 +494,7 @@ An HTTP handler that serves the entity's rows outside its CRUD routes calls
 answer is no, writes what `GET /api/<entity>` writes for that caller: the same
 status (401 for a missing session or tenant, 403 for a missing permission) and
 the same envelope, the missing permission named. EntityUI's `_export.csv`,
-`_bulk`, trash and saved-view routes refuse this way.
+`_bulk`, `_pick`, trash and saved-view routes refuse this way.
 
 ```go
 if !crudHandler.RequireRead(w, r) {

@@ -1617,8 +1617,9 @@ few lines, and link the PR or the docs page for the rest.
 - **A repeated `?include=` key answers 400 `include_repeated`**
   ([includes](framework/docs/content/includes.md)); the second key was
   half-applied.
-- **The CSV export, bulk, list-deleted and saved-views routes refuse as
-  the list route does**: an anonymous caller gets 401, not 403.
+- **The CSV export, bulk, list-deleted, saved-views and relation-picker
+  routes refuse as the list route does**: an anonymous caller gets 401,
+  not 403.
 - **A wrong path or method under `/mcp` or on `/openapi.json` answers a
   JSON problem document** instead of the UI host's HTML page, and opens
   no guest session.
