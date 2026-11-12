@@ -1621,8 +1621,11 @@ few lines, and link the PR or the docs page for the rest.
 - **A wrong path or method under `/mcp` or on `/openapi.json` answers a
   JSON problem document** instead of the UI host's HTML page, and opens
   no guest session.
-- **Record forms carry `enctype="multipart/form-data"`**, so a browser
-  without JavaScript sends a body the CRUD route accepts.
+- **Record forms carry `enctype="multipart/form-data"`**, so a create
+  form submitted without JavaScript sends a body the CRUD route accepts.
+  An edit form still needs the runtime: its native POST reaches a route
+  that serves PUT and PATCH
+  ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
 
 ## [0.96.0] - 2026-11-06
 
