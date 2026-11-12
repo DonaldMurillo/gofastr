@@ -60,7 +60,7 @@ capture previous projection
 | `pending` | Optimistic projection is painted; the RPC is in flight. Control is `aria-busy="true"` and ignores re-entry; it is not disabled, so keyboard focus stays on it. | `data-state="pending"` |
 | `committed` | The RPC returned 2xx. The projection is now authoritative. | `data-state="committed"` |
 | `conflicted` | A versioned 409. The runtime fetches fresh HTML from the conflict endpoint and replaces the affected region. (Sortable-specific today.) | `data-state` on the list, plus an `aria-live` announcement |
-| `failed` | The RPC returned non-2xx (or the network threw). The runtime rolls the projection back to `idle` and announces. `OptimisticAction` paints a brief `error` shake first. | `data-state="error"` (OptimisticAction) or direct revert to `idle` (ToggleAction) |
+| `failed` | The RPC returned non-2xx (or the network threw). The runtime paints `error`, then rolls the projection back to `idle` after ~600 ms and announces. `OptimisticAction` adds a brief shake. | `data-state="error"`, then `idle` (both primitives) |
 
 `OptimisticAction` and `ToggleAction` use `data-state` on the trigger
 button; `sortablelist` uses it on the `<ol>` wrapper. The runtime reads
@@ -368,7 +368,8 @@ broadcasts the auto-built error object `{ok:false,status,text}` into
 the signal; an `html`-mode region **ignores non-string values** (the
 optimistic-UI invariant: a failed create leaves the list exactly where
 it was), while a sibling `text`-mode status node renders a
-human-readable "Error: <status> — <text>" line.
+human-readable "Request failed (<status>) — <text>" line (the
+runtime's localized `runtime.request_failed_status` phrase).
 
 **The temp-row pattern (what "optimistic" adds):** a *true* optimistic
 create paints the row before the fetch resolves. That requires an
@@ -653,7 +654,7 @@ appear to be offline" surface.
 
 - `OptimisticAction` paints the `error` state (shake animation, disabled
   by `prefers-reduced-motion`), then reverts to `idle` after ~600 ms. It
-  dispatches `optimistic-action:rolled-back` so app code can hook in.
+  dispatches `action:rolled-back` on the button so app code can hook in.
 - `ToggleAction` fails the same way now that both ride the kernel's
   `action` primitive: a failed commit paints `error`, dispatches
   `action:rolled-back`, and reverts to `idle` after ~600 ms. A failed
@@ -756,9 +757,8 @@ should be undertaken deliberately, not as a side effect of a docs pass.
    toggling. The custom events are available for app code to write
    into an `aria-live` span: the primitive's `action:start`,
    `action:committed`, `action:rolled-back` and `action:untoggle` on
-   every bound button, plus the component names `optimistic-action:*`
-   and `toggle-action:commit` / `toggle-action:untoggle` the adapters
-   re-dispatch. `framework/headless`'s failure span is the shipped
+   every bound button; no component-named events are dispatched.
+   `framework/headless`'s failure span is the shipped
    version of that pattern for the headless pair.
 
 3. **`OptimisticAction` is fire-and-forget; `ToggleAction` is too.**
