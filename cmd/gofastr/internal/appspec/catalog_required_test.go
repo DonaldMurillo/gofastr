@@ -85,6 +85,16 @@ screens:
         props:
           title: 2026
 `, "quote"},
+		{"hero number image", `      - kind: hero
+        props:
+          title: Hi
+          image: 404
+`, "quote"},
+		{"hero bool media", `      - kind: hero
+        props:
+          title: Hi
+          media: true
+`, "quote"},
 		{"page_header number title", `      - kind: page_header
         props:
           title: 2026

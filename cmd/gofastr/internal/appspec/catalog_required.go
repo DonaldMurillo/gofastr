@@ -30,8 +30,8 @@ import (
 // A number or bool where the component takes text decodes as int64 or
 // bool, which the generator reads as "": refused with a hint to quote it.
 // Optional text is checked the same way: a hero's eyebrow, title,
-// subtitle and CTA labels (a dropped CTA label drops the CTA), and a
-// page_header's eyebrow and subtitle.
+// subtitle, CTA labels (a dropped CTA label drops the CTA) and image
+// (or media) path, and a page_header's eyebrow and subtitle.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
 	text := func(key string) error {
 		if v, ok := block.Props[key]; ok && v != nil {
@@ -85,7 +85,7 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 			}
 		}
 	case "hero":
-		for _, key := range []string{"eyebrow", "title", "subtitle", "cta_text", "secondary_text"} {
+		for _, key := range []string{"eyebrow", "title", "subtitle", "cta_text", "secondary_text", "image", "media"} {
 			if err := text(key); err != nil {
 				return err
 			}
