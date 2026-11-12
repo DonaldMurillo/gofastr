@@ -18,6 +18,7 @@ import (
 // (RequireSession, RequireAuthenticated) must not have its chrome
 // written into the tree; the export dumped every widget's chrome.
 func TestBuildSkipsGatedWidgetChrome(t *testing.T) {
+	widget.IsolateForTest(t)
 	a := coreapp.NewApp("SSGGated")
 	a.Register("/", &homeScreen{}, nil)
 	host := uihost.New(a)
@@ -56,6 +57,7 @@ func TestBuildSkipsGatedWidgetChrome(t *testing.T) {
 // nav) is left out of widgets.json; its chrome must stay out of the public
 // export too, where only the session gate was checked.
 func TestBuildSkipsUnlistedWidgetChrome(t *testing.T) {
+	widget.IsolateForTest(t)
 	a := coreapp.NewApp("SSGUnlisted")
 	a.Register("/", &homeScreen{}, nil)
 	host := uihost.New(a)
@@ -72,5 +74,17 @@ func TestBuildSkipsUnlistedWidgetChrome(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(out, "core-ui/widget/ssg-unlisted/style.css")); err != nil {
 		t.Errorf("style.css is missing; the live sheet is ungated: %v", err)
+	}
+}
+
+// The two tests above mount widgets into the process-global registry; each
+// isolates it, so a later export in this binary sees none of them.
+func TestGatedWidgetTestsLeaveNoWidgets(t *testing.T) {
+	t.Run("gated", TestBuildSkipsGatedWidgetChrome)
+	t.Run("unlisted", TestBuildSkipsUnlistedWidgetChrome)
+	for _, name := range []string{"ssg-gate-open", "ssg-gate-session", "ssg-gate-auth", "ssg-unlisted"} {
+		if _, ok := widget.Lookup(name); ok {
+			t.Errorf("%s is still registered after its test", name)
+		}
 	}
 }

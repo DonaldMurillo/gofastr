@@ -88,17 +88,26 @@ func TestMCPMissIsProblemJSON(t *testing.T) {
 	fwApp.Router().Get("/openapi.json", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	a, cleanup := startApp(t, fwApp)
 	defer cleanup()
-	for _, c := range []struct{ method, path string }{
-		{http.MethodPut, "/mcp"},
-		{http.MethodDelete, "/mcp"},
-		{http.MethodOptions, "/mcp"},
-		{http.MethodGet, "/mcp/bogus"},
-		{http.MethodPost, "/openapi.json"},
+	for _, c := range []struct {
+		method, path string
+		status       int
+	}{
+		{http.MethodPut, "/mcp", http.StatusMethodNotAllowed},
+		{http.MethodDelete, "/mcp", http.StatusMethodNotAllowed},
+		{http.MethodOptions, "/mcp", http.StatusMethodNotAllowed},
+		{http.MethodGet, "/mcp/bogus", http.StatusNotFound},
+		{http.MethodPost, "/openapi.json", http.StatusMethodNotAllowed},
 	} {
 		rec := httptest.NewRecorder()
 		a.router.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
-		if ct := rec.Header().Get("Content-Type"); rec.Code < 400 || !strings.HasPrefix(ct, "application/problem+json") {
-			t.Errorf("%s %s = %d %q, want a problem document", c.method, c.path, rec.Code, ct)
+		if ct := rec.Header().Get("Content-Type"); rec.Code != c.status || !strings.HasPrefix(ct, "application/problem+json") {
+			t.Errorf("%s %s = %d %q, want %d problem+json", c.method, c.path, rec.Code, ct, c.status)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+			t.Errorf("%s %s: body is not JSON: %v (%s)", c.method, c.path, err, rec.Body.String())
+		} else if status, _ := doc["status"].(float64); int(status) != c.status {
+			t.Errorf("%s %s: problem status = %v, want %d", c.method, c.path, doc["status"], c.status)
 		}
 		if sc := rec.Header().Get("Set-Cookie"); sc != "" {
 			t.Errorf("%s %s minted a session: %q", c.method, c.path, sc)

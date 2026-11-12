@@ -69,6 +69,14 @@ func TestRevokeRefusesOwnLastPermission(t *testing.T) {
 	if !canAs(r.policy, "admin", "queue:read") {
 		t.Fatal("a refused revoke still took queue:read from admin")
 	}
+	// A tombstone written behind the refusal would take it back on the
+	// next boot, so read the stored grants again.
+	if err := r.store.LoadInto(ctx, r.policy); err != nil {
+		t.Fatal(err)
+	}
+	if !canAs(r.policy, "admin", "queue:read") {
+		t.Fatal("a refused revoke left a tombstone: queue:read is gone after a reload")
+	}
 	if ops := r.auditOps("access"); !slices.Equal(ops, []string{"revoke-refused"}) {
 		t.Fatalf("audit ops = %v", ops)
 	}
