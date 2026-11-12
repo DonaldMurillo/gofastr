@@ -319,3 +319,7 @@ notes:
     breaking: true
     guidance: "Percent-encode query values (send ';' as %3B). Code that reads a list query itself can call filter.ParseQueryStrict(r.URL.RawQuery) for the same answer."
     nodetect: "the bytes of a URL a client sends; no host source spelling shows it"
+  - change: "BREAKING - the entityui CSV export answers 400 query_undecodable when its query holds a pair that does not decode (a malformed percent escape or a ';' separator), where the pair was dropped and the export held every row the caller may read"
+    breaking: true
+    guidance: "Percent-encode the export URL's values (send ';' as %3B). The bulk bar's Export link is always encoded."
+    nodetect: "a URL a client builds; no host source spelling shows it"

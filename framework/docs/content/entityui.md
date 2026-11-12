@@ -989,7 +989,10 @@ and so does an entity with no REST write routes.
   `Facets`, a non-blank `?q=` on an entity with no `SearchFields`,
   another keyed list's params, a typo) answers 400
   `export_unknown_param` instead of being ignored, and the Export link
-  carries only the list's own params. `NoQuery`, omitted and JSON fields are left out, and a
+  carries only the list's own params. A query with a pair that does not
+  decode (`?status=paid%ZZ`, a bare `%`, a `;` separator), which Go's
+  URL parser would drop before that check ran, answers 400
+  `query_undecodable`. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A
   number in an `Int`, `Float` or `Decimal` column is written as it is,
   so `-12.5` stays a number a spreadsheet sums; any other value in such

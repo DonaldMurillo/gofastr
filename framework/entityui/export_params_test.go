@@ -123,3 +123,22 @@ func TestExportRefusesUnsearchableQ(t *testing.T) {
 		t.Errorf("searchable ?q=A-2 = %d with %d lines, want 200 with the header and A-2", rec.Code, len(rows))
 	}
 }
+
+// url.ParseQuery drops a pair that does not decode, so ?status=paid%ZZ
+// vanished before the foreign-param refusal saw it and the export
+// answered every row where ?status=paid answers 400. The list's own
+// filter spelled the same way (filter=…%ZZ) widened the file too. Such
+// a query is refused before any param is read.
+func TestExportRefusesUndecodableParam(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	for _, query := range []string{
+		"status=paid%ZZ", "status=paid%", "st%ZZatus=paid", "status=paid;x",
+		"filter=number+%3D+%22A-2%ZZ", "_list=inv&inv_filter=%ZZ",
+		"_id=a1&_id=a2%ZZ", "_list=inv%ZZ",
+	} {
+		rec, _ := getExport(t, x, bulkCtx("u1", nil), query)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "query_undecodable") {
+			t.Errorf("?%s = %d %s, want 400 query_undecodable", query, rec.Code, rec.Body)
+		}
+	}
+}

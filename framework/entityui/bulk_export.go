@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // exportKeyParam names the list key on an export link: the list query's
@@ -52,7 +53,16 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
-		q := r.URL.Query()
+		// Strictly: URL.Query drops a pair that does not decode, so
+		// ?status=paid%ZZ vanished before the refusal below saw it, and
+		// a list filter spelled that way read as no filter. Either way
+		// the file held every row the caller may read.
+		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		if err != nil {
+			text, code := i18n.ErrorText(r.Context(), err, reasonExportBadQuery)
+			writeBulkJSON(w, http.StatusBadRequest, map[string]string{"error": text, "reason": code})
+			return
+		}
 		key := q.Get(exportKeyParam)
 		q.Del(exportKeyParam)
 		// The export reads the list's own params only. A REST filter
