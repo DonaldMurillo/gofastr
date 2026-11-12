@@ -258,6 +258,22 @@ func TestFrontmatterKeepsYAMLComments(t *testing.T) {
 	}
 }
 
+func TestFrontmatterListStaysOffPage(t *testing.T) {
+	for _, in := range []string{
+		"---\ntitle: Post\ntags:\n  - go\n  - web\n---\nBody text\n",
+		"---\ntitle: Post\ntags:\n- go\n---\nBody text\n",
+		"---\ntitle: Post\nsummary: >\n  folded line\n---\nBody text\n",
+	} {
+		doc := Render(in)
+		if doc.Frontmatter["title"] != "Post" {
+			t.Errorf("%q: frontmatter not read: %#v", in, doc.Frontmatter)
+		}
+		if got := string(doc.HTML); strings.Contains(got, "title:") || strings.Contains(got, "<hr") || !strings.Contains(got, "Body text") {
+			t.Errorf("%q: frontmatter leaked into the body: %q", in, got)
+		}
+	}
+}
+
 func TestTenDigitOrdinalIsNotAList(t *testing.T) {
 	got := string(RenderHTML("1000000000. item\n1000000001. item2\n"))
 	if strings.Contains(got, "<ol") {
