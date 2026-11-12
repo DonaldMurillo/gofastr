@@ -664,6 +664,27 @@ few lines, and link the PR or the docs page for the rest.
   could ask for `?page=/admin` and read the names of the admin drawer,
   palette and shortcut sheet. `/__gofastr/widgets` also answers
   `Cache-Control: no-store` with `Vary: Cookie`.
+- **The Roles grid refuses a revoke that locks the caller out.** An admin
+  could untick a permission their own role held and then could not grant
+  it back. The save is refused before any write when none of the
+  caller's roles would still hold it.
+- **A static export writes no chrome for a widget `ListedFor` hides.**
+  The admin nav drawer, command palette and shortcut sheet were left out
+  of `widgets.json` but their chrome, which renders the back-office nav,
+  was written as public files.
+- **The real-estate example's tours and inquiries declare `states:`**, so
+  an anonymous visitor can no longer book a tour already `confirmed` or
+  file an inquiry already `converted`.
+- **The default email check refuses a value that is not one
+  `local@domain` address** ([auth](framework/docs/content/auth.md)).
+  Registration accepted `notanemail` as an account. Register, login,
+  magic link, password reset and OAuth now answer 400 `invalid_email`
+  for a value with no `@`, more than one, white space or a control
+  character. The upgrade note carries a query that finds stored
+  accounts with no valid address.
+- **An anonymous MCP caller no longer lists permission-gated entity
+  tools.** It saw the full input schema of tools a signed-in caller
+  without the permission had hidden.
 
 ### Fixed
 - **A refused entity screen keeps its heading.** A list, record or
@@ -1531,6 +1552,108 @@ few lines, and link the PR or the docs page for the rest.
   the locale tag bound applies after lower-casing and trimming
   ([i18n](framework/docs/content/i18n.md)); and the legacy-timestamp
   check reads the whole column on every filtered request.
+- **A list query pair that does not decode answers 400.** `url.ParseQuery`
+  drops a pair with a malformed percent escape or a `;` separator, so
+  `?cursor=%ZZ` restarted a walk at page 1 and `?name=%ZZ` read as no
+  filter, both with a 200. The crud list and the entity CSV export read
+  their query through the new `filter.ParseQueryStrict` and answer
+  `query_undecodable`; an entityui list screen shows its "Filter not
+  applied" warning when the pair is one of its own params, so a keyed
+  list does not warn for its neighbour's.
+- **A `?where=` leaf with a null or missing value answers 400.**
+  `{"field":"title","value":null}` compiled to `title = ''` on a text
+  column; it and a null `in` entry now answer
+  `filter.where_needs_value`. An explicit `""` still matches the empty
+  string.
+- **The CSV export refuses `?q=` on an entity with no search fields**, as
+  the REST list does, instead of exporting every row.
+- **llm.md text cannot turn control-byte entities into markup**, and a
+  code block in a table cell keeps its row whole. Inline code keeps the
+  spaces at its ends, and a code block inside a paragraph that also
+  holds an entity stays a code block.
+- **Markdown:** a leading `---` with prose under it is body, not
+  frontmatter, and so is a block holding any line that is not a
+  `key: value` pair with a key, a `#` comment or an indented or `- item`
+  continuation ([core packages](framework/docs/content/core-packages.md)).
+  A ten-digit ordinal is paragraph text, not a list.
+- **A long Postgres isolation database name is cut on a rune boundary**,
+  and an isolation id longer than 63 bytes no longer panics: its suffix
+  becomes a hash of the id. A shorter id keeps its database name.
+- **App spec validation** refuses a callout with neither title nor text,
+  a pricing plan with `cta_text` and no safe `cta_href`, and a number in
+  any catalog block's text prop, a pricing plan's text props or its
+  `features` entries (each used to generate a screen that
+  answered 500 or drew nothing) ([app spec](framework/docs/content/app-spec.md)).
+- **`generate app --add` judges a fragment's screen routes by the
+  project's settings**: admin path, PWA files, `llm.md`, the auth `me`
+  route, the entity API prefix and locale prefixes. The signed-out
+  screen warning reads the project's auth too, so a fragment joining a
+  project with auth on is not told nobody can sign in.
+- **An explicit `base_url: http://localhost:8080` is kept.** The
+  generator spelled it and an unset `base_url` as the same literal, so
+  `gofastr pack` dropped it and `generate app --add` read the project as
+  having no base URL, refusing an absolute `login_form` action the whole
+  spec accepts. An unset `base_url` now falls back through a
+  `devBaseURL` constant in `main.go`
+  ([app spec](framework/docs/content/app-spec.md)); an app generated
+  before this change packs its fallback as `base_url:
+  http://localhost:8080` until it is regenerated.
+- **`gofastr pack` keeps** callout and divider blocks, a stat_grid's
+  layout and a static stat value, a hero's image and lone secondary CTA,
+  a card holding a chart, and `type: section` and bare-tag text blocks.
+- **Every 4xx and 5xx status Go names has a translatable phrase**
+  ([i18n](framework/docs/content/i18n.md)); 402, 408, 423, 451, 507 and
+  the rest fell back to English.
+- **App icons from a phone photo come out upright**: uihost applies the
+  EXIF orientation before cropping ([SEO](framework/docs/content/seo.md)).
+- **A dark code-color token takes the same check as its light twin**, so
+  a theme with `DarkCode` set to a value like `inherit` round-trips
+  through `ApplyTokens`.
+- **Owned style sheets decode escaped custom-property names** before the
+  token checks, so `--\63 olor-primary` is refused as a theme token
+  redeclaration and `var(--\63 olor-primary)` is not reported unknown.
+  The same goes for an escaped `@property` name and for standard
+  property names, read decoded and case folded: `\61 nimation` and
+  `ANIMATION` still need a reduced-motion block, and `\70 adding: 16px`
+  is still the `--spacing-lg` value.
+- **A float store slice stamps the text the runtime paints**: SSR writes
+  `1e-7` and `1.23e+23` as JavaScript's `String` does, not fixed notation,
+  and negative zero as `0`.
+- **`gofastr release --pkg=main.go` asks for `--name`** instead of naming
+  the release `command-line-arguments`.
+- **`gofastr docs --grep`, `audit a11y --pages/--url` and `upgrade`
+  refuse a flag as a flag's value** (write `--grep=--serve` to search for
+  one). `audit a11y` and `upgrade` also refuse an empty value
+  (`--to ""`, `--url=`) where it fell back to the default, and name the
+  first argument error: `--url --bogus` reports the missing URL.
+- **Docs:** grouped entities mount at the group prefix
+  ([API versioning](framework/docs/content/api-versioning.md)); an unknown
+  actor stores NULL in `actor_id`, not `-`
+  ([audit log](framework/docs/content/audit-log.md)); the live dashboard
+  loop keeps its own topic set
+  ([live dashboards](framework/docs/content/live-dashboards.md)); BlurHash
+  scales the image itself, so callers do not pre-resize; the
+  `optimistic-ui` events and error line, the core packages with external
+  dependencies, and how `static/` is served.
+- **A create `entity_form` must list every required field**
+  ([app spec](framework/docs/content/app-spec.md)). One that left out a
+  required field with no default validated, and every submit answered
+  400. The real-estate, lms and project-manager examples had four such
+  forms; each now lists its field.
+- **A repeated `?include=` key answers 400 `include_repeated`**
+  ([includes](framework/docs/content/includes.md)); the second key was
+  half-applied.
+- **The CSV export, bulk, list-deleted, saved-views and relation-picker
+  routes refuse as the list route does**: an anonymous caller gets 401,
+  not 403.
+- **A wrong path or method under `/mcp` or on `/openapi.json` answers a
+  JSON problem document** instead of the UI host's HTML page, and opens
+  no guest session.
+- **Record forms carry `enctype="multipart/form-data"`**, so a create
+  form submitted without JavaScript sends a body the CRUD route accepts.
+  An edit form still needs the runtime: its native POST reaches a route
+  that serves PUT and PATCH
+  ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
 
 ## [0.96.0] - 2026-11-06
 

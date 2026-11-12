@@ -390,3 +390,39 @@ func TestUpgradeReportScrubsHitText(t *testing.T) {
 		t.Errorf("scrubbed hit text missing, got:\n%s", report)
 	}
 }
+
+// TestUpgradeValueFlagRefusesNextFlag: `--to --apply` took "--apply" as
+// the target version and dropped the apply.
+func TestUpgradeValueFlagRefusesNextFlag(t *testing.T) {
+	for _, args := range [][]string{{"--to", "--apply"}, {"--from", "--to=v1.0.0"}, {"--to"}} {
+		opts, _ := parseUpgradeArgs(args)
+		if opts.missingValue != args[0] {
+			t.Errorf("%q: missingValue = %q, want %q", args, opts.missingValue, args[0])
+		}
+	}
+}
+
+// An empty --to or --from fell back to the default target or version.
+func TestUpgradeEmptyValueRefused(t *testing.T) {
+	for _, args := range [][]string{{"--to", ""}, {"--to="}, {"--from", ""}, {"--from="}} {
+		opts, bad := parseUpgradeArgs(args)
+		want := args[0]
+		if i := strings.IndexByte(want, '='); i >= 0 {
+			want = want[:i]
+		}
+		if bad != "" || opts.missingValue != want {
+			t.Errorf("%q: missingValue = %q, bad = %q, want missing %q", args, opts.missingValue, bad, want)
+		}
+	}
+}
+
+// The first argument error is the one reported: `--to --bogus` named
+// --bogus and hid the missing version.
+func TestUpgradeFirstArgErrorWins(t *testing.T) {
+	if opts, bad := parseUpgradeArgs([]string{"--to", "--bogus"}); bad != "" || opts.missingValue != "--to" {
+		t.Errorf("--to --bogus: missing = %q, bad = %q, want missing --to", opts.missingValue, bad)
+	}
+	if opts, bad := parseUpgradeArgs([]string{"--bogus", "--to"}); bad != "--bogus" || opts.missingValue != "" {
+		t.Errorf("--bogus --to: missing = %q, bad = %q, want bad --bogus", opts.missingValue, bad)
+	}
+}

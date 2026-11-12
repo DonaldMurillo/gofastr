@@ -45,6 +45,19 @@ func TestStatusPhraseCoversRefusals(t *testing.T) {
 	}
 }
 
+// Every error status Go names has a phrase, so HTTPErrorFor at 507 or
+// 451 writes a catalog key, not untranslatable http.StatusText English.
+func TestStatusPhraseEveryNamedError(t *testing.T) {
+	for code := 400; code < 600; code++ {
+		if http.StatusText(code) == "" {
+			continue
+		}
+		if StatusPhrase(code).IsZero() {
+			t.Errorf("StatusPhrase(%d) is zero; %q has no catalog key", code, http.StatusText(code))
+		}
+	}
+}
+
 func TestHTTPErrorZeroPhraseUsesStatusText(t *testing.T) {
 	w := httptest.NewRecorder()
 	HTTPError(w, httptest.NewRequest("GET", "/", nil), http.StatusTeapot, Phrase{})

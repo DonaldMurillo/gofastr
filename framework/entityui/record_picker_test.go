@@ -131,7 +131,8 @@ func TestPickerHandlerRefusals(t *testing.T) {
 }
 
 // SECURITY: a caller who may not read the related entity learns nothing
-// about its records, and an anonymous caller is refused the host entity.
+// about its records, and an anonymous caller is refused the host entity
+// with the list route's 401.
 func TestPickerHandlerReadGates(t *testing.T) {
 	x := postsWithGatedAuthor(t, false)
 	req := httptest.NewRequest(http.MethodPost, "/api/posts/_pick?field=author_id", strings.NewReader(`{"q":""}`))
@@ -148,13 +149,14 @@ func TestPickerHandlerReadGates(t *testing.T) {
 	req = req.WithContext(inv.ctx("/api/invoices/_pick?field=customer_id", ""))
 	rec = httptest.NewRecorder()
 	inv.ui.PickerHandler("invoices").ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "Acme") {
+	if rec.Code != http.StatusUnauthorized || strings.Contains(rec.Body.String(), "Acme") {
 		t.Fatalf("SECURITY: an anonymous picker search answered %d:\n%s", rec.Code, rec.Body)
 	}
 }
 
 // SECURITY: a caller refused the host entity learns nothing through its
-// picker, even when the related entity is open to them.
+// picker, even when the related entity is open to them. Anonymous here,
+// so the refusal is the list route's 401.
 func TestPickerHandlerHostGate(t *testing.T) {
 	x := newTestUI(t,
 		map[string]entity.EntityConfig{
@@ -172,7 +174,7 @@ func TestPickerHandlerHostGate(t *testing.T) {
 	req = req.WithContext(x.ctx("/api/posts/_pick?field=author_id", ""))
 	rec := httptest.NewRecorder()
 	x.ui.PickerHandler("posts").ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "Jane") {
+	if rec.Code != http.StatusUnauthorized || strings.Contains(rec.Body.String(), "Jane") {
 		t.Fatalf("SECURITY: a refused host answered %d:\n%s", rec.Code, rec.Body)
 	}
 }

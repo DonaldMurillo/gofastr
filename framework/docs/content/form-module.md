@@ -36,7 +36,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 
 | Component | Function | Purpose |
 |-----------|----------|---------|
-| Form | `ui.Form(FormConfig)` | `<form>` with action, method, optional FieldErrors; `SubmitFullWidth` makes the actions row a block column so the primary button spans the card (mobile-first auth/wizard forms) |
+| Form | `ui.Form(FormConfig)` | `<form>` with action, method, optional FieldErrors; `SubmitFullWidth` makes the actions row a block column so the primary button spans the card (mobile-first auth/wizard forms); `Multipart` sets `enctype="multipart/form-data"` for an upload or a route that refuses urlencoded bodies |
 | FormFrame | `ui.FormFrame(FormFrameConfig)` | Two-column record-form frame: a wide main column beside a narrow side rail, stacking on the form's own width |
 | FormField | `ui.FormField(FormFieldConfig)` | Label + input + help/error wrapper |
 | FormFieldFor | `ui.FormFieldFor(errs, name, config)` | FormField with per-field error from FieldErrors |

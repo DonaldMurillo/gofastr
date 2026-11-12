@@ -79,7 +79,7 @@ type rawPred struct {
 	Field  *string            `json:"field"`
 	Op     *string            `json:"op"`
 	Value  *string            `json:"value"`
-	Values *[]string          `json:"values"`
+	Values *[]*string         `json:"values"`
 }
 
 // ParseWhere parses a `?where=<json>` predicate tree and validates every
@@ -191,7 +191,15 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 		}
 		var vals []string
 		if rp.Values != nil {
-			vals = *rp.Values
+			// encoding/json reads a null entry into a string as "", so
+			// [null] compared with the empty string; refuse it instead.
+			vals = make([]string, 0, len(*rp.Values))
+			for _, v := range *rp.Values {
+				if v == nil {
+					return Predicate{}, i18n.NewError(reasonWhereNeedsValue, map[string]any{"field": strconv.Quote(*rp.Field), "op": strconv.Quote(opTok)})
+				}
+				vals = append(vals, *v)
+			}
 		} else if rp.Value != nil && *rp.Value != "" {
 			// Count separators before splitting. The where-body is size-bounded,
 			// so this is defence in depth rather than a live DoS, but the
@@ -209,9 +217,14 @@ func parseNode(msg json.RawMessage, idx *predFieldIndex, depth int, count *int) 
 		if rp.Values != nil {
 			return Predicate{}, i18n.NewError(reasonWhereStrayMember, map[string]any{"op": strconv.Quote(opTok), "member": strconv.Quote("values")})
 		}
-		if rp.Value != nil {
-			leaf.Value = *rp.Value
+		// A JSON null decodes into the *string as "not sent", the same
+		// nil an absent member leaves: either one compared a text column
+		// with '' while an int column refused it. Every scalar op reads
+		// its value, so a missing one is an error on any column type.
+		if rp.Value == nil {
+			return Predicate{}, i18n.NewError(reasonWhereNeedsValue, map[string]any{"field": strconv.Quote(*rp.Field), "op": strconv.Quote(opTok)})
 		}
+		leaf.Value = *rp.Value
 	}
 	if err := validateLeaf(&leaf, idx); err != nil {
 		return Predicate{}, err

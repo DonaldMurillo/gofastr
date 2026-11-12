@@ -1180,3 +1180,29 @@ func TestPack_InvalidUTF8ValueRefused(t *testing.T) {
 		t.Fatalf("encodeAppSpecYAML of an invalid UTF-8 value: %v, want a refusal naming the field", err)
 	}
 }
+
+// print.Config carries a PathPrefix too. A main.go that wires it after the
+// admin battery must still pack the admin path from admin.Config.
+func TestPackAdminIgnoresPrintConfig(t *testing.T) {
+	a, err := appspec.DecodeAppSpecFile(clitest.MeridianYML())
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	dir := meridianWithEnv(t, a)
+	mainGo := filepath.Join(dir, "main.go")
+	src, err := os.ReadFile(mainGo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src = append(src, "\nvar printBattery = print.New(print.Config{PathPrefix: \"/print\"})\n"...)
+	if err := os.WriteFile(mainGo, src, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app, err := packReadApp(dir)
+	if err != nil {
+		t.Fatalf("packReadApp: %v", err)
+	}
+	if !app.Admin.Enabled || app.Admin.Path != "" {
+		t.Fatalf("admin = %+v, want enabled at the default path", app.Admin)
+	}
+}

@@ -432,6 +432,14 @@ through the canonical `core-ui/urlsafe` allow-list (`Anchor` for hrefs,
 Direct; no framework auto-wiring. Start at `core/markdown/markdown.go`:
 `Render`.
 
+Frontmatter is a leading `---` block whose every non-blank line is a
+`key: value` pair with a non-blank key, a `#` comment, or a continuation
+of the key above it: an indented line or a `- item` line (a YAML list,
+nested map or folded string). Continuation lines are skipped, so that
+key reads as empty. Any other line makes the block body: a document that
+opens with `---`, prose, then another `---` keeps the prose, rendered
+after a thematic break.
+
 Line breaks follow CommonMark. A plain newline inside a paragraph, list
 item or blockquote is a soft break: it renders as a newline, which the
 browser shows as a space, so source hard-wrapped at 72 columns reads as

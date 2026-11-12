@@ -202,3 +202,70 @@ func TestQueryBoxOffByDefault(t *testing.T) {
 		t.Errorf("the query box rendered without QueryBox():\n%s", html)
 	}
 }
+
+// A query pair that does not decode is dropped by url.ParseQuery, so the
+// screen listed every row as if the filter were never sent. It warns
+// instead, the way a filter that does not parse does.
+func TestListWarnsUndecodableQuery(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").QueryBox()
+	for _, q := range []string{"?filter=status%ZZ", "?filter=a;b=c", "?q=%"} {
+		if got := listHTML(t, b, x.ctx("/orders", q)); !strings.Contains(got, "Filter not applied") {
+			t.Errorf("%s: no warning for a pair that does not decode:\n%s", q, got)
+		}
+	}
+	if got := listHTML(t, b, x.ctx("/orders", "?filter="+url.QueryEscape(`status = "paid"`))); strings.Contains(got, "Filter not applied") {
+		t.Errorf("a decodable filter drew the warning:\n%s", got)
+	}
+}
+
+// Two keyed lists share one query string: a pair that does not decode
+// warns the list that reads it, never its neighbour. A key that does not
+// decode belongs to no list anyone can name, so every list warns.
+func TestUndecodablePairWarnsItsOwnList(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	a, b := x.ui.List("orders").Key("a"), x.ui.List("orders").Key("b")
+	for _, q := range []string{"?a_sort=name&b_q=%ZZ", "?b_filter=a;b", "?b_f_status=paid%ZZ", "?other=%ZZ"} {
+		ctx := x.ctx("/page", q)
+		if strings.Contains(listHTML(t, a, ctx), "Filter not applied") {
+			t.Errorf("%s: list a warned for a pair it does not read", q)
+		}
+	}
+	for _, q := range []string{"?b_q=%ZZ", "?b_filter=a;b", "?b_f_status=paid%ZZ"} {
+		if !strings.Contains(listHTML(t, b, x.ctx("/page", q)), "Filter not applied") {
+			t.Errorf("%s: list b drew no warning for its own pair", q)
+		}
+	}
+	if !strings.Contains(listHTML(t, a, x.ctx("/page", "?b_q%ZZ=x")), "Filter not applied") {
+		t.Errorf("a key that does not decode drew no warning")
+	}
+}
+
+// A dropped sort, page, layout or column pair changes how the rows look,
+// not which rows show, so it draws no warning; neither does ?q= on an
+// entity with no search fields, which the list ignores either way.
+func TestUndecodableLookParamNoWarning(t *testing.T) {
+	noSearch := ordersConfig()
+	noSearch.SearchFields = nil
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig(), "plain": noSearch},
+		map[string][]map[string]any{"orders": ordersRows(), "plain": ordersRows()},
+	)
+	for _, q := range []string{"?sort=%ZZ", "?page=%ZZ", "?as=%ZZ", "?cols=a;b", "?per=%"} {
+		if strings.Contains(listHTML(t, x.ui.List("orders"), x.ctx("/orders", q)), "Filter not applied") {
+			t.Errorf("%s: warned for a pair that does not narrow the list", q)
+		}
+	}
+	if strings.Contains(listHTML(t, x.ui.List("plain"), x.ctx("/plain", "?q=%ZZ")), "Filter not applied") {
+		t.Error("?q= on an entity with no search fields drew the warning")
+	}
+	if !strings.Contains(listHTML(t, x.ui.List("orders"), x.ctx("/orders", "?saved=%ZZ")), "Filter not applied") {
+		t.Error("a dropped saved view widens the list and drew no warning")
+	}
+}

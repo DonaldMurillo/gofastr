@@ -619,8 +619,11 @@ func newRunID() string { return strings.ToLower(rand.Text()) }
 // RPC, and the record header's action buttons (scope "record"). App.EntityUI
 // mounts it for every entity with write routes. It answers 404 for an
 // entity with no write routes, or a list scope on one with
-// Display.NoBulk; 403 when the caller may not read the entity or run the
-// action; 422 naming what to fix; and on success a toast header with the
+// Display.NoBulk; 415, 413 or 400 for a body that is not JSON, too
+// large or malformed, all read before the gate; then the list route's refusal for a caller who may
+// not read the entity (CrudHandler.RequireRead: 401 with no session or
+// tenant, 403 without the permission); 403 when the caller may not run
+// the action; 422 naming what to fix; and on success a toast header with the
 // counts (200) or the queued count (202). A record action answers 200
 // when it ran, 403 when the record's gates skipped it and 500 when Run
 // failed.
@@ -657,8 +660,7 @@ func (u *UI) BulkHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
 		offered := u.bulkActions

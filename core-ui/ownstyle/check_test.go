@@ -527,3 +527,43 @@ func TestCheckStatementAtRule(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckEscapedCustomProperty: the browser decodes --\63 olor-primary
+// to --color-primary, so the checks must too. The raw compare let an
+// owned sheet redeclare a theme token (1820) and refused a real token
+// reference (1806).
+func TestCheckEscapedCustomProperty(t *testing.T) {
+	ds := Check("t.style.css", `.a { --\63 olor-primary: #000; }`, KindScoped, defaultTokens(t))
+	if len(ds) == 0 || ds[0].Rule != RuleTokenCustomProperty {
+		t.Fatalf("escaped token redeclaration: want 1820, got %s", joinDiags(ds))
+	}
+	if ds := Check("t.style.css", `.b { color: var(--\63 olor-primary); }`, KindScoped, defaultTokens(t)); len(ds) != 0 {
+		t.Fatalf("escaped token reference: unexpected %s", joinDiags(ds))
+	}
+	if ds := Check("t.style.css", `.c { --\66 oo: 1px; margin: var(--foo); }`, KindScoped, defaultTokens(t)); len(ds) != 0 {
+		t.Fatalf("escaped declaration read back by its decoded name: unexpected %s", joinDiags(ds))
+	}
+	// An @property name with its hyphens escaped registers --foo.
+	if ds := Check("t.style.css", "@property \\2d-foo { syntax: \"<length>\"; }\n.d { margin: var(--foo); }", KindScoped, defaultTokens(t)); len(ds) != 0 {
+		t.Fatalf("escaped @property name not registered: %s", joinDiags(ds))
+	}
+}
+
+// A standard property name is read the way the browser reads it, escapes
+// decoded and ASCII case folded: \61 nimation and ANIMATION are both
+// animation, and \70 adding is padding. The raw compare skipped the
+// reduced-motion warning (1813) and the hard-coded token value (1807).
+func TestCheckEscapedPropertyName(t *testing.T) {
+	for _, src := range []string{`.p { \61 nimation: pulse 1s infinite; }`, `.p { ANIMATION: pulse 1s infinite; }`, `.p { Animation-Name: pulse; }`} {
+		ds := Check("t.style.css", src, KindScoped, defaultTokens(t))
+		if len(ds) != 1 || ds[0].Rule != RuleAnimationWithoutReducedMotion {
+			t.Errorf("%s: want 1813, got %s", src, joinDiags(ds))
+		}
+	}
+	for _, src := range []string{`.a { \70 adding: 16px; }`, `.a { PADDING: 16px; }`} {
+		ds := Check("t.style.css", src, KindScoped, defaultTokens(t))
+		if len(ds) != 1 || !strings.Contains(ds[0].String(), "GOFASTR1807 16px is --spacing-lg") {
+			t.Errorf("%s: want 1807, got %s", src, joinDiags(ds))
+		}
+	}
+}

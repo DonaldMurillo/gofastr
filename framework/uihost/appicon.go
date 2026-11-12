@@ -47,7 +47,10 @@ func WithAppIcon(source []byte) Option {
 			slog.Default().Warn("uihost: WithAppIcon source is not a decodable image; skipping icon generation", "err", err)
 			return
 		}
-		sq := squareCrop(src)
+		// Apply EXIF orientation before the crop: the PNG renditions
+		// carry no orientation tag, so a phone photo would otherwise ship
+		// sideways, and a portrait source must be cropped as displayed.
+		sq := squareCrop(src.AutoOrient())
 		icons := make(map[string][]byte, len(appIconSizes))
 		for _, size := range appIconSizes {
 			b, err := sq.Resize(size, size).PNG().Bytes()

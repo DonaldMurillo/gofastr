@@ -3,9 +3,11 @@ package crud
 import (
 	"context"
 	"errors"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -30,6 +32,12 @@ func TestMCPToolGateBranches(t *testing.T) {
 	policy := access.NewRolePolicy()
 	policy.Grant("editor", "notes:write")
 	user := handler.SetUser(context.Background(), struct{ ID string }{ID: "u1"})
+	anonViewer := access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"viewer"})
+	withCreds := func(ctx context.Context) context.Context {
+		r := httptest.NewRequest("POST", "/mcp", nil)
+		r.Header.Set("Cookie", "gofastr-session=s1")
+		return mcp.WithRequest(ctx, r)
+	}
 	as := func(role string) context.Context {
 		return access.WithRoles(access.WithPolicy(user, policy), []string{role})
 	}
@@ -42,7 +50,13 @@ func TestMCPToolGateBranches(t *testing.T) {
 		deny bool
 	}{
 		{"unresolved caller is left to the route", context.Background(), opCreate, false, false},
-		{"a policy without a user is left to the route", access.WithRoles(access.WithPolicy(context.Background(), policy), []string{"viewer"}), opCreate, false, false},
+		{"a policy without a user is left to the route", withCreds(anonViewer), opCreate, false, false},
+		// No user and no credential the redispatch could resolve: the
+		// call can only run anonymous, so the gate judges it now rather
+		// than listing the tool's schema to a caller the route refuses.
+		{"a credential-less caller is judged", anonViewer, opCreate, false, true},
+		{"a bare request is judged", mcp.WithRequest(anonViewer, httptest.NewRequest("POST", "/mcp", nil)), opCreate, false, true},
+		{"a credential-less caller keeps ungated", anonViewer, opRead, false, false},
 		{"ungated operation", as("viewer"), opRead, false, false},
 		{"granted", as("editor"), opCreate, false, false},
 		{"missing permission", as("viewer"), opCreate, false, true},

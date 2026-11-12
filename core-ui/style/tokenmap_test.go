@@ -362,3 +362,31 @@ func tokenMapsEqual(a, b map[string]string) bool {
 	}
 	return true
 }
+
+// TestDarkCodeTakesLightGrammar: a dark tk-* override answers to the
+// same free-form check as its light twin, so a value the light side
+// accepts survives the ThemeToTokens -> ApplyTokens round trip.
+func TestDarkCodeTakesLightGrammar(t *testing.T) {
+	base := style.DefaultTheme()
+	if _, err := style.ApplyTokens(base, map[string]string{"tk-kw": "inherit"}); err != nil {
+		t.Fatalf("light tk-kw: %v", err)
+	}
+	got, err := style.ApplyTokens(base, map[string]string{"dark.tk-kw": "inherit"})
+	if err != nil {
+		t.Fatalf("dark tk-kw refused a value light tk-kw takes: %v", err)
+	}
+	if got.DarkCode["kw"] != "inherit" {
+		t.Fatalf("ApplyTokens dropped the dark override: DarkCode[kw] = %q", got.DarkCode["kw"])
+	}
+	tokens := style.ThemeToTokens(got)
+	if tokens["dark.tk-kw"] != "inherit" {
+		t.Fatalf("ThemeToTokens dropped the dark override: dark.tk-kw = %q", tokens["dark.tk-kw"])
+	}
+	back, err := style.ApplyTokens(base, tokens)
+	if err != nil {
+		t.Fatalf("round trip refused: %v", err)
+	}
+	if back.DarkCode["kw"] != "inherit" {
+		t.Fatalf("round trip lost the dark override: DarkCode[kw] = %q", back.DarkCode["kw"])
+	}
+}

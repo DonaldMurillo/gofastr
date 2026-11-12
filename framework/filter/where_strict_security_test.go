@@ -47,3 +47,37 @@ func TestParseWhereDecodesStrictly(t *testing.T) {
 		}
 	}
 }
+
+// TestWhereRefusesNullValue: encoding/json reads a JSON null into a
+// *string as "member not sent", so {"field":"title","value":null}
+// compared title with the empty string on text columns (200) while an
+// int column refused it. A leaf whose op reads a value must carry one,
+// and an in list may not hold a null entry, on every column type.
+func TestWhereRefusesNullValue(t *testing.T) {
+	fields := []schema.Field{
+		{Name: "title", Type: schema.String},
+		{Name: "score", Type: schema.Int},
+	}
+	for _, f := range []string{"title", "score"} {
+		for _, raw := range []string{
+			`{"field":"` + f + `","value":null}`,
+			`{"field":"` + f + `"}`,
+			`{"field":"` + f + `","op":"ne"}`,
+			`{"field":"` + f + `","op":"lt","value":null}`,
+			`{"field":"` + f + `","op":"in","values":null}`,
+			`{"field":"` + f + `","op":"in","values":[null]}`,
+			`{"field":"` + f + `","op":"in","values":["1",null]}`,
+		} {
+			if p, err := ParseWhere(raw, fields); err == nil {
+				t.Errorf("ParseWhere(%s) accepted: %+v", raw, *p)
+			}
+		}
+	}
+	if _, err := ParseWhere(`{"field":"title","op":"like","value":null}`, fields); err == nil {
+		t.Error("like with a null value accepted")
+	}
+	// An empty string sent on purpose still compares with ''.
+	if _, err := ParseWhere(`{"field":"title","value":""}`, fields); err != nil {
+		t.Errorf("explicit empty value refused: %v", err)
+	}
+}

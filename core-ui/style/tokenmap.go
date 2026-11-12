@@ -415,9 +415,11 @@ func nonEmptyStringField(v reflect.Value, name string) (string, bool) {
 // may target any token that has a light counterpart (so the re-declaration
 // overrides something real) OR an entry already present in the dark map
 // (so a host can mutate an existing override whose light token is absent,
-// e.g. a code-only DarkCode on a theme without a typed Code group). The
-// value must pass the same Color grammar as a light Color, it reaches CSS
-// as "--color-<name>: <value>" inside the dark-scheme block.
+// e.g. a code-only DarkCode on a theme without a typed Code group). Each
+// value passes the same check as its light twin: dark.color-* the Color
+// grammar, dark.tk-* the free-form check (no declaration breakers). It
+// reaches CSS as "--color-<name>" or "--tk-<name>" inside the dark-scheme
+// block.
 func applyDark(key, value string, lightColors, lightCode map[string]bool, darkColors, darkCode *map[string]string) error {
 	if name, ok := strings.CutPrefix(key, "color-"); ok {
 		if !lightColors[name] && !mapHasKey(*darkColors, name) {
@@ -433,7 +435,7 @@ func applyDark(key, value string, lightColors, lightCode map[string]bool, darkCo
 		if !lightCode[name] && !mapHasKey(*darkCode, name) {
 			return fmt.Errorf("dark override targets %q which is not a code-color token in this theme", name)
 		}
-		if err := validateColorValue(value); err != nil {
+		if err := validateFreeFormCSS(value); err != nil {
 			return err
 		}
 		ensureMap(darkCode)[name] = value

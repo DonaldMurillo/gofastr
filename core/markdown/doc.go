@@ -11,13 +11,18 @@
 //   - Fenced code blocks (three or more ` or ~, with an optional info string:
 //     a language, then options this package passes through in data-meta)
 //   - Unordered lists (-, *, +)
-//   - Ordered lists (1., 2., …; one that does not begin at 1 carries start)
+//   - Ordered lists (1., 2., …; one that does not begin at 1 carries start;
+//     a number of ten or more digits is paragraph text, as in CommonMark)
 //   - Nested lists, fenced code and further paragraphs under a list item,
 //     on lines indented two or more spaces past the item's marker
 //   - Blockquotes (>)
 //   - Horizontal rules (---, ***, ___)
 //   - GFM-style tables (| col | col |; \| is a literal pipe in a cell)
-//   - YAML-ish frontmatter (--- key: value --- at the top of the document)
+//   - YAML-ish frontmatter (--- key: value --- at the top of the document;
+//     an indented or `- item` line after a key continues that key and is
+//     skipped, so the key reads as empty; a block holding any other line
+//     that is neither a pair nor a # comment is body, a thematic break
+//     and its text)
 //
 // Supported inline elements:
 //   - Bold (**…** or __…__)

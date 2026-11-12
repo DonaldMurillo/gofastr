@@ -406,3 +406,36 @@ func TestHTML2MD_ImageAltControlEntities(t *testing.T) {
 		t.Fatalf("got %q, want %q", got, want)
 	}
 }
+
+// A multi-line <pre> in a table cell was parked as a fence slot that
+// mdTableCell never saw, and the fence came back, newlines and all, in
+// the middle of the pipe row. A cell's code block is one code span now.
+func TestHTML2MD_TableCellCodeBlock(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"<table><tr><th>C</th></tr><tr><td><pre>line1\nline2</pre></td></tr></table>",
+			"| C |\n| --- |\n| `line1 line2` |"},
+		{"<table><tr><th>C</th><th>D</th></tr><tr><td><pre><code>a | b\n&lt;i&gt;x&lt;/i&gt; `y`</code></pre></td><td>z</td></tr></table>",
+			"| C | D |\n| --- | --- |\n| `` a \\| b <i>x</i> `y` `` | z |"},
+	} {
+		if got := htmlToMarkdown(tc.in); got != tc.want {
+			t.Errorf("got  %q\nwant %q", got, tc.want)
+		}
+	}
+	// CommonMark strips one space from each end of a span that starts and
+	// ends with one, so code with its own boundary spaces is padded.
+	for _, tc := range []struct{ in, want string }{
+		{"<table><tr><th>C</th></tr><tr><td><pre> a\n b </pre></td></tr></table>",
+			"| C |\n| --- |\n| `  a  b  ` |"},
+		{"<p><code> x </code></p>", "`  x  `"},
+		{"<p><code> x</code></p>", "` x`"},
+		{"<p><code>   </code></p>", "`   `"},
+	} {
+		if got := htmlToMarkdown(tc.in); got != tc.want {
+			t.Errorf("got  %q\nwant %q", got, tc.want)
+		}
+	}
+	// Outside a table the block is still a fence.
+	if got := htmlToMarkdown("<p>x</p><pre>a\nb</pre>"); !strings.Contains(got, "````\na\nb\n````") {
+		t.Errorf("a code block outside a table lost its fence: %q", got)
+	}
+}

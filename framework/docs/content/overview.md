@@ -71,8 +71,11 @@ commit. When the framework is in your way, drop back to
 `core/`. You can also scaffold a whole app from a `gofastr.yml` app spec with
 the [code generator](/docs/codegen); the running app never needs the file.
 
-(Only `core/middleware` pulls in a dependency, OpenTelemetry, for tracing.
-Everything else in `core/` is stdlib-only.)
+(A few `core/` packages pull in a dependency: `core/middleware` and
+`core/tracing` use OpenTelemetry, `core/middleware` also uses
+`golang.org/x/net/http/httpguts`, `core/i18n` uses `golang.org/x/text`,
+`core/settings` uses `golang.org/x/mod` and `core/webbotauth` uses
+`golang.org/x/net`. The rest of `core/` is stdlib-only.)
 
 ## Modeling your domain
 

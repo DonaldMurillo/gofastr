@@ -209,8 +209,10 @@ func (f signedOutFinding) Message() string {
 // `gofastr validate` and `gofastr generate`, never an error: owned Go
 // can wire its own sign-in after generation. An entity with an access:
 // gate is left alone, since a blank read: there already opens its reads.
+// A fragment (generate app --add) is judged by the project's auth
+// (AppSpec.RouteApp), since its own app section is empty.
 func LintSignedOutScreens(bp appspec.AppSpec) []signedOutFinding {
-	if bp.App.Auth.Enabled {
+	if bp.RouteApp().Auth.Enabled {
 		return nil
 	}
 	gated := map[string]bool{}

@@ -117,7 +117,7 @@ func TestCredentialCanonsAgree(t *testing.T) {
 
 	fingerprint := norm(headerStringsNear(t, "app.go", "func credentialFingerprint"))
 	broker := norm(headerStringsNear(t, "processmodule_broker.go", "delegationCredentialHeaders ="))
-	redispatch := norm(headerStringsNear(t, filepath.Join("crud", "mcp.go"), "func runToolRequest"))
+	redispatch := norm(headerStringsNear(t, filepath.Join("crud", "mcp.go"), "redispatchCredentialHeaders ="))
 
 	t.Logf("credentialFingerprint       %v", fingerprint)
 	t.Logf("delegationCredentialHeaders %v", broker)

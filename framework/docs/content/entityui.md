@@ -276,9 +276,12 @@ keeps the UI unchanged; without a callback the default stays
   An `Image` or `File` field is an upload when the app has file storage
   (`framework.WithFileStorage`): the stored file (a thumbnail, or a link
   named by its file name) above a `ui.FileUpload` of the types the field
-  takes; the form then posts multipart (the runtime does so for any
-  form with a file input), and an empty input keeps the stored file. Without storage the stored URL stays an editable text
-  box. A stored key draws at `Extensions.FilesURL` + key (each segment
+  takes, and an empty input keeps the stored file. Without storage the
+  stored URL stays an editable text box. Every record form says
+  `enctype="multipart/form-data"`: the CRUD route reads JSON or
+  multipart and refuses urlencoded, so a browser without the runtime
+  still submits a body the route reads (behind its cross-site guard),
+  and the runtime sends the same form as FormData. A stored key draws at `Extensions.FilesURL` + key (each segment
   escaped; a key with `..` or a scheme other than http(s) draws
   nothing).
 - **A create screen** (`appUI.Create("invoices")`): the same form,
@@ -986,9 +989,13 @@ and so does an entity with no REST write routes.
   the list uses. The export speaks the list's grammar, not the REST
   list's: a parameter that is not the list's own (`?status=paid`, a
   `cursor`, an `f_` param for a field that is not one of the list's
-  `Facets`, another keyed list's params, a typo) answers 400
+  `Facets`, a non-blank `?q=` on an entity with no `SearchFields`,
+  another keyed list's params, a typo) answers 400
   `export_unknown_param` instead of being ignored, and the Export link
-  carries only the list's own params. `NoQuery`, omitted and JSON fields are left out, and a
+  carries only the list's own params. A query with a pair that does not
+  decode (`?status=paid%ZZ`, a bare `%`, a `;` separator), which Go's
+  URL parser would drop before that check ran, answers 400
+  `query_undecodable`. `NoQuery`, omitted and JSON fields are left out, and a
   cell a spreadsheet would run as a formula is prefixed with a quote. A
   number in an `Int`, `Float` or `Decimal` column is written as it is,
   so `-12.5` stays a number a spreadsheet sums; any other value in such

@@ -83,6 +83,18 @@ func TestRepeatedLiterals(t *testing.T) {
 	}
 }
 
+// A property name is read decoded and case folded, as in Check: an
+// escaped or upper-case padding still writes the repeated literal.
+func TestRepeatedLiteralsEscapedName(t *testing.T) {
+	sheets := []SheetSource{
+		{File: "a/x.style.css", Src: `.x { \70 adding: 10px; }`},
+		{File: "b/y.style.css", Src: ".y { PADDING: 10px; }"},
+	}
+	if got := repeatedLiteralFindings(sheets, nil); len(got) != 2 {
+		t.Fatalf("want both sheets named for 10px, got %d: %v", len(got), got)
+	}
+}
+
 // Zeros, a 100% fill and a -1 z-index say "none", "fill" or "behind",
 // not a size: two sheets resetting a list share no look. A z-index
 // other than -1 and a non-zero length still count.

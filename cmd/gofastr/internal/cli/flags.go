@@ -36,8 +36,8 @@ func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool)
 			return seen, fmt.Errorf("unknown flag %s", name)
 		}
 		if !hasValue {
-			if i+1 >= len(args) || isFlagToken(args[i+1]) {
-				return seen, fmt.Errorf("%s needs a value (write %s=<value> for one that starts with a dash)", name, name)
+			if i+1 >= len(args) || IsFlagToken(args[i+1]) {
+				return seen, NeedsValue(name)
 			}
 			i++
 			value = args[i]
@@ -48,4 +48,14 @@ func ParseFlags(args []string, valued map[string]*string, bare map[string]*bool)
 	return seen, nil
 }
 
-func isFlagToken(s string) bool { return len(s) > 1 && s[0] == '-' }
+// IsFlagToken reports whether s reads as a flag rather than a value: it
+// starts with a dash and is not a lone "-" (the stdin marker, and
+// codesign's ad-hoc identity). A hand-rolled `--name value` parser checks
+// it before taking the next argument as the value.
+func IsFlagToken(s string) bool { return len(s) > 1 && s[0] == '-' }
+
+// NeedsValue is the refusal for a valued flag with no value after it, or
+// with the next flag where its value belongs.
+func NeedsValue(name string) error {
+	return fmt.Errorf("%s needs a value (write %s=<value> for one that starts with a dash)", name, name)
+}

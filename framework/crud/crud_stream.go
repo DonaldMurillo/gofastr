@@ -65,7 +65,13 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	// direct in-process callers, so it must do its own scoping AND its own
 	// single-parse to keep the soft-delete gate and ?offset= read off the
 	// same url.Values instead of re-parsing per call.
-	q := r.URL.Query()
+	// Strictly, as List() reads it: a malformed pair (?name=%ZZ) answers
+	// 400 instead of being silently dropped, which is what URL.Query does.
+	q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+	if err != nil {
+		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+		return
+	}
 	// Offset bound, same as List(): the direct-call contract this method
 	// maintains for the owner/tenant and AfterList gates holds for the
 	// skip side too. When chained from List() the guard has already run

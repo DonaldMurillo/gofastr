@@ -12,7 +12,15 @@ import (
 // We deliberately do not parse full YAML, only `key: value` pairs at the
 // top level. Quoted strings are unwrapped; everything else is kept verbatim.
 // Lists, nested maps, and multi-line strings are not supported; if you need
-// them, write a JSON sidecar or wrap goldmark instead.
+// them, write a JSON sidecar or wrap goldmark instead. Their lines (an
+// indented line, or a `- item`, after a key) are skipped as the key's
+// continuation, so the key reads as empty.
+//
+// A closed leading `---` pair is frontmatter only when every non-blank
+// line between the two is a `key: value` pair with a non-blank key, a `#`
+// comment or such a continuation. A document that opens with a thematic break, then prose,
+// then another `---` is body: reading it as frontmatter dropped the prose
+// without a word.
 func splitFrontmatter(input string) (map[string]string, string) {
 	lines := splitLines(input)
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
@@ -28,15 +36,34 @@ func splitFrontmatter(input string) (map[string]string, string) {
 	if end < 0 {
 		return nil, input
 	}
-	fm := make(map[string]string)
+	sawKey := false
 	for _, line := range lines[1:end] {
-		if strings.TrimSpace(line) == "" {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
 			continue
 		}
+		if sawKey && isFrontmatterContinuation(line) {
+			continue
+		}
+		// A pair needs a key: ` : x` has none, and reading the block as
+		// frontmatter would drop that line and the text with it.
+		if k, _, ok := strings.Cut(line, ":"); !ok || strings.TrimSpace(k) == "" {
+			return nil, input
+		}
+		sawKey = true
+	}
+	fm := make(map[string]string)
+	sawKey = false
+	for _, line := range lines[1:end] {
+		t := strings.TrimSpace(line)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		if sawKey && isFrontmatterContinuation(line) {
+			continue
+		}
+		sawKey = true
 		idx := strings.Index(line, ":")
-		if idx <= 0 {
-			continue
-		}
 		key := strings.TrimSpace(line[:idx])
 		val := strings.TrimSpace(line[idx+1:])
 		val = Unquote(val)
@@ -55,6 +82,14 @@ func splitFrontmatter(input string) (map[string]string, string) {
 	}
 	body := strings.Join(lines[end+1:], "\n")
 	return fm, body
+}
+
+// isFrontmatterContinuation reports whether a frontmatter line continues
+// the key above it: an indented line (a nested map, a list item, a folded
+// string) or an unindented `- item` YAML also accepts under a key.
+func isFrontmatterContinuation(line string) bool {
+	return strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") ||
+		line == "-" || strings.HasPrefix(line, "- ")
 }
 
 // Unquote strips one layer of matching surrounding quotes (double or

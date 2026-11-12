@@ -366,7 +366,27 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // handler, which parses once and threads the result through every helper)
 // should call ParseFiltersValues directly to avoid the re-parse.
 func ParseFilters(r *http.Request, fields []schema.Field, opts ...FilterOption) ([]ParsedFilter, error) {
-	return ParseFiltersValues(r.URL.Query(), fields, opts...)
+	q, err := ParseQueryStrict(r.URL.RawQuery)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFiltersValues(q, fields, opts...)
+}
+
+// ParseQueryStrict parses a raw URL query the way url.ParseQuery does,
+// but refuses (filter.query_undecodable) where url.ParseQuery would
+// drop a pair: a key or value with a malformed percent escape (%ZZ, a
+// bare %) or a ';' separator. URL.Query keeps the pairs that decode and
+// discards the rest, so ?status=paid%ZZ read as no filter and ?cursor=%ZZ
+// as no cursor: a list that believed it was narrowed answered every row.
+// Every list-shaped surface (the crud list, its cursor and stream pages,
+// the entityui CSV export) reads its query through this once, at entry.
+func ParseQueryStrict(rawQuery string) (url.Values, error) {
+	q, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		return nil, &i18n.Error{Reason: reasonQueryUndecodable, Err: err}
+	}
+	return q, nil
 }
 
 // ParseFiltersValues is the allocation-conscious variant of ParseFilters:
@@ -713,7 +733,11 @@ func nearestField(key string, fieldNames []string) string {
 // Thin wrapper around ParseSortValues; callers that already hold a
 // url.Values should call ParseSortValues directly.
 func ParseSort(r *http.Request, fields []schema.Field) ([]ParsedSort, error) {
-	return ParseSortValues(r.URL.Query(), fields)
+	q, err := ParseQueryStrict(r.URL.RawQuery)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSortValues(q, fields)
 }
 
 // ParseSortValues is the allocation-conscious variant of ParseSort: it

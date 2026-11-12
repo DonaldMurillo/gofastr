@@ -3,12 +3,14 @@ package entityui
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -105,11 +107,11 @@ func TestExportFollowsQueryAndScope(t *testing.T) {
 }
 
 // An anonymous caller on a default-posture entity gets a refusal, not
-// rows.
+// rows: the list route's 401.
 func TestExportRefusesAnonymous(t *testing.T) {
 	x := newTestUI(t, invoiceEntities(), invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
 	rec, _ := getExport(t, x, context.Background(), "")
-	if rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), "INV-1") {
+	if rec.Code != http.StatusUnauthorized || strings.Contains(rec.Body.String(), "INV-1") {
 		t.Fatalf("anonymous export: %d %s", rec.Code, rec.Body.String())
 	}
 }
@@ -196,4 +198,50 @@ func TestPlainNumberForms(t *testing.T) {
 			t.Errorf("plainNumber(%q) = true", v)
 		}
 	}
+}
+
+// The export's access refusal is the list route's: the same status and
+// envelope, naming the missing permission. It answered a bare
+// {error, reason} with "access denied" while GET /api/invoices answered
+// the CRUD envelope with missing_permission.
+func TestExportRefusalMatchesList(t *testing.T) {
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Exposure = &entity.ExposureConfig{Access: entity.AccessControl{Read: "invoices:read"}}
+	ents["invoices"] = inv
+	x := newTestUI(t, ents, invoiceRows(), withAPI(map[string]string{"invoices": "/api/invoices"}))
+	policy := access.NewRolePolicy()
+	policy.Grant("reader", "invoices:read")
+	m, err := x.ui.meta("invoices")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ctx := range []context.Context{bulkCtx("u1", policy, "viewer"), context.Background()} {
+		list := httptest.NewRecorder()
+		m.ch.List().ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/invoices", nil).WithContext(ctx))
+		rec, _ := getExport(t, x, ctx, "")
+		if rec.Code != list.Code || rec.Body.String() != list.Body.String() {
+			t.Errorf("export refusal = %d %s, want the list's %d %s", rec.Code, rec.Body.String(), list.Code, list.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "INV-1") {
+			t.Fatalf("SECURITY: a refused caller got rows: %s", rec.Body.String())
+		}
+		// The bulk bar's read gate answers the same.
+		code, out := postBulk(t, x, ctx, map[string]any{"_csrf": "tok", "action": "delete", "scope": "selected", "ids": []string{"inv-1"}})
+		if code != list.Code || out["reason"] != listReason(t, list) {
+			t.Errorf("bulk refusal = %d %v, want the list's %d %s", code, out, list.Code, list.Body.String())
+		}
+	}
+	if rec, _ := getExport(t, x, bulkCtx("u1", policy, "reader"), ""); rec.Code != http.StatusOK {
+		t.Fatalf("a reader's export = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func listReason(t *testing.T, rec *httptest.ResponseRecorder) any {
+	t.Helper()
+	var doc map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("list answered non-JSON: %s", rec.Body.String())
+	}
+	return doc["reason"]
 }

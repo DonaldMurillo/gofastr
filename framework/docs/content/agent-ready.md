@@ -390,7 +390,8 @@ line breaks whether or not it wraps a `<code>` element, so a
 highlighted code block (a `<pre>` of per-line spans, which is what
 `ui.CodeBlock` and `ui.Markdown` render) reads as code; a one-line
 `<pre>` stays flowing text. A link or an image inside a table cell
-stays a link. A description list (`ui.DetailList`) reads one
+stays a link, and a code block inside one becomes a single code span,
+since a fence's line breaks would split the row. A description list (`ui.DetailList`) reads one
 `term: description` pair a line.
 
 ### Rendered values cannot inject markdown structure
@@ -538,7 +539,11 @@ rebinding); it does nothing against a direct TCP client, which sets
 Auth splits by tool kind: entity CRUD tools re-dispatch
 through the router, so session/JWT auth, owner scoping, and RBAC apply
 exactly as they do over HTTP (the caller's Cookie/Authorization from the `/mcp`
-request carries through). Directly registered tools, meaning custom
+request carries through). `tools/list` hides an RBAC-gated entity tool
+from a caller the `/mcp` request shows lacks the permission. A caller with
+no user and no credential header (Cookie, Authorization, X-API-Key, an embed
+grant) can only run the call anonymous, so it is judged as anonymous and
+does not see the gated tool's schema. Directly registered tools, meaning custom
 `app.MCP.RegisterTool` handlers and `Endpoint.MCPHandler` twins, run
 without route middleware, so they carry their own gate.
 

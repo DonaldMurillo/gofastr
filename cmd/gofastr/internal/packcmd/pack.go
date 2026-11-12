@@ -1228,7 +1228,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			}
 			key := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) == 1 {
-				key = astSelLast(fn.Recv.List[0].Type) + "." + key
+				key = appspec.AstSelLast(fn.Recv.List[0].Type) + "." + key
 			}
 			stubs[key] = fn
 			if fn.Doc != nil {
@@ -1262,7 +1262,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			if !ok || len(call.Args) != 1 {
 				return true
 			}
-			switch astSelLast(call.Fun) {
+			switch appspec.AstSelLast(call.Fun) {
 			case "Use":
 				id, ok := call.Args[0].(*ast.Ident)
 				if !ok {
@@ -1277,7 +1277,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 				if !ok {
 					return true
 				}
-				typ := astSelLast(lit.Type)
+				typ := appspec.AstSelLast(lit.Type)
 				root, isStub := strings.CutSuffix(typ, "Plugin")
 				if !isStub || stubs[typ+".Init"] == nil {
 					return true
@@ -1309,7 +1309,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	seen := map[string]bool{}
 	ast.Inspect(mainFile, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok || astSelLast(call.Fun) != "RegisterHook" || len(call.Args) != 2 {
+		if !ok || appspec.AstSelLast(call.Fun) != "RegisterHook" || len(call.Args) != 2 {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -1317,11 +1317,11 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			return true
 		}
 		reg, ok := sel.X.(*ast.CallExpr)
-		if !ok || astSelLast(reg.Fun) != "HookRegistry" || len(reg.Args) != 1 {
+		if !ok || appspec.AstSelLast(reg.Fun) != "HookRegistry" || len(reg.Args) != 1 {
 			return true
 		}
 		handler, ok := call.Args[1].(*ast.Ident)
-		when, known := lifecycles[astSelLast(call.Args[0])]
+		when, known := lifecycles[appspec.AstSelLast(call.Args[0])]
 		if !ok || !known || stubs[handler.Name] == nil || seen[handler.Name] {
 			return true
 		}
@@ -1542,7 +1542,7 @@ func packOutputDir(mainFile *ast.File, module string) string {
 // ui.IconConfig{}) call renderNavItemGo emits.
 func packIconName(e ast.Expr) string {
 	call, ok := e.(*ast.CallExpr)
-	if !ok || astSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
+	if !ok || appspec.AstSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
 		return ""
 	}
 	return appspec.AstString(call.Args[0])
@@ -1550,125 +1550,23 @@ func packIconName(e ast.Expr) string {
 
 // ----- P3: app config + theme + auth + admin --------------------------------
 
-// packReadApp reconstructs the app config (consts + theme + auth + admin) from
-// app.go and main.go.
+// packReadApp reconstructs the app config from app.go and main.go:
+// appspec.ReadGeneratedApp reads what the generator writes into source,
+// and pack adds the theme, the output dir and the secrets kept in .env.
 func packReadApp(dir string) (appspec.AppSpecApp, error) {
-	app := appspec.AppSpecApp{APIPrefix: "api"}
 	appPath := filepath.Join(dir, "app.go")
 	appFile, err := packParseFile(appPath)
 	if err != nil {
-		return app, fmt.Errorf("parse %s: %w", appPath, err)
+		return appspec.AppSpecApp{APIPrefix: "api"}, fmt.Errorf("parse %s: %w", appPath, err)
 	}
-	// Consts.
-	consts := map[string]string{}
-	for _, d := range appFile.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range gd.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 {
-				continue
-			}
-			consts[vs.Names[0].Name] = appspec.AstString(vs.Values[0])
-		}
+	mainFile, err := packParseFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		mainFile = nil
 	}
-	app.Name = consts["appName"]
-	app.Module = consts["appModule"]
-	app.DBDriver = consts["dbDriver"]
-	app.DBURL = consts["dbURL"]
-	app.StaticDir = consts["staticDir"]
-	if v, ok := consts["apiPrefix"]; ok {
-		app.APIPrefix = strings.Trim(v, "/")
-	}
-
-	// Theme.
+	app := appspec.ReadGeneratedApp(appFile, mainFile)
 	app.Theme, app.ThemeDark = packReadTheme(appFile)
-
-	// Auth + admin-seed, found anywhere in app.go.
-	ast.Inspect(appFile, func(n ast.Node) bool {
-		switch t := n.(type) {
-		case *ast.CompositeLit:
-			if astSelLast(t.Type) == "AuthConfig" {
-				app.Auth.Enabled = true
-				av := appspec.FieldVals(t)
-				app.Auth.DevMode = appspec.AstBool(av["DevMode"])
-				app.Auth.BasePath = appspec.AstString(av["BasePath"])
-				app.Auth.JWTSecret = appspec.AstString(av["JWTSecret"])
-			}
-		case *ast.CallExpr:
-			switch astSelLast(t.Fun) {
-			case "HashPassword":
-				if len(t.Args) == 1 {
-					app.Admin.SeedPassword = appspec.AstString(t.Args[0])
-				}
-			case "CreateUser":
-				if len(t.Args) >= 2 {
-					app.Admin.SeedEmail = appspec.AstString(t.Args[1])
-				}
-			}
-		}
-		return true
-	})
-
-	// Admin, PWA, LLM-markdown and locale-prefix config live in main.go.
-	if mainFile, err := packParseFile(filepath.Join(dir, "main.go")); err == nil {
+	if mainFile != nil {
 		app.OutputDir = packOutputDir(mainFile, app.Module)
-		ast.Inspect(mainFile, func(n ast.Node) bool {
-			switch t := n.(type) {
-			case *ast.CompositeLit:
-				switch astSelLast(t.Type) {
-				case "Config":
-					cv := appspec.FieldVals(t)
-					if _, ok := cv["PathPrefix"]; !ok {
-						return true // not an admin.Config
-					}
-					app.Admin.Enabled = true
-					app.Admin.Path = appspec.AstString(cv["PathPrefix"])
-					app.Admin.Role = appspec.AstString(cv["AdminRole"])
-					if app.Admin.Path == "/admin" {
-						app.Admin.Path = ""
-					}
-					if app.Admin.Role == "admin" {
-						app.Admin.Role = ""
-					}
-					app.Admin.LoginPath = appspec.AstString(cv["LoginPath"])
-				case "PWAConfig":
-					cv := appspec.FieldVals(t)
-					app.PWA.Enabled = true
-					app.PWA.Name = appspec.AstString(cv["Name"])
-					app.PWA.ShortName = appspec.AstString(cv["ShortName"])
-					app.PWA.Description = appspec.AstString(cv["Description"])
-					app.PWA.StartURL = appspec.AstString(cv["StartURL"])
-					app.PWA.Scope = appspec.AstString(cv["Scope"])
-					app.PWA.Display = packPWADisplay(astSelLast(cv["Display"]))
-					app.PWA.ThemeColor = appspec.AstString(cv["ThemeColor"])
-					app.PWA.BackgroundColor = appspec.AstString(cv["BackgroundColor"])
-				}
-			case *ast.CallExpr:
-				switch astSelLast(t.Fun) {
-				case "WithPublicOpenAPI":
-					app.PublicOpenAPI = true
-				case "WithDescription":
-					if len(t.Args) == 1 {
-						app.Description = appspec.AstString(t.Args[0])
-					}
-				case "getEnv":
-					if len(t.Args) == 2 && appspec.AstString(t.Args[0]) == "APP_BASE_URL" {
-						app.BaseURL = appspec.AstString(t.Args[1])
-						if app.BaseURL == "http://localhost:8080" {
-							app.BaseURL = ""
-						}
-					}
-				case "WithPublicLLMMD":
-					app.LLMMD = true
-				case "WithLocalePrefixes":
-					app.LocalePrefixes = true
-				}
-			}
-			return true
-		})
 	}
 
 	// Secrets moved out of committed source into the generated .env
@@ -1704,35 +1602,6 @@ func packReadDotEnv(path string) map[string]string {
 		return map[string]string{}
 	}
 	return out
-}
-
-// packPWADisplay maps a generated uihost.PWADisplay* constant name back
-// to the app spec's display string, the reverse of
-// appSpecPWADisplayConst. Unknown/absent → "" (the omitted default).
-func packPWADisplay(constName string) string {
-	switch constName {
-	case "PWADisplayStandalone":
-		return "standalone"
-	case "PWADisplayFullscreen":
-		return "fullscreen"
-	case "PWADisplayMinimalUI":
-		return "minimal-ui"
-	case "PWADisplayBrowser":
-		return "browser"
-	}
-	return ""
-}
-
-// astSelLast returns the trailing identifier of a selector/ident type expr
-// (auth.AuthConfig → "AuthConfig", admin.Config → "Config").
-func astSelLast(e ast.Expr) string {
-	switch t := e.(type) {
-	case *ast.SelectorExpr:
-		return t.Sel.Name
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
 }
 
 // packReadTheme parses appTheme()'s assignments back into the authored
@@ -2564,21 +2433,24 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.Section":
 		return reverseSection(call, helpers), true
 	case "ui.Card":
-		// A titled chart is emitted as ui.Card(Heading, <chart>): reverse
-		// it back to the chart block, not a card, with the heading as its
-		// title. A plain card has no chart child.
-		if len(call.Args) > 1 {
+		// A titled chart is emitted as ui.Card(CardConfig{Heading}, <chart>):
+		// reverse it back to the chart block with the heading as its title.
+		// A card block always writes Description, so a card whose first
+		// child is a chart (CardConfig{Heading, Description}, chart,
+		// siblings…) is a card: read as a chart it lost its text and every
+		// other child.
+		c := cfgOf(call, 0)
+		if _, isCard := c["Description"]; !isCard && len(call.Args) == 2 {
 			if child, ok := call.Args[1].(*ast.CallExpr); ok {
 				if b, ok := reverseChartCall(child); ok {
 					if b.Props == nil {
 						b.Props = map[string]any{}
 					}
-					putStr(b.Props, "title", appspec.AstString(cfgOf(call, 0)["Heading"]))
+					putStr(b.Props, "title", appspec.AstString(c["Heading"]))
 					return b, true
 				}
 			}
 		}
-		c := cfgOf(call, 0)
 		b := block("card", props2("heading", appspec.AstString(c["Heading"]), "text", appspec.AstString(c["Description"])))
 		// The generator passes a card's children after the config:
 		// ui.Card(cfg, children...).
@@ -2599,6 +2471,18 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.LinkButton":
 		c := cfgOf(call, 0)
 		return block("link_button", props2("label", appspec.AstString(c["Label"]), "href", appspec.AstString(c["Href"]), "variant", buttonVariant(c["Variant"]))), true
+	case "ui.Callout":
+		// ui.Callout(CalloutConfig{Title}, render.Text(text)).
+		b := block("callout", props2("title", appspec.AstString(cfgOf(call, 0)["Title"])))
+		if len(b.Props) == 0 {
+			b.Props = nil
+		}
+		if len(call.Args) > 1 {
+			b.Text = renderTextArg(call.Args[1])
+		}
+		return b, true
+	case "ui.Divider":
+		return appspec.AppSpecBlock{Kind: "divider"}, true
 	case "ui.Link":
 		config := cfgOf(call, 0)
 		return appspec.AppSpecBlock{Type: "link", Href: appspec.AstString(config["Href"]), Text: appspec.AstString(config["Text"]), Class: appspec.AstString(config["Class"])}, true
@@ -2607,13 +2491,18 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.Cluster":
 		return reverseLayoutBlock("cluster", call, helpers), true
 	case "ui.Grid":
-		// A grid of pricing cards is a `pricing` block; a grid of stat cards
-		// is a stat_row. Every other grid preserves the explicit layout block.
+		// A grid of pricing cards is a `pricing` block. stat_row is the
+		// one grid the generator emits with no Gap (Min "12rem", whatever
+		// its children); grid and stat_grid always carry Min and Gap, and
+		// one holding only stat cards reads back as a stat_grid with its
+		// layout. Every other grid preserves the explicit layout block.
 		if len(call.Args) > 1 {
 			if first, ok := call.Args[1].(*ast.CallExpr); ok && callSel(first) == "ui.PricingCard" {
 				return reversePricing(call), true
 			}
 		}
+		cfg := cfgOf(call, 0)
+		_, hasGap := cfg["Gap"]
 		allStats := len(call.Args) > 1
 		for _, arg := range call.Args[1:] {
 			child, ok := arg.(*ast.CallExpr)
@@ -2622,10 +2511,13 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 				break
 			}
 		}
-		if allStats {
+		if !hasGap && (allStats || appspec.AstString(cfg["Min"]) == "12rem") {
 			b := reverseLayoutBlock("stat_row", call, helpers)
 			b.Props = nil
 			return b, true
+		}
+		if allStats {
+			return reverseLayoutBlock("stat_grid", call, helpers), true
 		}
 		return reverseLayoutBlock("grid", call, helpers), true
 	case "ui.StatCard":
@@ -2644,6 +2536,16 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "render.Join":
 		if b, ok := reverseEntityForm(call); ok {
 			return b, true
+		}
+	case "html.Div":
+		// A bare-tag text block (type: div, header, article, nav, …; every
+		// tag but the ones above draws as a div): html.Div(DivConfig{Class},
+		// render.Text(text)). The authored tag name is not in the output,
+		// so it packs as type: div, which regenerates the same code.
+		if len(call.Args) == 2 {
+			if text, ok := call.Args[1].(*ast.CallExpr); ok && callSel(text) == "render.Text" {
+				return appspec.AppSpecBlock{Type: "div", Class: appspec.AstString(cfgOf(call, 0)["Class"]), Text: renderTextArg(text)}, true
+			}
 		}
 	case "html.Paragraph":
 		return appspec.AppSpecBlock{Type: "paragraph", Class: appspec.AstString(cfgOf(call, 0)["Class"]), Text: renderTextArg(call.Args[len(call.Args)-1])}, true
@@ -2742,6 +2644,11 @@ func reverseLayoutBlock(kind string, call *ast.CallExpr, helpers map[string]ast.
 	cfg := cfgOf(call, 0)
 	if kind == "grid" {
 		putStr(b.Props, "min", appspec.AstString(cfg["Min"]))
+	}
+	if min := appspec.AstString(cfg["Min"]); kind == "stat_grid" && min != "12rem" {
+		// "12rem" is stat_grid's default minimum, which the generator
+		// writes out when the block set none.
+		putStr(b.Props, "min", min)
 	}
 	if gap := reverseGap(appspec.AstSelName(cfg["Gap"])); gap != "" && gap != "md" {
 		b.Props["gap"] = gap
@@ -3015,15 +2922,17 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 	putStr(p, "title", appspec.AstString(c["Title"]))
 	putStr(p, "subtitle", appspec.AstString(c["Subtitle"]))
 	// Actions: []render.HTML{LinkButton(cta), LinkButton(secondary)}.
+	// The variant says which CTA a button is: a hero with only a
+	// secondary CTA emits it alone, first in the list.
 	if actions, ok := c["Actions"].(*ast.CompositeLit); ok {
-		for i, el := range actions.Elts {
+		for _, el := range actions.Elts {
 			ac, ok := el.(*ast.CallExpr)
 			if !ok || callSel(ac) != "ui.LinkButton" {
 				continue
 			}
 			lc := cfgOf(ac, 0)
 			label, href := appspec.AstString(lc["Label"]), appspec.AstString(lc["Href"])
-			if i == 0 {
+			if buttonVariant(lc["Variant"]) != "secondary" {
 				putStr(p, "cta_text", label)
 				putStr(p, "cta_href", href)
 			} else {
@@ -3031,6 +2940,11 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 				putStr(p, "secondary_href", href)
 			}
 		}
+	}
+	// Media: html.Image(html.ImageConfig{Src: image, Alt: title}), from
+	// props.image or its media alias; the alt is always the title.
+	if img, ok := c["Media"].(*ast.CallExpr); ok && callSel(img) == "html.Image" {
+		putStr(p, "image", appspec.AstString(cfgOf(img, 0)["Src"]))
 	}
 	return appspec.AppSpecBlock{Kind: "hero", Props: p}
 }
@@ -3075,6 +2989,10 @@ func reverseStatCard(call *ast.CallExpr) appspec.AppSpecBlock {
 			p["source"] = src
 			putStr(p, "format", appspec.AstString(vc.Args[5]))
 		}
+	}
+	if _, sourced := p["source"]; !sourced {
+		// A static card: the generator writes props.value as a literal.
+		putStr(p, "value", appspec.AstString(c["Value"]))
 	}
 	return appspec.AppSpecBlock{Kind: "stat_card", Props: p}
 }
@@ -3172,6 +3090,13 @@ func reverseRenderTag(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	switch tag {
 	case "p":
 		return appspec.AppSpecBlock{Type: "paragraph", Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+	case "section":
+		// A `type: section` text block: render.Tag("section", attrs,
+		// render.Text(text)), its attrs nil or {"class": …}.
+		if len(call.Args) != 3 {
+			return appspec.AppSpecBlock{}, false
+		}
+		return appspec.AppSpecBlock{Type: "section", Class: tagAttrClass(call.Args[1]), Text: renderTextArg(call.Args[2])}, true
 	case "div":
 		// chart wrapper: render.Tag("div", {class:"mrd-chart"}, Heading(title), ui.BarChart/PieChart(...)).
 		for _, arg := range call.Args[2:] {
@@ -3201,6 +3126,21 @@ func reverseRenderTag(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 		}
 	}
 	return appspec.AppSpecBlock{}, false
+}
+
+// tagAttrClass reads the class out of the attrs map a render.Tag call
+// takes: map[string]string{"class": "x"} or nil.
+func tagAttrClass(e ast.Expr) string {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	for _, el := range lit.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok && appspec.AstString(kv.Key) == "class" {
+			return appspec.AstString(kv.Value)
+		}
+	}
+	return ""
 }
 
 // reverseChartCall recognizes the three chart emission shapes and returns

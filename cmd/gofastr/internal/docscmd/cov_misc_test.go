@@ -53,3 +53,24 @@ func TestPluralSAndHighlight(t *testing.T) {
 		t.Fatalf("highlight: %s", got)
 	}
 }
+
+// TestRunDocsGrepRefusesFlagTerm: `--grep --serve` searched for the
+// literal "--serve" and exited 0. A dash term still works as --grep=-x.
+func TestRunDocsGrepRefusesFlagTerm(t *testing.T) {
+	code := clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep", "--serve"}) })
+	})
+	if code != 2 {
+		t.Fatalf("--grep --serve: want exit 2, got %d", code)
+	}
+	var out string
+	code = clitest.CovT_capExit(t, func() {
+		out = clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep=--serve"}) })
+	})
+	if code != -1 {
+		t.Fatalf("--grep=--serve: want no exit, got %d", code)
+	}
+	if !strings.Contains(out, "--serve") {
+		t.Fatalf("--grep=--serve must search: %.200s", out)
+	}
+}

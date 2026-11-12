@@ -26,9 +26,9 @@ func TestCursorDirectionJunkRefused(t *testing.T) {
 		ch.List()(rec, withTestUser(httptest.NewRequest(http.MethodGet, "/items"+query, nil), "u1"))
 		return rec
 	}
-	// %ZZ and a bare % do not decode: URL.Query drops the pair, so the
-	// value read as absent and the page went forward with a 200.
-	for _, d := range []string{"back", "Forward", "backwards", "forward%0d%0a", "%20forward", "%ZZ", "forward%", "forward;x"} {
+	// A direction that does not decode (%ZZ, forward%, forward;x) is the
+	// list's undecodable-query refusal (TestListRefusesUndecodableQuery).
+	for _, d := range []string{"back", "Forward", "backwards", "forward%0d%0a", "%20forward"} {
 		rec := get("?cursor=&direction=" + d)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "bad_direction") {
 			t.Errorf("direction=%s = %d %s, want 400 bad_direction", d, rec.Code, rec.Body)

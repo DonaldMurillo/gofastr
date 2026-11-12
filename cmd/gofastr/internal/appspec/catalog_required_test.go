@@ -1,6 +1,7 @@
 package appspec
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -9,9 +10,10 @@ import (
 // empty required field, so a block missing it passed validate and 500'd
 // its whole screen. stat_card's label was the reported one (spelled
 // text:, the entity_list key, it was dropped); a static card's value, a
-// link_button's label and href, a hero CTA's href and a markdown block's
-// text panic the same way. A number where the component takes text
-// decoded as int64, read as "" and panicked too.
+// link_button's label and href, a hero CTA's href, a markdown block's
+// text, a callout with neither title nor text and a pricing plan's CTA
+// with no safe cta_href panic the same way. A number where the component
+// takes text decoded as int64, read as "" and panicked too.
 func TestCatalogBlockNeedsRequiredProps(t *testing.T) {
 	const head = `
 app:
@@ -84,6 +86,16 @@ screens:
         props:
           title: 2026
 `, "quote"},
+		{"hero number image", `      - kind: hero
+        props:
+          title: Hi
+          image: 404
+`, "quote"},
+		{"hero bool media", `      - kind: hero
+        props:
+          title: Hi
+          media: true
+`, "quote"},
 		{"page_header number title", `      - kind: page_header
         props:
           title: 2026
@@ -103,6 +115,37 @@ screens:
 `, "quote"},
 		{"markdown no text", `      - kind: markdown
 `, "text"},
+		{"callout empty", `      - kind: callout
+`, "callout block needs"},
+		{"callout blank", `      - kind: callout
+        text: "  "
+        props:
+          title: " "
+`, "callout block needs"},
+		{"callout number title", `      - kind: callout
+        props:
+          title: 404
+`, "quote"},
+		{"pricing cta no href", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+`, "cta_href is required"},
+		{"pricing bad href", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_href: "javascript:alert(1)"
+`, "not a safe link"},
+		{"pricing number price", `      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: 9
+`, "quote"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := r5YAMLAppSpec(t, head+tc.block)
@@ -141,9 +184,140 @@ screens:
 		`      - kind: markdown
         text: "# Hi"
 `,
+		`      - kind: callout
+        props:
+          title: Heads up
+`,
+		`      - kind: callout
+        text: Backups run nightly.
+`,
+		`      - kind: pricing
+        props:
+          plans:
+            - name: Free
+              price: "$0"
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+              cta_href: /buy
+`,
 	} {
 		if err := r5YAMLAppSpec(t, head+ok); err != nil {
 			t.Errorf("refused a complete block: %v\n%s", err, ok)
 		}
+	}
+}
+
+// Every catalog prop the generator reads as text refuses a number: YAML
+// decodes `heading: 2026` as an int64, the generator reads it as "", and
+// the section heading, card text or chart title vanished with no word.
+// Each case starts from a block that validates and swaps one prop.
+func TestCatalogTextPropRefusesNumber(t *testing.T) {
+	const head = `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: %s
+        props:
+%s`
+	source := "          source:\n            entity: posts\n            group_by: title\n"
+	for _, tc := range []struct {
+		kind, base string
+		keys       []string
+	}{
+		{"section", "          heading: About\n", []string{"heading", "eyebrow", "description", "label", "class", "id"}},
+		{"card", "          heading: Hi\n", []string{"heading", "text"}},
+		{"bar_chart", source, []string{"title"}},
+		{"pie_chart", source, []string{"title"}},
+		{"line_chart", source, []string{"title"}},
+		{"link_button", "          label: Docs\n          href: /docs\n", []string{"label", "href", "variant"}},
+		{"stat_card", "          label: Uptime\n          value: \"1\"\n", []string{"label", "value"}},
+		{"page_header", "          title: Hi\n", []string{"title", "eyebrow", "subtitle"}},
+		{"hero", "          title: Hi\n", []string{"eyebrow", "title", "subtitle", "cta_text", "cta_href", "secondary_text", "secondary_href", "image", "media"}},
+		{"callout", "          title: Hi\n", []string{"title"}},
+	} {
+		if err := r5YAMLAppSpec(t, fmt.Sprintf(head, tc.kind, tc.base)); err != nil {
+			t.Fatalf("%s base block refused: %v", tc.kind, err)
+		}
+		for _, key := range tc.keys {
+			props := "          " + key + ": 2026\n"
+			for _, line := range strings.SplitAfter(tc.base, "\n") {
+				if line != "" && !strings.HasPrefix(line, "          "+key+":") {
+					props += line
+				}
+			}
+			err := r5YAMLAppSpec(t, fmt.Sprintf(head, tc.kind, props))
+			if err == nil || !strings.Contains(err.Error(), "quote 2026") {
+				t.Errorf("%s %s: 2026 should be refused as not text, got %v", tc.kind, key, err)
+			}
+		}
+	}
+	// A pricing block's text props sit one level down, on each plan, and
+	// each feature is text too: the generator drops a non-string feature
+	// and a numeric cta_href left the CTA with an empty href.
+	const pricingHead = `
+app:
+  name: Demo
+  module: example.com/demo
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+              cta_href: /buy
+              features:
+                - Unlimited posts
+%s`
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(pricingHead, "")); err != nil {
+		t.Fatalf("pricing base block refused: %v", err)
+	}
+	for key, was := range map[string]string{
+		"name":        "name: Pro",
+		"price":       `price: "$9"`,
+		"cta_text":    "cta_text: Buy",
+		"cta_href":    "cta_href: /buy",
+		"period":      "",
+		"description": "",
+	} {
+		spec := fmt.Sprintf(pricingHead, "              "+key+": 2026\n")
+		if was != "" {
+			spec = fmt.Sprintf(strings.Replace(pricingHead, was, key+": 2026", 1), "")
+		}
+		err := r5YAMLAppSpec(t, spec)
+		if err == nil || !strings.Contains(err.Error(), "quote 2026") {
+			t.Errorf("pricing %s: 2026 should be refused as not text, got %v", key, err)
+		}
+	}
+	for name, extra := range map[string]string{
+		"number feature": "                - 2026\n",
+		"bool feature":   "                - true\n",
+	} {
+		if err := r5YAMLAppSpec(t, fmt.Sprintf(pricingHead, extra)); err == nil || !strings.Contains(err.Error(), "features") {
+			t.Errorf("pricing %s should be refused, got %v", name, err)
+		}
+	}
+	scalarFeatures := strings.Replace(pricingHead, "              features:\n                - Unlimited posts\n", "              features: Unlimited posts\n", 1)
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(scalarFeatures, "")); err == nil || !strings.Contains(err.Error(), "features") {
+		t.Errorf("pricing features as one string should be refused, got %v", err)
+	}
+	// A sourced stat_card never reads value, so a number there loads.
+	sourced := "          label: Users\n          value: 0\n          source:\n            entity: posts\n            agg: count\n"
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(head, "stat_card", sourced)); err != nil {
+		t.Errorf("a sourced stat_card with value: 0 was refused: %v", err)
 	}
 }

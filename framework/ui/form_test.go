@@ -56,6 +56,18 @@ func TestFormRendersDefaultsAndSubmitButton(t *testing.T) {
 	}
 }
 
+// Multipart passes through to the form element; the default form sends
+// no enctype, so the browser's urlencoded default stands.
+func TestFormMultipartSetsEnctype(t *testing.T) {
+	const enc = `enctype="multipart/form-data"`
+	if h := string(Form(FormConfig{Action: "/x", Multipart: true})); !strings.Contains(h, enc) {
+		t.Errorf("Multipart form missing %s: %s", enc, h)
+	}
+	if h := string(Form(FormConfig{Action: "/x"})); strings.Contains(h, "enctype") {
+		t.Errorf("default form carries an enctype: %s", h)
+	}
+}
+
 func TestFormErrorsRenderTheSummary(t *testing.T) {
 	h := string(Form(FormConfig{
 		Action: "/x",

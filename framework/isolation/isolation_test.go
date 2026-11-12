@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // Resolve looks for gofastr.settings.yml from the directory it is given up
@@ -400,5 +401,72 @@ func TestResolveRefusesRetiredFile(t *testing.T) {
 	_, err := Resolve(dir)
 	if err == nil || !strings.Contains(err.Error(), "gofastr.isolation.yml is no longer read") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A multibyte database name cut at the identifier limit must end on a
+// rune boundary: a split rune re-encodes as a literal %C3 and the
+// worktree asks for a database nobody can create.
+func TestPostgresDSNCutsOnRuneBoundary(t *testing.T) {
+	rt := &Runtime{id: "wt_abcdef1234"}
+	name := strings.Repeat("é", 40) // 80 bytes; the cut lands mid-rune at byte 50
+	out, err := rt.postgresDSN("postgres://u:p@localhost:5432/" + name)
+	if err != nil {
+		t.Fatalf("postgresDSN: %v", err)
+	}
+	u, err := url.Parse(out)
+	if err != nil {
+		t.Fatalf("parse rewritten: %v", err)
+	}
+	db := strings.TrimPrefix(u.Path, "/")
+	if !utf8.ValidString(db) {
+		t.Fatalf("rewritten db = %q is not valid UTF-8 (rune split by the cut)", db)
+	}
+	if len(db) > 63 || !strings.HasSuffix(db, "_wt_abcdef1234") {
+		t.Fatalf("rewritten db = %q (len %d): want <= 63 bytes ending in the suffix", db, len(db))
+	}
+}
+
+// An operator-set GOFASTR_ISOLATION_ID longer than the identifier limit
+// must not slice a negative length; two such ids that share a long
+// prefix must still name different databases.
+func TestPostgresDSNLongIDStaysUnique(t *testing.T) {
+	long := strings.Repeat("x", 70)
+	names := map[string]bool{}
+	for _, id := range []string{long + "-one", long + "-two", "ünï" + strings.Repeat("ç", 40)} {
+		rt := &Runtime{id: id}
+		out, err := rt.postgresDSN("postgres://u:p@localhost:5432/app")
+		if err != nil {
+			t.Fatalf("postgresDSN(%q): %v", id, err)
+		}
+		u, err := url.Parse(out)
+		if err != nil {
+			t.Fatalf("parse rewritten: %v", err)
+		}
+		db := strings.TrimPrefix(u.Path, "/")
+		if len(db) > 63 || !utf8.ValidString(db) || !strings.HasPrefix(db, "app") {
+			t.Fatalf("id %q: rewritten db = %q (len %d): want a valid name <= 63 bytes keeping the base", id, db, len(db))
+		}
+		if names[db] {
+			t.Fatalf("id %q: rewritten db %q collides with another id", id, db)
+		}
+		names[db] = true
+		again, _ := rt.postgresDSN(out)
+		if again != out {
+			t.Fatalf("id %q: rewrite is not idempotent: %q then %q", id, out, again)
+		}
+	}
+}
+
+// An id that fitted before the digest existed keeps its literal suffix,
+// so an operator's worktree comes up on the database it already has.
+func TestPostgresDSNKeepsFittingIDName(t *testing.T) {
+	rt := &Runtime{id: "feature-checkout-redesign"}
+	out, err := rt.postgresDSN("postgres://u:p@localhost:5432/app")
+	if err != nil {
+		t.Fatalf("postgresDSN: %v", err)
+	}
+	if want := "postgres://u:p@localhost:5432/app_feature_checkout_redesign"; out != want {
+		t.Fatalf("rewritten = %q, want %q", out, want)
 	}
 }

@@ -556,16 +556,19 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		}
 		// Canonicalize at the single consumer of every provider (#270):
 		// a provider reporting Bob@example.com must match an existing
-		// bob@example.com account instead of creating a duplicate. A
-		// provider asserting a DECOMPOSED (non-NFC) address fails the
-		// login outright: fail-closed beats creating an unmatchable
-		// twin identity for the same mailbox (round 3 unicode decision).
-		if info.Email, err = p.mgr.canonicalizeEmail(info.Email); err != nil {
-			slog.Warn("oauth email refused: not in composed Unicode form",
+		// bob@example.com account instead of creating a duplicate. The
+		// default canonicalizer normalizes a decomposed address to NFC,
+		// so both spellings land on one account, and refuses a value
+		// that is not one local@domain address. A host's
+		// AuthConfig.CanonicalizeEmail owns its own policy instead.
+		canonical, err := p.mgr.canonicalizeEmail(info.Email)
+		if err != nil {
+			slog.Warn("oauth email refused",
 				"plugin", "oauth2", "email_hash", hashedIdentifier(info.Email), "err", err)
 			writeAuthErrorFor(w, r, http.StatusBadRequest, err, reasonComposedEmail)
 			return
 		}
+		info.Email = canonical
 		// The same bound the form paths apply: the address becomes a
 		// user-table value and a link-profile column.
 		if !emailWithinLimit(w, r, info.Email) {

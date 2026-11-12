@@ -365,10 +365,14 @@ column the handler cached first, while filters resolve it independently.
 
 ## Common mistakes
 
-- **Mixing `WithAPIPrefix` with `App.Group` manually.** `WithAPIPrefix` is
-  applied app-wide at `Start()` time. If you also call `app.Group("/api/v1")`
-  and register entities there, those entities receive the prefix twice
-  (`/api/v1/api/v1/posts`). Use `WithAPIPrefix` **or** route groups, not both.
+- **Mixing `WithAPIPrefix` with `App.Group` manually.** `WithAPIPrefix`
+  applies only to entities registered with `App.Entity`. An entity
+  registered on a group mounts at exactly the group's prefix and ignores
+  the app-wide one: with `WithAPIPrefix("/api")` and `app.Group("/v1")`,
+  `posts` serves at `/v1/posts`, outside `/api`, so middleware or gateway
+  rules scoped to `/api` do not cover it. Use `WithAPIPrefix` **or** route
+  groups, not both, and spell the whole prefix on the group
+  (`app.Group("/api/v1")`), as §2 does.
 - **Forgetting `WithMCPNamespace` on versioned groups.** Two versions of the
   same entity produce identical flat MCP tool names (`posts_list`), and the
   second registration panics. Always set `routegroup.WithMCPNamespace("v1")`

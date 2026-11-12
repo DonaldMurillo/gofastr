@@ -184,10 +184,13 @@ type pickerBody struct {
 
 // PickerHandler serves POST <api>/_pick?field=<field>: a relation picker's
 // search, answered with option rows for that field's input. It answers
-// 405 to another method, 403 to a cross-site post or a caller who may
-// not read the entity or the related one, 404 for a field that is not
-// an editable relation, 415 to a body that is not JSON, 413 past
-// pickerBodyLimit and 400 to a malformed body. The answer is never
+// 405 to another method, 403 to a cross-site post, 404 for a field that
+// is not an editable relation, and then refuses a caller who may not
+// read the entity as GET <api>/<entity> does (CrudHandler.RequireRead):
+// 401 with no session or tenant, 403 without the permission. Past that
+// gate it answers 415 to a body that is not JSON, 413 past
+// pickerBodyLimit, 400 to a malformed body and 403 when the caller may
+// not read the related entity. The answer is never
 // stored: it is per caller. A failed related-record read answers a
 // structured 500 rather than an empty successful option list.
 func (u *UI) PickerHandler(entityName string) http.Handler {
@@ -216,8 +219,7 @@ func (u *UI) PickerHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
 		if !handler.IsJSONContentType(r.Header.Get("Content-Type")) {

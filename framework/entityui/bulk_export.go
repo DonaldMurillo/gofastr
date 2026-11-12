@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
 // exportKeyParam names the list key on an export link: the list query's
@@ -34,8 +35,9 @@ const exportIDParam = "_id"
 // hooks, the same values the list shows; NoQuery fields (masked columns
 // among them), omitted and JSON fields are left out. A cell that a
 // spreadsheet would run as a formula is prefixed with a quote. It
-// answers 404 where BulkHandler does and 403 when the caller may not
-// read the entity.
+// answers 404 where BulkHandler does, and refuses a caller who may not
+// read the entity as GET <api>/<entity> does (CrudHandler.RequireRead:
+// 401 with no session or tenant, 403 without the permission).
 func (u *UI) ExportHandler(entityName string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -48,11 +50,21 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		// The list route's own gate and refusal, so a refused export
+		// answers what GET <api>/<entity> answers for the same caller.
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
-		q := r.URL.Query()
+		// Strictly: URL.Query drops a pair that does not decode, so
+		// ?status=paid%ZZ vanished before the refusal below saw it, and
+		// a list filter spelled that way read as no filter. Either way
+		// the file held every row the caller may read.
+		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		if err != nil {
+			text, code := i18n.ErrorText(r.Context(), err, reasonExportBadQuery)
+			writeBulkJSON(w, http.StatusBadRequest, map[string]string{"error": text, "reason": code})
+			return
+		}
 		key := q.Get(exportKeyParam)
 		q.Del(exportKeyParam)
 		// The export reads the list's own params only. A REST filter
@@ -60,6 +72,11 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 		// the file held every row the caller may read, so it is refused.
 		own := &listState{m: m, key: key, p: listParamsFor(key)}
 		for _, name := range slices.Sorted(maps.Keys(q)) {
+			// A blank ?q= narrows nothing on any entity; crud lets it
+			// through the same way.
+			if name == own.p.q && strings.TrimSpace(q.Get(name)) == "" {
+				continue
+			}
 			if name != exportIDParam && !own.exportParam(name) {
 				writeBulkError(w, r, http.StatusBadRequest, reasonExportUnknownParam, map[string]any{"name": name})
 				return
@@ -112,11 +129,16 @@ func (u *UI) ExportHandler(entityName string) http.Handler {
 // link may carry: its own narrowing and the view state it ignores. A
 // facet param must name a configured facet: ownsParam takes f_ of any
 // field, and the export narrows by facets() alone, so ?f_status=paid on
-// a list with no status facet exported every row.
+// a list with no status facet exported every row. Search is a param
+// only of an entity with SearchFields: the list ignores ?q= on any
+// other, so the export answered every row where the REST list refuses
+// the same ?q= with search_not_configured.
 func (s *listState) exportParam(name string) bool {
 	switch name {
 	case s.p.cols, s.p.saved, s.p.as, s.p.per:
 		return true
+	case s.p.q:
+		return len(s.m.e.Config.SearchFields) > 0
 	}
 	if field, ok := strings.CutPrefix(name, param(s.key, "f_")); ok {
 		if slices.Contains(s.facets(), field) {

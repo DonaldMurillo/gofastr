@@ -141,8 +141,7 @@ func (u *UI) serveDeletedWrite(entityName, op string) http.Handler {
 		if m.tr != nil {
 			ctx = i18n.WithTranslator(ctx, m.tr)
 		}
-		if !canRead(ctx, m.ch) {
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
+		if !requireRead(w, r, ctx, m) {
 			return
 		}
 		id := crud.PathRecordID(r, m.keys)

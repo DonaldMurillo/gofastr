@@ -59,10 +59,9 @@ func (u *UI) SavedViewsHandler(entityName string) http.Handler {
 			writeBulkError(w, r, http.StatusForbidden, reasonViewSignIn)
 			return
 		}
-		if !canRead(ctx, m.ch) {
+		if !requireRead(w, r, ctx, m) {
 			// A view names a filter over the entity's rows; a caller who
 			// may not list them may not keep one either.
-			writeBulkError(w, r, http.StatusForbidden, reasonAccessDenied)
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, savedViewBodyLimit)

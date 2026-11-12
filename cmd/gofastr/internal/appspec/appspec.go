@@ -69,6 +69,12 @@ type AppSpec struct {
 	// of the project's. Unexported for the reason phrases is; App.Name
 	// itself stays empty, since it decides whether app.go is emitted.
 	phraseApp string
+
+	// projectApp holds the route-owning settings of the project a
+	// fragment joins (SetProjectApp), nil when none were read. Unexported
+	// for the reason phrases is: App itself stays empty, since it decides
+	// what the fragment emits.
+	projectApp *AppSpecApp
 }
 
 // PhraseCollector returns the phrase collector of the file being
@@ -85,6 +91,23 @@ func (bp *AppSpec) MarkFragment() { bp.appless = true }
 // marked with MarkFragment). A serializer writes no app: section for one,
 // so the fragment stays a fragment on the next decode.
 func (bp *AppSpec) IsFragment() bool { return bp.appless }
+
+// SetProjectApp records the app settings of the project a fragment
+// joins (generate app --add), read off its generated source. Validation
+// judges the fragment's screen routes against them: a fragment's own App
+// is empty, so a screen at the project's admin path, PWA files, llm.md
+// pages, auth routes or entity API would otherwise pass and never
+// render.
+func (bp *AppSpec) SetProjectApp(app AppSpecApp) { bp.projectApp = &app }
+
+// RouteApp is the app whose settings decide which routes the framework
+// mounts: the project's, recorded by SetProjectApp, else App.
+func (bp *AppSpec) RouteApp() AppSpecApp {
+	if bp.projectApp != nil {
+		return *bp.projectApp
+	}
+	return bp.App
+}
 
 // SetPhraseApp records the project's app name for a fragment's phrase
 // keys (generate app --add). An empty name changes nothing.
@@ -2982,8 +3005,8 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, a route the framework serves itself: the screen would never render, or would take the route over; move the screen", screen.Name, screen.Route, owner))
 			continue
 		}
-		if bp.App.Auth.Enabled {
-			base := bp.App.Auth.BasePath
+		if app := bp.RouteApp(); app.Auth.Enabled {
+			base := app.Auth.BasePath
 			if base == "" {
 				base = "/auth"
 			}
@@ -3033,6 +3056,9 @@ func ValidateAppSpec(bp AppSpec) error {
 		}
 		for _, block := range screen.Body {
 			errs.add(validateAppSpecBlock(screen.Name, entitiesByName, block))
+		}
+		for _, block := range AppSpecBlocksDeep(screen.Body) {
+			errs.add(validateCreateFormCoversRequired(screen.Name, entitiesByName, bp.Hooks, block))
 		}
 		// entity_detail renders .Detail(ctx, s.id) and the list's "View" link is
 		// BasePath+"/"+id; entity_form mode:edit posts to {entity}/{id}. Both
@@ -3555,6 +3581,15 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		value, _ := block.Props[requiredProp].(string)
 		if strings.TrimSpace(value) == "" {
 			return fmt.Errorf("app spec: screen %q %s block %s is required", screenName, kind, requiredProp)
+		}
+	}
+	// Every catalog kind's text props, whichever arm below judges the
+	// rest of the block: section and the charts reach no catalog check
+	// of their own. Only kind: names a catalog section; type: section is
+	// the plain tag.
+	if block.Kind != "" && AppSpecCatalogKind(kind) {
+		if err := validateCatalogText(screenName, strings.ToLower(strings.TrimSpace(kind)), block); err != nil {
+			return err
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
@@ -4725,6 +4760,52 @@ func ScreenRecordKeys(bp AppSpec, screen AppSpecScreen) []string {
 		}
 	}
 	return nil
+}
+
+// validateCreateFormCoversRequired refuses a create entity_form whose
+// fields: list leaves out a field the create handler requires. The
+// generator draws a control only for the listed fields, and the handler
+// answers 400 for a Required field with no Default that the body lacks
+// (schema.ValidateAll), so such a form could never submit. Exempt are the
+// fields the server fills before that check: the system columns, an
+// auto-generated, Hidden or ReadOnly field, the owner column (stamped
+// from the request; app specs refuse multi_tenant), the state field and
+// its stamps (the first Initial value, or a move), and every field of an
+// entity with a before_create hook, which may set it. An edit form sends
+// a partial update, so it is not checked.
+func validateCreateFormCoversRequired(screenName string, entities map[string]framework.EntityDeclaration, hooks []AppSpecHook, block AppSpecBlock) error {
+	if !IsEntityFormBlock(block) || IsEditFormBlock(block) || len(block.Fields) == 0 {
+		return nil
+	}
+	decl, ok := entities[block.Entity]
+	if !ok {
+		return nil // validateAppSpecBlock names the unknown entity
+	}
+	for _, hook := range hooks {
+		if hook.Entity == decl.Name && hook.When == "before_create" {
+			return nil
+		}
+	}
+	serverSet := map[string]bool{"id": true, "created_at": true, "updated_at": true, "deleted_at": true}
+	if decl.Scope != nil && decl.Scope.OwnerField != "" {
+		serverSet[decl.Scope.OwnerField] = true
+	}
+	for _, col := range decl.States.Guarded() {
+		serverSet[col] = true
+	}
+	var missing []string
+	for _, field := range decl.Fields {
+		if !field.Required || field.Default != nil || serverSet[field.Name] ||
+			FieldAutoGenerated(field) || field.Hidden || field.ReadOnly ||
+			slices.Contains(block.Fields, field.Name) {
+			continue
+		}
+		missing = append(missing, strconv.Quote(field.Name))
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("app spec: screen %q entity_form creates %q but its fields: leave out required %s, which has no default: every submit would answer 400. List it in fields: (a relation draws a picker), give it a default, or drop fields: to draw every field", screenName, decl.Name, strings.Join(missing, ", "))
 }
 
 // ScreenNeedsRouteID reports whether a screen's body tree contains an

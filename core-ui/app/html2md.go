@@ -70,8 +70,10 @@ var (
 	reFenceSlot = regexp.MustCompile(slotOpen + "f([0-9]+)" + slotClose)
 	// reTagStart matches a '<' that begins something tag-shaped, so a
 	// decoded entity (&lt;script&gt;) can be re-neutralized without
-	// touching comparison operators ("1 < 2").
-	reTagStart = regexp.MustCompile(`<([a-zA-Z!/])`)
+	// touching comparison operators ("1 < 2"). A '<' right before a
+	// parked slot counts too: the tag strip would read it, the slot and
+	// the text up to the next '>' as one tag.
+	reTagStart = regexp.MustCompile(`<([a-zA-Z!/` + slotOpen + `])`)
 
 	// textWS flattens line breaks and tabs to single spaces: HTML
 	// renders them that way, and a flattened value cannot start a
@@ -96,8 +98,9 @@ var (
 )
 
 // The markers htmlToMarkdown parks content behind are C0 control bytes,
-// which scrubControls removes from the input, so none can come from the
-// page. A slot is slotOpen, a kind letter, an index and slotClose: the
+// which scrubControls removes from the input and decodeEntities from
+// every decoded value, so none can come from the page. A slot is
+// slotOpen, a kind letter, an index and slotClose: the
 // open and close bytes differ, so no match can start at a slot's end.
 // Inline code's angle brackets park as single bytes of their own, never
 // as a run a slot regex can read (\x00lt\x00 around <a1> formed a false
@@ -142,7 +145,7 @@ func htmlToMarkdown(h string) string {
 	s, fences := extractFencedBlocks(s)
 	var inlineCode []string
 	s = reCode.ReplaceAllStringFunc(s, func(match string) string {
-		inlineCode = append(inlineCode, textWS.Replace(html.UnescapeString(stripTags(submatch(match, reCode, 1)))))
+		inlineCode = append(inlineCode, textWS.Replace(decodeEntities(stripTags(submatch(match, reCode, 1)))))
 		return "<code></code>"
 	})
 
@@ -188,23 +191,23 @@ func htmlToMarkdown(h string) string {
 	// Tables first: a cell builds its own links and images, so the cell
 	// escaping that keeps a value inside its column does not also
 	// escape the link the cell holds.
-	s = convertTables(s)
+	s = convertTables(s, fences)
 
 	// Links: text and destination escaped per slot; href decodes here
 	// (attribute values sit inside tags, which decodeTextNodes skips).
 	s = reLink.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reLink.FindStringSubmatch(m)
-		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
+		return "[" + mdLinkText(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
 	})
 
 	// Images: alt text and src treated exactly like link text/dest.
 	s = reImgAltSrc.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgAltSrc.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(html.UnescapeString(sub[2])) + ")"
+		return "![" + mdImageAlt(sub[1]) + "](" + mdLinkDest(decodeEntities(sub[2])) + ")"
 	})
 	s = reImgSrcAlt.ReplaceAllStringFunc(s, func(m string) string {
 		sub := reImgSrcAlt.FindStringSubmatch(m)
-		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(html.UnescapeString(sub[1])) + ")"
+		return "![" + mdImageAlt(sub[2]) + "](" + mdLinkDest(decodeEntities(sub[1])) + ")"
 	})
 
 	// Horizontal rules
@@ -253,8 +256,9 @@ func htmlToMarkdown(h string) string {
 
 // convertTables converts HTML tables to markdown tables. Cell content
 // arrives already entity-decoded (decodeTextNodes); mdTableCell keeps
-// it inside its cell.
-func convertTables(h string) string {
+// it inside its cell. A code block in a cell becomes one code span:
+// fences is read for its code.
+func convertTables(h string, fences []fencedBlock) string {
 	return reTable.ReplaceAllStringFunc(h, func(table string) string {
 		var b strings.Builder
 		b.WriteString("\n")
@@ -270,7 +274,7 @@ func convertTables(h string) string {
 
 			b.WriteString("| ")
 			for _, cell := range cells {
-				b.WriteString(mdTableCellHTML(cell[1]) + " | ")
+				b.WriteString(mdTableCellHTML(cell[1], fences) + " | ")
 			}
 			b.WriteString("\n")
 
@@ -293,18 +297,30 @@ func convertTables(h string) string {
 // pipe in link text or in a destination would add a column), and parked
 // while the rest of the cell's text is escaped, so a link in a table
 // stays a link and a value still cannot forge one.
-func mdTableCellHTML(cellHTML string) string {
+func mdTableCellHTML(cellHTML string, fences []fencedBlock) string {
 	var parked []string
 	park := func(md string) string {
 		parked = append(parked, md)
 		return fmt.Sprintf(slotOpen+"a%d"+slotClose, len(parked)-1)
 	}
+	// A fenced block is lines, and a newline would split the row: the
+	// cell holds its code as one span, flattened like the rest of the
+	// cell, pipes escaped, and brackets parked so the tag passes after
+	// this one cannot read it.
+	cellHTML = reFenceSlot.ReplaceAllStringFunc(cellHTML, func(m string) string {
+		idx, err := strconv.Atoi(reFenceSlot.FindStringSubmatch(m)[1])
+		if err != nil || idx >= len(fences) {
+			return ""
+		}
+		code := strings.ReplaceAll(textWS.Replace(strings.TrimRight(fences[idx].code, "\r\n")), "|", `\|`)
+		return park(strings.NewReplacer("<", parkedLT, ">", parkedGT).Replace(mdCodeSpan(code)))
+	})
 	// A break inside a link's text separates words, as in the rest of
 	// the cell: the link is parked before the cell's own break pass.
 	text := func(v string) string {
 		return strings.ReplaceAll(mdLinkText(stripTags(reBR.ReplaceAllString(v, " "))), "|", `\|`)
 	}
-	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(html.UnescapeString(v)), "|", "%7C") }
+	dest := func(v string) string { return strings.ReplaceAll(mdLinkDest(decodeEntities(v)), "|", "%7C") }
 	// An alt is attribute text, not child markup: no tag strip, no break
 	// pass, only the cell's pipe escape on top of mdImageAlt.
 	image := func(alt, src string) string {
@@ -387,17 +403,35 @@ func scrubControls(s string) string {
 	}, s)
 }
 
+// decodeEntities decodes HTML entities once and scrubs the control
+// bytes the decode produced. The document scrub ran while entities were
+// still encoded, so &#2; and &#3; would otherwise become the parked-
+// bracket markers the last pass turns into a raw < and >, and &#0;/&#1;
+// slot bytes. Every decode in this file goes through it.
+func decodeEntities(s string) string {
+	return scrubControls(html.UnescapeString(s))
+}
+
+// fencedBlock is one parked code block: its fenced markdown and the
+// decoded code it fences, which a table cell reads to inline it.
+type fencedBlock struct {
+	md, code string
+}
+
 // extractFencedBlocks replaces every <pre><code> block with a slot
 // marker and returns the built fenced markdown alongside. Content is
 // tag-stripped, decoded exactly once, and fenced one backtick longer
 // than the longest run it contains, so no line of it can close the
 // fence.
-func extractFencedBlocks(s string) (string, []string) {
-	var blocks []string
-	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
-		content := stripTags(rePreBlock.FindStringSubmatch(m)[1])
-		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
+func extractFencedBlocks(s string) (string, []fencedBlock) {
+	var blocks []fencedBlock
+	add := func(content string) string {
+		code := decodeEntities(content)
+		blocks = append(blocks, fencedBlock{md: mdFencedBlock(code), code: code})
 		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
+	}
+	s = rePreBlock.ReplaceAllStringFunc(s, func(m string) string {
+		return add(stripTags(rePreBlock.FindStringSubmatch(m)[1]))
 	})
 	s = rePreBare.ReplaceAllStringFunc(s, func(m string) string {
 		content := stripTags(rePreBare.FindStringSubmatch(m)[1])
@@ -405,8 +439,7 @@ func extractFencedBlocks(s string) (string, []string) {
 			// One line reads the same as flowing text.
 			return m
 		}
-		blocks = append(blocks, mdFencedBlock(html.UnescapeString(content)))
-		return fmt.Sprintf(slotOpen+"f%d"+slotClose, len(blocks)-1)
+		return add(content)
 	})
 	return s, blocks
 }
@@ -415,7 +448,7 @@ func extractFencedBlocks(s string) (string, []string) {
 // with a newline, so whatever follows one starts a line:
 // escapeLeadingSplit neutralizes a structure initiator at its head,
 // mirroring decodeTextNode for text nodes after tags.
-func restoreFences(s string, blocks []string) string {
+func restoreFences(s string, blocks []fencedBlock) string {
 	if len(blocks) == 0 {
 		return s
 	}
@@ -428,7 +461,7 @@ func restoreFences(s string, blocks []string) string {
 		}
 		idx, _ := strconv.Atoi(s[m[2]:m[3]])
 		b.WriteString(s[:m[0]])
-		b.WriteString(blocks[idx])
+		b.WriteString(blocks[idx].md)
 		head, rest := escapeLeadingSplit(s[m[1]:])
 		b.WriteString(head)
 		s = rest
@@ -465,11 +498,33 @@ func decodeTextNode(t string) string {
 	}
 	d := t
 	if strings.Contains(d, "&") {
-		d = reTagStart.ReplaceAllString(html.UnescapeString(d), "&lt;$1")
+		d = reTagStart.ReplaceAllString(decodeAroundFenceSlots(d), "&lt;$1")
 	}
 	d = textWS.Replace(d)
 	head, rest := escapeLeadingSplit(d)
 	return head + rest
+}
+
+// decodeAroundFenceSlots decodes a text node's entities but not the
+// fence slots in it: a <pre> lifted out of a paragraph leaves its slot
+// in the same text run as the words around it, and decodeEntities
+// scrubs every control byte, the slot's \x00 and \x01 included, which
+// lost the block and left a literal "f0" in the text. The document
+// scrub already removed every input-borne control byte, so the only
+// ones left here are slot markers, and the runs between them decode
+// as before.
+func decodeAroundFenceSlots(t string) string {
+	var b strings.Builder
+	for {
+		loc := reFenceSlot.FindStringIndex(t)
+		if loc == nil {
+			b.WriteString(decodeEntities(t))
+			return b.String()
+		}
+		b.WriteString(decodeEntities(t[:loc[0]]))
+		b.WriteString(t[loc[0]:loc[1]])
+		t = t[loc[1]:]
+	}
 }
 
 // escapeLeadingSplit splits s at its first markdown structure
@@ -527,7 +582,7 @@ func mdLinkText(s string) string {
 // text, then mdLinkText. A <br> written in an alt is literal text, so the
 // tag passes that run after it (break, strip) must not read it as one.
 func mdImageAlt(alt string) string {
-	return mdLinkText(reTagStart.ReplaceAllString(scrubControls(html.UnescapeString(alt)), "&lt;$1"))
+	return mdLinkText(reTagStart.ReplaceAllString(decodeEntities(alt), "&lt;$1"))
 }
 
 // mdLinkDest percent-encodes the bytes that can terminate a markdown
@@ -567,12 +622,16 @@ func mdHeadField(s string) string {
 }
 
 // mdCodeSpan wraps inline code content in a backtick run one longer
-// than the longest run the content contains, padding with single
-// spaces when the content starts or ends with a backtick (CommonMark
-// code-span rule).
+// than the longest run the content contains. CommonMark strips one
+// space from each end of a span whose content starts and ends with a
+// space (and is not all spaces), so the content is padded with single
+// spaces when it starts or ends with a backtick (the padding the strip
+// removes) and when it starts and ends with a space (so the strip
+// removes the padding, not the code's own spaces).
 func mdCodeSpan(content string) string {
 	run := strings.Repeat("`", longestBacktickRun(content)+1)
-	if strings.HasPrefix(content, "`") || strings.HasSuffix(content, "`") {
+	spaced := strings.HasPrefix(content, " ") && strings.HasSuffix(content, " ") && strings.Trim(content, " ") != ""
+	if spaced || strings.HasPrefix(content, "`") || strings.HasSuffix(content, "`") {
 		return run + " " + content + " " + run
 	}
 	return run + content + run

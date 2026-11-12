@@ -506,6 +506,52 @@ func (s *listState) ownsParam(name string) bool {
 	return own
 }
 
+// narrowsParam reports whether name is a param that narrows this list's
+// rows: its filter, row filter, view, saved view, own facets, and search
+// on an entity with SearchFields. Those are the pairs whose loss widens
+// the list; a dropped sort, page, layout or column choice changes how
+// the rows look, not which rows the reader sees, and a ?q= the entity
+// cannot search is ignored either way.
+func (s *listState) narrowsParam(name string) bool {
+	switch name {
+	case s.p.filter, s.p.view, s.p.saved, s.p.rowF, s.p.rowO, s.p.rowV:
+		return true
+	case s.p.q:
+		return len(s.m.e.Config.SearchFields) > 0
+	}
+	field, ok := strings.CutPrefix(name, param(s.key, "f_"))
+	if !ok {
+		return false
+	}
+	_, own := s.m.byName[field]
+	return own
+}
+
+// ownPairUndecodable reports whether rawQuery holds a pair url.ParseQuery
+// drops that would narrow this list (narrowsParam): one whose value does
+// not decode or carries a ';'. Another keyed list's malformed pair is that
+// list's warning, not this one's. A key that does not decode names no list
+// anyone can tell, so it warns every list on the page.
+func (s *listState) ownPairUndecodable(rawQuery string) bool {
+	for pair := range strings.SplitSeq(rawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		k, v, _ := strings.Cut(pair, "=")
+		name, err := url.QueryUnescape(k)
+		if err != nil || strings.Contains(k, ";") {
+			return true
+		}
+		if !s.narrowsParam(name) {
+			continue
+		}
+		if _, err := url.QueryUnescape(v); err != nil || strings.Contains(v, ";") {
+			return true
+		}
+	}
+	return false
+}
+
 // defaultPageSizes are the rows-per-page choices an entity with no
 // Display.PageSizes offers.
 var defaultPageSizes = []int{25, 50, 100}

@@ -1508,6 +1508,16 @@ data-exposure hazard. Lenient drops keys that name no field (a bracket
 on an unknown field included); a key that names a field but cannot be
 read, an ambiguous bare key or an unknown bracket word, is still a 400.
 
+**A query pair that does not decode is a 400.** Go's `URL.Query` drops
+a pair with a malformed percent escape (`%ZZ`, a bare `%`) or a `;`
+separator and keeps the rest, so `?status=paid%ZZ` read as no filter
+and `?cursor=%ZZ` as no cursor (a walk restarted at page 1), each a 200
+with every row. The list (offset, cursor and stream pages alike)
+answers 400 `filter.query_undecodable` instead, `LenientFilters`
+included; send `;` as `%3B`. Code that reads a list query itself does
+the same with `filter.ParseQueryStrict(r.URL.RawQuery)`, which
+`filter.ParseFilters` and `filter.ParseSort` now call.
+
 ## Nested predicate filters (`?where=`)
 
 The flat `?field_op=value` params AND-compose. When you need **boolean
@@ -1528,7 +1538,13 @@ compiles to `WHERE ((status = $1) OR ((priority = $2) AND (assignee =
 $3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
 defaults to `eq`; use `"values":[...]` or a comma string in `"value"`
 with `op:"in"`, not both) or a **group** (`{"and":[...]}` /
-`{"or":[...]}`, non-empty, with no leaf member beside it).
+`{"or":[...]}`, non-empty, with no leaf member beside it). A leaf must
+carry the value its op reads: a `"value"` that is missing or JSON `null`,
+and a `null` entry in `"values"`, is a **400**
+(`filter.where_needs_value`), on every column type. JSON decoding reads a
+null as "not sent", so such a leaf compared a text column with `''`
+while an int column refused it. To match the empty string, send
+`"value":""`.
 
 The tree decodes strictly, the rule every client-borne JSON body
 follows (a `?cursor=` token included): a key repeated in one object, two
@@ -2494,7 +2510,9 @@ it keep the host's normal 404 rendering. A wrong method on a route in the
 same namespace (`PUT /api/posts`) answers `405` the same way: a problem
 document whose `reason` is `api_method_not_allowed`, with the router's
 `Allow` header, and no session cookie (the UI host's 405 page minted one).
-Outside the namespace the host's 405 page still answers. The namespace
+The MCP mount (`/mcp` and every path under it) and `/openapi.json` are
+machine surfaces outside the prefix and answer their misses and wrong
+methods the same way. Elsewhere the host's 405 page still answers. The namespace
 is the API's, not the UI host's: a screen declared under it is not
 served there (no route at its path is a `404` problem document, a route
 for another method a `405`), so keep screens outside the API prefix.

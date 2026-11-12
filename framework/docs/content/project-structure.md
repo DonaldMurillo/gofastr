@@ -17,7 +17,7 @@ myapp/
 ├── entities/           # Go entity declarations: the source of truth
 │   └── entities.go     # app.Entity(...) registrations (sample: posts, at /api/posts)
 ├── migrations/         # versioned SQL (reversible)
-├── static/             # assets served as-is
+├── static/             # empty placeholder; serve it with uihost.WithStaticDir("static")
 ├── gofastr.settings.yml   # project settings: isolation, codegen, contracts
 ├── go.mod
 └── AGENTS.md, CLAUDE.md, DESIGN.md, .agents/   # agent onboarding

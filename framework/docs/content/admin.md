@@ -629,7 +629,13 @@ row, so a narrower admin tier cannot mint a role above its own.
 Under the default gate a caller cannot remove their own `AdminRole`:
 the post is refused with `own-admin-refused` and an
 `assign-roles-refused` row, because the last admin dropping it leaves
-nobody who can grant it back. Another admin can remove it. An
+nobody who can grant it back. Another admin can remove it. The Roles grid
+holds the permission side to the same rule: a save that revokes a
+permission from one of the caller's own roles, leaving none of their
+roles (after the save) with it or the wildcard, is refused with
+`own-permission-refused` and a `revoke-refused` row. The caller could
+never grant it back, since a caller grants only what their roles hold.
+Grant it to a second role the caller holds first. An
 `access.Decider` on the request is asked about each permission first: its
 `DecisionDeny` refuses the change even when the policy grants it, and its
 `DecisionAllow` admits nothing the policy does not. A grid save is checked whole

@@ -30,15 +30,23 @@ func RunDocs(args []string) {
 	// --grep / -g, as `--grep <term>` or `--grep=<term>`
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		joined := false
 		if name, value, ok := strings.Cut(arg, "="); ok && (name == "--grep" || name == "-g") {
 			args = append(args[:i:i], append([]string{name, value}, args[i+1:]...)...)
 			arg = name
+			joined = true
 		}
 		switch arg {
 		case "--grep", "-g":
 			term := ""
 			if i+1 < len(args) {
 				term = args[i+1]
+			}
+			// `--grep --serve` would search for "--serve": a term that
+			// starts with a dash is written --grep=<term>.
+			if !joined && cli.IsFlagToken(term) {
+				cli.Fprintf(os.Stderr, "docs: %v\n", cli.NeedsValue(arg))
+				cli.OsExit(2)
 			}
 			if term == "" {
 				fmt.Fprintln(os.Stderr, "usage: gofastr docs --grep <term>")

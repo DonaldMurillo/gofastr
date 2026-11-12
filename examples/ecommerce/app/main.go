@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=75b458f5f78eeeb8
+//gofastr:generated generator=app kind=scaffold version=dev sum=6723824bf7e6c0c7
 
 package main
 
@@ -195,8 +195,12 @@ func appIconPNG() []byte {
 // (they must be absolute URLs). Set APP_BASE_URL when deploying; the
 // fallback keeps local dev and tests working out of the box.
 func appBaseURL() string {
-	return getEnv("APP_BASE_URL", "http://localhost:8080")
+	return getEnv("APP_BASE_URL", devBaseURL)
 }
+
+// devBaseURL is the local dev origin appBaseURL falls back to; the app
+// spec sets no app.base_url.
+const devBaseURL = "http://localhost:8080"
 
 // resolveSeedRefs rewrites "@entity.field=value" reference strings in a
 // seed row into the resolved primary-key id of the matching row. This lets

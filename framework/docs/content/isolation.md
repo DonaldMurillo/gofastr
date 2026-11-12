@@ -50,7 +50,11 @@ use most, so a boot that "hangs" from a worktree is almost always this.
   created owner-only, `0700` or a protected owner-only ACL on Windows, so the isolated app's database state is not
   readable by local co-users of a shared checkout).
 - Postgres URL database names get a stable `_{id}` suffix while query params
-  are preserved.
+  are preserved. The result stays within Postgres's 63-byte identifier
+  limit: a long base name is cut on a character boundary, and an id longer
+  than 62 bytes (so `_` plus the id passes 63) becomes `_wt_` plus 16 hex
+  digits of its SHA-1. A shorter id keeps its literal suffix, so an
+  existing database name does not change.
 - Env templates support `{id}`, `{project_dir}`, `{port}`, and
   `{port:name}` for named services.
 

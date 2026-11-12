@@ -517,6 +517,11 @@ func (b *ListBuilder) state(ctx context.Context, m *meta) (*listState, crud.List
 	s.path = b.base
 	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
 		s.path = r.URL.Path
+		// url.ParseQuery drops a pair it cannot decode (?f_status=paid%ZZ)
+		// and keeps the rest, so the screen would list wider than the
+		// reader asked with no word. The REST list answers 400 there; the
+		// screen warns, as it does for a filter that does not parse.
+		s.filterBad = s.ownPairUndecodable(r.URL.RawQuery)
 	}
 	s.base = b.base
 	if s.base == "" {

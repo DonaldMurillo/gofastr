@@ -850,8 +850,13 @@ it.
 
 Pack also reads `public_openapi`, the UI host's application description,
 and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
-override is not substituted for that authored fallback; the default
-`http://localhost:8080` fallback is omitted from the packed spec.
+override is not substituted for that authored fallback. With no
+`base_url` the generator spells the fallback as the `devBaseURL`
+constant (`http://localhost:8080`), which packs as unset; a `base_url`
+written out, `http://localhost:8080` included, is a literal and packs
+back as written. An app generated before this change spells the unset
+fallback as the literal, so it packs as `base_url:
+http://localhost:8080` until it is regenerated.
 Trailing `/` characters in `app.base_url` are removed while parsing:
 the value is the origin of absolute sitemap URLs, so
 `https://slash.example/` and `https://slash.example` have the same
@@ -997,7 +1002,13 @@ partial and keeps the shell).
   Submitted control names use the default camelCase API wire keys
   (`address_line_1` becomes `addressLine1`) so field refusals land on the
   matching input. Control IDs, label lookups and relationship targets keep
-  their declaration names.
+  their declaration names. A `fields:` list draws only the listed
+  fields, so a create form must list every required field with no
+  default (a relation draws its picker): validation refuses one that
+  leaves such a field out, since every submit would answer 400. The
+  fields the server fills are exempt: the owner field, the `states:`
+  field and its stamps, `hidden`, `read_only` and `auto_generate`
+  fields, and every field of an entity with a `before_create` hook.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs
@@ -1234,7 +1245,22 @@ variant with a `12rem` default minimum. Spacing must use the shared
 column on marketing pages. **Pricing**: a `pricing` block takes
 `props: {plans: [{name, price, period, description, features: […], cta_text,
 cta_href, featured}]}` and renders a row of `ui.PricingCard`s (featured plan
-highlighted), so a pricing page reads like marketing, not an admin grid.
+highlighted), so a pricing page reads like marketing, not an admin grid. A
+plan with `cta_text` needs a safe `cta_href` (root-relative, http(s), mailto
+or a fragment), and a numeric `price` is quoted (`price: "29"`); validation
+refuses either. A `callout` takes `props.title` and `text:` as its body and
+needs at least one of them.
+
+A catalog prop that takes text refuses a number or a boolean: an unquoted
+`heading: 2026` decodes as a number, which the generator would draw as
+nothing. Quote it (`heading: "2026"`). This covers a section's `heading`,
+`eyebrow`, `description`, `label`, `class` and `id`; a card's `heading`
+and `text`; a chart's `title`; a `link_button`'s `label`, `href` and
+`variant`; a `stat_card`'s `label` and `value`; a `page_header`'s
+`title`, `eyebrow` and `subtitle`; a hero's text, CTA and image props;
+a callout's `title`; and each pricing plan's `name`, `price`, `period`,
+`description`, `cta_text`, `cta_href` and every `features` entry
+(`features` itself must be a list).
 
 **Controls, tables and lists:** these kinds carry a form that is not bound
 to an entity (for that, use `entity_form`). Validation rejects a block
@@ -1946,8 +1972,7 @@ The generator rejects:
 - a screen route at or under an entity's CRUD mount (`/api/posts`,
   `/api/posts/{id}`, or `/posts` with `api_prefix: ""`): the framework
   refuses to boot on the mount itself, and under it the CRUD routes
-  (`{id}`, `llm.md`, `_events`) answer instead of the screen. A fragment with no `app:` section (`generate app --add`) is
-  not checked for it, since it does not carry the project's `api_prefix`
+  (`{id}`, `llm.md`, `_events`) answer instead of the screen
 - a screen route the framework serves itself: `/robots.txt`,
   `/sitemap.xml`, `/sitemap/*`, `/favicon.ico`, and anything at or under
   `/mcp`, `/.well-known` or `/__gofastr`; with entities, `/openapi.json`
@@ -2057,6 +2082,15 @@ The generator rejects:
   a field whose Go name matches a method the generator writes on the
   same type (`UnmarshalJSON`)
 
+A fragment added with `generate app --add` has no `app:` section, so
+the screen route checks above, the auth `GET <base_path>/me` route, the
+`login_form` and `signup_form` actions, the locale-prefix warning and
+the [signed-out screen warning](#screens-nobody-can-sign-in-to-gofastr-validate-and-gofastr-generate-warning)
+read the project's settings (`api_prefix`, auth and its base path,
+admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
+its generated `app.go` and `main.go`. A screen the whole spec would
+refuse is refused in the fragment too.
+
 Middleware, plugin, helper, and screen `name:`s that are not valid
 identifiers are skipped at emit: the generator refuses to interpolate
 an ungated name into a Go declaration slot, and `gofastr generate`
@@ -2117,7 +2151,10 @@ true` has no way to sign in, so the generated screen shows "Not
 available" under its heading to every visitor. Both commands warn, naming the entity
 and its screens; neither fails, since owned Go can wire its own sign-in.
 Turn on `app.auth`, or set `public: true` on an entity anyone may read
-and write. An entity with an `access:` gate is not flagged.
+and write. An entity with an `access:` gate is not flagged. A fragment
+added with `generate app --add` is judged by the project's auth, read
+off its generated `app.go`, so a fragment joining a project with auth on
+is not flagged.
 
 ### Forms that post to a screen (`gofastr validate` and `gofastr generate` warning)
 

@@ -22,6 +22,7 @@ func TestExportRefusesForeignParams(t *testing.T) {
 	for _, query := range []string{
 		"status=paid", "nosuchfield=1", "cursor=ZZ", "status%5Beq%5D=paid",
 		"_list=inv&other_q=x", "_list=inv&filter=status+%3D+%22paid%22",
+		"q=A",
 	} {
 		rec, _ := getExport(t, x, bulkCtx("u1", nil), query)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "export_unknown_param") {
@@ -29,7 +30,7 @@ func TestExportRefusesForeignParams(t *testing.T) {
 		}
 	}
 	for _, query := range []string{
-		"", "filter=number+%3D+%22A-2%22", "q=A", "_list=inv&inv_filter=number+%3D+%22A-2%22",
+		"", "filter=number+%3D+%22A-2%22", "q=", "_list=inv&inv_filter=number+%3D+%22A-2%22",
 		"_id=a1&_id=a2", "sort=number&dir=desc&page=2&cols=number&as=cards&per=50",
 	} {
 		if rec, _ := getExport(t, x, bulkCtx("u1", nil), query); rec.Code != http.StatusOK {
@@ -82,5 +83,62 @@ func TestExportRefusesNonFacetParam(t *testing.T) {
 	faceted := newTestUIExt(t, ents, rows, Extensions{}, withAPI(map[string]string{"invoices": "/api/invoices"}))
 	if rec, rows := getExport(t, faceted, bulkCtx("u1", nil), "f_status=paid"); rec.Code != http.StatusOK || len(rows) != 2 {
 		t.Errorf("facet ?f_status=paid = %d with %d lines, want 200 with the header and A-2", rec.Code, len(rows))
+	}
+}
+
+// ?q= on an entity with no SearchFields was taken as the list's own and
+// then ignored: the export answered 200 with every row while the REST
+// list refuses the same ?q= with search_not_configured. It is refused
+// now, the export link leaves it off, and a searchable entity still
+// narrows by it.
+func TestExportRefusesUnsearchableQ(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	for _, query := range []string{"q=B-1", "_list=inv&inv_q=B-1"} {
+		rec, _ := getExport(t, x, bulkCtx("u1", nil), query)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "export_unknown_param") {
+			t.Errorf("?%s = %d %s, want 400 export_unknown_param", query, rec.Code, rec.Body)
+		}
+	}
+	html := listHTML(t, x.ui.List("invoices").Bulk(), x.userCtx("/invoices", "?q=zzz", "u1"))
+	if m := regexp.MustCompile(`href="/api/invoices/_export\.csv(\?[^"]*)?"`).FindStringSubmatch(html); m == nil {
+		t.Errorf("no export link:\n%s", html)
+	} else if strings.Contains(m[1], "q=") {
+		t.Errorf("export link carries an unsearchable q: %s", m[1])
+	}
+
+	installOwnerExtractor(t)
+	ents := invoiceEntities()
+	inv := ents["invoices"]
+	inv.Fields = append(inv.Fields, schema.Field{Name: "owner_id", Type: schema.String, Hidden: true})
+	inv.Scope = &entity.ScopeConfig{OwnerField: "owner_id"}
+	inv.SearchFields = []string{"number"}
+	ents["invoices"] = inv
+	rows := invoiceRows()
+	rows["invoices"] = []map[string]any{
+		{"id": "a1", "number": "A-1", "status": "draft", "owner_id": "u1"},
+		{"id": "a2", "number": "A-2", "status": "draft", "owner_id": "u1"},
+	}
+	searchable := newTestUIExt(t, ents, rows, Extensions{}, withAPI(map[string]string{"invoices": "/api/invoices"}))
+	if rec, rows := getExport(t, searchable, bulkCtx("u1", nil), "q=A-2"); rec.Code != http.StatusOK || len(rows) != 2 {
+		t.Errorf("searchable ?q=A-2 = %d with %d lines, want 200 with the header and A-2", rec.Code, len(rows))
+	}
+}
+
+// url.ParseQuery drops a pair that does not decode, so ?status=paid%ZZ
+// vanished before the foreign-param refusal saw it and the export
+// answered every row where ?status=paid answers 400. The list's own
+// filter spelled the same way (filter=…%ZZ) widened the file too. Such
+// a query is refused before any param is read.
+func TestExportRefusesUndecodableParam(t *testing.T) {
+	x := ownedInvoices(t, Extensions{})
+	for _, query := range []string{
+		"status=paid%ZZ", "status=paid%", "st%ZZatus=paid", "status=paid;x",
+		"filter=number+%3D+%22A-2%ZZ", "_list=inv&inv_filter=%ZZ",
+		"_id=a1&_id=a2%ZZ", "_list=inv%ZZ",
+	} {
+		rec, _ := getExport(t, x, bulkCtx("u1", nil), query)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "query_undecodable") {
+			t.Errorf("?%s = %d %s, want 400 query_undecodable", query, rec.Code, rec.Body)
+		}
 	}
 }

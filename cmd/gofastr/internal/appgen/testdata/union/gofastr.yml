@@ -534,6 +534,7 @@ screens:
               cta_href: /signup
               secondary_text: Pricing
               secondary_href: /pricing
+              image: https://example.com/union-hero.png
           - kind: section
             props:
               heading: What it covers
@@ -549,6 +550,11 @@ screens:
                   text: Moves with stamps.
           - kind: markdown
             text: "## Union\n\nA **markdown** block with a list:\n\n- one\n- two"
+          - kind: divider
+          - kind: callout
+            props:
+              title: Heads up
+            text: The callout block draws a ui.Callout.
   # Catalog kinds spelled `type:` read as `kind:`. `type: section` is the
   # exception: with children it is the node renderer's plain <section>.
   - name: type_spelled
@@ -568,6 +574,13 @@ screens:
         children:
           - type: paragraph
             text: Inside the section.
+      # Text-only bare tags: type: section draws a plain <section>, and
+      # every other tag (header here) a div; pack keeps both.
+      - type: section
+        class: lead
+        text: A plain section with text.
+      - type: header
+        text: A header drawn as a div.
   # Control blocks: a form with every input kind, tables, a list, a
   # button and a link group.
   - name: contact
@@ -730,12 +743,39 @@ screens:
                 entity: invoices
                 agg: count
                 filter: 'created_at >= "2026-01-01T00:00:00Z"'
+      # stat_grid keeps its min and gap through pack; a static card keeps
+      # its value.
+      - kind: stat_grid
+        props:
+          min: 14rem
+          gap: lg
+        children:
+          - kind: stat_card
+            props:
+              label: Uptime
+              value: "99.9%"
       - kind: bar_chart
         props:
           title: Invoices by status
           source:
             entity: invoices
             group_by: status
+      # A card whose first child is a chart stays a card through pack,
+      # its text and its other children kept.
+      - kind: card
+        props:
+          heading: Billing
+          text: Where invoices stand.
+        children:
+          - kind: pie_chart
+            props:
+              source:
+                entity: invoices
+                group_by: status
+          - kind: card
+            props:
+              heading: Note
+              text: Counts refresh on every load.
       - kind: entity_list
         entity: invoices
         text: Recent invoices

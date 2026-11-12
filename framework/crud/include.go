@@ -174,6 +174,13 @@ func parseIncludeTree(r *http.Request, ent *entity.Entity, registry entity.Regis
 // its single url.Values through; this avoids r.URL.Query() re-parsing
 // RawQuery on every helper call.
 func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
+	// One include key carries every path, comma-separated. A repeated
+	// key was read as its first value only, so a later one was neither
+	// validated nor applied (?include=author&include=bogus answered 200).
+	// Refused like a repeated scalar filter (filter.repeated_filter).
+	if n := len(q["include"]); n > 1 {
+		return nil, i18n.NewError(reasonIncludeRepeated, map[string]any{"count": n})
+	}
 	raw := strings.TrimSpace(q.Get("include"))
 	if raw == "" {
 		return nil, nil

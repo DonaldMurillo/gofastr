@@ -44,6 +44,10 @@ func runAuditA11y(args []string) {
 		cli.Fprintf(os.Stderr, "audit a11y: unknown flag %s\n", opts.badFlag)
 		cli.OsExit(2)
 	}
+	if opts.missingValue != "" {
+		cli.Fprintf(os.Stderr, "audit a11y: %v\n", cli.NeedsValue(opts.missingValue))
+		cli.OsExit(2)
+	}
 	if (opts.email == "") != (opts.password == "") {
 		fmt.Fprintln(os.Stderr, "audit a11y: --email and --password must be provided together")
 		cli.OsExit(2)
@@ -84,19 +88,33 @@ func runAuditA11y(args []string) {
 // positional root, `--url`/`--pages` in BOTH `--flag=value` and
 // `--flag value` spellings (the docs use the space form), and
 // --help/-h. badFlag carries the first unrecognized flag, "" when all
-// args parsed.
+// args parsed. Only the first argument error is recorded: badFlag and
+// missingValue are never both set.
 type a11yArgs struct {
 	root, baseURL, email, password string
 	pages                          []string
 	help                           bool
 	badFlag                        string
+	// missingValue is the first valued flag given no value, an empty one,
+	// or the next flag where its value belongs.
+	missingValue string
 }
 
 func parseA11yArgs(args []string) a11yArgs {
 	out := a11yArgs{root: "."}
+	firstErr := func() bool { return out.badFlag == "" && out.missingValue == "" }
+	missing := func(flag string) {
+		if firstErr() {
+			out.missingValue = flag
+		}
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if (arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password") && i+1 < len(args) {
+		if arg == "--url" || arg == "--pages" || arg == "--email" || arg == "--password" {
+			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
+				missing(arg)
+				continue
+			}
 			arg = arg + "=" + args[i+1]
 			i++
 		}
@@ -104,21 +122,34 @@ func parseA11yArgs(args []string) a11yArgs {
 		case arg == "--help" || arg == "-h":
 			out.help = true
 		case strings.HasPrefix(arg, "--url="):
-			out.baseURL = strings.TrimPrefix(arg, "--url=")
+			if out.baseURL = strings.TrimPrefix(arg, "--url="); out.baseURL == "" {
+				missing("--url")
+			}
 		case strings.HasPrefix(arg, "--email="):
-			out.email = strings.TrimPrefix(arg, "--email=")
+			if out.email = strings.TrimPrefix(arg, "--email="); out.email == "" {
+				missing("--email")
+			}
 		case strings.HasPrefix(arg, "--password="):
-			out.password = resolveAuditPassword(strings.TrimPrefix(arg, "--password="))
+			v := strings.TrimPrefix(arg, "--password=")
+			if v == "" {
+				missing("--password")
+			} else {
+				out.password = resolveAuditPassword(v)
+			}
 		case strings.HasPrefix(arg, "--pages="):
+			n := len(out.pages)
 			for _, p := range strings.Split(strings.TrimPrefix(arg, "--pages="), ",") {
 				if p = strings.TrimSpace(p); p != "" {
 					out.pages = append(out.pages, p)
 				}
 			}
+			if len(out.pages) == n {
+				missing("--pages")
+			}
 		case !strings.HasPrefix(arg, "-"):
 			out.root = arg
 		default:
-			if out.badFlag == "" {
+			if firstErr() {
 				out.badFlag = arg
 			}
 		}

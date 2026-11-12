@@ -233,3 +233,75 @@ func TestEmphasisCloserSkipsLinks(t *testing.T) {
 		t.Errorf("renderInline(%q) = %q, want %q", in, got, want)
 	}
 }
+
+func TestLeadingRuleWithProseIsNotFrontmatter(t *testing.T) {
+	doc := Render("---\n\nintro text that matters\n\n---\n\nafter divider\n")
+	got := string(doc.HTML)
+	if !strings.Contains(got, "intro text that matters") {
+		t.Errorf("prose between two leading rules was dropped: %q", got)
+	}
+	if !strings.Contains(got, "after divider") {
+		t.Errorf("text after the second rule was dropped: %q", got)
+	}
+	if len(doc.Frontmatter) != 0 {
+		t.Errorf("a prose block parsed as frontmatter: %#v", doc.Frontmatter)
+	}
+}
+
+func TestFrontmatterKeepsYAMLComments(t *testing.T) {
+	doc := Render("---\n# generated\ntitle: Hello\n---\n\nbody\n")
+	if doc.Frontmatter["title"] != "Hello" {
+		t.Errorf("a commented frontmatter block was not read: %#v", doc.Frontmatter)
+	}
+	if strings.Contains(string(doc.HTML), "generated") {
+		t.Errorf("the frontmatter comment leaked into the body: %q", doc.HTML)
+	}
+}
+
+func TestFrontmatterListStaysOffPage(t *testing.T) {
+	for _, in := range []string{
+		"---\ntitle: Post\ntags:\n  - go\n  - web\n---\nBody text\n",
+		"---\ntitle: Post\ntags:\n- go\n---\nBody text\n",
+		"---\ntitle: Post\nsummary: >\n  folded line\n---\nBody text\n",
+	} {
+		doc := Render(in)
+		if doc.Frontmatter["title"] != "Post" {
+			t.Errorf("%q: frontmatter not read: %#v", in, doc.Frontmatter)
+		}
+		if got := string(doc.HTML); strings.Contains(got, "title:") || strings.Contains(got, "<hr") || !strings.Contains(got, "Body text") {
+			t.Errorf("%q: frontmatter leaked into the body: %q", in, got)
+		}
+	}
+}
+
+func TestTenDigitOrdinalIsNotAList(t *testing.T) {
+	got := string(RenderHTML("1000000000. item\n1000000001. item2\n"))
+	if strings.Contains(got, "<ol") {
+		t.Errorf("a 10-digit ordinal opened a list: %q", got)
+	}
+	if !strings.Contains(got, "1000000000. item") {
+		t.Errorf("the line lost its number: %q", got)
+	}
+	got = string(RenderHTML("123456789. item\n"))
+	if !strings.Contains(got, `<ol start="123456789">`) {
+		t.Errorf("a 9-digit ordinal lost its start: %q", got)
+	}
+	got = string(RenderHTML("1. a\n1000000000. b\n"))
+	if strings.Count(got, "<li>") != 1 {
+		t.Errorf("a 10-digit line joined the list as an item: %q", got)
+	}
+}
+
+// A line whose key is blank (` : x`) is no pair: the parser dropped it
+// and the block, read as frontmatter, swallowed the text under it.
+func TestFrontmatterBlankKeyIsBody(t *testing.T) {
+	for _, in := range []string{"---\n : kept text\n---\nbody\n", "---\n# note\n\t: kept text\n---\nbody\n"} {
+		doc := Render(in)
+		if len(doc.Frontmatter) != 0 {
+			t.Errorf("%q: a blank-key block parsed as frontmatter: %#v", in, doc.Frontmatter)
+		}
+		if got := string(doc.HTML); !strings.Contains(got, "kept text") || !strings.Contains(got, "body") {
+			t.Errorf("%q: a blank-key block dropped its text: %q", in, got)
+		}
+	}
+}
