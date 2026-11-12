@@ -151,15 +151,23 @@ func (p *parser) atUnorderedList() bool {
 }
 
 func (p *parser) atOrderedList() bool {
-	t := strings.TrimLeft(p.line(), " ")
+	_, _, ok := splitListItem(p.line(), true)
+	return ok
+}
+
+// maxOrdinalDigits is CommonMark's cap on an ordered list marker's
+// number: a longer digit run is paragraph text, not a list item.
+// atOrderedList took any run while listStart capped at nine, so a
+// ten-digit ordinal opened a list that renumbered from 1.
+const maxOrdinalDigits = 9
+
+// ordinalDigits returns the length of the digit run t opens with.
+func ordinalDigits(t string) int {
 	i := 0
 	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
 		i++
 	}
-	if i == 0 || i+1 >= len(t) {
-		return false
-	}
-	return t[i] == '.' && t[i+1] == ' '
+	return i
 }
 
 func (p *parser) atTable() bool {
@@ -444,11 +452,8 @@ func stripIndent(line string, n int) string {
 // too long to be a real step count reports false.
 func listStart(line string) (int, bool) {
 	t := strings.TrimLeft(line, " ")
-	i := 0
-	for i < len(t) && t[i] >= '0' && t[i] <= '9' {
-		i++
-	}
-	if i == 0 || i > 9 {
+	i := ordinalDigits(t)
+	if i == 0 || i > maxOrdinalDigits {
 		return 0, false
 	}
 	n, err := strconv.Atoi(t[:i])
@@ -458,11 +463,8 @@ func listStart(line string) (int, bool) {
 func splitListItem(line string, ordered bool) (marker, content string, ok bool) {
 	t := strings.TrimLeft(line, " ")
 	if ordered {
-		i := 0
-		for i < len(t) && t[i] >= '0' && t[i] <= '9' {
-			i++
-		}
-		if i == 0 || i+1 >= len(t) || t[i] != '.' || t[i+1] != ' ' {
+		i := ordinalDigits(t)
+		if i == 0 || i > maxOrdinalDigits || i+1 >= len(t) || t[i] != '.' || t[i+1] != ' ' {
 			return "", "", false
 		}
 		return t[:i+1], t[i+2:], true

@@ -257,3 +257,21 @@ func TestFrontmatterKeepsYAMLComments(t *testing.T) {
 		t.Errorf("the frontmatter comment leaked into the body: %q", doc.HTML)
 	}
 }
+
+func TestTenDigitOrdinalIsNotAList(t *testing.T) {
+	got := string(RenderHTML("1000000000. item\n1000000001. item2\n"))
+	if strings.Contains(got, "<ol") {
+		t.Errorf("a 10-digit ordinal opened a list: %q", got)
+	}
+	if !strings.Contains(got, "1000000000. item") {
+		t.Errorf("the line lost its number: %q", got)
+	}
+	got = string(RenderHTML("123456789. item\n"))
+	if !strings.Contains(got, `<ol start="123456789">`) {
+		t.Errorf("a 9-digit ordinal lost its start: %q", got)
+	}
+	got = string(RenderHTML("1. a\n1000000000. b\n"))
+	if strings.Count(got, "<li>") != 1 {
+		t.Errorf("a 10-digit line joined the list as an item: %q", got)
+	}
+}
