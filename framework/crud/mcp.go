@@ -125,7 +125,10 @@ var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 // It judges only what the MCP request's own context can show. With no
 // user on it, the credentials may still be resolved on the redispatch (the
 // API key and cookies are copied onto the in-process request and the
-// router's auth middleware runs there). With no role policy and no
+// router's auth middleware runs there). That holds only when the request
+// carries one of redispatchCredentialHeaders: a caller with none can only
+// run the call anonymous, so the gate judges it as it stands, and a gated
+// tool's schema is not listed to the caller with the least authority. With no role policy and no
 // Decider on it, the policy may be mounted on a route group, which only
 // the redispatch passes through. Either way the gate cannot know the
 // answer, so it leaves the tool listed and the route refuses the call as
@@ -144,7 +147,7 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool, permission access.Permi
 		if ch.permissionForOp(op) == permRefused && !ch.accessAllows(ctx, permRefused, "") {
 			return errMCPToolForbidden
 		}
-		if _, ok := handler.GetUser(ctx); !ok {
+		if _, ok := handler.GetUser(ctx); !ok && carriesRedispatchCredential(ctx) {
 			return nil
 		}
 		decider := access.GetDecider(ctx)
@@ -431,6 +434,28 @@ func (ch *CrudHandler) deleteTool(router http.Handler) mcp.ToolHandler {
 	}
 }
 
+// redispatchCredentialHeaders are the credential headers runToolRequest
+// copies from the caller's request onto the redispatch. The list must
+// match credentialFingerprint and the broker's (TestCredentialCanonsAgree).
+var redispatchCredentialHeaders = []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader}
+
+// carriesRedispatchCredential reports whether the MCP request on ctx carries
+// a credential the redispatch could resolve into a user.
+func carriesRedispatchCredential(ctx context.Context) bool {
+	orig, ok := mcp.RequestFromContext(ctx)
+	if !ok || orig == nil {
+		return false
+	}
+	for _, name := range redispatchCredentialHeaders {
+		for _, v := range orig.Header.Values(name) {
+			if v != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func runToolRequest(ctx context.Context, router http.Handler, method, path string, body any) (any, error) {
 	var reader *bytes.Reader
 	if body != nil {
@@ -486,8 +511,7 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 		// Two lists: the credential headers must match credentialFingerprint
 		// and the broker's (TestCredentialCanonsAgree); the proxy headers
 		// are address, not credential.
-		credentials := []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader}
-		for _, name := range append(credentials, []string{"X-Forwarded-For", "X-Real-IP"}...) {
+		for _, name := range append(slices.Clone(redispatchCredentialHeaders), []string{"X-Forwarded-For", "X-Real-IP"}...) {
 			for _, v := range orig.Header.Values(name) {
 				if v == "" {
 					continue
