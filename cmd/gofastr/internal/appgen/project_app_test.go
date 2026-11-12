@@ -33,3 +33,31 @@ func main() {
 		t.Fatalf("admin = %+v, want enabled at /backoffice", app.Admin)
 	}
 }
+
+// An explicit base_url of http://localhost:8080 is a literal like any
+// other; only the devBaseURL constant means the spec set none. Reading
+// the literal as unset made --add refuse an absolute login action the
+// whole spec accepts.
+func TestProjectBaseURLExplicitLocalhost(t *testing.T) {
+	for fallback, want := range map[string]string{
+		`"http://localhost:8080"`: "http://localhost:8080",
+		`"https://shop.example"`:  "https://shop.example",
+		"devBaseURL":              "",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "app.go"), []byte("package main\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		src := "package main\n\nfunc appBaseURL() string {\n\treturn getEnv(\"APP_BASE_URL\", " + fallback + ")\n}\n"
+		if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		app, ok := projectRouteApp(dir)
+		if !ok {
+			t.Fatal("projectRouteApp: project not read")
+		}
+		if app.BaseURL != want {
+			t.Errorf("fallback %s: BaseURL = %q, want %q", fallback, app.BaseURL, want)
+		}
+	}
+}

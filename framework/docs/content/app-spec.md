@@ -850,8 +850,13 @@ it.
 
 Pack also reads `public_openapi`, the UI host's application description,
 and the `APP_BASE_URL` fallback from `main.go`. A deployment's environment
-override is not substituted for that authored fallback; the default
-`http://localhost:8080` fallback is omitted from the packed spec.
+override is not substituted for that authored fallback. With no
+`base_url` the generator spells the fallback as the `devBaseURL`
+constant (`http://localhost:8080`), which packs as unset; a `base_url`
+written out, `http://localhost:8080` included, is a literal and packs
+back as written. An app generated before this change spells the unset
+fallback as the literal, so it packs as `base_url:
+http://localhost:8080` until it is regenerated.
 Trailing `/` characters in `app.base_url` are removed while parsing:
 the value is the origin of absolute sitemap URLs, so
 `https://slash.example/` and `https://slash.example` have the same
@@ -2079,7 +2084,8 @@ The generator rejects:
 
 A fragment added with `generate app --add` has no `app:` section, so
 the screen route checks above, the auth `GET <base_path>/me` route, the
-`login_form` and `signup_form` actions and the locale-prefix warning
+`login_form` and `signup_form` actions, the locale-prefix warning and
+the [signed-out screen warning](#screens-nobody-can-sign-in-to-gofastr-validate-and-gofastr-generate-warning)
 read the project's settings (`api_prefix`, auth and its base path,
 admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
 its generated `app.go` and `main.go`. A screen the whole spec would
@@ -2145,7 +2151,10 @@ true` has no way to sign in, so the generated screen shows "Not
 available" under its heading to every visitor. Both commands warn, naming the entity
 and its screens; neither fails, since owned Go can wire its own sign-in.
 Turn on `app.auth`, or set `public: true` on an entity anyone may read
-and write. An entity with an `access:` gate is not flagged.
+and write. An entity with an `access:` gate is not flagged. A fragment
+added with `generate app --add` is judged by the project's auth, read
+off its generated `app.go`, so a fragment joining a project with auth on
+is not flagged.
 
 ### Forms that post to a screen (`gofastr validate` and `gofastr generate` warning)
 

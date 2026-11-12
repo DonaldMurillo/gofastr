@@ -2176,12 +2176,19 @@ func RenderAppSpecMain(bp appspec.AppSpec) string {
 	sb.WriteString("// (they must be absolute URLs). Set APP_BASE_URL when deploying; the\n")
 	sb.WriteString("// fallback keeps local dev and tests working out of the box.\n")
 	sb.WriteString("func appBaseURL() string {\n")
-	fallbackBase := strings.TrimRight(bp.App.BaseURL, "/")
-	if fallbackBase == "" {
-		fallbackBase = "http://localhost:8080"
+	// An explicit base_url is a literal, the local dev origin included;
+	// with none the fallback is the devBaseURL constant, so a reader of
+	// this source (pack, generate app --add) can tell the two apart.
+	if fallbackBase := strings.TrimRight(bp.App.BaseURL, "/"); fallbackBase != "" {
+		sb.WriteString(fmt.Sprintf("\treturn getEnv(\"APP_BASE_URL\", %q)\n", fallbackBase))
+		sb.WriteString("}\n")
+	} else {
+		sb.WriteString("\treturn getEnv(\"APP_BASE_URL\", devBaseURL)\n")
+		sb.WriteString("}\n\n")
+		sb.WriteString("// devBaseURL is the local dev origin appBaseURL falls back to; the app\n")
+		sb.WriteString("// spec sets no app.base_url.\n")
+		sb.WriteString(fmt.Sprintf("const devBaseURL = %q\n", appspec.DevBaseURL))
 	}
-	sb.WriteString(fmt.Sprintf("\treturn getEnv(\"APP_BASE_URL\", %q)\n", fallbackBase))
-	sb.WriteString("}\n")
 	if hasSeed {
 		sb.WriteString("\n// resolveSeedRefs rewrites \"@entity.field=value\" reference strings in a\n")
 		sb.WriteString("// seed row into the resolved primary-key id of the matching row. This lets\n")

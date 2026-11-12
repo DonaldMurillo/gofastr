@@ -1583,7 +1583,18 @@ few lines, and link the PR or the docs page for the rest.
   answered 500 or drew nothing) ([app spec](framework/docs/content/app-spec.md)).
 - **`generate app --add` judges a fragment's screen routes by the
   project's settings**: admin path, PWA files, `llm.md`, the auth `me`
-  route, the entity API prefix and locale prefixes.
+  route, the entity API prefix and locale prefixes. The signed-out
+  screen warning reads the project's auth too, so a fragment joining a
+  project with auth on is not told nobody can sign in.
+- **An explicit `base_url: http://localhost:8080` is kept.** The
+  generator spelled it and an unset `base_url` as the same literal, so
+  `gofastr pack` dropped it and `generate app --add` read the project as
+  having no base URL, refusing an absolute `login_form` action the whole
+  spec accepts. An unset `base_url` now falls back through a
+  `devBaseURL` constant in `main.go`
+  ([app spec](framework/docs/content/app-spec.md)); an app generated
+  before this change packs its fallback as `base_url:
+  http://localhost:8080` until it is regenerated.
 - **`gofastr pack` keeps** callout and divider blocks, a stat_grid's
   layout and a static stat value, a hero's image and lone secondary CTA,
   a card holding a chart, and `type: section` and bare-tag text blocks.

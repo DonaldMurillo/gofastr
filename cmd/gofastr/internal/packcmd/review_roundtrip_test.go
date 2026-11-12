@@ -42,9 +42,15 @@ func TestPackUnionOmitsDerivedDescription(t *testing.T) {
 }
 
 func TestPackBaseURLCanonicalRoundTrip(t *testing.T) {
-	for _, baseURL := range []string{"https://slash.example/", "https://slash.example/prefix/"} {
+	// The local dev origin written out is a base_url too; only an
+	// unset one packs back unset.
+	for _, baseURL := range []string{"https://slash.example/", "https://slash.example/prefix/", "http://localhost:8080", ""} {
 		t.Run(baseURL, func(t *testing.T) {
-			spec, err := decodeAppSpecString("app:\n  name: Slash\n  module: example.com/slash\n  base_url: " + baseURL + "\n")
+			line := ""
+			if baseURL != "" {
+				line = "  base_url: " + baseURL + "\n"
+			}
+			spec, err := decodeAppSpecString("app:\n  name: Slash\n  module: example.com/slash\n" + line)
 			if err != nil {
 				t.Fatal(err)
 			}

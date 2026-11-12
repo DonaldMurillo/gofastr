@@ -90,3 +90,13 @@ func TestSignedOutScreenQuiet(t *testing.T) {
 		})
 	}
 }
+
+// A fragment (generate app --add) has no app section of its own; the
+// project it joins turns auth on, so its screens are not signed out.
+func TestSignedOutScreenFragmentReadsProject(t *testing.T) {
+	bp := loadSignedOutSpec(t, "", "")
+	bp.SetProjectApp(appspec.AppSpecApp{Auth: appspec.AppSpecAuth{Enabled: true}})
+	if got := LintSignedOutScreens(bp); len(got) != 0 {
+		t.Fatalf("project has auth on, want no finding, got %+v", got)
+	}
+}

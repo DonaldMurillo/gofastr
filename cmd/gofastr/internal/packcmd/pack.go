@@ -1228,7 +1228,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			}
 			key := fn.Name.Name
 			if fn.Recv != nil && len(fn.Recv.List) == 1 {
-				key = astSelLast(fn.Recv.List[0].Type) + "." + key
+				key = appspec.AstSelLast(fn.Recv.List[0].Type) + "." + key
 			}
 			stubs[key] = fn
 			if fn.Doc != nil {
@@ -1262,7 +1262,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			if !ok || len(call.Args) != 1 {
 				return true
 			}
-			switch astSelLast(call.Fun) {
+			switch appspec.AstSelLast(call.Fun) {
 			case "Use":
 				id, ok := call.Args[0].(*ast.Ident)
 				if !ok {
@@ -1277,7 +1277,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 				if !ok {
 					return true
 				}
-				typ := astSelLast(lit.Type)
+				typ := appspec.AstSelLast(lit.Type)
 				root, isStub := strings.CutSuffix(typ, "Plugin")
 				if !isStub || stubs[typ+".Init"] == nil {
 					return true
@@ -1309,7 +1309,7 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 	seen := map[string]bool{}
 	ast.Inspect(mainFile, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok || astSelLast(call.Fun) != "RegisterHook" || len(call.Args) != 2 {
+		if !ok || appspec.AstSelLast(call.Fun) != "RegisterHook" || len(call.Args) != 2 {
 			return true
 		}
 		sel, ok := call.Fun.(*ast.SelectorExpr)
@@ -1317,11 +1317,11 @@ func packReadStubs(dir string, bp *appspec.AppSpec) error {
 			return true
 		}
 		reg, ok := sel.X.(*ast.CallExpr)
-		if !ok || astSelLast(reg.Fun) != "HookRegistry" || len(reg.Args) != 1 {
+		if !ok || appspec.AstSelLast(reg.Fun) != "HookRegistry" || len(reg.Args) != 1 {
 			return true
 		}
 		handler, ok := call.Args[1].(*ast.Ident)
-		when, known := lifecycles[astSelLast(call.Args[0])]
+		when, known := lifecycles[appspec.AstSelLast(call.Args[0])]
 		if !ok || !known || stubs[handler.Name] == nil || seen[handler.Name] {
 			return true
 		}
@@ -1542,7 +1542,7 @@ func packOutputDir(mainFile *ast.File, module string) string {
 // ui.IconConfig{}) call renderNavItemGo emits.
 func packIconName(e ast.Expr) string {
 	call, ok := e.(*ast.CallExpr)
-	if !ok || astSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
+	if !ok || appspec.AstSelLast(call.Fun) != "Icon" || len(call.Args) == 0 {
 		return ""
 	}
 	return appspec.AstString(call.Args[0])
@@ -1550,127 +1550,23 @@ func packIconName(e ast.Expr) string {
 
 // ----- P3: app config + theme + auth + admin --------------------------------
 
-// packReadApp reconstructs the app config (consts + theme + auth + admin) from
-// app.go and main.go.
+// packReadApp reconstructs the app config from app.go and main.go:
+// appspec.ReadGeneratedApp reads what the generator writes into source,
+// and pack adds the theme, the output dir and the secrets kept in .env.
 func packReadApp(dir string) (appspec.AppSpecApp, error) {
-	app := appspec.AppSpecApp{APIPrefix: "api"}
 	appPath := filepath.Join(dir, "app.go")
 	appFile, err := packParseFile(appPath)
 	if err != nil {
-		return app, fmt.Errorf("parse %s: %w", appPath, err)
+		return appspec.AppSpecApp{APIPrefix: "api"}, fmt.Errorf("parse %s: %w", appPath, err)
 	}
-	// Consts.
-	consts := map[string]string{}
-	for _, d := range appFile.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok != token.CONST {
-			continue
-		}
-		for _, spec := range gd.Specs {
-			vs, ok := spec.(*ast.ValueSpec)
-			if !ok || len(vs.Names) != 1 || len(vs.Values) != 1 {
-				continue
-			}
-			consts[vs.Names[0].Name] = appspec.AstString(vs.Values[0])
-		}
+	mainFile, err := packParseFile(filepath.Join(dir, "main.go"))
+	if err != nil {
+		mainFile = nil
 	}
-	app.Name = consts["appName"]
-	app.Module = consts["appModule"]
-	app.DBDriver = consts["dbDriver"]
-	app.DBURL = consts["dbURL"]
-	app.StaticDir = consts["staticDir"]
-	if v, ok := consts["apiPrefix"]; ok {
-		app.APIPrefix = strings.Trim(v, "/")
-	}
-
-	// Theme.
+	app := appspec.ReadGeneratedApp(appFile, mainFile)
 	app.Theme, app.ThemeDark = packReadTheme(appFile)
-
-	// Auth + admin-seed, found anywhere in app.go.
-	ast.Inspect(appFile, func(n ast.Node) bool {
-		switch t := n.(type) {
-		case *ast.CompositeLit:
-			if astSelLast(t.Type) == "AuthConfig" {
-				app.Auth.Enabled = true
-				av := appspec.FieldVals(t)
-				app.Auth.DevMode = appspec.AstBool(av["DevMode"])
-				app.Auth.BasePath = appspec.AstString(av["BasePath"])
-				app.Auth.JWTSecret = appspec.AstString(av["JWTSecret"])
-			}
-		case *ast.CallExpr:
-			switch astSelLast(t.Fun) {
-			case "HashPassword":
-				if len(t.Args) == 1 {
-					app.Admin.SeedPassword = appspec.AstString(t.Args[0])
-				}
-			case "CreateUser":
-				if len(t.Args) >= 2 {
-					app.Admin.SeedEmail = appspec.AstString(t.Args[1])
-				}
-			}
-		}
-		return true
-	})
-
-	// Admin, PWA, LLM-markdown and locale-prefix config live in main.go.
-	if mainFile, err := packParseFile(filepath.Join(dir, "main.go")); err == nil {
+	if mainFile != nil {
 		app.OutputDir = packOutputDir(mainFile, app.Module)
-		ast.Inspect(mainFile, func(n ast.Node) bool {
-			switch t := n.(type) {
-			case *ast.CompositeLit:
-				switch astSelLast(t.Type) {
-				case "Config":
-					cv := appspec.FieldVals(t)
-					// print.Config and other batteries' configs carry a
-					// PathPrefix too; only admin.Config names the admin path.
-					if _, ok := cv["PathPrefix"]; !ok || astSelPkg(t.Type) != "admin" {
-						return true // not an admin.Config
-					}
-					app.Admin.Enabled = true
-					app.Admin.Path = appspec.AstString(cv["PathPrefix"])
-					app.Admin.Role = appspec.AstString(cv["AdminRole"])
-					if app.Admin.Path == "/admin" {
-						app.Admin.Path = ""
-					}
-					if app.Admin.Role == "admin" {
-						app.Admin.Role = ""
-					}
-					app.Admin.LoginPath = appspec.AstString(cv["LoginPath"])
-				case "PWAConfig":
-					cv := appspec.FieldVals(t)
-					app.PWA.Enabled = true
-					app.PWA.Name = appspec.AstString(cv["Name"])
-					app.PWA.ShortName = appspec.AstString(cv["ShortName"])
-					app.PWA.Description = appspec.AstString(cv["Description"])
-					app.PWA.StartURL = appspec.AstString(cv["StartURL"])
-					app.PWA.Scope = appspec.AstString(cv["Scope"])
-					app.PWA.Display = packPWADisplay(astSelLast(cv["Display"]))
-					app.PWA.ThemeColor = appspec.AstString(cv["ThemeColor"])
-					app.PWA.BackgroundColor = appspec.AstString(cv["BackgroundColor"])
-				}
-			case *ast.CallExpr:
-				switch astSelLast(t.Fun) {
-				case "WithPublicOpenAPI":
-					app.PublicOpenAPI = true
-				case "WithDescription":
-					if len(t.Args) == 1 {
-						app.Description = appspec.AstString(t.Args[0])
-					}
-				case "getEnv":
-					if len(t.Args) == 2 && appspec.AstString(t.Args[0]) == "APP_BASE_URL" {
-						app.BaseURL = appspec.AstString(t.Args[1])
-						if app.BaseURL == "http://localhost:8080" {
-							app.BaseURL = ""
-						}
-					}
-				case "WithPublicLLMMD":
-					app.LLMMD = true
-				case "WithLocalePrefixes":
-					app.LocalePrefixes = true
-				}
-			}
-			return true
-		})
 	}
 
 	// Secrets moved out of committed source into the generated .env
@@ -1706,46 +1602,6 @@ func packReadDotEnv(path string) map[string]string {
 		return map[string]string{}
 	}
 	return out
-}
-
-// packPWADisplay maps a generated uihost.PWADisplay* constant name back
-// to the app spec's display string, the reverse of
-// appSpecPWADisplayConst. Unknown/absent → "" (the omitted default).
-func packPWADisplay(constName string) string {
-	switch constName {
-	case "PWADisplayStandalone":
-		return "standalone"
-	case "PWADisplayFullscreen":
-		return "fullscreen"
-	case "PWADisplayMinimalUI":
-		return "minimal-ui"
-	case "PWADisplayBrowser":
-		return "browser"
-	}
-	return ""
-}
-
-// astSelPkg is the package qualifier of a selector expression
-// (admin.Config → "admin"), or "" for anything else.
-func astSelPkg(e ast.Expr) string {
-	if sel, ok := e.(*ast.SelectorExpr); ok {
-		if id, ok := sel.X.(*ast.Ident); ok {
-			return id.Name
-		}
-	}
-	return ""
-}
-
-// astSelLast returns the trailing identifier of a selector/ident type expr
-// (auth.AuthConfig → "AuthConfig", admin.Config → "Config").
-func astSelLast(e ast.Expr) string {
-	switch t := e.(type) {
-	case *ast.SelectorExpr:
-		return t.Sel.Name
-	case *ast.Ident:
-		return t.Name
-	}
-	return ""
 }
 
 // packReadTheme parses appTheme()'s assignments back into the authored
