@@ -303,3 +303,7 @@ notes:
     breaking: true
     guidance: "Apply DiffSchema's changes with ApplySchemaDiffWithOptions (AllowDestructive on SQLite, where the table is rebuilt), or drop the stale constraint in a reviewed migration. The old constraint refused one account's value for every other account, and its 409 told the caller what another account stored."
     nodetect: "a fact of the live database schema, not of the host source"
+  - change: "BREAKING - the entityui CSV export refuses a non-blank ?q= on an entity with no SearchFields with 400 export_unknown_param, where it ignored the search and exported every row the caller may read; the REST list already refused it with search_not_configured"
+    breaking: true
+    guidance: "Declare SearchFields on the entity to search its export, or leave ?q= off the export URL. The bulk bar's Export link never carried it."
+    nodetect: "a URL a client builds; no host source spelling shows it"
