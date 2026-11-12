@@ -509,6 +509,11 @@ func (b *Battery) applyGrants(w http.ResponseWriter, r *http.Request, page strin
 			return false
 		}
 	}
+	if c, lost := b.ownPermissionLost(ctx, changes); lost {
+		b.appendAudit(ctx, "access", c.op()+"-refused", c.role, actor, map[string]any{"permission": string(c.perm), "own_permission": true})
+		b.refuse(w, r, page, http.StatusForbidden, "own-permission-refused")
+		return false
+	}
 	for _, c := range changes {
 		if c.grant && !b.grantAccepted(w, r, page, c, b.cfg.GrantStore.CheckGrant(ctx, c.role, c.perm)) {
 			return false
@@ -729,6 +734,46 @@ func (b *Battery) callerHoldsPermission(ctx context.Context, perm access.Permiss
 		}
 	}
 	return false
+}
+
+// ownPermissionLost returns the first revoke in changes that would leave
+// the caller without the permission it takes away: after every change in
+// the save lands, none of the caller's own roles grants it or Wildcard.
+// callerHoldsPermission gates every later grant on exactly that set, so
+// such a revoke is one the caller can never undo, and the last holder of
+// it leaves the deployment unable to grant it back. A caller holding a
+// second role that keeps the permission (or Wildcard) may still revoke it.
+func (b *Battery) ownPermissionLost(ctx context.Context, changes []grantChange) (grantChange, bool) {
+	if b.cfg.Policy == nil {
+		return grantChange{}, false
+	}
+	held := callerHeldRoles(ctx)
+	after := map[access.Permission]bool{}
+	for _, role := range held {
+		perms := map[access.Permission]bool{}
+		for _, p := range b.cfg.Policy.PermissionsOf(role) {
+			perms[p] = true
+		}
+		for _, c := range changes {
+			if c.role == role {
+				perms[c.perm] = c.grant
+			}
+		}
+		for p, ok := range perms {
+			if ok {
+				after[p] = true
+			}
+		}
+	}
+	if after[access.Wildcard] {
+		return grantChange{}, false
+	}
+	for _, c := range changes {
+		if !c.grant && slices.Contains(held, c.role) && !after[c.perm] {
+			return c, true
+		}
+	}
+	return grantChange{}, false
 }
 
 // callerHeldRoles is the signed-in user's own roles, read from the user

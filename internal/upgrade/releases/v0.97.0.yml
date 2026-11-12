@@ -307,3 +307,7 @@ notes:
     breaking: true
     guidance: "Declare SearchFields on the entity to search its export, or leave ?q= off the export URL. The bulk bar's Export link never carried it."
     nodetect: "a URL a client builds; no host source spelling shows it"
+  - change: "BREAKING - the battery/admin Roles grid refuses a save that would revoke a permission from the caller's own role when none of the caller's roles would still hold it (or the wildcard), answering own-permission-refused with a revoke-refused audit row; that revoke used to land, and the caller could never grant the permission back"
+    breaking: true
+    guidance: "Grant the permission to a second role the admin holds before revoking it from the first, or have an admin whose roles keep it make the change."
+    nodetect: "the refusal depends on the caller's roles and the policy at request time; no host source spelling shows it"
