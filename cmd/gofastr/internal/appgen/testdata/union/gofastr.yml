@@ -574,6 +574,13 @@ screens:
         children:
           - type: paragraph
             text: Inside the section.
+      # Text-only bare tags: type: section draws a plain <section>, and
+      # every other tag (header here) a div; pack keeps both.
+      - type: section
+        class: lead
+        text: A plain section with text.
+      - type: header
+        text: A header drawn as a div.
   # Control blocks: a form with every input kind, tables, a list, a
   # button and a link group.
   - name: contact

@@ -2668,6 +2668,16 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 		if b, ok := reverseEntityForm(call); ok {
 			return b, true
 		}
+	case "html.Div":
+		// A bare-tag text block (type: div, header, article, nav, …; every
+		// tag but the ones above draws as a div): html.Div(DivConfig{Class},
+		// render.Text(text)). The authored tag name is not in the output,
+		// so it packs as type: div, which regenerates the same code.
+		if len(call.Args) == 2 {
+			if text, ok := call.Args[1].(*ast.CallExpr); ok && callSel(text) == "render.Text" {
+				return appspec.AppSpecBlock{Type: "div", Class: appspec.AstString(cfgOf(call, 0)["Class"]), Text: renderTextArg(text)}, true
+			}
+		}
 	case "html.Paragraph":
 		return appspec.AppSpecBlock{Type: "paragraph", Class: appspec.AstString(cfgOf(call, 0)["Class"]), Text: renderTextArg(call.Args[len(call.Args)-1])}, true
 	case "render.Tag":
@@ -3211,6 +3221,13 @@ func reverseRenderTag(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 	switch tag {
 	case "p":
 		return appspec.AppSpecBlock{Type: "paragraph", Text: renderTextArg(call.Args[len(call.Args)-1])}, true
+	case "section":
+		// A `type: section` text block: render.Tag("section", attrs,
+		// render.Text(text)), its attrs nil or {"class": …}.
+		if len(call.Args) != 3 {
+			return appspec.AppSpecBlock{}, false
+		}
+		return appspec.AppSpecBlock{Type: "section", Class: tagAttrClass(call.Args[1]), Text: renderTextArg(call.Args[2])}, true
 	case "div":
 		// chart wrapper: render.Tag("div", {class:"mrd-chart"}, Heading(title), ui.BarChart/PieChart(...)).
 		for _, arg := range call.Args[2:] {
@@ -3240,6 +3257,21 @@ func reverseRenderTag(call *ast.CallExpr) (appspec.AppSpecBlock, bool) {
 		}
 	}
 	return appspec.AppSpecBlock{}, false
+}
+
+// tagAttrClass reads the class out of the attrs map a render.Tag call
+// takes: map[string]string{"class": "x"} or nil.
+func tagAttrClass(e ast.Expr) string {
+	lit, ok := e.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	for _, el := range lit.Elts {
+		if kv, ok := el.(*ast.KeyValueExpr); ok && appspec.AstString(kv.Key) == "class" {
+			return appspec.AstString(kv.Value)
+		}
+	}
+	return ""
 }
 
 // reverseChartCall recognizes the three chart emission shapes and returns

@@ -269,3 +269,32 @@ screens:
 		t.Errorf("titled chart packed as %+v", titled)
 	}
 }
+
+// A `type: section` text block is drawn as render.Tag("section", …) and
+// every other bare tag (div, header, article, …) as html.Div; pack read
+// neither back and dropped the block with its text and class.
+func TestPackKeepsSectionAndDivText(t *testing.T) {
+	body := packRoundTrip(t, `      - type: section
+        class: lead
+        text: About this site
+      - type: div
+        text: A plain note
+      - type: header
+        class: banner
+        text: Top of the page
+`)
+	want := []appspec.AppSpecBlock{
+		{Type: "section", Class: "lead", Text: "About this site"},
+		{Type: "div", Text: "A plain note"},
+		{Type: "div", Class: "banner", Text: "Top of the page"},
+	}
+	if len(body) != 1+len(want) {
+		t.Fatalf("packed body has %d blocks, want %d: %+v", len(body), 1+len(want), body)
+	}
+	for i, w := range want {
+		got := body[i+1]
+		if got.Type != w.Type || got.Class != w.Class || got.Text != w.Text || got.Kind != "" {
+			t.Errorf("block %d packed as %+v, want type %q class %q text %q", i+1, got, w.Type, w.Class, w.Text)
+		}
+	}
+}
