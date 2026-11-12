@@ -1568,7 +1568,9 @@ few lines, and link the PR or the docs page for the rest.
 - **The CSV export refuses `?q=` on an entity with no search fields**, as
   the REST list does, instead of exporting every row.
 - **llm.md text cannot turn control-byte entities into markup**, and a
-  code block in a table cell keeps its row whole.
+  code block in a table cell keeps its row whole. Inline code keeps the
+  spaces at its ends, and a code block inside a paragraph that also
+  holds an entity stays a code block.
 - **Markdown:** a leading `---` with prose under it is body, not
   frontmatter, and a ten-digit ordinal is paragraph text, not a list.
 - **A long Postgres isolation database name is cut on a rune boundary**,
@@ -1596,8 +1598,13 @@ few lines, and link the PR or the docs page for the rest.
 - **Owned style sheets decode escaped custom-property names** before the
   token checks, so `--\63 olor-primary` is refused as a theme token
   redeclaration and `var(--\63 olor-primary)` is not reported unknown.
+  The same goes for an escaped `@property` name and for standard
+  property names, read decoded and case folded: `\61 nimation` and
+  `ANIMATION` still need a reduced-motion block, and `\70 adding: 16px`
+  is still the `--spacing-lg` value.
 - **A float store slice stamps the text the runtime paints**: SSR writes
-  `1e-7` and `1.23e+23` as JavaScript's `String` does, not fixed notation.
+  `1e-7` and `1.23e+23` as JavaScript's `String` does, not fixed notation,
+  and negative zero as `0`.
 - **`gofastr release --pkg=main.go` asks for `--name`** instead of naming
   the release `command-line-arguments`.
 - **`gofastr docs --grep`, `audit a11y --pages/--url` and `upgrade`

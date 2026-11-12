@@ -375,7 +375,18 @@ func TestDarkCodeTakesLightGrammar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dark tk-kw refused a value light tk-kw takes: %v", err)
 	}
-	if _, err := style.ApplyTokens(base, style.ThemeToTokens(got)); err != nil {
+	if got.DarkCode["kw"] != "inherit" {
+		t.Fatalf("ApplyTokens dropped the dark override: DarkCode[kw] = %q", got.DarkCode["kw"])
+	}
+	tokens := style.ThemeToTokens(got)
+	if tokens["dark.tk-kw"] != "inherit" {
+		t.Fatalf("ThemeToTokens dropped the dark override: dark.tk-kw = %q", tokens["dark.tk-kw"])
+	}
+	back, err := style.ApplyTokens(base, tokens)
+	if err != nil {
 		t.Fatalf("round trip refused: %v", err)
+	}
+	if back.DarkCode["kw"] != "inherit" {
+		t.Fatalf("round trip lost the dark override: DarkCode[kw] = %q", back.DarkCode["kw"])
 	}
 }

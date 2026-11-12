@@ -309,8 +309,9 @@ func collectDeclaredCustomProperties(sheet *Stylesheet) map[string]bool {
 		for _, r := range rules {
 			if r.At && r.Name == "property" {
 				for _, t := range r.Prel {
-					if t.Type == TokenIdent && strings.HasPrefix(t.Text, "--") {
-						declared[strings.TrimPrefix(cssUnescape(t.Text), "--")] = true
+					// Decoded before the prefix test: \2d-foo registers --foo.
+					if name, ok := strings.CutPrefix(cssUnescape(t.Text), "--"); t.Type == TokenIdent && ok {
+						declared[name] = true
 						break
 					}
 				}
@@ -699,7 +700,7 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 	c.checkHardcodedValue(d)
 	// GOFASTR1813: animation without a reduced-motion block for the
 	// same selector.
-	if (d.Name == "animation" || d.Name == "animation-name") && !inRM {
+	if prop := propName(d); (prop == "animation" || prop == "animation-name") && !inRM {
 		if first := firstIdent(d.Value); first != nil && first.Text != "none" && first.Text != "unset" {
 			if !c.rmSelectors[r.Text] {
 				c.report(Diagnostic{
@@ -712,6 +713,18 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 			}
 		}
 	}
+}
+
+// propName is a declaration's property name as the browser reads it:
+// escapes decoded (\61 nimation is animation) and, for a standard
+// property, ASCII case folded (ANIMATION is animation). A custom
+// property's name is case-sensitive and keeps its case.
+func propName(d *Decl) string {
+	name := cssUnescape(d.Name)
+	if strings.HasPrefix(name, "--") {
+		return name
+	}
+	return asciicase.Lower(name)
 }
 
 // firstIdent returns the first ident token of a value run.
@@ -834,7 +847,7 @@ func (c *checker) lightTokenValue(name string) (string, bool) {
 // (d.ValueSrc, comments included, !important excluded) with the
 // contracts pipeline's property-category gate.
 func (c *checker) checkHardcodedValue(d *Decl) {
-	cats, ok := propTokenCategories[d.Name]
+	cats, ok := propTokenCategories[propName(d)]
 	if !ok {
 		return
 	}

@@ -126,13 +126,14 @@ func RepeatedLiteralsIn(sheets []SheetSource, tokens map[string]string) []Repeat
 		visit = func(rules []*Rule) {
 			for _, r := range rules {
 				for _, d := range r.Decls {
-					cats, ok := propTokenCategories[d.Name]
+					prop := propName(d)
+					cats, ok := propTokenCategories[prop]
 					if !ok {
 						continue
 					}
 					v := strings.TrimSpace(d.ValueSrc)
 					lv := strings.ToLower(v)
-					if v == "" || bareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(d.Name, lv) {
+					if v == "" || bareKeyword(v) || strings.Contains(lv, "var(") || strings.Contains(v, "{") || structuralLiteral(prop, lv) {
 						continue
 					}
 					if tokenValueFor(valueIndex[lv], cats) {

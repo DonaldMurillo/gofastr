@@ -496,11 +496,33 @@ func decodeTextNode(t string) string {
 	}
 	d := t
 	if strings.Contains(d, "&") {
-		d = reTagStart.ReplaceAllString(decodeEntities(d), "&lt;$1")
+		d = reTagStart.ReplaceAllString(decodeAroundFenceSlots(d), "&lt;$1")
 	}
 	d = textWS.Replace(d)
 	head, rest := escapeLeadingSplit(d)
 	return head + rest
+}
+
+// decodeAroundFenceSlots decodes a text node's entities but not the
+// fence slots in it: a <pre> lifted out of a paragraph leaves its slot
+// in the same text run as the words around it, and decodeEntities
+// scrubs every control byte, the slot's \x00 and \x01 included, which
+// lost the block and left a literal "f0" in the text. The document
+// scrub already removed every input-borne control byte, so the only
+// ones left here are slot markers, and the runs between them decode
+// as before.
+func decodeAroundFenceSlots(t string) string {
+	var b strings.Builder
+	for {
+		loc := reFenceSlot.FindStringIndex(t)
+		if loc == nil {
+			b.WriteString(decodeEntities(t))
+			return b.String()
+		}
+		b.WriteString(decodeEntities(t[:loc[0]]))
+		b.WriteString(t[loc[0]:loc[1]])
+		t = t[loc[1]:]
+	}
 }
 
 // escapeLeadingSplit splits s at its first markdown structure
@@ -598,12 +620,16 @@ func mdHeadField(s string) string {
 }
 
 // mdCodeSpan wraps inline code content in a backtick run one longer
-// than the longest run the content contains, padding with single
-// spaces when the content starts or ends with a backtick (CommonMark
-// code-span rule).
+// than the longest run the content contains. CommonMark strips one
+// space from each end of a span whose content starts and ends with a
+// space (and is not all spaces), so the content is padded with single
+// spaces when it starts or ends with a backtick (the padding the strip
+// removes) and when it starts and ends with a space (so the strip
+// removes the padding, not the code's own spaces).
 func mdCodeSpan(content string) string {
 	run := strings.Repeat("`", longestBacktickRun(content)+1)
-	if strings.HasPrefix(content, "`") || strings.HasSuffix(content, "`") {
+	spaced := strings.HasPrefix(content, " ") && strings.HasSuffix(content, " ") && strings.Trim(content, " ") != ""
+	if spaced || strings.HasPrefix(content, "`") || strings.HasSuffix(content, "`") {
 		return run + " " + content + " " + run
 	}
 	return run + content + run
