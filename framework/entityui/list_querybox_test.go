@@ -202,3 +202,22 @@ func TestQueryBoxOffByDefault(t *testing.T) {
 		t.Errorf("the query box rendered without QueryBox():\n%s", html)
 	}
 }
+
+// A query pair that does not decode is dropped by url.ParseQuery, so the
+// screen listed every row as if the filter were never sent. It warns
+// instead, the way a filter that does not parse does.
+func TestListWarnsUndecodableQuery(t *testing.T) {
+	x := newTestUI(t,
+		map[string]entity.EntityConfig{"orders": ordersConfig()},
+		map[string][]map[string]any{"orders": ordersRows()},
+	)
+	b := x.ui.List("orders").QueryBox()
+	for _, q := range []string{"?filter=status%ZZ", "?filter=a;b=c", "?q=%"} {
+		if got := listHTML(t, b, x.ctx("/orders", q)); !strings.Contains(got, "Filter not applied") {
+			t.Errorf("%s: no warning for a pair that does not decode:\n%s", q, got)
+		}
+	}
+	if got := listHTML(t, b, x.ctx("/orders", "?filter="+url.QueryEscape(`status = "paid"`))); strings.Contains(got, "Filter not applied") {
+		t.Errorf("a decodable filter drew the warning:\n%s", got)
+	}
+}

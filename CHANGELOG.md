@@ -1556,7 +1556,8 @@ few lines, and link the PR or the docs page for the rest.
   `?cursor=%ZZ` restarted a walk at page 1 and `?name=%ZZ` read as no
   filter, both with a 200. The crud list and the entity CSV export read
   their query through the new `filter.ParseQueryStrict` and answer
-  `query_undecodable`.
+  `query_undecodable`; an entityui list screen shows its "Filter not
+  applied" warning.
 - **A `?where=` leaf with a null or missing value answers 400.**
   `{"field":"title","value":null}` compiled to `title = ''` on a text
   column; it and a null `in` entry now answer

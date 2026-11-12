@@ -17,6 +17,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	fwpagination "github.com/DonaldMurillo/gofastr/framework/pagination"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -517,6 +518,13 @@ func (b *ListBuilder) state(ctx context.Context, m *meta) (*listState, crud.List
 	s.path = b.base
 	if r := appui.RequestFromContext(ctx); r != nil && r.URL != nil {
 		s.path = r.URL.Path
+		// url.ParseQuery drops a pair it cannot decode (?f_status=paid%ZZ)
+		// and keeps the rest, so the screen would list wider than the
+		// reader asked with no word. The REST list answers 400 there; the
+		// screen warns, as it does for a filter that does not parse.
+		if _, err := filter.ParseQueryStrict(r.URL.RawQuery); err != nil {
+			s.filterBad = true
+		}
 	}
 	s.base = b.base
 	if s.base == "" {
