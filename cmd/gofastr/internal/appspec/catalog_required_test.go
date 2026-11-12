@@ -1,6 +1,7 @@
 package appspec
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -203,6 +204,62 @@ screens:
 	} {
 		if err := r5YAMLAppSpec(t, head+ok); err != nil {
 			t.Errorf("refused a complete block: %v\n%s", err, ok)
+		}
+	}
+}
+
+// Every catalog prop the generator reads as text refuses a number: YAML
+// decodes `heading: 2026` as an int64, the generator reads it as "", and
+// the section heading, card text or chart title vanished with no word.
+// Each case starts from a block that validates and swaps one prop.
+func TestCatalogTextPropRefusesNumber(t *testing.T) {
+	const head = `
+app:
+  name: Demo
+  module: example.com/demo
+entities:
+  - name: posts
+    crud: true
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: %s
+        props:
+%s`
+	source := "          source:\n            entity: posts\n            group_by: title\n"
+	for _, tc := range []struct {
+		kind, base string
+		keys       []string
+	}{
+		{"section", "          heading: About\n", []string{"heading", "eyebrow", "description", "label", "class", "id"}},
+		{"card", "          heading: Hi\n", []string{"heading", "text"}},
+		{"bar_chart", source, []string{"title"}},
+		{"pie_chart", source, []string{"title"}},
+		{"line_chart", source, []string{"title"}},
+		{"link_button", "          label: Docs\n          href: /docs\n", []string{"label", "href", "variant"}},
+		{"stat_card", "          label: Uptime\n          value: \"1\"\n", []string{"label", "value"}},
+		{"page_header", "          title: Hi\n", []string{"title", "eyebrow", "subtitle"}},
+		{"hero", "          title: Hi\n", []string{"eyebrow", "title", "subtitle", "cta_text", "cta_href", "secondary_text", "secondary_href", "image", "media"}},
+		{"callout", "          title: Hi\n", []string{"title"}},
+	} {
+		if err := r5YAMLAppSpec(t, fmt.Sprintf(head, tc.kind, tc.base)); err != nil {
+			t.Fatalf("%s base block refused: %v", tc.kind, err)
+		}
+		for _, key := range tc.keys {
+			props := "          " + key + ": 2026\n"
+			for _, line := range strings.SplitAfter(tc.base, "\n") {
+				if line != "" && !strings.HasPrefix(line, "          "+key+":") {
+					props += line
+				}
+			}
+			err := r5YAMLAppSpec(t, fmt.Sprintf(head, tc.kind, props))
+			if err == nil || !strings.Contains(err.Error(), "quote 2026") {
+				t.Errorf("%s %s: 2026 should be refused as not text, got %v", tc.kind, key, err)
+			}
 		}
 	}
 }

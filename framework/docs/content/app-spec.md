@@ -1240,6 +1240,15 @@ or a fragment), and a numeric `price` is quoted (`price: "29"`); validation
 refuses either. A `callout` takes `props.title` and `text:` as its body and
 needs at least one of them.
 
+A catalog prop that takes text refuses a number or a boolean: an unquoted
+`heading: 2026` decodes as a number, which the generator would draw as
+nothing. Quote it (`heading: "2026"`). This covers a section's `heading`,
+`eyebrow`, `description`, `label`, `class` and `id`; a card's `heading`
+and `text`; a chart's `title`; a `link_button`'s `label`, `href` and
+`variant`; a `stat_card`'s `label` and `value`; a `page_header`'s
+`title`, `eyebrow` and `subtitle`; a hero's text, CTA and image props;
+and a callout's `title`.
+
 **Controls, tables and lists:** these kinds carry a form that is not bound
 to an entity (for that, use `entity_form`). Validation rejects a block
 missing a required prop, which the component would otherwise refuse at

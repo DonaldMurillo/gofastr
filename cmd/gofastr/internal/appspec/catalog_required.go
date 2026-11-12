@@ -2,6 +2,7 @@ package appspec
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
@@ -27,24 +28,12 @@ import (
 //   - pricing: each plan's CTA is a ui.LinkButton, drawn when cta_text
 //     or cta_href is set, so it needs a safe cta_href.
 //
-// A number or bool where the component takes text decodes as int64 or
-// bool, which the generator reads as "": refused with a hint to quote it.
-// Optional text is checked the same way: a hero's eyebrow, title,
-// subtitle, CTA labels (a dropped CTA label drops the CTA) and image
-// (or media) path, and a page_header's eyebrow and subtitle.
+// Text props (catalogTextProps) are checked first, by validateCatalogText.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
-	text := func(key string) error {
-		if v, ok := block.Props[key]; ok && v != nil {
-			if _, isText := v.(string); !isText {
-				return fmt.Errorf("app spec: screen %q %s block %s must be text; quote %v", screenName, kind, key, v)
-			}
-		}
-		return nil
+	if err := validateCatalogText(screenName, kind, block); err != nil {
+		return err
 	}
 	need := func(key string) error {
-		if err := text(key); err != nil {
-			return err
-		}
 		if s, _ := block.Props[key].(string); strings.TrimSpace(s) == "" {
 			return fmt.Errorf("app spec: screen %q %s block %s is required: the component refuses to render without it", screenName, kind, key)
 		}
@@ -76,20 +65,8 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 		}
 		return href("href")
 	case "page_header":
-		if err := need("title"); err != nil {
-			return err
-		}
-		for _, key := range []string{"eyebrow", "subtitle"} {
-			if err := text(key); err != nil {
-				return err
-			}
-		}
+		return need("title")
 	case "hero":
-		for _, key := range []string{"eyebrow", "title", "subtitle", "cta_text", "secondary_text", "image", "media"} {
-			if err := text(key); err != nil {
-				return err
-			}
-		}
 		for _, cta := range [][2]string{{"cta_text", "cta_href"}, {"secondary_text", "secondary_href"}} {
 			if s, _ := block.Props[cta[0]].(string); s != "" {
 				if err := href(cta[1]); err != nil {
@@ -98,9 +75,6 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 			}
 		}
 	case "callout":
-		if err := text("title"); err != nil {
-			return err
-		}
 		if s, _ := block.Props["title"].(string); strings.TrimSpace(s) == "" && strings.TrimSpace(block.Text) == "" {
 			return fmt.Errorf("app spec: screen %q callout block needs props.title or text: headless.Alert refuses to render a callout that says nothing", screenName)
 		}
@@ -130,6 +104,48 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 	case "markdown":
 		if strings.TrimSpace(block.Text) == "" {
 			return fmt.Errorf("app spec: screen %q markdown block text is required: ui.Markdown refuses to render without it", screenName)
+		}
+	}
+	return nil
+}
+
+// catalogTextProps lists, per catalog kind, every prop the generator
+// reads as text (appgen's renderAppSpecCatalogBlock reads each through
+// AppSpecProp, which answers "" for anything but a string). The layout
+// kinds' gap, min, align and justify are left to
+// validateAppSpecLayoutBlock, and a pricing block's plans are checked
+// per plan in validateCatalogRequired. appgen's
+// TestCatalogTextPropsCoverGenerator fails when the generator reads a
+// key this table does not hold.
+var catalogTextProps = map[string][]string{
+	"page_header": {"title", "eyebrow", "subtitle"},
+	"hero":        {"eyebrow", "title", "subtitle", "cta_text", "cta_href", "secondary_text", "secondary_href", "image", "media"},
+	"section":     {"heading", "eyebrow", "description", "label", "class", "id"},
+	"card":        {"heading", "text"},
+	"stat_card":   {"label", "value"},
+	"bar_chart":   {"title"},
+	"pie_chart":   {"title"},
+	"line_chart":  {"title"},
+	"link_button": {"label", "href", "variant"},
+	"callout":     {"title"},
+}
+
+// CatalogTextProps returns the props a catalog kind takes as text, the
+// keys validation refuses a number or bool for.
+func CatalogTextProps(kind string) []string {
+	return slices.Clone(catalogTextProps[kind])
+}
+
+// validateCatalogText refuses a number or bool where a catalog block
+// takes text. YAML decodes `heading: 2026` as an int64, which the
+// generator reads as "", so the heading, title or label vanishes from
+// the page with no warning: refused with a hint to quote it.
+func validateCatalogText(screenName, kind string, block AppSpecBlock) error {
+	for _, key := range catalogTextProps[kind] {
+		if v, ok := block.Props[key]; ok && v != nil {
+			if _, isText := v.(string); !isText {
+				return fmt.Errorf("app spec: screen %q %s block %s must be text; quote %v", screenName, kind, key, v)
+			}
 		}
 	}
 	return nil

@@ -3557,6 +3557,15 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 			return fmt.Errorf("app spec: screen %q %s block %s is required", screenName, kind, requiredProp)
 		}
 	}
+	// Every catalog kind's text props, whichever arm below judges the
+	// rest of the block: section and the charts reach no catalog check
+	// of their own. Only kind: names a catalog section; type: section is
+	// the plain tag.
+	if block.Kind != "" && AppSpecCatalogKind(kind) {
+		if err := validateCatalogText(screenName, strings.ToLower(strings.TrimSpace(kind)), block); err != nil {
+			return err
+		}
+	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "", "text", "p", "paragraph", "section", "div", "article", "main", "header", "footer", "nav", "aside", "span", "strong", "em", "code", "pre", "small", "blockquote", "button", "input", "label", "form", "select", "option", "textarea", "fieldset", "image", "img", "list", "ul", "ol", "li", "table", "thead", "tbody", "tr", "th", "td", "raw":
 	case "heading", "h1", "h2", "h3", "h4", "h5", "h6":
