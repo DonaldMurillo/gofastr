@@ -263,8 +263,10 @@ the final provider-link recheck succeed. A fail-closed second-factor check
 records `login.failed` with `reason: twofa_failclosed` and `via: oauth`,
 never an OAuth login success event.
 
-Each row carries `record_id`/`actor_id` = the resolved user id (or `"-"`
-when unknown, since the column is NOT NULL), and a `diff` JSON of
+Each row carries `record_id` and `actor_id` = the resolved user id. When
+no user is known, `record_id` holds `"-"` (that column is NOT NULL) and
+`actor_id` is NULL, so look such rows up with `actor_id IS NULL`. Each
+row also carries a `diff` JSON of
 `{email, remote, …meta}`. `remote` is the host part of `r.RemoteAddr`;
 `X-Forwarded-For` is never trusted (see the auth threat model). A row
 with no user id (an unknown address, a magic-link request, a refused

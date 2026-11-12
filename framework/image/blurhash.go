@@ -22,10 +22,10 @@ const blurhashMaxSize = 64
 // the number of DCT components on each axis; both must be in 1..9.
 // Typical values are 4×3 (landscape) or 3×4 (portrait).
 //
-// The algorithm scales with width × height × components, so callers
-// processing large images should resize first:
-//
-//	hash, _ := img.Resize(32, 32, WithFit(FitInside)).BlurHash(4, 3)
+// A source larger than 64 px on its longest side is scaled down inside
+// the call, so a large image needs no resize first. Do not pre-resize:
+// hashing a smaller copy gives a different hash than the direct call that
+// [VariantSet.Process] and [VariantSet.ProcessTo] make for the same image.
 func (i *Image) BlurHash(xComp, yComp int) (string, error) {
 	if xComp < 1 || xComp > 9 || yComp < 1 || yComp > 9 {
 		return "", errors.New("image: BlurHash components must be in 1..9")

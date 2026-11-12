@@ -418,16 +418,27 @@ The right shape for a multi-tenant dashboard:
 
 3. **Render per-tenant state.** The snapshot must come from the
    tenant-scoped source of truth, not the package-global demo state.
-   Each tick iterates the tenants with active viewers and pushes only
-   that tenant's snapshot to its sessions:
+   The island manager does not list the topics that hold sessions, so
+   the app keeps that set itself: record a topic when the authorize
+   hook from step 2 admits it, and drop it once no session is left on
+   it. Each tick then pushes only that tenant's snapshot to its
+   sessions:
 
    ```go
-   for _, topic := range host.Islands.ActiveTopics() {
+   var watched sync.Map // topic → struct{}; add one in the authorize hook when it returns true
+
+   watched.Range(func(k, _ any) bool {
+       topic := k.(string)
+       if len(host.Islands.PresenceSessions(topic)) == 0 {
+           watched.Delete(topic)
+           return true
+       }
        tenantID, ok := tenantFromTopic(topic) // "tenant:<id>:dashboard" → "<id>"
-       if !ok { continue }
+       if !ok { return true }
        snap := repo.Snapshot(ctx, tenantID)
        pushTenantIslands(host.Islands, topic, snap)
-   }
+       return true
+   })
    ```
 
    `PresenceSessions(topic)` already returns only sessions that joined
