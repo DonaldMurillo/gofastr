@@ -997,7 +997,13 @@ partial and keeps the shell).
   Submitted control names use the default camelCase API wire keys
   (`address_line_1` becomes `addressLine1`) so field refusals land on the
   matching input. Control IDs, label lookups and relationship targets keep
-  their declaration names.
+  their declaration names. A `fields:` list draws only the listed
+  fields, so a create form must list every required field with no
+  default (a relation draws its picker): validation refuses one that
+  leaves such a field out, since every submit would answer 400. The
+  fields the server fills are exempt: the owner field, the `states:`
+  field and its stamps, `hidden`, `read_only` and `auto_generate`
+  fields, and every field of an entity with a `before_create` hook.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs

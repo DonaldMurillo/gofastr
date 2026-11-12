@@ -517,7 +517,7 @@ screens:
         text: Create Task
         entity: tasks
         mode: create
-        fields: [title, description, priority, task_type, status, assignee_email, due_date]
+        fields: [title, description, column_id, priority, task_type, status, assignee_email, due_date]
 
   - name: task_detail
     route: /tasks/{id}

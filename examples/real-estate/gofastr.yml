@@ -511,7 +511,7 @@ screens:
         text: New Property
         entity: properties
         mode: create
-        fields: [title, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, description]
+        fields: [title, slug, property_type, listing_type, price, address, city, bedrooms, bathrooms, sqft, description]
 
   - name: property_detail
     route: /properties/{id}
@@ -536,7 +536,7 @@ screens:
         text: Book Tour
         entity: tours
         mode: create
-        fields: [visitor_name, visitor_email, visitor_phone, scheduled_at, duration_minutes]
+        fields: [property_id, visitor_name, visitor_email, visitor_phone, scheduled_at, duration_minutes]
 endpoints:
   - name: schedule_tour
     entity: properties

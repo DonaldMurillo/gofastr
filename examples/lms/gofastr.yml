@@ -633,7 +633,7 @@ screens:
         text: New Course
         entity: courses
         mode: create
-        fields: [title, slug, subtitle, description, category, level, price, is_free]
+        fields: [title, slug, subtitle, description, instructor_id, category, level, price, is_free]
 
   - name: course_detail
     route: /courses/{id}
