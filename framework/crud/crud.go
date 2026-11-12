@@ -904,6 +904,9 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, 
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
+	if err := refuseRepeatedKey(q, "q"); err != nil {
+		return nil, err
+	}
 	qVal := q.Get("q")
 	if len(ch.Entity.Config.SearchFields) == 0 {
 		if strings.TrimSpace(qVal) == "" || ch.ownsQParam() {
@@ -954,6 +957,9 @@ func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, er
 // whereTreeClausesQ is the no-reparse variant of whereTreeClauses. It
 // also returns the parsed tree, for checks that read its fields.
 func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *filter.Predicate, error) {
+	if err := refuseRepeatedKey(q, "where"); err != nil {
+		return nil, nil, err
+	}
 	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil, nil
@@ -970,6 +976,19 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 		return nil, p, nil
 	}
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
+}
+
+// refuseRepeatedKey refuses a query key the handler reads as one value
+// (fields, where, q) when the query sends it more than once. q.Get reads
+// the first value only, so ?fields=title&fields=bogus answered 200 with
+// the title projection and never validated bogus, where ?fields=bogus
+// alone answered 400. The include key has its own refusal
+// (include_repeated); a scalar filter key has filter.repeated_filter.
+func refuseRepeatedKey(q url.Values, key string) error {
+	if n := len(q[key]); n > 1 {
+		return i18n.NewError(reasonQueryKeyRepeated, map[string]any{"key": strconv.Quote(key), "count": n})
+	}
+	return nil
 }
 
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"

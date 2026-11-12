@@ -27,6 +27,9 @@ func (ch *CrudHandler) projectFromRequest(r *http.Request) ([]string, error) {
 // The List handler threads its single url.Values through every helper so
 // ?fields= isn't re-parsed per call.
 func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
+	if err := refuseRepeatedKey(q, "fields"); err != nil {
+		return nil, err
+	}
 	raw := strings.TrimSpace(q.Get("fields"))
 	if raw == "" {
 		return ch.visibleFields(), nil
