@@ -15,7 +15,7 @@ import (
 // round trip must hand back every catalog block it was given.
 func packRoundTrip(t *testing.T, body string) []appspec.AppSpecBlock {
 	t.Helper()
-	spec, err := decodeAppSpecString(`app:
+	return packRoundTripApp(t, `app:
   name: Probe
   module: example.com/probe
 screens:
@@ -25,7 +25,14 @@ screens:
       - kind: page_header
         props:
           title: Home
-` + body)
+`+body)
+}
+
+// packRoundTripApp is packRoundTrip over a whole app spec, for blocks
+// that need entities; it returns the body of the spec's home screen.
+func packRoundTripApp(t *testing.T, yml string) []appspec.AppSpecBlock {
+	t.Helper()
+	spec, err := decodeAppSpecString(yml)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,11 +40,11 @@ screens:
 	if err != nil {
 		t.Fatal(err)
 	}
-	yml, err := encodeAppSpecYAML(packed)
+	out, err := encodeAppSpecYAML(packed)
 	if err != nil {
 		t.Fatal(err)
 	}
-	back, err := decodeAppSpecString(yml)
+	back, err := decodeAppSpecString(out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,5 +198,74 @@ func TestPackKeepsHeroImageAndCTAs(t *testing.T) {
 	}
 	if p := body[3].Props; p["secondary_text"] != "Learn" || p["secondary_href"] != "/learn" || p["cta_text"] != nil {
 		t.Fatalf("secondary-only hero packed props=%v", p)
+	}
+}
+
+// A titled chart is drawn as ui.Card(CardConfig{Heading}, chart); a card
+// whose first child is a chart is ui.Card(CardConfig{Heading,
+// Description}, chart, siblings…). Pack read both as the titled chart and
+// dropped the card's text and every other child.
+func TestPackKeepsCardHoldingChart(t *testing.T) {
+	body := packRoundTripApp(t, `app:
+  name: Probe
+  module: example.com/probe
+entities:
+  - name: posts
+    fields:
+      - name: title
+        type: string
+screens:
+  - name: home
+    route: /
+    body:
+      - kind: card
+        props:
+          heading: Sales
+          text: How we did
+        children:
+          - kind: bar_chart
+            props:
+              source:
+                entity: posts
+                group_by: title
+          - kind: card
+            props:
+              heading: Note
+              text: Charts update nightly
+      - kind: card
+        props:
+          heading: Lone
+        children:
+          - kind: pie_chart
+            props:
+              source:
+                entity: posts
+                group_by: title
+      - kind: bar_chart
+        props:
+          title: Titled
+          source:
+            entity: posts
+            group_by: title
+`)
+	if len(body) != 3 {
+		t.Fatalf("packed body has %d blocks, want 3: %+v", len(body), body)
+	}
+	outer := body[0]
+	if outer.Kind != "card" || outer.Props["heading"] != "Sales" || outer.Props["text"] != "How we did" {
+		t.Fatalf("card with a chart child packed as %+v", outer)
+	}
+	if len(outer.Children) != 2 || outer.Children[0].Kind != "bar_chart" || outer.Children[1].Kind != "card" {
+		t.Fatalf("card children packed as %+v, want bar_chart then card", outer.Children)
+	}
+	if _, titled := outer.Children[0].Props["title"]; titled {
+		t.Errorf("the card's heading leaked into its chart's title: %+v", outer.Children[0].Props)
+	}
+	lone := body[1]
+	if lone.Kind != "card" || lone.Props["heading"] != "Lone" || len(lone.Children) != 1 || lone.Children[0].Kind != "pie_chart" {
+		t.Errorf("card holding one chart packed as %+v", lone)
+	}
+	if titled := body[2]; titled.Kind != "bar_chart" || titled.Props["title"] != "Titled" {
+		t.Errorf("titled chart packed as %+v", titled)
 	}
 }

@@ -753,6 +753,22 @@ screens:
           source:
             entity: invoices
             group_by: status
+      # A card whose first child is a chart stays a card through pack,
+      # its text and its other children kept.
+      - kind: card
+        props:
+          heading: Billing
+          text: Where invoices stand.
+        children:
+          - kind: pie_chart
+            props:
+              source:
+                entity: invoices
+                group_by: status
+          - kind: card
+            props:
+              heading: Note
+              text: Counts refresh on every load.
       - kind: entity_list
         entity: invoices
         text: Recent invoices

@@ -2564,21 +2564,24 @@ func reverseBlock(e ast.Expr, helpers map[string]ast.Expr) (appspec.AppSpecBlock
 	case "ui.Section":
 		return reverseSection(call, helpers), true
 	case "ui.Card":
-		// A titled chart is emitted as ui.Card(Heading, <chart>): reverse
-		// it back to the chart block, not a card, with the heading as its
-		// title. A plain card has no chart child.
-		if len(call.Args) > 1 {
+		// A titled chart is emitted as ui.Card(CardConfig{Heading}, <chart>):
+		// reverse it back to the chart block with the heading as its title.
+		// A card block always writes Description, so a card whose first
+		// child is a chart (CardConfig{Heading, Description}, chart,
+		// siblings…) is a card: read as a chart it lost its text and every
+		// other child.
+		c := cfgOf(call, 0)
+		if _, isCard := c["Description"]; !isCard && len(call.Args) == 2 {
 			if child, ok := call.Args[1].(*ast.CallExpr); ok {
 				if b, ok := reverseChartCall(child); ok {
 					if b.Props == nil {
 						b.Props = map[string]any{}
 					}
-					putStr(b.Props, "title", appspec.AstString(cfgOf(call, 0)["Heading"]))
+					putStr(b.Props, "title", appspec.AstString(c["Heading"]))
 					return b, true
 				}
 			}
 		}
-		c := cfgOf(call, 0)
 		b := block("card", props2("heading", appspec.AstString(c["Heading"]), "text", appspec.AstString(c["Description"])))
 		// The generator passes a card's children after the config:
 		// ui.Card(cfg, children...).
