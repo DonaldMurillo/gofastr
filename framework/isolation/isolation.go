@@ -849,12 +849,12 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 	// default). Trim the base name so the suffix survives, two worktrees
 	// must not collide on a truncated form.
 	const pgMaxIdentifier = 63
-	// An operator-set GOFASTR_ISOLATION_ID can be any length; past this
-	// cap the suffix becomes a digest of the id, so the base name keeps
-	// room and two long ids sharing a prefix still differ.
-	const maxSuffix = 24
+	// An operator-set GOFASTR_ISOLATION_ID can be any length. A suffix
+	// that alone passes the limit becomes a digest of the id, so two long
+	// ids sharing a prefix still differ. Every id that fitted keeps its
+	// literal suffix, so an existing worktree keeps its database.
 	suffix := "_" + strings.ReplaceAll(r.id, "-", "_")
-	if len(suffix) > maxSuffix {
+	if len(suffix) > pgMaxIdentifier {
 		sum := sha1.Sum([]byte(r.id))
 		suffix = "_wt_" + hex.EncodeToString(sum[:])[:16]
 	}

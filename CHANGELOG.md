@@ -1569,8 +1569,8 @@ few lines, and link the PR or the docs page for the rest.
 - **Markdown:** a leading `---` with prose under it is body, not
   frontmatter, and a ten-digit ordinal is paragraph text, not a list.
 - **A long Postgres isolation database name is cut on a rune boundary**,
-  and an isolation id longer than 63 bytes no longer panics; ids past 23
-  bytes become a hashed suffix.
+  and an isolation id longer than 63 bytes no longer panics: its suffix
+  becomes a hash of the id. A shorter id keeps its database name.
 - **App spec validation** refuses a callout with neither title nor text,
   a pricing plan with `cta_text` and no safe `cta_href`, and a number in
   any catalog block's text prop (each used to generate a screen that

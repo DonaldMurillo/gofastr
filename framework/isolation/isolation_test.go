@@ -457,3 +457,16 @@ func TestPostgresDSNLongIDStaysUnique(t *testing.T) {
 		}
 	}
 }
+
+// An id that fitted before the digest existed keeps its literal suffix,
+// so an operator's worktree comes up on the database it already has.
+func TestPostgresDSNKeepsFittingIDName(t *testing.T) {
+	rt := &Runtime{id: "feature-checkout-redesign"}
+	out, err := rt.postgresDSN("postgres://u:p@localhost:5432/app")
+	if err != nil {
+		t.Fatalf("postgresDSN: %v", err)
+	}
+	if want := "postgres://u:p@localhost:5432/app_feature_checkout_redesign"; out != want {
+		t.Fatalf("rewritten = %q, want %q", out, want)
+	}
+}
