@@ -311,3 +311,7 @@ notes:
     breaking: true
     guidance: "Grant the permission to a second role the admin holds before revoking it from the first, or have an admin whose roles keep it make the change."
     nodetect: "the refusal depends on the caller's roles and the policy at request time; no host source spelling shows it"
+  - change: "BREAKING - a ?where= leaf whose value is missing or JSON null, or an in leaf whose values hold a null, answers 400 filter.where_needs_value, where a text column was compared with the empty string and answered 200"
+    breaking: true
+    guidance: "Send the value the leaf compares with. To match the empty string, send \"value\":\"\" explicitly."
+    nodetect: "a query parameter a client sends; no host source spelling shows it"

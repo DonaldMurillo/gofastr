@@ -1528,7 +1528,13 @@ compiles to `WHERE ((status = $1) OR ((priority = $2) AND (assignee =
 $3)))`. A node is either a **leaf** (`{"field","op","value"}`, `op`
 defaults to `eq`; use `"values":[...]` or a comma string in `"value"`
 with `op:"in"`, not both) or a **group** (`{"and":[...]}` /
-`{"or":[...]}`, non-empty, with no leaf member beside it).
+`{"or":[...]}`, non-empty, with no leaf member beside it). A leaf must
+carry the value its op reads: a `"value"` that is missing or JSON `null`,
+and a `null` entry in `"values"`, is a **400**
+(`filter.where_needs_value`), on every column type. JSON decoding reads a
+null as "not sent", so such a leaf compared a text column with `''`
+while an int column refused it. To match the empty string, send
+`"value":""`.
 
 The tree decodes strictly, the rule every client-borne JSON body
 follows (a `?cursor=` token included): a key repeated in one object, two
