@@ -25,7 +25,8 @@ output directory to --url.
 Flags:
   --version=<semver>   Release version, like 1.2.0 or v1.2.0-rc.1 (required)
   --pkg=<path>         Main package to build (default .)
-  --name=<binary>      Binary name (default: what go build would name it)
+  --name=<binary>      Binary name (default: what go build would name it;
+                       required when --pkg names .go files)
   -o, --out=<dir>      Output directory, created or empty (default dist/release/<version>)
   --url=<https-url>    Where the files will be downloaded from; writes the install scripts
   --targets=<list>     Comma-separated GOOS/GOARCH pairs (default: all of

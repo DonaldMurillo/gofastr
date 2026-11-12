@@ -55,7 +55,7 @@ fixed order, so two releases of the same tree are byte-identical.
 |------|---------|
 | `--version` | Required. Semver such as `1.2.0` or `1.2.0-rc.1`; a leading `v` is dropped from file names and from the stamped value. Build metadata (`+…`) is refused |
 | `--pkg` | The main package (default `.`). Anything else is refused |
-| `--name` | The binary name. Default: the name `go build` gives the package (the last import path element, skipping a `/vN` suffix). It must start with a letter and hold only letters, digits, `.`, `_` and `-`. When Windows is a target, a name Windows reserves (`con`, `aux`, `nul`, `com1`…) is refused |
+| `--name` | The binary name. Default: the name `go build` gives the package (the last import path element, skipping a `/vN` suffix). A `--pkg` that names `.go` files has no import path, so it needs `--name`. The name must start with a letter and hold only letters, digits, `.`, `_` and `-`. When Windows is a target, a name Windows reserves (`con`, `aux`, `nul`, `com1`…) is refused |
 | `-o`, `--out` | Output directory (default `dist/release/<version>`) |
 | `--url` | The https URL the files will be downloaded from. Without it no install scripts are written |
 | `--targets` | Comma-separated `GOOS/GOARCH` pairs. Default and maximum: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`, `windows/amd64`, `windows/arm64` |

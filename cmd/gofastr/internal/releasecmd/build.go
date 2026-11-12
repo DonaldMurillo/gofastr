@@ -56,6 +56,12 @@ func release(dir string, opts options, log io.Writer) (_ result, err error) {
 	}
 	res := result{name: opts.name}
 	if res.name == "" {
+		// .go file arguments list as the synthetic package
+		// command-line-arguments; go build names that binary after the
+		// first file, and nothing here should guess which file that is.
+		if info.importPath == "command-line-arguments" {
+			return result{}, fmt.Errorf("release: --pkg %s names .go files, which give no binary name; pass --name", opts.pkg)
+		}
 		res.name = defaultName(info.importPath)
 		if !nameRe.MatchString(res.name) {
 			return result{}, fmt.Errorf("release: the binary would be named %q, which the install scripts cannot use; pass --name", res.name)
