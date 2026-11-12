@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	coreyaml "github.com/DonaldMurillo/gofastr/core/yaml"
@@ -844,16 +845,30 @@ func (r *Runtime) postgresDSN(dsn string) (string, error) {
 	if db == "" {
 		return dsn, nil
 	}
-	suffix := "_" + strings.ReplaceAll(r.id, "-", "_")
-	if strings.HasSuffix(db, suffix) {
-		return u.String(), nil
-	}
 	// Postgres silently truncates identifiers at NAMEDATALEN-1 (63 bytes by
 	// default). Trim the base name so the suffix survives, two worktrees
 	// must not collide on a truncated form.
 	const pgMaxIdentifier = 63
+	// An operator-set GOFASTR_ISOLATION_ID can be any length; past this
+	// cap the suffix becomes a digest of the id, so the base name keeps
+	// room and two long ids sharing a prefix still differ.
+	const maxSuffix = 24
+	suffix := "_" + strings.ReplaceAll(r.id, "-", "_")
+	if len(suffix) > maxSuffix {
+		sum := sha1.Sum([]byte(r.id))
+		suffix = "_wt_" + hex.EncodeToString(sum[:])[:16]
+	}
+	if strings.HasSuffix(db, suffix) {
+		return u.String(), nil
+	}
 	if len(db)+len(suffix) > pgMaxIdentifier {
-		db = db[:pgMaxIdentifier-len(suffix)]
+		// Cut on a rune boundary: a split multibyte rune re-encodes as a
+		// literal %XX byte and names a database nobody can create.
+		cut := pgMaxIdentifier - len(suffix)
+		for cut > 0 && !utf8.RuneStart(db[cut]) {
+			cut--
+		}
+		db = db[:cut]
 	}
 	u.Path = "/" + db + suffix
 	return u.String(), nil
