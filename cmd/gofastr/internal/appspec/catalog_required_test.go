@@ -262,4 +262,9 @@ screens:
 			}
 		}
 	}
+	// A sourced stat_card never reads value, so a number there loads.
+	sourced := "          label: Users\n          value: 0\n          source:\n            entity: posts\n            agg: count\n"
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(head, "stat_card", sourced)); err != nil {
+		t.Errorf("a sourced stat_card with value: 0 was refused: %v", err)
+	}
 }

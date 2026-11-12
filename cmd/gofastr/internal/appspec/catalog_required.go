@@ -142,6 +142,11 @@ func CatalogTextProps(kind string) []string {
 // the page with no warning: refused with a hint to quote it.
 func validateCatalogText(screenName, kind string, block AppSpecBlock) error {
 	for _, key := range catalogTextProps[kind] {
+		// A sourced stat_card draws its value from the aggregate; the
+		// generator never reads props.value there.
+		if _, sourced := block.Props["source"].(map[string]any); sourced && kind == "stat_card" && key == "value" {
+			continue
+		}
 		if v, ok := block.Props[key]; ok && v != nil {
 			if _, isText := v.(string); !isText {
 				return fmt.Errorf("app spec: screen %q %s block %s must be text; quote %v", screenName, kind, key, v)
