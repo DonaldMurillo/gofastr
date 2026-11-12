@@ -3040,15 +3040,17 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 	putStr(p, "title", appspec.AstString(c["Title"]))
 	putStr(p, "subtitle", appspec.AstString(c["Subtitle"]))
 	// Actions: []render.HTML{LinkButton(cta), LinkButton(secondary)}.
+	// The variant says which CTA a button is: a hero with only a
+	// secondary CTA emits it alone, first in the list.
 	if actions, ok := c["Actions"].(*ast.CompositeLit); ok {
-		for i, el := range actions.Elts {
+		for _, el := range actions.Elts {
 			ac, ok := el.(*ast.CallExpr)
 			if !ok || callSel(ac) != "ui.LinkButton" {
 				continue
 			}
 			lc := cfgOf(ac, 0)
 			label, href := appspec.AstString(lc["Label"]), appspec.AstString(lc["Href"])
-			if i == 0 {
+			if buttonVariant(lc["Variant"]) != "secondary" {
 				putStr(p, "cta_text", label)
 				putStr(p, "cta_href", href)
 			} else {
@@ -3056,6 +3058,11 @@ func reverseHero(call *ast.CallExpr) appspec.AppSpecBlock {
 				putStr(p, "secondary_href", href)
 			}
 		}
+	}
+	// Media: html.Image(html.ImageConfig{Src: image, Alt: title}), from
+	// props.image or its media alias; the alt is always the title.
+	if img, ok := c["Media"].(*ast.CallExpr); ok && callSel(img) == "html.Image" {
+		putStr(p, "image", appspec.AstString(cfgOf(img, 0)["Src"]))
 	}
 	return appspec.AppSpecBlock{Kind: "hero", Props: p}
 }

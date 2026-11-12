@@ -534,6 +534,7 @@ screens:
               cta_href: /signup
               secondary_text: Pricing
               secondary_href: /pricing
+              image: https://example.com/union-hero.png
           - kind: section
             props:
               heading: What it covers

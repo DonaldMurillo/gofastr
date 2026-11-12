@@ -158,3 +158,38 @@ func TestPackKeepsStatGridLayout(t *testing.T) {
 		t.Fatalf("stat_row of a card packed as kind=%q children=%d", b.Kind, len(b.Children))
 	}
 }
+
+// The generator gives a hero with an image (or its media alias) a
+// Media: html.Image(ImageConfig{Src}), and draws a lone secondary CTA as
+// the only, secondary-variant action. pack read neither: the image was
+// dropped and a lone secondary CTA came back as the primary one.
+func TestPackKeepsHeroImageAndCTAs(t *testing.T) {
+	body := packRoundTrip(t, `      - kind: hero
+        props:
+          title: Ship it
+          image: /static/hero.jpg
+          cta_text: Start
+          cta_href: /start
+      - kind: hero
+        props:
+          title: Media alias
+          media: /static/alias.png
+      - kind: hero
+        props:
+          title: Only secondary
+          secondary_text: Learn
+          secondary_href: /learn
+`)
+	if len(body) != 4 {
+		t.Fatalf("packed %d blocks, want 4: %#v", len(body), body)
+	}
+	if p := body[1].Props; p["image"] != "/static/hero.jpg" || p["cta_text"] != "Start" {
+		t.Fatalf("hero packed props=%v", p)
+	}
+	if p := body[2].Props; p["image"] != "/static/alias.png" {
+		t.Fatalf("media hero packed props=%v", p)
+	}
+	if p := body[3].Props; p["secondary_text"] != "Learn" || p["secondary_href"] != "/learn" || p["cta_text"] != nil {
+		t.Fatalf("secondary-only hero packed props=%v", p)
+	}
+}
