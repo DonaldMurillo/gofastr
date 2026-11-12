@@ -265,7 +265,9 @@ never an OAuth login success event.
 
 Each row carries `record_id` and `actor_id` = the resolved user id. When
 no user is known, `record_id` holds `"-"` (that column is NOT NULL) and
-`actor_id` is NULL, so look such rows up with `actor_id IS NULL`. Each
+`actor_id` is NULL, so look such rows up with
+`entity = 'auth' AND record_id = '-'` (`actor_id IS NULL` alone also matches
+CRUD rows written with no actor). Each
 row also carries a `diff` JSON of
 `{email, remote, …meta}`. `remote` is the host part of `r.RemoteAddr`;
 `X-Forwarded-For` is never trusted (see the auth threat model). A row

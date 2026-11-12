@@ -52,7 +52,9 @@ use most, so a boot that "hangs" from a worktree is almost always this.
 - Postgres URL database names get a stable `_{id}` suffix while query params
   are preserved. The result stays within Postgres's 63-byte identifier
   limit: a long base name is cut on a character boundary, and an id longer
-  than 23 bytes becomes `_wt_` plus 16 hex digits of its SHA-1.
+  than 62 bytes (so `_` plus the id passes 63) becomes `_wt_` plus 16 hex
+  digits of its SHA-1. A shorter id keeps its literal suffix, so an
+  existing database name does not change.
 - Env templates support `{id}`, `{project_dir}`, `{port}`, and
   `{port:name}` for named services.
 

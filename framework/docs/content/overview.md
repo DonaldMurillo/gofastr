@@ -72,7 +72,8 @@ commit. When the framework is in your way, drop back to
 the [code generator](/docs/codegen); the running app never needs the file.
 
 (A few `core/` packages pull in a dependency: `core/middleware` and
-`core/tracing` use OpenTelemetry, `core/i18n` uses `golang.org/x/text`,
+`core/tracing` use OpenTelemetry, `core/middleware` also uses
+`golang.org/x/net/http/httpguts`, `core/i18n` uses `golang.org/x/text`,
 `core/settings` uses `golang.org/x/mod` and `core/webbotauth` uses
 `golang.org/x/net`. The rest of `core/` is stdlib-only.)
 

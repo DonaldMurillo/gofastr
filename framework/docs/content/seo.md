@@ -208,8 +208,9 @@ once, not twice. See [Static-site export](/docs/static-export).
 ## Icons: one source image → every icon file
 
 `WithAppIcon(source []byte)` takes one image (ideally ≥512px; non-square
-sources are center-cropped, after any EXIF orientation is applied, so a
-phone photo comes out upright) and derives everything at startup:
+sources are center-cropped, after a JPEG's EXIF orientation is applied, so
+a phone photo comes out upright; a PNG or WebP orientation tag is not read)
+and derives everything at startup:
 
 - 32/180/192/512px PNGs served under `/__gofastr/icons/`,
 - `/favicon.ico` (the 32px PNG, resolved by Content-Type),

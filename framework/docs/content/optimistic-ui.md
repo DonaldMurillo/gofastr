@@ -60,7 +60,7 @@ capture previous projection
 | `pending` | Optimistic projection is painted; the RPC is in flight. Control is `aria-busy="true"` and ignores re-entry; it is not disabled, so keyboard focus stays on it. | `data-state="pending"` |
 | `committed` | The RPC returned 2xx. The projection is now authoritative. | `data-state="committed"` |
 | `conflicted` | A versioned 409. The runtime fetches fresh HTML from the conflict endpoint and replaces the affected region. (Sortable-specific today.) | `data-state` on the list, plus an `aria-live` announcement |
-| `failed` | The RPC returned non-2xx (or the network threw). The runtime paints `error`, then rolls the projection back to `idle` after ~600 ms and announces. `OptimisticAction` adds a brief shake. | `data-state="error"`, then `idle` (both primitives) |
+| `failed` | A commit RPC returned non-2xx (or the network threw). The runtime paints `error`, then rolls the projection back to `idle` after ~600 ms and announces. `OptimisticAction` adds a brief shake. A failed `ToggleAction` untoggle is the exception: the button stays `committed` and no `action:rolled-back` fires. | `data-state="error"`, then `idle`; a failed untoggle stays `committed` |
 
 `OptimisticAction` and `ToggleAction` use `data-state` on the trigger
 button; `sortablelist` uses it on the `<ol>` wrapper. The runtime reads

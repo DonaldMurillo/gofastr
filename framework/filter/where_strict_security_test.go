@@ -50,9 +50,9 @@ func TestParseWhereDecodesStrictly(t *testing.T) {
 
 // TestWhereRefusesNullValue: encoding/json reads a JSON null into a
 // *string as "member not sent", so {"field":"title","value":null}
-// compared title with ” on text columns (200) while an int column
-// refused it. A leaf whose op reads a value must carry one, and an in
-// list may not hold a null entry, on every column type.
+// compared title with the empty string on text columns (200) while an
+// int column refused it. A leaf whose op reads a value must carry one,
+// and an in list may not hold a null entry, on every column type.
 func TestWhereRefusesNullValue(t *testing.T) {
 	fields := []schema.Field{
 		{Name: "title", Type: schema.String},
