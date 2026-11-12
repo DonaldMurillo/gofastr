@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -180,5 +181,28 @@ func TestStrictAllowsDeclaredExtraParams(t *testing.T) {
 	// A typo that is NOT declared still fails closed.
 	if _, err := parseQuery(t, "regionn=eu", Allow("region")); err == nil {
 		t.Fatal("undeclared unknown param must still error")
+	}
+}
+
+// ParseFilters and ParseSort read the request's raw query strictly: a
+// pair url.ParseQuery would drop (%ZZ, a bare %, ';') is an error, not
+// an absent filter that leaves the list unfiltered.
+func TestParseQueryStrictRefusesDrops(t *testing.T) {
+	fields := []schema.Field{{Name: "status", Type: schema.String}}
+	for _, raw := range []string{"status=paid%ZZ", "status=a%", "st%ZZatus=a", "status=a;b", "sort=status%"} {
+		if _, err := ParseQueryStrict(raw); err == nil {
+			t.Errorf("ParseQueryStrict(%q) accepted", raw)
+		}
+		r := httptest.NewRequest(http.MethodGet, "/x?"+raw, nil)
+		if _, err := ParseFilters(r, fields); err == nil {
+			t.Errorf("ParseFilters(?%s) accepted", raw)
+		}
+		if _, err := ParseSort(r, fields); err == nil {
+			t.Errorf("ParseSort(?%s) accepted", raw)
+		}
+	}
+	q, err := ParseQueryStrict("status=a%3Bb&sort=-status")
+	if err != nil || q.Get("status") != "a;b" {
+		t.Errorf("ParseQueryStrict(decodable) = %v, %v", q, err)
 	}
 }

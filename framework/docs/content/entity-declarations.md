@@ -1508,6 +1508,16 @@ data-exposure hazard. Lenient drops keys that name no field (a bracket
 on an unknown field included); a key that names a field but cannot be
 read, an ambiguous bare key or an unknown bracket word, is still a 400.
 
+**A query pair that does not decode is a 400.** Go's `URL.Query` drops
+a pair with a malformed percent escape (`%ZZ`, a bare `%`) or a `;`
+separator and keeps the rest, so `?status=paid%ZZ` read as no filter
+and `?cursor=%ZZ` as no cursor (a walk restarted at page 1), each a 200
+with every row. The list (offset, cursor and stream pages alike)
+answers 400 `filter.query_undecodable` instead, `LenientFilters`
+included; send `;` as `%3B`. Code that reads a list query itself does
+the same with `filter.ParseQueryStrict(r.URL.RawQuery)`, which
+`filter.ParseFilters` and `filter.ParseSort` now call.
+
 ## Nested predicate filters (`?where=`)
 
 The flat `?field_op=value` params AND-compose. When you need **boolean

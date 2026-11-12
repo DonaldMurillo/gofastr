@@ -31,5 +31,6 @@ var (
 	reasonWhereOpTypeMismatch = i18n.Define("filter.where_op_type_mismatch", "where: operator {{op}} cannot filter {{field}} (type {{type}})")
 	reasonWhereStrayMember    = i18n.Define("filter.where_stray_member", "where: op {{op}} does not read member {{member}}")
 	reasonWhereInNeedsValues  = i18n.Define("filter.where_in_needs_values", "where: {{field}} with op in requires values")
+	reasonQueryUndecodable    = i18n.Define("filter.query_undecodable", "a query parameter does not decode: a malformed percent escape or a ';' separator")
 	reasonWhereNeedsValue     = i18n.Define("filter.where_needs_value", "where: {{field}} with op {{op}} requires a non-null value")
 )

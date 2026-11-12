@@ -315,3 +315,7 @@ notes:
     breaking: true
     guidance: "Send the value the leaf compares with. To match the empty string, send \"value\":\"\" explicitly."
     nodetect: "a query parameter a client sends; no host source spelling shows it"
+  - change: "BREAKING - a crud list (offset, cursor or stream page) whose query holds a pair that does not decode (a malformed percent escape such as %ZZ or a bare %, or a ';' separator) answers 400 filter.query_undecodable, where the pair was dropped and the list answered as if it were absent; filter.ParseFilters and filter.ParseSort refuse the same query"
+    breaking: true
+    guidance: "Percent-encode query values (send ';' as %3B). Code that reads a list query itself can call filter.ParseQueryStrict(r.URL.RawQuery) for the same answer."
+    nodetect: "the bytes of a URL a client sends; no host source spelling shows it"

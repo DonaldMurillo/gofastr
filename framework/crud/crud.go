@@ -577,7 +577,15 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// ?cursor check, projection, ?stream check, soft-delete gate ×2,
 		// explicit offset). Handing the same parsed Values to every
 		// helper eliminates the re-parse without changing any semantics.
-		q := r.URL.Query()
+		//
+		// Strictly: URL.Query drops a pair that does not decode (%ZZ, a
+		// bare %, a ';'), so ?cursor=%ZZ restarted a walk at page 1 and
+		// ?status=paid%ZZ read as no filter, each a 200 with every row.
+		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		if err != nil {
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+			return
+		}
 		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 
 		// The skip side of pagination is bounded like the limit side: an
