@@ -1037,7 +1037,15 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
+		// Strictly, as List() reads it: URL.Query drops a pair that does
+		// not decode, so ?fields=name%ZZ answered the full row and
+		// ?trashed=true%ZZ hid the trashed row asked for (404).
+		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		if err != nil {
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+			return
+		}
+		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -1051,7 +1059,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			}
 		}
 
-		cols, err := ch.projectFromRequest(r)
+		cols, err := ch.projectFromRequestQ(q)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -1066,7 +1074,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		// in the WHERE clause, so the row is simply not found: the caller
 		// must not learn it exists. Same shape as the owner-scope path.
 		ch.ApplyReadScope(qb, r)
-		ch.ApplySoftDeleteFilter(qb, r)
+		ch.applySoftDeleteFilterQ(qb, q, r.Context())
 		for _, c := range getPayload.Where {
 			qb.Where(c.SQL, c.Args...)
 		}
