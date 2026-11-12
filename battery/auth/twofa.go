@@ -348,7 +348,7 @@ func (p *TwoFAPlugin) Init(mgr *AuthManager) error {
 	} else {
 		cfg := mgr.Config()
 		if !cfg.DevMode && !cfg.AllowInMemoryStores {
-			return fmt.Errorf("auth: production mode refuses the in-memory 2FA store: a restart wipes enrollment, silently reverting every 2FA account to password-only auth; set TwoFAConfig.Store (e.g. auth.NewEntityTwoFAStore(db, \"auth_twofa\")), or set AuthConfig.AllowInMemoryStores: true to acknowledge a deliberate single-node deployment")
+			return fmt.Errorf("auth: production mode refuses the in-memory 2FA store: a restart wipes enrollment, silently reverting every 2FA account to password-only auth; set TwoFAConfig.Store (e.g. auth.NewEntityTwoFAStore(db, \"auth_twofa\", auth.EntityTwoFAStoreConfig{EncryptionKey: key})), or set AuthConfig.AllowInMemoryStores: true to acknowledge a deliberate single-node deployment")
 		}
 		p.store = NewMemoryTwoFAStore()
 		if !cfg.DevMode {
