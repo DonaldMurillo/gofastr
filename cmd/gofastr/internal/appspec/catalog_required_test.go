@@ -262,6 +262,59 @@ screens:
 			}
 		}
 	}
+	// A pricing block's text props sit one level down, on each plan, and
+	// each feature is text too: the generator drops a non-string feature
+	// and a numeric cta_href left the CTA with an empty href.
+	const pricingHead = `
+app:
+  name: Demo
+  module: example.com/demo
+screens:
+  - name: dash
+    route: /
+    body:
+      - kind: pricing
+        props:
+          plans:
+            - name: Pro
+              price: "$9"
+              cta_text: Buy
+              cta_href: /buy
+              features:
+                - Unlimited posts
+%s`
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(pricingHead, "")); err != nil {
+		t.Fatalf("pricing base block refused: %v", err)
+	}
+	for key, was := range map[string]string{
+		"name":        "name: Pro",
+		"price":       `price: "$9"`,
+		"cta_text":    "cta_text: Buy",
+		"cta_href":    "cta_href: /buy",
+		"period":      "",
+		"description": "",
+	} {
+		spec := fmt.Sprintf(pricingHead, "              "+key+": 2026\n")
+		if was != "" {
+			spec = fmt.Sprintf(strings.Replace(pricingHead, was, key+": 2026", 1), "")
+		}
+		err := r5YAMLAppSpec(t, spec)
+		if err == nil || !strings.Contains(err.Error(), "quote 2026") {
+			t.Errorf("pricing %s: 2026 should be refused as not text, got %v", key, err)
+		}
+	}
+	for name, extra := range map[string]string{
+		"number feature": "                - 2026\n",
+		"bool feature":   "                - true\n",
+	} {
+		if err := r5YAMLAppSpec(t, fmt.Sprintf(pricingHead, extra)); err == nil || !strings.Contains(err.Error(), "features") {
+			t.Errorf("pricing %s should be refused, got %v", name, err)
+		}
+	}
+	scalarFeatures := strings.Replace(pricingHead, "              features:\n                - Unlimited posts\n", "              features: Unlimited posts\n", 1)
+	if err := r5YAMLAppSpec(t, fmt.Sprintf(scalarFeatures, "")); err == nil || !strings.Contains(err.Error(), "features") {
+		t.Errorf("pricing features as one string should be refused, got %v", err)
+	}
 	// A sourced stat_card never reads value, so a number there loads.
 	sourced := "          label: Users\n          value: 0\n          source:\n            entity: posts\n            agg: count\n"
 	if err := r5YAMLAppSpec(t, fmt.Sprintf(head, "stat_card", sourced)); err != nil {

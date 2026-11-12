@@ -26,7 +26,8 @@ import (
 //     gets props.title and the block's text: as its body, so one of
 //     the two must say something.
 //   - pricing: each plan's CTA is a ui.LinkButton, drawn when cta_text
-//     or cta_href is set, so it needs a safe cta_href.
+//     or cta_href is set, so it needs a safe cta_href. Each plan's text
+//     props and every features entry must be text.
 //
 // Text props (catalogTextProps) are checked first, by validateCatalogText.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
@@ -82,10 +83,23 @@ func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error 
 		plans, _ := block.Props["plans"].([]any)
 		for i, p := range plans {
 			plan, _ := p.(map[string]any)
-			for _, key := range []string{"name", "price", "period", "description", "cta_text"} {
+			for _, key := range []string{"name", "price", "period", "description", "cta_text", "cta_href"} {
 				if v, ok := plan[key]; ok && v != nil {
 					if _, isText := v.(string); !isText {
 						return fmt.Errorf("app spec: screen %q pricing block plan %d %s must be text; quote %v", screenName, i+1, key, v)
+					}
+				}
+			}
+			// The generator reads features as a list of text and drops
+			// anything else, so a plan rendered with a feature missing.
+			if v, ok := plan["features"]; ok && v != nil {
+				feats, isList := v.([]any)
+				if !isList {
+					return fmt.Errorf("app spec: screen %q pricing block plan %d features must be a list of text", screenName, i+1)
+				}
+				for j, f := range feats {
+					if _, isText := f.(string); !isText {
+						return fmt.Errorf("app spec: screen %q pricing block plan %d features entry %d must be text; quote %v", screenName, i+1, j+1, f)
 					}
 				}
 			}

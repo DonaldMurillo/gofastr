@@ -1576,7 +1576,8 @@ few lines, and link the PR or the docs page for the rest.
   becomes a hash of the id. A shorter id keeps its database name.
 - **App spec validation** refuses a callout with neither title nor text,
   a pricing plan with `cta_text` and no safe `cta_href`, and a number in
-  any catalog block's text prop (each used to generate a screen that
+  any catalog block's text prop, a pricing plan's text props or its
+  `features` entries (each used to generate a screen that
   answered 500 or drew nothing) ([app spec](framework/docs/content/app-spec.md)).
 - **`generate app --add` judges a fragment's screen routes by the
   project's settings**: admin path, PWA files, `llm.md`, the auth `me`

@@ -1253,7 +1253,9 @@ nothing. Quote it (`heading: "2026"`). This covers a section's `heading`,
 and `text`; a chart's `title`; a `link_button`'s `label`, `href` and
 `variant`; a `stat_card`'s `label` and `value`; a `page_header`'s
 `title`, `eyebrow` and `subtitle`; a hero's text, CTA and image props;
-and a callout's `title`.
+a callout's `title`; and each pricing plan's `name`, `price`, `period`,
+`description`, `cta_text`, `cta_href` and every `features` entry
+(`features` itself must be a list).
 
 **Controls, tables and lists:** these kinds carry a form that is not bound
 to an entity (for that, use `entity_form`). Validation rejects a block
