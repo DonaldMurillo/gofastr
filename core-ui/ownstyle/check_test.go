@@ -527,3 +527,20 @@ func TestCheckStatementAtRule(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckEscapedCustomProperty: the browser decodes --\63 olor-primary
+// to --color-primary, so the checks must too. The raw compare let an
+// owned sheet redeclare a theme token (1820) and refused a real token
+// reference (1806).
+func TestCheckEscapedCustomProperty(t *testing.T) {
+	ds := Check("t.style.css", `.a { --\63 olor-primary: #000; }`, KindScoped, defaultTokens(t))
+	if len(ds) == 0 || ds[0].Rule != RuleTokenCustomProperty {
+		t.Fatalf("escaped token redeclaration: want 1820, got %s", joinDiags(ds))
+	}
+	if ds := Check("t.style.css", `.b { color: var(--\63 olor-primary); }`, KindScoped, defaultTokens(t)); len(ds) != 0 {
+		t.Fatalf("escaped token reference: unexpected %s", joinDiags(ds))
+	}
+	if ds := Check("t.style.css", `.c { --\66 oo: 1px; margin: var(--foo); }`, KindScoped, defaultTokens(t)); len(ds) != 0 {
+		t.Fatalf("escaped declaration read back by its decoded name: unexpected %s", joinDiags(ds))
+	}
+}

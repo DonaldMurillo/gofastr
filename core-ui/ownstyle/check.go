@@ -310,13 +310,13 @@ func collectDeclaredCustomProperties(sheet *Stylesheet) map[string]bool {
 			if r.At && r.Name == "property" {
 				for _, t := range r.Prel {
 					if t.Type == TokenIdent && strings.HasPrefix(t.Text, "--") {
-						declared[strings.TrimPrefix(t.Text, "--")] = true
+						declared[strings.TrimPrefix(cssUnescape(t.Text), "--")] = true
 						break
 					}
 				}
 			}
 			for _, d := range r.Decls {
-				if name, ok := strings.CutPrefix(d.Name, "--"); ok {
+				if name, ok := strings.CutPrefix(cssUnescape(d.Name), "--"); ok {
 					declared[name] = true
 				}
 			}
@@ -670,7 +670,9 @@ func (c *checker) checkDecl(r *Rule, d *Decl, inRM bool) {
 			Message:  "!important: owned sheets load in the design system's order; specificity never needs it",
 		})
 	}
-	if name, isCustom := strings.CutPrefix(d.Name, "--"); isCustom {
+	// Names are compared decoded, as the browser reads them:
+	// --\63 olor-primary declares --color-primary.
+	if name, isCustom := strings.CutPrefix(cssUnescape(d.Name), "--"); isCustom {
 		// GOFASTR1820: a custom property whose name is a theme token.
 		if _, known := slices.BinarySearch(c.known, name); known {
 			c.report(Diagnostic{
@@ -731,11 +733,11 @@ func (c *checker) checkVarRefs(d *Decl) {
 		if t.Type != TokenFunction || !strings.EqualFold(t.Text, "var(") {
 			continue
 		}
-		if i+1 >= len(val) || val[i+1].Type != TokenIdent || !strings.HasPrefix(val[i+1].Text, "--") {
+		if i+1 >= len(val) || val[i+1].Type != TokenIdent || !strings.HasPrefix(cssUnescape(val[i+1].Text), "--") {
 			continue
 		}
 		nameTok := val[i+1]
-		name := strings.TrimPrefix(nameTok.Text, "--")
+		name := strings.TrimPrefix(cssUnescape(nameTok.Text), "--")
 		// Scan the var() arguments for a top-level comma (a fallback)
 		// and capture the fallback run.
 		depth := 1
