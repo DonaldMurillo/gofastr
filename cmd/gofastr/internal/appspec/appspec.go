@@ -69,6 +69,12 @@ type AppSpec struct {
 	// of the project's. Unexported for the reason phrases is; App.Name
 	// itself stays empty, since it decides whether app.go is emitted.
 	phraseApp string
+
+	// projectApp holds the route-owning settings of the project a
+	// fragment joins (SetProjectApp), nil when none were read. Unexported
+	// for the reason phrases is: App itself stays empty, since it decides
+	// what the fragment emits.
+	projectApp *AppSpecApp
 }
 
 // PhraseCollector returns the phrase collector of the file being
@@ -85,6 +91,23 @@ func (bp *AppSpec) MarkFragment() { bp.appless = true }
 // marked with MarkFragment). A serializer writes no app: section for one,
 // so the fragment stays a fragment on the next decode.
 func (bp *AppSpec) IsFragment() bool { return bp.appless }
+
+// SetProjectApp records the app settings of the project a fragment
+// joins (generate app --add), read off its generated source. Validation
+// judges the fragment's screen routes against them: a fragment's own App
+// is empty, so a screen at the project's admin path, PWA files, llm.md
+// pages, auth routes or entity API would otherwise pass and never
+// render.
+func (bp *AppSpec) SetProjectApp(app AppSpecApp) { bp.projectApp = &app }
+
+// RouteApp is the app whose settings decide which routes the framework
+// mounts: the project's, recorded by SetProjectApp, else App.
+func (bp *AppSpec) RouteApp() AppSpecApp {
+	if bp.projectApp != nil {
+		return *bp.projectApp
+	}
+	return bp.App
+}
 
 // SetPhraseApp records the project's app name for a fragment's phrase
 // keys (generate app --add). An empty name changes nothing.
@@ -2982,8 +3005,8 @@ func ValidateAppSpec(bp AppSpec) error {
 			errs.add(fmt.Errorf("app spec: screen %q route %q is at or under %s, a route the framework serves itself: the screen would never render, or would take the route over; move the screen", screen.Name, screen.Route, owner))
 			continue
 		}
-		if bp.App.Auth.Enabled {
-			base := bp.App.Auth.BasePath
+		if app := bp.RouteApp(); app.Auth.Enabled {
+			base := app.Auth.BasePath
 			if base == "" {
 				base = "/auth"
 			}

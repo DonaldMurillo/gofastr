@@ -705,6 +705,19 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 	// Keep the app spec's view of the output dir in sync so renderAppSpecMain
 	// derives the same import base.
 	bp.App.OutputDir = outDir
+	// A fragment's screen routes are judged against the project it joins:
+	// its own app section is empty, so the project's admin path, PWA,
+	// llm.md, auth and API mounts are read off the generated source, for
+	// the lints below and ValidateAppSpec in the additive branch.
+	if options.add {
+		projectRoot := outDir
+		if projectRoot == "" {
+			projectRoot = "."
+		}
+		if app, ok := projectRouteApp(projectRoot); ok {
+			bp.SetProjectApp(app)
+		}
+	}
 	// Unscoped PII is a warning here (generation proceeds) and an error
 	// from `gofastr validate`. Suppressed in --json mode so stdout stays
 	// machine-parseable; JSON consumers get the finding from validate.

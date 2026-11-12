@@ -1959,8 +1959,7 @@ The generator rejects:
 - a screen route at or under an entity's CRUD mount (`/api/posts`,
   `/api/posts/{id}`, or `/posts` with `api_prefix: ""`): the framework
   refuses to boot on the mount itself, and under it the CRUD routes
-  (`{id}`, `llm.md`, `_events`) answer instead of the screen. A fragment with no `app:` section (`generate app --add`) is
-  not checked for it, since it does not carry the project's `api_prefix`
+  (`{id}`, `llm.md`, `_events`) answer instead of the screen
 - a screen route the framework serves itself: `/robots.txt`,
   `/sitemap.xml`, `/sitemap/*`, `/favicon.ico`, and anything at or under
   `/mcp`, `/.well-known` or `/__gofastr`; with entities, `/openapi.json`
@@ -2069,6 +2068,14 @@ The generator rejects:
 - two declared names that meet in one generated identifier, such as
   a field whose Go name matches a method the generator writes on the
   same type (`UnmarshalJSON`)
+
+A fragment added with `generate app --add` has no `app:` section, so
+the screen route checks above, the auth `GET <base_path>/me` route, the
+`login_form` and `signup_form` actions and the locale-prefix warning
+read the project's settings (`api_prefix`, auth and its base path,
+admin and its path, `pwa`, `llm_md`, `locale_prefixes`, `base_url`) off
+its generated `app.go` and `main.go`. A screen the whole spec would
+refuse is refused in the fragment too.
 
 Middleware, plugin, helper, and screen `name:`s that are not valid
 identifiers are skipped at emit: the generator refuses to interpolate

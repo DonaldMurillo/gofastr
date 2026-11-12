@@ -54,8 +54,15 @@ func (f localeRouteFinding) Message() string {
 // the shape, never an error. The auth and admin mounts are routes too,
 // so their paths are read the same way, and so is the entity API's
 // mount (app.api_prefix, or each table when the prefix is empty).
+//
+// A fragment (generate app --add) is judged by the project's settings
+// (AppSpec.RouteApp): its screens and the API routes of its entities.
+// The project's own mounts (api_prefix, auth, admin) are read from the
+// spec's app section, which a fragment does not have: they were judged
+// when the project was generated.
 func LintLocaleRoutes(bp appspec.AppSpec) []localeRouteFinding {
-	if !bp.App.LocalePrefixes {
+	app := bp.RouteApp()
+	if !app.LocalePrefixes {
 		return nil
 	}
 	var out []localeRouteFinding
@@ -70,14 +77,17 @@ func LintLocaleRoutes(bp appspec.AppSpec) []localeRouteFinding {
 	}
 	// The entity API mounts under app.api_prefix, or with none at each
 	// CRUD entity's table.
-	if base := appSpecAPIBase(bp.App.APIPrefix); base != "" {
-		check("app.api_prefix", base)
-	} else {
+	if base := appSpecAPIBase(app.APIPrefix); base == "" {
 		for _, decl := range bp.Entities {
 			if appspec.EntityDeclarationCRUDEnabled(decl) {
 				check(fmt.Sprintf("entity %q API route", decl.Name), appSpecEntityAPIPath("", decl))
 			}
 		}
+	} else if bp.App.LocalePrefixes {
+		check("app.api_prefix", base)
+	}
+	if !bp.App.LocalePrefixes {
+		return out
 	}
 	if bp.App.Auth.Enabled {
 		check("app.auth.base_path", appSpecAuthBase(bp))

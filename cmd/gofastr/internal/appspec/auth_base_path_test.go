@@ -136,3 +136,32 @@ func TestAdminPathMustBeClean(t *testing.T) {
 		}
 	}
 }
+
+// A fragment (generate app --add) has no app section; its sign-in form is
+// judged by the base path of the project it joins (SetProjectApp), and
+// skipped only when none was read.
+func TestFragmentAuthFormUsesProjectBase(t *testing.T) {
+	frag := func(action string) AppSpec {
+		bp := AppSpec{Screens: []AppSpecScreen{{Name: "signin", Route: "/signin", Type: "page", Body: []AppSpecBlock{{
+			Kind: "login_form", Props: map[string]any{"action": action},
+		}}}}}
+		bp.MarkFragment()
+		return bp
+	}
+	if err := ValidateAppSpec(frag("/auth/login")); err != nil {
+		t.Fatalf("fragment with no project settings refused: %v", err)
+	}
+	project := AppSpecApp{APIPrefix: "api"}
+	project.Auth.Enabled = true
+	project.Auth.BasePath = "/account"
+	bad := frag("/auth/login")
+	bad.SetProjectApp(project)
+	if err := ValidateAppSpec(bad); err == nil || !strings.Contains(err.Error(), "/account/login") {
+		t.Errorf("fragment action /auth/login under project base /account: want refusal naming /account/login, got %v", err)
+	}
+	good := frag("/account/login")
+	good.SetProjectApp(project)
+	if err := ValidateAppSpec(good); err != nil {
+		t.Errorf("fragment action /account/login under project base /account refused: %v", err)
+	}
+}

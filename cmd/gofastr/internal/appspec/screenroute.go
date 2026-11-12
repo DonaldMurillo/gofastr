@@ -61,14 +61,15 @@ func screenRouteProblem(route string) string {
 // under it, where the CRUD routes shadow the screen. Trailing slashes are
 // trimmed, as the framework compares.
 func screenRouteOnEntityAPI(bp AppSpec, route string) string {
-	if bp.appless {
+	if bp.appless && bp.projectApp == nil {
 		// A fragment with no app: section (generate app --add, generate
-		// screen) does not say the project's api_prefix, so it cannot
-		// say where the CRUD routes mount.
+		// screen) does not say the project's api_prefix, so unless the
+		// project's settings were read (SetProjectApp) it cannot say
+		// where the CRUD routes mount.
 		return ""
 	}
 	base := ""
-	if p := strings.Trim(bp.App.APIPrefix, "/"); p != "" {
+	if p := strings.Trim(bp.RouteApp().APIPrefix, "/"); p != "" {
 		base = "/" + p
 	}
 	for _, decl := range bp.Entities {
@@ -113,9 +114,9 @@ var frameworkRoutes = []struct {
 	{"/__gofastr", routeAtOrUnder, "the UI runtime's own assets and RPC", nil},
 	{"/openapi.json", routeExact, "the OpenAPI schema", appSpecHasEntities},
 	{"/api/docs", routeAtOrUnder, "the API docs", appSpecHasEntities},
-	{"/manifest.webmanifest", routeExact, "the PWA manifest", func(bp AppSpec) bool { return bp.App.PWA.Enabled }},
-	{"/service-worker.js", routeExact, "the PWA service worker", func(bp AppSpec) bool { return bp.App.PWA.Enabled }},
-	{"/llm-pages.md", routeExact, "the llm.md page index, app.llm_md", func(bp AppSpec) bool { return bp.App.LLMMD }},
+	{"/manifest.webmanifest", routeExact, "the PWA manifest", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }},
+	{"/service-worker.js", routeExact, "the PWA service worker", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }},
+	{"/llm-pages.md", routeExact, "the llm.md page index, app.llm_md", func(bp AppSpec) bool { return bp.RouteApp().LLMMD }},
 }
 
 const (
@@ -145,11 +146,12 @@ func screenRouteOnFrameworkRoute(bp AppSpec, route string) string {
 			return fmt.Sprintf("%s (%s)", fr.path, fr.owner)
 		}
 	}
-	if bp.App.LLMMD && r[strings.LastIndexByte(r, '/')+1:] == "llm.md" {
+	app := bp.RouteApp()
+	if app.LLMMD && r[strings.LastIndexByte(r, '/')+1:] == "llm.md" {
 		return "a page's llm.md document (app.llm_md)"
 	}
-	if bp.App.Admin.Enabled {
-		admin := strings.TrimRight(bp.App.Admin.Path, "/")
+	if app.Admin.Enabled {
+		admin := strings.TrimRight(app.Admin.Path, "/")
 		if admin == "" {
 			admin = "/admin"
 		}
