@@ -1302,18 +1302,19 @@ func (b *Builder) dumpWidgetAssets(ctx context.Context, res *Result) error {
 	b.log("wrote %s", "/__gofastr/widgets.json")
 	pages := pageSet(res.Pages)
 	locales, byPrefix := b.Host.PathLocales()
-	// Every file in the export is public. A widget whose live /chrome
-	// endpoint refuses an anonymous caller (RequireSession,
-	// RequireAuthenticated) gets its style sheet, which the live host
-	// serves ungated, and no chrome.
+	// Every file in the export is public. A widget an anonymous caller is
+	// not offered (OfferedTo: its live /chrome endpoint refuses them via
+	// RequireSession or RequireAuthenticated, or its ListedFor hides it,
+	// as widgets.json above does) gets its style sheet, which the live
+	// host serves ungated, and no chrome.
 	anon := httptest.NewRequest(http.MethodGet, "/", nil)
 	for _, d := range defs {
 		if err := b.writeRawAsset(d.StyleURL(), []byte(widget.RenderCSS(d))); err != nil {
 			return err
 		}
 		res.Assets = append(res.Assets, d.StyleURL())
-		if !widget.GateSatisfied(d, anon) {
-			b.log("wrote widget %s (css only: its chrome is gated)", d.Name)
+		if !d.OfferedTo(anon) {
+			b.log("wrote widget %s (css only: its chrome is not offered to anonymous callers)", d.Name)
 			continue
 		}
 		// Chrome HTML may carry root-absolute nav links (/docs/…); rewrite
