@@ -2510,7 +2510,9 @@ it keep the host's normal 404 rendering. A wrong method on a route in the
 same namespace (`PUT /api/posts`) answers `405` the same way: a problem
 document whose `reason` is `api_method_not_allowed`, with the router's
 `Allow` header, and no session cookie (the UI host's 405 page minted one).
-Outside the namespace the host's 405 page still answers. The namespace
+The MCP mount (`/mcp` and every path under it) and `/openapi.json` are
+machine surfaces outside the prefix and answer their misses and wrong
+methods the same way. Elsewhere the host's 405 page still answers. The namespace
 is the API's, not the UI host's: a screen declared under it is not
 served there (no route at its path is a `404` problem document, a route
 for another method a `405`), so keep screens outside the API prefix.

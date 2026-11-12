@@ -78,3 +78,35 @@ func TestAPIWrongMethodMintsNoSession(t *testing.T) {
 		t.Errorf("PUT /api/things minted a session: %q", c)
 	}
 }
+
+// The MCP mount and /openapi.json are machine surfaces outside the API
+// prefix: a wrong method or an unrouted path under /mcp answered the UI
+// host's HTML page and minted a guest session. Both now answer problem
+// documents and mint nothing; a page outside them still reaches the host.
+func TestMCPMissIsProblemJSON(t *testing.T) {
+	fwApp := NewUIHostApp(uihost.New(app.NewApp("mcpmiss")), WithConfig(AppConfig{Name: "mcpmiss"}), WithMCP())
+	fwApp.Router().Get("/openapi.json", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	a, cleanup := startApp(t, fwApp)
+	defer cleanup()
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPut, "/mcp"},
+		{http.MethodDelete, "/mcp"},
+		{http.MethodOptions, "/mcp"},
+		{http.MethodGet, "/mcp/bogus"},
+		{http.MethodPost, "/openapi.json"},
+	} {
+		rec := httptest.NewRecorder()
+		a.router.ServeHTTP(rec, httptest.NewRequest(c.method, c.path, nil))
+		if ct := rec.Header().Get("Content-Type"); rec.Code < 400 || !strings.HasPrefix(ct, "application/problem+json") {
+			t.Errorf("%s %s = %d %q, want a problem document", c.method, c.path, rec.Code, ct)
+		}
+		if sc := rec.Header().Get("Set-Cookie"); sc != "" {
+			t.Errorf("%s %s minted a session: %q", c.method, c.path, sc)
+		}
+	}
+	rec := httptest.NewRecorder()
+	a.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/mcpx", nil))
+	if strings.HasPrefix(rec.Header().Get("Content-Type"), "application/problem+json") {
+		t.Errorf("GET /mcpx was claimed by the machine miss guard")
+	}
+}

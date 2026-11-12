@@ -38,11 +38,17 @@ func (a *App) apiNamespacePrefix() string {
 // handler's HTML page. The UI host's 405 page also minted a guest session
 // for an API client; the problem document mints nothing. A 405 keeps the
 // Allow header the router set.
+//
+// Two machine surfaces sit outside the API prefix and get the same guard:
+// the MCP mount (/mcp and anything under it), whose clients speak JSON-RPC,
+// and the /openapi.json document. Their 405 and 404 used
+// to answer the UI host's page and mint a guest session too.
 func (a *App) installAPIMissProblems() {
 	prefix := a.apiNamespacePrefix()
+	under := func(p, root string) bool { return p == root || strings.HasPrefix(p, root+"/") }
 	inAPI := func(r *http.Request) bool {
 		p := r.URL.Path
-		return p == prefix || strings.HasPrefix(p, prefix+"/")
+		return under(p, prefix) || under(p, "/mcp") || p == "/openapi.json"
 	}
 	a.router.WrapNotFound(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
