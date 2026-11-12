@@ -1,6 +1,7 @@
 package auditcmd
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -49,6 +50,9 @@ func TestParseA11yCredentials(t *testing.T) {
 // TestA11yValueFlagRefusesNextFlag: `--pages --url X` took "--url" as
 // the pages list and audited a directory named after the URL.
 func TestA11yValueFlagRefusesNextFlag(t *testing.T) {
+	// `--password -` reads the secret from stdin unless the env names it;
+	// a test must not read (or block on) the stdin it inherits.
+	t.Setenv("GOFASTR_AUDIT_PASSWORD", "test-secret")
 	for _, args := range [][]string{
 		{"--pages", "--url", "http://127.0.0.1:1/x"},
 		{"--url", "--pages=/a"},
@@ -62,5 +66,34 @@ func TestA11yValueFlagRefusesNextFlag(t *testing.T) {
 	}
 	if opts := parseA11yArgs([]string{"--email", "a@b.c", "--password", "-"}); opts.missingValue != "" || opts.email != "a@b.c" {
 		t.Errorf("a lone - is a value: %+v", opts)
+	}
+}
+
+// An empty value fell back to the default: `--url ""` ran the static
+// lint, `--pages=` audited the sitemap.
+func TestA11yEmptyValueRefused(t *testing.T) {
+	for _, args := range [][]string{
+		{"--url", ""}, {"--url="}, {"--pages", ""}, {"--pages="}, {"--pages=,"},
+		{"--email="}, {"--password="}, {"--password", ""},
+	} {
+		opts := parseA11yArgs(args)
+		want := args[0]
+		if i := strings.IndexByte(want, '='); i >= 0 {
+			want = want[:i]
+		}
+		if opts.badFlag != "" || opts.missingValue != want {
+			t.Errorf("%q: missingValue = %q, badFlag = %q, want missing %q", args, opts.missingValue, opts.badFlag, want)
+		}
+	}
+}
+
+// The first argument error is the one reported: `--url --bogus` named
+// --bogus and hid the missing URL.
+func TestA11yFirstArgErrorWins(t *testing.T) {
+	if opts := parseA11yArgs([]string{"--url", "--bogus"}); opts.badFlag != "" || opts.missingValue != "--url" {
+		t.Errorf("--url --bogus: %+v, want missing --url", opts)
+	}
+	if opts := parseA11yArgs([]string{"--bogus", "--url"}); opts.badFlag != "--bogus" || opts.missingValue != "" {
+		t.Errorf("--bogus --url: %+v, want bad --bogus", opts)
 	}
 }

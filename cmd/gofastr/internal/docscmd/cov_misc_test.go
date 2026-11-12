@@ -63,7 +63,13 @@ func TestRunDocsGrepRefusesFlagTerm(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("--grep --serve: want exit 2, got %d", code)
 	}
-	out := clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep=--serve"}) })
+	var out string
+	code = clitest.CovT_capExit(t, func() {
+		out = clitest.CovT_capStdout(t, func() { RunDocs([]string{"--grep=--serve"}) })
+	})
+	if code != -1 {
+		t.Fatalf("--grep=--serve: want no exit, got %d", code)
+	}
 	if !strings.Contains(out, "--serve") {
 		t.Fatalf("--grep=--serve must search: %.200s", out)
 	}

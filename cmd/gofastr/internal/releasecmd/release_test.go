@@ -644,7 +644,10 @@ func TestInstallPs1InstallsVerifiedBuild(t *testing.T) {
 // name for archives, checksums and the install script.
 func TestReleaseFileArgNeedsName(t *testing.T) {
 	dir := writeModule(t, map[string]string{"main.go": helloMain})
-	opts, _ := parseOptions([]string{"--version=1.0.0", "--targets=linux/amd64", "--pkg=./main.go", "-o", t.TempDir()})
+	opts, err := parseOptions([]string{"--version=1.0.0", "--targets=linux/amd64", "--pkg=./main.go", "-o", t.TempDir()})
+	if err != nil {
+		t.Fatalf("parseOptions: %v", err)
+	}
 	if _, err := release(dir, opts, io.Discard); err == nil || !strings.Contains(err.Error(), "pass --name") {
 		t.Fatalf("a .go file --pkg with no --name: err = %v, want a pass --name refusal", err)
 	}

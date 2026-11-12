@@ -295,8 +295,9 @@ type upgradeOpts struct {
 	to             string
 	apply          bool
 	allowDowngrade bool
-	// missingValue is the first of --from/--to given no value, or given
-	// the next flag where its value belongs.
+	// missingValue is the first of --from/--to given no value, an empty
+	// one, or the next flag where its value belongs. It is set only when
+	// it is the first argument error, ahead of any unknown flag.
 	missingValue string
 }
 
@@ -312,16 +313,21 @@ var runStep = func(name string, args []string, dir string) error {
 
 // parseUpgradeArgs resolves `gofastr upgrade` arguments: an optional
 // positional root, --from and --to in both `--to=v` and `--to v`
-// spellings, --apply, and --help. badFlag carries the first unknown flag.
+// spellings, --apply, and --help. badFlag carries the first unknown flag
+// when it comes before any missing value; only the first argument error
+// is reported.
 func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 	opts := upgradeOpts{root: "."}
+	missing := func(flag string) {
+		if opts.missingValue == "" {
+			opts.missingValue = flag
+		}
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if arg == "--to" || arg == "--from" {
 			if i+1 >= len(args) || cli.IsFlagToken(args[i+1]) {
-				if opts.missingValue == "" {
-					opts.missingValue = arg
-				}
+				missing(arg)
 				continue
 			}
 			arg += "=" + args[i+1]
@@ -329,9 +335,13 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 		}
 		switch {
 		case strings.HasPrefix(arg, "--from="):
-			opts.from = strings.TrimPrefix(arg, "--from=")
+			if opts.from = strings.TrimPrefix(arg, "--from="); opts.from == "" {
+				missing("--from")
+			}
 		case strings.HasPrefix(arg, "--to="):
-			opts.to = strings.TrimPrefix(arg, "--to=")
+			if opts.to = strings.TrimPrefix(arg, "--to="); opts.to == "" {
+				missing("--to")
+			}
 		case arg == "--apply":
 			opts.apply = true
 		case arg == "--allow-downgrade":
@@ -341,6 +351,9 @@ func parseUpgradeArgs(args []string) (upgradeOpts, string) {
 		case !strings.HasPrefix(arg, "-"):
 			opts.root = arg
 		default:
+			if opts.missingValue != "" {
+				return opts, ""
+			}
 			return opts, arg
 		}
 	}

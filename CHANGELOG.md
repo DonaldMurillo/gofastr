@@ -1620,7 +1620,9 @@ few lines, and link the PR or the docs page for the rest.
   the release `command-line-arguments`.
 - **`gofastr docs --grep`, `audit a11y --pages/--url` and `upgrade`
   refuse a flag as a flag's value** (write `--grep=--serve` to search for
-  one).
+  one). `audit a11y` and `upgrade` also refuse an empty value
+  (`--to ""`, `--url=`) where it fell back to the default, and name the
+  first argument error: `--url --bogus` reports the missing URL.
 - **Docs:** grouped entities mount at the group prefix
   ([API versioning](framework/docs/content/api-versioning.md)); an unknown
   actor stores NULL in `actor_id`, not `-`
