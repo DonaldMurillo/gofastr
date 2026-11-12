@@ -556,11 +556,11 @@ func (p *OAuth2Plugin) callbackHandler() http.HandlerFunc {
 		}
 		// Canonicalize at the single consumer of every provider (#270):
 		// a provider reporting Bob@example.com must match an existing
-		// bob@example.com account instead of creating a duplicate. A
-		// provider asserting a DECOMPOSED (non-NFC) address fails the
-		// login outright: fail-closed beats creating an unmatchable
-		// twin identity for the same mailbox (round 3 unicode decision).
-		// So does a value that is not one local@domain address.
+		// bob@example.com account instead of creating a duplicate. The
+		// default canonicalizer normalizes a decomposed address to NFC,
+		// so both spellings land on one account, and refuses a value
+		// that is not one local@domain address. A host's
+		// AuthConfig.CanonicalizeEmail owns its own policy instead.
 		canonical, err := p.mgr.canonicalizeEmail(info.Email)
 		if err != nil {
 			slog.Warn("oauth email refused",

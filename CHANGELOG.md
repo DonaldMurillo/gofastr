@@ -678,8 +678,9 @@ few lines, and link the PR or the docs page for the rest.
 - **The default email check refuses a value that is not one
   `local@domain` address** ([auth](framework/docs/content/auth.md)).
   Registration accepted `notanemail` as an account. Register, login,
-  magic link, password reset, password change and OAuth now answer 400
-  `invalid_email`. The upgrade note carries a query that finds stored
+  magic link, password reset and OAuth now answer 400 `invalid_email`
+  for a value with no `@`, more than one, white space or a control
+  character. The upgrade note carries a query that finds stored
   accounts with no valid address.
 - **An anonymous MCP caller no longer lists permission-gated entity
   tools.** It saw the full input schema of tools a signed-in caller

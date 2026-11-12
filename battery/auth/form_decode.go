@@ -220,16 +220,17 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 }
 
 // addressShaped reports whether email is one local@domain pair: exactly
-// one "@", text on both sides, no white space. The default canonicalizer
-// refuses anything else, so "notanemail" never becomes an account key
-// nobody can mail. It is a shape check, not RFC 5322 parsing; a host with
+// one "@", text on both sides, no white space and no control character
+// (C0 or DEL; the C1 block is stripped before this runs). The default
+// canonicalizer refuses anything else, so "notanemail" never becomes an
+// account key nobody can mail. It is a shape check, not RFC 5322 parsing; a host with
 // other rules (bare operator names, quoted local parts) installs
 // AuthConfig.CanonicalizeEmail, which replaces it.
 func addressShaped(email string) bool {
 	local, domain, ok := strings.Cut(email, "@")
 	return ok && local != "" && domain != "" &&
 		!strings.Contains(domain, "@") &&
-		!strings.ContainsFunc(email, unicode.IsSpace)
+		!strings.ContainsFunc(email, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
 }
 
 // stripInvisibleEmailRunes removes the zero-width/bidi set and the C1

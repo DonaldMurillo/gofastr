@@ -71,7 +71,8 @@ func storeKeys(s *memoryUserStore) []string {
 // address. The default refuses anything that is not one local@domain
 // pair; an override (AuthConfig.CanonicalizeEmail) keeps its own rule.
 func TestCanonicalEmailRefusesNonAddress(t *testing.T) {
-	for _, in := range []string{"notanemail", "@example.com", "bob@", "a@b@c.com", "bo b@example.com", "bob@exa mple.com", "  @  "} {
+	for _, in := range []string{"notanemail", "@example.com", "bob@", "a@b@c.com", "bo b@example.com", "bob@exa mple.com", "  @  ",
+		"bo\x01b@example.com", "bob@example.com\x1b", "bob@exam\x7fple.com"} {
 		if got, err := CanonicalEmail(in); err == nil {
 			t.Errorf("CanonicalEmail(%q) = %q, want a refusal", in, got)
 		}
