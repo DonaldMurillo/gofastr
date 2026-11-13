@@ -647,9 +647,11 @@ func crudExposureRederivedLines(rel string, body []byte) []int {
 		// A comment naming the flag is not a read. Strip comments with the
 		// string-aware lexer: cutting at the first "//" ended the line at a
 		// URL string and hid a read after it.
+		// A string naming the flag (a docs URL) is not a read either.
 		var code string
+		inRaw := st.inRawString
 		code, st = stripGoComments(line, st)
-		if strings.Contains(code, "Exposure.CRUD") {
+		if strings.Contains(outsideGoStrings(code, inRaw), "Exposure.CRUD") {
 			out = append(out, i+1)
 		}
 	}
@@ -833,6 +835,37 @@ func moduleIs(root, module string) (bool, error) {
 type goLexState struct {
 	inBlockComment bool
 	inRawString    bool
+}
+
+// outsideGoStrings drops string and rune literal contents from a line
+// stripGoComments already cleared of comments, keeping the code around
+// them. inRaw says the line opens inside a raw string carried from the
+// line before.
+func outsideGoStrings(code string, inRaw bool) string {
+	var out strings.Builder
+	var quote byte
+	if inRaw {
+		quote = '`'
+	}
+	for i := 0; i < len(code); i++ {
+		c := code[i]
+		if quote != 0 {
+			if c == '\\' && quote != '`' {
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
 }
 
 // stripGoComments returns the code on one line of Go source with both comment

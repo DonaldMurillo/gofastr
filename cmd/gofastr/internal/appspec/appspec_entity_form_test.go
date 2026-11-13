@@ -190,7 +190,10 @@ func TestFormFieldsEntryMustDraw(t *testing.T) {
         hidden: true
       - name: code
         type: string
-        read_only: true`
+        read_only: true
+      - name: ref
+        type: uuid
+        auto_generate: uuid`
 	for name, c := range map[string]struct{ form, entry string }{
 		"typo": {form: `
       - kind: entity_form
@@ -213,6 +216,11 @@ func TestFormFieldsEntryMustDraw(t *testing.T) {
         entity: tours
         fields: [property_id, visitor_name, code]
 `, entry: "code"},
+		"auto_generate on create": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, ref]
+`, entry: "ref"},
 		"system column on create": {form: `
       - kind: entity_form
         entity: tours

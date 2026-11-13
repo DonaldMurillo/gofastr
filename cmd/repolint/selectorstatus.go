@@ -70,7 +70,7 @@ func selectorStatusFindings(rel string, body []byte) []finding {
 			lineStart = strings.LastIndexByte(text[:lineStart-2], '\n') + 1
 		}
 		prefix := strings.ReplaceAll(text[lineStart:i], "\\\n", " ")
-		if !testOperandPrefix.MatchString(prefix) {
+		if opensShellComment(prefix) || !testOperandPrefix.MatchString(prefix) {
 			continue
 		}
 		line := strings.Count(text[:lineStart], "\n") + 1
@@ -148,4 +148,29 @@ func doubleQuoteEnd(s string, i int) int {
 		}
 	}
 	return len(s)
+}
+
+// opensShellComment reports whether a # in the text before a substitution
+// starts a comment: one at the start of a word, outside quotes. The shell
+// (and YAML around a run: block) never executes what follows it.
+func opensShellComment(prefix string) bool {
+	var quote byte
+	for i := 0; i < len(prefix); i++ {
+		c := prefix[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote == '"' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '\\':
+			i++
+		case c == '"' || c == '\'':
+			quote = c
+		case c == '#' && (i == 0 || strings.IndexByte(" \t;&|(", prefix[i-1]) >= 0):
+			return true
+		}
+	}
+	return false
 }

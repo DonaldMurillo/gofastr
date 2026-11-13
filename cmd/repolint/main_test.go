@@ -715,9 +715,11 @@ func TestLintRepoFlagsRederivedCRUDExposure(t *testing.T) {
 // the line hid the read after it.
 func TestCRUDExposureSeenPastAURLString(t *testing.T) {
 	body := "package docs\n\nfunc f(u string, e E) bool { u = \"https://example.com/x\"; return e.Exposure.CRUD != nil }\n" +
-		"func g(e E) bool { /* Exposure.CRUD */ return true }\n"
+		"func g(e E) bool { /* Exposure.CRUD */ return true }\n" +
+		"const link = \"https://docs.example.com/Exposure.CRUD\"\n" +
+		"var raw = `see\nExposure.CRUD in the docs`\n"
 	if got := crudExposureRederivedLines("battery/docs/site.go", []byte(body)); len(got) != 1 || got[0] != 3 {
-		t.Fatalf("flagged lines %v, want [3]: the read after a URL string, not the block comment", got)
+		t.Fatalf("flagged lines %v, want [3]: the read after a URL string, not the block comment or a string naming the flag", got)
 	}
 }
 
