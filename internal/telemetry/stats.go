@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"errors"
+	"maps"
 	"slices"
 	"time"
 )
@@ -36,7 +37,8 @@ type StatsPoint struct {
 	StatsCount
 }
 
-// RouteStats is one route's counts over the window.
+// RouteStats is one route's counts over the window, or one kind of
+// background work's, whose Route is its name.
 type RouteStats struct {
 	Route string
 	StatsCount
@@ -50,6 +52,11 @@ type Stats struct {
 	Points []StatsPoint
 	// Routes is every route seen, busiest first.
 	Routes []RouteStats
+	// Jobs is the background work of the window (queue jobs, scheduled
+	// runs), by name, busiest first, and JobsTotal all of it. It is not
+	// in Total, Points or Routes: those are the requests people made.
+	Jobs      []RouteStats
+	JobsTotal StatsCount
 }
 
 // StatsCeiling is the longest duration a percentile reads as: a request
@@ -115,30 +122,36 @@ func quantile(h *[statBuckets]int64, pct int64) time.Duration {
 		if i > 0 {
 			lower = statBounds[i-1]
 		}
-		return lower + (statBounds[i]-lower)*time.Duration(rank-before)/time.Duration(v)
+		// The bucket's requests are taken to be spread evenly across
+		// it, each at the middle of its own share: one request alone
+		// reads as the middle of the bucket, not its far edge.
+		return lower + (statBounds[i]-lower)*time.Duration(2*(rank-before)-1)/time.Duration(2*v)
 	}
 	return statBounds[len(statBounds)-1]
 }
 
 // parseStat reads one stats line. A count that is negative, or a line
 // with no "n", is not a line this package wrote and is passed over.
-func parseStat(line []byte) (route string, n, failed, slow, sum int64, h [statBuckets]int64, ok bool) {
+func parseStat(line []byte) (route string, job bool, n, failed, slow, sum int64, h [statBuckets]int64, ok bool) {
 	route, ok = stringField(line, `"route":`)
 	if !ok {
 		return
 	}
 	// The counts follow the route, whose text cannot hold a bare quote.
 	rest := line[bytes.Index(line, []byte(`"route":`)):]
+	// A route that spells the flag is written with its quotes escaped,
+	// so these bytes can only be the flag itself.
+	job = bytes.Contains(rest, []byte(`,"job":true`))
 	n, ok = intField(rest, `"n":`)
 	failed, _ = intField(rest, `"failed":`)
 	slow, _ = intField(rest, `"slow":`)
 	sum, _ = intField(rest, `"sum_us":`)
 	if !ok || n <= 0 || failed < 0 || slow < 0 || sum < 0 {
-		return route, 0, 0, 0, 0, h, false
+		return route, job, 0, 0, 0, 0, h, false
 	}
 	i := bytes.Index(rest, []byte(`"h":[`))
 	if i < 0 {
-		return route, n, failed, slow, sum, h, true
+		return route, job, n, failed, slow, sum, h, true
 	}
 	var v int64
 	slot, digits := 0, false
@@ -156,13 +169,13 @@ func parseStat(line []byte) (route string, n, failed, slow, sum int64, h [statBu
 			slot++
 			v, digits = 0, false
 			if c == ']' {
-				return route, n, failed, slow, sum, h, true
+				return route, job, n, failed, slow, sum, h, true
 			}
 		default:
-			return route, n, failed, slow, sum, h, true
+			return route, job, n, failed, slow, sum, h, true
 		}
 	}
-	return route, n, failed, slow, sum, h, true
+	return route, job, n, failed, slow, sum, h, true
 }
 
 // Stats counts the requests of a window from the per-minute lines the
@@ -183,28 +196,34 @@ func (s *Store) Stats(q StatsQuery) (Stats, error) {
 		return Stats{}, errors.New("telemetry: stats window has too many steps")
 	}
 	points := make([]statSum, steps)
-	routes := map[string]*statSum{}
-	var total statSum
+	routes, jobs := map[string]*statSum{}, map[string]*statSum{}
+	var total, jobsTotal statSum
 	err := s.scan(KindStats, from, q.To, false, false, func(line []byte) bool {
 		at, ok := lineTime(line)
 		if !ok || at.Before(from) || !at.Before(q.To) {
 			return true
 		}
-		route, n, failed, slow, sum, h, ok := parseStat(line)
+		route, job, n, failed, slow, sum, h, ok := parseStat(line)
 		if !ok || (q.Route != "" && route != q.Route) {
 			return true
 		}
-		points[at.Sub(from)/q.Step].add(n, failed, slow, sum, &h)
-		total.add(n, failed, slow, sum, &h)
-		r := routes[route]
+		into := routes
+		if job {
+			into = jobs
+			jobsTotal.add(n, failed, slow, sum, &h)
+		} else {
+			points[at.Sub(from)/q.Step].add(n, failed, slow, sum, &h)
+			total.add(n, failed, slow, sum, &h)
+		}
+		r := into[route]
 		if r == nil {
-			if len(routes) >= maxStatsRoutes {
+			if len(into) >= maxStatsRoutes {
 				route = OtherRoute
-				r = routes[route]
+				r = into[route]
 			}
 			if r == nil {
 				r = &statSum{}
-				routes[route] = r
+				into[route] = r
 			}
 		}
 		r.add(n, failed, slow, sum, &h)
@@ -213,15 +232,18 @@ func (s *Store) Stats(q StatsQuery) (Stats, error) {
 	if err != nil {
 		return Stats{}, err
 	}
-	out := Stats{Total: total.count(), Points: make([]StatsPoint, steps), Routes: make([]RouteStats, 0, len(routes))}
+	out := Stats{Total: total.count(), Points: make([]StatsPoint, steps)}
 	for i := range points {
 		out.Points[i] = StatsPoint{Time: from.Add(time.Duration(i) * q.Step), StatsCount: points[i].count()}
 	}
-	for route, r := range routes {
-		out.Routes = append(out.Routes, RouteStats{Route: route, StatsCount: r.count()})
+	list := func(m map[string]*statSum) []RouteStats {
+		l := make([]RouteStats, 0, len(m))
+		for _, route := range slices.Sorted(maps.Keys(m)) {
+			l = append(l, RouteStats{Route: route, StatsCount: m[route].count()})
+		}
+		slices.SortStableFunc(l, func(a, b RouteStats) int { return cmp.Compare(b.N, a.N) })
+		return l
 	}
-	slices.SortFunc(out.Routes, func(a, b RouteStats) int {
-		return cmp.Or(cmp.Compare(b.N, a.N), cmpString(a.Route, b.Route))
-	})
+	out.Routes, out.Jobs, out.JobsTotal = list(routes), list(jobs), jobsTotal.count()
 	return out, nil
 }

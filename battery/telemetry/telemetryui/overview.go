@@ -105,14 +105,20 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	} else if !host.Latest.Time.IsZero() {
 		machine = s.machine(ctx, sp, host, now)
 	}
+	// Queue jobs and scheduled runs, when the app has any: counted
+	// apart, since nobody was waiting on them.
+	var jobs render.HTML
+	if len(stats.Jobs) > 0 {
+		jobs = s.jobTable(ctx, stats.Jobs, wkey)
+	}
 	var body render.HTML
 	if stats.Total.N == 0 {
 		body = page(ui.EmptyState(ui.EmptyStateConfig{
 			Title:       i18nui.TelemetryOverviewEmpty.Text(ctx),
 			Description: i18nui.TelemetryOverviewEmptySub.Text(ctx),
-		}), machine)
+		}), jobs, machine)
 	} else {
-		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), machine, s.routeTable(ctx, stats.Routes, wkey))
+		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), s.routeTable(ctx, stats.Routes, wkey), jobs, machine)
 	}
 	if rowsOnly {
 		return body
@@ -298,16 +304,31 @@ func (s *Screens) charts(ctx context.Context, sp span, points []itel.StatsPoint,
 }
 
 func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, wkey string) render.HTML {
+	return s.countTable(ctx, routes, wkey, i18nui.TelemetryRoutes, i18nui.TelemetryColRoute, i18nui.TelemetryColRequests, true)
+}
+
+// jobTable lists background work by name. It has no "slow": that line
+// is drawn for someone waiting on a response.
+func (s *Screens) jobTable(ctx context.Context, jobs []itel.RouteStats, wkey string) render.HTML {
+	return s.countTable(ctx, jobs, wkey, i18nui.TelemetryJobs, i18nui.TelemetryColJob, i18nui.TelemetryColRuns, false)
+}
+
+// countTable is the table of routes or of background work: each name's
+// count, failures and how long it took, linked to its kept traces.
+func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, wkey string, caption, name, count i18n.Phrase, slow bool) render.HTML {
 	left := max(len(routes)-routesShown, 0)
 	routes = routes[:len(routes)-left]
 	cols := []ui.Column{
-		{Key: "route", Header: i18nui.TelemetryColRoute.Text(ctx), Wrap: true},
-		{Key: "n", Header: i18nui.TelemetryColRequests.Text(ctx), Align: "end"},
+		{Key: "route", Header: name.Text(ctx), Wrap: true},
+		{Key: "n", Header: count.Text(ctx), Align: "end"},
 		{Key: "failed", Header: i18nui.TelemetryColFailed.Text(ctx), Align: "end"},
-		{Key: "slow", Header: i18nui.TelemetryColSlow.Text(ctx), Align: "end"},
-		{Key: "p50", Header: i18nui.TelemetryColHalf.Text(ctx), Align: "end"},
-		{Key: "p95", Header: i18nui.TelemetryColP95.Text(ctx), Align: "end"},
 	}
+	if slow {
+		cols = append(cols, ui.Column{Key: "slow", Header: i18nui.TelemetryColSlow.Text(ctx), Align: "end"})
+	}
+	cols = append(cols,
+		ui.Column{Key: "p50", Header: i18nui.TelemetryColHalf.Text(ctx), Align: "end"},
+		ui.Column{Key: "p95", Header: i18nui.TelemetryColP95.Text(ctx), Align: "end"})
 	withShare := func(n, of int64) render.HTML {
 		if n == 0 {
 			return render.Text(i18n.Number(ctx, 0))
@@ -320,14 +341,17 @@ func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, wkey
 		if r.Route != itel.OtherRoute {
 			route = ui.Link(ui.LinkConfig{Href: link(s.RequestsPath(), "route", r.Route, "window", wkey), Text: r.Route})
 		}
-		rows[i] = ui.Row{ID: r.Route, Cells: map[string]render.HTML{
+		cells := map[string]render.HTML{
 			"route":  route,
 			"n":      render.Text(i18n.Number(ctx, r.N)),
 			"failed": withShare(r.Failed, r.N),
-			"slow":   withShare(r.Slow, r.N),
 			"p50":    render.Text(within(ctx, r.P50)),
 			"p95":    render.Text(within(ctx, r.P95)),
-		}}
+		}
+		if slow {
+			cells["slow"] = withShare(r.Slow, r.N)
+		}
+		rows[i] = ui.Row{ID: r.Route, Cells: cells}
 	}
 	var note render.HTML
 	if left > 0 {
@@ -337,7 +361,7 @@ func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, wkey
 	// bare numbers does not say which is the failures.
 	return page(
 		ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows, Ctx: ctx, Responsive: ui.ResponsiveCards,
-			Caption: i18nui.TelemetryRoutes.Text(ctx)}),
+			Caption: caption.Text(ctx)}),
 		note)
 }
 

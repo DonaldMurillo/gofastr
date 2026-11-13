@@ -69,7 +69,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		},
 		{
 			name:        "telemetry_stats",
-			description: "Count every request of a time range, not only the kept ones: requests, failed, slow, and the durations half and 95% of them finished within (microseconds, each right to within a bucket), in total, by route (busiest first) and as a series of up to 60 steps. Filters: `since_ts` (default 24 hours ago), `until_ts` (default now), `route` (exact), `limit` on routes (default 50, max 200). `machine` is the latest reading of CPU (share of all cores, 0 to 1), memory, disk and this process, in bytes, with the peaks of the range. Counts are written each minute, so the last minute or so is missing. The tool to call for how busy, how failing and how slow the app is.",
+			description: "Count every request of a time range, not only the kept ones: requests, failed, slow, and the durations half and 95% of them finished within (microseconds, each right to within a bucket), in total, by route (busiest first) and as a series of up to 60 steps. Filters: `since_ts` (default 24 hours ago), `until_ts` (default now), `route` (exact), `limit` on routes (default 50, max 200). `jobs` is background work (queue jobs, scheduled runs) by name with `runs`, `failed` and the same durations; it is not in the totals. `machine` is the latest reading of CPU (share of all cores, 0 to 1), memory, disk and this process, in bytes, with the peaks of the range. Counts are written each minute, so the last minute or so is missing. The tool to call for how busy, how failing and how slow the app is.",
 			schema: map[string]any{"type": "object", "properties": map[string]any{
 				"route":    map[string]any{"type": "string", "description": "Exact route."},
 				"since_ts": ts, "until_ts": ts,
@@ -312,6 +312,17 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 		m["route"] = r.Route
 		routes = append(routes, m)
 	}
+	// Background work by name: its "requests" are runs, and "slow" is
+	// always zero, since nobody waits on it.
+	jobs := make([]map[string]any, 0, min(len(got.Jobs), limit))
+	for _, j := range got.Jobs[:min(len(got.Jobs), limit)] {
+		m := count(j.StatsCount)
+		m["name"] = j.Route
+		delete(m, "slow")
+		m["runs"] = m["requests"]
+		delete(m, "requests")
+		jobs = append(jobs, m)
+	}
 	series := make([]map[string]any, len(got.Points))
 	for i, pt := range got.Points {
 		series[i] = map[string]any{"time": pt.Time.UTC().Format(time.RFC3339), "requests": pt.N, "failed": pt.Failed, "slow": pt.Slow, "p95_us": pt.P95.Microseconds()}
@@ -338,7 +349,8 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 	}
 	return map[string]any{
 		"machine": machine,
-		"total":   count(got.Total), "routes": routes, "routes_not_listed": len(got.Routes) - len(routes),
+		"jobs":    jobs, "jobs_not_listed": len(got.Jobs) - len(jobs),
+		"total": count(got.Total), "routes": routes, "routes_not_listed": len(got.Routes) - len(routes),
 		"series": series, "step_seconds": int(step / time.Second),
 		"slow_at_us": p.SlowThreshold().Microseconds(), "duration_ceiling_us": itel.StatsCeiling.Microseconds(),
 	}, nil

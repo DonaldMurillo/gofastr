@@ -115,8 +115,9 @@ without one, and a caller it refuses gets a 403.
   days: how many, how many failed, how many were slow, and how long 95
   in 100 took. Three bar charts show those over the range, and a table
   gives each route's own figures, busiest first; a route links to its
-  requests. See [Request counts](#request-counts). Under them is
-  [the machine](#the-machine): how busy its CPU is, how much memory and
+  requests. See [Request counts](#request-counts). A second table lists
+  background work (queue jobs, scheduled runs), which is counted apart.
+  Under them is [the machine](#the-machine): how busy its CPU is, how much memory and
   disk are used, and what this app holds.
 - **Requests** lists the kept requests, newest first: route, the path
   asked for, status, how long it took and when. Narrow it to failed or
@@ -222,6 +223,12 @@ What follows from that:
 - **Quiet paths are not counted.** Scripts, styles and anything in
   `Config.QuietPaths` are not the traffic a failure rate is about. Nor
   is a query a background loop ran outside any request.
+- **Background work is counted apart.** A queue job (`process <type>`)
+  or a scheduled run (`cron <name>`) is a line with `"job":true`. It is
+  in none of the request totals, charts or routes; the Overview, `stats`
+  and `telemetry_stats` list it separately, with runs in place of
+  requests and no "slow", since nobody waits on it. A trace counts as
+  background work when its first span is not a server's.
 - **A minute counts at most 200 routes apart.** Routes are patterns
   (`GET /orders/{id}`), so an app has few. Past 200 in one minute the
   rest count together as `(other)`.
@@ -341,7 +348,36 @@ secret. For mail or a pager, write the function yourself; `a.Text()` is
 the sentence.
 
 `tel.Firing()` returns the rules firing now. `NoAlerts` turns alerts
-off, the default rule included.
+off, the default rules included.
+
+### When the app is down
+
+None of the above tells you the app has stopped: a process that is not
+running sends nothing. `Config.Heartbeat` covers that from the other
+side. Give it the check-in URL of a monitor that alerts when check-ins
+stop (Healthchecks, Cronitor, Better Stack), and the app asks for that
+URL once a minute while it runs:
+
+<!-- gofastr:compile
+stmt: _ = tel
+-->
+```go
+import (
+    "os"
+
+    "github.com/DonaldMurillo/gofastr/battery/telemetry"
+)
+
+tel := telemetry.New(telemetry.Config{
+    Heartbeat: os.Getenv("HEARTBEAT_URL"),
+})
+```
+
+It is a plain GET with a ten-second limit that follows no redirect. An
+answer outside 2xx is a missed check-in. The app logs when check-ins
+start failing and when they work again, once each way, naming the host
+and never the URL, which is the monitor's secret. `Init` fails on a
+value that is not an http or https URL.
 
 The counts are kept in memory, per process. A restart starts them from
 zero, and each replica counts the requests it served itself, so with
@@ -466,6 +502,7 @@ never part of the sample:
 | `Alerts` | ten failed in five minutes; disk 90% full | the rules checked every fifteen seconds |
 | `Notify` | none | who is told when a rule fires or resolves |
 | `NoAlerts` | false | turn alerts off |
+| `Heartbeat` | none | a URL asked for once a minute, for a monitor that alerts when the app stops |
 | `EnableMCP` | false | the five MCP tools |
 | `MCPGate` | the admin role | who may call them |
 | `ExternalTracerProvider` | false | leave the global TracerProvider alone |

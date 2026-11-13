@@ -387,9 +387,10 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 	}
 	if o.asJSON {
 		enc := json.NewEncoder(w)
+		job := false
 		line := func(route string, total bool, c itel.StatsCount) error {
 			return enc.Encode(map[string]any{
-				"route": route, "total": total, "requests": c.N, "failed": c.Failed, "slow": c.Slow,
+				"route": route, "total": total, "job": job, "requests": c.N, "failed": c.Failed, "slow": c.Slow,
 				"p50_us": c.P50.Microseconds(), "p95_us": c.P95.Microseconds(), "mean_us": c.Mean.Microseconds(),
 			})
 		}
@@ -398,6 +399,14 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 		}
 		for _, r := range got.Routes[:min(len(got.Routes), o.limit)] {
 			if err := line(r.Route, false, r.StatsCount); err != nil {
+				return err
+			}
+		}
+		// Background work after the requests, marked: its "requests"
+		// are runs.
+		job = true
+		for _, j := range got.Jobs[:min(len(got.Jobs), o.limit)] {
+			if err := line(j.Route, false, j.StatsCount); err != nil {
 				return err
 			}
 		}
@@ -412,14 +421,14 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 		}
 		return enc.Encode(m)
 	}
+	pct := func(n, of int64) string { return strconv.FormatFloat(float64(n)*100/float64(of), 'f', 1, 64) + "%" }
 	if got.Total.N == 0 {
 		fmt.Fprintln(w, "No requests counted.")
 		if text := machineLine(latest); text != "" {
 			fmt.Fprintf(w, "\n%s\n", text)
 		}
-		return nil
+		return o.jobs(w, got.Jobs, pct)
 	}
-	pct := func(n, of int64) string { return strconv.FormatFloat(float64(n)*100/float64(of), 'f', 1, 64) + "%" }
 	t := got.Total
 	fmt.Fprintf(w, "%d requests in the last %s: %d failed (%s), %d slow (%s). Half finished within %s, 95%% within %s.\n\n",
 		t.N, span(o.since), t.Failed, pct(t.Failed, t.N), t.Slow, pct(t.Slow, t.N), within(t.P50), within(t.P95))
@@ -437,6 +446,29 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 	}
 	if left := len(got.Routes) - len(shown); left > 0 {
 		fmt.Fprintf(w, "Quieter routes not listed (raise --limit): %d\n", left)
+	}
+	return o.jobs(w, got.Jobs, pct)
+}
+
+// jobs prints the background work of the window under the requests:
+// queue jobs and scheduled runs by name, busiest first. With none it
+// prints nothing.
+func (o options) jobs(w io.Writer, jobs []itel.RouteStats, pct func(n, of int64) string) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	fmt.Fprintln(w, "\nBackground work")
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "RUNS\tFAILED\tHALF WITHIN\t95% WITHIN\tWORK")
+	shown := jobs[:min(len(jobs), o.limit)]
+	for _, j := range shown {
+		fmt.Fprintf(tw, "%d\t%d (%s)\t%s\t%s\t%s\n", j.N, j.Failed, pct(j.Failed, j.N), within(j.P50), within(j.P95), clean(j.Route))
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if left := len(jobs) - len(shown); left > 0 {
+		fmt.Fprintf(w, "Quieter work not listed (raise --limit): %d\n", left)
 	}
 	return nil
 }

@@ -98,6 +98,17 @@ func seed(t *testing.T, dir string, now time.Time) {
 	count(now.Add(-3*time.Minute), "POST /orders", 9, 3, 8*ms)
 	count(now.Add(-3*time.Minute), "POST /orders", 1, 0, 900*ms)
 	count(now.Add(-1*time.Minute), `GET /<script>alert(1)</script>`, 1, 0, ms)
+	// Background work, which no request total counts: six sends of a
+	// queue job (two failed) and one scheduled run.
+	work := func(at time.Time, name string, n, failed int, dur time.Duration) {
+		r := itel.NewRollup()
+		for i := range n {
+			r.ObserveJob(at, name, dur, i < failed)
+		}
+		write(itel.KindStats, at.Add(time.Minute), r.Take(at.Add(time.Minute), true))
+	}
+	work(now.Add(-3*time.Minute), "process welcome-email", 6, 2, 40*ms)
+	work(now.Add(-2*time.Minute), "cron nightly", 1, 0, 3*time.Second)
 	// The machine, read twice in the last few minutes and once two
 	// days ago, on a disk that is nearly full.
 	host := func(at time.Time, rest string) {
@@ -563,7 +574,7 @@ func TestOverviewWithALittleOrNothingFromTheMachine(t *testing.T) {
 		_, body := get(t, app.Router(), "/telemetry/overview", true)
 		return body
 	}
-	has(t, "no reading yet", serve(""), []string{"No requests counted yet"}, []string{"The machine"})
+	has(t, "no reading yet", serve(""), []string{"No requests counted yet"}, []string{"The machine", "Background work"})
 
 	little := serve(`"goroutines":12,"heap":52428800`)
 	has(t, "a machine that says little", little,
@@ -578,4 +589,51 @@ func TestOverviewWithALittleOrNothingFromTheMachine(t *testing.T) {
 	if regexp.MustCompile(`class="[^"]*fui-stat-card__trend--down`).MatchString(roomy) {
 		t.Error("a disk 40% full is drawn as trouble")
 	}
+}
+
+// Background work has a table of its own under the routes, with runs
+// in place of requests and no "slow", and none of it is in the request
+// totals. An app with no background work has no such table.
+func TestOverviewListsBackgroundWorkApart(t *testing.T) {
+	h := newApp(t)
+	_, body := get(t, h, "/telemetry/overview", true)
+	has(t, "the overview", body, []string{
+		">51<", // the requests, as before
+		"Background work, busiest first", "process welcome-email", "2 (33%)", "cron nightly", ">3.5 s<",
+		`href="/telemetry/requests?route=process+welcome-email"`,
+	}, []string{">58<"})
+	i := strings.Index(body, "Background work, busiest first")
+	table := body[i:][:strings.Index(body[i:], "</table>")]
+	has(t, "the background work table", table, []string{">Work<", ">Runs<", ">Failed<", ">Half within<"}, []string{">Slow<", ">Requests<", "GET /orders"})
+	if strings.Index(table, "process welcome-email") > strings.Index(table, "cron nightly") {
+		t.Error("the work is not busiest first")
+	}
+	if strings.Index(body, "Routes, busiest first") > i || strings.Index(body, "The machine") < i {
+		t.Error("the tables are out of order: routes, background work, the machine")
+	}
+}
+
+// A process that only works a queue serves no requests: the overview
+// still lists its work, under the note that no request was counted.
+func TestOverviewOfAWorkerWithNoRequests(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now().Add(-3 * time.Minute)
+	r := itel.NewRollup()
+	for range 5 {
+		r.ObserveJob(at, "process resize-image", 80*time.Millisecond, false)
+	}
+	if err := os.WriteFile(filepath.Join(dir, itel.FileName(itel.KindStats, time.Now())), r.Take(time.Now(), true), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tel := telemetry.New(telemetry.Config{Dir: dir, ExternalTracerProvider: true})
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	app.Mount(uihost.New(appui.NewApp("test")))
+	app.RegisterPlugin(tel)
+	app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Authorize: func(context.Context) bool { return true }}))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+	_, body := get(t, app.Router(), "/telemetry/overview", true)
+	has(t, "a worker", body, []string{"No requests counted yet", "Background work, busiest first", "process resize-image", ">5<"}, []string{"Routes, busiest first"})
 }

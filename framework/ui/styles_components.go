@@ -1517,6 +1517,14 @@ func dataTableCSS(_ style.Theme) string {
     /* A card is as wide as the phone: its values wrap. */
     white-space: normal;
   }
+  /* The caption is a block like the rest: left as a table caption
+     inside a table that is no longer one, it shrank to its longest
+     word and wrapped in a box of its own at the corner. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__caption:not(.fui-visually-hidden) {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via
        data-label and the ::before pseudo. Keep it accessible for screen
@@ -1622,6 +1630,12 @@ func dataTableCSS(_ style.Theme) string {
 }
 
 @container (max-width: 720px) {
+  /* As in the card layout: a caption is a block here. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__caption:not(.fui-visually-hidden) {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table,
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody {
     display: block;

@@ -311,6 +311,30 @@ handler's `ctx` carries, so SQL and HTTP spans inside the handler nest
 under it. A job span is a root span: a job does not carry the trace
 context of the request that enqueued it.
 
+Scheduled runs need none either. Each run of a [cron](cron.md) job is a
+trace of its own named `cron <job name>`, failed when the run returns an
+error or panics. For background work of your own, `tracing.Job` does the
+same:
+
+<!-- gofastr:compile
+stmt: _ = err
+var ctx context.Context
+-->
+```go
+import (
+    "context"
+
+    "github.com/DonaldMurillo/gofastr/core/tracing"
+)
+
+err := tracing.Job(ctx, "import customers", func(ctx context.Context) error {
+    return nil // the work, with ctx carrying the span
+})
+```
+
+The span's status is the error's text, or the panic's value with the
+call stack as `exception.stacktrace`; a panic goes on to the caller.
+
 | Span | Attributes |
 |---|---|
 | SQL | `db.system.name`, `db.query.text` |

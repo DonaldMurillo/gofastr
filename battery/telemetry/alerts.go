@@ -147,9 +147,11 @@ func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, a
 	// A failed write is counted by the writer, and the minutes it held
 	// are gone: counts are not queued.
 	_ = w.FlushStats(counts, false)
-	// The machine, once a minute: the round that first sees a new
-	// minute reads it.
-	if minute := now.Unix() / 60; minute != p.hostMinute {
+	// Once a minute, in the round that first sees the minute: a
+	// reading of the machine, and the heartbeat.
+	minute := now.Unix() / 60
+	fresh := minute != p.hostMinute
+	if fresh {
 		p.hostMinute = minute
 		if r, ok := p.readMachine(app, now); ok {
 			_ = w.WriteHost(r)
@@ -161,6 +163,10 @@ func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, a
 	}
 	if alerts != nil {
 		p.checkAlerts(app, alerts, now)
+	}
+	// Last: a monitor that is slow to answer holds up nothing else.
+	if fresh {
+		p.beat(app)
 	}
 }
 

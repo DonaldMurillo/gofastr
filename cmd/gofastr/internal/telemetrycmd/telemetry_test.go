@@ -72,6 +72,12 @@ func seed(t *testing.T) string {
 	count(now.Add(-50*time.Hour), "GET /old", 9, 0, ms)
 	count(now.Add(-3*time.Minute), "GET /orders/{id}", 200, 0, 7*ms)
 	count(now.Add(-2*time.Minute), "POST /orders\x1b[31m", 20, 5, 30*time.Second)
+	// Background work: three runs of a queue job, one of them failed.
+	jobs := itel.NewRollup()
+	for i := range 3 {
+		jobs.ObserveJob(now.Add(-4*time.Minute), "process welcome-email", 40*ms, i == 0)
+	}
+	write(itel.KindStats, now.Add(-3*time.Minute), jobs.Take(now.Add(-3*time.Minute), true))
 	// The machine, read two minutes ago and, with a different disk, two
 	// days ago.
 	for at, disk := range map[time.Time]int64{now.Add(-2 * time.Minute): 23 << 30, now.Add(-50 * time.Hour): 5 << 30} {
@@ -193,12 +199,20 @@ func TestStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
-	// Blank lines aside: the total, the machine, the header, two routes.
+	// Blank lines aside: the total, the machine, the header and two
+	// routes, then the background work's title, header and one row.
 	lines = slices.DeleteFunc(lines, func(l string) bool { return l == "" })
+	if len(lines) != 8 || lines[5] != "Background work" || !strings.HasPrefix(lines[6], "RUNS") || strings.Contains(lines[6], "SLOW") {
+		t.Fatalf("stats:\n%q", out)
+	}
+	if f := strings.Fields(lines[7]); len(f) < 7 || f[0] != "3" || f[1] != "1" || f[2] != "(33.3%)" || f[3] != "35ms" || f[4] != "45ms" || !strings.HasSuffix(lines[7], "process welcome-email") {
+		t.Errorf("the background work row: %q", lines[7])
+	}
+	lines = lines[:5]
 	if len(lines) != 5 || strings.Contains(out, "\x1b") || strings.Contains(out, "GET /old") {
 		t.Fatalf("stats:\n%q", out)
 	}
-	if want := "220 requests in the last 24h: 5 failed (2.3%), 20 slow (9.1%). Half finished within 7.8ms, 95% within 10s+."; lines[0] != want {
+	if want := "220 requests in the last 24h: 5 failed (2.3%), 20 slow (9.1%). Half finished within 7.7ms, 95% within 10s+."; lines[0] != want {
 		t.Errorf("the total:\n got %q\nwant %q", lines[0], want)
 	}
 	// Busiest first, each with its own shares.
@@ -218,11 +232,11 @@ func TestStats(t *testing.T) {
 		t.Errorf("stats --since 168h --limit 2: %v\n%s", err, week)
 	}
 	one, err := run(t, "stats", "--dir", dir, "--route", "GET /orders/{id}")
-	if err != nil || !strings.HasPrefix(one, "200 requests") || strings.Contains(one, "POST") {
+	if err != nil || !strings.HasPrefix(one, "200 requests") || strings.Contains(one, "POST") || strings.Contains(one, "Background work") {
 		t.Errorf("stats --route: %v\n%s", err, one)
 	}
 	js, err := run(t, "stats", "--dir", dir, "--json")
-	if err != nil || strings.Count(js, "\n") != 4 || !strings.Contains(js, `"machine":true`) || !strings.Contains(js, `"disk_used":24696061952`) || !strings.Contains(js, `"requests":220`) || !strings.Contains(js, `"total":true`) ||
+	if err != nil || strings.Count(js, "\n") != 5 || !strings.Contains(js, `"job":true,"mean_us":40000,"p50_us":35000,"p95_us":45000,"requests":3,"route":"process welcome-email"`) || !strings.Contains(js, `"machine":true`) || !strings.Contains(js, `"disk_used":24696061952`) || !strings.Contains(js, `"requests":220`) || !strings.Contains(js, `"total":true`) ||
 		!strings.Contains(js, `"route":"GET /orders/{id}","slow":0,"total":false`) {
 		t.Errorf("stats --json: %v\n%s", err, js)
 	}

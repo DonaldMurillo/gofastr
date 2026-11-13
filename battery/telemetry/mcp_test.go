@@ -188,6 +188,9 @@ func TestMCPStatsCountEveryRequest(t *testing.T) {
 		if i < 6 {
 			r.Observe(at, "POST /checkout", 800*time.Millisecond, i < 2, true)
 		}
+		if i < 4 {
+			r.ObserveJob(at, "process welcome-email", 40*time.Millisecond, i == 0)
+		}
 	}
 	// Written with the day's own stamp, as the plugin's flush does.
 	if err := os.WriteFile(filepath.Join(dir, itel.FileName(itel.KindStats, time.Now())), r.Take(time.Now(), true), 0o600); err != nil {
@@ -219,6 +222,13 @@ func TestMCPStatsCountEveryRequest(t *testing.T) {
 	total, _ := got["total"].(map[string]any)
 	if total["requests"] != 36.0 || total["failed"] != 2.0 || total["slow"] != 6.0 {
 		t.Fatalf("total: %v", total)
+	}
+	work, _ := got["jobs"].([]any)
+	if len(work) != 1 || got["jobs_not_listed"] != 0.0 {
+		t.Fatalf("jobs: %v (not listed %v)", work, got["jobs_not_listed"])
+	}
+	if j := work[0].(map[string]any); j["name"] != "process welcome-email" || j["runs"] != 4.0 || j["failed"] != 1.0 || j["requests"] != nil || j["slow"] != nil {
+		t.Fatalf("the job: %v", j)
 	}
 	routes, _ := got["routes"].([]any)
 	if len(routes) != 2 || routes[0].(map[string]any)["route"] != "GET /orders/{id}" || routes[1].(map[string]any)["failed"] != 2.0 || got["routes_not_listed"] != 0.0 {

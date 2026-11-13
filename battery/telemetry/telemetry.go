@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -77,8 +78,14 @@ type Config struct {
 	// WebhookNotifier for a chat webhook, or a function of your own
 	// that sends mail. It gets fifteen seconds; an error is logged.
 	Notify func(ctx context.Context, a Alert) error
-	// NoAlerts turns alerts off, the default rule included.
+	// NoAlerts turns alerts off, the default rules included.
 	NoAlerts bool
+	// Heartbeat is a URL the app asks for once a minute while it runs:
+	// the check-in address of a monitor that alerts when the asking
+	// stops (Healthchecks, Cronitor, Better Stack). It is how you are
+	// told the app is down, which the app itself cannot tell you.
+	// Empty sends nothing. The URL is a secret: it is never logged.
+	Heartbeat string
 	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
 	// and telemetry_logs, so a connected agent can read what the files
 	// hold. Off by default; `gofastr dev` turns them on for a loopback
@@ -127,13 +134,17 @@ type Plugin struct {
 	alerts    atomic.Pointer[itel.Alerts]
 	// readHost takes a reading of the machine, and hostMinute is the
 	// minute it last did; both belong to the watch goroutine.
-	readHost   func(time.Time) itel.HostReading
-	hostMinute int64
-	latestHost atomic.Pointer[itel.HostReading]
-	slow       atomic.Int64 // the resolved SlowThreshold
-	quiet      []string     // set once in New
-	unwritten  atomic.Int64 // lines that arrived with no writer open
-	stopped    atomic.Bool
+	// heartbeat is Config.Heartbeat parsed, and heartbeatDown whether
+	// the last ping failed; both belong to the watch goroutine.
+	heartbeat     *url.URL
+	heartbeatDown bool
+	readHost      func(time.Time) itel.HostReading
+	hostMinute    int64
+	latestHost    atomic.Pointer[itel.HostReading]
+	slow          atomic.Int64 // the resolved SlowThreshold
+	quiet         []string     // set once in New
+	unwritten     atomic.Int64 // lines that arrived with no writer open
+	stopped       atomic.Bool
 }
 
 // New returns the plugin. Register it before the log plugin, so the
@@ -153,6 +164,11 @@ func (*Plugin) Name() string { return "telemetry" }
 // Init opens the files and, unless ExternalTracerProvider is set,
 // installs a TracerProvider that feeds them.
 func (p *Plugin) Init(app *framework.App) error {
+	beat, err := parseHeartbeat(p.cfg.Heartbeat)
+	if err != nil {
+		return err
+	}
+	p.heartbeat = beat
 	dir := p.cfg.Dir
 	if dir == "" {
 		state, err := stateDir(app.Config.Name)

@@ -62,6 +62,14 @@ app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", A
 - Counts are about a minute behind, percentiles are right to within a
   bucket, and quiet paths are left out.
 
+**Background work and downtime:**
+- Queue jobs (`process <type>`) and cron runs (`cron <name>`) are traced
+  and counted apart from requests; the Overview lists them. Wrap work of
+  your own in `tracing.Job(ctx, name, fn)` (`core/tracing`).
+- To be told the app is down, set `Config.Heartbeat` to a monitor's
+  check-in URL (Healthchecks, Cronitor). The app cannot report its own
+  death; the monitor notices the check-ins stopping.
+
 **The machine:**
 - CPU, memory, disk and this process are read once a minute into
   `host-YYYYMMDD.jsonl` and shown on the Overview, in `gofastr telemetry

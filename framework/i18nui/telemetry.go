@@ -169,3 +169,10 @@ var (
 	TelemetryBytesGB      = i18n.Define("ui.telemetry.bytesGB", "{{n}} GB")
 	TelemetryBytesMB      = i18n.Define("ui.telemetry.bytesMB", "{{n}} MB")
 )
+
+// Background work, on the overview screen.
+var (
+	TelemetryJobs    = i18n.Define("ui.telemetry.jobs", "Background work, busiest first")
+	TelemetryColJob  = i18n.Define("ui.telemetry.colJob", "Work")
+	TelemetryColRuns = i18n.Define("ui.telemetry.colRuns", "Runs")
+)

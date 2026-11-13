@@ -45,6 +45,9 @@ type SpanEnd struct {
 	Route  string
 	Path   string
 	Status int
+	// Job marks a root that is background work: a queue job, a
+	// scheduled run. It is counted apart from requests.
+	Job bool
 	// Stack is where a failed span failed, when it knows: a panic's
 	// stack. The trace keeps the first one.
 	Stack string
@@ -220,7 +223,11 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 		c.alerts.Observe(e.Start.Add(s.Dur), e.Route, e.Error, s.Dur >= c.cfg.SlowThreshold)
 	}
 	if c.rollup != nil && !e.Stray && !e.Quiet {
-		c.rollup.Observe(e.Start.Add(s.Dur), e.Route, s.Dur, e.Error, s.Dur >= c.cfg.SlowThreshold)
+		if e.Job {
+			c.rollup.ObserveJob(e.Start.Add(s.Dur), e.Route, s.Dur, e.Error)
+		} else {
+			c.rollup.Observe(e.Start.Add(s.Dur), e.Route, s.Dur, e.Error, s.Dur >= c.cfg.SlowThreshold)
+		}
 	}
 	keep := s.Dur >= c.cfg.SlowThreshold
 	if !e.Stray {

@@ -110,6 +110,11 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 		}
 	}
 	e.Stray = e.Root && s.SpanKind() == trace.SpanKindClient
+	// A trace whose first span is not a server's answer to a request is
+	// work the app set itself: a queue job (a consumer span), a
+	// scheduled run (an internal one). The collector reads this for a
+	// root only, and after it has set a lone call aside.
+	e.Job = s.SpanKind() != trace.SpanKindServer
 	e.Quiet = e.Root && e.Path != "" && slices.ContainsFunc(p.quiet, func(prefix string) bool { return strings.HasPrefix(e.Path, prefix) })
 	p.c.SpanEnded(e)
 }

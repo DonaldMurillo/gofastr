@@ -393,16 +393,19 @@ func TestQuantileIsTheRequestAtThatPlace(t *testing.T) {
 		t.Fatalf("no requests: %v", got)
 	}
 	h[0], h[3], h[8] = 1, 1, 1 // up to 1 ms, 5 to 10 ms, 200 to 500 ms
-	if got := quantile(&h, 50); got != 10*time.Millisecond {
-		t.Fatalf("the middle of three is %v, want the second one's bucket edge, 10ms", got)
+	// Alone in its bucket, a request reads as the bucket's middle.
+	if got := quantile(&h, 50); got != 7500*time.Microsecond {
+		t.Fatalf("the middle of three is %v, want the middle of the second one's bucket, 7.5ms", got)
 	}
-	if got := quantile(&h, 95); got != 500*time.Millisecond {
-		t.Fatalf("p95 of three is %v, want the slowest one's, 500ms", got)
+	if got := quantile(&h, 95); got != 350*time.Millisecond {
+		t.Fatalf("p95 of three is %v, want the middle of the slowest one's bucket, 350ms", got)
 	}
 	// Inside a bucket, by how far into its count the place falls.
 	h = [statBuckets]int64{}
 	h[6] = 100 // 50 to 100 ms
-	if got := quantile(&h, 50); got != 75*time.Millisecond {
+	// The fiftieth of a hundred spread across 50-100ms sits at the
+	// middle of its own half-millisecond share: 49.5 shares in.
+	if got := quantile(&h, 50); got != 74750*time.Microsecond {
 		t.Fatalf("half way into 50-100ms: %v", got)
 	}
 	// Slower than the last edge reads as that edge, which is the
@@ -424,5 +427,73 @@ func BenchmarkRollupObserve(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {
 		r.Observe(day0.Add(time.Duration(i%60)*time.Second), routes[i%len(routes)], time.Duration(i%900)*time.Millisecond, i%50 == 0, false)
+	}
+}
+
+// Background work is counted apart from the requests people made: its
+// own lines, its own list and total, and none of it in the request
+// totals, the series or the routes. A route whose text merely spells
+// the flag is still a route.
+func TestJobsAreCountedApartFromRequests(t *testing.T) {
+	dir := t.TempDir()
+	r := NewRollup()
+	at := day0.Add(time.Minute)
+	sneaky := `GET /x","job":true,"n":999`
+	for i := range 10 {
+		r.Observe(at, "GET /orders/{id}", 5*time.Millisecond, i == 0, false)
+	}
+	r.Observe(at, sneaky, time.Millisecond, false, false)
+	for i := range 6 {
+		r.ObserveJob(at, "process welcome-email", 40*time.Millisecond, i < 2)
+	}
+	r.ObserveJob(at, "cron nightly", 3*time.Second, false)
+	// A request and a job may share a name without sharing a count.
+	r.ObserveJob(at, "GET /orders/{id}", time.Millisecond, true)
+	lines := string(r.Take(day0.Add(time.Hour), false))
+	if strings.Count(lines, "\n") != 5 || strings.Count(lines, `","job":true,"n":`) != 3 {
+		t.Fatalf("lines:\n%s", lines)
+	}
+	if !strings.Contains(lines, `"route":"cron nightly","job":true,"n":1,"failed":0,"slow":0,`) {
+		t.Fatalf("a job's line, which is never slow:\n%s", lines)
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName(KindStats, day0)), []byte(lines), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := statsStore(t, dir)
+	got, err := s.Stats(StatsQuery{From: day0, To: day0.Add(time.Hour), Step: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Total.N != 11 || got.Total.Failed != 1 || got.Points[0].N != 11 {
+		t.Fatalf("requests: total %+v, series %+v", got.Total, got.Points[0].StatsCount)
+	}
+	if len(got.Routes) != 2 || got.Routes[0].Route != "GET /orders/{id}" || got.Routes[0].N != 10 || got.Routes[1].Route != sneaky || got.Routes[1].N != 1 {
+		t.Fatalf("routes: %+v", got.Routes)
+	}
+	if got.JobsTotal.N != 8 || got.JobsTotal.Failed != 3 || got.JobsTotal.Slow != 0 {
+		t.Fatalf("jobs total: %+v", got.JobsTotal)
+	}
+	if len(got.Jobs) != 3 || got.Jobs[0].Route != "process welcome-email" || got.Jobs[0].N != 6 || got.Jobs[0].Failed != 2 {
+		t.Fatalf("jobs: %+v", got.Jobs)
+	}
+	// One name asked for: the request and the job of that name, each
+	// in its own place.
+	one, err := s.Stats(StatsQuery{From: day0, To: day0.Add(time.Hour), Step: time.Hour, Route: "GET /orders/{id}"})
+	if err != nil || one.Total.N != 10 || one.JobsTotal.N != 1 || len(one.Routes) != 1 || len(one.Jobs) != 1 {
+		t.Fatalf("one name: %+v, %v", one, err)
+	}
+
+	// The collector tells them apart by what the span says it is.
+	c, err := NewCollector(Config{Dir: "unused", KeepNoOrdinary: true, SlowThreshold: 100 * time.Millisecond}, func(Trace) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = NewRollup()
+	c.WatchStats(r)
+	c.SpanEnded(SpanEnd{TraceID: fmt.Sprintf("%032x", 1), Root: true, Start: day0, Route: "GET /a", Span: Span{SpanID: "01", Dur: 300 * time.Millisecond}})
+	c.SpanEnded(SpanEnd{TraceID: fmt.Sprintf("%032x", 2), Root: true, Start: day0, Route: "cron nightly", Job: true, Span: Span{SpanID: "01", Dur: 300 * time.Millisecond}})
+	lines = string(r.Take(day0.Add(time.Hour), true))
+	if !strings.Contains(lines, `"route":"GET /a","n":1,"failed":0,"slow":1,`) || !strings.Contains(lines, `"route":"cron nightly","job":true,"n":1,"failed":0,"slow":0,`) {
+		t.Fatalf("from the collector:\n%s", lines)
 	}
 }

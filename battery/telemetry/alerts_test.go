@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -309,5 +310,78 @@ func TestAPanickingMachineReaderDoesNotEndTheRound(t *testing.T) {
 	p.tick(app, p.writer.Load(), itel.NewRollup(), p.alerts.Load(), start.Add(time.Minute))
 	if h := p.Host(); h == nil || h.Goroutines != 3 {
 		t.Fatalf("the minute after: %+v", h)
+	}
+}
+
+// The heartbeat is asked for once a minute, follows no redirect, and
+// is logged about only when it starts failing and when it works again,
+// with the host and never the URL. A URL that is not one stops the app
+// at start.
+func TestHeartbeatPingsOnceAMinute(t *testing.T) {
+	var hits, elsewhere atomic.Int32
+	var status atomic.Int32
+	status.Store(200)
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { elsewhere.Add(1) }))
+	defer other.Close()
+	monitor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/ping/SECRET-TOKEN" {
+			t.Errorf("asked %s %s", r.Method, r.URL.Path)
+		}
+		if code := int(status.Load()); code == 302 {
+			http.Redirect(w, r, other.URL, code)
+		} else {
+			w.WriteHeader(code)
+		}
+	}))
+	defer monitor.Close()
+
+	p, app := alertApp(t, Config{Heartbeat: monitor.URL + "/ping/SECRET-TOKEN", NoAlerts: true})
+	p.readHost = nil
+	var logged bytes.Buffer
+	app.SetLogger(slog.New(slog.NewJSONHandler(&logged, nil)))
+	start := time.Now().Truncate(time.Minute)
+	round := func(at time.Time) { p.tick(app, p.writer.Load(), itel.NewRollup(), nil, at) }
+
+	round(start)
+	round(start.Add(15 * time.Second))
+	round(start.Add(45 * time.Second))
+	if hits.Load() != 1 || logged.Len() != 0 {
+		t.Fatalf("%d pings in one minute, log %q; want one ping and nothing said", hits.Load(), logged.String())
+	}
+	status.Store(500)
+	round(start.Add(1 * time.Minute))
+	round(start.Add(2 * time.Minute))
+	if hits.Load() != 3 || strings.Count(logged.String(), "was not delivered") != 1 || !strings.Contains(logged.String(), "answered 500") {
+		t.Fatalf("%d pings, log %s; want the failure said once", hits.Load(), logged.String())
+	}
+	status.Store(302)
+	round(start.Add(3 * time.Minute))
+	if elsewhere.Load() != 0 || strings.Count(logged.String(), "was not delivered") != 1 || strings.Contains(logged.String(), "being delivered again") {
+		t.Fatalf("a redirect was followed (%d), said again as a new failure, or taken for a check-in: %s", elsewhere.Load(), logged.String())
+	}
+	status.Store(204)
+	round(start.Add(4 * time.Minute))
+	round(start.Add(5 * time.Minute))
+	if strings.Count(logged.String(), "being delivered again") != 1 {
+		t.Fatalf("recovery said %d times: %s", strings.Count(logged.String(), "being delivered again"), logged.String())
+	}
+	monitor.Close()
+	round(start.Add(6 * time.Minute))
+	if strings.Count(logged.String(), "was not delivered") != 2 || !strings.Contains(logged.String(), "no answer") {
+		t.Fatalf("a monitor that is gone: %s", logged.String())
+	}
+	if strings.Contains(logged.String(), "SECRET-TOKEN") {
+		t.Fatalf("the heartbeat URL reached the log: %s", logged.String())
+	}
+
+	for _, bad := range []string{"healthchecks.io/ping/x", "ftp://example.com/x", "http://", "://x", "https://exa mple.com/x"} {
+		tel := New(Config{Dir: t.TempDir(), ExternalTracerProvider: true, Heartbeat: bad})
+		a := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+		a.RegisterPlugin(tel)
+		if err := a.InitPlugins(); err == nil {
+			_ = a.Shutdown(context.Background())
+			t.Errorf("Heartbeat %q: the app started", bad)
+		}
 	}
 }

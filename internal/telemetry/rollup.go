@@ -31,6 +31,9 @@ const OtherRoute = "(other)"
 type statKey struct {
 	minute int64 // minutes since the epoch
 	route  string
+	// job marks background work (a queue job, a scheduled run), which
+	// is counted apart from the requests people made.
+	job bool
 }
 
 type statCell struct {
@@ -65,13 +68,23 @@ func statBucket(d time.Duration) int {
 
 // Observe counts one finished request.
 func (r *Rollup) Observe(at time.Time, route string, dur time.Duration, failed, slow bool) {
+	r.observe(statKey{minute: at.Unix() / 60, route: route}, dur, failed, slow)
+}
+
+// ObserveJob counts one finished piece of background work, by its name
+// ("process welcome-email", "cron nightly"). It has no "slow": the
+// threshold is for a person waiting on a response.
+func (r *Rollup) ObserveJob(at time.Time, name string, dur time.Duration, failed bool) {
+	r.observe(statKey{minute: at.Unix() / 60, route: name, job: true}, dur, failed, false)
+}
+
+func (r *Rollup) observe(k statKey, dur time.Duration, failed, slow bool) {
 	if dur < 0 {
 		dur = 0
 	}
-	minute := at.Unix() / 60
+	minute := k.minute
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	k := statKey{minute, route}
 	c := r.cells[k]
 	if c == nil {
 		if r.routes[minute] >= maxStatRoutes {
@@ -117,6 +130,12 @@ func (r *Rollup) Take(now time.Time, all bool) []byte {
 		if a.minute != b.minute {
 			return int(a.minute - b.minute)
 		}
+		if a.job != b.job {
+			if b.job {
+				return -1
+			}
+			return 1
+		}
 		return cmpString(a.route, b.route)
 	})
 	cells := make([]statCell, len(keys))
@@ -129,7 +148,7 @@ func (r *Rollup) Take(now time.Time, all bool) []byte {
 
 	var out []byte
 	for i, k := range keys {
-		out = appendStat(out, time.Unix(max(k.minute, midnight)*60, 0), k.route, &cells[i])
+		out = appendStat(out, time.Unix(max(k.minute, midnight)*60, 0), k.route, k.job, &cells[i])
 	}
 	return out
 }
@@ -137,11 +156,14 @@ func (r *Rollup) Take(now time.Time, all bool) []byte {
 // appendStat writes one line: "time" first, as every day file's lines
 // have it, then the route and its counts. "h" is the duration buckets
 // with the empty ones at its end left off.
-func appendStat(b []byte, minute time.Time, route string, c *statCell) []byte {
+func appendStat(b []byte, minute time.Time, route string, job bool, c *statCell) []byte {
 	b = append(b, `{"time":"`...)
 	b = minute.UTC().AppendFormat(b, time.RFC3339)
 	b = append(b, `","route":`...)
 	b = appendJSONString(b, route)
+	if job {
+		b = append(b, `,"job":true`...)
+	}
 	b = append(b, `,"n":`...)
 	b = strconv.AppendInt(b, c.n, 10)
 	b = append(b, `,"failed":`...)

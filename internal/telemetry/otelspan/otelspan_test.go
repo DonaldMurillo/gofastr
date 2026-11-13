@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -175,5 +177,60 @@ func TestStackReachesTheTrace(t *testing.T) {
 	span.End()
 	if len(kept) != 1 || kept[0].Stack != "" {
 		t.Fatalf("a span that did not fail: %+v", kept)
+	}
+}
+
+// What a trace's first span says it is decides how it is counted: a
+// server's span is a request, a consumer's or an internal one is
+// background work, and a lone client call is neither.
+func TestRootSpanKindSaysRequestOrJob(t *testing.T) {
+	dir := t.TempDir()
+	w, err := telemetry.NewWriter(telemetry.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := telemetry.NewCollector(telemetry.Config{Dir: dir, SampleRate: 1}, func(telemetry.Trace) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := telemetry.NewRollup()
+	c.WatchStats(counts)
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(otelspan.New(c))).Tracer("test")
+	for name, kind := range map[string]trace.SpanKind{
+		"HTTP GET": trace.SpanKindServer, "process welcome-email": trace.SpanKindConsumer,
+		"cron nightly": trace.SpanKindInternal, "SELECT": trace.SpanKindClient,
+	} {
+		ctx, span := tracer.Start(context.Background(), name, trace.WithSpanKind(kind))
+		// A step under it is nothing of its own.
+		_, step := tracer.Start(ctx, "step", trace.WithSpanKind(trace.SpanKindInternal))
+		step.End()
+		span.End()
+	}
+	if err := w.FlushStats(counts, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := telemetry.Open(telemetry.Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	now := time.Now()
+	got, err := s.Stats(telemetry.StatsQuery{From: now.Add(-time.Hour), To: now.Add(time.Hour), Step: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var routes, jobs []string
+	for _, r := range got.Routes {
+		routes = append(routes, r.Route)
+	}
+	for _, j := range got.Jobs {
+		jobs = append(jobs, j.Route)
+	}
+	slices.Sort(jobs)
+	if len(routes) != 1 || routes[0] != "HTTP GET" || len(jobs) != 2 || jobs[0] != "cron nightly" || jobs[1] != "process welcome-email" {
+		t.Fatalf("requests %v, jobs %v", routes, jobs)
 	}
 }

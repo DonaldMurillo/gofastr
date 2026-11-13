@@ -35,6 +35,13 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: background work, and a heartbeat.** Queue jobs and
+  scheduled runs are counted apart from requests and listed in their own
+  table on the Overview, in `gofastr telemetry stats` and in
+  `telemetry_stats`. Each run of a cron job is now a trace named
+  `cron <job>`, and `tracing.Job` (`core/tracing`) does the same for
+  background work of your own. `telemetry.Config.Heartbeat` asks for a
+  URL once a minute, for a monitor that alerts when the app stops.
 - **Telemetry: the machine, and a disk alert.** Once a minute the plugin
   reads the machine's CPU, memory and disk and this process's goroutines
   and memory into a fourth day file (`host-YYYYMMDD.jsonl`). The
@@ -760,15 +767,14 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **A `ui.DataTable` caption wrapped in a narrow box on a phone.** In
+  the card and row phone layouts the caption stayed a table caption
+  inside a table that no longer was one, and shrank to its longest word.
+  It is a full-width block there now.
 - **`ui.BarChart` with `ShowAxis` and `HideValues` cut its top and bottom
   axis labels in half**, and a chart narrower than its `Width` kept its
   full height, with a blank band above and below the drawing. The axis
   labels have room now, and the height follows the width.
-- **Every panic on a route was one telemetry issue named "http.panic".**
-  With the log plugin installed, its recovery logs each panic under that
-  message, and the issue took the message for the error. It now takes
-  the panic's own value, so two different panics on one route are two
-  issues.
 - **`ui.BarChart` with `ShowAxis` cut off long tick labels.** The left
   gutter was a fixed 30px, so a count in the thousands lost its first
   digits ("1,500" read ".500"). The gutter is now as wide as the longest
