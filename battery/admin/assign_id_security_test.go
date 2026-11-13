@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 type assignLookupStore struct {
@@ -19,7 +20,7 @@ type assignLookupStore struct {
 
 func (store *assignLookupStore) FindByID(ctx context.Context, id string) (auth.User, error) {
 	store.lookups++
-	if !storableText(id) {
+	if !textsafe.Storable(id) {
 		return nil, errors.New("unstorable identifier reached storage")
 	}
 	return store.UserStore.FindByID(ctx, id)

@@ -53,7 +53,7 @@
 //
 // A recover counts when it runs on the panicking frame: the node's own
 // deferred recover (the inline `defer func(){ recover() }()` literal,
-// or `defer guard()` where the package-local guard function or method
+// or `defer guard()` where the guard function or method
 // recovers — recover works when called directly by the deferred
 // function, and the guard IS the deferred function), or the enclosing
 // owner's for a literal that runs synchronously. A recover inside a
@@ -107,6 +107,17 @@
 // and called it bare on the heartbeat goroutine (2026-10-27 bug bash
 // R9); the rule saw only a named function call. An accessor that
 // returns a closure it built, or a method value, stays quiet.
+// The 2026-11-13 twin sweep added direct atomic slot loads: a local
+// pointer read by Load from an atomic.Pointer[func(...)] that an exported
+// Set/On/Register/With/Use/Add API stores is also a host callback, read
+// through `x := slot.Load()`, a later `x = slot.Load()`, or a Load method
+// value (`load := slot.Load; load()`). The same sweep added cross-package
+// guard facts: a deferred imported function or method gets credit only
+// when its own body calls recover directly, not through another helper or
+// a nested defer. Its review tightened that credit, local and imported:
+// the recover must run on every path (the guard's first statement, never
+// on the right of && or ||) and the guard must not panic again, since
+// `if enabled { recover() }` and a recover-then-panic contain nothing.
 //
 // A callback expression that is itself a `go` target (go s.bus.Push(…),
 // go r.onTick()) reports outright: it runs on its own goroutine, where
@@ -162,6 +173,12 @@
 // goroutine elsewhere in the package — reachability, not adjacency, is
 // the test; and everything in _test.go, where a panic failing the test
 // is the intended outcome.
+// The access/event/hook observers and router hooks are held by hand and
+// panic regression tests, not this analyzer: they run on the caller's
+// request goroutine. Router hooks run before Recovery middleware, but
+// net/http still recovers per connection; that net can abort a response,
+// which is why the router needs its own guards and outcome tests. These
+// synchronous paths deliberately do not seed the dispatch-path flood.
 package recovercallback
 
 import (
@@ -177,10 +194,16 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name: "recovercallback",
-	Doc:  "report registry callbacks invoked with no recover on a dispatch path that has none",
-	Run:  run,
+	Name:      "recovercallback",
+	Doc:       "report registry callbacks invoked with no recover on a dispatch path that has none",
+	Run:       run,
+	FactTypes: []analysis.Fact{(*directRecoverFact)(nil)},
 }
+
+type directRecoverFact struct{}
+
+func (*directRecoverFact) AFact()         {}
+func (*directRecoverFact) String() string { return "direct recover guard" }
 
 // moduleFlag overrides the module an interface must be declared in to
 // count as an extension point. go vet populates pass.Module;
@@ -208,6 +231,11 @@ var plumbingName = regexp.MustCompile(`^(QueryContext|QueryRowContext|ExecContex
 
 func run(pass *analysis.Pass) (any, error) {
 	g := buildGraph(pass)
+	for object, declaration := range g.decls {
+		if object.Exported() && directRecover(pass, declaration.Body) {
+			pass.ExportObjectFact(object, &directRecoverFact{})
+		}
+	}
 	g.propagate()
 	g.report()
 	return nil, nil
@@ -256,10 +284,16 @@ type graph struct {
 	// hostClients: the *http.Client fields a host-supplied value can
 	// fill (see hostClientFields).
 	hostClients map[*types.Var]bool
+	hostSlots   map[types.Object]bool
+	// slotLoaders: locals holding a host slot's Load method value
+	// (`load := registry.observer.Load`), so `load()` reads the slot.
+	slotLoaders map[types.Object]bool
 }
 
 func buildGraph(pass *analysis.Pass) *graph {
 	g := &graph{pass: pass, byObj: map[types.Object]*node{}, decls: map[types.Object]*ast.FuncDecl{}, modPath: *moduleFlag, hostClients: hostClientFields(pass)}
+	g.hostSlots = hostAtomicSlots(pass)
+	g.slotLoaders = hostSlotLoaders(pass, g.hostSlots)
 	if g.modPath == "" && pass.Module != nil {
 		g.modPath = pass.Module.Path
 	}
@@ -399,13 +433,13 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 		g.markAsync(goStmt.Call.Fun, n)
 		return true
 	})
-	// R5: a deferred package-local guard whose body calls recover()
+	// R5: a deferred named guard whose body calls recover()
 	// DIRECTLY protects this node exactly like the inline literal —
 	// recover works when called directly by the deferred function, and
 	// the guard IS the deferred function. A guard whose OWN body defers
 	// its recover does not: that nested recover runs on the guard's
 	// frame and cannot catch a panic from this node, so only
-	// directRecover counts here.
+	// directRecover or its imported fact counts here.
 	ast.Inspect(n.body, func(x ast.Node) bool {
 		if _, ok := x.(*ast.FuncLit); ok {
 			return false
@@ -414,8 +448,13 @@ func (g *graph) link(pass *analysis.Pass, n *node) {
 		if !ok {
 			return true
 		}
-		if target, ok := g.byObj[g.callTarget(def.Call.Fun)]; ok {
-			if directRecover(target.body) {
+		object := g.callTarget(def.Call.Fun)
+		if target, ok := g.byObj[object]; ok {
+			if directRecover(pass, target.body) {
+				n.hasRecover = true
+			}
+		} else if object != nil && object.Pkg() != nil && object.Pkg() != pass.Pkg {
+			if pass.ImportObjectFact(object, &directRecoverFact{}) {
 				n.hasRecover = true
 			}
 		}
@@ -524,9 +563,11 @@ func (g *graph) callTarget(fun ast.Expr) types.Object {
 	case *ast.SelectorExpr:
 		if s, ok := g.pass.TypesInfo.Selections[fun]; ok {
 			obj = s.Obj()
+		} else {
+			obj = g.pass.TypesInfo.Uses[fun.Sel]
 		}
 	}
-	if fn, ok := obj.(*types.Func); ok && fn.Pkg() == g.pass.Pkg {
+	if fn, ok := obj.(*types.Func); ok {
 		return originFunc(fn)
 	}
 	return nil
@@ -604,6 +645,12 @@ func (g *graph) callbackCallee(call *ast.CallExpr, n *node) (string, bool) {
 		obj := pass.TypesInfo.ObjectOf(fun)
 		if obj != nil && g.derivedIn(obj, n, func(m *node) map[types.Object]bool { return m.derived }) {
 			return fun.Name, true
+		}
+	case *ast.StarExpr:
+		if identifier, ok := ast.Unparen(fun.X).(*ast.Ident); ok {
+			if g.derivedIn(pass.TypesInfo.ObjectOf(identifier), n, func(owner *node) map[types.Object]bool { return owner.derived }) {
+				return types.ExprString(call.Fun), true
+			}
 		}
 	}
 	return "", false
@@ -780,6 +827,17 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					out[obj] = true
 				}
 			}
+		case *ast.ValueSpec:
+			for i, rhs := range x.Values {
+				if i >= len(x.Names) {
+					continue
+				}
+				if call, ok := ast.Unparen(rhs).(*ast.CallExpr); ok && g.atomicSlotLoad(call) {
+					if object := pass.TypesInfo.Defs[x.Names[i]]; object != nil {
+						out[object] = true
+					}
+				}
+			}
 		case *ast.AssignStmt:
 			for i, rhs := range x.Rhs {
 				if i >= len(x.Lhs) {
@@ -814,6 +872,15 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					continue
 				}
 				if call, ok := ast.Unparen(rhs).(*ast.CallExpr); ok {
+					if g.atomicSlotLoad(call) {
+						// ObjectOf, not Defs: `callback = slot.Load()`
+						// into a local declared earlier reads the slot too.
+						if identifier, ok := x.Lhs[i].(*ast.Ident); ok {
+							if object := pass.TypesInfo.ObjectOf(identifier); object != nil {
+								out[object] = true
+							}
+						}
+					}
 					// A func result of a host call: `release` out of
 					// Acquire. Multi-value assigns map every func-typed
 					// left side to the one call on the right.
@@ -1025,24 +1092,80 @@ func hasRecover(body *ast.BlockStmt) bool {
 	return found
 }
 
-// directRecover: a recover() call in the node's own linear body, not
-// under a defer and not inside a nested literal. Useless for the node
-// itself, but effective when the node is the DEFERRED function —
-// that is the named-guard spelling (defer guard()).
-func directRecover(body *ast.BlockStmt) bool {
-	found := false
-	ast.Inspect(body, func(x ast.Node) bool {
-		if _, ok := x.(*ast.FuncLit); ok {
+// directRecover: the guard's body calls recover() on every path and
+// never panics again. Credit needs both: a recover that may not run
+// (`if enabled { recover() }`, `_ = enabled && recover() != nil`, or a
+// recover after an early return) contains nothing, and neither does a
+// guard that panics again (`if v := recover(); v != nil { panic(v) }`,
+// `defer panic(v)`). So the recover must sit in the guard's FIRST
+// statement (an assignment, an expression, a return, a var declaration, or the init
+// or leading operand of an if or switch), never on the right of && or
+// ||, and no builtin panic may appear anywhere in the body, deferred
+// calls and literals included. The recover itself is not under a defer
+// or inside a nested literal: it works only when the guard is the
+// DEFERRED function, the named-guard spelling (defer guard()).
+func directRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
+	isBuiltin := func(expression ast.Expr, name string) bool {
+		call, ok := ast.Unparen(expression).(*ast.CallExpr)
+		if !ok {
 			return false
 		}
-		if call, ok := x.(*ast.CallExpr); ok {
-			if id, ok := ast.Unparen(call.Fun).(*ast.Ident); ok && id.Name == "recover" {
-				found = true
-			}
+		identifier, ok := ast.Unparen(call.Fun).(*ast.Ident)
+		if !ok || identifier.Name != name {
+			return false
 		}
-		return !found
+		_, builtin := pass.TypesInfo.ObjectOf(identifier).(*types.Builtin)
+		return builtin
+	}
+	// panics: a builtin panic anywhere, deferred calls and literals
+	// included, since a panic escapes from any of them.
+	panics := false
+	ast.Inspect(body, func(x ast.Node) bool {
+		if expression, ok := x.(ast.Expr); ok && isBuiltin(expression, "panic") {
+			panics = true
+		}
+		return !panics
 	})
-	return found
+	if panics || len(body.List) == 0 {
+		return false
+	}
+	// recovers: a recover the node always evaluates, in this frame: not
+	// in a nested literal or defer, and not on the right of && or ||.
+	var recovers func(node ast.Node) bool
+	recovers = func(node ast.Node) bool {
+		if node == nil {
+			return false
+		}
+		found := false
+		ast.Inspect(node, func(x ast.Node) bool {
+			switch x := x.(type) {
+			case *ast.FuncLit, *ast.DeferStmt:
+				return false
+			case *ast.BinaryExpr:
+				if x.Op == token.LAND || x.Op == token.LOR {
+					found = found || recovers(x.X)
+					return false
+				}
+			case ast.Expr:
+				if isBuiltin(x, "recover") {
+					found = true
+				}
+			}
+			return !found
+		})
+		return found
+	}
+	switch first := body.List[0].(type) {
+	case *ast.AssignStmt, *ast.ExprStmt, *ast.DeclStmt, *ast.ReturnStmt:
+		return recovers(first)
+	case *ast.IfStmt:
+		return recovers(first.Init) || recovers(first.Cond)
+	case *ast.SwitchStmt:
+		return recovers(first.Init) || recovers(first.Tag)
+	case *ast.TypeSwitchStmt:
+		return recovers(first.Init) || recovers(first.Assign)
+	}
+	return false
 }
 
 // containsReadLoop reports whether body has a for (or channel-range)

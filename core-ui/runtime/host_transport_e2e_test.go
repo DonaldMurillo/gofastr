@@ -167,7 +167,7 @@ func TestJSFetchesThroughHost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	skipDir := map[string]bool{".git": true, "kiln": true, "examples": true, "testdata": true,
+	skipDir := map[string]bool{".git": true, ".claude": true, "kiln": true, "examples": true, "testdata": true,
 		"node_modules": true, "dist": true, ".gofastr": true, "framework/experimental": true}
 	var bad []string
 	scanned := 0

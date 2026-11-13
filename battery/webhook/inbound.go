@@ -17,6 +17,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Inbound lifecycle status values for an InboundEnvelope. Prefix avoids
@@ -271,7 +272,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		// A dedupe key or owner the SQL store cannot bind (a NUL byte,
 		// invalid UTF-8 — Postgres answers 22021) is refused before
 		// anything persists: it could never dedupe or attribute anyway.
-		if dedupeKey != "" && !storableText(dedupeKey) {
+		if dedupeKey != "" && !textsafe.Storable(dedupeKey) {
 			i18n.HTTPError(w, r, http.StatusBadRequest, reasonUnstorableText)
 			return
 		}
@@ -304,7 +305,7 @@ func IngestHandler(cfg IngestConfig) (http.Handler, error) {
 		}
 		if cfg.Owner != nil {
 			owner := cfg.Owner(r, body)
-			if !storableText(owner) {
+			if !textsafe.Storable(owner) {
 				i18n.HTTPError(w, r, http.StatusBadRequest, reasonUnstorableText)
 				return
 			}

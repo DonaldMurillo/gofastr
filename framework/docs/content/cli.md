@@ -27,8 +27,17 @@ escape sequences, bidi overrides (U+202A–U+202E, U+2066–U+2069),
 zero-width characters, and bytes that are not valid UTF-8 (a bare 0x9b
 is CSI to a terminal not in UTF-8 mode). A directory name, a key name
 or a file in a cloned repo cannot write your clipboard (OSC 52), clear
-the screen or reorder the line you are reading. `--json` output is
-scrubbed the same way.
+the screen or reorder the line you are reading. JSON output escapes unsafe
+characters instead of dropping them, preserving the decoded values except
+that invalid UTF-8 bytes become U+FFFD (the Unicode replacement character).
+
+For commands with a `--json` output mode, stdout contains exactly one JSON
+document on success or failure; all prose, warnings, progress and errors go
+to stderr. `--help` in that mode writes the addressed command's usage to
+stderr with no document, including when generation watch mode is requested.
+`gofastr generate --watch --json` is the exception: stdout is a stream of
+newline-delimited documents from its generation cycles. Semantic query and
+stats use the single-document contract without needing an output flag.
 
 ## Scaffold
 

@@ -351,7 +351,7 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 	case ds.sitemapConfig == nil:
 		out = append(out, strictFinding{strictCheckSitemap, "site: no sitemap: add uihost.WithSitemap so crawlers and the a11y audit can discover every route"})
 	default:
-		if reason := invalidSitemapBaseURL(ds.sitemapConfig.BaseURL); reason != "" {
+		if reason := InvalidSitemapBaseURL(ds.sitemapConfig.BaseURL); reason != "" {
 			out = append(out, strictFinding{strictCheckSitemap, fmt.Sprintf(
 				"site: sitemap BaseURL %q %s: <loc> entries must be absolute URLs (scheme + host), e.g. https://example.com", ds.sitemapConfig.BaseURL, reason)})
 		}
@@ -384,6 +384,8 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 //     shells of nested ScreenGroups with distinct layouts at two
 //     levels are resolved through unexported state and are not
 //     enumerated; the generator emits no such shape.
+//
+// appgen.LintNavHrefs only warns: unlike this complete boot table, owned routes and static inputs are not fully known to validate.
 func (ds *UIHost) strictChromeLinkFindings(cfg StrictConfig) []strictFinding {
 	probe := newGETProbe(ds.coreRouter)
 	// href → "layout %q chrome" origin of the first chrome that carried
@@ -580,12 +582,12 @@ func (p *getProbe) serves(path string) bool {
 	return pattern != ""
 }
 
-// invalidSitemapBaseURL reports why base cannot serve as the sitemap's
+// InvalidSitemapBaseURL reports why base cannot serve as the sitemap's
 // canonical origin ("" when it can). The sitemap protocol requires
 // absolute <loc> URLs, so strict mode refuses a configured-but-broken
 // sitemap the same way it refuses a missing one. A path prefix is
-// allowed (subpath deploys); userinfo, query, and fragment are not.
-func invalidSitemapBaseURL(base string) string {
+// refused; userinfo, query, and fragment are too.
+func InvalidSitemapBaseURL(base string) string {
 	u, err := url.Parse(base)
 	switch {
 	case base == "":

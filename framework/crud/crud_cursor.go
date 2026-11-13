@@ -55,18 +55,15 @@ func (ch *CrudHandler) cursorFields() []string {
 // cols is the ?fields= projection. extraWhere is every clause the page
 // applies (search, ?where= and BeforeList); hookWhere is the BeforeList
 // part alone, the scope the anchor lookup keeps.
-func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere, hookWhere []hook.WhereClause) {
+func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere, hookWhere []hook.WhereClause) {
 	// Same no-store posture as List: the cursor page is the same per-caller
 	// rows through the keyset arm, and this handler is also reachable via
 	// decodeCursorAny paths that bypass List's stamp.
 	w.Header().Set("Cache-Control", "no-store")
-	cursor, _, direction := pagination.ParseCursorPagination(r)
-	_, limit := parsePagination(r, ch.Entity.Config.Pagination.MaxListLimit)
-	// ParseCursorPagination folds every value it does not know into
-	// "forward", so a typo (back, Backward) paged forward with a 200. The
-	// raw parameter decides: absent or empty is forward, and anything but
-	// the two exact words is refused.
-	if !directionParamValid(r.URL.RawQuery) {
+	cursor, direction := q.Get("cursor"), q.Get("direction")
+	_, limit := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
+	// An absent or empty direction means forward. Reject unknown values.
+	if !directionParamValid(q["direction"]) {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
@@ -96,7 +93,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
 	ch.ApplyReadScope(qb, r)
-	ch.ApplySoftDeleteFilter(qb, r)
+	ch.applySoftDeleteFilterQ(qb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { qb.Where(sql, args...) },
 		ch.Entity.GetTable(), ch.keyCols(), nested,
@@ -143,7 +140,7 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 			}
 			carried[f] = v
 		}
-		args, err := ch.cursorAnchor(ctx, r, fields, keys, carried, hookWhere, isDate, textKeys)
+		args, err := ch.cursorAnchor(ctx, r, q, fields, keys, carried, hookWhere, isDate, textKeys)
 		if errors.Is(err, errCursorAnchorGone) {
 			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, i18n.NewError(reasonCursorAnchorGone, nil)), i18n.Phrase{})
 			return
@@ -355,7 +352,7 @@ var errCursorAnchorGone = errors.New("cursor anchor row not found")
 // restarts from the first page rather than reading a page from a position
 // nobody can name. textKeys is storedTimestampKeys: the Timestamp fields
 // it names are read and bound as the row stores them.
-func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool, textKeys map[string]string) ([]any, error) {
+func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, q url.Values, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool, textKeys map[string]string) ([]any, error) {
 	args := make([]any, len(fields))
 	lookup := false
 	for i, f := range fields {
@@ -377,7 +374,7 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, fields
 	ch.ApplyTenantScope(qb, r)
 	ch.ApplyOwnerScope(qb, r)
 	ch.ApplyReadScope(qb, r)
-	ch.ApplySoftDeleteFilter(qb, r)
+	ch.applySoftDeleteFilterQ(qb, q, r.Context())
 	for _, c := range hookWhere {
 		qb.Where(c.SQL, c.Args...)
 	}
@@ -493,21 +490,9 @@ func buildCursorPage(data []map[string]any, fields, keys []string, convertKey fu
 // would not fit the decoder's size cap.
 var errCursorKeyTooLong = errors.New("the last row's key is too long for a cursor")
 
-// directionParamValid reads every direction pair in the raw query. It
-// does not go through URL.Query, which drops a pair whose value does not
-// decode (%ZZ, a bare %, a ';'): that pair read as absent and the page
-// went forward with a 200. Each pair must decode to "", "forward" or
-// "backward".
-func directionParamValid(rawQuery string) bool {
-	for pair := range strings.SplitSeq(rawQuery, "&") {
-		key, val, _ := strings.Cut(pair, "=")
-		if k, err := url.QueryUnescape(key); err != nil || k != "direction" {
-			continue
-		}
-		v, err := url.QueryUnescape(val)
-		if err != nil || strings.Contains(val, ";") {
-			return false
-		}
+// directionParamValid validates direction values after strict query decoding.
+func directionParamValid(values []string) bool {
+	for _, v := range values {
 		if v != "" && v != "forward" && v != "backward" {
 			return false
 		}

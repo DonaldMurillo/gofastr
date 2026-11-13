@@ -100,23 +100,34 @@ func screenRouteOnEntityAPI(bp AppSpec, route string) string {
 // finalizeRoutes, framework/uihost/uihost.go). Opt-in routes the
 // generated main never enables (/metrics, /auth.md, /llms.txt) stay free.
 var frameworkRoutes = []struct {
-	path  string
-	match int // routeExact, routeAtOrUnder or routeUnder
-	owner string
-	when  func(AppSpec) bool // nil: every generated app
+	path   string
+	match  int // routeExact, routeAtOrUnder or routeUnder: screen reservations
+	owner  string
+	when   func(AppSpec) bool // nil: every generated app
+	served []string           // actual path patterns for a broad reservation; exact routes use path
 }{
-	{"/robots.txt", routeExact, "uihost.WithRobots", nil},
-	{"/sitemap.xml", routeExact, "uihost.WithSitemap", nil},
-	{"/sitemap", routeUnder, "uihost.WithSitemap's sitemap parts", nil},
-	{"/favicon.ico", routeExact, "uihost.WithAppIcon", nil},
-	{"/mcp", routeAtOrUnder, "the MCP endpoint, framework.WithMCP", nil},
-	{"/.well-known", routeAtOrUnder, "the well-known discovery documents", nil},
-	{"/__gofastr", routeAtOrUnder, "the UI runtime's own assets and RPC", nil},
-	{"/openapi.json", routeExact, "the OpenAPI schema", appSpecHasEntities},
-	{"/api/docs", routeAtOrUnder, "the API docs", appSpecHasEntities},
-	{"/manifest.webmanifest", routeExact, "the PWA manifest", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }},
-	{"/service-worker.js", routeExact, "the PWA service worker", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }},
-	{"/llm-pages.md", routeExact, "the llm.md page index, app.llm_md", func(bp AppSpec) bool { return bp.RouteApp().LLMMD }},
+	{"/healthz", routeExact, "framework health check", nil, nil},
+	{"/readyz", routeExact, "framework readiness check", nil, nil},
+	{"/api/llm.md", routeExact, "the API entity index", appSpecHasEntities, nil},
+	{"/robots.txt", routeExact, "uihost.WithRobots", nil, nil},
+	{"/sitemap.xml", routeExact, "uihost.WithSitemap", nil, nil},
+	{"/sitemap", routeUnder, "uihost.WithSitemap's sitemap parts", nil, []string{"/sitemap/{part}"}},
+	{"/favicon.ico", routeExact, "uihost.WithAppIcon", nil, nil},
+	{"/mcp", routeAtOrUnder, "the MCP endpoint, framework.WithMCP", nil, []string{"/mcp", "/mcp/server-card"}},
+	{"/.well-known", routeAtOrUnder, "the well-known discovery documents", nil, []string{
+		"/.well-known/mcp/catalog.json", "/.well-known/mcp/server-card.json", "/.well-known/mcp.json", "/.well-known/agent-skills/index.json",
+	}},
+	{"/.well-known/api-catalog", routeExact, "the API discovery catalog", appSpecHasEntities, nil},
+	{"/__gofastr", routeAtOrUnder, "the UI runtime's own assets and RPC", nil, []string{
+		"/__gofastr/runtime.js", "/__gofastr/color-scheme.js", "/__gofastr/actions.js", "/__gofastr/manifest.js", "/__gofastr/app.css", "/__gofastr/sse",
+		"/__gofastr/session", "/__gofastr/action", "/__gofastr/widget/{id}", "/__gofastr/comp/{path...}", "/__gofastr/comp-bundle.css", "/__gofastr/widgets",
+		"/__gofastr/runtime/{name}", "/__gofastr/compute/{name}", "/__gofastr/icons/icon-32.png", "/__gofastr/icons/icon-180.png", "/__gofastr/icons/icon-192.png", "/__gofastr/icons/icon-512.png",
+	}},
+	{"/openapi.json", routeExact, "the OpenAPI schema", appSpecHasEntities, nil},
+	{"/api/docs", routeAtOrUnder, "the API docs", appSpecHasEntities, []string{"/api/docs/"}},
+	{"/manifest.webmanifest", routeExact, "the PWA manifest", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }, nil},
+	{"/service-worker.js", routeExact, "the PWA service worker", func(bp AppSpec) bool { return bp.RouteApp().PWA.Enabled }, nil},
+	{"/llm-pages.md", routeExact, "the llm.md page index, app.llm_md", func(bp AppSpec) bool { return bp.RouteApp().LLMMD }, nil},
 }
 
 const (
@@ -160,4 +171,22 @@ func screenRouteOnFrameworkRoute(bp AppSpec, route string) string {
 		}
 	}
 	return ""
+}
+
+// AppSpecFrameworkRoutePatterns returns the path patterns generated apps
+// mount, using frameworkRoutes without its broader screen-reservation rules.
+// Lints must not credit arbitrary children of reserved infrastructure paths.
+func AppSpecFrameworkRoutePatterns(bp AppSpec) []string {
+	var paths []string
+	for _, fr := range frameworkRoutes {
+		if fr.when != nil && !fr.when(bp) {
+			continue
+		}
+		if fr.match == routeExact {
+			paths = append(paths, fr.path)
+		} else {
+			paths = append(paths, fr.served...)
+		}
+	}
+	return paths
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // MaxINListEntries bounds the number of values a single ?field_in=…
@@ -205,7 +206,7 @@ func (f ParsedFilter) typedAs(sent string, t schema.FieldType) (ParsedFilter, er
 	if f.Op == OpLike {
 		// A substring, never coerced, but still a text bind: invalid
 		// UTF-8 or a NUL is Postgres's 22021 here too.
-		if !storableText(f.Value) {
+		if !textsafe.Storable(f.Value) {
 			return f, valueTypeError(sent, t)
 		}
 		return f, nil
@@ -242,14 +243,20 @@ type ParsedSort struct {
 
 // reservedListParams are the list-endpoint control keys that are never
 // entity fields. Strict parsing skips them so a legitimate ?sort=/?page=/…
-// is not rejected as an unknown filter. Keep in sync with the params the
-// CRUD list handler actually reads (crud.go, pagination, projection,
-// include, search, where-tree, soft-delete, streaming).
+// is not rejected as an unknown filter. ListControlParams exposes this set
+// so CRUD can check that every reserved control has a repeat policy.
 var reservedListParams = map[string]bool{
 	"sort": true, "page": true, "limit": true, "per_page": true,
 	"offset": true, "cursor": true, "direction": true, "where": true,
 	"fields": true, "include": true, "trashed": true, "stream": true,
 	"q": true,
+}
+
+// ListControlParams returns the sorted list of reserved list control keys.
+// The returned slice is a copy; changing it does not alter filter parsing.
+// CRUD classifies these controls as single-value, except sort, which may repeat.
+func ListControlParams() []string {
+	return slices.Sorted(maps.Keys(reservedListParams))
 }
 
 // filterOpts holds the resolved options for a ParseFilters call.
@@ -358,7 +365,7 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // UNFILTERED 200, a broken client reads the whole table and an attacker's
 // probe looks identical to the real query. Reserved list controls (sort,
 // page, cursor, …) and nested relation filters (dotted keys like
-// author.name, validated separately by parseNestedFilters) are skipped, not
+// author.name, validated separately by parseNestedFiltersValues) are skipped, not
 // rejected. Pass [Lenient] to restore the old drop-silently behavior.
 //
 // This is a thin wrapper around ParseFiltersValues that parses the request
@@ -531,7 +538,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			continue
 		}
 		// Nested relation filters (author.name=…) are parsed and validated
-		// separately by parseNestedFilters (which enforces the same
+		// separately by parseNestedFiltersValues (which enforces the same
 		// schema/Hidden allow-list), skip dotted keys entirely here.
 		if strings.Contains(key, ".") {
 			continue

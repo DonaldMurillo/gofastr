@@ -2,8 +2,6 @@ package access
 
 import (
 	"context"
-	"log/slog"
-	"runtime/debug"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -69,14 +67,7 @@ func SetObserver(fn func(Evaluation)) {
 func observe(ctx context.Context, permission Permission, granted bool, path string) bool {
 	if fn := observer.Load(); fn != nil {
 		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Default().ErrorContext(ctx, "access: observer panicked; ignored",
-						"panic", textsafe.Recovered(r),
-						"stack", string(debug.Stack()),
-					)
-				}
-			}()
+			defer textsafe.LogPanic(ctx, "access: observer panicked; ignored")
 			(*fn)(Evaluation{
 				Permission: permission,
 				Granted:    granted,

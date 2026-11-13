@@ -61,6 +61,15 @@ func TestSearchWithoutFieldsRefused(t *testing.T) {
 		if body := rec.Body.String(); !strings.Contains(body, `"id":"1"`) || strings.Contains(body, `"id":"2"`) {
 			t.Errorf("%s ?q=x = %s, want only row 1", tc.table, body)
 		}
+		// The gate refuses a repeated column q before the filter parser,
+		// and on read-one too, where no filter parser runs.
+		for _, path := range []string{"?q=x&q=y", "/1?q=x&q=y"} {
+			repeated := serve(tc.table, []schema.Field{tc.field}, path)
+			if repeated.Code != http.StatusBadRequest || !strings.Contains(repeated.Body.String(), "query_key_repeated") {
+				t.Errorf("%s %s repeated column q = %d %s, want 400 query_key_repeated", tc.table, path, repeated.Code, repeated.Body)
+			}
+		}
+
 	}
 	// A host that owns q through AllowedFilterParams reads it itself, and
 	// an allowed param may repeat: the one-value refusal belongs to the

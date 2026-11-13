@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
@@ -145,10 +146,10 @@ func invalidTokenField(field string, reason i18n.Phrase, params map[string]any) 
 }
 
 func validateTokenSpec(spec TokenSpec) error {
-	if !storableText(spec.Name) || len(spec.Name) > maxTokenNameBytes {
+	if !textsafe.Storable(spec.Name) || len(spec.Name) > maxTokenNameBytes {
 		return invalidTokenField("name", reasonInvalidTokenName, map[string]any{"max": maxTokenNameBytes})
 	}
-	if !storableText(spec.OwnerID) {
+	if !textsafe.Storable(spec.OwnerID) {
 		return invalidTokenField("owner_id", reasonInvalidTokenOwnerID, nil)
 	}
 	if strings.TrimSpace(spec.Name) == "" {

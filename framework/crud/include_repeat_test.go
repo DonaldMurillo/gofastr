@@ -1,6 +1,7 @@
 package crud
 
 import (
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ import (
 // validated or applied, while ?include=bogus alone answered 400. A
 // repeated include key is refused, as a repeated scalar filter is; one
 // include value takes a comma-separated list. List and read-one both
-// parse through parseIncludeTreeQ.
+// validate controls at readQuery before resolving include paths.
 func TestRepeatedIncludeKeyIsRefused(t *testing.T) {
 	posts := entity.Define("posts", entity.EntityConfig{
 		Name: "posts", Table: "posts",
@@ -27,12 +28,13 @@ func TestRepeatedIncludeKeyIsRefused(t *testing.T) {
 	}.WithTimestamps(false))
 	reg := stubRegistry{byName: map[string]*entity.Entity{"posts": posts, "users": users}}
 
+	ch := NewCrudHandler(posts, nil)
 	for _, q := range []url.Values{
 		{"include": {"author", "bogus"}},
 		{"include": {"author", "author"}},
 		{"include": {"", "bogus"}},
 	} {
-		_, err := parseIncludeTreeQ(q, posts, reg)
+		_, err := ch.readQuery(httptest.NewRequest("GET", "/posts?"+q.Encode(), nil))
 		if err == nil || !strings.Contains(err.Error(), "include is sent") {
 			t.Errorf("%v: err = %v, want the repeated-include refusal", q, err)
 		}

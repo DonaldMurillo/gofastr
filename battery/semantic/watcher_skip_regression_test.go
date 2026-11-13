@@ -1,9 +1,12 @@
 package semantic
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -11,6 +14,10 @@ import (
 // One file the chunker refuses (Latin-1 bytes are not UTF-8) is skipped;
 // the scan goes on and indexes the files around it.
 func TestWatcherSkipsUnchunkableFile(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
 	dir := t.TempDir()
 	write := func(name, text string) {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
@@ -20,6 +27,7 @@ func TestWatcherSkipsUnchunkableFile(t *testing.T) {
 	write("a.md", "first file")
 	write("b.md", "caf\xe9 in latin-1")
 	write("c.md", "third file")
+	write("d.md", "a\x00b")
 	store := NewFlatStore(4, "stub-4")
 	idx, err := Open(Options{Embedder: NewStubEmbedder(4), Store: store})
 	if err != nil {
@@ -32,6 +40,18 @@ func TestWatcherSkipsUnchunkableFile(t *testing.T) {
 	}
 	if got := idx.Stats().Docs; got != 2 {
 		t.Fatalf("indexed %d docs, want the 2 valid files", got)
+	}
+	// Each refused file gets its own warning naming the real cause.
+	for _, name := range []string{"b.md", "d.md"} {
+		named := false
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, filepath.Join(dir, name)) && strings.Contains(line, "skipped a file with invalid document text") && strings.Contains(line, "document text must be valid UTF-8") {
+				named = true
+			}
+		}
+		if !named {
+			t.Fatalf("no refusal warning for %s: %s", name, logs.String())
+		}
 	}
 	// Indexed before, unchunkable now: the stale version leaves the index.
 	write("a.md", "now \xff broken")

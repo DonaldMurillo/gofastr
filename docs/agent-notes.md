@@ -1,5 +1,49 @@
 # Implementation regression notes
 
+## 2026-11-13 - Reserve stdout once for JSON commands
+- Scope: gofastr command registry, cli JSON sessions, appgen, verify and semantic output
+- Trigger: unknown and removed generator names bypassed the JSON-aware failure path.
+- Approach: dispatch reserves stdout with `cli.BeginJSON`; all result writers use `cli.EmitJSON` or `cli.EmitRawJSON`. Nested failure helpers reuse the reservation when called directly in tests.
+- Pitfall: status printers and raw fmt calls must both reach stderr; emitting a second document is an error. Escape terminal controls as JSON instead of stripping characters from paths or messages.
+- Evidence: `TestJSONStdoutParity` walks aliases and generators; `TestJSONFlagOwnersRegistered` checks parser ownership. Help regressions pin watch aliases, literal query help after `--`, generator-specific usage, and semantic no-mutation/no-scan behavior.
+- Help edges: preserve argv and let help beat the watch exemption. Use `cli.HasHelpFlagBeforeTerminator` at dispatch/semantic boundaries without changing legacy callers. Generator entry points share `showGenerateHelp` before parsing: entity/screen previously treated `-h` as a name and generated files.
+- Next time: add success/failure fixtures or a checked skip reason when registering a JSON command, declare source reads, and mutate the stdout swap and a dispatch refusal before trusting the parity gate.
+- Status: active
+
+## 2026-11-13 - Keep validate aligned with boot and render
+- Scope: appspec, appgen, framework registration and uihost strict checks
+- Trigger: boot found MCP/CRUD contradictions and endpoint overlaps late; conditional view stubs broke additive generation.
+- Approach: call runtime-owned exposure, endpoint-route and sitemap checks; lint nav against the screen router and known generated routes; warn because owned routes/static inputs cannot be fully known.
+- Evidence: `TestRenderPanicParity` catches a removed callout check; `TestBootRefusalParity` catches a removed exposure call (both proved with Go overlays).
+- Pitfall: endpoint grammar already refuses leading underscores; keep that gate while checking own-route collisions. Check endpoint shape before one complete group call (siblings can overlap). Emit `view_stubs_<entity>_init.go` registrations (avoid both Go suffix constraints and screen filenames). Keep stale registrations inert by checking the live registry through `withViewStubs(fwApp, appExtensions)`; never infer file deletion from a partial spec, packed declarations or source substrings. Compare framework route patterns to actual registrations through a socket-free Host. Keep callbacks in owned `extensions.go`; the owned `app.go` call passes fwApp into the wrapper.
+- Next time: add a case or a reason for every catalog kind, and mutate each independent validator before trusting its parity table.
+- Status: active
+
+## 2026-11-13 - Defer callback recovery on the dispatch frame
+- Scope: core/router, core/textsafe, recovercallback
+- Trigger: route gates and pre-route hooks ran before Recovery; direct atomic slot loads and imported guards were invisible to the analyzer.
+- Approach: defer textsafe.LogPanic directly (never from inside another deferred closure); use named zero-value gate results and a pre-route completion flag. The outcomes per hook are in framework/docs/content/core-packages.md (router) and the textsafe section there.
+- Evidence: TestPanickingRouteGateFailsClosed and TestPanickingPreRouteFailsClosed fail before the fix; TestRouterHookPanicParity pins all four dispatch sites and one scrubbed slog record each.
+- Next time: add a router parity row, preserve the request-path analyzer exclusion, and test imported guard facts with unguarded controls. Include atomic Store/Swap installs, assignment/ValueSpec loads, and named guards returning recover(). A guard deferred in the parent does not cover a callback it launches with go: defer it on the goroutine that calls the callback. A guard that recovers conditionally or re-panics earns no credit.
+- Status: active
+
+## 2026-11-13 - Share the storable-text refusal before storage
+- Scope: core/textsafe, battery/semantic, textbind, framework/docs
+- Trigger: semantic /index accepted JSON NULs in document fields and nested metadata; pgvector would reject them at the bind.
+- Approach: call textsafe.Storable; Add validates the last document per ID and returns InvalidDocumentTextError; metadata is checked with a UseNumber token walk after JSON encoding (retain duplicate members, omitted fields and huge numbers correctly); check raw kind separately because PgVectorStore binds it outside JSON; the HTTP route answers 400 and the watcher skips refused files.
+- Evidence: TestAddMetadataMatchesStoredJSON and TestOpenKeepsLegacyTextOutOfKeywordIndex failed before the fixes; skip invalid legacy keyword chunks with a warning while preserving vectors. TestIndexRouteRefusesUnstorableText failed with nine 202 responses; TestStorableTextHasOnePredicate catches a restored filter copy; TestStorable kills removal of its NUL half.
+- Pitfall: a local JSON-source analyzer trial falsely tainted overwritten fields and missed aggregate store helpers; it was dropped, with the gap recorded in textbind's Residuals.
+- Next time: run the drift guard for a new UTF-8/NUL pair and require per-object field flow plus aggregate summaries before claiming JSON-body analyzer coverage.
+- Status: active
+
+## 2026-11-13 - Parse CRUD read queries once at entry
+- Scope: framework/crud query controls, cursor and streaming paths
+- Trigger: repeated paging/trashed controls were ignored and cursor/stream helpers parsed the wire query again.
+- Approach: use readQuery at HTTP entry; thread url.Values into helpers and keep the exported soft-delete helpers strict and fail-closed.
+- Evidence: TestReadQueryParity covers 12 controls across five surfaces; TestReadQueryGuard forbids query reads outside query_read.go; TestReadQueryListUsesEntryValues changes the URL after entry.
+- Next time: classify a new reserved control in singleValueQueryKeys (or explicitly as multi-value) and add a row for a new read surface in the parity matrix.
+- Status: active
+
 ## 2026-11-09 - Keep a fitting component subset when app.css needs a link
 - Scope: framework/uihost, issue #669 first-paint CSS
 - Trigger: eager offline-toast sheets moved Meridian Customers from 15,328 B of subset CSS to 20,951 B of full linked CSS.

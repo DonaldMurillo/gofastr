@@ -1,5 +1,9 @@
 # GoFastr UI architecture
 
+Strict sitemap origin validation lives in `uihost.InvalidSitemapBaseURL`.
+App-spec validation calls the same check before generation; an omitted
+origin remains valid there because generated apps default to localhost.
+
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.

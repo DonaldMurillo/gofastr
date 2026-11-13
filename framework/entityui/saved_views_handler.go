@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/dsl"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 	"github.com/DonaldMurillo/gofastr/framework/ui"
@@ -134,7 +134,7 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 	filter := strings.TrimSpace(body.Filter)
 	// Postgres refuses invalid UTF-8 or a NUL in a text bind (22021), a
 	// 500 where SQLite stores the bytes: refuse it here, for every store.
-	if !storableText(name) || !storableText(filter) {
+	if !textsafe.Storable(name) || !textsafe.Storable(filter) {
 		writeBulkError(w, r, http.StatusBadRequest, reasonSavedBadText)
 		return
 	}
@@ -188,7 +188,7 @@ func (u *UI) createSavedView(ctx context.Context, w http.ResponseWriter, r *http
 func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http.Request, m *meta, body savedViewBody, back string, backOK, jsonCall bool) {
 	id := r.URL.Query().Get("id")
 	// An id no store can hold names no view.
-	if id == "" || !storableText(id) {
+	if id == "" || !textsafe.Storable(id) {
 		writeBulkError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 		return
 	}
@@ -217,12 +217,6 @@ func (u *UI) deleteSavedView(ctx context.Context, w http.ResponseWriter, r *http
 		return
 	}
 	http.Redirect(w, r, loc, http.StatusSeeOther)
-}
-
-// storableText reports whether every store can bind s as text: valid
-// UTF-8 with no NUL byte.
-func storableText(s string) bool {
-	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
 
 // writeSavedViewError maps the store's refusals onto statuses.

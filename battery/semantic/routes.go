@@ -9,10 +9,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // maxRequestBody caps the JSON body size for /index and /query so a
@@ -211,6 +211,14 @@ func indexHandler(idx Index) http.Handler {
 			}
 		}
 		if err := idx.Add(r.Context(), body.Documents...); err != nil {
+			if invalid := (*InvalidDocumentTextError)(nil); errors.As(err, &invalid) {
+				writeErr(w, r, http.StatusBadRequest, reasonDocumentInvalidText)
+				return
+			}
+			if outOfRange := (*MetadataNumberRangeError)(nil); errors.As(err, &outOfRange) {
+				writeErr(w, r, http.StatusBadRequest, reasonMetadataNumberOutOfRange)
+				return
+			}
 			if ce := (*chunkError)(nil); errors.As(err, &ce) {
 				writeErr(w, r, http.StatusBadRequest, reasonDocumentUnchunkable)
 				return
@@ -273,7 +281,7 @@ func deleteHandler(idx Index) http.Handler {
 		// (invalid UTF-8 or a NUL) names no document, and a Postgres-
 		// backed index refuses it in a text bind (22021, a 500): removing
 		// it is the no-op removing any absent id is.
-		if !utf8.ValidString(id) || strings.IndexByte(id, 0) >= 0 {
+		if !textsafe.Storable(id) {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}

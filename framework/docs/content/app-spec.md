@@ -569,6 +569,10 @@ settings file and the rebuilt derived files) under `updated`.
 
 With `--json`, source, validation, write and rebuild failures return one
 `{"files":[],"errors":[{"message":"..."}]}` document and exit nonzero.
+Success also writes exactly one document to stdout; all prose, warnings,
+progress and errors go to stderr. `--help` under `--json` writes usage to
+stderr with no document. The plain generation watch command instead emits
+a stream of documents; see [Codegen](codegen.md).
 Endpoint and client rebuild failures are both fatal. Earlier writes are
 not rolled back; the error document is not an inventory of completed
 writes. Correct the error and rerun before building the updated app.
@@ -1097,8 +1101,37 @@ record tabs and actions each register there, keyed by entity. `app.go`
 builds the app's UI from it once at boot:
 
 ```go
-appUI = fwApp.EntityUI(appExtensions)
+appUI = fwApp.EntityUI(withViewStubs(fwApp, appExtensions))
 ```
+
+Every generated app includes the generated `view_stubs.go` seam, even
+with no views. Each entity with a `display.views` entry that has no `where`
+also gets a generated `view_stubs_<entity>_init.go` file that registers its
+caller-dependent views. The prefix keeps these files distinct from screen
+files, and the fixed `_init` suffix keeps entity names such as `test`, `js`
+and `arm` from becoming Go test or platform file constraints.
+`generate app --add` writes new files while preserving existing owned files.
+Registration files are never deleted or refreshed to prune stale views.
+At boot the wrapper reads the app's live registry: it adds a stub only when
+the entity still declares that view with an empty `Where`. Registrations for
+removed entities, renamed views or views with a `where:` clause are inert.
+Keep real callbacks in the owned `extensions.go`; a host-supplied filter
+still wins. Stubs come only from generation: a `where`-less view you add
+later to an entity whose files already exist (by editing
+`entities/<entity>.go`) gets none, and boot stops with `entityui: entity
+"<entity>" view "<key>" has no where and no registered filter func` until
+you register its filter in `extensions.go`.
+
+For each caller-dependent view without a registered `Filter`, the default
+returns an error naming the entity, view and `extensions.go`: the filter
+is not written yet. The app can boot, but that view cannot read rows until
+you register its filter. An existing filter and its visibility callback
+are preserved.
+
+For an app generated before this seam, change its owned `app.go` call
+from `fwApp.EntityUI(appExtensions)` to the wrapper shown above before
+adding a caller-dependent view. `--add` supplies the view stub files but
+preserves the existing `app.go`.
 
 `fwApp.EntityUI` panics at boot on a name `appExtensions` uses that the
 entity does not declare, the way `App.Entity` refuses a bad declaration.
@@ -1423,6 +1456,24 @@ the colophon, edit the packages — they are yours; rerun
 `icon` and nested `items`. The app shell renders them as the sidebar (and, at
 narrow viewports, the hamburger drawer); the theme toggle lives in the sidebar
 footer, so there is no separate app top bar.
+
+`gofastr validate` checks concrete internal hrefs, including nested items,
+against the generated app's screens (including synthesized create and
+sign-in screens), framework routes, enabled battery routes and entity
+API routes. `gofastr validate` and generation warn about an unknown
+destination at its spec path, such as `nav[0].items[1].href`, because owned
+Go files can register routes that the spec cannot see. Strict boot refuses
+an unserved chrome link after the complete route table is mounted.
+
+The lint preserves escaped segment boundaries: `/a%2Fb` is one segment,
+so it can reach `/{slug}` but not `/a/b`, matching the screen router.
+The lint credits canonical trailing-slash screens, path-only HTTP routes,
+PWA icons and, when the project directory is known, existing static files.
+With `locale_prefixes` enabled it strips a leading locale-shaped segment;
+the actual locale catalog can change after generation. External links,
+fragments and route placeholders are skipped. With auth enabled,
+role-gated items and their children are absent from the anonymous boot
+render and skipped by this check too.
 
 A nav item may carry `role:` to restrict it to users holding that role:
 
@@ -2059,6 +2110,12 @@ The generator rejects:
   on one block, unreachable combined click actions, or missing `client_js`
 - endpoints whose `entity` the app spec does not declare, two endpoints
   linking one handler, or a handler in a file `generate app` writes
+- endpoints that collide with their entity's generated CRUD or EntityUI
+  routes, checked using the API prefix, primary key and state routes the
+  generated app mounts; the diagnostic names `endpoints[i].path`
+- an entity with `exposure.mcp: true` and `exposure.crud: false` (including
+  the flat spellings): MCP CRUD tools dispatch through the HTTP routes,
+  so the generated app refuses this combination at boot
 - an entity that lists `endpoints:` under itself (move each to the
   top-level list)
 - scalar posture fields given a list or map shape: `access:`

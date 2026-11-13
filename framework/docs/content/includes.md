@@ -246,8 +246,12 @@ beside the message, which is in the request's locale (see
   20,000 related-row references.
 - `include is sent N times; send it once with comma-separated paths`
   (`include_repeated`): the query repeated the `include` key
-  (`?include=author&include=comments`); name every path in one value,
-  `?include=author,comments`.
+  (`?include=author&include=comments`), even if values are equal or empty.
+  Every CRUD HTTP read checks this at entry, including offset, cursor,
+  streaming and read-one requests. Name every path in one value,
+  `?include=author,comments`. Other single-value controls use
+  `query_key_repeated`; `sort` may repeat, as may host-owned `q` under
+  the [query control rules](entity-declarations.md).
 - `too many include paths: N (max 32)` (`include_too_many_paths`): the
   request named more comma-separated include paths than one response
   may eager-load.

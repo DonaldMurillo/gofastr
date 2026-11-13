@@ -207,6 +207,13 @@ prefix), `--api-prefix=api` (must match your `AppConfig.APIPrefix`:
 it's baked into the client's base URL so customers pass a bare server
 URL), `--dry-run`, `--json`.
 
+For `gofastr generate cli --json`, stdout is exactly one document on success
+or failure; all prose, warnings, progress and errors go to stderr. `--help`
+under `--json` writes usage to stderr with no document. Plain generation's
+watch mode is a stream; see [Codegen](codegen.md). In the generated customer
+CLI, `--json` is a request-body flag, not an output-mode flag, and `watch`
+streams one JSON line per event.
+
 ## No entities? Generate from an OpenAPI document
 
 An app with a hand-written API has no entity set to generate from, but

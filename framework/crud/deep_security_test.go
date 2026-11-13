@@ -44,7 +44,7 @@ func requireNot500(t *testing.T, rr *httptest.ResponseRecorder, category, desc s
 func TestPagination_NegativePage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?page=-1", nil)
-	page, perPage := parsePagination(req, 0)
+	page, perPage := parsePaginationValues(queryValues(t, req), 0)
 	if page != 1 {
 		t.Errorf("SECURITY: [pagination] page=-1 returned page=%d, want 1. Attack: negative page could produce negative OFFSET", page)
 	}
@@ -55,7 +55,7 @@ func TestPagination_NegativePage(t *testing.T) {
 func TestPagination_ZeroPage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?page=0", nil)
-	page, _ := parsePagination(req, 0)
+	page, _ := parsePaginationValues(queryValues(t, req), 0)
 	if page != 1 {
 		t.Errorf("SECURITY: [pagination] page=0 returned page=%d, want 1. Attack: zero page could produce negative OFFSET", page)
 	}
@@ -115,7 +115,7 @@ func TestPagination_HugePage(t *testing.T) {
 func TestPagination_NegativePerPage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?limit=-1", nil)
-	_, perPage := parsePagination(req, 0)
+	_, perPage := parsePaginationValues(queryValues(t, req), 0)
 	if perPage <= 0 {
 		t.Errorf("SECURITY: [pagination] limit=-1 returned perPage=%d, want default 20. Attack: negative LIMIT clause", perPage)
 	}
@@ -126,7 +126,7 @@ func TestPagination_NegativePerPage(t *testing.T) {
 func TestPagination_ZeroPerPage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?limit=0", nil)
-	_, perPage := parsePagination(req, 0)
+	_, perPage := parsePaginationValues(queryValues(t, req), 0)
 	if perPage <= 0 {
 		t.Errorf("SECURITY: [pagination] limit=0 returned perPage=%d, want default 20. Attack: zero LIMIT clause", perPage)
 	}
@@ -138,7 +138,7 @@ func TestPagination_ZeroPerPage(t *testing.T) {
 func TestPagination_MaxListLimitEnforced(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?limit=1000", nil)
-	_, perPage := parsePagination(req, 10) // MaxListLimit=10
+	_, perPage := parsePaginationValues(queryValues(t, req), 10) // MaxListLimit=10
 	if perPage == 1000 {
 		t.Errorf("SECURITY: [pagination] MaxListLimit=10 but got perPage=1000 for ?limit=1000. Attack: bypassing list limit to fetch all rows")
 	}
@@ -151,7 +151,7 @@ func TestPagination_OffsetOverflow(t *testing.T) {
 	t.Parallel()
 	// page=2147483647, perPage=100 → offset = (2147483647-1)*100
 	req := httptest.NewRequest(http.MethodGet, "/items?page=2147483647&limit=100", nil)
-	page, perPage := parsePagination(req, 0)
+	page, perPage := parsePaginationValues(queryValues(t, req), 0)
 	offset := (page - 1) * perPage
 	if offset < 0 {
 		t.Errorf("SECURITY: [pagination] offset overflow: page=%d, perPage=%d, offset=%d. Attack: integer overflow in OFFSET", page, perPage, offset)
@@ -164,7 +164,7 @@ func TestPagination_OffsetOverflow(t *testing.T) {
 func TestPagination_NonNumericPage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?page=abc", nil)
-	page, _ := parsePagination(req, 0)
+	page, _ := parsePaginationValues(queryValues(t, req), 0)
 	if page != 1 {
 		t.Errorf("SECURITY: [pagination] page=abc returned page=%d, want default 1. Attack: non-numeric page param causes unhandled error", page)
 	}
@@ -176,7 +176,7 @@ func TestPagination_NonNumericPage(t *testing.T) {
 func TestPagination_NonNumericPerPage(t *testing.T) {
 	t.Parallel()
 	req := httptest.NewRequest(http.MethodGet, "/items?limit=xyz", nil)
-	_, perPage := parsePagination(req, 0)
+	_, perPage := parsePaginationValues(queryValues(t, req), 0)
 	if perPage <= 0 {
 		t.Errorf("SECURITY: [pagination] limit=xyz returned perPage=%d, want default 20. Attack: non-numeric limit param causes negative query", perPage)
 	}

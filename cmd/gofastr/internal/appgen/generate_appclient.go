@@ -82,6 +82,10 @@ func writeAppClient(dir string, plan appClientPlan) error {
 // from entities/. A client.go the app generator wrote and the user edited
 // is theirs until --force says otherwise.
 func RunGenerateClient(args []string) {
+	const usage = "Usage: gofastr generate client [--force] [--dry-run] [--json]"
+	if showGenerateHelp(args, usage) {
+		return
+	}
 	var force, dryRun, asJSON bool
 	for _, a := range args {
 		switch a {
@@ -92,7 +96,7 @@ func RunGenerateClient(args []string) {
 		case "--json":
 			asJSON = true
 		default:
-			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), "Usage: gofastr generate client [--force] [--dry-run] [--json]")
+			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), usage)
 			cli.OsExit(1)
 			return
 		}

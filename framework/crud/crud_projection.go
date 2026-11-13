@@ -1,14 +1,13 @@
 package crud
 
 import (
-	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// projectFromRequest reads the `?fields=` query parameter and returns the
+// projectFromRequestQ reads the `?fields=` query parameter and returns the
 // validated subset of visible columns to SELECT. The primary key and every
 // required column are always included regardless of whether the client
 // asked for them: the response schema marks required fields required, so a
@@ -19,17 +18,7 @@ import (
 //
 // Accepts either the DB column name (snake_case) or the JSON-cased name
 // (camelCase) so clients can pass whatever they see on the wire.
-func (ch *CrudHandler) projectFromRequest(r *http.Request) ([]string, error) {
-	return ch.projectFromRequestQ(r.URL.Query())
-}
-
-// projectFromRequestQ is the no-reparse variant of projectFromRequest.
-// The List handler threads its single url.Values through every helper so
-// ?fields= isn't re-parsed per call.
 func (ch *CrudHandler) projectFromRequestQ(q url.Values) ([]string, error) {
-	if err := refuseRepeatedKey(q, "fields"); err != nil {
-		return nil, err
-	}
 	raw := strings.TrimSpace(q.Get("fields"))
 	if raw == "" {
 		return ch.visibleFields(), nil

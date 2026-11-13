@@ -104,6 +104,12 @@ func RunValidate(args []string) {
 	for _, f := range appgen.LintUploadFields(bp) {
 		cli.Warn("%s: %s", path, f.Message())
 	}
+	// A nav link to a path nothing in the spec serves: the generated
+	// app's strict boot refuses it, but owned Go code can add routes
+	// validate cannot see, so this only warns.
+	for _, f := range appgen.LintNavHrefs(bp, anchor) {
+		cli.Warn("%s: %s", path, f.Message())
+	}
 	// A route under a locale-shaped first segment with locale_prefixes on.
 	for _, f := range appgen.LintLocaleRoutes(bp) {
 		cli.Warn("%s: %s", path, f.Message())

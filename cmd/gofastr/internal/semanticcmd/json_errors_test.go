@@ -2,12 +2,31 @@ package semanticcmd
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/battery/semantic"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 )
+
+func TestSemanticEncodeFailureExits(t *testing.T) {
+	output := clitest.CovT_capStdout(t, func() {
+		defer cli.BeginJSON()()
+		code := clitest.CovT_capExit(t, func() {
+			printHits([]semantic.Hit{{Score: math.NaN()}})
+		})
+		if code != 1 {
+			t.Fatalf("encode failure exit = %d, want 1", code)
+		}
+	})
+	var document struct{ Error string }
+	if err := json.Unmarshal([]byte(output), &document); err != nil || document.Error == "" {
+		t.Fatalf("encode failure = %q, error = %v", output, err)
+	}
+}
 
 func TestSemanticFailuresAreJSON(t *testing.T) {
 	for _, args := range [][]string{{"query", "x", "-k", "abc"}, {"query", "x", "--mmr", "invalid"}, {"query"}, {"query", "x"}, {"stats"}} {

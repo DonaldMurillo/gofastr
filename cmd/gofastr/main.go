@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/agentscmd"
@@ -157,39 +158,54 @@ func main() {
 	dispatch(os.Args[1:])
 }
 
-// ownsHelp lists the subcommands that implement their own --help/-h
-// output; dispatch routes help flags through to them instead of
-// printing the global overview. A command may only join this set once
-// it actually handles the flags (otherwise `<cmd> --help` would run
-// the command).
-var ownsHelp = map[string]bool{
-	"audit":    true,
-	"verify":   true,
-	"upgrade":  true,
-	"unmount":  true,
-	"remount":  true,
-	"docs":     true,
-	"doc":      true,
-	"init":     true,
-	"generate": true,
-	"gen":      true,
-	"g":        true,
-	"validate": true,
-	"theme":    true,
-	"semantic": true,
-	"new":      true,
-	"pack":     true,
-	"build":    true,
-	"dev":      true,
-	"migrate":  true,
-	"m":        true,
-	"test":     true,
-	"t":        true,
-	"harness":  true,
-	"agents":   true,
-	"desktop":  true,
-	"export":   true,
-	"release":  true,
+type commandSpec struct {
+	names          []string
+	run            func([]string)
+	ownsHelp       bool
+	versionChecked bool
+	json           func([]string) bool
+}
+
+var commands = []commandSpec{
+	{names: []string{"init"}, run: initcmd.RunInit, ownsHelp: true},
+	{names: []string{"new"}, run: newcmd.RunNew, ownsHelp: true, versionChecked: true},
+	{names: []string{"generate", "gen", "g"}, run: generatecmd.RunGenerate, ownsHelp: true, versionChecked: true, json: func(args []string) bool {
+		return slices.Contains(args, "--json") && (cli.HasHelpFlagBeforeTerminator(args) || !slices.Contains(args, "--watch"))
+	}},
+	{names: []string{"pack"}, run: packcmd.RunPack, ownsHelp: true, versionChecked: true},
+	{names: []string{"validate"}, run: validatecmd.RunValidate, ownsHelp: true, versionChecked: true},
+	{names: []string{"build"}, run: buildcmd.RunBuild, ownsHelp: true, versionChecked: true},
+	{names: []string{"dev"}, run: devcmd.RunDev, ownsHelp: true, versionChecked: true},
+	{names: []string{"export"}, run: exportcmd.RunExport, ownsHelp: true, versionChecked: true},
+	{names: []string{"migrate", "m"}, run: migratecmd.RunMigrate, ownsHelp: true, versionChecked: true},
+	{names: []string{"test", "t"}, run: testcmd.RunTest, ownsHelp: true, versionChecked: true},
+	{names: []string{"semantic"}, run: semanticcmd.RunSemantic, ownsHelp: true, versionChecked: true, json: func(args []string) bool {
+		return len(args) > 0 && slices.Contains([]string{"query", "q", "stats"}, args[0])
+	}},
+	{names: []string{"harness"}, run: harnesscmd.RunHarness, ownsHelp: true, versionChecked: true},
+	{names: []string{"docs", "doc"}, run: docscmd.RunDocs, ownsHelp: true},
+	{names: []string{"agents"}, run: agentscmd.RunAgents, ownsHelp: true, versionChecked: true},
+	{names: []string{"desktop"}, run: desktopcmd.RunDesktop, ownsHelp: true, versionChecked: true},
+	{names: []string{"release"}, run: releasecmd.RunRelease, ownsHelp: true, versionChecked: true},
+	{names: []string{"audit"}, run: auditcmd.RunAudit, ownsHelp: true, versionChecked: true},
+	{names: []string{"verify"}, run: verifycmd.RunVerify, ownsHelp: true, versionChecked: true, json: func(args []string) bool {
+		return slices.Contains(args, "--json")
+	}},
+	{names: []string{"upgrade"}, run: upgradecmd.RunUpgrade, ownsHelp: true},
+	{names: []string{"unmount"}, run: unmountcmd.RunUnmount, ownsHelp: true, versionChecked: true},
+	{names: []string{"remount"}, run: unmountcmd.RunRemount, ownsHelp: true, versionChecked: true},
+	{names: []string{"theme"}, run: themecmd.RunTheme, ownsHelp: true, versionChecked: true},
+	{names: []string{"version"}, run: func([]string) { cli.Println(project.VersionLine()) }},
+	{names: []string{"help"}, run: func([]string) { printHelp() }},
+}
+
+func findCommand(name string) *commandSpec {
+	for index := range commands {
+		if slices.Contains(commands[index].names, name) {
+			return &commands[index]
+		}
+	}
+	return nil
 }
 
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching
@@ -206,7 +222,7 @@ func dispatch(args []string) {
 	// place only; after a command it is that command's argument (verify's
 	// -v, a desktop build's --version, and `test -v`, which go test users
 	// type and which must be refused rather than answered with the version
-	// and exit 0). --help/-h is routed through to subcommands in ownsHelp,
+	// and exit 0). --help/-h is routed through to subcommands that own help,
 	// which implement it; for every other command it is intercepted
 	// anywhere in args (a side-effectful command like `dev --help` must
 	// never start a server because it lacks its own help path).
@@ -214,7 +230,8 @@ func dispatch(args []string) {
 		cli.Println(project.VersionLine())
 		return
 	}
-	if !ownsHelp[args[0]] {
+	command := findCommand(args[0])
+	if command == nil || !command.ownsHelp {
 		for _, a := range args {
 			if a == "--help" || a == "-h" {
 				printHelp()
@@ -233,66 +250,30 @@ func dispatch(args []string) {
 			printHelp()
 			return
 		}
-		if knownCommand(cmdArgs[0]) {
+		if findCommand(cmdArgs[0]) != nil {
 			dispatch([]string{cmdArgs[0], "--help"})
 			return
 		}
 		cmd = cmdArgs[0]
+		command = nil
+	}
+	if command != nil && command.json != nil && command.json(cmdArgs) {
+		defer cli.BeginJSON()()
+		if cli.HasHelpFlagBeforeTerminator(cmdArgs) {
+			command.run(cmdArgs)
+			return
+		}
 	}
 	warnVersionMismatch(cmd, cmdArgs)
 
-	switch cmd {
-	case "init":
-		initcmd.RunInit(cmdArgs)
-	case "theme":
-		themecmd.RunTheme(cmdArgs)
-	case "generate", "gen", "g":
-		generatecmd.RunGenerate(cmdArgs)
-	case "pack":
-		packcmd.RunPack(cmdArgs)
-	case "validate":
-		validatecmd.RunValidate(cmdArgs)
-	case "build":
-		buildcmd.RunBuild(cmdArgs)
-	case "dev":
-		devcmd.RunDev(cmdArgs)
-	case "export":
-		exportcmd.RunExport(cmdArgs)
-	case "new":
-		newcmd.RunNew(cmdArgs)
-	case "migrate", "m":
-		migratecmd.RunMigrate(cmdArgs)
-	case "test", "t":
-		testcmd.RunTest(cmdArgs)
-	case "semantic":
-		semanticcmd.RunSemantic(cmdArgs)
-	case "harness":
-		harnesscmd.RunHarness(cmdArgs)
-	case "docs", "doc":
-		docscmd.RunDocs(cmdArgs)
-	case "agents":
-		agentscmd.RunAgents(cmdArgs)
-	case "audit":
-		auditcmd.RunAudit(cmdArgs)
-	case "verify":
-		verifycmd.RunVerify(cmdArgs)
-	case "upgrade":
-		upgradecmd.RunUpgrade(cmdArgs)
-	case "unmount":
-		unmountcmd.RunUnmount(cmdArgs)
-	case "remount":
-		unmountcmd.RunRemount(cmdArgs)
-	case "desktop":
-		desktopcmd.RunDesktop(cmdArgs)
-	case "release":
-		releasecmd.RunRelease(cmdArgs)
-	case "version":
-		cli.Println(project.VersionLine())
-	default:
+	if command != nil {
+		command.run(cmdArgs)
+	} else {
 		cli.Fail("Unknown command: %s", cmd)
 		fmt.Println()
 		// Fuzzy suggestion: check if it's close to a known command
-		for _, s := range suggestions {
+		for _, candidate := range commands {
+			s := candidate.names[0]
 			if strings.HasPrefix(s, cmd) || fuzzy.Levenshtein(cmd, s) <= 2 {
 				cli.Printf("  Did you mean: "+cli.Bold("gofastr %s")+"?\n", s)
 			}
@@ -302,32 +283,11 @@ func dispatch(args []string) {
 	}
 }
 
-// suggestions are the command names an unknown command is matched
-// against (aliases left out).
-var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
-
-// knownCommand reports whether name is a command dispatch runs, an
-// alias included.
-func knownCommand(name string) bool {
-	return ownsHelp[name] || name == "version" || name == "help"
-}
-
-// versionCheckedCommands are the commands that work on the project in
-// the working directory, so the project version check runs before them.
-// init, version, docs and upgrade are left out (they run outside a
-// project or manage the version themselves), and so is an unknown
-// command, which only prints usage.
-var versionCheckedCommands = map[string]bool{
-	"theme": true, "generate": true, "gen": true, "g": true, "pack": true, "validate": true,
-	"build": true, "dev": true, "export": true, "new": true, "migrate": true, "m": true,
-	"test": true, "t": true, "semantic": true, "harness": true, "agents": true, "audit": true,
-	"verify": true, "unmount": true, "remount": true, "desktop": true, "release": true,
-}
-
 // versionCheckApplies reports whether warnVersionMismatch speaks for
 // this command line: a project command, not a help request.
 func versionCheckApplies(cmd string, args []string) bool {
-	if !versionCheckedCommands[cmd] {
+	command := findCommand(cmd)
+	if command == nil || !command.versionChecked {
 		return false
 	}
 	for _, a := range args {

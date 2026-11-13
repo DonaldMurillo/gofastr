@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
@@ -59,23 +60,18 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 		writeJSONError(w, r, http.StatusBadRequest, reasonStreamAfterList)
 		return
 	}
-	// Parse the URL query once and thread it through the helpers, mirroring
-	// the List() body. ServeStreamingList is called from List() (which has
-	// already enforced requireScope) but is also a public entrypoint for
-	// direct in-process callers, so it must do its own scoping AND its own
-	// single-parse to keep the soft-delete gate and ?offset= read off the
-	// same url.Values instead of re-parsing per call.
-	// Strictly, as List() reads it: a malformed pair (?name=%ZZ) answers
-	// 400 instead of being silently dropped, which is what URL.Query does.
-	q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+	// Direct callers share the same strict gate as List.
+	q, err := ch.readQuery(r)
 	if err != nil {
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
-	// Offset bound, same as List(): the direct-call contract this method
-	// maintains for the owner/tenant and AfterList gates holds for the
-	// skip side too. When chained from List() the guard has already run
-	// and passes again cheaply.
+	ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, limit, extraWhere)
+}
+
+// serveStreamingList consumes List's parsed values or the direct entry's values.
+func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
+	// Direct callers have the same offset bound as List.
 	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 	if !ch.requireBoundedOffset(w, r, q, streamPage, streamPerPage) {
 		return

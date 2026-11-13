@@ -40,7 +40,7 @@ import (
 // index. index/watch/clear are always local: long-lived mutations
 // should run alongside the server, not through it.
 func RunSemantic(args []string) {
-	if len(args) == 0 {
+	if len(args) == 0 || cli.HasHelpFlagBeforeTerminator(args) {
 		printSemanticHelp()
 		return
 	}
@@ -306,25 +306,23 @@ func embedQuery(args []string) {
 }
 
 func printHits(hits []semantic.Hit) {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(hits); err != nil {
+	if err := emitSemanticJSON(hits); err != nil {
 		failSemanticJSON(fmt.Errorf("print hits: %w", err))
+		cli.OsExit(1)
 	}
 }
 
 func embedStats() {
 	if url := os.Getenv("GOFASTR_URL"); url != "" {
 		body, err := remoteGet(url + "/semantic/stats")
-		if err == nil && !json.Valid(body) {
-			err = errors.New("response is not one JSON document")
+		if err == nil {
+			err = cli.EmitRawJSON(body)
 		}
 		if err != nil {
 			failSemanticJSON(fmt.Errorf("remote stats: %w", err))
 			cli.OsExit(1)
 			return
 		}
-		cli.Println(string(body))
 		return
 	}
 	idx, err := openLocalIndex(true)
@@ -334,14 +332,26 @@ func embedStats() {
 		return
 	}
 	defer idx.Close()
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	_ = enc.Encode(idx.Stats())
+	if err := emitSemanticJSON(idx.Stats()); err != nil {
+		failSemanticJSON(fmt.Errorf("print stats: %w", err))
+		cli.OsExit(1)
+	}
+}
+
+func emitSemanticJSON(document any) error {
+	data, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return err
+	}
+	return cli.EmitRawJSON(data)
 }
 
 func failSemanticJSON(err error) {
-	_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"error": err.Error()})
-	cli.Fprintf(os.Stderr, "  ✗ %v\n", err)
+	defer cli.BeginJSON()()
+	if emitErr := cli.EmitJSON(map[string]string{"error": err.Error()}); emitErr != nil {
+		cli.Fail("write JSON: %v", emitErr)
+	}
+	cli.Fail("%v", err)
 }
 
 func embedClear() {

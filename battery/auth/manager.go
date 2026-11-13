@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -606,7 +607,7 @@ func (m *AuthManager) SetSessionStore(store SessionStore) {
 // driven from scripts or future surfaces leave the same trail the admin
 // back-office writes today.
 func (m *AuthManager) SetUserRoles(ctx context.Context, userID string, roles []string) error {
-	if !storableText(userID) {
+	if !textsafe.Storable(userID) {
 		return ErrUserNotFound
 	}
 	if err := m.userStore.UpdateRoles(ctx, userID, roles); err != nil {

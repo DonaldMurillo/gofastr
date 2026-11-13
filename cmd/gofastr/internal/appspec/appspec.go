@@ -33,6 +33,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	fwfilter "github.com/DonaldMurillo/gofastr/framework/filter"
 	fwmigrate "github.com/DonaldMurillo/gofastr/framework/migrate"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 	"github.com/DonaldMurillo/gofastr/internal/inflect"
 )
@@ -2633,8 +2634,8 @@ func ValidateAppSpec(bp AppSpec) error {
 	}
 	// The sitemap origin: the generated app's always-on strict mode
 	// panics at boot on a base_url it cannot use.
-	if why := baseURLProblem(bp.App.BaseURL); why != "" {
-		errs.add(fmt.Errorf("app spec: app.base_url %q %s: it is the origin of every sitemap URL, and the generated app refuses to boot on it; write an origin such as https://demo.example", bp.App.BaseURL, why))
+	if why := uihost.InvalidSitemapBaseURL(bp.App.BaseURL); bp.App.BaseURL != "" && why != "" {
+		errs.add(fmt.Errorf("app spec: app.base_url %q must be a bare origin, with no path, query or fragment: write an origin such as https://demo.example (the generated app uses it for sitemap URLs)", bp.App.BaseURL))
 	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The
@@ -2751,7 +2752,7 @@ func ValidateAppSpec(bp AppSpec) error {
 	}
 	entityNames := map[string]bool{}
 	entitiesByName := map[string]framework.EntityDeclaration{}
-	for _, decl := range bp.Entities {
+	for entityIndex, decl := range bp.Entities {
 		if decl.Name == "" {
 			errs.add(fmt.Errorf("app spec: entity name is required"))
 			continue
@@ -2827,6 +2828,9 @@ func ValidateAppSpec(bp AppSpec) error {
 		if err != nil {
 			errs.add(fmt.Errorf("app spec: entity %q: %w", decl.Name, err))
 			continue
+		}
+		if err := framework.ValidateExposure(decl.Name, cfg); err != nil {
+			errs.add(fmt.Errorf("app spec: entities[%d].exposure: %w", entityIndex, err))
 		}
 		// The display: block names fields, facets, views and form slots
 		// registration checks against the entity; run that check here.
@@ -4961,20 +4965,18 @@ func appSpecDetailBase(bp AppSpec, entity string) (string, bool) {
 // AppSpecCatalogKind reports whether a block kind maps to a framework/ui
 // catalog component (handled by renderAppSpecCatalogBlock).
 func AppSpecCatalogKind(kind string) bool {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	// The layout blocks (stack/cluster/grid/stat_grid) are catalog
-	// compositions too: renderAppSpecCatalogBlock emits them as
-	// ui.Stack/Cluster/Grid calls, so a screen whose body is one needs
-	// the ui import like any hero or card. Meridian's about screen
-	// (a stack of page_header + markdown) is the fixture that exposed
-	// the gap: the emitted file referenced ui.Stack with no import.
-	case "stack", "cluster", "grid", "stat_grid",
-		"page_header", "hero", "section", "card", "stat_row", "stat_card",
-		"bar_chart", "pie_chart", "line_chart", "link_button", "callout", "divider",
-		"markdown", "pricing":
-		return true
-	}
-	return AppSpecControlKind(kind)
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	return appSpecCatalogKinds[kind] || AppSpecControlKind(kind)
+}
+
+// appSpecCatalogKinds is also the render-panic parity test's discovery
+// surface. Layout compositions belong here so the generator imports ui.
+var appSpecCatalogKinds = map[string]bool{
+	"stack": true, "cluster": true, "grid": true, "stat_grid": true,
+	"page_header": true, "hero": true, "section": true, "card": true,
+	"stat_row": true, "stat_card": true, "bar_chart": true, "pie_chart": true,
+	"line_chart": true, "link_button": true, "callout": true, "divider": true,
+	"markdown": true, "pricing": true,
 }
 
 // typeNamesCatalogKind reports whether a block's `type:` names a kind the
