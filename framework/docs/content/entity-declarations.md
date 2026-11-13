@@ -1436,10 +1436,15 @@ with no `opt` field) filters as itself, at the top level, in
 **`fields`, `where`, `q` and `cursor` are sent once too.** Each is read
 as one value, so `?fields=title&fields=body`, a second `?where=`, `?q=`
 or `?cursor=` is a **400** `query_key_repeated` naming the key, on the
-list and (for `fields`) on read-one. Where `q` is the entity's own
-filter (a column named `q`, or `q` in `AllowedFilterParams` with no
-`SearchFields`), it repeats under the filter rules instead. Before, the first value ran and the later
-ones were never validated: `?fields=title&fields=bogus` answered 200
+list and (for `fields`) on read-one. Two names read another way on
+the list. A queryable column named `fields`, `where`, `q` or `cursor`
+is a filter first, so repeating it there is the filter refusal above
+(`filter.repeated_filter`); read-one parses no filters and still
+answers `query_key_repeated` for a second `fields`. A `q` in
+`AllowedFilterParams`, on an entity with no `SearchFields` and no
+queryable column named `q`, belongs to the host: it may repeat, the
+list answers 200 and the host reads every value. Before, the first
+value ran and the later ones were never validated: `?fields=title&fields=bogus` answered 200
 where `?fields=bogus` alone answered 400. Name several fields in one
 value (`?fields=title,body`) and combine predicates inside one
 `?where=` tree. `include` has the same rule under its own reason,

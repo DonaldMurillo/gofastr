@@ -453,7 +453,7 @@ whose value or key does not decode (`?entity=posts%ZZ`, a malformed
 percent escape or a `;`) would be dropped by Go's query parser and the
 page would list every row, so the page draws the entity lists' "Filter
 not applied" warning over it instead. The Jobs page does the same for
-`?status=` and the search page for `?q=`.
+`?status=failed%ZZ` and the search page for `?q=launch%ZZ`.
 
 ### Saved views
 

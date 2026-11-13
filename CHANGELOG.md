@@ -1654,10 +1654,14 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
-- **A CRUD list or read-one refuses a repeated `fields`, `where`, `q` or
-  `cursor` key** with 400 `query_key_repeated`; the later values were
-  never validated or applied. A `q` the entity owns as a filter is
-  exempt. **BREAKING** for a client that sent one twice.
+- **A CRUD list refuses a repeated `fields`, `where`, `q` or `cursor`
+  key, and a read-one a repeated `fields` key,** with 400
+  `query_key_repeated`; the later values were never validated or
+  applied. On the list, a queryable column with one of these names is
+  a filter first and answers `filter.repeated_filter`, and a `q` the
+  host owns through `AllowedFilterParams` (no `SearchFields`, no
+  column named `q`) may repeat.
+  **BREAKING** for a client that sent one twice.
 - **A CRUD read-one refuses a query pair that does not decode** with
   400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
   returned the full row and `?trashed=true%ZZ` hid a trashed row.
