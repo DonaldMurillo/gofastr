@@ -1,6 +1,6 @@
 ---
 name: review-gate
-description: Review a change before it is committed or pushed with three independent reviews that block only when all three request changes. Use when asked to review before committing or pushing, gate a push, check "is this safe to push", explain or skip a block from the pre-commit hook's model review, or run a pre-push review. Runs three Codex reviews through review3.py when the Codex CLI is available, and three subagent reviews (or one advisory review) when it is not.
+description: Review a change before it is committed or pushed with three independent reviews that block only when all three request changes. Use when asked to review before committing or pushing, gate a push, check "is this safe to push", explain or skip a block from the pre-commit hook's model review, or run a pre-push review. Runs three reviews through review3.py (the Codex CLI, or the Claude CLI on Haiku when Codex is missing), and three Haiku subagent reviews (or one advisory review) when neither CLI is available.
 ---
 
 # Review gate
@@ -12,14 +12,16 @@ blocking findings from every run, not just the ones they agree on.
 ## Pick a mode
 
 Run `python3 .claude/skills/review-gate/review3.py --check` (on Windows,
-`python`). It prints the Codex binary it found and exits 0, or exits 3.
-It looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`, then the
+`python`). It prints the reviewer binary it found and exits 0, or exits 3.
+For Codex it looks at `--codex PATH`, then `CODEX_BIN`, then `PATH`, then the
 usual install spots: on macOS the ChatGPT app's own CLI
 (`ChatGPT.app/Contents/Resources/codex-cli/bin/codex` under
 `/Applications` or `~/Applications`), then every nvm node version newest
 first (`$NVM_DIR/versions/node/*/bin/codex`), and on Windows nvm-windows
 (`%NVM_HOME%\v*\codex.cmd`) and npm's global dir
-(`%APPDATA%\npm\codex.cmd`). The exit-3 message names each place tried.
+(`%APPDATA%\npm\codex.cmd`). With no Codex it falls back to the Claude
+Code CLI: `--claude PATH`, then `CLAUDE_BIN`, then `claude` on `PATH`. The
+exit-3 message names each place tried.
 
 - **Exit 0: script mode.** Use it.
 - **Exit 3, or you cannot run commands or Python: subagent mode.**
@@ -34,14 +36,18 @@ first (`$NVM_DIR/versions/node/*/bin/codex`), and on Windows nvm-windows
    `--range A...B` for another range, `--staged` for what the next
    commit holds (`git diff --cached`), or `--uncommitted` for
    `git diff HEAD`.
-2. It starts three `codex exec` sessions in parallel: read-only sandbox,
-   model `gpt-6-luna` (`--model` or `PUSH_REVIEW_MODEL` to change),
-   high effort, web search off, user config ignored, nothing saved.
+2. It starts three reviewer sessions in parallel. With Codex:
+   `codex exec`, read-only sandbox, model `gpt-6-luna` (`--model` or
+   `PUSH_REVIEW_MODEL` to change), high effort, web search off, user
+   config ignored, nothing saved. Without Codex: `claude -p`, model
+   `haiku` (`--model` or `PUSH_REVIEW_CLAUDE_MODEL` to change), limited to
+   reading files and read-only git, no settings or MCP servers loaded,
+   nothing saved. The result line names the reviewer and model used.
 3. It prints the decision, the vote and every blocking finding with the
    runs that raised it. `--json` prints the same as JSON.
 4. Exit codes: 0 approve, 1 block, 2 fewer than three usable answers or
-   any other failure (a git error, a codex that will not start, a crash),
-   3 no Codex. Only the vote exits 1. On 2, read the run logs it names,
+   any other failure (a git error, a reviewer that will not start, a
+   crash), 3 no reviewer (neither Codex nor Claude). Only the vote exits 1. On 2, read the run logs it names,
    then rerun or fall back to subagent mode. Never count a failed run as
    a vote either way.
 
@@ -54,11 +60,11 @@ an agent that commits gets the review without asking for it:
   test sweep, so it adds little to the hook's time. Its result prints
   last.
 - 3 of 3 request changes fails the commit and prints the findings.
-- No Codex fails the commit too, before the test sweep, and names the
-  places it looked. Install the Codex CLI or set `CODEX_BIN`; to commit
-  without the review, use `GOFASTR_SKIP_COMMIT_REVIEW=1` and say why in
-  the commit message.
-- Anything else lets the commit through: an approve, an incomplete
+- No Codex does not block: the same three runs go to the Claude CLI on
+  Haiku.
+- With neither CLI the hook warns, names the places it looked, and lets
+  the commit through. Run subagent mode yourself before you push.
+- Anything else lets the commit through too: an approve, an incomplete
   review, or no Python.
 - A run that takes longer than ten minutes counts as incomplete
   (`GOFASTR_COMMIT_REVIEW_TIMEOUT` sets the seconds). If the hook exits
@@ -67,7 +73,7 @@ an agent that commits gets the review without asking for it:
   only Markdown.
 - It reviews the index the commit is built from, so `git commit <paths>`
   is reviewed as committed.
-- The codex runs start without git's per-repo variables
+- The reviewer runs start without git's per-repo variables
   (`GIT_INDEX_FILE`, `GIT_DIR` and the rest): a reviewer that runs git or
   the tests must not write into the commit's index.
 
@@ -89,9 +95,9 @@ commit message which finding you rejected and why. Never use
    else: no conversation history, no summary of the change, no hint of
    what you suspect. Each must be able to read the repository and run
    git. Tell them not to edit files.
-   - Use the same model for all three. If you can delegate to a Codex
-     model, use `gpt-6-luna`.
-   - In Claude Code, use the Agent tool with an explicit `model`.
+   - Use the same model for all three. In Claude Code, use the Agent
+     tool with `model: haiku`. If you can delegate to a Codex model
+     instead, use `gpt-6-luna`.
    - If your environment caps how many agents run at once, run them in
      batches. The three must be independent; they need not be concurrent.
 3. Read each answer's JSON object. An answer with no JSON object, or a

@@ -216,3 +216,87 @@ func TestCodexRunsWithoutGitEnv(t *testing.T) {
 		t.Fatalf("codex ran with GIT_INDEX_FILE:\n%s", env)
 	}
 }
+
+// stubClaude is a claude that prints answer.json from beside itself and
+// records the arguments it was started with.
+const stubClaude = `#!/bin/sh
+dir=$(dirname "$0")
+cat > /dev/null
+echo "$@" >> "$dir/args.txt"
+cat "$dir/answer.json"
+`
+
+// Without codex the three runs go to the Claude CLI on Haiku, read-only,
+// and its votes decide the exit code like codex's do.
+func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name, answer string
+		want         int
+	}{
+		{"three blocks exit 1", block, 1},
+		{"three approvals exit 0", approve, 0},
+		{"no answer exits 2", "not json", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script, codex, repo := setup(t, [3]string{approve, approve, approve})
+			dir := filepath.Dir(codex)
+			claude := filepath.Join(dir, "claude")
+			if err := os.WriteFile(claude, []byte(stubClaude), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "answer.json"), []byte(tc.answer), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			py, err := exec.LookPath("python3")
+			if err != nil {
+				t.Skip("no python3")
+			}
+			gitBin, err := exec.LookPath("git")
+			if err != nil {
+				t.Skip("no git")
+			}
+			// No codex anywhere review3.py looks: an empty HOME, and a
+			// PATH with git and the two tools the stub calls.
+			bin := t.TempDir()
+			for name, target := range map[string]string{"git": gitBin, "cat": "", "dirname": ""} {
+				if target == "" {
+					if target, err = exec.LookPath(name); err != nil {
+						t.Skipf("no %s", name)
+					}
+				}
+				if err := os.Symlink(target, filepath.Join(bin, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command(py, script, "--staged", "--claude", claude, "--timeout", "60")
+			cmd.Dir = repo
+			cmd.Env = []string{"PATH=" + bin, "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1"}
+			out, err := cmd.CombinedOutput()
+			got := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				got = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("review3.py: %v\n%s", err, out)
+			}
+			if got != tc.want {
+				t.Fatalf("exit %d, want %d\n%s", got, tc.want, out)
+			}
+			args, err := os.ReadFile(filepath.Join(dir, "args.txt"))
+			if err != nil {
+				t.Fatalf("claude never ran: %v\n%s", err, out)
+			}
+			if n := strings.Count(string(args), "--model haiku"); n != 3 {
+				t.Fatalf("%d runs on haiku, want 3:\n%s", n, args)
+			}
+			for _, want := range []string{"--permission-mode dontAsk", "--tools Read,Grep,Glob,Bash"} {
+				if !strings.Contains(string(args), want) {
+					t.Fatalf("claude ran without %q:\n%s", want, args)
+				}
+			}
+			if strings.Contains(string(args), "Edit") || strings.Contains(string(args), "Write") {
+				t.Fatalf("claude was given a writing tool:\n%s", args)
+			}
+		})
+	}
+}

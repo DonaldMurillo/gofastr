@@ -174,7 +174,9 @@ func reviewStart(t *testing.T) string {
 	return s[start:end]
 }
 
-func TestHookFailsWithoutCodex(t *testing.T) {
+// With neither Codex nor the Claude CLI the hook has no reviewer: it warns
+// and lets the commit through, and never fails it.
+func TestHookWarnsWithoutReviewer(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("the hook is a POSIX shell script")
 	}
@@ -217,7 +219,7 @@ func TestHookFailsWithoutCodex(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "x.go"), []byte("package x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// PATH holds only what step 5c calls, so no real codex is on it.
+	// PATH holds only what step 5c calls, so no real codex or claude is on it.
 	bin := t.TempDir()
 	for name, target := range map[string]string{"python3": py, "git": gitBin} {
 		if err := os.Symlink(target, filepath.Join(bin, name)); err != nil {
@@ -262,15 +264,30 @@ staged_git() { git "$@"; }
 	}
 
 	code, out := hook()
-	if code != 1 || !strings.Contains(out, "FAIL model review: codex not found") || strings.Contains(out, "REACHED-STEP-6") {
-		t.Fatalf("no codex: exit %d, want 1 before step 6\n%s", code, out)
+	if code != 0 || !strings.Contains(out, "WARN model review skipped: codex not found") ||
+		!strings.Contains(out, "claude not found either") || !strings.Contains(out, "subagent mode") ||
+		!strings.Contains(out, "REACHED-STEP-6") {
+		t.Fatalf("no reviewer: exit %d, want 0, a warning and step 6\n%s", code, out)
+	}
+	// A claude on PATH is the reviewer when there is no codex: the hook
+	// starts the review instead of warning.
+	claude := filepath.Join(bin, "claude")
+	if err := os.WriteFile(claude, []byte("#!/bin/sh\ncat >/dev/null\necho '{\"decision\":\"approve\",\"findings\":[]}'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	code, out = hook()
+	if code != 0 || !strings.Contains(out, "Model review started (three runs of "+claude) || strings.Contains(out, "WARN model review") {
+		t.Fatalf("claude fallback: exit %d, want the review started\n%s", code, out)
+	}
+	if err := os.Remove(claude); err != nil {
+		t.Fatal(err)
 	}
 	code, out = hook("GOFASTR_SKIP_COMMIT_REVIEW=1")
 	if code != 0 || !strings.Contains(out, "WARN model review skipped") || !strings.Contains(out, "REACHED-STEP-6") {
 		t.Fatalf("skip: exit %d, want 0 and a warning\n%s", code, out)
 	}
 	// A --check that crashes is a review that could not run: the commit
-	// goes through with a warning, unlike a missing codex (exit 3).
+	// goes through with a warning, as it does with no reviewer (exit 3).
 	crash := "import sys\nprint('boom')\nsys.exit(1)\n"
 	if err := os.WriteFile(filepath.Join(skill, "review3.py"), []byte(crash), 0o600); err != nil {
 		t.Fatal(err)
