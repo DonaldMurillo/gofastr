@@ -29,7 +29,9 @@ func TestNewRouteRefusesBadHandler(t *testing.T) {
 			t.Errorf("--handler %q printed a snippet:\n%s", h, out)
 		}
 	}
-	for _, m := range []string{"GET\n", "G ET", "GE(T", "GET/", "\x7f"} {
+	// ı uppercases to I and ſ to S: the method is checked before the
+	// fold, or "gıt" would pass as GIT.
+	for _, m := range []string{"GET\n", "G ET", "GE(T", "GET/", "\x7f", "gıt", "poſt"} {
 		if code, out := runRoute(t, "/things", "--method", m); code != 1 {
 			t.Errorf("--method %q exit = %d, want 1:\n%s", m, code, out)
 		}
@@ -40,6 +42,9 @@ func TestNewRouteRefusesBadHandler(t *testing.T) {
 		{"handlers.Things", "delete", `app.Router().Handle("DELETE", "/things", handlers.Things)`},
 		// An extension method is a valid token the router serves.
 		{"h.Propfind", "PROPFIND", `app.Router().Handle("PROPFIND", "/things", h.Propfind)`},
+		// A Go identifier may hold any Unicode letter.
+		{"h.Listaño", "GET", `app.Router().Handle("GET", "/things", h.Listaño)`},
+		{"größe", "GET", `app.Router().Handle("GET", "/things", größe)`},
 	} {
 		code, out := runRoute(t, "/things", "--handler", c.handler, "--method", c.method)
 		// -1: the command returned without calling exit.

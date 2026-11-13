@@ -259,5 +259,20 @@ func buildCommandExtRefusal(d codegen.Discovery) string {
 	return fmt.Sprintf("codegen: discovered config declares a command extension: %s runs\n  %s\n"+
 		"Set GOFASTR_CODEGEN_ALLOW_COMMANDS=1 to allow commands from a discovered config, "+
 		"or run gofastr generate --config %s and then gofastr build --no-generate",
-		d.Path, strings.Join(named, "\n  "), d.Path)
+		d.Path, strings.Join(named, "\n  "), shellWord(d.Path))
+}
+
+// shellWord quotes s for a POSIX shell when it holds anything beyond the
+// bytes a shell reads as one plain word, so the remedy can be pasted as
+// printed. A single quote inside is closed, escaped and reopened.
+func shellWord(s string) string {
+	plain := s != ""
+	for i := 0; i < len(s) && plain; i++ {
+		c := s[i]
+		plain = c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || strings.IndexByte("_-./:@%+=,", c) >= 0
+	}
+	if plain {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }

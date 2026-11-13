@@ -119,12 +119,14 @@ func runNewHandler(args []string, overwrite bool) {
 		cli.OsExit(1)
 		return
 	}
-	method = strings.ToUpper(method)
+	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
+	// so a non-ASCII method would pass as a different token.
 	if err := checkRouteMethod(method); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
+	method = strings.ToUpper(method)
 
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		cli.Fail("%v", err)
@@ -148,12 +150,14 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
-	method = strings.ToUpper(method)
+	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
+	// so a non-ASCII method would pass as a different token.
 	if err := checkRouteMethod(method); err != nil {
 		cli.Fail("%v", err)
 		cli.OsExit(1)
 		return
 	}
+	method = strings.ToUpper(method)
 	// The handler lands at an expression slot of the printed Go line: a
 	// name that is not an identifier, or a selector of them (h.List),
 	// prints a line that does not compile.
@@ -190,13 +194,14 @@ func checkRouteMethod(method string) error {
 }
 
 // checkRouteHandler refuses a --handler that is not a Go identifier or a
-// selector chain of them (h.List, handlers.Things). A bare name gets new
-// handler's guard too: a keyword, main, init, _ or a predeclared name is
-// no handler.
+// selector chain of them (h.List, handlers.Things). The handler is the
+// host's own Go name, so any identifier the Go spec allows passes, Unicode
+// letters included. A bare name gets new handler's guard too: a keyword,
+// main, init, _ or a predeclared name is no handler.
 func checkRouteHandler(handler string) error {
 	parts := strings.Split(handler, ".")
 	for _, p := range parts {
-		if !project.IsGoIdentifier(p) || token.IsKeyword(p) || p == "_" {
+		if !token.IsIdentifier(p) || token.IsKeyword(p) || p == "_" {
 			return fmt.Errorf("invalid handler %q: must be a Go identifier or a selector such as h.List", handler)
 		}
 	}
