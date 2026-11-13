@@ -47,7 +47,7 @@ func TestNavHrefServed(t *testing.T) {
 	bp.App.Auth.Enabled, bp.App.Auth.DevMode = true, true
 	bp.App.Auth.BasePath = "/account"
 	bp.App.Admin.Enabled, bp.App.Admin.Path = true, "/staff"
-	bp.Nav = []appspec.AppSpecNavItem{{Href: "/login"}, {Href: "/account/me"}, {Href: "/account/logout"}, {Href: "/staff/entities/tickets"}, {Href: "/nowhere", Role: "admin", Items: []appspec.AppSpecNavItem{{Href: "/also-nowhere"}}}}
+	bp.Nav = []appspec.AppSpecNavItem{{Href: "/login"}, {Href: "/account/me"}, {Href: "/account/logout"}, {Href: "/staff/entities/tickets"}, {Href: "/staff/audit"}, {Href: "/nowhere", Role: "admin", Items: []appspec.AppSpecNavItem{{Href: "/also-nowhere"}}}}
 	if findings := LintNavHrefs(bp, ""); len(findings) != 0 {
 		t.Fatalf("battery routes and anonymous role filtering: %v", findings)
 	}

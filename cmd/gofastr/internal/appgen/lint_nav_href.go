@@ -100,7 +100,8 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		if base == "" {
 			base = "/admin"
 		}
-		for _, suffix := range []string{"", "/search", "/shortcuts", "/account"} {
+		// Generated apps hand admin a DB, which mounts the audit log.
+		for _, suffix := range []string{"", "/search", "/shortcuts", "/account", "/audit"} {
 			serve(base + suffix)
 		}
 		for _, decl := range bp.Entities {
