@@ -55,7 +55,13 @@ func start(t *testing.T, cfg telemetry.Config) appUnderTest {
 		_, span := otel.Tracer("test").Start(r.Context(), "SELECT")
 		span.End()
 		logger.InfoContext(r.Context(), "order.loaded", "id", r.PathValue("id"))
-		if r.PathValue("id") == "boom" {
+		switch r.PathValue("id") {
+		case "boom":
+			w.WriteHeader(500)
+		case "declined":
+			// The commonest failure: log what went wrong, answer 500,
+			// with no step of the request marked failed.
+			logger.ErrorContext(r.Context(), "payment failed", "err", "card 4411 declined")
 			w.WriteHeader(500)
 		}
 	}))
@@ -253,4 +259,25 @@ func TestDefaultDirNeedsAnAppName(t *testing.T) {
 		t.Fatalf("the default directory was not created: %v", err)
 	}
 	store.Close()
+}
+
+// A handler that logs an error and answers 500 has its failure named by
+// what it logged, not by "Internal Server Error": that is what tells
+// one issue from another.
+func TestFailureIsNamedByTheErrorTheAppLogged(t *testing.T) {
+	a := start(t, telemetry.Config{SampleRate: 1})
+	a.get("/orders/declined")
+	a.get("/orders/declined")
+	a.get("/orders/boom")
+	issues, _, err := a.store.Issues(time.Time{}, time.Time{}, 10)
+	if err != nil || len(issues) != 2 {
+		t.Fatalf("%d issues, %v; want the declined card and the unexplained 500 apart", len(issues), err)
+	}
+	byErr := map[string]int{}
+	for _, is := range issues {
+		byErr[is.Err] = is.Count
+	}
+	if byErr["card N declined"] != 2 || byErr["Internal Server Error"] != 1 {
+		t.Fatalf("issues: %v", byErr)
+	}
 }

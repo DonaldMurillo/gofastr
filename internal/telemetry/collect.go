@@ -33,6 +33,9 @@ type SpanEnd struct {
 	// failed step under it is recorded and counted, and decides nothing:
 	// a handler that deals with a query's error has not failed.
 	Error bool
+	// Err is what a failed span says went wrong; empty for one that
+	// did not fail.
+	Err string
 	// Route, Path and Status describe the trace; they are read from the
 	// root.
 	Route  string
@@ -68,7 +71,15 @@ type Collector struct {
 	bytes int64
 
 	kept, sampledOut, dropped, spansDropped, writeErrs atomic.Int64
+
+	// alerts, when set, counts every finished request, kept or not: a
+	// rule about failures must see them all. Set before the first span.
+	alerts *Alerts
 }
+
+// WatchAlerts has the collector count every finished request against a.
+// Call it before the collector sees a span.
+func (c *Collector) WatchAlerts(a *Alerts) { c.alerts = a }
 
 // CollectorStats counts what a Collector has decided.
 type CollectorStats struct {
@@ -92,7 +103,9 @@ type openTrace struct {
 	spans  []Span
 	starts []time.Time
 	bytes  int64
-	failed int // spans that failed, the root included
+	failed int    // spans that failed, the root included
+	err    string // the first failed step's Err
+	logErr string // the first error the app logged for the trace
 	elem   *list.Element
 }
 
@@ -158,6 +171,11 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	}
 	if e.Error {
 		ot.failed++
+		// The root is the whole, and says so in the status's words
+		// ("Internal Server Error"); a step says what broke.
+		if !e.Root && ot.err == "" {
+			ot.err = e.Err
+		}
 	}
 	if len(ot.spans) < maxSpansPerTrace || e.Root {
 		ot.spans = append(ot.spans, s)
@@ -170,21 +188,15 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	if e.Root {
 		c.remove(ot)
 	}
-	// Make room: first the traces whose root never came, then the
-	// oldest until the buffer fits. The map is bounded by the same cap,
-	// since every entry holds at least one span's cost.
-	for front := c.order.Front(); front != nil; front = c.order.Front() {
-		old := front.Value.(*openTrace)
-		if c.bytes <= c.cfg.MaxMemoryBytes && now.Sub(old.first) < maxOpenAge {
-			break
-		}
-		c.remove(old)
-		c.dropped.Add(1)
-	}
+	c.makeRoom(now)
 	c.mu.Unlock()
 
 	if !e.Root {
 		return
+	}
+	// A lone outgoing call is not a request, and is not counted as one.
+	if c.alerts != nil && !e.Stray {
+		c.alerts.Observe(e.Start.Add(s.Dur), e.Route, e.Error, s.Dur >= c.cfg.SlowThreshold)
 	}
 	keep := s.Dur >= c.cfg.SlowThreshold
 	if !e.Stray {
@@ -204,9 +216,20 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	if e.Error {
 		ot.failed-- // the root is the whole, not a step
 	}
+	// What went wrong, from whoever says it best: the first step that
+	// failed, else the first error the app logged while handling the
+	// request, else the whole's own status text (which for a panic is
+	// the panic).
+	errText := ot.err
+	if errText == "" && (e.Error || ot.failed > 0) {
+		errText = ot.logErr
+	}
+	if errText == "" && e.Error {
+		errText = e.Err
+	}
 	t := Trace{
 		Time: e.Start.Add(s.Dur), TraceID: e.TraceID, Route: e.Route, Path: e.Path, Status: e.Status,
-		Dur: s.Dur, Error: e.Error, FailedSteps: ot.failed, Spans: ot.spans,
+		Dur: s.Dur, Error: e.Error, FailedSteps: ot.failed, Err: errText, Spans: ot.spans,
 	}
 	// The sink runs outside the lock: a slow disk must not stall every
 	// span ending in the process.
@@ -215,6 +238,69 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 		return
 	}
 	c.kept.Add(1)
+}
+
+// NoteError records an error the app logged inside a trace, for a
+// request that fails without a failed step: the handler that logs what
+// went wrong and answers 500. The first one for a trace is kept, and a
+// trace that never fails makes nothing of it. The line usually comes
+// before any span of the request has ended, so it opens the trace's
+// place in the buffer, which the same cap and the same waiting limit
+// hold.
+func (c *Collector) NoteError(traceID, text string) {
+	if text == "" {
+		return
+	}
+	text = cut(text, maxErrLen)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ot := c.open[traceID]
+	if ot == nil {
+		ot = &openTrace{id: traceID, first: c.now()}
+		ot.elem = c.order.PushBack(ot)
+		c.open[traceID] = ot
+	}
+	if ot.logErr == "" {
+		ot.logErr = text
+		cost := int64(160 + len(text))
+		ot.bytes += cost
+		c.bytes += cost
+		c.makeRoom(ot.first)
+	}
+}
+
+// LoggedError reads a log entry for an error worth naming a failure by:
+// a line at ERROR or above inside a trace, and its "err" (or "error")
+// attribute, or its message when it has neither.
+func LoggedError(entry []byte) (traceID, text string, ok bool) {
+	lv, found := stringField(entry, `"level":`)
+	if !found || len(lv) < 5 || lv[:5] != "ERROR" {
+		return "", "", false
+	}
+	if traceID, found = stringField(entry, `"trace_id":`); !found || len(traceID) != 32 {
+		return "", "", false
+	}
+	for _, key := range []string{`"err":`, `"error":`, `"msg":`} {
+		if text, found = stringField(entry, key); found && text != "" {
+			return traceID, text, true
+		}
+	}
+	return "", "", false
+}
+
+// makeRoom drops waiting traces until the buffer fits: first the ones
+// whose root never came, then the oldest. The map is bounded by the
+// same cap, since every entry holds at least one span's or one logged
+// error's cost. c.mu must be held.
+func (c *Collector) makeRoom(now time.Time) {
+	for front := c.order.Front(); front != nil; front = c.order.Front() {
+		old := front.Value.(*openTrace)
+		if c.bytes <= c.cfg.MaxMemoryBytes && now.Sub(old.first) < maxOpenAge {
+			break
+		}
+		c.remove(old)
+		c.dropped.Add(1)
+	}
 }
 
 // remove takes ot out of the buffer. c.mu must be held.

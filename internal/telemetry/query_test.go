@@ -35,6 +35,7 @@ type refTrace struct {
 	Status  int       `json:"status"`
 	DurUS   int64     `json:"dur_us"`
 	Error   bool      `json:"error"`
+	Err     string    `json:"err"`
 	raw     string
 }
 
@@ -368,8 +369,74 @@ func queriesMatchFullRead(t *testing.T, fx *fixture) {
 		}
 	})
 
+	t.Run("issues", func(t *testing.T) {
+		// The reference knows the generator's three kinds of failure
+		// by how each begins, and groups by route, status and kind.
+		kind := func(err string) string {
+			for _, k := range []string{"upstream timed out", "dial tcp", "pq: deadlock"} {
+				if strings.HasPrefix(err, k) {
+					return k
+				}
+			}
+			t.Fatalf("a failure the reference does not know: %q", err)
+			return ""
+		}
+		type group struct {
+			count       int
+			first, last time.Time
+			lastID      string
+		}
+		want := map[string]*group{}
+		for _, tr := range fx.traces {
+			if !tr.Error || tr.Time.Before(from) || tr.Time.After(to) {
+				continue
+			}
+			k := fmt.Sprintf("%s|%d|%s", tr.Route, tr.Status, kind(tr.Err))
+			g := want[k]
+			if g == nil {
+				g = &group{first: tr.Time}
+				want[k] = g
+			}
+			g.count++
+			g.last, g.lastID = tr.Time, tr.TraceID
+		}
+		got, leftOut, err := fx.store.Issues(from, to, 1<<30)
+		if err != nil || leftOut != 0 || len(got) != len(want) || len(got) < 10 {
+			t.Fatalf("%d issues (%d left out, %v), the reference has %d", len(got), leftOut, err, len(want))
+		}
+		for i, is := range got {
+			w := want[fmt.Sprintf("%s|%d|%s", is.Route, is.Status, kind(is.Example))]
+			if w == nil || is.Count != w.count || !is.First.Equal(w.first) || !is.Last.Equal(w.last) || is.LastTraceID != w.lastID {
+				t.Fatalf("issue %+v, reference %+v", is, w)
+			}
+			if i > 0 && is.Last.After(got[i-1].Last) {
+				t.Fatalf("issues are not latest first at %d", i)
+			}
+			if strings.ContainsAny(is.Err, "0123456789") && !strings.Contains(is.Err, "tcp") {
+				t.Errorf("the grouped error still holds a number: %q", is.Err)
+			}
+		}
+		if few, _, _ := fx.store.Issues(from, to, 3); len(few) != 3 || few[0].ID != got[0].ID {
+			t.Fatalf("limit 3: %d issues", len(few))
+		}
+		// An issue's own requests: exactly the failures it counted.
+		pick := got[len(got)/2]
+		of, err := fx.store.Traces(telemetry.TraceQuery{Issue: pick.ID, From: from, To: to}, 1<<30)
+		if err != nil || len(of) != pick.Count || of[0].TraceID != pick.LastTraceID {
+			t.Fatalf("issue %s: %d requests listed for a count of %d, %v", pick.ID, len(of), pick.Count, err)
+		}
+		for _, sum := range of {
+			if !sum.Error || sum.Route != pick.Route || telemetry.IssueID(sum) != pick.ID {
+				t.Fatalf("a request of another issue was listed: %+v", sum)
+			}
+		}
+		if none, _ := fx.store.Traces(telemetry.TraceQuery{Issue: strings.Repeat("0", 16)}, 10); len(none) != 0 {
+			t.Fatalf("an unknown issue listed %d requests", len(none))
+		}
+	})
+
 	t.Run("parse trace", func(t *testing.T) {
-		want := telemetry.Trace{Time: from, TraceID: strings.Repeat("ab", 16), Route: `GET /a "b"`, Path: "/a/é", Status: 503, Dur: 1500 * time.Microsecond, Error: true, FailedSteps: 1,
+		want := telemetry.Trace{Time: from, TraceID: strings.Repeat("ab", 16), Route: `GET /a "b"`, Path: "/a/é", Status: 503, Dur: 1500 * time.Microsecond, Error: true, FailedSteps: 1, Err: `dial tcp 10.0.0.7:5432: "refused"`,
 			Spans: []telemetry.Span{
 				{SpanID: "01", Name: "root", Dur: 1500 * time.Microsecond, Attrs: []telemetry.Attr{{Key: "a", Value: "1"}, {Key: "b", Value: "x\ny"}}},
 				{SpanID: "02", ParentID: "01", Name: "child", Offset: 200 * time.Microsecond, Dur: 300 * time.Microsecond, Error: true},

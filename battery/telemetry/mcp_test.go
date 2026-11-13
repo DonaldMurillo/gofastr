@@ -53,8 +53,8 @@ func TestMCPToolsAreOptIn(t *testing.T) {
 	if names := toolNames(start(t, telemetry.Config{})); len(names) != 0 {
 		t.Fatalf("tools registered without EnableMCP: %v", names)
 	}
-	if names := toolNames(start(t, telemetry.Config{EnableMCP: true})); len(names) != 3 {
-		t.Fatalf("with EnableMCP: %v, want the three tools", names)
+	if names := toolNames(start(t, telemetry.Config{EnableMCP: true})); len(names) != 4 {
+		t.Fatalf("with EnableMCP: %v, want the four tools", names)
 	}
 }
 
@@ -64,7 +64,7 @@ func TestMCPToolsRefuseNonAdmins(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "")
 	a := start(t, telemetry.Config{EnableMCP: true, SampleRate: 1})
 	a.get("/orders/42")
-	for _, tool := range []string{"telemetry_requests", "telemetry_request", "telemetry_logs"} {
+	for _, tool := range []string{"telemetry_issues", "telemetry_requests", "telemetry_request", "telemetry_logs"} {
 		params := map[string]any{"trace_id": strings.Repeat("a", 32)}
 		for name, ctx := range map[string]context.Context{
 			"no caller":  context.Background(),
@@ -118,6 +118,13 @@ func TestMCPToolsReadTheFiles(t *testing.T) {
 	}
 	if miss := call(t, a, admin(), "telemetry_request", map[string]any{"trace_id": strings.Repeat("0", 32)}); miss["found"] != false {
 		t.Fatalf("an unknown trace: %v", miss)
+	}
+
+	issues := call(t, a, admin(), "telemetry_issues", nil)
+	list, _ := issues["issues"].([]any)
+	if issues["count"] != 1.0 || len(list) != 1 || list[0].(map[string]any)["count"] != 1.0 || list[0].(map[string]any)["last_trace_id"] != id ||
+		list[0].(map[string]any)["route"] != "GET /orders/{id}" || list[0].(map[string]any)["status"] != 500.0 {
+		t.Fatalf("telemetry_issues: %v", issues)
 	}
 
 	logs := call(t, a, admin(), "telemetry_logs", map[string]any{"text": "order.loaded"})

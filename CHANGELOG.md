@@ -35,6 +35,18 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: issues and alerts.** Failed requests are grouped by
+  route, status and error, with the numbers and IDs in the error set
+  aside, so one bug is one row with a count and a first and last seen.
+  The error comes from the failed step, else from the ERROR line the app
+  logged for the request. There is an Issues screen, `gofastr telemetry
+  issues`, `requests --issue <id>` and the MCP tool `telemetry_issues`.
+  Alert rules (`Config.Alerts`) count failed or slow requests in a
+  window, on one route or all; one rule is on by default, ten failed in
+  five minutes. A rule firing or resolving is logged, shown on the
+  Requests and Issues screens and handed to `Config.Notify`; `telemetry.WebhookNotifier`
+  posts it to a Slack, Discord, Teams or Mattermost webhook. A trace
+  line gains `err`.
 - **Telemetry: sealed days, paging and live lists.** A finished day's
   log and trace files are packed into gzip blocks in the background,
   about a seventh of their size, with an index of block times and trace

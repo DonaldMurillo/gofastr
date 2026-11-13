@@ -41,7 +41,8 @@ func seed(t *testing.T) string {
 				{SpanID: "01", Name: "HTTP GET GET /orders/{id}", Dur: 20 * ms},
 				{SpanID: "02", ParentID: "01", Name: "SELECT", Offset: 5 * ms, Dur: 10 * ms, Error: true, Attrs: []itel.Attr{{Key: "db.query.text", Value: "SELECT * FROM orders"}}},
 			}},
-		{Time: now.Add(-2 * time.Minute), TraceID: failedID, Route: "POST /orders\x1b[31m", Status: 500, Dur: 900 * ms, Error: true},
+		{Time: now.Add(-2 * time.Minute), TraceID: failedID, Route: "POST /orders\x1b[31m", Status: 500, Dur: 900 * ms, Error: true, Err: "card 4411 declined\x1b[2J"},
+		{Time: now.Add(-90 * time.Second), TraceID: strings.Repeat("d", 32), Route: "POST /orders\x1b[31m", Status: 500, Dur: 5 * ms, Error: true, Err: "card 9020 declined\x1b[2J"},
 	} {
 		write(itel.KindTraces, tr.Time, itel.AppendTrace(nil, tr))
 	}
@@ -113,7 +114,7 @@ func TestRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Count(out, "\n") != 3 || !strings.Contains(out, "GET /orders/{id}") || !strings.Contains(out, "500 failed") ||
+	if strings.Count(out, "\n") != 4 || !strings.Contains(out, "GET /orders/{id}") || !strings.Contains(out, "500 failed") ||
 		!strings.Contains(out, "900.0ms") || strings.Contains(out, "GET /old") || strings.Contains(out, "\x1b") {
 		t.Fatalf("requests:\n%q", out)
 	}
@@ -122,7 +123,7 @@ func TestRequests(t *testing.T) {
 		"--slow 500ms":             {failedID, okID},
 		"--route GET_/orders/{id}": {okID, failedID},
 		"--since 0":                {"GET /old", "\x00"},
-		"--since 0 --limit 1":      {failedID, "GET /old"},
+		"--since 0 --limit 1":      {strings.Repeat("d", 32), "GET /old"},
 		"--json --failed":          {`"trace_id":"` + failedID + `"`, okID},
 	} {
 		argv := append([]string{"requests", "--dir", dir}, strings.Fields(args)...)
@@ -133,6 +134,34 @@ func TestRequests(t *testing.T) {
 		if err != nil || !strings.Contains(out, c.want) || strings.Contains(out, c.not) {
 			t.Errorf("requests %s: %v\n%s", args, err, out)
 		}
+	}
+}
+
+// Failures that differ in a number are one issue with a count, printed
+// without the control bytes an error can carry, and its ID lists them.
+func TestIssues(t *testing.T) {
+	dir := seed(t)
+	out, err := run(t, "issues", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[1], "2 ") || !strings.Contains(lines[1], "card N declined") || strings.Contains(out, "\x1b") {
+		t.Fatalf("issues:\n%q", out)
+	}
+	id := lines[1][strings.LastIndex(lines[1], " ")+1:]
+	reqs, err := run(t, "requests", "--dir", dir, "--issue", id)
+	if err != nil || strings.Count(reqs, "\n") != 3 || !strings.Contains(reqs, failedID) || strings.Contains(reqs, okID) {
+		t.Fatalf("requests --issue %s: %v\n%s", id, err, reqs)
+	}
+	if js, _ := run(t, "issues", "--dir", dir, "--json"); !strings.Contains(js, `"count":2`) || !strings.Contains(js, `"id":"`+id+`"`) {
+		t.Errorf("issues --json: %s", js)
+	}
+	if none, _ := run(t, "issues", "--dir", dir, "--since", "30s"); !strings.Contains(none, "Nothing failed") {
+		t.Errorf("issues in a quiet window: %s", none)
+	}
+	if _, err := run(t, "issues", "--dir", dir, "extra"); !errors.Is(err, errUsage) {
+		t.Errorf("issues with an argument: %v", err)
 	}
 }
 

@@ -71,6 +71,26 @@ var (
 	TelemetrySummary          = i18n.Define("ui.telemetry.summary", "Request summary")
 )
 
+// The issues screen, and the notice of an alert that is firing.
+var (
+	TelemetryIssues          = i18n.Define("ui.telemetry.issues", "Issues")
+	TelemetryIssuesSub       = i18n.Define("ui.telemetry.issuesSub", "Failed requests, grouped by what went wrong.")
+	TelemetryColError        = i18n.Define("ui.telemetry.colError", "What went wrong")
+	TelemetryColCount        = i18n.Define("ui.telemetry.colCount", "Times")
+	TelemetryColLastSeen     = i18n.Define("ui.telemetry.colLastSeen", "Last seen")
+	TelemetryColFirstSeen    = i18n.Define("ui.telemetry.colFirstSeen", "First seen")
+	TelemetryIssueRequests   = i18n.Define("ui.telemetry.issueRequests", "Requests")
+	TelemetryIssueRequestsOf = i18n.Define("ui.telemetry.issueRequestsOf", "The {{count}} requests that failed with {{error}}")
+	TelemetryIssueNoError    = i18n.Define("ui.telemetry.issueNoError", "No error text")
+	TelemetryIssueFilter     = i18n.Define("ui.telemetry.issueFilter", "One issue only")
+	TelemetryIssueClear      = i18n.Define("ui.telemetry.issueClear", "Show every request")
+	TelemetryIssuesEmpty     = i18n.Define("ui.telemetry.issuesEmpty", "Nothing failed")
+	TelemetryIssuesEmptySub  = i18n.Define("ui.telemetry.issuesEmptySub", "No request failed in this time range.")
+	TelemetryIssuesLeftOut   = i18n.Define("ui.telemetry.issuesLeftOut", "{{n}} more failures fit none of the first 2,000 issues and are not listed.")
+	TelemetryAlertFailed     = i18n.Define("ui.telemetry.alertFailed", "Alert “{{name}}” is firing: {{count}} failed requests in the last {{minutes}} minutes.")
+	TelemetryAlertSlow       = i18n.Define("ui.telemetry.alertSlow", "Alert “{{name}}” is firing: {{count}} slow requests in the last {{minutes}} minutes.")
+)
+
 // The logs screen.
 var (
 	TelemetryLogsSub       = i18n.Define("ui.telemetry.logsSub", "Everything the app logged, newest first.")

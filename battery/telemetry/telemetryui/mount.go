@@ -78,8 +78,10 @@ func (p *Plugin) Init(app *framework.App) error {
 		return decide.Block(http.StatusForbidden)
 	})
 	layout := appui.NewLayout("gofastr-telemetry", appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {
-		return ui.Stack(ui.StackConfig{Screen: true, Gap: ui.GapNone},
-			ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage}, l.Primary()))
+		// No ui.Stack{Screen: true} here: it pins its last child to the
+		// bottom for a footer, and this layout has one child, so a short
+		// page would sit at the foot of the screen.
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage}, l.Primary())
 	})
 	group := appui.NewScreenGroup(path, layout, policy).Standalone()
 	add := func(at string, title i18n.Phrase, draw func(context.Context) render.HTML) {
@@ -87,6 +89,7 @@ func (p *Plugin) Init(app *framework.App) error {
 			WithTitle(title.Text(context.Background())), nil)
 	}
 	add(screens.RequestsPath(), i18nui.TelemetryRequests, screens.Requests)
+	add(screens.IssuesPath(), i18nui.TelemetryIssues, screens.Issues)
 	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.Logs)
 	host.App.Router.ScreenGroup(group)
 

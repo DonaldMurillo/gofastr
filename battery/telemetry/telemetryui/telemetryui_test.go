@@ -2,10 +2,13 @@ package telemetryui_test
 
 import (
 	"context"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +31,9 @@ const (
 	slowID   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3"
 	oldID    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4"
 	evilID   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5"
+	// A second failure of the first kind, and one of another kind.
+	failedAgainID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6"
+	otherFailID   = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7"
 )
 
 // seed writes a small, known set of traces and log lines into dir, all
@@ -43,7 +49,9 @@ func seed(t *testing.T, dir string, now time.Time) {
 				{SpanID: "02", ParentID: "01", Name: "SELECT", Offset: 5 * ms, Dur: 10 * ms, Attrs: []itel.Attr{{Key: "db.query.text", Value: "SELECT * FROM orders WHERE id = ?"}}},
 				{SpanID: "03", ParentID: "02", Name: "decode", Offset: 6 * ms, Dur: ms, Error: true},
 			}},
-		{Time: now.Add(-3 * time.Minute), TraceID: failedID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 8 * ms, Error: true},
+		{Time: now.Add(-3 * time.Minute), TraceID: failedID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 8 * ms, Error: true, Err: "card 4411 declined"},
+		{Time: now.Add(-150 * time.Second), TraceID: failedAgainID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 9 * ms, Error: true, Err: "card 9020 declined"},
+		{Time: now.Add(-140 * time.Second), TraceID: otherFailID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 9 * ms, Error: true, Err: "<b>inventory</b> gone"},
 		{Time: now.Add(-2 * time.Minute), TraceID: slowID, Route: "GET /reports", Path: "/reports", Status: 200, Dur: 900 * ms},
 		{Time: now.Add(-1 * time.Minute), TraceID: evilID, Route: `GET /<script>alert(1)</script>`, Path: `/"><img src=x>`, Status: 404, Dur: ms},
 	}
@@ -311,5 +319,73 @@ func TestScreenRequestsAreTracedByTheirRoute(t *testing.T) {
 	}
 	if route != "/telemetry/logs" {
 		t.Fatalf("http.route = %q, want the screen's route", route)
+	}
+}
+
+var issueLink = regexp.MustCompile(`href="(/telemetry/requests\?[^"]*issue=[0-9a-f]{16}[^"]*)"`)
+
+// Failures that differ only in a number are one issue with a count; a
+// different error on the same route is another. Each leads to exactly
+// its own requests, and an error's text is text.
+func TestIssuesGroupFailuresAndLeadToTheirRequests(t *testing.T) {
+	h := newApp(t)
+	code, body := get(t, h, "/telemetry/issues", true)
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	has(t, "issues", body,
+		[]string{"card N declined", "POST /orders", "inventory", ">500<", "Issues", "What went wrong"},
+		[]string{"card 4411", "<b>inventory</b>", "GET /reports", "GET /orders/{id}", "Nothing failed"})
+	links := issueLink.FindAllStringSubmatch(body, -1)
+	if len(links) != 2 {
+		t.Fatalf("%d issues link to their requests, want 2", len(links))
+	}
+	byIssue := map[string][]string{}
+	for _, l := range links {
+		_, reqs := get(t, h, html.UnescapeString(l[1]), true)
+		for _, id := range []string{failedID, failedAgainID, otherFailID, okID, slowID} {
+			if strings.Contains(reqs, "trace="+id) {
+				byIssue[l[1]] = append(byIssue[l[1]], id)
+			}
+		}
+		if !strings.Contains(reqs, "One issue only") || !strings.Contains(reqs, "Show every request") {
+			t.Error("the requests of an issue do not say they are filtered")
+		}
+	}
+	var sizes []int
+	for _, ids := range byIssue {
+		sizes = append(sizes, len(ids))
+	}
+	slices.Sort(sizes)
+	if !slices.Equal(sizes, []int{1, 2}) {
+		t.Fatalf("requests per issue: %v, want one issue of two and one of one", byIssue)
+	}
+	if code, _ := get(t, h, "/telemetry/issues", false); code != http.StatusForbidden {
+		t.Errorf("issues for an unadmitted caller: %d", code)
+	}
+	// An hour-old window still holds them; a range before them does not
+	// exist as a choice, so the empty state shows with a filter that
+	// matches nothing: the requests of an issue nobody has.
+	_, none := get(t, h, "/telemetry/requests?show=failed&issue="+strings.Repeat("0", 16), true)
+	has(t, "an unknown issue", none, []string{"No requests here"}, []string{"trace=" + failedID})
+}
+
+// The standalone page starts at the top of the screen. A screen stack
+// pins its last child to the bottom for a footer, and this layout has
+// one child: a short page (two issues) sat at the foot of the window.
+func TestStandalonePageIsNotPinnedToTheBottom(t *testing.T) {
+	code, body := get(t, newApp(t), "/telemetry/issues", true)
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	// On an element, not in the style sheet the page carries.
+	onElement := func(class string) bool {
+		return regexp.MustCompile(`class="[^"]*\b` + regexp.QuoteMeta(class) + `\b`).MatchString(body)
+	}
+	if onElement("fui-stack--screen") {
+		t.Fatal("the page sits in a screen stack, which pushes its only child to the bottom")
+	}
+	if !onElement("fui-container") {
+		t.Fatal("the page lost its container")
 	}
 }

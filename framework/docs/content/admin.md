@@ -187,8 +187,8 @@ and the page's own `Access`, and the page points a `data-cui-poll`
 region at it. The request's query string reaches `Part` as it reaches
 `Build`.
 
-`battery/telemetry/telemetryadmin` is a ready-made pair of pages:
-`Pages: telemetryadmin.Pages(tel, "/admin")` adds Requests and Logs over
+`battery/telemetry/telemetryadmin` is a ready-made set of pages:
+`Pages: telemetryadmin.Pages(tel, "/admin")` adds Requests, Issues and Logs over
 the files [battery/telemetry](telemetry.md) writes.
 
 A page's and a card's `Title`, a link's `Label` and a metric's `Label`

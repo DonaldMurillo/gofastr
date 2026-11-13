@@ -54,6 +54,22 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 	if parent.IsValid() {
 		e.Span.ParentID = parent.SpanID().String()
 	}
+	if e.Error {
+		// The status text when the span has one (the tracing
+		// middleware's "Internal Server Error", or the panic it
+		// recovered), else the error the span recorded.
+		e.Err = s.Status().Description
+		for _, ev := range s.Events() {
+			if e.Err != "" {
+				break
+			}
+			for _, kv := range ev.Attributes {
+				if ev.Name == "exception" && kv.Key == "exception.message" {
+					e.Err = kv.Value.AsString()
+				}
+			}
+		}
+	}
 	attrs := s.Attributes()
 	e.Span.Attrs = make([]telemetry.Attr, 0, len(attrs))
 	var method, route string

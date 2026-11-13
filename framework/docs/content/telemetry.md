@@ -55,8 +55,8 @@ There are three ways in. All of them read the same files.
 
 ### In the admin
 
-`battery/telemetry/telemetryadmin` adds **Requests** and **Logs** to the
-admin's sidebar, behind the admin's own gate:
+`battery/telemetry/telemetryadmin` adds **Requests**, **Issues** and
+**Logs** to the admin's sidebar, behind the admin's own gate:
 
 <!-- gofastr:compile
 stmt: _ = admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
@@ -119,8 +119,14 @@ without one, and a caller it refuses gets a 403.
   (`ui.Waterfall`): each query and outbound call, when it started, how
   long it took, and which failed. Under them are the log lines the app
   wrote while handling it.
+- **Issues** groups the failed requests of a time range by what went
+  wrong, latest first: the error, the route, the status, how many times,
+  and when it was last and first seen. A link lists that issue's
+  requests. See [Issues](#issues).
 - **Logs** lists log lines, newest first, by minimum level, by text and
   by time range. A line written inside a request links to that request.
+- Requests and Issues say so at the top while an [alert](#alerts) is
+  firing.
 
 Every filter is in the query string, so a view can be bookmarked and
 shared. The lists show 25 rows a page, with **Newer**, **Older** and
@@ -146,6 +152,8 @@ when the app is down:
 gofastr telemetry logs --app shop --level warn --since 1h
 gofastr telemetry requests --dir /var/lib/shop/telemetry --failed
 gofastr telemetry requests --app shop --slow 500ms --route "GET /orders/{id}"
+gofastr telemetry issues --app shop --since 24h
+gofastr telemetry requests --app shop --issue 9c1f0a2b7d3e4f55
 gofastr telemetry request 4bf92f3577b34da6a3ce929d0e0e4736 --app shop
 ```
 
@@ -155,10 +163,11 @@ files is scrubbed of terminal control bytes before it is printed.
 
 ### From an agent
 
-`Config.EnableMCP` adds three MCP tools beside the log plugin's:
+`Config.EnableMCP` adds four MCP tools beside the log plugin's:
 
 | Tool | Returns |
 |------|---------|
+| `telemetry_issues` | failed requests grouped by what went wrong, latest first, each with a count, first and last seen and an example `trace_id`; `since_ts`, `until_ts`, `limit` |
 | `telemetry_requests` | kept requests, newest first; `failed`, `slow`, `route`, `since_ts`, `until_ts`, `limit` |
 | `telemetry_request` | one request by `trace_id`: its spans and its log lines |
 | `telemetry_logs` | log lines; `level`, `text`, `since_ts`, `until_ts`, `limit` |
@@ -169,6 +178,89 @@ an error, never a filter quietly dropped. `telemetry_logs` gives up
 after ten seconds and returns what it found with `stopped_at`; pass
 that as `until_ts` to carry on. `gofastr dev` turns the tools on,
 ungated, for a loopback listener.
+
+## Issues
+
+An issue is every failed request with the same route, the same status
+and the same error. Numbers, UUIDs and hex IDs in the error are set
+aside first, so `card 4407 declined by issuer` and
+`card 4370 declined by issuer` are one issue, shown as
+`card N declined by issuer`.
+
+The error of a failed request is the first of these that exists:
+
+1. the error of its first failed step (a query, an outbound call);
+2. the first line the app logged at ERROR while handling it: its `err`
+   or `error` attribute, else its message;
+3. the request's own status text.
+
+So a handler that logs `slog.ErrorContext(ctx, "payment failed", "err", err)`
+before answering 500 gets an issue named after `err`, not after
+"Internal Server Error". Pass the request's context: a line logged
+without it belongs to no request.
+
+Issues are worked out from the kept traces each time they are asked
+for; nothing else is stored, and nothing is marked resolved. An issue
+that stops happening leaves the list when its range no longer covers
+it. At most 2,000 different issues are counted in one range; the page
+says how many failures fit none of them.
+
+## Alerts
+
+The plugin counts failed and slow requests as they end and checks its
+rules every fifteen seconds. With no rules of your own there is one:
+ten failed requests within five minutes.
+
+<!-- gofastr:compile
+stmt: _ = tel
+-->
+```go
+import (
+    "os"
+    "time"
+
+    "github.com/DonaldMurillo/gofastr/battery/telemetry"
+)
+
+tel := telemetry.New(telemetry.Config{
+    Alerts: []telemetry.AlertRule{
+        {Name: "checkout failing", Kind: telemetry.AlertFailed, AtLeast: 5, Within: 5 * time.Minute, Route: "POST /checkout"},
+        {Name: "slow requests", Kind: telemetry.AlertSlow, AtLeast: 50, Within: 10 * time.Minute},
+    },
+    Notify: telemetry.WebhookNotifier(os.Getenv("ALERT_WEBHOOK_URL")),
+})
+```
+
+A rule fires when `AtLeast` requests of its `Kind` ended within
+`Within` (one minute to one hour; five minutes when zero), on `Route`
+when one is set. It resolves when the count has fallen to half of
+`AtLeast` or less, so a count hovering at the line does not fire again
+and again. `Init` fails on a rule it cannot check.
+
+Each change does three things:
+
+- it is logged as `telemetry.alert`, at ERROR when firing and INFO when
+  resolved, so it is in the Logs page and the day file;
+- Requests and Issues show it at the top while it is firing;
+- `Config.Notify` is called, when set. It gets fifteen seconds; an error
+  or a panic in it is logged and the next check still runs.
+
+`telemetry.WebhookNotifier(url)` posts the alert as JSON with the
+sentence in both `text` and `content`, so a Slack, Mattermost, Teams or
+Discord incoming-webhook URL works as it is. The details are under
+`alert`: `rule`, `kind`, `route`, `firing`, `count`, `at_least`,
+`within_seconds`, `at`, `since`. It does not follow redirects, and its
+errors name the host only, since the URL of a chat webhook is its
+secret. For mail or a pager, write the function yourself; `a.Text()` is
+the sentence.
+
+`tel.Firing()` returns the rules firing now. `NoAlerts` turns alerts
+off, the default rule included.
+
+The counts are kept in memory, per process. A restart starts them from
+zero, and each replica counts the requests it served itself, so with
+three replicas a rule can fire on one of them while the other two stay
+quiet.
 
 ## What is written
 
@@ -203,13 +295,14 @@ A log line written inside a traced request carries `trace_id` and
 A trace line starts with its summary and then lists its spans:
 
 ```json
-{"time":"...","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","route":"GET /orders/{id}","path":"/orders/42","status":200,"dur_us":18412,"error":false,"failed_steps":1,"spans":[{"span_id":"00f067aa0ba902b7","parent_id":"","name":"HTTP GET GET /orders/{id}","start_us":0,"dur_us":18412,"attrs":{"http.status_code":"200"}},{"span_id":"53995c3f42cd8ad8","parent_id":"00f067aa0ba902b7","name":"SELECT","start_us":310,"dur_us":2104,"error":true}]}
+{"time":"...","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","route":"GET /orders/{id}","path":"/orders/42","status":200,"dur_us":18412,"error":false,"failed_steps":1,"err":"pq: deadlock detected","spans":[{"span_id":"00f067aa0ba902b7","parent_id":"","name":"HTTP GET GET /orders/{id}","start_us":0,"dur_us":18412,"attrs":{"http.status_code":"200"}},{"span_id":"53995c3f42cd8ad8","parent_id":"00f067aa0ba902b7","name":"SELECT","start_us":310,"dur_us":2104,"error":true}]}
 ```
 
 `error` says the request as a whole failed. `failed_steps` counts the
 spans under it that failed, whether or not the request did: a query
-whose error the handler dealt with. `path` and `failed_steps` are left
-out when empty, and a span's `error` when false.
+whose error the handler dealt with. `err` is what went wrong, as
+[Issues](#issues) picks it, cut to 200 bytes. `path`, `failed_steps` and
+`err` are left out when empty, and a span's `error` when false.
 
 Each line is written straight to the file, with no buffer in between. A
 line that was written survives the process being killed; a trace whose
@@ -249,7 +342,10 @@ never part of the sample:
 | `SlowThreshold` | 500 ms | when a trace counts as slow |
 | `MaxMemoryBytes` | 32 MiB | spans held for requests still running |
 | `QuietPaths` | none | path prefixes kept only when failed or slow |
-| `EnableMCP` | false | the three MCP tools |
+| `Alerts` | ten failed in five minutes | the rules checked every fifteen seconds |
+| `Notify` | none | who is told when a rule fires or resolves |
+| `NoAlerts` | false | turn alerts off |
+| `EnableMCP` | false | the four MCP tools |
 | `MCPGate` | the admin role | who may call them |
 | `ExternalTracerProvider` | false | leave the global TracerProvider alone |
 

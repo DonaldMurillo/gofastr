@@ -460,3 +460,11 @@
 - Evidence: at this note the feature is about 3,900 lines of non-test Go with no new module dependency, runs inside the app's process, and holds 13 days at 20 requests a second in 5 GiB.
 - Next time: a proposal that needs a second process, a database, or a new dependency has to say what it buys that the files cannot.
 - Status: active
+
+## 2026-11-13 - `ui.Stack{Screen: true}` pins its last child to the bottom
+- Scope: any layout built on `ui.Stack{Screen: true}` (`framework/ui/styles_primitives.go`)
+- Trigger: the standalone telemetry Issues page, two rows long, started 265px down the window with blank space above its tabs. Longer pages looked fine.
+- Approach: the screen stack gives its last child `margin-block-start: auto`, for a footer. A layout that wraps one container in it makes that container the last child, and it takes all the free height above itself. A layout with no header and footer uses the container alone.
+- Evidence: the container's computed `margin-top` was 264.5px on the short page and 0 on the long ones; `TestStandalonePageIsNotPinnedToTheBottom` fails with the screen stack put back.
+- Next time: look at a new layout with a page shorter than the window as well as a long one; the short one shows where the free space went.
+- Status: active

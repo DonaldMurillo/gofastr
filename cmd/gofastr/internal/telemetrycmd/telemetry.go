@@ -23,7 +23,7 @@ import (
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
-const usage = `Usage: gofastr telemetry <logs|requests|request> [flags]
+const usage = `Usage: gofastr telemetry <logs|requests|issues|request> [flags]
 
 Read the files battery/telemetry writes. Name the directory with --dir,
 or the app with --app to read its default one
@@ -36,9 +36,12 @@ or the app with --app to read its default one
       --failed         only requests that failed
       --slow <dur>     only requests that took at least this long (500ms)
       --route <route>  only this route, e.g. "GET /orders/{id}"
+      --issue <id>     only the failures of one issue, from "issues"
+  issues               failed requests grouped by what went wrong: how many
+                       times, first and last seen, and the ID to list them by
   request <trace-id>   one request: its steps and its log lines
 
-Flags for logs and requests:
+Flags for logs, requests and issues:
       --since <dur>    how far back to read (default 24h; 0 for everything kept)
       --limit <n>      most lines to print (default 50)
       --json           print the lines as stored, one JSON object each
@@ -75,6 +78,7 @@ type options struct {
 	failed      bool
 	slow        time.Duration
 	route       string
+	issue       string
 }
 
 // Run executes one `gofastr telemetry` command line, writing to w.
@@ -102,7 +106,8 @@ func Run(w io.Writer, args []string, now time.Time) error {
 		fs.BoolVar(&o.failed, "failed", false, "")
 		fs.DurationVar(&o.slow, "slow", 0, "")
 		fs.StringVar(&o.route, "route", "", "")
-	case "request":
+		fs.StringVar(&o.issue, "issue", "", "")
+	case "issues", "request":
 	default:
 		return fmt.Errorf("%w: unknown subcommand %q", errUsage, sub)
 	}
@@ -155,6 +160,11 @@ func Run(w io.Writer, args []string, now time.Time) error {
 			return fmt.Errorf("%w: requests takes no argument (use `request <trace-id>`)", errUsage)
 		}
 		return o.requests(w, store, from)
+	case "issues":
+		if len(positional) > 0 {
+			return fmt.Errorf("%w: issues takes no argument", errUsage)
+		}
+		return o.issues(w, store, from)
 	default:
 		if len(positional) != 1 {
 			return fmt.Errorf("%w: request takes one trace ID", errUsage)
@@ -265,7 +275,7 @@ func describe(line []byte) string {
 }
 
 func (o options) requests(w io.Writer, store *itel.Store, from time.Time) error {
-	sums, err := store.Traces(itel.TraceQuery{Route: o.route, Failed: o.failed, MinDur: o.slow, From: from}, o.limit)
+	sums, err := store.Traces(itel.TraceQuery{Route: o.route, Failed: o.failed, MinDur: o.slow, Issue: o.issue, From: from}, o.limit)
 	if err != nil {
 		return err
 	}
@@ -298,6 +308,48 @@ func (o options) requests(w io.Writer, store *itel.Store, from time.Time) error 
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", stamp(s.Time), status, took(s.Dur), clean(s.Route), s.TraceID)
 	}
 	return tw.Flush()
+}
+
+func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
+	issues, leftOut, err := store.Issues(from, time.Time{}, o.limit)
+	if err != nil {
+		return err
+	}
+	if o.asJSON {
+		enc := json.NewEncoder(w)
+		for _, is := range issues {
+			if err := enc.Encode(map[string]any{
+				"id": is.ID, "route": is.Route, "status": is.Status, "error": is.Err, "example": is.Example, "count": is.Count,
+				"first": is.First.UTC().Format(time.RFC3339Nano), "last": is.Last.UTC().Format(time.RFC3339Nano), "last_trace_id": is.LastTraceID,
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if len(issues) == 0 {
+		fmt.Fprintln(w, "Nothing failed.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "TIMES\tLAST SEEN\tSTATUS\tROUTE\tWHAT WENT WRONG\tISSUE")
+	for _, is := range issues {
+		status, what := "-", is.Err
+		if is.Status > 0 {
+			status = fmt.Sprint(is.Status)
+		}
+		if what == "" {
+			what = "(no error text)"
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s\n", is.Count, stamp(is.Last), status, clean(is.Route), clean(what), is.ID)
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if leftOut > 0 {
+		fmt.Fprintf(w, "%d more failures fit none of the first 2000 issues and are not listed.\n", leftOut)
+	}
+	return nil
 }
 
 // took writes a duration to three significant places with its unit.

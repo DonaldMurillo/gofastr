@@ -32,6 +32,8 @@ type TraceSummary struct {
 	Error   bool
 	// FailedSteps counts the failed spans under the root.
 	FailedSteps int
+	// Err is what went wrong, when something did.
+	Err string
 }
 
 // ErrBadTraceID is returned for a trace ID that is not 32 hex digits.
@@ -255,6 +257,9 @@ type TraceQuery struct {
 	// From and To bound when the trace ended, inclusive; zero leaves a
 	// side open. To pages older traces, as in LogQuery.
 	From, To time.Time
+	// Issue, when set, lists only the failed traces of that issue (an
+	// Issue's ID).
+	Issue string
 	// OldestFirst takes the limit from the old end of the window, as in
 	// LogQuery. The result is still returned newest first.
 	OldestFirst bool
@@ -274,7 +279,10 @@ func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
 			return TraceSummary{}, false
 		}
 		sum, ok := summary(line)
-		return sum, ok && inWindow(sum.Time, q.From, q.To) && (!q.Failed || sum.Error) && sum.Dur >= q.MinDur
+		if !ok || !inWindow(sum.Time, q.From, q.To) || (q.Failed && !sum.Error) || sum.Dur < q.MinDur {
+			return sum, false
+		}
+		return sum, q.Issue == "" || (sum.Error && IssueID(sum) == q.Issue)
 	}
 	var out []TraceSummary
 	err := s.scan(KindTraces, q.From, q.To, !q.OldestFirst, true, func(line []byte) bool {
@@ -317,6 +325,7 @@ func ParseTrace(line []byte) (Trace, error) {
 		DurUS   int64     `json:"dur_us"`
 		Error   bool      `json:"error"`
 		Failed  int       `json:"failed_steps"`
+		Err     string    `json:"err"`
 		Spans   []struct {
 			SpanID   string            `json:"span_id"`
 			ParentID string            `json:"parent_id"`
@@ -331,7 +340,7 @@ func ParseTrace(line []byte) (Trace, error) {
 		return Trace{}, fmt.Errorf("telemetry: trace line: %w", err)
 	}
 	t := Trace{Time: wire.Time, TraceID: wire.TraceID, Route: wire.Route, Path: wire.Path, Status: wire.Status,
-		Dur: micros(wire.DurUS), Error: wire.Error, FailedSteps: wire.Failed, Spans: make([]Span, len(wire.Spans))}
+		Dur: micros(wire.DurUS), Error: wire.Error, FailedSteps: wire.Failed, Err: wire.Err, Spans: make([]Span, len(wire.Spans))}
 	for i, ws := range wire.Spans {
 		sp := Span{SpanID: ws.SpanID, ParentID: ws.ParentID, Name: ws.Name,
 			Offset: micros(ws.StartUS), Dur: micros(ws.DurUS), Error: ws.Error}
@@ -398,6 +407,7 @@ func summary(line []byte) (TraceSummary, bool) {
 	sum.Error = bytes.Contains(h, []byte(`"error":true`))
 	failed, _ := intField(h, `"failed_steps":`)
 	sum.FailedSteps = int(failed)
+	sum.Err, _ = stringField(h, `"err":`)
 	return sum, true
 }
 

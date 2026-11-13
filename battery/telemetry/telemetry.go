@@ -17,6 +17,7 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -67,6 +68,17 @@ type Config struct {
 	// and styles, are always two. The Logs screen leaves these paths'
 	// access lines out unless asked for them.
 	QuietPaths []string
+	// Alerts are the rules checked every fifteen seconds. With none,
+	// one rule applies: ten failed requests within five minutes. Each
+	// rule that starts firing or resolves is logged as "telemetry.alert"
+	// and handed to Notify.
+	Alerts []AlertRule
+	// Notify is told when a rule starts firing and when it resolves:
+	// WebhookNotifier for a chat webhook, or a function of your own
+	// that sends mail. It gets fifteen seconds; an error is logged.
+	Notify func(ctx context.Context, a Alert) error
+	// NoAlerts turns alerts off, the default rule included.
+	NoAlerts bool
 	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
 	// and telemetry_logs, so a connected agent can read what the files
 	// hold. Off by default; `gofastr dev` turns them on for a loopback
@@ -112,6 +124,7 @@ type Plugin struct {
 	collector atomic.Pointer[itel.Collector]
 	processor atomic.Pointer[otelspan.Processor]
 	store     atomic.Pointer[itel.Store]
+	alerts    atomic.Pointer[itel.Alerts]
 	slow      atomic.Int64 // the resolved SlowThreshold
 	quiet     []string     // set once in New
 	unwritten atomic.Int64 // lines that arrived with no writer open
@@ -162,6 +175,16 @@ func (p *Plugin) Init(app *framework.App) error {
 		_ = w.Close()
 		return err
 	}
+	alerts, err := p.newAlerts()
+	if err != nil {
+		_ = w.Close()
+		_ = store.Close()
+		return err
+	}
+	if alerts != nil {
+		c.WatchAlerts(alerts)
+		p.alerts.Store(alerts)
+	}
 	if resolved, err := cfg.Resolve(); err == nil {
 		p.slow.Store(int64(resolved.SlowThreshold))
 	}
@@ -181,8 +204,18 @@ func (p *Plugin) Init(app *framework.App) error {
 		provider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(p.SpanProcessor()))
 		otel.SetTracerProvider(provider)
 	}
+	// Nothing after this point fails, so the watcher started here is
+	// always stopped by the hook below.
+	stopAlerts, alertsDone := make(chan struct{}), make(chan struct{})
+	if alerts != nil {
+		go p.watchAlerts(app, alerts, stopAlerts, alertsDone)
+	} else {
+		close(alertsDone)
+	}
 	app.OnStop(func() error {
 		p.stopped.Store(true)
+		close(stopAlerts)
+		<-alertsDone
 		if provider != nil {
 			// Nothing is queued: a span is recorded as it ends. The
 			// bound is for the provider's own bookkeeping.
@@ -249,6 +282,16 @@ func (s logSink) Write(entry []byte) error {
 			return nil // before Init: counted, and no sink error to report
 		}
 		return log.ErrSinkClosed
+	}
+	// An error logged inside a request names that request's failure
+	// when no step of it failed. Most lines are not errors: one cheap
+	// look decides.
+	if bytes.Contains(entry, []byte(`"level":"ERROR`)) {
+		if c := s.p.collector.Load(); c != nil {
+			if id, text, ok := itel.LoggedError(entry); ok {
+				c.NoteError(id, text)
+			}
+		}
 	}
 	return w.WriteLog(entry)
 }

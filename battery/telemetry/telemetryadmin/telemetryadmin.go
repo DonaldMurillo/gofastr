@@ -23,10 +23,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// NavGroup is the sidebar group the two pages sit in.
+// NavGroup is the sidebar group the pages sit in.
 const NavGroup = "telemetry"
 
-// Pages returns the Requests and Logs pages for tel. adminPrefix is the
+// Pages returns the Requests, Issues and Logs pages for tel. adminPrefix is the
 // admin's Config.PathPrefix ("/admin"): the pages link to each other
 // under it.
 func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
@@ -41,6 +41,8 @@ func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
 	return []admin.Page{
 		{Path: "/telemetry/requests", Title: i18nui.TelemetryRequests,
 			Nav: &entity.EntityNav{Group: NavGroup, Icon: "activity", Order: 10}, Build: build(screens.Requests), Part: build(screens.RequestsRows)},
+		{Path: "/telemetry/issues", Title: i18nui.TelemetryIssues,
+			Nav: &entity.EntityNav{Group: NavGroup, Icon: "alert-triangle", Order: 15}, Build: build(screens.Issues)},
 		{Path: "/telemetry/logs", Title: i18nui.TelemetryLogs,
 			Nav: &entity.EntityNav{Group: NavGroup, Icon: "list", Order: 20}, Build: build(screens.Logs), Part: build(screens.LogsRows)},
 	}

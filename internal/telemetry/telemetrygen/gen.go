@@ -309,8 +309,18 @@ func (g *gen) request(h slog.Handler, start time.Time) (*telemetry.Trace, error)
 	if status < 500 && dur < g.cfg.SlowThreshold && g.rng.Float64() >= g.cfg.SampleRate {
 		return nil, nil
 	}
+	// A failed request fails in one of a few ways, each with a detail
+	// that changes from one failure to the next.
+	var errText string
+	if status >= 500 {
+		errText = []string{
+			fmt.Sprintf("upstream timed out after %dms", 3000+g.rng.IntN(900)),
+			fmt.Sprintf("dial tcp 10.0.0.%d:5432: connect: connection refused", g.rng.IntN(255)),
+			"pq: deadlock detected",
+		}[g.rng.IntN(3)]
+	}
 	tr := &telemetry.Trace{
-		Time: start.Add(dur), TraceID: traceID, Route: route, Status: status, Dur: dur, Error: status >= 500,
+		Time: start.Add(dur), TraceID: traceID, Route: route, Status: status, Dur: dur, Error: status >= 500, Err: errText,
 		Spans: []telemetry.Span{{SpanID: rootID, Name: "HTTP " + route, Dur: dur,
 			Attrs: []telemetry.Attr{{Key: "http.status_code", Value: fmt.Sprint(status)}, {Key: "request_id", Value: reqID}}}},
 	}

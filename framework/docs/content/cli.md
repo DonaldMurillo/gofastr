@@ -668,11 +668,14 @@ directory itself, so it works over SSH and when the app is down.
   the minimum level and `--grep <text>` keeps lines containing text.
 - `gofastr telemetry requests`: kept requests, newest first. `--failed`,
   `--slow <duration>` and `--route <route>` narrow the list.
+- `gofastr telemetry issues`: failed requests grouped by what went
+  wrong, latest first: how many times, first and last seen, and an ID.
+  `gofastr telemetry requests --issue <id>` lists that issue's requests.
 - `gofastr telemetry request <trace-id>`: one request's steps, as a tree
   with start and duration, and its log lines.
 
 Name the directory with `--dir`, or the app with `--app <name>` for its
-default directory. `logs` and `requests` take `--since <duration>`
+default directory. `logs`, `requests` and `issues` take `--since <duration>`
 (default 24h; 0 for everything kept), `--limit <n>` (default 50) and
 `--json`, which prints the lines as stored. Text from the files is
 scrubbed of terminal control bytes and line breaks before it is printed.

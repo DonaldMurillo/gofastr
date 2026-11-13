@@ -28,8 +28,8 @@ type mcpTool struct {
 	handler           func(ctx context.Context, params map[string]any) (any, error)
 }
 
-// registerMCPTools adds telemetry_requests, telemetry_request and
-// telemetry_logs to the app's MCP server when Config.EnableMCP is set,
+// registerMCPTools adds telemetry_issues, telemetry_requests,
+// telemetry_request and telemetry_logs to the app's MCP server when Config.EnableMCP is set,
 // or under `gofastr dev`. Each hands out request paths, client
 // addresses and log lines, so each runs behind Config.MCPGate, the
 // admin role by default. Under the dev loop there is no auth to
@@ -57,6 +57,15 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 				"limit": map[string]any{"type": "integer", "minimum": 1},
 			}},
 			handler: p.toolRequests,
+		},
+		{
+			name:        "telemetry_issues",
+			description: "Group the failed requests of a time range by what went wrong (route, status and error with its numbers and IDs set aside), latest first: count, first and last seen, an example trace_id. Filters: `since_ts`/`until_ts`, `limit` (default 50, max 200). The first tool to call when asked what is breaking.",
+			schema: map[string]any{"type": "object", "properties": map[string]any{
+				"since_ts": ts, "until_ts": ts,
+				"limit": map[string]any{"type": "integer", "minimum": 1},
+			}},
+			handler: p.toolIssues,
 		},
 		{
 			name:        "telemetry_request",
@@ -207,6 +216,41 @@ func (p *Plugin) toolRequests(_ context.Context, params map[string]any) (any, er
 		}
 	}
 	return map[string]any{"requests": out, "count": len(out)}, nil
+}
+
+func (p *Plugin) toolIssues(_ context.Context, params map[string]any) (any, error) {
+	store, err := p.reader()
+	if err != nil {
+		return nil, err
+	}
+	from, err := timeArg(params, "since_ts")
+	if err != nil {
+		return nil, err
+	}
+	to, err := timeArg(params, "until_ts")
+	if err != nil {
+		return nil, err
+	}
+	limit, err := limitArg(params, 50, mcpMaxRequests)
+	if err != nil {
+		return nil, err
+	}
+	issues, leftOut, err := store.Issues(from, to, limit)
+	if err != nil {
+		return nil, errors.New("telemetry: the trace files could not be read")
+	}
+	out := make([]map[string]any, len(issues))
+	for i, is := range issues {
+		out[i] = map[string]any{
+			"id": is.ID, "route": is.Route, "status": is.Status, "error": is.Err, "example": is.Example, "count": is.Count,
+			"first": is.First.UTC().Format(time.RFC3339Nano), "last": is.Last.UTC().Format(time.RFC3339Nano), "last_trace_id": is.LastTraceID,
+		}
+	}
+	firing := []string{}
+	for _, a := range p.Firing() {
+		firing = append(firing, a.Text())
+	}
+	return map[string]any{"issues": out, "count": len(out), "failures_not_listed": leftOut, "alerts_firing": firing}, nil
 }
 
 func (p *Plugin) toolRequest(_ context.Context, params map[string]any) (any, error) {

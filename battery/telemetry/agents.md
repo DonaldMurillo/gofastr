@@ -48,9 +48,27 @@ admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
 // or on their own; Authorize is required
 app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", Authorize: isOperator}))
 ```
-- Shell: `gofastr telemetry logs|requests|request <trace-id> --app <name>`.
-- MCP: `telemetry.Config{EnableMCP: true}` adds `telemetry_requests`,
-  `telemetry_request`, `telemetry_logs` (admin role by default).
+- Shell: `gofastr telemetry logs|requests|issues|request <trace-id> --app <name>`.
+- MCP: `telemetry.Config{EnableMCP: true}` adds `telemetry_issues`,
+  `telemetry_requests`, `telemetry_request`, `telemetry_logs` (admin
+  role by default). Asked what is breaking, call `telemetry_issues`
+  first.
+
+**Issues and alerts:**
+- Failed requests are grouped by route, status and error (numbers and
+  IDs set aside). The error is the first failed step's, else the first
+  ERROR line logged with the request's context, else the status text.
+  So log `slog.ErrorContext(ctx, "payment failed", "err", err)` before
+  answering 500.
+- One alert rule is on by default: ten failed requests in five minutes.
+  It is logged as `telemetry.alert` and shown on Requests and Issues. To be
+  told, set `Notify`:
+```go
+telemetry.Config{
+    Alerts: []telemetry.AlertRule{{Name: "checkout failing", Kind: telemetry.AlertFailed, AtLeast: 5, Route: "POST /checkout"}},
+    Notify: telemetry.WebhookNotifier(os.Getenv("ALERT_WEBHOOK_URL")), // Slack, Discord, Teams, Mattermost
+}
+```
 
 **Do not:**
 - Register it after the log plugin: lines logged before its `Init` are

@@ -54,16 +54,22 @@ type Trace struct {
 	// FailedSteps counts the spans under the root that failed, whether
 	// or not the whole did: a query whose error the handler dealt with.
 	FailedSteps int
-	Spans       []Span
+	// Err is what went wrong, from whoever says it best: the first
+	// failed step's error, else the first error the app logged for the
+	// request, else the whole's own status text or panic. It is what
+	// failures are grouped by.
+	Err   string
+	Spans []Span
 }
 
 // traceHead bounds the bytes a query reads to learn a trace's summary:
-// AppendTrace writes time, trace_id, route, path, status, dur_us, error
-// and failed_steps before the spans, and a route and a path are cut to fit.
+// AppendTrace writes time, trace_id, route, path, status, dur_us, error,
+// failed_steps and err before the spans, and a route and a path are cut to fit.
 const (
 	traceHead   = 1024
 	maxRouteLen = 256
 	maxPathLen  = 256
+	maxErrLen   = 200
 )
 
 // AppendTrace appends t as one JSON line, newline included. The summary
@@ -92,6 +98,10 @@ func AppendTrace(dst []byte, t Trace) []byte {
 	if t.FailedSteps > 0 {
 		dst = append(dst, `,"failed_steps":`...)
 		dst = strconv.AppendInt(dst, int64(t.FailedSteps), 10)
+	}
+	if t.Err != "" {
+		dst = append(dst, `,"err":`...)
+		dst = appendJSONString(dst, strings.ToValidUTF8(t.Err[:min(len(t.Err), maxErrLen)], ""))
 	}
 	dst = append(dst, `,"spans":[`...)
 	for i, s := range t.Spans {

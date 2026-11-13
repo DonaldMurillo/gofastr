@@ -49,6 +49,8 @@ type Screens struct {
 	// searchBudget is how long a log search may read before it shows
 	// what it has and offers to carry on.
 	searchBudget time.Duration
+	// firingNow returns the alert rules firing now: the plugin's.
+	firingNow func() []telemetry.Alert
 
 	// Live, when set, returns the URL that serves a list's rows alone
 	// ("requests" or "logs", drawn by RequestsRows and LogsRows). The
@@ -88,11 +90,15 @@ func (s *Screens) liveBadge(ctx context.Context, cur cursor) render.HTML {
 // the links between the two itself, for a host with no navigation of
 // its own.
 func NewScreens(tel *telemetry.Plugin, base string, tabs bool) *Screens {
-	return &Screens{tel: tel, base: strings.TrimRight(base, "/"), tabs: tabs, now: time.Now, searchBudget: 3 * time.Second}
+	return &Screens{tel: tel, base: strings.TrimRight(base, "/"), tabs: tabs, now: time.Now, searchBudget: 3 * time.Second, firingNow: tel.Firing}
 }
 
-// RequestsPath and LogsPath are where the host serves the two pages.
+// RequestsPath, IssuesPath and LogsPath are where the host serves the
+// three pages.
 func (s *Screens) RequestsPath() string { return s.base + "/requests" }
+
+// IssuesPath is where the host serves the issues page.
+func (s *Screens) IssuesPath() string { return s.base + "/issues" }
 
 // LogsPath is where the host serves the logs page.
 func (s *Screens) LogsPath() string { return s.base + "/logs" }
@@ -259,17 +265,49 @@ func link(path string, pairs ...string) string {
 	return path + "?" + q.Encode()
 }
 
-func (s *Screens) tabNav(ctx context.Context, logs bool) render.HTML {
+// The three pages, as tabNav names the current one.
+const (
+	tabRequests = iota
+	tabIssues
+	tabLogs
+)
+
+func (s *Screens) tabNav(ctx context.Context, current int) render.HTML {
 	if !s.tabs {
 		return ""
 	}
 	return ui.TabNav(ui.TabNavConfig{
 		Label: i18nui.TelemetryNav.Text(ctx),
 		Items: []ui.TabNavItem{
-			{Text: i18nui.TelemetryRequests.Text(ctx), Href: s.RequestsPath(), Current: !logs},
-			{Text: i18nui.TelemetryLogs.Text(ctx), Href: s.LogsPath(), Current: logs},
+			{Text: i18nui.TelemetryRequests.Text(ctx), Href: s.RequestsPath(), Current: current == tabRequests},
+			{Text: i18nui.TelemetryIssues.Text(ctx), Href: s.IssuesPath(), Current: current == tabIssues},
+			{Text: i18nui.TelemetryLogs.Text(ctx), Href: s.LogsPath(), Current: current == tabLogs},
 		},
 	})
+}
+
+// firing is the notice of the alert rules firing now, for the top of
+// the requests and issues pages: the place someone told of trouble
+// lands on.
+func (s *Screens) firing(ctx context.Context) render.HTML {
+	alerts := s.firingNow()
+	if len(alerts) == 0 {
+		return ""
+	}
+	lines := make([]render.HTML, len(alerts))
+	for i, a := range alerts {
+		phrase := i18nui.TelemetryAlertFailed
+		if a.Rule.Kind == telemetry.AlertSlow {
+			phrase = i18nui.TelemetryAlertSlow
+		}
+		within := a.Rule.Within
+		if within == 0 {
+			within = 5 * time.Minute
+		}
+		lines[i] = render.Text(phrase.Text(ctx, map[string]any{
+			"name": a.Rule.Name, "count": i18n.Number(ctx, a.Count), "minutes": i18n.Number(ctx, int(within/time.Minute))}))
+	}
+	return ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, ui.Stack(ui.StackConfig{Gap: ui.GapSM}, lines...))
 }
 
 func page(parts ...render.HTML) render.HTML {
@@ -334,14 +372,14 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		Subtitle: i18nui.TelemetryRequestsSub.Text(ctx),
 	})
 	if store == nil {
-		return page(s.tabNav(ctx, false), header, problem(ctx, i18nui.TelemetryNotReady))
+		return page(s.tabNav(ctx, tabRequests), header, problem(ctx, i18nui.TelemetryNotReady))
 	}
 
-	show, route := param(q, "show"), param(q, "route")
+	show, route, issue := param(q, "show"), param(q, "route"), param(q, "issue")
 	win, from := s.pickWindow(q)
 	cur := readCursor(q)
 	lo, hi, oldestFirst := cur.bounds(from)
-	tq := itel.TraceQuery{Route: route, From: lo, To: hi, OldestFirst: oldestFirst}
+	tq := itel.TraceQuery{Route: route, Issue: issue, From: lo, To: hi, OldestFirst: oldestFirst}
 	switch show {
 	case "failed":
 		tq.Failed = true
@@ -353,7 +391,7 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	traces, err := store.Traces(tq, requestsPerPage+1)
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: list requests", "err", err)
-		return page(s.tabNav(ctx, false), header, problem(ctx, i18nui.TelemetryLoadFailed))
+		return page(s.tabNav(ctx, tabRequests), header, problem(ctx, i18nui.TelemetryLoadFailed))
 	}
 	traces, hasNewer, hasOlder := trim(cur, traces, requestsPerPage)
 
@@ -363,7 +401,7 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		wkey = ""
 	}
 	here := func(show, route string) string {
-		return link(path, "show", show, "route", route, "window", wkey)
+		return link(path, "show", show, "route", route, "issue", issue, "window", wkey)
 	}
 	segments := ui.SegmentedLinks(ui.SegmentedLinksConfig{
 		Label: i18nui.TelemetryShow.Text(ctx), Ctx: ctx,
@@ -379,7 +417,7 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		ApplyLabel: i18nui.TelemetryApply.Text(ctx),
 		Search:     &ui.FilterSearch{Name: "trace", Label: i18nui.TelemetryFindTrace.Text(ctx), Placeholder: i18nui.TelemetryTraceIDHint.Text(ctx)},
 		Facets:     []ui.Facet{s.windowFacet(ctx, win)},
-		Hidden:     []ui.HiddenField{{Name: "show", Value: show}, {Name: "route", Value: route}},
+		Hidden:     []ui.HiddenField{{Name: "show", Value: show}, {Name: "route", Value: route}, {Name: "issue", Value: issue}},
 		HideReset:  true,
 	})
 	var routeChip render.HTML
@@ -387,6 +425,12 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		routeChip = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 			ui.Tag(ui.TagConfig{Ctx: ctx, Label: i18nui.TelemetryRouteFilter.Text(ctx, map[string]any{"route": route})}),
 			ui.Link(ui.LinkConfig{Href: here(show, ""), Text: i18nui.TelemetryRouteClear.Text(ctx), Variant: ui.LinkMuted}))
+	}
+
+	if issue != "" {
+		routeChip = page(routeChip, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+			ui.Tag(ui.TagConfig{Ctx: ctx, Label: i18nui.TelemetryIssueFilter.Text(ctx), Variant: ui.StatusInfo}),
+			ui.Link(ui.LinkConfig{Href: link(path, "show", show, "route", route, "window", wkey), Text: i18nui.TelemetryIssueClear.Text(ctx)})))
 	}
 
 	now := s.now()
@@ -439,21 +483,21 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	}
 	newerAt, olderAt := neighbours(len(traces), hasNewer, hasOlder, newest, oldest)
 	pages := pager(ctx, cur, len(traces), newerAt, olderAt, newest, oldest, func(before, after string) string {
-		return link(path, "show", show, "route", route, "window", wkey, "before", before, "after", after)
+		return link(path, "show", show, "route", route, "issue", issue, "window", wkey, "before", before, "after", after)
 	})
 	if rowsOnly {
 		return page(table, pages)
 	}
 	var src string
 	if s.Live != nil {
-		src = link(s.Live("requests"), "show", show, "route", route, "window", wkey)
+		src = link(s.Live("requests"), "show", show, "route", route, "issue", issue, "window", wkey)
 	}
 	header = ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryRequests.Text(ctx),
 		Subtitle: i18nui.TelemetryRequestsSub.Text(ctx),
 		Actions:  s.liveBadge(ctx, cur),
 	})
-	return page(s.tabNav(ctx, false), header, segments, filters, routeChip, s.rows("requests", cur, src, table, pages))
+	return page(s.tabNav(ctx, tabRequests), header, s.firing(ctx), segments, filters, routeChip, s.rows("requests", cur, src, table, pages))
 }
 
 // pathBeside returns path when it says something route does not: the
@@ -495,7 +539,7 @@ func statusBadge(ctx context.Context, status int, failed bool, failedSteps int) 
 func (s *Screens) request(ctx context.Context, id string) render.HTML {
 	back := ui.LinkButton(ui.LinkButtonConfig{Label: i18nui.TelemetryBack.Text(ctx), Href: s.RequestsPath(), Variant: ui.ButtonSecondary})
 	missing := func(title string, body i18n.Phrase) render.HTML {
-		return page(s.tabNav(ctx, false),
+		return page(s.tabNav(ctx, tabRequests),
 			ui.PageHeader(ui.PageHeaderConfig{Eyebrow: i18nui.TelemetryRequests.Text(ctx), Title: title, Actions: back}),
 			ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(body.Text(ctx))))
 	}
@@ -550,7 +594,7 @@ func (s *Screens) request(ctx context.Context, id string) render.HTML {
 	} else {
 		logs = s.logTable(ctx, lines, false, i18nui.TelemetryRequestLogsEmpty, i18n.Phrase{})
 	}
-	return page(s.tabNav(ctx, false), header, summary,
+	return page(s.tabNav(ctx, tabRequests), header, summary,
 		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
 			{Label: i18nui.TelemetryTraceID.Text(ctx), Value: ui.InlineCode(tr.TraceID)},
 		}}),
@@ -620,6 +664,89 @@ func waterfallSteps(tr itel.Trace) []ui.WaterfallStep {
 	return steps
 }
 
+// ----- issues ------------------------------------------------------------------
+
+// issuesShown is the most issues one page lists: the latest to be seen.
+const issuesShown = 100
+
+// Issues draws the failed requests of a time range grouped by what went
+// wrong: how many times, since when, and the way to the requests.
+func (s *Screens) Issues(ctx context.Context) render.HTML {
+	header := ui.PageHeader(ui.PageHeaderConfig{
+		Title:    i18nui.TelemetryIssues.Text(ctx),
+		Subtitle: i18nui.TelemetryIssuesSub.Text(ctx),
+	})
+	store := s.tel.Reader()
+	if store == nil {
+		return page(s.tabNav(ctx, tabIssues), header, problem(ctx, i18nui.TelemetryNotReady))
+	}
+	q := query(ctx)
+	win, from := s.pickWindow(q)
+	issues, leftOut, err := store.Issues(from, time.Time{}, issuesShown)
+	if err != nil {
+		slog.ErrorContext(ctx, "telemetry: list issues", "err", err)
+		return page(s.tabNav(ctx, tabIssues), header, problem(ctx, i18nui.TelemetryLoadFailed))
+	}
+	wkey := win.key
+	if wkey == defaultWindow {
+		wkey = ""
+	}
+	filters := ui.FilterToolbar(ui.FilterToolbarConfig{
+		Action: s.IssuesPath(), ClientNavigation: true, Ctx: ctx,
+		Label:      i18nui.TelemetryFilters.Text(ctx),
+		ApplyLabel: i18nui.TelemetryApply.Text(ctx),
+		Facets:     []ui.Facet{s.windowFacet(ctx, win)},
+		HideReset:  true,
+	})
+	now := s.now()
+	cols := []ui.Column{
+		// The error and its route are separate columns so the phone row
+		// can end a long error with an ellipsis: a stacked cell is one
+		// box the cell's ellipsis cannot reach, and the text was cut
+		// mid-word.
+		{Key: "error", Header: i18nui.TelemetryColError.Text(ctx), Phone: ui.PhoneTitle, Wrap: true},
+		{Key: "route", Header: i18nui.TelemetryColRoute.Text(ctx), Phone: ui.PhoneSubtitle},
+		{Key: "status", Header: i18nui.TelemetryColStatus.Text(ctx)},
+		{Key: "count", Header: i18nui.TelemetryColCount.Text(ctx), Align: "end", Phone: ui.PhoneMeta},
+		{Key: "last", Header: i18nui.TelemetryColLastSeen.Text(ctx)},
+		{Key: "first", Header: i18nui.TelemetryColFirstSeen.Text(ctx)},
+		{Key: "open", Header: i18nui.TelemetryColRequest.Text(ctx), Align: "end", Fit: true, Phone: ui.PhoneEnd},
+	}
+	rows := make([]ui.Row, len(issues))
+	for i, is := range issues {
+		what := is.Err
+		if what == "" {
+			what = i18nui.TelemetryIssueNoError.Text(ctx)
+		}
+		rows[i] = ui.Row{ID: is.ID, Cells: map[string]render.HTML{
+			"error":  render.Text(what),
+			"route":  render.Text(is.Route),
+			"status": statusBadge(ctx, is.Status, true, 0),
+			"count":  render.Text(i18n.Number(ctx, is.Count)),
+			"last":   timeCell(ctx, now, is.Last),
+			"first":  timeCell(ctx, now, is.First),
+			"open": ui.Link(ui.LinkConfig{Href: link(s.RequestsPath(), "show", "failed", "issue", is.ID, "window", wkey),
+				Text: i18nui.TelemetryIssueRequests.Text(ctx), Variant: ui.LinkAction,
+				ExtraAttrs: html.Attrs{"aria-label": i18nui.TelemetryIssueRequestsOf.Text(ctx, map[string]any{
+					"count": i18n.Number(ctx, is.Count), "error": what})}}),
+		}}
+	}
+	var note render.HTML
+	if leftOut > 0 {
+		note = ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning}, render.Text(i18nui.TelemetryIssuesLeftOut.Text(ctx, map[string]any{"n": i18n.Number(ctx, leftOut)})))
+	}
+	table := ui.DataTable(ui.DataTableConfig{
+		Columns: cols, Rows: rows, Ctx: ctx,
+		Caption: i18nui.TelemetryIssues.Text(ctx), CaptionHidden: true,
+		Responsive: ui.ResponsiveRows,
+		Empty: ui.EmptyStateConfig{
+			Title:       i18nui.TelemetryIssuesEmpty.Text(ctx),
+			Description: i18nui.TelemetryIssuesEmptySub.Text(ctx),
+		},
+	})
+	return page(s.tabNav(ctx, tabIssues), header, s.firing(ctx), filters, note, table)
+}
+
 // ----- logs --------------------------------------------------------------------
 
 // level is one choice of minimum level.
@@ -650,7 +777,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	})
 	store := s.tel.Reader()
 	if store == nil {
-		return page(s.tabNav(ctx, true), header, problem(ctx, i18nui.TelemetryNotReady))
+		return page(s.tabNav(ctx, tabLogs), header, problem(ctx, i18nui.TelemetryNotReady))
 	}
 	q := query(ctx)
 	text := strings.TrimSpace(param(q, "q"))
@@ -676,7 +803,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	lines, stopped, err := store.LogsWithin(lq, logsPerPage+1, s.searchBudget)
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: list logs", "err", err)
-		return page(s.tabNav(ctx, true), header, problem(ctx, i18nui.TelemetryLoadFailed))
+		return page(s.tabNav(ctx, tabLogs), header, problem(ctx, i18nui.TelemetryLoadFailed))
 	}
 	lines, hasNewer, hasOlder := trim(cur, lines, logsPerPage)
 
@@ -740,7 +867,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
 		Actions:  s.liveBadge(ctx, cur),
 	})
-	return page(s.tabNav(ctx, true), header, segments, filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))
+	return page(s.tabNav(ctx, tabLogs), header, segments, filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))
 }
 
 // logTable draws log lines. linkRequests adds the column that opens a
