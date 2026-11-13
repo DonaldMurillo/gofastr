@@ -505,7 +505,8 @@ against the discovered surface. Every test binary merges into the same
 file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
 that finish together keep each other's records.
 
-The manifest sits under the project root unless
+The manifest sits under the project root, or under the Go workspace
+root when a `go.work` sits above the module, unless
 `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in
 which case the tests, the server and `gofastr verify` all use that
 directory. Set it the same way for all three, or verify reads a manifest
