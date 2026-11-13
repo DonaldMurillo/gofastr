@@ -270,14 +270,38 @@ staged_git() { git "$@"; }
 		t.Fatalf("no reviewer: exit %d, want 0, a warning and step 6\n%s", code, out)
 	}
 	// A claude on PATH is the reviewer when there is no codex: the hook
-	// starts the review instead of warning.
-	claude := filepath.Join(bin, "claude")
-	if err := os.WriteFile(claude, []byte("#!/bin/sh\ncat >/dev/null\necho '{\"decision\":\"approve\",\"findings\":[]}'\n"), 0o700); err != nil {
+	// starts the review instead of warning. The stub uses shell builtins
+	// only and leaves a marker, so the test sees that the runs happened
+	// and not just the hook's "started" line; the hook itself needs mktemp
+	// for the review's output file.
+	mktemp, err := exec.LookPath("mktemp")
+	if err != nil {
+		t.Skip("no mktemp")
+	}
+	if err := os.Symlink(mktemp, filepath.Join(bin, "mktemp")); err != nil {
 		t.Fatal(err)
 	}
-	code, out = hook()
-	if code != 0 || !strings.Contains(out, "Model review started (three runs of "+claude) || strings.Contains(out, "WARN model review") {
-		t.Fatalf("claude fallback: exit %d, want the review started\n%s", code, out)
+	claude := filepath.Join(bin, "claude")
+	ran := filepath.Join(t.TempDir(), "ran")
+	stub := "#!/bin/sh\nwhile read -r _; do :; done\necho run >> '" + ran + "'\necho '{\"decision\":\"approve\",\"findings\":[]}'\n"
+	if err := os.WriteFile(claude, []byte(stub), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(sh, "-c", prelude+reviewStart(t)+`
+wait "$review_pid"; echo "REVIEW-EXIT $?"
+while read -r line; do echo "$line"; done < "$review_out"
+`)
+	cmd.Dir = repo
+	cmd.Env = env
+	fallback, err := cmd.CombinedOutput()
+	out = string(fallback)
+	if err != nil || !strings.Contains(out, "Model review started (three runs of "+claude) ||
+		strings.Contains(out, "WARN model review") || !strings.Contains(out, "REVIEW-EXIT 0") ||
+		!strings.Contains(out, "review-gate: approve (0/3 usable runs request changes)") {
+		t.Fatalf("claude fallback: %v, want three approving runs\n%s", err, out)
+	}
+	if b, err := os.ReadFile(ran); err != nil || strings.Count(string(b), "run") != 3 {
+		t.Fatalf("the claude stub ran %q (%v), want three runs", b, err)
 	}
 	if err := os.Remove(claude); err != nil {
 		t.Fatal(err)

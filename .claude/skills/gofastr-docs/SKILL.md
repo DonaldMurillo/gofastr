@@ -55,8 +55,8 @@ was needed.
 **You added a new auto-generated route or endpoint pattern**
 (e.g. `_batch`, `_events`, `_search`):
 - README's "The code you don't write" table
-- A reference page under `framework/docs/content/` if the surface has
-  its own semantics
+- A page under `framework/docs/content/` updated in the same change;
+  a reference page of its own if the surface has its own semantics
 - `examples/api-tour/main.go` should exercise it; update the example
   README
 
@@ -125,7 +125,8 @@ was needed.
 
 **You removed or renamed an exported symbol:**
 - grep the docs for the old name and replace
-- `git grep '<OldName>' README.md framework/docs/content/ examples/`
+- `git grep '<OldName>' README.md docs/ framework/docs/content/ examples/`
+  (`docs/public-api.md` lists exported symbols and their stability tiers)
 - Don't leave dangling code samples
 
 **You landed a BREAKING change / you're cutting a release:**

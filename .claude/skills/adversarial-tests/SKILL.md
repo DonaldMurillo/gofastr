@@ -98,7 +98,9 @@ The policy:
 
 - An open finding is a `*_red_test.go` probe tagged `//go:build red` that
   asserts the secure behaviour and fails until the fix lands
-  (`make red-tests` runs them; `go test ./...` never sees them). The fix
+  (`make red-tests` runs the probes in packages your change affects,
+  `GOFASTR_TEST_ALL=1 make red-tests` runs every probe; `go test ./...`
+  never sees them). The fix
   turns the probe into a permanent `_security_test.go` test.
 - Permanent file suffix: `_security_test.go`, with no `_red_` infix
 - Drop the redundant `<pkg>_` prefix when the file lives in a

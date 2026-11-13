@@ -98,7 +98,8 @@ wins, not bugs.
 ## Stop conditions
 
 - 10-minute budget expired
-- You've visited every route from the home page nav AND attempted at
+- You've visited every route from the home page nav and every reachable
+  `window.__gofastr_routes` entry (step 2), AND attempted at
   least one rage-flow on each
 - You found a hard crash (panic, white-screen, browser error page):
   stop and report
