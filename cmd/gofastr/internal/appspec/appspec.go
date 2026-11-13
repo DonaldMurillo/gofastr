@@ -4099,13 +4099,23 @@ func AppSpecBlockName(block AppSpecBlock, prop, entity string) string {
 	return entity
 }
 
-// appSpecCatalogUnderNode returns the first catalog kind among blocks the
-// node renderer draws. section is a node kind as well as a catalog one, so
-// it renders either way.
+// appSpecCatalogUnderNode returns the first kind among blocks the node
+// renderer draws that it does not know: a catalog kind, an entity screen
+// (entity_list, entity_form, entity_detail) or an auth form, each of which
+// it would draw as an "unknown kind" comment. section is a node kind as
+// well as a catalog one, so it renders either way.
 func appSpecCatalogUnderNode(blocks []AppSpecBlock) string {
 	for _, b := range blocks {
 		if AppSpecCatalogKind(b.Kind) && !strings.EqualFold(strings.TrimSpace(b.Kind), "section") {
 			return b.Kind
+		}
+		kind := b.Kind
+		if kind == "" {
+			kind = b.Type
+		}
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "entity_list", "entity_form", "entity_detail", "login_form", "signup_form":
+			return kind
 		}
 		if inner := appSpecCatalogUnderNode(b.Children); inner != "" {
 			return inner
