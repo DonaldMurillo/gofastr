@@ -61,6 +61,11 @@ func TestSelectorStatusOtherSpellings(t *testing.T) {
 		"if [ -n \"$(printf ')'; go run ./cmd/affected)\" ]; then exit 0; fi\n",
 		"if [ -n \"$(printf \")\"; go run ./cmd/affected)\" ]; then exit 0; fi\n",
 		"if [ -n \\\n  \"$(go run ./cmd/affected)\" ]; then exit 0; fi\n",
+		// A ")" in a comment inside the substitution does not close it.
+		"if [ -n \"$(\n  # the selector (see docs)) prints dirs\n  go run ./cmd/affected\n)\" ]; then exit 0; fi\n",
+		"while test -n \"$(go run ./cmd/affected)\"; do break; done\n",
+		"true && test -n \"$(go run ./cmd/affected)\" && exit 0\n",
+		"      - run: test -n \"$(go run ./cmd/affected)\"\n",
 	} {
 		got := selectorStatusFindings("scripts/gate.sh", []byte(body))
 		if len(got) != 1 || got[0].Line != 1 {
@@ -72,6 +77,11 @@ func TestSelectorStatusOtherSpellings(t *testing.T) {
 		"if test -n \"$(git status --porcelain)\"; then echo dirty; fi\ngo run ./cmd/affected\n",
 		"latest=$(contest -n \"$(go run ./cmd/affected)\")\n",
 		"if [ -n \"$(printf '(')\" ]; then go run ./cmd/affected; fi\n",
+		// test as an argument, not a command.
+		"echo test -n \"$(go run ./cmd/affected)\"\n",
+		"run_suite unit test -z \"$(go run ./cmd/affected)\"\n",
+		// A # inside a word starts no comment.
+		"if [ -n \"$(echo a#b)\" ]; then go run ./cmd/affected; fi\n",
 	} {
 		if got := selectorStatusFindings("scripts/gate.sh", []byte(body)); len(got) != 0 {
 			t.Errorf("findings %+v, want none, for:\n%s", got, body)

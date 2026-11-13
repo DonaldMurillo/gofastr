@@ -9,12 +9,15 @@ import (
 
 // testOperandPrefix matches the text in front of a command substitution
 // that is the operand of a -n/-z test: `[ -n "`, `[[ -z `, `test -n "`,
-// with a `!` before the operator or not.
+// with a `!` before the operator or not. `test` counts only in command
+// position: at the line start, after a separator (; & | ( ! {), after a
+// YAML `run:`, or after a keyword such as if, then, do or while. `echo
+// test -n "$(…)"` passes test as an argument and keeps the status.
 // Inside a test the command substitution's exit status is lost, so a
 // selector that fails prints nothing and reads as "nothing affected": the
 // step skips a suite where it should fail. Assigning the output on its own
 // line keeps the status, and the step's `bash -e` stops on it.
-var testOperandPrefix = regexp.MustCompile(`(?:\[\[?|(?:^|[\s;&|(!])test)\s+(?:!\s+)?-[nz]\s+"?$`)
+var testOperandPrefix = regexp.MustCompile(`(?:\[\[?|(?:(?:^|[;&|(!{]|\brun:)\s*|(?:^|[\s;&|(!{])(?:then|do|if|elif|while|until|else)\s+)test)\s+(?:!\s+)?-[nz]\s+"?$`)
 
 const affectedTestedMessage = "tests a cmd/affected command substitution inside [ ], [[ ]] or test: the selector's exit status is lost, so a failure reads as nothing affected and the suite skips; assign the output on its own line, then test the variable"
 
@@ -88,12 +91,21 @@ func selectorStatusFindings(rel string, body []byte) []finding {
 // substitutionEnd returns the index in s of the ")" that closes a command
 // substitution whose "$(" was just read, or len(s) when none does. It
 // reads the shell's quoting: a ")" inside '…' or "…", or after a
-// backslash, is text, and a "$(" inside either nesting level opens its
-// own substitution.
+// backslash, is text, a "#" that starts a word comments out the rest of
+// its line, and a "$(" inside either nesting level opens its own
+// substitution.
 func substitutionEnd(s string) int {
 	depth := 0
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
+		case '#':
+			if i == 0 || strings.IndexByte(" \t\n;&|()", s[i-1]) >= 0 {
+				j := strings.IndexByte(s[i:], '\n')
+				if j < 0 {
+					return len(s)
+				}
+				i += j
+			}
 		case '\\':
 			i++
 		case '\'':

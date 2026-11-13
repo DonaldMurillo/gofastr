@@ -357,7 +357,11 @@ func lintConsumerModuleGraph(root string) ([]finding, error) {
 			}
 			fields = fields[1:]
 		}
+		// go.mod may quote a path ("x" or `x`).
 		path := fields[0]
+		if unq, err := strconv.Unquote(path); err == nil {
+			path = unq
+		}
 		for _, mod := range testOnlyModules {
 			// Exact match, or a submodule of it: testcontainers-go and
 			// testcontainers-go/modules/postgres are both the same problem,

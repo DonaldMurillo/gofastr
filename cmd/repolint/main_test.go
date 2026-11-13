@@ -296,6 +296,28 @@ func TestRequireBlockWithCommentIsRead(t *testing.T) {
 	}
 }
 
+// go.mod may quote a module path ("x" or `x`); the quotes are not part
+// of the path the rule matches.
+func TestQuotedRequireIsRead(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/app\n\ngo 1.26\n\n"+
+		"require (\n\t\"github.com/testcontainers/testcontainers-go\" v0.34.0\n)\n"+
+		"require `github.com/testcontainers/testcontainers-go/modules/postgres` v0.34.0\n")
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	var lines []int
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			lines = append(lines, f.Line)
+		}
+	}
+	if len(lines) != 2 || lines[0] != 6 || lines[1] != 8 {
+		t.Fatalf("flagged lines %v, want [6 8]: both quoted requires", lines)
+	}
+}
+
 // The rule must stay silent on a go.mod that requires none of them, or it
 // blocks every clean tree.
 func TestConsumerModuleGraphRuleQuietWhenAbsent(t *testing.T) {
