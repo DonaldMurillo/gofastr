@@ -542,6 +542,22 @@ that is the search the three-second budget above is for.
 The Overview's widest read, seven days of thirty routes with six of the
 days sealed, took about 350 ms.
 
+### On a small machine
+
+The Meridian example, with everything on this page turned on, run in a
+container held to one CPU and 1 GB of memory and asked for its
+server-rendered pages:
+
+| Load | Memory held | CPU | Slowest 1 in 100 |
+|------|-------------|-----|------------------|
+| idle | 23 to 29 MB | about 1% | |
+| 20 requests a second | 26 MB | about 10% of the core | 5.7 ms |
+| 200 requests a second | 30 MB | about 72% of the core | 4.9 ms |
+
+Those are the whole app's figures, not telemetry's share. Telemetry's
+own share, measured by running the same app with it off: about 32 µs of
+CPU a request and half a megabyte of memory.
+
 ## Common mistakes
 
 - **Registering the plugin after the log plugin.** The files open in
