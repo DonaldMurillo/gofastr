@@ -177,3 +177,126 @@ screens:
 		t.Fatalf("owner and state fields refused: %v", err)
 	}
 }
+
+// The form generator draws a control only for a fields: entry that names
+// a drawable field exactly, so an entry it would drop without a word is
+// refused at load, naming the entry.
+func TestFormFieldsEntryMustDraw(t *testing.T) {
+	hidden := `
+      - name: id
+        type: string
+      - name: notes
+        type: string
+        hidden: true
+      - name: code
+        type: string
+        read_only: true
+      - name: ref
+        type: uuid
+        auto_generate: uuid`
+	for name, c := range map[string]struct{ form, entry string }{
+		"typo": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, visitor_emial]
+`, entry: "visitor_emial"},
+		"typo on edit": {form: `
+      - kind: entity_form
+        entity: tours
+        mode: edit
+        fields: [visitor_nmae]
+`, entry: "visitor_nmae"},
+		"hidden": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, notes]
+`, entry: "notes"},
+		"read_only on create": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, code]
+`, entry: "code"},
+		"auto_generate on create": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, ref]
+`, entry: "ref"},
+		"system column on create": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, id]
+`, entry: "id"},
+		"listed twice": {form: `
+      - kind: entity_form
+        entity: tours
+        fields: [property_id, visitor_name, visitor_name]
+`, entry: "visitor_name"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := entityFormSpec(c.form, hidden, "")
+			if strings.Contains(c.form, "mode: edit") {
+				src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}/edit", 1)
+			}
+			err := loadEntityFormSpec(t, src)
+			if err == nil {
+				t.Fatalf("fields entry %q validated", c.entry)
+			}
+			if !strings.Contains(err.Error(), "entity_form field "+`"`+c.entry+`"`) {
+				t.Fatalf("error should name entry %q, got: %v", c.entry, err)
+			}
+		})
+	}
+}
+
+// A node block hands its subtree to the node renderer, which draws an
+// entity screen or an auth form as an "unknown kind" comment. Validate
+// refuses each one under a node block, at any depth.
+func TestNodeBlockRefusesEntityAndAuth(t *testing.T) {
+	for name, form := range map[string]string{
+		"entity_form in div": `
+      - type: div
+        children:
+          - kind: entity_form
+            entity: tours
+`,
+		"entity_list in header": `
+      - type: header
+        children:
+          - kind: entity_list
+            entity: tours
+            fields: [visitor_name]
+`,
+		"entity_detail in type section": `
+      - type: section
+        children:
+          - kind: entity_detail
+            entity: tours
+`,
+		"login_form deep in article": `
+      - type: article
+        children:
+          - type: div
+            children:
+              - kind: login_form
+`,
+		"signup_form spelled type": `
+      - type: div
+        children:
+          - type: signup_form
+`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := entityFormSpec(form, "", "")
+			if strings.Contains(form, "entity_detail") {
+				src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}", 1)
+			}
+			err := loadEntityFormSpec(t, src)
+			if err == nil {
+				t.Fatal("an entity or auth block under a node block validated")
+			}
+			if !strings.Contains(err.Error(), "node blocks draw only node kinds") {
+				t.Fatalf("want the node-block refusal, got: %v", err)
+			}
+		})
+	}
+}

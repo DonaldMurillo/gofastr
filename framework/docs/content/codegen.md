@@ -182,6 +182,12 @@ A command extension is an arbitrary binary named by whichever
 `gofastr.settings.yml` is in the project, so it runs with a deliberately narrow
 contract:
 
+- **A discovered config does not run commands on its own.** When nobody
+  named the settings file on the command line, `gofastr generate` and
+  `gofastr build` refuse its command extensions. Run
+  `gofastr generate --config <path>` to name it (then
+  `gofastr build --no-generate`, since build takes no `--config`), or set
+  `GOFASTR_CODEGEN_ALLOW_COMMANDS=1`.
 - **The environment is an allowlist, not an inheritance.** The child gets what a
   build-time tool needs to run and nothing else: `PATH`, `HOME`, a temp dir,
   locale, and the Go toolchain variables. It does not see `GOFASTR_SECRET`,

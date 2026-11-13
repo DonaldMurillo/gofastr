@@ -2,6 +2,7 @@ package cron
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -272,5 +273,52 @@ func TestCatchUpWaitingOnHandBackHonoursStop(t *testing.T) {
 		}
 		close(unblock)
 		cancel()
+	}
+}
+
+// flakyLease is a mutexLease whose first Acquire fails the way a database
+// lease does while its connection reconnects.
+type flakyLease struct {
+	mutexLease
+	calls atomic.Int32
+}
+
+func (l *flakyLease) Acquire(ctx context.Context) (bool, func(), error) {
+	if l.calls.Add(1) == 1 {
+		return false, nil, errors.New("lease store reconnecting")
+	}
+	return l.mutexLease.Acquire(ctx)
+}
+
+// One transient Acquire error at the first walked minute used to latch the
+// whole walk as "not leader": every owed minute and the current one were
+// skipped while last advanced, so nothing replayed them. An error is not an
+// answer, so the next walked minute asks again.
+func TestCatchUpRetriesLeaseAfterError(t *testing.T) {
+	s := NewScheduler()
+	lease := &flakyLease{}
+	s.WithLeaderElection(lease)
+	var errs atomic.Int32
+	s.OnError = func(string, error) { errs.Add(1) }
+	var fixedRuns, wildcardRuns atomic.Int32
+	registerCounter(t, s, "fixed", "5 10 * * *", &fixedRuns)
+	registerCounter(t, s, "wild", "* * * * *", &wildcardRuns)
+
+	last := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	now := last.Add(6 * time.Minute) // the 10:01 tick arrives at 10:06
+	s.catchUp(context.Background(), last, last.Add(time.Minute), now)
+	s.inflight.Wait()
+
+	if got := fixedRuns.Load(); got != 1 {
+		t.Errorf("fixed-time job owed at 10:05 ran %d times, want 1", got)
+	}
+	if got := wildcardRuns.Load(); got != 1 {
+		t.Errorf("wildcard job at the current minute ran %d times, want 1", got)
+	}
+	if got := lease.calls.Load(); got != 2 {
+		t.Errorf("Acquire called %d times, want 2 (the error, then one grant)", got)
+	}
+	if errs.Load() != 1 {
+		t.Errorf("OnError saw %d reports, want 1", errs.Load())
 	}
 }

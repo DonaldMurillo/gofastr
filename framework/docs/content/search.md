@@ -247,10 +247,12 @@ stem. The last term is also matched against `tsv_prefix`, the same text under
 the `simple` config with no stemming, and the other terms must still match
 the stemmed column.
 
-Query text splits into terms at any rune that is not a letter or digit, the
-way the tokenizer splits documents: `"won't"` is `won & t:*`, and
-`"load-balance"` is two terms. A query made only of stopwords (`"don't"` is
-`don` and `t`) matches nothing.
+Query text splits into terms at any rune that is not a letter, a number, `-`
+or `_`: `"won't"` is `won & t:*`, `"foo_bar baz"` is `foo_bar & baz:*`, and
+`"e-commerce"` stays one term. Postgres reads a hyphenated term as a phrase of
+its parts, so `"load-balance"` finds `load-balancer` but not "balance the
+load": the parts must sit next to each other. A query made only of stopwords
+(`"don't"` is `don` and `t`) matches nothing.
 
 ### What it deliberately doesn't do
 
@@ -321,8 +323,10 @@ companion existed has it filled from the stored rows on the first
 `EnsureSchema`, which also drops the `<table>_prefix_vocab` view earlier
 releases created.
 
-Query text splits into terms at any rune that is not a letter or digit, the
-way `unicode61` splits documents, so `"won't"` matches `won't`.
+Query text splits into terms at any rune that is not a letter, a number, `-`
+or `_`, so `"won't"` matches `won't`. A hyphenated term is sent as one quoted
+phrase, which `unicode61` splits into adjacent parts: `"load-balance"` finds
+`load-balancer` but not "balance the load".
 
 ### Ranking
 

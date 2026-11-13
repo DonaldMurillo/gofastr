@@ -1654,6 +1654,72 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
+- **A CRUD list refuses a repeated `fields`, `where`, `q` or `cursor`
+  key, and a read-one a repeated `fields` key,** with 400
+  `query_key_repeated`; the later values were never validated or
+  applied. On the list, a queryable column with one of these names is
+  a filter first and answers `filter.repeated_filter`, and a `q` the
+  host owns through `AllowedFilterParams` may repeat when the entity
+  has no `SearchFields` and no visible column whose name or wire name
+  is `q` (a `NoQuery` one included: the filter parser refuses it).
+  **BREAKING** for a client that sent one twice.
+- **A CRUD read-one refuses a query pair that does not decode** with
+  400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
+  returned the full row and `?trashed=true%ZZ` hid a trashed row.
+  **BREAKING** for a client that sent unencoded `;` or `%`.
+- **The admin Audit, Jobs and search pages show "Filter not applied"**
+  when a narrowing query pair does not decode, instead of listing every
+  row.
+- **The app spec refuses an entity or auth block under a node block**
+  (`type: div`, `header`, `article`, …), and **an `entity_form`
+  `fields:` entry the form cannot draw**: an unknown, hidden or
+  repeated name, or a read-only, auto-generated or server-filled field
+  on a create form. Both loaded before and drew nothing.
+- **`gofastr new route` refuses a `--handler` that is not a Go
+  identifier or selector**, and prints a hint to wrap a plain func in
+  `http.HandlerFunc`. `new route` and `new handler` refuse a `--method`
+  that is not an HTTP token.
+- **`gofastr build` names remedies it accepts** when it refuses a
+  settings file's command extension; it told you to pass `--config`,
+  which build does not take.
+- **The docpage pager's label and Previous/Next words translate**
+  through a new `PagerConfig.Ctx`.
+- **The relay never asks upstream for gzip**, so a client that sent no
+  `Accept-Encoding` gets the vendor's bytes as sent
+  ([relay](framework/docs/content/relay.md)).
+- **A plain cron leader lease that errors mid catch-up asks again at
+  the next minute**; one store error dropped the owed fixed-time jobs
+  for good.
+- **A panicking access observer no longer breaks `access.Can`** or the
+  router's serve hook; both recover, as hook and event do.
+- **`openapi.GatedHandler` applies the spec's `RequestView`**, so a
+  caller the predicate admits sees only the entities its session may
+  read. A predicate that admits callers with no session now hands them
+  a spec without the session-gated entities.
+- **`urlprefix.Middleware` rewrites an HTML body whose handler wrote
+  the status before any Content-Type**.
+- **`gofastr verify` reads the semantic-coverage manifest from the
+  go.work root**, where a workspace's tests write it.
+- **The 2FA boot refusal and the scaling guide spell the store's real
+  constructor**, `auth.NewEntityTwoFAStore(db, "auth_twofa",
+  auth.EntityTwoFAStoreConfig{EncryptionKey: key})`.
+- **uinodev1 refuses data-table columns that repeat a key**; the host
+  renderer panicked and the module route answered 500.
+- **Store slices**: a non-scalar slice's SSR stamp matches the
+  runtime's `JSON.stringify` paint (no `<` escapes, `""` for
+  null), and a Computed slice bound through `BindAttr` or `BindHTML`
+  is wired to the runtime.
+- **`html.TextArea` keeps a value's leading newline** through the HTML
+  parser.
+- **noderender**: an option with no `value` submits its text, and the
+  table family renders through the `core-ui/html` builders (`th` gets
+  its scope, `th` and `td` keep their `text`).
+- **repolint gates**: a URL string no longer hides an `Exposure.CRUD`
+  read, a `require (` opener with a comment is read, and every `test`
+  spelling of a `cmd/affected` substitution is flagged.
+- **Docs**: search query terms keep `-` and `_`; backup codes are eight
+  letters and digits; component sheets read the component-option
+  variables; seed references resolve only against one-column keys.
 
 ## [0.96.0] - 2026-11-06
 

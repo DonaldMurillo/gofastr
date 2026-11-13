@@ -473,6 +473,42 @@ func TestGzipPassthroughBytesIdentical(t *testing.T) {
 	}
 }
 
+// A client that sends no Accept-Encoding (curl, Go's default client with
+// compression off, most server SDKs) got the vendor's gzip body
+// decompressed: the relay's transport asked upstream for gzip itself and
+// unpacked the answer, so the body was not the vendor's bytes. The relay
+// forwards the client's Accept-Encoding as sent and nothing more.
+func TestGzipNotAskedForOrUnpacked(t *testing.T) {
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write(bytes.Repeat([]byte("A"), 5000))
+	zw.Close()
+	want := gz.Bytes()
+
+	var upstreamAE atomic.Value
+	base := startRelay(t, defaultCfg, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamAE.Store(r.Header.Get("Accept-Encoding"))
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(want)
+	}))
+
+	req, _ := http.NewRequest(http.MethodGet, base+"/__gofastr/t/e/blob", nil)
+	res, err := (&http.Transport{DisableCompression: true}).RoundTrip(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer res.Body.Close()
+	got, _ := io.ReadAll(res.Body)
+	if ae, _ := upstreamAE.Load().(string); ae != "" {
+		t.Errorf("upstream saw Accept-Encoding %q, the client sent none", ae)
+	}
+	if res.Header.Get("Content-Encoding") != "gzip" || !bytes.Equal(got, want) {
+		t.Errorf("Content-Encoding %q, %d bytes; want the vendor's %d gzip bytes",
+			res.Header.Get("Content-Encoding"), len(got), len(want))
+	}
+}
+
 // TestDeadlineExceededGives504 drives the router directly with a
 // recorder so the relay's own 504 is observable: the client's transport
 // isn't racing to abort first. The relay's per-request deadline is

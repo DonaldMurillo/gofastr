@@ -698,6 +698,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if q.Has("cursor") {
+			// One cursor names one position: a second one was never
+			// decoded, so a bad one beside a good one answered 200.
+			if err := refuseRepeatedKey(q, "cursor"); err != nil {
+				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+				return
+			}
 			// Keyset mode ignores ?sort=, the cursor fields control ORDER BY,
 			// but it must still REFUSE a sort it would refuse anywhere else.
 			// Returning early before this check made ?cursor=&sort=<NoQuery>
@@ -904,9 +910,16 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, 
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
+	if len(ch.Entity.Config.SearchFields) == 0 && ch.ownsQParam() {
+		// ?q= is the entity's own filter, which the filter parser reads.
+		return nil, nil
+	}
+	if err := refuseRepeatedKey(q, "q"); err != nil {
+		return nil, err
+	}
 	qVal := q.Get("q")
 	if len(ch.Entity.Config.SearchFields) == 0 {
-		if strings.TrimSpace(qVal) == "" || ch.ownsQParam() {
+		if strings.TrimSpace(qVal) == "" {
 			return nil, nil
 		}
 		return nil, &i18n.Error{Reason: reasonSearchNotConfigured}
@@ -954,6 +967,9 @@ func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, er
 // whereTreeClausesQ is the no-reparse variant of whereTreeClauses. It
 // also returns the parsed tree, for checks that read its fields.
 func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *filter.Predicate, error) {
+	if err := refuseRepeatedKey(q, "where"); err != nil {
+		return nil, nil, err
+	}
 	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil, nil
@@ -970,6 +986,19 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 		return nil, p, nil
 	}
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
+}
+
+// refuseRepeatedKey refuses a query key the handler reads as one value
+// (fields, where, q) when the query sends it more than once. q.Get reads
+// the first value only, so ?fields=title&fields=bogus answered 200 with
+// the title projection and never validated bogus, where ?fields=bogus
+// alone answered 400. The include key has its own refusal
+// (include_repeated); a scalar filter key has filter.repeated_filter.
+func refuseRepeatedKey(q url.Values, key string) error {
+	if n := len(q[key]); n > 1 {
+		return i18n.NewError(reasonQueryKeyRepeated, map[string]any{"key": strconv.Quote(key), "count": n})
+	}
+	return nil
 }
 
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
@@ -1018,7 +1047,15 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		includes, err := parseIncludeTree(r, ch.Entity, ch.Registry)
+		// Strictly, as List() reads it: URL.Query drops a pair that does
+		// not decode, so ?fields=name%ZZ answered the full row and
+		// ?trashed=true%ZZ hid the trashed row asked for (404).
+		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		if err != nil {
+			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+			return
+		}
+		includes, err := parseIncludeTreeQ(q, ch.Entity, ch.Registry)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -1032,7 +1069,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			}
 		}
 
-		cols, err := ch.projectFromRequest(r)
+		cols, err := ch.projectFromRequestQ(q)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -1047,7 +1084,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		// in the WHERE clause, so the row is simply not found: the caller
 		// must not learn it exists. Same shape as the owner-scope path.
 		ch.ApplyReadScope(qb, r)
-		ch.ApplySoftDeleteFilter(qb, r)
+		ch.applySoftDeleteFilterQ(qb, q, r.Context())
 		for _, c := range getPayload.Where {
 			qb.Where(c.SQL, c.Args...)
 		}

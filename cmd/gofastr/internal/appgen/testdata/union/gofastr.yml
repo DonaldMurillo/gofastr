@@ -848,7 +848,7 @@ screens:
     body:
       - kind: entity_form
         entity: customers
-        fields: [name, slug, cost, reference, logo, contract]
+        fields: [name, slug, logo, contract]
   - name: cards
     route: /cards
     title: Cards

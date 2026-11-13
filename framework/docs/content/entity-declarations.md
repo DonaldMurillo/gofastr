@@ -1433,6 +1433,23 @@ name ends in a suffix but whose name before it is no field (`opt_in`
 with no `opt` field) filters as itself, at the top level, in
 `?rel.field=` and in `include=rel(…)`.
 
+**`fields`, `where`, `q` and `cursor` are sent once too.** Each is read
+as one value, so `?fields=title&fields=body`, a second `?where=`, `?q=`
+or `?cursor=` is a **400** `query_key_repeated` naming the key, on the
+list and (for `fields`) on read-one. Two names read another way on
+the list. A queryable column named `fields`, `where`, `q` or `cursor`
+is a filter first, so repeating it there is the filter refusal above
+(`filter.repeated_filter`); read-one parses no filters and still
+answers `query_key_repeated` for a second `fields`. A `q` in
+`AllowedFilterParams`, on an entity with no `SearchFields` and no
+visible column whose name or `WireName` is `q`, belongs to the host: it may repeat, the
+list answers 200 and the host reads every value. Before, the first
+value ran and the later ones were never validated: `?fields=title&fields=bogus` answered 200
+where `?fields=bogus` alone answered 400. Name several fields in one
+value (`?fields=title,body`) and combine predicates inside one
+`?where=` tree. `include` has the same rule under its own reason,
+`include_repeated` ([includes](includes.md)).
+
 **A bare key that reads two ways is a 400.** When an entity has both
 `check` and `check_in`, `?check_in=x` could mean `check_in = x` or
 `check IN (x)`. The parser does not guess: it answers **400**
@@ -1514,7 +1531,9 @@ separator and keeps the rest, so `?status=paid%ZZ` read as no filter
 and `?cursor=%ZZ` as no cursor (a walk restarted at page 1), each a 200
 with every row. The list (offset, cursor and stream pages alike)
 answers 400 `filter.query_undecodable` instead, `LenientFilters`
-included; send `;` as `%3B`. Code that reads a list query itself does
+included; send `;` as `%3B`. Read-one (`GET /api/<entity>/<id>`)
+answers the same 400: there `?fields=title%ZZ` returned the full row
+and `?trashed=true%ZZ` hid the trashed row asked for. Code that reads a list query itself does
 the same with `filter.ParseQueryStrict(r.URL.RawQuery)`, which
 `filter.ParseFilters` and `filter.ParseSort` now call.
 

@@ -455,16 +455,38 @@ func normalizePattern(p string) string {
 	return p
 }
 
-// DirFor is the coverage root for the project at root: the
-// GOFASTR_SEMANTIC_COVERAGE_DIR or GOFASTR_AXE_COVERAGE_DIR override when
-// one is set, as [DefaultDir] resolves it for the tests and server that
-// write the manifest, else root. Readers that already know the project
-// root use it, so they look where the writers wrote.
+// DirFor is the coverage root for the project at root, resolved the way
+// [DefaultDir] resolves it for the tests and server that write the
+// manifest: the GOFASTR_SEMANTIC_COVERAGE_DIR or GOFASTR_AXE_COVERAGE_DIR
+// override when one is set, else the nearest ancestor of root holding
+// go.work, else root. Readers that already know the project root use
+// it, so they look where the writers wrote, in a Go workspace too.
 func DirFor(root string) string {
 	if v := overrideDir(); v != "" {
 		return v
 	}
+	start := root
+	if abs, err := filepath.Abs(root); err == nil {
+		start = abs
+	}
+	if d, ok := findUp(start, "go.work"); ok {
+		return d
+	}
 	return root
+}
+
+// findUp returns the nearest directory at or above start holding marker.
+func findUp(start, marker string) (string, bool) {
+	for d := start; ; {
+		if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
+			return d, true
+		}
+		parent := filepath.Dir(d)
+		if parent == d {
+			return "", false
+		}
+		d = parent
+	}
 }
 
 func overrideDir() string {
@@ -495,15 +517,8 @@ func DefaultDir() string {
 		return "."
 	}
 	for _, marker := range []string{"go.work", "go.mod"} {
-		for d := wd; ; {
-			if _, err := os.Stat(filepath.Join(d, marker)); err == nil {
-				return d
-			}
-			parent := filepath.Dir(d)
-			if parent == d {
-				break
-			}
-			d = parent
+		if d, ok := findUp(wd, marker); ok {
+			return d
 		}
 	}
 	return wd

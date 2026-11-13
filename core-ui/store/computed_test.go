@@ -121,3 +121,23 @@ func TestComputedValidatesDeps(t *testing.T) {
 	resetForTest()
 	_ = Computed[string](New("v"), "crumbs", "r", "route.path", "route.params.id")
 }
+
+// TestComputedAttrAndHTMLBindsWire: the runtime's computed module only
+// arms off an element carrying the wiring, whichever bind mode drew it.
+func TestComputedAttrAndHTMLBindsWire(t *testing.T) {
+	resetForTest()
+	_ = New("state").Int("count", 0)
+	ready := Computed[bool](New("state"), "isReady", "readyFn", "state.count")
+	label := Computed[string](New("state"), "label", "labelFn", "state.count")
+	ctx := context.Background()
+	for name, out := range map[string]string{
+		"attr": string(ready.BindAttr(ctx, "button", "disabled", nil)),
+		"html": string(label.BindHTML(ctx, "div", nil)),
+	} {
+		for _, want := range []string{`data-cui-computed="`, `data-cui-computed-deps="state.count"`} {
+			if !strings.Contains(out, want) {
+				t.Errorf("%s bind missing %q: %s", name, want, out)
+			}
+		}
+	}
+}

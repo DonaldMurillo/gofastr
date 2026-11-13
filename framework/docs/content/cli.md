@@ -110,7 +110,14 @@ scrubbed the same way.
   files already declare (`package main` when there are none). It refuses
   a name the build would reject: a Go keyword, `main`, `init`, `_`, a
   predeclared name such as `string`, or a name that package already
-  declares.
+  declares. `new route` prints the line without writing anything; it
+  refuses a `--handler` that is not a Go identifier or a selector of
+  them (`h.List`), and a bare name `new handler` would refuse. The
+  printed line passes the handler as written, since `Router.Handle`
+  takes an `http.Handler`, and a hint names the `http.HandlerFunc(…)`
+  conversion a plain func, such as the one `new handler` writes, needs. Both take any HTTP method token for
+  `--method` (`GET`, `POST`, an extension such as `PROPFIND`), upper-cased,
+  and refuse one with a space, a control byte or a separator.
 - `gofastr agents init|sync|skill [dir]`: generate or refresh `AGENTS.md`
   and the per-battery detail files under `.agents/`, in `dir` (default
   the current directory). The verbs take no flags except `skill

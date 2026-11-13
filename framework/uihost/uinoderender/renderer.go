@@ -283,11 +283,12 @@ func statValue(value, unit string) string {
 }
 
 // renderDataTable maps a read-only data-table. PANIC-SAFE: the framework's
-// ui.DataTable panics on empty Columns (datatable.go:154). The validator
-// already rejects empty Columns, but this is a defensive guard so a
-// hand-built (unvalidated) Tree can never crash the renderer. It renders
-// an empty-state instead. Empty Rows are handled by ui.DataTable itself
-// (it already composes EmptyState for zero rows).
+// ui.DataTable panics on empty Columns and on an empty or repeated column
+// Key. The validator already rejects all three, but these are defensive
+// guards so a hand-built (unvalidated) Tree can never crash the renderer.
+// Empty Columns render an empty-state; a bad key returns an error. Empty
+// Rows are handled by ui.DataTable itself (it already composes EmptyState
+// for zero rows).
 func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
 	p := n.Props.(uinodev1.DataTableProps)
 	if len(p.Columns) == 0 {
@@ -297,7 +298,14 @@ func (r *Renderer) renderDataTable(n uinodev1.Node) (render.HTML, error) {
 		}), nil
 	}
 	cols := make([]ui.Column, len(p.Columns))
+	seen := make(map[string]bool, len(p.Columns))
 	for i, c := range p.Columns {
+		// headless.Table panics on an empty or repeated key; the
+		// validator refuses both, and a hand-built Tree gets an error.
+		if c.Key == "" || seen[c.Key] {
+			return "", &renderErr{op: "data-table", reason: fmt.Sprintf("column %d key %q is empty or repeated", i, c.Key)}
+		}
+		seen[c.Key] = true
 		cols[i] = ui.Column{Key: c.Key, Header: c.Label}
 	}
 	rows := make([]ui.Row, len(p.Rows))

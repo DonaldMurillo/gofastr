@@ -1,6 +1,7 @@
 package docpage_test
 
 import (
+	"context"
 	"os"
 	"regexp"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/packages/docpage"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
@@ -130,5 +132,30 @@ func TestPager(t *testing.T) {
 	// No neighbours, no pager at all.
 	if got := string(docpage.Pager(docpage.PagerConfig{})); got != "" {
 		t.Errorf("a pager with no hrefs should render nothing, got %q", got)
+	}
+}
+
+// The pager's own words, its nav label and the direction defaults, come
+// from the request's catalog through Ctx, as siteheader's do; English
+// when no context is given.
+func TestPagerSpeaksTheLocale(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("es", "ui.pagination.previous", i18n.Message{Text: "Anterior"})
+	cat.Set("es", "ui.pagination.next", i18n.Message{Text: "Siguiente"})
+	cat.Set("es", "ui.nav.moreArticles", i18n.Message{Text: "Más artículos"})
+	ctx := i18n.WithTranslator(i18n.WithContext(context.Background(), i18n.Locale{Tag: "es"}), i18n.NewTranslator(cat, "en"))
+	got := string(docpage.Pager(docpage.PagerConfig{
+		Ctx:      ctx,
+		PrevHref: "/a", PrevLabel: "A",
+		NextHref: "/c", NextLabel: "C",
+	}))
+	for _, want := range []string{"Anterior", "Siguiente", `aria-label="Más artículos"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("an es pager lacks %q:\n%s", want, got)
+		}
+	}
+	en := string(docpage.Pager(docpage.PagerConfig{PrevHref: "/a", PrevLabel: "A"}))
+	if !strings.Contains(en, `aria-label="More articles"`) || !strings.Contains(en, "Previous") {
+		t.Errorf("a pager with no Ctx should read English:\n%s", en)
 	}
 }

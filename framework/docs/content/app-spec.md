@@ -1009,6 +1009,11 @@ partial and keeps the shell).
   fields the server fills are exempt: the owner field, the `states:`
   field and its stamps, `hidden`, `read_only` and `auto_generate`
   fields, and every field of an entity with a `before_create` hook.
+  Each `fields:` entry names a declared field by its declaration name:
+  validation refuses one that names no field, a `hidden` field, a
+  `read_only` or `auto_generate` field or a column the server fills
+  (`id`, `created_at`, `updated_at`, `deleted_at`) on a create form, or an entry
+  listed twice, since the form would draw nothing for it.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs
@@ -1317,8 +1322,10 @@ with the request context, so the form carries the CSRF token, and a
 The names differ from the raw node kinds `button`, `form`, `select`,
 `list`, `table` and `nav`, which still render as plain elements through
 the node renderer. That renderer draws only node kinds, so validation
-refuses a catalog block nested under a node block (`type: div` holding a
-`custom_form`): put it in a `stack`, `cluster`, `card` or `section`.
+refuses a catalog block, an `entity_list`, `entity_form` or
+`entity_detail`, or a `login_form` or `signup_form` nested at any depth
+under a node block (`type: div` holding a `custom_form` or an
+`entity_form`): put it in a `stack`, `cluster`, `card` or `section`.
 A raw `textarea` takes its text from `props.value` (or `text`, then
 `content`), rendered as the element's content; children are not drawn.
 A `type: link` block renders through `ui.Link`, the styled anchor;
@@ -1487,10 +1494,10 @@ would never retry; the app would report ready with bootstrap data missing.
 A relation value written as `"@currencies.label=Euro"` is a reference: the
 seed looks up the first `currencies` row whose `label` is `Euro` and stores
 that row's key, the target's `primary_key` column when it declares one and
-`id` otherwise. A relation's target has a one-column key, since boot
-refuses a relation to an entity keyed on several columns (see
+`id` otherwise. A reference resolves only against a one-column key: a
+relation onto a composite key uses a multi-column `foreign_key` (see
 [Relations and composite keys](entity-declarations.md#relations-and-composite-keys)),
-so a reference always stores one value.
+and its seed rows set each foreign-key column to a literal value instead.
 
 When any entity declares `owner_field` (per-user scoping) **and** an admin
 account is bootstrapped (`app.admin.seed_email` / `seed_password`), the seed

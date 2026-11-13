@@ -84,6 +84,11 @@ func TestProdRefusesMemoryTwoFAStore(t *testing.T) {
 	if !strings.Contains(err.Error(), "in-memory 2FA store") {
 		t.Fatalf("refusal must name the cause; got: %v", err)
 	}
+	// The remedy is pasted into editors: it must spell the constructor's
+	// real arity, config argument (EncryptionKey) included.
+	if !strings.Contains(err.Error(), `NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{EncryptionKey:`) {
+		t.Fatalf("remedy must spell the three-argument constructor; got: %v", err)
+	}
 }
 
 // AllowInMemoryStores acknowledges single-node deployments: boot

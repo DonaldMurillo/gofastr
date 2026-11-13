@@ -56,6 +56,7 @@ var (
 	reasonNestedInListOverCap  = i18n.Define("error.nested_in_over_cap", "nested filter {{key}}: in-list on {{field}} has {{count}} entries (max {{max}})")
 	reasonIncludeNoRegistry    = i18n.Define("error.include_no_registry", "include {{include}} requires an entity registry: set CrudHandler.Registry (framework apps do this automatically)")
 	reasonIncludeRepeated      = i18n.Define("error.include_repeated", "include is sent {{count}} times; send it once with comma-separated paths")
+	reasonQueryKeyRepeated     = i18n.Define("error.query_key_repeated", "{{key}} is sent {{count}} times; send it once")
 	reasonIncludeTooManyPaths  = i18n.Define("error.include_too_many_paths", "too many include paths: {{count}} (max {{max}})")
 	reasonIncludeTooDeep       = i18n.Define("error.include_too_deep", "include {{include}} is {{depth}} relations deep; the maximum is {{max}}")
 	reasonUnknownIncludeHint   = i18n.Define("error.unknown_include_hint", "unknown include {{include}} (segment {{segment}} has no relation on entity {{entity}}; did you mean {{suggestion}}?)")

@@ -119,6 +119,13 @@ func runNewHandler(args []string, overwrite bool) {
 		cli.OsExit(1)
 		return
 	}
+	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
+	// so a non-ASCII method would pass as a different token.
+	if err := checkRouteMethod(method); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	method = strings.ToUpper(method)
 
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
@@ -143,10 +150,67 @@ func runNewRoute(args []string) {
 		cli.OsExit(1)
 		return
 	}
+	// Check before the fold: strings.ToUpper maps ı to I and ſ to S,
+	// so a non-ASCII method would pass as a different token.
+	if err := checkRouteMethod(method); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 	method = strings.ToUpper(method)
+	// The handler lands at an expression slot of the printed Go line: a
+	// name that is not an identifier, or a selector of them (h.List),
+	// prints a line that does not compile.
+	if err := checkRouteHandler(handler); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 
 	cli.Info("Add this to your app setup:")
 	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+	// Router.Handle takes an http.Handler. new handler scaffolds a plain
+	// func, which needs the conversion; a handler value does not, and the
+	// command cannot tell which the name is.
+	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
+}
+
+// checkRouteMethod refuses a method that is not an HTTP token (RFC 9110
+// section 5.6.2): the router builds a "METHOD /path" pattern from it, and
+// net/http's ServeMux panics on a pattern whose method is no token.
+// Extension methods such as PROPFIND are tokens and pass.
+func checkRouteMethod(method string) error {
+	if method == "" {
+		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
+	}
+	for i := 0; i < len(method); i++ {
+		c := method[i]
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0 {
+			continue
+		}
+		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
+	}
+	return nil
+}
+
+// checkRouteHandler refuses a --handler that is not a Go identifier or a
+// selector chain of them (h.List, handlers.Things). The handler is the
+// host's own Go name, so any identifier the Go spec allows passes, Unicode
+// letters included. A bare name gets new handler's guard too: a keyword,
+// main, init, _ or a predeclared name is no handler.
+func checkRouteHandler(handler string) error {
+	parts := strings.Split(handler, ".")
+	for _, p := range parts {
+		if !token.IsIdentifier(p) || token.IsKeyword(p) || p == "_" {
+			return fmt.Errorf("invalid handler %q: must be a Go identifier or a selector such as h.List", handler)
+		}
+	}
+	if len(parts) == 1 {
+		if reason := unusableFuncName(handler); reason != "" {
+			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
+		}
+	}
+	return nil
 }
 
 // routeSnippet returns the canonical app.Router().Handle(...) line for
