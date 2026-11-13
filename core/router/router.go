@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Middleware is the same shape as middleware.Middleware: a function
@@ -228,11 +230,28 @@ func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 //
 // Test tooling uses it to record semantic coverage: which routes a suite
 // genuinely reached through the real router. Pass nil to clear. Must be
-// called on the root router; setting on a child forwards to root.
+// called on the root router; setting on a child forwards to root. A
+// panic in fn is recovered and logged; the request is still served.
 func (r *Router) SetServeHook(fn func(method, pattern string)) {
 	r.root.mu.Lock()
 	r.root.serveHook = fn
 	r.root.mu.Unlock()
+}
+
+// serveHookSafely runs the serve hook under a recover. The hook is test
+// tooling that runs before the middleware chain, so the app's recovery
+// middleware never sees its panic: a fault in it is logged and the
+// request is served as if no hook were installed.
+func serveHookSafely(ctx context.Context, hook func(method, pattern string), method, pattern string) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Default().ErrorContext(ctx, "router: serve hook panicked; ignored",
+				"panic", textsafe.Recovered(r),
+				"stack", string(debug.Stack()),
+			)
+		}
+	}()
+	hook(method, pattern)
 }
 
 // Get registers a handler for GET requests on the given pattern.
@@ -497,7 +516,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// before the chain, so a request the middleware later rejects still
 	// counts as having exercised this route.
 	if served != nil {
-		served(c.method, c.pattern)
+		serveHookSafely(req.Context(), served, c.method, c.pattern)
 	}
 	// Per-route timeout: stamp the resolution BEFORE the chain runs so
 	// middleware.Timeout picks it up. Behind the root's atomic flag, an

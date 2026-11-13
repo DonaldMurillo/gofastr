@@ -2,7 +2,11 @@ package access
 
 import (
 	"context"
+	"log/slog"
+	"runtime/debug"
 	"sync/atomic"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Evaluation is one permission check that actually happened, whatever the
@@ -41,7 +45,8 @@ var observer atomic.Pointer[func(Evaluation)]
 // production binary.
 //
 // The callback runs inline on the request path, so it must be cheap and
-// must not block. It must also tolerate concurrent calls.
+// must not block. It must also tolerate concurrent calls. A panic in it
+// is recovered and logged; the check returns its verdict regardless.
 func SetObserver(fn func(Evaluation)) {
 	if fn == nil {
 		observer.Store(nil)
@@ -56,14 +61,29 @@ func SetObserver(fn func(Evaluation)) {
 // Role resolution happens inside the nil check: GetRoles walks the
 // context, and doing that on every permission check in production, for
 // a value nobody reads, would be a real cost for no benefit.
+//
+// The observer is host-installed code running inline on the permission
+// check, so a panicking observer is recovered and logged, never allowed
+// to take the verdict (or a goroutine with no recover net) with it: the
+// same posture hook and event give their observers.
 func observe(ctx context.Context, permission Permission, granted bool, path string) bool {
 	if fn := observer.Load(); fn != nil {
-		(*fn)(Evaluation{
-			Permission: permission,
-			Granted:    granted,
-			Path:       path,
-			Roles:      GetRoles(ctx),
-		})
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Default().ErrorContext(ctx, "access: observer panicked; ignored",
+						"panic", textsafe.Recovered(r),
+						"stack", string(debug.Stack()),
+					)
+				}
+			}()
+			(*fn)(Evaluation{
+				Permission: permission,
+				Granted:    granted,
+				Path:       path,
+				Roles:      GetRoles(ctx),
+			})
+		}()
 	}
 	return granted
 }
