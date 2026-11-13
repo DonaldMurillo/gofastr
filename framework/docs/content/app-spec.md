@@ -1009,6 +1009,11 @@ partial and keeps the shell).
   fields the server fills are exempt: the owner field, the `states:`
   field and its stamps, `hidden`, `read_only` and `auto_generate`
   fields, and every field of an entity with a `before_create` hook.
+  Each `fields:` entry names a declared field by its declaration name:
+  validation refuses one that names no field, a `hidden` field, a
+  `read_only` or `auto_generate` field or a column the server fills
+  (`id`, `created_at`, `updated_at`, `deleted_at`) on a create form, or an entry
+  listed twice, since the form would draw nothing for it.
 - `entity_form` with `mode: edit` on an `{id}` route renders the record
   page, `appUI.Record("<entity>", id)`, without Delete or Duplicate. It
   loads the record into its form, keeps the key read-only, and Save PUTs
