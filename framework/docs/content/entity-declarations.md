@@ -1442,7 +1442,7 @@ is a filter first, so repeating it there is the filter refusal above
 (`filter.repeated_filter`); read-one parses no filters and still
 answers `query_key_repeated` for a second `fields`. A `q` in
 `AllowedFilterParams`, on an entity with no `SearchFields` and no
-queryable column named `q`, belongs to the host: it may repeat, the
+visible column whose name or `WireName` is `q`, belongs to the host: it may repeat, the
 list answers 200 and the host reads every value. Before, the first
 value ran and the later ones were never validated: `?fields=title&fields=bogus` answered 200
 where `?fields=bogus` alone answered 400. Name several fields in one

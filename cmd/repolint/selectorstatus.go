@@ -65,9 +65,14 @@ func selectorStatusFindings(rel string, body []byte) []finding {
 		}
 		// The test may start on an earlier line joined by a trailing
 		// backslash (`if [ -n \` then the substitution).
+		// A backslash inside a comment continues nothing.
 		lineStart := strings.LastIndexByte(text[:i], '\n') + 1
 		for lineStart >= 2 && text[lineStart-2] == '\\' {
-			lineStart = strings.LastIndexByte(text[:lineStart-2], '\n') + 1
+			prev := strings.LastIndexByte(text[:lineStart-2], '\n') + 1
+			if opensShellComment(text[prev : lineStart-2]) {
+				break
+			}
+			lineStart = prev
 		}
 		prefix := strings.ReplaceAll(text[lineStart:i], "\\\n", " ")
 		if opensShellComment(prefix) || !testOperandPrefix.MatchString(prefix) {
@@ -155,20 +160,23 @@ func doubleQuoteEnd(s string, i int) int {
 // shell metacharacter), outside quotes. The shell
 // (and YAML around a run: block) never executes what follows it.
 func opensShellComment(prefix string) bool {
-	var quote byte
 	for i := 0; i < len(prefix); i++ {
 		c := prefix[i]
 		switch {
-		case quote != 0:
-			if c == '\\' && quote == '"' {
-				i++
-			} else if c == quote {
-				quote = 0
-			}
 		case c == '\\':
 			i++
-		case c == '"' || c == '\'':
-			quote = c
+		case c == '\'':
+			j := strings.IndexByte(prefix[i+1:], '\'')
+			if j < 0 {
+				return false
+			}
+			i += j + 1
+		case c == '"':
+			// Substitution-aware: a quote inside "$(… " … ")" does not
+			// end the outer string.
+			i = doubleQuoteEnd(prefix, i+1)
+		case c == '$' && i+1 < len(prefix) && prefix[i+1] == '(':
+			i += 1 + substitutionEnd(prefix[i+2:]) + 1
 		case c == '#' && (i == 0 || strings.IndexByte(" \t;&|()<>", prefix[i-1]) >= 0):
 			return true
 		}

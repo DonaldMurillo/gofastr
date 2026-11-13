@@ -66,6 +66,9 @@ func TestSelectorStatusOtherSpellings(t *testing.T) {
 		"while test -n \"$(go run ./cmd/affected)\"; do break; done\n",
 		"true && test -n \"$(go run ./cmd/affected)\" && exit 0\n",
 		"      - run: test -n \"$(go run ./cmd/affected)\"\n",
+		// A quoted # inside an earlier substitution's own quotes starts no
+		// comment.
+		"echo \"$(printf '%s' \" # \")\"; if test -n \"$(go run ./cmd/affected)\"; then exit 0; fi\n",
 	} {
 		got := selectorStatusFindings("scripts/gate.sh", []byte(body))
 		if len(got) != 1 || got[0].Line != 1 {
@@ -100,5 +103,15 @@ func TestSelectorStatusOneFindingPerLine(t *testing.T) {
 	body := "if [ -n \"$(go run ./cmd/affected)\" ] && [ -n \"$(go run ./cmd/affected -format dir)\" ]; then exit 0; fi\n"
 	if got := selectorStatusFindings("scripts/gate.sh", []byte(body)); len(got) != 1 {
 		t.Fatalf("findings %+v, want exactly one", got)
+	}
+}
+
+// A backslash inside a comment continues nothing: the test on the next
+// line runs and is flagged on its own line.
+func TestSelectorStatusCommentBackslash(t *testing.T) {
+	body := "# Example command: go run ./cmd/affected \\\nif test -n \"$(go run ./cmd/affected)\"; then exit 0; fi\n"
+	got := selectorStatusFindings("scripts/gate.sh", []byte(body))
+	if len(got) != 1 || got[0].Line != 2 {
+		t.Fatalf("findings %+v, want one on line 2", got)
 	}
 }

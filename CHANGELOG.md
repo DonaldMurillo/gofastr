@@ -1659,8 +1659,9 @@ few lines, and link the PR or the docs page for the rest.
   `query_key_repeated`; the later values were never validated or
   applied. On the list, a queryable column with one of these names is
   a filter first and answers `filter.repeated_filter`, and a `q` the
-  host owns through `AllowedFilterParams` (no `SearchFields`, no
-  column named `q`) may repeat.
+  host owns through `AllowedFilterParams` may repeat when the entity
+  has no `SearchFields` and no visible column whose name or wire name
+  is `q` (a `NoQuery` one included: the filter parser refuses it).
   **BREAKING** for a client that sent one twice.
 - **A CRUD read-one refuses a query pair that does not decode** with
   400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`

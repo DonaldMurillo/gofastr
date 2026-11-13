@@ -352,7 +352,7 @@ notes:
     breaking: true
     guidance: "Name every path in one include value, comma-separated: ?include=author,comments."
     nodetect: "a query parameter a client sends; no host source spelling shows it"
-  - change: "BREAKING - a CRUD list that repeats the fields, where, q or cursor key (?fields=title&fields=body, two ?where= trees, two ?q= terms, two ?cursor= positions), or a read-one that repeats fields, answers 400 query_key_repeated, where it applied the first value and ignored the rest unvalidated. On the list, a queryable column named fields, where, q or cursor is a filter first: repeating it answers 400 filter.repeated_filter. A q the host owns (in AllowedFilterParams, with no SearchFields and no column named q) may repeat: the list answers 200 and the host reads every value"
+  - change: "BREAKING - a CRUD list that repeats the fields, where, q or cursor key (?fields=title&fields=body, two ?where= trees, two ?q= terms, two ?cursor= positions), or a read-one that repeats fields, answers 400 query_key_repeated, where it applied the first value and ignored the rest unvalidated. On the list, a queryable column named fields, where, q or cursor is a filter first: repeating it answers 400 filter.repeated_filter. A q the host owns (in AllowedFilterParams, with no SearchFields and no visible column whose name or wire name is q, NoQuery included) may repeat: the list answers 200 and the host reads every value"
     breaking: true
     guidance: "Send each key once: name several fields comma-separated (?fields=title,body), combine predicates inside one ?where= tree, put every search word in one ?q= value, and send one ?cursor=."
     nodetect: "a query parameter a client sends; no host source spelling shows it"
