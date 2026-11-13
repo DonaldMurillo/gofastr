@@ -199,7 +199,8 @@ func urlAttr(tag, key string) bool {
 // through [HTML] and the Location, X-Gofastr-Location,
 // X-Gofastr-Push-State and X-Gofastr-Document headers through [Path]. Any other request passes straight through. An HTML
 // body is buffered until the handler returns, so Flush waits for it;
-// other bodies stream. A body that is already encoded (gzip) passes
+// other bodies stream. A body with no Content-Type is typed by the sniff
+// net/http applies, even when the handler wrote its status first. A body that is already encoded (gzip) passes
 // through as written: the framework places this middleware inside
 // Compress, which encodes after it.
 func Middleware() func(http.Handler) http.Handler {
@@ -230,8 +231,13 @@ type writer struct {
 	rule      Rule
 	headed    bool
 	buffering bool
-	code      int
-	buf       bytes.Buffer
+	// pending: the handler wrote a status with no Content-Type, so the
+	// status waits for the first body bytes. net/http sniffs the type
+	// from them, and an untyped HTML body must be rewritten like a
+	// typed one.
+	pending bool
+	code    int
+	buf     bytes.Buffer
 }
 
 func (w *writer) rewriteHeaders() {
@@ -255,21 +261,51 @@ func (w *writer) WriteHeader(code int) {
 	w.code = code
 	w.rewriteHeaders()
 	h := w.ResponseWriter.Header()
-	if strings.HasPrefix(h.Get("Content-Type"), "text/html") && h.Get("Content-Encoding") == "" {
-		w.buffering = true
-		h.Del("Content-Length")
-		return
+	if h.Get("Content-Encoding") == "" {
+		if strings.HasPrefix(h.Get("Content-Type"), "text/html") {
+			w.buffering = true
+			h.Del("Content-Length")
+			return
+		}
+		if h.Get("Content-Type") == "" && bodyAllowed(code) {
+			w.pending = true
+			return
+		}
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// bodyAllowed mirrors net/http: these statuses carry no body, so it
+// never sniffs one for them.
+func bodyAllowed(code int) bool {
+	return code != http.StatusNoContent && code != http.StatusNotModified
+}
+
+// settle decides a pending status from the first body bytes, the same
+// sniff net/http applies to an untyped response: HTML is buffered and
+// rewritten, anything else is forwarded and streams.
+func (w *writer) settle(b []byte) {
+	w.pending = false
+	h := w.ResponseWriter.Header()
+	ct := http.DetectContentType(b)
+	h.Set("Content-Type", ct)
+	if strings.HasPrefix(ct, "text/html") {
+		w.buffering = true
+		h.Del("Content-Length")
+		return
+	}
+	w.ResponseWriter.WriteHeader(w.code)
+}
+
 func (w *writer) Write(b []byte) (int, error) {
 	if !w.headed {
-		h := w.ResponseWriter.Header()
-		if h.Get("Content-Type") == "" && len(b) > 0 {
-			h.Set("Content-Type", http.DetectContentType(b))
-		}
 		w.WriteHeader(http.StatusOK)
+	}
+	if w.pending {
+		if len(b) == 0 {
+			return 0, nil
+		}
+		w.settle(b)
 	}
 	if w.buffering {
 		return w.buf.Write(b)
@@ -289,6 +325,13 @@ func (w *writer) Flush() {
 			return
 		}
 	}
+	if w.pending {
+		// A flush before any body sends the headers now, and net/http
+		// types an empty sniff as text/plain, so what follows is not
+		// HTML to the client: forward the status and stream.
+		w.pending = false
+		w.ResponseWriter.WriteHeader(w.code)
+	}
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
 
@@ -298,6 +341,10 @@ func (w *writer) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func (w *writer) finish() {
 	if !w.headed {
 		w.rewriteHeaders()
+		return
+	}
+	if w.pending {
+		w.ResponseWriter.WriteHeader(w.code)
 		return
 	}
 	if !w.buffering {

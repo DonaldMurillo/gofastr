@@ -184,6 +184,52 @@ func TestMiddlewareSniffsUntypedHTML(t *testing.T) {
 	}
 }
 
+// R11 U1-01: a status written before an untyped HTML body was forwarded
+// at once, so the body passed through raw while net/http still sniffed
+// it as text/html. The status waits for the first write's sniff.
+func TestStatusFirstUntypedHTMLRewritten(t *testing.T) {
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, `<html><a href="/p`)
+		io.WriteString(w, `ricing">p</a>`)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+	if got := rec.Body.String(); got != `<html><a href="/es/pricing">p</a>` {
+		t.Fatalf("got %q", got)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want the sniffed text/html", ct)
+	}
+}
+
+// A status-first body that sniffs as something else streams as written,
+// and a status with no body still reaches the client.
+func TestStatusFirstOtherBodiesPass(t *testing.T) {
+	body := `{"href":"/pricing"}`
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, body)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != body {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+
+	h = Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+	}))
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("bodyless status = %d, want 201", rec.Code)
+	}
+}
+
 func TestMiddlewarePassesOtherTypes(t *testing.T) {
 	body := `{"href":"/pricing"}`
 	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
