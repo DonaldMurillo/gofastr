@@ -1,10 +1,12 @@
 package buildcmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/cmd/check-embed/embedcheck"
@@ -48,7 +50,13 @@ func RunBuild(args []string) {
 		// Same gate as `gofastr generate`: a discovered config's command
 		// extension runs a binary this build never asked for.
 		if err := codegen.CheckCommandExtensions(discovery); err != nil {
-			cli.Fail("%v", err)
+			if errors.Is(err, codegen.ErrCommandExtensionNotAllowed) {
+				// The shared refusal says to pass --config, which build
+				// does not take: name the remedies that work here.
+				cli.Fail("%s", buildCommandExtRefusal(discovery))
+			} else {
+				cli.Fail("%v", err)
+			}
 			cli.OsExit(1)
 		}
 		if buildGenerates(discovery.Found, ".") {
@@ -235,4 +243,21 @@ func buildEmbedGate(pattern string, allowUnverified bool) bool {
 // config entry (entities/client, the settings endpoints).
 func buildGenerates(configFound bool, dir string) bool {
 	return configFound || appgen.AppClientPresent(dir) || appgen.AppEndpointsWanted(dir)
+}
+
+// buildCommandExtRefusal is build's refusal of a discovered config's
+// command extension. build takes no --config, so the remedies it names
+// are the opt-in, or an explicit generate followed by a build that skips
+// generation (build's own generate step is that same generate).
+func buildCommandExtRefusal(d codegen.Discovery) string {
+	var named []string
+	for _, ext := range d.Config.Codegen.Extensions {
+		if len(ext.Command) > 0 {
+			named = append(named, ext.Name+": "+strings.Join(ext.Command, " "))
+		}
+	}
+	return fmt.Sprintf("codegen: discovered config declares a command extension: %s runs\n  %s\n"+
+		"Set GOFASTR_CODEGEN_ALLOW_COMMANDS=1 to allow commands from a discovered config, "+
+		"or run gofastr generate --config %s and then gofastr build --no-generate",
+		d.Path, strings.Join(named, "\n  "), d.Path)
 }
