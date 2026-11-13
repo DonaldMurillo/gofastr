@@ -103,7 +103,9 @@ func (sl *Slice[T]) Bind(ctx context.Context, tag string, attrs map[string]strin
 
 // applyComputed stamps the computed-wiring attributes when this slice is
 // a Computed. The runtime's computed module reads them to recompute the
-// value client-side whenever a dependency changes.
+// value client-side whenever a dependency changes, and loads only when
+// an element carries them, so every bind mode (Bind, BindAttr,
+// BindHTML) stamps them.
 func (sl *Slice[T]) applyComputed(a map[string]string) {
 	if sl.comp == nil {
 		return
@@ -131,6 +133,7 @@ func (sl *Slice[T]) BindAttr(ctx context.Context, tag, htmlAttr string, attrs ma
 	a["data-cui-signal"] = sl.name
 	a["data-cui-signal-mode"] = "attr"
 	a["data-cui-signal-attr"] = htmlAttr
+	sl.applyComputed(a)
 	v := any(sl.resolve(ctx))
 	if booleanSignalAttrs[asciicase.Lower(htmlAttr)] {
 		// A boolean attribute is on whenever it is present, so
@@ -249,6 +252,7 @@ func (sl *Slice[T]) BindHTML(ctx context.Context, tag string, attrs map[string]s
 	a := cloneAttrs(attrs)
 	a["data-cui-signal"] = sl.name
 	a["data-cui-signal-mode"] = "html"
+	sl.applyComputed(a)
 	return renderEl(tag, a, render.HTML(valueString(any(sl.resolve(ctx)))))
 }
 
