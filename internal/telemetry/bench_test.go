@@ -60,6 +60,27 @@ func benchStore(b *testing.B) (*telemetry.Store, telemetrygen.Stats) {
 			}
 			b.Logf("generated in %s", time.Since(start).Round(time.Second))
 		}
+		// TELEMETRY_BENCH_SEAL=1 seals every day but the last, as a
+		// running app has them: finished days packed, today plain.
+		if os.Getenv("TELEMETRY_BENCH_SEAL") == "1" {
+			start := time.Now()
+			for d := 0; d < load.Days-1; d++ {
+				day := bench.stats.First.Add(time.Duration(d) * 24 * time.Hour)
+				for _, kind := range []string{telemetry.KindLogs, telemetry.KindTraces} {
+					if bench.err = telemetry.SealDay(dir, kind, day); bench.err != nil {
+						return
+					}
+				}
+			}
+			var total int64
+			entries, _ := os.ReadDir(dir)
+			for _, e := range entries {
+				if info, err := e.Info(); err == nil {
+					total += info.Size()
+				}
+			}
+			b.Logf("sealed %d days in %s; the directory is now %d MB", load.Days-1, time.Since(start).Round(time.Second), total>>20)
+		}
 		bench.store, bench.err = telemetry.Open(cfg)
 		st := bench.stats
 		b.Logf("data: %g req/s for %d days in %s: %d log lines (%d MB), %d traces (%d MB)",

@@ -57,7 +57,7 @@ var day0 = time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
 func TestWriterWritesDayFilesTheStoreReads(t *testing.T) {
 	dir := t.TempDir()
 	ck := &clock{t: day0.Add(23*time.Hour + 59*time.Minute)}
-	w, err := newWriter(Config{Dir: dir}, ck.now)
+	w, err := newWriter(Config{Dir: dir}, ck.now, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestWriterRemovesFilesPastRetention(t *testing.T) {
 	// Noon on the fifth day, keeping 2 days: the files that ended more
 	// than 48 hours ago are days 0 and 1.
 	ck := &clock{t: day0.Add(4*24*time.Hour + 12*time.Hour)}
-	w, err := newWriter(Config{Dir: dir, Retention: 48 * time.Hour}, ck.now)
+	w, err := newWriter(Config{Dir: dir, Retention: 48 * time.Hour}, ck.now, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestWriterHoldsTheDiskCap(t *testing.T) {
 	}
 	ck := &clock{t: day0.Add(3*24*time.Hour + time.Hour)}
 	// Room for two past days and a little of today.
-	w, err := newWriter(Config{Dir: dir, MaxDiskBytes: 4500}, ck.now)
+	w, err := newWriter(Config{Dir: dir, MaxDiskBytes: 4500}, ck.now, false)
 	if err != nil {
 		t.Fatal(err)
 	}

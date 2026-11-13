@@ -123,8 +123,19 @@ without one, and a caller it refuses gets a 403.
   by time range. A line written inside a request links to that request.
 
 Every filter is in the query string, so a view can be bookmarked and
-shared. The pages do not refresh on their own yet: reload for newer
-lines.
+shared. The lists show 25 rows a page, with **Newer**, **Older** and
+**Back to newest**.
+
+The newest page of each list refreshes its rows every ten seconds and
+says "Live". A page you have paged back on stays as it is.
+
+The Logs page leaves out the access lines of quiet paths (scripts,
+styles, anything in `Config.QuietPaths`), which would otherwise fill
+every page; a link on the page shows them.
+
+A search for a rare word has to read every kept line. After three
+seconds the page shows what it found, says how far back it read, and
+its Older link carries on from there.
 
 ### From a shell
 
@@ -154,19 +165,38 @@ files is scrubbed of terminal control bytes before it is printed.
 
 They run behind `Config.MCPGate`, by default
 `framework.MCPRequireRole("admin")`. An argument a tool cannot read is
-an error, never a filter quietly dropped. `gofastr dev` turns the tools
-on, ungated, for a loopback listener.
+an error, never a filter quietly dropped. `telemetry_logs` gives up
+after ten seconds and returns what it found with `stopped_at`; pass
+that as `until_ts` to carry on. `gofastr dev` turns the tools on,
+ungated, for a loopback listener.
 
 ## What is written
 
 Files go in `Config.Dir`, by default `telemetry/` under the app's state
-directory (`$XDG_STATE_HOME/<app>` or `~/.local/state/<app>`). There is
-one file per kind per UTC day, owner-readable only:
+directory (`$XDG_STATE_HOME/<app>` or `~/.local/state/<app>`). Today's
+lines go to one plain file per kind, owner-readable only:
 
 | File | One line is |
 |------|-------------|
 | `logs-YYYYMMDD.jsonl` | a log entry, as [log](log.md) describes it |
 | `traces-YYYYMMDD.jsonl` | one complete trace, written when its request ends |
+
+When a UTC day is over, its files are **sealed** in the background: the
+lines are packed into gzip blocks of about 1 MiB and the plain file is
+removed. A sealed day is about a seventh of its plain size.
+
+| File | Holds |
+|------|-------|
+| `logs-YYYYMMDD.jsonl.gz`, `traces-YYYYMMDD.jsonl.gz` | the same lines. Each is one valid gzip stream: `zcat logs-20261112.jsonl.gz \| grep ...` works |
+| `traces-YYYYMMDD.heads.gz` | each trace's summary, so a list of requests never unpacks a span |
+| `logs-YYYYMMDD.idx`, `traces-YYYYMMDD.idx` | where each block is, the times it covers, and which block holds each trace ID |
+
+The index is written last. A day without one is read from its plain
+file, so an app killed in the middle of sealing loses nothing and
+finishes the job on its next start. An index that is lost or damaged is
+rebuilt from the blocks. Sealing rests between blocks, so on one core it
+leaves two thirds of the time to requests, and it stops at the next
+block when the app shuts down.
 
 A log line written inside a traced request carries `trace_id` and
 `span_id`, so `grep <trace_id> logs-*.jsonl` reads one request's lines.
@@ -201,9 +231,9 @@ Set `KeepNoOrdinary` to keep only the first two. Two kinds of work are
 never part of the sample:
 
 - **Quiet paths.** A request under one of `Config.QuietPaths` is kept
-  only when it fails or is slow. `/__gofastr/`, the framework's own
-  scripts and styles, is always one; add your static files and health
-  check.
+  only when it fails or is slow. `/__gofastr/` and `/core-ui/`, the
+  framework's own scripts and styles, are always two; add your static
+  files and health check.
 - **Stray calls.** A query or outbound call made outside any request or
   job (a poll loop) is kept only when it is slow.
 
@@ -233,7 +263,8 @@ When a limit is reached, data is dropped and counted, never queued:
   `MaxMemoryBytes`, the oldest unfinished trace is dropped. A trace
   whose request has not ended after ten minutes is dropped too.
 
-`tel.Stats()` reports what was written and every kind of drop.
+`tel.Stats()` reports what was written, every kind of drop, and how
+many days have been sealed.
 
 ## Cost
 
@@ -241,14 +272,16 @@ Measured through the default middleware and the log plugin, for a
 request that logs 3 lines and makes 8 spans, on one CPU: writing the log
 lines to the day file adds about 4 µs to a request, and tracing adds
 about 26 µs more, most of it the OpenTelemetry SDK creating the spans.
-A day at 20 requests a second is about 1.6 GB of files; days are not
-compressed yet, so the default cap holds about three days at that rate.
+A day at 20 requests a second is about 1.7 GB while it is today's and
+about 240 MB once sealed, so the default 5 GiB cap holds about 13 sealed
+days beside today. Sealing a day took about 15 seconds of CPU.
 
-Queries read the files directly, with no index. Over three days at that
-rate, on one CPU: the newest log lines and one request's log lines come
-back in a few milliseconds, a day's slow requests in about 100 ms, and a
-text search of one day in about a second. Opening a request by trace ID
-reads every trace file until it finds it, about 75 ms a day of files.
+Measured at that rate with finished days sealed, on one CPU: the newest
+log lines and one request's log lines come back in about 5 ms, a request
+opened by trace ID in about 80 ms, a day's slow requests in about
+100 ms, and a text search of the last day in a little over a second.
+Searching sealed days means unpacking them, at about 5 seconds a day;
+that is the search the three-second budget above is for.
 
 ## Common mistakes
 
@@ -265,9 +298,12 @@ reads every trace file until it finds it, about 75 ms a day of files.
   replaces the provider the plugin installed and traces stop. Set
   `ExternalTracerProvider` and add `tel.SpanProcessor()` to your own
   provider.
-- **Sizing `MaxDiskBytes` from the default.** Days are not compressed
-  yet. At 20 requests a second the default 5 GiB holds about three days,
-  not the 14 that `Retention` allows; the cap wins.
+- **Sizing `MaxDiskBytes` without counting today.** Today's files are
+  plain until the day is over, about seven times a sealed day. At 20
+  requests a second the default 5 GiB holds today and about 13 sealed
+  days; when the cap and `Retention` disagree, the cap wins.
+- **Grepping only `*.jsonl`.** Finished days are `*.jsonl.gz`. Use
+  `zcat`, or `gofastr telemetry logs --grep`, which reads both.
 - **Looking for an ordinary request that is not there.** Nineteen in
   twenty are sampled out by default. Raise `SampleRate`, or find its log
   lines on the Logs page, which keeps every line.

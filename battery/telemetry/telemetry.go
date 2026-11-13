@@ -63,8 +63,9 @@ type Config struct {
 	MaxMemoryBytes int64
 	// QuietPaths are path prefixes of requests kept only when they fail
 	// or are slow, never as part of the sample: static files, health
-	// checks. "/__gofastr/", the framework's own scripts and styles, is
-	// always one.
+	// checks. "/__gofastr/" and "/core-ui/", the framework's own scripts
+	// and styles, are always two. The Logs screen leaves these paths'
+	// access lines out unless asked for them.
 	QuietPaths []string
 	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
 	// and telemetry_logs, so a connected agent can read what the files
@@ -99,6 +100,9 @@ type Stats struct {
 	LinesDropped int64
 	// FilesRemoved is the day files deleted for age or for the cap.
 	FilesRemoved int64
+	// DaysSealed is the finished days packed into compressed blocks,
+	// counted once for logs and once for traces.
+	DaysSealed int64
 }
 
 // Plugin is the telemetry plugin. It implements framework.Plugin.
@@ -117,11 +121,12 @@ type Plugin struct {
 // New returns the plugin. Register it before the log plugin, so the
 // files are open when the first line is logged.
 func New(cfg Config) *Plugin {
-	return &Plugin{cfg: cfg, quiet: append([]string{"/__gofastr/"}, cfg.QuietPaths...)}
+	return &Plugin{cfg: cfg, quiet: append([]string{"/__gofastr/", "/core-ui/"}, cfg.QuietPaths...)}
 }
 
 // QuietPaths returns the path prefixes whose requests are kept only
-// when they fail or are slow: "/__gofastr/" and Config.QuietPaths.
+// when they fail or are slow: the framework's own "/__gofastr/" and
+// "/core-ui/", and Config.QuietPaths.
 func (p *Plugin) QuietPaths() []string { return slices.Clone(p.quiet) }
 
 // Name implements framework.Plugin.
@@ -211,7 +216,7 @@ func (p *Plugin) Stats() Stats {
 		ws := w.Stats()
 		st.LogLines, st.LogBytes, st.Traces, st.TraceBytes = ws.LogLines, ws.LogBytes, ws.Traces, ws.TraceBytes
 		st.LinesDropped += ws.Dropped
-		st.FilesRemoved = ws.FilesRemoved
+		st.FilesRemoved, st.DaysSealed = ws.FilesRemoved, ws.DaysSealed
 	}
 	if c := p.collector.Load(); c != nil {
 		cs := c.Stats()

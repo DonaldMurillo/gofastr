@@ -1199,6 +1199,7 @@
       "warning": "Aviso"
     },
     "telemetry": {
+      "searchStopped": "La búsqueda se detuvo en {{time}} para no tardar. No se leyeron las líneas más allá de ese punto: usa Anteriores o Más recientes para continuar.",
       "newer": "Más recientes",
       "pageRange": "{{n}} mostradas, de {{from}} a {{to}}",
       "paging": "Páginas",

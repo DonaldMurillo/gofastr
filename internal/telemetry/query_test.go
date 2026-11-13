@@ -69,7 +69,12 @@ func readLines(t testing.TB, dir, kind string, each func(line []byte)) {
 	}
 }
 
-func newFixture(t *testing.T) *fixture {
+func newFixture(t *testing.T) *fixture { return newFixtureSealed(t, 0) }
+
+// newFixtureSealed generates three days and seals the oldest n of them
+// after the reference has read the plain files, so one reference checks
+// plain days, sealed days and a mix.
+func newFixtureSealed(t *testing.T, seal int) *fixture {
 	t.Helper()
 	cfg := telemetry.Config{Dir: t.TempDir()}
 	stats, err := telemetrygen.Generate(cfg, telemetrygen.Load{
@@ -103,6 +108,17 @@ func newFixture(t *testing.T) *fixture {
 	if int64(len(fx.logs)) != stats.LogLines || int64(len(fx.traces)) != stats.Traces || len(fx.traces) == 0 {
 		t.Fatalf("files hold %d logs, %d traces; stats say %d, %d", len(fx.logs), len(fx.traces), stats.LogLines, stats.Traces)
 	}
+	for d := range seal {
+		day := stats.First.Add(time.Duration(d) * 24 * time.Hour)
+		for _, kind := range []string{telemetry.KindLogs, telemetry.KindTraces} {
+			if err := telemetry.SealDay(cfg.Dir, kind, day); err != nil {
+				t.Fatalf("seal %s %s: %v", kind, day.Format("2006-01-02"), err)
+			}
+			if _, err := os.Stat(filepath.Join(cfg.Dir, telemetry.FileName(kind, day))); !os.IsNotExist(err) {
+				t.Fatalf("the plain %s file for a sealed day is still there: %v", kind, err)
+			}
+		}
+	}
 	return fx
 }
 
@@ -125,8 +141,16 @@ func equal(t *testing.T, what string, got, want []string) {
 	}
 }
 
+// Every query gives the same answer whether a day is a plain file or
+// sealed into blocks: with none sealed, with the two finished days
+// sealed, and with all three.
 func TestQueriesMatchFullRead(t *testing.T) {
-	fx := newFixture(t)
+	for sealed, name := range map[int]string{0: "plain", 2: "older days sealed", 3: "all sealed"} {
+		t.Run(name, func(t *testing.T) { queriesMatchFullRead(t, newFixtureSealed(t, sealed)) })
+	}
+}
+
+func queriesMatchFullRead(t *testing.T, fx *fixture) {
 	// A window that starts and ends mid-file and crosses midnight.
 	from := fx.stats.First.Add(19*time.Hour + 7*time.Minute)
 	to := fx.stats.First.Add(31*time.Hour + 3*time.Second)
@@ -226,6 +250,29 @@ func TestQueriesMatchFullRead(t *testing.T) {
 				equal(t, fmt.Sprintf("logs %+v limit %d", q, limit), raws(got), want)
 			}
 		}
+		// A search out of time says where it stopped, returns what it
+		// had found, and the same search bounded there carries on: the
+		// two halves are the whole answer, with nothing twice.
+		whole, _ := fx.store.Logs(telemetry.LogQuery{Text: "export", MinLevel: slog.LevelDebug}, 1<<30)
+		first, stopped, err := fx.store.LogsWithin(telemetry.LogQuery{Text: "export", MinLevel: slog.LevelDebug}, 1<<30, time.Nanosecond)
+		if err != nil || stopped.IsZero() || len(first) >= len(whole) {
+			t.Fatalf("a search with no time: %d of %d lines, stopped %v, %v", len(first), len(whole), stopped, err)
+		}
+		rest, again, err := fx.store.LogsWithin(telemetry.LogQuery{Text: "export", MinLevel: slog.LevelDebug, To: stopped}, 1<<30, 0)
+		if err != nil || !again.IsZero() {
+			t.Fatalf("the rest of the search: stopped %v, %v", again, err)
+		}
+		joined := raws(first)
+		for _, r := range raws(rest) {
+			if !slices.Contains(joined, r) { // the line it stopped on is in both
+				joined = append(joined, r)
+			}
+		}
+		equal(t, "a search finished in two goes", joined, raws(whole))
+		if _, stopped, _ := fx.store.LogsWithin(telemetry.LogQuery{Text: "export"}, 1<<30, time.Hour); !stopped.IsZero() {
+			t.Fatal("a search with time to spare says it stopped")
+		}
+
 		// Skipped path prefixes drop their access lines and nothing else.
 		skipped, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelDebug, From: from, To: to, SkipPaths: []string{"/orders", "/customers/"}}, 1<<30)
 		if err != nil {
@@ -266,9 +313,9 @@ func TestQueriesMatchFullRead(t *testing.T) {
 			t.Fatalf("older then newer did not return to the first page: %v", err)
 		}
 		// The next page: the same query, ending just before the last line shown.
-		first, _ := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn}, 5)
-		second, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn, To: first[4].Time.Add(-time.Nanosecond)}, 5)
-		if err != nil || len(second) != 5 || !second[0].Time.Before(first[4].Time) {
+		page1, _ := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn}, 5)
+		second, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn, To: page1[4].Time.Add(-time.Nanosecond)}, 5)
+		if err != nil || len(second) != 5 || !second[0].Time.Before(page1[4].Time) {
 			t.Fatalf("second page: %d lines, %v", len(second), err)
 		}
 	})

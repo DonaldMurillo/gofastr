@@ -35,6 +35,18 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: sealed days, paging and live lists.** A finished day's
+  log and trace files are packed into gzip blocks in the background,
+  about a seventh of their size, with an index of block times and trace
+  IDs: the default cap now holds about 13 days at 20 requests a second,
+  and a request opens by trace ID in about 80 ms. The request and log
+  lists page 25 rows at a time in both directions, refresh their newest
+  page every ten seconds, and a log search that runs past three seconds
+  shows what it found and carries on from there.
+- **`admin.Page.Part`** ([admin](framework/docs/content/admin.md)): the
+  piece of an admin page that keeps itself current, served alone at
+  `admin.PagePartPath(prefix, path)` behind the gate and the page's
+  `Access`, for a polled region.
 - **`ui.Waterfall`**
   ([new components](framework/docs/content/ui-new-components.md)): the
   steps of one request or job as bars on a shared time axis, in a table

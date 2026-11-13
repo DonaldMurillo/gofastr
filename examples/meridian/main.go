@@ -81,7 +81,12 @@ func main() {
 	// Logs and traces go to day files beside the database, and the admin
 	// shows them (Requests and Logs in its sidebar). Telemetry registers
 	// before the log plugin so the files are open for its first line.
-	tel := telemetry.New(telemetry.Config{Dir: getEnv("TELEMETRY_DIR", "meridian-telemetry")})
+	tel := telemetry.New(telemetry.Config{
+		Dir: getEnv("TELEMETRY_DIR", "meridian-telemetry"),
+		// Fonts and static files are fetched on every page; they are
+		// worth a trace only when they fail or are slow.
+		QuietPaths: []string{"/fonts/", "/static/"},
+	})
 	fwApp.RegisterPlugin(tel)
 	fwApp.RegisterPlugin(applog.New(applog.Config{Sinks: []applog.Sink{tel.LogSink()}}))
 	entities.RegisterAll(fwApp)

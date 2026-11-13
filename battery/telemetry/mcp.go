@@ -19,6 +19,7 @@ import (
 const (
 	mcpMaxRequests = 200
 	mcpMaxLogs     = 500
+	mcpLogBudget   = 10 * time.Second
 )
 
 type mcpTool struct {
@@ -67,7 +68,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		},
 		{
 			name:        "telemetry_logs",
-			description: "List log lines from the day files, newest first. Filters: `level` (minimum: DEBUG/INFO/WARN/ERROR), `text` (case-sensitive substring of the line), `since_ts`/`until_ts`, `limit` (default 100, max 500).",
+			description: "List log lines from the day files, newest first. Filters: `level` (minimum: DEBUG/INFO/WARN/ERROR), `text` (case-sensitive substring of the line), `since_ts`/`until_ts`, `limit` (default 100, max 500). A search that runs past ten seconds returns what it found with `stopped_at`: pass that as `until_ts` to carry on.",
 			schema: map[string]any{"type": "object", "properties": map[string]any{
 				"level":    map[string]any{"type": "string", "enum": []string{"DEBUG", "INFO", "WARN", "ERROR"}},
 				"text":     map[string]any{"type": "string"},
@@ -265,11 +266,18 @@ func (p *Plugin) toolLogs(_ context.Context, params map[string]any) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	lines, err := store.Logs(q, limit)
+	// A rare word means reading every kept line; an agent gets what ten
+	// seconds found and where the search stopped.
+	lines, stopped, err := store.LogsWithin(q, limit, mcpLogBudget)
 	if err != nil {
 		return nil, errors.New("telemetry: the log files could not be read")
 	}
-	return map[string]any{"entries": rawLines(lines), "count": len(lines)}, nil
+	out := map[string]any{"entries": rawLines(lines), "count": len(lines)}
+	if !stopped.IsZero() {
+		out["stopped_at"] = stopped.UTC().Format(time.RFC3339Nano)
+		out["note"] = "The search ran out of time at stopped_at. Call again with until_ts set to it to read older lines."
+	}
+	return out, nil
 }
 
 // rawLines hands log lines back as the JSON objects they are. A line

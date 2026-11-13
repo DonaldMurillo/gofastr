@@ -31,6 +31,9 @@ app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{tel.LogSink()}}))
   plus `SampleRate` (default 5%) of the rest. Framework assets and
   `Config.QuietPaths` are kept only when failed or slow.
 - Old days removed by `Retention` (14 days) and `MaxDiskBytes` (5 GiB).
+- Finished days sealed into `*.jsonl.gz` blocks with an `.idx` beside
+  them, about a seventh of the size. Read them with `zcat` or
+  `gofastr telemetry`; never write to the directory yourself.
 
 **Screens, shell and agent access** (all read the same files):
 ```go

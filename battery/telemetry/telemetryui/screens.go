@@ -46,6 +46,9 @@ type Screens struct {
 	base string
 	tabs bool
 	now  func() time.Time
+	// searchBudget is how long a log search may read before it shows
+	// what it has and offers to carry on.
+	searchBudget time.Duration
 
 	// Live, when set, returns the URL that serves a list's rows alone
 	// ("requests" or "logs", drawn by RequestsRows and LogsRows). The
@@ -85,7 +88,7 @@ func (s *Screens) liveBadge(ctx context.Context, cur cursor) render.HTML {
 // the links between the two itself, for a host with no navigation of
 // its own.
 func NewScreens(tel *telemetry.Plugin, base string, tabs bool) *Screens {
-	return &Screens{tel: tel, base: strings.TrimRight(base, "/"), tabs: tabs, now: time.Now}
+	return &Screens{tel: tel, base: strings.TrimRight(base, "/"), tabs: tabs, now: time.Now, searchBudget: 3 * time.Second}
 }
 
 // RequestsPath and LogsPath are where the host serves the two pages.
@@ -196,11 +199,12 @@ func trim[T any](c cursor, rows []T, limit int) (page []T, hasNewer, hasOlder bo
 }
 
 // pager draws the links to the neighbouring pages and says what this
-// one holds. newest and oldest are the first and last rows' times and n
-// how many rows there are. here builds this list's URL with the given
+// one holds. newerAt and olderAt are where those pages start, zero for
+// none; newest and oldest are the first and last rows' times and n how
+// many rows there are. here builds this list's URL with the given
 // before and after values.
-func pager(ctx context.Context, c cursor, n int, hasNewer, hasOlder bool, newest, oldest time.Time, here func(before, after string) string) render.HTML {
-	if !c.set() && !hasOlder {
+func pager(ctx context.Context, c cursor, n int, newerAt, olderAt, newest, oldest time.Time, here func(before, after string) string) render.HTML {
+	if !c.set() && olderAt.IsZero() && newerAt.IsZero() {
 		return "" // everything fits on the one page
 	}
 	link := func(label i18n.Phrase, href string, on bool) render.HTML {
@@ -209,18 +213,13 @@ func pager(ctx context.Context, c cursor, n int, hasNewer, hasOlder bool, newest
 		}
 		return ui.LinkButton(ui.LinkButtonConfig{Label: label.Text(ctx), Href: href, Variant: ui.ButtonSecondary})
 	}
-	var newerHref, olderHref string
-	if n > 0 {
-		newerHref = here("", stampParam(newest.Add(time.Nanosecond)))
-		olderHref = here(stampParam(oldest.Add(-time.Nanosecond)), "")
-	}
 	links := []render.HTML{}
 	if c.set() {
 		links = append(links, ui.LinkButton(ui.LinkButtonConfig{Label: i18nui.TelemetryNewest.Text(ctx), Href: here("", ""), Variant: ui.ButtonGhost}))
 	}
 	links = append(links,
-		link(i18nui.TelemetryNewer, newerHref, hasNewer && n > 0),
-		link(i18nui.TelemetryOlder, olderHref, hasOlder && n > 0))
+		link(i18nui.TelemetryNewer, here("", stampParam(newerAt)), !newerAt.IsZero()),
+		link(i18nui.TelemetryOlder, here(stampParam(olderAt), ""), !olderAt.IsZero()))
 	var summary render.HTML
 	if n > 0 {
 		summary = ui.Muted(render.Text(i18nui.TelemetryPageRange.Text(ctx, map[string]any{
@@ -232,6 +231,18 @@ func pager(ctx context.Context, c cursor, n int, hasNewer, hasOlder bool, newest
 	return html.Nav(html.NavConfig{Label: i18nui.TelemetryPaging.Text(ctx)},
 		ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD, Justify: ui.JustifyBetween, Align: ui.AlignCenter},
 			summary, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, links...)))
+}
+
+// neighbours turns a page's rows and flags into where its neighbouring
+// pages start: just past its newest and oldest rows.
+func neighbours(n int, hasNewer, hasOlder bool, newest, oldest time.Time) (newerAt, olderAt time.Time) {
+	if n > 0 && hasNewer {
+		newerAt = newest.Add(time.Nanosecond)
+	}
+	if n > 0 && hasOlder {
+		olderAt = oldest.Add(-time.Nanosecond)
+	}
+	return newerAt, olderAt
 }
 
 // link builds a URL for path carrying the non-empty pairs.
@@ -426,7 +437,8 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	if len(traces) > 0 {
 		newest, oldest = traces[0].Time, traces[len(traces)-1].Time
 	}
-	pages := pager(ctx, cur, len(traces), hasNewer, hasOlder, newest, oldest, func(before, after string) string {
+	newerAt, olderAt := neighbours(len(traces), hasNewer, hasOlder, newest, oldest)
+	pages := pager(ctx, cur, len(traces), newerAt, olderAt, newest, oldest, func(before, after string) string {
 		return link(path, "show", show, "route", route, "window", wkey, "before", before, "after", after)
 	})
 	if rowsOnly {
@@ -661,7 +673,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	if all == "" {
 		lq.SkipPaths = s.tel.QuietPaths()
 	}
-	lines, err := store.Logs(lq, logsPerPage+1)
+	lines, stopped, err := store.LogsWithin(lq, logsPerPage+1, s.searchBudget)
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: list logs", "err", err)
 		return page(s.tabNav(ctx, true), header, problem(ctx, i18nui.TelemetryLoadFailed))
@@ -700,11 +712,24 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 		newest, oldest = lines[0].Time, lines[len(lines)-1].Time
 	}
 	table := s.logTable(ctx, lines, true, i18nui.TelemetryLogsEmpty, i18nui.TelemetryLogsEmptySub)
-	pages := pager(ctx, cur, len(lines), hasNewer, hasOlder, newest, oldest, func(before, after string) string {
+	newerAt, olderAt := neighbours(len(lines), hasNewer, hasOlder, newest, oldest)
+	// A search that ran out of time carries on from where it stopped,
+	// in the direction it was reading, whether or not it found a row.
+	var stoppedNote render.HTML
+	if !stopped.IsZero() {
+		if oldestFirst {
+			newerAt = stopped
+		} else {
+			olderAt = stopped
+		}
+		stoppedNote = ui.Callout(ui.CalloutConfig{Variant: ui.StatusInfo}, render.Text(i18nui.TelemetrySearchStopped.Text(ctx, map[string]any{
+			"time": i18n.DateTime(ctx, stopped.UTC(), i18n.DateMedium, i18n.TimeLong)})))
+	}
+	pages := pager(ctx, cur, len(lines), newerAt, olderAt, newest, oldest, func(before, after string) string {
 		return link(path, "level", lv.key, "q", text, "window", wkey, "all", all, "before", before, "after", after)
 	})
 	if rowsOnly {
-		return page(table, pages)
+		return page(stoppedNote, table, pages)
 	}
 	var src string
 	if s.Live != nil {
@@ -715,7 +740,7 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
 		Actions:  s.liveBadge(ctx, cur),
 	})
-	return page(s.tabNav(ctx, true), header, segments, filters, quiet, s.rows("logs", cur, src, table, pages))
+	return page(s.tabNav(ctx, true), header, segments, filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))
 }
 
 // logTable draws log lines. linkRequests adds the column that opens a

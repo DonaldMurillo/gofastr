@@ -6,7 +6,6 @@ import (
 	"io/fs"
 	"os"
 	"slices"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -42,6 +41,13 @@ type Writer struct {
 	full       atomic.Bool
 	closed     atomic.Bool
 
+	// sealing is held by the one pass that packs finished days; bg
+	// counts it, so Close can wait for it to step out.
+	sealing sync.Mutex
+	bg      sync.WaitGroup
+	sealed  atomic.Int64
+	noSeal  bool
+
 	logLines, logBytes     atomic.Int64
 	traceLines, traceBytes atomic.Int64
 	dropped, removed       atomic.Int64
@@ -56,6 +62,8 @@ type WriterStats struct {
 	Dropped int64
 	// FilesRemoved is the day files deleted for age or for the cap.
 	FilesRemoved int64
+	// DaysSealed is the finished days of one kind packed into blocks.
+	DaysSealed int64
 }
 
 type dayFileWriter struct {
@@ -68,10 +76,13 @@ type dayFileWriter struct {
 // NewWriter opens cfg.Dir for writing, creating it owner-only if it is
 // missing, and removes what Retention and MaxDiskBytes no longer allow.
 func NewWriter(cfg Config) (*Writer, error) {
-	return newWriter(cfg, time.Now)
+	return newWriter(cfg, time.Now, true)
 }
 
-func newWriter(cfg Config, now func() time.Time) (*Writer, error) {
+// newWriter is NewWriter with the clock and the sealing pass in the
+// caller's hands: a test of pruning counts plain files, which a pass
+// in the background would be packing while it counts.
+func newWriter(cfg Config, now func() time.Time, seal bool) (*Writer, error) {
 	cfg, err := cfg.Resolve()
 	if err != nil {
 		return nil, err
@@ -83,12 +94,13 @@ func newWriter(cfg Config, now func() time.Time) (*Writer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("telemetry: open %s: %w", cfg.Dir, err)
 	}
-	w := &Writer{cfg: cfg, root: root, now: now}
+	w := &Writer{cfg: cfg, root: root, now: now, noSeal: !seal}
 	w.logs.kind, w.traces.kind = KindLogs, KindTraces
 	if err := w.prune(); err != nil {
 		_ = root.Close()
 		return nil, err
 	}
+	w.sealPast()
 	return w, nil
 }
 
@@ -97,7 +109,7 @@ func (w *Writer) Stats() WriterStats {
 	return WriterStats{
 		LogLines: w.logLines.Load(), LogBytes: w.logBytes.Load(),
 		Traces: w.traceLines.Load(), TraceBytes: w.traceBytes.Load(),
-		Dropped: w.dropped.Load(), FilesRemoved: w.removed.Load(),
+		Dropped: w.dropped.Load(), FilesRemoved: w.removed.Load(), DaysSealed: w.sealed.Load(),
 	}
 }
 
@@ -169,12 +181,68 @@ func (w *Writer) write(d *dayFileWriter, line []byte) (int, error) {
 		// check tries again, and the write itself succeeded.
 		_ = w.prune()
 	}
+	if turned {
+		w.sealPast()
+	}
 	return n, nil
 }
 
-// prune removes day files past Retention, then the oldest remaining
-// ones while the directory is over MaxDiskBytes. Today's files are
-// never removed; if they alone are over the cap, writes stop.
+// errSealStopped ends a sealing pass early: the writer is closing.
+var errSealStopped = errors.New("telemetry: sealing stopped")
+
+// sealPast packs every finished day's plain files into blocks, and
+// rebuilds the index of a sealed day that has lost its own, in the
+// background, one pass at a time. It runs when the writer opens and
+// when the day turns. Between blocks it rests for twice as long as the
+// block took, so on one core it leaves two thirds of the time to the
+// app, and it stops at the next block when the writer closes. A day it
+// cannot seal stays plain and readable, and the next pass tries again.
+func (w *Writer) sealPast() {
+	if w.noSeal || w.closed.Load() || !w.sealing.TryLock() {
+		return
+	}
+	w.bg.Add(1)
+	go func() {
+		defer w.bg.Done()
+		defer w.sealing.Unlock()
+		entries, err := fs.ReadDir(w.root.FS(), ".")
+		if err != nil {
+			return
+		}
+		today := w.now().UTC().Truncate(24 * time.Hour)
+		rest := func(took time.Duration) error {
+			if w.closed.Load() {
+				return errSealStopped
+			}
+			time.Sleep(min(2*took, 200*time.Millisecond))
+			return nil
+		}
+		for _, e := range entries {
+			kind, day, ext, ok := splitName(e.Name())
+			if !ok || !day.Before(today) || w.closed.Load() {
+				continue
+			}
+			switch ext {
+			case extPlain:
+				if err := sealDay(w.root, kind, day, rest); err == nil {
+					w.sealed.Add(1)
+				}
+			case extData:
+				// A sealed day whose index was lost or damaged
+				// is rebuilt from its blocks. A failure leaves
+				// it as it was for the next pass.
+				_ = repairDay(w.root, kind, day)
+			}
+		}
+		// Sealing shrinks the directory: the cap may have room again.
+		_ = w.prune()
+	}()
+}
+
+// prune removes days past Retention, then the oldest remaining days
+// while the directory is over MaxDiskBytes. A day goes whole: its plain
+// file or its blocks, summaries and index. Today's files are never
+// removed; if they alone are over the cap, writes stop.
 func (w *Writer) prune() error {
 	w.pruning.Lock()
 	defer w.pruning.Unlock()
@@ -192,13 +260,8 @@ func (w *Writer) prune() error {
 	var files []file
 	var total int64
 	for _, e := range entries {
-		kind, rest, ok := strings.Cut(e.Name(), "-")
-		stamp, isDay := strings.CutSuffix(rest, fileExt)
-		if !ok || !isDay || (kind != KindLogs && kind != KindTraces) || !e.Type().IsRegular() {
-			continue
-		}
-		day, err := time.Parse(dayLayout, stamp)
-		if err != nil {
+		_, day, _, ok := splitName(e.Name())
+		if !ok || !e.Type().IsRegular() {
 			continue
 		}
 		info, err := e.Info()
@@ -208,26 +271,38 @@ func (w *Writer) prune() error {
 		files = append(files, file{e.Name(), day, info.Size()})
 		total += info.Size()
 	}
-	slices.SortFunc(files, func(a, b file) int { return a.day.Compare(b.day) })
-	for _, f := range files {
-		expired := !f.day.Add(24 * time.Hour).After(now.Add(-w.cfg.Retention))
-		if f.day.Before(today) && (expired || total > w.cfg.MaxDiskBytes) {
-			if err := w.root.Remove(f.name); err != nil {
-				return fmt.Errorf("telemetry: remove %s: %w", f.name, err)
-			}
-			total -= f.size
-			w.removed.Add(1)
+	slices.SortStableFunc(files, func(a, b file) int { return a.day.Compare(b.day) })
+	for i := 0; i < len(files); {
+		// One day's files, of both kinds, go or stay together.
+		j, daySize := i, int64(0)
+		for j < len(files) && files[j].day.Equal(files[i].day) {
+			daySize += files[j].size
+			j++
 		}
+		day := files[i].day
+		expired := !day.Add(24 * time.Hour).After(now.Add(-w.cfg.Retention))
+		if day.Before(today) && (expired || total > w.cfg.MaxDiskBytes) {
+			for _, f := range files[i:j] {
+				if err := w.root.Remove(f.name); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return fmt.Errorf("telemetry: remove %s: %w", f.name, err)
+				}
+				w.removed.Add(1)
+			}
+			total -= daySize
+		}
+		i = j
 	}
 	w.full.Store(total > w.cfg.MaxDiskBytes)
 	return nil
 }
 
-// Close closes the day files. Writes after it return ErrClosed.
+// Close stops any sealing pass and closes the day files. Writes after
+// it return ErrClosed.
 func (w *Writer) Close() error {
 	if w.closed.Swap(true) {
 		return nil
 	}
+	w.bg.Wait() // a sealing pass stops at its next block
 	var errs []error
 	for _, d := range []*dayFileWriter{&w.logs, &w.traces} {
 		d.mu.Lock()

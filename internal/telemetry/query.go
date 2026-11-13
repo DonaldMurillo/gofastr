@@ -76,64 +76,44 @@ func (s *Store) LogsForTrace(traceID string, from, to time.Time) ([]LogEntry, er
 	if err != nil {
 		return nil, err
 	}
-	files, err := s.files(KindLogs, from, to)
-	if err != nil {
-		return nil, err
-	}
 	var out []LogEntry
-	for _, df := range slices.Backward(files) { // oldest file first
-		w, err := s.open(df, from, to)
-		if err != nil {
-			return nil, err
-		}
-		seen := 0
-		err = scanForward(w.f, w.start, w.end, func(line []byte) bool {
-			if seen++; seen%boundEvery == 0 {
-				if t, ok := lineTime(line); ok && !to.IsZero() && t.After(to.Add(timeSlop)) {
-					return false
-				}
+	err = s.scan(KindLogs, from, to, false, false, func(line []byte) bool {
+		if bytes.Contains(line, needle) {
+			if e, ok := entry(line); ok && inWindow(e.Time, from, to) {
+				e.Line = bytes.Clone(e.Line) // line is the reader's buffer
+				out = append(out, e)
 			}
-			if bytes.Contains(line, needle) {
-				if e, ok := entry(line); ok && inWindow(e.Time, from, to) {
-					e.Line = bytes.Clone(e.Line) // line is the reader's buffer
-					out = append(out, e)
-				}
-			}
-			return true
-		})
-		_ = w.f.Close()
-		if err != nil {
-			return nil, err
 		}
-	}
-	return out, nil
+		return true
+	})
+	return out, err
 }
 
 // TraceByID returns the trace's line, or false when no file holds it.
-// With no time to narrow by, it reads every trace file, newest first.
+// It has no time to narrow by, so it asks every day, newest first: a
+// sealed day answers from its ID table, a plain day is read through.
 func (s *Store) TraceByID(traceID string) (json.RawMessage, bool, error) {
 	needle, err := traceNeedle(traceID)
 	if err != nil {
 		return nil, false, err
 	}
-	files, err := s.files(KindTraces, time.Time{}, time.Time{})
+	days, err := s.days(KindTraces, time.Time{}, time.Time{})
 	if err != nil {
 		return nil, false, err
 	}
-	var found json.RawMessage
-	for _, df := range files {
-		w, err := s.open(df, time.Time{}, time.Time{})
-		if err != nil {
-			return nil, false, err
+	for _, d := range days {
+		var found []byte
+		if d.sealed {
+			found, err = s.findSealed(d, traceID, needle)
+		} else {
+			err = s.scanPlain(d, time.Time{}, time.Time{}, false, func(line []byte) bool {
+				if bytes.Contains(head(line), needle) {
+					found = bytes.Clone(line)
+					return false
+				}
+				return true
+			})
 		}
-		err = scanForward(w.f, w.start, w.end, func(line []byte) bool {
-			if bytes.Contains(head(line), needle) {
-				found = bytes.Clone(line)
-				return false
-			}
-			return true
-		})
-		_ = w.f.Close()
 		if err != nil || found != nil {
 			return found, found != nil, err
 		}
@@ -151,10 +131,6 @@ func (s *Store) SlowestTraces(route string, from, to time.Time, n int) ([]TraceS
 	if route != "" {
 		needle = appendJSONString([]byte(`"route":`), route)
 	}
-	files, err := s.files(KindTraces, from, to)
-	if err != nil {
-		return nil, err
-	}
 	var out []TraceSummary
 	trim := func() {
 		slices.SortFunc(out, func(a, b TraceSummary) int {
@@ -162,32 +138,19 @@ func (s *Store) SlowestTraces(route string, from, to time.Time, n int) ([]TraceS
 		})
 		out = out[:min(len(out), n)]
 	}
-	for _, df := range files {
-		w, err := s.open(df, from, to)
-		if err != nil {
-			return nil, err
-		}
-		seen := 0
-		err = scanForward(w.f, w.start, w.end, func(line []byte) bool {
-			if seen++; seen%boundEvery == 0 {
-				if t, ok := lineTime(line); ok && !to.IsZero() && t.After(to.Add(timeSlop)) {
-					return false
-				}
-			}
-			if needle != nil && !bytes.Contains(head(line), needle) {
-				return true
-			}
-			if sum, ok := summary(line); ok && inWindow(sum.Time, from, to) {
-				if out = append(out, sum); len(out) >= 4*n+64 {
-					trim()
-				}
-			}
+	err := s.scan(KindTraces, from, to, false, true, func(line []byte) bool {
+		if needle != nil && !bytes.Contains(head(line), needle) {
 			return true
-		})
-		_ = w.f.Close()
-		if err != nil {
-			return nil, err
 		}
+		if sum, ok := summary(line); ok && inWindow(sum.Time, from, to) {
+			if out = append(out, sum); len(out) >= 4*n+64 {
+				trim()
+			}
+		}
+		return true
+	})
+	if err != nil {
+		return nil, err
 	}
 	trim()
 	return out, nil
@@ -216,6 +179,21 @@ type LogQuery struct {
 
 // Logs returns up to limit lines matching q, newest first.
 func (s *Store) Logs(q LogQuery, limit int) ([]LogEntry, error) {
+	out, _, err := s.LogsWithin(q, limit, 0)
+	return out, err
+}
+
+// budgetEvery is how many lines are read between looks at the clock.
+const budgetEvery = 1024
+
+// LogsWithin is Logs that gives up after budget (zero for no limit): a
+// search for a rare word reads every line of every day, and a sealed
+// day must be unpacked to be read. When it gives up it returns what it
+// found and the time it had read to: lines on the far side of stopped
+// (older, or newer for an OldestFirst query) were not looked at, and
+// the same query bounded there carries on. A zero stopped means the
+// whole window was read.
+func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []LogEntry, stopped time.Time, err error) {
 	var needle []byte
 	if q.Text != "" {
 		needle = appendJSONString(nil, q.Text)
@@ -239,54 +217,31 @@ func (s *Store) Logs(q LogQuery, limit int) ([]LogEntry, error) {
 		e, ok := entry(line)
 		return e, ok && e.Level >= q.MinLevel && inWindow(e.Time, q.From, q.To)
 	}
-	var out []LogEntry
-	if q.OldestFirst {
-		err := s.forward(KindLogs, q.From, q.To, limit, func(line []byte) bool {
-			if e, ok := pick(line); ok {
-				e.Line = bytes.Clone(e.Line)
-				out = append(out, e)
-			}
-			return len(out) < limit
-		})
-		slices.Reverse(out)
-		return out, err
-	}
-	err := s.logsBackward(q.From, q.To, limit, pick, &out)
-	return out, err
-}
-
-// forward walks kind's lines oldest first across the day files that
-// overlap [from, to], until fn returns false. It is the scan behind
-// every oldest-first page.
-func (s *Store) forward(kind string, from, to time.Time, limit int, fn func(line []byte) bool) error {
 	if limit <= 0 {
-		return nil
+		return nil, time.Time{}, nil
 	}
-	files, err := s.files(kind, from, to)
-	if err != nil {
-		return err
-	}
-	for _, df := range slices.Backward(files) { // oldest file first
-		w, err := s.open(df, from, to)
-		if err != nil {
-			return err
-		}
-		more, seen := true, 0
-		err = scanForward(w.f, w.start, w.end, func(line []byte) bool {
-			if seen++; seen%boundEvery == 0 && !to.IsZero() {
-				if t, ok := lineTime(line); ok && t.After(to.Add(timeSlop)) {
-					return false
-				}
+	start, seen := time.Now(), 0
+	err = s.scan(KindLogs, q.From, q.To, !q.OldestFirst, false, func(line []byte) bool {
+		if seen++; budget > 0 && seen%budgetEvery == 0 && time.Since(start) > budget {
+			// Stop only on a line inside the window: a scan starts a
+			// little outside it, and a search resumed from where the
+			// last one stopped must end up further on, or it would
+			// stop on the same line for ever.
+			if t, ok := lineTime(line); ok && inWindow(t, q.From, q.To) && !t.Equal(q.To) && !t.Equal(q.From) {
+				stopped = t
+				return false
 			}
-			more = fn(line)
-			return more
-		})
-		_ = w.f.Close()
-		if err != nil || !more {
-			return err
 		}
+		if e, ok := pick(line); ok {
+			e.Line = bytes.Clone(e.Line)
+			out = append(out, e)
+		}
+		return len(out) < limit
+	})
+	if q.OldestFirst {
+		slices.Reverse(out)
 	}
-	return nil
+	return out, stopped, err
 }
 
 // TraceQuery narrows a trace listing. The zero value lists everything.
@@ -322,43 +277,16 @@ func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
 		return sum, ok && inWindow(sum.Time, q.From, q.To) && (!q.Failed || sum.Error) && sum.Dur >= q.MinDur
 	}
 	var out []TraceSummary
+	err := s.scan(KindTraces, q.From, q.To, !q.OldestFirst, true, func(line []byte) bool {
+		if sum, ok := match(line); ok {
+			out = append(out, sum)
+		}
+		return len(out) < limit
+	})
 	if q.OldestFirst {
-		err := s.forward(KindTraces, q.From, q.To, limit, func(line []byte) bool {
-			if sum, ok := match(line); ok {
-				out = append(out, sum)
-			}
-			return len(out) < limit
-		})
 		slices.Reverse(out)
-		return out, err
 	}
-	files, err := s.files(KindTraces, q.From, q.To)
-	if err != nil {
-		return nil, err
-	}
-	for _, df := range files {
-		w, err := s.open(df, q.From, q.To)
-		if err != nil {
-			return nil, err
-		}
-		seen := 0
-		err = scanBackward(w.f, w.end, func(line []byte) bool {
-			if seen++; seen%boundEvery == 0 && !q.From.IsZero() {
-				if t, ok := lineTime(line); ok && t.Before(q.From.Add(-timeSlop)) {
-					return false
-				}
-			}
-			if sum, ok := match(line); ok {
-				out = append(out, sum)
-			}
-			return len(out) < limit
-		})
-		_ = w.f.Close()
-		if err != nil || len(out) >= limit {
-			return out, err
-		}
-	}
-	return out, nil
+	return out, err
 }
 
 // maxMicros is the most microseconds a time.Duration holds.
@@ -417,40 +345,19 @@ func ParseTrace(line []byte) (Trace, error) {
 	return t, nil
 }
 
-// logsBackward walks log lines newest first across day files, keeping
-// what pick accepts until *out holds limit entries.
+// logsBackward walks log lines newest first, keeping what pick accepts
+// until *out holds limit entries.
 func (s *Store) logsBackward(from, to time.Time, limit int, pick func([]byte) (LogEntry, bool), out *[]LogEntry) error {
 	if limit <= 0 {
 		return nil
 	}
-	files, err := s.files(KindLogs, from, to)
-	if err != nil {
-		return err
-	}
-	for _, df := range files {
-		w, err := s.open(df, from, to)
-		if err != nil {
-			return err
+	return s.scan(KindLogs, from, to, true, false, func(line []byte) bool {
+		if e, ok := pick(line); ok {
+			e.Line = bytes.Clone(e.Line)
+			*out = append(*out, e)
 		}
-		seen := 0
-		err = scanBackward(w.f, w.end, func(line []byte) bool {
-			if seen++; seen%boundEvery == 0 && !from.IsZero() {
-				if t, ok := lineTime(line); ok && t.Before(from.Add(-timeSlop)) {
-					return false
-				}
-			}
-			if e, ok := pick(line); ok {
-				e.Line = bytes.Clone(e.Line)
-				*out = append(*out, e)
-			}
-			return len(*out) < limit
-		})
-		_ = w.f.Close()
-		if err != nil || len(*out) >= limit {
-			return err
-		}
-	}
-	return nil
+		return len(*out) < limit
+	})
 }
 
 func inWindow(t, from, to time.Time) bool {
