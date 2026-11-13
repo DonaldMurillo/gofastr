@@ -44,8 +44,10 @@ func (b *Battery) handlePalette(w http.ResponseWriter, r *http.Request) {
 // links, for a reader without script.
 func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.HTML {
 	q := ""
+	dropped := false
 	if r := appui.RequestFromContext(ctx); r != nil {
 		q = r.URL.Query().Get("q")
+		dropped = droppedNarrowing(r, "q")
 	}
 	label := i18nui.AdminSearch.Text(ctx)
 	parts := []render.HTML{
@@ -56,6 +58,9 @@ func (b *Battery) renderSearch(ctx context.Context, _ map[string]string) render.
 			HideReset: true,
 			Ctx:       ctx,
 		}),
+	}
+	if dropped {
+		parts = append(parts, filterNotApplied(ctx))
 	}
 	cmds := b.paletteCommands(ctx, q)
 	if len(cmds) == 0 {

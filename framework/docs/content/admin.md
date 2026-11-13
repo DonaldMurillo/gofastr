@@ -448,7 +448,12 @@ refused operation in the unfiltered log. The entity select offers the
 exposed entities.
 Every value is checked server-side before it reaches SQL, and values
 travel as placeholders. An invalid value is ignored with a warning
-naming the parameter, never a 500; a link clears the filter.
+naming the parameter, never a 500; a link clears the filter. A pair
+whose value or key does not decode (`?entity=posts%ZZ`, a malformed
+percent escape or a `;`) would be dropped by Go's query parser and the
+page would list every row, so the page draws the entity lists' "Filter
+not applied" warning over it instead. The Jobs page does the same for
+`?status=` and the search page for `?q=`.
 
 ### Saved views
 

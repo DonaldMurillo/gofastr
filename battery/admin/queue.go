@@ -146,9 +146,14 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			Ctx:       ctx,
 		}
 	}
+	var dropped render.HTML
+	if droppedNarrowing(r, "status") {
+		dropped = filterNotApplied(ctx)
+	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
+		dropped,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
 	)
