@@ -632,11 +632,13 @@ func crudExposureRederivedLines(rel string, body []byte) []int {
 		return nil
 	}
 	var out []int
+	var st goLexState
 	for i, line := range strings.Split(string(body), "\n") {
-		code := line
-		if j := strings.Index(code, "//"); j >= 0 {
-			code = code[:j] // a comment naming the flag is not a read
-		}
+		// A comment naming the flag is not a read. Strip comments with the
+		// string-aware lexer: cutting at the first "//" ended the line at a
+		// URL string and hid a read after it.
+		var code string
+		code, st = stripGoComments(line, st)
 		if strings.Contains(code, "Exposure.CRUD") {
 			out = append(out, i+1)
 		}

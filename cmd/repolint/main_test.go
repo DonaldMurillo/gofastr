@@ -666,6 +666,16 @@ func TestLintRepoFlagsRederivedCRUDExposure(t *testing.T) {
 	}
 }
 
+// The rule cut each line at the first "//", so a URL string earlier on
+// the line hid the read after it.
+func TestCRUDExposureSeenPastAURLString(t *testing.T) {
+	body := "package docs\n\nfunc f(u string, e E) bool { u = \"https://example.com/x\"; return e.Exposure.CRUD != nil }\n" +
+		"func g(e E) bool { /* Exposure.CRUD */ return true }\n"
+	if got := crudExposureRederivedLines("battery/docs/site.go", []byte(body)); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("flagged lines %v, want [3]: the read after a URL string, not the block comment", got)
+	}
+}
+
 func TestLintRepoAcceptsClassifiedCRUDExposure(t *testing.T) {
 	dir := t.TempDir()
 	writeTestFile(t, dir, "go.mod", "module example.com/x\n\ngo 1.26.3\n")
