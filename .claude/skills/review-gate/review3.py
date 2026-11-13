@@ -240,7 +240,7 @@ CLAUDE_NOTE = ("\n\nIn this session you can read and search files but cannot run
                "commands. Judge the change from the diff and the files.\n")
 
 
-def command(kind, binary, model, out_file, workdir=None):
+def command(kind, binary, model, out_file, diff_dir=None):
     if kind == "claude":
         # The answer comes on stdout; the prompt goes in on stdin. No
         # user or project settings, no MCP servers, nothing saved.
@@ -248,9 +248,13 @@ def command(kind, binary, model, out_file, workdir=None):
                "--tools", ",".join(CLAUDE_TOOLS),
                "--allowedTools", *CLAUDE_TOOLS,
                "--permission-mode", "dontAsk",
-               "--add-dir", workdir or os.path.dirname(out_file),
                "--setting-sources", "", "--strict-mcp-config",
                "--no-session-persistence"]
+        if diff_dir:
+            # Only the directory holding the saved diff. The run
+            # directory holds the other runs' answers and logs, and a
+            # reviewer that read them would not be an independent vote.
+            cmd += ["--add-dir", diff_dir]
     else:
         cmd = [binary, "exec", "-s", "read-only", "-m", model,
                "-c", 'model_reasoning_effort="high"',
@@ -278,7 +282,7 @@ def parse(text):
     return found
 
 
-def run_one(n, kind, binary, model, prompt, timeout, workdir, env):
+def run_one(n, kind, binary, model, prompt, timeout, workdir, env, diff_dir=None):
     out_file = os.path.join(workdir, f"run{n}.txt")
     log_file = os.path.join(workdir, f"run{n}.log")
     with open(log_file, "w", encoding="utf-8") as log, contextlib.ExitStack() as stack:
@@ -289,7 +293,7 @@ def run_one(n, kind, binary, model, prompt, timeout, workdir, env):
         else:
             out, err = log, subprocess.STDOUT
         try:
-            proc = subprocess.Popen(command(kind, binary, model, out_file, workdir), stdin=subprocess.PIPE,
+            proc = subprocess.Popen(command(kind, binary, model, out_file, diff_dir), stdin=subprocess.PIPE,
                                     stdout=out, stderr=err, env=env,
                                     text=True, encoding="utf-8",
                                     start_new_session=os.name == "posix")
@@ -383,7 +387,13 @@ def main():
         signal.signal(sig, _stop)
     workdir = tempfile.mkdtemp(prefix="review-gate-")
     claude = kind == "claude"
-    prompt, rng = build_prompt(rng, mode, os.path.join(workdir, "full.diff") if claude else None)
+    # The saved diff gets a directory of its own, apart from the runs'
+    # answers and logs in workdir.
+    diff_dir = None
+    if claude:
+        diff_dir = os.path.join(workdir, "diff")
+        os.mkdir(diff_dir)
+    prompt, rng = build_prompt(rng, mode, os.path.join(diff_dir, "full.diff") if claude else None)
     if prompt is None:
         print(f"review-gate: nothing to review in {rng}")
         return 0
@@ -391,7 +401,7 @@ def main():
         prompt += CLAUDE_NOTE
     with ThreadPoolExecutor(RUNS) as pool:
         env = codex_env()
-        results = list(pool.map(lambda n: run_one(n, kind, binary, model, prompt, a.timeout, workdir, env),
+        results = list(pool.map(lambda n: run_one(n, kind, binary, model, prompt, a.timeout, workdir, env, diff_dir),
                                 range(1, RUNS + 1)))
 
     usable = [r for r in results if "decision" in r]

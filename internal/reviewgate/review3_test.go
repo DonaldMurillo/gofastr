@@ -307,6 +307,21 @@ func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
 					t.Fatalf("claude ran without %q:\n%s", want, args)
 				}
 			}
+			// The one directory added is the saved diff's own, never
+			// the run directory that holds the other runs' answers.
+			for _, line := range strings.Split(strings.TrimSpace(string(args)), "\n") {
+				i := strings.Index(line, "--add-dir ")
+				if i < 0 {
+					t.Fatalf("claude ran without --add-dir:\n%s", line)
+				}
+				dir := strings.Fields(line[i:])[1]
+				if filepath.Base(dir) != "diff" {
+					t.Fatalf("claude was given %s, want the diff directory", dir)
+				}
+				if runs, _ := filepath.Glob(filepath.Join(dir, "run*")); len(runs) != 0 {
+					t.Fatalf("the added directory holds run files: %v", runs)
+				}
+			}
 			// No tool that can write: Bash counts, since
 			// `git diff --output=<path>` writes a file.
 			for _, banned := range []string{"Edit", "Write", "Bash"} {
