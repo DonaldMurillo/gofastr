@@ -164,10 +164,22 @@ few lines, and link the PR or the docs page for the rest.
   with no Referer redirects there, back to the form, instead of to the
   login error path. The app spec generator sets it to the screen
   holding the `signup_form`, and `gofastr init` sets `/register`.
-- **`framework.ValidateDisplay` and `entity.ValidateDefaults`** run the
-  boot checks for a `Display` block and for field defaults over a
-  config that never passed registration. They are for code generators;
-  `gofastr validate` uses both.
+- **`framework.ValidateDisplay`, `entity.ValidateDefaults`,
+  `framework.ValidateExposure` and `framework.ValidateEntityEndpointRoutes`**
+  run the boot checks for a `Display` block, field defaults, an
+  entity's exposure and its endpoint routes over a config that never
+  passed registration. They are for code generators; `gofastr validate`
+  uses all four. An overlap comes back as `*framework.EndpointRouteError`,
+  and `uihost.InvalidSitemapBaseURL` reports the base URL a sitemap
+  would refuse.
+- **`textsafe.Storable` and `textsafe.LogPanic`**
+  ([core packages](framework/docs/content/core-packages.md)).
+  `Storable` reports whether a string is valid UTF-8 with no NUL byte,
+  the text Postgres can store; the framework's own checks (schema,
+  filter, crud, entityui, auth, admin, webhook, a2a, setup, semantic,
+  ratelimit, desktop) all call it. `LogPanic` is a deferred
+  recover-and-log guard for callbacks; the access, event and hook
+  observers use it.
 
 ### Changed
 - **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
@@ -354,9 +366,12 @@ few lines, and link the PR or the docs page for the rest.
   - an `app.base_url` that is not a bare http(s) origin (a bare trailing
     `?` included, which uihost strict mode now refuses at boot too), and an
     `app.admin.path` that is not a clean prefix (`/` included);
-  - two entities whose create-flagged lists share one screen.
+  - two entities whose create-flagged lists share one screen;
+  - an entity with `exposure.mcp: true` and `exposure.crud: false`;
+  - sibling endpoints whose routes overlap.
 
-  It also warns on a `custom_form` that POSTs to a screen route, an
+  It also warns on a `nav[].href` nothing in the spec serves, a
+  `custom_form` that POSTs to a screen route, an
   image or file field with no file storage wired, and a screen, auth or
   admin mount, or entity API route whose first segment is a locale tag
   under `locale_prefixes`.
@@ -1542,6 +1557,12 @@ few lines, and link the PR or the docs page for the rest.
   from its product.
 - **The `keytrim` analyzer reads `r.PathValue` and identity headers** as
   request input, so a trimmed path or `X-Tenant-Id` value fires.
+- **The `recovercallback` analyzer reads atomic callback slots** loaded
+  directly, through a `Load` method value, or into an existing local. It
+  credits a deferred guard from another package only when the guard's
+  first statement always recovers and it never panics again, so a
+  helper that recovers after an early return, on the right of `&&`, or
+  re-panics no longer silences it.
 - **Docs:** crud lists default to 20 rows and the pagination parse
   helpers to 25 ([cursor pagination](framework/docs/content/cursor-pagination.md));
   `BoolDefault` answers its fallback when the flag store errors
@@ -1654,15 +1675,22 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
-- **A CRUD list refuses a repeated `fields`, `where`, `q` or `cursor`
-  key, and a read-one a repeated `fields` key,** with 400
-  `query_key_repeated`; the later values were never validated or
-  applied. On the list, a queryable column with one of these names is
-  a filter first and answers `filter.repeated_filter`, and a `q` the
-  host owns through `AllowedFilterParams` may repeat when the entity
-  has no `SearchFields` and no visible column whose name or wire name
-  is `q` (a `NoQuery` one included: the filter parser refuses it).
-  **BREAKING** for a client that sent one twice.
+- **Every CRUD read refuses a repeated single-value control** with 400
+  `query_key_repeated`: `cursor`, `direction`, `fields`, `limit`,
+  `offset`, `page`, `per_page`, `q`, `stream`, `trashed` and `where`, on
+  list (offset, cursor and stream pages), direct streaming and read-one.
+  The later values were never validated or applied, and
+  `?trashed=true&trashed=false` read `true`. A queryable column that
+  shares a control's name gets the same refusal. `sort` may still repeat
+  (16 clauses at most), `include` keeps `include_repeated`, and a `q` the
+  host owns through `AllowedFilterParams` may repeat when the entity has
+  no `SearchFields` and no visible column whose name or wire name is `q`.
+  Each read now parses its query once, strictly; the cursor page used to
+  re-parse it up to eight times, leniently. The exported
+  `CrudHandler.ApplySoftDeleteFilter` and `ApplySoftDeleteFilterCount`
+  fail closed: an undecodable query or a repeated `trashed` keeps
+  `deleted_at IS NULL`. `filter.ListControlParams` lists the reserved
+  keys. **BREAKING** for a client that sent one twice.
 - **A CRUD read-one refuses a query pair that does not decode** with
   400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
   returned the full row and `?trashed=true%ZZ` hid a trashed row.
@@ -1720,6 +1748,26 @@ few lines, and link the PR or the docs page for the rest.
 - **Docs**: search query terms keep `-` and `_`; backup codes are eight
   letters and digits; component sheets read the component-option
   variables; seed references resolve only against one-column keys.
+- **semantic refuses text it cannot store**
+  ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
+  `IndexOwned` and the `/index` route refuse a document whose ID,
+  source, owner, text or metadata holds a NUL byte or invalid UTF-8.
+  The route answers 400 `document_invalid_text` where Postgres answered
+  500, and Go callers get `*semantic.InvalidDocumentTextError`. The
+  memory store refuses the same text. Text a host `Options.Chunker`
+  produces is not re-checked.
+- **A panicking route gate or pre-route hook no longer escapes the
+  router.** A `SetRouteGate` panic is logged and counts as a refusal:
+  404 on the route, and the method is left out of a 405's `Allow`. A
+  `PreRoute` panic is logged and answers a localized 500 without
+  running middleware or the handler. Both used to abort the connection.
+  A CONNECT redirect no longer asks the gate about the bare target path.
+- **A generated app boots with a `display.views` entry that has no
+  `where:`**; the view answers an error naming `extensions.go` until
+  its filter is registered there. Generated apps call
+  `fwApp.EntityUI(withViewStubs(appExtensions))` in `app.go`; an app
+  generated earlier makes that edit by hand, since `--add` keeps
+  `app.go`.
 
 ## [0.96.0] - 2026-11-06
 
