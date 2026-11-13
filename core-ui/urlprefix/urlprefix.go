@@ -267,7 +267,9 @@ func (w *writer) WriteHeader(code int) {
 			h.Del("Content-Length")
 			return
 		}
-		if h.Get("Content-Type") == "" && bodyAllowed(code) {
+		// net/http sniffs only when the key is absent: a key set to nil
+		// is the handler opting out, and the body goes out untyped.
+		if _, typed := h["Content-Type"]; !typed && bodyAllowed(code) {
 			w.pending = true
 			return
 		}

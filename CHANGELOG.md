@@ -1654,9 +1654,10 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
-- **A CRUD list or read-one refuses a repeated `fields`, `where` or `q`
-  key** with 400 `query_key_repeated`; the later values were never
-  validated or applied. **BREAKING** for a client that sent one twice.
+- **A CRUD list or read-one refuses a repeated `fields`, `where`, `q` or
+  `cursor` key** with 400 `query_key_repeated`; the later values were
+  never validated or applied. A `q` the entity owns as a filter is
+  exempt. **BREAKING** for a client that sent one twice.
 - **A CRUD read-one refuses a query pair that does not decode** with
   400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
   returned the full row and `?trashed=true%ZZ` hid a trashed row.
@@ -1670,8 +1671,9 @@ few lines, and link the PR or the docs page for the rest.
   repeated name, or a read-only, auto-generated or server-filled field
   on a create form. Both loaded before and drew nothing.
 - **`gofastr new route` refuses a `--handler` that is not a Go
-  identifier or selector**, and `new route` and `new handler` take only
-  the nine standard HTTP methods; the printed line did not compile.
+  identifier or selector**, and prints a hint to wrap a plain func in
+  `http.HandlerFunc`. `new route` and `new handler` refuse a `--method`
+  that is not an HTTP token.
 - **`gofastr build` names remedies it accepts** when it refuses a
   settings file's command extension; it told you to pass `--config`,
   which build does not take.
@@ -1686,7 +1688,9 @@ few lines, and link the PR or the docs page for the rest.
 - **A panicking access observer no longer breaks `access.Can`** or the
   router's serve hook; both recover, as hook and event do.
 - **`openapi.GatedHandler` applies the spec's `RequestView`**, so a
-  caller the predicate admits sees only the entities it may read.
+  caller the predicate admits sees only the entities its session may
+  read. A predicate that admits callers with no session now hands them
+  a spec without the session-gated entities.
 - **`urlprefix.Middleware` rewrites an HTML body whose handler wrote
   the status before any Content-Type**.
 - **`gofastr verify` reads the semantic-coverage manifest from the

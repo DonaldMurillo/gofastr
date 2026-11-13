@@ -29,7 +29,7 @@ func TestNewRouteRefusesBadHandler(t *testing.T) {
 			t.Errorf("--handler %q printed a snippet:\n%s", h, out)
 		}
 	}
-	for _, m := range []string{"G_ET", "GET\n", "FETCH"} {
+	for _, m := range []string{"GET\n", "G ET", "GE(T", "GET/", "\x7f"} {
 		if code, out := runRoute(t, "/things", "--method", m); code != 1 {
 			t.Errorf("--method %q exit = %d, want 1:\n%s", m, code, out)
 		}
@@ -38,23 +38,34 @@ func TestNewRouteRefusesBadHandler(t *testing.T) {
 		{"ItemHandler", "GET", `app.Router().Handle("GET", "/things", ItemHandler)`},
 		{"h.List", "post", `app.Router().Handle("POST", "/things", h.List)`},
 		{"handlers.Things", "delete", `app.Router().Handle("DELETE", "/things", handlers.Things)`},
+		// An extension method is a valid token the router serves.
+		{"h.Propfind", "PROPFIND", `app.Router().Handle("PROPFIND", "/things", h.Propfind)`},
 	} {
 		code, out := runRoute(t, "/things", "--handler", c.handler, "--method", c.method)
 		// -1: the command returned without calling exit.
-		if code != -1 || !strings.Contains(out, c.want) {
+		// Router.Handle takes an http.Handler: the hint names the
+		// conversion a plain func such as new handler's needs.
+		hint := "pass http.HandlerFunc(" + c.handler + ")"
+		if code != -1 || !strings.Contains(out, c.want) || !strings.Contains(out, hint) {
 			t.Errorf("--handler %q --method %q: exit %d, want %s in:\n%s", c.handler, c.method, code, c.want, out)
 		}
 	}
 }
 
-// new handler takes the same method set.
+// new handler takes the same methods: any HTTP token, PROPFIND included.
 func TestNewHandlerRefusesUnknownMethod(t *testing.T) {
 	dir := t.TempDir()
 	clitest.CovT_chdir(t, dir)
 	code := clitest.CovT_capExit(t, func() {
-		clitest.CovT_capStdout(t, func() { runNewHandler([]string{"Things", "--method", "G_ET"}, false) })
+		clitest.CovT_capStdout(t, func() { runNewHandler([]string{"Things", "--method", "G ET"}, false) })
 	})
 	if code != 1 {
-		t.Fatalf("--method G_ET exit = %d, want 1", code)
+		t.Fatalf("--method \"G ET\" exit = %d, want 1", code)
+	}
+	code = clitest.CovT_capExit(t, func() {
+		clitest.CovT_capStdout(t, func() { runNewHandler([]string{"Dav", "--method", "PROPFIND"}, false) })
+	})
+	if code != -1 {
+		t.Fatalf("--method PROPFIND exit = %d, want success", code)
 	}
 }

@@ -230,6 +230,29 @@ func TestStatusFirstOtherBodiesPass(t *testing.T) {
 	}
 }
 
+// A Content-Type key set to nil opts out of net/http's sniff: the body
+// goes out untyped and unrewritten, status first or not.
+func TestNilContentTypeStaysUnsniffed(t *testing.T) {
+	body := `<a href="/pricing">p</a>`
+	for _, statusFirst := range []bool{true, false} {
+		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header()["Content-Type"] = nil
+			if statusFirst {
+				w.WriteHeader(http.StatusOK)
+			}
+			io.WriteString(w, body)
+		}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, esRequest("GET", "/x"))
+		if rec.Body.String() != body {
+			t.Fatalf("statusFirst=%v: body %q, want it unchanged", statusFirst, rec.Body.String())
+		}
+		if ct := rec.Header().Get("Content-Type"); ct != "" {
+			t.Fatalf("statusFirst=%v: Content-Type = %q, want none", statusFirst, ct)
+		}
+	}
+}
+
 func TestMiddlewarePassesOtherTypes(t *testing.T) {
 	body := `{"href":"/pricing"}`
 	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -1433,10 +1433,12 @@ name ends in a suffix but whose name before it is no field (`opt_in`
 with no `opt` field) filters as itself, at the top level, in
 `?rel.field=` and in `include=rel(…)`.
 
-**`fields`, `where` and `q` are sent once too.** Each is read as one
-value, so `?fields=title&fields=body`, a second `?where=` or a second
-`?q=` is a **400** `query_key_repeated` naming the key, on the list and
-(for `fields`) on read-one. Before, the first value ran and the later
+**`fields`, `where`, `q` and `cursor` are sent once too.** Each is read
+as one value, so `?fields=title&fields=body`, a second `?where=`, `?q=`
+or `?cursor=` is a **400** `query_key_repeated` naming the key, on the
+list and (for `fields`) on read-one. Where `q` is the entity's own
+filter (a column named `q`, or `q` in `AllowedFilterParams` with no
+`SearchFields`), it repeats under the filter rules instead. Before, the first value ran and the later
 ones were never validated: `?fields=title&fields=bogus` answered 200
 where `?fields=bogus` alone answered 400. Name several fields in one
 value (`?fields=title,body`) and combine predicates inside one

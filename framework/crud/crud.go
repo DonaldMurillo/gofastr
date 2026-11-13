@@ -698,6 +698,12 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if q.Has("cursor") {
+			// One cursor names one position: a second one was never
+			// decoded, so a bad one beside a good one answered 200.
+			if err := refuseRepeatedKey(q, "cursor"); err != nil {
+				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
+				return
+			}
 			// Keyset mode ignores ?sort=, the cursor fields control ORDER BY,
 			// but it must still REFUSE a sort it would refuse anywhere else.
 			// Returning early before this check made ?cursor=&sort=<NoQuery>
@@ -904,12 +910,16 @@ func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, 
 // url.Values so the List handler can share its single parse across every
 // helper that previously called r.URL.Query() itself.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
+	if len(ch.Entity.Config.SearchFields) == 0 && ch.ownsQParam() {
+		// ?q= is the entity's own filter, which the filter parser reads.
+		return nil, nil
+	}
 	if err := refuseRepeatedKey(q, "q"); err != nil {
 		return nil, err
 	}
 	qVal := q.Get("q")
 	if len(ch.Entity.Config.SearchFields) == 0 {
-		if strings.TrimSpace(qVal) == "" || ch.ownsQParam() {
+		if strings.TrimSpace(qVal) == "" {
 			return nil, nil
 		}
 		return nil, &i18n.Error{Reason: reasonSearchNotConfigured}

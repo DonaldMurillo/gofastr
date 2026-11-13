@@ -49,3 +49,22 @@ func TestRepeatedSingleValueKeysRefused(t *testing.T) {
 		t.Errorf("single fields and q = %d %s, want 200", ok.Code, ok.Body)
 	}
 }
+
+// ?cursor= is read as one value too: a second cursor was never decoded,
+// so cursor=<valid>&cursor=@@@ paged from the first with a 200 while
+// cursor=@@@ alone answered 400 invalid_cursor.
+func TestRepeatedCursorRefused(t *testing.T) {
+	ch := thingsHandler(t, entity.EntityConfig{Exposure: &entity.ExposureConfig{Public: true}})
+	for _, raw := range []string{"cursor=&cursor=%40%40%40", "cursor=&cursor="} {
+		w := httptest.NewRecorder()
+		ch.List()(w, httptest.NewRequest(http.MethodGet, "/api/things?"+raw, nil))
+		if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "query_key_repeated") {
+			t.Errorf("list %s = %d %s, want 400 query_key_repeated", raw, w.Code, w.Body)
+		}
+	}
+	w := httptest.NewRecorder()
+	ch.List()(w, httptest.NewRequest(http.MethodGet, "/api/things?cursor=", nil))
+	if w.Code != http.StatusOK {
+		t.Errorf("single empty cursor = %d %s, want 200", w.Code, w.Body)
+	}
+}

@@ -261,8 +261,8 @@ notes:
   - change: "App spec: an entity_form fields: entry that names no declared field, a hidden field, a read_only or auto_generate field or a server-filled column (id, created_at, updated_at, deleted_at) on a create form, or an entry listed twice is refused at load; it loaded before and the form drew nothing for it"
     guidance: "Fix the typo or remove the entry. Name the field by its declaration name (visitor_email, not visitorEmail). The form never drew the entry."
     nodetect: "app spec YAML, which the Go source scan does not read; gofastr validate reports it"
-  - change: "gofastr new route refuses a --handler that is not a Go identifier or a selector of them (list-things, a b), and new route and new handler refuse a --method outside the nine standard HTTP methods (GET, HEAD, POST, PUT, PATCH, DELETE, CONNECT, OPTIONS, TRACE); new route printed a line that did not compile"
-    guidance: "Pass the handler's Go name (listThings, h.List) and a standard method."
+  - change: "gofastr new route refuses a --handler that is not a Go identifier or a selector of them (list-things, a b), and new route and new handler refuse a --method that is not an HTTP token (a space, a control byte or a separator such as / or (); new route printed a line that did not compile"
+    guidance: "Pass the handler's Go name (listThings, h.List) and a method token (GET, PROPFIND). Wrap a plain func in http.HandlerFunc, as the printed hint says."
     nodetect: "a CLI invocation; the Go source scan does not read it"
   - change: "gofastr migrate generate with no --db or --driver writes DDL for the app spec's own database (app.db.driver, or Postgres for a postgres:// app.db.url) instead of always SQLite"
     guidance: "A project on Postgres that ran generate without the flag got SQLite DDL that Postgres refuses; nothing to change. Pass --db=sqlite to keep SQLite DDL for a spec that names Postgres."
@@ -273,6 +273,9 @@ notes:
   - change: "generate app --add and generate screen judge a fragment's screen routes by the project's settings, read off its app.go and main.go: a screen at the admin path, the PWA manifest or service worker, an llm.md route, the auth base path's /me route or under the entity API mount is refused, and so is a login_form or signup_form action off the project's auth base path"
     guidance: "Move the screen to a free route. A screen at one of those routes was written and registered before, and the framework's route answered instead of it."
     nodetect: "a CLI invocation over app spec YAML; the Go source scan reads neither"
+  - change: "openapi.GatedHandler serves the spec through its RequestView, as Handler does, so a caller the predicate admits sees only the entities its session may read; it served the full document to every admitted caller"
+    guidance: "A predicate that admits callers with no session (a CI docs token) now gets a spec without the session-gated entities. To hand such a caller the whole document, serve PublicHandler behind your own check."
+    nodetect: "the spec a caller receives depends on its session at runtime; the GatedHandler call reads the same"
   - change: "/openapi.json documents a relation field with Many as one string id with x-many: true, the value the API takes and answers; it documented an array of ids, a body the API answered with 400 not_reference"
     guidance: "A client generated from the document that sent or read an array for such a field sends and reads the id string."
     nodetect: "a fact of the served document and of clients generated from it; no host source spelling shows it"
@@ -349,9 +352,9 @@ notes:
     breaking: true
     guidance: "Name every path in one include value, comma-separated: ?include=author,comments."
     nodetect: "a query parameter a client sends; no host source spelling shows it"
-  - change: "BREAKING - a CRUD list that repeats the fields, where or q key (?fields=title&fields=body, two ?where= trees, two ?q= terms), or a read-one that repeats fields, answers 400 query_key_repeated, where it applied the first value and ignored the rest unvalidated"
+  - change: "BREAKING - a CRUD list that repeats the fields, where, q or cursor key (?fields=title&fields=body, two ?where= trees, two ?q= terms, two ?cursor= positions), or a read-one that repeats fields, answers 400 query_key_repeated, where it applied the first value and ignored the rest unvalidated"
     breaking: true
-    guidance: "Send each key once: name several fields comma-separated (?fields=title,body), combine predicates inside one ?where= tree, and put every search word in one ?q= value."
+    guidance: "Send each key once: name several fields comma-separated (?fields=title,body), combine predicates inside one ?where= tree, put every search word in one ?q= value, and send one ?cursor=. A q the entity owns as a filter (AllowedFilterParams with no SearchFields) is not refused."
     nodetect: "a query parameter a client sends; no host source spelling shows it"
   - change: "BREAKING - battery/auth's default email canonicalizer (auth.CanonicalEmail) refuses a value that is not one local@domain pair (exactly one @, text on both sides, no white space, no control character) with 400 invalid_email, at registration, login, magic link, password reset and OAuth; it used to fold case and spaces and store anything, so register accepted notanemail"
     breaking: true

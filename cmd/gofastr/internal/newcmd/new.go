@@ -8,7 +8,6 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -166,16 +165,26 @@ func runNewRoute(args []string) {
 
 	cli.Info("Add this to your app setup:")
 	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+	// Router.Handle takes an http.Handler. new handler scaffolds a plain
+	// func, which needs the conversion; a handler value does not, and the
+	// command cannot tell which the name is.
+	cli.Info("If %s is a func(http.ResponseWriter, *http.Request), such as one new handler wrote, pass http.HandlerFunc(%s).", handler, handler)
 }
 
-// routeMethods are the methods new handler and new route accept, upper
-// case: the HTTP methods a route serves.
-var routeMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE"}
-
-// checkRouteMethod refuses a method outside routeMethods.
+// checkRouteMethod refuses a method that is not an HTTP token (RFC 9110
+// section 5.6.2): the router builds a "METHOD /path" pattern from it, and
+// net/http's ServeMux panics on a pattern whose method is no token.
+// Extension methods such as PROPFIND are tokens and pass.
 func checkRouteMethod(method string) error {
-	if !slices.Contains(routeMethods, method) {
-		return fmt.Errorf("invalid method %q: use one of %s", method, strings.Join(routeMethods, ", "))
+	if method == "" {
+		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
+	}
+	for i := 0; i < len(method); i++ {
+		c := method[i]
+		if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0 {
+			continue
+		}
+		return fmt.Errorf("invalid method %q: must be an HTTP method such as GET or PROPFIND", method)
 	}
 	return nil
 }
