@@ -2,6 +2,7 @@ package html
 
 import (
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/urlsafe"
 	"github.com/DonaldMurillo/gofastr/core/render"
@@ -271,7 +272,16 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	if cfg.Content == "" {
 		return render.Tag("textarea", attrs)
 	}
-	return render.Tag("textarea", attrs, render.Text(cfg.Content))
+	// The HTML parser drops ONE newline straight after <textarea>, so
+	// content that opens on a line break lost it on every render and
+	// save. One extra newline is what the parser eats. CR and CRLF
+	// count: the tokenizer folds both to LF before the drop. The same
+	// rule as framework/headless.Textarea.
+	content := cfg.Content
+	if strings.HasPrefix(content, "\n") || strings.HasPrefix(content, "\r") {
+		content = "\n" + content
+	}
+	return render.Tag("textarea", attrs, render.Text(content))
 }
 
 // ButtonGroup produces a <div> with role="group" containing buttons.
