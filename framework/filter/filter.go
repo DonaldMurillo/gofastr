@@ -242,14 +242,20 @@ type ParsedSort struct {
 
 // reservedListParams are the list-endpoint control keys that are never
 // entity fields. Strict parsing skips them so a legitimate ?sort=/?page=/…
-// is not rejected as an unknown filter. Keep in sync with the params the
-// CRUD list handler actually reads (crud.go, pagination, projection,
-// include, search, where-tree, soft-delete, streaming).
+// is not rejected as an unknown filter. ListControlParams exposes this set
+// so CRUD can check that every reserved control has a repeat policy.
 var reservedListParams = map[string]bool{
 	"sort": true, "page": true, "limit": true, "per_page": true,
 	"offset": true, "cursor": true, "direction": true, "where": true,
 	"fields": true, "include": true, "trashed": true, "stream": true,
 	"q": true,
+}
+
+// ListControlParams returns the sorted list of reserved list control keys.
+// The returned slice is a copy; changing it does not alter filter parsing.
+// CRUD classifies these controls as single-value, except sort, which may repeat.
+func ListControlParams() []string {
+	return slices.Sorted(maps.Keys(reservedListParams))
 }
 
 // filterOpts holds the resolved options for a ParseFilters call.

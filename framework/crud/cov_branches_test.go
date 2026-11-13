@@ -396,7 +396,7 @@ func TestProjection_DuplicateFields(t *testing.T) {
 	ch, _ := covNotesHandler(t)
 	// Duplicate + empty entries are de-duped / skipped.
 	req := httptest.NewRequest("GET", "/notes?fields=title,title,,body", nil)
-	cols, err := ch.projectFromRequest(req)
+	cols, err := ch.projectFromRequestQ(queryValues(t, req))
 	if err != nil {
 		t.Fatalf("projection: %v", err)
 	}

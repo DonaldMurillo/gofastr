@@ -161,26 +161,12 @@ func scopedClauseKey(parsed []filter.ParsedFilter) string {
 	return b.String()
 }
 
-// parseIncludeTree splits comma-separated dotted include paths and resolves
+// parseIncludeTreeQ splits comma-separated dotted include paths and resolves
 // each segment against the registry. Returns the roots of the include forest.
 //
 // Example: "author.profile, comments" against a posts entity yields two
 // roots: author (with profile as a child) and comments (no children).
-func parseIncludeTree(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
-	return parseIncludeTreeQ(r.URL.Query(), ent, registry)
-}
-
-// parseIncludeTreeQ is the no-reparse variant. The List handler threads
-// its single url.Values through; this avoids r.URL.Query() re-parsing
-// RawQuery on every helper call.
 func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
-	// One include key carries every path, comma-separated. A repeated
-	// key was read as its first value only, so a later one was neither
-	// validated nor applied (?include=author&include=bogus answered 200).
-	// Refused like a repeated scalar filter (filter.repeated_filter).
-	if n := len(q["include"]); n > 1 {
-		return nil, i18n.NewError(reasonIncludeRepeated, map[string]any{"count": n})
-	}
 	raw := strings.TrimSpace(q.Get("include"))
 	if raw == "" {
 		return nil, nil

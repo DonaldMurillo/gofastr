@@ -272,21 +272,21 @@ func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 // authenticated. An anonymous caller passing ?trashed=true on a public
 // list endpoint must not be allowed to enumerate soft-deleted rows,
 // that's an information-disclosure path. The query param is honoured
-// only when a user is present in the request context.
+// only when a user is present in the request context. The query is parsed
+// strictly: an undecodable pair or repeated trashed key keeps deleted_at IS NULL.
 func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
-	ch.applySoftDeleteFilterQ(qb, r.URL.Query(), r.Context())
+	ch.applySoftDeleteFilterQ(qb, softDeleteQuery(r), r.Context())
 }
 
 // ApplySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
-// Same authentication gate as ApplySoftDeleteFilter.
+// Same authentication gate and strict, fail-closed query parsing as
+// ApplySoftDeleteFilter: an undecodable pair or repeated trashed key keeps
+// deleted_at IS NULL.
 func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
-	ch.applySoftDeleteFilterCountQ(cb, r.URL.Query(), r.Context())
+	ch.applySoftDeleteFilterCountQ(cb, softDeleteQuery(r), r.Context())
 }
 
-// applySoftDeleteFilterQ is the no-reparse variant of ApplySoftDeleteFilter.
-// List/ServeStreamingList parse the URL query once and thread the same
-// url.Values through every helper; this variant accepts it directly so the
-// soft-delete gate doesn't pay url.URL.Query a second time per call.
+// applySoftDeleteFilterQ applies the soft-delete gate to already parsed values.
 func (ch *CrudHandler) applySoftDeleteFilterQ(qb *query.QueryBuilder, q url.Values, ctx context.Context) {
 	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
 		qb.Where("deleted_at IS NULL")
@@ -300,17 +300,8 @@ func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url
 	}
 }
 
-// trashedAllowed reports whether the caller may see soft-deleted rows on
-// this request. True only when ?trashed=true AND the request carries an
-// authenticated user, anonymous callers are denied visibility into
-// soft-deleted data regardless of how they ask.
-func (ch *CrudHandler) trashedAllowed(r *http.Request) bool {
-	return ch.trashedAllowedQ(r.URL.Query(), r.Context())
-}
-
-// trashedAllowedQ is the no-reparse variant. The List handler computes it
-// once from its single parsed url.Values and reuses the result across the
-// count + data query builders.
+// trashedAllowedQ requires ?trashed=true and an authenticated request user.
+// Read handlers reuse their single parsed values for both count and data.
 func (ch *CrudHandler) trashedAllowedQ(q url.Values, ctx context.Context) bool {
 	if q.Get("trashed") != "true" {
 		return false
@@ -569,19 +560,8 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 		ctx := r.Context()
-		// Parse the URL query ONCE and thread it through every helper.
-		// r.URL.Query() re-parses RawQuery and allocates a fresh
-		// url.Values on every call; the previous List body paid that
-		// ~13-15× per request (pagination, includes, filters, sort,
-		// nested filters, q-column edge case, ?q= search, ?where= tree,
-		// ?cursor check, projection, ?stream check, soft-delete gate ×2,
-		// explicit offset). Handing the same parsed Values to every
-		// helper eliminates the re-parse without changing any semantics.
-		//
-		// Strictly: URL.Query drops a pair that does not decode (%ZZ, a
-		// bare %, a ';'), so ?cursor=%ZZ restarted a walk at page 1 and
-		// ?status=paid%ZZ read as no filter, each a 200 with every row.
-		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		// Strictly parse and validate controls once for every read path.
+		q, err := ch.readQuery(r)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -698,12 +678,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		// empty for first-page) switches to keyset mode and emits the
 		// CursorPage envelope.
 		if q.Has("cursor") {
-			// One cursor names one position: a second one was never
-			// decoded, so a bad one beside a good one answered 200.
-			if err := refuseRepeatedKey(q, "cursor"); err != nil {
-				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
-				return
-			}
 			// Keyset mode ignores ?sort=, the cursor fields control ORDER BY,
 			// but it must still REFUSE a sort it would refuse anywhere else.
 			// Returning early before this check made ?cursor=&sort=<NoQuery>
@@ -720,7 +694,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			ch.serveCursorList(ctx, w, r, cols, includes, filters, nested, listPayload.Where, hookWheres)
+			ch.serveCursorList(ctx, w, r, q, cols, includes, filters, nested, listPayload.Where, hookWheres)
 			return
 		}
 
@@ -762,7 +736,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 					return
 				}
 			} else {
-				ch.ServeStreamingList(ctx, w, r, cols, filters, nested, sorts, page, perPage, listPayload.Where)
+				ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, perPage, listPayload.Where)
 				return
 			}
 			// Fall through to the buffered path (auto-stream with includes or
@@ -893,7 +867,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 	}
 }
 
-// searchWhereClauses builds hook.WhereClause entries from ?q= when the
+// searchWhereClausesQ builds hook.WhereClause entries from ?q= when the
 // entity declares SearchFields. Returns nil when ?q= is blank. On an
 // entity with no SearchFields a non-blank ?q= is refused (400
 // search_not_configured), the way ListAll refuses Search there:
@@ -902,20 +876,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 // filter param) is named q, where ?q= is that filter. The conditions AND-compose safely with owner/tenant/
 // soft-delete scopes because the query builder wraps each Where clause
 // in parens.
-func (ch *CrudHandler) searchWhereClauses(r *http.Request) ([]hook.WhereClause, error) {
-	return ch.searchWhereClausesQ(r.URL.Query())
-}
-
-// searchWhereClausesQ is the no-reparse variant. Accepts a pre-parsed
-// url.Values so the List handler can share its single parse across every
-// helper that previously called r.URL.Query() itself.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
 	if len(ch.Entity.Config.SearchFields) == 0 && ch.ownsQParam() {
 		// ?q= is the entity's own filter, which the filter parser reads.
 		return nil, nil
-	}
-	if err := refuseRepeatedKey(q, "q"); err != nil {
-		return nil, err
 	}
 	qVal := q.Get("q")
 	if len(ch.Entity.Config.SearchFields) == 0 {
@@ -952,24 +916,14 @@ func (ch *CrudHandler) ownsQParam() bool {
 	return slices.Contains(ch.Entity.Config.AllowedFilterParams, "q")
 }
 
-// whereTreeClauses parses a ?where=<json> nested predicate tree, validates
+// whereTreeClausesQ parses a ?where=<json> nested predicate tree, validates
 // every field against the entity's (non-Hidden) schema and every operator
 // against the supported set, and compiles it to one hook.WhereClause. It
-// returns (nil, nil) when ?where= is absent/blank (back-compat). An
+// returns no clauses or tree when ?where= is absent/blank. An
 // invalid tree returns an error the caller maps to 400. The single clause
 // AND-composes with owner/tenant/soft-delete scopes because the query
 // builder wraps each Where in parens.
-func (ch *CrudHandler) whereTreeClauses(r *http.Request) ([]hook.WhereClause, error) {
-	clauses, _, err := ch.whereTreeClausesQ(r.URL.Query())
-	return clauses, err
-}
-
-// whereTreeClausesQ is the no-reparse variant of whereTreeClauses. It
-// also returns the parsed tree, for checks that read its fields.
 func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *filter.Predicate, error) {
-	if err := refuseRepeatedKey(q, "where"); err != nil {
-		return nil, nil, err
-	}
 	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil, nil
@@ -986,19 +940,6 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 		return nil, p, nil
 	}
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
-}
-
-// refuseRepeatedKey refuses a query key the handler reads as one value
-// (fields, where, q) when the query sends it more than once. q.Get reads
-// the first value only, so ?fields=title&fields=bogus answered 200 with
-// the title projection and never validated bogus, where ?fields=bogus
-// alone answered 400. The include key has its own refusal
-// (include_repeated); a scalar filter key has filter.repeated_filter.
-func refuseRepeatedKey(q url.Values, key string) error {
-	if n := len(q[key]); n > 1 {
-		return i18n.NewError(reasonQueryKeyRepeated, map[string]any{"key": strconv.Quote(key), "count": n})
-	}
-	return nil
 }
 
 // stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
@@ -1050,7 +991,7 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		// Strictly, as List() reads it: URL.Query drops a pair that does
 		// not decode, so ?fields=name%ZZ answered the full row and
 		// ?trashed=true%ZZ hid the trashed row asked for (404).
-		q, err := filter.ParseQueryStrict(r.URL.RawQuery)
+		q, err := ch.readQuery(r)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
@@ -1585,7 +1526,7 @@ func isForeignKeyViolation(err error) bool {
 	return false
 }
 
-// parsePagination extracts the page number (?page) and page size (?limit,
+// parsePaginationValues extracts the page number (?page) and page size (?limit,
 // or its ?per_page alias) from query params. Defaults: page=1, perPage=20.
 //
 // The per_page cap is 100 by default. Entities can raise this via
@@ -1594,10 +1535,6 @@ func isForeignKeyViolation(err error) bool {
 // public endpoints can't be coerced into 10× larger responses by
 // adding a query param. When the entity has explicitly raised the
 // limit, the streaming-list path uses min(MaxListLimit, streamListThreshold).
-func parsePagination(r *http.Request, entityMax int) (page, perPage int) {
-	return parsePaginationValues(r.URL.Query(), entityMax)
-}
-
 func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 	page = 1
 	perPage = 20
@@ -1631,15 +1568,11 @@ func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 	return
 }
 
-// explicitOffset reads a raw ?offset= row skip. Returns (n, true) only for a
+// explicitOffsetValues reads a raw ?offset= row skip. Returns (n, true) only for a
 // well-formed non-negative integer; a missing, malformed, or negative value
 // yields (0, false) so the caller keeps the page-derived offset. LIMIT still
 // caps the row count, and requireBoundedOffset refuses the skip side beyond
 // maxListOffset, so an oversized offset never reaches the query.
-func explicitOffset(r *http.Request) (int, bool) {
-	return explicitOffsetValues(r.URL.Query())
-}
-
 func explicitOffsetValues(q url.Values) (int, bool) {
 	v := q.Get("offset")
 	if v == "" {

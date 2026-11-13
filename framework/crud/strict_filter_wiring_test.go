@@ -84,13 +84,13 @@ func TestList_UndeclaredCustomParamStillRejected(t *testing.T) {
 // silent default.
 func TestParsePagination_PerPageAlias(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/notes?per_page=7", nil)
-	_, perPage := parsePagination(req, 0)
+	_, perPage := parsePaginationValues(queryValues(t, req), 0)
 	if perPage != 7 {
 		t.Fatalf("per_page alias = %d, want 7", perPage)
 	}
 	// ?limit wins when both are present.
 	req = httptest.NewRequest(http.MethodGet, "/notes?limit=5&per_page=7", nil)
-	if _, pp := parsePagination(req, 0); pp != 5 {
+	if _, pp := parsePaginationValues(queryValues(t, req), 0); pp != 5 {
 		t.Fatalf("limit should win over per_page, got %d, want 5", pp)
 	}
 }
@@ -122,7 +122,7 @@ func TestExplicitOffset(t *testing.T) {
 	}
 	for _, c := range cases {
 		r := httptest.NewRequest(http.MethodGet, "/notes"+c.query, nil)
-		got, ok := explicitOffset(r)
+		got, ok := explicitOffsetValues(queryValues(t, r))
 		if got != c.want || ok != c.present {
 			t.Errorf("explicitOffset(%q) = (%d,%v), want (%d,%v)", c.query, got, ok, c.want, c.present)
 		}

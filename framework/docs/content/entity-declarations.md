@@ -1433,22 +1433,29 @@ name ends in a suffix but whose name before it is no field (`opt_in`
 with no `opt` field) filters as itself, at the top level, in
 `?rel.field=` and in `include=rel(…)`.
 
-**`fields`, `where`, `q` and `cursor` are sent once too.** Each is read
-as one value, so `?fields=title&fields=body`, a second `?where=`, `?q=`
-or `?cursor=` is a **400** `query_key_repeated` naming the key, on the
-list and (for `fields`) on read-one. Two names read another way on
-the list. A queryable column named `fields`, `where`, `q` or `cursor`
-is a filter first, so repeating it there is the filter refusal above
-(`filter.repeated_filter`); read-one parses no filters and still
-answers `query_key_repeated` for a second `fields`. A `q` in
-`AllowedFilterParams`, on an entity with no `SearchFields` and no
-visible column whose name or `WireName` is `q`, belongs to the host: it may repeat, the
-list answers 200 and the host reads every value. Before, the first
-value ran and the later ones were never validated: `?fields=title&fields=bogus` answered 200
-where `?fields=bogus` alone answered 400. Name several fields in one
-value (`?fields=title,body`) and combine predicates inside one
-`?where=` tree. `include` has the same rule under its own reason,
-`include_repeated` ([includes](includes.md)).
+**Single-value controls are sent once.** CRUD refuses a repeated
+`cursor`, `direction`, `fields`, `include`, `limit`, `offset`, `page`,
+`per_page`, `q`, `stream`, `trashed` or `where` key on every HTTP read:
+list (offset, cursor and stream modes), direct streaming, and read-one.
+The response is **400** `query_key_repeated` naming the key, except
+`include` keeps **400** `include_repeated` ([includes](includes.md)).
+Even two equal or empty values count as a repeat. If several controls
+repeat, the alphabetically first key decides the refusal. An undecodable
+query is refused before these checks (`filter.query_undecodable`, below).
+
+Name several fields in one value (`?fields=title,body`), include paths
+in one value (`?include=author,comments`), and combine predicates inside
+one `?where=` tree. **`sort` may repeat**: every occurrence contributes
+sort clauses, up to 16 clauses in total.
+
+The exception is a `q` in `AllowedFilterParams` on an entity with no
+`SearchFields` and no visible queryable column whose name or `WireName`
+is `q`: it belongs to the host, may repeat, and the host reads every
+value. A queryable column named `q` on an entity with no `SearchFields`
+still filters on list requests, and a repeated `q` there is refused at
+entry as `query_key_repeated`, on read-one too. Every other
+single-value control is checked at entry the same way, including when a
+column shares its name.
 
 **A bare key that reads two ways is a 400.** When an entity has both
 `check` and `check_in`, `?check_in=x` could mean `check_in = x` or
@@ -1535,7 +1542,18 @@ included; send `;` as `%3B`. Read-one (`GET /api/<entity>/<id>`)
 answers the same 400: there `?fields=title%ZZ` returned the full row
 and `?trashed=true%ZZ` hid the trashed row asked for. Code that reads a list query itself does
 the same with `filter.ParseQueryStrict(r.URL.RawQuery)`, which
-`filter.ParseFilters` and `filter.ParseSort` now call.
+`filter.ParseFilters` and `filter.ParseSort` also call. CRUD parses the
+wire query strictly once at entry and shares the decoded values through
+pagination, cursor anchors, projection, includes, filtering and streaming.
+`filter.ListControlParams()` returns a sorted copy of the reserved list
+control keys for callers that need to classify those keys.
+
+The exported `crud.CrudHandler.ApplySoftDeleteFilter` and
+`crud.CrudHandler.ApplySoftDeleteFilterCount` helpers also parse strictly.
+They cannot return a query error, so an undecodable pair anywhere in the
+query or a repeated `trashed` key keeps the `deleted_at IS NULL` filter,
+even for an authenticated caller. A single `?trashed=true` grants trashed
+visibility only to an authenticated caller on a soft-delete entity.
 
 ## Nested predicate filters (`?where=`)
 

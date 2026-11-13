@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
@@ -97,7 +96,7 @@ type nestedFilter struct {
 	table      string                // 1-hop fallback
 }
 
-// parseNestedFilters extracts dotted-path query params and resolves their
+// parseNestedFiltersValues extracts dotted-path query params and resolves their
 // relation references against the entity's declared relations. Multi-hop
 // nesting is supported up to depth 4 (e.g. `?comments.post.author.name=alice`).
 //
@@ -110,10 +109,6 @@ type nestedFilter struct {
 //
 // Unknown relations and unknown fields on the target return an error so
 // the caller can map to 400, silent ignoring would mask client typos.
-func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
-	return parseNestedFiltersValues(r.URL.Query(), ent, registry)
-}
-
 func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	if ent == nil {
 		return nil, nil

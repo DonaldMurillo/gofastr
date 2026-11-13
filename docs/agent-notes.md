@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-13 - Parse CRUD read queries once at entry
+- Scope: framework/crud query controls, cursor and streaming paths
+- Trigger: repeated paging/trashed controls were ignored and cursor/stream helpers parsed the wire query again.
+- Approach: use readQuery at HTTP entry; thread url.Values into helpers and keep the exported soft-delete helpers strict and fail-closed.
+- Evidence: TestReadQueryParity covers 12 controls across five surfaces; TestReadQueryGuard forbids query reads outside query_read.go; TestReadQueryListUsesEntryValues changes the URL after entry.
+- Next time: classify a new reserved control in singleValueQueryKeys (or explicitly as multi-value) and add a row for a new read surface in the parity matrix.
+- Status: active
+
 ## 2026-11-09 - Keep a fitting component subset when app.css needs a link
 - Scope: framework/uihost, issue #669 first-paint CSS
 - Trigger: eager offline-toast sheets moved Meridian Customers from 15,328 B of subset CSS to 20,951 B of full linked CSS.
