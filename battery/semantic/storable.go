@@ -25,11 +25,11 @@ func (err *InvalidDocumentTextError) Error() string {
 
 // MetadataNumberRangeError identifies document metadata holding a JSON
 // number Postgres jsonb cannot store: more than 131072 digits before the
-// decimal point or 16383 after it. Add refuses it on every store.
+// decimal point or 16383 after it, or an exponent above 1073741823. Add refuses it on every store.
 type MetadataNumberRangeError struct{}
 
 func (*MetadataNumberRangeError) Error() string {
-	return "semantic: document metadata holds a number outside the range Postgres jsonb stores (131072 digits before the decimal point, 16383 after)"
+	return "semantic: document metadata holds a number outside the range Postgres jsonb stores (131072 digits before the decimal point, 16383 after, exponent 1073741823)"
 }
 
 func validateDocumentText(document Document) error {

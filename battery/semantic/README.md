@@ -35,14 +35,14 @@ and reason `invalid_json_body`. Decoded document `id`, `source`, `text`, and
 every string value and key (including duplicate members) and custom encoders;
 NULs and escapes for half a surrogate pair (which Postgres jsonb rejects) are
 refused, and fields omitted by JSON tags are ignored. A metadata number with
-more than 131072 digits before the decimal point or 16383 after it (jsonb's
-numeric range) answers 400 `document_metadata_number_out_of_range`, and Go
+more than 131072 digits before the decimal point or 16383 after it, or an
+exponent above 1073741823 (jsonb's numeric range), answers 400 `document_metadata_number_out_of_range`, and Go
 callers get `*MetadataNumberRangeError`. Invalid UTF-8 in ordinary Go strings
 is normalized by JSON encoding, except `metadata["kind"]`: the store also binds
 that raw string to a text column, so it must itself be valid UTF-8 without NUL
-bytes. For Go callers only, metadata JSON cannot encode (a NaN, a channel)
-fails with a plain encoding error; the route cannot receive such a value,
-since JSON has no NaN.
+bytes. For Go callers only, metadata values that JSON cannot encode (a NaN,
+a channel) fail with a plain encoding error; the route cannot receive such a
+value, since JSON has no NaN.
 `Index.Add` returns `*InvalidDocumentTextError` before batch writes, even with
 an in-memory store; only the last document with each ID is validated and
 stored. The owned adapter from `WrapSearchBackend` applies the text refusal

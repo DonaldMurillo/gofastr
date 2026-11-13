@@ -210,8 +210,8 @@ func TestAddRefusesNumbersJSONBCannotHold(t *testing.T) {
 	} {
 		err := idx.Add(context.Background(), Document{ID: "n", Text: "ok", Metadata: map[string]any{"raw": json.RawMessage(`{"n":` + tc.number + `}`)}})
 		var outOfRange *MetadataNumberRangeError
-		if got := errors.As(err, &outOfRange); got != tc.refused {
-			t.Errorf("Add(%s): %v; refused=%v, want %v", tc.number, err, got, tc.refused)
+		if got := errors.As(err, &outOfRange); got != tc.refused || (!tc.refused && err != nil) {
+			t.Errorf("Add(%s): %v; want refused=%v with no other error", tc.number, err, tc.refused)
 		}
 	}
 }
