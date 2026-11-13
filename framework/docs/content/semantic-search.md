@@ -292,7 +292,11 @@ including custom encoders, every nested string value and key, and duplicate
 object members. Omitted fields do not participate. Ordinary Go strings with
 invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
 PgVectorStore also binds it raw to a text column, so that string must itself
-be valid UTF-8 without NUL bytes. Encoding or decoding failures are refused.
+be valid UTF-8 without NUL bytes. An escape for half a surrogate pair
+(`"\ud800"` in a `json.RawMessage`) is refused too: Go would decode it to
+U+FFFD, but Postgres's jsonb input rejects it. Metadata that cannot be
+encoded as JSON at all (a NaN, a channel) fails on every store with a plain
+error naming the encoding, not an `InvalidDocumentTextError`.
 Large JSON numbers remain valid during this check. The in-memory store and `IndexOwned` method
 of `WrapSearchBackend`'s owned keyword adapter also refuse unstorable text.
 The phrase key is `semantic.document_invalid_text`; a host catalog can

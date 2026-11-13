@@ -265,6 +265,21 @@ func TestViewStubsIgnoreStaleRegistrations(t *testing.T) {
 	}
 }
 
+func TestViewStubsVersionedEntity(t *testing.T) {
+	reg := framework.NewRegistry()
+	for _, version := range []string{"v1", "v2"} {
+		e := entity.Define("posts", entity.EntityConfig{Display: &entity.DisplayConfig{Views: []entity.ListView{{Key: "mine"}}}})
+		e.Version = version
+		if err := reg.Register(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ext := fillViewStubs(reg, entityui.Extensions{}, [][2]string{{"posts", "mine"}})
+	if ext.Entities["posts"].Views["mine"].Filter == nil {
+		t.Fatal("where-less view of a versioned entity got no default filter")
+	}
+}
+
 func TestViewStubFilenameDoesNotCollideWithScreen(t *testing.T) {
 	bp := appspec.AppSpec{App: appspec.AppSpecApp{Name: "Demo", Module: "example.com/demo"},
 		Entities: []framework.EntityDeclaration{{Name: "screen", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}, Display: &entity.DisplayConfig{Views: []entity.ListView{{Key: "mine"}}}}},

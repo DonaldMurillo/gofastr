@@ -41,8 +41,17 @@ func TestWatcherSkipsUnchunkableFile(t *testing.T) {
 	if got := idx.Stats().Docs; got != 2 {
 		t.Fatalf("indexed %d docs, want the 2 valid files", got)
 	}
-	if !strings.Contains(logs.String(), "skipped a file with invalid document text") || !strings.Contains(logs.String(), "document text must be valid UTF-8") {
-		t.Fatalf("wrong refusal warning: %s", logs.String())
+	// Each refused file gets its own warning naming the real cause.
+	for _, name := range []string{"b.md", "d.md"} {
+		named := false
+		for _, line := range strings.Split(logs.String(), "\n") {
+			if strings.Contains(line, filepath.Join(dir, name)) && strings.Contains(line, "skipped a file with invalid document text") && strings.Contains(line, "document text must be valid UTF-8") {
+				named = true
+			}
+		}
+		if !named {
+			t.Fatalf("no refusal warning for %s: %s", name, logs.String())
+		}
 	}
 	// Indexed before, unchunkable now: the stale version leaves the index.
 	write("a.md", "now \xff broken")

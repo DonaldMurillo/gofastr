@@ -43,7 +43,8 @@ type chunkLister interface {
 
 type index struct {
 	// restoring is true only during single-threaded Open: persisted text
-	// predating validation must not prevent reopening the vector store.
+	// predating validation must not prevent reopening the vector store,
+	// so a keyword backend's text refusal skips that chunk instead.
 	restoring bool
 	embedder  Embedder
 	chunker   Chunker
@@ -739,17 +740,17 @@ func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) (err err
 	}
 	owned, _ := i.keyword.(OwnedKeywordBackend)
 	for _, c := range chunks {
-		if i.restoring {
-			if err := validateDocumentText(Document{ID: c.ID, Owner: c.Owner, Text: c.Text}); err != nil {
-				slog.Warn("semantic: keyword index skipped stored chunk with invalid document text", "chunk", textsafe.ScrubControlBytes(c.ID), "err", textsafe.ScrubControlBytes(err.Error()))
-				continue
-			}
-		}
 		index := i.keyword.Index
 		if owned != nil {
 			index = func(ctx context.Context, id, text string) error { return owned.IndexOwned(ctx, id, c.Owner, text) }
 		}
 		if err := index(ctx, c.ID, c.Text); err != nil {
+			// A backend that refuses text stored before validation skips
+			// that chunk on reopen; a backend that holds it keeps it.
+			if invalid := (*InvalidDocumentTextError)(nil); i.restoring && errors.As(err, &invalid) {
+				slog.Warn("semantic: keyword index skipped stored chunk with invalid document text", "chunk", textsafe.ScrubControlBytes(c.ID), "err", textsafe.ScrubControlBytes(err.Error()))
+				continue
+			}
 			return fmt.Errorf("semantic: keyword index %q: %w", c.ID, err)
 		}
 	}

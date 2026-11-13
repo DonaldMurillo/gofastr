@@ -33,8 +33,9 @@ and reason `invalid_json_body`. Decoded document `id`, `source`, `text`, and
 `owner` strings containing a NUL (for example, an escaped `\u0000`) receive
 400 `document_invalid_text`. Metadata is checked as encoded JSON, including
 every string value and key (including duplicate members) and custom encoders;
-NULs and encoding failures are refused, and fields omitted by JSON tags are
-ignored. Invalid UTF-8 in ordinary Go strings is normalized by JSON encoding,
+NULs and escapes for half a surrogate pair (which Postgres jsonb rejects) are
+refused, and fields omitted by JSON tags are ignored. Metadata JSON cannot
+encode (a NaN) fails with a plain encoding error instead. Invalid UTF-8 in ordinary Go strings is normalized by JSON encoding,
 except `metadata["kind"]`: the store also binds that raw string to a text column,
 so it must itself be valid UTF-8 without NUL bytes.
 `Index.Add` returns `*InvalidDocumentTextError` before batch writes, even with

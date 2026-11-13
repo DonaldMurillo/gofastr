@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -65,7 +65,7 @@ func TestAddRefusesUnstorableText(t *testing.T) {
 		}{
 			{"id", Document{ID: bad, Text: "ok"}}, {"text", Document{ID: "a", Text: bad}},
 			{"source", Document{ID: "a", Text: "ok", Source: bad}}, {"owner", Document{ID: "a", Text: "ok", Owner: bad}},
-			{"metadata", Document{ID: "a", Text: "ok", Metadata: map[string]any{"nested": json.RawMessage(strconv.Quote(bad))}}},
+			{"metadata", Document{ID: "a", Text: "ok", Metadata: map[string]any{"nested": json.RawMessage(`"` + strings.ReplaceAll(bad, "\x00", `\u0000`) + `"`)}}},
 		} {
 			err := idx.Add(context.Background(), Document{ID: "valid", Text: "ok"}, tc.document)
 			var refusal *InvalidDocumentTextError
@@ -125,27 +125,40 @@ func TestAddMetadataMatchesStoredJSON(t *testing.T) {
 		name     string
 		metadata map[string]any
 		refused  bool
+		encoding bool
 	}{
-		{"huge_number_and_nul", map[string]any{"raw": json.RawMessage(`{"number":1e400,"text":"a\u0000b"}`)}, true},
-		{"huge_number", map[string]any{"raw": json.RawMessage(`{"number":1e400}`)}, false},
+		{"huge_number_and_nul", map[string]any{"raw": json.RawMessage(`{"number":1e400,"text":"a\u0000b"}`)}, true, false},
+		{"huge_number", map[string]any{"raw": json.RawMessage(`{"number":1e400}`)}, false, false},
 		{"omitted_field", map[string]any{"value": struct {
 			Hidden  string `json:"-"`
 			Visible string `json:"visible"`
-		}{Hidden: "a\x00b", Visible: "ok"}}, false},
-		{"encoding_failure", map[string]any{"value": make(chan int)}, true},
-		{"normalized_utf8", map[string]any{"value": "a\xffb"}, false},
-		{"raw_kind_utf8", map[string]any{"kind": "a\xffb"}, true},
-		{"raw_kind_nul", map[string]any{"kind": "a\x00b"}, true},
-		{"valid_kind", map[string]any{"kind": "guide"}, false},
-		{"duplicate_key_nul_first", map[string]any{"raw": json.RawMessage(`{"x":"\u0000","x":"clean"}`)}, true},
-		{"duplicate_key_nul_last", map[string]any{"raw": json.RawMessage(`{"x":"clean","x":"\u0000"}`)}, true},
-		{"nested_duplicate_key_nul", map[string]any{"raw": json.RawMessage(`[{"x":"\u0000","x":"clean"}]`)}, true},
-		{"duplicate_key_clean", map[string]any{"raw": json.RawMessage(`{"x":"first","x":"clean"}`)}, false},
+		}{Hidden: "a\x00b", Visible: "ok"}}, false, false},
+		{"encoding_failure", map[string]any{"value": make(chan int)}, true, true},
+		{"nan_is_encoding_failure", map[string]any{"value": math.NaN()}, true, true},
+		{"lone_high_surrogate", map[string]any{"raw": json.RawMessage(`"\ud800"`)}, true, false},
+		{"lone_low_surrogate", map[string]any{"raw": json.RawMessage(`{"k":"a\udc00b"}`)}, true, false},
+		{"high_then_text", map[string]any{"raw": json.RawMessage(`"\ud800x"`)}, true, false},
+		{"high_then_high", map[string]any{"raw": json.RawMessage(`"\ud800\ud800"`)}, true, false},
+		{"surrogate_key", map[string]any{"raw": json.RawMessage(`{"\udfff":1}`)}, true, false},
+		{"surrogate_pair", map[string]any{"raw": json.RawMessage(`"\ud83d\ude00"`)}, false, false},
+		{"escaped_backslash_u", map[string]any{"raw": json.RawMessage(`"\\ud800"`)}, false, false},
+		{"normalized_utf8", map[string]any{"value": "a\xffb"}, false, false},
+		{"raw_kind_utf8", map[string]any{"kind": "a\xffb"}, true, false},
+		{"raw_kind_nul", map[string]any{"kind": "a\x00b"}, true, false},
+		{"valid_kind", map[string]any{"kind": "guide"}, false, false},
+		{"duplicate_key_nul_first", map[string]any{"raw": json.RawMessage(`{"x":"\u0000","x":"clean"}`)}, true, false},
+		{"duplicate_key_nul_last", map[string]any{"raw": json.RawMessage(`{"x":"clean","x":"\u0000"}`)}, true, false},
+		{"nested_duplicate_key_nul", map[string]any{"raw": json.RawMessage(`[{"x":"\u0000","x":"clean"}]`)}, true, false},
+		{"duplicate_key_clean", map[string]any{"raw": json.RawMessage(`{"x":"first","x":"clean"}`)}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := idx.Add(context.Background(), Document{ID: tc.name, Text: "ok", Metadata: tc.metadata})
-			if tc.refused {
-				var invalid *InvalidDocumentTextError
+			var invalid *InvalidDocumentTextError
+			if tc.encoding {
+				if err == nil || errors.As(err, &invalid) || !strings.Contains(err.Error(), "metadata cannot be encoded as JSON") {
+					t.Fatalf("Add: %v; want a JSON encoding refusal, not an invalid-text one", err)
+				}
+			} else if tc.refused {
 				if !errors.As(err, &invalid) || invalid.Field != "metadata" {
 					t.Fatalf("Add: %v; want metadata refusal", err)
 				}
@@ -223,5 +236,30 @@ func TestOpenKeepsLegacyTextOutOfKeywordIndex(t *testing.T) {
 				t.Fatal("live Add accepted invalid text")
 			}
 		})
+	}
+}
+
+// MemoryKeyword holds any Go string, so a reopen keeps legacy chunks in
+// its keyword leg: only a backend that refuses the text skips them.
+func TestOpenKeepsLegacyTextInMemoryKeyword(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+	embedder := NewStubEmbedder(4)
+	store := NewFlatStore(4, embedder.Name())
+	if err := store.Add(ctx, []Chunk{{ID: "bad:0", DocID: "bad", Text: "legacy\x00zebra", Vec: []float32{1, 0, 0, 0}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Snapshot(filepath.Join(dir, "store.snap")); err != nil {
+		t.Fatal(err)
+	}
+	keyword := NewMemoryKeyword()
+	idx, err := Open(Options{Embedder: embedder, Path: dir, Keyword: keyword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	hits, err := keyword.Search(ctx, "zebra", 5)
+	if err != nil || len(hits) != 1 || hits[0].ChunkID != "bad:0" {
+		t.Fatalf("keyword hits=%v, %v; want the legacy chunk kept", hits, err)
 	}
 }

@@ -1116,7 +1116,11 @@ At boot the wrapper reads the app's live registry: it adds a stub only when
 the entity still declares that view with an empty `Where`. Registrations for
 removed entities, renamed views or views with a `where:` clause are inert.
 Keep real callbacks in the owned `extensions.go`; a host-supplied filter
-still wins.
+still wins. Stubs come only from generation: a `where`-less view you add
+later to an entity whose files already exist (by editing
+`entities/<entity>.go`) gets none, and boot stops with `entityui: entity
+"<entity>" view "<key>" has no where and no registered filter func` until
+you register its filter in `extensions.go`.
 
 For each caller-dependent view without a registered `Filter`, the default
 returns an error naming the entity, view and `extensions.go`: the filter

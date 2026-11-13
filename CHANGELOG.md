@@ -1751,8 +1751,12 @@ few lines, and link the PR or the docs page for the rest.
 - **semantic refuses text it cannot store**
   ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
   `IndexOwned` and the `/index` route refuse a document whose ID,
-  source, owner, text or metadata holds a NUL byte or invalid UTF-8.
-  Go callers get `*semantic.InvalidDocumentTextError`, and the route
+  source, owner or text holds a NUL byte or invalid UTF-8. `Index.Add`
+  also refuses metadata whose JSON Postgres's jsonb cannot hold (an
+  escaped NUL, half a surrogate pair) and a `metadata["kind"]` that is
+  not valid UTF-8 without NUL; other metadata strings are normalized by
+  JSON encoding, and metadata JSON cannot encode (NaN) fails with its
+  own error. Go callers get `*semantic.InvalidDocumentTextError`, and the route
   answers 400 `document_invalid_text` for a NUL sent as `\u0000`, where
   Postgres answered 500. Raw invalid UTF-8 in the body is still
   `invalid_json_body`. The
