@@ -48,8 +48,11 @@ something breaks or you're confident nothing breaks. Suggested walk:
 
 1. Land on the home page. Spam-click the brand link, the CTAs, the nav
    links. Take screenshots when something looks wrong.
-2. Walk through the main routes (about, framework-ui, components,
-   customers). On each, rage-click every button, link, form control.
+2. Walk through the main routes: the home navigation, plus each entry's
+   `path` in `window.__gofastr_routes`. Skip entries that carry
+   `redirect`. An entry with a parameter (`:id`, `{id}`) is a pattern,
+   not a URL: reach it through a link on a page you already visited. On
+   each, rage-click every button, link, form control.
 3. Wherever you find a `data-cui-rpc` element, spam it. Use
    `browser_evaluate` to count how many actual network requests fired
    (`performance.getEntries().filter(e => e.entryType === 'resource')`).
@@ -95,7 +98,8 @@ wins, not bugs.
 ## Stop conditions
 
 - 10-minute budget expired
-- You've visited every route from the home page nav AND attempted at
+- You've visited every route from the home page nav and every reachable
+  `window.__gofastr_routes` entry (step 2), AND attempted at
   least one rage-flow on each
 - You found a hard crash (panic, white-screen, browser error page):
   stop and report

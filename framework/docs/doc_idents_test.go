@@ -380,7 +380,7 @@ var identAllowed = map[string]string{
 	"core-ui/ARCHITECTURE.md:Style.Scope":               "Style is the generated owned-style sheet var (*ownstyle.Sheet)",
 	".claude/skills/gofastr-docs/SKILL.md:schema.Money": "a hypothetical new field type in an example",
 	"battery/email/agents.md:client.SendMail":           "a host's mail client value, not this repo's client package",
-	"CLAUDE.md:Date.UTC":                                "the JavaScript Date.UTC a browser lint fires on",
+	"internal/analyzers/README.md:Date.UTC":             "the JavaScript Date.UTC a browser lint fires on",
 }
 
 // importAlias reads `alias "github.com/DonaldMurillo/gofastr/<path>"` from a

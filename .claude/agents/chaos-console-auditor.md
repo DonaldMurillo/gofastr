@@ -48,9 +48,10 @@ array of registered paths) and visit each. Plus these edge URLs:
 
 - `/__gofastr/runtime.js` (200, JS body)
 - `/__gofastr/app.css` (200, CSS body)
-- `/__gofastr/catalog.js` (410 GONE expected; DO NOT treat as failure)
-- `/__gofastr/theme.css` (410 GONE expected)
-- `/__gofastr/css/anything` (410 GONE expected)
+- `/__gofastr/catalog.js` (404 expected: the legacy catalog is removed;
+  not a failure)
+- `/__gofastr/theme.css` (404 expected: removed; not a failure)
+- `/__gofastr/css/anything` (404 expected: removed; not a failure)
 - `/nonexistent-route` (404 expected, but graceful)
 - `/__gofastr/sse?session=invalid` (still 200 SSE stream, or 401)
 

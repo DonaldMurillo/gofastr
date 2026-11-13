@@ -19,14 +19,16 @@
 # Skip only the slow test sweep (e.g. docs-only commit):
 #   GOFASTR_SKIP_COMMIT_TESTS=1 git commit ...    (pre-push re-runs it)
 #
-# The model review (.claude/skills/review-gate) runs three Codex reviews of
-# the staged change beside the test sweep and fails the commit only when
-# all three request changes. No Codex fails the commit too (review3.py
-# looks past PATH to the usual install spots first). No Python or an
-# incomplete review warns and lets the commit through, and so does a run
-# past GOFASTR_COMMIT_REVIEW_TIMEOUT seconds (default 600). To skip the
-# review, or overrule a block you read and rejected (say why in the
-# commit message):
+# The model review (.claude/skills/review-gate) runs three reviews of the
+# staged change beside the test sweep and fails the commit only when all
+# three request changes. The reviewer is the Codex CLI (review3.py looks
+# past PATH to the usual install spots first); without Codex it is the
+# Claude Code CLI on Haiku. With neither, the hook warns and lets the
+# commit through: run the skill's subagent mode before you push. No
+# Python or an incomplete review warns and lets the commit through too,
+# and so does a run past GOFASTR_COMMIT_REVIEW_TIMEOUT seconds (default
+# 600). To skip the review, or overrule a block you read and rejected
+# (say why in the commit message):
 #   GOFASTR_SKIP_COMMIT_REVIEW=1 git commit ...
 
 set -e
@@ -243,15 +245,10 @@ else
     # could not run, which lets the commit through like a crashed run.
     review_note="skipped: review3.py --check exited $review_rc: $review_check"
   elif [ "$review_rc" -eq 3 ]; then
-    # No codex blocks: a skipped review only printed a warning, and
-    # nobody read it for a week of commits.
-    fail "model review: $review_check"
-    echo ""
-    echo "  Install the Codex CLI or set CODEX_BIN. To commit without the review,"
-    echo "  say why in the commit message and commit with"
-    echo "  GOFASTR_SKIP_COMMIT_REVIEW=1. Do NOT use --no-verify."
-    echo ""
-    exit 1
+    # Neither Codex nor the Claude CLI: the hook has no reviewer to run.
+    # The commit goes through; an agent runs the skill's subagent mode
+    # (three Haiku subagents) before it pushes.
+    review_note="skipped: $review_check. Run the review-gate skill's subagent mode before you push"
   else
     review_out=$(mktemp)
     # A stalled run counts as unusable (warn, no block) after ten minutes,
@@ -319,9 +316,9 @@ pass "No new contract findings"
 
 # ---- 8. Model review result ----
 # Exit codes from review3.py: 0 approve, 1 all three runs request changes,
-# 2 fewer than three usable answers, 3 no Codex. Only 1 blocks here: a
-# usage limit or a network failure must not stop every commit. A missing
-# Codex already failed the commit at step 5c.
+# 2 fewer than three usable answers, 3 no reviewer. Only 1 blocks here: a
+# usage limit or a network failure must not stop every commit. With no
+# reviewer, step 5c already warned and started nothing.
 if [ -n "$review_pid" ]; then
   echo ""
   echo "  → Waiting for the model review..."

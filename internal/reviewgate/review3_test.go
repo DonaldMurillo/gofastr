@@ -216,3 +216,149 @@ func TestCodexRunsWithoutGitEnv(t *testing.T) {
 		t.Fatalf("codex ran with GIT_INDEX_FILE:\n%s", env)
 	}
 }
+
+// stubClaude is a claude that prints answer.json from beside itself and
+// records the arguments it was started with.
+const stubClaude = `#!/bin/sh
+dir=$(dirname "$0")
+cat > /dev/null
+echo "$@" >> "$dir/args.txt"
+cat "$dir/answer.json"
+`
+
+// Without codex the three runs go to the Claude CLI on Haiku, read-only,
+// and its votes decide the exit code like codex's do.
+func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
+	for _, tc := range []struct {
+		name, answer string
+		want         int
+	}{
+		{"three blocks exit 1", block, 1},
+		{"three approvals exit 0", approve, 0},
+		{"no answer exits 2", "not json", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			script, codex, repo := setup(t, [3]string{approve, approve, approve})
+			dir := filepath.Dir(codex)
+			// Off the real /Applications, so an installed ChatGPT app's
+			// codex does not answer on macOS.
+			src, err := os.ReadFile(script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const sys = `MAC_APPS = "/Applications"`
+			if !strings.Contains(string(src), sys) {
+				t.Fatalf("review3.py no longer says %s", sys)
+			}
+			if err := os.WriteFile(script, []byte(strings.Replace(string(src), sys, `MAC_APPS = "/nonexistent"`, 1)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			claude := filepath.Join(dir, "claude")
+			if err := os.WriteFile(claude, []byte(stubClaude), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "answer.json"), []byte(tc.answer), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			py, err := exec.LookPath("python3")
+			if err != nil {
+				t.Skip("no python3")
+			}
+			gitBin, err := exec.LookPath("git")
+			if err != nil {
+				t.Skip("no git")
+			}
+			// No codex anywhere review3.py looks: an empty HOME, and a
+			// PATH with git and the two tools the stub calls.
+			bin := t.TempDir()
+			for name, target := range map[string]string{"git": gitBin, "cat": "", "dirname": ""} {
+				if target == "" {
+					if target, err = exec.LookPath(name); err != nil {
+						t.Skipf("no %s", name)
+					}
+				}
+				if err := os.Symlink(target, filepath.Join(bin, name)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command(py, script, "--staged", "--claude", claude, "--timeout", "60")
+			cmd.Dir = repo
+			cmd.Env = []string{"PATH=" + bin, "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1"}
+			out, err := cmd.CombinedOutput()
+			got := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				got = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("review3.py: %v\n%s", err, out)
+			}
+			if got != tc.want {
+				t.Fatalf("exit %d, want %d\n%s", got, tc.want, out)
+			}
+			args, err := os.ReadFile(filepath.Join(dir, "args.txt"))
+			if err != nil {
+				t.Fatalf("claude never ran: %v\n%s", err, out)
+			}
+			if n := strings.Count(string(args), "--model haiku"); n != 3 {
+				t.Fatalf("%d runs on haiku, want 3:\n%s", n, args)
+			}
+			for _, want := range []string{"--permission-mode dontAsk", "--tools Read,Grep,Glob "} {
+				if !strings.Contains(string(args), want) {
+					t.Fatalf("claude ran without %q:\n%s", want, args)
+				}
+			}
+			// The one directory added is the saved diff's own, never
+			// the run directory that holds the other runs' answers.
+			for _, line := range strings.Split(strings.TrimSpace(string(args)), "\n") {
+				i := strings.Index(line, "--add-dir ")
+				if i < 0 {
+					t.Fatalf("claude ran without --add-dir:\n%s", line)
+				}
+				// --add-dir is the last argument, so the rest of the line is
+				// its value, spaces in a temp path included.
+				dir := strings.TrimSpace(line[i+len("--add-dir "):])
+				if filepath.Base(dir) != "diff" {
+					t.Fatalf("claude was given %s, want the diff directory", dir)
+				}
+				if runs, _ := filepath.Glob(filepath.Join(dir, "run*")); len(runs) != 0 {
+					t.Fatalf("the added directory holds run files: %v", runs)
+				}
+			}
+			// No tool that can write: Bash counts, since
+			// `git diff --output=<path>` writes a file.
+			for _, banned := range []string{"Edit", "Write", "Bash"} {
+				if strings.Contains(string(args), banned) {
+					t.Fatalf("claude was given %s:\n%s", banned, args)
+				}
+			}
+		})
+	}
+}
+
+// A CLAUDE_BIN that names a file nobody can execute is not a reviewer:
+// --check must not report it, or the hook would start runs that cannot.
+func TestNonExecutableClaudeIsNotFound(t *testing.T) {
+	script, codex, _ := setup(t, [3]string{approve, approve, approve})
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(strings.Replace(string(src), `MAC_APPS = "/Applications"`, `MAC_APPS = "/nonexistent"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(filepath.Dir(codex), "claude-stale")
+	if err := os.WriteFile(stale, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3")
+	}
+	cmd := exec.Command(py, script, "--check")
+	cmd.Env = []string{"PATH=" + t.TempDir(), "HOME=" + t.TempDir(), "CLAUDE_BIN=" + stale}
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("err %v, want exit 3\n%s", err, out)
+	}
+}
