@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=5cc3d35bc75a210b
+//gofastr:generated generator=app kind=scaffold version=dev sum=7a810e577daea7f8
 
 package main
 
@@ -233,7 +233,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		// HTML forms, mount auth.CSRF: see `gofastr docs app-spec`
 		// (Auth section) and `gofastr docs auth`.
 	}
-	appUI = fwApp.EntityUI(appExtensions)
+	appUI = fwApp.EntityUI(withViewStubs(appExtensions))
 	mountGenerated(fwApp, site, db)
 	fwApp.Use(RequestLoggerMiddleware)
 	fwApp.RegisterPlugin(AnalyticsPlugin{})

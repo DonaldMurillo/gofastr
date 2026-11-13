@@ -353,6 +353,31 @@ func renderAppSpec(bp appspec.AppSpec, entityOrderOffset, screenOrderOffset int,
 	if emitsApp {
 		files = append(files, GeneratedFile{Name: "extensions.go", Content: appSpecExtensionsGo})
 	}
+	// The base seam has identical bytes for every app, including fragments.
+	stub, err := renderViewStubs()
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, stub)
+	views := appSpecFuncViews(bp)
+	for _, decl := range bp.Entities {
+		hasViews := false
+		for _, view := range views {
+			if view[0] == decl.Name {
+				hasViews = true
+				break
+			}
+		}
+		if !hasViews {
+			continue
+		}
+		registration, err := renderEntityViewStubs(decl.Name, views)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, registration)
+	}
+
 	if appSpecNeedsAuthHooks(bp) {
 		files = append(files, GeneratedFile{Name: "auth_hooks.go", Content: appSpecAuthHooksGo(bp)})
 	}
@@ -5141,7 +5166,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// One UI per app, built after the entities registered and before any
 	// screen mounts. EntityUI panics at boot on a bad name in
 	// appExtensions, the way App.Entity refuses a bad declaration.
-	sb.WriteString("\tappUI = fwApp.EntityUI(appExtensions)\n")
+	sb.WriteString("\tappUI = fwApp.EntityUI(withViewStubs(appExtensions))\n")
 	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
 	for _, item := range bp.Middleware {
 		// Same gate as the stub emitter: never reference a name that is

@@ -1807,8 +1807,10 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
 	crudEnabled := a.entityCRUDEnabled(e)
-	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-		panic(fmt.Sprintf("framework: entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name))
+	if a.DB != nil {
+		if err := ValidateExposure(name, e.Config); err != nil {
+			panic("framework: " + err.Error())
+		}
 	}
 	mcpTools := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
 
@@ -2492,8 +2494,10 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
 	// grouped values are authoritative.
 	crudEnabled := a.entityCRUDEnabled(e)
-	if e.Config.Exposure.MCP && a.DB != nil && e.Config.Exposure.CRUD != nil && !*e.Config.Exposure.CRUD {
-		return fmt.Errorf("entity %q has MCP=true with CRUD=false: MCP CRUD tools require the HTTP routes to be registered", name)
+	if a.DB != nil {
+		if err := ValidateExposure(name, e.Config); err != nil {
+			return err
+		}
 	}
 
 	var mountPath string
@@ -2949,54 +2953,16 @@ func (a *App) validateEntityRegistration(ent *entity.Entity, endpoints []entity.
 	// that panic into an error cannot un-publish them, so the collision
 	// has to be caught here.
 	if len(endpoints) > 0 || (a.entityUI != nil && crudMount != "" && a.entityUIWouldOwn(ent)) {
-		// Values name what owns the route, so the error can tell a user
-		// who collided with an unrelated page from one who shadowed their
-		// own generated CRUD route. Different fixes.
-		// Keys are normalized the same way entityRouteCollision normalizes
-		// them: ServeMux conflicts on a pattern's SHAPE, so an endpoint at
-		// {slug} aliases the generated {id}. Comparing raw strings let that
-		// pair through validation and into the commit phase, where the
-		// panic arrived with the registry entry and CRUD routes already
-		// published and no way to un-publish them.
-		routes := a.router.Routes()
-		taken := map[string]string{}
-		for _, rt := range routes {
-			taken[normalizeRoutePattern(strings.ToUpper(rt.Method)+" "+rt.Pattern)] = "an existing route"
-		}
-		// An equal shape is not the only conflict: the scratch mux also
-		// refuses an endpoint that overlaps a route with neither more
-		// specific, as entityRouteCollision checks for CRUD routes.
-		held := newMuxReplay(routes)
-		// The CRUD routes are not on the router yet, this runs before
-		// the commit phase, so ask crud for the set it will mount.
-		if crudMount != "" {
-			for _, pattern := range crud.CrudRoutePatterns(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}) {
-				taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
-				held.add(pattern, "this entity's own generated CRUD route")
-			}
-		}
-		if crudMount != "" && a.entityUI != nil && a.entityUIWouldOwn(ent) {
-			for _, pattern := range entityUIRoutePatterns(crudMount) {
-				if conflict, refused := held.add(pattern, "this entity's EntityUI route"); refused {
-					return fmt.Errorf("EntityUI route %s overlaps %s, %s", pattern, conflict.pattern, conflict.owner)
-				}
-				taken[normalizeRoutePattern(pattern)] = "this entity's EntityUI route"
-			}
-		}
-		for _, endpoint := range endpoints {
-			method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
-			if method == "" || endpoint.Handler == nil {
+		resolved := make([]Endpoint, 0, len(endpoints))
+		for _, ep := range endpoints {
+			if strings.TrimSpace(ep.Method) == "" || ep.Handler == nil {
 				continue // shape errors are reported below
 			}
-			path, _ := m.endpointPaths(endpoint)
-			key := normalizeRoutePattern(method + " " + path)
-			if owner, clash := taken[key]; clash {
-				return fmt.Errorf("endpoint %q would register %s, but that route is %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, key, owner)
-			}
-			if conflict, refused := held.add(method+" "+path, "a sibling endpoint on this declaration"); refused {
-				return fmt.Errorf("endpoint %q would register %s, which overlaps %s, %s: rename the endpoint path, or move entity routes under an APIPrefix", endpoint.Path, method+" "+path, conflict.pattern, conflict.owner)
-			}
-			taken[key] = "a sibling endpoint on this declaration"
+			ep.Path, _ = m.endpointPaths(ep)
+			resolved = append(resolved, ep)
+		}
+		if err := ValidateEntityEndpointRoutes(crudMount, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD, States: ent.Config.States, Key: ent.KeyColumns()}, a.entityUI != nil && a.entityUIWouldOwn(ent), resolved, a.router.Routes()...); err != nil {
+			return err
 		}
 	}
 

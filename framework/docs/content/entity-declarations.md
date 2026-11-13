@@ -188,6 +188,27 @@ of `Exposure.MCP`. To end up with no surface at all, the entity needs
 own access rules (an `Endpoint`'s HTTP handler inherits the route's
 middleware chain, its MCP twin does not — see `Endpoint.MCPGate`).
 
+`framework.ValidateExposure(name, cfg)` checks the same exposure contract
+as entity registration with a database: `Exposure.MCP: true` cannot be
+combined with `Exposure.CRUD: false`, because the generated MCP tools
+dispatch through the HTTP routes. It accepts the config returned by a
+declaration's `Config()`; grouped and flat declaration spellings have
+already normalized there. Registration without a database keeps its
+existing behavior and does not apply this check.
+
+Generators can also call `framework.ValidateEntityEndpointRoutes(mount,
+opts, withEntityUI, endpoints, existing...)` before publishing routes.
+Pass the CRUD mount (empty when disabled), its `crud.CrudRouteOptions`,
+and endpoints whose `Path` is the resolved absolute HTTP route, including
+API or group prefixes. `withEntityUI` includes bulk, export and picker
+routes; `existing` optionally supplies the app router's registered routes.
+The check refuses equal route shapes and overlapping ServeMux patterns,
+including sibling endpoints. Pass each entity's complete endpoint slice
+in registration order so sibling overlaps are checked together. A collision
+returns `*framework.EndpointRouteError`; its zero-based `Index` identifies
+the refused endpoint in that slice, and `Unwrap` exposes the cause. App registration uses this same
+check.
+
 Default-on routes are not default-open routes. Every one of them refuses an
 anonymous caller with 401 unless the entity declares `OwnerField`, `Access`,
 or `Public`. See **Default CRUD authentication** below, and note the limit

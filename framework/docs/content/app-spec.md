@@ -1097,8 +1097,27 @@ record tabs and actions each register there, keyed by entity. `app.go`
 builds the app's UI from it once at boot:
 
 ```go
-appUI = fwApp.EntityUI(appExtensions)
+appUI = fwApp.EntityUI(withViewStubs(appExtensions))
 ```
+
+Every generated app includes the generated `view_stubs.go` seam, even
+with no views. Each entity with a `display.views` entry that has no `where`
+also gets a generated `view_stubs_<entity>.go` file that registers its
+caller-dependent views. `generate app --add` writes the new entity's file
+while preserving existing files, so both the first such view and later
+ones receive defaults without editing owned code. Keep your callbacks in
+the owned `extensions.go`.
+
+For each caller-dependent view without a registered `Filter`, the default
+returns an error naming the entity, view and `extensions.go`: the filter
+is not written yet. The app can boot, but that view cannot read rows until
+you register its filter. An existing filter and its visibility callback
+are preserved.
+
+For an app generated before this seam, change its owned `app.go` call
+from `fwApp.EntityUI(appExtensions)` to the wrapper shown above before
+adding a caller-dependent view. `--add` supplies the view stub files but
+preserves the existing `app.go`.
 
 `fwApp.EntityUI` panics at boot on a name `appExtensions` uses that the
 entity does not declare, the way `App.Entity` refuses a bad declaration.
@@ -1423,6 +1442,22 @@ the colophon, edit the packages — they are yours; rerun
 `icon` and nested `items`. The app shell renders them as the sidebar (and, at
 narrow viewports, the hamburger drawer); the theme toggle lives in the sidebar
 footer, so there is no separate app top bar.
+
+`gofastr validate` checks concrete internal hrefs, including nested items,
+against the generated app's screens (including synthesized create and
+sign-in screens), framework routes, enabled battery routes and entity
+API routes. `gofastr validate` and generation warn about an unknown
+destination at its spec path, such as `nav[0].items[1].href`, because owned
+Go files can register routes that the spec cannot see. Strict boot refuses
+an unserved chrome link after the complete route table is mounted.
+
+The lint credits canonical trailing-slash screens, path-only HTTP routes,
+PWA icons and, when the project directory is known, existing static files.
+With `locale_prefixes` enabled it strips a leading locale-shaped segment;
+the actual locale catalog can change after generation. External links,
+fragments and route placeholders are skipped. With auth enabled,
+role-gated items and their children are absent from the anonymous boot
+render and skipped by this check too.
 
 A nav item may carry `role:` to restrict it to users holding that role:
 
@@ -2059,6 +2094,12 @@ The generator rejects:
   on one block, unreachable combined click actions, or missing `client_js`
 - endpoints whose `entity` the app spec does not declare, two endpoints
   linking one handler, or a handler in a file `generate app` writes
+- endpoints that collide with their entity's generated CRUD or EntityUI
+  routes, checked using the API prefix, primary key and state routes the
+  generated app mounts; the diagnostic names `endpoints[i].path`
+- an entity with `exposure.mcp: true` and `exposure.crud: false` (including
+  the flat spellings): MCP CRUD tools dispatch through the HTTP routes,
+  so the generated app refuses this combination at boot
 - an entity that lists `endpoints:` under itself (move each to the
   top-level list)
 - scalar posture fields given a list or map shape: `access:`

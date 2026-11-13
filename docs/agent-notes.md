@@ -1,5 +1,14 @@
 # Implementation regression notes
 
+## 2026-11-13 - Keep validate aligned with boot and render
+- Scope: appspec, appgen, framework registration and uihost strict checks
+- Trigger: boot found MCP/CRUD contradictions and endpoint overlaps late; conditional view stubs broke additive generation.
+- Approach: call runtime-owned exposure, endpoint-route and sitemap checks; lint nav against the screen router and known generated routes; warn because owned routes/static inputs cannot be fully known.
+- Evidence: `TestRenderPanicParity` catches a removed callout check; `TestBootRefusalParity` catches a removed exposure call (both proved with Go overlays).
+- Pitfall: endpoint grammar already refuses leading underscores; keep that gate while checking own-route collisions. Check endpoint shape before one complete group call (siblings can overlap). Always emit the base view-stub seam and per-entity registration files: `--add` skips existing derived files too. Keep callbacks in owned `extensions.go`; older apps need the manual `withViewStubs` wrapper in `app.go`.
+- Next time: add a case or a reason for every catalog kind, and mutate each independent validator before trusting its parity table.
+- Status: active
+
 ## 2026-11-13 - Defer callback recovery on the dispatch frame
 - Scope: core/router, core/textsafe, recovercallback
 - Trigger: route gates and pre-route hooks ran before Recovery; direct atomic slot loads and imported guards were invisible to the analyzer.

@@ -30,7 +30,7 @@ entities:
       max_list_limit: 50
     exposure:
       crud: false
-      mcp: true
+      mcp: false
       access:
         read: notes:read
     fields:

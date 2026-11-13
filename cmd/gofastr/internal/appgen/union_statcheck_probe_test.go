@@ -43,7 +43,7 @@ func TestFrameworkColumnStatBoots(t *testing.T) {
 	entities.RegisterAll(fwApp)
 	saved := appUI
 	t.Cleanup(func() { appUI = saved })
-	appUI = fwApp.EntityUI(appExtensions)
+	appUI = fwApp.EntityUI(withViewStubs(appExtensions))
 	if err := appUI.CheckStat("invoices", "count", "", ` + "`" + `created_at >= "2026-01-01T00:00:00Z"` + "`" + `, ""); err != nil {
 		t.Fatalf("a filter on a column Define adds fails the boot check: %v", err)
 	}

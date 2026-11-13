@@ -758,6 +758,9 @@ func generateAppSpec(bp appspec.AppSpec, options GenerateOptions) {
 		for _, f := range LintUploadFields(bp) {
 			cli.Warn("%s", f.Message())
 		}
+		for _, f := range LintNavHrefs(bp, ".") {
+			cli.Warn("%s", f.Message())
+		}
 		for _, f := range LintLocaleRoutes(bp) {
 			cli.Warn("%s", f.Message())
 		}

@@ -31,7 +31,7 @@ func newTestAppUI(t *testing.T) *entityui.UI {
 	t.Cleanup(func() { _ = db.Close() })
 	fwApp := framework.NewApp(framework.WithDB(db))
 	entities.RegisterAll(fwApp)
-	return fwApp.EntityUI(appExtensions)
+	return fwApp.EntityUI(withViewStubs(appExtensions))
 }
 
 func TestMissingEntityStatFailsClosed(t *testing.T) {

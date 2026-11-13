@@ -253,6 +253,8 @@ entities:
         order: 1
       columns: [number, amount, status, due_on]
       views:
+        - key: mine
+          label: Mine
         - key: open
           label: Open
           where: 'status = "open"'
