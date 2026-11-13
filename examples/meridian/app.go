@@ -353,7 +353,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	// it. One UI per app, built after the entities registered (RegisterAll in
 	// main.go) and before any screen mounts. EntityUI panics at boot on a bad
 	// name in appExtensions, the way App.Entity refuses a bad declaration.
-	appUI = fwApp.EntityUI(withViewStubs(appExtensions))
+	appUI = fwApp.EntityUI(withViewStubs(fwApp, appExtensions))
 	// The Billing panel (an appExtensions side panel) and the admin
 	// Revenue page (main.go hands revenuePage to battery/admin) draw stats
 	// and charts with hand-written readers no generated check reaches:

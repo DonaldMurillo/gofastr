@@ -16,6 +16,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 	corestatic "github.com/DonaldMurillo/gofastr/core/static"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
 type navHrefFinding struct{ Path, Href string }
@@ -58,10 +59,7 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		if err != nil {
 			continue
 		}
-		mount := appSpecEntityAPIPath("", decl)
-		if p := strings.Trim(bp.RouteApp().APIPrefix, "/"); p != "" {
-			mount = "/" + p + mount
-		}
+		mount := navEntityAPIMount(bp, decl)
 		for _, pattern := range crud.CrudRoutePatterns(mount, crud.CrudRouteOptions{States: cfg.States, Key: cfg.PrimaryKey}) {
 			serve(pattern)
 		}
@@ -75,10 +73,7 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 			if ep.Entity != decl.Name {
 				continue
 			}
-			mount := appSpecEntityAPIPath("", decl)
-			if p := strings.Trim(bp.RouteApp().APIPrefix, "/"); p != "" {
-				mount = "/" + p + mount
-			}
+			mount := navEntityAPIMount(bp, decl)
 			serve(strings.ToUpper(ep.Method) + " " + mount + "/" + ep.Path)
 		}
 	}
@@ -126,9 +121,9 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 		}
 	}
 	screenServes := func(path string) bool {
-		_, _, ok := screens.Resolve(app.RoutePath((&url.URL{Path: path}).EscapedPath()))
+		_, _, ok := screens.Resolve(app.RoutePath(path))
 		if !ok && path != "/" && !strings.HasSuffix(path, "/") {
-			_, _, ok = screens.Resolve(app.RoutePath((&url.URL{Path: path + "/"}).EscapedPath()))
+			_, _, ok = screens.Resolve(app.RoutePath(path + "/"))
 		}
 		return ok
 	}
@@ -143,11 +138,12 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 			if path, internal := navInternalPath(item.Href); internal {
 				if routeApp.LocalePrefixes {
 					seg, rest, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
-					if localeShaped(seg) {
+					locale, _ := url.PathUnescape(seg)
+					if localeShaped(locale) {
 						path = "/" + rest
 					}
 				}
-				_, pattern := mux.Handler(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: path}})
+				_, pattern := mux.Handler(&http.Request{Method: http.MethodGet, URL: navPathURL(path)})
 				served := pattern != "" || screenServes(path)
 				if !served && routeApp.LLMMD && strings.HasSuffix(path, "/llm.md") {
 					base := strings.TrimSuffix(path, "/llm.md")
@@ -157,7 +153,7 @@ func LintNavHrefs(bp appspec.AppSpec, projectDir string) []navHrefFinding {
 					served = screenServes(base)
 				}
 				if !served && staticRoot != nil && path != "/" {
-					served = navStaticServes(staticRoot, path)
+					served = navStaticServes(staticRoot, navPathURL(path).Path)
 				}
 				if !served {
 					findings = append(findings, navHrefFinding{Path: at + ".href", Href: item.Href})
@@ -177,13 +173,14 @@ func navInternalPath(href string) (string, bool) {
 	if h == "" || !strings.HasPrefix(h, "/") {
 		return "", false
 	}
-	if decoded, err := url.PathUnescape(h); err == nil {
-		h = decoded
+	decoded, err := url.PathUnescape(h)
+	if err != nil {
+		decoded = h
 	}
-	if strings.HasPrefix(h, "//") || strings.Contains(h, `\`) {
+	if strings.HasPrefix(decoded, "//") || strings.Contains(decoded, `\`) {
 		return "", false
 	}
-	for seg := range strings.SplitSeq(h, "/") {
+	for seg := range strings.SplitSeq(decoded, "/") {
 		if strings.HasPrefix(seg, ":") || strings.ContainsAny(seg, "{<") {
 			return "", false
 		}
@@ -213,4 +210,20 @@ func navStaticServes(root *os.Root, path string) bool {
 	}
 	info, err := root.Stat(rel)
 	return err == nil && !info.IsDir()
+}
+
+// navPathURL retains escaped segment boundaries for ServeMux matching.
+func navPathURL(path string) *url.URL {
+	decoded, err := url.PathUnescape(path)
+	if err != nil {
+		return &url.URL{Path: path}
+	}
+	return &url.URL{Path: decoded, RawPath: path}
+}
+func navEntityAPIMount(bp appspec.AppSpec, decl entity.EntityDeclaration) string {
+	base := ""
+	if prefix := strings.Trim(bp.RouteApp().APIPrefix, "/"); prefix != "" {
+		base = "/" + prefix
+	}
+	return appSpecEntityAPIPath(base, decl)
 }

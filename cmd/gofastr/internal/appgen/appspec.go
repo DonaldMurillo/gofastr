@@ -5166,7 +5166,7 @@ func RenderAppSpecApp(bp appspec.AppSpec) string {
 	// One UI per app, built after the entities registered and before any
 	// screen mounts. EntityUI panics at boot on a bad name in
 	// appExtensions, the way App.Entity refuses a bad declaration.
-	sb.WriteString("\tappUI = fwApp.EntityUI(withViewStubs(appExtensions))\n")
+	sb.WriteString("\tappUI = fwApp.EntityUI(withViewStubs(fwApp, appExtensions))\n")
 	sb.WriteString("\tmountGenerated(fwApp, site, db)\n")
 	for _, item := range bp.Middleware {
 		// Same gate as the stub emitter: never reference a name that is

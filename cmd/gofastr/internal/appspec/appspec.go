@@ -2635,7 +2635,7 @@ func ValidateAppSpec(bp AppSpec) error {
 	// The sitemap origin: the generated app's always-on strict mode
 	// panics at boot on a base_url it cannot use.
 	if why := uihost.InvalidSitemapBaseURL(bp.App.BaseURL); bp.App.BaseURL != "" && why != "" {
-		errs.add(fmt.Errorf("app spec: app.base_url %q %s: it is the origin of every sitemap URL, and the generated app refuses to boot on it; write an origin such as https://demo.example", bp.App.BaseURL, why))
+		errs.add(fmt.Errorf("app spec: app.base_url %q must be a bare origin, with no path, query or fragment: write an origin such as https://demo.example (the generated app uses it for sitemap URLs)", bp.App.BaseURL))
 	}
 	// A multi-tenant entity needs a request-time tenant resolver, and the
 	// right one is host-specific (subdomain, JWT claim, user's org). The

@@ -205,9 +205,11 @@ routes; `existing` optionally supplies the app router's registered routes.
 The check refuses equal route shapes and overlapping ServeMux patterns,
 including sibling endpoints. Pass each entity's complete endpoint slice
 in registration order so sibling overlaps are checked together. A collision
-returns `*framework.EndpointRouteError`; its zero-based `Index` identifies
-the refused endpoint in that slice, and `Unwrap` exposes the cause. App registration uses this same
-check.
+involving an endpoint, or a malformed endpoint route, returns
+`*framework.EndpointRouteError`; its zero-based `Index` identifies the refused
+endpoint in that slice, and `Unwrap` exposes the cause. Collisions while
+reserving generated CRUD or EntityUI routes return an ordinary error because
+no endpoint in the slice caused them. App registration uses this same check.
 
 Default-on routes are not default-open routes. Every one of them refuses an
 anonymous caller with 401 unless the entity declares `OwnerField`, `Access`,

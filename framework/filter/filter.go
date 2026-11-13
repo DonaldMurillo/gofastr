@@ -365,7 +365,7 @@ var FilterSuffixes = [...]FilterSuffixOp{
 // UNFILTERED 200, a broken client reads the whole table and an attacker's
 // probe looks identical to the real query. Reserved list controls (sort,
 // page, cursor, …) and nested relation filters (dotted keys like
-// author.name, validated separately by parseNestedFilters) are skipped, not
+// author.name, validated separately by parseNestedFiltersValues) are skipped, not
 // rejected. Pass [Lenient] to restore the old drop-silently behavior.
 //
 // This is a thin wrapper around ParseFiltersValues that parses the request
@@ -538,7 +538,7 @@ func ParseFiltersValues(q url.Values, fields []schema.Field, opts ...FilterOptio
 			continue
 		}
 		// Nested relation filters (author.name=…) are parsed and validated
-		// separately by parseNestedFilters (which enforces the same
+		// separately by parseNestedFiltersValues (which enforces the same
 		// schema/Hidden allow-list), skip dotted keys entirely here.
 		if strings.Contains(key, ".") {
 			continue

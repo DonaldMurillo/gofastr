@@ -59,7 +59,8 @@ CLI flags override config values where they overlap:
 - `--clean` and `--no-clean` override `codegen.clean`.
 
 Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
-With `--json`, stdout is exactly one document on success or failure.
+With `--json` and without `--watch`, stdout is exactly one document on
+success or failure.
 Invalid flags, missing arguments and unknown generator names produce an
 error document (`files: []`, `errors: [{message: ...}]`); all prose, warnings,
 progress and errors go to stderr. The same error shape applies to every

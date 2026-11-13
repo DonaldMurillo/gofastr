@@ -141,3 +141,23 @@ nav:
 		t.Fatalf("a nav link to a file under gen/public warned:\n%s", out)
 	}
 }
+
+func TestNavHrefEscapedSlashMatchesScreenRouter(t *testing.T) {
+	for _, tc := range []struct {
+		route, href string
+		warn        bool
+	}{
+		{"/{slug}", "/a%2Fb", false}, {"/a/b", "/a%2Fb", true},
+		{"/a/b", "/a/b", false}, {"/café", "/caf%C3%A9", false},
+		{"/{slug}", "/en/a%2Fb", false},
+		{"/a/b", "/%65n/a/b", false},
+	} {
+		t.Run(tc.route+tc.href, func(t *testing.T) {
+			bp := appspec.AppSpec{App: appspec.AppSpecApp{Name: "Demo", LocalePrefixes: true}, Screens: []appspec.AppSpecScreen{{Name: "page", Route: tc.route}}, Nav: []appspec.AppSpecNavItem{{Href: tc.href}}}
+			got := LintNavHrefs(bp, "")
+			if (len(got) > 0) != tc.warn {
+				t.Fatalf("lint=%v, want warning=%t", got, tc.warn)
+			}
+		})
+	}
+}

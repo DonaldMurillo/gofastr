@@ -28,7 +28,8 @@ zero-width characters, and bytes that are not valid UTF-8 (a bare 0x9b
 is CSI to a terminal not in UTF-8 mode). A directory name, a key name
 or a file in a cloned repo cannot write your clipboard (OSC 52), clear
 the screen or reorder the line you are reading. JSON output escapes unsafe
-characters instead of dropping them, preserving the decoded values.
+characters instead of dropping them, preserving the decoded values except
+that invalid UTF-8 bytes become U+FFFD (the Unicode replacement character).
 
 For commands with a `--json` output mode, stdout contains exactly one JSON
 document on success or failure; all prose, warnings, progress and errors go

@@ -43,7 +43,7 @@ trap 'rm -rf "$tmp"' EXIT
 git ls-files -z '*.go' |
 	tr '\0' '\n' |
 	grep -v '_test\.go$' |
-	grep -vE '^(kiln/|framework/experimental/)|/testdata/|(^|/)vendor/' |
+	grep -vE '^(kiln/|framework/experimental/)|(^|/)testdata/|(^|/)vendor/' |
 	tr '\n' '\0' |
 	xargs -0 wc -l |
 	awk '$2!="total" { p=$2; if (p ~ /\//) sub(/\/[^\/]*$/, "", p); else p="."; L[p]+=$1 }

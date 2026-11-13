@@ -34,7 +34,7 @@ func hostAtomicSlots(pass *analysis.Pass) map[types.Object]bool {
 					return true
 				}
 				selector, ok := ast.Unparen(call.Fun).(*ast.SelectorExpr)
-				if !ok || selector.Sel.Name != "Store" {
+				if !ok || (selector.Sel.Name != "Store" && selector.Sel.Name != "Swap") {
 					return true
 				}
 				value := ast.Unparen(call.Args[0])

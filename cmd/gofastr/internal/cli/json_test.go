@@ -114,8 +114,13 @@ func TestJSONWithoutSession(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
-		if !json.Valid([]byte(output)) || !strings.HasSuffix(output, "\n") {
-			t.Fatalf("output = %q", output)
+		want, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, '\n')
+		if !bytes.Equal([]byte(output), want) {
+			t.Fatalf("output=%q, want %q", output, want)
 		}
 	}
 }

@@ -54,7 +54,7 @@ func TestBootRefusalParity(t *testing.T) {
 		{"field_default", func(bp *AppSpec) {
 			bp.Entities[0].Fields[0] = framework.FieldDeclaration{Name: "quantity", Type: "int", Default: "oops"}
 		}, bootEntities, `entity "tickets"`, "invalid Default"},
-		{"display", func(bp *AppSpec) { bp.Entities[0].Display = &entity.DisplayConfig{TitleFields: []string{"missing"}} }, bootEntities, `entity "tickets"`, "display"},
+		{"display", func(bp *AppSpec) { bp.Entities[0].Display = &entity.DisplayConfig{TitleFields: []string{"missing"}} }, bootEntities, `entity "tickets"`, `title_fields[0] names field "missing", which the entity does not declare`},
 		{"mcp_without_crud", func(bp *AppSpec) {
 			bp.Entities[0].Exposure = &framework.ExposureDeclaration{MCP: true, CRUD: new(false)}
 		}, bootEntities, "exposure", "MCP=true with CRUD=false"},
@@ -80,5 +80,12 @@ func TestBootRefusalParity(t *testing.T) {
 				t.Errorf("runtime refusal = %q; want %q", got, tc.refusal)
 			}
 		})
+	}
+}
+
+func TestBaseURLRefusalUsesAppSpecWording(t *testing.T) {
+	err := ValidateAppSpec(AppSpec{App: AppSpecApp{Name: "Demo", Module: "example.com/demo", BaseURL: "https://example.com/path"}})
+	if err == nil || !strings.Contains(err.Error(), "bare origin, with no path") || strings.Contains(err.Error(), "BasePath") {
+		t.Fatalf("app-spec origin remedy: %v", err)
 	}
 }

@@ -73,6 +73,10 @@ func TestStorableTextMatcher(t *testing.T) {
 		{`return utf8.Valid(raw) && bytes.IndexByte(raw, '\x00') < 0`, 1},
 		{`return utf8.ValidString(raw) && !strings.ContainsRune(raw, 0)`, 1},
 		{`return utf8.ValidString(raw) && !strings.Contains(raw, "\x00")`, 1},
+		{`return utf8.ValidString(raw) && !strings.Contains(raw, "a\x00")`, 0},
+		{`return utf8.ValidString(raw) && strings.Index(raw, "a\x00") < 0`, 0},
+		{`return utf8.Valid(raw) && !bytes.Contains(raw, []byte{1,0})`, 0},
+		{`return utf8.Valid(raw) && bytes.Index(raw, []byte("a\x00")) < 0`, 0},
 		{`return utf8.ValidString(raw) && !strings.ContainsAny(raw, "\x00\n")`, 1},
 		{`return utf8.Valid([]byte(raw)) && !strings.ContainsRune(raw, 0)`, 1},
 		{`return utf8.ValidString(raw)`, 0},
@@ -174,6 +178,9 @@ func storableNULTest(name string, argument ast.Expr) bool {
 		if name != "Contains" && name != "Index" && name != "ContainsAny" && name != "IndexAny" {
 			return false
 		}
+		if (name == "Contains" || name == "Index") && len(argument.Elts) != 1 {
+			return false
+		}
 		for _, element := range argument.Elts {
 			if storableNULLiteral(element) {
 				return true
@@ -197,6 +204,9 @@ func storableNULTest(name string, argument ast.Expr) bool {
 			return false
 		}
 		value, err := strconv.Unquote(literal.Value)
+		if name == "Contains" || name == "Index" {
+			return err == nil && value == "\x00"
+		}
 		return err == nil && strings.IndexByte(value, 0) >= 0
 	}
 	return false

@@ -2,6 +2,7 @@ package framework
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
@@ -33,7 +34,9 @@ func ValidateEntityEndpointRoutes(mount string, opts crud.CrudRouteOptions, with
 	if mount != "" {
 		for _, pattern := range crud.CrudRoutePatterns(mount, opts) {
 			taken[normalizeRoutePattern(pattern)] = "this entity's own generated CRUD route"
-			held.add(pattern, "this entity's own generated CRUD route")
+			if conflict, refused := held.add(pattern, "this entity's own generated CRUD route"); refused {
+				return fmt.Errorf("generated CRUD route %s overlaps %s, %s", pattern, conflict.pattern, conflict.owner)
+			}
 		}
 		if withEntityUI {
 			for _, pattern := range entityUIRoutePatterns(mount) {
@@ -46,6 +49,9 @@ func ValidateEntityEndpointRoutes(mount string, opts crud.CrudRouteOptions, with
 	}
 	for i, ep := range endpoints {
 		pattern := strings.ToUpper(strings.TrimSpace(ep.Method)) + " " + ep.Path
+		if !muxAccepts(http.NewServeMux(), pattern) {
+			return &EndpointRouteError{Index: i, Err: fmt.Errorf("endpoint %q has malformed route %q: use a valid absolute ServeMux path and method", ep.Path, pattern)}
+		}
 		key := normalizeRoutePattern(pattern)
 		if owner, clash := taken[key]; clash {
 			return &EndpointRouteError{Index: i, Err: fmt.Errorf("endpoint %q would register %s, but that route is %s: rename the endpoint path, or move entity routes under an APIPrefix", ep.Path, key, owner)}

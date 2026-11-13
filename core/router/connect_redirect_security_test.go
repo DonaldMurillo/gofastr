@@ -47,9 +47,9 @@ func TestConnectRedirectToGatedRouteIs404(t *testing.T) {
 }
 
 // A CONNECT redirect's bare target path is not a "METHOD /path" key, so
-// the gate is never asked about it: a gate that panics on a key it does
-// not expect was refused, logged, then overruled by the two keys it did
-// accept, and the 307 named the route.
+// the gate must never be asked about it. A bare-key call would panic
+// and be refused by the gate's recovery, making the redirect return 404
+// instead of the 307 for the live route.
 func TestConnectRedirectGateSeesOnlyRouteKeys(t *testing.T) {
 	r := New()
 	var keys []string

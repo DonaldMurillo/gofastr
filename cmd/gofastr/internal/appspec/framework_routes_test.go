@@ -1,10 +1,18 @@
 package appspec
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/app"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
 // A screen at a route the generated app's framework serves itself
@@ -64,3 +72,60 @@ func TestScreenAtFrameworkRouteRefused(t *testing.T) {
 		t.Errorf("admin off: /admin/e/posts refused: %v", err)
 	}
 }
+
+// Use the real framework lifecycle and route registrations, with no generated
+// app, listener, browser, or network request. Exact pattern membership prevents
+// UIHost's catch-all from making a stale table entry appear served.
+//
+//gofastr:test-reads /framework/*.go /framework/uihost/*.go /core-ui/widget/*.go
+func TestFrameworkRoutePatternsMatchRegistrations(t *testing.T) {
+	for _, entities := range []bool{false, true} {
+		for _, optional := range []bool{false, true} {
+			t.Run(fmt.Sprintf("entities=%t/optional=%t", entities, optional), func(t *testing.T) {
+				bp := AppSpec{App: AppSpecApp{Name: "Routes"}}
+				bp.App.PWA.Enabled = optional
+				bp.App.LLMMD = optional
+				fw := framework.NewApp(framework.WithMCP(), framework.WithoutDefaultMiddleware())
+				if entities {
+					decl := framework.EntityDeclaration{Name: "posts", Fields: []framework.FieldDeclaration{{Name: "title", Type: "string"}}}
+					bp.Entities = []framework.EntityDeclaration{decl}
+					cfg, err := decl.Config()
+					if err != nil {
+						t.Fatal(err)
+					}
+					fw.Entity(decl.Name, cfg)
+				}
+				var icon bytes.Buffer
+				if err := png.Encode(&icon, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+					t.Fatal(err)
+				}
+				opts := []uihost.Option{uihost.WithSitemap(uihost.SitemapConfig{BaseURL: "https://example.com"}), uihost.WithRobots(uihost.RobotsConfig{}), uihost.WithAppIcon(icon.Bytes())}
+				if optional {
+					opts = append(opts, uihost.WithPWA(uihost.PWAConfig{Name: "Routes"}), uihost.WithPublicLLMMD())
+				}
+				fw.Mount(uihost.New(app.NewApp("Routes"), opts...))
+				var registered []router.RegisteredRoute
+				host := routeTableHost{inspect: func() { registered = fw.Router().Routes() }}
+				if err := fw.Run(context.Background(), host); err != nil {
+					t.Fatal(err)
+				}
+				got := map[string]bool{}
+				for _, route := range registered {
+					if route.Method == "GET" || route.Method == "" {
+						got[route.Pattern] = true
+					}
+				}
+				for _, pattern := range AppSpecFrameworkRoutePatterns(bp) {
+					if !got[pattern] {
+						t.Errorf("framework table claims GET %s, but framework did not register it", pattern)
+					}
+				}
+			})
+		}
+	}
+}
+
+type routeTableHost struct{ inspect func() }
+
+func (h routeTableHost) Run(context.Context, *framework.Session) error { h.inspect(); return nil }
+func (routeTableHost) Stop(context.Context) error                      { return nil }

@@ -28,13 +28,22 @@ hits, _ := idx.Query(ctx, semantic.Query{
 
 ## What's in the box
 
-`POST /index` refuses invalid UTF-8 or NUL bytes in document `id`, `source`,
-`text`, `owner`, and metadata string values or keys (including nested maps,
-slices and `kind`) with HTTP 400 and reason `document_invalid_text`.
-`Index.Add` returns `*InvalidDocumentTextError` before any batch writes,
-even with an in-memory store. The owned adapter from `WrapSearchBackend`
-applies the same refusal in `IndexOwned`. The phrase is registered as
-`semantic.document_invalid_text` for host translation catalogs.
+`POST /semantic/index` refuses invalid UTF-8 in the JSON body with HTTP 400
+and reason `invalid_json_body`. Decoded document `id`, `source`, `text`, and
+`owner` strings containing a NUL (for example, an escaped `\u0000`) receive
+400 `document_invalid_text`. Metadata is checked as encoded JSON, including
+every string value and key (including duplicate members) and custom encoders;
+NULs and encoding failures are refused, and fields omitted by JSON tags are
+ignored. Invalid UTF-8 in ordinary Go strings is normalized by JSON encoding,
+except `metadata["kind"]`: the store also binds that raw string to a text column,
+so it must itself be valid UTF-8 without NUL bytes.
+`Index.Add` returns `*InvalidDocumentTextError` before batch writes, even with
+an in-memory store; only the last document with each ID is validated and
+stored. The owned adapter from `WrapSearchBackend` applies the text refusal
+in `IndexOwned`. Opening an older index preserves stored vector chunks but
+skips chunks with invalid text when rebuilding or replaying the keyword
+index, with a warning naming the cause. Live additions remain strict. The
+phrase is registered as `semantic.document_invalid_text` for host catalogs.
 
 | File | What it does |
 | --- | --- |

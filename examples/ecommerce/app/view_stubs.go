@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=037b662857fd590e
+//gofastr:generated generator=app kind=scaffold version=dev sum=bde8fb7ee961ddb9
 
 package main
 
@@ -7,25 +7,41 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/DonaldMurillo/gofastr/framework"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/entityui"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// Per-entity derived files append their caller-dependent views at init.
+// Each view_stubs_<entity>_init.go file appends caller-dependent views at init.
 var generatedViewStubs [][2]string
 
-func withViewStubs(ext entityui.Extensions) entityui.Extensions {
-	return fillViewStubs(ext, generatedViewStubs)
+func withViewStubs(fwApp *framework.App, ext entityui.Extensions) entityui.Extensions {
+	return fillViewStubs(fwApp.Registry, ext, generatedViewStubs)
 }
 
 // fillViewStubs is emitted verbatim in view_stubs.go. Keeping it
 // compiled here lets the runtime test exercise exactly what apps receive.
-func fillViewStubs(ext entityui.Extensions, views [][2]string) entityui.Extensions {
+func fillViewStubs(reg entity.Registry, ext entityui.Extensions, views [][2]string) entityui.Extensions {
 	ext.Entities = maps.Clone(ext.Entities)
 	if ext.Entities == nil {
 		ext.Entities = map[string]entityui.Extension{}
 	}
 	for _, view := range views {
+		declared, err := reg.Get(view[0])
+		if err != nil || declared.Config.Display == nil {
+			continue
+		}
+		needsFilter := false
+		for _, current := range declared.Config.Display.Views {
+			if current.Key == view[1] && current.Where == "" {
+				needsFilter = true
+				break
+			}
+		}
+		if !needsFilter {
+			continue
+		}
 		e := ext.Entities[view[0]]
 		vf := e.Views[view[1]]
 		if vf.Filter != nil {

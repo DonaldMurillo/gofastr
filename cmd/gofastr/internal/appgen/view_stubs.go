@@ -35,8 +35,8 @@ func renderViewStubs() (GeneratedFile, error) {
 	return GeneratedFile{Name: "view_stubs.go", Content: strings.Replace(viewStubsImpl, "package appgen", "package main", 1)}, nil
 }
 
-// Each new entity contributes a new file, so --add never edits a prior
-// registration or the owned app.go and extensions.go seams.
+// Each entity contributes a registration file. The wrapper checks the live
+// registry at boot, so stale registrations never require file cleanup.
 func renderEntityViewStubs(entity string, views [][2]string) (GeneratedFile, error) {
 	var b strings.Builder
 	b.WriteString("package main\n\n// The caller-dependent views of entity " + strconv.Quote(entity) + ": each gets a\n// fail-closed filter until extensions.go registers its own.\nfunc init() {\n generatedViewStubs = append(generatedViewStubs, [][2]string{\n")
@@ -46,5 +46,5 @@ func renderEntityViewStubs(entity string, views [][2]string) (GeneratedFile, err
 		}
 	}
 	b.WriteString("}...)\n}\n")
-	return GeneratedFile{Name: "view_stubs_" + entity + ".go", Content: b.String()}, nil
+	return GeneratedFile{Name: "view_stubs_" + entity + "_init.go", Content: b.String()}, nil
 }

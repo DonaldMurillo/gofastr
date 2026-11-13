@@ -144,7 +144,7 @@ w.Run(ctx, "./src", "./docs")     // until ctx cancellation
 w.ScanOnce(ctx, "./src")          // one-shot
 ```
 
-A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
+A file refused for invalid document text or a chunking error is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
 Only regular files are indexed. Symlinks, devices, sockets and pipes under a root are skipped, so a link to `~/.ssh/id_ed25519` or `/dev/zero` is never read, and a link inside the root to another file there is not indexed twice. Each file is opened through an `os.Root` on its root, so a path swapped for a link out of the root between the walk and the read is refused, not followed. The open does not wait, so a file swapped for a FIFO is skipped instead of blocking the scan until a writer appears, and a root directory swapped for one fails the scan with an error. The read stops at `MaxFileSize`: a file that grew past it since the walk measured it, or was deleted, is skipped, and the document indexed for its path before is removed, whether this watcher or an earlier process indexed it. A root may name one file (`ScanOnce(ctx, "README.md")`, `gofastr semantic index README.md`); it is confined to the file's directory and indexes only that file.
 
@@ -282,16 +282,27 @@ level with an orthogonal one. A response the route cannot encode answers 500 wit
 never a 200 with an empty one. `POST /index` answers 400 for a document with
 no id (`doc_id_is_required`) or one the chunker refuses
 (`document_unchunkable`); the chunker's error text stays in the log.
-It also answers 400 with reason `document_invalid_text` when a document's
-`id`, `source`, `text`, `owner`, or a metadata string or object key is not
-valid UTF-8 without NUL bytes. Metadata is checked recursively, including
-`kind` and strings inside nested maps and slices. `Index.Add` refuses the
-entire batch before chunking or storage with `*semantic.InvalidDocumentTextError`,
-whose `Field` identifies the input field without echoing its value. The
-same rule holds for in-memory stores and the `IndexOwned` method of
-`WrapSearchBackend`'s owned keyword adapter, not only pgvector.
+Invalid UTF-8 in the JSON body answers 400 `invalid_json_body`. Decoded NULs
+in `id`, `source`, `text`, `owner`, or encoded metadata strings or keys answer
+400 `document_invalid_text`. `Index.Add` validates the last document per ID
+before chunking or storage with `*semantic.InvalidDocumentTextError`, whose
+`Field` identifies the refused field without echoing its value. Superseded
+duplicates do not participate. Metadata validation follows encoded JSON,
+including custom encoders, every nested string value and key, and duplicate
+object members. Omitted fields do not participate. Ordinary Go strings with
+invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
+PgVectorStore also binds it raw to a text column, so that string must itself
+be valid UTF-8 without NUL bytes. Encoding or decoding failures are refused.
+Large JSON numbers remain valid during this check. The in-memory store and `IndexOwned` method
+of `WrapSearchBackend`'s owned keyword adapter also refuse unstorable text.
 The phrase key is `semantic.document_invalid_text`; a host catalog can
 translate it without changing the wire reason.
+
+When opening an older index, invalid stored chunks retain their vectors but
+are skipped in the keyword index with a warning, both for snapshot rebuilds
+and WAL replay. Live additions and direct `IndexOwned` calls remain strict.
+The watcher logs document-text refusals separately from chunking failures
+and continues indexing the rest of the tree.
 
 `POST /index` and `POST /query` decode their bodies strictly: duplicate or
 case-folded top-level JSON keys are refused with 400 rather than silently

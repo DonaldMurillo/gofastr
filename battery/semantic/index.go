@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
@@ -40,11 +42,14 @@ type chunkLister interface {
 }
 
 type index struct {
-	embedder Embedder
-	chunker  Chunker
-	store    Store
-	keyword  KeywordBackend
-	reranker Reranker
+	// restoring is true only during single-threaded Open: persisted text
+	// predating validation must not prevent reopening the vector store.
+	restoring bool
+	embedder  Embedder
+	chunker   Chunker
+	store     Store
+	keyword   KeywordBackend
+	reranker  Reranker
 
 	path          string
 	snapshotEvery int
@@ -352,12 +357,12 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if len(docs) == 0 {
 		return nil
 	}
+	docs = lastPerID(docs)
 	for _, document := range docs {
 		if err := validateDocumentText(document); err != nil {
 			return err
 		}
 	}
-	docs = lastPerID(docs)
 	var chunks []Chunk
 	for _, doc := range docs {
 		if doc.ID == "" {
@@ -734,6 +739,12 @@ func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) (err err
 	}
 	owned, _ := i.keyword.(OwnedKeywordBackend)
 	for _, c := range chunks {
+		if i.restoring {
+			if err := validateDocumentText(Document{ID: c.ID, Owner: c.Owner, Text: c.Text}); err != nil {
+				slog.Warn("semantic: keyword index skipped stored chunk with invalid document text", "chunk", textsafe.ScrubControlBytes(c.ID), "err", textsafe.ScrubControlBytes(err.Error()))
+				continue
+			}
+		}
 		index := i.keyword.Index
 		if owned != nil {
 			index = func(ctx context.Context, id, text string) error { return owned.IndexOwned(ctx, id, c.Owner, text) }

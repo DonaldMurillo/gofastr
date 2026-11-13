@@ -1780,10 +1780,10 @@ few lines, and link the PR or the docs page for the rest.
 - **A generated app boots with a `display.views` entry that has no
   `where:`**; the view answers an error naming `extensions.go` until
   its filter is registered there. Generated apps call
-  `fwApp.EntityUI(withViewStubs(appExtensions))` in `app.go`; an app
+  `fwApp.EntityUI(withViewStubs(fwApp, appExtensions))` in `app.go`; an app
   generated earlier makes that edit by hand, since `--add` keeps
   `app.go`, and copies `view_stubs.go` and the entity's
-  `view_stubs_<entity>.go` from a scratch regeneration.
+  `view_stubs_<entity>_init.go` from a scratch regeneration.
 
 ## [0.96.0] - 2026-11-06
 

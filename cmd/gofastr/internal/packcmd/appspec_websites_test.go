@@ -188,7 +188,7 @@ func TestAppSpec_AppCRUDScreensSynthesized(t *testing.T) {
 	// The appUI seam: app.go declares the var and builds it before the
 	// screens mount; extensions.go holds the value it is built from.
 	clitest.AssertContains(t, fileContent(files, "app.go"), "var appUI *entityui.UI")
-	clitest.AssertContains(t, fileContent(files, "app.go"), "appUI = fwApp.EntityUI(withViewStubs(appExtensions))")
+	clitest.AssertContains(t, fileContent(files, "app.go"), "appUI = fwApp.EntityUI(withViewStubs(fwApp, appExtensions))")
 	clitest.AssertContains(t, fileContent(files, "extensions.go"), "var appExtensions = entityui.Extensions{}")
 }
 

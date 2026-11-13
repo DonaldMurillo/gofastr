@@ -1101,16 +1101,22 @@ record tabs and actions each register there, keyed by entity. `app.go`
 builds the app's UI from it once at boot:
 
 ```go
-appUI = fwApp.EntityUI(withViewStubs(appExtensions))
+appUI = fwApp.EntityUI(withViewStubs(fwApp, appExtensions))
 ```
 
 Every generated app includes the generated `view_stubs.go` seam, even
 with no views. Each entity with a `display.views` entry that has no `where`
-also gets a generated `view_stubs_<entity>.go` file that registers its
-caller-dependent views. `generate app --add` writes the new entity's file
-while preserving existing files, so both the first such view and later
-ones receive defaults without editing owned code. Keep your callbacks in
-the owned `extensions.go`.
+also gets a generated `view_stubs_<entity>_init.go` file that registers its
+caller-dependent views. The prefix keeps these files distinct from screen
+files, and the fixed `_init` suffix keeps entity names such as `test`, `js`
+and `arm` from becoming Go test or platform file constraints.
+`generate app --add` writes new files while preserving existing owned files.
+Registration files are never deleted or refreshed to prune stale views.
+At boot the wrapper reads the app's live registry: it adds a stub only when
+the entity still declares that view with an empty `Where`. Registrations for
+removed entities, renamed views or views with a `where:` clause are inert.
+Keep real callbacks in the owned `extensions.go`; a host-supplied filter
+still wins.
 
 For each caller-dependent view without a registered `Filter`, the default
 returns an error naming the entity, view and `extensions.go`: the filter
@@ -1455,6 +1461,8 @@ destination at its spec path, such as `nav[0].items[1].href`, because owned
 Go files can register routes that the spec cannot see. Strict boot refuses
 an unserved chrome link after the complete route table is mounted.
 
+The lint preserves escaped segment boundaries: `/a%2Fb` is one segment,
+so it can reach `/{slug}` but not `/a/b`, matching the screen router.
 The lint credits canonical trailing-slash screens, path-only HTTP routes,
 PWA icons and, when the project directory is known, existing static files.
 With `locale_prefixes` enabled it strips a leading locale-shaped segment;

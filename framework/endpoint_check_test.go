@@ -2,6 +2,7 @@ package framework
 
 import (
 	"errors"
+	"github.com/DonaldMurillo/gofastr/core/router"
 	"strings"
 	"testing"
 
@@ -40,5 +41,21 @@ func TestEndpointRouteIndex(t *testing.T) {
 	var collision *EndpointRouteError
 	if !errors.As(err, &collision) || collision.Index != 1 || !strings.Contains(collision.Error(), "overlaps") || errors.Unwrap(collision) == nil {
 		t.Fatalf("second sibling must expose its slice index and cause: %v", err)
+	}
+}
+
+func TestEndpointRouteRefusesCRUDCollision(t *testing.T) {
+	err := ValidateEntityEndpointRoutes("/api/items", crud.CrudRouteOptions{}, false, nil, router.RegisteredRoute{Method: "GET", Pattern: "/api/items/{slug}"})
+	if err == nil || !strings.Contains(err.Error(), "generated CRUD route") || !strings.Contains(err.Error(), "existing route") {
+		t.Fatalf("CRUD collision silently accepted: %v", err)
+	}
+}
+func TestEndpointRouteRefusesMalformedPattern(t *testing.T) {
+	for _, path := range []string{"/api/items/{", "/api/items/{id}/{id}", "relative"} {
+		err := ValidateEntityEndpointRoutes("/api/items", crud.CrudRouteOptions{}, true, []Endpoint{{Method: "GET", Path: path}})
+		var refusal *EndpointRouteError
+		if !errors.As(err, &refusal) || refusal.Index != 0 || !strings.Contains(err.Error(), "malformed route") || strings.Contains(err.Error(), "overlaps") {
+			t.Errorf("%q: %v, want indexed malformed-route refusal", path, err)
+		}
 	}
 }

@@ -94,3 +94,48 @@ func InternalOnly(ticker *time.Ticker) {
 		}
 	}
 }
+
+var swapped atomic.Pointer[func()]
+
+func SetSwapped(callback func()) { swapped.Swap(&callback) }
+func RunSwapped(ticker *time.Ticker) {
+	for range ticker.C {
+		if callback := swapped.Load(); callback != nil {
+			(*callback)() // want `recovercallback: \(\*callback\) is invoked with no recover in scope`
+		}
+	}
+}
+func RunSwappedGuarded(ticker *time.Ticker) {
+	defer callbackguard.LogPanic(context.Background(), "observer panicked")
+	for range ticker.C {
+		if callback := swapped.Load(); callback != nil {
+			(*callback)()
+		}
+	}
+}
+func RunValueSpec(ticker *time.Ticker) {
+	for range ticker.C {
+		var callback = observer.Load()
+		if callback != nil {
+			(*callback)() // want `recovercallback: \(\*callback\) is invoked with no recover in scope`
+		}
+	}
+}
+func RunValueSpecGuarded(ticker *time.Ticker) {
+	defer callbackguard.LogPanic(context.Background(), "observer panicked")
+	for range ticker.C {
+		var callback = observer.Load()
+		if callback != nil {
+			(*callback)()
+		}
+	}
+}
+func recoverReturned() any { return recover() }
+func RunReturnRecoverGuarded(ticker *time.Ticker) {
+	defer recoverReturned()
+	for range ticker.C {
+		if callback := observer.Load(); callback != nil {
+			(*callback)()
+		}
+	}
+}

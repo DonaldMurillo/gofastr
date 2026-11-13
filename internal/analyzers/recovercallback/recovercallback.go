@@ -827,6 +827,17 @@ func (g *graph) derivedVars(body *ast.BlockStmt, n *node) map[types.Object]bool 
 					out[obj] = true
 				}
 			}
+		case *ast.ValueSpec:
+			for i, rhs := range x.Values {
+				if i >= len(x.Names) {
+					continue
+				}
+				if call, ok := ast.Unparen(rhs).(*ast.CallExpr); ok && g.atomicSlotLoad(call) {
+					if object := pass.TypesInfo.Defs[x.Names[i]]; object != nil {
+						out[object] = true
+					}
+				}
+			}
 		case *ast.AssignStmt:
 			for i, rhs := range x.Rhs {
 				if i >= len(x.Lhs) {
@@ -1087,7 +1098,7 @@ func hasRecover(body *ast.BlockStmt) bool {
 // recover after an early return) contains nothing, and neither does a
 // guard that panics again (`if v := recover(); v != nil { panic(v) }`,
 // `defer panic(v)`). So the recover must sit in the guard's FIRST
-// statement (an assignment, an expression, a var declaration, or the init
+// statement (an assignment, an expression, a return, a var declaration, or the init
 // or leading operand of an if or switch), never on the right of && or
 // ||, and no builtin panic may appear anywhere in the body, deferred
 // calls and literals included. The recover itself is not under a defer
@@ -1145,7 +1156,7 @@ func directRecover(pass *analysis.Pass, body *ast.BlockStmt) bool {
 		return found
 	}
 	switch first := body.List[0].(type) {
-	case *ast.AssignStmt, *ast.ExprStmt, *ast.DeclStmt:
+	case *ast.AssignStmt, *ast.ExprStmt, *ast.DeclStmt, *ast.ReturnStmt:
 		return recovers(first)
 	case *ast.IfStmt:
 		return recovers(first.Init) || recovers(first.Cond)

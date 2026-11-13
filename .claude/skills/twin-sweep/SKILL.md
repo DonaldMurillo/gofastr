@@ -28,6 +28,9 @@ can be planned from that record.
 ## Where the history lives
 
 - State for this skill, outside git: `~/programming/gofastr-hunt-state/`
+  (`$HUNT_STATE` overrides it). It lives on the maintainer's machine on
+  purpose: hunts run there, and the ledgers it is built from are not in
+  the repo. Without it, `density.sh` has nothing to read.
   - `coverage.tsv`: one row per package per round that read it.
   - `findings.tsv`: one row per accepted or rejected finding.
   - `twins.md`: the twin registry (families, sites, decision, PR).

@@ -76,7 +76,7 @@ func TestStrictRejectsHiddenFilter(t *testing.T) {
 // rejected as unknown filters.
 func TestStrictAllowsReservedControls(t *testing.T) {
 	reserved := url.Values{}
-	for _, key := range ListControlParams() {
+	for _, key := range []string{"sort", "page", "limit", "per_page", "offset", "cursor", "direction", "where", "fields", "include", "trashed", "stream", "q"} {
 		reserved.Set(key, "value")
 	}
 	if _, err := parseQuery(t, reserved.Encode()); err != nil {
