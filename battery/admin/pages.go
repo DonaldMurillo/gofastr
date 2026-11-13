@@ -43,6 +43,26 @@ type Page struct {
 	// the admin's elevation never reaches app code. A panic or an error
 	// fails the page with a generic message and a log line.
 	Build func(r *http.Request) (component.Component, error)
+
+	// Part, when set, draws the piece of the page that keeps itself
+	// current: a list's rows. The admin serves it alone at
+	// PagePartPath(prefix, Path), behind the gate and this page's
+	// Access, with the caller's own context, as Build runs. The page
+	// points a polled region at it:
+	//
+	//	html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
+	//	    "data-cui-poll":     "10s",
+	//	    "data-cui-poll-src": admin.PagePartPath("/admin", "/reports"),
+	//	}}, rows)
+	//
+	// The request's query string reaches Part as it reaches Build.
+	Part func(r *http.Request) (component.Component, error)
+}
+
+// PagePartPath is where the admin at prefix serves the Part of the page
+// at pagePath.
+func PagePartPath(prefix, pagePath string) string {
+	return strings.TrimRight(prefix, "/") + "/_part" + pagePath
 }
 
 // Card is one of the app's own dashboard cards.
@@ -152,6 +172,28 @@ func (b *Battery) buildSlot(ctx context.Context, slot string, build func(*http.R
 // cardPath is where a polled app card redraws.
 func (b *Battery) cardPath(key string) string {
 	return b.cfg.PathPrefix + "/_card/" + key
+}
+
+// mountParts mounts GET <prefix>/_part/<page path> for every page with a
+// Part: that part alone, drawn with the caller's own context. The route
+// sits in the gated group, and the page's own Access is asked here: a
+// screen policy answers for the page, not for this route.
+func (b *Battery) mountParts(r *router.Router) {
+	for _, p := range b.cfg.Pages {
+		if p.Part == nil {
+			continue
+		}
+		r.Get(PagePartPath(b.cfg.PathPrefix, p.Path), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := appui.WithRequest(r.Context(), r)
+			w.Header().Set("Cache-Control", "private, no-store")
+			if !b.pageAllows(ctx, p) {
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(b.buildSlot(ctx, "page part "+p.Path, p.Part)))
+		}))
+	}
 }
 
 // mountCards mounts GET <prefix>/_card/<key> for every polled card: the

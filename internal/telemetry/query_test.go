@@ -226,6 +226,45 @@ func TestQueriesMatchFullRead(t *testing.T) {
 				equal(t, fmt.Sprintf("logs %+v limit %d", q, limit), raws(got), want)
 			}
 		}
+		// Skipped path prefixes drop their access lines and nothing else.
+		skipped, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelDebug, From: from, To: to, SkipPaths: []string{"/orders", "/customers/"}}, 1<<30)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var kept []string
+		for _, l := range slices.Backward(fx.logs) {
+			if !l.Time.Before(from) && !l.Time.After(to) && !strings.Contains(l.raw, `"path":"/orders`) && !strings.Contains(l.raw, `"path":"/customers/`) {
+				kept = append(kept, l.raw)
+			}
+		}
+		if len(kept) == len(fx.logs) {
+			t.Fatal("the reference skipped nothing, so the check proves nothing")
+		}
+		equal(t, "logs with skipped paths", raws(skipped), kept)
+
+		// Oldest first takes the limit from the old end and still
+		// answers newest first: the page of lines after a point.
+		for _, q := range []telemetry.LogQuery{{OldestFirst: true, From: from, To: to}, {OldestFirst: true, MinLevel: slog.LevelWarn, From: from}} {
+			got, err := fx.store.Logs(q, 9)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, l := range fx.logs {
+				if l.Level >= q.MinLevel && !l.Time.Before(q.From) && (q.To.IsZero() || !l.Time.After(q.To)) && len(want) < 9 {
+					want = append(want, l.raw)
+				}
+			}
+			slices.Reverse(want)
+			equal(t, fmt.Sprintf("oldest-first logs %+v", q), raws(got), want)
+		}
+		// Paging older then newer lands back on the same lines.
+		top, _ := fx.store.Logs(telemetry.LogQuery{}, 5)
+		older, _ := fx.store.Logs(telemetry.LogQuery{To: top[4].Time.Add(-time.Nanosecond)}, 5)
+		back, err := fx.store.Logs(telemetry.LogQuery{From: older[0].Time.Add(time.Nanosecond), OldestFirst: true}, 5)
+		if err != nil || !slices.Equal(raws(back), raws(top)) {
+			t.Fatalf("older then newer did not return to the first page: %v", err)
+		}
 		// The next page: the same query, ending just before the last line shown.
 		first, _ := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn}, 5)
 		second, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn, To: first[4].Time.Add(-time.Nanosecond)}, 5)
@@ -258,6 +297,27 @@ func TestQueriesMatchFullRead(t *testing.T) {
 				ids[i] = g.TraceID
 			}
 			equal(t, fmt.Sprintf("traces %+v", q), ids, want)
+		}
+	})
+
+	t.Run("traces oldest first", func(t *testing.T) {
+		for _, q := range []telemetry.TraceQuery{{OldestFirst: true}, {OldestFirst: true, Failed: true, From: from, To: to}} {
+			got, err := fx.store.Traces(q, 7)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, tr := range fx.traces {
+				if (!q.Failed || tr.Error) && (q.From.IsZero() || !tr.Time.Before(q.From)) && (q.To.IsZero() || !tr.Time.After(q.To)) && len(want) < 7 {
+					want = append(want, tr.TraceID)
+				}
+			}
+			slices.Reverse(want)
+			ids := make([]string, len(got))
+			for i, g := range got {
+				ids[i] = g.TraceID
+			}
+			equal(t, fmt.Sprintf("oldest-first traces %+v", q), ids, want)
 		}
 	})
 

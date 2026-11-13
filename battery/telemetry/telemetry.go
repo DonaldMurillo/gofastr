@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -108,13 +109,20 @@ type Plugin struct {
 	processor atomic.Pointer[otelspan.Processor]
 	store     atomic.Pointer[itel.Store]
 	slow      atomic.Int64 // the resolved SlowThreshold
+	quiet     []string     // set once in New
 	unwritten atomic.Int64 // lines that arrived with no writer open
 	stopped   atomic.Bool
 }
 
 // New returns the plugin. Register it before the log plugin, so the
 // files are open when the first line is logged.
-func New(cfg Config) *Plugin { return &Plugin{cfg: cfg} }
+func New(cfg Config) *Plugin {
+	return &Plugin{cfg: cfg, quiet: append([]string{"/__gofastr/"}, cfg.QuietPaths...)}
+}
+
+// QuietPaths returns the path prefixes whose requests are kept only
+// when they fail or are slow: "/__gofastr/" and Config.QuietPaths.
+func (p *Plugin) QuietPaths() []string { return slices.Clone(p.quiet) }
 
 // Name implements framework.Plugin.
 func (*Plugin) Name() string { return "telemetry" }
@@ -155,7 +163,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	p.store.Store(store)
 	p.writer.Store(w)
 	p.collector.Store(c)
-	p.processor.Store(otelspan.New(c, append([]string{"/__gofastr/"}, p.cfg.QuietPaths...)...))
+	p.processor.Store(otelspan.New(c, p.quiet...))
 
 	if err := p.registerMCPTools(app); err != nil {
 		_ = w.Close()

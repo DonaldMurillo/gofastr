@@ -69,6 +69,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	}
 
 	screens := NewScreens(p.tel, path, true)
+	screens.Live = func(list string) string { return path + "/_rows/" + list }
 	allowed := func(ctx context.Context) bool { return p.cfg.Authorize(ctx) }
 	policy := appui.PolicyFunc(func(ctx context.Context) appui.Decision {
 		if allowed(ctx) {
@@ -88,6 +89,24 @@ func (p *Plugin) Init(app *framework.App) error {
 	add(screens.RequestsPath(), i18nui.TelemetryRequests, screens.Requests)
 	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.Logs)
 	host.App.Router.ScreenGroup(group)
+
+	// A list's rows alone, for the newest page's timer. The same gate
+	// as the pages, asked on every fetch: a caller whose access ended
+	// stops getting rows at the next tick.
+	rows := func(draw func(context.Context) render.HTML) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := appui.WithRequest(r.Context(), r)
+			w.Header().Set("Cache-Control", "private, no-store")
+			if !allowed(ctx) {
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(draw(ctx)))
+		})
+	}
+	app.Router().Get(path+"/_rows/requests", rows(screens.RequestsRows))
+	app.Router().Get(path+"/_rows/logs", rows(screens.LogsRows))
 
 	// The bare path goes to the first screen. The target is fixed, and
 	// the screen it names is the one that asks who is calling.

@@ -34,8 +34,8 @@ import (
 
 // Page sizes, and the longest filter value read from a query string.
 const (
-	requestsPerPage = 50
-	logsPerPage     = 100
+	requestsPerPage = 25
+	logsPerPage     = 25
 	maxParam        = 256
 )
 
@@ -46,6 +46,38 @@ type Screens struct {
 	base string
 	tabs bool
 	now  func() time.Time
+
+	// Live, when set, returns the URL that serves a list's rows alone
+	// ("requests" or "logs", drawn by RequestsRows and LogsRows). The
+	// newest page of each list then re-fetches its rows on a timer.
+	// The host that sets it serves that URL behind the same gate as
+	// the pages.
+	Live func(list string) string
+}
+
+// liveEvery is how often the newest page of a list re-fetches its rows.
+const liveEvery = 10 * time.Second
+
+// rows wraps a list's table and pager. On the newest page, with a host
+// that serves the rows alone, the wrapper re-fetches them on a timer:
+// a page someone has paged back on stays as it is.
+func (s *Screens) rows(list string, cur cursor, src string, parts ...render.HTML) render.HTML {
+	body := page(parts...)
+	if s.Live == nil || cur.set() {
+		return body
+	}
+	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
+		"data-cui-poll":     liveEvery.String(),
+		"data-cui-poll-src": src,
+	}}, body)
+}
+
+// liveBadge says a list keeps itself current, when it does.
+func (s *Screens) liveBadge(ctx context.Context, cur cursor) render.HTML {
+	if s.Live == nil || cur.set() {
+		return ""
+	}
+	return ui.PollingIndicator(ui.PollingIndicatorConfig{Ctx: ctx})
 }
 
 // NewScreens returns the screens for tel, linking to each other under
@@ -108,13 +140,98 @@ func (s *Screens) pickWindow(q url.Values) (window, time.Time) {
 	return s.pickWindow(url.Values{})
 }
 
-// before reads the paging cursor: list lines older than this.
-func before(q url.Values) time.Time {
-	t, err := time.Parse(time.RFC3339Nano, param(q, "before"))
-	if err != nil {
-		return time.Time{}
+// cursor is where a page sits in the list: before a time (older rows),
+// after one (newer rows), or neither, which is the newest page.
+type cursor struct{ before, after time.Time }
+
+func (c cursor) set() bool { return !c.before.IsZero() || !c.after.IsZero() }
+
+func readCursor(q url.Values) cursor {
+	var c cursor
+	if t, err := time.Parse(time.RFC3339Nano, param(q, "before")); err == nil {
+		c.before = t
 	}
-	return t
+	// One at a time: a URL carrying both is read as the older page.
+	if t, err := time.Parse(time.RFC3339Nano, param(q, "after")); err == nil && c.before.IsZero() {
+		c.after = t
+	}
+	return c
+}
+
+// bounds narrows a window to the cursor's page and says which end the
+// limit is taken from.
+func (c cursor) bounds(from time.Time) (lo, hi time.Time, oldestFirst bool) {
+	lo, hi = from, c.before
+	if !c.after.IsZero() {
+		if c.after.After(lo) {
+			lo = c.after
+		}
+		oldestFirst = true
+	}
+	return lo, hi, oldestFirst
+}
+
+func stampParam(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// trim cuts a page fetched one row over its limit back to the limit and
+// reports whether pages exist on each side. The extra row is the proof
+// of another page: the oldest row when the limit was taken from the new
+// end, the newest when it was taken from the old end (a "newer" page).
+// A page reached by a cursor came from the other side, so that side has
+// one too.
+func trim[T any](c cursor, rows []T, limit int) (page []T, hasNewer, hasOlder bool) {
+	extra := len(rows) > limit
+	switch {
+	case !c.after.IsZero():
+		if extra {
+			rows = rows[len(rows)-limit:]
+		}
+		return rows, extra, true
+	default:
+		if extra {
+			rows = rows[:limit]
+		}
+		return rows, !c.before.IsZero(), extra
+	}
+}
+
+// pager draws the links to the neighbouring pages and says what this
+// one holds. newest and oldest are the first and last rows' times and n
+// how many rows there are. here builds this list's URL with the given
+// before and after values.
+func pager(ctx context.Context, c cursor, n int, hasNewer, hasOlder bool, newest, oldest time.Time, here func(before, after string) string) render.HTML {
+	if !c.set() && !hasOlder {
+		return "" // everything fits on the one page
+	}
+	link := func(label i18n.Phrase, href string, on bool) render.HTML {
+		if !on {
+			return ui.Button(ui.ButtonConfig{Ctx: ctx, Label: label.Text(ctx), Variant: ui.ButtonSecondary, Disabled: true})
+		}
+		return ui.LinkButton(ui.LinkButtonConfig{Label: label.Text(ctx), Href: href, Variant: ui.ButtonSecondary})
+	}
+	var newerHref, olderHref string
+	if n > 0 {
+		newerHref = here("", stampParam(newest.Add(time.Nanosecond)))
+		olderHref = here(stampParam(oldest.Add(-time.Nanosecond)), "")
+	}
+	links := []render.HTML{}
+	if c.set() {
+		links = append(links, ui.LinkButton(ui.LinkButtonConfig{Label: i18nui.TelemetryNewest.Text(ctx), Href: here("", ""), Variant: ui.ButtonGhost}))
+	}
+	links = append(links,
+		link(i18nui.TelemetryNewer, newerHref, hasNewer && n > 0),
+		link(i18nui.TelemetryOlder, olderHref, hasOlder && n > 0))
+	var summary render.HTML
+	if n > 0 {
+		summary = ui.Muted(render.Text(i18nui.TelemetryPageRange.Text(ctx, map[string]any{
+			"n":    i18n.Number(ctx, n),
+			"from": i18n.DateTime(ctx, oldest.UTC(), i18n.DateMedium, i18n.TimeLong),
+			"to":   i18n.DateTime(ctx, newest.UTC(), i18n.DateMedium, i18n.TimeLong),
+		})))
+	}
+	return html.Nav(html.NavConfig{Label: i18nui.TelemetryPaging.Text(ctx)},
+		ui.Cluster(ui.ClusterConfig{Gap: ui.GapMD, Justify: ui.JustifyBetween, Align: ui.AlignCenter},
+			summary, ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter}, links...)))
 }
 
 // link builds a URL for path carrying the non-empty pairs.
@@ -161,10 +278,17 @@ func problem(ctx context.Context, msg i18n.Phrase) render.HTML {
 // timeCell shows when something happened to the second, which is what
 // lines up a log with a report of trouble; how long ago is the tooltip.
 func timeCell(ctx context.Context, now, t time.Time) render.HTML {
-	u := t.UTC()
+	u, today := t.UTC(), now.UTC()
+	full := i18n.DateTime(ctx, u, i18n.DateMedium, i18n.TimeLong)
+	// Today's rows say the time alone: the date on every row is noise,
+	// and a phone row has no room for it.
+	shown := full
+	if u.Year() == today.Year() && u.YearDay() == today.YearDay() {
+		shown = i18n.Time(ctx, u, i18n.TimeLong)
+	}
 	return html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339Nano),
-		ExtraAttrs: html.Attrs{"title": ui.Ago(ctx, now, t)}},
-		render.Text(i18n.DateTime(ctx, u, i18n.DateMedium, i18n.TimeLong)))
+		ExtraAttrs: html.Attrs{"title": full + " (" + ui.Ago(ctx, now, t) + ")"}},
+		render.Text(shown))
 }
 
 func (s *Screens) windowFacet(ctx context.Context, current window) ui.Facet {
@@ -175,28 +299,22 @@ func (s *Screens) windowFacet(ctx context.Context, current window) ui.Facet {
 	return f
 }
 
-// older is the link to the next page, drawn when this one is full.
-func older(ctx context.Context, full bool, href, newest string, paged bool) render.HTML {
-	var links []render.HTML
-	if paged {
-		links = append(links, ui.LinkButton(ui.LinkButtonConfig{Label: i18nui.TelemetryNewest.Text(ctx), Href: newest, Variant: ui.ButtonSecondary}))
-	}
-	if full {
-		links = append(links, ui.LinkButton(ui.LinkButtonConfig{Label: i18nui.TelemetryOlder.Text(ctx), Href: href, Variant: ui.ButtonSecondary}))
-	}
-	if len(links) == 0 {
-		return ""
-	}
-	return ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Justify: ui.JustifyEnd}, links...)
-}
-
 // ----- requests ----------------------------------------------------------------
 
 // Requests draws the list of kept requests, or one request when the
 // query names a trace.
-func (s *Screens) Requests(ctx context.Context) render.HTML {
+func (s *Screens) Requests(ctx context.Context) render.HTML { return s.requests(ctx, false) }
+
+// RequestsRows draws the requests list's table and pager alone, for the
+// same query: what the newest page re-fetches.
+func (s *Screens) RequestsRows(ctx context.Context) render.HTML { return s.requests(ctx, true) }
+
+func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	q := query(ctx)
 	if id := strings.ToLower(strings.TrimSpace(param(q, "trace"))); id != "" {
+		if rowsOnly {
+			return ""
+		}
 		return s.request(ctx, id)
 	}
 	store := s.tel.Reader()
@@ -210,8 +328,9 @@ func (s *Screens) Requests(ctx context.Context) render.HTML {
 
 	show, route := param(q, "show"), param(q, "route")
 	win, from := s.pickWindow(q)
-	cursor := before(q)
-	tq := itel.TraceQuery{Route: route, From: from, To: cursor}
+	cur := readCursor(q)
+	lo, hi, oldestFirst := cur.bounds(from)
+	tq := itel.TraceQuery{Route: route, From: lo, To: hi, OldestFirst: oldestFirst}
 	switch show {
 	case "failed":
 		tq.Failed = true
@@ -220,26 +339,27 @@ func (s *Screens) Requests(ctx context.Context) render.HTML {
 	default:
 		show = ""
 	}
-	traces, err := store.Traces(tq, requestsPerPage)
+	traces, err := store.Traces(tq, requestsPerPage+1)
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: list requests", "err", err)
 		return page(s.tabNav(ctx, false), header, problem(ctx, i18nui.TelemetryLoadFailed))
 	}
+	traces, hasNewer, hasOlder := trim(cur, traces, requestsPerPage)
 
 	path := s.RequestsPath()
-	here := func(show, route, before string) string {
-		w := win.key
-		if w == defaultWindow {
-			w = ""
-		}
-		return link(path, "show", show, "route", route, "window", w, "before", before)
+	wkey := win.key
+	if wkey == defaultWindow {
+		wkey = ""
+	}
+	here := func(show, route string) string {
+		return link(path, "show", show, "route", route, "window", wkey)
 	}
 	segments := ui.SegmentedLinks(ui.SegmentedLinksConfig{
 		Label: i18nui.TelemetryShow.Text(ctx), Ctx: ctx,
 		Items: []ui.SegmentLink{
-			{Text: i18nui.TelemetryShowAll.Text(ctx), Href: here("", route, ""), Current: show == ""},
-			{Text: i18nui.TelemetryShowFailed.Text(ctx), Href: here("failed", route, ""), Current: show == "failed"},
-			{Text: i18nui.TelemetryShowSlow.Text(ctx), Href: here("slow", route, ""), Current: show == "slow"},
+			{Text: i18nui.TelemetryShowAll.Text(ctx), Href: here("", route), Current: show == ""},
+			{Text: i18nui.TelemetryShowFailed.Text(ctx), Href: here("failed", route), Current: show == "failed"},
+			{Text: i18nui.TelemetryShowSlow.Text(ctx), Href: here("slow", route), Current: show == "slow"},
 		},
 	})
 	filters := ui.FilterToolbar(ui.FilterToolbarConfig{
@@ -255,7 +375,7 @@ func (s *Screens) Requests(ctx context.Context) render.HTML {
 	if route != "" {
 		routeChip = ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
 			ui.Tag(ui.TagConfig{Ctx: ctx, Label: i18nui.TelemetryRouteFilter.Text(ctx, map[string]any{"route": route})}),
-			ui.Link(ui.LinkConfig{Href: here(show, "", ""), Text: i18nui.TelemetryRouteClear.Text(ctx), Variant: ui.LinkMuted}))
+			ui.Link(ui.LinkConfig{Href: here(show, ""), Text: i18nui.TelemetryRouteClear.Text(ctx), Variant: ui.LinkMuted}))
 	}
 
 	now := s.now()
@@ -270,7 +390,7 @@ func (s *Screens) Requests(ctx context.Context) render.HTML {
 	for i, t := range traces {
 		routeCell := render.HTML(render.Text(t.Route))
 		if route == "" && t.Route != "" {
-			routeCell = ui.Link(ui.LinkConfig{Href: here(show, t.Route, ""), Text: t.Route,
+			routeCell = ui.Link(ui.LinkConfig{Href: here(show, t.Route), Text: t.Route,
 				ExtraAttrs: html.Attrs{"title": i18nui.TelemetryRouteOnly.Text(ctx, map[string]any{"route": t.Route})}})
 		}
 		// The path the caller asked for, when the route is a pattern
@@ -302,12 +422,26 @@ func (s *Screens) Requests(ctx context.Context) render.HTML {
 			Description: i18nui.TelemetryRequestsEmptySub.Text(ctx),
 		},
 	})
-	var next string
-	if len(traces) == requestsPerPage {
-		next = here(show, route, traces[len(traces)-1].Time.Add(-time.Nanosecond).UTC().Format(time.RFC3339Nano))
+	var newest, oldest time.Time
+	if len(traces) > 0 {
+		newest, oldest = traces[0].Time, traces[len(traces)-1].Time
 	}
-	return page(s.tabNav(ctx, false), header, segments, filters, routeChip, table,
-		older(ctx, next != "", next, here(show, route, ""), !cursor.IsZero()))
+	pages := pager(ctx, cur, len(traces), hasNewer, hasOlder, newest, oldest, func(before, after string) string {
+		return link(path, "show", show, "route", route, "window", wkey, "before", before, "after", after)
+	})
+	if rowsOnly {
+		return page(table, pages)
+	}
+	var src string
+	if s.Live != nil {
+		src = link(s.Live("requests"), "show", show, "route", route, "window", wkey)
+	}
+	header = ui.PageHeader(ui.PageHeaderConfig{
+		Title:    i18nui.TelemetryRequests.Text(ctx),
+		Subtitle: i18nui.TelemetryRequestsSub.Text(ctx),
+		Actions:  s.liveBadge(ctx, cur),
+	})
+	return page(s.tabNav(ctx, false), header, segments, filters, routeChip, s.rows("requests", cur, src, table, pages))
 }
 
 // pathBeside returns path when it says something route does not: the
@@ -491,7 +625,13 @@ var levels = []level{
 }
 
 // Logs draws the log, newest first, narrowed by level, text and time.
-func (s *Screens) Logs(ctx context.Context) render.HTML {
+func (s *Screens) Logs(ctx context.Context) render.HTML { return s.logs(ctx, false) }
+
+// LogsRows draws the log's table and pager alone, for the same query:
+// what the newest page re-fetches.
+func (s *Screens) LogsRows(ctx context.Context) render.HTML { return s.logs(ctx, true) }
+
+func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryLogs.Text(ctx),
 		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
@@ -509,24 +649,41 @@ func (s *Screens) Logs(ctx context.Context) render.HTML {
 		}
 	}
 	win, from := s.pickWindow(q)
-	cursor := before(q)
-	lines, err := store.Logs(itel.LogQuery{Text: text, MinLevel: lv.min, From: from, To: cursor}, logsPerPage)
+	cur := readCursor(q)
+	lo, hi, oldestFirst := cur.bounds(from)
+	// Access lines for scripts and styles would fill every page, so
+	// they are left out unless asked for.
+	all := param(q, "all")
+	if all != "1" {
+		all = ""
+	}
+	lq := itel.LogQuery{Text: text, MinLevel: lv.min, From: lo, To: hi, OldestFirst: oldestFirst}
+	if all == "" {
+		lq.SkipPaths = s.tel.QuietPaths()
+	}
+	lines, err := store.Logs(lq, logsPerPage+1)
 	if err != nil {
 		slog.ErrorContext(ctx, "telemetry: list logs", "err", err)
 		return page(s.tabNav(ctx, true), header, problem(ctx, i18nui.TelemetryLoadFailed))
 	}
+	lines, hasNewer, hasOlder := trim(cur, lines, logsPerPage)
 
 	path := s.LogsPath()
-	here := func(level, before string) string {
-		w := win.key
-		if w == defaultWindow {
-			w = ""
-		}
-		return link(path, "level", level, "q", text, "window", w, "before", before)
+	wkey := win.key
+	if wkey == defaultWindow {
+		wkey = ""
 	}
+	here := func(level string) string { return link(path, "level", level, "q", text, "window", wkey, "all", all) }
+	quietNote, quietLink, quietHref := i18nui.TelemetryQuietHidden, i18nui.TelemetryQuietShow, link(path, "level", lv.key, "q", text, "window", wkey, "all", "1")
+	if all != "" {
+		quietNote, quietLink, quietHref = i18nui.TelemetryQuietShown, i18nui.TelemetryQuietHide, link(path, "level", lv.key, "q", text, "window", wkey)
+	}
+	quiet := ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM, Align: ui.AlignCenter},
+		ui.Muted(render.Text(quietNote.Text(ctx))),
+		ui.Link(ui.LinkConfig{Href: quietHref, Text: quietLink.Text(ctx)}))
 	items := make([]ui.SegmentLink, len(levels))
 	for i, l := range levels {
-		items[i] = ui.SegmentLink{Text: l.label.Text(ctx), Href: here(l.key, ""), Current: l.key == lv.key}
+		items[i] = ui.SegmentLink{Text: l.label.Text(ctx), Href: here(l.key), Current: l.key == lv.key}
 	}
 	segments := ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: i18nui.TelemetryLevel.Text(ctx), Items: items, Ctx: ctx})
 	filters := ui.FilterToolbar(ui.FilterToolbarConfig{
@@ -535,16 +692,30 @@ func (s *Screens) Logs(ctx context.Context) render.HTML {
 		ApplyLabel: i18nui.TelemetryApply.Text(ctx),
 		Search:     &ui.FilterSearch{Name: "q", Value: text, Label: i18nui.TelemetrySearchLogs.Text(ctx), Placeholder: i18nui.TelemetrySearchHint.Text(ctx)},
 		Facets:     []ui.Facet{s.windowFacet(ctx, win)},
-		Hidden:     []ui.HiddenField{{Name: "level", Value: lv.key}},
+		Hidden:     []ui.HiddenField{{Name: "level", Value: lv.key}, {Name: "all", Value: all}},
 		HideReset:  true,
 	})
-	var next string
-	if len(lines) == logsPerPage {
-		next = here(lv.key, lines[len(lines)-1].Time.Add(-time.Nanosecond).UTC().Format(time.RFC3339Nano))
+	var newest, oldest time.Time
+	if len(lines) > 0 {
+		newest, oldest = lines[0].Time, lines[len(lines)-1].Time
 	}
-	return page(s.tabNav(ctx, true), header, segments, filters,
-		s.logTable(ctx, lines, true, i18nui.TelemetryLogsEmpty, i18nui.TelemetryLogsEmptySub),
-		older(ctx, next != "", next, here(lv.key, ""), !cursor.IsZero()))
+	table := s.logTable(ctx, lines, true, i18nui.TelemetryLogsEmpty, i18nui.TelemetryLogsEmptySub)
+	pages := pager(ctx, cur, len(lines), hasNewer, hasOlder, newest, oldest, func(before, after string) string {
+		return link(path, "level", lv.key, "q", text, "window", wkey, "all", all, "before", before, "after", after)
+	})
+	if rowsOnly {
+		return page(table, pages)
+	}
+	var src string
+	if s.Live != nil {
+		src = link(s.Live("logs"), "level", lv.key, "q", text, "window", wkey, "all", all)
+	}
+	header = ui.PageHeader(ui.PageHeaderConfig{
+		Title:    i18nui.TelemetryLogs.Text(ctx),
+		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
+		Actions:  s.liveBadge(ctx, cur),
+	})
+	return page(s.tabNav(ctx, true), header, segments, filters, quiet, s.rows("logs", cur, src, table, pages))
 }
 
 // logTable draws log lines. linkRequests adds the column that opens a
@@ -552,12 +723,14 @@ func (s *Screens) Logs(ctx context.Context) render.HTML {
 func (s *Screens) logTable(ctx context.Context, lines []itel.LogEntry, linkRequests bool, empty, emptySub i18n.Phrase) render.HTML {
 	now := s.now()
 	cols := []ui.Column{
-		{Key: "time", Header: i18nui.TelemetryColTime.Text(ctx), Phone: ui.PhoneSubtitle},
+		// On a phone: the message over its details, the level over the
+		// time at the end.
+		{Key: "time", Header: i18nui.TelemetryColTime.Text(ctx), Phone: ui.PhoneDetail},
 		{Key: "level", Header: i18nui.TelemetryColLevel.Text(ctx), Phone: ui.PhoneMeta},
 		{Key: "msg", Header: i18nui.TelemetryColMessage.Text(ctx), Phone: ui.PhoneTitle, Wrap: true},
 		// A request's own page has room for every attribute; the long
 		// list keeps one line a row.
-		{Key: "details", Header: i18nui.TelemetryColDetails.Text(ctx), Truncate: linkRequests, Wrap: !linkRequests},
+		{Key: "details", Header: i18nui.TelemetryColDetails.Text(ctx), Truncate: linkRequests, Wrap: !linkRequests, Phone: ui.PhoneSubtitle},
 	}
 	if linkRequests {
 		cols = append(cols, ui.Column{Key: "request", Header: i18nui.TelemetryColRequest.Text(ctx), Align: "end", Fit: true, Phone: ui.PhoneEnd})

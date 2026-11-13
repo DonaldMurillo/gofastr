@@ -1199,6 +1199,13 @@
       "warning": "Aviso"
     },
     "telemetry": {
+      "newer": "Más recientes",
+      "pageRange": "{{n}} mostradas, de {{from}} a {{to}}",
+      "paging": "Páginas",
+      "quietHidden": "No se incluyen las solicitudes de scripts, estilos y otras rutas silenciosas.",
+      "quietHide": "No incluirlas",
+      "quietShow": "Mostrarlas",
+      "quietShown": "Se incluyen las solicitudes de scripts, estilos y otras rutas silenciosas.",
       "apply": "Aplicar",
       "back": "Todas las solicitudes",
       "colDetails": "Detalles",

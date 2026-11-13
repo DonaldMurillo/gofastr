@@ -30,15 +30,19 @@ const NavGroup = "telemetry"
 // admin's Config.PathPrefix ("/admin"): the pages link to each other
 // under it.
 func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
-	screens := telemetryui.NewScreens(tel, strings.TrimRight(adminPrefix, "/")+"/telemetry", false)
+	prefix := strings.TrimRight(adminPrefix, "/")
+	screens := telemetryui.NewScreens(tel, prefix+"/telemetry", false)
+	// The newest page of each list re-fetches its rows from the admin's
+	// page-part route, which the admin gates as it gates the page.
+	screens.Live = func(list string) string { return admin.PagePartPath(prefix, "/telemetry/"+list) }
 	build := func(draw func(context.Context) render.HTML) func(*http.Request) (component.Component, error) {
 		return func(*http.Request) (component.Component, error) { return page{draw: draw}, nil }
 	}
 	return []admin.Page{
 		{Path: "/telemetry/requests", Title: i18nui.TelemetryRequests,
-			Nav: &entity.EntityNav{Group: NavGroup, Icon: "activity", Order: 10}, Build: build(screens.Requests)},
+			Nav: &entity.EntityNav{Group: NavGroup, Icon: "activity", Order: 10}, Build: build(screens.Requests), Part: build(screens.RequestsRows)},
 		{Path: "/telemetry/logs", Title: i18nui.TelemetryLogs,
-			Nav: &entity.EntityNav{Group: NavGroup, Icon: "list", Order: 20}, Build: build(screens.Logs)},
+			Nav: &entity.EntityNav{Group: NavGroup, Icon: "list", Order: 20}, Build: build(screens.Logs), Part: build(screens.LogsRows)},
 	}
 }
 

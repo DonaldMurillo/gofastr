@@ -203,6 +203,15 @@ type LogQuery struct {
 	// open. A page of older lines is the same query with To set just
 	// before the oldest line already shown.
 	From, To time.Time
+	// SkipPaths leaves out access lines for paths under these prefixes
+	// ("/__gofastr/"): the fetches of scripts and styles that otherwise
+	// fill a page of the log.
+	SkipPaths []string
+	// OldestFirst takes the limit from the old end of the window: the
+	// lines just after From, which is the page of newer lines when From
+	// is set just after the newest line already shown. The result is
+	// still returned newest first.
+	OldestFirst bool
 }
 
 // Logs returns up to limit lines matching q, newest first.
@@ -212,15 +221,72 @@ func (s *Store) Logs(q LogQuery, limit int) ([]LogEntry, error) {
 		needle = appendJSONString(nil, q.Text)
 		needle = needle[1 : len(needle)-1]
 	}
-	var out []LogEntry
-	err := s.logsBackward(q.From, q.To, limit, func(line []byte) (LogEntry, bool) {
+	skips := make([][]byte, len(q.SkipPaths))
+	for i, p := range q.SkipPaths {
+		// The path attribute, up to but not including its closing quote.
+		quoted := appendJSONString([]byte(`"path":`), p)
+		skips[i] = quoted[:len(quoted)-1]
+	}
+	pick := func(line []byte) (LogEntry, bool) {
 		if needle != nil && !bytes.Contains(line, needle) {
 			return LogEntry{}, false
 		}
+		for _, skip := range skips {
+			if bytes.Contains(line, skip) {
+				return LogEntry{}, false
+			}
+		}
 		e, ok := entry(line)
 		return e, ok && e.Level >= q.MinLevel && inWindow(e.Time, q.From, q.To)
-	}, &out)
+	}
+	var out []LogEntry
+	if q.OldestFirst {
+		err := s.forward(KindLogs, q.From, q.To, limit, func(line []byte) bool {
+			if e, ok := pick(line); ok {
+				e.Line = bytes.Clone(e.Line)
+				out = append(out, e)
+			}
+			return len(out) < limit
+		})
+		slices.Reverse(out)
+		return out, err
+	}
+	err := s.logsBackward(q.From, q.To, limit, pick, &out)
 	return out, err
+}
+
+// forward walks kind's lines oldest first across the day files that
+// overlap [from, to], until fn returns false. It is the scan behind
+// every oldest-first page.
+func (s *Store) forward(kind string, from, to time.Time, limit int, fn func(line []byte) bool) error {
+	if limit <= 0 {
+		return nil
+	}
+	files, err := s.files(kind, from, to)
+	if err != nil {
+		return err
+	}
+	for _, df := range slices.Backward(files) { // oldest file first
+		w, err := s.open(df, from, to)
+		if err != nil {
+			return err
+		}
+		more, seen := true, 0
+		err = scanForward(w.f, w.start, w.end, func(line []byte) bool {
+			if seen++; seen%boundEvery == 0 && !to.IsZero() {
+				if t, ok := lineTime(line); ok && t.After(to.Add(timeSlop)) {
+					return false
+				}
+			}
+			more = fn(line)
+			return more
+		})
+		_ = w.f.Close()
+		if err != nil || !more {
+			return err
+		}
+	}
+	return nil
 }
 
 // TraceQuery narrows a trace listing. The zero value lists everything.
@@ -234,6 +300,9 @@ type TraceQuery struct {
 	// From and To bound when the trace ended, inclusive; zero leaves a
 	// side open. To pages older traces, as in LogQuery.
 	From, To time.Time
+	// OldestFirst takes the limit from the old end of the window, as in
+	// LogQuery. The result is still returned newest first.
+	OldestFirst bool
 }
 
 // Traces returns up to limit trace summaries matching q, newest first.
@@ -245,11 +314,28 @@ func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
 	if q.Route != "" {
 		needle = appendJSONString([]byte(`"route":`), q.Route)
 	}
+	match := func(line []byte) (TraceSummary, bool) {
+		if needle != nil && !bytes.Contains(head(line), needle) {
+			return TraceSummary{}, false
+		}
+		sum, ok := summary(line)
+		return sum, ok && inWindow(sum.Time, q.From, q.To) && (!q.Failed || sum.Error) && sum.Dur >= q.MinDur
+	}
+	var out []TraceSummary
+	if q.OldestFirst {
+		err := s.forward(KindTraces, q.From, q.To, limit, func(line []byte) bool {
+			if sum, ok := match(line); ok {
+				out = append(out, sum)
+			}
+			return len(out) < limit
+		})
+		slices.Reverse(out)
+		return out, err
+	}
 	files, err := s.files(KindTraces, q.From, q.To)
 	if err != nil {
 		return nil, err
 	}
-	var out []TraceSummary
 	for _, df := range files {
 		w, err := s.open(df, q.From, q.To)
 		if err != nil {
@@ -262,14 +348,9 @@ func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
 					return false
 				}
 			}
-			if needle != nil && !bytes.Contains(head(line), needle) {
-				return true
+			if sum, ok := match(line); ok {
+				out = append(out, sum)
 			}
-			sum, ok := summary(line)
-			if !ok || !inWindow(sum.Time, q.From, q.To) || (q.Failed && !sum.Error) || sum.Dur < q.MinDur {
-				return true
-			}
-			out = append(out, sum)
 			return len(out) < limit
 		})
 		_ = w.f.Close()
