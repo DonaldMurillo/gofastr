@@ -1008,6 +1008,7 @@
     },
     "nav": {
       "mobilePrimary": "Principal en móvil",
+      "moreArticles": "Más artículos",
       "primary": "Principal",
       "toggle": "Mostrar u ocultar la navegación"
     },

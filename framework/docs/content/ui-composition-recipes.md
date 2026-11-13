@@ -317,7 +317,11 @@ server-side on every navigation). Crumbs, toc and pager are outlets each
 article fills; the crumbs are `ui.Breadcrumbs`. An article without
 headings declines the TOC fill (`ErrNoFill`), and the sheet collapses
 the empty column with `:has(> :empty)`, including after client
-navigation. A rail left unset collapses the same way, because the
+navigation. The pager's own words, its nav label and the "Previous" /
+"Next" defaults, translate through `PagerConfig.Ctx` the way
+siteheader's do through `Config.Ctx` (`i18nui.NavMoreArticles`,
+`i18nui.PaginationPrevious`, `i18nui.PaginationNext`); with no context
+they read English. A rail left unset collapses the same way, because the
 unset region renders an empty element itself; a page with neither
 rail is one centred column at the prose measure, the shape a blog
 post or a standalone page uses.
