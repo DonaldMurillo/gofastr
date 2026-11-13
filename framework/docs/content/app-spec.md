@@ -569,6 +569,10 @@ settings file and the rebuilt derived files) under `updated`.
 
 With `--json`, source, validation, write and rebuild failures return one
 `{"files":[],"errors":[{"message":"..."}]}` document and exit nonzero.
+Success also writes exactly one document to stdout; all prose, warnings,
+progress and errors go to stderr. `--help` under `--json` writes usage to
+stderr with no document. The plain generation watch command instead emits
+a stream of documents; see [Codegen](codegen.md).
 Endpoint and client rebuild failures are both fatal. Earlier writes are
 not rolled back; the error document is not an inventory of completed
 writes. Correct the error and rerun before building the updated app.

@@ -177,6 +177,13 @@ gofastr semantic clear
 on failure. Errors use `{"error":"..."}`, print a diagnostic to stderr,
 and exit nonzero. A remote stats response must itself be one JSON document.
 
+`--help` (or `-h`) before `--` prints usage and exits successfully without
+running the command: `clear --help` keeps the index, and `index --help` or
+`watch --help` does not scan. Query and stats help goes to stderr without a
+JSON document. After `--`, help-shaped tokens are query text:
+`gofastr semantic query -- --help` searches for the literal `--help`;
+`q` is the query alias.
+
 `query` takes one query (quote a query of several words; `--` before one
 that starts with a dash) and its flags before or after it, as `-k 5` or
 `-k=5`. `-k` must be at least 1; an empty query, a second word or an

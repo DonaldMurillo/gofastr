@@ -188,6 +188,10 @@ func AppEndpointsWanted(dir string) bool {
 
 // runGenerateEndpoints is `gofastr generate endpoints`.
 func runGenerateEndpoints(args []string) {
+	const usage = "Usage: gofastr generate endpoints [--dry-run] [--json]"
+	if showGenerateHelp(args, usage) {
+		return
+	}
 	var dryRun, asJSON bool
 	for _, a := range args {
 		switch a {
@@ -196,7 +200,7 @@ func runGenerateEndpoints(args []string) {
 		case "--json":
 			asJSON = true
 		default:
-			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), "Usage: gofastr generate endpoints [--dry-run] [--json]")
+			failGenerateArgs(args, fmt.Errorf("unknown flag: %s", a), usage)
 			cli.OsExit(1)
 			return
 		}

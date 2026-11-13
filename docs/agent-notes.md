@@ -1,5 +1,15 @@
 # Implementation regression notes
 
+## 2026-11-13 - Reserve stdout once for JSON commands
+- Scope: gofastr command registry, cli JSON sessions, appgen, verify and semantic output
+- Trigger: unknown and removed generator names bypassed the JSON-aware failure path.
+- Approach: dispatch reserves stdout with `cli.BeginJSON`; all result writers use `cli.EmitJSON` or `cli.EmitRawJSON`. Nested failure helpers reuse the reservation when called directly in tests.
+- Pitfall: status printers and raw fmt calls must both reach stderr; emitting a second document is an error. Escape terminal controls as JSON instead of stripping characters from paths or messages.
+- Evidence: `TestJSONStdoutParity` walks aliases and generators; `TestJSONFlagOwnersRegistered` checks parser ownership. Help regressions pin watch aliases, literal query help after `--`, generator-specific usage, and semantic no-mutation/no-scan behavior.
+- Help edges: preserve argv and let help beat the watch exemption. Use `cli.HasHelpFlagBeforeTerminator` at dispatch/semantic boundaries without changing legacy callers. Generator entry points share `showGenerateHelp` before parsing: entity/screen previously treated `-h` as a name and generated files.
+- Next time: add success/failure fixtures or a checked skip reason when registering a JSON command, declare source reads, and mutate the stdout swap and a dispatch refusal before trusting the parity gate.
+- Status: active
+
 ## 2026-11-13 - Keep validate aligned with boot and render
 - Scope: appspec, appgen, framework registration and uihost strict checks
 - Trigger: boot found MCP/CRUD contradictions and endpoint overlaps late; conditional view stubs broke additive generation.

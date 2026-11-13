@@ -414,7 +414,10 @@ date beside the version.
 `gofastr generate sdk --json` writes one document to stdout on both success
 and failure. Source, validation and write errors return
 `{"files":[],"errors":[{"message":"..."}]}` with a nonzero exit status;
-prose diagnostics go to stderr and overwrite warnings are suppressed.
+all prose, warnings, progress and errors go to stderr rather than stdout
+(overwrite warnings remain suppressed). `--help` under `--json` writes usage
+to stderr with no document. The plain generation watch command emits a
+stream instead; see [Codegen](codegen.md).
 
 Defaults can live in the `codegen:` section of `gofastr.settings.yml` as
 a generator entry named

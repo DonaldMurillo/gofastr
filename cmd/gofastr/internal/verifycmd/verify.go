@@ -1,7 +1,6 @@
 package verifycmd
 
 import (
-	"encoding/json"
 	"fmt"
 	goversion "go/version"
 	"io"
@@ -277,13 +276,13 @@ func RunVerify(args []string) {
 		// The success half of this path must keep stdout parseable too:
 		// the failure half already ships through failRun.
 		if opts.json {
-			data, marshalErr := json.Marshal(map[string]any{
+			if err := cli.EmitJSON(map[string]any{
 				"baselineWritten": baselineFile,
 				"accepted":        b.Total(),
 				"notices":         notices,
-			})
-			if marshalErr == nil {
-				cli.Println(string(data))
+			}); err != nil {
+				cli.Fail("write JSON: %v", err)
+				cli.OsExit(2)
 			}
 		} else {
 			cli.Success("baseline written to %s: %d finding(s) accepted", baselineFile, b.Total())
@@ -356,7 +355,7 @@ func RunVerify(args []string) {
 			cli.OsExit(2)
 			return
 		}
-		cli.Println(string(data))
+		emitVerifyJSON(data)
 	case opts.sarifPath != "":
 		// The success line above plus, on failure, the verdict: a
 		// failing run must not end on a green line alone.
@@ -536,7 +535,7 @@ func emitVetFailureJSON(root string, cfg *contracts.Config, vet *contracts.VetRe
 		failRun(true, "render JSON: %v", err)
 		return
 	}
-	cli.Println(string(data))
+	emitVerifyJSON(data)
 }
 
 func explainRule(idOrSlug string, asJSON bool) {
@@ -557,7 +556,7 @@ func explainRule(idOrSlug string, asJSON bool) {
 			cli.OsExit(2)
 			return
 		}
-		cli.Println(string(data))
+		emitVerifyJSON(data)
 		return
 	}
 	fmt.Print(contracts.FormatExplain(rule, cli.StdoutIsTTY))
@@ -585,7 +584,7 @@ func listRules(asJSON bool, capabilities []contracts.Capability) {
 			cli.OsExit(2)
 			return
 		}
-		cli.Println(string(data))
+		emitVerifyJSON(data)
 		return
 	}
 	fmt.Printf("\n%s: %d rules\n", cli.Bold("GoFastr contracts"), len(rules))
@@ -779,25 +778,22 @@ severity unless a gofastr.settings.yml relaxes it, or a
 		cli.Bold("Capabilities"), cli.Bold("Flags"), cli.Bold("Examples"), cli.Bold("Exit codes"))
 }
 
-// failRun reports an operational failure of the verify run. In text mode
-// it is fail(); in --json mode stdout IS the document on every path, so
-// the failure ships AS the document, `{"error": "..."}`, with the
-// prose copied to stderr for a human watching a pipeline log. fail()
-// writes to stdout, and prose in front of a document a consumer is
-// parsing corrupts it on exactly the runs that went wrong.
 func failRun(jsonMode bool, format string, args ...any) {
-	if !jsonMode {
-		cli.Fail(format, args...)
-		return
+	if jsonMode {
+		defer cli.BeginJSON()()
+		if err := cli.EmitJSON(map[string]string{"error": fmt.Sprintf(format, args...)}); err != nil {
+			cli.Fail("write JSON: %v", err)
+		}
 	}
-	msg := fmt.Sprintf(format, args...)
-	cli.Fprintf(os.Stderr, "  ✗ %s\n", msg)
-	data, err := json.Marshal(map[string]string{"error": msg})
-	if err != nil {
-		// A string map cannot fail to marshal; belt for the impossible.
-		data = []byte(`{"error":"verify failed and the message could not be encoded"}`)
+	cli.Fail(format, args...)
+}
+
+func emitVerifyJSON(data []byte) {
+	defer cli.BeginJSON()()
+	if err := cli.EmitRawJSON(data); err != nil {
+		cli.Fail("write JSON: %v", err)
+		cli.OsExit(2)
 	}
-	cli.Println(string(data))
 }
 
 // partialWriteNote names the files an aborted fix pass already rewrote.

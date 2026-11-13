@@ -665,7 +665,9 @@ must notice.
 
 With `--json`, stdout is exactly one JSON document on failures too,
 including invalid flags and unknown `--explain` rules. Operational errors
-carry an `error` string; human-readable error details go to stderr.
+carry an `error` string; all prose, warnings, progress and error details go
+to stderr. `--help` under `--json` writes usage to stderr with no document.
+The generation watch stream is a separate contract; see [Codegen](codegen.md).
 Report `root` is the absolute analysed directory even when vet stops
 the run before contracts execute.
 

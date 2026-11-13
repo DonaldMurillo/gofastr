@@ -18,8 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"unicode/utf16"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -40,6 +38,9 @@ import (
 // app spec yml remains the way to express real intent. CRUD stays default,
 // so the entity also gains a JSON API out of the box.
 func GenerateScaffoldEntity(args []string) {
+	if showGenerateHelp(args, scaffoldUsage("entity")) {
+		return
+	}
 	name, opts, ok := ParseScaffoldArgs(args, "entity")
 	if !ok {
 		cli.OsExit(1)
@@ -65,6 +66,9 @@ func GenerateScaffoldEntity(args []string) {
 // continuity, skip-existing, and the legacy-layout refusal all hold for
 // free.
 func GenerateScaffoldScreen(args []string) {
+	if showGenerateHelp(args, scaffoldUsage("screen")) {
+		return
+	}
 	name, opts, ok := ParseScaffoldArgs(args, "screen")
 	if !ok {
 		cli.OsExit(1)
@@ -181,9 +185,13 @@ func ParseScaffoldArgs(args []string, kind string) (name string, opts GenerateOp
 // explicit `gofastr generate app`, never discovered: a project may hold a
 // gofastr.yml it already generated from.
 func GenerateProject(args []string) {
+	const usage = "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`."
+	if showGenerateHelp(args, usage) {
+		return
+	}
 	options, err := ParseGenerateOptions(args)
 	if err != nil {
-		failGenerateArgs(args, err, "Usage: gofastr generate [--config=<gofastr.settings.yml>] [--out=<dir>] [--clean | --no-clean] [--dry-run] [--json] [--watch], or gofastr generate <generator>. See `gofastr generate --help`.")
+		failGenerateArgs(args, err, usage)
 		cli.OsExit(1)
 		return
 	}
@@ -324,6 +332,9 @@ const appUsage = "Usage: gofastr generate app [spec] [--out=<dir>] [--force | --
 // that turns an app spec (a .yml/.yaml/.json file or a directory of them,
 // gofastr.yml by default) into owned Go.
 func RunGenerateApp(args []string) {
+	if showGenerateHelp(args, appUsage) {
+		return
+	}
 	options, err := parseAppGenerateArgs(args)
 	if err != nil {
 		failGenerateArgs(args, err, appUsage)
@@ -2494,108 +2505,9 @@ func safeCleanOutputDir(dir string) error {
 	return nil
 }
 
-func printGeneratedFilesJSON(files []GeneratedFile) {
-	fmt.Println(`{"files":[`)
-	for i, file := range files {
-		comma := ","
-		if i == len(files)-1 {
-			comma = ""
-		}
-		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Name), len(file.Content), comma)
-	}
-	fmt.Println(`]}`)
-}
-
-// printAdditiveFilesJSON emits the --add success shape: the written files in
-// the same {"path","size"} format as printGeneratedFilesJSON, a sorted
-// "skipped_existing" array of file names that were not written because they
-// already existed, and an "updated" array of files already there that the
-// run changed: the settings file's merged endpoints and the rebuilt derived
-// files. Both keys are always present in --add mode.
-func printAdditiveFilesJSON(written []GeneratedFile, skipped, updated []string) {
-	fmt.Println(`{"files":[`)
-	for i, file := range written {
-		comma := ","
-		if i == len(written)-1 {
-			comma = ""
-		}
-		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Name), len(file.Content), comma)
-	}
-	fmt.Print("]")
-	printJSONNames("skipped_existing", skipped)
-	printJSONNames("updated", updated)
-	fmt.Println("}")
-}
-
-// printJSONNames continues a JSON object with key holding names.
-func printJSONNames(key string, names []string) {
-	if len(names) == 0 {
-		cli.Printf(",%s:[]", jsonString(key))
-		return
-	}
-	cli.Printf(",%s:[\n", jsonString(key))
-	for i, name := range names {
-		comma := ","
-		if i == len(names)-1 {
-			comma = ""
-		}
-		cli.Printf("  %s%s\n", jsonString(name), comma)
-	}
-	fmt.Print("]")
-}
-
 // withoutNames returns names less those in drop.
 func withoutNames(names, drop []string) []string {
 	return slices.DeleteFunc(names, func(n string) bool { return slices.Contains(drop, n) })
-}
-
-func printCodegenFilesJSON(files []codegen.GeneratedFile) {
-	fmt.Println(`{"files":[`)
-	for i, file := range files {
-		comma := ","
-		if i == len(files)-1 {
-			comma = ""
-		}
-		cli.Printf("  {\"path\":%s,\"size\":%d}%s\n", jsonString(file.Path), len(file.Content), comma)
-	}
-	fmt.Println(`]}`)
-}
-
-// jsonString quotes s as a JSON string. Go's %q is not JSON: it spells a
-// control byte \x1b or \a, which no JSON parser reads, and a caller's
-// --out directory or file name can carry one. Every rune past ASCII is
-// written as a \u escape too: the CLI's printers drop terminal-unsafe
-// runes (a bidi override, NEL, a zero-width space), and an escape
-// survives them and decodes to the same path.
-func jsonString(s string) string {
-	quoted, _ := json.Marshal(s)
-	var b strings.Builder
-	b.Grow(len(quoted))
-	for _, r := range string(quoted) {
-		switch {
-		case r < utf8.RuneSelf && r != 0x7f:
-			b.WriteRune(r)
-		case r > 0xffff:
-			hi, lo := utf16.EncodeRune(r)
-			fmt.Fprintf(&b, `\u%04x\u%04x`, hi, lo)
-		default:
-			fmt.Fprintf(&b, `\u%04x`, r)
-		}
-	}
-	return b.String()
-}
-
-func printGeneratedErrorsJSON(errs ...error) {
-	fmt.Println(`{"files":[],"errors":[`)
-	for i, err := range errs {
-		comma := ","
-		if i == len(errs)-1 {
-			comma = ""
-		}
-		// An error can carry a control byte from a spec it refused.
-		cli.Printf("  {\"message\":%s}%s\n", jsonString(err.Error()), comma)
-	}
-	fmt.Println(`]}`)
 }
 
 // entityFileName maps an entity name to its generated file name, guarding

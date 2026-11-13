@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 )
 
 // Version info: main sets these from its own vars, the ones -ldflags
@@ -180,6 +181,15 @@ func HasHelpFlag(args []string) bool {
 		}
 	}
 	return false
+}
+
+// HasHelpFlagBeforeTerminator checks for help only before the first --.
+// HasHelpFlag retains its anywhere-in-args scan for existing callers.
+func HasHelpFlagBeforeTerminator(args []string) bool {
+	if end := slices.Index(args, "--"); end >= 0 {
+		args = args[:end]
+	}
+	return HasHelpFlag(args)
 }
 
 func Min(vals ...int) int {
