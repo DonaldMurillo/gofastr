@@ -181,6 +181,10 @@ admin.New(admin.Config{
 })
 ```
 
+`battery/telemetry/telemetryadmin` is a ready-made pair of pages:
+`Pages: telemetryadmin.Pages(tel, "/admin")` adds Requests and Logs over
+the files [battery/telemetry](telemetry.md) writes.
+
 A page's and a card's `Title`, a link's `Label` and a metric's `Label`
 are `i18n.Phrase` values, so the admin draws them in the request's
 language and a catalog entry for the key translates them (see

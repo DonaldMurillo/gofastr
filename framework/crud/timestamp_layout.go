@@ -51,7 +51,7 @@ func storedTextColumn(field string) string {
 // an instant, and every row crud writes is canonical. It asks the
 // dialect only for an Unmanaged entity.
 func (ch *CrudHandler) legacyTimestampsPossible(ctx context.Context) bool {
-	return ch.Entity != nil && ch.Entity.Config.Unmanaged && !isPostgres(ctx, ch.conn(ctx))
+	return ch.Entity != nil && ch.Entity.Config.Unmanaged && !isPostgres(ctx, ch.DB, ch.conn(ctx))
 }
 
 // storedTimestampKeys maps each Timestamp field among fields to the row

@@ -658,6 +658,25 @@ directories are followed with cycle detection. Accessibility and sandbox
 checks tolerate source files disappearing during an editor save; a missing
 root or another I/O failure still fails the check.
 
+## Telemetry
+
+`gofastr telemetry` reads the log and trace files
+[battery/telemetry](telemetry.md) writes, from a shell. It opens the
+directory itself, so it works over SSH and when the app is down.
+
+- `gofastr telemetry logs`: log lines, newest first. `--level <l>` sets
+  the minimum level and `--grep <text>` keeps lines containing text.
+- `gofastr telemetry requests`: kept requests, newest first. `--failed`,
+  `--slow <duration>` and `--route <route>` narrow the list.
+- `gofastr telemetry request <trace-id>`: one request's steps, as a tree
+  with start and duration, and its log lines.
+
+Name the directory with `--dir`, or the app with `--app <name>` for its
+default directory. `logs` and `requests` take `--since <duration>`
+(default 24h; 0 for everything kept), `--limit <n>` (default 50) and
+`--json`, which prints the lines as stored. Text from the files is
+scrubbed of terminal control bytes and line breaks before it is printed.
+
 ## Extras
 
 The repository's `cmd/repolint` wiring gate catches a raw `data-cui-rpc`

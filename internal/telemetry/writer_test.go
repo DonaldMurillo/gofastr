@@ -218,14 +218,27 @@ func TestCollectorKeepsErrorsSlowAndTheSampledShare(t *testing.T) {
 		dur   time.Duration
 		fails bool
 		keep  bool
+		// rootFails fails the whole, where fails fails one step.
+		rootFails bool
+		// stray makes the root a lone outgoing call.
+		stray bool
+		// quiet makes it a request for one of the framework's assets.
+		quiet bool
 	}{
-		{"ordinary, rate 1", Config{SampleRate: 1}, high, time.Millisecond, false, true},
-		{"ordinary, keep none", Config{KeepNoOrdinary: true}, low, time.Millisecond, false, false},
-		{"ordinary, in the sampled share", Config{SampleRate: 0.01}, low, time.Millisecond, false, true},
-		{"ordinary, outside it", Config{SampleRate: 0.01}, high, time.Millisecond, false, false},
-		{"slow", Config{KeepNoOrdinary: true, SlowThreshold: time.Second}, high, time.Second, false, true},
-		{"just under slow", Config{KeepNoOrdinary: true, SlowThreshold: time.Second}, high, time.Second - 1, false, false},
-		{"a child failed", Config{KeepNoOrdinary: true}, high, time.Millisecond, true, true},
+		{name: "ordinary, rate 1", cfg: Config{SampleRate: 1}, id: high, dur: time.Millisecond, keep: true},
+		{name: "ordinary, keep none", cfg: Config{KeepNoOrdinary: true}, id: low, dur: time.Millisecond},
+		{name: "ordinary, in the sampled share", cfg: Config{SampleRate: 0.01}, id: low, dur: time.Millisecond, keep: true},
+		{name: "ordinary, outside it", cfg: Config{SampleRate: 0.01}, id: high, dur: time.Millisecond},
+		{name: "slow", cfg: Config{KeepNoOrdinary: true, SlowThreshold: time.Second}, id: high, dur: time.Second, keep: true},
+		{name: "just under slow", cfg: Config{KeepNoOrdinary: true, SlowThreshold: time.Second}, id: high, dur: time.Second - 1},
+		{name: "a step failed, the whole did not", cfg: Config{KeepNoOrdinary: true}, id: high, dur: time.Millisecond, fails: true},
+		{name: "a step failed, sampled in", cfg: Config{SampleRate: 1}, id: high, dur: time.Millisecond, fails: true, keep: true},
+		{name: "a stray call, sampled in for anything else", cfg: Config{SampleRate: 1}, id: low, dur: time.Millisecond, stray: true},
+		{name: "a stray call that failed", cfg: Config{SampleRate: 1}, id: low, dur: time.Millisecond, rootFails: true, stray: true},
+		{name: "a stray call that was slow", cfg: Config{KeepNoOrdinary: true, SlowThreshold: time.Second}, id: high, dur: time.Second, keep: true, stray: true},
+		{name: "a quiet request, sampled in for anything else", cfg: Config{SampleRate: 1}, id: low, dur: time.Millisecond, quiet: true},
+		{name: "a quiet request that failed", cfg: Config{KeepNoOrdinary: true}, id: high, dur: time.Millisecond, keep: true, rootFails: true, quiet: true},
+		{name: "the whole failed", cfg: Config{KeepNoOrdinary: true}, id: high, dur: time.Millisecond, keep: true, rootFails: true},
 	}
 	for _, tc := range cases {
 		var got []Trace
@@ -237,7 +250,11 @@ func TestCollectorKeepsErrorsSlowAndTheSampledShare(t *testing.T) {
 		ch := child(tc.id)
 		ch.Error = tc.fails
 		c.SpanEnded(ch)
-		c.SpanEnded(root(tc.id, tc.dur))
+		rt := root(tc.id, tc.dur)
+		rt.Error = tc.rootFails
+		rt.Stray = tc.stray
+		rt.Quiet = tc.quiet
+		c.SpanEnded(rt)
 		st := c.Stats()
 		if (len(got) == 1) != tc.keep || st.Kept+st.SampledOut != 1 || (st.Kept == 1) != tc.keep || st.OpenTraces != 0 || st.BufferedBytes != 0 {
 			t.Errorf("%s: wrote %d traces, stats %+v", tc.name, len(got), st)
@@ -247,9 +264,10 @@ func TestCollectorKeepsErrorsSlowAndTheSampledShare(t *testing.T) {
 			continue
 		}
 		tr := got[0]
-		if tr.TraceID != tc.id || tr.Route != "GET /x" || tr.Status != 200 || tr.Dur != tc.dur || tr.Error != tc.fails ||
+		if tr.TraceID != tc.id || tr.Route != "GET /x" || tr.Status != 200 || tr.Dur != tc.dur || tr.Error != tc.rootFails || tr.FailedSteps != map[bool]int{true: 1}[tc.fails] ||
 			!tr.Time.Equal(start.Add(tc.dur)) || len(tr.Spans) != 2 ||
-			tr.Spans[0].Name != "HTTP GET /x" || tr.Spans[0].Offset != 0 || tr.Spans[1].Offset != 2*time.Millisecond {
+			tr.Spans[0].Name != "HTTP GET /x" || tr.Spans[0].Offset != 0 || tr.Spans[1].Offset != 2*time.Millisecond ||
+			tr.Spans[0].Error != tc.rootFails || tr.Spans[1].Error != tc.fails {
 			t.Errorf("%s: trace %+v", tc.name, tr)
 		}
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/releasecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/semanticcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/telemetrycmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/testcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/themecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/unmountcmd"
@@ -113,6 +114,9 @@ func printHelp() {
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
+  telemetry <sub>       Read the log and trace files battery/telemetry writes, with
+                        the app running or not: logs · requests · request <trace-id>
+                        --dir <directory> or --app <name>. See "gofastr docs telemetry"
   upgrade               Guide the app to a newer GoFastr release: shows every
                         migration note between go.mod's version and the target,
                         points at affected lines; --apply runs the go get/tidy/
@@ -163,33 +167,34 @@ func main() {
 // it actually handles the flags (otherwise `<cmd> --help` would run
 // the command).
 var ownsHelp = map[string]bool{
-	"audit":    true,
-	"verify":   true,
-	"upgrade":  true,
-	"unmount":  true,
-	"remount":  true,
-	"docs":     true,
-	"doc":      true,
-	"init":     true,
-	"generate": true,
-	"gen":      true,
-	"g":        true,
-	"validate": true,
-	"theme":    true,
-	"semantic": true,
-	"new":      true,
-	"pack":     true,
-	"build":    true,
-	"dev":      true,
-	"migrate":  true,
-	"m":        true,
-	"test":     true,
-	"t":        true,
-	"harness":  true,
-	"agents":   true,
-	"desktop":  true,
-	"export":   true,
-	"release":  true,
+	"audit":     true,
+	"telemetry": true,
+	"verify":    true,
+	"upgrade":   true,
+	"unmount":   true,
+	"remount":   true,
+	"docs":      true,
+	"doc":       true,
+	"init":      true,
+	"generate":  true,
+	"gen":       true,
+	"g":         true,
+	"validate":  true,
+	"theme":     true,
+	"semantic":  true,
+	"new":       true,
+	"pack":      true,
+	"build":     true,
+	"dev":       true,
+	"migrate":   true,
+	"m":         true,
+	"test":      true,
+	"t":         true,
+	"harness":   true,
+	"agents":    true,
+	"desktop":   true,
+	"export":    true,
+	"release":   true,
 }
 
 // dispatch routes a parsed argument vector (os.Args[1:]) to the matching
@@ -274,6 +279,8 @@ func dispatch(args []string) {
 		agentscmd.RunAgents(cmdArgs)
 	case "audit":
 		auditcmd.RunAudit(cmdArgs)
+	case "telemetry":
+		telemetrycmd.RunTelemetry(cmdArgs)
 	case "verify":
 		verifycmd.RunVerify(cmdArgs)
 	case "upgrade":
@@ -304,7 +311,7 @@ func dispatch(args []string) {
 
 // suggestions are the command names an unknown command is matched
 // against (aliases left out).
-var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "audit", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
+var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "audit", "telemetry", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
 
 // knownCommand reports whether name is a command dispatch runs, an
 // alias included.
@@ -314,9 +321,9 @@ func knownCommand(name string) bool {
 
 // versionCheckedCommands are the commands that work on the project in
 // the working directory, so the project version check runs before them.
-// init, version, docs and upgrade are left out (they run outside a
-// project or manage the version themselves), and so is an unknown
-// command, which only prints usage.
+// init, version, docs, upgrade and telemetry are left out (they run
+// outside a project or manage the version themselves), and so is an
+// unknown command, which only prints usage.
 var versionCheckedCommands = map[string]bool{
 	"theme": true, "generate": true, "gen": true, "g": true, "pack": true, "validate": true,
 	"build": true, "dev": true, "export": true, "new": true, "migrate": true, "m": true,

@@ -195,3 +195,7 @@ examples/*/site
 
 # Python bytecode (.claude/skills scripts)
 __pycache__/
+
+# Telemetry files the Meridian example writes beside its database when run
+# from its own directory (TELEMETRY_DIR overrides the place).
+meridian-telemetry/

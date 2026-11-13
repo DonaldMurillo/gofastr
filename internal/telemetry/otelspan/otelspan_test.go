@@ -17,8 +17,10 @@ import (
 type traceLine struct {
 	TraceID string `json:"trace_id"`
 	Route   string `json:"route"`
+	Path    string `json:"path"`
 	Status  int    `json:"status"`
 	Error   bool   `json:"error"`
+	Failed  int    `json:"failed_steps"`
 	Spans   []struct {
 		SpanID   string            `json:"span_id"`
 		ParentID string            `json:"parent_id"`
@@ -60,7 +62,9 @@ func TestSpansBecomeOneTraceLine(t *testing.T) {
 		// What the tracing middleware sets: a pattern with its method
 		// for one request, a bare path for the other.
 		route := map[bool]string{false: "GET /orders/{id}", true: "/orders/{id}"}[remote]
-		root.SetAttributes(attribute.Int("http.status_code", 503), attribute.String("http.method", "GET"), attribute.String("http.route", route))
+		root.SetAttributes(attribute.Int("http.status_code", 503), attribute.String("http.method", "GET"), attribute.String("http.route", route), attribute.String("http.target", "/orders/42"))
+		// The tracing middleware fails the request's span on a 5xx.
+		root.SetStatus(codes.Error, "Service Unavailable")
 		root.End()
 
 		if len(lines) != 1 {
@@ -71,7 +75,7 @@ func TestSpansBecomeOneTraceLine(t *testing.T) {
 			t.Fatalf("remote=%v: %v\n%s", remote, err, lines[0])
 		}
 		rootID, childID := root.SpanContext().SpanID().String(), child.SpanContext().SpanID().String()
-		if got.TraceID != root.SpanContext().TraceID().String() || got.Route != "GET /orders/{id}" || got.Status != 503 || !got.Error ||
+		if got.TraceID != root.SpanContext().TraceID().String() || got.Route != "GET /orders/{id}" || got.Path != "/orders/42" || got.Status != 503 || !got.Error || got.Failed != 1 ||
 			len(got.Spans) != 2 || got.Spans[0].SpanID != rootID || got.Spans[0].Name != "HTTP GET GET /orders/{id}" ||
 			got.Spans[1].SpanID != childID || got.Spans[1].ParentID != rootID || got.Spans[1].Attrs["db.rows"] != "3" {
 			t.Fatalf("remote=%v: %s", remote, lines[0])
@@ -79,5 +83,46 @@ func TestSpansBecomeOneTraceLine(t *testing.T) {
 		if wantParent := map[bool]string{false: "", true: "0900000000000000"}[remote]; got.Spans[0].ParentID != wantParent {
 			t.Fatalf("remote=%v: root parent_id %q, want %q", remote, got.Spans[0].ParentID, wantParent)
 		}
+	}
+}
+
+// A lone outgoing call, a query some background loop ran outside any
+// request, is not a request: it is not kept as part of the sample. The
+// same call inside a request is one of that request's steps.
+func TestLoneClientSpanIsNotSampledIn(t *testing.T) {
+	var kept []telemetry.Trace
+	c, err := telemetry.NewCollector(telemetry.Config{Dir: "unused", SampleRate: 1}, func(tr telemetry.Trace) error {
+		kept = append(kept, tr)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(otelspan.New(c, "/assets/"))).Tracer("test")
+
+	// A request under a quiet prefix is not sampled in either; its
+	// neighbour outside the prefix is.
+	for path, want := range map[string]int{"/assets/app.js": 0, "/assets": 1} {
+		kept = nil
+		_, req := tracer.Start(context.Background(), "HTTP GET", trace.WithSpanKind(trace.SpanKindServer), trace.WithAttributes(attribute.String("http.target", path)))
+		req.End()
+		if len(kept) != want {
+			t.Fatalf("request for %s: kept %d traces, want %d", path, len(kept), want)
+		}
+	}
+	kept = nil
+
+	_, lone := tracer.Start(context.Background(), "SELECT", trace.WithSpanKind(trace.SpanKindClient))
+	lone.End()
+	if len(kept) != 0 {
+		t.Fatalf("a lone client span was kept as a request: %+v", kept)
+	}
+
+	ctx, root := tracer.Start(context.Background(), "job", trace.WithSpanKind(trace.SpanKindConsumer))
+	_, step := tracer.Start(ctx, "SELECT", trace.WithSpanKind(trace.SpanKindClient))
+	step.End()
+	root.End()
+	if len(kept) != 1 || len(kept[0].Spans) != 2 {
+		t.Fatalf("a job and its query: kept %+v", kept)
 	}
 }

@@ -1,0 +1,88 @@
+package i18nui
+
+import "github.com/DonaldMurillo/gofastr/core/i18n"
+
+// The request and log screens over battery/telemetry's files
+// (battery/telemetry/telemetryui), on their own or inside the admin.
+
+// Both screens.
+var (
+	TelemetryNav         = i18n.Define("ui.telemetry.nav", "Telemetry")
+	TelemetryRequests    = i18n.Define("ui.telemetry.requests", "Requests")
+	TelemetryLogs        = i18n.Define("ui.telemetry.logs", "Logs")
+	TelemetryNotReady    = i18n.Define("ui.telemetry.notReady", "Telemetry is not running yet.")
+	TelemetryLoadFailed  = i18n.Define("ui.telemetry.loadFailed", "The telemetry files could not be read.")
+	TelemetryWindow      = i18n.Define("ui.telemetry.window", "Time range")
+	TelemetryWindowHour  = i18n.Define("ui.telemetry.windowHour", "Last hour")
+	TelemetryWindowDay   = i18n.Define("ui.telemetry.windowDay", "Last 24 hours")
+	TelemetryWindowWeek  = i18n.Define("ui.telemetry.windowWeek", "Last 7 days")
+	TelemetryWindowAll   = i18n.Define("ui.telemetry.windowAll", "Everything kept")
+	TelemetryFilters     = i18n.Define("ui.telemetry.filters", "Filters")
+	TelemetryApply       = i18n.Define("ui.telemetry.apply", "Apply")
+	TelemetryOlder       = i18n.Define("ui.telemetry.older", "Older")
+	TelemetryNewest      = i18n.Define("ui.telemetry.newest", "Back to newest")
+	TelemetryColTime     = i18n.Define("ui.telemetry.colTime", "Time")
+	TelemetryColStatus   = i18n.Define("ui.telemetry.colStatus", "Status")
+	TelemetryColDuration = i18n.Define("ui.telemetry.colDuration", "Took")
+)
+
+// The requests screen: the list of kept traces.
+var (
+	TelemetryRequestsSub      = i18n.Define("ui.telemetry.requestsSub", "Every failed request, every slow one, and a sample of the rest.")
+	TelemetryShow             = i18n.Define("ui.telemetry.show", "Which requests")
+	TelemetryShowAll          = i18n.Define("ui.telemetry.showAll", "All")
+	TelemetryShowFailed       = i18n.Define("ui.telemetry.showFailed", "Failed")
+	TelemetryShowSlow         = i18n.Define("ui.telemetry.showSlow", "Slow")
+	TelemetryColRoute         = i18n.Define("ui.telemetry.colRoute", "Route")
+	TelemetryColTrace         = i18n.Define("ui.telemetry.colTrace", "Trace")
+	TelemetryOpenTrace        = i18n.Define("ui.telemetry.openTrace", "Open")
+	TelemetryOpenTraceOf      = i18n.Define("ui.telemetry.openTraceOf", "Open the request {{route}} at {{time}}")
+	TelemetryRouteOnly        = i18n.Define("ui.telemetry.routeOnly", "Only {{route}}")
+	TelemetryRouteFilter      = i18n.Define("ui.telemetry.routeFilter", "Route: {{route}}")
+	TelemetryRouteClear       = i18n.Define("ui.telemetry.routeClear", "Show every route")
+	TelemetryFindTrace        = i18n.Define("ui.telemetry.findTrace", "Open a request by trace ID")
+	TelemetryTraceIDHint      = i18n.Define("ui.telemetry.traceIDHint", "Trace ID (32 characters)")
+	TelemetryFailed           = i18n.Define("ui.telemetry.failed", "Failed")
+	TelemetrySlow             = i18n.Define("ui.telemetry.slow", "Slow")
+	TelemetryStepFailed       = i18n.Define("ui.telemetry.stepFailed", "A step failed")
+	TelemetryNoStatus         = i18n.Define("ui.telemetry.noStatus", "No status")
+	TelemetryRequestsEmpty    = i18n.Define("ui.telemetry.requestsEmpty", "No requests here")
+	TelemetryRequestsEmptySub = i18n.Define("ui.telemetry.requestsEmptySub", "Nothing kept matches these filters. Widen the time range, or wait for traffic.")
+)
+
+// One request: its steps and its log lines.
+var (
+	TelemetryRequest          = i18n.Define("ui.telemetry.request", "Request")
+	TelemetryBack             = i18n.Define("ui.telemetry.back", "All requests")
+	TelemetryTraceMissing     = i18n.Define("ui.telemetry.traceMissing", "This request is not in the files")
+	TelemetryTraceMissingSub  = i18n.Define("ui.telemetry.traceMissingSub", "It was not kept (most ordinary requests are sampled out), its day has been removed, or the ID is wrong.")
+	TelemetryTraceBadID       = i18n.Define("ui.telemetry.traceBadID", "That is not a trace ID. A trace ID is 32 characters, 0 to 9 and a to f.")
+	TelemetryEnded            = i18n.Define("ui.telemetry.ended", "Ended")
+	TelemetryTraceID          = i18n.Define("ui.telemetry.traceID", "Trace ID")
+	TelemetrySteps            = i18n.Define("ui.telemetry.steps", "Steps")
+	TelemetryStepsCount       = i18n.Define("ui.telemetry.stepsCount", "Steps recorded")
+	TelemetryStepsOf          = i18n.Define("ui.telemetry.stepsOf", "Steps of {{route}}")
+	TelemetryRequestLogs      = i18n.Define("ui.telemetry.requestLogs", "Log lines")
+	TelemetryRequestLogsSub   = i18n.Define("ui.telemetry.requestLogsSub", "What the app logged while it handled this request.")
+	TelemetryRequestLogsEmpty = i18n.Define("ui.telemetry.requestLogsEmpty", "No log lines carry this request's trace ID.")
+	TelemetrySummary          = i18n.Define("ui.telemetry.summary", "Request summary")
+)
+
+// The logs screen.
+var (
+	TelemetryLogsSub      = i18n.Define("ui.telemetry.logsSub", "Everything the app logged, newest first.")
+	TelemetryLevel        = i18n.Define("ui.telemetry.level", "Level")
+	TelemetryLevelAll     = i18n.Define("ui.telemetry.levelAll", "All")
+	TelemetryLevelInfo    = i18n.Define("ui.telemetry.levelInfo", "Info and up")
+	TelemetryLevelWarn    = i18n.Define("ui.telemetry.levelWarn", "Warnings and up")
+	TelemetryLevelError   = i18n.Define("ui.telemetry.levelError", "Errors")
+	TelemetrySearchLogs   = i18n.Define("ui.telemetry.searchLogs", "Search log lines")
+	TelemetrySearchHint   = i18n.Define("ui.telemetry.searchHint", "Message, request ID or any text")
+	TelemetryColLevel     = i18n.Define("ui.telemetry.colLevel", "Level")
+	TelemetryColMessage   = i18n.Define("ui.telemetry.colMessage", "Message")
+	TelemetryColDetails   = i18n.Define("ui.telemetry.colDetails", "Details")
+	TelemetryColRequest   = i18n.Define("ui.telemetry.colRequest", "Request")
+	TelemetryLogsEmpty    = i18n.Define("ui.telemetry.logsEmpty", "No log lines here")
+	TelemetryLogsEmptySub = i18n.Define("ui.telemetry.logsEmptySub", "Nothing matches these filters. Widen the time range or clear the search.")
+	TelemetryLogsCaption  = i18n.Define("ui.telemetry.logsCaption", "Log lines")
+)

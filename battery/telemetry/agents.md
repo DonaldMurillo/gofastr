@@ -27,9 +27,21 @@ app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{tel.LogSink()}}))
 - `logs-YYYYMMDD.jsonl` and `traces-YYYYMMDD.jsonl` under
   `<state dir>/<app>/telemetry` (or `Config.Dir`).
 - `trace_id` and `span_id` on every log line inside a traced request.
-- Every failed trace and every trace at or over `SlowThreshold` kept,
-  plus `SampleRate` (default 5%) of the rest.
+- Every failed request and every one at or over `SlowThreshold` kept,
+  plus `SampleRate` (default 5%) of the rest. Framework assets and
+  `Config.QuietPaths` are kept only when failed or slow.
 - Old days removed by `Retention` (14 days) and `MaxDiskBytes` (5 GiB).
+
+**Screens, shell and agent access** (all read the same files):
+```go
+// in the admin's sidebar, behind the admin's gate
+admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
+// or on their own; Authorize is required
+app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", Authorize: isOperator}))
+```
+- Shell: `gofastr telemetry logs|requests|request <trace-id> --app <name>`.
+- MCP: `telemetry.Config{EnableMCP: true}` adds `telemetry_requests`,
+  `telemetry_request`, `telemetry_logs` (admin role by default).
 
 **Do not:**
 - Register it after the log plugin: lines logged before its `Init` are
@@ -37,7 +49,8 @@ app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{tel.LogSink()}}))
 - Call `otel.SetTracerProvider` yourself as well. Set
   `Config.ExternalTracerProvider` and add `tel.SpanProcessor()` to your
   provider instead.
-- Expect a UI or MCP tools for the files yet; read them with `grep` and
-  `jq`.
+- Mount `telemetryui` with an `Authorize` that always returns true: the
+  pages show request paths, client addresses and log lines.
+- Draw your own request timeline: the screens use `ui.Waterfall`.
 
 Docs: `framework/docs/content/telemetry.md`.

@@ -28,9 +28,23 @@ few lines, and link the PR or the docs page for the rest.
 - **Logs and traces on disk** (experimental,
   [telemetry](framework/docs/content/telemetry.md)). `battery/telemetry`
   writes log lines and complete traces to day files on the app's own
-  machine, keeps every failed and slow trace plus a sampled share, and
-  holds the directory to a retention period and a size cap. Nothing
-  browses the files yet.
+  machine, keeps every failed and slow request plus a sampled share, and
+  holds the directory to a retention period and a size cap. Request and
+  log screens read them: in the admin
+  (`telemetryadmin.Pages(tel, "/admin")`) or on their own behind a gate
+  you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
+  reads the files from a shell, and `Config.EnableMCP` adds
+  `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **`ui.Waterfall`**
+  ([new components](framework/docs/content/ui-new-components.md)): the
+  steps of one request or job as bars on a shared time axis, in a table
+  whose start and duration cells are text. `ui.DurationText` writes a
+  latency in the reader's locale.
+- **`middleware.NoteRoute`**
+  ([observability](framework/docs/content/observability.md)): a router
+  behind a catch-all names the route it matched, and the request's span
+  takes it. The UI host does this for every screen, so a page's span
+  reads `HTTP GET /orders/{id}`, not `HTTP GET unmatched`.
 - **Trace IDs on log lines** ([log](framework/docs/content/log.md)).
   With a TracerProvider installed, `battery/log` adds `trace_id` and
   `span_id` to every line logged with a context that holds a span, the
@@ -697,6 +711,17 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **`tracing.OpenDB` on SQLite stored timestamps the app could not read
+  back.** A database handle opened from another handle's driver, which
+  is how `core/tracing` wraps connections, got the bare SQLite driver
+  with none of `sqlite/stdlib`'s defaults: a `time.Time` went to disk in
+  Go's `String` format and the next start failed on it. The driver a
+  handle reports now carries the defaults. Rows written by an affected
+  build keep the bad format; nothing rewrites them.
+- **The Postgres probe ran on every request.** `framework/crud` asked
+  the database `SELECT version()` each time it needed the dialect. On
+  SQLite that query fails by design, so every such request ran a failing
+  query. The answer is now remembered per database handle.
 - **A refused entity screen keeps its heading.** A list, record or
   create screen the caller may not read drew the "Not available" notice
   alone, with no `<h1>`, so an axe run failed `page-has-heading-one`

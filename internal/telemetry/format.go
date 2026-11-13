@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -31,7 +32,9 @@ type Span struct {
 	Name     string
 	Offset   time.Duration
 	Dur      time.Duration
-	Attrs    []Attr
+	// Error marks a span that failed. It is written only when true.
+	Error bool
+	Attrs []Attr
 }
 
 // Trace is one complete trace. Time is when its root span ended, which
@@ -40,18 +43,27 @@ type Trace struct {
 	Time    time.Time
 	TraceID string
 	Route   string
-	Status  int
-	Dur     time.Duration
-	Error   bool
-	Spans   []Span
+	// Path is the request's own path ("/orders/42") where Route is the
+	// pattern it matched. Empty for work that is not a request.
+	Path   string
+	Status int
+	Dur    time.Duration
+	// Error marks work that failed as a whole: its root span did (a
+	// 500, a panic, a job that returned an error).
+	Error bool
+	// FailedSteps counts the spans under the root that failed, whether
+	// or not the whole did: a query whose error the handler dealt with.
+	FailedSteps int
+	Spans       []Span
 }
 
 // traceHead bounds the bytes a query reads to learn a trace's summary:
-// AppendTrace writes time, trace_id, route, status, dur_us and error
-// before the spans, and a route is cut to fit.
+// AppendTrace writes time, trace_id, route, path, status, dur_us, error
+// and failed_steps before the spans, and a route and a path are cut to fit.
 const (
-	traceHead   = 512
+	traceHead   = 1024
 	maxRouteLen = 256
+	maxPathLen  = 256
 )
 
 // AppendTrace appends t as one JSON line, newline included. The summary
@@ -67,12 +79,20 @@ func AppendTrace(dst []byte, t Trace) []byte {
 	dst = appendJSONString(dst, t.TraceID)
 	dst = append(dst, `,"route":`...)
 	dst = appendJSONString(dst, route)
+	if t.Path != "" {
+		dst = append(dst, `,"path":`...)
+		dst = appendJSONString(dst, strings.ToValidUTF8(t.Path[:min(len(t.Path), maxPathLen)], ""))
+	}
 	dst = append(dst, `,"status":`...)
 	dst = strconv.AppendInt(dst, int64(t.Status), 10)
 	dst = append(dst, `,"dur_us":`...)
 	dst = strconv.AppendInt(dst, t.Dur.Microseconds(), 10)
 	dst = append(dst, `,"error":`...)
 	dst = strconv.AppendBool(dst, t.Error)
+	if t.FailedSteps > 0 {
+		dst = append(dst, `,"failed_steps":`...)
+		dst = strconv.AppendInt(dst, int64(t.FailedSteps), 10)
+	}
 	dst = append(dst, `,"spans":[`...)
 	for i, s := range t.Spans {
 		if i > 0 {
@@ -88,6 +108,9 @@ func AppendTrace(dst []byte, t Trace) []byte {
 		dst = strconv.AppendInt(dst, s.Offset.Microseconds(), 10)
 		dst = append(dst, `,"dur_us":`...)
 		dst = strconv.AppendInt(dst, s.Dur.Microseconds(), 10)
+		if s.Error {
+			dst = append(dst, `,"error":true`...)
+		}
 		if len(s.Attrs) > 0 {
 			dst = append(dst, `,"attrs":{`...)
 			for j, a := range s.Attrs {

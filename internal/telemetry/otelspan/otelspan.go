@@ -10,20 +10,28 @@ package otelspan
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
 // Processor is an sdktrace.SpanProcessor that keeps nothing itself:
 // every finished span goes straight to the collector.
-type Processor struct{ c *telemetry.Collector }
+type Processor struct {
+	c     *telemetry.Collector
+	quiet []string
+}
 
-// New returns a processor writing to c.
-func New(c *telemetry.Collector) *Processor { return &Processor{c: c} }
+// New returns a processor writing to c. A request whose path starts
+// with one of quietPrefixes is kept only when it fails or is slow.
+func New(c *telemetry.Collector, quietPrefixes ...string) *Processor {
+	return &Processor{c: c, quiet: slices.Clone(quietPrefixes)}
+}
 
 // OnStart does nothing: a span is recorded when it ends.
 func (*Processor) OnStart(context.Context, sdktrace.ReadWriteSpan) {}
@@ -57,6 +65,8 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 			method = kv.Value.AsString()
 		case "http.route":
 			route = kv.Value.AsString()
+		case "http.target", "url.path":
+			e.Path = kv.Value.AsString()
 		}
 		e.Span.Attrs = append(e.Span.Attrs, telemetry.Attr{Key: string(kv.Key), Value: kv.Value.Emit()})
 	}
@@ -69,6 +79,8 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 			e.Route = method + " " + route
 		}
 	}
+	e.Stray = e.Root && s.SpanKind() == trace.SpanKindClient
+	e.Quiet = e.Root && e.Path != "" && slices.ContainsFunc(p.quiet, func(prefix string) bool { return strings.HasPrefix(e.Path, prefix) })
 	p.c.SpanEnded(e)
 }
 

@@ -56,7 +56,8 @@ func TestVersionCheckCoversEveryCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true}
+	// telemetry reads an app's files wherever they are; it needs no project.
+	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true, "telemetry": true}
 	seen := 0
 	for _, d := range f.Decls {
 		fn, ok := d.(*ast.FuncDecl)

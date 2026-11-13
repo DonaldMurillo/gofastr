@@ -7,6 +7,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go.opentelemetry.io/otel"
@@ -64,6 +66,8 @@ func Tracing() Middleware {
 			// a %0d%0a path). Scrub both at the sink — the same
 			// control-byte rule the slog sinks carry — so a forged value
 			// cannot render as a forged line in collector UIs/exporters.
+			note := &routeNote{}
+			ctx = context.WithValue(ctx, routeNoteKey{}, note)
 			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", textsafe.ScrubControlBytes(r.Method)),
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
@@ -81,6 +85,15 @@ func Tracing() Middleware {
 			finish := func(status int) {
 				// After the handler runs, r.Pattern is populated by the mux.
 				route := r.Pattern
+				if route == "" || strings.HasSuffix(route, "/") || strings.HasSuffix(route, "...}") {
+					// The mux matched nothing of its own, or a pattern
+					// that takes a whole subtree ("/", "/files/{path...}").
+					// A router behind it (the UI host's screens) may
+					// have said which of its routes this was.
+					if noted := note.load(); noted != "" {
+						route = noted
+					}
+				}
 				if route == "" {
 					route = "unmatched"
 				}
@@ -131,6 +144,41 @@ func extractTraceContext(parent context.Context, global, w3c propagation.TextMap
 		ctx = propagation.Baggage{}.Extract(ctx, carrier)
 	}
 	return ctx
+}
+
+type routeNoteKey struct{}
+
+// routeNote carries a route from a handler back to the middleware that
+// wraps it: a context only flows inward.
+type routeNote struct {
+	mu    sync.Mutex
+	route string
+}
+
+func (n *routeNote) load() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.route
+}
+
+// NoteRoute names the route a request matched, for a router that sits
+// behind a catch-all and so leaves r.Pattern empty or at a pattern
+// that takes a whole subtree ("/"): the UI host's screens. The
+// request's span is then named for route (a pattern such as
+// "/orders/{id}", never the request's own path) instead of "unmatched"
+// or the catch-all. A mux pattern that names one route wins over a
+// note, and the first note wins over a later one. It does nothing
+// outside Tracing.
+func NoteRoute(ctx context.Context, route string) {
+	n, _ := ctx.Value(routeNoteKey{}).(*routeNote)
+	if n == nil || route == "" {
+		return
+	}
+	n.mu.Lock()
+	if n.route == "" {
+		n.route = route
+	}
+	n.mu.Unlock()
 }
 
 // SpanFromRequest is a thin convenience that returns the active span on the

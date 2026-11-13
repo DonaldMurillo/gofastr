@@ -5,7 +5,10 @@ import (
 	"cmp"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"time"
@@ -23,9 +26,12 @@ type TraceSummary struct {
 	Time    time.Time
 	TraceID string
 	Route   string
+	Path    string
 	Status  int
 	Dur     time.Duration
 	Error   bool
+	// FailedSteps counts the failed spans under the root.
+	FailedSteps int
 }
 
 // ErrBadTraceID is returned for a trace ID that is not 32 hex digits.
@@ -187,6 +193,149 @@ func (s *Store) SlowestTraces(route string, from, to time.Time, n int) ([]TraceS
 	return out, nil
 }
 
+// LogQuery narrows a log listing. The zero value lists everything.
+type LogQuery struct {
+	// Text, when set, must appear in the line, as SearchLogs matches it.
+	Text string
+	// MinLevel is the lowest level listed.
+	MinLevel slog.Level
+	// From and To bound the line's time, inclusive; zero leaves a side
+	// open. A page of older lines is the same query with To set just
+	// before the oldest line already shown.
+	From, To time.Time
+}
+
+// Logs returns up to limit lines matching q, newest first.
+func (s *Store) Logs(q LogQuery, limit int) ([]LogEntry, error) {
+	var needle []byte
+	if q.Text != "" {
+		needle = appendJSONString(nil, q.Text)
+		needle = needle[1 : len(needle)-1]
+	}
+	var out []LogEntry
+	err := s.logsBackward(q.From, q.To, limit, func(line []byte) (LogEntry, bool) {
+		if needle != nil && !bytes.Contains(line, needle) {
+			return LogEntry{}, false
+		}
+		e, ok := entry(line)
+		return e, ok && e.Level >= q.MinLevel && inWindow(e.Time, q.From, q.To)
+	}, &out)
+	return out, err
+}
+
+// TraceQuery narrows a trace listing. The zero value lists everything.
+type TraceQuery struct {
+	// Route, when set, is the exact route listed.
+	Route string
+	// Failed lists only traces with a failed span.
+	Failed bool
+	// MinDur lists only traces that took at least this long.
+	MinDur time.Duration
+	// From and To bound when the trace ended, inclusive; zero leaves a
+	// side open. To pages older traces, as in LogQuery.
+	From, To time.Time
+}
+
+// Traces returns up to limit trace summaries matching q, newest first.
+func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	var needle []byte
+	if q.Route != "" {
+		needle = appendJSONString([]byte(`"route":`), q.Route)
+	}
+	files, err := s.files(KindTraces, q.From, q.To)
+	if err != nil {
+		return nil, err
+	}
+	var out []TraceSummary
+	for _, df := range files {
+		w, err := s.open(df, q.From, q.To)
+		if err != nil {
+			return nil, err
+		}
+		seen := 0
+		err = scanBackward(w.f, w.end, func(line []byte) bool {
+			if seen++; seen%boundEvery == 0 && !q.From.IsZero() {
+				if t, ok := lineTime(line); ok && t.Before(q.From.Add(-timeSlop)) {
+					return false
+				}
+			}
+			if needle != nil && !bytes.Contains(head(line), needle) {
+				return true
+			}
+			sum, ok := summary(line)
+			if !ok || !inWindow(sum.Time, q.From, q.To) || (q.Failed && !sum.Error) || sum.Dur < q.MinDur {
+				return true
+			}
+			out = append(out, sum)
+			return len(out) < limit
+		})
+		_ = w.f.Close()
+		if err != nil || len(out) >= limit {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// maxMicros is the most microseconds a time.Duration holds.
+const maxMicros = int64(math.MaxInt64 / int64(time.Microsecond))
+
+// micros reads a count of microseconds off a line as a duration. A line
+// is a file anyone with the directory can write: a count past what a
+// duration holds stops at the most one can, and a negative one at zero,
+// instead of wrapping into a small number that looks real.
+func micros(n int64) time.Duration {
+	if n < 0 {
+		return 0
+	}
+	if n > maxMicros {
+		n = maxMicros
+	}
+	return time.Duration(n) * time.Microsecond
+}
+
+// ParseTrace decodes a trace line, as TraceByID returns it.
+func ParseTrace(line []byte) (Trace, error) {
+	var wire struct {
+		Time    time.Time `json:"time"`
+		TraceID string    `json:"trace_id"`
+		Route   string    `json:"route"`
+		Path    string    `json:"path"`
+		Status  int       `json:"status"`
+		DurUS   int64     `json:"dur_us"`
+		Error   bool      `json:"error"`
+		Failed  int       `json:"failed_steps"`
+		Spans   []struct {
+			SpanID   string            `json:"span_id"`
+			ParentID string            `json:"parent_id"`
+			Name     string            `json:"name"`
+			StartUS  int64             `json:"start_us"`
+			DurUS    int64             `json:"dur_us"`
+			Error    bool              `json:"error"`
+			Attrs    map[string]string `json:"attrs"`
+		} `json:"spans"`
+	}
+	if err := json.Unmarshal(line, &wire); err != nil {
+		return Trace{}, fmt.Errorf("telemetry: trace line: %w", err)
+	}
+	t := Trace{Time: wire.Time, TraceID: wire.TraceID, Route: wire.Route, Path: wire.Path, Status: wire.Status,
+		Dur: micros(wire.DurUS), Error: wire.Error, FailedSteps: wire.Failed, Spans: make([]Span, len(wire.Spans))}
+	for i, ws := range wire.Spans {
+		sp := Span{SpanID: ws.SpanID, ParentID: ws.ParentID, Name: ws.Name,
+			Offset: micros(ws.StartUS), Dur: micros(ws.DurUS), Error: ws.Error}
+		// A line holds attributes in the order they were set; a decoded
+		// object does not keep it, so they come back sorted by key.
+		for _, k := range slices.Sorted(maps.Keys(ws.Attrs)) {
+			sp.Attrs = append(sp.Attrs, Attr{Key: k, Value: ws.Attrs[k]})
+		}
+		t.Spans[i] = sp
+	}
+	return t, nil
+}
+
 // logsBackward walks log lines newest first across day files, keeping
 // what pick accepts until *out holds limit entries.
 func (s *Store) logsBackward(from, to time.Time, limit int, pick func([]byte) (LogEntry, bool), out *[]LogEntry) error {
@@ -253,15 +402,27 @@ func summary(line []byte) (TraceSummary, bool) {
 		return TraceSummary{}, false
 	}
 	sum.Route, _ = stringField(h, `"route":`)
+	sum.Path, _ = stringField(h, `"path":`)
 	status, _ := intField(h, `"status":`)
 	sum.Status = int(status)
 	us, _ := intField(h, `"dur_us":`)
-	sum.Dur = time.Duration(us) * time.Microsecond
+	sum.Dur = micros(us)
 	sum.Error = bytes.Contains(h, []byte(`"error":true`))
+	failed, _ := intField(h, `"failed_steps":`)
+	sum.FailedSteps = int(failed)
 	return sum, true
 }
 
-func head(line []byte) []byte { return line[:min(len(line), traceHead)] }
+// head is the part of a trace line that holds its summary: what comes
+// before the spans, which carry "error" and "dur_us" keys of their own.
+// The cut is exact: inside a string the quotes would be escaped.
+func head(line []byte) []byte {
+	h := line[:min(len(line), traceHead)]
+	if i := bytes.Index(h, []byte(`,"spans":[`)); i >= 0 {
+		h = h[:i]
+	}
+	return h
+}
 
 // traceNeedle is the bytes a line carrying traceID contains. Refusing
 // anything but hex keeps a caller's string from shaping the match.

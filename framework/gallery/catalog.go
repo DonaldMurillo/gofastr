@@ -21,6 +21,7 @@ package gallery
 
 import (
 	"fmt"
+	"time"
 
 	"context"
 
@@ -862,6 +863,19 @@ const page = await api.posts.list({ limit: 25 });`},
 				{Title: "Built", Meta: "Just now", Body: render.Text("go run . succeeded"), Variant: ui.TimelineSuccess},
 				{Title: "Committed", Meta: "5m ago", Body: render.Text("feat: add timeline showcase"), Variant: ui.TimelineInfo},
 				{Title: "Started", Meta: "1h ago", Body: render.Text("Working on components")},
+			},
+		})
+	}},
+	{"waterfall", "Waterfall", "Data", "The steps of one request as bars on a shared time axis.", func() render.HTML {
+		ms := time.Millisecond
+		return ui.Waterfall(ui.WaterfallConfig{
+			Label: "Steps of GET /orders/{id}",
+			Steps: []ui.WaterfallStep{
+				{Label: "GET /orders/{id}", Dur: 184 * ms},
+				{Label: "SELECT", Detail: "SELECT id, total FROM orders WHERE id = ?", Start: 3 * ms, Dur: 12 * ms, Depth: 1},
+				{Label: "SELECT", Detail: "SELECT * FROM order_lines WHERE order_id = ?", Start: 16 * ms, Dur: 41 * ms, Depth: 1},
+				{Label: "POST api.example.com", Detail: "https://api.example.com/v1/charges", Start: 60 * ms, Dur: 118 * ms, Depth: 1, Tone: ui.WaterfallWarning},
+				{Label: "INSERT", Detail: "INSERT INTO audit_log ...", Start: 179 * ms, Dur: 4 * ms, Depth: 1, Tone: ui.WaterfallDanger},
 			},
 		})
 	}},

@@ -18,6 +18,7 @@ package telemetry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,6 +60,20 @@ type Config struct {
 	// Past it the oldest unfinished trace is dropped and counted.
 	// Default 32 MiB.
 	MaxMemoryBytes int64
+	// QuietPaths are path prefixes of requests kept only when they fail
+	// or are slow, never as part of the sample: static files, health
+	// checks. "/__gofastr/", the framework's own scripts and styles, is
+	// always one.
+	QuietPaths []string
+	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
+	// and telemetry_logs, so a connected agent can read what the files
+	// hold. Off by default; `gofastr dev` turns them on for a loopback
+	// listener.
+	EnableMCP bool
+	// MCPGate replaces the precondition every tool runs behind,
+	// framework.MCPRequireRole("admin") by default: the tools hand out
+	// request paths, client addresses and log lines.
+	MCPGate func(ctx context.Context) error
 	// ExternalTracerProvider leaves the global OpenTelemetry
 	// TracerProvider alone. Set it when the app builds its own (to
 	// export spans elsewhere too) and add SpanProcessor to that one.
@@ -91,6 +106,8 @@ type Plugin struct {
 	writer    atomic.Pointer[itel.Writer]
 	collector atomic.Pointer[itel.Collector]
 	processor atomic.Pointer[otelspan.Processor]
+	store     atomic.Pointer[itel.Store]
+	slow      atomic.Int64 // the resolved SlowThreshold
 	unwritten atomic.Int64 // lines that arrived with no writer open
 	stopped   atomic.Bool
 }
@@ -127,9 +144,24 @@ func (p *Plugin) Init(app *framework.App) error {
 		_ = w.Close()
 		return err
 	}
+	store, err := itel.Open(cfg)
+	if err != nil {
+		_ = w.Close()
+		return err
+	}
+	if resolved, err := cfg.Resolve(); err == nil {
+		p.slow.Store(int64(resolved.SlowThreshold))
+	}
+	p.store.Store(store)
 	p.writer.Store(w)
 	p.collector.Store(c)
-	p.processor.Store(otelspan.New(c))
+	p.processor.Store(otelspan.New(c, append([]string{"/__gofastr/"}, p.cfg.QuietPaths...)...))
+
+	if err := p.registerMCPTools(app); err != nil {
+		_ = w.Close()
+		_ = store.Close()
+		return err
+	}
 
 	var provider *sdktrace.TracerProvider
 	if !p.cfg.ExternalTracerProvider {
@@ -145,7 +177,7 @@ func (p *Plugin) Init(app *framework.App) error {
 			defer cancel()
 			_ = provider.Shutdown(ctx)
 		}
-		return w.Close()
+		return errors.Join(w.Close(), store.Close())
 	})
 	return nil
 }
@@ -180,6 +212,15 @@ func (p *Plugin) Stats() Stats {
 	}
 	return st
 }
+
+// Reader returns the store the framework's own screens and tools read
+// the files through, or nil before Init. Its type is internal to this
+// module: the query API is not part of this package's surface yet.
+func (p *Plugin) Reader() *itel.Store { return p.store.Load() }
+
+// SlowThreshold returns the duration at which a trace counts as slow:
+// the configured one, or the default. It is zero before Init.
+func (p *Plugin) SlowThreshold() time.Duration { return time.Duration(p.slow.Load()) }
 
 // LogSink returns the sink that writes log lines to the day files. Pass
 // it in the log plugin's Config.Sinks, alone or beside other sinks.

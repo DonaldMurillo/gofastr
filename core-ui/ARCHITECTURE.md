@@ -3551,6 +3551,7 @@ your need:
 | One reading against a range (CPU, latency budget, disk) | `framework/ui.Gauge` | Pure-SVG semicircle dial on an ARIA `meter`. `Bands` color the arc green / amber / red by the reading. |
 | Two measures against each other (seats vs MRR) | `framework/ui.ScatterChart` | Pure-SVG points on two clean-stepped axes, one palette color per series, a `<title>` per point. |
 | Values over two categories (sign-ups by weekday and hour) | `framework/ui.Heatmap` | Pure-SVG grid shaded in four strengths of one palette color; NaN cells draw empty. |
+| Where one request's (or job's) time went | `framework/ui.Waterfall` | A table of steps with a pure-SVG bar per row on a shared time axis; start and duration are text cells (`ui.DurationText`), the bars decoration. `Depth` indents, `Tone` marks a slow or failed step. No JS. |
 | Inline trend sparkline | `framework/ui.Sparkline` | Pure-SVG, no JS. Line or area shape. Pairs with Card for metric-overview surfaces. |
 | Unified diff viewer | `framework/ui.DiffViewer` | Line-by-line, unified or split layout. Parses standard `diff -u` format; hunk ranges distinguish changed `---`/`+++` lines from the next file's headers. A final newline adds no phantom context row. CRLF line endings are normalized without changing embedded carriage returns. `Ctx` localizes default split-column labels through `i18nui.DiffOld` / `DiffNew`; explicit labels win. |
 | Collapsible JSON tree | `framework/ui.JSONViewer` | Nested `<details>`/`<summary>` collapse. No JS. Configurable open depth. |

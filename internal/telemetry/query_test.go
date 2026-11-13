@@ -5,9 +5,11 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -196,6 +198,104 @@ func TestQueriesMatchFullRead(t *testing.T) {
 		}
 		if _, ok, err := fx.store.TraceByID(strings.Repeat("0", 32)); ok || err != nil {
 			t.Fatalf("unknown ID: ok=%v err=%v", ok, err)
+		}
+	})
+
+	t.Run("logs", func(t *testing.T) {
+		for _, q := range []telemetry.LogQuery{
+			{},
+			{MinLevel: slog.LevelError},
+			{Text: "cache miss", MinLevel: slog.LevelInfo, From: from, To: to},
+			{From: from, To: to},
+		} {
+			for _, limit := range []int{7, 1 << 30} {
+				if limit > 7 && q.From.IsZero() {
+					continue // the whole data set, already covered by the windowed cases
+				}
+				got, err := fx.store.Logs(q, limit)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var want []string
+				for _, l := range slices.Backward(fx.logs) {
+					if l.Level >= q.MinLevel && strings.Contains(l.raw, q.Text) &&
+						(q.From.IsZero() || !l.Time.Before(q.From)) && (q.To.IsZero() || !l.Time.After(q.To)) && len(want) < limit {
+						want = append(want, l.raw)
+					}
+				}
+				equal(t, fmt.Sprintf("logs %+v limit %d", q, limit), raws(got), want)
+			}
+		}
+		// The next page: the same query, ending just before the last line shown.
+		first, _ := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn}, 5)
+		second, err := fx.store.Logs(telemetry.LogQuery{MinLevel: slog.LevelWarn, To: first[4].Time.Add(-time.Nanosecond)}, 5)
+		if err != nil || len(second) != 5 || !second[0].Time.Before(first[4].Time) {
+			t.Fatalf("second page: %d lines, %v", len(second), err)
+		}
+	})
+
+	t.Run("traces", func(t *testing.T) {
+		for _, q := range []telemetry.TraceQuery{
+			{},
+			{Failed: true},
+			{MinDur: 100 * time.Millisecond},
+			{Route: "GET /orders", From: from, To: to},
+			{Route: "GET /", Failed: true, From: from, To: to},
+		} {
+			got, err := fx.store.Traces(q, 25)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []string
+			for _, tr := range slices.Backward(fx.traces) {
+				if (q.Route == "" || tr.Route == q.Route) && (!q.Failed || tr.Error) && tr.DurUS >= q.MinDur.Microseconds() &&
+					(q.From.IsZero() || !tr.Time.Before(q.From)) && (q.To.IsZero() || !tr.Time.After(q.To)) && len(want) < 25 {
+					want = append(want, tr.TraceID)
+				}
+			}
+			ids := make([]string, len(got))
+			for i, g := range got {
+				ids[i] = g.TraceID
+			}
+			equal(t, fmt.Sprintf("traces %+v", q), ids, want)
+		}
+	})
+
+	t.Run("parse trace", func(t *testing.T) {
+		want := telemetry.Trace{Time: from, TraceID: strings.Repeat("ab", 16), Route: `GET /a "b"`, Path: "/a/é", Status: 503, Dur: 1500 * time.Microsecond, Error: true, FailedSteps: 1,
+			Spans: []telemetry.Span{
+				{SpanID: "01", Name: "root", Dur: 1500 * time.Microsecond, Attrs: []telemetry.Attr{{Key: "a", Value: "1"}, {Key: "b", Value: "x\ny"}}},
+				{SpanID: "02", ParentID: "01", Name: "child", Offset: 200 * time.Microsecond, Dur: 300 * time.Microsecond, Error: true},
+			}}
+		got, err := telemetry.ParseTrace(telemetry.AppendTrace(nil, want))
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Fatalf("round trip:\n got  %+v\n want %+v\n err %v", got, want, err)
+		}
+		// A summary reads the trace's own fields, never a span's: this
+		// trace is fine and took 9 ms, whatever its failed 3 ms step says.
+		fine := telemetry.Trace{Time: from, TraceID: strings.Repeat("cd", 16), Route: "GET /x", Status: 200, Dur: 9 * time.Millisecond, FailedSteps: 1,
+			Spans: []telemetry.Span{{SpanID: "01", Name: "root", Dur: 9 * time.Millisecond}, {SpanID: "02", ParentID: "01", Name: "q", Dur: 3 * time.Millisecond, Error: true}}}
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, telemetry.FileName(telemetry.KindTraces, from)), telemetry.AppendTrace(nil, fine), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		st, err := telemetry.Open(telemetry.Config{Dir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer st.Close()
+		sums, err := st.Traces(telemetry.TraceQuery{}, 5)
+		if err != nil || len(sums) != 1 || sums[0].Error || sums[0].FailedSteps != 1 || sums[0].Dur != 9*time.Millisecond || sums[0].Status != 200 {
+			t.Fatalf("summary of a fine trace with a failed step: %+v, %v", sums, err)
+		}
+		// A count no duration holds stops at the largest one; it does not
+		// wrap into a small number.
+		huge, err := telemetry.ParseTrace([]byte(`{"time":"2026-11-13T00:00:00Z","trace_id":"x","dur_us":9223372036854775807,"spans":[{"start_us":-5,"dur_us":9223372036854775807}]}`))
+		if err != nil || huge.Dur < 290*365*24*time.Hour || huge.Spans[0].Dur != huge.Dur || huge.Spans[0].Offset != 0 {
+			t.Fatalf("out-of-range microseconds: %+v, %v", huge, err)
+		}
+		if _, err := telemetry.ParseTrace([]byte("{not json")); err == nil {
+			t.Fatal("a broken line parsed")
 		}
 	})
 

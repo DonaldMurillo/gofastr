@@ -193,6 +193,16 @@ var (
 	HeatmapLess        = i18n.Define("ui.heatmap.less", "Less")
 	HeatmapMore        = i18n.Define("ui.heatmap.more", "More")
 
+	// Waterfall, and the latencies it and the request screens write
+	WaterfallStep     = i18n.Define("ui.waterfall.step", "Step")
+	WaterfallStart    = i18n.Define("ui.waterfall.start", "Starts at")
+	WaterfallTook     = i18n.Define("ui.waterfall.took", "Took")
+	WaterfallTimeline = i18n.Define("ui.waterfall.timeline", "Timeline")
+	WaterfallEmpty    = i18n.Define("ui.waterfall.empty", "No steps recorded")
+	DurationMicros    = i18n.Define("ui.duration.micros", "{{n}} µs")
+	DurationMillis    = i18n.Define("ui.duration.millis", "{{n}} ms")
+	DurationSeconds   = i18n.Define("ui.duration.seconds", "{{n}} s")
+
 	// Auth extras
 	SignOut = i18n.Define("ui.auth.signOut", "Sign out")
 

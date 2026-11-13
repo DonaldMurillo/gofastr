@@ -29,16 +29,31 @@ type SpanEnd struct {
 	// process: one with no parent, or whose parent is in another
 	// process.
 	Root bool
-	// Error marks a span that failed. Any failed span keeps the trace.
+	// Error marks a span that failed. A failed root keeps the trace; a
+	// failed step under it is recorded and counted, and decides nothing:
+	// a handler that deals with a query's error has not failed.
 	Error bool
-	// Route and Status describe the trace; they are read from the root.
+	// Route, Path and Status describe the trace; they are read from the
+	// root.
 	Route  string
+	Path   string
 	Status int
+	// Stray marks a root that is one outgoing call with nothing around
+	// it: a query a background loop ran outside any request or job. It
+	// is kept only when it was slow. A poll every second would fill the
+	// list as a sample, and a failure here is often a probe that is
+	// meant to fail (asking SQLite for version() to learn it is not
+	// Postgres); a real one is the caller's to log.
+	Stray bool
+	// Quiet marks a request nobody opens the list to see: a fetch of
+	// the framework's own scripts and styles. It is kept when it failed
+	// or was slow, and never as part of the sample.
+	Quiet bool
 }
 
 // Collector buffers finished spans by trace and, when a trace's root
-// ends, decides whether to keep it: always for an error or a slow
-// trace, otherwise for SampleRate of them. Because the decision waits
+// ends, decides whether to keep it: always when the root failed or the
+// trace was slow, otherwise for SampleRate of them. Because the decision waits
 // for the whole trace, nothing interesting is sampled away. The buffer
 // never exceeds MaxMemoryBytes: past it, the oldest waiting trace is
 // dropped and counted.
@@ -77,7 +92,7 @@ type openTrace struct {
 	spans  []Span
 	starts []time.Time
 	bytes  int64
-	failed bool
+	failed int // spans that failed, the root included
 	elem   *list.Element
 }
 
@@ -123,6 +138,7 @@ func spanCost(s Span) int64 {
 // SpanEnded records one finished span.
 func (c *Collector) SpanEnded(e SpanEnd) {
 	s := e.Span
+	s.Error = e.Error
 	s.Name = cut(s.Name, maxSpanName)
 	if len(s.Attrs) > maxAttrsPerSpan {
 		s.Attrs = s.Attrs[:maxAttrsPerSpan]
@@ -140,7 +156,9 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 		ot.elem = c.order.PushBack(ot)
 		c.open[e.TraceID] = ot
 	}
-	ot.failed = ot.failed || e.Error
+	if e.Error {
+		ot.failed++
+	}
 	if len(ot.spans) < maxSpansPerTrace || e.Root {
 		ot.spans = append(ot.spans, s)
 		ot.starts = append(ot.starts, e.Start)
@@ -168,7 +186,11 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	if !e.Root {
 		return
 	}
-	if !ot.failed && s.Dur < c.cfg.SlowThreshold && !sampled(e.TraceID, c.cfg.SampleRate) {
+	keep := s.Dur >= c.cfg.SlowThreshold
+	if !e.Stray {
+		keep = keep || e.Error || (!e.Quiet && sampled(e.TraceID, c.cfg.SampleRate))
+	}
+	if !keep {
 		c.sampledOut.Add(1)
 		return
 	}
@@ -179,9 +201,12 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	for i := range ot.spans {
 		ot.spans[i].Offset = ot.starts[i].Sub(e.Start)
 	}
+	if e.Error {
+		ot.failed-- // the root is the whole, not a step
+	}
 	t := Trace{
-		Time: e.Start.Add(s.Dur), TraceID: e.TraceID, Route: e.Route, Status: e.Status,
-		Dur: s.Dur, Error: ot.failed, Spans: ot.spans,
+		Time: e.Start.Add(s.Dur), TraceID: e.TraceID, Route: e.Route, Path: e.Path, Status: e.Status,
+		Dur: s.Dur, Error: e.Error, FailedSteps: ot.failed, Spans: ot.spans,
 	}
 	// The sink runs outside the lock: a slow disk must not stall every
 	// span ending in the process.

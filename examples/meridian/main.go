@@ -12,9 +12,13 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
 	"github.com/DonaldMurillo/gofastr/battery/auth"
+	applog "github.com/DonaldMurillo/gofastr/battery/log"
+	"github.com/DonaldMurillo/gofastr/battery/telemetry"
+	"github.com/DonaldMurillo/gofastr/battery/telemetry/telemetryadmin"
 	uiapp "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core/dotenv"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/isolation"
@@ -67,11 +71,19 @@ func main() {
 	// WithLocalePrefixes serves each catalog locale under its own path
 	// (/es/pricing), with hreflang and sitemap alternates; English keeps
 	// the plain paths.
-	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption(), framework.WithLocalePrefixes()}
+	// WithTracing gives every request a span; the telemetry plugin below
+	// keeps the failed and slow ones, and a sample of the rest, on disk.
+	options := []framework.AppOption{framework.WithConfig(framework.AppConfig{Name: appName, APIPrefix: apiPrefix}), fileStorageOption(), translatorOption(), framework.WithLocalePrefixes(), framework.WithTracing()}
 	if db != nil {
 		options = append(options, framework.WithDB(db))
 	}
 	fwApp := framework.NewApp(options...)
+	// Logs and traces go to day files beside the database, and the admin
+	// shows them (Requests and Logs in its sidebar). Telemetry registers
+	// before the log plugin so the files are open for its first line.
+	tel := telemetry.New(telemetry.Config{Dir: getEnv("TELEMETRY_DIR", "meridian-telemetry")})
+	fwApp.RegisterPlugin(tel)
+	fwApp.RegisterPlugin(applog.New(applog.Config{Sinks: []applog.Sink{tel.LogSink()}}))
 	entities.RegisterAll(fwApp)
 	fwApp.WithSeed(func(ctx context.Context) error {
 		// Seed owner-scoped rows as the bootstrap admin so the demo data
@@ -150,7 +162,7 @@ func main() {
 	if db != nil {
 		fwApp.WithAuditLog(framework.AuditConfig{})
 	}
-	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes, Pages: []admin.Page{revenuePage}, EmailPreviews: adminEmails(), DashboardNew: "customers"}))
+	fwApp.RegisterBattery(admin.New(admin.Config{PathPrefix: "/admin", Title: appName, AdminRole: "admin", LoginPath: "/login", UI: appUI, DB: db, AuditTable: "audit_log", AllEntities: true, SavedViews: true, Auth: authMgr, Policy: rolePolicy, GrantStore: adminGrantStore(db, rolePolicy), Metrics: adminMetrics, Attention: adminAttention, Queue: adminBrowsable(), BulkJobs: adminBulkJobs, Themes: adminThemes, Pages: append([]admin.Page{revenuePage}, telemetryadmin.Pages(tel, "/admin")...), EmailPreviews: adminEmails(), DashboardNew: "customers"}))
 	addr, err := runtimeIsolation.Addr(getEnv("PORT", "localhost:8080"))
 	if err != nil {
 		log.Fatal(err)
@@ -178,9 +190,9 @@ func openDB(runtimeIsolation *isolation.Runtime) (*sql.DB, error) {
 	case "", "none":
 		return nil, nil
 	case "sqlite", "sqlite3":
-		return sql.Open("sqlite3", dsn)
+		return tracing.OpenDB("sqlite3", dsn)
 	case "postgres", "postgresql":
-		return sql.Open("postgres", dsn)
+		return tracing.OpenDB("postgres", dsn)
 	default:
 		return nil, fmt.Errorf("unsupported db driver %q", driver)
 	}

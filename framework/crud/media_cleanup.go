@@ -219,7 +219,7 @@ func (ch *CrudHandler) updateReturningObjects(ctx context.Context, update *query
 		fields := handler.mediaFields()
 		columns := mediaColumns(fields)
 		statement, args := update.Matching(columns...)
-		if isPostgres(ctx, handler.conn(ctx)) {
+		if isPostgres(ctx, handler.DB, handler.conn(ctx)) {
 			statement += " FOR UPDATE"
 		}
 		before, _, err := handler.queryStoredObjects(ctx, statement, args, fields)

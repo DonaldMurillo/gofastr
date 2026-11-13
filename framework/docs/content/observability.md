@@ -230,6 +230,17 @@ Like `WithMetrics`, `WithTracing` panics when combined with
 r.Use(framework.Tracing())
 ```
 
+### Routes behind a catch-all
+
+The request span is named for the mux pattern the request matched. A
+router that serves many routes through one catch-all, as the UI host
+does for screens, leaves that empty, so it calls
+`middleware.NoteRoute(ctx, "/orders/{id}")` with the route it matched
+and the span reads `HTTP GET /orders/{id}` instead of `HTTP GET
+unmatched`. The UI host does this for every screen. Call it from your
+own router if it sits behind a `/` or `{path...}` pattern; pass a
+pattern, never the request's own path.
+
 ### Trace IDs on log lines
 
 With a TracerProvider installed, `battery/log` adds `trace_id` and
