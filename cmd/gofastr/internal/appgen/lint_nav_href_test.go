@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/appspec"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/clitest"
 	"github.com/DonaldMurillo/gofastr/core/settings"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
@@ -104,5 +105,39 @@ func TestNavHrefInputs(t *testing.T) {
 	bp.Nav = []appspec.AppSpecNavItem{{Href: "/staff/nowhere"}}
 	if findings := LintNavHrefs(bp, ""); len(findings) != 1 {
 		t.Errorf("admin's unserved child must warn: %v", findings)
+	}
+}
+
+// generate reads the static dir under the directory the app is written
+// to, as validate reads it beside the spec, not under the shell's cwd.
+func TestNavHrefStaticUnderOutDir(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	spec := `
+app:
+  name: Demo
+  module: example.com/demo
+  static_dir: public
+screens:
+  - name: home
+    route: /
+nav:
+  - label: Brochure
+    href: /brochure.pdf
+`
+	if err := os.WriteFile("gofastr.yml", []byte(spec), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join("gen", "public"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("gen", "public", "brochure.pdf"), []byte("%PDF"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := clitest.CaptureStdout(t, func() {
+		GenerateFromAppSpec(GenerateOptions{Spec: "gofastr.yml", outputDir: "gen", outputSet: true, dryRun: true})
+	})
+	if strings.Contains(out, "nav[0].href") {
+		t.Fatalf("a nav link to a file under gen/public warned:\n%s", out)
 	}
 }

@@ -1682,7 +1682,7 @@ few lines, and link the PR or the docs page for the rest.
   The later values were never validated or applied, and
   `?trashed=true&trashed=false` read `true`. A queryable column that
   shares a control's name gets the same refusal. `sort` may still repeat
-  (16 clauses at most), `include` keeps `include_repeated`, and a `q` the
+  (16 clauses at most on an offset list), `include` keeps `include_repeated`, and a `q` the
   host owns through `AllowedFilterParams` may repeat when the entity has
   no `SearchFields` and no visible column whose name or wire name is `q`.
   Each read now parses its query once, strictly; the cursor page used to
@@ -1752,8 +1752,10 @@ few lines, and link the PR or the docs page for the rest.
   ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
   `IndexOwned` and the `/index` route refuse a document whose ID,
   source, owner, text or metadata holds a NUL byte or invalid UTF-8.
-  The route answers 400 `document_invalid_text` where Postgres answered
-  500, and Go callers get `*semantic.InvalidDocumentTextError`. The
+  Go callers get `*semantic.InvalidDocumentTextError`, and the route
+  answers 400 `document_invalid_text` for a NUL sent as `\u0000`, where
+  Postgres answered 500. Raw invalid UTF-8 in the body is still
+  `invalid_json_body`. The
   memory store refuses the same text. Text a host `Options.Chunker`
   produces is not re-checked.
 - **A panicking route gate or pre-route hook no longer escapes the
@@ -1765,7 +1767,8 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr --json` prints one JSON document on stdout on every
   path** ([CLI](framework/docs/content/cli.md)). `generate <unknown>
   --json` and `generate ts --json` printed prose and no document; status
-  lines no longer reach stdout in JSON mode. `--help` with `--json`
+  lines no longer reach stdout in JSON mode. `generate --watch --json`
+  stays a stream, one document per generation. `--help` with `--json`
   prints the usage on stderr and no document. Generator reports are
   compact JSON and keep non-ASCII text as UTF-8.
 - **`gofastr generate entity -h` and `generate screen -h`** generated
@@ -1779,7 +1782,8 @@ few lines, and link the PR or the docs page for the rest.
   its filter is registered there. Generated apps call
   `fwApp.EntityUI(withViewStubs(appExtensions))` in `app.go`; an app
   generated earlier makes that edit by hand, since `--add` keeps
-  `app.go`.
+  `app.go`, and copies `view_stubs.go` and the entity's
+  `view_stubs_<entity>.go` from a scratch regeneration.
 
 ## [0.96.0] - 2026-11-06
 

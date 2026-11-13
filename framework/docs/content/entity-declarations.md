@@ -1468,7 +1468,8 @@ query is refused before these checks (`filter.query_undecodable`, below).
 Name several fields in one value (`?fields=title,body`), include paths
 in one value (`?include=author,comments`), and combine predicates inside
 one `?where=` tree. **`sort` may repeat**: every occurrence contributes
-sort clauses, up to 16 clauses in total.
+sort clauses on an offset list, up to 16 clauses in total. A cursor
+list orders by its cursor and reads no `sort`.
 
 The exception is a `q` in `AllowedFilterParams` on an entity with no
 `SearchFields` and no visible queryable column whose name or `WireName`
