@@ -165,7 +165,7 @@ def codex_missing():
 def find_claude(explicit):
     """The fallback reviewer: --claude, then CLAUDE_BIN, then PATH."""
     for cand in (explicit, os.environ.get("CLAUDE_BIN")):
-        if cand and os.path.isfile(cand):
+        if cand and os.path.isfile(cand) and (os.name == "nt" or os.access(cand, os.X_OK)):
             return cand
     return shutil.which("claude")
 
@@ -185,7 +185,9 @@ def default_range():
     return None
 
 
-def build_prompt(rng, mode):
+def build_prompt(rng, mode, diff_file=None):
+    """The filled prompt. A diff past DIFF_CAP is summarized: the reviewer
+    reads the rest with git, or from diff_file when it cannot run git."""
     top = git("rev-parse", "--show-toplevel").strip()
     repo = os.path.basename(top)
     if mode == "staged":
@@ -201,8 +203,12 @@ def build_prompt(rng, mode):
         return None, rng
     if len(diff) > DIFF_CAP:
         stat = git("diff", "--stat", rng)
-        diff = ("The diff is too long to paste here. Its summary is below; "
-                f"read the full diff with `git diff {rng}`.\n\n" + stat)
+        how = f"read the full diff with `git diff {rng}`"
+        if diff_file:
+            with open(diff_file, "w", encoding="utf-8") as f:
+                f.write(diff)
+            how = f"read the full diff in the file {diff_file}"
+        diff = (f"The diff is too long to paste here. Its summary is below; {how}.\n\n" + stat)
     else:
         diff = "```diff\n" + diff + "\n```"
     with open(os.path.join(HERE, "prompt.md"), encoding="utf-8") as f:
@@ -225,20 +231,24 @@ def codex_env():
     return {k: v for k, v in os.environ.items() if k not in names}
 
 
-# What a Claude reviewer may do: read the tree and run read-only git.
-# dontAsk refuses everything else without a prompt.
-CLAUDE_ALLOWED = ["Read", "Grep", "Glob", "Bash(git diff:*)", "Bash(git log:*)",
-                  "Bash(git show:*)", "Bash(git status:*)", "Bash(git blame:*)"]
+# What a Claude reviewer may do: read files, and nothing else. No Bash,
+# not even git: `git diff --output=<path>` writes a file, so no git
+# allowlist is read-only. dontAsk refuses everything else without a
+# prompt. A diff too long for the prompt is saved for it to Read.
+CLAUDE_TOOLS = ["Read", "Grep", "Glob"]
+CLAUDE_NOTE = ("\n\nIn this session you can read and search files but cannot run "
+               "commands. Judge the change from the diff and the files.\n")
 
 
-def command(kind, binary, model, out_file):
+def command(kind, binary, model, out_file, workdir=None):
     if kind == "claude":
         # The answer comes on stdout; the prompt goes in on stdin. No
         # user or project settings, no MCP servers, nothing saved.
         cmd = [binary, "-p", "--model", model,
-               "--tools", "Read,Grep,Glob,Bash",
-               "--allowedTools", *CLAUDE_ALLOWED,
+               "--tools", ",".join(CLAUDE_TOOLS),
+               "--allowedTools", *CLAUDE_TOOLS,
                "--permission-mode", "dontAsk",
+               "--add-dir", workdir or os.path.dirname(out_file),
                "--setting-sources", "", "--strict-mcp-config",
                "--no-session-persistence"]
     else:
@@ -279,7 +289,7 @@ def run_one(n, kind, binary, model, prompt, timeout, workdir, env):
         else:
             out, err = log, subprocess.STDOUT
         try:
-            proc = subprocess.Popen(command(kind, binary, model, out_file), stdin=subprocess.PIPE,
+            proc = subprocess.Popen(command(kind, binary, model, out_file, workdir), stdin=subprocess.PIPE,
                                     stdout=out, stderr=err, env=env,
                                     text=True, encoding="utf-8",
                                     start_new_session=os.name == "posix")
@@ -371,12 +381,14 @@ def main():
         fail("no upstream or origin/HEAD; pass --range, --staged or --uncommitted")
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, _stop)
-    prompt, rng = build_prompt(rng, mode)
+    workdir = tempfile.mkdtemp(prefix="review-gate-")
+    claude = kind == "claude"
+    prompt, rng = build_prompt(rng, mode, os.path.join(workdir, "full.diff") if claude else None)
     if prompt is None:
         print(f"review-gate: nothing to review in {rng}")
         return 0
-
-    workdir = tempfile.mkdtemp(prefix="review-gate-")
+    if claude:
+        prompt += CLAUDE_NOTE
     with ThreadPoolExecutor(RUNS) as pool:
         env = codex_env()
         results = list(pool.map(lambda n: run_one(n, kind, binary, model, prompt, a.timeout, workdir, env),

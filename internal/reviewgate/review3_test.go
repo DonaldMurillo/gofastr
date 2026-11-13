@@ -240,6 +240,19 @@ func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			script, codex, repo := setup(t, [3]string{approve, approve, approve})
 			dir := filepath.Dir(codex)
+			// Off the real /Applications, so an installed ChatGPT app's
+			// codex does not answer on macOS.
+			src, err := os.ReadFile(script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			const sys = `MAC_APPS = "/Applications"`
+			if !strings.Contains(string(src), sys) {
+				t.Fatalf("review3.py no longer says %s", sys)
+			}
+			if err := os.WriteFile(script, []byte(strings.Replace(string(src), sys, `MAC_APPS = "/nonexistent"`, 1)), 0o600); err != nil {
+				t.Fatal(err)
+			}
 			claude := filepath.Join(dir, "claude")
 			if err := os.WriteFile(claude, []byte(stubClaude), 0o700); err != nil {
 				t.Fatal(err)
@@ -289,14 +302,46 @@ func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
 			if n := strings.Count(string(args), "--model haiku"); n != 3 {
 				t.Fatalf("%d runs on haiku, want 3:\n%s", n, args)
 			}
-			for _, want := range []string{"--permission-mode dontAsk", "--tools Read,Grep,Glob,Bash"} {
+			for _, want := range []string{"--permission-mode dontAsk", "--tools Read,Grep,Glob "} {
 				if !strings.Contains(string(args), want) {
 					t.Fatalf("claude ran without %q:\n%s", want, args)
 				}
 			}
-			if strings.Contains(string(args), "Edit") || strings.Contains(string(args), "Write") {
-				t.Fatalf("claude was given a writing tool:\n%s", args)
+			// No tool that can write: Bash counts, since
+			// `git diff --output=<path>` writes a file.
+			for _, banned := range []string{"Edit", "Write", "Bash"} {
+				if strings.Contains(string(args), banned) {
+					t.Fatalf("claude was given %s:\n%s", banned, args)
+				}
 			}
 		})
+	}
+}
+
+// A CLAUDE_BIN that names a file nobody can execute is not a reviewer:
+// --check must not report it, or the hook would start runs that cannot.
+func TestNonExecutableClaudeIsNotFound(t *testing.T) {
+	script, codex, _ := setup(t, [3]string{approve, approve, approve})
+	src, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(strings.Replace(string(src), `MAC_APPS = "/Applications"`, `MAC_APPS = "/nonexistent"`, 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(filepath.Dir(codex), "claude-stale")
+	if err := os.WriteFile(stale, []byte("#!/bin/sh\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	py, err := exec.LookPath("python3")
+	if err != nil {
+		t.Skip("no python3")
+	}
+	cmd := exec.Command(py, script, "--check")
+	cmd.Env = []string{"PATH=" + t.TempDir(), "HOME=" + t.TempDir(), "CLAUDE_BIN=" + stale}
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 {
+		t.Fatalf("err %v, want exit 3\n%s", err, out)
 	}
 }

@@ -14,7 +14,7 @@ skill applies. Docs are part of the change, not a follow-up.
 | File | Role | Update when |
 |------|------|-------------|
 | `README.md` | Canonical entry point. The quickstart, the "The code you don't write" table (auto-generated entity behaviour), and the "The repo in 60 seconds" table (batteries, CLI) are the source of truth for what the framework advertises. | A new auto-generated entity behaviour is added/renamed/removed. A battery or CLI subcommand is added/renamed/removed. |
-| `framework/docs/content/README.md` | The docs index, the browsable entry point to every reference page. | A file in `framework/docs/content/` is added, renamed or removed. |
+| `framework/docs/content/README.md` | The curated docs index: it links most reference pages, not all of them. | A file in `framework/docs/content/` is added, renamed or removed. |
 | `core-ui/ARCHITECTURE.md` | UI/runtime contract. Authoritative for SSR/hydration/island/SSE model. | Any change to `core-ui/`, `framework/ui/`, `framework/uihost/`, `runtime.js`, or the `data-cui-*` attribute set. |
 | `framework/docs/content/entity-declarations.md` | JSON + Go entity declaration reference. | New field type, new option in `EntityConfig`, new declaration loader, new validator. |
 | `framework/docs/content/query-dsl.md` | Query DSL parser surface. | New operator, new clause, new column type, change to DSL grammar. |
@@ -106,7 +106,9 @@ was needed.
   suite as well (rule from `CLAUDE.md`)
 
 **You added/changed a battery package (anything under `battery/`):**
-- The matching `framework/docs/content/<battery>.md` (create if missing)
+- The battery's existing reference page in `framework/docs/content/`
+  (find it through the docs index; create `<battery>.md` only when the
+  battery has no page yet)
 - README "The repo in 60 seconds" `battery/` row if the package list
   changed
 

@@ -41,8 +41,8 @@ exit-3 message names each place tried.
    `PUSH_REVIEW_MODEL` to change), high effort, web search off, user
    config ignored, nothing saved. Without Codex: `claude -p`, model
    `haiku` (`--model` or `PUSH_REVIEW_CLAUDE_MODEL` to change), limited to
-   reading files and read-only git, no settings or MCP servers loaded,
-   nothing saved. The result line names the reviewer and model used.
+   reading and searching files (no shell, so no git: a long diff is saved
+   to a file for it), no settings or MCP servers loaded, nothing saved. The result line names the reviewer and model used.
 3. It prints the decision, the vote and every blocking finding with the
    runs that raised it. `--json` prints the same as JSON.
 4. Exit codes: 0 approve, 1 block, 2 fewer than three usable answers or

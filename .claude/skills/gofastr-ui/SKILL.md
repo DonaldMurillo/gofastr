@@ -51,8 +51,9 @@ new rendered rows. `framework/ui.Pagination` renders the anchors for both.
 
 ### ❌ Hard refresh on every interaction
 **Symptom**: clicking a sort header reloads the whole page.
-**Correct**: island RPC. The runtime swaps the island, the rest of the
-page stays.
+**Correct**: no full reload either way. A list screen's sort header is a
+query-string link the router intercepts; a table embedded in a page
+sorts by island RPC, and the runtime swaps just that island.
 
 ### ❌ Client-only after hydration
 **Symptom**: pagination math lives in JS; the server doesn't know about

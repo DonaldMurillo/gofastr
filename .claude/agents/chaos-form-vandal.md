@@ -53,7 +53,9 @@ For every text/textarea field, try (in order, one per submit cycle):
 ## How to explore
 
 1. Find every form on every route reachable from the home navigation
-   and from `window.__gofastr_routes`.
+   and from `window.__gofastr_routes` (each entry's `path`; skip entries
+   with `redirect`). An entry with a parameter (`:id`, `{id}`) is a
+   pattern, not a URL: reach it through a link to a real record.
 2. For each form, run the payload library on each field one at a time.
    After each, observe:
    - Does client-side validation block?

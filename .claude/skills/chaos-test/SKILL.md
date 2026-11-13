@@ -85,9 +85,11 @@ browser-driving work stays with Claude Agents (playwright is a Claude MCP).
 ## Cost note
 
 Seven parallel playwright sessions for ~5–10 min each = serious token spend.
-When the user invoked the skill, say in one line that seven agents run in
-parallel for about ten minutes and use a lot of tokens, then start. Ask
-before starting only when running it was your idea.
+When the user invoked the skill, say in one line how many agents run and
+for how long (seven in parallel for about ten minutes by default; fewer
+or longer with `--persona` or `--budget`) and that it uses a lot of
+tokens, then start. Ask before starting only when running it was your
+idea.
 
 ## Args
 

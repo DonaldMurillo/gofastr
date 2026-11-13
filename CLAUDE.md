@@ -191,9 +191,10 @@ expose them to agents connected to a live app.**
   `internal/analyzers/suite/suite.go`. Each analyzer's own package doc
   carries the bug shape it catches, the fix spelling it accepts and the
   postures it deliberately stays silent on: read it when a finding
-  fires. The catalog of every analyzer, contracts rule (`GOFASTR14xx`),
-  runtime JS lint (`core-ui/check`) and doc gate, with the round that
-  added each, is `internal/analyzers/README.md`. The rule most code trips
+  fires. `internal/analyzers/README.md` catalogs what the audit rounds
+  added or widened: analyzers, contracts rules (`GOFASTR14xx`), runtime
+  JS lints (`core-ui/check`) and doc gates. It is not the full list; the
+  suite file is. The rule most code trips
   is `mapwriter`: never range a map while writing output, iterate
   `slices.Sorted(maps.Keys(m))`, so SSR/email/prompt bytes are
   deterministic. New invariants go in
