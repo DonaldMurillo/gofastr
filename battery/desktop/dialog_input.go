@@ -2,7 +2,8 @@ package desktop
 
 import (
 	"strings"
-	"unicode/utf8"
+
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Every shell checks dialog input here first (Linux and Windows hand it
@@ -12,7 +13,7 @@ import (
 
 // NativeText reports whether s can cross into a native string: valid
 // UTF-8 with no NUL, which would end a C or UTF-16 string early.
-func NativeText(s string) bool { return utf8.ValidString(s) && !strings.ContainsRune(s, 0) }
+func NativeText(s string) bool { return textsafe.Storable(s) }
 
 // FilterPatterns turns a file filter's extensions into glob patterns:
 // "png" and ".png" give "*.png", "*" gives "*", and no extensions give

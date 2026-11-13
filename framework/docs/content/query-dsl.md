@@ -187,8 +187,8 @@ refused. Code that writes filter text quotes a value with
 `dsl.Quote(v)`, which escapes the backslash before the quote, so
 `C:\reports` is written `"C:\\reports"` and parses back to itself. A
 value holding a line break cannot be written as a term, and one that is
-not valid UTF-8 or holds a NUL byte is refused like any value Postgres
-cannot bind.
+not valid UTF-8 or holds a NUL byte fails `textsafe.Storable` and is
+refused like any value Postgres cannot bind.
 
 Keywords are case-insensitive and `and` binds tighter than `or`.
 `contains` is a literal substring match: the `%`, `_` and escape

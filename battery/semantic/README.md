@@ -28,6 +28,14 @@ hits, _ := idx.Query(ctx, semantic.Query{
 
 ## What's in the box
 
+`POST /index` refuses invalid UTF-8 or NUL bytes in document `id`, `source`,
+`text`, `owner`, and metadata string values or keys (including nested maps,
+slices and `kind`) with HTTP 400 and reason `document_invalid_text`.
+`Index.Add` returns `*InvalidDocumentTextError` before any batch writes,
+even with an in-memory store. The owned adapter from `WrapSearchBackend`
+applies the same refusal in `IndexOwned`. The phrase is registered as
+`semantic.document_invalid_text` for host translation catalogs.
+
 | File | What it does |
 | --- | --- |
 | `semantic.go` | Public types: `Document`, `Chunk`, `Hit`, `Query`, `Filter`, `Stats`. The `Embedder`, `Chunker`, `Store`, `KeywordBackend`, `Reranker` interfaces. `Open(Options) Index`. |

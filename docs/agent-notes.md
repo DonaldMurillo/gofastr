@@ -1,5 +1,14 @@
 # Implementation regression notes
 
+## 2026-11-13 - Share the storable-text refusal before storage
+- Scope: core/textsafe, battery/semantic, textbind, framework/docs
+- Trigger: semantic /index accepted JSON NULs in document fields and nested metadata; pgvector would reject them at the bind.
+- Approach: call textsafe.Storable; Add checks whole batches and returns InvalidDocumentTextError; the HTTP route answers 400 and the watcher skips refused files.
+- Evidence: TestIndexRouteRefusesUnstorableText failed with nine 202 responses; TestStorableTextHasOnePredicate catches a restored filter copy; TestStorable kills removal of its NUL half.
+- Pitfall: a local JSON-source analyzer trial falsely tainted overwritten fields and missed aggregate store helpers; it was dropped, with the gap recorded in textbind's Residuals.
+- Next time: run the drift guard for a new UTF-8/NUL pair and require per-object field flow plus aggregate summaries before claiming JSON-body analyzer coverage.
+- Status: active
+
 ## 2026-11-13 - Parse CRUD read queries once at entry
 - Scope: framework/crud query controls, cursor and streaming paths
 - Trigger: repeated paging/trashed controls were ignored and cursor/stream helpers parsed the wire query again.

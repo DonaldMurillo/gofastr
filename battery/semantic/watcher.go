@@ -419,14 +419,15 @@ func (w *Watcher) upsert(ctx context.Context, root *os.Root, rel, path string, i
 	}
 	if err := w.idx.Add(ctx, doc); err != nil {
 		var ce *chunkError
-		if !errors.As(err, &ce) {
+		var invalid *InvalidDocumentTextError
+		if !errors.As(err, &ce) && !errors.As(err, &invalid) {
 			return fmt.Errorf("semantic: watcher add %q: %w", path, err)
 		}
 		// The file's content is the fault (Latin-1 bytes, say): skip it
 		// so the rest of the tree still indexes, drop any version indexed
 		// before, and retry only once the file changes.
 		slog.Default().Warn("semantic: watcher skipped a file it cannot chunk",
-			"path", textsafe.ScrubControlBytes(path), "err", textsafe.ScrubControlBytes(ce.err.Error()))
+			"path", textsafe.ScrubControlBytes(path), "err", textsafe.ScrubControlBytes(err.Error()))
 		if err := w.idx.Remove(ctx, docID); err != nil {
 			return fmt.Errorf("semantic: watcher remove %q: %w", path, err)
 		}

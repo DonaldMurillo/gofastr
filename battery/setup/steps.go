@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 )
 
@@ -128,7 +128,7 @@ func canonicalAdminEmail(m *auth.AuthManager, raw string) (string, error) {
 
 // validateAdminEmail refuses an empty admin address.
 func validateAdminEmail(v string) error {
-	if !utf8.ValidString(v) || strings.IndexByte(v, 0) >= 0 {
+	if !textsafe.Storable(v) {
 		return i18n.NewError(reasonEmailInvalid)
 	}
 	if v == "" {

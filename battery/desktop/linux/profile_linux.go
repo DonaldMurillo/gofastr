@@ -18,9 +18,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 type browserProfile struct {
@@ -86,7 +86,7 @@ func openBrowserProfile(appID, dataDir string) (*browserProfile, error) {
 			return nil, errors.New("desktop/linux: invalid profile AppID")
 		}
 	}
-	if !filepath.IsAbs(dataDir) || filepath.Clean(dataDir) == "/" || !utf8.ValidString(dataDir) || strings.IndexByte(dataDir, 0) >= 0 {
+	if !filepath.IsAbs(dataDir) || filepath.Clean(dataDir) == "/" || !textsafe.Storable(dataDir) {
 		return nil, errors.New("desktop/linux: profile DataDir must be an absolute UTF-8 directory path")
 	}
 	if err := privateProfileDirectory(filepath.Clean(dataDir)); err != nil {

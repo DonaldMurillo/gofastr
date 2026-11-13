@@ -11,7 +11,7 @@
 //
 //   - 145b37ab: ?q= reached filter.SearchConditions, whose LIKE args
 //     bound the term as is (a 500 on Postgres, an empty 200 on SQLite);
-//     SearchConditions now refuses it with storableText;
+//     SearchConditions now refuses it with textsafe.Storable;
 //   - 39de7827: an Idempotency-Key holding 0xff reached
 //     SQLIdempotencyStore.Begin through the IdempotencyStore interface
 //     and answered 503 "store down"; the middleware now refuses a key
@@ -98,7 +98,7 @@
 //     walk of the parameter that refuses everything past ASCII and the
 //     control range (39de7827's printableASCII: c < 0x20 || c > 0x7e),
 //     or a call that hands the parameter to such a function (filter
-//     .CoerceValue delegates to storableText). The check dominates when
+//     .CoerceValue delegates to textsafe.Storable). The check dominates when
 //     it sits in an enclosing if's condition or in a statement before
 //     the use whose verdict is kept AND gated — a diverging
 //     `if err != nil { return }`, an enclosing if on the verdict; a
@@ -141,11 +141,18 @@
 // IdempotencyConfig from a dependent, so the declaring package's
 // no-fill posture stands in for the host's fill), and a builder local
 // held somewhere other than a plain local (a field, a parameter).
+// JSON-body decode targets are not sources. A local-only decoder arm
+// tried in the 2026-11-13 storable-text sweep caught direct field binds,
+// but flagged a field overwritten with trusted text and missed decoded
+// structs passed through aggregate store helpers (semantic's /index
+// shape). It was dropped rather than widening field-wide facts or
+// claiming coverage of those writes. Closing this needs per-object,
+// per-field flow and aggregate parameter summaries together.
 //
 // The fix spelling: refuse the value before it binds, with a 400 naming
-// the field (filter's storableText: utf8.ValidString(s) &&
-// strings.IndexByte(s, 0) < 0), or narrow it to the bytes the field may
-// hold (middleware's printableASCII for a client-minted key).
+// the field (textsafe.Storable: valid UTF-8 without a NUL byte), or
+// narrow it to the bytes the field may hold (middleware's printableASCII
+// for a client-minted key).
 package textbind
 
 import (
@@ -240,7 +247,7 @@ func (t taint) clean() bool       { return !t.src && t.params == 0 }
 func bit(i int) uint64            { return 1 << uint(i&63) }
 func has(mask uint64, i int) bool { return mask&bit(i) != 0 }
 
-const msg = "request text reaches a SQL bind%s with no storable-text check: invalid UTF-8 or a NUL byte is Postgres's 22021 (a 500 where SQLite answers 200); refuse it first with a 400 (utf8.ValidString(s) && strings.IndexByte(s, 0) < 0, filter's storableText)"
+const msg = "request text reaches a SQL bind%s with no storable-text check: invalid UTF-8 or a NUL byte is Postgres's 22021 (a 500 where SQLite answers 200); refuse it first with a 400 using textsafe.Storable"
 
 type checker struct {
 	pass    *analysis.Pass
@@ -1810,7 +1817,7 @@ func (st *fnState) checksIn(e ast.Node, v *types.Var) bool {
 
 // keptCheckIn returns the verdict variables a statement s keeps from a
 // storable check on v: `_, err := CoerceValue(…, v)` and `ok :=
-// storableText(v)` keep theirs; a call statement or an assignment to _
+// textsafe.Storable(v)` keep theirs; a call statement or an assignment to _
 // throws the verdict away. A kept verdict vets v only where it gates
 // the path to the use (verdictGates).
 func (st *fnState) keptCheckIn(s ast.Stmt, v *types.Var) []types.Object {

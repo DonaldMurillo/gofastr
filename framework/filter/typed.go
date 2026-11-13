@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // decimalLiteral is the numeric text both dialects parse: an optional sign,
@@ -69,7 +69,7 @@ var timestampLayouts = []string{
 // Timestamp or Date in year 0 or before (Postgres has no year 0) are
 // refused for the same reason.
 func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
-	if !storableText(raw) {
+	if !textsafe.Storable(raw) {
 		return nil, valueTypeError(field, t)
 	}
 	switch t {
@@ -132,13 +132,6 @@ func CoerceValue(field string, t schema.FieldType, raw string) (any, error) {
 	default:
 		return raw, nil
 	}
-}
-
-// storableText reports whether raw is text both dialects store and
-// compare: valid UTF-8 holding no NUL byte. Postgres refuses anything
-// else in a text bind (22021).
-func storableText(raw string) bool {
-	return utf8.ValidString(raw) && strings.IndexByte(raw, 0) < 0
 }
 
 // TypedBind is CoerceValue for a value already checked, or one the program

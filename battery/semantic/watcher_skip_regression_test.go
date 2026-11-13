@@ -20,6 +20,7 @@ func TestWatcherSkipsUnchunkableFile(t *testing.T) {
 	write("a.md", "first file")
 	write("b.md", "caf\xe9 in latin-1")
 	write("c.md", "third file")
+	write("d.md", "a\x00b")
 	store := NewFlatStore(4, "stub-4")
 	idx, err := Open(Options{Embedder: NewStubEmbedder(4), Store: store})
 	if err != nil {

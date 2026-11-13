@@ -275,6 +275,16 @@ level with an orthogonal one. A response the route cannot encode answers 500 wit
 never a 200 with an empty one. `POST /index` answers 400 for a document with
 no id (`doc_id_is_required`) or one the chunker refuses
 (`document_unchunkable`); the chunker's error text stays in the log.
+It also answers 400 with reason `document_invalid_text` when a document's
+`id`, `source`, `text`, `owner`, or a metadata string or object key is not
+valid UTF-8 without NUL bytes. Metadata is checked recursively, including
+`kind` and strings inside nested maps and slices. `Index.Add` refuses the
+entire batch before chunking or storage with `*semantic.InvalidDocumentTextError`,
+whose `Field` identifies the input field without echoing its value. The
+same rule holds for in-memory stores and the `IndexOwned` method of
+`WrapSearchBackend`'s owned keyword adapter, not only pgvector.
+The phrase key is `semantic.document_invalid_text`; a host catalog can
+translate it without changing the wire reason.
 
 `POST /index` and `POST /query` decode their bodies strictly: duplicate or
 case-folded top-level JSON keys are refused with 400 rather than silently
@@ -417,8 +427,9 @@ logging the mutation. In-memory stores return a nil error.
 **Replace is one transaction.** `Index.Add` and `Index.Remove` on a
 `PgVectorStore` delete a document's old chunks and insert its new ones in a
 single transaction. Metadata is marshalled before anything is deleted, and a
-failed insert (metadata JSON cannot carry, such as `NaN`, or a NUL byte in the
-text) rolls the delete back, so the old version stays. The transaction first
+failed insert (metadata JSON cannot carry, such as `NaN`) rolls the delete
+back, so the old version stays. Unstorable document text is refused by
+`Index.Add` before replacement begins. The transaction first
 takes a transaction-scoped advisory lock (`pg_advisory_xact_lock`) per
 document, keyed on the table's OID and the document ID, so two replicas
 replacing the same document run one after the other and the table keeps one

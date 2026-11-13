@@ -8,10 +8,9 @@ import (
 	"errors"
 	"image/color"
 	"image/png"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const (
@@ -41,7 +40,7 @@ type trayModel struct {
 }
 
 func validTrayText(s string) bool {
-	return len(s) <= trayTextLimit && utf8.ValidString(s) && !strings.ContainsRune(s, 0)
+	return len(s) <= trayTextLimit && textsafe.Storable(s)
 }
 
 func newTrayModel(ctx context.Context, cfg desktop.WindowConfig) (*trayModel, error) {

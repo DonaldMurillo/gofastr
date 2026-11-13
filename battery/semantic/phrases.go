@@ -8,4 +8,5 @@ var (
 	reasonDocumentsRequired   = i18n.Define("semantic.documents_required", "documents is required and must be non-empty")
 	reasonQueryTextIsRequired = i18n.Define("semantic.query_text_is_required", "query.text is required")
 	reasonDocumentUnchunkable = i18n.Define("semantic.document_unchunkable", "a document could not be split into chunks")
+	reasonDocumentInvalidText = i18n.Define("semantic.document_invalid_text", "document fields and metadata must be valid UTF-8 without NUL bytes")
 )

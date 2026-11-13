@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // UpdateRoles replaces the roles for an existing user. It writes the JSON
@@ -23,7 +24,7 @@ import (
 // (AuthManager.SetUserRoles) is responsible for sourcing them from an
 // admin-gated context.
 func (s *EntityUserStore) UpdateRoles(ctx context.Context, userID string, roles []string) error {
-	if !storableText(userID) {
+	if !textsafe.Storable(userID) {
 		return ErrUserNotFound
 	}
 	// json.Marshal directly, do NOT use formatRoles, which defaults empty

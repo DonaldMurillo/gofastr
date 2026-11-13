@@ -633,6 +633,14 @@ letters or digits, then CANCEL TAG (Scotland, England, Wales). Any other
 tag run, one behind a black flag included, is stripped or refused. Start
 at `core/textsafe/textsafe.go`.
 
+`Storable(s string) bool` answers a different question: whether a string
+is valid UTF-8 without a NUL byte, so Postgres can bind it as text without
+SQLSTATE `22021`. Use it before a SQL bind and refuse caller input with
+400 or a typed validation error; do not replace or strip the bytes.
+Empty strings, line breaks and ordinary Unicode pass. Lone surrogates
+encoded as WTF-8 fail the UTF-8 check. This is not `ContainsUnsafe`:
+storage permits characters that a header, log or identity may forbid.
+
 ### webbotauth
 
 Inbound Web Bot Auth verification: RFC 9421 signature-base assembly,

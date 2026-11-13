@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/embed"
 )
 
@@ -306,7 +307,7 @@ func (p *TokensPlugin) revokeTokenHandler() http.HandlerFunc {
 		}
 		// An id that is not storable text names no token, and Postgres
 		// would refuse it in the bind (22021, a 500).
-		if !storableText(id) {
+		if !textsafe.Storable(id) {
 			writeAuthError(w, r, http.StatusNotFound, reasonTokenNotFound)
 			return
 		}

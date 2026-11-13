@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // MaxINListEntries bounds the number of values a single ?field_in=…
@@ -205,7 +206,7 @@ func (f ParsedFilter) typedAs(sent string, t schema.FieldType) (ParsedFilter, er
 	if f.Op == OpLike {
 		// A substring, never coerced, but still a text bind: invalid
 		// UTF-8 or a NUL is Postgres's 22021 here too.
-		if !storableText(f.Value) {
+		if !textsafe.Storable(f.Value) {
 			return f, valueTypeError(sent, t)
 		}
 		return f, nil

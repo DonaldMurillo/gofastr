@@ -352,6 +352,11 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 	if len(docs) == 0 {
 		return nil
 	}
+	for _, document := range docs {
+		if err := validateDocumentText(document); err != nil {
+			return err
+		}
+	}
 	docs = lastPerID(docs)
 	var chunks []Chunk
 	for _, doc := range docs {

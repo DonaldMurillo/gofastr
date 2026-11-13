@@ -39,9 +39,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
@@ -212,7 +212,7 @@ const maxKeyLen = 256
 // with 22021, which AllowContext reads as a store outage: a 429 for that
 // client and an outage warning for the operator.
 func foldKey(key string) string {
-	if len(key) <= maxKeyLen && utf8.ValidString(key) && !strings.ContainsRune(key, 0) && !strings.HasPrefix(key, "sha256:") {
+	if len(key) <= maxKeyLen && textsafe.Storable(key) && !strings.HasPrefix(key, "sha256:") {
 		return key
 	}
 	sum := sha256.Sum256([]byte(key))

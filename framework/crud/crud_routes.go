@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -91,7 +91,7 @@ func transitionParam(cols []string) string {
 func PathRecordID(r *http.Request, cols []string) string {
 	if len(cols) <= 1 {
 		id := r.PathValue("id")
-		if !storableKey(id) {
+		if !textsafe.Storable(id) {
 			return ""
 		}
 		return id
@@ -99,18 +99,12 @@ func PathRecordID(r *http.Request, cols []string) string {
 	parts := make([]string, len(cols))
 	for i, c := range cols {
 		v := r.PathValue(c)
-		if v == "" || !storableKey(v) {
+		if v == "" || !textsafe.Storable(v) {
 			return ""
 		}
 		parts[i] = v
 	}
 	return entity.JoinKey(parts)
-}
-
-// storableKey reports whether a key segment is text Postgres binds:
-// valid UTF-8 holding no NUL byte (filter's storableText rule).
-func storableKey(s string) bool {
-	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
 }
 
 // pathID is PathRecordID under the handler's key.

@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/auth"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -415,11 +414,11 @@ func (b *Battery) grantOrRevoke(w http.ResponseWriter, r *http.Request, op, ok s
 	}
 	role := strings.TrimSpace(vals.Get("role"))
 	perm := access.Permission(strings.TrimSpace(vals.Get("permission")))
-	if !storableText(role) {
+	if !textsafe.Storable(role) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "role")
 		return
 	}
-	if !storableText(string(perm)) {
+	if !textsafe.Storable(string(perm)) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "permission")
 		return
 	}
@@ -565,16 +564,12 @@ func distinctTrimmed(vals []string) ([]string, bool) {
 	out := make([]string, 0, len(vals))
 	for _, v := range vals {
 		v = strings.TrimSpace(v)
-		if v == "" || !storableText(v) || slices.Contains(out, v) {
+		if v == "" || !textsafe.Storable(v) || slices.Contains(out, v) {
 			return nil, false
 		}
 		out = append(out, v)
 	}
 	return out, true
-}
-
-func storableText(value string) bool {
-	return utf8.ValidString(value) && strings.IndexByte(value, 0) < 0
 }
 
 // gridCell parses a grant value "i:j" against the grid's size.
@@ -606,14 +601,14 @@ func (b *Battery) handleAssign(w http.ResponseWriter, r *http.Request) {
 	}
 	// The id is a key, used exactly: trimming " u1 " would edit "u1".
 	userID := vals.Get("user_id")
-	if strings.TrimSpace(userID) == "" || !storableText(userID) {
+	if strings.TrimSpace(userID) == "" || !textsafe.Storable(userID) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "user_id")
 		return
 	}
 	// One value per checkbox, or one comma-separated text field.
 	var roles []string
 	for _, v := range vals["roles"] {
-		if !storableText(v) {
+		if !textsafe.Storable(v) {
 			b.refuse(w, r, page, http.StatusBadRequest, "bad-input", "roles")
 			return
 		}
