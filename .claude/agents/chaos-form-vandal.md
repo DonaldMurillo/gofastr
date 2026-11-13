@@ -52,8 +52,8 @@ For every text/textarea field, try (in order, one per submit cycle):
 
 ## How to explore
 
-1. Find every form. The website has at least `/customers/new`. There
-   may be more under `/framework-ui/`.
+1. Find every form on every route reachable from the home navigation
+   and from `window.__gofastr_routes`.
 2. For each form, run the payload library on each field one at a time.
    After each, observe:
    - Does client-side validation block?

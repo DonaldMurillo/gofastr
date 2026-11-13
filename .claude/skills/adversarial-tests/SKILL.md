@@ -51,8 +51,8 @@ properties across *every* call site, not for "more cases":
 
 | Property | Common surfaces | Reference fix |
 |---|---|---|
-| URL scheme allow-list (surface-specific: anchors may allow http(s) / relative / fragment / mailto / tel; head/media/header use narrower policies) | any field that flows to `<a href>`, `<img src>`, `<form action>`, `<link href>`, `Link:` response header, OpenAPI `servers[].url`, SEO meta tags, Image/File entity fields | `framework/ui/safety.go::safeURL`, `framework/uihost/uihost.go::isSafeHeadURL`, `framework/crud/crud_upload.go::isSafeMediaURL`, `framework/experimental/apiversions/version.go::safeReplacementURL` |
-| C0 / DEL sanitation on outbound strings (protocol-specific, NOT uniform: SSE `scrubSSEDataLines` strips CR+NUL only to preserve LF framing; `safeLogMethod`/`safeLogPath` fast-path returns clean input unchanged) | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/handler/respond.go::sanitizeHeaderValue`, `core/middleware/cors.go::stripCtrlBytes`, `core/middleware/logging.go::safeLogMethod` (test the fast-path too), `core/stream/sse.go::scrubSSEDataLines`, `framework/dsl/dsl.go::stripDSLControlBytes` |
+| URL scheme allow-list (surface-specific: anchors may allow http(s) / relative / fragment / mailto / tel; head/media/header use narrower policies) | any field that flows to `<a href>`, `<img src>`, `<form action>`, `<link href>`, `Link:` response header, OpenAPI `servers[].url`, SEO meta tags, Image/File entity fields | `core-ui/urlsafe/urlsafe.go::Clean` / `CleanAnchor` (with `framework/ui/safety.go::safeImageURL`), `framework/uihost/uihost.go::isSafeHeadURL`, `framework/crud/crud_upload.go::isSafeMediaURL`, `framework/experimental/apiversions/version.go::safeReplacementURL` |
+| C0 / DEL sanitation on outbound strings (protocol-specific, NOT uniform: SSE `scrubSSEDataLines` strips CR+NUL only to preserve LF framing; `safeLogMethod`/`safeLogPath` fast-path returns clean input unchanged) | response header values (`Content-Type`, `Access-Control-*`, `Link:`), log attribute values (`method`, `path`), SSE field bodies, DSL opaque literals, route-group prefix | `core/textsafe/controlbytes.go::SanitizeControlBytes` / `ScrubControlBytes` (called from `core/handler/respond.go`, `core/middleware/cors.go::sanitizeCORSTokens` and `framework/dsl/dsl.go`), `core/middleware/logging.go::safeLogMethod` (test the fast-path too), `core/stream/sse.go::scrubSSEDataLines` |
 | Strict JSON top-level parsing (reject duplicate / case-folded / unknown keys); no-op for non-struct-pointer destinations and non-object bodies | every `Bind` consumer decoding a top-level JSON object into a struct pointer | `core/handler/bind.go::validateBodyKeys` |
 | Fail-closed scoping (multi-tenant + owner-required) on in-process paths | every CRUD method that touches DB state (not just the HTTP path; middleware doesn't protect in-process callers) | `framework/crud/owner.go::requireOwnerContext` + `framework/crud/owner.go::requireTenantContext` + every method in `framework/crud/crud_api.go` |
 | Forensic completeness on rollback / soft-delete | batch envelope, upsert ON CONFLICT, audit hook | `framework/crud/crud_batch.go::scrubRolledBackData`, `framework/crud/crud_upsert.go::errSoftDeletedResurrection` |
@@ -96,7 +96,11 @@ For every adversarial test the agent proposes:
 
 The policy:
 
-- File suffix: `_security_test.go` (drop the `_red_` infix entirely)
+- An open finding is a `*_red_test.go` probe tagged `//go:build red` that
+  asserts the secure behaviour and fails until the fix lands
+  (`make red-tests` runs them; `go test ./...` never sees them). The fix
+  turns the probe into a permanent `_security_test.go` test.
+- Permanent file suffix: `_security_test.go`, with no `_red_` infix
 - Drop the redundant `<pkg>_` prefix when the file lives in a
   package of that name
 - Function names ≤ 40 chars stating the behaviour
@@ -116,13 +120,16 @@ IS the record, and `git log -p` is the audit trail. A permanently
 `t.Skip`ped test is never acceptable. Delete it and leave a comment
 where the contract is actually tested.
 
-## Not-yet-audited surfaces (as of 2026-07-25)
+## Where to start a pass
 
-The 2026-07-25 pass fixed 30 findings and published its own coverage
-gaps. These are **never-looked, not clean**: no pass has run all four
-signals over them, so the clean-gate above has nothing to say about
-them. Start the next pass here rather than re-sweeping what is already
-pinned.
+The list below is the 2026-07-25 pass's own never-looked list: no pass
+had run all four signals over these surfaces at that date. Later passes
+have covered some of them (`core/upload` and `battery/auth` OIDC now
+carry `_security_test.go` files), so check each entry for an existing
+`_security_test.go` before treating it as never-looked, and delete the
+entries a pass clears. A package that carries `_security_test.go`
+siblings has been looked at for the properties those tests name, not
+for every property in the table above.
 
 - **Auth:** `battery/auth/oidc.go` + `oidc_jwks.go` (1000+ lines: JWKS
   fetch, `iss`/`aud`, nonce, `email_verified`; oidc allows `http` for a
@@ -184,8 +191,9 @@ Rules:
 - Cap case count at ~5 per property: one happy path + three or four
   distinct attack shapes covering the threat class. No 60-row
   matrices.
-- Naming: `_security_test.go` suffix; function names ≤40 chars
-  stating the behaviour.
+- Naming: an open finding is a `_red_test.go` probe behind the `red`
+  build tag; its fix converts it to a `_security_test.go` test.
+  Function names ≤40 chars stating the behaviour.
 - Before authoring a test, grep for the closest existing
   `_security_test.go` sibling. If one exists, merge into it
   unless the topic is genuinely new.
@@ -225,7 +233,7 @@ to known surfaces only). See the table in
 - Credentials never in argv (env/stdin channels)
 
 Hard NO:
-- No new `_red_test.go` files
+- No `_red_test.go` file left behind once its finding is fixed
 - No 60-case matrices
 - No Module_Feature_Precondition_Assertion essay test names
 - No silent contradictions of documented contracts
@@ -252,29 +260,27 @@ A security pass is run by **two passes with different jobs**, never one.
 This is not optional: a single-pass audit does not get to mark
 anything clean.
 
-**Both profiles run on Opus 5.** Recon used to run on Haiku; that was
-changed on 2026-07-25 because the cheap tier's *clean* verdicts proved
-worthless. On 2026-07-24 it returned "clean" on the scope holding that
-round's top finding; on 2026-07-25 it emitted 18 candidates, all 18
-of which were refuted, while missing all 3 real findings in its scope. A
-breadth pass whose silence means nothing cannot be half of a clean-gate.
+**Both profiles run on the same model**: each pins `model: opus` in its
+frontmatter. A breadth pass on a cheaper tier is not acceptable, because
+a breadth pass whose silence means nothing cannot be half of a
+clean-gate.
 
 | Role | Profile | Model | Job |
 |---|---|---|---|
-| breadth | `sec-recon` | Opus 5 | walk every file against the property×surface checklist, emit all candidates, report coverage honestly |
-| depth | `sec-auditor` | Opus 5 | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
+| breadth | `sec-recon` | `opus` | walk every file against the property×surface checklist, emit all candidates, report coverage honestly |
+| depth | `sec-auditor` | `opus` | threat-intel anchor → deep discovery (authz/TOCTOU/state-machine) → refute + fix + rule on every candidate |
 
 **Why two passes:** exhaustive breadth and deep reasoning are different
 jobs; one agent doing both drops coverage the moment a thread gets
 interesting. The split is job, not capability.
 
-**Honest limit: this got worse, not better.** With both halves on the
-same model, the two passes share a lineage *and* a tier: their blind
-spots now overlap almost completely. Agreement between them is weak
+**Honest limit.** With both halves on the same model, the two passes
+share a lineage *and* a tier: their blind spots overlap almost
+completely. Agreement between them is weak
 evidence, and one confirming the other is **not** independent
 verification. Say so out loud rather than banking it. The diversity
-that does not come from a model is therefore load-bearing; it is now
-the *only* diversity in the pass:
+that does not come from a model is therefore load-bearing; it is the
+*only* diversity in the pass:
 
 - **Web search** (`sec-auditor` job 1) injects vuln classes from the
   live CVE/advisory corpus that no Claude tier would spontaneously

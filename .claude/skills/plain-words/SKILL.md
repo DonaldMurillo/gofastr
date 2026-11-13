@@ -5,7 +5,7 @@ description: Write GoFastr-facing copy in plain, concrete words. Auto-load befor
 
 # Plain words
 
-You keep reaching for jargon and marketing words. Stop. This is the filter you run every sentence through before it ships.
+Run every user-facing sentence through this filter before it ships: GoFastr copy states what the code does, in the words a Go developer uses.
 
 ## The one test
 

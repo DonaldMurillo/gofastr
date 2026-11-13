@@ -13,7 +13,8 @@ skill applies. Docs are part of the change, not a follow-up.
 
 | File | Role | Update when |
 |------|------|-------------|
-| `README.md` | Canonical entry point. The "Surfaces" table & quickstart are the source of truth for what the framework advertises. | A new surface is added/renamed/removed. A new auto-generated entity behaviour is added. CLI changes. |
+| `README.md` | Canonical entry point. The quickstart, the "The code you don't write" table (auto-generated entity behaviour), and the "The repo in 60 seconds" table (batteries, CLI) are the source of truth for what the framework advertises. | A new auto-generated entity behaviour is added/renamed/removed. A battery or CLI subcommand is added/renamed/removed. |
+| `framework/docs/content/README.md` | The docs index, the browsable entry point to every reference page. | A file in `framework/docs/content/` is added, renamed or removed. |
 | `core-ui/ARCHITECTURE.md` | UI/runtime contract. Authoritative for SSR/hydration/island/SSE model. | Any change to `core-ui/`, `framework/ui/`, `framework/uihost/`, `runtime.js`, or the `data-cui-*` attribute set. |
 | `framework/docs/content/entity-declarations.md` | JSON + Go entity declaration reference. | New field type, new option in `EntityConfig`, new declaration loader, new validator. |
 | `framework/docs/content/query-dsl.md` | Query DSL parser surface. | New operator, new clause, new column type, change to DSL grammar. |
@@ -26,9 +27,10 @@ skill applies. Docs are part of the change, not a follow-up.
 | `examples/site/docs_catalog.go` | The public docs site's curated catalog. Every embedded topic must appear here or `/docs/<slug>` 404s. | **Any** new file in `framework/docs/content/`; there is a test for this, and it is the one people forget. |
 | `examples/*/README.md` | Per-example walkthrough. | When the example's behaviour or wiring changes. |
 
-There is no `docs/api-reference/`. The public API is documented via
-README's "Surfaces" table + per-feature reference page + the
-`framework/doc.go` package doc. Keep these consistent.
+The public API is documented via README's "The code you don't write"
+table + the per-feature reference pages in `framework/docs/content/` + the
+`framework/doc.go` package doc. Keep these consistent. The repo-root
+`docs/` holds agent notes, proposals and reviews, not reference pages.
 
 ## The change→doc mapping (use this as a checklist)
 
@@ -38,29 +40,31 @@ change, and either edit it or note in the commit message why no edit
 was needed.
 
 **You added a new exported func/type/const in `framework/`:**
-- README "Surfaces" table or per-feature section
-- The matching `docs/<feature>.md` (or create it if the surface is
-  new enough to warrant its own page)
+- README "The code you don't write" table or per-feature section
+- The matching `framework/docs/content/<feature>.md` (or create it if the
+  surface is new enough to warrant its own page)
 - If the new symbol is referenced from a JSON entity declaration:
   `framework/docs/content/entity-declarations.md`
 
 **You added a new entity field type** (e.g. `schema.JSON`, `schema.Money`):
 - `framework/docs/content/entity-declarations.md`: field type table
-- README "Declare an entity" example if it changes the canonical shape
+- README "The code you don't write" `app.Entity` example if it changes
+  the canonical shape
 - `framework/entity/column.go` column constructors, same PR
 
 **You added a new auto-generated route or endpoint pattern**
 (e.g. `_batch`, `_events`, `_search`):
-- README's per-entity surfaces table
-- A reference page under `docs/` if the surface has its own semantics
+- README's "The code you don't write" table
+- A reference page under `framework/docs/content/` if the surface has
+  its own semantics
 - `examples/api-tour/main.go` should exercise it; update the example
   README
 
 **You added a new `EntityConfig` option** (e.g. `SoftDelete`, `MCP`,
 `CursorField`, `Endpoints`):
 - `framework/docs/content/entity-declarations.md`
-- README "Declare an entity (Go)" example if it changes the default
-  story
+- README "The code you don't write" `app.Entity` example if it changes
+  the default story
 
 **You changed the query DSL grammar or operator set:**
 - `framework/docs/content/query-dsl.md`
@@ -101,14 +105,15 @@ was needed.
 - If you added a new `data-cui-*` attribute: update the runtime test
   suite as well (rule from `CLAUDE.md`)
 
-**You added/changed a battery package (`auth`, `cache`, `email`,
-`queue`, `search`, `storage`):**
-- The matching `docs/<battery>.md` (create if missing)
-- README "battery/" section if the package list changed
+**You added/changed a battery package (anything under `battery/`):**
+- The matching `framework/docs/content/<battery>.md` (create if missing)
+- README "The repo in 60 seconds" `battery/` row if the package list
+  changed
 
 **You added a new CLI subcommand:**
-- README "cmd/gofastr — CLI" section
-- A reference page under `docs/cli-<subcommand>.md` if non-trivial
+- `framework/docs/content/cli.md`, which maps every subcommand to its doc
+- README "The repo in 60 seconds" `cmd/gofastr` row
+- A reference page under `framework/docs/content/` if non-trivial
 
 **You ran an architecture review / security review:**
 - Findings become fixes with pinning tests in the same pass; the
@@ -118,7 +123,7 @@ was needed.
 
 **You removed or renamed an exported symbol:**
 - grep the docs for the old name and replace
-- `git grep '<OldName>' README.md docs/ examples/`
+- `git grep '<OldName>' README.md framework/docs/content/ examples/`
 - Don't leave dangling code samples
 
 **You landed a BREAKING change / you're cutting a release:**
@@ -211,24 +216,20 @@ Run this mental check:
 
 ## Anti-patterns observed in this repo (don't repeat them)
 
-- **Stub doc disease.** `framework/docs/content/search.md`, `framework/docs/content/security.md`,
-  `framework/docs/content/migrations.md`, `framework/docs/content/query-dsl.md` were each ~20 lines:
-  enough to be discoverable but not enough to answer real questions.
-  Fix: expand or delete; don't leave half-done.
-- **Surfaces drift.** README's "Surfaces" table listed batch endpoints
-  and SSE streams that had no reference page anywhere. If the README
-  advertises it, `docs/` should cover it.
+- **Surfaces drift.** If the README advertises a behaviour, a page in
+  `framework/docs/content/` should cover it.
 - **Roadmap drift.** Forward-looking work lives in `ROADMAP.md`.
   Keep it accurate: when an item ships, delete it from the roadmap
-  and move per-feature truth into `docs/<feature>.md`.
+  and move per-feature truth into `framework/docs/content/<feature>.md`.
 
 ## Definition of done for a doc-touching PR
 
 - [ ] Every doc listed in the change→doc mapping above has been opened
-- [ ] README "Surfaces" table reflects reality
+- [ ] README "The code you don't write" and "The repo in 60 seconds"
+  tables reflect reality
 - [ ] No dangling references to removed symbols (`git grep` clean)
 - [ ] No new TODO in docs that aren't tracked elsewhere
-- [ ] If you created a new `docs/<name>.md`, it has at least:
+- [ ] If you created a new `framework/docs/content/<name>.md`, it has at least:
   a one-paragraph intro, a code sample that runs as-is against the
   current code, the full option/parameter table, and one "common
   mistake" callout

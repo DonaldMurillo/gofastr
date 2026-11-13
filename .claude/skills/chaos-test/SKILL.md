@@ -85,9 +85,9 @@ browser-driving work stays with Claude Agents (playwright is a Claude MCP).
 ## Cost note
 
 Seven parallel playwright sessions for ~5–10 min each = serious token spend.
-Tell the user up front: "Round 7 of chaos-test fires 7 agents in parallel;
-this'll take ~10 min and burn tokens. Proceed?" Default to yes if the user
-already invoked the skill.
+When the user invoked the skill, say in one line that seven agents run in
+parallel for about ten minutes and use a lot of tokens, then start. Ask
+before starting only when running it was your idea.
 
 ## Args
 
@@ -98,7 +98,8 @@ already invoked the skill.
 ## What success looks like
 
 A `summary.md` that:
-1. Is short enough to read in 5 minutes (cap each tier at 7 items)
+1. Is short enough to read in a few minutes: lead each tier with the
+   findings that matter most and group repeats of one root cause
 2. Names specific reproduction steps for every critical finding
 3. Cites which persona surfaced each issue (so you can ask follow-ups)
 4. Distinguishes "X is broken" from "X is a UX rough edge"

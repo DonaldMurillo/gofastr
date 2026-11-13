@@ -1,6 +1,6 @@
 ---
 name: gofastr-ui
-description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state is island RPC) and the three failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/site/, or runtime.js, and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
+description: Auto-loads when working on UI, runtime, or framework/uihost code in the GoFastr repo. Encodes the SSR-with-hydration architecture (no hard refresh, page-nav swaps content, in-page state stays on its route as query params or islands) and the failure modes that have already happened. Triggers on edits to core-ui/, framework/ui/, framework/uihost/, examples/site/, or runtime.js, and on phrases like "pagination", "sort header", "tab click", "navigation", "SPA", "hydration".
 ---
 
 # GoFastr UI architecture: load this before writing UI code
@@ -38,15 +38,16 @@ Never open a bespoke `EventSource` on an app surface; the bus is the only
 push channel. (Dev-mode tooling like `framework/dev` livereload and kiln's
 build-mode reload ships its own; that's the whole exception class.)
 
-## The three failure modes: refuse to do these
+## The failure modes: refuse to do these
 
-### ❌ Treating in-page state as a route
-**Symptom**: pagination/sort renders as `<a href="?p=2">` and triggers
-either a full reload or an SPA route change to "the same page with
-different query params".
-**Correct**: pagination is an island. The buttons are `data-cui-rpc=...`
-NOT `<a href>`. The server has an RPC handler that returns the new
-rendered rows.
+### ❌ Treating in-page state as a new route
+**Symptom**: page 2 or a sort order gets a path of its own (`/orders/page/2`),
+or a pager embedded in a card does a full reload.
+**Correct**: a list screen's own sort, page and filter live in its query
+string, and its links are normal `<a href="?p=2">` navigations the client
+router intercepts. A region embedded in a page (a pager inside a card, an
+expand) is an island: its controls fire an RPC and the server returns the
+new rendered rows. `framework/ui.Pagination` renders the anchors for both.
 
 ### ❌ Hard refresh on every interaction
 **Symptom**: clicking a sort header reloads the whole page.
@@ -74,7 +75,7 @@ and always via the shared bus.
 | Static HTML primitive (`<button>`, `<h1>`, `<table>`) | `core-ui/html` |
 | A composed UI pattern (accordion, tabs, pagination, breadcrumbs) | `framework/ui/<Name>` (on its `framework/headless` primitive) |
 | A semantic component (PageHeader, FormField, DataTable) | `framework/ui/` |
-| An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPCWithSignal(...)`) |
+| An island (server-rendered, server-state-owning, RPC-updatable) | `core-ui/widget` (builder API: `New(name).Slot(...).RPC(...)`) |
 | A theme token | `framework/ui/theme` (canonical typed `style.Theme`; mutate fields directly) |
 | An interactive component (RPC, signals, widget chaining) | `core-ui/interactive` (`OnClick(html, Post("/path").OnSuccess(...))`) |
 | **Per-component CSS** (loaded on demand, dedup'd, never re-fetched) | `core-ui/registry` (`RegisterStyle` + `Style.WrapHTML`) |
@@ -187,7 +188,8 @@ The flow:
 ## Before you ship UI code, check
 
 - [ ] Initial render is full SSR: refresh on the URL produces the same DOM.
-- [ ] No `<a href="?…">` for state changes; that's an island RPC.
+- [ ] No path of its own for in-page state: a list screen's sort/page/filter
+      are query-string links; an embedded region's are an island RPC.
 - [ ] In-page state worth sharing/bookmarking is in the URL via the
       `X-Gofastr-Push-State` response header.
 - [ ] No `location.href = …` in JS or in the server response.
@@ -200,7 +202,8 @@ The flow:
 ## Stop and re-read `core-ui/ARCHITECTURE.md` if
 
 - You're about to write `data-cui-spa` or any "opt into SPA mode" attribute.
-- You're about to make pagination an `<a href>`.
+- You're about to give pagination or sort a path of its own, or make an
+  embedded region's pager reload the page.
 - You're about to add a runtime endpoint that's not part of the
   SSR / page-nav / island-RPC / poll / SSE-push grid.
 - You're about to open an `EventSource` outside the shared bus, or use
