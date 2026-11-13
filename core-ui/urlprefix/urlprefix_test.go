@@ -377,3 +377,86 @@ func TestMiddlewareFlushKeepsBuffer(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// net/http sniffs the first 512 bytes the handler writes, however many
+// writes carry them: an HTML start split across writes is still HTML.
+func TestSniffSpansSplitWrites(t *testing.T) {
+	for _, statusFirst := range []bool{true, false} {
+		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if statusFirst {
+				w.WriteHeader(http.StatusCreated)
+			}
+			io.WriteString(w, `<ht`)
+			io.WriteString(w, `ml><a href="/pricing">p</a>`)
+		}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, esRequest("GET", "/x"))
+		if got := rec.Body.String(); got != `<html><a href="/es/pricing">p</a>` {
+			t.Fatalf("statusFirst=%v: got %q", statusFirst, got)
+		}
+		if ct := rec.Result().Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("statusFirst=%v: Content-Type = %q, want text/html", statusFirst, ct)
+		}
+	}
+}
+
+// A body that does not sniff as HTML within its first 512 bytes streams,
+// and the held bytes reach the client in order.
+func TestSniffHeldBytesForwarded(t *testing.T) {
+	first := strings.Repeat("a", 300)
+	second := strings.Repeat("b", 300)
+	h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		io.WriteString(w, first)
+		io.WriteString(w, second)
+		io.WriteString(w, `<a href="/pricing">`)
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, esRequest("GET", "/x"))
+	if rec.Code != http.StatusAccepted || rec.Body.String() != first+second+`<a href="/pricing">` {
+		t.Fatalf("got %d %q", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Result().Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
+		t.Fatalf("Content-Type = %q, want text/plain", ct)
+	}
+}
+
+// net/http fixes the header at WriteHeader: a header set after it is
+// ignored, trailers aside. A deferred status must not let a late
+// Content-Encoding or Content-Type reach the response.
+func TestHeadersAfterWriteHeaderIgnored(t *testing.T) {
+	for _, typed := range []bool{true, false} {
+		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if typed {
+				w.Header().Set("Content-Type", "text/html")
+			}
+			w.Header().Set("Trailer", "X-Sum")
+			w.WriteHeader(http.StatusOK)
+			w.Header().Set("Content-Encoding", "gzip")
+			w.Header().Set("X-Late", "1")
+			if !typed {
+				w.Header().Set("Content-Type", "application/json")
+			}
+			io.WriteString(w, `<html><a href="/pricing">p</a>`)
+			w.Header().Set("X-Sum", "abc")
+		}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, esRequest("GET", "/x"))
+		res := rec.Result()
+		if got := rec.Body.String(); got != `<html><a href="/es/pricing">p</a>` {
+			t.Fatalf("typed=%v: got %q", typed, got)
+		}
+		if v := res.Header.Get("Content-Encoding"); v != "" {
+			t.Fatalf("typed=%v: late Content-Encoding %q reached the response", typed, v)
+		}
+		if v := res.Header.Get("X-Late"); v != "" {
+			t.Fatalf("typed=%v: late X-Late %q reached the response", typed, v)
+		}
+		if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("typed=%v: Content-Type = %q, want text/html", typed, ct)
+		}
+		if v := res.Trailer.Get("X-Sum"); v != "abc" {
+			t.Fatalf("typed=%v: trailer X-Sum = %q, want abc", typed, v)
+		}
+	}
+}

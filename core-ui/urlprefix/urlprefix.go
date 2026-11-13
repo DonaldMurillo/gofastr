@@ -197,12 +197,16 @@ func urlAttr(tag, key string) bool {
 // Middleware rewrites the responses to a request whose URL named a
 // prefixed locale (i18n.PathPrefix is not empty): text/html bodies
 // through [HTML] and the Location, X-Gofastr-Location,
-// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path]. Any other request passes straight through. An HTML
-// body is buffered until the handler returns, so Flush waits for it;
-// other bodies stream. A body with no Content-Type is typed by the sniff
-// net/http applies, even when the handler wrote its status first. A body that is already encoded (gzip) passes
-// through as written: the framework places this middleware inside
-// Compress, which encodes after it.
+// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path].
+// Any other request passes straight through. An HTML body is buffered
+// until the handler returns, so Flush waits for it; other bodies stream.
+// A body with no Content-Type is typed by the sniff net/http applies, over
+// its first 512 bytes across writes, even when the handler wrote its
+// status first. While the status waits, the header stays as it stood at
+// WriteHeader, as net/http keeps it: a header set later is ignored,
+// trailers aside. A body that is already encoded (gzip) passes through as
+// written: the framework places this middleware inside Compress, which
+// encodes after it.
 func Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -233,12 +237,19 @@ type writer struct {
 	buffering bool
 	// pending: the handler wrote a status with no Content-Type, so the
 	// status waits for the first body bytes. net/http sniffs the type
-	// from them, and an untyped HTML body must be rewritten like a
-	// typed one.
+	// from the first 512 of them, across writes, and an untyped HTML
+	// body must be rewritten like a typed one. The held bytes sit in buf.
 	pending bool
 	code    int
 	buf     bytes.Buffer
+	// snap is the header as it stood at WriteHeader while the real
+	// status waits. net/http fixes the header there: a header set after
+	// it is ignored, trailers aside, so commit sends snap.
+	snap http.Header
 }
+
+// sniffLen is how many bytes net/http's sniff reads.
+const sniffLen = 512
 
 func (w *writer) rewriteHeaders() {
 	h := w.ResponseWriter.Header()
@@ -264,17 +275,47 @@ func (w *writer) WriteHeader(code int) {
 	if h.Get("Content-Encoding") == "" {
 		if strings.HasPrefix(h.Get("Content-Type"), "text/html") {
 			w.buffering = true
-			h.Del("Content-Length")
+			w.snap = h.Clone()
+			w.snap.Del("Content-Length")
 			return
 		}
 		// net/http sniffs only when the key is absent: a key set to nil
 		// is the handler opting out, and the body goes out untyped.
 		if _, typed := h["Content-Type"]; !typed && bodyAllowed(code) {
 			w.pending = true
+			w.snap = h.Clone()
 			return
 		}
 	}
 	w.ResponseWriter.WriteHeader(code)
+}
+
+// commit sends the deferred status with the header as it stood at
+// WriteHeader. A trailer the handler declared there, or sets under
+// http.TrailerPrefix, is kept from the live map: net/http reads those
+// when the handler returns.
+func (w *writer) commit() {
+	h := w.ResponseWriter.Header()
+	declared := map[string]bool{}
+	for _, v := range w.snap.Values("Trailer") {
+		for _, k := range strings.Split(v, ",") {
+			if k = strings.TrimSpace(k); k != "" {
+				declared[http.CanonicalHeaderKey(k)] = true
+			}
+		}
+	}
+	for k, v := range h {
+		if declared[k] || strings.HasPrefix(k, http.TrailerPrefix) {
+			w.snap[k] = v
+		}
+	}
+	for k := range h {
+		delete(h, k)
+	}
+	for k, v := range w.snap {
+		h[k] = v
+	}
+	w.ResponseWriter.WriteHeader(w.code)
 }
 
 // bodyAllowed mirrors net/http: these statuses carry no body, so it
@@ -283,20 +324,28 @@ func bodyAllowed(code int) bool {
 	return code != http.StatusNoContent && code != http.StatusNotModified
 }
 
-// settle decides a pending status from the first body bytes, the same
-// sniff net/http applies to an untyped response: HTML is buffered and
-// rewritten, anything else is forwarded and streams.
-func (w *writer) settle(b []byte) {
+// settle decides a pending status from the held body bytes, the same
+// sniff net/http applies to an untyped response: HTML stays buffered
+// and is rewritten, anything else is forwarded and streams.
+func (w *writer) settle() error {
 	w.pending = false
-	h := w.ResponseWriter.Header()
-	ct := http.DetectContentType(b)
-	h.Set("Content-Type", ct)
+	held := w.buf.Bytes()
+	if len(held) == 0 {
+		// net/http sniffs no type from an empty body.
+		w.commit()
+		return nil
+	}
+	ct := http.DetectContentType(held)
+	w.snap.Set("Content-Type", ct)
 	if strings.HasPrefix(ct, "text/html") {
 		w.buffering = true
-		h.Del("Content-Length")
-		return
+		w.snap.Del("Content-Length")
+		return nil
 	}
-	w.ResponseWriter.WriteHeader(w.code)
+	w.commit()
+	_, err := w.ResponseWriter.Write(held)
+	w.buf.Reset()
+	return err
 }
 
 func (w *writer) Write(b []byte) (int, error) {
@@ -304,10 +353,14 @@ func (w *writer) Write(b []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	if w.pending {
-		if len(b) == 0 {
-			return 0, nil
+		w.buf.Write(b)
+		if w.buf.Len() < sniffLen {
+			return len(b), nil
 		}
-		w.settle(b)
+		if err := w.settle(); err != nil {
+			return 0, err
+		}
+		return len(b), nil
 	}
 	if w.buffering {
 		return w.buf.Write(b)
@@ -328,11 +381,12 @@ func (w *writer) Flush() {
 		}
 	}
 	if w.pending {
-		// A flush before any body sends the headers now, and net/http
-		// types an empty sniff as text/plain, so what follows is not
-		// HTML to the client: forward the status and stream.
-		w.pending = false
-		w.ResponseWriter.WriteHeader(w.code)
+		// A flush ends the sniff: net/http types the response from
+		// what it holds. With nothing held the type is not HTML, so
+		// what follows streams.
+		if w.settle() != nil || w.buffering {
+			return
+		}
 	}
 	_ = http.NewResponseController(w.ResponseWriter).Flush()
 }
@@ -346,12 +400,13 @@ func (w *writer) finish() {
 		return
 	}
 	if w.pending {
-		w.ResponseWriter.WriteHeader(w.code)
-		return
+		if w.settle() != nil || !w.buffering {
+			return
+		}
 	}
 	if !w.buffering {
 		return
 	}
-	w.ResponseWriter.WriteHeader(w.code)
+	w.commit()
 	_, _ = w.ResponseWriter.Write(HTML(w.buf.Bytes(), w.rule))
 }
