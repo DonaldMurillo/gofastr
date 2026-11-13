@@ -56,3 +56,33 @@ func TestValueStringMatchesJSStringify(t *testing.T) {
 		}
 	}
 }
+
+// TestValueStringJSStringAndKeyOrder: the runtime JSON.parses the seed and
+// paints a string raw, so a value that marshals to a JSON string ([]byte,
+// *string, a TextMarshaler) stamps its text, not its quoted JSON. An
+// object it re-stringifies lists integer-like keys first, ascending, as
+// JSON.parse then JSON.stringify does; the rest keep their order.
+func TestValueStringJSStringAndKeyOrder(t *testing.T) {
+	s := `say "hi" <b>`
+	type keyed struct {
+		B   int `json:"b"`
+		One int `json:"1"`
+		A   int `json:"a"`
+	}
+	for _, tc := range []struct {
+		in   any
+		want string
+	}{
+		{&s, `say "hi" <b>`},
+		{[]byte("hi"), "aGk="},
+		{map[string]int{"10": 1, "9": 2, "a": 3, "01": 4}, `{"9":2,"10":1,"01":4,"a":3}`},
+		{keyed{B: 1, One: 2, A: 3}, `{"1":2,"b":1,"a":3}`},
+		{[]any{map[string]any{"10": "x", "9": []int{1}}}, `[{"9":[1],"10":"x"}]`},
+		// 2^32-1 is no array index: it keeps its place.
+		{map[string]int{"!": 0, "4294967295": 1, "7": 2}, `{"7":2,"!":0,"4294967295":1}`},
+	} {
+		if got := valueString(tc.in); got != tc.want {
+			t.Errorf("valueString(%#v) = %q, want %q (runtime paint)", tc.in, got, tc.want)
+		}
+	}
+}

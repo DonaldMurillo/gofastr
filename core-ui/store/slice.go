@@ -2,11 +2,13 @@ package store
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"maps"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -379,10 +381,125 @@ func valueString(v any) string {
 		if err := enc.Encode(v); err != nil {
 			return ""
 		}
-		out := strings.TrimSuffix(buf.String(), "\n")
-		if out == "null" {
+		out := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
+		switch {
+		case string(out) == "null":
 			return ""
+		case len(out) > 0 && out[0] == '"':
+			// []byte, *string, a TextMarshaler: the seed parses to a
+			// string, which the runtime paints raw.
+			var str string
+			if json.Unmarshal(out, &str) == nil {
+				return str
+			}
+		case len(out) > 0 && (out[0] == '{' || out[0] == '['):
+			if js, err := jsKeyOrder(out); err == nil {
+				return string(js)
+			}
 		}
-		return out
+		return string(out)
 	}
+}
+
+// jsKeyOrder re-lists every object in compact JSON in the order
+// JSON.stringify gives it after JSON.parse: array-index keys ("0" to
+// "4294967294", no leading zero) first, ascending, then the rest in
+// source order. encoding/json sorts map keys as strings ("10" before
+// "9") and lists struct fields as declared. Leaves keep their bytes.
+func jsKeyOrder(raw []byte) ([]byte, error) {
+	if len(raw) == 0 || (raw[0] != '{' && raw[0] != '[') {
+		return raw, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if _, err := dec.Token(); err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	if raw[0] == '[' {
+		out.WriteByte('[')
+		for i := 0; dec.More(); i++ {
+			var v json.RawMessage
+			if err := dec.Decode(&v); err != nil {
+				return nil, err
+			}
+			js, err := jsKeyOrder(v)
+			if err != nil {
+				return nil, err
+			}
+			if i > 0 {
+				out.WriteByte(',')
+			}
+			out.Write(js)
+		}
+		out.WriteByte(']')
+		return out.Bytes(), nil
+	}
+	type member struct {
+		key   string
+		index uint64
+		isIdx bool
+		val   []byte
+	}
+	var members []member
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, _ := tok.(string)
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return nil, err
+		}
+		js, err := jsKeyOrder(v)
+		if err != nil {
+			return nil, err
+		}
+		idx, isIdx := arrayIndex(key)
+		members = append(members, member{key: key, index: idx, isIdx: isIdx, val: js})
+	}
+	slices.SortStableFunc(members, func(a, b member) int {
+		switch {
+		case a.isIdx && b.isIdx:
+			return cmp.Compare(a.index, b.index)
+		case a.isIdx:
+			return -1
+		case b.isIdx:
+			return 1
+		}
+		return 0
+	})
+	enc := json.NewEncoder(&out)
+	enc.SetEscapeHTML(false)
+	out.WriteByte('{')
+	for i, m := range members {
+		if i > 0 {
+			out.WriteByte(',')
+		}
+		if err := enc.Encode(m.key); err != nil {
+			return nil, err
+		}
+		out.Truncate(out.Len() - 1) // Encode's newline
+		out.WriteByte(':')
+		out.Write(m.val)
+	}
+	out.WriteByte('}')
+	return out.Bytes(), nil
+}
+
+// arrayIndex reports whether key is an ECMAScript array index: the
+// canonical decimal spelling of an integer from 0 to 2^32-2.
+func arrayIndex(key string) (uint64, bool) {
+	if key == "" || len(key) > 10 || (len(key) > 1 && key[0] == '0') {
+		return 0, false
+	}
+	var n uint64
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + uint64(c-'0')
+	}
+	return n, n < 1<<32-1
 }

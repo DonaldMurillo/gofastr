@@ -1,6 +1,9 @@
 package html
 
-import "github.com/DonaldMurillo/gofastr/core/render"
+import (
+	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+)
 
 // TableConfig configures a <table> element. Automatically adds role="table".
 type TableConfig struct {
@@ -87,16 +90,18 @@ func TableRow(cfg TableRowConfig, children ...render.HTML) render.HTML {
 }
 
 // TH produces a <th> element. The scope attribute defaults to "col"
-// (columnheader) unless cfg.Scope is set. The role is set to
-// "columnheader" for scope="col" and "rowheader" for scope="row".
+// (columnheader) unless cfg.Scope is set; the keyword is folded to lower
+// case, as HTML reads it ASCII case-insensitively. The role is
+// "rowheader" for scope="row" and "rowgroup", which head rows, and
+// "columnheader" for every other scope, "col" and "colgroup" included.
 func TH(cfg THConfig, children ...render.HTML) render.HTML {
 	attrs := buildAttrs(cfg.ExtraAttrs, cfg.ID, cfg.Class)
-	scope := cfg.Scope
+	scope := asciicase.Lower(cfg.Scope)
 	if scope == "" {
 		scope = "col"
 	}
 	setAttr(attrs, "scope", scope)
-	if scope == "row" {
+	if scope == "row" || scope == "rowgroup" {
 		setAttr(attrs, "role", "rowheader")
 	} else {
 		setAttr(attrs, "role", "columnheader")
