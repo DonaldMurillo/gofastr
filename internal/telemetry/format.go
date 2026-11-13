@@ -62,6 +62,10 @@ type Trace struct {
 	// failures are grouped by.
 	Err   string
 	Spans []Span
+	// Stack is where the trace failed, when a span knew: the stack of a
+	// panic, from the function that panicked on. Written after the
+	// spans, and only when there is one.
+	Stack string
 }
 
 // traceHead bounds the bytes a query reads to learn a trace's summary:
@@ -137,7 +141,14 @@ func AppendTrace(dst []byte, t Trace) []byte {
 		}
 		dst = append(dst, '}')
 	}
-	return append(dst, "]}\n"...)
+	dst = append(dst, ']')
+	// After the spans, so a summary, which ends where they start,
+	// never carries it.
+	if t.Stack != "" {
+		dst = append(dst, `,"stack":`...)
+		dst = appendJSONString(dst, t.Stack)
+	}
+	return append(dst, "}\n"...)
 }
 
 // appendJSONString appends s as a JSON string the way slog's JSON

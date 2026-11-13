@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"io"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -116,6 +118,17 @@ func Tracing() Middleware {
 				if v := recover(); v != nil {
 					finish(panickedStatus(w, ww.wroteHeader, ww.status))
 					span.SetStatus(codes.Error, textsafe.Recovered(v))
+					// Where it panicked, under OpenTelemetry's own name
+					// for it, so whatever reads the span has the stack
+					// beside the request. A panic Timeout carried over
+					// from the handler's goroutine brings that
+					// goroutine's stack; this one's would show only the
+					// middleware.
+					_, stack, _ := unwrapPanic(v)
+					if stack == nil {
+						stack = debug.Stack()
+					}
+					span.SetAttributes(attribute.String("exception.stacktrace", panicOrigin(stack)))
 					panic(v)
 				}
 			}()
@@ -257,4 +270,14 @@ func (w *tracingResponseWriter) Push(target string, opts *http.PushOptions) erro
 // Unwrap exposes the wrapped writer to net/http's ResponseController.
 func (w *tracingResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+// maxSpanStackLen bounds the stack a span carries: enough for the
+// frames between a handler and the line that panicked.
+const maxSpanStackLen = 8 << 10
+
+// panicOrigin is the stack a span carries for a panic: from the
+// function that panicked on, and bounded.
+func panicOrigin(stack []byte) string {
+	return textsafe.Truncate(panicstack.Origin(string(stack)), maxSpanStackLen)
 }

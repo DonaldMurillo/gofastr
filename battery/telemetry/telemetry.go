@@ -288,8 +288,8 @@ func (s logSink) Write(entry []byte) error {
 	// look decides.
 	if bytes.Contains(entry, []byte(`"level":"ERROR`)) {
 		if c := s.p.collector.Load(); c != nil {
-			if id, text, ok := itel.LoggedError(entry); ok {
-				c.NoteError(id, text)
+			if id, text, stack, ok := itel.LoggedError(entry); ok {
+				c.NoteError(id, text, stack)
 			}
 		}
 	}

@@ -49,7 +49,8 @@ func seed(t *testing.T, dir string, now time.Time) {
 				{SpanID: "02", ParentID: "01", Name: "SELECT", Offset: 5 * ms, Dur: 10 * ms, Attrs: []itel.Attr{{Key: "db.query.text", Value: "SELECT * FROM orders WHERE id = ?"}}},
 				{SpanID: "03", ParentID: "02", Name: "decode", Offset: 6 * ms, Dur: ms, Error: true},
 			}},
-		{Time: now.Add(-3 * time.Minute), TraceID: failedID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 8 * ms, Error: true, Err: "card 4411 declined"},
+		{Time: now.Add(-3 * time.Minute), TraceID: failedID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 8 * ms, Error: true, Err: "card 4411 declined",
+			Stack: "app.charge(...)\n\t/app/pay.go:41 +0x2\napp.<b>handler</b>(...)\n\t/app/h.go:9 +0x1\n"},
 		{Time: now.Add(-150 * time.Second), TraceID: failedAgainID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 9 * ms, Error: true, Err: "card 9020 declined"},
 		{Time: now.Add(-140 * time.Second), TraceID: otherFailID, Route: "POST /orders", Path: "/orders", Status: 500, Dur: 9 * ms, Error: true, Err: "<b>inventory</b> gone"},
 		{Time: now.Add(-2 * time.Minute), TraceID: slowID, Route: "GET /reports", Path: "/reports", Status: 200, Dur: 900 * ms},
@@ -466,4 +467,32 @@ func TestOverviewWithNothingCounted(t *testing.T) {
 		t.Fatalf("status %d", code)
 	}
 	has(t, "an app with no requests yet", body, []string{"No requests counted yet", "Time range"}, []string{"telemetry-chart-requests", "<table"})
+}
+
+// A failed request's page says what went wrong in the failure's own
+// words, and where when the trace knows. A request that failed without
+// a stack has no empty section for one, and one that did not fail has
+// neither.
+func TestFailedRequestShowsWhatAndWhere(t *testing.T) {
+	h := newApp(t)
+	_, body := get(t, h, "/telemetry/requests?trace="+failedID, true)
+	has(t, "a failure with a stack", body,
+		[]string{"What went wrong", "card 4411 declined", "Where it failed", "app.charge(...)", "/app/pay.go:41", "app.&lt;b&gt;handler&lt;/b&gt;(...)"},
+		[]string{"app.<b>handler</b>"})
+	if strings.Index(body, "What went wrong") > strings.Index(body, "Where it failed") {
+		t.Error("where comes before what")
+	}
+
+	_, body = get(t, h, "/telemetry/requests?trace="+failedAgainID, true)
+	has(t, "a failure with no stack", body, []string{"What went wrong", "card 9020 declined"}, []string{"Where it failed"})
+
+	// A request that succeeded though a step failed has no error of its
+	// own to show, and no stack.
+	_, body = get(t, h, "/telemetry/requests?trace="+slowID, true)
+	has(t, "a request that did not fail", body, []string{"GET /reports"}, []string{"What went wrong", "Where it failed"})
+
+	// A step failed and nothing said why: no empty box in place of the
+	// words.
+	_, body = get(t, h, "/telemetry/requests?trace="+okID, true)
+	has(t, "a failed step with no error text", body, []string{"GET /orders/{id}"}, []string{"What went wrong"})
 }

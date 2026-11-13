@@ -335,12 +335,13 @@ func ParseTrace(line []byte) (Trace, error) {
 			Error    bool              `json:"error"`
 			Attrs    map[string]string `json:"attrs"`
 		} `json:"spans"`
+		Stack string `json:"stack"`
 	}
 	if err := json.Unmarshal(line, &wire); err != nil {
 		return Trace{}, fmt.Errorf("telemetry: trace line: %w", err)
 	}
 	t := Trace{Time: wire.Time, TraceID: wire.TraceID, Route: wire.Route, Path: wire.Path, Status: wire.Status,
-		Dur: micros(wire.DurUS), Error: wire.Error, FailedSteps: wire.Failed, Err: wire.Err, Spans: make([]Span, len(wire.Spans))}
+		Dur: micros(wire.DurUS), Error: wire.Error, FailedSteps: wire.Failed, Err: wire.Err, Stack: wire.Stack, Spans: make([]Span, len(wire.Spans))}
 	for i, ws := range wire.Spans {
 		sp := Span{SpanID: ws.SpanID, ParentID: ws.ParentID, Name: ws.Name,
 			Offset: micros(ws.StartUS), Dur: micros(ws.DurUS), Error: ws.Error}

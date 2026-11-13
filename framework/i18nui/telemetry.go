@@ -115,6 +115,13 @@ var (
 	TelemetryLogsCaption   = i18n.Define("ui.telemetry.logsCaption", "Log lines")
 )
 
+// One request's failure.
+var (
+	TelemetryWentWrong = i18n.Define("ui.telemetry.wentWrong", "What went wrong")
+	TelemetryStack     = i18n.Define("ui.telemetry.stack", "Where it failed")
+	TelemetryStackSub  = i18n.Define("ui.telemetry.stackSub", "The call stack, from the function that failed up to the request's handler.")
+)
+
 // The overview screen.
 var (
 	TelemetryOverview         = i18n.Define("ui.telemetry.overview", "Overview")

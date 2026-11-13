@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -118,13 +119,13 @@ func TestTraceErrComesFromWhoeverSaysItBest(t *testing.T) {
 		id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 		// The usual order: the handler logs before any span has ended.
 		if logged != "" {
-			c.NoteError(id, logged)
-			c.NoteError(id, "a second logged error") // the first one stands
+			c.NoteError(id, logged, "")
+			c.NoteError(id, "a second logged error", "") // the first one stands
 		}
 		for _, e := range steps {
 			c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Error: e != "", Err: e, Span: Span{Name: "step"}})
 		}
-		c.NoteError("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "another request's error")
+		c.NoteError("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "another request's error", "")
 		c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Root: true, Error: rootErr != "", Err: rootErr, Span: Span{Name: "root"}})
 		return got
 	}
@@ -151,7 +152,7 @@ func TestTraceErrComesFromWhoeverSaysItBest(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i := range 5000 {
-		c.NoteError(fmt.Sprintf("%032x", i), "an error for a request that never ends")
+		c.NoteError(fmt.Sprintf("%032x", i), "an error for a request that never ends", "")
 		if st := c.Stats(); st.BufferedBytes > 32<<10 {
 			t.Fatalf("after %d logged errors the buffer holds %d bytes, over its 32 KiB cap", i+1, st.BufferedBytes)
 		}
@@ -191,7 +192,7 @@ func TestLoggedErrorReadsOnlyErrorsInsideATrace(t *testing.T) {
 		"a short trace ID": {[]byte(`{"time":"x","level":"ERROR","msg":"m","trace_id":"abc","err":"x"}`), ""},
 		"not json":         {[]byte(`ERROR something`), ""},
 	} {
-		gotID, text, ok := LoggedError(c.entry)
+		gotID, text, _, ok := LoggedError(c.entry)
 		if text != c.text || ok != (c.text != "") || (ok && gotID != id) {
 			t.Errorf("%s: %q, %q, %v; want text %q", name, gotID, text, ok, c.text)
 		}
@@ -233,5 +234,118 @@ func TestIssuesSeenTogetherListTheCommonOneFirst(t *testing.T) {
 		if issues[0].Err != common || issues[0].Count != 4 {
 			t.Fatalf("with %q the common one, first is %+v", common, issues[0])
 		}
+	}
+}
+
+// A trace carries the first stack a failed span brought, cut to a bound
+// and counted against the memory cap; the line holds it after the
+// spans, so a summary never reads it, and a trace with none says
+// nothing about one.
+func TestTraceCarriesWhereItFailed(t *testing.T) {
+	var got Trace
+	c, err := NewCollector(Config{Dir: "unused", SampleRate: 1}, func(tr Trace) error { got = tr; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := fmt.Sprintf("%032x", 1)
+	long := "app.handler(...)\n\t/app/h.go:12 +0x2\n" + strings.Repeat("x", 3*maxStackLen)
+	c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Error: true, Err: "boom", Stack: long, Span: Span{SpanID: "02", ParentID: "01", Name: "step"}})
+	if st := c.Stats(); st.BufferedBytes < maxStackLen {
+		t.Fatalf("a held stack of %d bytes is counted as %d", maxStackLen, st.BufferedBytes)
+	}
+	// A second stack, and one on a span that did not fail, change nothing.
+	c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Error: true, Stack: "second", Span: Span{SpanID: "03", ParentID: "01", Name: "step"}})
+	c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Root: true, Error: true, Err: "Internal Server Error", Route: "GET /a", Status: 500, Span: Span{SpanID: "01", Name: "root"}})
+	if len(got.Stack) != maxStackLen || !strings.HasPrefix(got.Stack, "app.handler(...)\n\t/app/h.go:12") {
+		t.Fatalf("stack of %d bytes starting %q; want the first one cut to %d", len(got.Stack), got.Stack[:min(len(got.Stack), 40)], maxStackLen)
+	}
+	if st := c.Stats(); st.BufferedBytes != 0 {
+		t.Fatalf("%d bytes still counted after the trace was written", st.BufferedBytes)
+	}
+
+	line := AppendTrace(nil, got)
+	back, err := ParseTrace(line)
+	if err != nil || back.Stack != got.Stack || back.Err != "boom" || len(back.Spans) != 3 {
+		t.Fatalf("read back: stack %d bytes, err %q, %d spans, %v", len(back.Stack), back.Err, len(back.Spans), err)
+	}
+	if !strings.HasSuffix(string(line), "\"}\n") || strings.Contains(string(head(line)), `"stack"`) {
+		t.Fatal("the stack is not the line's last field, after the spans")
+	}
+	if sum, ok := summary(line); !ok || sum.Err != "boom" || sum.TraceID != id {
+		t.Fatalf("the summary of a line with a stack: %+v, %v", sum, ok)
+	}
+
+	// A stack on a span that did not fail is not where anything failed.
+	c.SpanEnded(SpanEnd{TraceID: fmt.Sprintf("%032x", 2), Start: day0, Root: true, Stack: "not a failure", Route: "GET /a", Status: 200, Span: Span{SpanID: "01", Name: "root"}})
+	if got.Stack != "" || strings.Contains(string(AppendTrace(nil, got)), `"stack"`) {
+		t.Fatalf("a request that did not fail carries a stack: %q", got.Stack)
+	}
+}
+
+// The log plugin recovers a panic inside the request and logs one line
+// for it: "http.panic" for every panic, the value under "panic", the
+// stack under "stack". The failure is named by the value, and the trace
+// carries the stack from the function that panicked on. A stack logged
+// by a request that goes on to succeed is nobody's failure.
+func TestLoggedPanicNamesTheFailureAndBringsItsStack(t *testing.T) {
+	id := strings.Repeat("a", 32)
+	stack := `goroutine 9 [running]:\nruntime/debug.Stack()\n\t/go/debug/stack.go:26 +0x5e\nlog.recoveryMiddleware.func1()\n\t/log/middleware.go:106 +0x1\npanic({0x1, 0x2})\n\t/go/runtime/panic.go:860 +0x13a\napp.lookUp(...)\n\t/app/orders.go:41 +0x2\n`
+	entry := []byte(`{"time":"2026-11-10T00:00:00Z","level":"ERROR","msg":"http.panic","trace_id":"` + id + `","panic":"runtime error: index out of range [3] with length 0","method":"GET","stack":"` + stack + `"}`)
+	gotID, text, gotStack, ok := LoggedError(entry)
+	if !ok || gotID != id || text != "runtime error: index out of range [3] with length 0" {
+		t.Fatalf("read %q, %q, %v", gotID, text, ok)
+	}
+	if want := "app.lookUp(...)\n\t/app/orders.go:41 +0x2\n"; gotStack != want {
+		t.Fatalf("stack %q, want %q", gotStack, want)
+	}
+	// A line with no stack has none, and "err" still names an error
+	// that is not a panic.
+	if _, text, st, ok := LoggedError([]byte(`{"time":"x","level":"ERROR","msg":"payment failed","trace_id":"` + id + `","err":"declined"}`)); !ok || text != "declined" || st != "" {
+		t.Fatalf("an ordinary error line: %q, %q, %v", text, st, ok)
+	}
+
+	for name, failed := range map[string]bool{"a request that fails": true, "a request that succeeds": false} {
+		var got Trace
+		c, err := NewCollector(Config{Dir: "unused", SampleRate: 1}, func(tr Trace) error { got = tr; return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.NoteError(id, text, gotStack)
+		c.NoteError(id, "a later error", "a later stack")
+		status := 200
+		if failed {
+			status = 500
+		}
+		c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Root: true, Error: failed, Err: "Internal Server Error", Route: "GET /a", Status: status, Span: Span{SpanID: "01", Name: "root"}})
+		wantStack, wantErr := "", ""
+		if failed {
+			wantStack, wantErr = gotStack, text
+		}
+		if got.Stack != wantStack || got.Err != wantErr {
+			t.Errorf("%s: err %q, stack %q", name, got.Err, got.Stack)
+		}
+	}
+}
+
+// A stack that arrives on a log line is held to the same bound as one a
+// span brings, and counted against the same memory cap while it waits.
+func TestLoggedStackIsBoundedAndCounted(t *testing.T) {
+	var got Trace
+	c, err := NewCollector(Config{Dir: "unused", SampleRate: 1}, func(tr Trace) error { got = tr; return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("c", 32)
+	c.NoteError(id, "boom", "app.f()\n"+strings.Repeat("z", 5*maxStackLen))
+	held := c.Stats().BufferedBytes
+	if held < maxStackLen || held > 2*maxStackLen {
+		t.Fatalf("a waiting stack of at most %d bytes is counted as %d", maxStackLen, held)
+	}
+	c.SpanEnded(SpanEnd{TraceID: id, Start: day0, Root: true, Error: true, Route: "GET /a", Status: 500, Span: Span{SpanID: "01", Name: "root"}})
+	if len(got.Stack) != maxStackLen || !strings.HasPrefix(got.Stack, "app.f()\n") {
+		t.Fatalf("stack of %d bytes, want %d", len(got.Stack), maxStackLen)
+	}
+	if left := c.Stats().BufferedBytes; left != 0 {
+		t.Fatalf("%d bytes still counted after the trace was written", left)
 	}
 }

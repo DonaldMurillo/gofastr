@@ -69,6 +69,15 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 				}
 			}
 		}
+		// The stack of an error recorded with one (RecordError with
+		// trace.WithStackTrace), when the span carries none itself.
+		for _, ev := range s.Events() {
+			for _, kv := range ev.Attributes {
+				if ev.Name == "exception" && kv.Key == "exception.stacktrace" && e.Stack == "" {
+					e.Stack = kv.Value.AsString()
+				}
+			}
+		}
 	}
 	attrs := s.Attributes()
 	e.Span.Attrs = make([]telemetry.Attr, 0, len(attrs))
@@ -83,6 +92,11 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 			route = kv.Value.AsString()
 		case "http.target", "url.path":
 			e.Path = kv.Value.AsString()
+		case "exception.stacktrace":
+			// The tracing middleware's, for a panic. It is the
+			// trace's, not one more attribute cut to a line.
+			e.Stack = kv.Value.AsString()
+			continue
 		}
 		e.Span.Attrs = append(e.Span.Attrs, telemetry.Attr{Key: string(kv.Key), Value: kv.Value.Emit()})
 	}

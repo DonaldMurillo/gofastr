@@ -189,7 +189,8 @@ and carries these attributes:
 Responses with status `>= 500` set the span status to `codes.Error`. A
 panicking handler's span ends with `codes.Error` and the status the client
 got (`500`, or the one already sent), and the SDK records the panic as the
-span's `exception` event.
+span's `exception` event. The span also carries `exception.stacktrace`: the
+call stack from the function that panicked, at most 8 KiB.
 
 Incoming trace context is extracted with the global propagator you set
 with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one

@@ -68,6 +68,9 @@ app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", A
   ERROR line logged with the request's context, else the status text.
   So log `slog.ErrorContext(ctx, "payment failed", "err", err)` before
   answering 500.
+- A panic is named by its value and keeps its call stack, from the
+  function that panicked: on the request's page, in `gofastr telemetry
+  request <trace-id>` and as `stack` in `telemetry_request`.
 - One alert rule is on by default: ten failed requests in five minutes.
   It is logged as `telemetry.alert` and shown on Requests and Issues. To be
   told, set `Notify`:

@@ -3,6 +3,8 @@ package otelspan_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -124,5 +126,54 @@ func TestLoneClientSpanIsNotSampledIn(t *testing.T) {
 	root.End()
 	if len(kept) != 1 || len(kept[0].Spans) != 2 {
 		t.Fatalf("a job and its query: kept %+v", kept)
+	}
+}
+
+// Where a span failed reaches the trace by either of the two ways an
+// OpenTelemetry span can say it: the exception.stacktrace attribute the
+// tracing middleware sets for a panic, or the exception event of an
+// error recorded with its stack. The attribute is the trace's own
+// field, not one more span attribute cut to a line.
+func TestStackReachesTheTrace(t *testing.T) {
+	var kept []telemetry.Trace
+	c, err := telemetry.NewCollector(telemetry.Config{Dir: "unused", SampleRate: 1}, func(tr telemetry.Trace) error {
+		kept = append(kept, tr)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(otelspan.New(c))).Tracer("test")
+
+	long := "app.handler(...)\n\t/app/h.go:12 +0x2\n" + strings.Repeat("y", 3000)
+	_, span := tracer.Start(context.Background(), "HTTP GET", trace.WithSpanKind(trace.SpanKindServer))
+	span.SetStatus(codes.Error, "index out of range")
+	span.SetAttributes(attribute.String("exception.stacktrace", long), attribute.String("http.route", "/a"))
+	span.End()
+	if len(kept) != 1 || kept[0].Stack != long || kept[0].Err != "index out of range" {
+		t.Fatalf("from the attribute: %d traces, stack of %d bytes, err %q", len(kept), len(kept[0].Stack), kept[0].Err)
+	}
+	for _, a := range kept[0].Spans[0].Attrs {
+		if a.Key == "exception.stacktrace" {
+			t.Fatalf("the stack is also a span attribute, cut to %d bytes", len(a.Value))
+		}
+	}
+
+	kept = nil
+	_, span = tracer.Start(context.Background(), "job", trace.WithSpanKind(trace.SpanKindConsumer))
+	span.RecordError(errors.New("disk full"), trace.WithStackTrace(true))
+	span.SetStatus(codes.Error, "")
+	span.End()
+	if len(kept) != 1 || !strings.Contains(kept[0].Stack, "TestStackReachesTheTrace") || kept[0].Err != "disk full" {
+		t.Fatalf("from a recorded error: %+v", kept)
+	}
+
+	// A span that did not fail brings no stack, whatever it carries.
+	kept = nil
+	_, span = tracer.Start(context.Background(), "HTTP GET", trace.WithSpanKind(trace.SpanKindServer))
+	span.SetAttributes(attribute.String("exception.stacktrace", "stale"))
+	span.End()
+	if len(kept) != 1 || kept[0].Stack != "" {
+		t.Fatalf("a span that did not fail: %+v", kept)
 	}
 }

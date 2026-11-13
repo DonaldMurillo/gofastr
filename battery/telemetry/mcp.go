@@ -79,7 +79,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		},
 		{
 			name:        "telemetry_request",
-			description: "Return one request by `trace_id` (32 hex digits): its spans with start offsets and durations in microseconds, and the log lines written while it ran.",
+			description: "Return one request by `trace_id` (32 hex digits): its spans with start offsets and durations in microseconds, `err` (what went wrong) and `stack` (where, for a panic) when it failed, and the log lines written while it ran.",
 			schema: map[string]any{"type": "object", "required": []string{"trace_id"}, "properties": map[string]any{
 				"trace_id": map[string]any{"type": "string", "description": "The trace ID, from telemetry_requests or a log line's trace_id."},
 			}},

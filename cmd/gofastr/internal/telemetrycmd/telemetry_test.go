@@ -41,7 +41,8 @@ func seed(t *testing.T) string {
 				{SpanID: "01", Name: "HTTP GET GET /orders/{id}", Dur: 20 * ms},
 				{SpanID: "02", ParentID: "01", Name: "SELECT", Offset: 5 * ms, Dur: 10 * ms, Error: true, Attrs: []itel.Attr{{Key: "db.query.text", Value: "SELECT * FROM orders"}}},
 			}},
-		{Time: now.Add(-2 * time.Minute), TraceID: failedID, Route: "POST /orders\x1b[31m", Status: 500, Dur: 900 * ms, Error: true, Err: "card 4411 declined\x1b[2J"},
+		{Time: now.Add(-2 * time.Minute), TraceID: failedID, Route: "POST /orders\x1b[31m", Status: 500, Dur: 900 * ms, Error: true, Err: "card 4411 declined\x1b[2J",
+			Stack: "app.charge(...)\n\t/app/pay.go:41 +0x2\x1b[2J\napp.handler(...)\n\t/app/h.go:9 +0x1\n"},
 		{Time: now.Add(-90 * time.Second), TraceID: strings.Repeat("d", 32), Route: "POST /orders\x1b[31m", Status: 500, Dur: 5 * ms, Error: true, Err: "card 9020 declined\x1b[2J"},
 	} {
 		write(itel.KindTraces, tr.Time, itel.AppendTrace(nil, tr))
@@ -246,6 +247,28 @@ func TestRequest(t *testing.T) {
 	}
 	if _, err := run(t, "request", strings.Repeat("0", 32), "--dir", dir); err == nil || !strings.Contains(err.Error(), "no request with that trace ID") {
 		t.Errorf("unknown ID: %v", err)
+	}
+}
+
+// One failed request says what went wrong and where, each stack line
+// on a line of its own with nothing in it that moves the cursor.
+func TestRequestShowsTheErrorAndTheStack(t *testing.T) {
+	dir := seed(t)
+	out, err := run(t, "request", failedID, "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"error  card 4411 declined", "\nWhere it failed\n  app.charge(...)\n      /app/pay.go:41 +0x2", "\n  app.handler(...)\n      /app/h.go:9 +0x1\n\nLog lines"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\x1b") || strings.Index(out, "Steps") > strings.Index(out, "Where it failed") {
+		t.Errorf("an escape got through, or the stack is before the steps:\n%q", out)
+	}
+	ok, err := run(t, "request", okID, "--dir", dir)
+	if err != nil || strings.Contains(ok, "Where it failed") || strings.Contains(ok, "error  ") {
+		t.Errorf("a request that did not fail: %v\n%s", err, ok)
 	}
 }
 

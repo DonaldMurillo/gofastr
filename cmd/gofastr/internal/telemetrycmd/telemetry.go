@@ -502,7 +502,11 @@ func (o options) request(w io.Writer, store *itel.Store, id string) error {
 	if tr.Path != "" {
 		fmt.Fprintf(w, "path   %s\n", clean(tr.Path))
 	}
-	fmt.Fprintf(w, "ended  %s\ntrace  %s\n\nSteps\n", stamp(tr.Time), tr.TraceID)
+	fmt.Fprintf(w, "ended  %s\ntrace  %s\n", stamp(tr.Time), tr.TraceID)
+	if tr.Err != "" && (tr.Error || tr.FailedSteps > 0) {
+		fmt.Fprintf(w, "error  %s\n", clean(tr.Err))
+	}
+	fmt.Fprint(w, "\nSteps\n")
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "  START\tTOOK\tSTEP")
@@ -515,6 +519,14 @@ func (o options) request(w io.Writer, store *itel.Store, id string) error {
 	}
 	if err := tw.Flush(); err != nil {
 		return err
+	}
+	if tr.Stack != "" {
+		// Each line cleaned on its own: the stack's line breaks are its
+		// shape, and nothing else in it may move the cursor.
+		fmt.Fprintln(w, "\nWhere it failed")
+		for line := range strings.SplitSeq(strings.TrimRight(tr.Stack, "\n"), "\n") {
+			fmt.Fprintf(w, "  %s\n", clean(strings.ReplaceAll(line, "\t", "    ")))
+		}
 	}
 	fmt.Fprintln(w, "\nLog lines")
 	if len(logs) == 0 {

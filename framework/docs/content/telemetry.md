@@ -120,7 +120,9 @@ without one, and a caller it refuses gets a 403.
   asked for, status, how long it took and when. Narrow it to failed or
   slow requests, to one route (click a route), or to a time range. Paste
   a trace ID to open one request.
-- **One request** shows its steps as bars on a shared time axis
+- **One request** says what went wrong when it failed, and for a panic
+  shows the call stack from the function that panicked. It shows its
+  steps as bars on a shared time axis
   (`ui.Waterfall`): each query and outbound call, when it started, how
   long it took, and which failed. Under them are the log lines the app
   wrote while handling it.
@@ -237,14 +239,30 @@ aside first, so `card 4407 declined by issuer` and
 The error of a failed request is the first of these that exists:
 
 1. the error of its first failed step (a query, an outbound call);
-2. the first line the app logged at ERROR while handling it: its `err`
-   or `error` attribute, else its message;
-3. the request's own status text.
+2. the first line the app logged at ERROR while handling it: its
+   `panic`, `err` or `error` attribute, else its message;
+3. the request's own status text, which for a panic is the panic.
 
 So a handler that logs `slog.ErrorContext(ctx, "payment failed", "err", err)`
 before answering 500 gets an issue named after `err`, not after
 "Internal Server Error". Pass the request's context: a line logged
 without it belongs to no request.
+
+### Where it failed
+
+A request that panics keeps the call stack, cut to start at the function
+that panicked, and at most 8 KiB of it. The request's page shows it
+under "Where it failed"; `gofastr telemetry request` prints it and
+`telemetry_request` returns it as `stack`.
+
+The stack comes from whichever caught the panic. The log plugin's
+recovery logs it with the request's trace ID, and the plugin reads it
+from that line. Without the log plugin, the tracing middleware puts it
+on the request's span as `exception.stacktrace`, OpenTelemetry's name
+for it, so an exporter of your own gets it too. A span that records an
+error with OpenTelemetry's stack-trace option turned on is read the same
+way. An error that is returned, not panicked, has no stack unless your
+code records one.
 
 Issues are worked out from the kept traces each time they are asked
 for; nothing else is stored, and nothing is marked resolved. An issue
@@ -349,8 +367,10 @@ A trace line starts with its summary and then lists its spans:
 `error` says the request as a whole failed. `failed_steps` counts the
 spans under it that failed, whether or not the request did: a query
 whose error the handler dealt with. `err` is what went wrong, as
-[Issues](#issues) picks it, cut to 200 bytes. `path`, `failed_steps` and
-`err` are left out when empty, and a span's `error` when false.
+[Issues](#issues) picks it, cut to 200 bytes. A trace that failed with a
+known stack ends with `"stack":"..."`, after its spans. `path`,
+`failed_steps`, `err` and `stack` are left out when empty, and a span's
+`error` when false.
 
 Each line is written straight to the file, with no buffer in between. A
 line that was written survives the process being killed; a trace whose

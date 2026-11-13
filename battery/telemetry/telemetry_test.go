@@ -56,6 +56,8 @@ func start(t *testing.T, cfg telemetry.Config) appUnderTest {
 		span.End()
 		logger.InfoContext(r.Context(), "order.loaded", "id", r.PathValue("id"))
 		switch r.PathValue("id") {
+		case "panic":
+			lookUpOrder(nil, 3)
 		case "boom":
 			w.WriteHeader(500)
 		case "declined":
@@ -309,5 +311,44 @@ func TestEveryRequestIsCountedThoughFewAreKept(t *testing.T) {
 	}
 	if len(got.Routes) != 1 || got.Routes[0].Route != "GET /orders/{id}" {
 		t.Fatalf("routes %+v", got.Routes)
+	}
+}
+
+//go:noinline
+func lookUpOrder(orders []int, i int) int { return orders[i] }
+
+// A handler that panics leaves a trace that says what went wrong, in
+// the panic's words, and where: the stack from the function that
+// panicked, tied to the request, in the file.
+func TestPanicLeavesItsStackOnTheRequest(t *testing.T) {
+	a := start(t, telemetry.Config{KeepNoOrdinary: true})
+	func() {
+		// The router alone, with no Recovery around it: the panic comes
+		// back out, as it would to the middleware above.
+		defer func() { _ = recover() }()
+		a.get("/orders/panic")
+	}()
+	failed, err := a.store.Traces(itel.TraceQuery{Failed: true}, 10)
+	if err != nil || len(failed) != 1 {
+		t.Fatalf("%d failed traces, %v", len(failed), err)
+	}
+	line, ok, err := a.store.TraceByID(failed[0].TraceID)
+	if err != nil || !ok {
+		t.Fatalf("the trace: %v, %v", ok, err)
+	}
+	tr, err := itel.ParseTrace(line)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tr.Err, "index out of range [3] with length 0") {
+		t.Errorf("what went wrong: %q", tr.Err)
+	}
+	if !strings.HasPrefix(tr.Stack, "github.com/DonaldMurillo/gofastr/battery/telemetry_test.lookUpOrder(") || !strings.Contains(tr.Stack, "telemetry_test.go:") {
+		t.Errorf("where it failed:\n%s", tr.Stack)
+	}
+	// The issue it groups under is named by the panic, numbers aside.
+	issues, _, err := a.store.Issues(time.Time{}, time.Time{}, 10)
+	if err != nil || len(issues) != 1 || !strings.Contains(issues[0].Err, "index out of range [N] with length N") {
+		t.Fatalf("issues: %+v, %v", issues, err)
 	}
 }

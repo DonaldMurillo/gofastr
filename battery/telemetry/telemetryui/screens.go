@@ -596,10 +596,25 @@ func (s *Screens) request(ctx context.Context, id string) render.HTML {
 	} else {
 		logs = s.logTable(ctx, lines, false, i18nui.TelemetryRequestLogsEmpty, i18n.Phrase{})
 	}
-	return page(s.tabNav(ctx, tabRequests), header, summary,
+	// What went wrong, in the failure's own words, and where: the two
+	// things someone opening a failed request came for.
+	var wentWrong, stack render.HTML
+	if tr.Err != "" && (tr.Error || tr.FailedSteps > 0) {
+		variant := ui.StatusWarning
+		if tr.Error {
+			variant = ui.StatusDanger
+		}
+		wentWrong = ui.Callout(ui.CalloutConfig{Variant: variant, Title: i18nui.TelemetryWentWrong.Text(ctx)}, render.Text(tr.Err))
+	}
+	if tr.Stack != "" {
+		stack = ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryStack.Text(ctx), Description: i18nui.TelemetryStackSub.Text(ctx), Compact: true, Ctx: ctx},
+			ui.CodeBlock(ui.CodeBlockConfig{Code: tr.Stack, Scroll: true, ShowCopy: true, Ctx: ctx}))
+	}
+	return page(s.tabNav(ctx, tabRequests), header, wentWrong, summary,
 		ui.DetailList(ui.DetailListConfig{Items: []ui.DetailItem{
 			{Label: i18nui.TelemetryTraceID.Text(ctx), Value: ui.InlineCode(tr.TraceID)},
 		}}),
+		stack,
 		steps,
 		ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryRequestLogs.Text(ctx), Description: i18nui.TelemetryRequestLogsSub.Text(ctx), Compact: true, Ctx: ctx}, logs))
 }

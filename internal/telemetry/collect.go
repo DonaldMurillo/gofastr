@@ -2,7 +2,9 @@ package telemetry
 
 import (
 	"container/list"
+	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,7 +16,9 @@ const (
 	maxSpansPerTrace = 512
 	maxAttrsPerSpan  = 32
 	maxAttrValue     = 1024
-	maxSpanName      = 256
+	// maxStackLen bounds the stack a trace carries.
+	maxStackLen = 8 << 10
+	maxSpanName = 256
 	// maxOpenAge is how long a trace waits for its root span to end
 	// before its spans are given up.
 	maxOpenAge = 10 * time.Minute
@@ -41,6 +45,9 @@ type SpanEnd struct {
 	Route  string
 	Path   string
 	Status int
+	// Stack is where a failed span failed, when it knows: a panic's
+	// stack. The trace keeps the first one.
+	Stack string
 	// Stray marks a root that is one outgoing call with nothing around
 	// it: a query a background loop ran outside any request or job. It
 	// is kept only when it was slow. A poll every second would fill the
@@ -114,6 +121,7 @@ type openTrace struct {
 	failed int    // spans that failed, the root included
 	err    string // the first failed step's Err
 	logErr string // the first error the app logged for the trace
+	stack  string // the first failed span's stack
 	elem   *list.Element
 }
 
@@ -184,6 +192,11 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 		if !e.Root && ot.err == "" {
 			ot.err = e.Err
 		}
+		if ot.stack == "" && e.Stack != "" {
+			ot.stack = strings.ToValidUTF8(e.Stack[:min(len(e.Stack), maxStackLen)], "")
+			ot.bytes += int64(len(ot.stack))
+			c.bytes += int64(len(ot.stack))
+		}
 	}
 	if len(ot.spans) < maxSpansPerTrace || e.Root {
 		ot.spans = append(ot.spans, s)
@@ -242,6 +255,11 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 		Time: e.Start.Add(s.Dur), TraceID: e.TraceID, Route: e.Route, Path: e.Path, Status: e.Status,
 		Dur: s.Dur, Error: e.Error, FailedSteps: ot.failed, Err: errText, Spans: ot.spans,
 	}
+	// Where it failed, for a trace that did: a stack logged by a
+	// request that went on to answer 200 is not a failure's.
+	if e.Error || ot.failed > 0 {
+		t.Stack = ot.stack
+	}
 	// The sink runs outside the lock: a slow disk must not stall every
 	// span ending in the process.
 	if err := c.sink(t); err != nil {
@@ -258,11 +276,15 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 // before any span of the request has ended, so it opens the trace's
 // place in the buffer, which the same cap and the same waiting limit
 // hold.
-func (c *Collector) NoteError(traceID, text string) {
+//
+// stack, when the line carried one (the log plugin's line for a panic it
+// recovered), is where it failed: the trace keeps the first.
+func (c *Collector) NoteError(traceID, text, stack string) {
 	if text == "" {
 		return
 	}
 	text = cut(text, maxErrLen)
+	stack = strings.ToValidUTF8(stack[:min(len(stack), maxStackLen)], "")
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	ot := c.open[traceID]
@@ -271,9 +293,16 @@ func (c *Collector) NoteError(traceID, text string) {
 		ot.elem = c.order.PushBack(ot)
 		c.open[traceID] = ot
 	}
+	var cost int64
 	if ot.logErr == "" {
 		ot.logErr = text
-		cost := int64(160 + len(text))
+		cost += int64(160 + len(text))
+	}
+	if ot.stack == "" && stack != "" {
+		ot.stack = stack
+		cost += int64(len(stack))
+	}
+	if cost > 0 {
 		ot.bytes += cost
 		c.bytes += cost
 		c.makeRoom(ot.first)
@@ -281,22 +310,29 @@ func (c *Collector) NoteError(traceID, text string) {
 }
 
 // LoggedError reads a log entry for an error worth naming a failure by:
-// a line at ERROR or above inside a trace, and its "err" (or "error")
-// attribute, or its message when it has neither.
-func LoggedError(entry []byte) (traceID, text string, ok bool) {
+// a line at ERROR or above inside a trace, and its "panic", "err" or
+// "error" attribute, or its message when it has none of them. "panic"
+// comes first: the log plugin's line for a panic it recovered is
+// "http.panic" for every panic, and names the one that happened there.
+// stack is the line's "stack" attribute, from the function that
+// panicked on when it is a panic's.
+func LoggedError(entry []byte) (traceID, text, stack string, ok bool) {
 	lv, found := stringField(entry, `"level":`)
 	if !found || len(lv) < 5 || lv[:5] != "ERROR" {
-		return "", "", false
+		return "", "", "", false
 	}
 	if traceID, found = stringField(entry, `"trace_id":`); !found || len(traceID) != 32 {
-		return "", "", false
+		return "", "", "", false
 	}
-	for _, key := range []string{`"err":`, `"error":`, `"msg":`} {
+	for _, key := range []string{`"panic":`, `"err":`, `"error":`, `"msg":`} {
 		if text, found = stringField(entry, key); found && text != "" {
-			return traceID, text, true
+			if st, has := stringField(entry, `"stack":`); has {
+				stack = panicstack.Origin(st)
+			}
+			return traceID, text, stack, true
 		}
 	}
-	return "", "", false
+	return "", "", "", false
 }
 
 // makeRoom drops waiting traces until the buffer fits: first the ones

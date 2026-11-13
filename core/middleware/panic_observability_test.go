@@ -157,3 +157,98 @@ func TestTracingMarksPanickedSpan(t *testing.T) {
 		})
 	}
 }
+
+// spanStack returns the stack the one span a panicking handler leaves
+// carries, and the value the panic re-raised with. The handler is built
+// here: Tracing takes its tracer from the provider installed when it is
+// called.
+func spanStack(t *testing.T, build func() http.Handler) (stack string, v any) {
+	t.Helper()
+	prev := otel.GetTracerProvider()
+	sr := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	_, v = serveRecovered(build())
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("spans = %d, want 1", len(spans))
+	}
+	n := 0
+	for _, kv := range spans[0].Attributes() {
+		if kv.Key == "exception.stacktrace" {
+			stack = kv.Value.AsString()
+			n++
+		}
+	}
+	if n > 1 {
+		t.Fatalf("%d exception.stacktrace attributes", n)
+	}
+	return stack, v
+}
+
+// TestTracingSpanCarriesThePanicsStack: a panicking request's span said
+// that it panicked and with what, and nothing about where. Recovery
+// logged the stack, but outside the span, on a line with no trace ID, so
+// nothing tied the stack to the request. The span now carries it, cut to
+// start at the function that panicked.
+func TestTracingSpanCarriesThePanicsStack(t *testing.T) {
+	panics := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panicSiteForStackTest() })
+
+	stack, v := spanStack(t, func() http.Handler { return Tracing()(panics) })
+	if v != "deep handler bug" {
+		t.Fatalf("recovered %v, want the handler's panic value re-raised", v)
+	}
+	if !strings.HasPrefix(stack, "github.com/DonaldMurillo/gofastr/core/middleware.panicSiteForStackTest(") {
+		t.Fatalf("the stack does not start at the function that panicked:\n%s", stack)
+	}
+	for _, noise := range []string{"runtime/debug.Stack", "[running]", "\npanic("} {
+		if strings.Contains(stack, noise) {
+			t.Errorf("the stack still holds %q, the same in every panic:\n%s", noise, stack)
+		}
+	}
+	if !strings.Contains(stack, "panic_observability_test.go:") {
+		t.Errorf("the stack names no file and line:\n%s", stack)
+	}
+
+	// Timeout runs the handler on a goroutine of its own and re-raises
+	// on this one: the stack is the handler's, not the re-raise's.
+	stack, v = spanStack(t, func() http.Handler { return Tracing()(Timeout(time.Minute)(panics)) })
+	if v == nil || !strings.Contains(stack, "panicSiteForStackTest") {
+		t.Fatalf("through Timeout: recovered %v, stack:\n%s", v, stack)
+	}
+
+	// A request that does not panic carries none.
+	prev := otel.GetTracerProvider()
+	sr := tracetest.NewSpanRecorder()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(sr)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+	Tracing()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) })).
+		ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	for _, kv := range sr.Ended()[0].Attributes() {
+		if kv.Key == "exception.stacktrace" {
+			t.Fatalf("a 500 with no panic carries a stack: %s", kv.Value.AsString())
+		}
+	}
+}
+
+// panicOrigin keeps a stack it cannot read whole, and bounds what a span
+// carries.
+func TestPanicOriginCutsAndBounds(t *testing.T) {
+	const top = "goroutine 7 [running]:\nruntime/debug.Stack()\n\t/go/debug/stack.go:26 +0x5e\nmw.func1()\n\t/mw.go:9 +0x1\n"
+	const origin = "app.handler(...)\n\t/app/h.go:12 +0x2\nnet/http.HandlerFunc.ServeHTTP(...)\n\t/go/http/server.go:1 +0x3\n"
+	for name, c := range map[string]struct{ in, want string }{
+		"a panic's stack":        {top + "panic({0x1, 0x2})\n\t/go/runtime/panic.go:860 +0x13a\n" + origin, origin},
+		"no panic frame":         {top + origin, top + origin},
+		"nothing after it":       {top + "panic({0x1, 0x2})\n\t/go/runtime/panic.go:860 +0x13a\n", top + "panic({0x1, 0x2})\n\t/go/runtime/panic.go:860 +0x13a\n"},
+		"a panic within a panic": {top + "panic({0x1})\n\t/p.go:1\nmw.again()\n\t/mw.go:20\npanic({0x2})\n\t/p.go:1\n" + origin, origin},
+		"empty":                  {"", ""},
+	} {
+		if got := panicOrigin([]byte(c.in)); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", name, got, c.want)
+		}
+	}
+	long := panicOrigin([]byte(top + "panic(1)\n\t/p.go:1\n" + strings.Repeat("app.deep(...)\n\t/app/deep.go:1 +0x1\n", 2000)))
+	if len(long) > maxSpanStackLen+64 || !strings.HasPrefix(long, "app.deep(") {
+		t.Errorf("a deep stack is %d bytes, over the %d a span carries", len(long), maxSpanStackLen)
+	}
+}

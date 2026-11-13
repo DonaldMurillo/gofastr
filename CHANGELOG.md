@@ -35,6 +35,12 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: a panic keeps its call stack with its request.** A
+  request's page, `gofastr telemetry request` and `telemetry_request`
+  now say what went wrong and, for a panic, show the stack from the
+  function that panicked. The tracing middleware puts the stack on the
+  request's span as `exception.stacktrace`, so an OpenTelemetry exporter
+  of your own gets it as well. A trace line gains `stack`.
 - **Telemetry: an overview that counts every request.** The plugin now
   counts each request as it ends, kept or not, by minute and route, in a
   third day file (`stats-YYYYMMDD.jsonl`, sealed and removed with its
@@ -744,6 +750,11 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **Every panic on a route was one telemetry issue named "http.panic".**
+  With the log plugin installed, its recovery logs each panic under that
+  message, and the issue took the message for the error. It now takes
+  the panic's own value, so two different panics on one route are two
+  issues.
 - **`ui.BarChart` with `ShowAxis` cut off long tick labels.** The left
   gutter was a fixed 30px, so a count in the thousands lost its first
   digits ("1,500" read ".500"). The gutter is now as wide as the longest
