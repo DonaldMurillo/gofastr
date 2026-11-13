@@ -444,3 +444,19 @@
 - Evidence: HTTP regressions in framework/crud, framework, battery/auth and cmd/kiln fail on their original writers; the widget failure-writer test pins logging.
 - Next time: inject unencodable values at the real response boundary and assert status, body and sensitive-response headers before widening the analyzer.
 - Status: active
+
+## 2026-11-13 - Screenshot the viewport, not a full-page stitch, when chrome is pinned
+- Scope: any page with a sticky sidebar, toolbar or header (the admin shell, `ui.ContentRow{Sticky: true}`)
+- Trigger: a full-page capture of the admin Logs page showed the list running on below a sidebar that ended one viewport down. It read as a broken layout, was noticed, and was sent to the user anyway as "an artifact" without a check.
+- Approach: a full-page capture draws viewport-height pinned chrome once, at the top, so it cannot show what a reader sees after scrolling. Capture the viewport at the top and again scrolled to the bottom, and measure the pinned element's rect at both (`getBoundingClientRect` top and bottom against `innerHeight`).
+- Evidence: scrolled to the bottom of the Logs and Audit pages at 1360x900, the sidebar's rect stayed 0 to 900 with `position: sticky`; the viewport screenshot shows it beside the last row.
+- Next time: anything in a screenshot that looks wrong is checked before the screenshot is shown to anyone, and a capture that misrepresents the page is retaken, not explained.
+- Status: active
+
+## 2026-11-13 - Telemetry's goal: most of the value, a tenth of the weight
+- Scope: battery/telemetry and everything built on its files (screens, CLI, MCP tools, what comes next)
+- Trigger: the owner's statement of the goal: about 80% of what Datadog, Sentry and groundcover give a small team, at about 10% of the code and of the machine.
+- Approach: before adding a feature, name the question an operator asks that it answers, and whether something already built answers it. Prefer one more filter on an existing screen to a new screen, the standard library to a dependency, a scan with a budget to an index, and a setting with a good default to a mode. Measure the result against the 1 vCPU, 1 GB target, not against a laptop.
+- Evidence: at this note the feature is about 3,900 lines of non-test Go with no new module dependency, runs inside the app's process, and holds 13 days at 20 requests a second in 5 GiB.
+- Next time: a proposal that needs a second process, a database, or a new dependency has to say what it buys that the files cannot.
+- Status: active

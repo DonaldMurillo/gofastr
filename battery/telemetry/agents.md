@@ -5,6 +5,12 @@ machine it runs on: one JSON-lines file per kind per UTC day, held to a
 retention period, a disk cap and a memory cap. No collector, agent or
 database runs beside the app.
 
+**The goal** is most of what a hosted observability product gives a
+small team, at a tenth of the code and of the machine: one process, no
+new dependency, a 1 vCPU and 1 GB host. A change that needs a second
+process, a database or a dependency has to say what it buys that the
+files cannot.
+
 **Use this when** the prompt mentions: traces, tracing on a small
 server, "see what a request did", keep logs for N days, log retention,
 disk cap for logs, observability without Datadog or a collector,
