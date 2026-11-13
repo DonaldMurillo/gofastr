@@ -206,3 +206,23 @@ func TestWebhookNotifier(t *testing.T) {
 		}
 	}
 }
+
+// Each round writes the request counts of the minutes that have ended,
+// with or without alert rules, so the Overview is at most a minute and
+// a round behind and an app that never stops still has its counts.
+func TestEachRoundWritesTheFinishedMinutes(t *testing.T) {
+	for name, cfg := range map[string]Config{"with the default rule": {}, "with alerts off": {NoAlerts: true}} {
+		t.Run(name, func(t *testing.T) {
+			p, app := alertApp(t, cfg)
+			now := time.Now()
+			counts := itel.NewRollup()
+			counts.Observe(now.Add(-2*time.Minute), "GET /a", time.Millisecond, false, false)
+			counts.Observe(now, "GET /a", time.Millisecond, false, false)
+			p.tick(app, p.writer.Load(), counts, p.alerts.Load(), now)
+			got, err := p.Reader().Stats(itel.StatsQuery{From: now.Add(-time.Hour), To: now.Add(time.Hour), Step: time.Hour})
+			if err != nil || got.Total.N != 1 {
+				t.Fatalf("after one round: %d requests, %v; want the finished minute's one", got.Total.N, err)
+			}
+		})
+	}
+}

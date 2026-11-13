@@ -340,3 +340,27 @@ func TestBarChartManyBarsStayInsideThePlot(t *testing.T) {
 		}
 	}
 }
+
+// The axis gutter holds the longest tick label. A fixed gutter held
+// three characters, so a count in the thousands lost its first digits
+// ("1,500" read ".500") off the chart's left edge.
+func TestBarChartAxisGutterFitsItsLongestLabel(t *testing.T) {
+	label := regexp.MustCompile(`<text x="([0-9.]+)"[^>]*fui-bar-chart__axis-label[^>]*>([^<]+)</text>`)
+	for _, peak := range []float64{8, 1300, 2_400_000} {
+		h := string(BarChart(BarChartConfig{Bars: []BarChartBar{{Label: "a", Value: peak}, {Label: "b", Value: peak / 2}}, ShowAxis: true, Width: 480}))
+		found := label.FindAllStringSubmatch(h, -1)
+		if len(found) < 2 {
+			t.Fatalf("peak %v: no axis labels in %s", peak, h)
+		}
+		for _, m := range found {
+			// The label ends at x and runs left from there.
+			x, err := strconv.ParseFloat(m[1], 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if need := float64(utf8.RuneCountInString(m[2])) * 7; x < need {
+				t.Errorf("peak %v: label %q ends at x=%v and needs %v: it starts off the chart", peak, m[2], x, need)
+			}
+		}
+	}
+}

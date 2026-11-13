@@ -82,6 +82,21 @@ func seed(t *testing.T, dir string, now time.Time) {
 		at := now.Add(l.at)
 		write(itel.KindLogs, at, []byte(`{"time":"`+at.UTC().Format(time.RFC3339Nano)+`",`+l.line+"}\n"))
 	}
+	// The counts of every request, which are more than the traces kept:
+	// 40 orders read (one failed), 10 placed (3 failed, 1 slow), one
+	// request with markup for a route, and 7 of a route two days ago.
+	count := func(at time.Time, route string, n, failed int, dur time.Duration) {
+		r := itel.NewRollup()
+		for i := range n {
+			r.Observe(at, route, dur, i < failed, dur >= 500*ms)
+		}
+		write(itel.KindStats, at.Add(time.Minute), r.Take(at.Add(time.Minute), true))
+	}
+	count(now.Add(-50*time.Hour), "GET /old", 7, 0, 4*ms)
+	count(now.Add(-4*time.Minute), "GET /orders/{id}", 40, 1, 5*ms)
+	count(now.Add(-3*time.Minute), "POST /orders", 9, 3, 8*ms)
+	count(now.Add(-3*time.Minute), "POST /orders", 1, 0, 900*ms)
+	count(now.Add(-1*time.Minute), `GET /<script>alert(1)</script>`, 1, 0, ms)
 }
 
 // newApp serves the screens at /telemetry for a caller who sends
@@ -134,7 +149,7 @@ func has(t *testing.T, what, body string, want, not []string) {
 // not admit gets a refusal with none of it, on every page.
 func TestScreensRefuseAnUnadmittedCaller(t *testing.T) {
 	h := newApp(t)
-	for _, url := range []string{"/telemetry/requests", "/telemetry/requests?trace=" + okID, "/telemetry/logs"} {
+	for _, url := range []string{"/telemetry/overview", "/telemetry/issues", "/telemetry/requests", "/telemetry/requests?trace=" + okID, "/telemetry/logs"} {
 		code, body := get(t, h, url, false)
 		if code != http.StatusForbidden {
 			t.Errorf("%s: status %d, want 403", url, code)
@@ -238,12 +253,14 @@ func TestLogsFilters(t *testing.T) {
 	}
 }
 
-func TestBarePathGoesToRequests(t *testing.T) {
+// The bare path lands on the overview: the page that says how things
+// are before any list says what happened.
+func TestBarePathGoesToTheOverview(t *testing.T) {
 	h := newApp(t)
 	req := httptest.NewRequest(http.MethodGet, "/telemetry", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/telemetry/requests" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/telemetry/overview" {
 		t.Fatalf("status %d, Location %q", rec.Code, rec.Header().Get("Location"))
 	}
 }
@@ -388,4 +405,65 @@ func TestStandalonePageIsNotPinnedToTheBottom(t *testing.T) {
 	if !onElement("fui-container") {
 		t.Fatal("the page lost its container")
 	}
+}
+
+// The overview counts every request of the range, by route, and leads
+// to each route's requests. A range that is not one of its own reads as
+// the last 24 hours.
+func TestOverviewCountsEveryRequestByRoute(t *testing.T) {
+	h := newApp(t)
+	code, body := get(t, h, "/telemetry/overview", true)
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	has(t, "the last 24 hours", body, []string{
+		"Overview", ">51<", // 40 + 10 + 1
+		`href="/telemetry/requests?route=GET+%2Forders%2F%7Bid%7D"`, ">40<", "1 (2.5%)",
+		`href="/telemetry/requests?route=POST+%2Forders"`, ">10<", "3 (30%)", "1 (10%)",
+		`href="/telemetry/requests?show=failed"`, `href="/telemetry/requests?show=slow"`,
+		`id="telemetry-chart-requests-title"`, `aria-labelledby="telemetry-chart-requests-title"`,
+		`aria-labelledby="telemetry-chart-failed-title"`, `aria-labelledby="telemetry-chart-p95-title"`,
+		"Each bar is 15 minutes.", "&lt;script&gt;alert(1)&lt;/script&gt;",
+		`data-cui-poll-src="/telemetry/_rows/overview"`,
+	}, []string{"GET /old", "<script>alert(1)</script>", "No requests counted yet"})
+	// The busiest route is listed first.
+	if strings.Index(body, "GET /orders/{id}") > strings.Index(body, "POST /orders") {
+		t.Error("the routes are not busiest first")
+	}
+
+	_, week := get(t, h, "/telemetry/overview?window=7d", true)
+	has(t, "the last 7 days", week, []string{"GET /old", ">58<", "Each bar is 2 hours.",
+		`href="/telemetry/requests?route=GET+%2Fold&amp;window=7d"`},
+		// Bars two hours wide do not refresh every ten seconds.
+		[]string{"data-cui-poll", "Live"})
+
+	_, hour := get(t, h, "/telemetry/overview?window=1h", true)
+	has(t, "the last hour", hour, []string{">51<", "Each bar is one minute.", `data-cui-poll-src="/telemetry/_rows/overview?window=1h"`}, []string{"GET /old"})
+
+	for _, w := range []string{"all", "nonsense", "24h"} {
+		_, other := get(t, h, "/telemetry/overview?window="+w, true)
+		has(t, "window="+w, other, []string{">51<", "Each bar is 15 minutes."}, []string{"GET /old"})
+	}
+
+	// The figures alone, for the timer: no heading, no filter.
+	_, part := get(t, h, "/telemetry/_rows/overview", true)
+	has(t, "the rows route", part, []string{">51<", "<table"}, []string{"<h1", "Time range"})
+}
+
+// With nothing counted the overview says so, and draws no empty charts.
+func TestOverviewWithNothingCounted(t *testing.T) {
+	tel := telemetry.New(telemetry.Config{Dir: t.TempDir(), ExternalTracerProvider: true})
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	app.Mount(uihost.New(appui.NewApp("test")))
+	app.RegisterPlugin(tel)
+	app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Authorize: func(context.Context) bool { return true }}))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+	code, body := get(t, app.Router(), "/telemetry/overview", true)
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	has(t, "an app with no requests yet", body, []string{"No requests counted yet", "Time range"}, []string{"telemetry-chart-requests", "<table"})
 }

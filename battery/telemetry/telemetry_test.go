@@ -281,3 +281,33 @@ func TestFailureIsNamedByTheErrorTheAppLogged(t *testing.T) {
 		t.Fatalf("issues: %v", byErr)
 	}
 }
+
+// The counts are of every request, where the traces are a sample: with
+// only failures kept, 200 ordinary requests are still 200 in the counts
+// once the app has stopped and written the minute in progress.
+func TestEveryRequestIsCountedThoughFewAreKept(t *testing.T) {
+	a := start(t, telemetry.Config{KeepNoOrdinary: true})
+	const ordinary = 200
+	for range ordinary {
+		a.get("/orders/42")
+	}
+	a.get("/orders/boom")
+	a.app.Router().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/core-ui/runtime.js", nil))
+	if st := a.tel.Stats(); st.Traces != 1 {
+		t.Fatalf("%d traces kept; the test needs the ordinary ones sampled out", st.Traces)
+	}
+	if err := a.app.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	got, err := a.store.Stats(itel.StatsQuery{From: now.Add(-time.Hour), To: now.Add(time.Hour), Step: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Total.N != ordinary+1 || got.Total.Failed != 1 {
+		t.Fatalf("counted %+v; want %d requests, 1 failed, and the script fetch left out", got.Total, ordinary+1)
+	}
+	if len(got.Routes) != 1 || got.Routes[0].Route != "GET /orders/{id}" {
+		t.Fatalf("routes %+v", got.Routes)
+	}
+}

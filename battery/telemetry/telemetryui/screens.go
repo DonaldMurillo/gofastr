@@ -267,7 +267,8 @@ func link(path string, pairs ...string) string {
 
 // The three pages, as tabNav names the current one.
 const (
-	tabRequests = iota
+	tabOverview = iota
+	tabRequests
 	tabIssues
 	tabLogs
 )
@@ -279,6 +280,7 @@ func (s *Screens) tabNav(ctx context.Context, current int) render.HTML {
 	return ui.TabNav(ui.TabNavConfig{
 		Label: i18nui.TelemetryNav.Text(ctx),
 		Items: []ui.TabNavItem{
+			{Text: i18nui.TelemetryOverview.Text(ctx), Href: s.OverviewPath(), Current: current == tabOverview},
 			{Text: i18nui.TelemetryRequests.Text(ctx), Href: s.RequestsPath(), Current: current == tabRequests},
 			{Text: i18nui.TelemetryIssues.Text(ctx), Href: s.IssuesPath(), Current: current == tabIssues},
 			{Text: i18nui.TelemetryLogs.Text(ctx), Href: s.LogsPath(), Current: current == tabLogs},

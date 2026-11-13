@@ -26,7 +26,7 @@ import (
 // NavGroup is the sidebar group the pages sit in.
 const NavGroup = "telemetry"
 
-// Pages returns the Requests, Issues and Logs pages for tel. adminPrefix is the
+// Pages returns the Overview, Requests, Issues and Logs pages for tel. adminPrefix is the
 // admin's Config.PathPrefix ("/admin"): the pages link to each other
 // under it.
 func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
@@ -39,6 +39,8 @@ func Pages(tel *telemetry.Plugin, adminPrefix string) []admin.Page {
 		return func(*http.Request) (component.Component, error) { return page{draw: draw}, nil }
 	}
 	return []admin.Page{
+		{Path: "/telemetry/overview", Title: i18nui.TelemetryOverview,
+			Nav: &entity.EntityNav{Group: NavGroup, Icon: "bar-chart", Order: 5}, Build: build(screens.Overview), Part: build(screens.OverviewRows)},
 		{Path: "/telemetry/requests", Title: i18nui.TelemetryRequests,
 			Nav: &entity.EntityNav{Group: NavGroup, Icon: "activity", Order: 10}, Build: build(screens.Requests), Part: build(screens.RequestsRows)},
 		{Path: "/telemetry/issues", Title: i18nui.TelemetryIssues,

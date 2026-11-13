@@ -35,6 +35,15 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: an overview that counts every request.** The plugin now
+  counts each request as it ends, kept or not, by minute and route, in a
+  third day file (`stats-YYYYMMDD.jsonl`, sealed and removed with its
+  day). An Overview screen reads it: requests, failed, slow and the time
+  95 in 100 finished within, over the last hour, 24 hours or 7 days, as
+  totals, three bar charts and a table of routes. `gofastr telemetry
+  stats` and the MCP tool `telemetry_stats` give the same counts. The
+  bare standalone path now lands on the Overview. See
+  [request counts](framework/docs/content/telemetry.md#request-counts).
 - **Telemetry: issues and alerts.** Failed requests are grouped by
   route, status and error, with the numbers and IDs in the error set
   aside, so one bug is one row with a count and a first and last seen.
@@ -735,6 +744,14 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **`ui.BarChart` with `ShowAxis` cut off long tick labels.** The left
+  gutter was a fixed 30px, so a count in the thousands lost its first
+  digits ("1,500" read ".500"). The gutter is now as wide as the longest
+  tick label.
+- **A chip or code box in a `Truncate` column of `ui.DataTable` was laid
+  out at its full length under the cell's clip.** Its end edge was cut
+  off and the box reached past the screen. It is now held to the cell
+  and ends its own text with an ellipsis.
 - **`tracing.OpenDB` on SQLite stored timestamps the app could not read
   back.** A database handle opened from another handle's driver, which
   is how `core/tracing` wraps connections, got the bare SQLite driver

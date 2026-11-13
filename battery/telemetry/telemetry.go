@@ -185,6 +185,8 @@ func (p *Plugin) Init(app *framework.App) error {
 		c.WatchAlerts(alerts)
 		p.alerts.Store(alerts)
 	}
+	counts := itel.NewRollup()
+	c.WatchStats(counts)
 	if resolved, err := cfg.Resolve(); err == nil {
 		p.slow.Store(int64(resolved.SlowThreshold))
 	}
@@ -207,11 +209,7 @@ func (p *Plugin) Init(app *framework.App) error {
 	// Nothing after this point fails, so the watcher started here is
 	// always stopped by the hook below.
 	stopAlerts, alertsDone := make(chan struct{}), make(chan struct{})
-	if alerts != nil {
-		go p.watchAlerts(app, alerts, stopAlerts, alertsDone)
-	} else {
-		close(alertsDone)
-	}
+	go p.watch(app, w, counts, alerts, stopAlerts, alertsDone)
 	app.OnStop(func() error {
 		p.stopped.Store(true)
 		close(stopAlerts)
@@ -223,7 +221,9 @@ func (p *Plugin) Init(app *framework.App) error {
 			defer cancel()
 			_ = provider.Shutdown(ctx)
 		}
-		return errors.Join(w.Close(), store.Close())
+		// The minute in progress is written as far as it got.
+		flushed := w.FlushStats(counts, true)
+		return errors.Join(flushed, w.Close(), store.Close())
 	})
 	return nil
 }

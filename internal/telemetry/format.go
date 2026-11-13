@@ -12,8 +12,10 @@ import (
 const (
 	KindLogs   = "logs"
 	KindTraces = "traces"
-	dayLayout  = "20060102"
-	fileExt    = ".jsonl"
+	// KindStats is the per-minute request counts, one line per route.
+	KindStats = "stats"
+	dayLayout = "20060102"
+	fileExt   = ".jsonl"
 )
 
 // FileName returns the file that holds kind's lines for t's UTC day.

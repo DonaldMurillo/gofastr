@@ -107,10 +107,11 @@ func (p *Plugin) newAlerts() (*itel.Alerts, error) {
 	return itel.NewAlerts(internal)
 }
 
-// watchAlerts checks the rules every alertEvery until stop is closed.
-// Each change is a log line, and goes to Config.Notify when there is
-// one.
-func (p *Plugin) watchAlerts(app *framework.App, alerts *itel.Alerts, stop <-chan struct{}, done chan<- struct{}) {
+// watch runs every alertEvery until stop is closed: it writes the
+// request counts of the minutes that have ended, and checks the alert
+// rules when there are any. Each change of a rule is a log line, and
+// goes to Config.Notify when there is one.
+func (p *Plugin) watch(app *framework.App, w *itel.Writer, counts *itel.Rollup, alerts *itel.Alerts, stop <-chan struct{}, done chan<- struct{}) {
 	defer close(done)
 	tick := time.NewTicker(alertEvery)
 	defer tick.Stop()
@@ -119,8 +120,18 @@ func (p *Plugin) watchAlerts(app *framework.App, alerts *itel.Alerts, stop <-cha
 		case <-stop:
 			return
 		case now := <-tick.C:
-			p.checkAlerts(app, alerts, now)
+			p.tick(app, w, counts, alerts, now)
 		}
+	}
+}
+
+// tick is one round of watch.
+func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, alerts *itel.Alerts, now time.Time) {
+	// A failed write is counted by the writer, and the minutes it held
+	// are gone: counts are not queued.
+	_ = w.FlushStats(counts, false)
+	if alerts != nil {
+		p.checkAlerts(app, alerts, now)
 	}
 }
 

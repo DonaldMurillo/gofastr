@@ -75,11 +75,19 @@ type Collector struct {
 	// alerts, when set, counts every finished request, kept or not: a
 	// rule about failures must see them all. Set before the first span.
 	alerts *Alerts
+	// rollup, when set, counts every finished request that is not a
+	// quiet path's, kept or not. Set before the first span.
+	rollup *Rollup
 }
 
 // WatchAlerts has the collector count every finished request against a.
 // Call it before the collector sees a span.
 func (c *Collector) WatchAlerts(a *Alerts) { c.alerts = a }
+
+// WatchStats has the collector count every finished request into r,
+// leaving out the quiet paths: a page's scripts and styles are not the
+// traffic a rate is about. Call it before the collector sees a span.
+func (c *Collector) WatchStats(r *Rollup) { c.rollup = r }
 
 // CollectorStats counts what a Collector has decided.
 type CollectorStats struct {
@@ -197,6 +205,9 @@ func (c *Collector) SpanEnded(e SpanEnd) {
 	// A lone outgoing call is not a request, and is not counted as one.
 	if c.alerts != nil && !e.Stray {
 		c.alerts.Observe(e.Start.Add(s.Dur), e.Route, e.Error, s.Dur >= c.cfg.SlowThreshold)
+	}
+	if c.rollup != nil && !e.Stray && !e.Quiet {
+		c.rollup.Observe(e.Start.Add(s.Dur), e.Route, s.Dur, e.Error, s.Dur >= c.cfg.SlowThreshold)
 	}
 	keep := s.Dur >= c.cfg.SlowThreshold
 	if !e.Stray {

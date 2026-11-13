@@ -3,11 +3,15 @@ package telemetry_test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/battery/telemetry"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
 type adminCaller struct{}
@@ -53,8 +57,8 @@ func TestMCPToolsAreOptIn(t *testing.T) {
 	if names := toolNames(start(t, telemetry.Config{})); len(names) != 0 {
 		t.Fatalf("tools registered without EnableMCP: %v", names)
 	}
-	if names := toolNames(start(t, telemetry.Config{EnableMCP: true})); len(names) != 4 {
-		t.Fatalf("with EnableMCP: %v, want the four tools", names)
+	if names := toolNames(start(t, telemetry.Config{EnableMCP: true})); len(names) != 5 {
+		t.Fatalf("with EnableMCP: %v, want the five tools", names)
 	}
 }
 
@@ -64,7 +68,7 @@ func TestMCPToolsRefuseNonAdmins(t *testing.T) {
 	t.Setenv("GOFASTR_DEV", "")
 	a := start(t, telemetry.Config{EnableMCP: true, SampleRate: 1})
 	a.get("/orders/42")
-	for _, tool := range []string{"telemetry_issues", "telemetry_requests", "telemetry_request", "telemetry_logs"} {
+	for _, tool := range []string{"telemetry_stats", "telemetry_issues", "telemetry_requests", "telemetry_request", "telemetry_logs"} {
 		params := map[string]any{"trace_id": strings.Repeat("a", 32)}
 		for name, ctx := range map[string]context.Context{
 			"no caller":  context.Background(),
@@ -146,15 +150,21 @@ func TestMCPToolsRefuseUnreadableArguments(t *testing.T) {
 		tool   string
 		params map[string]any
 	}{
-		"failed as a string": {"telemetry_requests", map[string]any{"failed": "yes"}},
-		"route as a number":  {"telemetry_requests", map[string]any{"route": 7}},
-		"route too long":     {"telemetry_requests", map[string]any{"route": strings.Repeat("r", 2000)}},
-		"limit as a string":  {"telemetry_requests", map[string]any{"limit": "10"}},
-		"limit zero":         {"telemetry_requests", map[string]any{"limit": 0}},
-		"limit a fraction":   {"telemetry_logs", map[string]any{"limit": 1.5}},
-		"since not a time":   {"telemetry_logs", map[string]any{"since_ts": "yesterday"}},
-		"level unknown":      {"telemetry_logs", map[string]any{"level": "LOUD"}},
-		"trace_id not hex":   {"telemetry_request", map[string]any{"trace_id": "not-an-id"}},
+		"failed as a string":      {"telemetry_requests", map[string]any{"failed": "yes"}},
+		"route as a number":       {"telemetry_requests", map[string]any{"route": 7}},
+		"route too long":          {"telemetry_requests", map[string]any{"route": strings.Repeat("r", 2000)}},
+		"limit as a string":       {"telemetry_requests", map[string]any{"limit": "10"}},
+		"limit zero":              {"telemetry_requests", map[string]any{"limit": 0}},
+		"limit a fraction":        {"telemetry_logs", map[string]any{"limit": 1.5}},
+		"since not a time":        {"telemetry_logs", map[string]any{"since_ts": "yesterday"}},
+		"level unknown":           {"telemetry_logs", map[string]any{"level": "LOUD"}},
+		"stats route as a number": {"telemetry_stats", map[string]any{"route": 7}},
+		"stats since not a time":  {"telemetry_stats", map[string]any{"since_ts": "last week"}},
+		"stats limit zero":        {"telemetry_stats", map[string]any{"limit": 0}},
+		"stats window backwards":  {"telemetry_stats", map[string]any{"since_ts": "2026-11-13T00:00:00Z", "until_ts": "2026-11-12T00:00:00Z"}},
+		"stats window empty":      {"telemetry_stats", map[string]any{"since_ts": "2026-11-13T00:00:00Z", "until_ts": "2026-11-13T00:00:00Z"}},
+		"stats window of years":   {"telemetry_stats", map[string]any{"since_ts": "2020-01-01T00:00:00Z", "until_ts": "2026-11-13T00:00:00Z"}},
+		"trace_id not hex":        {"telemetry_request", map[string]any{"trace_id": "not-an-id"}},
 		// A tool takes the ID exactly as the files hold it.
 		"trace_id padded":      {"telemetry_request", map[string]any{"trace_id": " " + strings.Repeat("a", 32) + " "}},
 		"trace_id upper case":  {"telemetry_request", map[string]any{"trace_id": strings.Repeat("A", 32)}},
@@ -163,5 +173,65 @@ func TestMCPToolsRefuseUnreadableArguments(t *testing.T) {
 		if res, err := a.app.MCP.CallTool(admin(), c.tool, c.params); err == nil {
 			t.Errorf("%s: answered %v", name, res)
 		}
+	}
+}
+
+// telemetry_stats answers from the counts of every request: totals, by
+// route, and a series short enough to read.
+func TestMCPStatsCountEveryRequest(t *testing.T) {
+	t.Setenv("GOFASTR_DEV", "")
+	dir := t.TempDir()
+	at := time.Now().Add(-10 * time.Minute)
+	r := itel.NewRollup()
+	for i := range 30 {
+		r.Observe(at, "GET /orders/{id}", 7*time.Millisecond, false, false)
+		if i < 6 {
+			r.Observe(at, "POST /checkout", 800*time.Millisecond, i < 2, true)
+		}
+	}
+	// Written with the day's own stamp, as the plugin's flush does.
+	if err := os.WriteFile(filepath.Join(dir, itel.FileName(itel.KindStats, time.Now())), r.Take(time.Now(), true), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := start(t, telemetry.Config{EnableMCP: true, Dir: dir})
+
+	got := call(t, a, admin(), "telemetry_stats", nil)
+	total, _ := got["total"].(map[string]any)
+	if total["requests"] != 36.0 || total["failed"] != 2.0 || total["slow"] != 6.0 {
+		t.Fatalf("total: %v", total)
+	}
+	routes, _ := got["routes"].([]any)
+	if len(routes) != 2 || routes[0].(map[string]any)["route"] != "GET /orders/{id}" || routes[1].(map[string]any)["failed"] != 2.0 || got["routes_not_listed"] != 0.0 {
+		t.Fatalf("routes: %v (not listed %v)", routes, got["routes_not_listed"])
+	}
+	// The last 24 hours in at most sixty whole-minute steps, and the
+	// requests are in exactly one of them.
+	series, _ := got["series"].([]any)
+	step, _ := got["step_seconds"].(float64)
+	if len(series) < 50 || len(series) > 61 || step < 60 || int(step)%60 != 0 {
+		t.Fatalf("%d steps of %v seconds", len(series), step)
+	}
+	var sum float64
+	for _, pt := range series {
+		sum += pt.(map[string]any)["requests"].(float64)
+	}
+	if sum != 36 {
+		t.Fatalf("the series adds up to %v, want 36", sum)
+	}
+	if got["slow_at_us"] != 500000.0 || got["duration_ceiling_us"] != 10000000.0 {
+		t.Fatalf("slow_at_us %v, duration_ceiling_us %v", got["slow_at_us"], got["duration_ceiling_us"])
+	}
+
+	one := call(t, a, admin(), "telemetry_stats", map[string]any{"route": "POST /checkout", "limit": 1})
+	if one["total"].(map[string]any)["requests"] != 6.0 || len(one["routes"].([]any)) != 1 {
+		t.Fatalf("one route: %v", one)
+	}
+	capped := call(t, a, admin(), "telemetry_stats", map[string]any{"limit": 1})
+	if len(capped["routes"].([]any)) != 1 || capped["routes_not_listed"] != 1.0 {
+		t.Fatalf("limit 1: %v routes, %v not listed", len(capped["routes"].([]any)), capped["routes_not_listed"])
+	}
+	before := call(t, a, admin(), "telemetry_stats", map[string]any{"until_ts": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)})
+	if before["total"].(map[string]any)["requests"] != 0.0 {
+		t.Fatalf("a window that ends before the requests counted %v", before["total"])
 	}
 }

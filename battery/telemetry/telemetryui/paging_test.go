@@ -239,7 +239,7 @@ func TestNewestPageRefetchesItsRows(t *testing.T) {
 
 func TestRowsRouteRefusesAnUnadmittedCaller(t *testing.T) {
 	h := newApp(t) // admits only X-Allow: yes
-	for _, url := range []string{"/telemetry/_rows/logs", "/telemetry/_rows/requests"} {
+	for _, url := range []string{"/telemetry/_rows/logs", "/telemetry/_rows/requests", "/telemetry/_rows/overview"} {
 		req := httptest.NewRequest(http.MethodGet, url, nil)
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)

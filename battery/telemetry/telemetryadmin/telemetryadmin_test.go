@@ -12,13 +12,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
 )
 
-// The three pages sit under the admin's prefix, in one sidebar group, and
+// The four pages sit under the admin's prefix, in one sidebar group, and
 // link to each other there: a page built for "/back" must not point at
 // "/admin".
 func TestPagesSitUnderTheAdminPrefix(t *testing.T) {
 	tel := telemetry.New(telemetry.Config{Dir: t.TempDir()})
 	pages := telemetryadmin.Pages(tel, "/back/")
-	if len(pages) != 3 || pages[0].Path != "/telemetry/requests" || pages[1].Path != "/telemetry/issues" || pages[2].Path != "/telemetry/logs" {
+	if len(pages) != 4 || pages[0].Path != "/telemetry/overview" || pages[1].Path != "/telemetry/requests" || pages[2].Path != "/telemetry/issues" || pages[3].Path != "/telemetry/logs" {
 		t.Fatalf("pages: %+v", pages)
 	}
 	for _, p := range pages {

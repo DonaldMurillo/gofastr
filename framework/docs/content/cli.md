@@ -664,6 +664,10 @@ root or another I/O failure still fails the check.
 [battery/telemetry](telemetry.md) writes, from a shell. It opens the
 directory itself, so it works over SSH and when the app is down.
 
+- `gofastr telemetry stats`: every request counted, not only the kept
+  ones: how many, how many failed and were slow, and how long half and
+  95 in 100 took, in all and by route. `--route <route>` counts one
+  route. It needs a `--since` of a minute or more.
 - `gofastr telemetry logs`: log lines, newest first. `--level <l>` sets
   the minimum level and `--grep <text>` keeps lines containing text.
 - `gofastr telemetry requests`: kept requests, newest first. `--failed`,
@@ -675,7 +679,7 @@ directory itself, so it works over SSH and when the app is down.
   with start and duration, and its log lines.
 
 Name the directory with `--dir`, or the app with `--app <name>` for its
-default directory. `logs`, `requests` and `issues` take `--since <duration>`
+default directory. `stats`, `logs`, `requests` and `issues` take `--since <duration>`
 (default 24h; 0 for everything kept), `--limit <n>` (default 50) and
 `--json`, which prints the lines as stored. Text from the files is
 scrubbed of terminal control bytes and line breaks before it is printed.

@@ -57,6 +57,18 @@ func seed(t *testing.T) string {
 		at := now.Add(l.at)
 		write(itel.KindLogs, at, []byte(`{"time":"`+at.Format(time.RFC3339Nano)+`",`+l.body+"}\n"))
 	}
+	// Every request counted: 200 orders read, 20 placed (5 failed, all
+	// slower than anything measures), and 9 of a route two days ago.
+	count := func(at time.Time, route string, n, failed int, dur time.Duration) {
+		r := itel.NewRollup()
+		for i := range n {
+			r.Observe(at, route, dur, i < failed, dur >= 500*ms)
+		}
+		write(itel.KindStats, at.Add(time.Minute), r.Take(at.Add(time.Minute), true))
+	}
+	count(now.Add(-50*time.Hour), "GET /old", 9, 0, ms)
+	count(now.Add(-3*time.Minute), "GET /orders/{id}", 200, 0, 7*ms)
+	count(now.Add(-2*time.Minute), "POST /orders\x1b[31m", 20, 5, 30*time.Second)
 	return dir
 }
 
@@ -162,6 +174,55 @@ func TestIssues(t *testing.T) {
 	}
 	if _, err := run(t, "issues", "--dir", dir, "extra"); !errors.Is(err, errUsage) {
 		t.Errorf("issues with an argument: %v", err)
+	}
+}
+
+func TestStats(t *testing.T) {
+	dir := seed(t)
+	out, err := run(t, "stats", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 5 || strings.Contains(out, "\x1b") || strings.Contains(out, "GET /old") {
+		t.Fatalf("stats:\n%q", out)
+	}
+	if want := "220 requests in the last 24h: 5 failed (2.3%), 20 slow (9.1%). Half finished within 7.8ms, 95% within 10s+."; lines[0] != want {
+		t.Errorf("the total:\n got %q\nwant %q", lines[0], want)
+	}
+	// Busiest first, each with its own shares.
+	if f := strings.Fields(lines[3]); len(f) < 8 || f[0] != "200" || f[1] != "0" || f[5] != "7.5ms" || !strings.HasSuffix(lines[3], "GET /orders/{id}") {
+		t.Errorf("the busiest route: %q", lines[3])
+	}
+	if f := strings.Fields(lines[4]); len(f) < 8 || f[0] != "20" || f[1] != "5" || f[2] != "(25.0%)" || f[6] != "10s+" {
+		t.Errorf("the failing route: %q", lines[4])
+	}
+
+	week, err := run(t, "stats", "--dir", dir, "--since", "168h", "--limit", "2")
+	if err != nil || !strings.Contains(week, "229 requests in the last 168h") || !strings.Contains(week, "Quieter routes not listed (raise --limit): 1") || strings.Contains(week, "GET /old") {
+		t.Errorf("stats --since 168h --limit 2: %v\n%s", err, week)
+	}
+	one, err := run(t, "stats", "--dir", dir, "--route", "GET /orders/{id}")
+	if err != nil || !strings.HasPrefix(one, "200 requests") || strings.Contains(one, "POST") {
+		t.Errorf("stats --route: %v\n%s", err, one)
+	}
+	js, err := run(t, "stats", "--dir", dir, "--json")
+	if err != nil || strings.Count(js, "\n") != 3 || !strings.Contains(js, `"requests":220`) || !strings.Contains(js, `"total":true`) ||
+		!strings.Contains(js, `"route":"GET /orders/{id}","slow":0,"total":false`) {
+		t.Errorf("stats --json: %v\n%s", err, js)
+	}
+	if none, _ := run(t, "stats", "--dir", dir, "--since", "1m"); !strings.Contains(none, "No requests counted") {
+		t.Errorf("stats in a quiet window: %s", none)
+	}
+	for _, argv := range [][]string{{"stats", "--dir", dir, "extra"}, {"stats", "--dir", dir, "--since", "0"}, {"stats", "--dir", dir, "--since", "30s"}} {
+		if _, err := run(t, argv...); !errors.Is(err, errUsage) {
+			t.Errorf("%v: %v", argv, err)
+		}
+	}
+	// A year by the minute would be too many steps; the command picks
+	// its own, so any window answers.
+	if year, err := run(t, "stats", "--dir", dir, "--since", "8760h"); err != nil || !strings.HasPrefix(year, "229 requests") {
+		t.Errorf("stats --since 8760h: %v\n%s", err, year)
 	}
 }
 

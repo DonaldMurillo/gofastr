@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -140,7 +141,14 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	// Layout gutters.
 	axisGutter := 0.0 // left gutter for value-axis tick labels
 	if cfg.ShowAxis {
+		// Wide enough for the longest tick label, set right-aligned 5px
+		// from the plot at about 7px a character of 12px text. A
+		// fixed 30px held three characters: "1,500" lost its "1,".
 		axisGutter = 30
+		for _, tv := range niceTicks(valueMax) {
+			need := float64(utf8.RuneCountInString(chartNumber(cfg.Ctx, tv)))*7 + 8
+			axisGutter = math.Max(axisGutter, math.Ceil(need))
+		}
 	}
 	topGutter := 0.0 // headroom for value labels above the caps
 	if showValues {

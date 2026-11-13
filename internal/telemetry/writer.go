@@ -34,7 +34,7 @@ type Writer struct {
 	root *os.Root
 	now  func() time.Time
 
-	logs, traces dayFileWriter
+	logs, traces, stats dayFileWriter
 
 	sinceCheck atomic.Int64
 	pruning    sync.Mutex
@@ -44,9 +44,12 @@ type Writer struct {
 	// sealing is held by the one pass that packs finished days; bg
 	// counts it, so Close can wait for it to step out.
 	sealing sync.Mutex
-	bg      sync.WaitGroup
-	sealed  atomic.Int64
-	noSeal  bool
+	// flushing orders FlushStats calls: lines reach the file in time
+	// order.
+	flushing sync.Mutex
+	bg       sync.WaitGroup
+	sealed   atomic.Int64
+	noSeal   bool
 
 	logLines, logBytes     atomic.Int64
 	traceLines, traceBytes atomic.Int64
@@ -95,7 +98,7 @@ func newWriter(cfg Config, now func() time.Time, seal bool) (*Writer, error) {
 		return nil, fmt.Errorf("telemetry: open %s: %w", cfg.Dir, err)
 	}
 	w := &Writer{cfg: cfg, root: root, now: now, noSeal: !seal}
-	w.logs.kind, w.traces.kind = KindLogs, KindTraces
+	w.logs.kind, w.traces.kind, w.stats.kind = KindLogs, KindTraces, KindStats
 	if err := w.prune(); err != nil {
 		_ = root.Close()
 		return nil, err
@@ -139,6 +142,24 @@ func (w *Writer) WriteTrace(t Trace) error {
 		w.traceBytes.Add(int64(n))
 	}
 	return err
+}
+
+// WriteStats appends the lines Rollup.Take returned: whole lines, in
+// time order.
+func (w *Writer) WriteStats(lines []byte) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	_, err := w.write(&w.stats, lines)
+	return err
+}
+
+// FlushStats writes r's finished minutes, or every minute when all is
+// set (the app is stopping), to the day's stats file.
+func (w *Writer) FlushStats(r *Rollup, all bool) error {
+	w.flushing.Lock()
+	defer w.flushing.Unlock()
+	return w.WriteStats(r.Take(w.now(), all))
 }
 
 func (w *Writer) write(d *dayFileWriter, line []byte) (int, error) {
@@ -273,7 +294,7 @@ func (w *Writer) prune() error {
 	}
 	slices.SortStableFunc(files, func(a, b file) int { return a.day.Compare(b.day) })
 	for i := 0; i < len(files); {
-		// One day's files, of both kinds, go or stay together.
+		// One day's files, of every kind, go or stay together.
 		j, daySize := i, int64(0)
 		for j < len(files) && files[j].day.Equal(files[i].day) {
 			daySize += files[j].size
@@ -304,7 +325,7 @@ func (w *Writer) Close() error {
 	}
 	w.bg.Wait() // a sealing pass stops at its next block
 	var errs []error
-	for _, d := range []*dayFileWriter{&w.logs, &w.traces} {
+	for _, d := range []*dayFileWriter{&w.logs, &w.traces, &w.stats} {
 		d.mu.Lock()
 		if d.f != nil {
 			errs = append(errs, d.f.Close())

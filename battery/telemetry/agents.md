@@ -48,11 +48,19 @@ admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
 // or on their own; Authorize is required
 app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", Authorize: isOperator}))
 ```
-- Shell: `gofastr telemetry logs|requests|issues|request <trace-id> --app <name>`.
-- MCP: `telemetry.Config{EnableMCP: true}` adds `telemetry_issues`,
-  `telemetry_requests`, `telemetry_request`, `telemetry_logs` (admin
+- Shell: `gofastr telemetry stats|logs|requests|issues|request <trace-id> --app <name>`.
+- MCP: `telemetry.Config{EnableMCP: true}` adds `telemetry_stats`,
+  `telemetry_issues`, `telemetry_requests`, `telemetry_request`, `telemetry_logs` (admin
   role by default). Asked what is breaking, call `telemetry_issues`
   first.
+
+**Request counts:**
+- Every request is counted by minute and route in `stats-YYYYMMDD.jsonl`,
+  kept or not. Rates and percentiles come from there (the Overview
+  screen, `gofastr telemetry stats`, `telemetry_stats`), never from the
+  traces, which are a sample.
+- Counts are about a minute behind, percentiles are right to within a
+  bucket, and quiet paths are left out.
 
 **Issues and alerts:**
 - Failed requests are grouped by route, status and error (numbers and

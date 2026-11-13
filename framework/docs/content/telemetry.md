@@ -55,8 +55,8 @@ There are three ways in. All of them read the same files.
 
 ### In the admin
 
-`battery/telemetry/telemetryadmin` adds **Requests**, **Issues** and
-**Logs** to the admin's sidebar, behind the admin's own gate:
+`battery/telemetry/telemetryadmin` adds **Overview**, **Requests**,
+**Issues** and **Logs** to the admin's sidebar, behind the admin's own gate:
 
 <!-- gofastr:compile
 stmt: _ = admin.New(admin.Config{Pages: telemetryadmin.Pages(tel, "/admin")})
@@ -111,6 +111,11 @@ without one, and a caller it refuses gets a 403.
 
 ### What the screens show
 
+- **Overview** counts every request of the last hour, 24 hours or 7
+  days: how many, how many failed, how many were slow, and how long 95
+  in 100 took. Three bar charts show those over the range, and a table
+  gives each route's own figures, busiest first; a route links to its
+  requests. See [Request counts](#request-counts).
 - **Requests** lists the kept requests, newest first: route, the path
   asked for, status, how long it took and when. Narrow it to failed or
   slow requests, to one route (click a route), or to a time range. Paste
@@ -132,8 +137,9 @@ Every filter is in the query string, so a view can be bookmarked and
 shared. The lists show 25 rows a page, with **Newer**, **Older** and
 **Back to newest**.
 
-The newest page of each list refreshes its rows every ten seconds and
-says "Live". A page you have paged back on stays as it is.
+The newest page of each list refreshes every ten seconds and says
+"Live". So does the Overview for the last hour and the last 24 hours;
+the 7-day view, whose bars are two hours wide, stays as loaded. A page you have paged back on stays as it is.
 
 The Logs page leaves out the access lines of quiet paths (scripts,
 styles, anything in `Config.QuietPaths`), which would otherwise fill
@@ -149,6 +155,7 @@ its Older link carries on from there.
 when the app is down:
 
 ```sh
+gofastr telemetry stats --app shop --since 6h
 gofastr telemetry logs --app shop --level warn --since 1h
 gofastr telemetry requests --dir /var/lib/shop/telemetry --failed
 gofastr telemetry requests --app shop --slow 500ms --route "GET /orders/{id}"
@@ -163,10 +170,11 @@ files is scrubbed of terminal control bytes before it is printed.
 
 ### From an agent
 
-`Config.EnableMCP` adds four MCP tools beside the log plugin's:
+`Config.EnableMCP` adds five MCP tools beside the log plugin's:
 
 | Tool | Returns |
 |------|---------|
+| `telemetry_stats` | every request counted: totals, each route, and a series of up to 60 steps, with `requests`, `failed`, `slow`, `p50_us`, `p95_us`; `since_ts` (default 24 hours ago), `until_ts`, `route`, `limit` |
 | `telemetry_issues` | failed requests grouped by what went wrong, latest first, each with a count, first and last seen and an example `trace_id`; `since_ts`, `until_ts`, `limit` |
 | `telemetry_requests` | kept requests, newest first; `failed`, `slow`, `route`, `since_ts`, `until_ts`, `limit` |
 | `telemetry_request` | one request by `trace_id`: its spans and its log lines |
@@ -178,6 +186,45 @@ an error, never a filter quietly dropped. `telemetry_logs` gives up
 after ten seconds and returns what it found with `stopped_at`; pass
 that as `until_ts` to carry on. `gofastr dev` turns the tools on,
 ungated, for a loopback listener.
+
+## Request counts
+
+The traces on disk are a sample: every failed and slow request, and one
+in twenty of the rest. A rate or a percentile worked out from them would
+be wrong. So the plugin also counts every request as it ends, kept or
+not, and writes the counts to a third day file, one line a route a
+minute:
+
+```json
+{"time":"2026-11-13T15:36:00Z","route":"POST /checkout","n":41,"failed":2,"slow":3,"sum_us":5912044,"h":[0,0,0,4,9,11,8,6,3]}
+```
+
+`n` is the requests that ended in that minute, `failed` and `slow` the
+ones that failed or took `SlowThreshold` or longer, and `sum_us` their
+total time. `h` counts them by how long they took, in buckets ending at
+1, 2, 5, 10, 20, 50, 100, 200 and 500 ms and 1, 2, 5 and 10 s, with one
+more for anything slower; empty buckets at the end are left off.
+
+What follows from that:
+
+- **The Overview is about a minute behind.** A minute's counts are
+  written once it is over, at the next fifteen-second check. When the
+  app stops, the minute in progress is written as far as it got.
+- **"Half within" and "95 in 100 within" are right to within a bucket.**
+  They are read from the buckets, not from each request's time, so 180
+  ms may be anything from 100 to 200 ms. The screens show two digits for
+  that reason. A request slower than ten seconds reads as "10 s or
+  more".
+- **Quiet paths are not counted.** Scripts, styles and anything in
+  `Config.QuietPaths` are not the traffic a failure rate is about. Nor
+  is a query a background loop ran outside any request.
+- **A minute counts at most 200 routes apart.** Routes are patterns
+  (`GET /orders/{id}`), so an app has few. Past 200 in one minute the
+  rest count together as `(other)`.
+- **Each replica counts what it served.** The files are per machine.
+
+A day at five busy routes is under a megabyte, and about a tenth of
+that once sealed. The file is removed with its day, as the others are.
 
 ## Issues
 
@@ -272,6 +319,7 @@ lines go to one plain file per kind, owner-readable only:
 |------|-------------|
 | `logs-YYYYMMDD.jsonl` | a log entry, as [log](log.md) describes it |
 | `traces-YYYYMMDD.jsonl` | one complete trace, written when its request ends |
+| `stats-YYYYMMDD.jsonl` | one route's [request counts](#request-counts) for one minute |
 
 When a UTC day is over, its files are **sealed** in the background: the
 lines are packed into gzip blocks of about 1 MiB and the plain file is
@@ -279,9 +327,9 @@ removed. A sealed day is about a seventh of its plain size.
 
 | File | Holds |
 |------|-------|
-| `logs-YYYYMMDD.jsonl.gz`, `traces-YYYYMMDD.jsonl.gz` | the same lines. Each is one valid gzip stream: `zcat logs-20261112.jsonl.gz \| grep ...` works |
+| `logs-YYYYMMDD.jsonl.gz`, `traces-YYYYMMDD.jsonl.gz`, `stats-YYYYMMDD.jsonl.gz` | the same lines. Each is one valid gzip stream: `zcat logs-20261112.jsonl.gz \| grep ...` works |
 | `traces-YYYYMMDD.heads.gz` | each trace's summary, so a list of requests never unpacks a span |
-| `logs-YYYYMMDD.idx`, `traces-YYYYMMDD.idx` | where each block is, the times it covers, and which block holds each trace ID |
+| `logs-YYYYMMDD.idx`, `traces-YYYYMMDD.idx`, `stats-YYYYMMDD.idx` | where each block is, the times it covers, and which block holds each trace ID |
 
 The index is written last. A day without one is read from its plain
 file, so an app killed in the middle of sealing loses nothing and
@@ -345,7 +393,7 @@ never part of the sample:
 | `Alerts` | ten failed in five minutes | the rules checked every fifteen seconds |
 | `Notify` | none | who is told when a rule fires or resolves |
 | `NoAlerts` | false | turn alerts off |
-| `EnableMCP` | false | the four MCP tools |
+| `EnableMCP` | false | the five MCP tools |
 | `MCPGate` | the admin role | who may call them |
 | `ExternalTracerProvider` | false | leave the global TracerProvider alone |
 
@@ -368,6 +416,8 @@ Measured through the default middleware and the log plugin, for a
 request that logs 3 lines and makes 8 spans, on one CPU: writing the log
 lines to the day file adds about 4 µs to a request, and tracing adds
 about 26 µs more, most of it the OpenTelemetry SDK creating the spans.
+Counting the request for the [request counts](#request-counts) adds
+about 50 ns and no allocation.
 A day at 20 requests a second is about 1.7 GB while it is today's and
 about 240 MB once sealed, so the default 5 GiB cap holds about 13 sealed
 days beside today. Sealing a day took about 15 seconds of CPU.
@@ -378,6 +428,9 @@ opened by trace ID in about 80 ms, a day's slow requests in about
 100 ms, and a text search of the last day in a little over a second.
 Searching sealed days means unpacking them, at about 5 seconds a day;
 that is the search the three-second budget above is for.
+
+The Overview's widest read, seven days of thirty routes with six of the
+days sealed, took about 350 ms.
 
 ## Common mistakes
 

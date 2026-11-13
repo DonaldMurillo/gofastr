@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -23,12 +24,15 @@ import (
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
-const usage = `Usage: gofastr telemetry <logs|requests|issues|request> [flags]
+const usage = `Usage: gofastr telemetry <stats|logs|requests|issues|request> [flags]
 
 Read the files battery/telemetry writes. Name the directory with --dir,
 or the app with --app to read its default one
 ($XDG_STATE_HOME/<app>/telemetry or ~/.local/state/<app>/telemetry).
 
+  stats                every request counted: how many, how many failed and
+                       were slow, and how long they took, in all and by route
+      --route <route>  only this route
   logs                 log lines, newest first
       --level <l>      minimum level: debug, info, warn, error
       --grep <text>    only lines containing text (case-sensitive)
@@ -41,8 +45,9 @@ or the app with --app to read its default one
                        times, first and last seen, and the ID to list them by
   request <trace-id>   one request: its steps and its log lines
 
-Flags for logs, requests and issues:
-      --since <dur>    how far back to read (default 24h; 0 for everything kept)
+Flags for stats, logs, requests and issues:
+      --since <dur>    how far back to read (default 24h; 0 for everything kept,
+                       which stats does not take)
       --limit <n>      most lines to print (default 50)
       --json           print the lines as stored, one JSON object each
 `
@@ -107,6 +112,8 @@ func Run(w io.Writer, args []string, now time.Time) error {
 		fs.DurationVar(&o.slow, "slow", 0, "")
 		fs.StringVar(&o.route, "route", "", "")
 		fs.StringVar(&o.issue, "issue", "", "")
+	case "stats":
+		fs.StringVar(&o.route, "route", "", "")
 	case "issues", "request":
 	default:
 		return fmt.Errorf("%w: unknown subcommand %q", errUsage, sub)
@@ -150,6 +157,14 @@ func Run(w io.Writer, args []string, now time.Time) error {
 		from = now.Add(-o.since)
 	}
 	switch sub {
+	case "stats":
+		if len(positional) > 0 {
+			return fmt.Errorf("%w: stats takes no argument", errUsage)
+		}
+		if o.since < time.Minute {
+			return fmt.Errorf("%w: stats needs --since of a minute or more", errUsage)
+		}
+		return o.stats(w, store, now)
 	case "logs":
 		if len(positional) > 0 {
 			return fmt.Errorf("%w: logs takes no argument (use --grep)", errUsage)
@@ -350,6 +365,93 @@ func (o options) issues(w io.Writer, store *itel.Store, from time.Time) error {
 		fmt.Fprintf(w, "%d more failures fit none of the first 2000 issues and are not listed.\n", leftOut)
 	}
 	return nil
+}
+
+// stats prints the counts of every request since o.since ago: the
+// total, then each route, busiest first.
+func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
+	// One answer for the whole window: the fewest steps that cover it.
+	// The window starts on a step, so it may reach back a little
+	// further than asked, by less than a thousandth of its length.
+	const steps = 1000
+	step := (o.since/steps + time.Minute - 1).Truncate(time.Minute)
+	got, err := store.Stats(itel.StatsQuery{From: now.Add(-o.since), To: now, Step: max(step, time.Minute), Route: o.route})
+	if err != nil {
+		return err
+	}
+	if o.asJSON {
+		enc := json.NewEncoder(w)
+		line := func(route string, total bool, c itel.StatsCount) error {
+			return enc.Encode(map[string]any{
+				"route": route, "total": total, "requests": c.N, "failed": c.Failed, "slow": c.Slow,
+				"p50_us": c.P50.Microseconds(), "p95_us": c.P95.Microseconds(), "mean_us": c.Mean.Microseconds(),
+			})
+		}
+		if err := line("", true, got.Total); err != nil {
+			return err
+		}
+		for _, r := range got.Routes[:min(len(got.Routes), o.limit)] {
+			if err := line(r.Route, false, r.StatsCount); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if got.Total.N == 0 {
+		fmt.Fprintln(w, "No requests counted.")
+		return nil
+	}
+	pct := func(n, of int64) string { return strconv.FormatFloat(float64(n)*100/float64(of), 'f', 1, 64) + "%" }
+	t := got.Total
+	fmt.Fprintf(w, "%d requests in the last %s: %d failed (%s), %d slow (%s). Half finished within %s, 95%% within %s.\n\n",
+		t.N, span(o.since), t.Failed, pct(t.Failed, t.N), t.Slow, pct(t.Slow, t.N), within(t.P50), within(t.P95))
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "REQUESTS\tFAILED\tSLOW\tHALF WITHIN\t95% WITHIN\tROUTE")
+	shown := got.Routes[:min(len(got.Routes), o.limit)]
+	for _, r := range shown {
+		fmt.Fprintf(tw, "%d\t%d (%s)\t%d (%s)\t%s\t%s\t%s\n", r.N, r.Failed, pct(r.Failed, r.N), r.Slow, pct(r.Slow, r.N), within(r.P50), within(r.P95), clean(r.Route))
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if left := len(got.Routes) - len(shown); left > 0 {
+		fmt.Fprintf(w, "Quieter routes not listed (raise --limit): %d\n", left)
+	}
+	return nil
+}
+
+// span writes a window the way it was asked for: "24h", not "24h0m0s".
+func span(d time.Duration) string {
+	s := d.String()
+	s = strings.TrimSuffix(s, "0s")
+	if strings.HasSuffix(s, "h0m") {
+		s = strings.TrimSuffix(s, "0m")
+	}
+	return s
+}
+
+// within writes a percentile to two digits, which is as much as the
+// duration buckets it is read from can say, and marks one at the
+// ceiling: the request took that long or longer.
+func within(d time.Duration) string {
+	unit := time.Duration(1)
+	for d/unit >= 100 {
+		unit *= 10
+	}
+	d = (d + unit/2) / unit * unit
+	var s string
+	switch {
+	case d < time.Millisecond:
+		s = fmt.Sprintf("%dµs", d.Microseconds())
+	case d < time.Second:
+		s = strconv.FormatFloat(float64(d.Microseconds())/1e3, 'f', -1, 64) + "ms"
+	default:
+		s = strconv.FormatFloat(d.Seconds(), 'f', -1, 64) + "s"
+	}
+	if d >= itel.StatsCeiling {
+		s += "+"
+	}
+	return s
 }
 
 // took writes a duration to three significant places with its unit.

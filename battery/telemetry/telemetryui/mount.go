@@ -88,6 +88,7 @@ func (p *Plugin) Init(app *framework.App) error {
 		group.Screen(appui.NewScreen(at, &screen{allowed: allowed, title: title, draw: draw}).
 			WithTitle(title.Text(context.Background())), nil)
 	}
+	add(screens.OverviewPath(), i18nui.TelemetryOverview, screens.Overview)
 	add(screens.RequestsPath(), i18nui.TelemetryRequests, screens.Requests)
 	add(screens.IssuesPath(), i18nui.TelemetryIssues, screens.Issues)
 	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.Logs)
@@ -108,12 +109,13 @@ func (p *Plugin) Init(app *framework.App) error {
 			_, _ = w.Write([]byte(draw(ctx)))
 		})
 	}
+	app.Router().Get(path+"/_rows/overview", rows(screens.OverviewRows))
 	app.Router().Get(path+"/_rows/requests", rows(screens.RequestsRows))
 	app.Router().Get(path+"/_rows/logs", rows(screens.LogsRows))
 
 	// The bare path goes to the first screen. The target is fixed, and
 	// the screen it names is the one that asks who is calling.
-	target := screens.RequestsPath()
+	target := screens.OverviewPath()
 	app.Router().Get(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target, http.StatusSeeOther)
 	}))
