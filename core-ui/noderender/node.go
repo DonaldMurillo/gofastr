@@ -356,7 +356,17 @@ func renderKind(kind string, props map[string]any, children []render.HTML) rende
 			"id", "class", "name", "required", "multiple",
 		), children...)
 	case "option":
-		return html.Option(propString(props, "value"), propString(props, "text"), propBool(props, "selected"))
+		// An <option> with no value attribute submits its text, while
+		// value="" submits the empty string. html.Option always writes
+		// the attribute (value="" is the placeholder idiom), so a node
+		// that names no value submits its text the way the bare
+		// element would; an explicit "" stays empty.
+		text := propString(props, "text")
+		value := text
+		if v, ok := props["value"]; ok && v != nil {
+			value = propString(props, "value")
+		}
+		return html.Option(value, text, propBool(props, "selected"))
 	case "textarea":
 		name := propString(props, "name")
 		if name == "" {
