@@ -25,6 +25,10 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Trace IDs on log lines** ([log](framework/docs/content/log.md)).
+  With a TracerProvider installed, `battery/log` adds `trace_id` and
+  `span_id` to every line logged with a context that holds a span, the
+  access line included. Nothing changes without one.
 - **Embed surfaces on routes with parameters**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [embed](framework/docs/content/embed.md)). `embed.New` accepts a

@@ -18,6 +18,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Config configures the log plugin.
@@ -466,6 +467,16 @@ func (h *fanoutHandler) Handle(ctx context.Context, r slog.Record) error {
 	// Replay the With/WithGroup chain in order so attrs and groups nest
 	// the way the caller built them.
 	var attached slog.Handler = enc
+	// A line written inside a traced request names its trace and span,
+	// at the top level whatever groups the caller opened, so a reader
+	// can go from the line to its trace and back. Without a
+	// TracerProvider the span context is invalid and nothing is added.
+	if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+		attached = attached.WithAttrs([]slog.Attr{
+			slog.String("trace_id", sc.TraceID().String()),
+			slog.String("span_id", sc.SpanID().String()),
+		})
+	}
 	for _, st := range h.steps {
 		if st.group != "" {
 			attached = attached.WithGroup(st.group)

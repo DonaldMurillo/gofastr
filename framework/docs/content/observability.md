@@ -230,6 +230,13 @@ Like `WithMetrics`, `WithTracing` panics when combined with
 r.Use(framework.Tracing())
 ```
 
+### Trace IDs on log lines
+
+With a TracerProvider installed, `battery/log` adds `trace_id` and
+`span_id` to every line logged with a context that holds a span, the
+access line included. Search the logs for a `trace_id` to read one
+request's lines together. See [log](log.md) for the line shape.
+
 ### Spans for SQL, jobs and outbound calls
 
 A request span shows how long the request took, not where the time went.
