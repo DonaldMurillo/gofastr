@@ -273,6 +273,29 @@ replace github.com/testcontainers/testcontainers-go => ../local/testcontainers
 	}
 }
 
+// `require ( // pinned` is valid go.mod; the opener check wanted the bare
+// "require (" and sent the whole block to the replace/exclude branch.
+func TestRequireBlockWithCommentIsRead(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/app\n\ngo 1.26\n\n"+
+		"require ( // pinned by CI\n\tgithub.com/testcontainers/testcontainers-go v0.34.0\n)\n\n"+
+		"replace ( // local\n\tgithub.com/testcontainers/testcontainers-go => ../tc\n)\n"+
+		"require\tgithub.com/testcontainers/testcontainers-go/modules/postgres\tv0.34.0\n")
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	var lines []int
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			lines = append(lines, f.Line)
+		}
+	}
+	if len(lines) != 2 || lines[0] != 6 || lines[1] != 12 {
+		t.Fatalf("flagged lines %v, want [6 12]: the require entries, not the replace", lines)
+	}
+}
+
 // The rule must stay silent on a go.mod that requires none of them, or it
 // blocks every clean tree.
 func TestConsumerModuleGraphRuleQuietWhenAbsent(t *testing.T) {

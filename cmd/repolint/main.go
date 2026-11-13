@@ -322,36 +322,42 @@ func lintConsumerModuleGraph(root string) ([]finding, error) {
 	inRequireBlock := false
 	inOtherBlock := false
 	for i, line := range strings.Split(string(body), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+		// A go.mod comment runs from "//" to the end of the line, and a
+		// block opener or closer may carry one (`require ( // pinned`).
+		// Matching the raw line read that opener as some other block and
+		// skipped every entry in it.
+		code, _, _ := strings.Cut(line, "//")
+		trimmed := strings.TrimSpace(code)
+		if trimmed == "" {
 			continue
 		}
-		switch {
-		case trimmed == "require (":
-			inRequireBlock = true
+		if directive, ok := strings.CutSuffix(trimmed, "("); ok {
+			if strings.TrimSpace(directive) == "require" {
+				inRequireBlock = true
+			} else {
+				// replace ( / exclude ( / retract ( / tool ( …
+				inOtherBlock = true
+			}
 			continue
-		case strings.HasSuffix(trimmed, "("):
-			// replace ( / exclude ( / retract (
-			inOtherBlock = true
-			continue
-		case trimmed == ")":
+		}
+		if trimmed == ")" {
 			inRequireBlock, inOtherBlock = false, false
 			continue
 		}
 		if inOtherBlock {
 			continue
 		}
-		entry := trimmed
+		// The module path is the first field; the version follows it.
+		// Fields, not a cut at " ": go.mod separates with any blank, so
+		// `require\tx v1` is a require too.
+		fields := strings.Fields(trimmed)
 		if !inRequireBlock {
-			rest, ok := strings.CutPrefix(trimmed, "require ")
-			if !ok {
+			if len(fields) < 2 || fields[0] != "require" {
 				continue
 			}
-			entry = strings.TrimSpace(rest)
+			fields = fields[1:]
 		}
-		// The module path is the first field; the version and any
-		// `// indirect` marker follow it.
-		path, _, _ := strings.Cut(entry, " ")
+		path := fields[0]
 		for _, mod := range testOnlyModules {
 			// Exact match, or a submodule of it: testcontainers-go and
 			// testcontainers-go/modules/postgres are both the same problem,
