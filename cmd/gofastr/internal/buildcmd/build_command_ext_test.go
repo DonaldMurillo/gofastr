@@ -44,6 +44,11 @@ codegen:
 // The remedy is a command to paste: a config path with a space or a
 // shell metacharacter is quoted so the shell passes it as one word.
 func TestBuildExtRefusalQuotesPath(t *testing.T) {
+	// The remedy is quoted for a POSIX shell, and the test reads it back
+	// through one.
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no POSIX sh on PATH")
+	}
 	for _, path := range []string{"/tmp/my app/gofastr.settings.yml", "/tmp/it's/gofastr.settings.yml", "/tmp/$HOME;x/gofastr.settings.yml", "/tmp/plain/gofastr.settings.yml"} {
 		var d codegen.Discovery
 		d.Path = path
