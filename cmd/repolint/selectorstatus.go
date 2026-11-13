@@ -151,7 +151,8 @@ func doubleQuoteEnd(s string, i int) int {
 }
 
 // opensShellComment reports whether a # in the text before a substitution
-// starts a comment: one at the start of a word, outside quotes. The shell
+// starts a comment: one at the start of a word (after white space or a
+// shell metacharacter), outside quotes. The shell
 // (and YAML around a run: block) never executes what follows it.
 func opensShellComment(prefix string) bool {
 	var quote byte
@@ -168,7 +169,7 @@ func opensShellComment(prefix string) bool {
 			i++
 		case c == '"' || c == '\'':
 			quote = c
-		case c == '#' && (i == 0 || strings.IndexByte(" \t;&|(", prefix[i-1]) >= 0):
+		case c == '#' && (i == 0 || strings.IndexByte(" \t;&|()<>", prefix[i-1]) >= 0):
 			return true
 		}
 	}

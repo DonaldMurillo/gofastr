@@ -380,6 +380,29 @@ func TestMiddlewareFlushKeepsBuffer(t *testing.T) {
 
 // net/http sniffs the first 512 bytes the handler writes, however many
 // writes carry them: an HTML start split across writes is still HTML.
+// A body that opens with white space sniffs as HTML once the markup
+// arrives: net/http skips leading white space, so a status-first "\n"
+// write must not fix the type as text/plain.
+func TestSniffSkipsLeadingWhitespace(t *testing.T) {
+	for _, statusFirst := range []bool{true, false} {
+		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if statusFirst {
+				w.WriteHeader(http.StatusCreated)
+			}
+			io.WriteString(w, "\n  ")
+			io.WriteString(w, `<html><a href="/pricing">p</a>`)
+		}))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, esRequest("GET", "/x"))
+		if got := rec.Body.String(); got != "\n  "+`<html><a href="/es/pricing">p</a>` {
+			t.Fatalf("statusFirst=%v: got %q", statusFirst, got)
+		}
+		if ct := rec.Result().Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+			t.Fatalf("statusFirst=%v: Content-Type = %q, want text/html", statusFirst, ct)
+		}
+	}
+}
+
 func TestSniffSpansSplitWrites(t *testing.T) {
 	for _, statusFirst := range []bool{true, false} {
 		h := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

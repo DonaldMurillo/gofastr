@@ -86,6 +86,7 @@ func TestSelectorStatusOtherSpellings(t *testing.T) {
 		"# if test -n \"$(go run ./cmd/affected)\"; then exit 0; fi\n",
 		"      # [ -n \"$(go run ./cmd/affected)\" ] && exit 0\n",
 		"echo ok # if [ -n \"$(go run ./cmd/affected)\" ]; then exit 0; fi\n",
+		"(true)#[ -n \"$(go run ./cmd/affected)\" ]\n",
 	} {
 		if got := selectorStatusFindings("scripts/gate.sh", []byte(body)); len(got) != 0 {
 			t.Errorf("findings %+v, want none, for:\n%s", got, body)
