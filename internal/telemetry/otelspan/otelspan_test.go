@@ -50,14 +50,17 @@ func TestSpansBecomeOneTraceLine(t *testing.T) {
 				TraceID: trace.TraceID{1, 2, 3}, SpanID: trace.SpanID{9}, TraceFlags: trace.FlagsSampled, Remote: true,
 			}))
 		}
-		ctx, root := tracer.Start(ctx, "HTTP GET /orders/{id}")
+		ctx, root := tracer.Start(ctx, "HTTP GET GET /orders/{id}")
 		_, child := tracer.Start(ctx, "SELECT", trace.WithAttributes(attribute.Int("db.rows", 3)))
 		child.SetStatus(codes.Error, "boom")
 		child.End()
 		if len(lines) != 0 {
 			t.Fatalf("remote=%v: a trace was written before its root ended", remote)
 		}
-		root.SetAttributes(attribute.Int("http.status_code", 503))
+		// What the tracing middleware sets: a pattern with its method
+		// for one request, a bare path for the other.
+		route := map[bool]string{false: "GET /orders/{id}", true: "/orders/{id}"}[remote]
+		root.SetAttributes(attribute.Int("http.status_code", 503), attribute.String("http.method", "GET"), attribute.String("http.route", route))
 		root.End()
 
 		if len(lines) != 1 {
@@ -69,7 +72,7 @@ func TestSpansBecomeOneTraceLine(t *testing.T) {
 		}
 		rootID, childID := root.SpanContext().SpanID().String(), child.SpanContext().SpanID().String()
 		if got.TraceID != root.SpanContext().TraceID().String() || got.Route != "GET /orders/{id}" || got.Status != 503 || !got.Error ||
-			len(got.Spans) != 2 || got.Spans[0].SpanID != rootID || got.Spans[0].Name != "HTTP GET /orders/{id}" ||
+			len(got.Spans) != 2 || got.Spans[0].SpanID != rootID || got.Spans[0].Name != "HTTP GET GET /orders/{id}" ||
 			got.Spans[1].SpanID != childID || got.Spans[1].ParentID != rootID || got.Spans[1].Attrs["db.rows"] != "3" {
 			t.Fatalf("remote=%v: %s", remote, lines[0])
 		}

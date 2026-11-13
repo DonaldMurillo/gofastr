@@ -36,7 +36,7 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 		Start:   s.StartTime(),
 		Root:    !parent.IsValid() || parent.IsRemote(),
 		Error:   s.Status().Code == codes.Error,
-		Route:   strings.TrimPrefix(s.Name(), "HTTP "),
+		Route:   s.Name(),
 		Span: telemetry.Span{
 			SpanID: sc.SpanID().String(),
 			Name:   s.Name(),
@@ -48,12 +48,26 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 	}
 	attrs := s.Attributes()
 	e.Span.Attrs = make([]telemetry.Attr, 0, len(attrs))
+	var method, route string
 	for _, kv := range attrs {
 		switch kv.Key {
 		case "http.status_code", "http.response.status_code":
 			e.Status = int(kv.Value.AsInt64())
+		case "http.method", "http.request.method":
+			method = kv.Value.AsString()
+		case "http.route":
+			route = kv.Value.AsString()
 		}
 		e.Span.Attrs = append(e.Span.Attrs, telemetry.Attr{Key: string(kv.Key), Value: kv.Value.Emit()})
+	}
+	// A request is listed by method and route. The mux pattern is the
+	// route and may already start with the method ("GET /orders/{id}");
+	// the span name repeats it, so the name is only for other spans.
+	if route != "" {
+		e.Route = route
+		if method != "" && !strings.Contains(route, " ") {
+			e.Route = method + " " + route
+		}
 	}
 	p.c.SpanEnded(e)
 }

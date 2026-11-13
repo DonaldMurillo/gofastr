@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Logs and traces on disk** (experimental,
+  [telemetry](framework/docs/content/telemetry.md)). `battery/telemetry`
+  writes log lines and complete traces to day files on the app's own
+  machine, keeps every failed and slow trace plus a sampled share, and
+  holds the directory to a retention period and a size cap. Nothing
+  browses the files yet.
 - **Trace IDs on log lines** ([log](framework/docs/content/log.md)).
   With a TracerProvider installed, `battery/log` adds `trace_id` and
   `span_id` to every line logged with a context that holds a span, the
