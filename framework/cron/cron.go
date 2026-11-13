@@ -234,7 +234,8 @@ type walk struct {
 	// A plain lease is asked for once per walk and held until every job
 	// the walk started has finished: it is mutual exclusion only while
 	// held, so it must cover all of them, and a second Acquire inside the
-	// walk would meet the first.
+	// walk would meet the first. An Acquire error is no answer, so the
+	// next walked minute asks again.
 	asked   bool
 	held    bool
 	release func()
@@ -299,6 +300,10 @@ func (w *walk) fire(ctx context.Context, now time.Time, fixedOnly bool) bool {
 		}
 		held, release, err := s.acquireSafely(ctx, w.leader.Acquire)
 		if err != nil {
+			// An error is not an answer: the next walked minute asks
+			// again, as the tick-lease arm does. Only a clean "a peer
+			// leads" skips the rest of the walk.
+			w.asked = false
 			s.reportError("(leader-election)", err)
 			return false
 		}
