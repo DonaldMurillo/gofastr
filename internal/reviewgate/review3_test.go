@@ -314,7 +314,9 @@ func TestClaudeReviewsWhenCodexIsMissing(t *testing.T) {
 				if i < 0 {
 					t.Fatalf("claude ran without --add-dir:\n%s", line)
 				}
-				dir := strings.Fields(line[i:])[1]
+				// --add-dir is the last argument, so the rest of the line is
+				// its value, spaces in a temp path included.
+				dir := strings.TrimSpace(line[i+len("--add-dir "):])
 				if filepath.Base(dir) != "diff" {
 					t.Fatalf("claude was given %s, want the diff directory", dir)
 				}
