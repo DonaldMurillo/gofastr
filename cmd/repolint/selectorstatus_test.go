@@ -48,3 +48,33 @@ func TestSelectorStatusAssignedFirst(t *testing.T) {
 		}
 	}
 }
+
+// The regex wanted a `[` and stopped at the first `)`, so the `test`
+// synonym, a nested $(…) before cmd/affected and a substitution split
+// across lines all lost the selector's status unflagged.
+func TestSelectorStatusOtherSpellings(t *testing.T) {
+	for _, body := range []string{
+		"if test -n \"$(go run ./cmd/affected -format dir)\"; then exit 0; fi\n",
+		"if [ -n \"$(cd \"$(dirname \"$0\")\" && go run ./cmd/affected)\" ]; then exit 0; fi\n",
+		"if [ -n \"$(\n  go run ./cmd/affected -format dir\n)\" ]; then exit 0; fi\n",
+		"if ! test -z \"$(go run ./cmd/affected)\"; then exit 0; fi\n",
+		"if [ -n \"$(printf ')'; go run ./cmd/affected)\" ]; then exit 0; fi\n",
+		"if [ -n \"$(printf \")\"; go run ./cmd/affected)\" ]; then exit 0; fi\n",
+		"if [ -n \\\n  \"$(go run ./cmd/affected)\" ]; then exit 0; fi\n",
+	} {
+		got := selectorStatusFindings("scripts/gate.sh", []byte(body))
+		if len(got) != 1 || got[0].Line != 1 {
+			t.Errorf("findings %+v, want one on line 1, for:\n%s", got, body)
+		}
+	}
+	for _, body := range []string{
+		"out=$(cd \"$(dirname \"$0\")\" && go run ./cmd/affected)\nif [ -n \"$out\" ]; then exit 0; fi\n",
+		"if test -n \"$(git status --porcelain)\"; then echo dirty; fi\ngo run ./cmd/affected\n",
+		"latest=$(contest -n \"$(go run ./cmd/affected)\")\n",
+		"if [ -n \"$(printf '(')\" ]; then go run ./cmd/affected; fi\n",
+	} {
+		if got := selectorStatusFindings("scripts/gate.sh", []byte(body)); len(got) != 0 {
+			t.Errorf("findings %+v, want none, for:\n%s", got, body)
+		}
+	}
+}
