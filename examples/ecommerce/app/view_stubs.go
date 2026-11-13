@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=30bc2b65deab8d8e
+//gofastr:generated generator=app kind=scaffold version=dev sum=463844a905c844e2
 
 package main
 
@@ -28,17 +28,18 @@ func fillViewStubs(reg entity.Registry, ext entityui.Extensions, views [][2]stri
 		ext.Entities = map[string]entityui.Extension{}
 	}
 	for _, view := range views {
-		// Every version of the name counts: Get refuses a name registered
-		// only under versions, and entityui checks each version's views.
+		// Get, as entityui resolves extension keys: it refuses an
+		// extension for a name registered only under versions as an
+		// unknown entity, so a stub there could not make boot pass.
+		declared, err := reg.Get(view[0])
+		if err != nil || declared.Config.Display == nil {
+			continue
+		}
 		needsFilter := false
-		for _, declared := range reg.AllSorted() {
-			if declared.GetName() != view[0] || declared.Config.Display == nil {
-				continue
-			}
-			for _, current := range declared.Config.Display.Views {
-				if current.Key == view[1] && current.Where == "" {
-					needsFilter = true
-				}
+		for _, current := range declared.Config.Display.Views {
+			if current.Key == view[1] && current.Where == "" {
+				needsFilter = true
+				break
 			}
 		}
 		if !needsFilter {

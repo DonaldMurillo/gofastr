@@ -294,13 +294,19 @@ invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
 PgVectorStore also binds it raw to a text column, so that string must itself
 be valid UTF-8 without NUL bytes. An escape for half a surrogate pair
 (`"\ud800"` in a `json.RawMessage`) is refused too: Go would decode it to
-U+FFFD, but Postgres's jsonb input rejects it. Metadata that cannot be
-encoded as JSON at all (a NaN, a channel) fails on every store with a plain
-error naming the encoding, not an `InvalidDocumentTextError`.
-Large JSON numbers remain valid during this check. The in-memory store and `IndexOwned` method
+U+FFFD, but Postgres's jsonb input rejects it. A metadata number outside
+jsonb's numeric range (more than 131072 digits before the decimal point or
+16383 after it; `1e200000`, `1e-16384`) is refused on every store with
+`*semantic.MetadataNumberRangeError`, and the route answers 400
+`document_metadata_number_out_of_range`; numbers inside it, such as `1e400`,
+are kept as written. A Go caller's metadata that cannot be encoded as JSON at
+all (a NaN, a channel) fails on every store with a plain error naming the
+encoding, not an `InvalidDocumentTextError`; the route never sees one,
+since JSON has no NaN. The in-memory store and `IndexOwned` method
 of `WrapSearchBackend`'s owned keyword adapter also refuse unstorable text.
-The phrase key is `semantic.document_invalid_text`; a host catalog can
-translate it without changing the wire reason.
+The phrase keys are `semantic.document_invalid_text` and
+`semantic.document_metadata_number_out_of_range`; a host catalog can
+translate them without changing the wire reason.
 
 When opening an older index, invalid stored chunks retain their vectors but
 are skipped in the keyword index with a warning, both for snapshot rebuilds

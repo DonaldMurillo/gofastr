@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -19,6 +21,15 @@ type InvalidDocumentTextError struct {
 
 func (err *InvalidDocumentTextError) Error() string {
 	return fmt.Sprintf("semantic: document %s must be valid UTF-8 without NUL bytes", err.Field)
+}
+
+// MetadataNumberRangeError identifies document metadata holding a JSON
+// number Postgres jsonb cannot store: more than 131072 digits before the
+// decimal point or 16383 after it. Add refuses it on every store.
+type MetadataNumberRangeError struct{}
+
+func (*MetadataNumberRangeError) Error() string {
+	return "semantic: document metadata holds a number outside the range Postgres jsonb stores (131072 digits before the decimal point, 16383 after)"
 }
 
 func validateDocumentText(document Document) error {
@@ -46,10 +57,7 @@ func validateDocumentText(document Document) error {
 	if err != nil {
 		return fmt.Errorf("semantic: document metadata cannot be encoded as JSON: %w", err)
 	}
-	if !storableMetadataJSON(encoded) {
-		return &InvalidDocumentTextError{Field: "metadata"}
-	}
-	return nil
+	return storableMetadataJSON(encoded)
 }
 
 // storableMetadataJSON checks exactly the encoded value the JSONB column
@@ -59,25 +67,72 @@ func validateDocumentText(document Document) error {
 // members that decoding into a map would discard. The decoder turns a
 // lone surrogate escape into U+FFFD, while Postgres's jsonb input refuses
 // it, so escapes are checked on the encoded bytes first. A decoding
-// failure refuses the metadata.
-func storableMetadataJSON(encoded []byte) bool {
+// failure refuses the metadata. Number tokens keep their literal text, so
+// a number past jsonb's numeric range is refused here, not at the store.
+func storableMetadataJSON(encoded []byte) error {
+	invalid := &InvalidDocumentTextError{Field: "metadata"}
 	if !utf8.Valid(encoded) || loneSurrogateEscape(encoded) {
-		return false
+		return invalid
 	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.UseNumber()
 	for {
 		token, err := decoder.Token()
 		if err == io.EOF {
-			return true
+			return nil
 		}
 		if err != nil {
-			return false
+			return invalid
 		}
-		if value, ok := token.(string); ok && !textsafe.Storable(value) {
-			return false
+		switch value := token.(type) {
+		case string:
+			if !textsafe.Storable(value) {
+				return invalid
+			}
+		case json.Number:
+			if !jsonbNumberFits(string(value)) {
+				return &MetadataNumberRangeError{}
+			}
 		}
 	}
+}
+
+// Postgres numeric limits as jsonb applies them, measured on Postgres 16.
+const (
+	jsonbMaxIntegerDigits  = 131072
+	jsonbMaxFractionDigits = 16383
+	jsonbMaxExponent       = 1<<30 - 1 // INT_MAX/2 in numeric's parser
+)
+
+// jsonbNumberFits reports whether a JSON number literal (already valid
+// JSON) fits Postgres numeric: the digits after the decimal point count
+// even for zero (0.0000e-20000 is refused), and the digits before it are
+// counted from the first nonzero digit.
+func jsonbNumberFits(literal string) bool {
+	mantissa, exponentText, _ := strings.Cut(strings.ToLower(strings.TrimPrefix(literal, "-")), "e")
+	exponent := int64(0)
+	if exponentText != "" {
+		parsed, err := strconv.ParseInt(exponentText, 10, 32)
+		if err != nil {
+			return false // beyond any digit count jsonb stores either way
+		}
+		exponent = parsed
+	}
+	if exponent > jsonbMaxExponent {
+		return false // refused before the digits are counted, zero included
+	}
+	integer, fraction, _ := strings.Cut(mantissa, ".")
+	if int64(len(fraction))-exponent > jsonbMaxFractionDigits {
+		return false
+	}
+	digits := integer + fraction
+	first := strings.IndexFunc(digits, func(r rune) bool { return r != '0' })
+	if first < 0 {
+		return true // zero has no integer digits to overflow
+	}
+	// Power of ten of the leading nonzero digit.
+	weight := int64(len(integer)-1-first) + exponent
+	return weight < jsonbMaxIntegerDigits
 }
 
 // loneSurrogateEscape reports a \uD800-\uDFFF escape in encoded JSON that

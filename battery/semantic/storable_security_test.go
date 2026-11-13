@@ -169,6 +169,53 @@ func TestAddMetadataMatchesStoredJSON(t *testing.T) {
 	}
 }
 
+// The bounds were measured on Postgres 16 jsonb: at most 131072 digits
+// before the decimal point and 16383 after it, counted for zero too.
+// The route decodes metadata numbers with UseNumber, so a literal jsonb
+// cannot hold reaches Add; it is the caller's to fix, never a 500.
+func TestIndexRouteRefusesOutOfRangeNumber(t *testing.T) {
+	idx, err := Open(Options{Embedder: NewStubEmbedder(4)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	request := httptest.NewRequest(http.MethodPost, "/index", strings.NewReader(`{"documents":[{"id":"a","text":"ok","metadata":{"n":1e200000}}]}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	Handler(idx, WithInsecureDisabledAuth()).ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"reason":"document_metadata_number_out_of_range"`) {
+		t.Fatalf("status %d, body %s; want 400 document_metadata_number_out_of_range", response.Code, response.Body)
+	}
+	if stats := idx.Stats(); stats.Chunks != 0 {
+		t.Fatalf("refused document reached storage: %+v", stats)
+	}
+}
+
+func TestAddRefusesNumbersJSONBCannotHold(t *testing.T) {
+	idx, err := Open(Options{Embedder: NewStubEmbedder(4)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = idx.Close() })
+	for _, tc := range []struct {
+		number  string
+		refused bool
+	}{
+		{"1e400", false}, {"1e131071", false}, {"9.99e131071", false}, {"-1e131071", false},
+		{"1e-16383", false}, {"1.5e-16382", false}, {"0e200000", false}, {"12.5", false},
+		{"1e131072", true}, {"1e200000", true}, {"-1e131072", true}, {"0.5e131073", true},
+		{"1e-16384", true}, {"1.5e-16383", true}, {"0.0000e-20000", true},
+		{"1e99999999999999999999", true}, {"0e-99999999999999999999", true},
+		{"0e1073741823", false}, {"0e1073741824", true},
+	} {
+		err := idx.Add(context.Background(), Document{ID: "n", Text: "ok", Metadata: map[string]any{"raw": json.RawMessage(`{"n":` + tc.number + `}`)}})
+		var outOfRange *MetadataNumberRangeError
+		if got := errors.As(err, &outOfRange); got != tc.refused {
+			t.Errorf("Add(%s): %v; refused=%v, want %v", tc.number, err, got, tc.refused)
+		}
+	}
+}
+
 func TestAddValidatesOnlyLastDocumentPerID(t *testing.T) {
 	idx, err := Open(Options{Embedder: NewStubEmbedder(4)})
 	if err != nil {

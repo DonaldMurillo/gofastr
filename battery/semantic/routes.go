@@ -215,6 +215,10 @@ func indexHandler(idx Index) http.Handler {
 				writeErr(w, r, http.StatusBadRequest, reasonDocumentInvalidText)
 				return
 			}
+			if outOfRange := (*MetadataNumberRangeError)(nil); errors.As(err, &outOfRange) {
+				writeErr(w, r, http.StatusBadRequest, reasonMetadataNumberOutOfRange)
+				return
+			}
 			if ce := (*chunkError)(nil); errors.As(err, &ce) {
 				writeErr(w, r, http.StatusBadRequest, reasonDocumentUnchunkable)
 				return

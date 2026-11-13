@@ -1755,8 +1755,10 @@ few lines, and link the PR or the docs page for the rest.
   also refuses metadata whose JSON Postgres's jsonb cannot hold (an
   escaped NUL, half a surrogate pair) and a `metadata["kind"]` that is
   not valid UTF-8 without NUL; other metadata strings are normalized by
-  JSON encoding, and metadata JSON cannot encode (NaN) fails with its
-  own error. Go callers get `*semantic.InvalidDocumentTextError`, and the route
+  JSON encoding. A metadata number outside jsonb's numeric range
+  (`1e200000`) gets `*semantic.MetadataNumberRangeError` and 400
+  `document_metadata_number_out_of_range`, and Go metadata JSON cannot
+  encode (NaN) fails with its own error. Go callers get `*semantic.InvalidDocumentTextError`, and the route
   answers 400 `document_invalid_text` for a NUL sent as `\u0000`, where
   Postgres answered 500. Raw invalid UTF-8 in the body is still
   `invalid_json_body`. The
