@@ -219,3 +219,19 @@ func TestDocsHandler_CarriesContentSecurityPolicy(t *testing.T) {
 		t.Fatalf("SECURITY: [openapi] swagger UI missing Content-Security-Policy header: %#v", rr.Header())
 	}
 }
+
+// A spec with no RequestView is the same document for every admitted
+// caller, so GatedHandler serves bytes built once, as PublicHandler does,
+// and does not rebuild and marshal the spec per request.
+func TestGatedHandlerStaticSpecBuiltOnce(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	spec.SetDescription("at construction")
+	gated := GatedHandler(spec, func(*http.Request) bool { return true })
+	spec.SetDescription("rebuilt per request")
+
+	rr := httptest.NewRecorder()
+	gated.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if body := rr.Body.String(); rr.Code != http.StatusOK || !strings.Contains(body, "at construction") {
+		t.Fatalf("got %d %s, want the document built once at construction", rr.Code, body)
+	}
+}

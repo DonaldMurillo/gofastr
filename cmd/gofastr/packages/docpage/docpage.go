@@ -60,7 +60,10 @@ func Render(cfg Config) render.HTML {
 // card on that side.
 type PagerConfig struct {
 	// Ctx resolves the pager's own words (the nav label and the
-	// direction defaults) through i18nui; English when unset.
+	// direction defaults) through i18nui in the request's language. Left
+	// unset, they come from the app's default translator in its fallback
+	// locale, and English only when that has no entry or there is no
+	// translator; pass the request context to follow the reader.
 	Ctx                 context.Context
 	PrevHref, PrevLabel string
 	NextHref, NextLabel string

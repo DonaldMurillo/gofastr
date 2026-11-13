@@ -12,7 +12,11 @@ import (
 // in it must not take the request with it: the route still answers.
 func TestPanickingServeHookStillServes(t *testing.T) {
 	r := New()
-	r.SetServeHook(func(string, string) { panic("hook boom") })
+	var ran string
+	r.SetServeHook(func(method, pattern string) {
+		ran = method + " " + pattern
+		panic("hook boom")
+	})
 	r.Get("/ok", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 	}))
@@ -21,5 +25,9 @@ func TestPanickingServeHookStillServes(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ok", nil))
 	if rec.Code != http.StatusTeapot {
 		t.Fatalf("status = %d, want the handler's 418", rec.Code)
+	}
+	// The hook must have run, or the test never reached the recovery.
+	if ran != "GET /ok" {
+		t.Fatalf("serve hook saw %q, want GET /ok", ran)
 	}
 }
