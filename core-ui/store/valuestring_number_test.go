@@ -31,3 +31,28 @@ func TestValueStringMatchesJSNumber(t *testing.T) {
 		}
 	}
 }
+
+// TestValueStringMatchesJSStringify: a non-scalar stamp must equal the
+// runtime's JSON.stringify (no HTML escapes) and a nil one the empty
+// string the runtime paints for null.
+func TestValueStringMatchesJSStringify(t *testing.T) {
+	type pair struct {
+		A string `json:"a"`
+	}
+	for _, tc := range []struct {
+		in   any
+		want string
+	}{
+		{[]string{"a<b", "c&d", "e>f"}, `["a<b","c&d","e>f"]`},
+		{map[string]string{"k": "<x>"}, `{"k":"<x>"}`},
+		{pair{A: "&"}, `{"a":"&"}`},
+		{nil, ""},
+		{[]string(nil), ""},
+		{map[string]int(nil), ""},
+		{(*pair)(nil), ""},
+	} {
+		if got := valueString(tc.in); got != tc.want {
+			t.Errorf("valueString(%#v) = %q, want %q (JSON.stringify / null paint)", tc.in, got, tc.want)
+		}
+	}
+}

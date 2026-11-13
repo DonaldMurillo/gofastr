@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -364,10 +365,20 @@ func valueString(v any) string {
 		}
 		return string(b)
 	default:
-		b, err := json.Marshal(v)
-		if err != nil {
+		// The runtime paints null as '' and anything else through
+		// JSON.stringify, which does not escape <, > or &. json.Marshal
+		// does (a\u003cb), and a nil slice, map or pointer marshals as
+		// null: both stamps changed on the first client write.
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetEscapeHTML(false)
+		if err := enc.Encode(v); err != nil {
 			return ""
 		}
-		return string(b)
+		out := strings.TrimSuffix(buf.String(), "\n")
+		if out == "null" {
+			return ""
+		}
+		return out
 	}
 }
