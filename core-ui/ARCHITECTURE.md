@@ -2179,7 +2179,7 @@ Future agents: **if you find yourself doing one of these, stop and re-read this 
 > Symptom: every `<a href>` is hijacked by the runtime to do partial fetches.
 
 That breaks the model for two reasons:
-- **State-change interactions** like pagination should NOT be `<a href="?p=2">` links at all. They are island RPCs. The fact that I built pagination as a route-changing link is the root cause; "fixing" the link interception only papered over it.
+- **State-change interactions** on a region embedded in a page (a pager inside a card, an expand) are island RPCs, not links. A list screen's own sort, page and filter are query-string links (`<a href="?p=2">`) that the router intercepts like any navigation; see Hard rule 1 below. The root cause was state that got a route of its own; "fixing" the link interception only papered over it.
 - **Cross-page navigation** (a real `/a` → `/b`) IS supposed to be intercepted (Angular-router style with cache). Don't disable that to "fix" pagination. Pagination wasn't a route in the first place.
 
 ### Failure 2: "Make every interaction a server round-trip via full nav"

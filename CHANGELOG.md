@@ -170,6 +170,14 @@ few lines, and link the PR or the docs page for the rest.
   `gofastr validate` uses both.
 
 ### Changed
+- **The pre-commit model review falls back to Claude on Haiku**
+  ([CONTRIBUTING](CONTRIBUTING.md)). Without the Codex CLI the hook failed
+  every commit. It now runs the same three reviews through the Claude
+  Code CLI on Haiku, read-only, and with neither CLI it warns and lets
+  the commit through.
+- **The `gofastr-host` agent skill describes when to load by intent**,
+  not by a list of about 150 trigger phrases. `gofastr agents skill`
+  writes the shorter description into a host app.
 - **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   Nothing called either helper in `framework/experimental/harness/session`
