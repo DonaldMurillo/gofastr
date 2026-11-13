@@ -1762,6 +1762,18 @@ few lines, and link the PR or the docs page for the rest.
   `PreRoute` panic is logged and answers a localized 500 without
   running middleware or the handler. Both used to abort the connection.
   A CONNECT redirect no longer asks the gate about the bare target path.
+- **`gofastr --json` prints one JSON document on stdout on every
+  path** ([CLI](framework/docs/content/cli.md)). `generate <unknown>
+  --json` and `generate ts --json` printed prose and no document; status
+  lines no longer reach stdout in JSON mode. `--help` with `--json`
+  prints the usage on stderr and no document. Generator reports are
+  compact JSON and keep non-ASCII text as UTF-8.
+- **`gofastr generate entity -h` and `generate screen -h`** generated
+  files named `-h`; every generator answers help before doing work.
+- **`gofastr semantic clear --help` deleted the index**; it prints the
+  usage. `semantic stats` exits 1 when it cannot encode its report,
+  where it printed nothing and exited 0. A `--help` after `--` is text:
+  `semantic query -- --help` searches for it.
 - **A generated app boots with a `display.views` entry that has no
   `where:`**; the view answers an error naming `extensions.go` until
   its filter is registered there. Generated apps call
