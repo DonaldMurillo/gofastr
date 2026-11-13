@@ -379,6 +379,12 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	// The machine's latest reading in the window, when there is one. A
+	// directory that cannot give it still gives the counts.
+	var latest itel.HostReading
+	if host, err := store.Host(now.Add(-o.since), now, max(step, time.Minute)); err == nil {
+		latest = host.Latest
+	}
 	if o.asJSON {
 		enc := json.NewEncoder(w)
 		line := func(route string, total bool, c itel.StatsCount) error {
@@ -395,16 +401,31 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 				return err
 			}
 		}
-		return nil
+		if latest.Time.IsZero() {
+			return nil
+		}
+		m := map[string]any{"machine": true, "time": latest.Time.UTC().Format(time.RFC3339),
+			"mem_used": latest.MemUsed, "mem_total": latest.MemTotal, "disk_used": latest.DiskUsed, "disk_total": latest.DiskTotal,
+			"goroutines": latest.Goroutines, "heap": latest.HeapBytes, "rss": latest.RSSBytes}
+		if latest.CPU >= 0 {
+			m["cpu"] = latest.CPU
+		}
+		return enc.Encode(m)
 	}
 	if got.Total.N == 0 {
 		fmt.Fprintln(w, "No requests counted.")
+		if text := machineLine(latest); text != "" {
+			fmt.Fprintf(w, "\n%s\n", text)
+		}
 		return nil
 	}
 	pct := func(n, of int64) string { return strconv.FormatFloat(float64(n)*100/float64(of), 'f', 1, 64) + "%" }
 	t := got.Total
 	fmt.Fprintf(w, "%d requests in the last %s: %d failed (%s), %d slow (%s). Half finished within %s, 95%% within %s.\n\n",
 		t.N, span(o.since), t.Failed, pct(t.Failed, t.N), t.Slow, pct(t.Slow, t.N), within(t.P50), within(t.P95))
+	if text := machineLine(latest); text != "" {
+		fmt.Fprintf(w, "%s\n\n", text)
+	}
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "REQUESTS\tFAILED\tSLOW\tHALF WITHIN\t95% WITHIN\tROUTE")
 	shown := got.Routes[:min(len(got.Routes), o.limit)]
@@ -418,6 +439,40 @@ func (o options) stats(w io.Writer, store *itel.Store, now time.Time) error {
 		fmt.Fprintf(w, "Quieter routes not listed (raise --limit): %d\n", left)
 	}
 	return nil
+}
+
+// size writes a byte count: whole megabytes under a gigabyte, gigabytes
+// to one decimal over it.
+func size(n int64) string {
+	const mb, gb = 1 << 20, 1 << 30
+	if n < gb {
+		return strconv.FormatInt((n+mb/2)/mb, 10) + " MB"
+	}
+	return strconv.FormatFloat(float64(n)/gb, 'f', 1, 64) + " GB"
+}
+
+// machineLine says the machine's latest reading in a sentence, leaving
+// out what the platform did not give. A zero reading says nothing.
+func machineLine(r itel.HostReading) string {
+	if r.Time.IsZero() {
+		return ""
+	}
+	var parts []string
+	if r.CPU >= 0 {
+		parts = append(parts, fmt.Sprintf("CPU %d%% busy", int(r.CPU*100+0.5)))
+	}
+	if p := r.MemPercent(); p >= 0 {
+		parts = append(parts, fmt.Sprintf("memory %s of %s (%d%%)", size(r.MemUsed), size(r.MemTotal), p))
+	}
+	if p := r.DiskPercent(); p >= 0 {
+		parts = append(parts, fmt.Sprintf("disk %s of %s (%d%%)", size(r.DiskUsed), size(r.DiskTotal), p))
+	}
+	held := r.RSSBytes
+	if held == 0 {
+		held = r.HeapBytes
+	}
+	parts = append(parts, fmt.Sprintf("this app holds %s in %d goroutines", size(held), r.Goroutines))
+	return "Machine at " + stamp(r.Time) + ": " + strings.Join(parts, ", ") + "."
 }
 
 // span writes a window the way it was asked for: "24h", not "24h0m0s".

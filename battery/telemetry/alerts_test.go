@@ -226,3 +226,88 @@ func TestEachRoundWritesTheFinishedMinutes(t *testing.T) {
 		})
 	}
 }
+
+// The machine is read once a minute, however many rounds the minute
+// has, and each reading goes to the day's file and to the disk rule: a
+// disk that passes its line notifies once, and once more when it has
+// room again.
+func TestMachineIsReadOnceAMinuteAndTheDiskRuleFollows(t *testing.T) {
+	var got []Alert
+	p, app := alertApp(t, Config{Notify: func(_ context.Context, a Alert) error { got = append(got, a); return nil }})
+	gb := int64(1 << 30)
+	disk, reads := int64(10), 0
+	p.readHost = func(at time.Time) itel.HostReading {
+		reads++
+		return itel.HostReading{Time: at, CPU: 0.25, MemUsed: gb, MemTotal: 4 * gb, DiskUsed: disk * gb, DiskTotal: 25 * gb, Goroutines: 9}
+	}
+	start := time.Now().Truncate(time.Minute)
+	round := func(at time.Time) { p.tick(app, p.writer.Load(), itel.NewRollup(), p.alerts.Load(), at) }
+
+	round(start)
+	round(start.Add(15 * time.Second))
+	round(start.Add(45 * time.Second))
+	if reads != 1 {
+		t.Fatalf("%d readings in one minute, want 1", reads)
+	}
+	if h := p.Host(); h == nil || h.DiskPercent() != 40 || h.Goroutines != 9 {
+		t.Fatalf("the latest reading: %+v", h)
+	}
+	disk = 23 // 92%
+	round(start.Add(time.Minute))
+	round(start.Add(75 * time.Second))
+	if reads != 2 || len(got) != 1 || !got[0].Firing || got[0].Rule.Kind != AlertDisk || got[0].Count != 92 {
+		t.Fatalf("%d readings, alerts %+v; want the default disk rule firing at 92", reads, got)
+	}
+	if want := "Alert: disk nearly full. The disk is 92% full (the rule fires at 90%)."; got[0].Text() != want {
+		t.Fatalf("text %q, want %q", got[0].Text(), want)
+	}
+	disk = 20 // 80%
+	round(start.Add(2 * time.Minute))
+	if len(got) != 2 || got[1].Firing || got[1].Text() != "Resolved: disk nearly full. The disk is 80% full, down from at least 90%." {
+		t.Fatalf("after room was made: %+v", got)
+	}
+
+	series, err := p.Reader().Host(start.Add(-time.Minute), start.Add(10*time.Minute), time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, pt := range series.Points {
+		n += pt.Samples
+	}
+	if n != 3 || series.Latest.DiskUsed != 20*gb {
+		t.Fatalf("%d readings in the file, latest %+v", n, series.Latest)
+	}
+
+	// With alerts off the machine is still read and written.
+	quiet, quietApp := alertApp(t, Config{NoAlerts: true})
+	quiet.tick(quietApp, quiet.writer.Load(), itel.NewRollup(), nil, start)
+	if h := quiet.Host(); h == nil || h.Goroutines < 1 {
+		t.Fatalf("with alerts off: %+v", h)
+	}
+}
+
+// A reader that panics costs that minute's reading and nothing else:
+// the round goes on to its alert check, and the next minute reads again.
+func TestAPanickingMachineReaderDoesNotEndTheRound(t *testing.T) {
+	p, app := alertApp(t, Config{})
+	var logged bytes.Buffer
+	app.SetLogger(slog.New(slog.NewJSONHandler(&logged, nil)))
+	calls := 0
+	p.readHost = func(at time.Time) itel.HostReading {
+		calls++
+		if calls == 1 {
+			panic("a /proc file nobody expected")
+		}
+		return itel.HostReading{Time: at, CPU: -1, Goroutines: 3}
+	}
+	start := time.Now().Truncate(time.Minute)
+	p.tick(app, p.writer.Load(), itel.NewRollup(), p.alerts.Load(), start)
+	if p.Host() != nil || !strings.Contains(logged.String(), "reading the machine panicked") {
+		t.Fatalf("after a panicking read: latest %+v, log %s", p.Host(), logged.String())
+	}
+	p.tick(app, p.writer.Load(), itel.NewRollup(), p.alerts.Load(), start.Add(time.Minute))
+	if h := p.Host(); h == nil || h.Goroutines != 3 {
+		t.Fatalf("the minute after: %+v", h)
+	}
+}

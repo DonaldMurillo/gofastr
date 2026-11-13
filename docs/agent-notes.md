@@ -468,3 +468,19 @@
 - Evidence: the container's computed `margin-top` was 264.5px on the short page and 0 on the long ones; `TestStandalonePageIsNotPinnedToTheBottom` fails with the screen stack put back.
 - Next time: look at a new layout with a page shorter than the window as well as a long one; the short one shows where the free space went.
 - Status: active
+
+## 2026-11-13 - Do not mutate source while a background test run is compiling
+- Scope: any session that runs the affected suite in the background and keeps working
+- Trigger: a full run reported one failure in a package that passed five times in a row afterwards. The run had compiled that package during the seconds a deliberate mutation sat on disk.
+- Approach: start the background run only when the tree is in the state to be judged, and leave the tree alone until it reports. Mutation passes and edits happen before it starts or after it ends.
+- Evidence: the failure's timestamp fell inside a mutation of `live := s.Live != nil && false`; the test it failed asserts exactly what that mutation breaks.
+- Next time: a failure that cannot be reproduced gets its timestamp compared with the session's own edits before it is called a flake.
+- Status: active
+
+## 2026-11-13 - A fixed-size SVG chart needs its drawing size chosen for its container
+- Scope: `ui.BarChart` and the other charts in `framework/ui` drawn at a pixel `Width`
+- Trigger: three Overview charts drawn at 480px sat in 292px cards. They scaled to 0.6, axis text with them, inside boxes that kept the full height; at natural size the top and bottom axis labels were cut by the drawing's own edge.
+- Approach: pick `Width` near the narrowest card the chart sits in (a phone and a three-across desktop grid are about the same), and keep sibling grids at one column width with `ui.Grid{Fill: true}`. A percentage chart sets `Max: 100`.
+- Evidence: measured with `getBoundingClientRect` on each `svg[data-cui-comp="ui-bar-chart"]` against its `width` attribute; `TestBarChartAxisLabelsStayInsideTheDrawing` and `TestBarChartMaxFixesTheScale` hold the kit fixes.
+- Next time: after adding a chart, compare its rendered width with its declared width in every layout it appears in.
+- Status: active

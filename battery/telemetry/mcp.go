@@ -69,7 +69,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		},
 		{
 			name:        "telemetry_stats",
-			description: "Count every request of a time range, not only the kept ones: requests, failed, slow, and the durations half and 95% of them finished within (microseconds, each right to within a bucket), in total, by route (busiest first) and as a series of up to 60 steps. Filters: `since_ts` (default 24 hours ago), `until_ts` (default now), `route` (exact), `limit` on routes (default 50, max 200). Counts are written each minute, so the last minute or so is missing. The tool to call for how busy, how failing and how slow the app is.",
+			description: "Count every request of a time range, not only the kept ones: requests, failed, slow, and the durations half and 95% of them finished within (microseconds, each right to within a bucket), in total, by route (busiest first) and as a series of up to 60 steps. Filters: `since_ts` (default 24 hours ago), `until_ts` (default now), `route` (exact), `limit` on routes (default 50, max 200). `machine` is the latest reading of CPU (share of all cores, 0 to 1), memory, disk and this process, in bytes, with the peaks of the range. Counts are written each minute, so the last minute or so is missing. The tool to call for how busy, how failing and how slow the app is.",
 			schema: map[string]any{"type": "object", "properties": map[string]any{
 				"route":    map[string]any{"type": "string", "description": "Exact route."},
 				"since_ts": ts, "until_ts": ts,
@@ -316,8 +316,29 @@ func (p *Plugin) toolStats(_ context.Context, params map[string]any) (any, error
 	for i, pt := range got.Points {
 		series[i] = map[string]any{"time": pt.Time.UTC().Format(time.RFC3339), "requests": pt.N, "failed": pt.Failed, "slow": pt.Slow, "p95_us": pt.P95.Microseconds()}
 	}
+	// The machine as last read, and the most its CPU and memory reached
+	// in the window: nil where the platform does not say.
+	var machine map[string]any
+	if host, err := store.Host(from, to, step); err == nil && !host.Latest.Time.IsZero() {
+		l := host.Latest
+		machine = map[string]any{"time": l.Time.UTC().Format(time.RFC3339),
+			"mem_used": l.MemUsed, "mem_total": l.MemTotal, "disk_used": l.DiskUsed, "disk_total": l.DiskTotal,
+			"disk_percent": l.DiskPercent(), "goroutines": l.Goroutines, "heap": l.HeapBytes, "rss": l.RSSBytes}
+		if l.CPU >= 0 {
+			machine["cpu"] = l.CPU
+		}
+		peakCPU, peakMem := -1.0, int64(0)
+		for _, pt := range host.Points {
+			peakCPU, peakMem = max(peakCPU, pt.CPUMax), max(peakMem, pt.MemUsed)
+		}
+		if peakCPU >= 0 {
+			machine["cpu_peak"] = peakCPU
+		}
+		machine["mem_used_peak"] = peakMem
+	}
 	return map[string]any{
-		"total": count(got.Total), "routes": routes, "routes_not_listed": len(got.Routes) - len(routes),
+		"machine": machine,
+		"total":   count(got.Total), "routes": routes, "routes_not_listed": len(got.Routes) - len(routes),
 		"series": series, "step_seconds": int(step / time.Second),
 		"slow_at_us": p.SlowThreshold().Microseconds(), "duration_ceiling_us": itel.StatsCeiling.Microseconds(),
 	}, nil

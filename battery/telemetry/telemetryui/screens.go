@@ -298,6 +298,11 @@ func (s *Screens) firing(ctx context.Context) render.HTML {
 	}
 	lines := make([]render.HTML, len(alerts))
 	for i, a := range alerts {
+		if a.Rule.Kind == telemetry.AlertDisk {
+			lines[i] = render.Text(i18nui.TelemetryAlertDisk.Text(ctx, map[string]any{
+				"name": a.Rule.Name, "share": i18n.Percent(ctx, float64(a.Count)/100)}))
+			continue
+		}
 		phrase := i18nui.TelemetryAlertFailed
 		if a.Rule.Kind == telemetry.AlertSlow {
 			phrase = i18nui.TelemetryAlertSlow

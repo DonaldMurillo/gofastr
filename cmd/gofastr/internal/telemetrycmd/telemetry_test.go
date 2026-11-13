@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +72,12 @@ func seed(t *testing.T) string {
 	count(now.Add(-50*time.Hour), "GET /old", 9, 0, ms)
 	count(now.Add(-3*time.Minute), "GET /orders/{id}", 200, 0, 7*ms)
 	count(now.Add(-2*time.Minute), "POST /orders\x1b[31m", 20, 5, 30*time.Second)
+	// The machine, read two minutes ago and, with a different disk, two
+	// days ago.
+	for at, disk := range map[time.Time]int64{now.Add(-2 * time.Minute): 23 << 30, now.Add(-50 * time.Hour): 5 << 30} {
+		write(itel.KindHost, at, []byte(fmt.Sprintf(`{"time":%q,"cpu":0.3700,"mem_used":2254857830,"mem_total":4294967296,"disk_used":%d,"disk_total":26843545600,"goroutines":42,"heap":31457280,"rss":83886080}`+"\n",
+			at.Format(time.RFC3339), disk)))
+	}
 	return dir
 }
 
@@ -185,6 +193,8 @@ func TestStats(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
+	// Blank lines aside: the total, the machine, the header, two routes.
+	lines = slices.DeleteFunc(lines, func(l string) bool { return l == "" })
 	if len(lines) != 5 || strings.Contains(out, "\x1b") || strings.Contains(out, "GET /old") {
 		t.Fatalf("stats:\n%q", out)
 	}
@@ -199,6 +209,10 @@ func TestStats(t *testing.T) {
 		t.Errorf("the failing route: %q", lines[4])
 	}
 
+	if want := "Machine at 2026-11-13 11:58:00.000Z: CPU 37% busy, memory 2.1 GB of 4.0 GB (52%), disk 23.0 GB of 25.0 GB (92%), this app holds 80 MB in 42 goroutines."; lines[1] != want {
+		t.Errorf("the machine:\n got %q\nwant %q", lines[1], want)
+	}
+
 	week, err := run(t, "stats", "--dir", dir, "--since", "168h", "--limit", "2")
 	if err != nil || !strings.Contains(week, "229 requests in the last 168h") || !strings.Contains(week, "Quieter routes not listed (raise --limit): 1") || strings.Contains(week, "GET /old") {
 		t.Errorf("stats --since 168h --limit 2: %v\n%s", err, week)
@@ -208,12 +222,24 @@ func TestStats(t *testing.T) {
 		t.Errorf("stats --route: %v\n%s", err, one)
 	}
 	js, err := run(t, "stats", "--dir", dir, "--json")
-	if err != nil || strings.Count(js, "\n") != 3 || !strings.Contains(js, `"requests":220`) || !strings.Contains(js, `"total":true`) ||
+	if err != nil || strings.Count(js, "\n") != 4 || !strings.Contains(js, `"machine":true`) || !strings.Contains(js, `"disk_used":24696061952`) || !strings.Contains(js, `"requests":220`) || !strings.Contains(js, `"total":true`) ||
 		!strings.Contains(js, `"route":"GET /orders/{id}","slow":0,"total":false`) {
 		t.Errorf("stats --json: %v\n%s", err, js)
 	}
-	if none, _ := run(t, "stats", "--dir", dir, "--since", "1m"); !strings.Contains(none, "No requests counted") {
-		t.Errorf("stats in a quiet window: %s", none)
+	if none, _ := run(t, "stats", "--dir", dir, "--since", "1m"); !strings.Contains(none, "No requests counted") || strings.Contains(none, "Machine") {
+		t.Errorf("stats in a window with no requests and no reading: %s", none)
+	}
+	if quiet, err := run(t, "stats", "--dir", dir, "--since", "1m", "--json"); err != nil || strings.Contains(quiet, "machine") || strings.Count(quiet, "\n") != 1 {
+		t.Errorf("stats --json in a window with no reading: %v\n%s", err, quiet)
+	}
+	// A reading with no requests beside it is still said.
+	only := t.TempDir()
+	at := now.Add(-time.Minute)
+	if err := os.WriteFile(filepath.Join(only, itel.FileName(itel.KindHost, at)), []byte(`{"time":"`+at.Format(time.RFC3339)+`","goroutines":3,"heap":10485760}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := run(t, "stats", "--dir", only); err != nil || !strings.Contains(out, "No requests counted.") || !strings.HasSuffix(out, ": this app holds 10 MB in 3 goroutines.\n") {
+		t.Errorf("a machine that says little, with no requests: %v\n%q", err, out)
 	}
 	for _, argv := range [][]string{{"stats", "--dir", dir, "extra"}, {"stats", "--dir", dir, "--since", "0"}, {"stats", "--dir", dir, "--since", "30s"}} {
 		if _, err := run(t, argv...); !errors.Is(err, errUsage) {

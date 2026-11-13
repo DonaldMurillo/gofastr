@@ -64,6 +64,11 @@ type BarChartConfig struct {
 	// wrap onto up to two lines; a single over-long word is ellipsized
 	// with the full text preserved in the bar's <title>. Default off.
 	ShowLabels bool
+	// Max fixes the top of the value scale: 100 for percentages, so
+	// the axis reads 0, 50, 100 whatever the tallest bar. Zero leaves
+	// the scale to round up from the data. A bar taller than Max grows
+	// the scale to hold it.
+	Max float64
 	// HideValues suppresses the per-bar value labels that ride above each
 	// cap. Values are shown by default. Set this to opt out (e.g. a dense
 	// sparkline-style strip where the numbers would crowd).
@@ -93,6 +98,10 @@ type BarChartConfig struct {
 	// reader's locale. Nil writes English.
 	Ctx context.Context
 }
+
+// axisLabelHalf is the room an axis label needs past its gridline:
+// half of a 12px line, and a pixel of air.
+const axisLabelHalf = 8.0
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
@@ -129,6 +138,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	valueMax := niceCeil(dataMax / 0.85)
 	if !finite(valueMax) || valueMax <= 0 {
 		valueMax = dataMax
+	}
+	// A scale with a known top (a percentage) keeps it: 96% drawn
+	// against 150 says nothing. A bar past Max is beyond what the
+	// caller said can be, and the scale grows to hold it.
+	if finite(cfg.Max) && cfg.Max > 0 {
+		valueMax = math.Max(cfg.Max, dataMax)
 	}
 	if valueMax == 0 {
 		valueMax = 1
@@ -184,6 +199,15 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	bottomGutter := 0.0
 	if cfg.ShowLabels {
 		bottomGutter = float64(maxLines)*lineH + labelGap + 4
+	}
+
+	// An axis label is centred on its gridline, so the top and bottom
+	// ones reach half a line past the plot. With no value labels above
+	// and no category labels below there was no room for either half,
+	// and the drawing's edge cut them.
+	if cfg.ShowAxis {
+		topGutter = math.Max(topGutter, axisLabelHalf)
+		bottomGutter = math.Max(bottomGutter, axisLabelHalf)
 	}
 
 	plotH := float64(h) - topGutter - bottomGutter
@@ -551,9 +575,13 @@ var barChartStyle = registry.RegisterStyle("ui-bar-chart", barChartCSS)
 
 func barChartCSS(_ style.Theme) string {
 	// Knobs: --ui-bar-chart-bar-hover-opacity (0.85) is the hover dim.
+	// The height follows the width when a narrow container shrinks the
+	// chart: at a fixed height the drawing scaled down inside a box that
+	// stayed tall, with a blank band above and below it.
 	return `[data-cui-comp="ui-bar-chart"] {
   display: block;
   max-inline-size: 100%;
+  block-size: auto;
 }
 [data-cui-comp="ui-bar-chart"] .fui-bar-chart__bar {
   transition: opacity var(--duration-fast, 150ms) var(--easing-ease-in-out, ease);

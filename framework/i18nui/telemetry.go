@@ -149,3 +149,23 @@ var (
 	TelemetryRoutesMore       = i18n.Define("ui.telemetry.routesMore", "{{n}} quieter routes are not listed.")
 	TelemetryCountShare       = i18n.Define("ui.telemetry.countShare", "{{count}} ({{share}})")
 )
+
+// The machine, on the overview screen.
+var (
+	TelemetryAlertDisk    = i18n.Define("ui.telemetry.alertDisk", "Alert “{{name}}” is firing: the disk is {{share}} full.")
+	TelemetryMachine      = i18n.Define("ui.telemetry.machine", "The machine")
+	TelemetryMachineSub   = i18n.Define("ui.telemetry.machineSub", "Read once a minute. The figures are the latest reading; the charts cover the time range.")
+	TelemetryMachineStats = i18n.Define("ui.telemetry.machineStats", "The machine now")
+	TelemetryCPU          = i18n.Define("ui.telemetry.cpu", "CPU busy")
+	TelemetryMemory       = i18n.Define("ui.telemetry.memory", "Memory used")
+	TelemetryDisk         = i18n.Define("ui.telemetry.disk", "Disk used")
+	TelemetryProcess      = i18n.Define("ui.telemetry.process", "This app")
+	TelemetryUsedOf       = i18n.Define("ui.telemetry.usedOf", "{{used}} of {{total}}")
+	TelemetryGoroutines   = i18n.Define("ui.telemetry.goroutines", "{{n}} goroutines")
+	TelemetryAllCores     = i18n.Define("ui.telemetry.allCores", "of all cores")
+	TelemetryNotKnown     = i18n.Define("ui.telemetry.notKnown", "Not known here")
+	TelemetryChartCPU     = i18n.Define("ui.telemetry.chartCPU", "CPU busy (%)")
+	TelemetryChartMemory  = i18n.Define("ui.telemetry.chartMemory", "Memory used (%)")
+	TelemetryBytesGB      = i18n.Define("ui.telemetry.bytesGB", "{{n}} GB")
+	TelemetryBytesMB      = i18n.Define("ui.telemetry.bytesMB", "{{n}} MB")
+)

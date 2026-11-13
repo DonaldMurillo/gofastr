@@ -98,6 +98,14 @@ func seed(t *testing.T, dir string, now time.Time) {
 	count(now.Add(-3*time.Minute), "POST /orders", 9, 3, 8*ms)
 	count(now.Add(-3*time.Minute), "POST /orders", 1, 0, 900*ms)
 	count(now.Add(-1*time.Minute), `GET /<script>alert(1)</script>`, 1, 0, ms)
+	// The machine, read twice in the last few minutes and once two
+	// days ago, on a disk that is nearly full.
+	host := func(at time.Time, rest string) {
+		write(itel.KindHost, at, []byte(`{"time":"`+at.UTC().Format(time.RFC3339)+`",`+rest+"}\n"))
+	}
+	host(now.Add(-50*time.Hour), `"cpu":0.9900,"mem_used":4000000000,"mem_total":4294967296,"disk_used":1073741824,"disk_total":26843545600,"goroutines":5,"heap":1048576,"rss":2097152`)
+	host(now.Add(-4*time.Minute), `"cpu":0.1000,"mem_used":1073741824,"mem_total":4294967296,"disk_used":21474836480,"disk_total":26843545600,"goroutines":30,"heap":31457280,"rss":83886080`)
+	host(now.Add(-2*time.Minute), `"cpu":0.3700,"mem_used":2254857830,"mem_total":4294967296,"disk_used":24696061952,"disk_total":26843545600,"goroutines":42,"heap":31457280,"rss":83886080`)
 }
 
 // newApp serves the screens at /telemetry for a caller who sends
@@ -495,4 +503,79 @@ func TestFailedRequestShowsWhatAndWhere(t *testing.T) {
 	// words.
 	_, body = get(t, h, "/telemetry/requests?trace="+okID, true)
 	has(t, "a failed step with no error text", body, []string{"GET /orders/{id}"}, []string{"What went wrong"})
+}
+
+// The overview shows the machine as it was last read: how busy, how
+// much memory and disk are used and of how much, and what this app
+// holds, with a chart of CPU and of memory over the range. A disk at or
+// past ninety percent is drawn as trouble.
+func TestOverviewShowsTheMachine(t *testing.T) {
+	h := newApp(t)
+	_, body := get(t, h, "/telemetry/overview", true)
+	has(t, "the machine", body, []string{
+		"The machine", "CPU busy", ">37%<", "of all cores",
+		"Memory used", ">52%<", "2.1 GB of 4 GB",
+		"Disk used", ">92%<", "23 GB of 25 GB",
+		"This app", ">80 MB<", "42 goroutines",
+		`aria-labelledby="telemetry-chart-cpu-title"`, `aria-labelledby="telemetry-chart-memory-title"`,
+	}, []string{"Not known here", ">99%<"})
+	// The disk's figure is the one drawn as trouble.
+	// Counted on elements: the page's style sheet names the class too.
+	if n := len(regexp.MustCompile(`class="[^"]*fui-stat-card__trend--down`).FindAllString(body, -1)); n != 2 {
+		t.Errorf("%d figures drawn as trouble; want the failed requests and the disk", n)
+	}
+	// Both charts are percentages: their scale tops out at 100.
+	for _, id := range []string{"telemetry-chart-cpu-title", "telemetry-chart-memory-title"} {
+		i := strings.Index(body, `aria-labelledby="`+id+`"`)
+		chart := body[i:][:strings.Index(body[i:], "</svg>")]
+		if !strings.Contains(chart, ">100</text>") || strings.Contains(chart, ">150</text>") {
+			t.Errorf("%s: the scale does not top out at 100", id)
+		}
+	}
+	// The figures alone, for the timer, carry the machine too.
+	_, part := get(t, h, "/telemetry/_rows/overview", true)
+	has(t, "the rows route", part, []string{"The machine", ">92%<"}, nil)
+}
+
+// A machine that says little (no /proc: not Linux) shows what it has and
+// a dash for the rest, with no empty chart. An app with no reading yet
+// shows no machine at all, and one with readings and no requests shows
+// the machine under the note that nothing was counted.
+func TestOverviewWithALittleOrNothingFromTheMachine(t *testing.T) {
+	serve := func(hostLine string) string {
+		dir := t.TempDir()
+		if hostLine != "" {
+			at := time.Now().Add(-2 * time.Minute)
+			line := `{"time":"` + at.UTC().Format(time.RFC3339) + `",` + hostLine + "}\n"
+			if err := os.WriteFile(filepath.Join(dir, itel.FileName(itel.KindHost, at)), []byte(line), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tel := telemetry.New(telemetry.Config{Dir: dir, ExternalTracerProvider: true})
+		app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+		app.Mount(uihost.New(appui.NewApp("test")))
+		app.RegisterPlugin(tel)
+		app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Authorize: func(context.Context) bool { return true }}))
+		if err := app.InitPlugins(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
+		_, body := get(t, app.Router(), "/telemetry/overview", true)
+		return body
+	}
+	has(t, "no reading yet", serve(""), []string{"No requests counted yet"}, []string{"The machine"})
+
+	little := serve(`"goroutines":12,"heap":52428800`)
+	has(t, "a machine that says little", little,
+		[]string{"No requests counted yet", "The machine", "Not known here", ">50 MB<", "12 goroutines"},
+		[]string{"telemetry-chart-cpu", "telemetry-chart-memory", "%<"})
+	if n := strings.Count(little, "Not known here"); n != 3 {
+		t.Errorf("%d figures say they are not known; want CPU, memory and disk", n)
+	}
+	// A disk with room is a figure like the others, not trouble.
+	roomy := serve(`"disk_used":10737418240,"disk_total":26843545600,"goroutines":3,"heap":1048576`)
+	has(t, "a disk with room", roomy, []string{">40%<", "10 GB of 25 GB"}, nil)
+	if regexp.MustCompile(`class="[^"]*fui-stat-card__trend--down`).MatchString(roomy) {
+		t.Error("a disk 40% full is drawn as trouble")
+	}
 }

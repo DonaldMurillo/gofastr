@@ -14,6 +14,8 @@ const (
 	KindTraces = "traces"
 	// KindStats is the per-minute request counts, one line per route.
 	KindStats = "stats"
+	// KindHost is the machine's readings, one line a minute.
+	KindHost  = "host"
 	dayLayout = "20060102"
 	fileExt   = ".jsonl"
 )

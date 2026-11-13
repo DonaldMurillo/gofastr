@@ -135,3 +135,60 @@ func TestAlertRulesAreChecked(t *testing.T) {
 		}
 	}
 }
+
+// A disk rule fires when the disk is as full as its line, resolves five
+// points below it, says nothing before the first reading, and is not
+// moved by requests.
+func TestDiskRuleFollowsTheDisk(t *testing.T) {
+	a, err := NewAlerts([]AlertRule{{Name: "disk", Kind: AlertDisk, AtLeast: 90}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 10, 12, 0, 0, 0, time.UTC)
+	check := func(what string, percent int, wantEvent, wantFiring bool) {
+		t.Helper()
+		a.SetDisk(percent)
+		events := a.Check(now)
+		now = now.Add(15 * time.Second)
+		if (len(events) == 1) != wantEvent || (len(a.Firing()) == 1) != wantFiring {
+			t.Fatalf("%s (%d%%): %d events, %d firing; want event=%v firing=%v", what, percent, len(events), len(a.Firing()), wantEvent, wantFiring)
+		}
+		if wantEvent && (events[0].Count != min(percent, 100) || events[0].Firing != wantFiring) {
+			t.Fatalf("%s: event %+v", what, events[0])
+		}
+	}
+	if len(a.Check(now)) != 0 {
+		t.Fatal("a rule fired before any reading")
+	}
+	// A hundred failed requests are not a full disk.
+	for range 100 {
+		a.Observe(now, "GET /a", true, true)
+	}
+	check("unknown", -1, false, false)
+	check("under the line", 89, false, false)
+	check("at the line", 90, true, true)
+	check("still full", 97, false, true)
+	check("unreadable while firing", -1, false, true)
+	check("a point under", 89, false, true)
+	check("just short of resolving", 86, false, true)
+	check("five points under", 85, true, false)
+	check("an unknown reading keeps the last", -1, false, false)
+	check("past full", 250, true, true)
+	if f := a.Firing(); f[0].Count != 100 {
+		t.Fatalf("a disk more than full reads as %d%%", f[0].Count)
+	}
+
+	for name, r := range map[string]AlertRule{
+		"no line":        {Name: "d", Kind: AlertDisk},
+		"over a hundred": {Name: "d", Kind: AlertDisk, AtLeast: 101},
+		"a window":       {Name: "d", Kind: AlertDisk, AtLeast: 90, Within: time.Minute},
+		"a route":        {Name: "d", Kind: AlertDisk, AtLeast: 90, Route: "GET /a"},
+	} {
+		if _, err := NewAlerts([]AlertRule{r}); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	if _, err := NewAlerts([]AlertRule{{Name: "d", Kind: AlertDisk, AtLeast: 100}, {Name: "e", Kind: AlertDisk, AtLeast: 1}}); err != nil {
+		t.Errorf("the two ends of the range: %v", err)
+	}
+}

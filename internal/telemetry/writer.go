@@ -34,7 +34,7 @@ type Writer struct {
 	root *os.Root
 	now  func() time.Time
 
-	logs, traces, stats dayFileWriter
+	logs, traces, stats, host dayFileWriter
 
 	sinceCheck atomic.Int64
 	pruning    sync.Mutex
@@ -98,7 +98,7 @@ func newWriter(cfg Config, now func() time.Time, seal bool) (*Writer, error) {
 		return nil, fmt.Errorf("telemetry: open %s: %w", cfg.Dir, err)
 	}
 	w := &Writer{cfg: cfg, root: root, now: now, noSeal: !seal}
-	w.logs.kind, w.traces.kind, w.stats.kind = KindLogs, KindTraces, KindStats
+	w.logs.kind, w.traces.kind, w.stats.kind, w.host.kind = KindLogs, KindTraces, KindStats, KindHost
 	if err := w.prune(); err != nil {
 		_ = root.Close()
 		return nil, err
@@ -325,7 +325,7 @@ func (w *Writer) Close() error {
 	}
 	w.bg.Wait() // a sealing pass stops at its next block
 	var errs []error
-	for _, d := range []*dayFileWriter{&w.logs, &w.traces, &w.stats} {
+	for _, d := range []*dayFileWriter{&w.logs, &w.traces, &w.stats, &w.host} {
 		d.mu.Lock()
 		if d.f != nil {
 			errs = append(errs, d.f.Close())

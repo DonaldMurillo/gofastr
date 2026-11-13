@@ -25,6 +25,11 @@ const (
 	AlertFailed AlertKind = "failed"
 	// AlertSlow counts requests at or over Config.SlowThreshold.
 	AlertSlow AlertKind = "slow"
+	// AlertDisk watches how full the disk holding the telemetry
+	// directory is. Its rule's AtLeast is a percentage from 1 to 100,
+	// and it takes no Within and no Route. It resolves five points
+	// below its line.
+	AlertDisk AlertKind = "disk"
 )
 
 // AlertRule fires when at least AtLeast requests of its Kind finished
@@ -58,6 +63,12 @@ type Alert struct {
 
 // Text says the alert in one line, for a chat message or a subject.
 func (a Alert) Text() string {
+	if a.Rule.Kind == AlertDisk {
+		if !a.Firing {
+			return fmt.Sprintf("Resolved: %s. The disk is %d%% full, down from at least %d%%.", a.Rule.Name, a.Count, a.Rule.AtLeast)
+		}
+		return fmt.Sprintf("Alert: %s. The disk is %d%% full (the rule fires at %d%%).", a.Rule.Name, a.Count, a.Rule.AtLeast)
+	}
 	what := "failed requests"
 	if a.Rule.Kind == AlertSlow {
 		what = "slow requests"
@@ -77,8 +88,14 @@ func (a Alert) Text() string {
 }
 
 // defaultAlerts is what an app gets with no rules of its own: told when
-// requests are failing in numbers, and nothing else.
-var defaultAlerts = []AlertRule{{Name: "failed requests", Kind: AlertFailed, AtLeast: 10, Within: 5 * time.Minute}}
+// requests are failing in numbers and when the disk is nearly full, and
+// nothing else.
+var defaultAlerts = []AlertRule{
+	{Name: "failed requests", Kind: AlertFailed, AtLeast: 10, Within: 5 * time.Minute},
+	// The files this plugin writes are capped, but nothing else on the
+	// machine is: a database, an upload directory, the system's logs.
+	{Name: "disk nearly full", Kind: AlertDisk, AtLeast: 90},
+}
 
 // alertEvery is how often the rules are checked.
 const alertEvery = 15 * time.Second
@@ -130,9 +147,38 @@ func (p *Plugin) tick(app *framework.App, w *itel.Writer, counts *itel.Rollup, a
 	// A failed write is counted by the writer, and the minutes it held
 	// are gone: counts are not queued.
 	_ = w.FlushStats(counts, false)
+	// The machine, once a minute: the round that first sees a new
+	// minute reads it.
+	if minute := now.Unix() / 60; minute != p.hostMinute {
+		p.hostMinute = minute
+		if r, ok := p.readMachine(app, now); ok {
+			_ = w.WriteHost(r)
+			p.latestHost.Store(&r)
+			if alerts != nil {
+				alerts.SetDisk(r.DiskPercent())
+			}
+		}
+	}
 	if alerts != nil {
 		p.checkAlerts(app, alerts, now)
 	}
+}
+
+// readMachine takes one reading, with a net under it: this runs on the
+// watch goroutine, where a panic would end the app over a number for a
+// chart.
+func (p *Plugin) readMachine(app *framework.App, now time.Time) (r itel.HostReading, ok bool) {
+	read := p.readHost
+	if read == nil {
+		return r, false
+	}
+	defer func() {
+		if v := recover(); v != nil {
+			// The results are still their zero values: no reading.
+			app.Logger().Error("telemetry: reading the machine panicked", "panic", textsafe.Recovered(v))
+		}
+	}()
+	return read(now), true
 }
 
 func (p *Plugin) checkAlerts(app *framework.App, alerts *itel.Alerts, now time.Time) {

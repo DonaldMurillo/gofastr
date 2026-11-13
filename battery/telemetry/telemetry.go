@@ -125,10 +125,15 @@ type Plugin struct {
 	processor atomic.Pointer[otelspan.Processor]
 	store     atomic.Pointer[itel.Store]
 	alerts    atomic.Pointer[itel.Alerts]
-	slow      atomic.Int64 // the resolved SlowThreshold
-	quiet     []string     // set once in New
-	unwritten atomic.Int64 // lines that arrived with no writer open
-	stopped   atomic.Bool
+	// readHost takes a reading of the machine, and hostMinute is the
+	// minute it last did; both belong to the watch goroutine.
+	readHost   func(time.Time) itel.HostReading
+	hostMinute int64
+	latestHost atomic.Pointer[itel.HostReading]
+	slow       atomic.Int64 // the resolved SlowThreshold
+	quiet      []string     // set once in New
+	unwritten  atomic.Int64 // lines that arrived with no writer open
+	stopped    atomic.Bool
 }
 
 // New returns the plugin. Register it before the log plugin, so the
@@ -187,6 +192,9 @@ func (p *Plugin) Init(app *framework.App) error {
 	}
 	counts := itel.NewRollup()
 	c.WatchStats(counts)
+	if resolved, err := cfg.Resolve(); err == nil {
+		p.readHost = itel.NewHostSampler(resolved.Dir).Read
+	}
 	if resolved, err := cfg.Resolve(); err == nil {
 		p.slow.Store(int64(resolved.SlowThreshold))
 	}
@@ -263,6 +271,12 @@ func (p *Plugin) Stats() Stats {
 // the files through, or nil before Init. Its type is internal to this
 // module: the query API is not part of this package's surface yet.
 func (p *Plugin) Reader() *itel.Store { return p.store.Load() }
+
+// Host returns the latest reading of the machine, or nil before the
+// first: one is taken each minute, the first within fifteen seconds of
+// the app starting. Its type is internal to this module, as Reader's
+// is.
+func (p *Plugin) Host() *itel.HostReading { return p.latestHost.Load() }
 
 // SlowThreshold returns the duration at which a trace counts as slow:
 // the configured one, or the default. It is zero before Init.

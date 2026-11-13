@@ -115,7 +115,9 @@ without one, and a caller it refuses gets a 403.
   days: how many, how many failed, how many were slow, and how long 95
   in 100 took. Three bar charts show those over the range, and a table
   gives each route's own figures, busiest first; a route links to its
-  requests. See [Request counts](#request-counts).
+  requests. See [Request counts](#request-counts). Under them is
+  [the machine](#the-machine): how busy its CPU is, how much memory and
+  disk are used, and what this app holds.
 - **Requests** lists the kept requests, newest first: route, the path
   asked for, status, how long it took and when. Narrow it to failed or
   slow requests, to one route (click a route), or to a time range. Paste
@@ -132,8 +134,8 @@ without one, and a caller it refuses gets a 403.
   requests. See [Issues](#issues).
 - **Logs** lists log lines, newest first, by minimum level, by text and
   by time range. A line written inside a request links to that request.
-- Requests and Issues say so at the top while an [alert](#alerts) is
-  firing.
+- Overview, Requests and Issues say so at the top while an
+  [alert](#alerts) is firing.
 
 Every filter is in the query string, so a view can be bookmarked and
 shared. The lists show 25 rows a page, with **Newer**, **Older** and
@@ -273,8 +275,8 @@ says how many failures fit none of them.
 ## Alerts
 
 The plugin counts failed and slow requests as they end and checks its
-rules every fifteen seconds. With no rules of your own there is one:
-ten failed requests within five minutes.
+rules every fifteen seconds. With no rules of your own there are two:
+ten failed requests within five minutes, and the disk 90% full.
 
 <!-- gofastr:compile
 stmt: _ = tel
@@ -302,11 +304,30 @@ when one is set. It resolves when the count has fallen to half of
 `AtLeast` or less, so a count hovering at the line does not fire again
 and again. `Init` fails on a rule it cannot check.
 
+A rule of kind `telemetry.AlertDisk` watches the disk the telemetry
+directory is on. Its `AtLeast` is a percentage from 1 to 100, and it
+takes no `Within` and no `Route`. It fires when the disk is that full
+and resolves five points lower. The files this plugin writes are capped;
+a database, an upload directory and the system's own logs are not, and
+on a small machine they are what fills the disk. Rules of your own
+replace the defaults, so add a disk rule to them if you want to keep it:
+
+<!-- gofastr:compile
+stmt: _ = rule
+-->
+```go
+import (
+    "github.com/DonaldMurillo/gofastr/battery/telemetry"
+)
+
+rule := telemetry.AlertRule{Name: "disk nearly full", Kind: telemetry.AlertDisk, AtLeast: 85}
+```
+
 Each change does three things:
 
 - it is logged as `telemetry.alert`, at ERROR when firing and INFO when
   resolved, so it is in the Logs page and the day file;
-- Requests and Issues show it at the top while it is firing;
+- Overview, Requests and Issues show it at the top while it is firing;
 - `Config.Notify` is called, when set. It gets fifteen seconds; an error
   or a panic in it is logged and the next check still runs.
 
@@ -327,6 +348,37 @@ zero, and each replica counts the requests it served itself, so with
 three replicas a rule can fire on one of them while the other two stay
 quiet.
 
+## The machine
+
+Once a minute the plugin reads the machine it runs on and writes one
+line to a fourth day file:
+
+```json
+{"time":"2026-11-13T18:42:00Z","cpu":0.3712,"mem_used":2254857830,"mem_total":4294967296,"disk_used":24696061952,"disk_total":26843545600,"goroutines":42,"heap":31457280,"rss":83886080}
+```
+
+| Field | Is |
+|-------|----|
+| `cpu` | the share of all cores that were busy since the reading before, 0 to 1 |
+| `mem_used`, `mem_total` | memory in bytes; used is the total less what the kernel says is available |
+| `disk_used`, `disk_total` | the filesystem the telemetry directory is on; space only root may use counts as used |
+| `goroutines`, `heap`, `rss` | this process: its goroutines, the Go heap in use, and the memory it holds |
+
+The Overview shows the latest reading and charts CPU and memory over
+its time range. `gofastr telemetry stats` says it in a sentence, and
+`telemetry_stats` returns it as `machine` with the peaks of the range.
+
+- **CPU, memory and `rss` are read from `/proc`, so Linux only.**
+  Elsewhere the line carries the process's goroutines and heap, and the
+  disk on macOS and FreeBSD. A field the platform does not give is left
+  out, and the Overview shows a dash for it.
+- **It is the whole machine, not the app's share.** In a container the
+  kernel reports the host's CPU and memory. `rss` is the app's own.
+- **A reading is a moment.** Memory and disk are as they were at that
+  second; CPU is the mean of the minute before it.
+
+A day is about 300 KB. The file is sealed and removed with its day.
+
 ## What is written
 
 Files go in `Config.Dir`, by default `telemetry/` under the app's state
@@ -338,6 +390,7 @@ lines go to one plain file per kind, owner-readable only:
 | `logs-YYYYMMDD.jsonl` | a log entry, as [log](log.md) describes it |
 | `traces-YYYYMMDD.jsonl` | one complete trace, written when its request ends |
 | `stats-YYYYMMDD.jsonl` | one route's [request counts](#request-counts) for one minute |
+| `host-YYYYMMDD.jsonl` | one reading of [the machine](#the-machine) |
 
 When a UTC day is over, its files are **sealed** in the background: the
 lines are packed into gzip blocks of about 1 MiB and the plain file is
@@ -345,9 +398,9 @@ removed. A sealed day is about a seventh of its plain size.
 
 | File | Holds |
 |------|-------|
-| `logs-YYYYMMDD.jsonl.gz`, `traces-YYYYMMDD.jsonl.gz`, `stats-YYYYMMDD.jsonl.gz` | the same lines. Each is one valid gzip stream: `zcat logs-20261112.jsonl.gz \| grep ...` works |
+| `logs-YYYYMMDD.jsonl.gz`, `traces-YYYYMMDD.jsonl.gz`, `stats-YYYYMMDD.jsonl.gz`, `host-YYYYMMDD.jsonl.gz` | the same lines. Each is one valid gzip stream: `zcat logs-20261112.jsonl.gz \| grep ...` works |
 | `traces-YYYYMMDD.heads.gz` | each trace's summary, so a list of requests never unpacks a span |
-| `logs-YYYYMMDD.idx`, `traces-YYYYMMDD.idx`, `stats-YYYYMMDD.idx` | where each block is, the times it covers, and which block holds each trace ID |
+| `logs-YYYYMMDD.idx`, `traces-YYYYMMDD.idx`, `stats-YYYYMMDD.idx`, `host-YYYYMMDD.idx` | where each block is, the times it covers, and which block holds each trace ID |
 
 The index is written last. A day without one is read from its plain
 file, so an app killed in the middle of sealing loses nothing and
@@ -410,7 +463,7 @@ never part of the sample:
 | `SlowThreshold` | 500 ms | when a trace counts as slow |
 | `MaxMemoryBytes` | 32 MiB | spans held for requests still running |
 | `QuietPaths` | none | path prefixes kept only when failed or slow |
-| `Alerts` | ten failed in five minutes | the rules checked every fifteen seconds |
+| `Alerts` | ten failed in five minutes; disk 90% full | the rules checked every fifteen seconds |
 | `Notify` | none | who is told when a rule fires or resolves |
 | `NoAlerts` | false | turn alerts off |
 | `EnableMCP` | false | the five MCP tools |

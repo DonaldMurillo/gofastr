@@ -108,11 +108,13 @@ func TestFiringAlertIsShownOnThePages(t *testing.T) {
 		return []telemetry.Alert{
 			{Rule: telemetry.AlertRule{Name: "failed <requests>", Kind: telemetry.AlertFailed, AtLeast: 10, Within: 10 * time.Minute}, Firing: true, Count: 37},
 			{Rule: telemetry.AlertRule{Name: "slow", Kind: telemetry.AlertSlow, AtLeast: 5}, Firing: true, Count: 6},
+			{Rule: telemetry.AlertRule{Name: "disk nearly full", Kind: telemetry.AlertDisk, AtLeast: 90}, Firing: true, Count: 93},
 		}
 	}
 	for name, f := range map[string]func(context.Context) render.HTML{"requests": s.Requests, "issues": s.Issues} {
 		body := draw(f)
-		for _, want := range []string{"37 failed requests in the last 10 minutes", "6 slow requests in the last 5 minutes", "failed &lt;requests&gt;"} {
+		for _, want := range []string{"37 failed requests in the last 10 minutes", "6 slow requests in the last 5 minutes", "failed &lt;requests&gt;",
+			"Alert “disk nearly full” is firing: the disk is 93% full."} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: missing %q", name, want)
 			}

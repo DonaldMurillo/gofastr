@@ -193,9 +193,29 @@ func TestMCPStatsCountEveryRequest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, itel.FileName(itel.KindStats, time.Now())), r.Take(time.Now(), true), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// And the machine, read twice: busier and fuller the first time.
+	for ago, line := range map[time.Duration]string{
+		9 * time.Minute: `"cpu":0.8000,"mem_used":3000000000,"mem_total":4294967296,"disk_used":1000,"disk_total":26843545600,"goroutines":50,"heap":1,"rss":2`,
+		4 * time.Minute: `"cpu":0.2000,"mem_used":1000000000,"mem_total":4294967296,"disk_used":24696061952,"disk_total":26843545600,"goroutines":42,"heap":31457280,"rss":83886080`,
+	} {
+		at := time.Now().Add(-ago)
+		f, err := os.OpenFile(filepath.Join(dir, itel.FileName(itel.KindHost, time.Now())), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = f.WriteString(`{"time":"` + at.UTC().Format(time.RFC3339) + `",` + line + "}\n")
+		if cerr := f.Close(); err != nil || cerr != nil {
+			t.Fatal(err, cerr)
+		}
+	}
 	a := start(t, telemetry.Config{EnableMCP: true, Dir: dir})
 
 	got := call(t, a, admin(), "telemetry_stats", nil)
+	m, _ := got["machine"].(map[string]any)
+	if m["cpu"] != 0.2 || m["cpu_peak"] != 0.8 || m["mem_used"] != 1000000000.0 || m["mem_used_peak"] != 3000000000.0 ||
+		m["disk_percent"] != 92.0 || m["goroutines"] != 42.0 || m["rss"] != 83886080.0 {
+		t.Fatalf("machine: %v", m)
+	}
 	total, _ := got["total"].(map[string]any)
 	if total["requests"] != 36.0 || total["failed"] != 2.0 || total["slow"] != 6.0 {
 		t.Fatalf("total: %v", total)
@@ -231,6 +251,9 @@ func TestMCPStatsCountEveryRequest(t *testing.T) {
 		t.Fatalf("limit 1: %v routes, %v not listed", len(capped["routes"].([]any)), capped["routes_not_listed"])
 	}
 	before := call(t, a, admin(), "telemetry_stats", map[string]any{"until_ts": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)})
+	if before["machine"] != nil {
+		t.Fatalf("a window with no reading has a machine: %v", before["machine"])
+	}
 	if before["total"].(map[string]any)["requests"] != 0.0 {
 		t.Fatalf("a window that ends before the requests counted %v", before["total"])
 	}

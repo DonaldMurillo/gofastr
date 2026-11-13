@@ -15,7 +15,16 @@ const (
 	AlertFailed AlertKind = "failed"
 	// AlertSlow counts requests at or over the slow threshold.
 	AlertSlow AlertKind = "slow"
+	// AlertDisk watches how full the disk is. Its rule's AtLeast is a
+	// percentage, and it has no window and no route: a disk is as
+	// full as it is.
+	AlertDisk AlertKind = "disk"
 )
+
+// diskSlack is how far below its line, in points, a disk must fall for
+// its rule to resolve: a disk sitting at the line does not fire and
+// resolve by turns.
+const diskSlack = 5
 
 // AlertRule fires when at least AtLeast requests of its Kind finished
 // within the last Within.
@@ -38,7 +47,8 @@ type AlertEvent struct {
 	// Firing is true when the rule started firing and false when it
 	// resolved.
 	Firing bool
-	// Count is the requests counted in the window at that moment.
+	// Count is the requests counted in the window at that moment; for
+	// a disk rule, the percentage full.
 	Count int
 	// At is when the change was noticed; Since is when the rule started
 	// firing.
@@ -56,6 +66,9 @@ type alertState struct {
 	firing  bool
 	since   time.Time
 	lastSum int
+	// disk is the last percentage a disk rule was told, or negative
+	// before the first.
+	disk int
 }
 
 // Alerts counts finished requests against a set of rules, in memory:
@@ -75,12 +88,19 @@ func NewAlerts(rules []AlertRule) (*Alerts, error) {
 		switch {
 		case r.Name == "" || seen[r.Name]:
 			return nil, fmt.Errorf("telemetry: alert rule name %q is empty or used twice", r.Name)
-		case r.Kind != AlertFailed && r.Kind != AlertSlow:
-			return nil, fmt.Errorf("telemetry: alert rule %q: Kind must be AlertFailed or AlertSlow", r.Name)
+		case r.Kind != AlertFailed && r.Kind != AlertSlow && r.Kind != AlertDisk:
+			return nil, fmt.Errorf("telemetry: alert rule %q: Kind must be AlertFailed, AlertSlow or AlertDisk", r.Name)
+		case r.Kind == AlertDisk && (r.AtLeast < 1 || r.AtLeast > 100 || r.Within != 0 || r.Route != ""):
+			return nil, fmt.Errorf("telemetry: alert rule %q: a disk rule takes AtLeast from 1 to 100 (a percentage), and no Within or Route", r.Name)
 		case r.AtLeast < 1:
 			return nil, fmt.Errorf("telemetry: alert rule %q: AtLeast must be at least 1", r.Name)
 		case r.Within < 0:
 			return nil, fmt.Errorf("telemetry: alert rule %q: Within is negative", r.Name)
+		}
+		if r.Kind == AlertDisk {
+			seen[r.Name] = true
+			a.states = append(a.states, &alertState{rule: r, disk: -1})
+			continue
 		}
 		if r.Within == 0 {
 			r.Within = 5 * time.Minute
@@ -113,7 +133,8 @@ func (s *alertState) advance(at time.Time) int64 {
 	return b
 }
 
-// Observe counts one finished request.
+// Observe counts one finished request. A disk rule has no buckets, so
+// a request that gets past its kind test has nowhere to be counted.
 func (a *Alerts) Observe(at time.Time, route string, failed, slow bool) {
 	if !failed && !slow {
 		return
@@ -132,6 +153,21 @@ func (a *Alerts) Observe(at time.Time, route string, failed, slow bool) {
 	}
 }
 
+// SetDisk tells the disk rules how full the disk is, 0 to 100. A
+// negative percent is "unknown" and changes nothing.
+func (a *Alerts) SetDisk(percent int) {
+	if percent < 0 {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, s := range a.states {
+		if s.rule.Kind == AlertDisk {
+			s.disk = min(percent, 100)
+		}
+	}
+}
+
 // Check brings every rule up to now and returns the ones that changed:
 // a rule fires when its count reaches AtLeast, and resolves when the
 // count has fallen to half of that or less, so a rate hovering at the
@@ -141,6 +177,20 @@ func (a *Alerts) Check(now time.Time) []AlertEvent {
 	defer a.mu.Unlock()
 	var events []AlertEvent
 	for _, s := range a.states {
+		if s.rule.Kind == AlertDisk {
+			// Before the first reading disk is negative, which is
+			// under every line: nothing fires.
+			s.lastSum = s.disk
+			switch {
+			case !s.firing && s.disk >= s.rule.AtLeast:
+				s.firing, s.since = true, now
+				events = append(events, AlertEvent{Rule: s.rule, Firing: true, Count: s.disk, At: now, Since: now})
+			case s.firing && s.disk <= s.rule.AtLeast-diskSlack:
+				s.firing = false
+				events = append(events, AlertEvent{Rule: s.rule, Firing: false, Count: s.disk, At: now, Since: s.since})
+			}
+			continue
+		}
 		s.advance(now)
 		sum := 0
 		for _, n := range s.counts {

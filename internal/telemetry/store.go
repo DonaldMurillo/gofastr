@@ -50,7 +50,7 @@ type dayRef struct {
 // extensions.
 func splitName(name string) (kind string, day time.Time, ext string, ok bool) {
 	kind, rest, found := strings.Cut(name, "-")
-	if !found || (kind != KindLogs && kind != KindTraces && kind != KindStats) || len(rest) < len(dayLayout) {
+	if !found || (kind != KindLogs && kind != KindTraces && kind != KindStats && kind != KindHost) || len(rest) < len(dayLayout) {
 		return "", time.Time{}, "", false
 	}
 	day, err := time.Parse(dayLayout, rest[:len(dayLayout)])

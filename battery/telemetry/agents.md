@@ -62,6 +62,12 @@ app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", A
 - Counts are about a minute behind, percentiles are right to within a
   bucket, and quiet paths are left out.
 
+**The machine:**
+- CPU, memory, disk and this process are read once a minute into
+  `host-YYYYMMDD.jsonl` and shown on the Overview, in `gofastr telemetry
+  stats` and as `machine` in `telemetry_stats`. CPU and memory are
+  Linux only, and are the whole machine's.
+
 **Issues and alerts:**
 - Failed requests are grouped by route, status and error (numbers and
   IDs set aside). The error is the first failed step's, else the first
@@ -71,9 +77,10 @@ app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{Path: "/telemetry", A
 - A panic is named by its value and keeps its call stack, from the
   function that panicked: on the request's page, in `gofastr telemetry
   request <trace-id>` and as `stack` in `telemetry_request`.
-- One alert rule is on by default: ten failed requests in five minutes.
-  It is logged as `telemetry.alert` and shown on Requests and Issues. To be
-  told, set `Notify`:
+- Two alert rules are on by default: ten failed requests in five
+  minutes, and the disk 90% full (`telemetry.AlertDisk`). Rules of your
+  own replace both. A rule firing is logged as `telemetry.alert` and
+  shown on Overview, Requests and Issues. To be told, set `Notify`:
 ```go
 telemetry.Config{
     Alerts: []telemetry.AlertRule{{Name: "checkout failing", Kind: telemetry.AlertFailed, AtLeast: 5, Route: "POST /checkout"}},

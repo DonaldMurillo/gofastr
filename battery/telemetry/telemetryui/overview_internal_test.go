@@ -98,3 +98,15 @@ func TestRouteTableStopsAtItsLimit(t *testing.T) {
 		t.Error("a table that lists every route says it left some out")
 	}
 }
+
+func TestByteText(t *testing.T) {
+	ctx := context.Background()
+	for n, want := range map[int64]string{
+		0: "0 MB", 1 << 20: "1 MB", 83886080: "80 MB", (1 << 30) - 1: "1,024 MB", 1 << 30: "1 GB",
+		2254857830: "2.1 GB", 25 << 30: "25 GB", 252 << 30: "252 GB",
+	} {
+		if got := byteText(ctx, n); got != want {
+			t.Errorf("byteText(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

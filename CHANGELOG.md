@@ -35,6 +35,16 @@ few lines, and link the PR or the docs page for the rest.
   you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
   reads the files from a shell, and `Config.EnableMCP` adds
   `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: the machine, and a disk alert.** Once a minute the plugin
+  reads the machine's CPU, memory and disk and this process's goroutines
+  and memory into a fourth day file (`host-YYYYMMDD.jsonl`). The
+  Overview shows the latest reading and charts CPU and memory;
+  `gofastr telemetry stats` and `telemetry_stats` carry it too. CPU and
+  memory are read from `/proc`, so Linux only. A new alert kind,
+  `telemetry.AlertDisk`, fires when the disk passes a percentage, and a
+  second default rule uses it at 90%.
+- **`ui.BarChart` takes `Max`**, the top of its value scale, so a chart
+  of percentages reads against 100.
 - **Telemetry: a panic keeps its call stack with its request.** A
   request's page, `gofastr telemetry request` and `telemetry_request`
   now say what went wrong and, for a panic, show the stack from the
@@ -750,6 +760,10 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **`ui.BarChart` with `ShowAxis` and `HideValues` cut its top and bottom
+  axis labels in half**, and a chart narrower than its `Width` kept its
+  full height, with a blank band above and below the drawing. The axis
+  labels have room now, and the height follows the width.
 - **Every panic on a route was one telemetry issue named "http.panic".**
   With the log plugin installed, its recovery logs each panic under that
   message, and the issue took the message for the error. It now takes

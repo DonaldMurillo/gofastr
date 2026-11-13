@@ -3,6 +3,7 @@ package telemetryui
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/url"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 
 // routesShown is the rows of the overview's route table.
 const routesShown = 50
+
+// A chart is drawn at about the width of the card it sits in, on a
+// phone and three across on a desktop alike. A drawing much wider than
+// its card is scaled down to fit, and its axis text with it.
+const chartWidth, chartHeight = 340, 160
 
 // liveStepMax is the widest bar of a range that refreshes itself.
 const liveStepMax = 15 * time.Minute
@@ -91,14 +97,22 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	if wkey == defaultWindow {
 		wkey = ""
 	}
+	// The machine is read on its own clock, traffic or none. A window
+	// it cannot be read for costs the page that section, not the rest.
+	var machine render.HTML
+	if host, err := store.Host(now.Add(-sp.span), now, sp.step); err != nil {
+		slog.ErrorContext(ctx, "telemetry: read machine readings", "err", err)
+	} else if !host.Latest.Time.IsZero() {
+		machine = s.machine(ctx, sp, host, now)
+	}
 	var body render.HTML
 	if stats.Total.N == 0 {
-		body = ui.EmptyState(ui.EmptyStateConfig{
+		body = page(ui.EmptyState(ui.EmptyStateConfig{
 			Title:       i18nui.TelemetryOverviewEmpty.Text(ctx),
 			Description: i18nui.TelemetryOverviewEmptySub.Text(ctx),
-		})
+		}), machine)
 	} else {
-		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), s.routeTable(ctx, stats.Routes, wkey))
+		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), machine, s.routeTable(ctx, stats.Routes, wkey))
 	}
 	if rowsOnly {
 		return body
@@ -176,6 +190,91 @@ func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) re
 	}})
 }
 
+// byteText writes a size the way a machine's are read: whole megabytes
+// under a gigabyte, gigabytes to one decimal over it.
+func byteText(ctx context.Context, n int64) string {
+	const mb, gb = 1 << 20, 1 << 30
+	if n < gb {
+		return i18nui.TelemetryBytesMB.Text(ctx, map[string]any{"n": i18n.Number(ctx, (n+mb/2)/mb)})
+	}
+	return i18nui.TelemetryBytesGB.Text(ctx, map[string]any{"n": i18n.Number(ctx, float64(n)/gb, i18n.MaxFraction(1))})
+}
+
+// diskWarnAt is how full a disk is drawn as trouble, whatever the
+// app's own alert rule says: the default rule's line.
+const diskWarnAt = 90
+
+// machine draws the machine's latest reading and its CPU and memory
+// over the range. A figure the platform does not give says so: only
+// Linux reports the machine's CPU and memory.
+func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, now time.Time) render.HTML {
+	l := host.Latest
+	// A figure the platform cannot give is a dash that says why, not
+	// a sentence in the size of a number.
+	const dash = "–"
+	unknown := i18nui.TelemetryNotKnown.Text(ctx)
+	usedOf := func(used, total int64) string {
+		return i18nui.TelemetryUsedOf.Text(ctx, map[string]any{"used": byteText(ctx, used), "total": byteText(ctx, total)})
+	}
+	cpu := ui.StatCardConfig{Label: i18nui.TelemetryCPU.Text(ctx), Value: dash, Trend: unknown, Plain: true}
+	if l.CPU >= 0 {
+		cpu.Value, cpu.Trend = i18n.Percent(ctx, l.CPU), i18nui.TelemetryAllCores.Text(ctx)
+	}
+	mem := ui.StatCardConfig{Label: i18nui.TelemetryMemory.Text(ctx), Value: dash, Trend: unknown, Plain: true}
+	if p := l.MemPercent(); p >= 0 {
+		mem.Value, mem.Trend = i18n.Percent(ctx, float64(p)/100), usedOf(l.MemUsed, l.MemTotal)
+	}
+	disk := ui.StatCardConfig{Label: i18nui.TelemetryDisk.Text(ctx), Value: dash, Trend: unknown, Plain: true}
+	if p := l.DiskPercent(); p >= 0 {
+		disk.Value, disk.Trend = i18n.Percent(ctx, float64(p)/100), usedOf(l.DiskUsed, l.DiskTotal)
+		if p >= diskWarnAt {
+			disk.Direction = ui.TrendDown
+		}
+	}
+	// What this process holds: the kernel's count where there is one,
+	// else the Go heap.
+	held := l.RSSBytes
+	if held == 0 {
+		held = l.HeapBytes
+	}
+	proc := ui.StatCardConfig{Label: i18nui.TelemetryProcess.Text(ctx), Value: byteText(ctx, held), Plain: true,
+		Trend: i18nui.TelemetryGoroutines.Text(ctx, map[string]any{"n": i18n.Number(ctx, l.Goroutines)})}
+	strip := ui.StatStrip(ui.StatStripConfig{Label: i18nui.TelemetryMachineStats.Text(ctx), Cells: []render.HTML{
+		ui.StatCard(cpu), ui.StatCard(mem), ui.StatCard(disk), ui.StatCard(proc)}})
+
+	// A step with no reading draws no bar: the app was not running, or
+	// the platform does not say.
+	var haveCPU, haveMem bool
+	cpuBars := make([]ui.BarChartBar, len(host.Points))
+	memBars := make([]ui.BarChartBar, len(host.Points))
+	for i, p := range host.Points {
+		at := i18n.DateTime(ctx, p.Time.UTC(), i18n.DateMedium, i18n.TimeShort)
+		cpuBars[i] = ui.BarChartBar{Label: at, Value: math.NaN()}
+		memBars[i] = ui.BarChartBar{Label: at, Value: math.NaN(), Color: "info"}
+		if p.CPU >= 0 {
+			cpuBars[i].Value, haveCPU = math.Round(p.CPU*1000)/10, true
+		}
+		if p.MemTotal > 0 {
+			memBars[i].Value, haveMem = math.Round(float64(min(p.MemUsed, p.MemTotal))/float64(p.MemTotal)*1000)/10, true
+		}
+	}
+	var cards []render.HTML
+	if haveCPU {
+		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-cpu", i18nui.TelemetryChartCPU, cpuBars, 100, host.Points[0].Time, now))
+	}
+	if haveMem {
+		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-memory", i18nui.TelemetryChartMemory, memBars, 100, host.Points[0].Time, now))
+	}
+	var charts render.HTML
+	if len(cards) > 0 {
+		// Fill keeps these two the width of the three charts above
+		// them, where two cards alone would stretch across the row.
+		charts = ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG, Fill: true}, cards...)
+	}
+	return ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryMachine.Text(ctx), Description: i18nui.TelemetryMachineSub.Text(ctx), Compact: true, Ctx: ctx},
+		page(strip, charts))
+}
+
 // charts draws three questions over the range: how busy, when did it
 // fail, when was it slow.
 func (s *Screens) charts(ctx context.Context, sp span, points []itel.StatsPoint, now time.Time) render.HTML {
@@ -188,23 +287,9 @@ func (s *Screens) charts(ctx context.Context, sp span, points []itel.StatsPoint,
 		failed[i] = ui.BarChartBar{Label: at, Value: float64(p.Failed), Color: "danger"}
 		slowest[i] = ui.BarChartBar{Label: at, Value: float64(p.P95.Microseconds()) / 1000, Color: "warning"}
 	}
-	// Where the bars start and end, to the minute: the first bar's
-	// start carries its date when that is not today.
-	end := func(t time.Time) render.HTML {
-		u := t.UTC()
-		text := i18n.Time(ctx, u, i18n.TimeShort)
-		if n := now.UTC(); u.Year() != n.Year() || u.YearDay() != n.YearDay() {
-			text = i18n.DateTime(ctx, u, i18n.DateShort, i18n.TimeShort)
-		}
-		return ui.Muted(html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339)}, render.Text(text)))
-	}
-	ends := ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, NoWrap: true}, end(points[0].Time), end(now))
-	// The card names its heading "<id>-title"; the chart is labelled by it.
+	first := points[0].Time
 	card := func(id string, title i18n.Phrase, bars []ui.BarChartBar) render.HTML {
-		return ui.Card(ui.CardConfig{Heading: title.Text(ctx), Description: sp.bar.Text(ctx), ID: id},
-			ui.Stack(ui.StackConfig{Gap: ui.GapSM},
-				ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: bars, Width: 480, Height: 180, ShowAxis: true, HideValues: true, LabelledBy: id + "-title"}),
-				ends))
+		return s.chartCard(ctx, sp, id, title, bars, 0, first, now)
 	}
 	return ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
 		card("telemetry-chart-requests", i18nui.TelemetryChartRequests, requests),
@@ -254,4 +339,25 @@ func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, wkey
 		ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows, Ctx: ctx, Responsive: ui.ResponsiveCards,
 			Caption: i18nui.TelemetryRoutes.Text(ctx)}),
 		note)
+}
+
+// chartCard is one bar chart of a range in its card: the title, how
+// wide a bar is, the bars, and under them where they start and end to
+// the minute. The first bar's start carries its date when that is not
+// today. The card names its heading "<id>-title"; the chart is labelled
+// by it. top, when not zero, is the top of the scale: 100 for a
+// percentage.
+func (s *Screens) chartCard(ctx context.Context, sp span, id string, title i18n.Phrase, bars []ui.BarChartBar, top float64, first, now time.Time) render.HTML {
+	end := func(t time.Time) render.HTML {
+		u := t.UTC()
+		text := i18n.Time(ctx, u, i18n.TimeShort)
+		if n := now.UTC(); u.Year() != n.Year() || u.YearDay() != n.YearDay() {
+			text = i18n.DateTime(ctx, u, i18n.DateShort, i18n.TimeShort)
+		}
+		return ui.Muted(html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339)}, render.Text(text)))
+	}
+	return ui.Card(ui.CardConfig{Heading: title.Text(ctx), Description: sp.bar.Text(ctx), ID: id},
+		ui.Stack(ui.StackConfig{Gap: ui.GapSM},
+			ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: bars, Width: chartWidth, Height: chartHeight, ShowAxis: true, HideValues: true, Max: top, LabelledBy: id + "-title"}),
+			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, NoWrap: true}, end(first), end(now))))
 }
