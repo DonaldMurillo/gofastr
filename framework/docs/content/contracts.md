@@ -521,6 +521,10 @@ stay dependency-free leaves and a production binary pays one atomic load
 per check. A panicking observer is recovered and logged where it runs
 (the hook firing, the event emission): coverage tooling must not be able
 to take down the operation it observes.
+The observers and router serve hook share `textsafe.LogPanic`: a panic
+produces one error-level slog record with the scrubbed value and stack,
+while the permission verdict, hook execution, event emission, or route
+handler continues unchanged.
 
 | Dimension | Recorded when | Rule |
 |---|---|---|

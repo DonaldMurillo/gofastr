@@ -1,5 +1,13 @@
 # Implementation regression notes
 
+## 2026-11-13 - Defer callback recovery on the dispatch frame
+- Scope: core/router, core/textsafe, recovercallback
+- Trigger: route gates and pre-route hooks ran before Recovery; direct atomic slot loads and imported guards were invisible to the analyzer.
+- Approach: defer textsafe.LogPanic directly (never from inside another deferred closure); use named zero-value gate results and a pre-route completion flag. The outcomes per hook are in framework/docs/content/core-packages.md (router) and the textsafe section there.
+- Evidence: TestPanickingRouteGateFailsClosed and TestPanickingPreRouteFailsClosed fail before the fix; TestRouterHookPanicParity pins all four dispatch sites and one scrubbed slog record each.
+- Next time: add a router parity row, preserve the request-path analyzer exclusion, and test imported guard facts with unguarded controls. A guard deferred in the parent does not cover a callback it launches with go: defer it on the goroutine that calls the callback. A guard that recovers conditionally or re-panics earns no credit.
+- Status: active
+
 ## 2026-11-13 - Share the storable-text refusal before storage
 - Scope: core/textsafe, battery/semantic, textbind, framework/docs
 - Trigger: semantic /index accepted JSON NULs in document fields and nested metadata; pgvector would reject them at the bind.

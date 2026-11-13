@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"runtime/debug"
@@ -377,11 +376,7 @@ func (s *ProcessModuleSupervisor) mintDelegationSafely(r *http.Request, callID u
 // dispatch path, and its panic is logged rather than replacing the tool
 // call's own return path.
 func (s *ProcessModuleSupervisor) releaseDelegationSafely(release func()) {
-	defer func() {
-		if p := recover(); p != nil {
-			slog.Default().Error("processmodule: delegation release panicked", "panic", textsafe.Recovered(p), "stack", string(debug.Stack()))
-		}
-	}()
+	defer textsafe.LogPanic(context.Background(), "processmodule: delegation release panicked")
 	release()
 }
 

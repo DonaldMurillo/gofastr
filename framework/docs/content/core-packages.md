@@ -183,6 +183,15 @@ serve an absolute URL outside its own prefix (routes added there skip
 the group's middleware). Direct. Start at `core/router/router.go`:
 `Router`.
 
+`SetRouteGate` runs before the middleware chain. A false result or a
+panic answers 404 on a matched route and excludes that method from a
+405's `Allow` header; a panic is logged. `SetServeHook` also runs before
+the chain: its panic is logged and the handler still runs. `PreRoute`
+runs before matching, including locale-prefix rewrites. Its panic is
+logged and answers a localized 500 without running middleware or a
+handler. These hooks have their own guards because the app's Recovery
+middleware cannot catch a panic raised before it runs.
+
 ## Real-time
 
 ### stream
@@ -640,6 +649,19 @@ SQLSTATE `22021`. Use it before a SQL bind and refuse caller input with
 Empty strings, line breaks and ordinary Unicode pass. Lone surrogates
 encoded as WTF-8 fail the UTF-8 check. This is not `ContainsUnsafe`:
 storage permits characters that a header, log or identity may forbid.
+
+`Recovered(value)` renders a panic value for logs, strips unsafe
+characters, and truncates it to 4 KiB. `LogPanic(ctx, msg)` is the shared
+swallow-and-log guard for host callbacks: use it directly as
+`defer textsafe.LogPanic(ctx, "observer panicked; ignored")`. It calls
+`recover` itself and logs once through `slog.Default().ErrorContext`,
+with the scrubbed value under `panic` and the stack under `stack`.
+An ordinary return logs nothing. Do not wrap the call in a deferred
+closure: recover must run directly in the deferred function. A panic
+returns the caller's current named results, so gates start with a false
+result and pre-route hooks track whether they completed. Keep a local
+recover when a callback needs an error, a protocol response, cleanup,
+backoff, a re-panic, or a different logger.
 
 ### webbotauth
 

@@ -1,8 +1,7 @@
 package event
 
 import (
-	"log/slog"
-	"runtime/debug"
+	"context"
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -53,14 +52,7 @@ func SetObserver(fn func(Emission)) {
 func observeEmission(eventType string, subscribers int) {
 	if fn := observer.Load(); fn != nil {
 		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					slog.Default().Error("event: observer panicked; ignored",
-						"panic", textsafe.Recovered(r),
-						"stack", string(debug.Stack()),
-					)
-				}
-			}()
+			defer textsafe.LogPanic(context.Background(), "event: observer panicked; ignored")
 			(*fn)(Emission{Type: eventType, Subscribers: subscribers})
 		}()
 	}
