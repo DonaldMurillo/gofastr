@@ -8,6 +8,7 @@ import (
 	"go/types"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
@@ -120,6 +121,11 @@ func runNewHandler(args []string, overwrite bool) {
 		return
 	}
 	method = strings.ToUpper(method)
+	if err := checkRouteMethod(method); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 
 	if err := scaffoldHandler(".", name, method, path, overwrite); err != nil {
 		cli.Fail("%v", err)
@@ -144,9 +150,53 @@ func runNewRoute(args []string) {
 		return
 	}
 	method = strings.ToUpper(method)
+	if err := checkRouteMethod(method); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
+	// The handler lands at an expression slot of the printed Go line: a
+	// name that is not an identifier, or a selector of them (h.List),
+	// prints a line that does not compile.
+	if err := checkRouteHandler(handler); err != nil {
+		cli.Fail("%v", err)
+		cli.OsExit(1)
+		return
+	}
 
 	cli.Info("Add this to your app setup:")
 	cli.Printf("\n  %s\n\n", routeSnippet(method, path, handler))
+}
+
+// routeMethods are the methods new handler and new route accept, upper
+// case: the HTTP methods a route serves.
+var routeMethods = []string{"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "OPTIONS", "TRACE"}
+
+// checkRouteMethod refuses a method outside routeMethods.
+func checkRouteMethod(method string) error {
+	if !slices.Contains(routeMethods, method) {
+		return fmt.Errorf("invalid method %q: use one of %s", method, strings.Join(routeMethods, ", "))
+	}
+	return nil
+}
+
+// checkRouteHandler refuses a --handler that is not a Go identifier or a
+// selector chain of them (h.List, handlers.Things). A bare name gets new
+// handler's guard too: a keyword, main, init, _ or a predeclared name is
+// no handler.
+func checkRouteHandler(handler string) error {
+	parts := strings.Split(handler, ".")
+	for _, p := range parts {
+		if !project.IsGoIdentifier(p) || token.IsKeyword(p) || p == "_" {
+			return fmt.Errorf("invalid handler %q: must be a Go identifier or a selector such as h.List", handler)
+		}
+	}
+	if len(parts) == 1 {
+		if reason := unusableFuncName(handler); reason != "" {
+			return fmt.Errorf("invalid handler %q: %s; pick another name", handler, reason)
+		}
+	}
+	return nil
 }
 
 // routeSnippet returns the canonical app.Router().Handle(...) line for
