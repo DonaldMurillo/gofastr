@@ -12,6 +12,12 @@ the rule is broken, and only then deletes the comment. The format is
 
 One sweep covers one package or one primitive. Keep it to one PR.
 
+The evals behind this skill (`evals/primitives/results/`) found that
+deleting a comment costs nothing where a test already enforces what it
+says: agents found the rule in the test. So the sweep is fast for most
+comments and slow only for the few that state a rule nothing enforces.
+The order of work across packages is in `primitives/PLAN.md`.
+
 ## What a sweep never touches
 
 - Directives: `//go:`, `//gofastr:allow(...)` with its reason,
@@ -49,6 +55,11 @@ One sweep covers one package or one primitive. Keep it to one PR.
    write the test, watch it fail, fix the code back. A test name that
    merely sounds right is not an enforcer. Record each proof in the PR
    description as `mutation -> failing test`.
+
+   Spend this effort where it pays. A rule whose test you have watched
+   fail can lose its comment without a registry entry. Write the entry
+   for a rule a contributor could break while every nearby test still
+   passes, and for every rule you had to write the test for.
 
 5. **Reach for `judge` last.** Use it alone only when no test or
    analyzer can state the rule, and write it as a yes/no question where

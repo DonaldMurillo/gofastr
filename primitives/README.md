@@ -5,6 +5,8 @@ the code: the primitives the framework is built from, the invariants each
 one keeps, and the decisions behind them. One YAML file per primitive,
 checked by `go run ./cmd/primitives lint`.
 
+Where this is going, and in what order, is `PLAN.md` beside this file.
+
 It replaces prose. A rule that lives in a code comment, in `CLAUDE.md` or
 in an architecture document is not enforced and goes stale. A rule here
 names the test, analyzer or contract rule that fails when it is broken.
