@@ -76,7 +76,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	// counts, a third of a second of one core. It stays as loaded.
 	live := s.Live != nil && sp.step <= liveStepMax
 	header := ui.PageHeaderConfig{
-		Title:    i18nui.TelemetryOverview.Text(ctx),
+		Title: i18nui.TelemetryOverview.Text(ctx),
 	}
 	if live {
 		header.Actions = s.liveBadge(ctx, cursor{})

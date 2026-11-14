@@ -46,7 +46,12 @@ func (p *Plugin) beat(app *framework.App) {
 	if u == nil {
 		return
 	}
-	err := ping(u)
+	err := ping(p.run, u)
+	// The app is stopping: a ping cut short by that says nothing about
+	// the monitor.
+	if p.run.Err() != nil {
+		return
+	}
 	switch {
 	case err != nil && !p.heartbeatDown:
 		p.heartbeatDown = true
@@ -57,8 +62,8 @@ func (p *Plugin) beat(app *framework.App) {
 	}
 }
 
-func ping(u *url.URL) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func ping(ctx context.Context, u *url.URL) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

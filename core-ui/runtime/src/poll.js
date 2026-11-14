@@ -116,18 +116,57 @@
     if (!el.isConnected) el.__fuiPollWired = false;
   }
 
-  // occupied reports whether someone is inside el: focus on one of its
-  // descendants, or a non-empty text selection that starts or ends in
-  // it. Focus on el itself does not count: a region made focusable so it
+  // MAX_HELD is how many ticks in a row a region may be held for the
+  // person inside it before it is brought up to date anyway: a status
+  // that never changes because a caret was left in a field is worse
+  // than a moved caret.
+  const MAX_HELD = 6;
+
+  // within returns the focused element when it is a descendant of el.
+  // Focus on el itself does not count: a region made focusable so it
   // can be scrolled survives its contents being replaced.
-  function occupied(el) {
+  function within(el) {
     const a = document.activeElement;
-    if (a && a !== el && a !== document.body && el.contains(a)) return true;
+    return a && a !== el && a !== document.body && el.contains(a) ? a : null;
+  }
+
+  // occupied reports whether someone is working inside el: keyboard
+  // focus on one of its descendants, a caret in one of its fields, or
+  // a non-empty text selection that starts or ends in it. Focus a
+  // mouse click left behind is not that: a browser leaves focus on a
+  // clicked link or button until the next click somewhere else, and a
+  // region held for it stopped updating for as long as the page stayed
+  // open.
+  function occupied(el) {
+    const a = within(el);
+    if (a) {
+      const tag = a.tagName;
+      if (tag === 'TEXTAREA' || tag === 'SELECT' || a.isContentEditable) return true;
+      if (tag === 'INPUT' && !/^(button|submit|reset|checkbox|radio|image|file|range|color)$/i.test(a.type)) return true;
+      try { if (a.matches(':focus-visible')) return true; } catch (_) { return true; }
+    }
     const sel = window.getSelection && window.getSelection();
     if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
       return el.contains(sel.anchorNode) || el.contains(sel.focusNode);
     }
     return false;
+  }
+
+  // refocus puts focus back on what held it before a swap, when the new
+  // markup has the same thing: an element with the same id, else a link
+  // to the same place. Nothing found leaves focus where the browser put
+  // it.
+  function refocus(el, was) {
+    if (!was) return;
+    let to = null;
+    try {
+      if (was.id) to = el.querySelector('#' + CSS.escape(was.id));
+      else if (was.tagName === 'A' && was.getAttribute('href')) {
+        const href = was.getAttribute('href');
+        for (const a of el.querySelectorAll('a[href]')) if (a.getAttribute('href') === href) { to = a; break; }
+      }
+      if (to) to.focus({ preventScroll: true });
+    } catch (_) { /* a selector the browser refuses: leave focus be */ }
   }
 
   function wireOne(el) {
@@ -141,7 +180,7 @@
     el.__fuiPollWired = true;
     const s = {
       base, cap: base * 5, current: base,
-      timer: null, stopped: false, onVisible: null, tick: null,
+      timer: null, stopped: false, onVisible: null, tick: null, held: 0,
     };
     stateByEl.set(el, s);
     active.add(el);
@@ -189,22 +228,33 @@
           // terminal response is exempt from both: its body is the
           // last word and must render before the poll ends.
           //
-          // Nothing changed: writing the same markup again replaces
-          // every node, which drops focus, text selection, scroll
-          // position inside the region and any open tooltip, for no
-          // change on screen.
+          // Nothing changed: the response is the one applied last, and
+          // the region still holds what that left there. Writing the
+          // same markup again replaces every node, which drops focus,
+          // text selection, scroll position inside the region and any
+          // open tooltip, for no change on screen. A region something
+          // else has redrawn since (an island answer, a script) is not
+          // "unchanged", whatever the server says: it is written again.
           //
-          // Someone is in it: keyboard focus or a text selection inside
-          // the region means it is being read or operated. Replacing
-          // it under them sends focus to <body> (a keyboard user then
-          // starts again from the top of the page, every interval) and
-          // discards the selection. The swap waits for a tick after
-          // they leave; lastHTML is not advanced, so that tick applies.
-          if (!stop && html === s.lastHTML) { pollTicked(); return; }
-          if (!stop && occupied(el)) return;
+          // Someone is in it (see occupied). Replacing it under them
+          // sends focus to <body>, so a keyboard user starts again from
+          // the top of the page every interval, and discards a
+          // selection. The swap waits for a tick after they leave, at
+          // most MAX_HELD ticks: lastHTML is not advanced, so that tick
+          // applies. A held tick still counts as a tick: the poll is
+          // alive.
+          if (!stop && html === s.lastHTML && s.dom !== undefined && el.innerHTML === s.dom) { s.held = 0; pollTicked(); return; }
+          if (!stop && occupied(el) && s.held < MAX_HELD) { s.held++; pollTicked(); return; }
+          const was = within(el);
+          s.held = 0;
           s.lastHTML = html;
           el.innerHTML = html;
           if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el);
+          refocus(el, was);
+          // What the region holds once the modules that dress new
+          // markup have run: the next tick compares against it.
+          s.dom = undefined;
+          setTimeout(() => { if (!s.stopped && s.lastHTML === html) s.dom = el.innerHTML; }, 50);
           pollTicked();
           // Terminal: the body is applied, now end the cadence.
           // teardown sets s.stopped so the .finally below short-circuits

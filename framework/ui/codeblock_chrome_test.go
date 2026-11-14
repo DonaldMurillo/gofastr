@@ -125,6 +125,15 @@ func TestCodeBlockLabelNamesTheBlock(t *testing.T) {
 	if strings.Count(named, "aria-label=") != 1 {
 		t.Errorf("the block carries more than one name:\n%s", named)
 	}
+	// Its copy button says what it copies; an unnamed block's button
+	// keeps its visible word as its whole name.
+	withCopy := string(CodeBlock(CodeBlockConfig{Code: "a", Label: "Call stack", ShowCopy: true}))
+	if !strings.Contains(withCopy, `aria-label="copy Call stack"`) {
+		t.Errorf("a named block's copy button does not say what it copies:\n%s", withCopy)
+	}
+	if bare := string(CodeBlock(CodeBlockConfig{Code: "a", ShowCopy: true})); strings.Contains(bare, `aria-label="copy`) {
+		t.Errorf("an unnamed block's copy button got a name of its own:\n%s", bare)
+	}
 	plain := string(CodeBlock(CodeBlockConfig{Code: "x"}))
 	if !strings.Contains(plain, `aria-label="source code"`) {
 		t.Errorf("with no Label the default name must stand:\n%s", plain)

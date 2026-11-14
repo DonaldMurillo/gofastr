@@ -3,6 +3,7 @@ package telemetry_test
 import (
 	"context"
 	"encoding/json"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,6 +81,11 @@ func TestMCPToolsRefuseNonAdmins(t *testing.T) {
 		}
 		if _, err := a.app.MCP.CallTool(admin(), tool, params); err != nil {
 			t.Errorf("%s by an admin: %v", tool, err)
+		}
+		// The files hold every tenant's lines together: an admin of one
+		// tenant is refused by the default gate.
+		if res, err := a.app.MCP.CallTool(tenant.SetTenantID(admin(), "t1"), tool, params); err == nil {
+			t.Errorf("SECURITY: %s by a tenant's admin: answered %v", tool, res)
 		}
 	}
 

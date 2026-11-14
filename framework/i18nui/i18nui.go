@@ -407,6 +407,7 @@ var (
 	CodeBlockLines      = i18n.Define("ui.codeBlock.lines", "{{n}} lines")
 	CodeBlockCopy       = i18n.Define("ui.codeBlock.copy", "copy")
 	CodeBlockCopied     = i18n.Define("ui.codeBlock.copied", "copied")
+	CodeBlockCopyOf     = i18n.Define("ui.codeBlock.copyOf", "copy {{what}}")
 )
 
 // PricingCard's badge and its default call to action.

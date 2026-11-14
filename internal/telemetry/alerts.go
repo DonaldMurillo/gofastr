@@ -26,6 +26,17 @@ const (
 // resolve by turns.
 const diskSlack = 5
 
+// diskResolveAt is how full a disk may be for its rule to stop firing:
+// diskSlack points under the rule's line, and one point under it for a
+// line too low to have that much room beneath it (a rule at 3% would
+// otherwise wait for a disk at -2%, and never resolve).
+func diskResolveAt(atLeast int) int {
+	if atLeast <= diskSlack {
+		return atLeast - 1
+	}
+	return atLeast - diskSlack
+}
+
 // AlertRule fires when at least AtLeast requests of its Kind finished
 // within the last Within.
 type AlertRule struct {
@@ -185,7 +196,7 @@ func (a *Alerts) Check(now time.Time) []AlertEvent {
 			case !s.firing && s.disk >= s.rule.AtLeast:
 				s.firing, s.since = true, now
 				events = append(events, AlertEvent{Rule: s.rule, Firing: true, Count: s.disk, At: now, Since: now})
-			case s.firing && s.disk <= s.rule.AtLeast-diskSlack:
+			case s.firing && s.disk <= diskResolveAt(s.rule.AtLeast):
 				s.firing = false
 				events = append(events, AlertEvent{Rule: s.rule, Firing: false, Count: s.disk, At: now, Since: s.since})
 			}

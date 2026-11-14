@@ -1405,13 +1405,21 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			html.Span(html.TextConfig{}, render.Text(i18nui.CodeBlockLines.Text(ctx, map[string]any{"n": len(cfg.Lines)}))))
 	}
 	if cfg.ShowCopy {
+		copyName := ""
+		if cfg.Label != "" {
+			copyName = i18nui.CodeBlockCopyOf.Text(ctx, map[string]any{"what": cfg.Label})
+		}
 		metaChildren = append(metaChildren, CopyButton(CopyButtonConfig{
 			Target:       "#" + bodyID,
 			Label:        i18nui.CodeBlockCopy.Text(ctx),
 			CopiedLabel:  i18nui.CodeBlockCopied.Text(ctx),
 			AnnounceText: i18nui.CopyCopied.Text(ctx),
-			Ctx:          ctx,
-			Class:        "fui-code-block__copy",
+			// A page with two blocks has two buttons that say "copy":
+			// a named block's button says what it copies. The visible
+			// word stays, and leads the name.
+			AriaLabel: copyName,
+			Ctx:       ctx,
+			Class:     "fui-code-block__copy",
 		}))
 	}
 	if len(metaChildren) > 0 {

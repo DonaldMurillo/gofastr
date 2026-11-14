@@ -665,6 +665,7 @@
     "codeBlock": {
       "copied": "copiado",
       "copy": "copiar",
+      "copyOf": "copiar {{what}}",
       "langSource": "código {{language}}",
       "lines": "{{n}} líneas",
       "source": "código fuente"

@@ -138,6 +138,11 @@ type Plugin struct {
 	// the last ping failed; both belong to the watch goroutine.
 	heartbeat     *url.URL
 	heartbeatDown bool
+	// run is cancelled when the app stops; inited says Init ran.
+	run    context.Context
+	inited atomic.Bool
+	// notifyTimeout is how long a notifier has; zero is 15 seconds.
+	notifyTimeout time.Duration
 	readHost      func(time.Time) itel.HostReading
 	hostMinute    int64
 	latestHost    atomic.Pointer[itel.HostReading]
@@ -164,6 +169,12 @@ func (*Plugin) Name() string { return "telemetry" }
 // Init opens the files and, unless ExternalTracerProvider is set,
 // installs a TracerProvider that feeds them.
 func (p *Plugin) Init(app *framework.App) error {
+	// Once: a second Init would open the files again, fail on the
+	// tools the first one registered, and leave the plugin pointing at
+	// the files it had just closed while the first watcher ran on.
+	if !p.inited.CompareAndSwap(false, true) {
+		return errors.New("telemetry: Init was already called on this plugin")
+	}
 	beat, err := parseHeartbeat(p.cfg.Heartbeat)
 	if err != nil {
 		return err
@@ -220,6 +231,13 @@ func (p *Plugin) Init(app *framework.App) error {
 	p.processor.Store(otelspan.New(c, p.quiet...))
 
 	if err := p.registerMCPTools(app); err != nil {
+		// Nothing may be reached through the plugin once its files are
+		// closed: a log line or a page would find a closed writer.
+		p.store.Store(nil)
+		p.writer.Store(nil)
+		p.collector.Store(nil)
+		p.processor.Store(nil)
+		p.alerts.Store(nil)
 		_ = w.Close()
 		_ = store.Close()
 		return err
@@ -233,9 +251,14 @@ func (p *Plugin) Init(app *framework.App) error {
 	// Nothing after this point fails, so the watcher started here is
 	// always stopped by the hook below.
 	stopAlerts, alertsDone := make(chan struct{}), make(chan struct{})
+	// Cancelled when the app stops: a ping or a notification in flight
+	// ends there, so stopping does not wait out their timeouts.
+	run, stopRun := context.WithCancel(context.Background())
+	p.run = run
 	go p.watch(app, w, counts, alerts, stopAlerts, alertsDone)
 	app.OnStop(func() error {
 		p.stopped.Store(true)
+		stopRun()
 		close(stopAlerts)
 		<-alertsDone
 		if provider != nil {

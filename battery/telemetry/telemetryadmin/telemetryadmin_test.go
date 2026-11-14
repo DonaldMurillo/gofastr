@@ -10,6 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/battery/telemetry/telemetryadmin"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/component"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 // The four pages sit under the admin's prefix, in one sidebar group, and
@@ -37,6 +38,44 @@ func TestPagesSitUnderTheAdminPrefix(t *testing.T) {
 		}
 		if strings.Contains(string(html), `href="/admin`) {
 			t.Errorf("%s links outside its prefix: %s", p.Path, html)
+		}
+	}
+}
+
+// The files hold every tenant's requests and log lines together, so
+// every page (and with it the page's part route, which asks the same
+// Access) refuses a caller scoped to a tenant, as the admin's own
+// tenant-less pages do.
+func TestPagesRefuseATenantScopedCaller(t *testing.T) {
+	tel := telemetry.New(telemetry.Config{Dir: t.TempDir()})
+	for _, p := range telemetryadmin.Pages(tel, "/admin") {
+		if p.Access == nil {
+			t.Fatalf("SECURITY: %s admits every admin, a tenant's included", p.Path)
+		}
+		if p.Access(tenant.SetTenantID(context.Background(), "t1")) {
+			t.Errorf("SECURITY: %s admits a caller scoped to a tenant", p.Path)
+		}
+		if !p.Access(context.Background()) {
+			t.Errorf("%s refuses the platform operator", p.Path)
+		}
+	}
+}
+
+// Requests and Logs name the view for the browser tab.
+func TestPagesNameTheView(t *testing.T) {
+	tel := telemetry.New(telemetry.Config{Dir: t.TempDir()})
+	for _, p := range telemetryadmin.Pages(tel, "/admin") {
+		for query, want := range map[string]map[string]string{
+			"/telemetry/requests": {"?show=failed": "Failed requests", "": "Requests"},
+			"/telemetry/logs":     {"?q=card": "Logs: card", "": "Logs"},
+		}[p.Path] {
+			r := httptest.NewRequest("GET", "/admin"+p.Path+query, nil)
+			if p.TabTitle == nil {
+				t.Fatalf("%s has no TabTitle", p.Path)
+			}
+			if got := p.TabTitle(appui.WithRequest(r.Context(), r)); got != want {
+				t.Errorf("%s%s: tab title %q, want %q", p.Path, query, got, want)
+			}
 		}
 	}
 }

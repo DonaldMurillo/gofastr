@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"errors"
 	"maps"
+	"math"
 	"slices"
 	"time"
 )
@@ -105,7 +106,9 @@ func quantile(h *[statBuckets]int64, pct int64) time.Duration {
 	for _, v := range h {
 		total += v
 	}
-	if total <= 0 {
+	// A total past this is not a count of requests one machine served,
+	// and total*pct below would overflow.
+	if total <= 0 || total > math.MaxInt64/200 {
 		return 0
 	}
 	rank := (total*pct + 99) / 100 // the request at this place, from 1
@@ -125,7 +128,10 @@ func quantile(h *[statBuckets]int64, pct int64) time.Duration {
 		// The bucket's requests are taken to be spread evenly across
 		// it, each at the middle of its own share: one request alone
 		// reads as the middle of the bucket, not its far edge.
-		return lower + (statBounds[i]-lower)*time.Duration(2*(rank-before)-1)/time.Duration(2*v)
+		// In floating point: a count read from a file can be anything,
+		// and the bucket's width times a large one overflows an int64.
+		share := float64(2*(rank-before)-1) / float64(2*v)
+		return lower + time.Duration(float64(statBounds[i]-lower)*share)
 	}
 	return statBounds[len(statBounds)-1]
 }

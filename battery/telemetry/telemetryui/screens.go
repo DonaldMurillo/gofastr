@@ -852,7 +852,7 @@ const issuesShown = 100
 // wrong: how many times, since when, and the way to the requests.
 func (s *Screens) Issues(ctx context.Context) render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.TelemetryIssues.Text(ctx),
+		Title: i18nui.TelemetryIssues.Text(ctx),
 	})
 	store := s.tel.Reader()
 	if store == nil {
@@ -952,7 +952,7 @@ func (s *Screens) LogsRows(ctx context.Context) render.HTML { return s.logs(ctx,
 
 func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.TelemetryLogs.Text(ctx),
+		Title: i18nui.TelemetryLogs.Text(ctx),
 	})
 	store := s.tel.Reader()
 	if store == nil {
@@ -1044,8 +1044,8 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 		src = link(s.Live("logs"), "level", lv.key, "q", text, "window", wkey, "all", all)
 	}
 	header = ui.PageHeader(ui.PageHeaderConfig{
-		Title:    i18nui.TelemetryLogs.Text(ctx),
-		Actions:  s.liveBadge(ctx, cur),
+		Title:   i18nui.TelemetryLogs.Text(ctx),
+		Actions: s.liveBadge(ctx, cur),
 	})
 	return page(s.tabNav(ctx, tabLogs), header, controls(segments, ranges), filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))
 }

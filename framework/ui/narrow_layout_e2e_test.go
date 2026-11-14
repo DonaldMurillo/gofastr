@@ -30,7 +30,9 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 	for _, e := range registry.All() {
 		css.WriteString(e.CSSFor(theme.Default()))
 	}
-	body := `<style>body{margin:0}` + css.String() + `</style><div id="page" style="padding:20px">` +
+	// A sans-serif face: the serif default a bare page falls back to is
+	// narrower than any face an app ships, and hides a tight gutter.
+	body := `<style>body{margin:0;font-family:sans-serif}` + css.String() + `</style><div id="page" style="padding:20px">` +
 		string(ui.PageHeader(ui.PageHeaderConfig{Title: "GET " + strings.ReplaceAll(long, "acme", "{tenant}"), Subtitle: long,
 			Actions: ui.LinkButton(ui.LinkButtonConfig{Label: "All requests", Href: "/x", Variant: ui.ButtonSecondary})})) +
 		string(ui.SegmentedLinks(ui.SegmentedLinksConfig{Label: "Level", Items: []ui.SegmentLink{
@@ -48,6 +50,8 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 		Columns: []ui.Column{{Key: "route", Header: "Route", Wrap: true}, {Key: "n", Header: "Requests", Align: "end"}},
 		Rows: []ui.Row{{ID: "c1", Cells: map[string]render.HTML{
 			"route": render.Text("GET " + strings.ReplaceAll(long, "acme", "{tenant}")), "n": render.Text("127")}}}})) + `</div>` +
+		`<div id="chart">` + string(ui.BarChart(ui.BarChartConfig{Width: 340, Height: 160, ShowAxis: true, HideValues: true,
+		Bars: []ui.BarChartBar{{Label: "a", Value: 1200000}, {Label: "b", Value: 48000000}}})) + `</div>` +
 		string(ui.Waterfall(ui.WaterfallConfig{Label: "steps", Steps: []ui.WaterfallStep{
 			{Label: "SELECT", Detail: "SELECT sum(total) FROM orders WHERE month = 11", Dur: time.Second}}})) +
 		`</div>`
@@ -62,6 +66,8 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 	for name, js := range map[string]string{
 		"the page's content runs past the screen": `(function(){
 			var w=[...document.querySelectorAll('#page *')].filter(function(e){var r=e.getBoundingClientRect(); return r.width > 1 && r.right > innerWidth+1 && getComputedStyle(e).position !== 'absolute' && !e.closest('svg,pre,.fui-data-table__scroll');}).map(function(e){return e.tagName+'.'+e.className+' to '+Math.round(e.getBoundingClientRect().right);});
+			// A box can stay inside while its text spills out of it.
+			for (const e of document.querySelectorAll('.fui-page-header__title, .fui-page-header__subtitle')) if (e.scrollWidth > e.clientWidth + 1) w.push(e.className+' text spills '+(e.scrollWidth-e.clientWidth)+'px');
 			return w.slice(0,4).join(', ');})()`,
 		"the segmented strip hides a choice": `(function(){var s=document.querySelector('.fui-seglinks'), r=s.getBoundingClientRect(), bad='';
 			if (s.scrollWidth > s.clientWidth + 1) bad='scrolls by '+(s.scrollWidth-s.clientWidth)+'px';
@@ -75,6 +81,12 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 			return td.scrollWidth <= td.clientWidth + 1 && td.getBoundingClientRect().height > 30 ? '' : 'scrollWidth '+td.scrollWidth+' clientWidth '+td.clientWidth+' height '+td.getBoundingClientRect().height;})()`,
 		"a long route makes the card list scroll sideways": `(function(){var sc=document.querySelector('#cards .fui-data-table__scroll');
 			return sc.scrollWidth <= sc.clientWidth + 1 ? '' : 'scrollWidth '+sc.scrollWidth+' clientWidth '+sc.clientWidth;})()`,
+		// The drawing is scaled to its box: what matters is the size the
+		// labels come out at, and that the widest still starts inside.
+		"the chart's axis numbers are too small or cut": `(function(){var svg=document.querySelector('#chart svg'), s=svg.getBoundingClientRect(), k=s.width/340, bad='';
+			for (const t of svg.querySelectorAll('.fui-bar-chart__axis-label')) { var px=parseFloat(getComputedStyle(t).fontSize)*k, r=t.getBoundingClientRect();
+				if (px < 10) bad='drawn at '+px.toFixed(1)+'px'; if (r.left < s.left - 0.5) bad += ' "'+t.textContent+'" starts '+(s.left-r.left).toFixed(1)+'px outside'; }
+			return k < 1 ? bad : 'the chart was not scaled down (k='+k+'): nothing tested';})()`,
 		"the step's detail is cut": `(function(){var d=document.querySelector('.fui-waterfall__detail');
 			return d.scrollWidth <= d.clientWidth + 1 ? '' : 'scrollWidth '+d.scrollWidth+' clientWidth '+d.clientWidth;})()`,
 	} {

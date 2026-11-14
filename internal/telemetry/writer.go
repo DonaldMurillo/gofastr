@@ -1,11 +1,13 @@
 package telemetry
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +42,13 @@ type Writer struct {
 	pruning    sync.Mutex
 	full       atomic.Bool
 	closed     atomic.Bool
+	trimmed    atomic.Int64
+	// lastPrune is when the directory was last measured, in Unix
+	// seconds: a full directory is measured again once a minute.
+	lastPrune atomic.Int64
+	// bgMu orders a sealing pass starting against Close waiting for
+	// the passes that have started.
+	bgMu sync.Mutex
 
 	// sealing is held by the one pass that packs finished days; bg
 	// counts it, so Close can wait for it to step out.
@@ -67,6 +76,10 @@ type WriterStats struct {
 	FilesRemoved int64
 	// DaysSealed is the finished days of one kind packed into blocks.
 	DaysSealed int64
+	// Trimmed is the traces written without their attributes, and
+	// without their later steps where that was not enough, because
+	// whole they were longer than a reader returns.
+	Trimmed int64
 }
 
 type dayFileWriter struct {
@@ -113,6 +126,7 @@ func (w *Writer) Stats() WriterStats {
 		LogLines: w.logLines.Load(), LogBytes: w.logBytes.Load(),
 		Traces: w.traceLines.Load(), TraceBytes: w.traceBytes.Load(),
 		Dropped: w.dropped.Load(), FilesRemoved: w.removed.Load(), DaysSealed: w.sealed.Load(),
+		Trimmed: w.trimmed.Load(),
 	}
 }
 
@@ -133,6 +147,23 @@ var lineBufs = sync.Pool{New: func() any { return new([]byte) }}
 func (w *Writer) WriteTrace(t Trace) error {
 	bp := lineBufs.Get().(*[]byte)
 	*bp = AppendTrace((*bp)[:0], t)
+	// A reader skips a line longer than maxLine, and sealing drops it:
+	// a trace written whole at that size was counted as kept and found
+	// by nothing. Its attributes go first (the steps and their times
+	// are what the page draws), then the later half of its steps, until
+	// the line fits.
+	if len(*bp) > maxLine {
+		w.trimmed.Add(1)
+		t.Spans = slices.Clone(t.Spans)
+		for i := range t.Spans {
+			t.Spans[i].Attrs = nil
+		}
+		*bp = AppendTrace((*bp)[:0], t)
+		for len(*bp) > maxLine && len(t.Spans) > 1 {
+			t.Spans = t.Spans[:(len(t.Spans)+1)/2]
+			*bp = AppendTrace((*bp)[:0], t)
+		}
+	}
 	n, err := w.write(&w.traces, *bp)
 	if cap(*bp) <= 64<<10 {
 		lineBufs.Put(bp)
@@ -159,20 +190,52 @@ func (w *Writer) WriteStats(lines []byte) error {
 func (w *Writer) FlushStats(r *Rollup, all bool) error {
 	w.flushing.Lock()
 	defer w.flushing.Unlock()
+	// Take empties the minutes it returns. A writer that would refuse
+	// them leaves them where they are, to be written when it can: the
+	// counts are exact, and a refused write lost them for good. While
+	// the directory stays full they are kept for an hour, then let go,
+	// so the map does not grow all day.
+	if w.closed.Load() {
+		return ErrClosed
+	}
+	if w.full.Load() && !all {
+		if stale := r.Take(w.now().Add(-time.Hour), false); len(stale) > 0 {
+			w.dropped.Add(int64(bytes.Count(stale, []byte{'\n'})))
+		}
+		if w.remeasure(w.now()); w.full.Load() {
+			return ErrDiskFull
+		}
+	}
 	return w.WriteStats(r.Take(w.now(), all))
 }
 
 func (w *Writer) write(d *dayFileWriter, line []byte) (int, error) {
+	d.mu.Lock()
+	// Asked under the lock: Close sets closed and then takes this lock
+	// to close the file, so a write that got here first finishes, and
+	// one that gets here after is refused instead of opening the file
+	// again behind a closed writer.
 	if w.closed.Load() {
+		d.mu.Unlock()
 		return 0, ErrClosed
 	}
+	// The clock is read under the lock too. Read before it, a write
+	// stamped a millisecond before midnight could take the lock after
+	// another had turned the day, and open yesterday's file again: a
+	// day already packed, whose plain file no reader looks at and the
+	// next pass deletes. A day never goes backwards for the same
+	// reason when the clock itself steps back: the line goes in the
+	// file that is open.
 	now := w.now().UTC()
 	day := now.Unix() / 86400
-	d.mu.Lock()
+	if d.f != nil && day < d.day {
+		day = d.day
+	}
 	turned := d.f != nil && d.day != day
 	if w.full.Load() && !turned {
 		d.mu.Unlock()
 		w.dropped.Add(1)
+		w.remeasure(now)
 		return 0, ErrDiskFull
 	}
 	if d.f == nil || turned {
@@ -208,6 +271,15 @@ func (w *Writer) write(d *dayFileWriter, line []byte) (int, error) {
 	return n, nil
 }
 
+// remeasure measures a full directory again, at most once a minute:
+// room made since (a day removed by hand, a pass that packed one) is
+// found without waiting for midnight.
+func (w *Writer) remeasure(now time.Time) {
+	if last := w.lastPrune.Load(); now.Unix()-last >= 60 && w.lastPrune.CompareAndSwap(last, now.Unix()) {
+		_ = w.prune()
+	}
+}
+
 // errSealStopped ends a sealing pass early: the writer is closing.
 var errSealStopped = errors.New("telemetry: sealing stopped")
 
@@ -219,10 +291,18 @@ var errSealStopped = errors.New("telemetry: sealing stopped")
 // app, and it stops at the next block when the writer closes. A day it
 // cannot seal stays plain and readable, and the next pass tries again.
 func (w *Writer) sealPast() {
-	if w.noSeal || w.closed.Load() || !w.sealing.TryLock() {
+	if w.noSeal {
+		return
+	}
+	// Close sets closed, then takes bgMu before it waits: a pass either
+	// started before that, and is waited for, or sees closed here.
+	w.bgMu.Lock()
+	if w.closed.Load() || !w.sealing.TryLock() {
+		w.bgMu.Unlock()
 		return
 	}
 	w.bg.Add(1)
+	w.bgMu.Unlock()
 	go func() {
 		defer w.bg.Done()
 		defer w.sealing.Unlock()
@@ -290,7 +370,12 @@ func (w *Writer) prune() error {
 			continue // removed since the listing
 		}
 		files = append(files, file{e.Name(), day, info.Size()})
-		total += info.Size()
+		// A file being packed is the day counted a second time, for as
+		// long as the pass runs: with the directory near its cap that
+		// removed a day more than the cap asked, or refused new lines.
+		if !strings.HasSuffix(e.Name(), extTmp) {
+			total += info.Size()
+		}
 	}
 	slices.SortStableFunc(files, func(a, b file) int { return a.day.Compare(b.day) })
 	for i := 0; i < len(files); {
@@ -323,6 +408,8 @@ func (w *Writer) Close() error {
 	if w.closed.Swap(true) {
 		return nil
 	}
+	w.bgMu.Lock() // no pass starts from here on
+	w.bgMu.Unlock()
 	w.bg.Wait() // a sealing pass stops at its next block
 	var errs []error
 	for _, d := range []*dayFileWriter{&w.logs, &w.traces, &w.stats, &w.host} {

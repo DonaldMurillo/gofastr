@@ -202,18 +202,39 @@ func (p *Plugin) checkAlerts(app *framework.App, alerts *itel.Alerts, now time.T
 	}
 }
 
-// notify calls the app's notifier with a deadline and a net under it:
-// a notifier that hangs or panics must not stop the next check.
+// notify calls the app's notifier with a deadline, on a goroutine of
+// its own. One that returns in time is waited for. One that hangs is
+// left behind at the deadline, or when the app stops: the watcher goes
+// on to the next check, and stopping does not wait for it. A notifier
+// that ignores its context keeps its goroutine; that is the notifier's
+// to fix, and the log says so.
 func (p *Plugin) notify(app *framework.App, a Alert) {
-	defer func() {
-		if r := recover(); r != nil {
-			app.Logger().Error("telemetry: the alert notifier panicked", "rule", a.Rule.Name, "panic", textsafe.Recovered(r))
+	limit := p.notifyTimeout
+	if limit <= 0 {
+		limit = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(p.run, limit)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer cancel()
+		defer func() {
+			if r := recover(); r != nil {
+				app.Logger().Error("telemetry: the alert notifier panicked", "rule", a.Rule.Name, "panic", textsafe.Recovered(r))
+			}
+		}()
+		if err := p.cfg.Notify(ctx, a); err != nil {
+			app.Logger().Error("telemetry: the alert was not delivered", "rule", a.Rule.Name, "err", err.Error())
 		}
 	}()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := p.cfg.Notify(ctx, a); err != nil {
-		app.Logger().Error("telemetry: the alert was not delivered", "rule", a.Rule.Name, "err", err.Error())
+	select {
+	case <-done:
+	case <-ctx.Done():
+		select {
+		case <-done: // it returned as its context ended
+		case <-time.After(time.Second):
+			app.Logger().Error("telemetry: the alert notifier did not return when its context ended; it is left running", "rule", a.Rule.Name)
+		}
 	}
 }
 

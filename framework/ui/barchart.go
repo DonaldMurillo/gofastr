@@ -100,8 +100,17 @@ type BarChartConfig struct {
 }
 
 // axisLabelHalf is the room an axis label needs past its gridline:
-// half of a 12px line, and a pixel of air.
-const axisLabelHalf = 8.0
+// half of its line at the larger size a phone draws it (see
+// axisPhoneScale), and a pixel of air.
+const axisLabelHalf = 10.0
+
+// axisPhoneScale is how much larger the axis labels are drawn on a
+// phone. The drawing scales to its box, and in a phone's card a 340px
+// chart is drawn about two thirds its size: 12px labels came out at
+// 8px. Drawn at the base text size in place of the extra-small one
+// (16px for 12px, this ratio) they land near 11px. The gutter is sized
+// for the larger text at every width, so the labels never leave it.
+const axisPhoneScale = 16.0 / 12.0
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
@@ -157,11 +166,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	axisGutter := 0.0 // left gutter for value-axis tick labels
 	if cfg.ShowAxis {
 		// Wide enough for the longest tick label, set right-aligned 5px
-		// from the plot at about 7px a character of 12px text. A
-		// fixed 30px held three characters: "1,500" lost its "1,".
+		// from the plot at about 7px a character of 12px text, times
+		// what a phone enlarges it by. A fixed 30px held three
+		// characters: "1,500" lost its "1,".
 		axisGutter = 30
 		for _, tv := range niceTicks(valueMax) {
-			need := float64(utf8.RuneCountInString(chartNumber(cfg.Ctx, tv)))*7 + 8
+			need := float64(utf8.RuneCountInString(chartNumber(cfg.Ctx, tv)))*7*axisPhoneScale + 8
 			axisGutter = math.Max(axisGutter, math.Ceil(need))
 		}
 	}
@@ -618,5 +628,13 @@ func barChartCSS(_ style.Theme) string {
   font-size: var(--text-xs, 0.75rem);
   fill: var(--color-text-subtle, #71717A);
   font-variant-numeric: tabular-nums;
+}
+/* On a phone the drawing is scaled down to its card, and its text with
+   it. The axis labels are drawn larger to stay readable; the gutter
+   already has the room (axisPhoneScale). */
+@media (max-width: 480px) {
+  [data-cui-comp="ui-bar-chart"] .fui-bar-chart__axis-label {
+    font-size: var(--text-base, 1rem);
+  }
 }`
 }

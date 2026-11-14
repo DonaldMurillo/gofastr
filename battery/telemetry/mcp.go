@@ -12,6 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework"
 	"github.com/DonaldMurillo/gofastr/framework/dev"
+	"github.com/DonaldMurillo/gofastr/framework/tenant"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
@@ -28,6 +29,9 @@ type mcpTool struct {
 	handler           func(ctx context.Context, params map[string]any) (any, error)
 }
 
+// errTenantCaller refuses a tenant-scoped caller of the default gate.
+var errTenantCaller = errors.New("telemetry: these tools read every tenant's files and are for a caller with no tenant")
+
 // registerMCPTools adds telemetry_stats, telemetry_issues, telemetry_requests,
 // telemetry_request and telemetry_logs to the app's MCP server when Config.EnableMCP is set,
 // or under `gofastr dev`. Each hands out request paths, client
@@ -42,7 +46,16 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 	}
 	gate := p.cfg.MCPGate
 	if gate == nil {
-		gate = framework.MCPRequireRole("admin")
+		// An admin with no tenant: the files hold every tenant's lines
+		// together, so an admin scoped to one tenant would read them
+		// all. An app with another rule sets MCPGate.
+		admin := framework.MCPRequireRole("admin")
+		gate = func(ctx context.Context) error {
+			if tenant.GetTenantID(ctx) != "" {
+				return errTenantCaller
+			}
+			return admin(ctx)
+		}
 	}
 	ts := map[string]any{"type": "string", "description": "RFC 3339 timestamp."}
 	tools := []mcpTool{

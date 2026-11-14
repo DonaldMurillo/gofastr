@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -29,6 +31,14 @@ type Page struct {
 	// Title is the page title, its crumb and its nav and palette label,
 	// in the request's language.
 	Title i18n.Phrase
+
+	// TabTitle, when set, names what the page is showing right now for
+	// the browser tab, history and a screen reader's arrival
+	// announcement: a page whose query picks between views ("Failed
+	// requests", "Request 7e22a54e") says which. Title stays the nav,
+	// crumb and palette label. It runs for callers the page admits,
+	// with their own context; an empty answer falls back to Title.
+	TabTitle func(ctx context.Context) string
 
 	// Nav places the page in the sidebar (Group, Order, Icon). Nil, or
 	// Hide, leaves it out of the sidebar; the palette still lists it.
@@ -107,11 +117,37 @@ func reservedPagePath(p string) bool {
 	return p == "/" || strings.HasPrefix(p, "/_")
 }
 
+// tabTitle is the page's title for the browser tab: TabTitle's answer,
+// asked with the caller's own context (an app page's screen is never
+// elevated) and only after the page's Access policy admitted the
+// caller, which refuses before a screen loads; and Title for an empty answer and for a TabTitle
+// that panics. Nil when the page sets none.
+func (b *Battery) tabTitle(p Page) func(ctx context.Context, _ map[string]string) string {
+	if p.TabTitle == nil {
+		return nil
+	}
+	return func(ctx context.Context, _ map[string]string) (title string) {
+		title = p.Title.Text(ctx)
+		defer func() {
+			if r := recover(); r != nil {
+				slog.ErrorContext(ctx, "admin: page TabTitle panicked", "page", p.Path, "panic", textsafe.Recovered(r))
+				title = p.Title.Text(ctx)
+			}
+		}()
+		// Title here, not an empty answer: the screen's own fallback
+		// is the title in the default language.
+		if t := p.TabTitle(ctx); t != "" {
+			return t
+		}
+		return title
+	}
+}
+
 // mountPages registers each app page as a screen. Access is a screen
 // policy, so a refused caller is answered before Build runs.
 func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	for _, p := range b.cfg.Pages {
-		s := b.screen(group, p.Path, p.Title, false, func(ctx context.Context, _ map[string]string) render.HTML {
+		s := b.screenNamed(group, p.Path, p.Title, b.tabTitle(p), false, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.buildSlot(ctx, "page "+p.Path, p.Build)
 		})
 		if p.Access != nil {

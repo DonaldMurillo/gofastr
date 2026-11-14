@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -165,6 +166,14 @@ func (s *Store) TraceByID(traceID string) (json.RawMessage, bool, error) {
 				return true
 			})
 		}
+		// As scan does: a day packed since the listing answers from its
+		// blocks, and one that is gone is passed over.
+		if errors.Is(err, errDayMoved) {
+			found, err = s.findSealed(d, traceID, needle)
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
+		}
 		if err != nil || found != nil {
 			return found, found != nil, err
 		}
@@ -270,14 +279,18 @@ func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []L
 	}
 	start, seen := time.Now(), 0
 	err = s.scan(KindLogs, q.From, q.To, !q.OldestFirst, false, func(line []byte) bool {
-		if seen++; budget > 0 && seen%budgetEvery == 0 && time.Since(start) > budget {
-			// Stop only on a line inside the window: a scan starts a
-			// little outside it, and a search resumed from where the
-			// last one stopped must end up further on, or it would
-			// stop on the same line for ever.
+		// Only lines inside the window count toward a look at the
+		// clock, and only one of them can be where the search stops. A
+		// scan starts a little outside its window, and a search resumed
+		// from where the last one stopped must end up a full stride
+		// further on: counting the lines outside, a stride was what
+		// was left of it after them, which could be a few lines.
+		if budget > 0 {
 			if t, ok := lineTime(line); ok && inWindow(t, q.From, q.To) && !t.Equal(q.To) && !t.Equal(q.From) {
-				stopped = t
-				return false
+				if seen++; seen%budgetEvery == 0 && time.Since(start) > budget {
+					stopped = t
+					return false
+				}
 			}
 		}
 		if e, ok := pick(line); ok {

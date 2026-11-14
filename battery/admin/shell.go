@@ -131,9 +131,19 @@ func (b *Battery) gatePolicy() appui.Policy {
 // get it.
 func (b *Battery) screen(group *appui.ScreenGroup, path string, title i18n.Phrase, elevate bool,
 	draw func(ctx context.Context, p map[string]string) render.HTML) *appui.Screen {
+	return b.screenNamed(group, path, title, nil, elevate, draw)
+}
+
+// screenNamed is screen with the browser-tab title computed per
+// request; a nil name is the page's title.
+func (b *Battery) screenNamed(group *appui.ScreenGroup, path string, title i18n.Phrase, name func(ctx context.Context, p map[string]string) string, elevate bool,
+	draw func(ctx context.Context, p map[string]string) render.HTML) *appui.Screen {
+	if name == nil {
+		name = func(ctx context.Context, _ map[string]string) string { return title.Text(ctx) }
+	}
 	s := appui.NewScreen(b.cfg.PathPrefix+path, &adminScreen{
 		b:       b,
-		title:   func(ctx context.Context, _ map[string]string) string { return title.Text(ctx) },
+		title:   name,
 		draw:    draw,
 		elevate: elevate,
 	}).WithTitle(title.Text(context.Background()))

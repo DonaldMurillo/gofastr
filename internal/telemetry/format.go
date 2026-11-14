@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // File name parts. A day's files are <kind>-YYYYMMDD.jsonl, UTC.
@@ -72,7 +73,8 @@ type Trace struct {
 
 // traceHead bounds the bytes a query reads to learn a trace's summary:
 // AppendTrace writes time, trace_id, route, path, status, dur_us, error,
-// failed_steps and err before the spans, and a route and a path are cut to fit.
+// failed_steps and err before the spans, and a route, a path and an
+// error are cut to fit as written (summaryText).
 const (
 	traceHead   = 1024
 	maxRouteLen = 256
@@ -80,13 +82,39 @@ const (
 	maxErrLen   = 200
 )
 
+// summaryText fits s into limit bytes as the file will hold it, which
+// is what traceHead counts: a quote or a backslash is written as two
+// bytes, the two Unicode line separators as six, and a control
+// character would be six, so those are dropped (a path of 256 of them
+// was 1.5 KB on disk, and pushed the status and the error flag past
+// what a query reads: the request left the failed list). Bytes that
+// are not UTF-8 are dropped too, and the cut falls between characters.
+func summaryText(s string, limit int) string {
+	var b strings.Builder
+	used := 0
+	for _, r := range s {
+		cost := utf8.RuneLen(r)
+		switch {
+		case r == utf8.RuneError || r < 0x20 || r == 0x7f:
+			continue
+		case r == '"' || r == '\\':
+			cost = 2
+		case r == '\u2028' || r == '\u2029':
+			cost = 6
+		}
+		if used+cost > limit {
+			break
+		}
+		used += cost
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
 // AppendTrace appends t as one JSON line, newline included. The summary
 // fields come first and in a fixed order: the readers depend on both.
 func AppendTrace(dst []byte, t Trace) []byte {
-	route := t.Route
-	if len(route) > maxRouteLen {
-		route = route[:maxRouteLen]
-	}
+	route := summaryText(t.Route, maxRouteLen)
 	dst = append(dst, `{"time":"`...)
 	dst = t.Time.UTC().AppendFormat(dst, time.RFC3339Nano)
 	dst = append(dst, `","trace_id":`...)
@@ -95,7 +123,7 @@ func AppendTrace(dst []byte, t Trace) []byte {
 	dst = appendJSONString(dst, route)
 	if t.Path != "" {
 		dst = append(dst, `,"path":`...)
-		dst = appendJSONString(dst, strings.ToValidUTF8(t.Path[:min(len(t.Path), maxPathLen)], ""))
+		dst = appendJSONString(dst, summaryText(t.Path, maxPathLen))
 	}
 	dst = append(dst, `,"status":`...)
 	dst = strconv.AppendInt(dst, int64(t.Status), 10)
@@ -109,7 +137,7 @@ func AppendTrace(dst []byte, t Trace) []byte {
 	}
 	if t.Err != "" {
 		dst = append(dst, `,"err":`...)
-		dst = appendJSONString(dst, strings.ToValidUTF8(t.Err[:min(len(t.Err), maxErrLen)], ""))
+		dst = appendJSONString(dst, summaryText(t.Err, maxErrLen))
 	}
 	dst = append(dst, `,"spans":[`...)
 	for i, s := range t.Spans {

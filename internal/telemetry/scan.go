@@ -185,6 +185,28 @@ func seekTime(f io.ReaderAt, size int64, t time.Time) (int64, error) {
 	return lo, nil
 }
 
+// firstLineAfter returns where the first line stamped after t starts,
+// reading on from at, which is the start of a line; size when there is
+// none. A line with no time, or too long to read, is passed over.
+func firstLineAfter(f io.ReaderAt, size, at int64, t time.Time) (int64, error) {
+	lr := newLineReader(io.NewSectionReader(f, at, size-at), probeBuf)
+	for off := at; ; {
+		line, n, err := lr.next()
+		if line != nil {
+			if lt, ok := lineTime(line); ok && lt.After(t) {
+				return off, nil
+			}
+		}
+		off += int64(n)
+		if err == io.EOF {
+			return size, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+	}
+}
+
 // firstTimedLine finds the first whole line starting after from, and
 // before to, that carries a time.
 func firstTimedLine(f io.ReaderAt, from, to int64) (start int64, t time.Time, ok bool, err error) {

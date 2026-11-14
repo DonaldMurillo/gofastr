@@ -121,10 +121,20 @@ func (s *Store) scan(kind string, from, to time.Time, newestFirst, summaries boo
 			more = fn(line)
 			return more
 		}
+		// The listing is a moment old by now. A plain day packed since
+		// has blocks in its place, and is read from them; a day removed
+		// since (its retention ran out, the cap was reached) is gone,
+		// and the query goes on without it. Before, the first lost the
+		// day from the answer without a word and the second failed the
+		// whole query.
+		heads := kind == KindTraces && summaries
 		if d.sealed {
-			err = s.scanSealed(d, kind == KindTraces && summaries, from, to, newestFirst, each)
-		} else {
-			err = s.scanPlain(d, from, to, newestFirst, each)
+			err = s.scanSealed(d, heads, from, to, newestFirst, each)
+		} else if err = s.scanPlain(d, from, to, newestFirst, each); errors.Is(err, errDayMoved) {
+			err = s.scanSealed(d, heads, from, to, newestFirst, each)
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			err = nil
 		}
 		if err != nil || !more {
 			return err
@@ -133,10 +143,13 @@ func (s *Store) scan(kind string, from, to time.Time, newestFirst, summaries boo
 	return nil
 }
 
+// errDayMoved says a day's plain file is gone: packed, or removed.
+var errDayMoved = errors.New("telemetry: day file moved")
+
 func (s *Store) scanPlain(d dayRef, from, to time.Time, newestFirst bool, fn func(line []byte) bool) error {
 	f, err := s.root.Open(d.base + extPlain)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil // sealed or pruned since the listing
+		return errDayMoved // packed or removed since the listing
 	}
 	if err != nil {
 		return fmt.Errorf("telemetry: open %s: %w", d.base, err)
@@ -155,13 +168,19 @@ func (s *Store) scanPlain(d dayRef, from, to time.Time, newestFirst bool, fn fun
 		}
 	}
 	if !to.IsZero() && to.Add(timeSlop).Before(d.day.Add(24*time.Hour)) {
-		// seekTime stops short of its target by up to a granule; the
-		// bound check below trims the overshoot this adds.
+		// seekTime lands at or before its target, by a granule when
+		// lines are short and by several lines when they are long (a
+		// trace of 500 steps is a quarter of a megabyte). Reading on
+		// from there to the first line past the window finds where it
+		// really ends; a fixed two granules cut off the newest long
+		// lines, the ones just written.
 		at, err := seekTime(f, info.Size(), to.Add(timeSlop))
 		if err != nil {
 			return fmt.Errorf("telemetry: seek %s: %w", d.base, err)
 		}
-		end = min(info.Size(), at+2*seekGranule)
+		if end, err = firstLineAfter(f, info.Size(), at, to.Add(timeSlop)); err != nil {
+			return fmt.Errorf("telemetry: seek %s: %w", d.base, err)
+		}
 	}
 	seen := 0
 	if newestFirst {

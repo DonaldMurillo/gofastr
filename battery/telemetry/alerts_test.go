@@ -385,3 +385,143 @@ func TestHeartbeatPingsOnceAMinute(t *testing.T) {
 		}
 	}
 }
+
+// Stopping the app does not wait out a ping to a monitor that never
+// answers: the ping ends with the app.
+func TestStopDoesNotWaitOutAHungPing(t *testing.T) {
+	if testing.Short() {
+		t.Skip("waits one watcher interval for the first ping")
+	}
+	asked := make(chan struct{}, 4)
+	release := make(chan struct{})
+	monitor := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		asked <- struct{}{}
+		<-release
+	}))
+	defer monitor.Close()
+	defer close(release)
+	cfg := Config{Heartbeat: monitor.URL + "/ping", NoAlerts: true}
+	cfg.Dir, cfg.ExternalTracerProvider = t.TempDir(), true
+	p := New(cfg)
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	app.RegisterPlugin(p)
+	var logged bytes.Buffer
+	app.SetLogger(slog.New(slog.NewJSONHandler(&logged, nil)))
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	// The watcher's first round is one interval in.
+	select {
+	case <-asked:
+	case <-time.After(alertEvery + 10*time.Second):
+		t.Fatal("the watcher never pinged")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	began := time.Now()
+	if err := app.Shutdown(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(began); took > 3*time.Second {
+		t.Errorf("Shutdown took %v behind a ping in flight", took.Round(time.Millisecond))
+	}
+	// A ping the app cut short is not the monitor failing.
+	if strings.Contains(logged.String(), "was not delivered") {
+		t.Errorf("stopping logged a failed heartbeat: %s", logged.String())
+	}
+}
+
+// A notifier that never returns is left behind at its deadline: the
+// watcher goes on, and the log names the rule. One that returns when
+// its context ends is waited for, and its error is the one logged.
+func TestHungNotifierIsLeftBehind(t *testing.T) {
+	never := make(chan struct{})
+	defer close(never)
+	var obeys atomic.Bool
+	notify := func(ctx context.Context, _ Alert) error {
+		if obeys.Load() {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		<-never
+		return nil
+	}
+	p, app := alertApp(t, Config{Notify: notify})
+	p.notifyTimeout = 50 * time.Millisecond
+	var logged bytes.Buffer
+	app.SetLogger(slog.New(slog.NewJSONHandler(&logged, nil)))
+	a := Alert{Rule: AlertRule{Name: "failed requests"}, Firing: true}
+
+	began := time.Now()
+	p.notify(app, a)
+	if took := time.Since(began); took > 5*time.Second {
+		t.Fatalf("a hung notifier held the watcher for %v", took)
+	}
+	if !strings.Contains(logged.String(), "did not return") || !strings.Contains(logged.String(), "failed requests") {
+		t.Errorf("nothing says the notifier was left running: %s", logged.String())
+	}
+
+	logged.Reset()
+	obeys.Store(true)
+	p.notify(app, a)
+	if !strings.Contains(logged.String(), "was not delivered") || strings.Contains(logged.String(), "did not return") {
+		t.Errorf("a notifier that returned at its deadline: %s", logged.String())
+	}
+}
+
+// Init runs once. A second one would open the files again and leave the
+// plugin pointing at closed ones.
+func TestSecondInitIsRefused(t *testing.T) {
+	p, app := alertApp(t, Config{EnableMCP: true})
+	if err := p.Init(app); err == nil {
+		t.Fatal("a second Init was accepted")
+	}
+	if err := p.LogSink().Write([]byte(`{"time":"2026-11-14T00:00:00Z","level":"INFO","msg":"x"}`)); err != nil {
+		t.Errorf("after a refused second Init the plugin cannot write: %v", err)
+	}
+	if p.Reader() == nil {
+		t.Error("after a refused second Init the plugin has no reader")
+	}
+}
+
+// The same, without the wait for the watcher's first round: a ping in
+// flight ends when the app's run ends, and is not logged as a failure.
+func TestPingEndsWithTheApp(t *testing.T) {
+	release := make(chan struct{})
+	monitor := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	defer monitor.Close()
+	defer close(release)
+	p, app := alertApp(t, Config{Heartbeat: monitor.URL + "/ping", NoAlerts: true})
+	var logged bytes.Buffer
+	app.SetLogger(slog.New(slog.NewJSONHandler(&logged, nil)))
+	run, stop := context.WithCancel(context.Background())
+	p.run = run
+	time.AfterFunc(100*time.Millisecond, stop)
+	began := time.Now()
+	p.beat(app)
+	if took := time.Since(began); took > 3*time.Second {
+		t.Errorf("a ping outlived the app's run by %v", took.Round(time.Millisecond))
+	}
+	if logged.Len() != 0 {
+		t.Errorf("a ping the app cut short was logged: %s", logged.String())
+	}
+}
+
+// An Init that fails after it opened the files leaves nothing reachable
+// through the plugin: a page or a log line must not find closed files.
+func TestFailedInitLeavesNothingBehind(t *testing.T) {
+	cfg := Config{EnableMCP: true}
+	cfg.Dir, cfg.ExternalTracerProvider = t.TempDir(), true
+	p := New(cfg)
+	app := framework.NewApp(framework.WithConfig(framework.AppConfig{Name: "test"}))
+	// The app already has a tool by one of the plugin's names.
+	if err := app.MCP.RegisterTool("telemetry_logs", "taken", map[string]any{"type": "object"}, func(context.Context, map[string]any) (any, error) { return nil, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Init(app); err == nil {
+		t.Fatal("setup: Init did not fail on the taken tool name")
+	}
+	if p.Reader() != nil || p.writer.Load() != nil || p.collector.Load() != nil || p.alerts.Load() != nil || p.processor.Load() != nil {
+		t.Error("a failed Init left the plugin holding closed files")
+	}
+}

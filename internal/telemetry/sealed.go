@@ -251,6 +251,16 @@ func (b *blockReader) read(f io.ReaderAt, r blockRef) ([]byte, error) {
 	if _, err := io.ReadFull(b.zr, b.buf); err != nil {
 		return nil, fmt.Errorf("telemetry: block: %w", err)
 	}
+	// One read past the end: it is the read that reaches the block's
+	// checksum, and without it a damaged block that still unpacks was
+	// served as what the app wrote.
+	var past [1]byte
+	if n, err := b.zr.Read(past[:]); n != 0 || err != io.EOF {
+		if err == nil || err == io.EOF {
+			err = errors.New("longer than its index says")
+		}
+		return nil, fmt.Errorf("telemetry: block: %w", err)
+	}
 	return b.buf, nil
 }
 
