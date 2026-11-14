@@ -222,3 +222,81 @@ func TestRequestPageSaysItInWords(t *testing.T) {
 		t.Error("a request's page interrupts a screen reader with what it shows from the start")
 	}
 }
+
+// A request opened from an older page of the list leads back to that
+// page, and one found by its ID from a filtered list leads back to
+// that list.
+func TestBackGoesToThePageItCameFrom(t *testing.T) {
+	h := longApp(t)
+	_, p1 := get(t, h, "/telemetry/requests", true)
+	older := html.UnescapeString(links(p1)["Older"])
+	if !strings.Contains(older, "before=") {
+		t.Fatalf("setup: no older page (%q)", older)
+	}
+	_, p2 := get(t, h, older, true)
+	row := regexp.MustCompile(`href="(/telemetry/requests\?[^"]*trace=[0-9a-f]{32}[^"]*)"`).FindStringSubmatch(p2)
+	if row == nil {
+		t.Fatal("setup: page 2 links no request")
+	}
+	open := html.UnescapeString(row[1])
+	before := regexp.MustCompile(`before=[^&#]+`).FindString(older)
+	if !strings.Contains(open, before) {
+		t.Fatalf("a row on an older page links %q, without the page it is on (%s)", open, before)
+	}
+	_, page := get(t, h, open, true)
+	b := backLink.FindStringSubmatch(page)
+	if b == nil || !strings.Contains(html.UnescapeString(b[1]), before) || b[2] != "Back to the list" {
+		t.Errorf("back link %v, want the older page (%s)", b, before)
+	}
+	// The first page has no cursor to carry, and a made-up one is not
+	// carried at all.
+	first := regexp.MustCompile(`href="(/telemetry/requests\?[^"]*trace=[0-9a-f]{32}[^"]*)"`).FindStringSubmatch(p1)
+	if first == nil || strings.Contains(first[1], "before=") || strings.Contains(first[1], "after=") {
+		t.Errorf("a row on the newest page carries a cursor: %v", first)
+	}
+	_, odd := get(t, h, "/telemetry/requests?before=%3Cscript%3E&after=yesterday&trace="+strings.Repeat("0", 31)+"1", true)
+	if b := backLink.FindStringSubmatch(odd); b == nil || b[1] != "/telemetry/requests" {
+		t.Errorf("a made-up cursor reached the back link: %v", b)
+	}
+
+	// The trace box sends the list's filters with the ID.
+	app := newApp(t)
+	_, list := get(t, app, "/telemetry/requests?show=failed&route=POST+%2Forders&window=7d", true)
+	for _, want := range []string{`name="show" type="hidden" value="failed"`, `name="route" type="hidden" value="POST /orders"`, `name="window" type="hidden" value="7d"`} {
+		if !strings.Contains(list, want) {
+			t.Errorf("the trace box does not carry %s", want)
+		}
+	}
+	_, plain := get(t, app, "/telemetry/requests", true)
+	if strings.Contains(plain, `type="hidden"`) {
+		t.Error("the trace box of an unfiltered list carries empty fields")
+	}
+}
+
+// A list refreshes itself only when that is a short read: the newest
+// page of a day or less with nothing to search for. A week, everything
+// kept, one route, one issue or a text search are each the whole range
+// read again every ten seconds, and are loaded once.
+func TestOnlyAShortReadRefreshesItself(t *testing.T) {
+	h := newApp(t)
+	for url, live := range map[string]bool{
+		"/telemetry/requests":                        true,
+		"/telemetry/requests?window=1h&show=failed":  true,
+		"/telemetry/requests?window=24h":             true,
+		"/telemetry/requests?window=7d":              false,
+		"/telemetry/requests?window=all":             false,
+		"/telemetry/requests?route=POST+%2Forders":   false,
+		"/telemetry/requests?issue=0123456789abcdef": false,
+		"/telemetry/logs":                            true,
+		"/telemetry/logs?level=error&window=1h":      true,
+		"/telemetry/logs?q=card":                     false,
+		"/telemetry/logs?window=7d":                  false,
+		"/telemetry/logs?window=all":                 false,
+	} {
+		_, body := get(t, h, url, true)
+		polls, says := strings.Contains(body, "data-cui-poll-src="), strings.Contains(body, ">Live<")
+		if polls != live || says != live {
+			t.Errorf("%s: refreshes itself %v, says Live %v; want both %v", url, polls, says, live)
+		}
+	}
+}

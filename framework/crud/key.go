@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"weak"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -288,7 +290,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 		return res.RowsAffected()
 	}
-	if isPostgres(ctx, ch.DB, ch.DB) {
+	if isPostgres(ctx, ch.dialectHandle(), ch.DB) {
 		sqlStr, args := build(ch.keyCols())
 		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
 		if err != nil {
@@ -324,7 +326,30 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 // by design: unremembered, every request that reached one of its
 // callers ran a query that errors, which a trace of the request then
 // showed as a failed step.
-var knownDialect sync.Map // *sql.DB -> bool
+//
+// The key is a weak pointer: the map does not keep a closed database
+// alive, and the entry goes when the database is collected. A process
+// that opens a database per test or per tenant would otherwise hold
+// every one of them for good.
+var knownDialect sync.Map // weak.Pointer[sql.DB] -> bool
+
+// dialectHandle is the database the handler's dialect is remembered
+// under: its DB, or the database its transaction was begun on. Writes
+// run inside a transaction, and they are the callers of the probe: with
+// the transaction as the handle nothing was ever remembered for them.
+func (ch *CrudHandler) dialectHandle() *sql.DB {
+	if db, ok := ch.DB.(*sql.DB); ok {
+		return db
+	}
+	return ch.root
+}
+
+func rememberDialect(db *sql.DB, pg bool) {
+	key := weak.Make(db)
+	if _, had := knownDialect.Swap(key, pg); !had {
+		runtime.AddCleanup(db, func(k weak.Pointer[sql.DB]) { knownDialect.Delete(k) }, key)
+	}
+}
 
 // isPostgres reports whether db answers SELECT version() with a
 // PostgreSQL banner, query.IsPostgres over an executor: the probe runs
@@ -343,20 +368,20 @@ func isPostgres(ctx context.Context, handle any, q interface {
 	db, stable := handle.(*sql.DB)
 	stable = stable && db != nil
 	if stable {
-		if known, ok := knownDialect.Load(db); ok {
+		if known, ok := knownDialect.Load(weak.Make(db)); ok {
 			return known.(bool)
 		}
 	}
 	var v string
 	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
 		if stable && strings.Contains(strings.ToLower(err.Error()), "no such function") {
-			knownDialect.Store(db, false)
+			rememberDialect(db, false)
 		}
 		return false
 	}
 	pg := strings.Contains(strings.ToLower(v), "postgresql")
 	if stable {
-		knownDialect.Store(db, pg)
+		rememberDialect(db, pg)
 	}
 	return pg
 }

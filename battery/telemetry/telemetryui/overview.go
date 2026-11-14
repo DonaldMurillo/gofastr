@@ -79,7 +79,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 		Title: i18nui.TelemetryOverview.Text(ctx),
 	}
 	if live {
-		header.Actions = s.liveBadge(ctx, cursor{})
+		header.Actions = s.liveBadge(ctx, true)
 	}
 	store := s.tel.Reader()
 	if store == nil {
@@ -141,7 +141,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	}
 	filters := rangeLinks(ctx, choices, sp.key, func(key string) string { return sorted(s.OverviewPath(), key) })
 	if live {
-		body = s.rows("overview", cursor{}, sorted(s.Live("overview"), wkey), body)
+		body = s.rows(true, sorted(s.Live("overview"), wkey), body)
 	}
 	return page(s.tabNav(ctx, tabOverview), ui.PageHeader(header), s.firing(ctx), filters, body)
 }

@@ -69,9 +69,9 @@ const liveEvery = 10 * time.Second
 // rows wraps a list's table and pager. On the newest page, with a host
 // that serves the rows alone, the wrapper re-fetches them on a timer:
 // a page someone has paged back on stays as it is.
-func (s *Screens) rows(list string, cur cursor, src string, parts ...render.HTML) render.HTML {
+func (s *Screens) rows(live bool, src string, parts ...render.HTML) render.HTML {
 	body := page(parts...)
-	if s.Live == nil || cur.set() {
+	if !live {
 		return body
 	}
 	return html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
@@ -80,9 +80,23 @@ func (s *Screens) rows(list string, cur cursor, src string, parts ...render.HTML
 	}}, body)
 }
 
+// liveWindowMax is the widest time range a list re-reads on a timer.
+const liveWindowMax = 24 * time.Hour
+
+// keepsCurrent reports whether a list refreshes itself: the newest page
+// of a range no wider than a day, with nothing narrowing it that has to
+// be searched for. A refresh re-runs the page's read every ten seconds
+// for every open tab. Reading the newest rows of a day is a short read;
+// looking through a week, or through every kept line for one route or
+// one word, is the whole of that range each time, on the one core the
+// app also serves requests with.
+func (s *Screens) keepsCurrent(cur cursor, win window, narrowed bool) bool {
+	return s.Live != nil && !cur.set() && win.span > 0 && win.span <= liveWindowMax && !narrowed
+}
+
 // liveBadge says a list keeps itself current, when it does.
-func (s *Screens) liveBadge(ctx context.Context, cur cursor) render.HTML {
-	if s.Live == nil || cur.set() {
+func (s *Screens) liveBadge(ctx context.Context, live bool) render.HTML {
+	if !live {
 		return ""
 	}
 	return ui.PollingIndicator(ui.PollingIndicatorConfig{Ctx: ctx})
@@ -201,6 +215,15 @@ func (c cursor) bounds(from time.Time) (lo, hi time.Time, oldestFirst bool) {
 }
 
 func stampParam(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+
+// cursorParam is stampParam for a cursor's side, which may not be set:
+// no time is no parameter.
+func cursorParam(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return stampParam(t)
+}
 
 // trim cuts a page fetched one row over its limit back to the limit and
 // reports whether pages exist on each side. The extra row is the proof
@@ -516,7 +539,9 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 	ranges := rangeLinks(ctx, windows, win.key, func(key string) string {
 		return link(path, "show", show, "route", route, "issue", issue, "window", key)
 	})
-	filters := s.traceSearch(ctx, "")
+	filters := s.traceSearch(ctx, "",
+		ui.HiddenField{Name: "show", Value: show}, ui.HiddenField{Name: "route", Value: route},
+		ui.HiddenField{Name: "issue", Value: issue}, ui.HiddenField{Name: "window", Value: wkey})
 	// A list narrowed to one route or one issue that finds nothing is
 	// not waiting for traffic: the route or issue is the likelier miss.
 	emptySub := i18nui.TelemetryRequestsEmptySub
@@ -552,7 +577,8 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		if name == "" {
 			name = i18nui.TelemetryRequest.Text(ctx)
 		}
-		routeCell := ui.Link(ui.LinkConfig{Href: link(path, "show", show, "route", route, "issue", issue, "window", wkey, "trace", t.TraceID) + atTop, Text: name,
+		routeCell := ui.Link(ui.LinkConfig{Href: link(path, "show", show, "route", route, "issue", issue, "window", wkey,
+			"before", cursorParam(cur.before), "after", cursorParam(cur.after), "trace", t.TraceID) + atTop, Text: name,
 			ExtraAttrs: html.Attrs{"aria-label": i18nui.TelemetryOpenTraceOf.Text(ctx, map[string]any{
 				"route": name, "time": i18n.DateTime(ctx, t.Time.UTC(), i18n.DateMedium, i18n.TimeLong)})}})
 		// Under it, what a failed request failed with; else the path the
@@ -597,15 +623,16 @@ func (s *Screens) requests(ctx context.Context, rowsOnly bool) render.HTML {
 		return page(table, pages)
 	}
 	var src string
-	if s.Live != nil {
+	live := s.keepsCurrent(cur, win, route != "" || issue != "")
+	if live {
 		src = link(s.Live("requests"), "show", show, "route", route, "issue", issue, "window", wkey)
 	}
 	header = ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryRequests.Text(ctx),
 		Subtitle: i18nui.TelemetryRequestsSub.Text(ctx),
-		Actions:  s.liveBadge(ctx, cur),
+		Actions:  s.liveBadge(ctx, live),
 	})
-	return page(s.tabNav(ctx, tabRequests), header, s.firing(ctx), controls(segments, ranges), filters, routeChip, s.rows("requests", cur, src, table, pages))
+	return page(s.tabNav(ctx, tabRequests), header, s.firing(ctx), controls(segments, ranges), filters, routeChip, s.rows(live, src, table, pages))
 }
 
 // pathBeside returns path when it says something route does not: the
@@ -645,9 +672,13 @@ func statusBadge(ctx context.Context, status int, failed bool, failedSteps int) 
 
 // traceSearch is the box that opens a request by its trace ID. value
 // is what was last looked for, shown again on the page that did not
-// find it.
-func (s *Screens) traceSearch(ctx context.Context, value string) render.HTML {
+// find it; carried is what the form sends beside it.
+func (s *Screens) traceSearch(ctx context.Context, value string, carried ...ui.HiddenField) render.HTML {
+	// The list's filters ride along, so the request found by its ID
+	// leads back to the same list. Empty ones are left out.
+	carried = slices.DeleteFunc(carried, func(h ui.HiddenField) bool { return h.Value == "" })
 	return ui.FilterToolbar(ui.FilterToolbarConfig{
+		Hidden: carried,
 		Action: s.RequestsPath(), ClientNavigation: true, Ctx: ctx,
 		Label:      i18nui.TelemetryFilters.Text(ctx),
 		ApplyLabel: i18nui.TelemetryFind.Text(ctx),
@@ -669,7 +700,12 @@ func (s *Screens) request(ctx context.Context, id string, q url.Values) render.H
 	if show != "failed" && show != "slow" {
 		show = ""
 	}
-	list := link(s.RequestsPath(), "show", show, "route", param(q, "route"), "issue", param(q, "issue"), "window", wkey)
+	// The page of the list too: a request opened from an older page
+	// goes back to that page. Read through readCursor, so only a time
+	// comes back out.
+	cur := readCursor(q)
+	list := link(s.RequestsPath(), "show", show, "route", param(q, "route"), "issue", param(q, "issue"), "window", wkey,
+		"before", cursorParam(cur.before), "after", cursorParam(cur.after))
 	backLabel := i18nui.TelemetryBack
 	if list != s.RequestsPath() {
 		backLabel = i18nui.TelemetryBackToList
@@ -1040,14 +1076,15 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 		return page(stoppedNote, table, pages)
 	}
 	var src string
-	if s.Live != nil {
+	live := s.keepsCurrent(cur, win, text != "")
+	if live {
 		src = link(s.Live("logs"), "level", lv.key, "q", text, "window", wkey, "all", all)
 	}
 	header = ui.PageHeader(ui.PageHeaderConfig{
 		Title:   i18nui.TelemetryLogs.Text(ctx),
-		Actions: s.liveBadge(ctx, cur),
+		Actions: s.liveBadge(ctx, live),
 	})
-	return page(s.tabNav(ctx, tabLogs), header, controls(segments, ranges), filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))
+	return page(s.tabNav(ctx, tabLogs), header, controls(segments, ranges), filters, quiet, s.rows(live, src, stoppedNote, table, pages))
 }
 
 // logTable draws log lines. linkRequests adds the column that opens a
@@ -1060,9 +1097,10 @@ func (s *Screens) logTable(ctx context.Context, lines []itel.LogEntry, linkReque
 		{Key: "time", Header: i18nui.TelemetryColTime.Text(ctx), Phone: ui.PhoneDetail},
 		{Key: "level", Header: i18nui.TelemetryColLevel.Text(ctx), Phone: ui.PhoneMeta},
 		{Key: "msg", Header: i18nui.TelemetryColMessage.Text(ctx), Phone: ui.PhoneTitle, Wrap: true},
-		// A request's own page has room for every attribute; the long
-		// list keeps one line a row.
-		{Key: "details", Header: i18nui.TelemetryColDetails.Text(ctx), Truncate: linkRequests, Wrap: !linkRequests, Phone: ui.PhoneSubtitle},
+		// Wrapped, on both pages: cut to one line, a line with no
+		// request to open could not be read in full anywhere. readLine
+		// holds the text to maxDetails, so a row is a few lines at most.
+		{Key: "details", Header: i18nui.TelemetryColDetails.Text(ctx), Wrap: true, Phone: ui.PhoneSubtitle},
 	}
 	if linkRequests {
 		cols = append(cols, ui.Column{Key: "request", Header: i18nui.TelemetryColRequest.Text(ctx), Align: "end", Fit: true, Phone: ui.PhoneEnd})
@@ -1102,7 +1140,10 @@ func (s *Screens) logTable(ctx context.Context, lines []itel.LogEntry, linkReque
 	return ui.DataTable(ui.DataTableConfig{
 		Columns: cols, Rows: rows, Ctx: ctx,
 		Caption: i18nui.TelemetryLogsCaption.Text(ctx), CaptionHidden: true,
-		Responsive: ui.ResponsiveRows, Empty: es,
+		// Cards on a phone: a line is read by its message and its
+		// details, and both need the full width; a two-line row gave
+		// the details a column a few words wide.
+		Responsive: ui.ResponsiveCards, Empty: es,
 	})
 }
 

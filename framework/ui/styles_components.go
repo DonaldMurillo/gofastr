@@ -1378,11 +1378,13 @@ func dataTableCSS(_ style.Theme) string {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* A chip or a code box in a truncated cell is one atomic box the
-   cell's ellipsis cannot reach: it is held to the cell's width and ends
-   its own text. Left alone it is laid out at its full length under the
-   cell's clip, with its end edge cut off. */
-[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate > * {
+/* A code box in a truncated cell is one atomic box the cell's ellipsis
+   cannot reach: it is held to the cell's width and ends its own text.
+   Left alone it is laid out at its full length under the cell's clip,
+   with its end edge cut off. Code only: the same rule on every child
+   drew a hidden one (it out-ranks [hidden]) and collapsed a row of
+   controls to a few pixels. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate > code:not([hidden]) {
   display: inline-block;
   max-inline-size: 100%;
   overflow: hidden;

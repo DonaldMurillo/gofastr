@@ -105,6 +105,12 @@ app.RegisterPlugin(telemetryui.New(tel, telemetryui.Config{
 }))
 ```
 
+In the admin, the four pages refuse a caller scoped to a tenant
+(`tenant.GetTenantID(ctx) != ""`), as the admin's queue and roles pages
+do: the files hold every tenant's requests and log lines together. The
+MCP tools' default gate refuses the same callers. On the standalone
+mount the rule is yours to write in `Authorize`.
+
 `Authorize` is required. The pages show request paths, client addresses
 and whatever the app logs, so there is no open default: `Init` fails
 without one, and a caller it refuses gets a 403.
@@ -151,11 +157,14 @@ Every filter is in the query string, so a view can be bookmarked and
 shared. A time range is one click, and it holds as you move between
 the four pages. Each view has its own page title ("Failed requests",
 "Request 7e22a54e"), and a request opened from a filtered list leads
-back to that list. The lists show 25 rows a page, with **Newer**, **Older** and
+back to that list, on the page it was opened from. The lists show 25 rows a page, with **Newer**, **Older** and
 **Back to newest**.
 
 The newest page of each list refreshes every ten seconds and says
-"Live". So does the Overview for the last hour and the last 24 hours;
+"Live", when that is a short read: a range of a day or less, with no
+route, issue or search text narrowing it. A week, everything kept or a
+search is loaded once, since refreshing it would read the whole range
+again every ten seconds. So does the Overview for the last hour and the last 24 hours;
 the 7-day view, whose bars are two hours wide, stays as loaded. A page you have paged back on stays as it is.
 A refresh never moves keyboard focus or drops selected text: the
 region waits while you are in it (see
@@ -532,8 +541,13 @@ When a limit is reached, data is dropped and counted, never queued:
   `MaxMemoryBytes`, the oldest unfinished trace is dropped. A trace
   whose request has not ended after ten minutes is dropped too.
 
-`tel.Stats()` reports what was written, every kind of drop, and how
-many days have been sealed.
+A trace longer than a megabyte as written (hundreds of steps with long
+attributes) is kept without its attributes, and without its later
+steps if that is not enough: a line that long is one no reader returns.
+
+`tel.Stats()` reports what was written, every kind of drop, how many
+traces were trimmed (`TracesTrimmed`), and how many days have been
+sealed.
 
 ## Cost
 

@@ -129,33 +129,44 @@ func TestE2E_LightboxArrowsDeferToTopModal(t *testing.T) {
 	}
 }
 
-// Clearing a search box that arrived holding a submitted search
-// re-submits its GET form: the box and the results under it must not
-// disagree. Text typed and cleared before any submit sends nothing, and
-// a POST form is left to its own pipeline.
+// Clearing a search box re-submits its form when the page is showing a
+// search for that box (the address carries its name with a value) and
+// the form is a plain GET form: the box and the results under it must
+// not disagree. Nothing else is submitted: text typed and cleared
+// before any submit, a POST form, a form with no method (it posts
+// through its handler), a form wired to an RPC.
 func TestE2E_SearchInputClearResubmitsAGetForm(t *testing.T) {
-	box := func(id, value string) string {
-		return string(ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: id, ExtraAttrs: map[string]string{"value": value}}))
+	box := func(id, name, value string) string {
+		return string(ui.SearchInput(ui.SearchInputConfig{Name: name, ID: id, ExtraAttrs: map[string]string{"value": value}}))
 	}
-	ctx := moduleTestCtx(t, `<form id="searched" method="get">`+box("a", "sku")+`</form>`+
-		`<form id="fresh" method="get">`+box("b", "")+`</form>`+
-		`<form id="posted" method="post">`+box("c", "sku")+`</form>`)
+	ctx := moduleTestCtx(t, `<form id="searched" method="GET">`+box("a", "q", "sku")+`</form>`+
+		`<form id="fresh" method="get">`+box("b", "other", "")+`</form>`+
+		`<form id="posted" method="post">`+box("c", "q", "sku")+`</form>`+
+		`<form id="nomethod">`+box("d", "q", "sku")+`<input name="title" value="draft"></form>`+
+		`<form id="rpc" method="get" data-cui-rpc="/x">`+box("e", "q", "sku")+`</form>`+
+		// Arrived holding a value the address does not: a header box
+		// that outlived a navigation.
+		`<form id="stale" method="get">`+box("f", "elsewhere", "old")+`</form>`)
 	if !pollJS(ctx, moduleLoaded("searchinput")) {
 		t.Fatal("the SearchInput marker never loaded the searchinput module")
 	}
 	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){
+		history.replaceState(null, '', location.pathname + '?q=sku&page=2');
 		window.__sent = [];
-		for (const f of document.forms) f.addEventListener('submit', function(e){ e.preventDefault(); window.__sent.push(f.id + ':' + f.elements.q.value); });
+		for (const f of document.forms) f.addEventListener('submit', function(e){ e.preventDefault(); e.stopImmediatePropagation(); window.__sent.push(f.id); }, true);
 		document.getElementById('b').value = 'typed';
 		document.getElementById('b').dispatchEvent(new Event('input', {bubbles:true}));
 		for (const b of document.querySelectorAll('.fui-search__clear')) b.click();
 	})()`, nil)); err != nil {
 		t.Fatal(err)
 	}
-	if !pollJS(ctx, `document.getElementById('c').value === ''`) {
+	if !pollJS(ctx, `document.getElementById('f').value === ''`) {
 		t.Fatal("the clear buttons did not clear")
 	}
-	if got := evalString(ctx, `window.__sent.join(',')`); got != "searched:" {
-		t.Errorf("forms submitted on clear = %q, want only the GET form that held a submitted search, with the box empty", got)
+	if got := evalString(ctx, `window.__sent.join(',')`); got != "searched" {
+		t.Errorf("forms submitted on clear = %q, want only the GET form whose search the address shows", got)
+	}
+	if got := evalString(ctx, `document.getElementById('a').value`); got != "" {
+		t.Errorf("the submitted box still holds %q", got)
 	}
 }

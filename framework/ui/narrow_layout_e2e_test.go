@@ -52,6 +52,13 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 			"route": render.Text("GET " + strings.ReplaceAll(long, "acme", "{tenant}")), "n": render.Text("127")}}}})) + `</div>` +
 		`<div id="chart">` + string(ui.BarChart(ui.BarChartConfig{Width: 340, Height: 160, ShowAxis: true, HideValues: true,
 		Bars: []ui.BarChartBar{{Label: "a", Value: 1200000}, {Label: "b", Value: 48000000}}})) + `</div>` +
+		// A truncated cell holds its code box to its width and leaves
+		// every other child as it was.
+		`<div id="trunc">` + string(ui.DataTable(ui.DataTableConfig{Caption: "Jobs",
+		Columns: []ui.Column{{Key: "err", Header: "Error", Truncate: true}, {Key: "act", Header: "Actions", Truncate: true}},
+		Rows: []ui.Row{{ID: "t1", Cells: map[string]render.HTML{
+			"err": ui.InlineCode(strings.Repeat("dial tcp 10.0.0.1:5432: connect: connection refused ", 6)),
+			"act": render.HTML(`<span hidden id="gone">secret</span>` + string(ui.Cluster(ui.ClusterConfig{Gap: ui.GapSM}, render.HTML(`<b id="in-cluster">a</b>`), render.HTML(`<b>b</b>`))))}}}})) + `</div>` +
 		string(ui.Waterfall(ui.WaterfallConfig{Label: "steps", Steps: []ui.WaterfallStep{
 			{Label: "SELECT", Detail: "SELECT sum(total) FROM orders WHERE month = 11", Dur: time.Second}}})) +
 		`</div>`
@@ -87,6 +94,11 @@ func TestE2E_ComponentsFitAPhone(t *testing.T) {
 			for (const t of svg.querySelectorAll('.fui-bar-chart__axis-label')) { var px=parseFloat(getComputedStyle(t).fontSize)*k, r=t.getBoundingClientRect();
 				if (px < 10) bad='drawn at '+px.toFixed(1)+'px'; if (r.left < s.left - 0.5) bad += ' "'+t.textContent+'" starts '+(s.left-r.left).toFixed(1)+'px outside'; }
 			return k < 1 ? bad : 'the chart was not scaled down (k='+k+'): nothing tested';})()`,
+		"a truncated cell mistreats its children": `(function(){var bad='', code=document.querySelector('#trunc td.is-truncate code'), td=code.closest('td');
+			if (code.getBoundingClientRect().right > td.getBoundingClientRect().right + 0.5) bad += 'the code box runs past its cell; ';
+			if (getComputedStyle(document.getElementById('gone')).display !== 'none') bad += 'a hidden child is drawn; ';
+			if (getComputedStyle(document.getElementById('in-cluster').parentElement).display !== 'flex') bad += 'a row of controls is no longer a flex row';
+			return bad;})()`,
 		"the step's detail is cut": `(function(){var d=document.querySelector('.fui-waterfall__detail');
 			return d.scrollWidth <= d.clientWidth + 1 ? '' : 'scrollWidth '+d.scrollWidth+' clientWidth '+d.clientWidth;})()`,
 	} {

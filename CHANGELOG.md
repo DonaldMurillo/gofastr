@@ -40,15 +40,34 @@ few lines, and link the PR or the docs page for the rest.
   say p50, p95, CPU, Memory, Disk, Jobs. See
   [telemetry](framework/docs/content/telemetry.md).
 - **A polled region no longer moves focus.** `data-cui-poll` skips a
-  response identical to the last one, and waits while keyboard focus or
-  a text selection is inside the region; the swap lands on the first
-  tick after. Before, every tick replaced the region and sent focus to
-  the top of the page. See
+  response identical to the last one while the region still holds what
+  it left there, and waits while someone is working in the region
+  (keyboard focus, a caret in a field, a text selection), for six ticks
+  at most. After a swap, focus goes back to the element with the same
+  id or the link with the same href. Before, every tick replaced the
+  region and sent focus to the top of the page. See
   [reactivity](framework/docs/content/reactivity.md).
+- **Telemetry: fixes from a code review.** The admin's telemetry pages
+  and the MCP tools' default gate refuse a caller scoped to a tenant
+  (the files hold every tenant's lines together). In the store: a trace
+  over a megabyte is trimmed to fit instead of written and never found
+  (`Stats().TracesTrimmed`); a window ending now no longer drops the
+  newest long traces; a path full of control characters no longer hides
+  a failed request from the failed list; a late write cannot reopen a
+  packed day; refused request counts are kept and written later; a
+  query survives a day packed or removed under it; a block's checksum
+  is read. Stopping the app no longer waits out a heartbeat or a
+  notifier in flight, and `Init` runs once. A list refreshes on a timer
+  only for a day or less with nothing to search for. `gofastr telemetry
+  ... --json` escapes characters a terminal obeys.
+- **`admin.Page.TabTitle`** names a page's current view for the browser
+  tab. See [admin](framework/docs/content/admin.md).
 - **Kit.** `ui.Callout` gains `Standing` (a warning that is part of the
   page, not an interruption), `ui.CodeBlock` gains `Label`,
   `ui.WaterfallStep` gains `Note` (the tone in a word). Clearing a
-  `ui.SearchInput` that held a submitted search re-submits its GET form.
+  `ui.SearchInput` whose search the page is showing re-submits its
+  `method="get"` form. A named `ui.CodeBlock`'s copy button says what
+  it copies, and `ui.BarChart` axis numbers are readable on a phone.
   Fixed at phone width: a `ui.PageHeader` with a long path as its
   subtitle widened the page; `ui.SegmentedLinks` scrolled its last
   choices out of sight (it wraps now); a search field and a `ui.ShortID`

@@ -122,6 +122,11 @@ type Stats struct {
 	// DaysSealed is the finished days packed into compressed blocks,
 	// counted once for logs and once for traces.
 	DaysSealed int64
+	// TracesTrimmed is the traces written without their attributes
+	// (and without their later steps where that was not enough)
+	// because whole they were longer than a megabyte, which no reader
+	// returns.
+	TracesTrimmed int64
 }
 
 // Plugin is the telemetry plugin. It implements framework.Plugin.
@@ -296,7 +301,7 @@ func (p *Plugin) Stats() Stats {
 		ws := w.Stats()
 		st.LogLines, st.LogBytes, st.Traces, st.TraceBytes = ws.LogLines, ws.LogBytes, ws.Traces, ws.TraceBytes
 		st.LinesDropped += ws.Dropped
-		st.FilesRemoved, st.DaysSealed = ws.FilesRemoved, ws.DaysSealed
+		st.FilesRemoved, st.DaysSealed, st.TracesTrimmed = ws.FilesRemoved, ws.DaysSealed, ws.Trimmed
 	}
 	if c := p.collector.Load(); c != nil {
 		cs := c.Stats()

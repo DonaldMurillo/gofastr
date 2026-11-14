@@ -684,6 +684,9 @@ default directory. `stats`, `logs`, `requests` and `issues` take `--since <durat
 (default 24h; 0 for everything kept), `--limit <n>` (default 50) and
 `--json`, which prints the lines as stored. Text from the files is
 scrubbed of terminal control bytes and line breaks before it is printed.
+With `--json`, the characters JSON leaves bare and a terminal obeys are
+written as `\u` escapes, and a line that is not JSON (torn by a crash)
+is printed as a JSON string, so each output line still parses.
 
 ## Extras
 

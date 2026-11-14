@@ -4,6 +4,7 @@
 package telemetrycmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
@@ -219,6 +221,40 @@ func clean(s string) string {
 	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(cli.ScrubTerminalOutput(s))
 }
 
+// jsonLine makes a stored line safe to print as --json. The table
+// output is scrubbed; this one is the line as stored, and a terminal
+// acts on what it is shown. A line that is not JSON (torn by a crash,
+// or not written by this package) is printed as a JSON string, which
+// escapes every control character. In one that is, the characters JSON
+// leaves as they are and a terminal obeys are written as escapes: the
+// C1 controls (U+009B starts a control sequence without an ESC) and the
+// ones that reorder text. They can only stand inside a string, where an
+// escape means the same character.
+func jsonLine(line []byte) []byte {
+	if !json.Valid(line) {
+		quoted, err := json.Marshal(string(line)) // which also replaces bytes that are not UTF-8
+		if err != nil {
+			return []byte(`""`)
+		}
+		return quoted
+	}
+	risky := func(r rune) bool {
+		return (r >= 0x80 && r <= 0x9f) || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069) || r == 0x200e || r == 0x200f || r == 0x061c
+	}
+	if !bytes.ContainsFunc(line, risky) {
+		return line
+	}
+	out := make([]byte, 0, len(line)+16)
+	for _, r := range string(line) {
+		if risky(r) {
+			out = fmt.Appendf(out, "\\u%04x", r)
+			continue
+		}
+		out = utf8.AppendRune(out, r)
+	}
+	return out
+}
+
 func stamp(t time.Time) string { return t.UTC().Format("2006-01-02 15:04:05.000Z") }
 
 func (o options) logs(w io.Writer, store *itel.Store, from time.Time) error {
@@ -234,7 +270,7 @@ func (o options) logs(w io.Writer, store *itel.Store, from time.Time) error {
 	}
 	for _, e := range lines {
 		if o.asJSON {
-			fmt.Fprintf(w, "%s\n", e.Line)
+			fmt.Fprintf(w, "%s\n", jsonLine(e.Line))
 			continue
 		}
 		fmt.Fprintf(w, "%s  %-5s  %s\n", stamp(e.Time), e.Level, clean(describe(e.Line)))
@@ -572,9 +608,9 @@ func (o options) request(w io.Writer, store *itel.Store, id string) error {
 		return err
 	}
 	if o.asJSON {
-		fmt.Fprintf(w, "%s\n", line)
+		fmt.Fprintf(w, "%s\n", jsonLine(line))
 		for _, e := range logs {
-			fmt.Fprintf(w, "%s\n", e.Line)
+			fmt.Fprintf(w, "%s\n", jsonLine(e.Line))
 		}
 		return nil
 	}
