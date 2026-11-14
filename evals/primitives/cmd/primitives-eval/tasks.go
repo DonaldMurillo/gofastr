@@ -31,7 +31,8 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 const hookSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}` + "\n"
 
 // harnessSettings adds the stop check, which runs the changed packages'
-// tests and names the docs of a part that changed.
+// tests, asks about sibling paths, and shows a changed part's on_change
+// lines and the docs it left untouched.
 const harnessSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives stop","timeout":420}]}]}}` + "\n"
 
 const nudge = " Before you finish, check whether other code paths have the same defect, and fix those too."
