@@ -87,7 +87,7 @@ func (p *Plugin) registerMCPTools(app *framework.App) error {
 		},
 		{
 			name:        "telemetry_logs",
-			description: "List log lines from the day files, newest first. Filters: `level` (minimum: DEBUG/INFO/WARN/ERROR), `text` (case-sensitive substring of the line), `since_ts`/`until_ts`, `limit` (default 100, max 500). A search that runs past ten seconds returns what it found with `stopped_at`: pass that as `until_ts` to carry on.",
+			description: "List log lines from the day files, newest first. Filters: `level` (minimum: DEBUG/INFO/WARN/ERROR), `text` (words the line must all hold, in any letter case; wrap in double quotes for an exact phrase), `since_ts`/`until_ts`, `limit` (default 100, max 500). A search that runs past ten seconds returns what it found with `stopped_at`: pass that as `until_ts` to carry on.",
 			schema: map[string]any{"type": "object", "properties": map[string]any{
 				"level":    map[string]any{"type": "string", "enum": []string{"DEBUG", "INFO", "WARN", "ERROR"}},
 				"text":     map[string]any{"type": "string"},

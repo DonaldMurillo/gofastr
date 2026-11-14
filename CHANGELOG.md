@@ -25,6 +25,34 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **Telemetry screens: a review round.** A time range is one click and
+  holds across the four pages; the Overview's tables sort by any column
+  and each chart says its highest bar in words; a row's route opens its
+  request, at the top of the page, and "Back to the list" returns to
+  the filtered list. Each view has its own page title. The log search
+  (pages, `gofastr telemetry logs --grep`, `telemetry_logs`) now finds
+  lines that hold every word in any letter case, with double quotes for
+  an exact phrase; it was one case-sensitive piece of text. A request no
+  route took is stored as `GET (no route)` and `GET /{$}` as `GET /`
+  (older lines keep the old spelling). On a phone no page scrolls
+  sideways and Issues shows every column. See
+  [telemetry](framework/docs/content/telemetry.md).
+- **A polled region no longer moves focus.** `data-cui-poll` skips a
+  response identical to the last one, and waits while keyboard focus or
+  a text selection is inside the region; the swap lands on the first
+  tick after. Before, every tick replaced the region and sent focus to
+  the top of the page. See
+  [reactivity](framework/docs/content/reactivity.md).
+- **Kit.** `ui.Callout` gains `Standing` (a warning that is part of the
+  page, not an interruption), `ui.CodeBlock` gains `Label`,
+  `ui.WaterfallStep` gains `Note` (the tone in a word). Clearing a
+  `ui.SearchInput` that held a submitted search re-submits its GET form.
+  Fixed at phone width: a `ui.PageHeader` with a long path as its
+  subtitle widened the page; `ui.SegmentedLinks` scrolled its last
+  choices out of sight (it wraps now); a search field and a `ui.ShortID`
+  pushed their buttons out of their frames; a `Wrap` column was cut to
+  one line in a `ResponsiveRows` phone row; a framed code block showed
+  no focus ring.
 - **Logs and traces on disk** (experimental,
   [telemetry](framework/docs/content/telemetry.md)). `battery/telemetry`
   writes log lines and complete traces to day files on the app's own

@@ -1,10 +1,14 @@
 package telemetryui
 
 import (
+	"cmp"
 	"context"
 	"log/slog"
 	"math"
 	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -44,7 +48,7 @@ var spans = []span{
 // unknown one is named. The overview has no "everything kept": its
 // bars need a width.
 func pickSpan(q url.Values) span {
-	key := param(q, "window")
+	key := choice(q, "window")
 	for _, sp := range spans {
 		if sp.key == key {
 			return sp
@@ -65,7 +69,8 @@ func (s *Screens) Overview(ctx context.Context) render.HTML { return s.overview(
 func (s *Screens) OverviewRows(ctx context.Context) render.HTML { return s.overview(ctx, true) }
 
 func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
-	sp := pickSpan(query(ctx))
+	q := query(ctx)
+	sp := pickSpan(q)
 	// A range whose bars are hours wide gains nothing from a refresh
 	// every ten seconds, and it is the widest read: seven days of
 	// counts, a third of a second of one core. It stays as loaded.
@@ -109,7 +114,7 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	// apart, since nobody was waiting on them.
 	var jobs render.HTML
 	if len(stats.Jobs) > 0 {
-		jobs = s.jobTable(ctx, stats.Jobs, wkey)
+		jobs = s.jobTable(ctx, stats.Jobs, q, wkey)
 	}
 	var body render.HTML
 	if stats.Total.N == 0 {
@@ -118,24 +123,26 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 			Description: i18nui.TelemetryOverviewEmptySub.Text(ctx),
 		}), jobs, machine)
 	} else {
-		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), s.routeTable(ctx, stats.Routes, wkey), jobs, machine)
+		body = page(s.totals(ctx, stats.Total, wkey), s.charts(ctx, sp, stats.Points, now), s.routeTable(ctx, stats.Routes, q, wkey), jobs, machine)
 	}
 	if rowsOnly {
 		return body
 	}
-	facet := ui.Facet{Name: "window", Label: i18nui.TelemetryWindow.Text(ctx), Value: sp.key}
-	for _, o := range spans {
-		facet.Options = append(facet.Options, ui.FacetOption{Label: o.label.Text(ctx), Value: o.key})
+	choices := make([]window, len(spans))
+	for i, o := range spans {
+		choices[i] = o.window
 	}
-	filters := ui.FilterToolbar(ui.FilterToolbarConfig{
-		Action: s.OverviewPath(), ClientNavigation: true, Ctx: ctx,
-		Label:      i18nui.TelemetryFilters.Text(ctx),
-		ApplyLabel: i18nui.TelemetryApply.Text(ctx),
-		Facets:     []ui.Facet{facet},
-		HideReset:  true,
-	})
+	// A change of range, and the timer's fetch, keep the tables' sorts.
+	sorted := func(path, window string) string {
+		pairs := []string{"window", window}
+		for _, name := range overviewSorts {
+			pairs = append(pairs, name, param(q, name))
+		}
+		return link(path, pairs...)
+	}
+	filters := rangeLinks(ctx, choices, sp.key, func(key string) string { return sorted(s.OverviewPath(), key) })
 	if live {
-		body = s.rows("overview", cursor{}, link(s.Live("overview"), "window", wkey), body)
+		body = s.rows("overview", cursor{}, sorted(s.Live("overview"), wkey), body)
 	}
 	return page(s.tabNav(ctx, tabOverview), ui.PageHeader(header), s.firing(ctx), filters, body)
 }
@@ -182,6 +189,11 @@ func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) re
 	ofAll := func(n int64) string {
 		return i18nui.TelemetryStatShare.Text(ctx, map[string]any{"share": share(ctx, n, t.N)})
 	}
+	// "Slow" is a line the app's own settings draw: say where it is.
+	slowLabel := i18nui.TelemetryStatSlow.Text(ctx)
+	if at := s.tel.SlowThreshold(); at > 0 {
+		slowLabel = i18nui.TelemetryStatSlowAt.Text(ctx, map[string]any{"duration": ui.DurationText(ctx, at)})
+	}
 	failed := ui.StatCardConfig{Label: i18nui.TelemetryStatFailed.Text(ctx), Value: i18n.Number(ctx, t.Failed), Trend: ofAll(t.Failed), Plain: true,
 		Href: link(s.RequestsPath(), "show", "failed", "window", wkey)}
 	if t.Failed > 0 {
@@ -190,7 +202,7 @@ func (s *Screens) totals(ctx context.Context, t itel.StatsCount, wkey string) re
 	return ui.StatStrip(ui.StatStripConfig{Label: i18nui.TelemetryStats.Text(ctx), Cells: []render.HTML{
 		ui.StatCard(ui.StatCardConfig{Label: i18nui.TelemetryChartRequests.Text(ctx), Value: i18n.Number(ctx, t.N), Plain: true}),
 		ui.StatCard(failed),
-		ui.StatCard(ui.StatCardConfig{Label: i18nui.TelemetryStatSlow.Text(ctx), Value: i18n.Number(ctx, t.Slow), Trend: ofAll(t.Slow), Plain: true,
+		ui.StatCard(ui.StatCardConfig{Label: slowLabel, Value: i18n.Number(ctx, t.Slow), Trend: ofAll(t.Slow), Plain: true,
 			Href: link(s.RequestsPath(), "show", "slow", "window", wkey)}),
 		ui.StatCard(ui.StatCardConfig{Label: i18nui.TelemetryStatP95.Text(ctx), Value: within(ctx, t.P95), Plain: true}),
 	}})
@@ -234,7 +246,10 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 	if p := l.DiskPercent(); p >= 0 {
 		disk.Value, disk.Trend = i18n.Percent(ctx, float64(p)/100), usedOf(l.DiskUsed, l.DiskTotal)
 		if p >= diskWarnAt {
+			// Said in words as well: red alone tells nothing to a
+			// screen reader or a colour-blind reader.
 			disk.Direction = ui.TrendDown
+			disk.Trend = i18nui.TelemetryDiskNearlyFull.Text(ctx, map[string]any{"used": disk.Trend})
 		}
 	}
 	// What this process holds: the kernel's count where there is one,
@@ -266,10 +281,10 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 	}
 	var cards []render.HTML
 	if haveCPU {
-		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-cpu", i18nui.TelemetryChartCPU, cpuBars, 100, host.Points[0].Time, now))
+		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-cpu", i18nui.TelemetryChartCPU, cpuBars, 100, host.Points[0].Time, now, percentOf100, 3))
 	}
 	if haveMem {
-		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-memory", i18nui.TelemetryChartMemory, memBars, 100, host.Points[0].Time, now))
+		cards = append(cards, s.chartCard(ctx, sp, "telemetry-chart-memory", i18nui.TelemetryChartMemory, memBars, 100, host.Points[0].Time, now, percentOf100, 3))
 	}
 	var charts render.HTML
 	if len(cards) > 0 {
@@ -277,7 +292,11 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 		// them, where two cards alone would stretch across the row.
 		charts = ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG, Fill: true}, cards...)
 	}
-	return ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryMachine.Text(ctx), Description: i18nui.TelemetryMachineSub.Text(ctx), Compact: true, Ctx: ctx},
+	read := i18nui.TelemetryUTC.Text(ctx, map[string]any{"time": i18n.Time(ctx, l.Time.UTC(), i18n.TimeShort)})
+	if n := now.UTC(); l.Time.UTC().Year() != n.Year() || l.Time.UTC().YearDay() != n.YearDay() {
+		read = i18nui.TelemetryUTC.Text(ctx, map[string]any{"time": i18n.DateTime(ctx, l.Time.UTC(), i18n.DateShort, i18n.TimeShort)})
+	}
+	return ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryMachine.Text(ctx), Description: i18nui.TelemetryMachineSub.Text(ctx, map[string]any{"time": read}), Compact: true, Ctx: ctx},
 		page(strip, charts))
 }
 
@@ -294,41 +313,97 @@ func (s *Screens) charts(ctx context.Context, sp span, points []itel.StatsPoint,
 		slowest[i] = ui.BarChartBar{Label: at, Value: float64(p.P95.Microseconds()) / 1000, Color: "warning"}
 	}
 	first := points[0].Time
-	card := func(id string, title i18n.Phrase, bars []ui.BarChartBar) render.HTML {
-		return s.chartCard(ctx, sp, id, title, bars, 0, first, now)
+	card := func(id string, title i18n.Phrase, bars []ui.BarChartBar, figure func(context.Context, float64) string) render.HTML {
+		// These sit straight under the page title.
+		return s.chartCard(ctx, sp, id, title, bars, 0, first, now, figure, 2)
+	}
+	whole := func(ctx context.Context, v float64) string { return i18n.Number(ctx, int(v)) }
+	millis := func(ctx context.Context, v float64) string {
+		return ui.DurationText(ctx, time.Duration(v*float64(time.Millisecond)))
 	}
 	return ui.Grid(ui.GridConfig{Min: "20rem", Gap: ui.GapLG},
-		card("telemetry-chart-requests", i18nui.TelemetryChartRequests, requests),
-		card("telemetry-chart-failed", i18nui.TelemetryChartFailed, failed),
-		card("telemetry-chart-p95", i18nui.TelemetryChartP95, slowest))
+		card("telemetry-chart-requests", i18nui.TelemetryChartRequests, requests, whole),
+		card("telemetry-chart-failed", i18nui.TelemetryChartFailed, failed, whole),
+		card("telemetry-chart-p95", i18nui.TelemetryChartP95, slowest, millis))
 }
 
-func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, wkey string) render.HTML {
-	return s.countTable(ctx, routes, wkey, i18nui.TelemetryRoutes, i18nui.TelemetryColRoute, i18nui.TelemetryColRequests, true)
+func (s *Screens) routeTable(ctx context.Context, routes []itel.RouteStats, q url.Values, wkey string) render.HTML {
+	return s.countTable(ctx, routes, q, wkey, i18nui.TelemetryRoutes, i18nui.TelemetryColRoute, i18nui.TelemetryColRequests, true, "sort", "dir")
 }
 
 // jobTable lists background work by name. It has no "slow": that line
 // is drawn for someone waiting on a response.
-func (s *Screens) jobTable(ctx context.Context, jobs []itel.RouteStats, wkey string) render.HTML {
-	return s.countTable(ctx, jobs, wkey, i18nui.TelemetryJobs, i18nui.TelemetryColJob, i18nui.TelemetryColRuns, false)
+func (s *Screens) jobTable(ctx context.Context, jobs []itel.RouteStats, q url.Values, wkey string) render.HTML {
+	return s.countTable(ctx, jobs, q, wkey, i18nui.TelemetryJobs, i18nui.TelemetryColJob, i18nui.TelemetryColRuns, false, "jsort", "jdir")
+}
+
+// sortKeys are the columns a count table sorts by, and each one's
+// order from most to least. The busiest come first unless asked: the
+// question is as often "which fails most" or "which is slowest".
+var sortKeys = map[string]func(a, b itel.RouteStats) int{
+	"n":      func(a, b itel.RouteStats) int { return cmp.Compare(b.N, a.N) },
+	"failed": func(a, b itel.RouteStats) int { return cmp.Compare(b.Failed, a.Failed) },
+	"slow":   func(a, b itel.RouteStats) int { return cmp.Compare(b.Slow, a.Slow) },
+	"p50":    func(a, b itel.RouteStats) int { return cmp.Compare(b.P50, a.P50) },
+	"p95":    func(a, b itel.RouteStats) int { return cmp.Compare(b.P95, a.P95) },
+	"route":  func(a, b itel.RouteStats) int { return strings.Compare(b.Route, a.Route) },
+}
+
+// overviewSorts are the query parameters the overview's two tables
+// sort by: carried by every link and by the timer's fetch, so a sort
+// outlives a change of range and a refresh.
+var overviewSorts = []string{"sort", "dir", "jsort", "jdir"}
+
+// sortOf reads one table's sort from the query: a column this table
+// has, most first unless "asc". Anything else is the busiest first.
+func sortOf(q url.Values, sortParam, dirParam string, slow bool) (key string, dir ui.SortDir) {
+	key, dir = param(q, sortParam), ui.SortDesc
+	if _, ok := sortKeys[key]; !ok || (key == "slow" && !slow) {
+		return "n", ui.SortDesc
+	}
+	if param(q, dirParam) == "asc" {
+		dir = ui.SortAsc
+	}
+	return key, dir
 }
 
 // countTable is the table of routes or of background work: each name's
 // count, failures and how long it took, linked to its kept traces.
-func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, wkey string, caption, name, count i18n.Phrase, slow bool) render.HTML {
+func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, q url.Values, wkey string, caption, name, count i18n.Phrase, slow bool, sortParam, dirParam string) render.HTML {
+	// Sorted before it is cut to length: the rows shown are the first
+	// of the order asked for, not the busiest in that order.
+	key, dir := sortOf(q, sortParam, dirParam, slow)
+	routes = slices.Clone(routes)
+	slices.SortStableFunc(routes, func(a, b itel.RouteStats) int {
+		c := sortKeys[key](a, b)
+		if dir == ui.SortAsc {
+			c = -c
+		}
+		return c
+	})
 	left := max(len(routes)-routesShown, 0)
 	routes = routes[:len(routes)-left]
 	cols := []ui.Column{
-		{Key: "route", Header: name.Text(ctx), Wrap: true},
-		{Key: "n", Header: count.Text(ctx), Align: "end"},
-		{Key: "failed", Header: i18nui.TelemetryColFailed.Text(ctx), Align: "end"},
+		{Key: "route", Header: name.Text(ctx), Wrap: true, Sortable: true},
+		{Key: "n", Header: count.Text(ctx), Align: "end", Sortable: true},
+		{Key: "failed", Header: i18nui.TelemetryColFailed.Text(ctx), Align: "end", Sortable: true},
 	}
 	if slow {
-		cols = append(cols, ui.Column{Key: "slow", Header: i18nui.TelemetryColSlow.Text(ctx), Align: "end"})
+		cols = append(cols, ui.Column{Key: "slow", Header: i18nui.TelemetryColSlow.Text(ctx), Align: "end", Sortable: true})
 	}
 	cols = append(cols,
-		ui.Column{Key: "p50", Header: i18nui.TelemetryColHalf.Text(ctx), Align: "end"},
-		ui.Column{Key: "p95", Header: i18nui.TelemetryColP95.Text(ctx), Align: "end"})
+		ui.Column{Key: "p50", Header: i18nui.TelemetryColHalf.Text(ctx), Align: "end", Sortable: true},
+		ui.Column{Key: "p95", Header: i18nui.TelemetryColP95.Text(ctx), Align: "end", Sortable: true})
+	// A sort link keeps the range and the other table's sort.
+	carried := url.Values{}
+	if wkey != "" {
+		carried.Set("window", wkey)
+	}
+	for _, name := range overviewSorts {
+		if v := param(q, name); v != "" {
+			carried.Set(name, v)
+		}
+	}
 	withShare := func(n, of int64) render.HTML {
 		if n == 0 {
 			return render.Text(i18n.Number(ctx, 0))
@@ -351,7 +426,8 @@ func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, wkey
 		if slow {
 			cells["slow"] = withShare(r.Slow, r.N)
 		}
-		rows[i] = ui.Row{ID: r.Route, Cells: cells}
+		// A route holds spaces and braces, which an element id cannot.
+		rows[i] = ui.Row{ID: sortParam + strconv.Itoa(i), Cells: cells}
 	}
 	var note render.HTML
 	if left > 0 {
@@ -361,7 +437,8 @@ func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, wkey
 	// bare numbers does not say which is the failures.
 	return page(
 		ui.DataTable(ui.DataTableConfig{Columns: cols, Rows: rows, Ctx: ctx, Responsive: ui.ResponsiveCards,
-			Caption: caption.Text(ctx)}),
+			Caption: caption.Text(ctx), SortBy: key, SortDir: dir,
+			Path: s.OverviewPath(), Query: carried, SortParam: sortParam, DirParam: dirParam}),
 		note)
 }
 
@@ -371,17 +448,47 @@ func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, wkey
 // today. The card names its heading "<id>-title"; the chart is labelled
 // by it. top, when not zero, is the top of the scale: 100 for a
 // percentage.
-func (s *Screens) chartCard(ctx context.Context, sp span, id string, title i18n.Phrase, bars []ui.BarChartBar, top float64, first, now time.Time) render.HTML {
-	end := func(t time.Time) render.HTML {
+// percentOf100 writes a chart value that is already a percentage.
+func percentOf100(ctx context.Context, v float64) string { return i18n.Percent(ctx, v/100) }
+
+// peak says a chart's highest bar in words, or nothing when every bar
+// is empty. A bar chart is a picture: this sentence is what it shows to
+// someone who cannot see it, and the first thing anyone looks for in
+// it. Of equal bars the latest wins, the one nearest to now.
+func peak(ctx context.Context, bars []ui.BarChartBar, figure func(context.Context, float64) string) string {
+	at := -1
+	for i, b := range bars {
+		if b.Value > 0 && (at < 0 || b.Value >= bars[at].Value) {
+			at = i
+		}
+	}
+	if at < 0 {
+		return ""
+	}
+	return i18nui.TelemetryChartPeak.Text(ctx, map[string]any{"value": figure(ctx, bars[at].Value), "time": bars[at].Label})
+}
+
+func (s *Screens) chartCard(ctx context.Context, sp span, id string, title i18n.Phrase, bars []ui.BarChartBar, top float64, first, now time.Time, figure func(context.Context, float64) string, level int) render.HTML {
+	about := sp.bar.Text(ctx)
+	if p := peak(ctx, bars, figure); p != "" {
+		about += " " + p
+	}
+	// Every other time on these screens says its zone; so do these.
+	end := func(t time.Time, zone bool) render.HTML {
 		u := t.UTC()
 		text := i18n.Time(ctx, u, i18n.TimeShort)
-		if n := now.UTC(); u.Year() != n.Year() || u.YearDay() != n.YearDay() {
+		// A chart that starts on another day dates both ends: a bare
+		// time at the right of a dated one reads as the same day.
+		if f, n := first.UTC(), now.UTC(); f.Year() != n.Year() || f.YearDay() != n.YearDay() {
 			text = i18n.DateTime(ctx, u, i18n.DateShort, i18n.TimeShort)
+		}
+		if zone {
+			text = i18nui.TelemetryUTC.Text(ctx, map[string]any{"time": text})
 		}
 		return ui.Muted(html.Time(html.TimeConfig{Datetime: u.Format(time.RFC3339)}, render.Text(text)))
 	}
-	return ui.Card(ui.CardConfig{Heading: title.Text(ctx), Description: sp.bar.Text(ctx), ID: id},
+	return ui.Card(ui.CardConfig{Heading: title.Text(ctx), Description: about, ID: id, HeadingLevel: level},
 		ui.Stack(ui.StackConfig{Gap: ui.GapSM},
 			ui.BarChart(ui.BarChartConfig{Ctx: ctx, Bars: bars, Width: chartWidth, Height: chartHeight, ShowAxis: true, HideValues: true, Max: top, LabelledBy: id + "-title"}),
-			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, NoWrap: true}, end(first), end(now))))
+			ui.Cluster(ui.ClusterConfig{Justify: ui.JustifyBetween, NoWrap: true}, end(first, false), end(now, true))))
 }

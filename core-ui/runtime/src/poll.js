@@ -116,6 +116,20 @@
     if (!el.isConnected) el.__fuiPollWired = false;
   }
 
+  // occupied reports whether someone is inside el: focus on one of its
+  // descendants, or a non-empty text selection that starts or ends in
+  // it. Focus on el itself does not count: a region made focusable so it
+  // can be scrolled survives its contents being replaced.
+  function occupied(el) {
+    const a = document.activeElement;
+    if (a && a !== el && a !== document.body && el.contains(a)) return true;
+    const sel = window.getSelection && window.getSelection();
+    if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+      return el.contains(sel.anchorNode) || el.contains(sel.focusNode);
+    }
+    return false;
+  }
+
   function wireOne(el) {
     if (!el || !el.getAttribute || el.__fuiPollWired) return;
     const raw = el.getAttribute('data-cui-poll') || '';
@@ -171,6 +185,24 @@
           // path, not a hand-rolled second one. scanAndLoadCSS is
           // already exposed on __gofastr and handles component-CSS
           // dedup for any freshly-arrived [data-cui-comp] markers.
+          // Two reasons to leave the region as it is this tick. The
+          // terminal response is exempt from both: its body is the
+          // last word and must render before the poll ends.
+          //
+          // Nothing changed: writing the same markup again replaces
+          // every node, which drops focus, text selection, scroll
+          // position inside the region and any open tooltip, for no
+          // change on screen.
+          //
+          // Someone is in it: keyboard focus or a text selection inside
+          // the region means it is being read or operated. Replacing
+          // it under them sends focus to <body> (a keyboard user then
+          // starts again from the top of the page, every interval) and
+          // discards the selection. The swap waits for a tick after
+          // they leave; lastHTML is not advanced, so that tick applies.
+          if (!stop && html === s.lastHTML) { pollTicked(); return; }
+          if (!stop && occupied(el)) return;
+          s.lastHTML = html;
           el.innerHTML = html;
           if (NS.scanAndLoadCSS) NS.scanAndLoadCSS(el);
           pollTicked();

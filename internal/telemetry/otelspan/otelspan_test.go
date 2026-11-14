@@ -234,3 +234,29 @@ func TestRootSpanKindSaysRequestOrJob(t *testing.T) {
 		t.Fatalf("requests %v, jobs %v", routes, jobs)
 	}
 }
+
+// A trace is stored under the route as a person reads it: the home
+// page's "/{$}" as "/", and a request no route took as "(no route)".
+func TestTraceRouteIsStoredReadable(t *testing.T) {
+	var kept []telemetry.Trace
+	c, err := telemetry.NewCollector(telemetry.Config{Dir: t.TempDir(), SampleRate: 1}, func(tr telemetry.Trace) error {
+		kept = append(kept, tr)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracer := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(otelspan.New(c))).Tracer("test")
+	for _, route := range []string{"/{$}", "unmatched", "/orders/{id}"} {
+		_, span := tracer.Start(context.Background(), "HTTP GET", trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(attribute.String("http.route", route), attribute.String("http.request.method", "GET")))
+		span.End()
+	}
+	var got []string
+	for _, tr := range kept {
+		got = append(got, tr.Route)
+	}
+	if want := []string{"GET /", "GET (no route)", "GET /orders/{id}"}; !slices.Equal(got, want) {
+		t.Errorf("routes stored as %q, want %q", got, want)
+	}
+}

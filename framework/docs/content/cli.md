@@ -669,7 +669,8 @@ directory itself, so it works over SSH and when the app is down.
   95 in 100 took, in all and by route. `--route <route>` counts one
   route. It needs a `--since` of a minute or more.
 - `gofastr telemetry logs`: log lines, newest first. `--level <l>` sets
-  the minimum level and `--grep <text>` keeps lines containing text.
+  the minimum level and `--grep <text>` keeps lines that hold every word of text, in any
+  letter case (`--grep '"mailbox busy"'` for the exact phrase).
 - `gofastr telemetry requests`: kept requests, newest first. `--failed`,
   `--slow <duration>` and `--route <route>` narrow the list.
 - `gofastr telemetry issues`: failed requests grouped by what went

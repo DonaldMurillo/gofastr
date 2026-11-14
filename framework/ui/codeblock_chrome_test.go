@@ -114,3 +114,19 @@ func TestCodeBlockEscapesApostrophes(t *testing.T) {
 		t.Errorf("CodeBlock leaked a raw apostrophe:\n%s", h)
 	}
 }
+
+// Label replaces the default accessible name, with or without a
+// language, and is escaped; left empty the default stands.
+func TestCodeBlockLabelNamesTheBlock(t *testing.T) {
+	named := string(CodeBlock(CodeBlockConfig{Code: "main.go:1", Language: "go", Label: `Call "stack"`}))
+	if !strings.Contains(named, `aria-label="Call &#34;stack&#34;"`) && !strings.Contains(named, `aria-label="Call &quot;stack&quot;"`) {
+		t.Errorf("Label did not name the block:\n%s", named)
+	}
+	if strings.Count(named, "aria-label=") != 1 {
+		t.Errorf("the block carries more than one name:\n%s", named)
+	}
+	plain := string(CodeBlock(CodeBlockConfig{Code: "x"}))
+	if !strings.Contains(plain, `aria-label="source code"`) {
+		t.Errorf("with no Label the default name must stand:\n%s", plain)
+	}
+}

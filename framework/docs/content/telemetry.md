@@ -114,15 +114,19 @@ without one, and a caller it refuses gets a 403.
 - **Overview** counts every request of the last hour, 24 hours or 7
   days: how many, how many failed, how many were slow, and how long 95
   in 100 took. Three bar charts show those over the range, and a table
-  gives each route's own figures, busiest first; a route links to its
-  requests. See [Request counts](#request-counts). A second table lists
+  gives each route's own figures, busiest first; a column heading
+  sorts by that column (which fails most, which is slowest), and a
+  route links to its requests. Each chart says its highest bar in
+  words. See [Request counts](#request-counts). A second table lists
   background work (queue jobs, scheduled runs), which is counted apart.
   Under them is [the machine](#the-machine): how busy its CPU is, how much memory and
   disk are used, and what this app holds.
 - **Requests** lists the kept requests, newest first: route, the path
   asked for, status, how long it took and when. Narrow it to failed or
-  slow requests, to one route (click a route), or to a time range. Paste
-  a trace ID to open one request.
+  slow requests, to one route (click a route), or to a time range. A
+  row's route opens that request. Paste a trace ID to open one request.
+  A request no route took is listed as `GET (no route)`, and the home
+  page's `GET /{$}` as `GET /`.
 - **One request** says what went wrong when it failed, and for a panic
   shows the call stack from the function that panicked. It shows its
   steps as bars on a shared time axis
@@ -131,20 +135,31 @@ without one, and a caller it refuses gets a 403.
   wrote while handling it.
 - **Issues** groups the failed requests of a time range by what went
   wrong, latest first: the error, the route, the status, how many times,
-  and when it was last and first seen. A link lists that issue's
-  requests. See [Issues](#issues).
+  and when it was last and first seen. The error lists that issue's
+  requests, and **Open** goes to the latest of them. See
+  [Issues](#issues).
 - **Logs** lists log lines, newest first, by minimum level, by text and
   by time range. A line written inside a request links to that request.
+  The search finds lines that hold every word typed, in any order and
+  any letter case, so text copied off the page (`GET /search → 200`,
+  `dur_ms=52`) finds its line. Wrap words in double quotes for an exact
+  phrase.
 - Overview, Requests and Issues say so at the top while an
   [alert](#alerts) is firing.
 
 Every filter is in the query string, so a view can be bookmarked and
-shared. The lists show 25 rows a page, with **Newer**, **Older** and
+shared. A time range is one click, and it holds as you move between
+the four pages. Each view has its own page title ("Failed requests",
+"Request 7e22a54e"), and a request opened from a filtered list leads
+back to that list. The lists show 25 rows a page, with **Newer**, **Older** and
 **Back to newest**.
 
 The newest page of each list refreshes every ten seconds and says
 "Live". So does the Overview for the last hour and the last 24 hours;
 the 7-day view, whose bars are two hours wide, stays as loaded. A page you have paged back on stays as it is.
+A refresh never moves keyboard focus or drops selected text: the
+region waits while you are in it (see
+[reactivity](reactivity.md)).
 
 The Logs page leaves out the access lines of quiet paths (scripts,
 styles, anything in `Config.QuietPaths`), which would otherwise fill

@@ -1,6 +1,7 @@
 // SearchInput's clear control: shows and hides the clear button from
 // the input's value, clears the input on click or Escape and refocuses
-// it. framework/ui registers this file as the `searchinput` behaviour
+// it. Clearing a box that arrived holding a submitted search re-submits
+// its GET form, so the results follow the box. framework/ui registers this file as the `searchinput` behaviour
 // and the kernel loads it when a SearchInput marker is on the page.
 //
 // This module is framework/ui's: SearchInput has no headless
@@ -38,6 +39,17 @@
       updateClearVisibility();
       // A real input event, so a form-RPC pipeline sees the change.
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      // The box arrived holding a search the page below was drawn for
+      // (defaultValue is the value attribute the server wrote). In a
+      // GET form nothing else re-runs it: left alone, the box is empty
+      // and the list under it is still the filtered one. Submitting
+      // the form brings the two back into agreement. Text typed and
+      // cleared before any submit changes nothing, so it submits
+      // nothing.
+      const form = input.form;
+      if (input.defaultValue && form && (form.getAttribute('method') || 'get').toLowerCase() === 'get') {
+        if (form.requestSubmit) form.requestSubmit(); else form.submit();
+      }
     };
 
     input.addEventListener('input', updateClearVisibility);

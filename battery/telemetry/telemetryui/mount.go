@@ -68,7 +68,9 @@ func (p *Plugin) Init(app *framework.App) error {
 		return errors.New("telemetryui: the screens render through the app's UI host; mount one first (framework.NewUIHostApp or uihost.New)")
 	}
 
-	screens := NewScreens(p.tel, path, true)
+	// No tabs in the pages: the layout below draws them, outside the
+	// main region.
+	screens := NewScreens(p.tel, path, false)
 	screens.Live = func(list string) string { return path + "/_rows/" + list }
 	allowed := func(ctx context.Context) bool { return p.cfg.Authorize(ctx) }
 	policy := appui.PolicyFunc(func(ctx context.Context) appui.Decision {
@@ -77,21 +79,32 @@ func (p *Plugin) Init(app *framework.App) error {
 		}
 		return decide.Block(http.StatusForbidden)
 	})
-	layout := appui.NewLayout("gofastr-telemetry", appui.LayoutSpec{}, func(_ context.Context, l *appui.LayoutTree) render.HTML {
+	// The tabs are a route area: they sit in the layout, before the
+	// main region, so "Skip to main content" skips them, and they are
+	// drawn again on every navigation to mark the current page.
+	spec := appui.LayoutSpec{Areas: []appui.AreaSpec{{Name: "tabs"}}}
+	layout := appui.NewLayout("gofastr-telemetry", spec, func(_ context.Context, l *appui.LayoutTree) render.HTML {
 		// No ui.Stack{Screen: true} here: it pins its last child to the
-		// bottom for a footer, and this layout has one child, so a short
-		// page would sit at the foot of the screen.
-		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage}, l.Primary())
+		// bottom for a footer, and a short page would sit at the foot
+		// of the screen.
+		return ui.Container(ui.ContainerConfig{Width: ui.ContainerWide, Pad: ui.ContainerPadPage},
+			l.RouteArea("tabs", func(ctx context.Context, m appui.Match) render.HTML {
+				return screens.Tabs(ctx, m.Path())
+			}),
+			l.Primary())
 	})
 	group := appui.NewScreenGroup(path, layout, policy).Standalone()
-	add := func(at string, title i18n.Phrase, draw func(context.Context) render.HTML) {
-		group.Screen(appui.NewScreen(at, &screen{allowed: allowed, title: title, draw: draw}).
+	add := func(at string, title i18n.Phrase, name func(context.Context) string, draw func(context.Context) render.HTML) {
+		if name == nil {
+			name = func(ctx context.Context) string { return title.Text(ctx) }
+		}
+		group.Screen(appui.NewScreen(at, &screen{allowed: allowed, name: name, draw: draw}).
 			WithTitle(title.Text(context.Background())), nil)
 	}
-	add(screens.OverviewPath(), i18nui.TelemetryOverview, screens.Overview)
-	add(screens.RequestsPath(), i18nui.TelemetryRequests, screens.Requests)
-	add(screens.IssuesPath(), i18nui.TelemetryIssues, screens.Issues)
-	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.Logs)
+	add(screens.OverviewPath(), i18nui.TelemetryOverview, nil, screens.Overview)
+	add(screens.RequestsPath(), i18nui.TelemetryRequests, screens.RequestsTitle, screens.Requests)
+	add(screens.IssuesPath(), i18nui.TelemetryIssues, nil, screens.Issues)
+	add(screens.LogsPath(), i18nui.TelemetryLogs, screens.LogsTitle, screens.Logs)
 	host.App.Router.ScreenGroup(group)
 
 	// A list's rows alone, for the newest page's timer. The same gate
@@ -117,7 +130,13 @@ func (p *Plugin) Init(app *framework.App) error {
 	// the screen it names is the one that asks who is calling.
 	target := screens.OverviewPath()
 	app.Router().Get(path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, target, http.StatusSeeOther)
+		// The query rides along: a shared link to the bare path with a
+		// time range keeps it.
+		to := target
+		if r.URL.RawQuery != "" {
+			to += "?" + r.URL.Query().Encode()
+		}
+		http.Redirect(w, r, to, http.StatusSeeOther)
 	}))
 	return nil
 }
@@ -126,12 +145,12 @@ func (p *Plugin) Init(app *framework.App) error {
 type screen struct {
 	component.ContextOnly
 	allowed func(context.Context) bool
-	title   i18n.Phrase
+	name    func(context.Context) string
 	draw    func(context.Context) render.HTML
 }
 
 // ScreenTitle names the page in the caller's language.
-func (s *screen) ScreenTitle(ctx context.Context) string { return s.title.Text(ctx) }
+func (s *screen) ScreenTitle(ctx context.Context) string { return s.name(ctx) }
 
 // RenderCtx draws the page. The group's policy has already refused
 // everyone else; asking again keeps the page's data from depending on

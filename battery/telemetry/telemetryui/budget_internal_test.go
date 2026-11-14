@@ -122,6 +122,15 @@ func TestFiringAlertIsShownOnThePages(t *testing.T) {
 		if strings.Contains(body, "<requests>") {
 			t.Errorf("%s: a rule's name reached the page as markup", name)
 		}
+		// One line each (run together they read as one sentence), in a
+		// notice that is part of the page, not an interruption: the
+		// page is drawn again every few seconds while a rule fires.
+		if n := strings.Count(body, "<div>Alert “"); n != 3 {
+			t.Errorf("%s: %d alert lines in a box of their own, want 3", name, n)
+		}
+		if strings.Contains(body, `role="alert"`) {
+			t.Errorf("%s: the firing notice is announced as an interruption", name)
+		}
 	}
 	if body := draw(s.Logs); strings.Contains(body, "is firing") {
 		t.Error("the logs page shows the alert: it is on the two pages that explain it")

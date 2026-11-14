@@ -3,11 +3,16 @@ package telemetryui
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
+	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/i18n"
+	"github.com/DonaldMurillo/gofastr/framework/ui"
 	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
 )
 
@@ -81,7 +86,7 @@ func TestRouteTableStopsAtItsLimit(t *testing.T) {
 		routes = append(routes, itel.RouteStats{Route: fmt.Sprintf("GET /r%03d", i), StatsCount: itel.StatsCount{N: int64(1000 - i)}})
 	}
 	routes[3].Route = itel.OtherRoute
-	out := string(s.routeTable(context.Background(), routes, ""))
+	out := string(s.routeTable(context.Background(), routes, url.Values{}, ""))
 	if n := strings.Count(out, "<tr") - 1; n != routesShown {
 		t.Fatalf("%d rows, want %d", n, routesShown)
 	}
@@ -94,7 +99,7 @@ func TestRouteTableStopsAtItsLimit(t *testing.T) {
 	if !strings.Contains(out, itel.OtherRoute) || strings.Contains(out, "route=%28other%29") {
 		t.Error("the row for the routes counted together is missing or is a link")
 	}
-	if all := string(s.routeTable(context.Background(), routes[:routesShown], "")); strings.Contains(all, "quieter routes") {
+	if all := string(s.routeTable(context.Background(), routes[:routesShown], url.Values{}, "")); strings.Contains(all, "quieter routes") {
 		t.Error("a table that lists every route says it left some out")
 	}
 }
@@ -108,5 +113,90 @@ func TestByteText(t *testing.T) {
 		if got := byteText(ctx, n); got != want {
 			t.Errorf("byteText(%d) = %q, want %q", n, got, want)
 		}
+	}
+}
+
+// A count table sorts by the column asked for, most first unless "asc",
+// and falls back to the busiest first for a column it does not have.
+// Its header links keep the time range and the other table's sort.
+func TestCountTableSorts(t *testing.T) {
+	s := &Screens{base: "/t"}
+	routes := []itel.RouteStats{
+		{Route: "GET /busy", StatsCount: itel.StatsCount{N: 50, Failed: 1, Slow: 0, P95: 10 * time.Millisecond}},
+		{Route: "GET /failing", StatsCount: itel.StatsCount{N: 30, Failed: 9, Slow: 2, P95: 40 * time.Millisecond}},
+		{Route: "GET /slow", StatsCount: itel.StatsCount{N: 10, Failed: 0, Slow: 7, P95: 2 * time.Second}},
+	}
+	order := func(out string) string {
+		type at struct {
+			name string
+			i    int
+		}
+		var seen []at
+		for _, n := range []string{"busy", "failing", "slow"} {
+			seen = append(seen, at{n, strings.Index(out, ">GET /"+n+"<")})
+		}
+		slices.SortFunc(seen, func(a, b at) int { return a.i - b.i })
+		return seen[0].name + "," + seen[1].name + "," + seen[2].name
+	}
+	for query, want := range map[string]string{
+		"":                     "busy,failing,slow",
+		"sort=failed":          "failing,busy,slow",
+		"sort=slow":            "slow,failing,busy",
+		"sort=p95&dir=asc":     "busy,failing,slow",
+		"sort=p95":             "slow,failing,busy",
+		"sort=route&dir=asc":   "busy,failing,slow",
+		"sort=n&dir=asc":       "slow,failing,busy",
+		"sort=nonsense":        "busy,failing,slow",
+		"sort=failed&dir=ASC":  "failing,busy,slow",
+		"jsort=failed":         "busy,failing,slow", // the other table's sort
+		"sort=failed&dir=desc": "failing,busy,slow",
+	} {
+		q, _ := url.ParseQuery(query)
+		if got := order(string(s.routeTable(context.Background(), slices.Clone(routes), q, ""))); got != want {
+			t.Errorf("?%s: rows %s, want %s", query, got, want)
+		}
+	}
+	// Background work has no "slow" column: asked to sort by it, it
+	// stays busiest first rather than sorting by a figure it hides.
+	q, _ := url.ParseQuery("jsort=slow")
+	if got := order(string(s.jobTable(context.Background(), slices.Clone(routes), q, ""))); got != "busy,failing,slow" {
+		t.Errorf("the work table sorted by a column it does not show: %s", got)
+	}
+	q, _ = url.ParseQuery("jsort=failed")
+	if got := order(string(s.jobTable(context.Background(), slices.Clone(routes), q, ""))); got != "failing,busy,slow" {
+		t.Errorf("the work table ignored its own sort: %s", got)
+	}
+
+	q, _ = url.ParseQuery("jsort=failed&jdir=asc&sort=p95")
+	out := string(s.routeTable(context.Background(), slices.Clone(routes), q, "7d"))
+	for _, want := range []string{"jsort=failed", "jdir=asc", "window=7d", "sort=failed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a header link drops %q:\n%s", want, out[:min(len(out), 1500)])
+		}
+	}
+	// Row ids are plain: a route has spaces and braces an id cannot.
+	if strings.Contains(out, `id="GET `) || regexp.MustCompile(`id="[^"]* [^"]*"`).MatchString(out) {
+		t.Error("a row or cell id holds a space")
+	}
+}
+
+// A chart says its highest bar in words; of equal bars the latest; and
+// nothing when every bar is empty or unknown.
+func TestPeakSaysTheHighestBar(t *testing.T) {
+	ctx := context.Background()
+	whole := func(ctx context.Context, v float64) string { return i18n.Number(ctx, int(v)) }
+	bars := []ui.BarChartBar{{Label: "1:00", Value: 3}, {Label: "1:15", Value: 1200}, {Label: "1:30", Value: math.NaN()}, {Label: "1:45", Value: 1200}, {Label: "2:00", Value: 7}}
+	if got := peak(ctx, bars, whole); got != "Highest: 1,200, at 1:45 UTC." {
+		t.Errorf("peak = %q", got)
+	}
+	for name, empty := range map[string][]ui.BarChartBar{
+		"none": nil, "zeros": {{Label: "a"}, {Label: "b"}}, "unknown": {{Label: "a", Value: math.NaN()}},
+	} {
+		if got := peak(ctx, empty, whole); got != "" {
+			t.Errorf("%s: peak = %q, want nothing", name, got)
+		}
+	}
+	if got := percentOf100(ctx, 37.5); got != "37.5%" && got != "38%" {
+		t.Errorf("percentOf100(37.5) = %q", got)
 	}
 }

@@ -128,3 +128,34 @@ func TestE2E_LightboxArrowsDeferToTopModal(t *testing.T) {
 		t.Fatalf("ArrowRight with the lightbox on top: calls %q, want lb:2.jpg", calls)
 	}
 }
+
+// Clearing a search box that arrived holding a submitted search
+// re-submits its GET form: the box and the results under it must not
+// disagree. Text typed and cleared before any submit sends nothing, and
+// a POST form is left to its own pipeline.
+func TestE2E_SearchInputClearResubmitsAGetForm(t *testing.T) {
+	box := func(id, value string) string {
+		return string(ui.SearchInput(ui.SearchInputConfig{Name: "q", ID: id, ExtraAttrs: map[string]string{"value": value}}))
+	}
+	ctx := moduleTestCtx(t, `<form id="searched" method="get">`+box("a", "sku")+`</form>`+
+		`<form id="fresh" method="get">`+box("b", "")+`</form>`+
+		`<form id="posted" method="post">`+box("c", "sku")+`</form>`)
+	if !pollJS(ctx, moduleLoaded("searchinput")) {
+		t.Fatal("the SearchInput marker never loaded the searchinput module")
+	}
+	if err := chromedp.Run(ctx, chromedp.Evaluate(`(function(){
+		window.__sent = [];
+		for (const f of document.forms) f.addEventListener('submit', function(e){ e.preventDefault(); window.__sent.push(f.id + ':' + f.elements.q.value); });
+		document.getElementById('b').value = 'typed';
+		document.getElementById('b').dispatchEvent(new Event('input', {bubbles:true}));
+		for (const b of document.querySelectorAll('.fui-search__clear')) b.click();
+	})()`, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if !pollJS(ctx, `document.getElementById('c').value === ''`) {
+		t.Fatal("the clear buttons did not clear")
+	}
+	if got := evalString(ctx, `window.__sent.join(',')`); got != "searched:" {
+		t.Errorf("forms submitted on clear = %q, want only the GET form that held a submitted search, with the box empty", got)
+	}
+}

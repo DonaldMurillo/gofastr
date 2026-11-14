@@ -544,6 +544,13 @@ func TestCalloutRoleSwitchesForAlerts(t *testing.T) {
 		h := Callout(CalloutConfig{Title: "x", Variant: v}, render.Text("body"))
 		mustContain(t, h, `role="alert"`)
 	}
+	// A Standing one keeps its tone and says nothing on arrival.
+	for _, v := range []StatusVariant{StatusDanger, StatusWarning} {
+		h := Callout(CalloutConfig{Title: "x", Variant: v, Standing: true}, render.Text("body"))
+		if strings.Contains(string(h), "role=") || !strings.Contains(string(h), "fui-callout--"+string(v)) {
+			t.Errorf("%s: a Standing callout must keep its tone and claim no role:\n%s", v, h)
+		}
+	}
 	// Info/success/neutral callouts are standing messages the page
 	// rendered: no live role at all, so nothing interrupts on load.
 	for _, v := range []StatusVariant{StatusInfo, StatusSuccess, StatusNeutral} {

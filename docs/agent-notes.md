@@ -484,3 +484,15 @@
 - Evidence: measured with `getBoundingClientRect` on each `svg[data-cui-comp="ui-bar-chart"]` against its `width` attribute; `TestBarChartAxisLabelsStayInsideTheDrawing` and `TestBarChartMaxFixesTheScale` hold the kit fixes.
 - Next time: after adding a chart, compare its rendered width with its declared width in every layout it appears in.
 - Status: active
+
+- **A kit browser test page has no component styles unless you add them.**
+  `moduleTestCtx` (framework/ui) serves the runtime and the markup, not
+  the registered stylesheets. A layout check on that page passes on
+  unstyled boxes: the first phone-width test written against it passed
+  with all eight fixes reverted. Inject `registry.All()`'s
+  `CSSFor(theme.Default())` in a `<style>`, assert one computed style
+  to prove the page is styled, and revert each fix to watch its check
+  fail (`framework/ui/narrow_layout_e2e_test.go`).
+- **An input's default width depends on the machine's fonts.** A test
+  for a field overflowing its frame must put it in a box narrower than
+  any font would make it (180px), or it reproduces on one machine only.

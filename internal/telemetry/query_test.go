@@ -178,14 +178,14 @@ func queriesMatchFullRead(t *testing.T, fx *fixture) {
 		for _, c := range []struct {
 			text  string
 			limit int
-		}{{"cache miss", 1 << 30}, {"cache miss", 5}, {"/customers", 1 << 30}} {
+		}{{`"cache miss"`, 1 << 30}, {`"cache miss"`, 5}, {"/customers", 1 << 30}} {
 			got, err := fx.store.SearchLogs(c.text, from, to, c.limit)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var want []string
 			for _, l := range slices.Backward(fx.logs) {
-				if strings.Contains(l.raw, c.text) && !l.Time.Before(from) && !l.Time.After(to) && len(want) < c.limit {
+				if strings.Contains(l.raw, strings.Trim(c.text, `"`)) && !l.Time.Before(from) && !l.Time.After(to) && len(want) < c.limit {
 					want = append(want, l.raw)
 				}
 			}
@@ -230,7 +230,7 @@ func queriesMatchFullRead(t *testing.T, fx *fixture) {
 		for _, q := range []telemetry.LogQuery{
 			{},
 			{MinLevel: slog.LevelError},
-			{Text: "cache miss", MinLevel: slog.LevelInfo, From: from, To: to},
+			{Text: `"cache miss"`, MinLevel: slog.LevelInfo, From: from, To: to},
 			{From: from, To: to},
 		} {
 			for _, limit := range []int{7, 1 << 30} {
@@ -243,7 +243,7 @@ func queriesMatchFullRead(t *testing.T, fx *fixture) {
 				}
 				var want []string
 				for _, l := range slices.Backward(fx.logs) {
-					if l.Level >= q.MinLevel && strings.Contains(l.raw, q.Text) &&
+					if l.Level >= q.MinLevel && strings.Contains(l.raw, strings.Trim(q.Text, `"`)) &&
 						(q.From.IsZero() || !l.Time.Before(q.From)) && (q.To.IsZero() || !l.Time.After(q.To)) && len(want) < limit {
 						want = append(want, l.raw)
 					}

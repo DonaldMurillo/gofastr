@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -673,5 +674,129 @@ func TestWidgetPoll_StopsOnTerminalHeader(t *testing.T) {
 	// is authoritative; growth means the timer survived the header.
 	if hitsAfter > hitsAtTerminal {
 		t.Errorf("/state hits grew %d → %d after terminal — poll did not stop on header", hitsAtTerminal, hitsAfter)
+	}
+}
+
+// waitHits blocks until the poll source has been fetched at least n
+// times.
+func waitHits(t *testing.T, hits *atomic.Int64, n int64) {
+	t.Helper()
+	deadline := time.Now().Add(60 * time.Second)
+	for hits.Load() < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("poll source fetched %d times, want %d", hits.Load(), n)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	// The fetch is counted before the browser has applied its body.
+	time.Sleep(500 * time.Millisecond)
+}
+
+// TestPoll_LeavesAnUnchangedRegionAlone: a response identical to the
+// last one applied must not replace the region's nodes. Replacing them
+// drops focus, selection and scroll position for no change on screen.
+func TestPoll_LeavesAnUnchangedRegionAlone(t *testing.T) {
+	var hits atomic.Int64
+	page := `<!doctype html><html><head></head><body>
+<div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div>
+<script src="/__gofastr/runtime.js"></script></body></html>`
+	base := startPollServer(t, page, map[string]http.HandlerFunc{
+		"/fresh": func(w http.ResponseWriter, r *http.Request) {
+			hits.Add(1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, `<button id="b">same</button>`)
+		},
+	})
+
+	ctx := chromedptest.Context(t)
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.Poll(`!!document.getElementById('b')`, nil,
+			chromedp.WithPollingInterval(200*time.Millisecond)),
+		chromedp.Evaluate(`document.getElementById('b').dataset.mark = 'kept'; true`, nil),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	waitHits(t, &hits, 3)
+	var mark string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('b').dataset.mark || ''`, &mark),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if mark != "kept" {
+		t.Errorf("an identical response replaced the region's nodes (mark=%q)", mark)
+	}
+}
+
+// TestPoll_WaitsWhileFocusIsInside: a region with keyboard focus inside
+// it is not replaced under the person using it. The swap lands on a
+// tick after focus leaves, and a terminal response applies regardless,
+// since its body is the last one the region will get.
+func TestPoll_WaitsWhileFocusIsInside(t *testing.T) {
+	var hits atomic.Int64
+	var terminal atomic.Bool
+	page := `<!doctype html><html><head></head><body>
+<button id="outside">outside</button>
+<div id="region" data-cui-poll="5s" data-cui-poll-src="/fresh">stale</div>
+<script src="/__gofastr/runtime.js"></script></body></html>`
+	base := startPollServer(t, page, map[string]http.HandlerFunc{
+		"/fresh": func(w http.ResponseWriter, r *http.Request) {
+			n := hits.Add(1)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if terminal.Load() {
+				w.Header().Set("X-Gofastr-Poll-Stop", "1")
+				fmt.Fprint(w, `<button id="b">done</button>`)
+				return
+			}
+			fmt.Fprintf(w, `<button id="b">v%d</button>`, n)
+		},
+	})
+
+	ctx := chromedptest.Context(t)
+	var first string
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(base+"/"),
+		chromedp.Poll(`!!document.getElementById('b')`, nil,
+			chromedp.WithPollingInterval(200*time.Millisecond)),
+		chromedp.Evaluate(`(function(){var b=document.getElementById('b'); b.focus(); return b.textContent;})()`, &first),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	seen := hits.Load()
+	waitHits(t, &hits, seen+2)
+	var held, active string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('b').textContent`, &held),
+		chromedp.Evaluate(`document.activeElement ? document.activeElement.id : ''`, &active),
+	); err != nil {
+		t.Fatalf("chromedp: %v", err)
+	}
+	if held != first || active != "b" {
+		t.Errorf("region replaced under focus: text %q (was %q), focus on %q", held, first, active)
+	}
+
+	// Focus leaves: the next tick applies what was held back.
+	var after string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.getElementById('outside').focus(); true`, nil),
+		chromedp.Poll(fmt.Sprintf(`document.getElementById('b').textContent !== %q`, first), nil,
+			chromedp.WithPollingInterval(200*time.Millisecond)),
+		chromedp.Evaluate(`(function(){var b=document.getElementById('b'); b.focus(); return b.textContent;})()`, &after),
+	); err != nil {
+		t.Fatalf("chromedp after blur: %v", err)
+	}
+	if after == first {
+		t.Errorf("region never caught up after focus left")
+	}
+
+	// Focus is inside again; the terminal body still lands.
+	terminal.Store(true)
+	if err := chromedp.Run(ctx,
+		chromedp.Poll(`document.getElementById('b').textContent === 'done'`, nil,
+			chromedp.WithPollingInterval(200*time.Millisecond),
+			chromedp.WithPollingTimeout(30*time.Second)),
+	); err != nil {
+		t.Fatalf("terminal body did not apply while focus was inside: %v", err)
 	}
 }

@@ -55,6 +55,11 @@ type WaterfallStep struct {
 	Depth int
 	// Tone colors the bar.
 	Tone WaterfallTone
+	// Note is a word beside the label that says what the tone means:
+	// "Failed", "Slow". A color tells nothing to someone who cannot
+	// see it, or cannot tell red from black, so a toned step says it
+	// in words too.
+	Note string
 }
 
 // WaterfallConfig configures a Waterfall.
@@ -142,6 +147,16 @@ func Waterfall(cfg WaterfallConfig) render.HTML {
 		sb.WriteString(strconv.Itoa(min(max(s.Depth, 0), waterfallMaxDepth)))
 		sb.WriteString(`"><span class="fui-waterfall__name">`)
 		sb.WriteString(string(render.Text(s.Label)))
+		if s.Note != "" {
+			sb.WriteString(` <span class="fui-waterfall__note`)
+			if s.Tone != WaterfallNeutral {
+				sb.WriteString(` fui-waterfall__note--`)
+				sb.WriteString(string(s.Tone))
+			}
+			sb.WriteString(`">`)
+			sb.WriteString(string(render.Text(s.Note)))
+			sb.WriteString(`</span>`)
+		}
 		sb.WriteString(`</span>`)
 		if s.Detail != "" {
 			sb.WriteString(`<span class="fui-waterfall__detail">`)
@@ -238,6 +253,13 @@ func waterfallCSS(_ style.Theme) string {
 [data-cui-comp="ui-waterfall"] .fui-waterfall__step--d5 { padding-inline-start: calc(var(--spacing-md, 8px) + 5 * var(--ui-waterfall-indent, var(--spacing-lg, 16px))); }
 [data-cui-comp="ui-waterfall"] .fui-waterfall__step--d6 { padding-inline-start: calc(var(--spacing-md, 8px) + 6 * var(--ui-waterfall-indent, var(--spacing-lg, 16px))); }
 [data-cui-comp="ui-waterfall"] .fui-waterfall__name { display: block; }
+[data-cui-comp="ui-waterfall"] .fui-waterfall__note {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted, #52525B);
+}
+[data-cui-comp="ui-waterfall"] .fui-waterfall__note--warning { color: var(--color-warning, #854D0E); }
+[data-cui-comp="ui-waterfall"] .fui-waterfall__note--danger { color: var(--color-danger, #B91C1C); }
 [data-cui-comp="ui-waterfall"] .fui-waterfall__detail {
   display: block;
   font-weight: var(--font-weight-normal);
@@ -261,6 +283,10 @@ func waterfallCSS(_ style.Theme) string {
 @container (max-width: 36rem) {
   [data-cui-comp="ui-waterfall"] .fui-waterfall__start { display: none; }
   [data-cui-comp="ui-waterfall"] .fui-waterfall__num { inline-size: 4.5rem; }
+  /* The detail is what tells one step from the next (six SELECTs that
+     differ in their last word): cut to one line here it shows a few
+     characters, so it wraps. */
+  [data-cui-comp="ui-waterfall"] .fui-waterfall__detail { white-space: normal; overflow-wrap: anywhere; }
   [data-cui-comp="ui-waterfall"] .fui-waterfall__lane { inline-size: var(--ui-waterfall-lane, 30%); }
 }`
 }

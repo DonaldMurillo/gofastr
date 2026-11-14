@@ -11,7 +11,9 @@ import (
 	"math"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 )
 
 // LogEntry is one log line. Line is the JSON object as written.
@@ -51,17 +53,64 @@ func (s *Store) TailLogs(n int, minLevel slog.Level) ([]LogEntry, error) {
 	return out, err
 }
 
-// SearchLogs returns up to limit lines stamped in [from, to] whose JSON
-// contains text, newest first. text is plain text, matched
-// case-sensitively against the line as written: it finds a message, an
-// attribute value or a key, and a quote in it matches a quote inside a
-// value, never the JSON's own.
+// wordMatcher reports whether a stored line holds every word of text,
+// in any order and any letter case (ASCII letters; others match as
+// written). Words are what spaces and equals signs separate, so text
+// copied off a screen that shows a line as "GET /search → 200" or
+// "dur_ms=52" finds it: the file holds those as separate JSON values,
+// and the arrow is the screen's own. A quote in a word matches a quote
+// inside a value, never the JSON's own. Text wrapped in double quotes
+// is one word, spaces and all: "mailbox busy" finds those two words
+// side by side. Empty text matches every line.
+//
+// The returned func keeps a scratch buffer: one goroutine at a time.
+func wordMatcher(text string) func(line []byte) bool {
+	var needles [][]byte
+	words := strings.FieldsFunc(text, func(r rune) bool {
+		return r == '=' || r == '→' || unicode.IsSpace(r)
+	})
+	if t := strings.TrimSpace(text); len(t) > 2 && t[0] == '"' && t[len(t)-1] == '"' {
+		words = []string{t[1 : len(t)-1]}
+	}
+	for _, w := range words {
+		n := appendJSONString(nil, w)
+		needles = append(needles, lowerASCII(n[1:len(n)-1]))
+	}
+	if len(needles) == 0 {
+		return func([]byte) bool { return true }
+	}
+	var low []byte
+	return func(line []byte) bool {
+		low = lowerASCII(append(low[:0], line...))
+		for _, n := range needles {
+			if !bytes.Contains(low, n) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// lowerASCII lowers A to Z in place. It leaves every other byte alone,
+// so it cannot map one character onto another the way Unicode folding
+// does.
+func lowerASCII(b []byte) []byte {
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + 'a' - 'A'
+		}
+	}
+	return b
+}
+
+// SearchLogs returns up to limit lines stamped in [from, to] that hold
+// every word of text, newest first. See wordMatcher for what a word is
+// and how it is compared.
 func (s *Store) SearchLogs(text string, from, to time.Time, limit int) ([]LogEntry, error) {
-	needle := appendJSONString(nil, text)
-	needle = needle[1 : len(needle)-1]
+	has := wordMatcher(text)
 	var out []LogEntry
 	err := s.logsBackward(from, to, limit, func(line []byte) (LogEntry, bool) {
-		if !bytes.Contains(line, needle) {
+		if !has(line) {
 			return LogEntry{}, false
 		}
 		e, ok := entry(line)
@@ -160,7 +209,8 @@ func (s *Store) SlowestTraces(route string, from, to time.Time, n int) ([]TraceS
 
 // LogQuery narrows a log listing. The zero value lists everything.
 type LogQuery struct {
-	// Text, when set, must appear in the line, as SearchLogs matches it.
+	// Text, when set, names words the line must hold, as SearchLogs
+	// matches them.
 	Text string
 	// MinLevel is the lowest level listed.
 	MinLevel slog.Level
@@ -196,11 +246,7 @@ const budgetEvery = 1024
 // the same query bounded there carries on. A zero stopped means the
 // whole window was read.
 func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []LogEntry, stopped time.Time, err error) {
-	var needle []byte
-	if q.Text != "" {
-		needle = appendJSONString(nil, q.Text)
-		needle = needle[1 : len(needle)-1]
-	}
+	has := wordMatcher(q.Text)
 	skips := make([][]byte, len(q.SkipPaths))
 	for i, p := range q.SkipPaths {
 		// The path attribute, up to but not including its closing quote.
@@ -208,7 +254,7 @@ func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []L
 		skips[i] = quoted[:len(quoted)-1]
 	}
 	pick := func(line []byte) (LogEntry, bool) {
-		if needle != nil && !bytes.Contains(line, needle) {
+		if !has(line) {
 			return LogEntry{}, false
 		}
 		for _, skip := range skips {

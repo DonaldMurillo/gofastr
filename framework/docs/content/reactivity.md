@@ -110,6 +110,11 @@ no fanout, no shared infrastructure, and no held connection.
   the floor.
 - `data-cui-poll-src` is the URL the runtime fetches. The response body
   replaces the region's `innerHTML`, exactly like an RPC signal swap.
+- A body identical to the last one applied is not written again, so an
+  unchanged region keeps its nodes, focus and scroll position.
+- While keyboard focus or a text selection is inside the region, the swap
+  waits. It lands on the first tick after the person leaves. A region is
+  never replaced under the person reading or operating it.
 - The interval is jittered so a fleet of tabs does not synchronize on a wall
   clock.
 - The poller pauses while the tab is hidden and resumes when it returns.

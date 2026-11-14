@@ -108,6 +108,7 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 		if method != "" && !strings.Contains(route, " ") {
 			e.Route = method + " " + route
 		}
+		e.Route = readableRoute(e.Route)
 	}
 	e.Stray = e.Root && s.SpanKind() == trace.SpanKindClient
 	// A trace whose first span is not a server's answer to a request is
@@ -124,3 +125,15 @@ func (*Processor) Shutdown(context.Context) error { return nil }
 
 // ForceFlush has nothing to flush.
 func (*Processor) ForceFlush(context.Context) error { return nil }
+
+// readableRoute turns two spellings a router uses into words. "{$}" is
+// net/http's mark for "this path and nothing under it": "/{$}" is the
+// home page, and reads as "/". "unmatched" is the tracing middleware's
+// word for a request no route took, which beside a method reads as a
+// route of that name.
+func readableRoute(route string) string {
+	if method, found := strings.CutSuffix(route, "unmatched"); found && (method == "" || strings.HasSuffix(method, " ")) {
+		return method + "(no route)"
+	}
+	return strings.TrimSuffix(route, "{$}")
+}

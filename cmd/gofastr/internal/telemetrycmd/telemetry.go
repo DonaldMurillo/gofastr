@@ -35,7 +35,7 @@ or the app with --app to read its default one
       --route <route>  only this route
   logs                 log lines, newest first
       --level <l>      minimum level: debug, info, warn, error
-      --grep <text>    only lines containing text (case-sensitive)
+      --grep <text>    only lines holding every word of text, in any case
   requests             kept requests (traces), newest first
       --failed         only requests that failed
       --slow <dur>     only requests that took at least this long (500ms)

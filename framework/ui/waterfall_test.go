@@ -162,3 +162,23 @@ func TestDurationText(t *testing.T) {
 		}
 	}
 }
+
+// A toned step says what its color means in words: the note sits in the
+// row's header cell, where assistive tech reads it with the step's
+// name, and carries the tone's class. A step with no note draws none.
+func TestWaterfallNoteSaysTheToneInWords(t *testing.T) {
+	out := string(ui.Waterfall(ui.WaterfallConfig{Label: "steps", Steps: []ui.WaterfallStep{
+		{Label: "charge card", Dur: time.Second, Tone: ui.WaterfallDanger, Note: "Failed <b>"},
+		{Label: "render", Dur: time.Second},
+		{Label: "wait", Dur: time.Second, Note: "Queued"},
+	}}))
+	if !strings.Contains(out, `<span class="fui-waterfall__name">charge card <span class="fui-waterfall__note fui-waterfall__note--danger">Failed &lt;b&gt;</span></span>`) {
+		t.Errorf("failed step's note missing, unescaped or outside the row header:\n%s", out)
+	}
+	if !strings.Contains(out, `<span class="fui-waterfall__note">Queued</span>`) {
+		t.Errorf("a note with no tone must draw with no tone class:\n%s", out)
+	}
+	if n := strings.Count(out, `class="fui-waterfall__note`); n != 2 {
+		t.Errorf("%d notes drawn, want 2: a step with no Note draws none", n)
+	}
+}

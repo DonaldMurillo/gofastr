@@ -142,6 +142,8 @@ func newApp(t *testing.T) http.Handler {
 
 func get(t *testing.T, h http.Handler, url string, allow bool) (int, string) {
 	t.Helper()
+	// A browser keeps the fragment to itself; so does this.
+	url, _, _ = strings.Cut(url, "#")
 	req := httptest.NewRequest(http.MethodGet, url, nil)
 	if allow {
 		req.Header.Set("X-Allow", "yes")
@@ -187,11 +189,13 @@ func TestRequestsListFilters(t *testing.T) {
 		// The default range is a day: the request from two days ago is out.
 		"": {[]string{"GET /orders/{id}", "/orders/42", "POST /orders", "GET /reports", ">500<", ">404<", "A step failed", "Slow",
 			"trace=" + okID, "trace=" + failedID}, []string{"GET /old"}},
-		"?window=7d":                        {[]string{"GET /old", "POST /orders"}, nil},
-		"?show=failed":                      {[]string{"POST /orders"}, []string{"GET /reports", "GET /orders/{id}"}},
-		"?show=slow":                        {[]string{"GET /reports"}, []string{"POST /orders", "GET /orders/{id}"}},
-		"?route=POST+%2Forders":             {[]string{"trace=" + failedID, "Route: POST /orders", "Show every route"}, []string{"trace=" + okID, "trace=" + slowID}},
-		"?show=failed&window=1h":            {[]string{"POST /orders", `name="show" type="hidden" value="failed"`}, nil},
+		"?window=7d":            {[]string{"GET /old", "POST /orders"}, nil},
+		"?show=failed":          {[]string{"POST /orders"}, []string{"GET /reports", "GET /orders/{id}"}},
+		"?show=slow":            {[]string{"GET /reports"}, []string{"POST /orders", "GET /orders/{id}"}},
+		"?route=POST+%2Forders": {[]string{"trace=" + failedID, "Route: POST /orders", "Show every route"}, []string{"trace=" + okID, "trace=" + slowID}},
+		"?show=failed&window=1h": {[]string{"POST /orders",
+			// each range keeps the failed filter, and the chosen one is marked
+			`href="/telemetry/requests?show=failed"`, `aria-current="true" class="fui-seglinks__item" data-cui-internal="" href="/telemetry/requests?show=failed&amp;window=1h"`}, nil},
 		"?window=nonsense":                  {[]string{"POST /orders"}, []string{"GET /old"}},
 		"?show=failed&route=GET+%2Freports": {[]string{"No requests here"}, []string{"trace="}},
 	}
@@ -227,7 +231,7 @@ func TestOneRequestShowsItsStepsAndItsLogLines(t *testing.T) {
 			// the steps, as a tree: the request, its query, the query's step
 			`fui-waterfall__step--d0"><span class="fui-waterfall__name">GET /orders/{id}</span>`,
 			`fui-waterfall__step--d1"><span class="fui-waterfall__name">SELECT</span><span class="fui-waterfall__detail">SELECT * FROM orders WHERE id = ?</span>`,
-			`fui-waterfall__step--d2"><span class="fui-waterfall__name">decode</span>`,
+			`fui-waterfall__step--d2"><span class="fui-waterfall__name">decode <span class="fui-waterfall__note fui-waterfall__note--danger">Failed</span></span>`,
 			`<rect class="fui-waterfall__bar fui-waterfall__bar--danger"`,
 			// its own log lines, and only those
 			"order.loaded", "order=42", "GET /orders/42 → 200"},
@@ -373,7 +377,20 @@ func TestIssuesGroupFailuresAndLeadToTheirRequests(t *testing.T) {
 	has(t, "issues", body,
 		[]string{"card N declined", "POST /orders", "inventory", ">500<", "Issues", "What went wrong"},
 		[]string{"card 4411", "<b>inventory</b>", "GET /reports", "GET /orders/{id}", "Nothing failed"})
-	links := issueLink.FindAllStringSubmatch(body, -1)
+	// Each issue has two links: its name, to every request that failed
+	// this way, and "Open", to the newest of them at the top of its page.
+	every := issueLink.FindAllStringSubmatch(body, -1)
+	var links [][]string
+	for _, l := range every {
+		if !strings.Contains(l[1], "trace=") {
+			links = append(links, l)
+		} else if !strings.HasSuffix(l[1], "#top") || !strings.Contains(l[1], "show=failed") {
+			t.Errorf("the link to an issue's newest request %q must open at the top and carry its list", l[1])
+		}
+	}
+	if len(every) != 4 {
+		t.Fatalf("%d links from 2 issues, want a name and an Open each", len(every))
+	}
 	if len(links) != 2 {
 		t.Fatalf("%d issues link to their requests, want 2", len(links))
 	}
@@ -599,16 +616,16 @@ func TestOverviewListsBackgroundWorkApart(t *testing.T) {
 	_, body := get(t, h, "/telemetry/overview", true)
 	has(t, "the overview", body, []string{
 		">51<", // the requests, as before
-		"Background work, busiest first", "process welcome-email", "2 (33%)", "cron nightly", ">3.5 s<",
+		">Background work</caption>", "process welcome-email", "2 (33%)", "cron nightly", ">3.5 s<",
 		`href="/telemetry/requests?route=process+welcome-email"`,
 	}, []string{">58<"})
-	i := strings.Index(body, "Background work, busiest first")
+	i := strings.Index(body, ">Background work</caption>")
 	table := body[i:][:strings.Index(body[i:], "</table>")]
 	has(t, "the background work table", table, []string{">Work<", ">Runs<", ">Failed<", ">Half within<"}, []string{">Slow<", ">Requests<", "GET /orders"})
 	if strings.Index(table, "process welcome-email") > strings.Index(table, "cron nightly") {
 		t.Error("the work is not busiest first")
 	}
-	if strings.Index(body, "Routes, busiest first") > i || strings.Index(body, "The machine") < i {
+	if strings.Index(body, ">Routes</caption>") > i || !strings.Contains(body, ">Routes</caption>") || strings.Index(body, "The machine") < i {
 		t.Error("the tables are out of order: routes, background work, the machine")
 	}
 }
@@ -635,5 +652,5 @@ func TestOverviewOfAWorkerWithNoRequests(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
 	_, body := get(t, app.Router(), "/telemetry/overview", true)
-	has(t, "a worker", body, []string{"No requests counted yet", "Background work, busiest first", "process resize-image", ">5<"}, []string{"Routes, busiest first"})
+	has(t, "a worker", body, []string{"No requests counted yet", ">Background work</caption>", "process resize-image", ">5<"}, []string{"Routes, busiest first"})
 }
