@@ -541,3 +541,125 @@ func TestDiskRuleResolvesAtAnyLine(t *testing.T) {
 		}
 	}
 }
+
+// Paging by time lists every row once, even where two rows were written
+// the other way round from their times: before, the one written out of
+// turn across a page's edge was on neither page.
+func TestPagingListsOutOfOrderRowsOnce(t *testing.T) {
+	dir := t.TempDir()
+	base := time.Date(2026, 11, 12, 10, 0, 0, 0, time.UTC)
+	const total = 60
+	id := func(i int) string {
+		return strings.Repeat("0", 30) + string("0123456789abcdef"[i>>4&15]) + string("0123456789abcdef"[i&15])
+	}
+	// Row i ended i seconds in, so the allowance for lines out of order
+	// (timeSlop, two seconds) is two rows wide, not the whole file.
+	// Written in order, except that every sixth row is written two
+	// places early or two places late, turn about: wherever a page of
+	// 6 or of 5 ends, some row near that edge is out of turn by as much
+	// as the allowance covers, on either side.
+	order := make([]int, total)
+	for i := range order {
+		order[i] = i
+	}
+	for n, i := 0, 4; i+2 < total; n, i = n+1, i+6 {
+		if n%2 == 0 {
+			order[i], order[i+1], order[i+2] = order[i+2], order[i], order[i+1] // i+2 written early
+		} else {
+			order[i], order[i+1], order[i+2] = order[i+1], order[i+2], order[i] // i written late
+		}
+	}
+	var traces, logs []byte
+	for _, i := range order {
+		at := base.Add(time.Duration(i) * time.Second)
+		traces = AppendTrace(traces, Trace{Time: at, TraceID: id(i), Route: "GET /a", Status: 200, Dur: time.Millisecond,
+			Spans: []Span{{SpanID: "s", Name: "x", Dur: time.Millisecond}}})
+		logs = append(append(logs, logLine(at, id(i))...), '\n')
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName(KindTraces, base)), traces, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, FileName(KindLogs, base)), logs, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(Config{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	check := func(what string, seen []string) {
+		t.Helper()
+		if len(seen) != total {
+			t.Errorf("%s: %d rows listed, want %d", what, len(seen), total)
+		}
+		count := map[string]int{}
+		for _, v := range seen {
+			count[v]++
+		}
+		for i := range total {
+			if count[id(i)] != 1 {
+				t.Errorf("%s: row %d listed %d times", what, i, count[id(i)])
+			}
+		}
+	}
+
+	for _, size := range []int{6, 5, 1} {
+		// Older, as the page's link asks: everything before the oldest shown.
+		var seen []string
+		to := time.Time{}
+		for range total {
+			page, err := s.Traces(TraceQuery{To: to}, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page) == 0 {
+				break
+			}
+			for i, tr := range page {
+				if i > 0 && tr.Time.After(page[i-1].Time) {
+					t.Fatalf("a page is not newest first: %v after %v", tr.Time, page[i-1].Time)
+				}
+				seen = append(seen, tr.TraceID)
+			}
+			to = page[len(page)-1].Time.Add(-time.Nanosecond)
+		}
+		check("traces, walking older", seen)
+
+		// Newer: everything after the newest shown, read oldest first.
+		seen = nil
+		from := base.Add(-time.Second)
+		for range total {
+			page, err := s.Traces(TraceQuery{From: from, OldestFirst: true}, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page) == 0 {
+				break
+			}
+			for _, tr := range page {
+				seen = append(seen, tr.TraceID)
+			}
+			from = page[0].Time.Add(time.Nanosecond) // returned newest first
+		}
+		check("traces, walking newer", seen)
+
+		seen = nil
+		to = time.Time{}
+		for range total {
+			page, err := s.Logs(LogQuery{To: to, MinLevel: -100}, size)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page) == 0 {
+				break
+			}
+			for _, e := range page {
+				msg, _ := stringField(e.Line, `"msg":`)
+				seen = append(seen, msg)
+			}
+			to = page[len(page)-1].Time.Add(-time.Nanosecond)
+		}
+		check("logs, walking older", seen)
+	}
+}

@@ -65,7 +65,8 @@ few lines, and link the PR or the docs page for the rest.
   a failed request from the failed list; a late write cannot reopen a
   packed day; refused request counts are kept and written later; a
   query survives a day packed or removed under it; a block's checksum
-  is read. Stopping the app no longer waits out a heartbeat or a
+  is read; paging lists every row once where two rows were written the
+  other way round from their times. Stopping the app no longer waits out a heartbeat or a
   notifier in flight, and `Init` runs once. A list refreshes on a timer
   only for a day or less with nothing to search for. `gofastr telemetry
   ... --json` escapes characters a terminal obeys.

@@ -278,6 +278,7 @@ func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []L
 		return nil, time.Time{}, nil
 	}
 	start, seen := time.Now(), 0
+	pg := pageOf[LogEntry]{limit: limit, newestFirst: !q.OldestFirst, at: func(e LogEntry) time.Time { return e.Time }}
 	err = s.scan(KindLogs, q.From, q.To, !q.OldestFirst, false, func(line []byte) bool {
 		// Only lines inside the window count toward a look at the
 		// clock, and only one of them can be where the search stops. A
@@ -295,10 +296,11 @@ func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []L
 		}
 		if e, ok := pick(line); ok {
 			e.Line = bytes.Clone(e.Line)
-			out = append(out, e)
+			pg.add(e)
 		}
-		return len(out) < limit
+		return pg.more(line)
 	})
+	out = pg.rows()
 	if q.OldestFirst {
 		slices.Reverse(out)
 	}
@@ -343,17 +345,77 @@ func (s *Store) Traces(q TraceQuery, limit int) ([]TraceSummary, error) {
 		}
 		return sum, q.Issue == "" || (sum.Error && IssueID(sum) == q.Issue)
 	}
-	var out []TraceSummary
+	pg := pageOf[TraceSummary]{limit: limit, newestFirst: !q.OldestFirst, at: func(t TraceSummary) time.Time { return t.Time }}
 	err := s.scan(KindTraces, q.From, q.To, !q.OldestFirst, true, func(line []byte) bool {
 		if sum, ok := match(line); ok {
-			out = append(out, sum)
+			pg.add(sum)
 		}
-		return len(out) < limit
+		return pg.more(line)
 	})
+	out := pg.rows()
 	if q.OldestFirst {
 		slices.Reverse(out)
 	}
 	return out, err
+}
+
+// pageOf gathers one page of a listing. A file is in the order its
+// lines were written, which is the order of their times give or take
+// timeSlop: two requests that end in the same instant can be written
+// either way round. A page cut at the limit-th row read, with the next
+// page asked for by time ("older than the oldest shown"), lost the row
+// that was written out of turn across that cut: it was newer than the
+// page's last row and so on neither page. So the read goes on past the
+// limit until the lines are timeSlop beyond the page's edge, and the
+// page is the limit rows nearest the start by time.
+type pageOf[T any] struct {
+	limit       int
+	newestFirst bool
+	at          func(T) time.Time
+	got         []T
+	full        bool
+	edge        time.Time // the far end of the first limit rows read
+}
+
+func (p *pageOf[T]) add(row T) {
+	p.got = append(p.got, row)
+	if p.full || len(p.got) < p.limit {
+		return
+	}
+	p.full = true
+	p.edge = p.at(p.got[0])
+	for _, r := range p.got[1:] {
+		if t := p.at(r); t.Before(p.edge) == p.newestFirst {
+			p.edge = t
+		}
+	}
+}
+
+// more reports whether the scan should go on after line.
+func (p *pageOf[T]) more(line []byte) bool {
+	if !p.full {
+		return true
+	}
+	t, ok := lineTime(line)
+	if !ok {
+		return true
+	}
+	if p.newestFirst {
+		return !t.Before(p.edge.Add(-timeSlop))
+	}
+	return !t.After(p.edge.Add(timeSlop))
+}
+
+// rows returns the page in the order it was read for: newest first, or
+// oldest first.
+func (p *pageOf[T]) rows() []T {
+	slices.SortStableFunc(p.got, func(a, b T) int {
+		if p.newestFirst {
+			return p.at(b).Compare(p.at(a))
+		}
+		return p.at(a).Compare(p.at(b))
+	})
+	return p.got[:min(len(p.got), p.limit)]
 }
 
 // maxMicros is the most microseconds a time.Duration holds.
@@ -420,13 +482,16 @@ func (s *Store) logsBackward(from, to time.Time, limit int, pick func([]byte) (L
 	if limit <= 0 {
 		return nil
 	}
-	return s.scan(KindLogs, from, to, true, false, func(line []byte) bool {
+	pg := pageOf[LogEntry]{limit: limit, newestFirst: true, at: func(e LogEntry) time.Time { return e.Time }}
+	err := s.scan(KindLogs, from, to, true, false, func(line []byte) bool {
 		if e, ok := pick(line); ok {
 			e.Line = bytes.Clone(e.Line)
-			*out = append(*out, e)
+			pg.add(e)
 		}
-		return len(*out) < limit
+		return pg.more(line)
 	})
+	*out = append(*out, pg.rows()...)
+	return err
 }
 
 func inWindow(t, from, to time.Time) bool {
