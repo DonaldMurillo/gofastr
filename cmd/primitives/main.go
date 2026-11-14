@@ -248,7 +248,10 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 	}
 	state := treeState(c.Root, changed)
 	tested := state != "" && slices.Contains(toldFiles(c.Root, "stop-pass"), state)
-	notices := docsNotices(c, changed, toldFiles(c.Root, docsKey(event.Session)))
+	var notices []docsNotice
+	if sessionName.MatchString(event.Session) {
+		notices = docsNotices(c, changed, toldFiles(c.Root, docsKey(event.Session)))
+	}
 	var problems []string
 	for _, f := range c.Lint() {
 		problems = append(problems, f.String())
@@ -283,26 +286,41 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 	if state != "" {
 		rememberTold(c.Root, "stop-pass", []string{state})
 	}
+	var lines []string
+	if sessionName.MatchString(event.Session) && len(toldFiles(c.Root, siblingsKey(event.Session))) == 0 {
+		rememberTold(c.Root, siblingsKey(event.Session), []string{"asked"})
+		lines = append(lines, siblingsQuestion)
+	}
 	if len(notices) > 0 {
-		var ids, lines []string
+		var ids []string
 		for _, n := range notices {
 			ids = append(ids, n.primitive)
 			lines = append(lines, n.text)
 		}
 		rememberTold(c.Root, docsKey(event.Session), append(toldFiles(c.Root, docsKey(event.Session)), ids...))
+	}
+	if len(lines) > 0 {
 		return "Before you finish:\n\n" + strings.Join(lines, "\n\n"), ""
 	}
 	return "", ""
 }
 
+// siblingsQuestion is asked once per session, when it has changed code
+// and that code passes. Agents fix the path they were pointed at and
+// stop; asked this, they look at the others.
+const siblingsQuestion = "Does any other code path do the same job as the one you changed: a sibling handler, another mode or spelling of the same input, the layer above or below? " +
+	"Check them for the same defect or the same missing change. Fix what you find, or list in your summary the paths you checked and why each needs nothing."
+
+func siblingsKey(session string) string { return session + "-siblings" }
+
 func docsKey(session string) string { return session + "-docs" }
 
 type docsNotice struct{ primitive, text string }
 
-// docsNotices names, for each primitive whose code changed while none of
-// its docs did, the docs to update and anything else the primitive asks
-// for on a change. A primitive the session was already told about is
-// left out.
+// docsNotices names, for each primitive whose code changed, what the
+// primitive asks for on a change and, when none of its docs changed, the
+// docs to update. A primitive the session was already told about is left
+// out, and so is a session the hook cannot name.
 func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 	var out []docsNotice
 	seen := map[string]bool{}
@@ -321,12 +339,12 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 				docs = append(docs, ref.Value)
 				touched = touched || slices.Contains(changed, ref.Value)
 			}
-			if touched {
+			if (touched || len(docs) == 0) && len(p.OnChange) == 0 {
 				continue
 			}
 			var b strings.Builder
 			fmt.Fprintf(&b, "You changed %s (%s)", p.ID, strings.TrimSuffix(p.Summary, "."))
-			if len(docs) > 0 {
+			if len(docs) > 0 && !touched {
 				fmt.Fprintf(&b, ", and none of its docs changed: %s. Update them, or say in your summary why this change needs none.", strings.Join(docs, ", "))
 			} else {
 				b.WriteString(".")

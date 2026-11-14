@@ -197,17 +197,24 @@ func TestStop(t *testing.T) {
 	git("commit", "-q", "-m", "docs")
 	const session = `{"session_id":"s1"}`
 	code, msg = fire(session)
-	for _, want := range []string{"You changed x (Does x)", "docs/x.md", "Add an upgrade note"} {
+	for _, want := range []string{"Does any other code path do the same job", "You changed x (Does x)", "docs/x.md", "Add an upgrade note"} {
 		if code != 2 || !strings.Contains(msg, want) {
 			t.Fatalf("code changed and its docs did not: stop = %d, message %q, want %q", code, msg, want)
 		}
 	}
 	if code, msg := fire(session); code != 0 {
-		t.Errorf("the same session was asked about the same docs twice: %d %s", code, msg)
+		t.Errorf("the same session was asked the same things twice: %d %s", code, msg)
 	}
 	write("docs/x.md", "# x\n\nOne is one.\n")
-	if code, msg := fire(`{"session_id":"s2"}`); code != 0 {
-		t.Errorf("the docs changed with the code, yet stop = %d: %s", code, msg)
+	code, msg = fire(`{"session_id":"s2"}`)
+	if code != 2 || !strings.Contains(msg, "Add an upgrade note") || !strings.Contains(msg, "Does any other code path") {
+		t.Errorf("the docs changed with the code: the on_change line and the question are still due, got %d %q", code, msg)
+	}
+	if strings.Contains(msg, "none of its docs changed") {
+		t.Errorf("the docs changed, yet the notice asks for them: %q", msg)
+	}
+	if code, msg := fire(`{}`); code != 0 {
+		t.Errorf("a session the hook cannot name is asked nothing, got %d %q", code, msg)
 	}
 	if passed := toldFiles(root, "stop-pass"); len(passed) != 1 {
 		t.Errorf("a pass was not remembered: %v", passed)
