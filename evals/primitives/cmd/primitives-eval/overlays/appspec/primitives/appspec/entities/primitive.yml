@@ -1,0 +1,55 @@
+primitive: appspec.entities
+summary: Holds the entity-side checks that keep every name a spec transcribes a valid Go identifier and SQL name, keep owner-scoped keys per user, flag unscoped PII, and hold the relation and hook vocabularies the generator and kiln share.
+code:
+  - cmd/gofastr/internal/appspec/sqlident.go
+  - cmd/gofastr/internal/appspec/ownerkey.go
+  - cmd/gofastr/internal/appspec/lint_pii.go
+  - cmd/gofastr/internal/appspec/generate.go
+  - cmd/gofastr/internal/appspec/generate_keys.go
+  - cmd/gofastr/internal/appspec/appspec_endpoints.go
+  - cmd/gofastr/internal/appspec/casing.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - "A battery table the generated app mounts joins appSpecBatteryTables in sqlident.go."
+  - "A new hook lifecycle point is added to AppSpecHookTypes and to mapHookType in kiln/render/render.go together, or a hook that fires in the kiln preview fires nowhere in the shipped app."
+twins:
+  - job: Every spec name that lands in Go identifier position is refused unless it derives a valid identifier.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: ValidateAppSpec, the entity, field, screen and relation name checks through project.IsGoIdentifier(ToCamelCase).
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: ValidateAppSpec, the hook handler check and the middleware, plugins and helpers group loop.
+      - path: core/settings/endpoints.go
+        note: Endpoint.Validate, the handler's exported func name (goExportedRe), run by ValidateAppSpecEndpoints.
+      - path: cmd/gofastr/internal/appspec/sqlident.go
+        note: validateAppSpecSQLNames, the SQL-name sibling, which skips names ValidateAppSpec already refused.
+  - job: Relation kinds are mapped between YAML spellings, framework.RelationType and generated const names.
+    sites:
+      - path: cmd/gofastr/internal/appspec/generate.go
+        note: RelationKinds, the table appgen relationTypeConst and pack relationTypeFromConstName read.
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: relationTypeFromString, the decoder's own switch with its aliases (belongsto, hasmany), outside the table.
+      - path: cmd/gofastr/internal/appspec/pack.go
+        note: relationTypeFromConstName, the reverse lookup pack uses.
+      - path: cmd/gofastr/internal/appgen/generate.go
+        note: RelationKindFor and relationTypeConst, the emitter's lookup.
+  - job: The set of hook lifecycle points a spec may name is the set the kiln preview registers hooks for.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: AppSpecHookTypes, checked by ValidateAppSpec for hooks[].when.
+      - path: kiln/render/render.go
+        note: mapHookType, the preview's switch over the same eight spellings.
+invariants:
+  - id: hook-handler-is-identifier
+    rule: A hook handler that does not derive a Go identifier is refused at validate.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestHookHandlerMustDeriveIdentifier
+  - id: hook-entity-and-when-known
+    rule: A hook with an empty or undeclared entity, or a when outside the eight lifecycle points, is refused, and each of the eight stays legal.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestHookTargetEntityAndWhenMustBeKnown
+  - id: owner-scoped-key-holds-owner
+    rule: An owner-scoped entity whose primary key leaves out the owner column and has no generated key column is refused.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestOwnerScopedKeyNeedsOwner

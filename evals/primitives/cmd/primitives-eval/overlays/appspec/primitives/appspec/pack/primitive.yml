@@ -1,0 +1,24 @@
+primitive: appspec.pack
+summary: Reads a generated app's Go source (entity Define calls, app.go and main.go) back into AppSpec values, so gofastr pack and generate app --add see the spec the code was generated from.
+code:
+  - cmd/gofastr/internal/appspec/pack.go
+  - cmd/gofastr/internal/appspec/generated_app.go
+docs:
+  - framework/docs/content/app-spec.md
+on_change:
+  - "A new field the generator emits into an entity literal, app.go or main.go gets a reader here, or pack silently drops it and the round trip stops being exact."
+  - "A default the generator fills in (admin path, admin role, devBaseURL) reads back as unset, so a packed spec does not pin a default the author never wrote."
+twins:
+  - job: The PWA display mode vocabulary is spelled at validate, at emit and at read-back.
+    sites:
+      - path: cmd/gofastr/internal/appspec/appspec.go
+        note: ValidateAppSpec app.pwa.display switch (standalone, fullscreen, minimal-ui, browser).
+      - path: cmd/gofastr/internal/appgen/appspec.go
+        note: appSpecPWADisplayConst, the emitted uihost constant.
+      - path: cmd/gofastr/internal/appspec/generated_app.go
+        note: pwaDisplayName, the constant read back to the spec string.
+invariants:
+  - id: pack-refuses-unheld-field-key
+    rule: Pack refuses a generated field literal holding a key it cannot read back, rather than dropping it.
+    enforced_by:
+      - test: cmd/gofastr/internal/appspec.TestPackRefusesUnheldFieldKey

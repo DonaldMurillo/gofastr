@@ -263,7 +263,7 @@ func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *
 	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
 		return fmt.Errorf("overlay the registry tooling: %w", err)
 	}
-	base := path.Join("overlays", t.ID)
+	base := path.Join("overlays", t.overlay())
 	err = fs.WalkDir(overlays, base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

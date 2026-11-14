@@ -1,0 +1,14 @@
+package uinodev1
+
+import "testing"
+
+func TestReplayReportedDupColumnKeys(t *testing.T) {
+	dup := `{"component":"data-table","props":{"columns":[{"key":"a","label":"First"},{"key":"a","label":"Second"}],"rows":[{"cells":[{"text":"x"},{"text":"y"}]}]}}`
+	if _, err := Validate([]byte(dup), DefaultLimits()); err == nil {
+		t.Error("a data-table whose columns repeat a key validated")
+	}
+	ok := `{"component":"data-table","props":{"columns":[{"key":"a","label":"First"},{"key":"A","label":"Second"}],"rows":[{"cells":[{"text":"x"},{"text":"y"}]}]}}`
+	if _, err := Validate([]byte(ok), DefaultLimits()); err != nil {
+		t.Errorf("distinct keys no longer validate: %v", err)
+	}
+}

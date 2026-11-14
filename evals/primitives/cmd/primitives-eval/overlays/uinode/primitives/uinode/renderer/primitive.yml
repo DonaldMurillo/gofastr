@@ -1,0 +1,32 @@
+primitive: uinode.renderer
+summary: "The host renderer that maps each validated ui.node.v1 node to a framework/ui or core-ui/html primitive and assigns every id, class, variant and data-cui-rpc URL itself."
+code:
+  - framework/uihost/uinoderender/
+docs:
+  - framework/docs/content/process-modules.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - "Compose framework/ui and core-ui/html primitives only; a mapping that needs markup or CSS the design system lacks is a missing component or variant to add upstream, never local markup here."
+  - "A signature change to New or ActionResolver is a breaking upgrade note with a find block on gofastr/framework/uihost/uinoderender.New, as v0.94.0.yml did for the context argument."
+  - "The renderer does not re-validate structure; a new mapping that calls a primitive which panics on some input either relies on a validator rule for it or guards it here, as renderDataTable does for empty columns."
+  - "New words the renderer shows go through i18n.Define in phrases.go and are drawn in the context passed to New."
+invariants:
+  - id: unresolved-action-ref-fails-closed
+    rule: "Render returns an error, and no markup, for a button or action_ref link whose ref the ActionResolver does not resolve or when no resolver is wired."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderButtonUnresolvedFailsClosed
+      - test: framework/uihost/uinoderender.TestRenderNilResolverFailsClosed
+  - id: module-strings-escaped
+    rule: "Every free-text prop string reaches the output entity-escaped, and every schema string field has an escape surface or a justified exemption."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestModuleStringsEscapeAtEveryProp
+      - test: framework/uihost/uinoderender.TestEscapeInventoryMatchesSchema
+      - test: framework/uihost/uinoderender.TestImageSrcQuoteIsEscapedNotRejected
+  - id: empty-table-columns-no-panic
+    rule: "A data-table node with no columns renders an empty state instead of reaching ui.DataTable, which panics on empty columns."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderDataTableEmptyColumns
+  - id: layout-emits-no-style
+    rule: "A validated tree nesting stack, grid, cluster, section and card with gap and columns set renders with no style attribute anywhere in the output."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestLayoutChainEmitsNoStyleAttribute

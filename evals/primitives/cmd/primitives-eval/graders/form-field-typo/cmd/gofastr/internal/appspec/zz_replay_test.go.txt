@@ -1,0 +1,64 @@
+package appspec
+
+import (
+	"strings"
+	"testing"
+)
+
+const replayExtraFields = `
+      - name: id
+        type: string
+      - name: notes
+        type: string
+        hidden: true
+      - name: code
+        type: string
+        read_only: true`
+
+func replayForm(t *testing.T, fields, mode string) error {
+	t.Helper()
+	form := "\n      - kind: entity_form\n        entity: tours\n"
+	if mode != "" {
+		form += "        mode: " + mode + "\n"
+	}
+	form += "        fields: [" + fields + "]\n"
+	src := entityFormSpec(form, replayExtraFields, "")
+	if mode == "edit" {
+		src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}/edit", 1)
+	}
+	return loadEntityFormSpec(t, src)
+}
+
+func replayRefused(t *testing.T, what, fields, mode string) {
+	t.Helper()
+	if err := replayForm(t, "property_id, visitor_name", ""); err != nil {
+		t.Fatalf("a form of drawable fields no longer loads: %v", err)
+	}
+	if err := replayForm(t, fields, mode); err == nil {
+		t.Errorf("%s validated", what)
+	}
+}
+
+func TestReplayReportedTypo(t *testing.T) {
+	replayRefused(t, "a misspelled field", "property_id, visitor_name, visitor_emial", "")
+}
+
+func TestReplayTwinTypoOnEdit(t *testing.T) {
+	replayRefused(t, "a misspelled field on an edit form", "visitor_nmae", "edit")
+}
+
+func TestReplayTwinHidden(t *testing.T) {
+	replayRefused(t, "a hidden field", "property_id, visitor_name, notes", "")
+}
+
+func TestReplayTwinReadOnlyOnCreate(t *testing.T) {
+	replayRefused(t, "a read_only field on a create form", "property_id, visitor_name, code", "")
+}
+
+func TestReplayTwinSystemColumn(t *testing.T) {
+	replayRefused(t, "a server-filled column on a create form", "property_id, visitor_name, id", "")
+}
+
+func TestReplayTwinListedTwice(t *testing.T) {
+	replayRefused(t, "a field listed twice", "property_id, visitor_name, visitor_name", "")
+}

@@ -48,6 +48,13 @@ reports one path. The real fix reached others with the same defect.
 | `repeated-query-key` | `81850a28^` | a repeated `fields` key on a list | repeated `where` and `q` on a list, `fields` on read-one |
 | `observer-panic` | `ae4a44a9^` | a panicking permission observer | a panicking router serve hook |
 | `undecodable-filter` | `830f31b8^` | an undecodable filter on the admin audit page | the admin jobs and search pages |
+| `form-field-typo` | `5cbb3145^` | a misspelled name in an `entity_form` fields list | the same on an edit form; a hidden, read-only, server-filled or repeated entry |
+| `node-block-entity` | `289df96a^` | an `entity_list` under a node block | `entity_form`, `entity_detail`, `login_form` and `signup_form` there, nested or spelled `type:` |
+| `dup-column-key` | `765ffef4^` | `Validate` accepting repeated data-table column keys | the renderer panicking on a hand-built tree |
+
+The registry entries for the first three tasks were written knowing the
+bugs. Those for the last three were written by a separate agent that was
+given the pre-fix code and the format, and not told what the bugs were.
 
 Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and

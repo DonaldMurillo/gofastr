@@ -44,6 +44,9 @@ type task struct {
 	Suite string
 	// Ref, on a replay task, is the commit just before the real fix.
 	Ref string
+	// Overlay names the directory under overlays/ holding the registry
+	// entries a registry cell is given. Empty means the task's own ID.
+	Overlay string
 	// Graders, on a replay task, names the directory of held-out tests
 	// under graders/: TestReplayReported* covers the path the prompt
 	// reports, TestReplayTwin* the other paths the real fix reached.
@@ -67,6 +70,13 @@ const replayClosing = "\n\nWhen you are done, reply with a short summary of what
 
 const closing = "\n\nWhen you are done, reply with a short summary of what you changed. If you decide not to make the change, say why instead."
 
+func (t task) overlay() string {
+	if t.Overlay != "" {
+		return t.Overlay
+	}
+	return t.ID
+}
+
 var tasks = []task{
 	{
 		ID: "repeated-query-key", Suite: suiteReplay, Ref: "81850a28^", Graders: "repeated-query-key",
@@ -86,6 +96,24 @@ var tasks = []task{
 		Prompt: "In battery/admin, the audit page silently drops a filter whose query pair does not decode: /admin/audit?entity=posts%ZZ lists every entity, wider than the reader asked. " +
 			"The entityui lists show a \"Filter not applied\" warning in this case. Make the audit page show the same warning." + replayClosing,
 		Packages: []string{"./battery/admin/"},
+	},
+	{
+		ID: "form-field-typo", Suite: suiteReplay, Ref: "5cbb3145^", Graders: "form-field-typo", Overlay: "appspec",
+		Prompt: "In gofastr.yml, an entity_form block whose fields: list has a typo, such as visitor_emial for visitor_email, validates, and the generated form drops that field without a word. " +
+			"entity_list refuses an unknown column when the spec loads. Make entity_form refuse an unknown field name at load too, naming the entry." + replayClosing,
+		Packages: []string{"./cmd/gofastr/internal/appspec/"},
+	},
+	{
+		ID: "node-block-entity", Suite: suiteReplay, Ref: "289df96a^", Graders: "node-block-entity", Overlay: "appspec",
+		Prompt: "In gofastr.yml, an entity_list nested under a node block (type: header, type: div and the like) validates, and the screen then draws an \"unknown kind\" HTML comment where the list belongs. " +
+			"Refuse it when the spec loads." + replayClosing,
+		Packages: []string{"./cmd/gofastr/internal/appspec/"},
+	},
+	{
+		ID: "dup-column-key", Suite: suiteReplay, Ref: "765ffef4^", Graders: "dup-column-key", Overlay: "uinode",
+		Prompt: "uinodev1.Validate (core-ui/uinodev1) accepts a data-table whose columns repeat a key. The host renderer then panics in headless.Table, so a module route answers 500 on every hit. " +
+			"Make Validate refuse the repeat." + replayClosing,
+		Packages: []string{"./core-ui/uinodev1/", "./framework/uihost/uinoderender/"},
 	},
 	{
 		ID: "scope-equality", Suite: suiteTrap,
