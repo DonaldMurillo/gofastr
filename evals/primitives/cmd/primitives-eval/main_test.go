@@ -53,6 +53,37 @@ func TestStripRegistry(t *testing.T) {
 	}
 }
 
+func TestIsolateDropsHarnessAndProjectSettings(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{".claude/settings.json", ".claude/skills/x/SKILL.md", "evals/primitives/README.md", "evals/other/README.md"} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := isolate(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{".claude/settings.json", "evals/primitives"} {
+		if _, err := root.Stat(gone); err == nil {
+			t.Errorf("%s survived: a cell would inherit it", gone)
+		}
+	}
+	for _, kept := range []string{".claude/skills/x/SKILL.md", "evals/other/README.md"} {
+		if _, err := root.Stat(kept); err != nil {
+			t.Errorf("%s was removed: %v", kept, err)
+		}
+	}
+}
+
 func TestReadTranscript(t *testing.T) {
 	stream := strings.Join([]string{
 		`not json`,

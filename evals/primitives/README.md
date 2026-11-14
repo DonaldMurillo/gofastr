@@ -89,7 +89,9 @@ a cell inside it would read this checkout's `CLAUDE.md`.
 - Each cell is a fresh one-commit repository, so the agent cannot read
   this checkout's history, where the deleted comments still are.
 - `evals/primitives/` is removed from every cell: it holds the prompts
-  and the grading.
+  and the grading. So is `.claude/settings.json`: a cell must not
+  inherit this repository's hooks and deny rules. The `hook` and
+  `harness` conditions write their own.
 - The agent runs with project settings only and no MCP servers.
 
 ## What it does not show

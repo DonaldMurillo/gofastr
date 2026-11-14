@@ -204,8 +204,7 @@ func prepare(cfg config, t task, condition, dir string) error {
 		return err
 	}
 	defer root.Close()
-	// The harness holds the prompts and the grading: no cell may read it.
-	if err := root.RemoveAll("evals/primitives"); err != nil {
+	if err := isolate(root); err != nil {
 		return err
 	}
 	if condition == conditionBare {
@@ -294,6 +293,20 @@ func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *
 		return fmt.Errorf("CLAUDE.md at %s has no %q heading to put the registry pointer before", t.Ref, anchor)
 	}
 	return root.WriteFile("CLAUDE.md", slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
+}
+
+// isolate removes from a cell's tree what no condition may inherit from
+// the commit it was cut from: the harness itself, which holds the prompts
+// and the grading, and the project's Claude Code settings, whose hooks
+// and deny rules would otherwise run in every condition. A condition
+// that tests hooks writes its own settings afterwards.
+func isolate(root *os.Root) error {
+	for _, p := range []string{"evals/primitives", ".claude/settings.json", ".claude/settings.local.json"} {
+		if err := root.RemoveAll(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 var registryParagraph = regexp.MustCompile(`(?s)\*\*Before changing a file, run .go run \./cmd/primitives for.*?\n\n`)
