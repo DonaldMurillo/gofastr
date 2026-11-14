@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"weak"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -287,7 +290,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 		return res.RowsAffected()
 	}
-	if isPostgres(ctx, ch.DB) {
+	if isPostgres(ctx, ch.dialectHandle(), ch.DB) {
 		sqlStr, args := build(ch.keyCols())
 		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
 		if err != nil {
@@ -318,18 +321,69 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 	return res.RowsAffected()
 }
 
-// isPostgres reports whether q's database answers SELECT version() with a
-// PostgreSQL banner, query.IsPostgres over an executor: inside a
-// transaction the probe runs on it. SQLite has no version(), and a failed
-// statement leaves its transaction usable.
-func isPostgres(ctx context.Context, q interface {
+// knownDialect remembers, per database handle, whether it is Postgres.
+// A handle's engine never changes, and the probe below fails on SQLite
+// by design: unremembered, every request that reached one of its
+// callers ran a query that errors, which a trace of the request then
+// showed as a failed step.
+//
+// The key is a weak pointer: the map does not keep a closed database
+// alive, and the entry goes when the database is collected. A process
+// that opens a database per test or per tenant would otherwise hold
+// every one of them for good.
+var knownDialect sync.Map // weak.Pointer[sql.DB] -> bool
+
+// dialectHandle is the database the handler's dialect is remembered
+// under: its DB, or the database its transaction was begun on. Writes
+// run inside a transaction, and they are the callers of the probe: with
+// the transaction as the handle nothing was ever remembered for them.
+func (ch *CrudHandler) dialectHandle() *sql.DB {
+	if db, ok := ch.DB.(*sql.DB); ok {
+		return db
+	}
+	return ch.root
+}
+
+func rememberDialect(db *sql.DB, pg bool) {
+	key := weak.Make(db)
+	if _, had := knownDialect.Swap(key, pg); !had {
+		runtime.AddCleanup(db, func(k weak.Pointer[sql.DB]) { knownDialect.Delete(k) }, key)
+	}
+}
+
+// isPostgres reports whether db answers SELECT version() with a
+// PostgreSQL banner, query.IsPostgres over an executor: the probe runs
+// on q, which inside a transaction is that transaction. SQLite has no
+// version(), and a failed statement leaves its transaction usable. The
+// answer is remembered for db once it is certain: a banner, or the
+// engine saying it has no such function. Any other failure (a dropped
+// connection, a cancelled context) reads as "not Postgres" for this
+// call only and is asked again. handle is the handler's DB: nothing is
+// remembered unless it is a *sql.DB.
+func isPostgres(ctx context.Context, handle any, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) bool {
+	// Only a *sql.DB is a stable identity: a test double or a wrapper
+	// is asked every time.
+	db, stable := handle.(*sql.DB)
+	stable = stable && db != nil
+	if stable {
+		if known, ok := knownDialect.Load(weak.Make(db)); ok {
+			return known.(bool)
+		}
+	}
 	var v string
 	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
+		if stable && strings.Contains(strings.ToLower(err.Error()), "no such function") {
+			rememberDialect(db, false)
+		}
 		return false
 	}
-	return strings.Contains(strings.ToLower(v), "postgresql")
+	pg := strings.Contains(strings.ToLower(v), "postgresql")
+	if stable {
+		rememberDialect(db, pg)
+	}
+	return pg
 }
 
 // idVals splits a record id into its key values, one per key column,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
+	"github.com/DonaldMurillo/gofastr/core/tracing"
 )
 
 // MaxJobNameBytes caps the length of a job name. The cap exists to keep
@@ -529,7 +530,9 @@ func (s *Scheduler) runOnce(ctx context.Context, now time.Time, tickJobs *tickGr
 					s.reportError(j.Name, fmt.Errorf("panic: %s\n%s", textsafe.Recovered(r), debug.Stack()))
 				}
 			}()
-			if err := j.Run(ctx); err != nil {
+			// Each run is a trace of its own, "cron <name>", so a run
+			// that failed or took long is found the way a request is.
+			if err := tracing.Job(ctx, "cron "+j.Name, j.Run); err != nil {
 				s.reportError(j.Name, err)
 			}
 		}(job)

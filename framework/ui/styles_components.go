@@ -345,6 +345,15 @@ func codeBlockCSS(_ style.Theme) string {
   max-block-size: var(--ui-code-block-scroll-max, 26rem);
   overflow-y: auto;
 }
+/* The scrolling body takes keyboard focus so it can be scrolled with the
+   arrow keys. Its ring is drawn inside it, in the code's own text
+   color: the frame clips anything outside the body, and the page's
+   ring color is dark on this dark surface. */
+[data-cui-comp="ui-code-block"] .fui-code-block__body:focus-visible,
+[data-cui-comp="ui-code-block"]:focus-visible {
+  outline: var(--stroke-focus, 2px) solid var(--color-code-text, #E4E4E7);
+  outline-offset: calc(-1 * var(--stroke-focus, 2px));
+}
 /* A blank source line is an empty span with no line box; min-block-size
    keeps its row, so its gutter number does not land on the next line's. */
 [data-cui-comp="ui-code-block"] .fui-code-block__line { display: block; position: relative; min-block-size: 1lh; }
@@ -1358,12 +1367,29 @@ func dataTableCSS(_ style.Theme) string {
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table td.is-wrap {
   white-space: normal;
+  /* A route, a URL or an id is one long word: it breaks where it must,
+     or it widens the table past its frame and pushes the last columns
+     out of sight. */
+  overflow-wrap: anywhere;
   min-inline-size: var(--ui-data-table-wrap-width, 16rem);
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate {
   max-inline-size: var(--ui-data-table-truncate-width, 20rem);
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* A code box in a truncated cell is one atomic box the cell's ellipsis
+   cannot reach: it is held to the cell's width and ends its own text.
+   Left alone it is laid out at its full length under the cell's clip,
+   with its end edge cut off. Code only: the same rule on every child
+   drew a hidden one (it out-ranks [hidden]) and collapsed a row of
+   controls to a few pixels. */
+[data-cui-comp="ui-data-table"] .fui-data-table__table td.is-truncate > code:not([hidden]) {
+  display: inline-block;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
 }
 [data-cui-comp="ui-data-table"] .fui-data-table__table tbody tr:last-child td {
   border-bottom: 0;
@@ -1506,6 +1532,14 @@ func dataTableCSS(_ style.Theme) string {
     /* A card is as wide as the phone: its values wrap. */
     white-space: normal;
   }
+  /* The caption is a block like the rest: left as a table caption
+     inside a table that is no longer one, it shrank to its longest
+     word and wrapped in a box of its own at the corner. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__caption:not(.fui-visually-hidden) {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-cards .fui-data-table__table thead {
     /* Visually hide the header row — labels travel with each cell via
        data-label and the ::before pseudo. Keep it accessible for screen
@@ -1611,6 +1645,12 @@ func dataTableCSS(_ style.Theme) string {
 }
 
 @container (max-width: 720px) {
+  /* As in the card layout: a caption is a block here. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__caption:not(.fui-visually-hidden) {
+    display: block;
+    box-sizing: border-box;
+    inline-size: 100%;
+  }
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table,
   [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table tbody {
     display: block;
@@ -1685,6 +1725,13 @@ func dataTableCSS(_ style.Theme) string {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* A column that wraps on a wide screen wraps in its slot too: an
+     error message or a log line cut to one line on a phone cannot be
+     read anywhere else. */
+  [data-cui-comp="ui-data-table"].fui-data-table--responsive-rows .fui-data-table__table td.is-wrap[class*="is-phone-"] {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   /* A chip or an id in a slot is one atomic box the cell's ellipsis
      cannot reach: it is held to the cell's width and ends its own text

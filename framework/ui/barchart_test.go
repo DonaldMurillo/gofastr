@@ -2,7 +2,9 @@ package ui
 
 import (
 	stdhtml "html"
+	"math"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -338,5 +340,110 @@ func TestBarChartManyBarsStayInsideThePlot(t *testing.T) {
 				prevEnd = x + w
 			}
 		}
+	}
+}
+
+// The axis gutter holds the longest tick label. A fixed gutter held
+// three characters, so a count in the thousands lost its first digits
+// ("1,500" read ".500") off the chart's left edge.
+func TestBarChartAxisGutterFitsItsLongestLabel(t *testing.T) {
+	label := regexp.MustCompile(`<text x="([0-9.]+)"[^>]*fui-bar-chart__axis-label[^>]*>([^<]+)</text>`)
+	for _, peak := range []float64{8, 1300, 2_400_000} {
+		h := string(BarChart(BarChartConfig{Bars: []BarChartBar{{Label: "a", Value: peak}, {Label: "b", Value: peak / 2}}, ShowAxis: true, Width: 480}))
+		found := label.FindAllStringSubmatch(h, -1)
+		if len(found) < 2 {
+			t.Fatalf("peak %v: no axis labels in %s", peak, h)
+		}
+		for _, m := range found {
+			// The label ends at x and runs left from there.
+			x, err := strconv.ParseFloat(m[1], 64)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if need := float64(utf8.RuneCountInString(m[2])) * 7; x < need {
+				t.Errorf("peak %v: label %q ends at x=%v and needs %v: it starts off the chart", peak, m[2], x, need)
+			}
+		}
+	}
+}
+
+// Every axis label sits inside the drawing. Centred on its gridline, the
+// top one reached above y=0 and the bottom one below the height when no
+// value labels or category labels made room, and the edge cut both.
+func TestBarChartAxisLabelsStayInsideTheDrawing(t *testing.T) {
+	label := regexp.MustCompile(`<text x="[0-9.]+" y="(-?[0-9.]+)"[^>]*fui-bar-chart__axis-label`)
+	height := regexp.MustCompile(`<svg width="\d+" height="(\d+)"`)
+	bars := []BarChartBar{{Label: "a", Value: 96}, {Label: "b", Value: 40}}
+	for name, cfg := range map[string]BarChartConfig{
+		"values hidden":     {Bars: bars, ShowAxis: true, HideValues: true, Height: 180},
+		"values and labels": {Bars: bars, ShowAxis: true, ShowLabels: true, Height: 180},
+		"hugging its bars":  {Bars: bars, ShowAxis: true, HideValues: true, FitHeight: true},
+		"a short chart":     {Bars: bars, ShowAxis: true, HideValues: true, Height: 40},
+	} {
+		h := string(BarChart(cfg))
+		total, _ := strconv.ParseFloat(height.FindStringSubmatch(h)[1], 64)
+		found := label.FindAllStringSubmatch(h, -1)
+		if len(found) < 2 {
+			t.Fatalf("%s: no axis labels", name)
+		}
+		for _, m := range found {
+			// y is the text's baseline: a 12px line reaches about 9px
+			// above it and 3px below.
+			y, _ := strconv.ParseFloat(m[1], 64)
+			if y-9 < 0 || y+3 > total {
+				t.Errorf("%s: a label with its baseline at y=%v leaves a drawing %v high", name, y, total)
+			}
+		}
+	}
+}
+
+// Max fixes the top of the scale, so a percentage reads against 100 and
+// not against whatever round number is above the tallest bar.
+func TestBarChartMaxFixesTheScale(t *testing.T) {
+	ticks := func(cfg BarChartConfig) []string {
+		cfg.ShowAxis = true
+		var out []string
+		for _, m := range regexp.MustCompile(`fui-bar-chart__axis-label[^>]*>([^<]+)</text>`).FindAllStringSubmatch(string(BarChart(cfg)), -1) {
+			out = append(out, m[1])
+		}
+		return out
+	}
+	bars := []BarChartBar{{Label: "a", Value: 96}, {Label: "b", Value: 40}}
+	if got := ticks(BarChartConfig{Bars: bars}); !slices.Contains(got, "150") {
+		t.Fatalf("with no Max the scale rounds up from the data: %v", got)
+	}
+	if got := ticks(BarChartConfig{Bars: bars, Max: 100}); !slices.Contains(got, "100") || slices.Contains(got, "150") {
+		t.Fatalf("Max 100: ticks %v", got)
+	}
+	// A bar past Max grows the scale; a Max that is no number is none.
+	top := 0.0
+	for _, tick := range ticks(BarChartConfig{Bars: bars, Max: 50}) {
+		if v, err := strconv.ParseFloat(tick, 64); err == nil && v > top {
+			top = v
+		}
+	}
+	if top < 96 {
+		t.Fatalf("a bar of 96 with Max 50: the scale tops out at %v, under the bar", top)
+	}
+	for _, bad := range []float64{-5, math.NaN(), math.Inf(1)} {
+		if got := ticks(BarChartConfig{Bars: bars, Max: bad}); !slices.Contains(got, "150") {
+			t.Fatalf("Max %v changed the scale: %v", bad, got)
+		}
+	}
+	// The tallest bar of a fixed scale is drawn against it: 50 of 100
+	// is half the plot, not most of it.
+	rect := regexp.MustCompile(`<rect[^>]*height="([0-9.]+)"[^>]*fui-bar-chart__bar`)
+	hOf := func(cfg BarChartConfig) float64 {
+		m := rect.FindStringSubmatch(string(BarChart(cfg)))
+		if m == nil {
+			t.Fatalf("no bar in %s", BarChart(cfg))
+		}
+		v, _ := strconv.ParseFloat(m[1], 64)
+		return v
+	}
+	half := []BarChartBar{{Label: "a", Value: 50}}
+	free, fixed := hOf(BarChartConfig{Bars: half, HideValues: true, Height: 200}), hOf(BarChartConfig{Bars: half, HideValues: true, Height: 200, Max: 100})
+	if fixed < 95 || fixed > 105 || free <= fixed {
+		t.Fatalf("a bar of 50: %v high against a free scale, %v against Max 100 in a 200px chart", free, fixed)
 	}
 }

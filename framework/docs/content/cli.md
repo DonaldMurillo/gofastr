@@ -674,6 +674,54 @@ directories are followed with cycle detection. Accessibility and sandbox
 checks tolerate source files disappearing during an editor save; a missing
 root or another I/O failure still fails the check.
 
+## Deploy
+
+`gofastr deploy <user@host>` puts the app on one Linux server over SSH
+as a systemd service: it builds for the server's CPU, copies the binary,
+starts it, and waits for the health check. A release that does not pass
+is replaced by the one before it. See [Deployment](deploy.md).
+
+- `gofastr deploy <user@host>`: build, copy, start, check. `--name`
+  (service, user and directory; default this directory's name), `--pkg`,
+  `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
+  `--port` (default 8080) and `--health` (default `/healthz`) for the
+  check, `--wait <seconds>` (default 30), `--keep <n>` earlier releases
+  (default 5), `--ssh-port`, `-i <identity file>`.
+- `gofastr deploy rollback <user@host>`: start the release before the
+  running one.
+- `gofastr deploy status <user@host>`: the release running, whether the
+  service is active, whether it answers, and the releases kept.
+
+## Telemetry
+
+`gofastr telemetry` reads the log and trace files
+[battery/telemetry](telemetry.md) writes, from a shell. It opens the
+directory itself, so it works over SSH and when the app is down.
+
+- `gofastr telemetry stats`: every request counted, not only the kept
+  ones: how many, how many failed and were slow, and how long half and
+  95 in 100 took, in all and by route. `--route <route>` counts one
+  route. It needs a `--since` of a minute or more.
+- `gofastr telemetry logs`: log lines, newest first. `--level <l>` sets
+  the minimum level and `--grep <text>` keeps lines that hold every word of text, in any
+  letter case (`--grep '"mailbox busy"'` for the exact phrase).
+- `gofastr telemetry requests`: kept requests, newest first. `--failed`,
+  `--slow <duration>` and `--route <route>` narrow the list.
+- `gofastr telemetry issues`: failed requests grouped by what went
+  wrong, latest first: how many times, first and last seen, and an ID.
+  `gofastr telemetry requests --issue <id>` lists that issue's requests.
+- `gofastr telemetry request <trace-id>`: one request's steps, as a tree
+  with start and duration, and its log lines.
+
+Name the directory with `--dir`, or the app with `--app <name>` for its
+default directory. `stats`, `logs`, `requests` and `issues` take `--since <duration>`
+(default 24h; 0 for everything kept), `--limit <n>` (default 50) and
+`--json`, which prints the lines as stored. Text from the files is
+scrubbed of terminal control bytes and line breaks before it is printed.
+With `--json`, the characters JSON leaves bare and a terminal obeys are
+written as `\u` escapes, and a line that is not JSON (torn by a crash)
+is printed as a JSON string, so each output line still parses.
+
 ## Extras
 
 The repository's `cmd/repolint` wiring gate catches a raw `data-cui-rpc`

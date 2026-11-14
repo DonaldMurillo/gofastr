@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/render"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/crud"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
@@ -30,6 +32,14 @@ type Page struct {
 	// in the request's language.
 	Title i18n.Phrase
 
+	// TabTitle, when set, names what the page is showing right now for
+	// the browser tab, history and a screen reader's arrival
+	// announcement: a page whose query picks between views ("Failed
+	// requests", "Request 7e22a54e") says which. Title stays the nav,
+	// crumb and palette label. It runs for callers the page admits,
+	// with their own context; an empty answer falls back to Title.
+	TabTitle func(ctx context.Context) string
+
 	// Nav places the page in the sidebar (Group, Order, Icon). Nil, or
 	// Hide, leaves it out of the sidebar; the palette still lists it.
 	Nav *entity.EntityNav
@@ -43,6 +53,26 @@ type Page struct {
 	// the admin's elevation never reaches app code. A panic or an error
 	// fails the page with a generic message and a log line.
 	Build func(r *http.Request) (component.Component, error)
+
+	// Part, when set, draws the piece of the page that keeps itself
+	// current: a list's rows. The admin serves it alone at
+	// PagePartPath(prefix, Path), behind the gate and this page's
+	// Access, with the caller's own context, as Build runs. The page
+	// points a polled region at it:
+	//
+	//	html.Div(html.DivConfig{ExtraAttrs: html.Attrs{
+	//	    "data-cui-poll":     "10s",
+	//	    "data-cui-poll-src": admin.PagePartPath("/admin", "/reports"),
+	//	}}, rows)
+	//
+	// The request's query string reaches Part as it reaches Build.
+	Part func(r *http.Request) (component.Component, error)
+}
+
+// PagePartPath is where the admin at prefix serves the Part of the page
+// at pagePath.
+func PagePartPath(prefix, pagePath string) string {
+	return strings.TrimRight(prefix, "/") + "/_part" + pagePath
 }
 
 // Card is one of the app's own dashboard cards.
@@ -87,11 +117,37 @@ func reservedPagePath(p string) bool {
 	return p == "/" || strings.HasPrefix(p, "/_")
 }
 
+// tabTitle is the page's title for the browser tab: TabTitle's answer,
+// asked with the caller's own context (an app page's screen is never
+// elevated) and only after the page's Access policy admitted the
+// caller, which refuses before a screen loads; and Title for an empty answer and for a TabTitle
+// that panics. Nil when the page sets none.
+func (b *Battery) tabTitle(p Page) func(ctx context.Context, _ map[string]string) string {
+	if p.TabTitle == nil {
+		return nil
+	}
+	return func(ctx context.Context, _ map[string]string) (title string) {
+		title = p.Title.Text(ctx)
+		defer func() {
+			if r := recover(); r != nil {
+				slog.ErrorContext(ctx, "admin: page TabTitle panicked", "page", p.Path, "panic", textsafe.Recovered(r))
+				title = p.Title.Text(ctx)
+			}
+		}()
+		// Title here, not an empty answer: the screen's own fallback
+		// is the title in the default language.
+		if t := p.TabTitle(ctx); t != "" {
+			return t
+		}
+		return title
+	}
+}
+
 // mountPages registers each app page as a screen. Access is a screen
 // policy, so a refused caller is answered before Build runs.
 func (b *Battery) mountPages(group *appui.ScreenGroup) {
 	for _, p := range b.cfg.Pages {
-		s := b.screen(group, p.Path, p.Title, false, func(ctx context.Context, _ map[string]string) render.HTML {
+		s := b.screenNamed(group, p.Path, p.Title, b.tabTitle(p), false, func(ctx context.Context, _ map[string]string) render.HTML {
 			return b.buildSlot(ctx, "page "+p.Path, p.Build)
 		})
 		if p.Access != nil {
@@ -152,6 +208,28 @@ func (b *Battery) buildSlot(ctx context.Context, slot string, build func(*http.R
 // cardPath is where a polled app card redraws.
 func (b *Battery) cardPath(key string) string {
 	return b.cfg.PathPrefix + "/_card/" + key
+}
+
+// mountParts mounts GET <prefix>/_part/<page path> for every page with a
+// Part: that part alone, drawn with the caller's own context. The route
+// sits in the gated group, and the page's own Access is asked here: a
+// screen policy answers for the page, not for this route.
+func (b *Battery) mountParts(r *router.Router) {
+	for _, p := range b.cfg.Pages {
+		if p.Part == nil {
+			continue
+		}
+		r.Get(PagePartPath(b.cfg.PathPrefix, p.Path), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := appui.WithRequest(r.Context(), r)
+			w.Header().Set("Cache-Control", "private, no-store")
+			if !b.pageAllows(ctx, p) {
+				i18n.HTTPError(w, r, http.StatusForbidden, i18n.StatusPhrase(http.StatusForbidden))
+				return
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(b.buildSlot(ctx, "page part "+p.Path, p.Part)))
+		}))
+	}
 }
 
 // mountCards mounts GET <prefix>/_card/<key> for every polled card: the

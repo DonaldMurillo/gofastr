@@ -2,6 +2,9 @@ package stdlib
 
 import (
 	"database/sql"
+	"database/sql/driver"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -343,5 +346,43 @@ func TestReadThenWriteTxWaitsForWriter(t *testing.T) {
 	}
 	if _, err := other.Exec(`INSERT INTO t (id) VALUES (1)`); err != nil {
 		t.Fatalf("write after the transaction committed: %v", err)
+	}
+}
+
+// A handle opened from another handle's Driver keeps the defaults:
+// sql.DB.Driver must answer the compat driver, not modernc's bare one.
+// core/tracing.OpenDB opens its traced handle this way, and through the
+// bare driver a time.Time went to disk in Go's String format
+// ("2026-11-13 01:51:04 +0000 UTC"), which nothing reads back.
+func TestDriverOfAnOpenHandleKeepsTheDefaults(t *testing.T) {
+	probe, err := sql.Open("sqlite3", "file:"+filepath.Join(t.TempDir(), "a.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := probe.Driver()
+	_ = probe.Close()
+	dc, ok := d.(driver.DriverContext)
+	if !ok {
+		t.Fatalf("Driver() is %T, which opens no connector", d)
+	}
+	c, err := dc.OpenConnector("file:" + filepath.Join(t.TempDir(), "b.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := sql.OpenDB(c)
+	defer db.Close()
+	if _, err := db.Exec(`CREATE TABLE t (at TEXT)`); err != nil {
+		t.Fatal(err)
+	}
+	when := time.Date(2026, 11, 13, 1, 51, 4, 0, time.UTC)
+	if _, err := db.Exec(`INSERT INTO t (at) VALUES (?)`, when); err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := db.QueryRow(`SELECT at FROM t`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored, "UTC") || !strings.HasPrefix(stored, "2026-11-13 01:51:04") {
+		t.Fatalf("time stored as %q: the time format default was lost", stored)
 	}
 }

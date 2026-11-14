@@ -42,7 +42,7 @@ func pageHeaderCSS(t style.Theme) string {
 		Set("display", "flex", "flex-wrap", "wrap", "align-items", "center",
 			"gap", "var(--spacing-md, 8px)", "min-inline-size", "0").
 		End().
-		Rule(".fui-page-header__title-row > .fui-page-header__title").
+		Rule(".fui-page-header__title").
 		Set("min-inline-size", "0", "overflow-wrap", "anywhere").
 		End().
 		Rule(".fui-page-header__eyebrow").
@@ -70,7 +70,10 @@ func pageHeaderCSS(t style.Theme) string {
 		).
 		End().
 		Rule(".fui-page-header__subtitle").
-		Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "color", "var(--color-text-muted, #52525B)").
+		Set("margin", "0", "font-size", "var(--text-sm, 0.875rem)", "color", "var(--color-text-muted, #52525B)",
+			// A URL path has no break point: left whole it sets the
+			// page's width on a phone. The title breaks the same way.
+			"overflow-wrap", "anywhere").
 		End().
 		// An h2 title is a section under the page's own h1 (a dashboard's
 		// recent rows, a detail page's related list): one step down. It

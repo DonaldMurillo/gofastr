@@ -1,6 +1,7 @@
 // SearchInput's clear control: shows and hides the clear button from
 // the input's value, clears the input on click or Escape and refocuses
-// it. framework/ui registers this file as the `searchinput` behaviour
+// it. Clearing a box that arrived holding a submitted search re-submits
+// its GET form, so the results follow the box. framework/ui registers this file as the `searchinput` behaviour
 // and the kernel loads it when a SearchInput marker is on the page.
 //
 // This module is framework/ui's: SearchInput has no headless
@@ -38,6 +39,24 @@
       updateClearVisibility();
       // A real input event, so a form-RPC pipeline sees the change.
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      // The page is showing a search for this box: its address carries
+      // the box's name with a value. In a GET form nothing else re-runs
+      // it: left alone, the box is empty and the list under it is still
+      // the filtered one. Submitting the form brings the two back into
+      // agreement. The address is asked, not the value the box arrived
+      // with: a box in a header that outlives a navigation still holds
+      // the value of the page it first came with. Text typed and
+      // cleared before any submit changes nothing, so it submits
+      // nothing. Only a form that says method="get" and is not wired to
+      // an RPC or a tool: a form with no method posts through its
+      // handler, and clearing a box must not send the rest of it.
+      const form = input.form;
+      if (!form || !input.name) return;
+      if ((form.getAttribute('method') || '').toLowerCase() !== 'get') return;
+      if (form.hasAttribute('data-cui-rpc') || form.hasAttribute('data-kiln-tool')) return;
+      let shown = '';
+      try { shown = new URLSearchParams(window.location.search).get(input.name) || ''; } catch (_) { /* no address to ask */ }
+      if (shown) { if (form.requestSubmit) form.requestSubmit(); else form.submit(); }
     };
 
     input.addEventListener('input', updateClearVisibility);

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -200,5 +201,62 @@ func TestLinksMustBeSameOrigin(t *testing.T) {
 	x := setup(t, nil, Config{Links: []Link{{Label: testPhrase("Docs"), Href: "/docs", Group: "help"}}}, nil)
 	if body := get(x.as(theAdmin), "/admin").Body.String(); !strings.Contains(body, `href="/docs"`) {
 		t.Error("the sidebar lacks the link")
+	}
+}
+
+// A page's Part is served alone at PagePartPath, for a polled region:
+// the part and nothing of the shell, with the request's query, behind
+// the gate and the page's own Access, and never cached.
+func TestPagePartIsServedAloneBehindTheSameGates(t *testing.T) {
+	built := 0
+	p := page("/reports", "Reports", says("whole page"))
+	p.Access = func(ctx context.Context) bool { return adminActorID(ctx) == "boss-1" }
+	p.Part = func(r *http.Request) (component.Component, error) {
+		built++
+		return text("rows for " + r.URL.Query().Get("show")), nil
+	}
+	plain := page("/plain", "Plain", says("no part"))
+	x := setup(t, nil, Config{Pages: []Page{p, plain}}, nil)
+	path := PagePartPath("/admin/", "/reports")
+	if path != "/admin/_part/reports" {
+		t.Fatalf("PagePartPath = %q", path)
+	}
+
+	boss := roleUser{id: "boss-1", roles: []string{"admin"}}
+	rr := get(x.as(boss), path+"?show=failed")
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK || !strings.Contains(body, "rows for failed") || strings.Contains(body, "<html") || strings.Contains(body, "whole page") {
+		t.Fatalf("the part: status %d, body %q", rr.Code, body)
+	}
+	if cc := rr.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("Cache-Control = %q: a per-caller fragment must not be stored", cc)
+	}
+
+	built = 0
+	// An admin the page's Access refuses, and a caller who is no admin.
+	for name, rr := range map[string]*httptest.ResponseRecorder{
+		"refused by Access": get(x.as(theAdmin), path),
+		"signed out":        get(x.h, path),
+	} {
+		if rr.Code == http.StatusOK || strings.Contains(rr.Body.String(), "rows for") {
+			t.Errorf("SECURITY: %s got the part: status %d", name, rr.Code)
+		}
+	}
+	if built != 0 {
+		t.Error("SECURITY: Part ran for a refused caller")
+	}
+	// A page with no Access of its own still has the admin's gate in
+	// front of its part.
+	open := page("/open", "Open", says("open page"))
+	open.Part = says("open rows")
+	y := setup(t, nil, Config{Pages: []Page{open}}, nil)
+	if rr := get(y.h, PagePartPath("/admin", "/open")); rr.Code == http.StatusOK || strings.Contains(rr.Body.String(), "open rows") {
+		t.Errorf("SECURITY: a signed-out caller got a part: status %d", rr.Code)
+	}
+	if rr := get(y.as(theAdmin), PagePartPath("/admin", "/open")); !strings.Contains(rr.Body.String(), "open rows") {
+		t.Errorf("an admin did not get the part: status %d", rr.Code)
+	}
+	if rr := get(x.as(boss), PagePartPath("/admin", "/plain")); rr.Code != http.StatusNotFound {
+		t.Errorf("a page with no Part answered %d at its part path", rr.Code)
 	}
 }

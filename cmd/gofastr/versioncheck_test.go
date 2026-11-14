@@ -43,7 +43,9 @@ func TestProjectDirFlag(t *testing.T) {
 }
 
 func TestVersionCheckCoversEveryCommand(t *testing.T) {
-	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true, "help": true}
+	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true, "help": true,
+		// telemetry reads an app's files wherever they are.
+		"telemetry": true}
 	seen := 0
 	for _, command := range commands {
 		for _, name := range command.names {

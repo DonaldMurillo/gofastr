@@ -189,7 +189,8 @@ and carries these attributes:
 Responses with status `>= 500` set the span status to `codes.Error`. A
 panicking handler's span ends with `codes.Error` and the status the client
 got (`500`, or the one already sent), and the SDK records the panic as the
-span's `exception` event.
+span's `exception` event. The span also carries `exception.stacktrace`: the
+call stack from the function that panicked, at most 8 KiB.
 
 Incoming trace context is extracted with the global propagator you set
 with `otel.SetTextMapPropagator` (B3, Jaeger, a composite), the same one
@@ -229,6 +230,24 @@ Like `WithMetrics`, `WithTracing` panics when combined with
 ```go
 r.Use(framework.Tracing())
 ```
+
+### Routes behind a catch-all
+
+The request span is named for the mux pattern the request matched. A
+router that serves many routes through one catch-all, as the UI host
+does for screens, leaves that empty, so it calls
+`middleware.NoteRoute(ctx, "/orders/{id}")` with the route it matched
+and the span reads `HTTP GET /orders/{id}` instead of `HTTP GET
+unmatched`. The UI host does this for every screen. Call it from your
+own router if it sits behind a `/` or `{path...}` pattern; pass a
+pattern, never the request's own path.
+
+### Trace IDs on log lines
+
+With a TracerProvider installed, `battery/log` adds `trace_id` and
+`span_id` to every line logged with a context that holds a span, the
+access line included. Search the logs for a `trace_id` to read one
+request's lines together. See [log](log.md) for the line shape.
 
 ### Spans for SQL, jobs and outbound calls
 
@@ -291,6 +310,30 @@ queues runs under a consumer span named `process <job type>`, which the
 handler's `ctx` carries, so SQL and HTTP spans inside the handler nest
 under it. A job span is a root span: a job does not carry the trace
 context of the request that enqueued it.
+
+Scheduled runs need none either. Each run of a [cron](cron.md) job is a
+trace of its own named `cron <job name>`, failed when the run returns an
+error or panics. For background work of your own, `tracing.Job` does the
+same:
+
+<!-- gofastr:compile
+stmt: _ = err
+var ctx context.Context
+-->
+```go
+import (
+    "context"
+
+    "github.com/DonaldMurillo/gofastr/core/tracing"
+)
+
+err := tracing.Job(ctx, "import customers", func(ctx context.Context) error {
+    return nil // the work, with ctx carrying the span
+})
+```
+
+The span's status is the error's text, or the panic's value with the
+call stack as `exception.stacktrace`; a panic goes on to the caller.
 
 | Span | Attributes |
 |---|---|

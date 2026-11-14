@@ -83,8 +83,12 @@ type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
-	Entity     *entity.Entity
-	DB         DBExecutor
+	Entity *entity.Entity
+	DB     DBExecutor
+	// root is the database a transaction-bound copy of the handler was
+	// made from (inTx sets DB to the transaction): what is known about
+	// the database is remembered under it.
+	root       *sql.DB
 	PrimaryKey []string           // key columns in order; nil means "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *hook.HookRegistry // optional lifecycle hooks

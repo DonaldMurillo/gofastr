@@ -123,6 +123,9 @@ results, the harness contract) are exempt. The exemption list lives in
   chokepoint, menus, tray, deep links, remembered window state, app
   state, declared preferences with a settings screen, single-user
   mode, and the fs allow-list. Experimental: pin a version.
+- [Logs and traces on disk (experimental)](telemetry.md):
+  `battery/telemetry`: log lines and complete traces in day files on the
+  app's own machine, inside a disk and memory budget.
 - [OS service host (experimental)](service.md): `battery/service`:
   `<app> service install` registers the binary as a per-user launchd
   agent, `systemd --user` unit or Task Scheduler task; the loopback
