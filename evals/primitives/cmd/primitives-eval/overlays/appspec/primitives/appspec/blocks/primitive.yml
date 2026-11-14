@@ -10,6 +10,7 @@ on_change:
   - "A prop the generator starts reading through AppSpecProp joins catalogTextProps, or appgen TestCatalogTextPropsCoverGenerator fails."
 twins:
   - job: The set of block kinds is enumerated in several switches that must agree on which kinds exist and which renderer draws them.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: validateAppSpecBlock, the kind switch whose default refuses an unsupported block type.
@@ -24,6 +25,7 @@ twins:
       - path: cmd/gofastr/internal/appgen/appspec.go
         note: renderAppSpecCatalogBlock, the emitter switch that draws each catalog kind.
   - job: A column the API masks (hidden or no_query) is refused in every spec position whose value a page renders, matches on or carries in a token.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: decodeAppSpecEntities, search_fields (hidden, no_query), read_scope filter fields (hidden only) and cursor fields (hidden, no_query).

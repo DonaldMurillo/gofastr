@@ -45,7 +45,7 @@ func TestHook(t *testing.T) {
 		"a/a.go":                     "package a\n",
 		"b/b.go":                     "package b\n",
 		"c/c.go":                     "package c\n",
-		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\ntwins:\n  - job: Doing x\n    sites:\n      - path: a/a.go\n        note: first\n      - path: b/b.go\n        note: second\n",
+		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\ntwins:\n  - job: Doing x\n    why: Not merged yet.\n    sites:\n      - path: a/a.go\n        note: first\n      - path: b/b.go\n        note: second\n",
 	} {
 		p := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {

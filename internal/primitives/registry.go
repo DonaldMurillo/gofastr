@@ -44,9 +44,12 @@ type Primitive struct {
 }
 
 // Twin is one job done in more than one place: a defect or a change in
-// one site probably belongs in the others.
+// one site probably belongs in the others. It is a debt, recorded until
+// the sites become one implementation, and Why says what keeps them
+// apart today.
 type Twin struct {
 	Job   string
+	Why   string
 	Sites []Site
 	Line  int
 }
@@ -316,10 +319,10 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 		})
 	}
 	for _, n := range d.list(root, "twins") {
-		if !d.mapping(n, "twins entry", "job", "sites") {
+		if !d.mapping(n, "twins entry", "job", "why", "sites") {
 			continue
 		}
-		twin := Twin{Job: d.str(n, "job", true), Line: n.Line}
+		twin := Twin{Job: d.str(n, "job", true), Why: d.str(n, "why", true), Line: n.Line}
 		for _, s := range d.list(n, "sites") {
 			if !d.mapping(s, "site", "path", "note") {
 				continue

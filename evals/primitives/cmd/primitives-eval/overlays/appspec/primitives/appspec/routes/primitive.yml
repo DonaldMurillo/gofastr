@@ -13,6 +13,7 @@ on_change:
   - "A directory the generator starts writing Go into joins generatedSourceDirs in staticdir.go."
 twins:
   - job: The default mount prefix of the auth battery (/auth) and of the admin back office (/admin) is filled in wherever an empty app.auth.base_path or app.admin.path is read.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec_authform.go
         note: validateAuthFormActions, base defaults to /auth for the login and register action check.

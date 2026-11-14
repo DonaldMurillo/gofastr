@@ -10,6 +10,7 @@ on_change:
   - "A default the generator fills in (admin path, admin role, devBaseURL) reads back as unset, so a packed spec does not pin a default the author never wrote."
 twins:
   - job: The PWA display mode vocabulary is spelled at validate, at emit and at read-back.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: ValidateAppSpec app.pwa.display switch (standalone, fullscreen, minimal-ui, browser).

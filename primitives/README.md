@@ -47,6 +47,7 @@ imports:                         # generated into primitives_imports_test.go
     instead: What to do when you need the banned package.
 twins:                           # one job done in more than one place
   - job: What the sites all do.
+    why: What keeps them from being one implementation today.
     sites:
       - path: framework/crud/include.go
         note: Which function, and for what.
@@ -75,10 +76,14 @@ decisions:
 Quote any string that holds `: ` or ` #`. Block scalars (`|`, `>`) are not
 read; a rule or a reason is one sentence on one line.
 
-`primitives for` on any site of a `twins` entry prints every other site
-and says to check each one. A site need not be owned by the primitive
-that lists it. Prefer merging the sites into one implementation; record
-a twin when they have to stay apart.
+A twins entry is a debt, not a feature. One job belongs in one
+implementation, and the fix for a twin is to merge its sites and delete
+the entry. An entry exists only for the time the sites are still apart,
+and its `why` says what keeps them apart: often nothing but work not yet
+done, rarely a real reason code cannot be shared. `primitives lint`
+prints how many are left. Until a twin is merged, `primitives for` on
+any of its sites prints every other site. A site need not be owned by
+the primitive that lists it.
 
 ## What the harness enforces
 
@@ -111,8 +116,8 @@ a twin when they have to stay apart.
 - A `code` entry that matches no file, or a file claimed by two primitives
   where neither contains the other.
 - A `docs` path that is not a file.
-- A `twins` entry with fewer than two sites, or a site that is not a
-  file.
+- A `twins` entry with no `why`, with fewer than two sites, or with a
+  site that is not a file.
 - An `enforced_by` test that does not exist, an analyzer that is not
   registered, a contract rule that is not in the catalog.
 - An invariant with neither `enforced_by` nor `judge`.

@@ -11,6 +11,7 @@ docs:
   - framework/docs/content/entity-declarations.md
 twins:
   - job: Deciding whether a caller's read posture admits an entity
+    why: Nothing requires it; CanReadScoped was added beside requireScope instead of under it, and one function answering both is the fix.
     sites:
       - path: framework/crud/owner.go
         note: CanReadScoped answers as a boolean, requireScope as the HTTP gate

@@ -119,9 +119,10 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "primitives: %d finding(s)\n", len(findings))
 			return 1
 		}
-		invariants, judged, decisions := 0, 0, 0
+		invariants, judged, decisions, twins := 0, 0, 0, 0
 		for _, p := range c.Primitives {
 			decisions += len(p.Decisions)
+			twins += len(p.Twins)
 			for _, inv := range p.Invariants {
 				invariants++
 				if len(inv.EnforcedBy) == 0 {
@@ -129,8 +130,8 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 				}
 			}
 		}
-		fmt.Fprintf(stdout, "primitives: %d primitives, %d invariants (%d judged only), %d decisions: clean\n",
-			len(c.Primitives), invariants, judged, decisions)
+		fmt.Fprintf(stdout, "primitives: %d primitives, %d invariants (%d judged only), %d decisions, %d twins left to merge: clean\n",
+			len(c.Primitives), invariants, judged, decisions, twins)
 	case "gen":
 		return gen(c, args, stdout, stderr)
 	case "hook":
@@ -529,7 +530,8 @@ func printTwins(w io.Writer, twins []primitives.Twin) {
 		for _, site := range twin.Sites {
 			fmt.Fprintf(w, "  %s: %s\n", site.Path, site.Note)
 		}
-		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt.")
+		fmt.Fprintf(w, "  Not one implementation yet because: %s\n", twin.Why)
+		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt. Better still, make them one.")
 	}
 }
 

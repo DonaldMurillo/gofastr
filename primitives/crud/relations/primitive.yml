@@ -9,6 +9,7 @@ docs:
   - framework/docs/content/includes.md
 twins:
   - job: Building the owner and tenant predicate for a relation's target
+    why: Nothing requires it; include builds node filters and the eager loader builds predicates, and one builder feeding both is the fix.
     sites:
       - path: framework/crud/include.go
         note: applyRelatedOwnerScope and applyRelatedTenantScope, for ?include=

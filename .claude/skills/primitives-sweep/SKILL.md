@@ -61,9 +61,11 @@ One sweep covers one package or one primitive. Keep it to one PR.
    its invariant with `upholds`.
 
 7. **Two ways to do one job.** When the sweep finds two internal paths
-   for the same job, do not record both. Either merge them (see the
-   `twin-sweep` skill), or record an invariant that they agree, enforced
-   by a parity test, plus a decision saying why two remain.
+   for the same job, merge them (see the `twin-sweep` skill). If the
+   merge is too large for this sweep, record a `twins` entry whose `why`
+   says what keeps them apart, and pin them with a parity test. The
+   entry is a debt: `primitives lint` counts the ones left, and the goal
+   is none.
 
 8. **Delete the comments** the entries replace. Where a symbol is named
    in a registry entry, no pointer back is needed: `primitives for <file>` finds

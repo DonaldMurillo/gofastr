@@ -12,6 +12,7 @@ on_change:
   - "A new check goes through schemaErrors.add inside ValidateAppSpec so one pass still reports every finding; a decode-time refusal names the YAML path and line."
 twins:
   - job: Each spec section lists the keys it accepts, and every other list of those keys (misplaced-key hints, pack's serializer order, the directory merge) must name the same set.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: DecodeAppSpec allowed map (top level, includes hooks) and decodeAppSpecApp allowed map (app keys).
@@ -24,6 +25,7 @@ twins:
       - path: cmd/gofastr/internal/appspec/pack.go
         note: packHeldFieldKeys, the schema.Field keys a spec field holds, which must match decodeFields allowed keys.
   - job: A flag whose false value is the permissive state, and a string whose empty value is the ungated one, are decoded strictly (protectiveBool, requireScalarString) in every spelling the spec accepts.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: decodeEntityScope, the grouped scope.soft_delete, scope.multi_tenant, owner_field, tenant_field and cross_owner_read.
@@ -38,6 +40,7 @@ twins:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: decodeNavItems still reads role with stringValue, so a list or map role shows the item to everyone; decide whether it joins.
   - job: Every spec construct that names an entity is checked against the declared entities, so a typo fails at generate time rather than at migrate or boot.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: ValidateAppSpec, a relation-typed field's to, relations[].entity, and hooks[].entity.

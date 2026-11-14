@@ -15,6 +15,7 @@ on_change:
   - "A new hook lifecycle point is added to AppSpecHookTypes and to mapHookType in kiln/render/render.go together, or a hook that fires in the kiln preview fires nowhere in the shipped app."
 twins:
   - job: Every spec name that lands in Go identifier position is refused unless it derives a valid identifier.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: ValidateAppSpec, the entity, field, screen and relation name checks through project.IsGoIdentifier(ToCamelCase).
@@ -25,6 +26,7 @@ twins:
       - path: cmd/gofastr/internal/appspec/sqlident.go
         note: validateAppSpecSQLNames, the SQL-name sibling, which skips names ValidateAppSpec already refused.
   - job: Relation kinds are mapped between YAML spellings, framework.RelationType and generated const names.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/generate.go
         note: RelationKinds, the table appgen relationTypeConst and pack relationTypeFromConstName read.
@@ -35,6 +37,7 @@ twins:
       - path: cmd/gofastr/internal/appgen/generate.go
         note: RelationKindFor and relationTypeConst, the emitter's lookup.
   - job: The set of hook lifecycle points a spec may name is the set the kiln preview registers hooks for.
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: cmd/gofastr/internal/appspec/appspec.go
         note: AppSpecHookTypes, checked by ValidateAppSpec for hooks[].when.

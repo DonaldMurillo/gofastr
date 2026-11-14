@@ -6,6 +6,7 @@ code:
   - framework/hook/observe.go
 twins:
   - job: Calling a coverage callback a host or a test installed
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: framework/access/observe.go
         note: SetObserver, called on every permission check

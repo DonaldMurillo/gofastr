@@ -20,6 +20,7 @@ imports:
     instead: Use the interface.
 twins:
   - job: Sorting rows
+    why: Export sorts a copy it may not keep.
     sites:
       - path: pkg/store/store.go
         note: sorts on write
@@ -129,6 +130,7 @@ func TestLintRefuses(t *testing.T) {
 		{"upholds nothing", "upholds: [rows-keep-order]", "upholds: [gone]", `upholds "gone" names no invariant`},
 		{"duplicate invariant", "id: judged-only", "id: rows-keep-order", `invariant "rows-keep-order" is declared twice`},
 		{"duplicate decision", "id: old-way", "id: new-way", `decision "new-way" is declared twice`},
+		{"twin without a reason", "    why: Export sorts a copy it may not keep.\n", "", "missing why"},
 		{"twin with one site", "      - path: pkg/heavy/heavy.go\n        note: sorts on export\n", "", "names fewer than two sites"},
 		{"twin site missing", "path: pkg/heavy/heavy.go", "path: pkg/heavy/gone.go", `site "pkg/heavy/gone.go" is not a file`},
 		{"twin site without note", "        note: sorts on export\n", "", "missing note"},
