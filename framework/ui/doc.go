@@ -196,6 +196,7 @@
 //	Tooltip:              CSS-only hover/focus reveal
 //	Tree:                 WAI-ARIA treeview (roving tabindex, lazy branches)
 //	ValidationSummary:    inline summary of form validation errors
+//	Waterfall:            steps of one piece of work as bars on a shared time axis (a table; SVG bars)
 //
 // Layout primitives (Stack, Cluster, Grid, Center, Spacer, Box) share
 // one ui-layout stylesheet. See layout.go.

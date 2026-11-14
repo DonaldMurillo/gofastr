@@ -182,6 +182,9 @@ func searchInputCSS(_ style.Theme) string {
 }
 .fui-search .fui-search__input {
   flex: 1;
+  /* An input's own minimum is about 20 characters: without this a
+     narrow field pushes the clear button out of its frame. */
+  min-inline-size: 0;
   border: 0;
   background: transparent;
   font: inherit;

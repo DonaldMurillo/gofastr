@@ -183,10 +183,28 @@ func (d compatDriver) Open(dsn string) (driver.Conn, error) {
 func (d compatDriver) OpenConnector(dsn string) (driver.Connector, error) {
 	normalized := withCompatDefaults(dsn)
 	if dc, ok := d.inner.(driver.DriverContext); ok {
-		return dc.OpenConnector(normalized)
+		c, err := dc.OpenConnector(normalized)
+		if err != nil {
+			return nil, err
+		}
+		return compatConnector{Connector: c, driver: d}, nil
 	}
-	return dsnConnector{dsn: normalized, driver: d.inner}, nil
+	return compatConnector{Connector: dsnConnector{dsn: normalized, driver: d.inner}, driver: d}, nil
 }
+
+// compatConnector answers Driver with the compat driver, not the one it
+// wraps. sql.DB.Driver returns its connector's driver, and a caller that
+// opens a second handle from it (core/tracing.OpenDB does, to wrap the
+// connections) would otherwise get modernc's bare driver: no time
+// format, no foreign keys, none of the defaults above. Timestamps then
+// went to disk in Go's String format, which the next start could not
+// read back.
+type compatConnector struct {
+	driver.Connector
+	driver compatDriver
+}
+
+func (c compatConnector) Driver() driver.Driver { return c.driver }
 
 type dsnConnector struct {
 	dsn    string

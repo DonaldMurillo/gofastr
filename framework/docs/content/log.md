@@ -322,6 +322,15 @@ Standard slog JSON: `time`, `level`, `msg`, plus per-entry attrs.
 {"time":"...","level":"INFO","msg":"http.access","method":"GET","path":"/users/1","status":200,"bytes":421,"dur_ms":12,"request_id":"...","remote":"10.0.0.4"}
 ```
 
+**Inside a traced request** (`framework.WithTracing()` plus a
+TracerProvider, see [observability](observability.md)), every line also
+carries the request's `trace_id` and `span_id`, at the top level even when
+the logger has an open group. Pass the request's context
+(`logger.InfoContext(r.Context(), ...)`) so your own lines get them too:
+```json
+{"time":"...","level":"INFO","msg":"http.access","trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7","method":"GET","path":"/users/1","status":200,"bytes":421,"dur_ms":12,"request_id":"...","remote":"10.0.0.4"}
+```
+
 **Panic:**
 ```json
 {"time":"...","level":"ERROR","msg":"http.panic","panic":"nil pointer dereference","method":"POST","path":"/things","request_id":"...","stack":"goroutine 18 [running]:\n..."}

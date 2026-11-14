@@ -331,6 +331,13 @@ func runProbeMemHog(v string) int {
 		size := min(int64(probeMemHogChunk), n-got)
 		b, err := syscall.Mmap(-1, 0, int(size), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_ANON|syscall.MAP_PRIVATE)
 		if errors.Is(err, syscall.ENOMEM) {
+			// Give the mappings back before saying so. The cap is full
+			// at this point, and printing needs a little heap: with
+			// nothing left the runtime dies of "cannot allocate memory"
+			// and the refusal that was just proven is never reported.
+			for _, h := range held {
+				_ = syscall.Munmap(h)
+			}
 			fmt.Println(probeMemHogRefused, got)
 			return 0
 		}

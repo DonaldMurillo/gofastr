@@ -1,0 +1,377 @@
+// Package telemetry keeps an app's logs and traces in plain files on
+// the machine it runs on, inside a fixed disk and memory budget, with
+// no collector, agent or database beside the app.
+//
+// Log lines go to one JSON-lines file per UTC day. Traces go to another:
+// one complete trace per line, written when its request ends. Every
+// error and slow trace is kept and a share of the rest; every log line
+// inside a traced request names its trace. Old days are removed by age
+// and by a cap on the directory's size.
+//
+//	tel := telemetry.New(telemetry.Config{})
+//	app := framework.NewApp(framework.WithTracing())
+//	app.RegisterPlugin(tel) // before the log plugin
+//	app.RegisterPlugin(log.New(log.Config{Sinks: []log.Sink{tel.LogSink()}}))
+//
+// Experimental: the file layout and this API may change.
+package telemetry
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync/atomic"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+
+	"github.com/DonaldMurillo/gofastr/battery/log"
+	"github.com/DonaldMurillo/gofastr/framework"
+	itel "github.com/DonaldMurillo/gofastr/internal/telemetry"
+	"github.com/DonaldMurillo/gofastr/internal/telemetry/otelspan"
+)
+
+// Config holds the plugin's settings. The zero value of a field means
+// its default, sized for a 1 vCPU, 1 GB host.
+type Config struct {
+	// Dir is where the files go. Default: telemetry/ under the app's
+	// state directory ($XDG_STATE_HOME/<app> or ~/.local/state/<app>),
+	// beside the log plugin's server.log.
+	Dir string
+	// Retention is how long a day's files are kept. Default 14 days.
+	Retention time.Duration
+	// MaxDiskBytes caps the directory's size. The oldest days are
+	// removed first; if today alone fills it, new lines are dropped and
+	// counted until the day turns. Default 5 GiB.
+	MaxDiskBytes int64
+	// SampleRate is the share of ordinary traces kept, from 0 to 1.
+	// Traces with a failed span, and traces at or over SlowThreshold,
+	// are always kept. Default 0.05.
+	SampleRate float64
+	// KeepNoOrdinary keeps only failed and slow traces.
+	KeepNoOrdinary bool
+	// SlowThreshold is how long a trace takes to count as slow.
+	// Default 500 ms.
+	SlowThreshold time.Duration
+	// MaxMemoryBytes caps the spans held for requests still running.
+	// Past it the oldest unfinished trace is dropped and counted.
+	// Default 32 MiB.
+	MaxMemoryBytes int64
+	// QuietPaths are paths whose requests, and those below them, are
+	// kept only when they fail or are slow, never as part of the sample:
+	// static files, health checks. A match stops at a path segment:
+	// "/healthz" covers "/healthz/db" and not "/healthz2". "/__gofastr/" and "/core-ui/", the framework's own scripts
+	// and styles, are always two. The Logs screen leaves these paths'
+	// access lines out unless asked for them.
+	QuietPaths []string
+	// Alerts are the rules checked every fifteen seconds. With none,
+	// one rule applies: ten failed requests within five minutes. Each
+	// rule that starts firing or resolves is logged as "telemetry.alert"
+	// and handed to Notify.
+	Alerts []AlertRule
+	// Notify is told when a rule starts firing and when it resolves:
+	// WebhookNotifier for a chat webhook, or a function of your own
+	// that sends mail. It gets fifteen seconds; an error is logged.
+	Notify func(ctx context.Context, a Alert) error
+	// NoAlerts turns alerts off, the default rules included.
+	NoAlerts bool
+	// Heartbeat is a URL the app asks for once a minute while it runs:
+	// the check-in address of a monitor that alerts when the asking
+	// stops (Healthchecks, Cronitor, Better Stack). It is how you are
+	// told the app is down, which the app itself cannot tell you.
+	// Empty sends nothing. The URL is a secret: it is never logged.
+	Heartbeat string
+	// EnableMCP adds the MCP tools telemetry_requests, telemetry_request
+	// and telemetry_logs, so a connected agent can read what the files
+	// hold. Off by default; `gofastr dev` turns them on for a loopback
+	// listener.
+	EnableMCP bool
+	// MCPGate replaces the precondition every tool runs behind,
+	// framework.MCPRequireRole("admin") by default: the tools hand out
+	// request paths, client addresses and log lines.
+	MCPGate func(ctx context.Context) error
+	// ExternalTracerProvider leaves the global OpenTelemetry
+	// TracerProvider alone. Set it when the app builds its own (to
+	// export spans elsewhere too) and add SpanProcessor to that one.
+	ExternalTracerProvider bool
+}
+
+// Stats counts what the plugin has written and what it has dropped.
+type Stats struct {
+	// LogLines and LogBytes are the log lines written to day files.
+	LogLines, LogBytes int64
+	// Traces and TraceBytes are the traces written.
+	Traces, TraceBytes int64
+	// TracesSampledOut is the finished ordinary traces not kept.
+	TracesSampledOut int64
+	// TracesDropped is the traces given up unfinished: the span buffer
+	// was full, or the request's span never ended.
+	TracesDropped int64
+	// SpansDropped is the spans past one trace's span limit.
+	SpansDropped int64
+	// LinesDropped is the lines refused: the disk cap was reached, a
+	// write failed, or the line came before Init or after shutdown.
+	LinesDropped int64
+	// FilesRemoved is the day files deleted for age or for the cap.
+	FilesRemoved int64
+	// DaysSealed is the finished days packed into compressed blocks,
+	// counted once for logs and once for traces.
+	DaysSealed int64
+	// TracesTrimmed is the traces written without their attributes
+	// (and without their later steps where that was not enough)
+	// because whole they were longer than a megabyte, which no reader
+	// returns.
+	TracesTrimmed int64
+}
+
+// Plugin is the telemetry plugin. It implements framework.Plugin.
+type Plugin struct {
+	cfg       Config
+	writer    atomic.Pointer[itel.Writer]
+	collector atomic.Pointer[itel.Collector]
+	processor atomic.Pointer[otelspan.Processor]
+	store     atomic.Pointer[itel.Store]
+	alerts    atomic.Pointer[itel.Alerts]
+	// readHost takes a reading of the machine, and hostMinute is the
+	// minute it last did; both belong to the watch goroutine.
+	// heartbeat is Config.Heartbeat parsed, and heartbeatDown whether
+	// the last ping failed; both belong to the watch goroutine.
+	heartbeat     *url.URL
+	heartbeatDown bool
+	// run is cancelled when the app stops; inited says Init ran.
+	run    context.Context
+	inited atomic.Bool
+	// notifyTimeout is how long a notifier has; zero is 15 seconds.
+	notifyTimeout time.Duration
+	readHost      func(time.Time) itel.HostReading
+	hostMinute    int64
+	latestHost    atomic.Pointer[itel.HostReading]
+	slow          atomic.Int64 // the resolved SlowThreshold
+	quiet         []string     // set once in New
+	unwritten     atomic.Int64 // lines that arrived with no writer open
+	stopped       atomic.Bool
+}
+
+// New returns the plugin. Register it before the log plugin, so the
+// files are open when the first line is logged.
+func New(cfg Config) *Plugin {
+	return &Plugin{cfg: cfg, quiet: append([]string{"/__gofastr/", "/core-ui/"}, cfg.QuietPaths...)}
+}
+
+// QuietPaths returns the path prefixes whose requests are kept only
+// when they fail or are slow: the framework's own "/__gofastr/" and
+// "/core-ui/", and Config.QuietPaths.
+func (p *Plugin) QuietPaths() []string { return slices.Clone(p.quiet) }
+
+// Name implements framework.Plugin.
+func (*Plugin) Name() string { return "telemetry" }
+
+// Init opens the files and, unless ExternalTracerProvider is set,
+// installs a TracerProvider that feeds them.
+func (p *Plugin) Init(app *framework.App) error {
+	// Once: a second Init would open the files again, fail on the
+	// tools the first one registered, and leave the plugin pointing at
+	// the files it had just closed while the first watcher ran on.
+	if !p.inited.CompareAndSwap(false, true) {
+		return errors.New("telemetry: Init was already called on this plugin")
+	}
+	beat, err := parseHeartbeat(p.cfg.Heartbeat)
+	if err != nil {
+		return err
+	}
+	p.heartbeat = beat
+	dir := p.cfg.Dir
+	if dir == "" {
+		state, err := stateDir(app.Config.Name)
+		if err != nil {
+			return fmt.Errorf("telemetry: %w", err)
+		}
+		dir = filepath.Join(state, "telemetry")
+	}
+	cfg := itel.Config{
+		Dir: dir, Retention: p.cfg.Retention, MaxDiskBytes: p.cfg.MaxDiskBytes,
+		SampleRate: p.cfg.SampleRate, KeepNoOrdinary: p.cfg.KeepNoOrdinary,
+		SlowThreshold: p.cfg.SlowThreshold, MaxMemoryBytes: p.cfg.MaxMemoryBytes,
+	}
+	w, err := itel.NewWriter(cfg)
+	if err != nil {
+		return err
+	}
+	c, err := itel.NewCollector(cfg, w.WriteTrace)
+	if err != nil {
+		_ = w.Close()
+		return err
+	}
+	store, err := itel.Open(cfg)
+	if err != nil {
+		_ = w.Close()
+		return err
+	}
+	alerts, err := p.newAlerts()
+	if err != nil {
+		_ = w.Close()
+		_ = store.Close()
+		return err
+	}
+	if alerts != nil {
+		c.WatchAlerts(alerts)
+		p.alerts.Store(alerts)
+	}
+	counts := itel.NewRollup()
+	c.WatchStats(counts)
+	if resolved, err := cfg.Resolve(); err == nil {
+		p.readHost = itel.NewHostSampler(resolved.Dir).Read
+	}
+	if resolved, err := cfg.Resolve(); err == nil {
+		p.slow.Store(int64(resolved.SlowThreshold))
+	}
+	p.store.Store(store)
+	p.writer.Store(w)
+	p.collector.Store(c)
+	p.processor.Store(otelspan.New(c, p.quiet...))
+
+	if err := p.registerMCPTools(app); err != nil {
+		// Nothing may be reached through the plugin once its files are
+		// closed: a log line or a page would find a closed writer.
+		p.store.Store(nil)
+		p.writer.Store(nil)
+		p.collector.Store(nil)
+		p.processor.Store(nil)
+		p.alerts.Store(nil)
+		_ = w.Close()
+		_ = store.Close()
+		return err
+	}
+
+	var provider *sdktrace.TracerProvider
+	if !p.cfg.ExternalTracerProvider {
+		provider = sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(p.SpanProcessor()))
+		otel.SetTracerProvider(provider)
+	}
+	// Nothing after this point fails, so the watcher started here is
+	// always stopped by the hook below.
+	stopAlerts, alertsDone := make(chan struct{}), make(chan struct{})
+	// Cancelled when the app stops: a ping or a notification in flight
+	// ends there, so stopping does not wait out their timeouts.
+	run, stopRun := context.WithCancel(context.Background())
+	p.run = run
+	go p.watch(app, w, counts, alerts, stopAlerts, alertsDone)
+	app.OnStop(func() error {
+		p.stopped.Store(true)
+		stopRun()
+		close(stopAlerts)
+		<-alertsDone
+		if provider != nil {
+			// Nothing is queued: a span is recorded as it ends. The
+			// bound is for the provider's own bookkeeping.
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = provider.Shutdown(ctx)
+		}
+		// The minute in progress is written as far as it got.
+		flushed := w.FlushStats(counts, true)
+		return errors.Join(flushed, w.Close(), store.Close())
+	})
+	return nil
+}
+
+func stateDir(appName string) (string, error) {
+	if appName == "" {
+		return "", fmt.Errorf("set Config.Dir or framework.AppConfig.Name: the default directory is named after the app")
+	}
+	if x := os.Getenv("XDG_STATE_HOME"); x != "" {
+		return filepath.Join(x, appName), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state", appName), nil
+}
+
+// Stats returns the counters. They are zero before Init.
+func (p *Plugin) Stats() Stats {
+	st := Stats{LinesDropped: p.unwritten.Load()}
+	if w := p.writer.Load(); w != nil {
+		ws := w.Stats()
+		st.LogLines, st.LogBytes, st.Traces, st.TraceBytes = ws.LogLines, ws.LogBytes, ws.Traces, ws.TraceBytes
+		st.LinesDropped += ws.Dropped
+		st.FilesRemoved, st.DaysSealed, st.TracesTrimmed = ws.FilesRemoved, ws.DaysSealed, ws.Trimmed
+	}
+	if c := p.collector.Load(); c != nil {
+		cs := c.Stats()
+		st.TracesSampledOut, st.TracesDropped, st.SpansDropped = cs.SampledOut, cs.Dropped, cs.SpansDropped
+		st.LinesDropped += cs.WriteErrors
+	}
+	return st
+}
+
+// Reader returns the store the framework's own screens and tools read
+// the files through, or nil before Init. Its type is internal to this
+// module: the query API is not part of this package's surface yet.
+func (p *Plugin) Reader() *itel.Store { return p.store.Load() }
+
+// Host returns the latest reading of the machine, or nil before the
+// first: one is taken each minute, the first within fifteen seconds of
+// the app starting. Its type is internal to this module, as Reader's
+// is.
+func (p *Plugin) Host() *itel.HostReading { return p.latestHost.Load() }
+
+// SlowThreshold returns the duration at which a trace counts as slow:
+// the configured one, or the default. It is zero before Init.
+func (p *Plugin) SlowThreshold() time.Duration { return time.Duration(p.slow.Load()) }
+
+// LogSink returns the sink that writes log lines to the day files. Pass
+// it in the log plugin's Config.Sinks, alone or beside other sinks.
+func (p *Plugin) LogSink() log.Sink { return logSink{p} }
+
+type logSink struct{ p *Plugin }
+
+func (s logSink) Write(entry []byte) error {
+	w := s.p.writer.Load()
+	if w == nil || s.p.stopped.Load() {
+		s.p.unwritten.Add(1)
+		if w == nil {
+			return nil // before Init: counted, and no sink error to report
+		}
+		return log.ErrSinkClosed
+	}
+	// An error logged inside a request names that request's failure
+	// when no step of it failed. Most lines are not errors: one cheap
+	// look decides.
+	if bytes.Contains(entry, []byte(`"level":"ERROR`)) {
+		if c := s.p.collector.Load(); c != nil {
+			if id, text, stack, ok := itel.LoggedError(entry); ok {
+				c.NoteError(id, text, stack)
+			}
+		}
+	}
+	return w.WriteLog(entry)
+}
+
+// Close does nothing: the plugin closes the files when the app stops.
+func (logSink) Close() error { return nil }
+
+// SpanProcessor returns the processor that records finished spans. Init
+// installs it on a provider of its own; an app that builds its own
+// TracerProvider sets ExternalTracerProvider and adds this to it.
+func (p *Plugin) SpanProcessor() sdktrace.SpanProcessor { return spanProcessor{p} }
+
+type spanProcessor struct{ p *Plugin }
+
+func (spanProcessor) OnStart(context.Context, sdktrace.ReadWriteSpan) {}
+
+func (s spanProcessor) OnEnd(span sdktrace.ReadOnlySpan) {
+	if proc := s.p.processor.Load(); proc != nil && !s.p.stopped.Load() {
+		proc.OnEnd(span)
+	}
+}
+
+func (spanProcessor) Shutdown(context.Context) error   { return nil }
+func (spanProcessor) ForceFlush(context.Context) error { return nil }

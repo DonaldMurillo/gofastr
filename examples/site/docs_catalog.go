@@ -204,6 +204,7 @@ var docIntents = []docIntent{
 		Docs: []docEntry{
 			{"log", "Logging", "Structured JSON logs with MCP query tools."},
 			{"observability", "Observability", "Metrics and tracing for the hot paths."},
+			{"telemetry", "Logs and traces on disk", "Experimental: battery/telemetry keeps logs and traces in plain files on the app's own machine, inside a disk and memory budget."},
 			{"deploy", "Deployment", "Ship it: build, configure, and run GoFastr in production."},
 			{"backups", "Backups and restore", "Database backup commands for SQLite and Postgres, and how to prove a restore works."},
 			{"first-run", "First-run setup", "A setup wizard (or headless env bootstrap) gates the app until first-boot state exists."},

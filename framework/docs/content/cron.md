@@ -278,6 +278,11 @@ bounded by the app's shutdown drain deadline, so a hung job cannot stall
 
 ## Error handling
 
+With `framework.WithTracing()`, each run is a trace of its own named
+`cron <job name>`, failed when the run returns an error or panics, so a
+run that failed or took long is found the way a request is (see
+[observability](observability.md) and [telemetry](telemetry.md)).
+
 A job's returned error is forwarded to `Scheduler.OnError` if set,
 otherwise logged to `slog.Default()`. Errors do not crash the process. Set `OnError` to
 plumb cron failures into your existing logger/metrics.

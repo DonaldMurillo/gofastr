@@ -98,11 +98,12 @@ func segmentedLinksCSS(_ style.Theme) string {
 	return `:where([data-cui-comp="ui-segmented-links"]).fui-seglinks {
   display: inline-flex;
   /* The strip keeps its own width in a flex column too, and a strip
-     wider than its box scrolls inside it instead of widening the page. */
+     wider than its box wraps onto a second line: scrolling it would
+     hide the last choices, and the current one with them, on a phone. */
   inline-size: fit-content;
   max-inline-size: 100%;
   box-sizing: border-box;
-  overflow-x: auto;
+  flex-wrap: wrap;
   gap: var(--spacing-xs, 2px);
   padding: var(--spacing-xs, 2px);
   border: var(--stroke-thin, 1px) solid var(--color-border);

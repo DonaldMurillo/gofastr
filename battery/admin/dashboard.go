@@ -322,6 +322,7 @@ func (b *Battery) mountOps(r *router.Router) {
 		post("/modules/_revoke", platformOnly(b.handleModuleRevoke))
 	}
 	b.mountCards(r)
+	b.mountParts(r)
 	b.mountMetrics(r)
 }
 

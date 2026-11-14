@@ -488,3 +488,55 @@
 - Evidence: HTTP regressions in framework/crud, framework, battery/auth and cmd/kiln fail on their original writers; the widget failure-writer test pins logging.
 - Next time: inject unencodable values at the real response boundary and assert status, body and sensitive-response headers before widening the analyzer.
 - Status: active
+
+## 2026-11-13 - Screenshot the viewport, not a full-page stitch, when chrome is pinned
+- Scope: any page with a sticky sidebar, toolbar or header (the admin shell, `ui.ContentRow{Sticky: true}`)
+- Trigger: a full-page capture of the admin Logs page showed the list running on below a sidebar that ended one viewport down. It read as a broken layout, was noticed, and was sent to the user anyway as "an artifact" without a check.
+- Approach: a full-page capture draws viewport-height pinned chrome once, at the top, so it cannot show what a reader sees after scrolling. Capture the viewport at the top and again scrolled to the bottom, and measure the pinned element's rect at both (`getBoundingClientRect` top and bottom against `innerHeight`).
+- Evidence: scrolled to the bottom of the Logs and Audit pages at 1360x900, the sidebar's rect stayed 0 to 900 with `position: sticky`; the viewport screenshot shows it beside the last row.
+- Next time: anything in a screenshot that looks wrong is checked before the screenshot is shown to anyone, and a capture that misrepresents the page is retaken, not explained.
+- Status: active
+
+## 2026-11-13 - Telemetry's goal: most of the value, a tenth of the weight
+- Scope: battery/telemetry and everything built on its files (screens, CLI, MCP tools, what comes next)
+- Trigger: the owner's statement of the goal: about 80% of what Datadog, Sentry and groundcover give a small team, at about 10% of the code and of the machine.
+- Approach: before adding a feature, name the question an operator asks that it answers, and whether something already built answers it. Prefer one more filter on an existing screen to a new screen, the standard library to a dependency, a scan with a budget to an index, and a setting with a good default to a mode. Measure the result against the 1 vCPU, 1 GB target, not against a laptop.
+- Evidence: at this note the feature is about 3,900 lines of non-test Go with no new module dependency, runs inside the app's process, and holds 13 days at 20 requests a second in 5 GiB.
+- Next time: a proposal that needs a second process, a database, or a new dependency has to say what it buys that the files cannot.
+- Status: active
+
+## 2026-11-13 - `ui.Stack{Screen: true}` pins its last child to the bottom
+- Scope: any layout built on `ui.Stack{Screen: true}` (`framework/ui/styles_primitives.go`)
+- Trigger: the standalone telemetry Issues page, two rows long, started 265px down the window with blank space above its tabs. Longer pages looked fine.
+- Approach: the screen stack gives its last child `margin-block-start: auto`, for a footer. A layout that wraps one container in it makes that container the last child, and it takes all the free height above itself. A layout with no header and footer uses the container alone.
+- Evidence: the container's computed `margin-top` was 264.5px on the short page and 0 on the long ones; `TestStandalonePageIsNotPinnedToTheBottom` fails with the screen stack put back.
+- Next time: look at a new layout with a page shorter than the window as well as a long one; the short one shows where the free space went.
+- Status: active
+
+## 2026-11-13 - Do not mutate source while a background test run is compiling
+- Scope: any session that runs the affected suite in the background and keeps working
+- Trigger: a full run reported one failure in a package that passed five times in a row afterwards. The run had compiled that package during the seconds a deliberate mutation sat on disk.
+- Approach: start the background run only when the tree is in the state to be judged, and leave the tree alone until it reports. Mutation passes and edits happen before it starts or after it ends.
+- Evidence: the failure's timestamp fell inside a mutation of `live := s.Live != nil && false`; the test it failed asserts exactly what that mutation breaks.
+- Next time: a failure that cannot be reproduced gets its timestamp compared with the session's own edits before it is called a flake.
+- Status: active
+
+## 2026-11-13 - A fixed-size SVG chart needs its drawing size chosen for its container
+- Scope: `ui.BarChart` and the other charts in `framework/ui` drawn at a pixel `Width`
+- Trigger: three Overview charts drawn at 480px sat in 292px cards. They scaled to 0.6, axis text with them, inside boxes that kept the full height; at natural size the top and bottom axis labels were cut by the drawing's own edge.
+- Approach: pick `Width` near the narrowest card the chart sits in (a phone and a three-across desktop grid are about the same), and keep sibling grids at one column width with `ui.Grid{Fill: true}`. A percentage chart sets `Max: 100`.
+- Evidence: measured with `getBoundingClientRect` on each `svg[data-cui-comp="ui-bar-chart"]` against its `width` attribute; `TestBarChartAxisLabelsStayInsideTheDrawing` and `TestBarChartMaxFixesTheScale` hold the kit fixes.
+- Next time: after adding a chart, compare its rendered width with its declared width in every layout it appears in.
+- Status: active
+
+- **A kit browser test page has no component styles unless you add them.**
+  `moduleTestCtx` (framework/ui) serves the runtime and the markup, not
+  the registered stylesheets. A layout check on that page passes on
+  unstyled boxes: the first phone-width test written against it passed
+  with all eight fixes reverted. Inject `registry.All()`'s
+  `CSSFor(theme.Default())` in a `<style>`, assert one computed style
+  to prove the page is styled, and revert each fix to watch its check
+  fail (`framework/ui/narrow_layout_e2e_test.go`).
+- **An input's default width depends on the machine's fonts.** A test
+  for a field overflowing its frame must put it in a box narrower than
+  any font would make it (180px), or it reproduces on one machine only.

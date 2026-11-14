@@ -835,6 +835,7 @@ var kitComponents = []kitComponent{
 	{name: "Tooltip", fn: Tooltip},
 	{name: "Tree", fn: Tree},
 	{name: "ValidationSummary", fn: ValidationSummary},
+	{name: "Waterfall", fn: Waterfall, prep: prepSet("Steps", []WaterfallStep{{Label: "step", Dur: 1e9}})},
 	{name: "Workbench", fn: Workbench},
 	{name: "headless.Alert", fn: headless.Alert},
 	{name: "headless.BackToTop", fn: headless.BackToTop},

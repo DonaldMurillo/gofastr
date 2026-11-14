@@ -4,9 +4,13 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/panicstack"
 	"io"
 	"net"
 	"net/http"
+	"runtime/debug"
+	"strings"
+	"sync"
 
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go.opentelemetry.io/otel"
@@ -64,6 +68,8 @@ func Tracing() Middleware {
 			// a %0d%0a path). Scrub both at the sink — the same
 			// control-byte rule the slog sinks carry — so a forged value
 			// cannot render as a forged line in collector UIs/exporters.
+			note := &routeNote{}
+			ctx = context.WithValue(ctx, routeNoteKey{}, note)
 			ctx, span := tracer.Start(ctx, fmt.Sprintf("HTTP %s", textsafe.ScrubControlBytes(r.Method)),
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
@@ -81,6 +87,15 @@ func Tracing() Middleware {
 			finish := func(status int) {
 				// After the handler runs, r.Pattern is populated by the mux.
 				route := r.Pattern
+				if route == "" || strings.HasSuffix(route, "/") || strings.HasSuffix(route, "...}") {
+					// The mux matched nothing of its own, or a pattern
+					// that takes a whole subtree ("/", "/files/{path...}").
+					// A router behind it (the UI host's screens) may
+					// have said which of its routes this was.
+					if noted := note.load(); noted != "" {
+						route = noted
+					}
+				}
 				if route == "" {
 					route = "unmatched"
 				}
@@ -103,6 +118,17 @@ func Tracing() Middleware {
 				if v := recover(); v != nil {
 					finish(panickedStatus(w, ww.wroteHeader, ww.status))
 					span.SetStatus(codes.Error, textsafe.Recovered(v))
+					// Where it panicked, under OpenTelemetry's own name
+					// for it, so whatever reads the span has the stack
+					// beside the request. A panic Timeout carried over
+					// from the handler's goroutine brings that
+					// goroutine's stack; this one's would show only the
+					// middleware.
+					_, stack, _ := unwrapPanic(v)
+					if stack == nil {
+						stack = debug.Stack()
+					}
+					span.SetAttributes(attribute.String("exception.stacktrace", panicOrigin(stack)))
 					panic(v)
 				}
 			}()
@@ -131,6 +157,41 @@ func extractTraceContext(parent context.Context, global, w3c propagation.TextMap
 		ctx = propagation.Baggage{}.Extract(ctx, carrier)
 	}
 	return ctx
+}
+
+type routeNoteKey struct{}
+
+// routeNote carries a route from a handler back to the middleware that
+// wraps it: a context only flows inward.
+type routeNote struct {
+	mu    sync.Mutex
+	route string
+}
+
+func (n *routeNote) load() string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.route
+}
+
+// NoteRoute names the route a request matched, for a router that sits
+// behind a catch-all and so leaves r.Pattern empty or at a pattern
+// that takes a whole subtree ("/"): the UI host's screens. The
+// request's span is then named for route (a pattern such as
+// "/orders/{id}", never the request's own path) instead of "unmatched"
+// or the catch-all. A mux pattern that names one route wins over a
+// note, and the first note wins over a later one. It does nothing
+// outside Tracing.
+func NoteRoute(ctx context.Context, route string) {
+	n, _ := ctx.Value(routeNoteKey{}).(*routeNote)
+	if n == nil || route == "" {
+		return
+	}
+	n.mu.Lock()
+	if n.route == "" {
+		n.route = route
+	}
+	n.mu.Unlock()
 }
 
 // SpanFromRequest is a thin convenience that returns the active span on the
@@ -209,4 +270,14 @@ func (w *tracingResponseWriter) Push(target string, opts *http.PushOptions) erro
 // Unwrap exposes the wrapped writer to net/http's ResponseController.
 func (w *tracingResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+// maxSpanStackLen bounds the stack a span carries: enough for the
+// frames between a handler and the line that panicked.
+const maxSpanStackLen = 8 << 10
+
+// panicOrigin is the stack a span carries for a panic: from the
+// function that panicked on, and bounded.
+func panicOrigin(stack []byte) string {
+	return textsafe.Truncate(panicstack.Origin(string(stack)), maxSpanStackLen)
 }

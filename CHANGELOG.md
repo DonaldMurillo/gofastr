@@ -25,6 +25,147 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`gofastr deploy <user@host>`** (experimental) puts an app on one
+  Linux server over SSH as a systemd service: build for the server's
+  CPU, copy, start, health check, and back to the release before when
+  the check fails. `rollback` and `status` beside it. systemd holds the
+  app's port, so a deploy, a rollback or a crash does not close it:
+  `App.Start` now serves on a socket systemd passes it (`LISTEN_FDS`)
+  in place of opening its address, and the checks on what a bind may
+  expose (the dev-only MCP tools) read that socket's address. The unit
+  sets `GOFASTR_ENV=production`. The server needs only sshd, systemd
+  and bash. See
+  [Deployment](framework/docs/content/deploy.md).
+- **Telemetry screens: a review round.** A time range is one click and
+  holds across the four pages; the Overview's tables sort by any column
+  and each chart says its highest bar in words; a row's route opens its
+  request, at the top of the page, and "Back to the list" returns to
+  the filtered list. Each view has its own page title. The log search
+  (pages, `gofastr telemetry logs --grep`, `telemetry_logs`) now finds
+  lines that hold every word in any letter case, with double quotes for
+  an exact phrase; it was one case-sensitive piece of text. A request no
+  route took is stored as `GET (no route)` and `GET /{$}` as `GET /`
+  (older lines keep the old spelling). On a phone no page scrolls
+  sideways and Issues shows every column. The screens' wording is
+  shorter: the sentences under each heading are gone, and the labels
+  say p50, p95, CPU, Memory, Disk, Jobs. See
+  [telemetry](framework/docs/content/telemetry.md).
+- **A polled region no longer moves focus.** `data-cui-poll` skips a
+  response identical to the last one while the region still holds what
+  it left there, and waits while someone is working in the region
+  (keyboard focus, a caret in a field, a text selection), for six ticks
+  at most. After a swap, focus goes back to the element with the same
+  id or the link with the same href. Before, every tick replaced the
+  region and sent focus to the top of the page. See
+  [reactivity](framework/docs/content/reactivity.md).
+- **Telemetry: fixes from a code review.** The admin's telemetry pages
+  and the MCP tools' default gate refuse a caller scoped to a tenant
+  (the files hold every tenant's lines together). In the store: a trace
+  over a megabyte is trimmed to fit instead of written and never found
+  (`Stats().TracesTrimmed`); a window ending now no longer drops the
+  newest long traces; a path full of control characters no longer hides
+  a failed request from the failed list; a late write cannot reopen a
+  packed day; refused request counts are kept and written later; a
+  query survives a day packed or removed under it; a block's checksum
+  is read; paging lists every row once where two rows were written the
+  other way round from their times. Stopping the app no longer waits out a heartbeat or a
+  notifier in flight, and `Init` runs once. A list refreshes on a timer
+  only for a day or less with nothing to search for. `gofastr telemetry
+  ... --json` escapes characters a terminal obeys.
+- **`admin.Page.TabTitle`** names a page's current view for the browser
+  tab. See [admin](framework/docs/content/admin.md).
+- **Kit.** `ui.Callout` gains `Standing` (a warning that is part of the
+  page, not an interruption), `ui.CodeBlock` gains `Label`,
+  `ui.WaterfallStep` gains `Note` (the tone in a word). Clearing a
+  `ui.SearchInput` whose search the page is showing re-submits its
+  `method="get"` form. A named `ui.CodeBlock`'s copy button says what
+  it copies, and `ui.BarChart` axis numbers are readable on a phone.
+  Fixed at phone width: a `ui.PageHeader` with a long path as its
+  subtitle widened the page; `ui.SegmentedLinks` scrolled its last
+  choices out of sight (it wraps now); a search field and a `ui.ShortID`
+  pushed their buttons out of their frames; a `Wrap` column was cut to
+  one line in a `ResponsiveRows` phone row; a framed code block showed
+  no focus ring.
+- **Logs and traces on disk** (experimental,
+  [telemetry](framework/docs/content/telemetry.md)). `battery/telemetry`
+  writes log lines and complete traces to day files on the app's own
+  machine, keeps every failed and slow request plus a sampled share, and
+  holds the directory to a retention period and a size cap. Request and
+  log screens read them: in the admin
+  (`telemetryadmin.Pages(tel, "/admin")`) or on their own behind a gate
+  you supply (`telemetryui.New`). `gofastr telemetry logs|requests|request`
+  reads the files from a shell, and `Config.EnableMCP` adds
+  `telemetry_requests`, `telemetry_request` and `telemetry_logs`.
+- **Telemetry: background work, and a heartbeat.** Queue jobs and
+  scheduled runs are counted apart from requests and listed in their own
+  table on the Overview, in `gofastr telemetry stats` and in
+  `telemetry_stats`. Each run of a cron job is now a trace named
+  `cron <job>`, and `tracing.Job` (`core/tracing`) does the same for
+  background work of your own. `telemetry.Config.Heartbeat` asks for a
+  URL once a minute, for a monitor that alerts when the app stops.
+- **Telemetry: the machine, and a disk alert.** Once a minute the plugin
+  reads the machine's CPU, memory and disk and this process's goroutines
+  and memory into a fourth day file (`host-YYYYMMDD.jsonl`). The
+  Overview shows the latest reading and charts CPU and memory;
+  `gofastr telemetry stats` and `telemetry_stats` carry it too. CPU and
+  memory are read from `/proc`, so Linux only. A new alert kind,
+  `telemetry.AlertDisk`, fires when the disk passes a percentage, and a
+  second default rule uses it at 90%.
+- **`ui.BarChart` takes `Max`**, the top of its value scale, so a chart
+  of percentages reads against 100.
+- **Telemetry: a panic keeps its call stack with its request.** A
+  request's page, `gofastr telemetry request` and `telemetry_request`
+  now say what went wrong and, for a panic, show the stack from the
+  function that panicked. The tracing middleware puts the stack on the
+  request's span as `exception.stacktrace`, so an OpenTelemetry exporter
+  of your own gets it as well. A trace line gains `stack`.
+- **Telemetry: an overview that counts every request.** The plugin now
+  counts each request as it ends, kept or not, by minute and route, in a
+  third day file (`stats-YYYYMMDD.jsonl`, sealed and removed with its
+  day). An Overview screen reads it: requests, failed, slow and the time
+  95 in 100 finished within, over the last hour, 24 hours or 7 days, as
+  totals, three bar charts and a table of routes. `gofastr telemetry
+  stats` and the MCP tool `telemetry_stats` give the same counts. The
+  bare standalone path now lands on the Overview. See
+  [request counts](framework/docs/content/telemetry.md#request-counts).
+- **Telemetry: issues and alerts.** Failed requests are grouped by
+  route, status and error, with the numbers and IDs in the error set
+  aside, so one bug is one row with a count and a first and last seen.
+  The error comes from the failed step, else from the ERROR line the app
+  logged for the request. There is an Issues screen, `gofastr telemetry
+  issues`, `requests --issue <id>` and the MCP tool `telemetry_issues`.
+  Alert rules (`Config.Alerts`) count failed or slow requests in a
+  window, on one route or all; one rule is on by default, ten failed in
+  five minutes. A rule firing or resolving is logged, shown on the
+  Requests and Issues screens and handed to `Config.Notify`; `telemetry.WebhookNotifier`
+  posts it to a Slack, Discord, Teams or Mattermost webhook. A trace
+  line gains `err`.
+- **Telemetry: sealed days, paging and live lists.** A finished day's
+  log and trace files are packed into gzip blocks in the background,
+  about a seventh of their size, with an index of block times and trace
+  IDs: the default cap now holds about 13 days at 20 requests a second,
+  and a request opens by trace ID in about 80 ms. The request and log
+  lists page 25 rows at a time in both directions, refresh their newest
+  page every ten seconds, and a log search that runs past three seconds
+  shows what it found and carries on from there.
+- **`admin.Page.Part`** ([admin](framework/docs/content/admin.md)): the
+  piece of an admin page that keeps itself current, served alone at
+  `admin.PagePartPath(prefix, path)` behind the gate and the page's
+  `Access`, for a polled region.
+- **`ui.Waterfall`**
+  ([new components](framework/docs/content/ui-new-components.md)): the
+  steps of one request or job as bars on a shared time axis, in a table
+  whose start and duration cells are text. `ui.DurationText` writes a
+  latency in the reader's locale.
+- **`middleware.NoteRoute`**
+  ([observability](framework/docs/content/observability.md)): a router
+  behind a catch-all names the route it matched, and the request's span
+  takes it. The UI host does this for every screen, so a page's span
+  reads `HTTP GET /orders/{id}`, not `HTTP GET unmatched`.
+- **Trace IDs on log lines** ([log](framework/docs/content/log.md)).
+  With a TracerProvider installed, `battery/log` adds `trace_id` and
+  `span_id` to every line logged with a context that holds a span, the
+  access line included. Nothing changes without one.
 - **Embed surfaces on routes with parameters**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669),
   [embed](framework/docs/content/embed.md)). `embed.New` accepts a
@@ -710,6 +851,33 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **A `ui.DataTable` caption wrapped in a narrow box on a phone.** In
+  the card and row phone layouts the caption stayed a table caption
+  inside a table that no longer was one, and shrank to its longest word.
+  It is a full-width block there now.
+- **`ui.BarChart` with `ShowAxis` and `HideValues` cut its top and bottom
+  axis labels in half**, and a chart narrower than its `Width` kept its
+  full height, with a blank band above and below the drawing. The axis
+  labels have room now, and the height follows the width.
+- **`ui.BarChart` with `ShowAxis` cut off long tick labels.** The left
+  gutter was a fixed 30px, so a count in the thousands lost its first
+  digits ("1,500" read ".500"). The gutter is now as wide as the longest
+  tick label.
+- **A chip or code box in a `Truncate` column of `ui.DataTable` was laid
+  out at its full length under the cell's clip.** Its end edge was cut
+  off and the box reached past the screen. It is now held to the cell
+  and ends its own text with an ellipsis.
+- **`tracing.OpenDB` on SQLite stored timestamps the app could not read
+  back.** A database handle opened from another handle's driver, which
+  is how `core/tracing` wraps connections, got the bare SQLite driver
+  with none of `sqlite/stdlib`'s defaults: a `time.Time` went to disk in
+  Go's `String` format and the next start failed on it. The driver a
+  handle reports now carries the defaults. Rows written by an affected
+  build keep the bad format; nothing rewrites them.
+- **The Postgres probe ran on every request.** `framework/crud` asked
+  the database `SELECT version()` each time it needed the dialect. On
+  SQLite that query fails by design, so every such request ran a failing
+  query. The answer is now remembered per database handle.
 - **A refused entity screen keeps its heading.** A list, record or
   create screen the caller may not read drew the "Not available" notice
   alone, with no `<h1>`, so an axe run failed `page-has-heading-one`

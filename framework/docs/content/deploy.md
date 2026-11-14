@@ -48,6 +48,82 @@ gofastr build --pkg ./cmd/server
 > `jackc/pgx` stdlib driver; the `mattn/go-sqlite3` driver needs CGO, so
 > choose your base image accordingly (see the Dockerfile note below).
 
+## One server over SSH: `gofastr deploy`
+
+For one Linux server (a small VPS is enough), `gofastr deploy` puts the
+app there as a systemd service. Nothing else is installed on the server:
+no agent, no container runtime.
+
+```sh
+gofastr deploy deploy@203.0.113.7 --name shop --env-file prod.env --port 8080
+```
+
+It asks the server what CPU it has, builds the package in this directory
+for it, copies the binary over SSH, starts it, and waits for the app to
+answer `/healthz` with a 2xx. If it does not within 30 seconds, the
+release before is started again, the failed one is removed, the last
+lines the app logged are printed, and the command exits non-zero.
+
+What it sets up, on the first deploy and kept the same on later ones:
+
+- `/opt/<name>/releases/<UTC time>/<name>`, one directory per release,
+  and `/opt/<name>/current`, a link to the one running. The newest five
+  earlier releases are kept (`--keep`).
+- A system user `<name>` with no login, which the app runs as.
+- `/var/lib/<name>`, the only place the app may write (mode 0750). `HOME`
+  and `XDG_STATE_HOME` point into it, so a SQLite file with a relative
+  path and the [telemetry](telemetry.md) files land there.
+- `/etc/<name>/env`, from `--env-file`: `KEY=value` lines, readable by
+  root and the app only. A deploy without `--env-file` leaves it as it is.
+- `/etc/systemd/system/<name>.service`: restarts the app after a crash,
+  every time, and starts it at boot. It sets `GOFASTR_ENV=production`,
+  which turns the dev-only features off whatever `GOFASTR_DEV` says in
+  an env file copied from a laptop.
+- `/etc/systemd/system/<name>.socket`: systemd opens the app's port and
+  keeps it. See below.
+
+### Restarts do not close the port
+
+systemd holds the listening socket and hands it to the app when it
+starts (`App.Start` takes it in place of opening the address it was
+given). While the app is down, between one release and the next or
+after a crash, connections wait in the socket's queue and are answered
+by the app that starts: a deploy, a rollback or a crash is a slower
+request, not a refused one. Measured on a 1 CPU server at ten requests a
+second: none failed through a redeploy, a rollback and three `kill -9`
+in a row; the slowest took 1.4 seconds.
+
+The port in the socket unit is `--port`, on every interface. The app's
+own address setting is not used while systemd passes it a socket, and
+what the bind may expose (the dev-only MCP tools, livereload) is decided
+from the socket's address, not from that setting.
+
+A binary that cannot take a socket (built on a GoFastr before this, or
+not a GoFastr app) is detected and opens its own port as before, with
+about a second of closed port on each restart. The first deploy that
+moves an app from one way to the other closes the port once.
+
+Each release keeps the units it was deployed with, in
+`releases/<time>/units/`, and going back to a release puts them back.
+
+```sh
+gofastr deploy status deploy@203.0.113.7 --name shop     # release, service, health
+gofastr deploy rollback deploy@203.0.113.7 --name shop   # back one release
+```
+
+`rollback` starts the release before the running one and checks it the
+same way; if that one does not answer, the release it left runs again.
+
+The server needs sshd, systemd and bash. The SSH user must be root or
+have passwordless sudo. The server is named as `user@host` or as a host
+from your SSH config; `--ssh-port` and `-i` are passed to `ssh`. `--bin
+<file>` deploys a Linux binary you built yourself in place of building
+one, and `--pkg` names the main package when it is not `.`.
+
+What it does not do: TLS (put a reverse proxy in front, or see
+[Serving HTTPS from the app](#serving-https-from-the-app)), a firewall,
+or more than one server.
+
 ## Production Dockerfile
 
 Multi-stage, distroless runtime, non-root, pure-Go build (Postgres):

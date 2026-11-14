@@ -838,6 +838,14 @@ type CalloutConfig struct {
 	ID      string
 	Class   string
 
+	// Standing marks a danger or warning callout that is part of the
+	// page as drawn, not news that arrived: a failed record's reason on
+	// its detail page, a notice inside a region that re-renders on a
+	// timer. It keeps its tone and loses role=alert, which a screen
+	// reader announces at once, over whatever it was reading, every
+	// time the region is drawn again.
+	Standing bool
+
 	// ExtraAttrs forwards additional attributes (data-* test hooks,
 	// analytics markers) to the callout's root element. Keys the
 	// component owns are dropped: class and id (use Class / ID),
@@ -861,8 +869,8 @@ var calloutClasses = headless.Classes{
 // headless.Alert. Distinct from Toast / Notification (ephemeral);
 // callouts live inline with content.
 //
-// Danger and warning callouts interrupt (role=alert); the rest are
-// standing messages the page rendered, which do not. The old
+// Danger and warning callouts interrupt (role=alert) unless Standing;
+// the rest are standing messages the page rendered, which do not. The old
 // complementary-<aside> shape is gone: a tip is emphasis, not a
 // tangential region, and a nested complementary landmark is the axe
 // finding the Landmark field existed to dodge.
@@ -873,7 +881,7 @@ func Callout(cfg CalloutConfig, body ...render.HTML) render.HTML {
 	}
 	checkStatusVariant("Callout", v)
 	live := headless.LiveOff
-	if v == StatusDanger || v == StatusWarning {
+	if (v == StatusDanger || v == StatusWarning) && !cfg.Standing {
 		live = headless.LiveAssertive
 	}
 	var bodyHTML render.HTML
@@ -1174,6 +1182,10 @@ type CodeBlockConfig struct {
 	// Filename, when set, renders a chrome header (status dot + filename)
 	// above the body and switches the wrapper to a framed container.
 	Filename string
+	// Label names the block for assistive tech in place of the default
+	// "source code": what the text is when it is not source ("Call
+	// stack", "Server response").
+	Label string
 	// ShowCopy adds a copy-to-clipboard button (the framework CopyButton)
 	// in the header, targeting this block's own body. Forces a header even
 	// when Filename is empty.
@@ -1290,6 +1302,9 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 	if cfg.Language != "" {
 		label = i18nui.CodeBlockLangSource.Text(ctx, map[string]any{"language": cfg.Language})
 	}
+	if cfg.Label != "" {
+		label = cfg.Label
+	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs, "tabindex", "aria-label")
 
 	// Body <pre>. WCAG 2.1.1: tabindex=0 so keyboard users can pan the
@@ -1390,13 +1405,21 @@ func CodeBlock(cfg CodeBlockConfig) render.HTML {
 			html.Span(html.TextConfig{}, render.Text(i18nui.CodeBlockLines.Text(ctx, map[string]any{"n": len(cfg.Lines)}))))
 	}
 	if cfg.ShowCopy {
+		copyName := ""
+		if cfg.Label != "" {
+			copyName = i18nui.CodeBlockCopyOf.Text(ctx, map[string]any{"what": cfg.Label})
+		}
 		metaChildren = append(metaChildren, CopyButton(CopyButtonConfig{
 			Target:       "#" + bodyID,
 			Label:        i18nui.CodeBlockCopy.Text(ctx),
 			CopiedLabel:  i18nui.CodeBlockCopied.Text(ctx),
 			AnnounceText: i18nui.CopyCopied.Text(ctx),
-			Ctx:          ctx,
-			Class:        "fui-code-block__copy",
+			// A page with two blocks has two buttons that say "copy":
+			// a named block's button says what it copies. The visible
+			// word stays, and leads the name.
+			AriaLabel: copyName,
+			Ctx:       ctx,
+			Class:     "fui-code-block__copy",
 		}))
 	}
 	if len(metaChildren) > 0 {

@@ -27,6 +27,7 @@ import (
 	_ "github.com/DonaldMurillo/gofastr/battery/setup"
 	_ "github.com/DonaldMurillo/gofastr/battery/sitesearch"
 	_ "github.com/DonaldMurillo/gofastr/battery/storage"
+	_ "github.com/DonaldMurillo/gofastr/battery/telemetry"
 	_ "github.com/DonaldMurillo/gofastr/battery/webhook"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	_ "github.com/DonaldMurillo/gofastr/framework"

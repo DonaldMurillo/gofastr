@@ -15,6 +15,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/auditcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/buildcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/deploycmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/desktopcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/docscmd"
@@ -28,6 +29,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/project"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/releasecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/semanticcmd"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/telemetrycmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/testcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/themecmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/unmountcmd"
@@ -114,6 +116,13 @@ func printHelp() {
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
+  deploy <user@host>    Put the app on a Linux server over SSH as a systemd service:
+                        build, copy, start, health check, and back to the release
+                        before if the check fails. rollback · status.
+                        See "gofastr docs deploy"
+  telemetry <sub>       Read the log and trace files battery/telemetry writes, with
+                        the app running or not: logs · requests · request <trace-id>
+                        --dir <directory> or --app <name>. See "gofastr docs telemetry"
   upgrade               Guide the app to a newer GoFastr release: shows every
                         migration note between go.mod's version and the target,
                         points at affected lines; --apply runs the go get/tidy/
@@ -188,6 +197,10 @@ var commands = []commandSpec{
 	{names: []string{"desktop"}, run: desktopcmd.RunDesktop, ownsHelp: true, versionChecked: true},
 	{names: []string{"release"}, run: releasecmd.RunRelease, ownsHelp: true, versionChecked: true},
 	{names: []string{"audit"}, run: auditcmd.RunAudit, ownsHelp: true, versionChecked: true},
+	// telemetry reads an app's files wherever they are; it needs no
+	// project. deploy builds the project in this directory.
+	{names: []string{"telemetry"}, run: telemetrycmd.RunTelemetry, ownsHelp: true},
+	{names: []string{"deploy"}, run: deploycmd.RunDeploy, ownsHelp: true, versionChecked: true},
 	{names: []string{"verify"}, run: verifycmd.RunVerify, ownsHelp: true, versionChecked: true, json: func(args []string) bool {
 		return slices.Contains(args, "--json")
 	}},

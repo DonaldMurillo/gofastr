@@ -98,6 +98,7 @@ func shortIDCSS(_ style.Theme) string {
   gap: var(--spacing-xs, 2px);
   white-space: nowrap;
   min-inline-size: 0;
+  max-inline-size: 100%;
 }
 /* In a box narrower than the id (a phone row's cell) the code gives
    way and the copy button stays whole. */

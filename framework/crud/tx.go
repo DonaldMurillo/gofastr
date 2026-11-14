@@ -49,6 +49,7 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 		opCtx, held := holdCascadeEmits(ctx)
 		if err := db.InSavepoint(opCtx, tx, func(ctx context.Context, tx *sql.Tx) error {
 			txCh := *ch
+			txCh.root = ch.dialectHandle()
 			txCh.DB = tx
 			return fn(ctx, &txCh)
 		}); err != nil {
@@ -88,6 +89,7 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	txCh := *ch
+	txCh.root = ch.dialectHandle()
 	txCh.DB = tx
 	txCtx, queue := db.WithTxQueue(ctx, tx)
 	// The deferred rollback guarantees the tx is closed on EVERY exit path,

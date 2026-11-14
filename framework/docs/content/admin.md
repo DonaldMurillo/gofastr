@@ -181,6 +181,22 @@ admin.New(admin.Config{
 })
 ```
 
+A page whose query string picks between views sets `TabTitle`, a
+`func(ctx context.Context) string` that names the view for the browser
+tab ("Failed requests"); `Title` stays the sidebar, crumb and palette
+label. An empty answer, or a panic, falls back to `Title`.
+
+A page that keeps part of itself current sets `Part`: the admin serves
+that piece alone at `admin.PagePartPath(prefix, path)`, behind the gate
+and the page's own `Access`, and the page points a `data-cui-poll`
+region at it. The request's query string reaches `Part` as it reaches
+`Build`.
+
+`battery/telemetry/telemetryadmin` is a ready-made set of pages:
+`Pages: telemetryadmin.Pages(tel, "/admin")` adds Overview, Requests, Issues and Logs over
+the files [battery/telemetry](telemetry.md) writes. They refuse a caller
+scoped to a tenant: the files hold every tenant's lines together.
+
 A page's and a card's `Title`, a link's `Label` and a metric's `Label`
 are `i18n.Phrase` values, so the admin draws them in the request's
 language and a catalog entry for the key translates them (see

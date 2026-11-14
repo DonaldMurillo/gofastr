@@ -1632,11 +1632,7 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 	// hosts (and hosts whose app skipped the middleware) get it here
 	// so a Policy or ScreenLoader on a dynamic route can read the
 	// same params the render pipeline injects.
-	if _, ok := app.MatchFromContext(ctx); !ok {
-		if m, ok := ds.App.Router.MatchFor(path); ok {
-			ctx = app.WithMatch(ctx, m)
-		}
-	}
+	ctx = withRouteMatch(ctx, ds.App.Router, path)
 	// Install the per-request signal value bag BEFORE rendering so a
 	// producer's Slice.Seed(ctx, v) during Load (and a consumer's
 	// Bind(ctx, …) during RenderCtx) write/read the same bag that
@@ -3195,11 +3191,7 @@ func (ds *UIHost) handlePartRequest(w http.ResponseWriter, r *http.Request, path
 	}
 	ctx := app.WithRequest(r.Context(), r)
 	ctx = store.WithValues(ctx)
-	if _, ok := app.MatchFromContext(ctx); !ok {
-		if m, ok := ds.App.Router.MatchFor(path); ok {
-			ctx = app.WithMatch(ctx, m)
-		}
-	}
+	ctx = withRouteMatch(ctx, ds.App.Router, path)
 	fill, outcome := ds.App.RenderPartResult(ctx, path, addr)
 	if outcome == app.PartReset {
 		ds.writePartReset(w, partResetAny)
@@ -3310,11 +3302,7 @@ func (ds *UIHost) handlePartialPage(w http.ResponseWriter, r *http.Request, path
 	ctx, recorded := app.TrackStatus(ctx)
 	// Route match for policies/screens on the partial path too, same
 	// as handlePage: RouteMatchMiddleware normally installed it.
-	if _, ok := app.MatchFromContext(ctx); !ok {
-		if m, ok := ds.App.Router.MatchFor(path); ok {
-			ctx = app.WithMatch(ctx, m)
-		}
-	}
+	ctx = withRouteMatch(ctx, ds.App.Router, path)
 
 	// Intercepting routes (#130 slice 5): the client ASKS for an overlay
 	// by sending X-Gofastr-Intercept plus the location it is navigating
@@ -4982,11 +4970,7 @@ func (ds *UIHost) RenderStaticPageResult(ctx context.Context, path string) (stri
 			ctx = app.WithRequest(ctx, req)
 		}
 	}
-	if _, ok := app.MatchFromContext(ctx); !ok {
-		if m, ok := ds.App.Router.MatchFor(path); ok {
-			ctx = app.WithMatch(ctx, m)
-		}
-	}
+	ctx = withRouteMatch(ctx, ds.App.Router, path)
 	// Install the value bag so producer-seeded slice values are captured
 	// during the static render (matches the live handlePage path).
 	ctx = store.WithValues(ctx)
@@ -5987,4 +5971,20 @@ var screenMetaTagPrefix = regexp.MustCompile(`(?i)<(meta|link)\b`)
 
 func markScreenHead(head string) string {
 	return screenMetaTagPrefix.ReplaceAllString(head, `<$1 data-cui-page-meta=""`)
+}
+
+// withRouteMatch puts the screen route path matched on ctx, unless
+// RouteMatchMiddleware already did, and tells the tracing middleware
+// which route that is: the mux sees every screen through one catch-all,
+// so without the note every page's span would read "unmatched".
+func withRouteMatch(ctx context.Context, router *app.Router, path string) context.Context {
+	m, ok := app.MatchFromContext(ctx)
+	if !ok {
+		if m, ok = router.MatchFor(path); !ok {
+			return ctx
+		}
+		ctx = app.WithMatch(ctx, m)
+	}
+	middleware.NoteRoute(ctx, m.ScreenID())
+	return ctx
 }

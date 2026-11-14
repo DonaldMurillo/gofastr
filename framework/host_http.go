@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/sdlisten"
 	"net"
 	"net/http"
 	"os"
@@ -34,6 +35,22 @@ func (h *httpHost) preflight() error {
 		return err
 	}
 	h.network = "tcp"
+	if h.ln == nil {
+		// A socket systemd opened for this process is the listener: it
+		// is the port already held, through restarts, and the address
+		// asked for would find it taken. Taken here, before the guards
+		// below run: they decide what a bind may expose, and must read
+		// the socket's own address. Read from the address Start was
+		// given, an app told "localhost:8080" kept its dev-only tools
+		// while serving on every interface.
+		passed, err := sdlisten.Inherited()
+		if err != nil {
+			return fmt.Errorf("listen and serve: %w", err)
+		}
+		if passed != nil {
+			h.ln = &onceCloseListener{Listener: passed}
+		}
+	}
 	if h.ln != nil {
 		// A caller-supplied listener is served as given: there is no
 		// address to remap, and the guards below read its own address
