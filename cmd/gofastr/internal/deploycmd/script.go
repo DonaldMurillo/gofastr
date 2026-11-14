@@ -43,6 +43,10 @@ type plan struct {
 // times in ten seconds is left stopped until someone logs in. HOME
 // and XDG_STATE_HOME point there, so anything the app keeps by default
 // (the telemetry files among it) lands under /var/lib/<name>.
+// GOFASTR_ENV says production, which turns the dev-only features off
+// (the ungated MCP tools, livereload) whatever GOFASTR_DEV says: an env
+// file copied from a laptop often carries it. The env file is read
+// after, so a server that is meant to be something else can say so.
 func (p plan) unit() string {
 	held := ""
 	if p.socket {
@@ -63,6 +67,7 @@ StateDirectory=` + p.name + `
 StateDirectoryMode=0750
 Environment=HOME=` + p.root + `/var/lib/` + p.name + `
 Environment=XDG_STATE_HOME=` + p.root + `/var/lib/` + p.name + `/state
+Environment=GOFASTR_ENV=production
 EnvironmentFile=-` + p.root + `/etc/` + p.name + `/env
 ExecStart=` + p.root + `/opt/` + p.name + `/current/` + p.name + `
 Restart=always

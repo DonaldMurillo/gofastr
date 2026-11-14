@@ -76,7 +76,9 @@ What it sets up, on the first deploy and kept the same on later ones:
 - `/etc/<name>/env`, from `--env-file`: `KEY=value` lines, readable by
   root and the app only. A deploy without `--env-file` leaves it as it is.
 - `/etc/systemd/system/<name>.service`: restarts the app after a crash,
-  every time, and starts it at boot.
+  every time, and starts it at boot. It sets `GOFASTR_ENV=production`,
+  which turns the dev-only features off whatever `GOFASTR_DEV` says in
+  an env file copied from a laptop.
 - `/etc/systemd/system/<name>.socket`: systemd opens the app's port and
   keeps it. See below.
 
@@ -91,8 +93,10 @@ request, not a refused one. Measured on a 1 CPU server at ten requests a
 second: none failed through a redeploy, a rollback and three `kill -9`
 in a row; the slowest took 1.4 seconds.
 
-The port in the socket unit is `--port`. The app's own address setting
-is not used while systemd passes it a socket.
+The port in the socket unit is `--port`, on every interface. The app's
+own address setting is not used while systemd passes it a socket, and
+what the bind may expose (the dev-only MCP tools, livereload) is decided
+from the socket's address, not from that setting.
 
 A binary that cannot take a socket (built on a GoFastr before this, or
 not a GoFastr app) is detected and opens its own port as before, with

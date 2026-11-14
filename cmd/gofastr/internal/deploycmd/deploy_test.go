@@ -268,7 +268,10 @@ func TestDeployLifecycle(t *testing.T) {
 	unit, _ := os.ReadFile(filepath.Join(s.dir, "etc/systemd/system/shop.service"))
 	for _, want := range []string{"User=shop", "ExecStart=" + s.dir + "/opt/shop/current/shop", "Restart=always", "EnvironmentFile=-" + s.dir + "/etc/shop/env", "ProtectSystem=strict", "NoNewPrivileges=true", "StateDirectory=shop",
 		// Never left stopped after a run of crashes, and its data is its own.
-		"StartLimitIntervalSec=0", "StateDirectoryMode=0750"} {
+		"StartLimitIntervalSec=0", "StateDirectoryMode=0750",
+		// Dev-only features are off on a server, whatever the env file
+		// was copied from; the file is read after and can say otherwise.
+		"Environment=GOFASTR_ENV=production\nEnvironmentFile=-"} {
 		if !strings.Contains(string(unit), want) {
 			t.Errorf("the unit lacks %q:\n%s", want, unit)
 		}
