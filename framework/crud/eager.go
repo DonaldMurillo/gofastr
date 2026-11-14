@@ -28,17 +28,16 @@ import (
 //     target does not declare (another API version's, a removed field's)
 //     are dropped.
 //  3. Owner scope: an owner-scoped target (OwnerField set) gets
-//     `owner_field = <ctx owner>` ANDed in, exactly like the include path's
-//     applyRelatedOwnerScope. With no user in context the predicate becomes
+//     `owner_field = <ctx owner>` ANDed in, from the builder the include
+//     path uses. With no user in context the predicate becomes
 //     `owner_field = ""`, matching no real row (fail-closed).
 //  4. Tenant scope: a MultiTenant target gets `tenant_id = <ctx tenant>`
-//     ANDed in, exactly like applyRelatedTenantScope. With no tenant in
-//     context it likewise matches nothing.
+//     ANDed in, from the same builder. With no tenant in context it
+//     likewise matches nothing.
 //
 // Owner and tenant scopes are ANDed for every caller except one holding an
 // explicit cross-scope grant (owner.AllowCrossOwner, the target's
-// CrossOwnerRead, tenant.AllowCrossTenant), the same exemption
-// applyRelatedOwnerScope and applyRelatedTenantScope make on the include path.
+// CrossOwnerRead, tenant.AllowCrossTenant).
 // For everyone else the cross-table predicate is the IDOR back-door control
 // and is unconditional: lifting it would let an ?include= or an EagerLoad
 // caller reach across tenants and owners.
@@ -143,8 +142,7 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			softDeleteFilter = " AND deleted_at IS NULL"
 		}
 		served := servedColumns(target)
-		// Row-scope predicates for the target (owner + tenant), mirroring
-		// the include path's applyRelatedOwnerScope/applyRelatedTenantScope.
+		// Row-scope predicates for the target (owner + tenant).
 		// Empty when the target is neither owner-scoped nor multi-tenant, so
 		// an unscoped relation is untouched.
 		scopeFilters := eagerScopeFilters(ctx, target)
@@ -432,36 +430,23 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 	return rows.Err()
 }
 
-// eagerScopeFilters builds the owner/tenant row-scope predicates for a
-// relation target, mirroring the include path's applyRelatedOwnerScope and
-// applyRelatedTenantScope (include.go) exactly. The result is rendered into
-// each loader's WHERE via filterClause/filterClauseQualified.
+// eagerScopeFilters is the one builder of the owner and tenant predicates
+// for a relation's target. Every path that reads a target's rows through a
+// relation renders its output: ?include=, EagerLoad, nested filters, pivot
+// rows and the foreign-key and cascade write checks.
 //
-//   - OwnerField set ⇒ `owner_field = <ctx owner>` (OpEq). With no owner in
-//     context the value is "" so the predicate matches no real row,
-//     fail-closed, identical to the include path.
-//   - MultiTenant ⇒ `tenant_id = <ctx tenant>` (OpEq), likewise fail-closed
-//     on an empty ctx tenant.
-//
-// The scopes are emitted for every caller EXCEPT one holding an explicit
-// cross-scope grant: owner.AllowCrossOwner, the target's own CrossOwnerRead
-// permission, or tenant.AllowCrossTenant. Those callers see every row on the
-// entity's own routes, so narrowing a relation for them removes a capability
-// without protecting anything, and did: EagerLoad returned an empty relation
-// where the routes returned everything. For every other caller the predicate
-// is unconditional, and it is the cross-table IDOR control.
-// A nil target (no registry) yields no filters.
+// An owner-scoped target gets owner_field = <ctx owner>, and a multi-tenant
+// one tenant column = <ctx tenant>. With no owner or tenant in ctx the value
+// is empty, which matches no row. A caller holding an explicit cross-scope
+// grant (owner.AllowCrossOwner, the target's CrossOwnerRead permission,
+// tenant.AllowCrossTenant) gets no predicate for that scope, as on the
+// target's own routes. A nil target yields no filters.
 func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.ParsedFilter {
 	if target == nil {
 		return nil
 	}
 	var out []filter.ParsedFilter
 	if ownerField := target.Config.Scope.OwnerField; ownerField != "" {
-		// Cross-owner callers are exempt, exactly as they are on the include
-		// path and on the routes themselves. Omitting the branch here made
-		// EagerLoad answer with an empty relation for a caller every route
-		// serves in full, the same defect the include path had, left behind
-		// when that one was fixed while this comment still claimed parity.
 		crossOwner := owner.IsCrossOwner(ctx)
 		if !crossOwner {
 			probe := &CrudHandler{Entity: target}

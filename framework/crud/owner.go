@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/framework/access"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
@@ -78,13 +79,12 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 // session requirement, owner scoping, tenant scoping, and RBAC, as a boolean
 // with no HTTP response written.
 //
-// It answers the STRICTER of itself and requireScope(opRead) wherever the two
-// could differ. In particular it does not honour owner.AllowCrossOwner, which
+// It is the same decision the read route makes (scopeGate), so the two
+// cannot differ. In particular it does not honour owner.AllowCrossOwner, which
 // the in-process requireOwnerContext does and the HTTP route's RequireOwner
 // does not: that marker is exported, so a host could apply it to a request
 // context, and a rendering surface trusting the looser answer would show rows
-// the REST route refuses. Read scoping is still a separate implementation of
-// one rule and will drift if edited without its counterpart.
+// the REST route refuses.
 //
 // It is COLLECTION-level: the RBAC check asks about the entity, not a specific
 // record id, so a resource-aware Decider that denies one row is not consulted.
@@ -195,7 +195,7 @@ func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool 
 //
 // Owner and tenant are deliberately excluded. They scope WHICH rows a caller
 // sees, and the eager loaders already apply them per node
-// (applyRelatedOwnerScope / applyRelatedTenantScope), so a missing owner or
+// (applyRelatedScope), so a missing owner or
 // tenant yields zero rows rather than a refusal, the framework's existing,
 // tested fail-closed behavior. Folding them in here would convert that
 // filtering into a 403 and change the answer for callers who are legitimately
@@ -203,19 +203,14 @@ func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool 
 //
 // Use this ONLY where the row scoping is provably applied separately. Today
 // that is exactly one caller: the include gate, whose eager loaders call
-// applyRelatedOwnerScope and applyRelatedTenantScope per node. Nested filters
+// applyRelatedScope per node. Nested filters
 // looked like the same case and are not, their EXISTS subquery emits no owner
 // or tenant predicate, so choosing this gate there left a live count oracle
 // over rows the target's own route refuses. If you are reaching for this
 // predicate, first find the code that applies owner and tenant for your path;
 // if you cannot point at it, you want CanReadScoped.
 func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
-	if ch.sessionGated() {
-		if _, ok := handler.GetUser(ctx); !ok {
-			return false
-		}
-	}
-	return ch.CanRead(ctx)
+	return ch.sessionGate(ctx) == nil && ch.CanRead(ctx)
 }
 
 // requirePermission enforces EntityConfig.Access for op. When the entity
@@ -232,19 +227,96 @@ func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
 // through itemPermitted. With no decider configured, CanResource
 // answers exactly what access.Can answered, so behaviour is byte-identical.
 func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp, recordID string) bool {
-	perm := ch.permissionForOp(op)
-	if perm == "" {
+	return ch.permissionGate(r.Context(), op, recordID).pass(w, r)
+}
+
+// gateRefusal is why an access gate refuses: the status and phrase the
+// route answers with. A nil *gateRefusal is the gate letting the caller
+// through.
+type gateRefusal struct {
+	status int
+	reason i18n.Phrase
+	params map[string]any
+}
+
+// pass reports whether the gate let the caller through, and writes the
+// refusal when it did not.
+func (g *gateRefusal) pass(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case g == nil:
 		return true
+	case g.params != nil:
+		writeJSONError(w, r, g.status, g.reason, g.params)
+	default:
+		writeJSONError(w, r, g.status, g.reason)
 	}
-	if !ch.accessAllows(r.Context(), perm, recordID) {
-		if perm == permRefused {
-			writeJSONError(w, r, http.StatusForbidden, reasonOpRefused)
-			return false
-		}
-		writeJSONError(w, r, http.StatusForbidden, handler.ReasonMissingPermission, map[string]any{"permission": string(perm)})
-		return false
+	return false
+}
+
+// scopeGate is the one answer to "may this caller run op on this entity",
+// asked about record id ("" for the collection). The routes write its
+// refusal (requireScope, RequireRead) and the Can*Scoped predicates
+// report whether there is one, so a screen and the route it mirrors
+// cannot disagree. The gates run in the order the routes have always
+// answered in: owner, tenant, the baseline session, then the permission.
+func (ch *CrudHandler) scopeGate(ctx context.Context, op crudOp, id string) *gateRefusal {
+	if g := ch.ownerGate(ctx); g != nil {
+		return g
 	}
-	return true
+	if g := ch.tenantGate(ctx); g != nil {
+		return g
+	}
+	if g := ch.sessionGate(ctx); g != nil {
+		return g
+	}
+	return ch.permissionGate(ctx, op, id)
+}
+
+// ownerGate refuses an OwnerField entity when ctx carries no owner. It
+// does not honour owner.AllowCrossOwner: a host could apply that
+// exported marker to a request context.
+func (ch *CrudHandler) ownerGate(ctx context.Context) *gateRefusal {
+	if ch.Entity.Config.Scope.OwnerField == "" {
+		return nil
+	}
+	if _, ok := owner.Get(ctx); !ok {
+		return &gateRefusal{status: http.StatusUnauthorized, reason: handler.ReasonAuthenticationRequired}
+	}
+	return nil
+}
+
+// tenantGate refuses a MultiTenant entity when ctx carries no tenant and
+// no cross-tenant grant.
+func (ch *CrudHandler) tenantGate(ctx context.Context) *gateRefusal {
+	if ch.requireTenantContext(ctx) != nil {
+		return &gateRefusal{status: http.StatusUnauthorized, reason: reasonTenantRequired}
+	}
+	return nil
+}
+
+// sessionGate refuses an entity on the default posture (no OwnerField,
+// no Access block, not Public) when ctx carries no user.
+func (ch *CrudHandler) sessionGate(ctx context.Context) *gateRefusal {
+	if !ch.sessionGated() {
+		return nil
+	}
+	if _, ok := handler.GetUser(ctx); !ok {
+		return &gateRefusal{status: http.StatusUnauthorized, reason: handler.ReasonAuthenticationRequired}
+	}
+	return nil
+}
+
+// permissionGate refuses when the entity declares a permission for op
+// and ctx does not hold it for record id.
+func (ch *CrudHandler) permissionGate(ctx context.Context, op crudOp, id string) *gateRefusal {
+	perm := ch.permissionForOp(op)
+	if perm == "" || ch.accessAllows(ctx, perm, id) {
+		return nil
+	}
+	if perm == permRefused {
+		return &gateRefusal{status: http.StatusForbidden, reason: reasonOpRefused}
+	}
+	return &gateRefusal{status: http.StatusForbidden, reason: handler.ReasonMissingPermission, params: map[string]any{"permission": string(perm)}}
 }
 
 // itemPermitted re-asks op's permission about one record: the per-item twin
@@ -430,14 +502,13 @@ func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
 // requests that can't produce an owner id, regardless of whether the
 // caller mounted auth middleware in front of the route.
 func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id any, ok bool) {
+	if !ch.ownerGate(r.Context()).pass(w, r) {
+		return nil, false
+	}
 	if ch.Entity.Config.Scope.OwnerField == "" {
 		return nil, true
 	}
-	id, found := owner.Get(r.Context())
-	if !found {
-		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
-		return nil, false
-	}
+	id, _ = owner.Get(r.Context())
 	return id, true
 }
 
@@ -459,14 +530,7 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 // signal, generalized to every CRUD entrypoint instead of just the SSE
 // feed.
 func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
-	if !ch.sessionGated() {
-		return true // an explicit mechanism already governs this entity
-	}
-	if _, ok := handler.GetUser(r.Context()); !ok {
-		writeJSONError(w, r, http.StatusUnauthorized, handler.ReasonAuthenticationRequired)
-		return false
-	}
-	return true
+	return ch.sessionGate(r.Context()).pass(w, r)
 }
 
 // sessionGated reports whether the entity falls back to the baseline session
@@ -485,16 +549,7 @@ func (ch *CrudHandler) sessionGated() bool {
 // export, bulk bar, trash and saved views) gates on it so one refusal
 // reads the same on every sibling.
 func (ch *CrudHandler) RequireRead(w http.ResponseWriter, r *http.Request) bool {
-	if _, ok := ch.RequireOwner(w, r); !ok {
-		return false
-	}
-	if !ch.RequireTenant(w, r) {
-		return false
-	}
-	if !ch.requireAuthenticated(w, r, opRead) {
-		return false
-	}
-	return ch.requirePermission(w, r, opRead, "")
+	return ch.scopeGate(r.Context(), opRead, "").pass(w, r)
 }
 
 // requireScope runs every secure-by-default access gate for an HTTP request in
@@ -506,16 +561,7 @@ func (ch *CrudHandler) RequireRead(w http.ResponseWriter, r *http.Request) bool 
 // single chokepoint guarantees a new handler can't accidentally enforce one
 // scope but forget another.
 func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op crudOp) bool {
-	if _, ok := ch.RequireOwner(w, r); !ok {
-		return false
-	}
-	if !ch.RequireTenant(w, r) {
-		return false
-	}
-	if !ch.requireAuthenticated(w, r, op) {
-		return false
-	}
-	return ch.requirePermission(w, r, op, ch.pathID(r))
+	return ch.scopeGate(r.Context(), op, ch.pathID(r)).pass(w, r)
 }
 
 // RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.
@@ -532,13 +578,5 @@ func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op c
 // access (admin tooling) must set a tenant id deliberately rather than rely on
 // an empty context.
 func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok bool) {
-	if !ch.Entity.Config.Scope.MultiTenant {
-		return true
-	}
-	ctx := r.Context()
-	if tenantIDFromCtx(ctx) == "" && !tenant.IsCrossTenant(ctx) {
-		writeJSONError(w, r, http.StatusUnauthorized, reasonTenantRequired)
-		return false
-	}
-	return true
+	return ch.tenantGate(r.Context()).pass(w, r)
 }

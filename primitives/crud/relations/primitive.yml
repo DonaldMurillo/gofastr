@@ -7,14 +7,6 @@ code:
   - framework/crud/relation_keys.go
 docs:
   - framework/docs/content/includes.md
-twins:
-  - job: Building the owner and tenant predicate for a relation's target
-    why: Nothing requires it; include builds node filters and the eager loader builds predicates, and one builder feeding both is the fix.
-    sites:
-      - path: framework/crud/include.go
-        note: applyRelatedOwnerScope and applyRelatedTenantScope, for ?include=
-      - path: framework/crud/eager.go
-        note: eagerScopeFilters, for EagerLoad and nested filters
 invariants:
   - id: eager-load-scrubs
     rule: EagerLoad with a registry excludes soft-deleted rows, serves only declared non-Hidden columns, and applies owner and tenant scope; a target it cannot resolve is an error.
@@ -30,13 +22,22 @@ invariants:
       - test: framework/crud.TestInclude_ScopedFilterCannotBypassOwnerScope
       - test: framework/crud.TestInclude_RelatedTableTenantScope
       - test: framework/crud.TestInclude_EmptyTenantFailsClosed
-  - id: related-scope-builders-agree
-    rule: applyRelatedOwnerScope, applyRelatedTenantScope and eagerScopeFilters exempt the same cross-scope callers.
+  - id: one-related-scope-builder
+    rule: eagerScopeFilters is the only builder of a relation target's owner and tenant predicates, and the include path prepends its output to the caller's filters.
     enforced_by:
       - test: framework/crud.TestRelatedScopeHelpersHonourCrossScopeMarkers
       - test: framework/crud.TestEagerScopeFiltersExemptCrossScopeCallers
-    judge: Does this change alter the owner or tenant predicate in one of applyRelatedOwnerScope, applyRelatedTenantScope or eagerScopeFilters without the same change in the others?
+      - test: framework/crud.TestInclude_RelatedTableOwnerScope
+      - test: framework/crud.TestEagerLoadScopesOwner
 decisions:
+  - id: include-uses-the-eager-builder
+    date: 2026-11-14
+    status: accepted
+    decision: The include path gets its owner and tenant predicates from eagerScopeFilters.
+    rejected:
+      - option: Separate applyRelatedOwnerScope and applyRelatedTenantScope helpers for includes.
+        why: They were a second copy of the rule and had already drifted once, over the cross-owner exemption.
+    upholds: [one-related-scope-builder]
   - id: served-columns-allow-list
     status: accepted
     decision: Included rows serve an allow-list of declared columns.

@@ -9,14 +9,6 @@ code:
 docs:
   - framework/docs/content/access-control.md
   - framework/docs/content/entity-declarations.md
-twins:
-  - job: Deciding whether a caller's read posture admits an entity
-    why: Nothing requires it; CanReadScoped was added beside requireScope instead of under it, and one function answering both is the fix.
-    sites:
-      - path: framework/crud/owner.go
-        note: CanReadScoped answers as a boolean, requireScope as the HTTP gate
-      - path: framework/crud/write_gate.go
-        note: canScopedRecord answers per record
 invariants:
   - id: one-read-scope-builder
     rule: readScopeFilters is the only builder of ReadScope predicates, and every read sink renders its output.
@@ -46,10 +38,13 @@ invariants:
       - test: framework/crud.TestAnonymousCreateRejectedByDefault
       - test: framework/crud.TestAnonymousListRejectedByDefault
       - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
-  - id: read-posture-gates-agree
-    rule: CanReadScoped and requireScope give the same answer for every read posture.
+  - id: one-scope-gate
+    rule: The routes and the Can*Scoped predicates take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture.
     enforced_by:
       - test: framework/crud.TestCanReadScoped_PostureMatrix
+      - test: framework/crud.TestRequireReadRefusesAsListRoute
+      - test: framework/crud.TestWriteGatesRequireScope
+      - test: framework/crud.TestAnonymousListRejectedByDefault
   - id: write-read-back-hidden-by-scope
     rule: A write whose resulting row the caller's ReadScope would hide answers with the primary key only, and the write stands.
     enforced_by:
@@ -57,6 +52,14 @@ invariants:
       - test: framework/crud.TestCreateHidesReadScopedRow
       - test: framework/crud.TestBatchUpdateHidesReadScopedRow
 decisions:
+  - id: predicates-ask-the-route-gate
+    date: 2026-11-14
+    status: accepted
+    decision: The boolean predicates report whether scopeGate refuses, and the routes write that refusal.
+    rejected:
+      - option: A separate boolean implementation beside the HTTP gates.
+        why: It was a second copy of the access rule, and its own comment said it would drift.
+    upholds: [one-scope-gate]
   - id: read-scope-binds-reads-only
     status: accepted
     decision: ReadScope filters reads only; update, delete and upsert statements do not carry it, and the read-back of a write is cut to the primary key instead.
