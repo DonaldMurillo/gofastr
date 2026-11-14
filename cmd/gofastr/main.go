@@ -14,6 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/auditcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/buildcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
+	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/deploycmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/desktopcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/devcmd"
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/docscmd"
@@ -114,6 +115,10 @@ func printHelp() {
                         lint  scan for AI-typical mistakes (ignored Exec, missing CSRF, …)
                         a11y  guided accessibility lint; --url <base> runs the full
                               axe-core scan against a running app (both color schemes)
+  deploy <user@host>    Put the app on a Linux server over SSH as a systemd service:
+                        build, copy, start, health check, and back to the release
+                        before if the check fails. rollback · status.
+                        See "gofastr docs deploy"
   telemetry <sub>       Read the log and trace files battery/telemetry writes, with
                         the app running or not: logs · requests · request <trace-id>
                         --dir <directory> or --app <name>. See "gofastr docs telemetry"
@@ -169,6 +174,7 @@ func main() {
 var ownsHelp = map[string]bool{
 	"audit":     true,
 	"telemetry": true,
+	"deploy":    true,
 	"verify":    true,
 	"upgrade":   true,
 	"unmount":   true,
@@ -281,6 +287,8 @@ func dispatch(args []string) {
 		auditcmd.RunAudit(cmdArgs)
 	case "telemetry":
 		telemetrycmd.RunTelemetry(cmdArgs)
+	case "deploy":
+		deploycmd.RunDeploy(cmdArgs)
 	case "verify":
 		verifycmd.RunVerify(cmdArgs)
 	case "upgrade":
@@ -311,7 +319,7 @@ func dispatch(args []string) {
 
 // suggestions are the command names an unknown command is matched
 // against (aliases left out).
-var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "audit", "telemetry", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
+var suggestions = []string{"init", "new", "generate", "pack", "validate", "build", "dev", "export", "migrate", "test", "semantic", "harness", "docs", "agents", "desktop", "release", "deploy", "audit", "telemetry", "verify", "upgrade", "unmount", "remount", "theme", "version", "help"}
 
 // knownCommand reports whether name is a command dispatch runs, an
 // alias included.

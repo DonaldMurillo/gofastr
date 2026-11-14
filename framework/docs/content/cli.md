@@ -658,6 +658,24 @@ directories are followed with cycle detection. Accessibility and sandbox
 checks tolerate source files disappearing during an editor save; a missing
 root or another I/O failure still fails the check.
 
+## Deploy
+
+`gofastr deploy <user@host>` puts the app on one Linux server over SSH
+as a systemd service: it builds for the server's CPU, copies the binary,
+starts it, and waits for the health check. A release that does not pass
+is replaced by the one before it. See [Deployment](deploy.md).
+
+- `gofastr deploy <user@host>`: build, copy, start, check. `--name`
+  (service, user and directory; default this directory's name), `--pkg`,
+  `--bin <file>` (deploy this Linux binary, no build), `--env-file`,
+  `--port` (default 8080) and `--health` (default `/healthz`) for the
+  check, `--wait <seconds>` (default 30), `--keep <n>` earlier releases
+  (default 5), `--ssh-port`, `-i <identity file>`.
+- `gofastr deploy rollback <user@host>`: start the release before the
+  running one.
+- `gofastr deploy status <user@host>`: the release running, whether the
+  service is active, whether it answers, and the releases kept.
+
 ## Telemetry
 
 `gofastr telemetry` reads the log and trace files

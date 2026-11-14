@@ -25,6 +25,12 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **`gofastr deploy <user@host>`** (experimental) puts an app on one
+  Linux server over SSH as a systemd service: build for the server's
+  CPU, copy, start, health check, and back to the release before when
+  the check fails. `rollback` and `status` beside it. The server needs
+  only sshd, systemd and bash. See
+  [Deployment](framework/docs/content/deploy.md).
 - **Telemetry screens: a review round.** A time range is one click and
   holds across the four pages; the Overview's tables sort by any column
   and each chart says its highest bar in words; a row's route opens its
