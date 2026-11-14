@@ -1,4 +1,4 @@
-package canon
+package primitives
 
 import (
 	"io/fs"
@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-// Lint checks every reference in the canon against the tree: owned
+// Lint checks every reference in the registry against the tree: owned
 // files, docs, enforcing tests, analyzers and contract rules.
-func (c *Canon) Lint() []Finding {
+func (c *Registry) Lint() []Finding {
 	l := &linter{c: c, tests: map[string]map[string]bool{}}
 	owners := map[string][]*Primitive{}
 	for _, p := range c.Primitives {
@@ -72,7 +72,7 @@ func related(a, b string) bool {
 }
 
 type linter struct {
-	c     *Canon
+	c     *Registry
 	p     *Primitive
 	out   []Finding
 	tests map[string]map[string]bool
@@ -236,7 +236,7 @@ func (l *linter) decisions(p *Primitive) {
 
 // Invariant resolves an invariant reference made from p: a bare id is
 // p's own, <primitive>/<id> reaches another primitive.
-func (c *Canon) Invariant(p *Primitive, ref string) *Invariant {
+func (c *Registry) Invariant(p *Primitive, ref string) *Invariant {
 	if prim, id, ok := strings.Cut(ref, "/"); ok {
 		p, ref = c.byID[prim], id
 	}

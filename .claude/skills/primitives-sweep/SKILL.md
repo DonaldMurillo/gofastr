@@ -1,14 +1,14 @@
 ---
-name: canon-sweep
-description: Move what a package's comments and prose claim into the canon (canon/**/primitive.yml), then delete the comments. Load it when asked to sweep, strip or cut comments, to "canonize" a package, to add a primitive, invariant or decision to the canon, to record why something was built a certain way, or to shrink CLAUDE.md or an ARCHITECTURE.md into canon entries. Also load it before writing a comment longer than two lines in framework code, because the comment probably belongs in the canon instead.
+name: primitives-sweep
+description: Move what a package's comments and prose claim into the registry (primitives/**/primitive.yml), then delete the comments. Load it when asked to sweep, strip or cut comments, to add a primitive, invariant or decision to the registry, to record why something was built a certain way, or to shrink CLAUDE.md or an ARCHITECTURE.md into registry entries. Also load it before writing a comment longer than two lines in framework code, because the comment probably belongs in the registry instead.
 ---
 
-# Canon sweep
+# Primitives sweep
 
 A comment that states a rule is not enforced and gets copied. The sweep
-turns each such comment into a canon entry that names what fails when
+turns each such comment into a registry entry that names what fails when
 the rule is broken, and only then deletes the comment. The format is
-`canon/README.md`. Read it first.
+`primitives/README.md`. Read it first.
 
 One sweep covers one package or one primitive. Keep it to one PR.
 
@@ -25,7 +25,7 @@ One sweep covers one package or one primitive. Keep it to one PR.
 
 ## Steps
 
-1. **Find the owner.** Run `go run ./cmd/canon for <files>`. If a file
+1. **Find the owner.** Run `go run ./cmd/primitives for <files>`. If a file
    has no owner, add a primitive first. Split by job, not by package,
    and nest it under the parent it is a part of.
 
@@ -66,10 +66,10 @@ One sweep covers one package or one primitive. Keep it to one PR.
    by a parity test, plus a decision saying why two remain.
 
 8. **Delete the comments** the entries replace. Where a symbol is named
-   in a canon entry, no pointer back is needed: `canon for <file>` finds
+   in a registry entry, no pointer back is needed: `primitives for <file>` finds
    it.
 
-9. **Check.** `go run ./cmd/canon lint`, `go run ./cmd/canon gen`,
+9. **Check.** `go run ./cmd/primitives lint`, `go run ./cmd/primitives gen`,
    `make test`, `make analyze`.
 
 ## Reporting
@@ -83,5 +83,5 @@ An unenforced rule is a finding, not a footnote.
 Same steps, with the paragraph as the comment. A hard rule becomes an
 invariant on the primitive it governs, enforced by the analyzer or
 contract rule that already checks it. Delete the paragraph once
-`canon for` on a governed file prints the rule. What stays in CLAUDE.md
-is how to find the canon and what no primitive can own.
+`primitives for` on a governed file prints the rule. What stays in CLAUDE.md
+is how to find the registry and what no primitive can own.

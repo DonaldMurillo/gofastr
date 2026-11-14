@@ -1,6 +1,6 @@
 // Package exif holds the leaf EXIF readers shared by the framework's
 // image-adjacent packages. It exists so framework/file (which must not
-// link the image codecs, see the generated TestCanonImports there) and
+// link the image codecs, see the generated TestPrimitiveImports there) and
 // framework/image can share one TIFF walker without either importing
 // the other: it is a leaf with no gofastr imports, sitting beside
 // internal/casing at L1.

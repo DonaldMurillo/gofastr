@@ -1,7 +1,7 @@
-// Package canon reads the contributor canon under canon/: one
+// Package primitives reads the primitives registry under primitives/: one
 // primitive.yml per primitive, nested by directory, each carrying the
-// primitive's invariants and decisions. canon/README.md is the format.
-package canon
+// primitive's invariants and decisions. primitives/README.md is the format.
+package primitives
 
 import (
 	"fmt"
@@ -18,11 +18,11 @@ import (
 )
 
 const (
-	Dir           = "canon"
+	Dir           = "primitives"
 	PrimitiveFile = "primitive.yml"
 )
 
-type Canon struct {
+type Registry struct {
 	Root       string
 	Primitives []*Primitive
 	byID       map[string]*Primitive
@@ -99,7 +99,7 @@ const (
 	StatusSuperseded = "superseded"
 )
 
-// Finding is one problem in the canon, addressed as file:line.
+// Finding is one problem in the registry, addressed as file:line.
 type Finding struct {
 	File string
 	Line int
@@ -110,14 +110,14 @@ func (f Finding) String() string { return fmt.Sprintf("%s:%d: %s", f.File, f.Lin
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// Load reads every primitive under root/canon. Content problems come
+// Load reads every primitive under root/primitives. Content problems come
 // back as findings; only a tree that cannot be read is an error.
-func Load(root string) (*Canon, []Finding, error) {
+func Load(root string) (*Registry, []Finding, error) {
 	dir, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, nil, err
 	}
-	c := &Canon{Root: root, byID: map[string]*Primitive{}, fsys: dir.FS()}
+	c := &Registry{Root: root, byID: map[string]*Primitive{}, fsys: dir.FS()}
 	var findings []Finding
 	err = fs.WalkDir(c.fsys, Dir, func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -145,10 +145,10 @@ func Load(root string) (*Canon, []Finding, error) {
 	return c, findings, nil
 }
 
-func (c *Canon) Primitive(id string) *Primitive { return c.byID[id] }
+func (c *Registry) Primitive(id string) *Primitive { return c.byID[id] }
 
 // Parent returns the primitive one level up, or nil at the top.
-func (c *Canon) Parent(p *Primitive) *Primitive {
+func (c *Registry) Parent(p *Primitive) *Primitive {
 	i := strings.LastIndex(p.ID, ".")
 	if i < 0 {
 		return nil
@@ -158,7 +158,7 @@ func (c *Canon) Parent(p *Primitive) *Primitive {
 
 // Children returns the primitives exactly one level below id; the
 // empty id lists the top level.
-func (c *Canon) Children(id string) []*Primitive {
+func (c *Registry) Children(id string) []*Primitive {
 	var out []*Primitive
 	for _, p := range c.Primitives {
 		if parentID(p.ID) == id {
@@ -273,7 +273,7 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 	}
 	p := &Primitive{ID: id, File: file, Line: root.Line}
 	if id == "" {
-		d.errf(root.Line, "%s sits at the canon root: a primitive needs its own directory", PrimitiveFile)
+		d.errf(root.Line, "%s sits at the registry root: a primitive needs its own directory", PrimitiveFile)
 	}
 	for seg := range strings.SplitSeq(id, ".") {
 		if id != "" && !idPattern.MatchString(seg) {

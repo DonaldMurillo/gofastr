@@ -1,4 +1,4 @@
-package canon
+package primitives
 
 import (
 	"path"
@@ -7,7 +7,7 @@ import (
 
 // Chain returns the primitives that own file, outermost first: the
 // deepest primitive whose code covers it, preceded by its ancestors.
-func (c *Canon) Chain(file string) []*Primitive {
+func (c *Registry) Chain(file string) []*Primitive {
 	var owner *Primitive
 	for _, p := range c.Primitives {
 		if p.Owns(file) && (owner == nil || depth(p.ID) > depth(owner.ID)) {
@@ -47,7 +47,7 @@ type Check struct {
 
 // Checks lists the judge questions that apply to the changed files:
 // one per invariant on each file's owner chain, with its files grouped.
-func (c *Canon) Checks(changed []string) []Check {
+func (c *Registry) Checks(changed []string) []Check {
 	index := map[string]int{}
 	var out []Check
 	for _, file := range changed {

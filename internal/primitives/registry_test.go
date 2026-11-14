@@ -1,4 +1,4 @@
-package canon
+package primitives
 
 import (
 	"os"
@@ -49,7 +49,7 @@ func fixture(t *testing.T, primitive string) string {
 	root := t.TempDir()
 	for name, body := range map[string]string{
 		"go.mod":                                "module example.test/m\n",
-		"canon/store/primitive.yml":             primitive,
+		"primitives/store/primitive.yml":        primitive,
 		"docs/store.md":                         "# store\n",
 		"pkg/store/store.go":                    "package store\n",
 		"pkg/store/store_test.go":               "package store\n\nfunc TestOrder(t *testing.T) {}\n",
@@ -88,9 +88,9 @@ func lint(t *testing.T, root string) []string {
 	return out
 }
 
-func TestValidCanonIsClean(t *testing.T) {
+func TestValidRegistryIsClean(t *testing.T) {
 	if got := lint(t, fixture(t, validPrimitive)); len(got) != 0 {
-		t.Fatalf("valid canon has findings:\n%s", strings.Join(got, "\n"))
+		t.Fatalf("valid registry has findings:\n%s", strings.Join(got, "\n"))
 	}
 }
 
@@ -146,7 +146,7 @@ func TestUnregisteredAnalyzerIsRefused(t *testing.T) {
 
 func TestChildNeedsParent(t *testing.T) {
 	root := fixture(t, validPrimitive)
-	write(t, root, "canon/shop/till/primitive.yml", "primitive: shop.till\nsummary: Takes money.\ncode:\n  - docs/store.md\n")
+	write(t, root, "primitives/shop/till/primitive.yml", "primitive: shop.till\nsummary: Takes money.\ncode:\n  - docs/store.md\n")
 	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, `parent primitive "shop" has no primitive.yml`) {
 		t.Fatalf("got:\n%s", got)
 	}
@@ -154,12 +154,12 @@ func TestChildNeedsParent(t *testing.T) {
 
 func TestFileHasOneOwnerChain(t *testing.T) {
 	root := fixture(t, validPrimitive)
-	write(t, root, "canon/rival/primitive.yml", "primitive: rival\nsummary: Also keeps rows.\ncode:\n  - pkg/store/store.go\n")
+	write(t, root, "primitives/rival/primitive.yml", "primitive: rival\nsummary: Also keeps rows.\ncode:\n  - pkg/store/store.go\n")
 	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, "pkg/store/store.go is claimed by both") {
 		t.Fatalf("got:\n%s", got)
 	}
 	root = fixture(t, validPrimitive)
-	write(t, root, "canon/store/rows/primitive.yml", "primitive: store.rows\nsummary: One row.\ncode:\n  - pkg/store/store.go\n")
+	write(t, root, "primitives/store/rows/primitive.yml", "primitive: store.rows\nsummary: One row.\ncode:\n  - pkg/store/store.go\n")
 	if got := lint(t, root); len(got) != 0 {
 		t.Fatalf("a child may narrow its parent's files, got:\n%s", strings.Join(got, "\n"))
 	}
@@ -167,7 +167,7 @@ func TestFileHasOneOwnerChain(t *testing.T) {
 
 func TestChainPicksTheDeepestOwner(t *testing.T) {
 	root := fixture(t, validPrimitive)
-	write(t, root, "canon/store/rows/primitive.yml", "primitive: store.rows\nsummary: One row.\ncode:\n  - pkg/store/store.go\ninvariants:\n  - id: row-is-whole\n    rule: A row is whole.\n    judge: Is a row partial?\n")
+	write(t, root, "primitives/store/rows/primitive.yml", "primitive: store.rows\nsummary: One row.\ncode:\n  - pkg/store/store.go\ninvariants:\n  - id: row-is-whole\n    rule: A row is whole.\n    judge: Is a row partial?\n")
 	c, _, err := Load(root)
 	if err != nil {
 		t.Fatal(err)

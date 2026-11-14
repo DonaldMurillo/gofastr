@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-//gofastr:test-reads canon/ *.go *.md
+//gofastr:test-reads primitives/ *.go *.md
 func TestCommands(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -18,7 +18,7 @@ func TestCommands(t *testing.T) {
 		{[]string{"for", "go.mod"}, 0, "no primitive owns this path yet"},
 		{[]string{"show", "crud"}, 0, "child crud.scope: "},
 		{[]string{"show", "crud.read-hooks"}, 0, "rejected Match by position: "},
-		{[]string{"show", "nope"}, 2, "usage: canon show"},
+		{[]string{"show", "nope"}, 2, "usage: primitives show"},
 		{[]string{"lint"}, 0, "clean"},
 		{[]string{"gen", "--check"}, 0, ""},
 		{[]string{"bogus"}, 2, `unknown command "bogus"`},
@@ -27,7 +27,7 @@ func TestCommands(t *testing.T) {
 		code := run("../..", tc.args, &stdout, &stderr)
 		out := stdout.String() + stderr.String()
 		if code != tc.code || !strings.Contains(out, tc.want) {
-			t.Errorf("canon %v: exit %d, want %d and output containing %q, got:\n%s", tc.args, code, tc.code, tc.want, out)
+			t.Errorf("primitives %v: exit %d, want %d and output containing %q, got:\n%s", tc.args, code, tc.code, tc.want, out)
 		}
 	}
 }

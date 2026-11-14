@@ -1,13 +1,13 @@
-// canon reads the contributor canon under canon/ (format:
-// canon/README.md).
+// primitives reads the primitives registry under primitives/ (format:
+// primitives/README.md).
 //
-//	canon                  list the top-level primitives
-//	canon for <path>...    what governs these files: owner chain, invariants, decisions
-//	canon show <id>        one primitive in full, with its children
-//	canon lint             check every reference in the canon against the tree
-//	canon gen [--check]    write the generated files, or fail when they are stale
-//	canon judge [--base <ref>] [--json]
-//	                       list the judged questions that apply to the changed files
+//	primitives                  list the top-level primitives
+//	primitives for <path>...    what governs these files: owner chain, invariants, decisions
+//	primitives show <id>        one primitive in full, with its children
+//	primitives lint             check every reference in the registry against the tree
+//	primitives gen [--check]    write the generated files, or fail when they are stale
+//	primitives judge [--base <ref>] [--json]
+//	                            list the judged questions that apply to the changed files
 package main
 
 import (
@@ -21,7 +21,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/DonaldMurillo/gofastr/internal/canon"
+	"github.com/DonaldMurillo/gofastr/internal/primitives"
 )
 
 func main() {
@@ -33,7 +33,7 @@ func main() {
 }
 
 func fail(err error) {
-	fmt.Fprintf(os.Stderr, "canon: %v\n", err)
+	fmt.Fprintf(os.Stderr, "primitives: %v\n", err)
 	os.Exit(2)
 }
 
@@ -43,23 +43,23 @@ func repoRoot() (string, error) {
 		return "", err
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, canon.Dir)); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, primitives.Dir)); err == nil {
 			if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 				return dir, nil
 			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no %s/ directory beside a go.mod above the working directory", canon.Dir)
+			return "", fmt.Errorf("no %s/ directory beside a go.mod above the working directory", primitives.Dir)
 		}
 		dir = parent
 	}
 }
 
 func run(root string, args []string, stdout, stderr io.Writer) int {
-	c, findings, err := canon.Load(root)
+	c, findings, err := primitives.Load(root)
 	if err != nil {
-		fmt.Fprintf(stderr, "canon: %v\n", err)
+		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
 	cmd := "list"
@@ -70,7 +70,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 		for _, f := range findings {
 			fmt.Fprintln(stderr, f)
 		}
-		fmt.Fprintln(stderr, "canon: the canon does not parse; fix the findings above")
+		fmt.Fprintln(stderr, "primitives: the registry does not parse; fix the findings above")
 		return 1
 	}
 	switch cmd {
@@ -78,10 +78,10 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 		for _, p := range c.Children("") {
 			fmt.Fprintf(stdout, "%s: %s\n", p.ID, p.Summary)
 		}
-		fmt.Fprintln(stdout, "\nNext: canon show <id>, or canon for <path>")
+		fmt.Fprintln(stdout, "\nNext: primitives show <id>, or primitives for <path>")
 	case "for":
 		if len(args) == 0 {
-			fmt.Fprintln(stderr, "usage: canon for <path>...")
+			fmt.Fprintln(stderr, "usage: primitives for <path>...")
 			return 2
 		}
 		for i, arg := range args {
@@ -92,7 +92,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 		}
 	case "show":
 		if len(args) != 1 || c.Primitive(args[0]) == nil {
-			fmt.Fprintln(stderr, "usage: canon show <id>   (canon lists the top-level ids)")
+			fmt.Fprintln(stderr, "usage: primitives show <id>   (primitives lists the top-level ids)")
 			return 2
 		}
 		printPrimitive(c, stdout, c.Primitive(args[0]), true)
@@ -102,7 +102,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, f)
 		}
 		if len(findings) > 0 {
-			fmt.Fprintf(stderr, "canon: %d finding(s)\n", len(findings))
+			fmt.Fprintf(stderr, "primitives: %d finding(s)\n", len(findings))
 			return 1
 		}
 		invariants, judged, decisions := 0, 0, 0
@@ -115,14 +115,14 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 				}
 			}
 		}
-		fmt.Fprintf(stdout, "canon: %d primitives, %d invariants (%d judged only), %d decisions: clean\n",
+		fmt.Fprintf(stdout, "primitives: %d primitives, %d invariants (%d judged only), %d decisions: clean\n",
 			len(c.Primitives), invariants, judged, decisions)
 	case "gen":
 		return gen(c, args, stdout, stderr)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "canon: unknown command %q (list, for, show, lint, gen, judge)\n", cmd)
+		fmt.Fprintf(stderr, "primitives: unknown command %q (list, for, show, lint, gen, judge)\n", cmd)
 		return 2
 	}
 	return 0
@@ -140,7 +140,7 @@ func relPath(root, arg string) string {
 	return filepath.ToSlash(rel)
 }
 
-func printFor(c *canon.Canon, w io.Writer, file string) {
+func printFor(c *primitives.Registry, w io.Writer, file string) {
 	chain := c.Chain(file)
 	if len(chain) == 0 {
 		fmt.Fprintf(w, "%s: no primitive owns this path yet\n", file)
@@ -150,10 +150,10 @@ func printFor(c *canon.Canon, w io.Writer, file string) {
 	for _, p := range chain {
 		printPrimitive(c, w, p, false)
 	}
-	fmt.Fprintf(w, "Next: canon show %s (rejected options and revisit conditions)\n", chain[len(chain)-1].ID)
+	fmt.Fprintf(w, "Next: primitives show %s (rejected options and revisit conditions)\n", chain[len(chain)-1].ID)
 }
 
-func printPrimitive(c *canon.Canon, w io.Writer, p *canon.Primitive, full bool) {
+func printPrimitive(c *primitives.Registry, w io.Writer, p *primitives.Primitive, full bool) {
 	fmt.Fprintf(w, "\n%s: %s\n", p.ID, p.Summary)
 	if full {
 		for _, ref := range p.Code {
@@ -177,7 +177,7 @@ func printPrimitive(c *canon.Canon, w io.Writer, p *canon.Primitive, full bool) 
 	}
 	for _, d := range p.Decisions {
 		status := ""
-		if d.Status == canon.StatusSuperseded {
+		if d.Status == primitives.StatusSuperseded {
 			status = " (superseded by " + d.SupersededBy + ")"
 		}
 		fmt.Fprintf(w, "  decision %s%s: %s\n", d.ID, status, d.Decision)
@@ -198,15 +198,15 @@ func printPrimitive(c *canon.Canon, w io.Writer, p *canon.Primitive, full bool) 
 	}
 }
 
-func gen(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
+func gen(c *primitives.Registry, args []string, stdout, stderr io.Writer) int {
 	check := len(args) == 1 && args[0] == "--check"
 	if len(args) > 0 && !check {
-		fmt.Fprintln(stderr, "usage: canon gen [--check]")
+		fmt.Fprintln(stderr, "usage: primitives gen [--check]")
 		return 2
 	}
 	stale, err := c.Stale()
 	if err != nil {
-		fmt.Fprintf(stderr, "canon: %v\n", err)
+		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
 	if check {
@@ -214,19 +214,19 @@ func gen(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "%s: %s\n", rel, stale[rel])
 		}
 		if len(stale) > 0 {
-			fmt.Fprintln(stderr, "canon: generated files are stale; run `go run ./cmd/canon gen`")
+			fmt.Fprintln(stderr, "primitives: generated files are stale; run `go run ./cmd/primitives gen`")
 			return 1
 		}
 		return 0
 	}
 	files, err := c.Generate()
 	if err != nil {
-		fmt.Fprintf(stderr, "canon: %v\n", err)
+		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
 	dir, err := os.OpenRoot(c.Root)
 	if err != nil {
-		fmt.Fprintf(stderr, "canon: %v\n", err)
+		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
 	defer dir.Close()
@@ -238,7 +238,7 @@ func gen(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
 			err = dir.WriteFile(rel, files[rel], 0o644)
 		}
 		if err != nil {
-			fmt.Fprintf(stderr, "canon: %v\n", err)
+			fmt.Fprintf(stderr, "primitives: %v\n", err)
 			return 2
 		}
 		fmt.Fprintf(stdout, "%s: %s, fixed\n", rel, stale[rel])
@@ -246,7 +246,7 @@ func gen(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func judge(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
+func judge(c *primitives.Registry, args []string, stdout, stderr io.Writer) int {
 	base, asJSON := "origin/main", false
 	for i := 0; i < len(args); i++ {
 		switch {
@@ -256,24 +256,24 @@ func judge(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
 			i++
 			base = args[i]
 		default:
-			fmt.Fprintln(stderr, "usage: canon judge [--base <ref>] [--json]")
+			fmt.Fprintln(stderr, "usage: primitives judge [--base <ref>] [--json]")
 			return 2
 		}
 	}
 	changed, err := changedFiles(c.Root, base)
 	if err != nil {
-		fmt.Fprintf(stderr, "canon: %v\n", err)
+		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
 	checks := c.Checks(changed)
 	if asJSON {
 		if checks == nil {
-			checks = []canon.Check{}
+			checks = []primitives.Check{}
 		}
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(checks); err != nil {
-			fmt.Fprintf(stderr, "canon: %v\n", err)
+			fmt.Fprintf(stderr, "primitives: %v\n", err)
 			return 2
 		}
 		return 0
@@ -281,7 +281,7 @@ func judge(c *canon.Canon, args []string, stdout, stderr io.Writer) int {
 	for _, check := range checks {
 		fmt.Fprintf(stdout, "%s/%s\n  rule: %s\n  ask:  %s\n  in:   %s\n", check.Primitive, check.Invariant, check.Rule, check.Question, strings.Join(check.Files, ", "))
 	}
-	fmt.Fprintf(stdout, "canon: %d judged question(s) apply to %d changed file(s) against %s\n", len(checks), len(changed), base)
+	fmt.Fprintf(stdout, "primitives: %d judged question(s) apply to %d changed file(s) against %s\n", len(checks), len(changed), base)
 	return 0
 }
 

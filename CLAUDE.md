@@ -35,14 +35,14 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 `framework/docs/mcptools`; package framework never imports the corpus)
 expose them to agents connected to a live app.**
 
-**Before changing a file, run `go run ./cmd/canon for <path>`.** It
+**Before changing a file, run `go run ./cmd/primitives for <path>`.** It
 prints the primitives that own the file with their invariants (each
-naming the test or analyzer that enforces it) and decisions. The canon
-lives in `canon/`, one `primitive.yml` per primitive, format in
-`canon/README.md`; `go run ./cmd/canon lint` checks it and `gen` writes
+naming the test or analyzer that enforces it) and decisions. The registry
+lives in `primitives/`, one `primitive.yml` per primitive, format in
+`primitives/README.md`; `go run ./cmd/primitives lint` checks it and `gen` writes
 the import tests it declares. A rule or a "why" that would have gone
-into a comment or into this file goes there instead (the `canon-sweep`
-skill). The canon covers `framework/crud` so far.
+into a comment or into this file goes there instead (the `primitives-sweep`
+skill). The registry covers `framework/crud` so far.
 
 ## TL;DR of the architecture (read the full doc anyway)
 
@@ -263,7 +263,7 @@ skill). The canon covers `framework/crud` so far.
   generator. Aesthetics ship as components + tokens, so every surface
   inherits them.
 - New island? Use `core-ui/widget` builder.
-- Theme tokens? `framework/ui/theme` for the canonical theme;
+- Theme tokens? `framework/ui/theme` for the registryical theme;
   `core-ui/style` for the underlying machinery.
 - Entity model, columns, relations, validators, EntityDeclaration?
   `framework/entity/`. Most other framework subpackages depend on it.
