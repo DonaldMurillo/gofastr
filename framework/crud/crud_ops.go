@@ -404,38 +404,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	return result, nil
 }
 
-// checkBelongsToScope refuses a create/update body whose BelongsTo
-// (many-to-one) FK targets a row the caller cannot read. The read side
-// already treats such a relation as a trust boundary: ?include= and
-// EagerLoad resolve the target under eagerScopeFilters, so a foreign
-// parent never surfaces. The write side now resolves the SAME predicate:
-// for every BelongsTo relation whose FK the body carries, the target row
-// must exist under the target's own owner/tenant/read scopes, or the
-// write fails with errNotFound — the exact status reading that foreign
-// row answers, so existence is not leaked by a 403.
-//
-// Callers holding an explicit cross-scope grant (owner.AllowCrossOwner,
-// the target's CrossOwnerRead permission, tenant.AllowCrossTenant) pass
-// unchanged: eagerScopeFilters emits nothing for them, matching what
-// their reads already see. WithServerWrites contexts (host-driven
-// in-process writes: jobs, imports, admin tooling) are exempt for the
-// same reason ReadOnly field writes are: the host opted into privileged
-// writes and owns the reference. A NULL/absent FK, an unscoped target,
-// or a target the registry does not know is skipped — no registry means
-// no read-side resolver either.
-//
-// relationReachable is NOT applied here, unlike checkTargetRowScope's
-// many_to_many link, and on purpose. It refuses every row of a target
-// with Exposure.CRUD=false, or one whose "<table>:read" a held-scope
-// token lacks, so an ordinary reference (posts.author_id onto auth's
-// users, CRUD off by default; an items-only token filing an item under
-// its own order) would stop working. An m2m link writes a pivot row, a
-// generated write surface onto the target; an FK is a column of the
-// caller's own row, and the write returns that row, never the target's
-// fields. Nor is it an oracle: a scoped target answers the same 404 for
-// a hidden row and a missing one, and an unscoped target is not looked
-// up, so both write. TestBelongsToFKSkipsRelationReachableOnPurpose pins
-// this.
+// checkBelongsToScope refuses a create or update whose BelongsTo foreign
+// key names a row the caller cannot read, with errNotFound.
 func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request, w fkWrite) error {
 	if err := ch.checkForeignKeyTuples(w); err != nil {
 		return err

@@ -19,12 +19,7 @@ import (
 )
 
 // Row-scope operators for Exposure.ReadScope that the filter package does
-// not define. FilterOp is a string type, so declaring the values here needs
-// no change to framework/filter, whose ApplyToQuery/ApplyToCountQuery
-// helpers silently SKIP unknown ops, which is exactly why read-scope
-// predicates are rendered by renderReadScope below instead. A scope
-// predicate that a renderer drops, or degrades to equality, silently serves
-// rows the declaration says are hidden.
+// not define.
 const (
 	readOpNeq   filter.FilterOp = "neq"
 	readOpNotIn filter.FilterOp = "not_in"
@@ -137,12 +132,6 @@ func readScopeUnrestricted(ctx context.Context, ent *entity.Entity) bool {
 // table qualification for joins (the ManyToMany loader, the ?rel.field=
 // EXISTS subquery). startIdx is the first $N; callers know how many
 // placeholders precede the fragment.
-//
-// The fragment is deliberately NOT fed through renderFilterClause: that
-// path renders unknown ops as equality (opToSQL's default), which would
-// turn a `neq` scope into an `eq` scope and serve the complement of the
-// declared rows. An op this renderer does not know matches nothing
-// ("1 = 0"): fail closed, never fail open.
 func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int) (string, []any) {
 	if len(preds) == 0 {
 		return "", nil
@@ -200,8 +189,6 @@ func renderReadScope(preds []filter.ParsedFilter, qualifier string, startIdx int
 			args = append(args, f.BindValue())
 			idx++
 		default:
-			// Fail closed: a scope predicate that cannot render must match
-			// nothing, never everything.
 			parts = append(parts, "1 = 0")
 		}
 	}

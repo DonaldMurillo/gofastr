@@ -21,6 +21,10 @@ invariants:
     enforced_by:
       - test: framework/crud.TestRelWriteForeignBelongsToRefused
       - test: framework/crud.TestUpsertChecksBelongsToScope
+  - id: foreign-key-ignores-relation-reachable
+    rule: A BelongsTo foreign-key write onto a target with CRUD off, or from a token without the target's read scope, succeeds, and a hidden target row answers the same as a missing one.
+    enforced_by:
+      - test: framework/crud.TestBelongsToFKSkipsRelationReachableOnPurpose
       - test: framework/crud.TestBelongsToFKUnscopedHiddenTargetAnswersAlike
   - id: batch-envelope-exact-keys
     rule: A _batch envelope carries exactly its declared keys, each once and spelled exactly.
@@ -38,5 +42,5 @@ decisions:
     decision: A BelongsTo foreign-key write checks the target's read scope but not relationReachable, which stays on many-to-many links only.
     rejected:
       - option: Apply relationReachable to foreign-key writes too.
-        why: It refuses ordinary references onto entities with CRUD off, such as posts.author_id onto users, and the write never returns the target's fields.
-    upholds: [foreign-key-target-readable]
+        why: It refuses ordinary references onto entities with CRUD off, such as posts.author_id onto users, and an items-only token filing an item under its own order; a foreign key is a column of the caller's own row and the write never returns the target's fields.
+    upholds: [foreign-key-target-readable, foreign-key-ignores-relation-reachable]
