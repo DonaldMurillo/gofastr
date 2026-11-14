@@ -1,0 +1,38 @@
+primitive: crud.relations
+summary: Loading related rows through ?include= trees and EagerLoad, with the scrubs applied to every loaded row.
+code:
+  - framework/crud/include.go
+  - framework/crud/eager.go
+  - framework/crud/eager_filtered.go
+  - framework/crud/relation_keys.go
+docs:
+  - framework/docs/content/includes.md
+invariants:
+  - id: eager-load-scrubs
+    rule: EagerLoad with a registry excludes soft-deleted rows, serves only declared non-Hidden columns, and applies owner and tenant scope; a target it cannot resolve is an error.
+    enforced_by:
+      - test: framework/crud.TestEagerLoadScrubsSoftDeleteAndHidden
+      - test: framework/crud.TestEagerLoadFailsOnUnresolvedTarget
+      - test: framework/crud.TestEagerLoadDropsUndeclaredColumns
+      - test: framework/crud.TestEagerLoadScopesTenant
+      - test: framework/crud.TestEagerLoadScopesOwner
+  - id: included-child-scope-always-applies
+    rule: An included owner-scoped or multi-tenant child always carries the context owner or tenant predicate, even when the caller filters on that column, and matches no row when the context has neither.
+    enforced_by:
+      - test: framework/crud.TestInclude_ScopedFilterCannotBypassOwnerScope
+      - test: framework/crud.TestInclude_RelatedTableTenantScope
+      - test: framework/crud.TestInclude_EmptyTenantFailsClosed
+  - id: related-scope-builders-agree
+    rule: applyRelatedOwnerScope, applyRelatedTenantScope and eagerScopeFilters exempt the same cross-scope callers.
+    enforced_by:
+      - test: framework/crud.TestRelatedScopeHelpersHonourCrossScopeMarkers
+      - test: framework/crud.TestEagerScopeFiltersExemptCrossScopeCallers
+    judge: Does this change alter the owner or tenant predicate in one of applyRelatedOwnerScope, applyRelatedTenantScope or eagerScopeFilters without the same change in the others?
+decisions:
+  - id: served-columns-allow-list
+    status: accepted
+    decision: Included rows serve an allow-list of declared columns.
+    rejected:
+      - option: A deny-list of Hidden fields.
+        why: Undeclared columns leaked, namely another version's field, a removed field, or an extra column on an unmanaged table.
+    upholds: [eager-load-scrubs]

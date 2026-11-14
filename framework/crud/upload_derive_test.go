@@ -21,7 +21,7 @@ import (
 
 // fakeDeriver stands in for framework/imagefield so these tests exercise the
 // upload handler's own branches without pulling the image codecs into this
-// package's dependency graph (see TestUploadPathDoesNotLinkImageCodecs).
+// package's dependency graph (see TestCanonImports).
 type fakeDeriver struct {
 	out     *file.ImageDerivatives
 	err     error

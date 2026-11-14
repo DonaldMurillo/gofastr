@@ -1,0 +1,39 @@
+primitive: crud.relations.nested-filter
+summary: The ?rel.field= filters, rendered as EXISTS subqueries over a relation's target.
+code:
+  - framework/crud/nested_filter.go
+docs:
+  - framework/docs/content/query-dsl.md
+invariants:
+  - id: single-segment-identifiers
+    rule: A nested-filter field name and every relation identifier spliced into the subquery is a single-segment SQL identifier, and anything else is refused.
+    enforced_by:
+      - test: framework/crud.TestNestedFilter_SQLInjection
+      - test: framework/crud.TestBuildExistsSubquery_UnsafeRelationIdentifiers
+      - test: framework/crud.TestBuildExistsSubquery_UnsafeHopChain
+  - id: subquery-carries-target-scope
+    rule: The EXISTS subquery is narrowed by the target's owner, tenant and read-scope predicates on HTTP and in-process calls alike.
+    enforced_by:
+      - test: framework/crud.TestNestedFilterCountsOnlyTheCallersOwnRows
+      - test: framework/crud.TestNestedFilterScopesTheManyToOneBranch
+      - test: framework/crud.TestInProcessNestedFilterScopesByDefault
+      - test: framework/crud.TestBuildExistsSubqueryEmitsScopePredicates
+decisions:
+  - id: narrow-not-refuse
+    status: accepted
+    decision: A nested filter across a scoped target is narrowed with the eagerScopeFilters predicates, always, in-process calls included.
+    rejected:
+      - option: Refuse every owner-scoped or multi-tenant target.
+        why: It closed the row-count oracle but refused owners filtering their own rows.
+      - option: Narrow only when the context carries realRequestKey.
+        why: That marker never reaches ListAll or CountAll, so the narrowing branch was unreachable in production.
+    revisit_if: Server code needs cross-owner reads through a nested filter; it must use owner.AllowCrossOwner or tenant.AllowCrossTenant, not a context marker.
+    upholds: [subquery-carries-target-scope]
+  - id: own-identifier-pattern
+    status: accepted
+    decision: Nested filters keep their own identifier pattern, separate from core/query's.
+    rejected:
+      - option: Reuse core/query's identifier pattern.
+        why: It admits a dotted schema.table, which would loosen the single-segment field rule.
+    revisit_if: Multi-level field paths are ever allowed.
+    upholds: [single-segment-identifiers]

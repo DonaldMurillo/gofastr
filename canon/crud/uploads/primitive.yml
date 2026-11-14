@@ -1,0 +1,32 @@
+primitive: crud.uploads
+summary: Request body and multipart parsing, the Content-Type and cross-site guards, and the lifecycle of stored media.
+code:
+  - framework/crud/crud_upload.go
+  - framework/crud/media_cleanup.go
+  - framework/crud/media_derived.go
+  - framework/crud/media_provenance.go
+docs:
+  - framework/docs/content/uploads.md
+imports:
+  - deny: framework/image
+    from: [framework/crud, framework/file]
+    why: framework/image links every image decoder and the WebP encoder, and crud is in nearly every app's dependency graph.
+    instead: Implement file.ImageDeriver in framework/imagefield.
+invariants:
+  - id: json-or-multipart-only
+    rule: A write endpoint accepts only application/json or multipart/form-data, and a multipart write also passes the cross-site guard.
+    enforced_by:
+      - test: framework/crud.TestEnforceJSONContentType
+      - test: framework/crud.TestCreate_RejectsMissingContentType
+      - test: framework/crud.TestCrossSiteMultipartCreateRefused
+  - id: failed-write-leaves-no-upload
+    rule: A file saved while parsing a multipart body is deleted on every failure path.
+    enforced_by:
+      - test: framework/crud.TestFailedCreateLeavesNoOrphanUpload
+decisions:
+  - id: image-pipeline-behind-an-interface
+    status: accepted
+    decision: The upload path reaches the image pipeline through the file.ImageDeriver interface, implemented in framework/imagefield.
+    rejected:
+      - option: Import framework/image from crud or file.
+        why: Every binary would link every image codec, whether or not the app touches images.

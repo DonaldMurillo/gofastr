@@ -1,0 +1,42 @@
+primitive: crud.write
+summary: Create, update, delete, upsert, batch, soft delete, cascade writes, transactions and state transitions.
+code:
+  - framework/crud/crud_ops.go
+  - framework/crud/crud_api.go
+  - framework/crud/crud_upsert.go
+  - framework/crud/crud_batch.go
+  - framework/crud/crud_softdelete.go
+  - framework/crud/cascade_write.go
+  - framework/crud/tx.go
+  - framework/crud/serverwrites.go
+  - framework/crud/audit_ctx.go
+  - framework/crud/states.go
+  - framework/crud/conflict_fields.go
+docs:
+  - framework/docs/content/batch-endpoints.md
+  - framework/docs/content/hooks-and-transactions.md
+invariants:
+  - id: foreign-key-target-readable
+    rule: A create or update whose BelongsTo foreign key names a row the caller cannot read answers 404, never 403, unless the context carries WithServerWrites or a cross-scope grant.
+    enforced_by:
+      - test: framework/crud.TestRelWriteForeignBelongsToRefused
+      - test: framework/crud.TestUpsertChecksBelongsToScope
+      - test: framework/crud.TestBelongsToFKUnscopedHiddenTargetAnswersAlike
+  - id: batch-envelope-exact-keys
+    rule: A _batch envelope carries exactly its declared keys, each once and spelled exactly.
+    enforced_by:
+      - test: framework/crud.TestBatchEnvelopeRejectsDuplicateKeys
+      - test: framework/crud.TestBatchEnvelopeRejectsCaseFoldedKey
+      - test: framework/crud.TestBatchEnvelopeRejectsUnknownKey
+  - id: purge-only-soft-deleted
+    rule: PurgeOne removes only rows that are already soft-deleted.
+    enforced_by:
+      - test: framework/crud.TestPurgeOneRefusesLiveRow
+decisions:
+  - id: foreign-key-skips-relation-reachable
+    status: accepted
+    decision: A BelongsTo foreign-key write checks the target's read scope but not relationReachable, which stays on many-to-many links only.
+    rejected:
+      - option: Apply relationReachable to foreign-key writes too.
+        why: It refuses ordinary references onto entities with CRUD off, such as posts.author_id onto users, and the write never returns the target's fields.
+    upholds: [foreign-key-target-readable]

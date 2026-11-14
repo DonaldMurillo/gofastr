@@ -1,0 +1,68 @@
+primitive: crud.read-hooks
+summary: The Before and After read hook chains, the WithReadHooks opt-in for in-process reads, write-response hooks, and declared field masks.
+code:
+  - framework/crud/readhooks.go
+  - framework/crud/mask.go
+docs:
+  - framework/docs/content/hooks-and-transactions.md
+invariants:
+  - id: in-process-reads-raw-by-default
+    rule: ListAll, CountAll, GetOne and TypedQuery return stored values and run no read hooks unless the context carries WithReadHooks.
+    enforced_by:
+      - test: framework/crud.TestInProcessReadsAreRawByDefault
+      - test: framework/crud.TestMaskKeepsStoredValue
+      - analyzer: hookedread
+  - id: hooks-never-see-the-opt-in
+    rule: A hook never receives the read-hook opt-in, on its context or on its request, so a hook that reads its own entity cannot recurse.
+    enforced_by:
+      - test: framework/crud.TestHookRequestStripsTheOptIn
+      - test: framework/crud.TestReadHookReadingOwnEntityDoesNotRecurse
+  - id: included-rows-run-child-hooks
+    rule: Rows reached through ?include= or ?rel.field= run the child entity's own read hooks, recursively, and a child hook error fails the request.
+    enforced_by:
+      - test: framework/crud.TestIncludeRunsChildBeforeList
+      - test: framework/crud.TestIncludeToOneRunsBeforeGet
+      - test: framework/crud.TestIncludeChildBeforeHookErrorFails
+      - test: framework/crud.TestApplyChildReadHooksRecursesIntoGrandchildren
+  - id: child-hook-results-match-by-primary-key
+    rule: A child hook's results are folded back into the rows already attached to their parents by primary key, and a changed row count, a duplicate, an unknown row or a row without its id is refused before anything is mutated.
+    enforced_by:
+      - test: framework/crud.TestReattachAllowsReorderWithoutCorruption
+      - test: framework/crud.TestReattachFoldsReorderedProjections
+      - test: framework/crud.TestReattachRefusesRowCountChange
+      - test: framework/crud.TestReattachRefusesDuplicateRow
+      - test: framework/crud.TestReattachRefusesUnknownRow
+      - test: framework/crud.TestReattachRefusesProjectionWithoutID
+      - test: framework/crud.TestReattachDoesNotMutateBeforeARefusal
+  - id: failed-response-hook-answers-identity
+    rule: When a write's response hook fails, the response carries the primary key only; it never echoes the row and never answers 500.
+    enforced_by:
+      - test: framework/crud.TestWriteResponseHookErrorHidesRow
+      - test: framework/crud.TestIdentityOnlyKeepsOnlyThePrimaryKey
+decisions:
+  - id: match-by-primary-key
+    status: accepted
+    decision: Child hook results are matched to attached rows by primary key.
+    rejected:
+      - option: Match by position.
+        why: A hook that reorders corrupts rows, [A,B,C] to [C,B,A] became [C,B,C], and the request still answered 200.
+      - option: Match by pointer identity.
+        why: A hook that projects and sorts returns fresh maps, which folded by position again, and a legitimate sorting hook became a data-dependent 500.
+    revisit_if: A documented mask shape stops preserving the primary key.
+    upholds: [child-hook-results-match-by-primary-key]
+  - id: read-hooks-opt-in
+    status: accepted
+    decision: In-process read hooks are opt-in per call, through WithReadHooks, at display sites.
+    rejected:
+      - option: Run read hooks on every in-process read.
+        why: A read-modify-write persists the mask over the real column, aggregates sum masked values, and AfterGet recurses into itself.
+    upholds: [in-process-reads-raw-by-default, hooks-never-see-the-opt-in]
+  - id: identity-on-hook-failure
+    status: accepted
+    decision: A write whose response hook fails answers with the primary key only.
+    rejected:
+      - option: Echo the row.
+        why: It serves the values the hook was there to mask.
+      - option: Answer 500.
+        why: It says a committed write did not happen, so clients retry and create duplicates.
+    upholds: [failed-response-hook-answers-identity]

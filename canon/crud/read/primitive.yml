@@ -1,0 +1,23 @@
+primitive: crud.read
+summary: List and get reads and their query controls, covering projection, offset, cursor and stream pages, aggregates and typed queries.
+code:
+  - framework/crud/query_read.go
+  - framework/crud/crud_projection.go
+  - framework/crud/crud_cursor.go
+  - framework/crud/crud_stream.go
+  - framework/crud/aggregate.go
+  - framework/crud/typed_query.go
+docs:
+  - framework/docs/content/query-dsl.md
+  - framework/docs/content/cursor-pagination.md
+invariants:
+  - id: one-strict-query-read
+    rule: Every HTTP read parses the wire query once, through readQuery, which refuses an undecodable pair or a repeated single-value key.
+    enforced_by:
+      - test: framework/crud.TestReadQueryGuard
+      - test: framework/crud.TestReadQueryParity
+  - id: cursor-fields-match
+    rule: A decoded cursor is refused unless its field names equal the page's expected set.
+    enforced_by:
+      - test: framework/crud.TestDecodeCursor_RejectsMismatchedFields
+      - test: framework/crud.TestCursorSingleFieldForeignNameRejected

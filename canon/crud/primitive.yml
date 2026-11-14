@@ -1,0 +1,6 @@
+primitive: crud
+summary: The generated HTTP, MCP and in-process CRUD surface for a declared entity.
+code:
+  - framework/crud/
+docs:
+  - framework/docs/content/endpoints.md

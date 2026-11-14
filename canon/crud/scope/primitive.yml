@@ -1,0 +1,68 @@
+primitive: crud.scope
+summary: Who may read or write a row, decided by the owner, tenant, session, RBAC and ReadScope gates and their SQL predicates.
+code:
+  - framework/crud/owner.go
+  - framework/crud/read_scope.go
+  - framework/crud/hook_scope.go
+  - framework/crud/write_gate.go
+  - framework/crud/elevation.go
+docs:
+  - framework/docs/content/access-control.md
+  - framework/docs/content/entity-declarations.md
+invariants:
+  - id: one-read-scope-builder
+    rule: readScopeFilters is the only builder of ReadScope predicates, and every read sink renders its output.
+    enforced_by:
+      - test: framework/crud.TestReadScope_CountMatchesFilteredRows
+      - test: framework/crud.TestReadScope_CursorAgreesWithBufferedList
+      - test: framework/crud.TestReadScope_StreamAgreesWithBufferedList
+      - test: framework/crud.TestReadScope_IncludeHidesScopedRows
+      - test: framework/crud.TestReadScope_EagerLoadHidesScopedRows
+      - test: framework/crud.TestReadScope_InProcessAPIScopes
+      - test: framework/crud.TestReadScope_TypedQueryScopes
+    judge: Does this change build or render a ReadScope predicate anywhere other than readScopeFilters and renderReadScope?
+  - id: unknown-operator-matches-nothing
+    rule: A read-scope operator the renderer does not know renders as a predicate that matches no row.
+    enforced_by:
+      - test: framework/crud.TestRenderReadScopeOps
+      - test: framework/crud.TestReadScope_EveryOperatorFiltersRealRows
+  - id: hidden-row-write-answers-404
+    rule: A record write on a row the caller's BeforeGet hooks hide answers 404 and writes nothing, and a hook error counts as hidden.
+    enforced_by:
+      - test: framework/crud.TestHiddenRowRecordWritesAnswer404
+      - test: framework/crud.TestHiddenRowWriteHookErrorFailsClosed
+      - test: framework/crud.TestHiddenRowBatchWritesFailLikeMissing
+  - id: unscoped-entity-requires-session
+    rule: An entity with no OwnerField, no Access block and no Public flag requires an authenticated session for every operation, the event stream included.
+    enforced_by:
+      - test: framework/crud.TestAnonymousCreateRejectedByDefault
+      - test: framework/crud.TestAnonymousListRejectedByDefault
+      - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
+  - id: read-posture-gates-agree
+    rule: CanReadScoped and requireScope give the same answer for every read posture.
+    enforced_by:
+      - test: framework/crud.TestCanReadScoped_PostureMatrix
+  - id: write-read-back-hidden-by-scope
+    rule: A write whose resulting row the caller's ReadScope would hide answers with the primary key only, and the write stands.
+    enforced_by:
+      - test: framework/crud.TestUpdateHidesReadScopedRowAnon
+      - test: framework/crud.TestCreateHidesReadScopedRow
+      - test: framework/crud.TestBatchUpdateHidesReadScopedRow
+decisions:
+  - id: read-scope-binds-reads-only
+    status: accepted
+    decision: ReadScope filters reads only; update, delete and upsert statements do not carry it, and the read-back of a write is cut to the primary key instead.
+    rejected:
+      - option: Filter writes by the read posture.
+        why: It strands rows their own editor cannot save.
+    revisit_if: Writes ever need read-scope gating.
+    upholds: [write-read-back-hidden-by-scope]
+  - id: own-read-scope-renderer
+    status: accepted
+    decision: Read-scope predicates have their own SQL renderer and their own Go evaluator for the event stream.
+    rejected:
+      - option: Reuse renderFilterClause or filter.ApplyToQuery.
+        why: The first renders an unknown operator as equality, so neq would become eq, and the second skips unknown operators.
+      - option: Evaluate the flattened ParsedFilters in Go.
+        why: A list such as in [a, b] would read as a AND b.
+    upholds: [unknown-operator-matches-nothing]

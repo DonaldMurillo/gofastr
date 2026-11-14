@@ -1,4 +1,4 @@
-.PHONY: analyze build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources bench-smoke lint repo-lint dupl mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
+.PHONY: analyze canon build build-all build-cmd build-examples csp-check embed-check test test-all test-pg test-pg-env test-pg-only test-race bench bench-sqlite bench-pg bench-pg-evidence bench-tier1 bench-tier2 bench-tier3 bench-tier4 bench-tier5 bench-tier6 bench-tier7 bench-tier8 bench-tier9 bench-techempower bench-overhead bench-resources bench-smoke lint repo-lint dupl mutate postgres-up postgres-down generate dev clean security security-full fuzz hooks install ollama-up ollama-down ollama-logs semantic-live
 
 # ---- Build ----
 #
@@ -86,6 +86,12 @@ red-tests:
 # together with the change that moved the number.
 dupl:
 	@./scripts/dupl.sh
+
+# The contributor canon (canon/): lint every reference, fail on stale
+# generated files.
+canon:
+	go run ./cmd/canon lint
+	go run ./cmd/canon gen --check
 
 # Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.

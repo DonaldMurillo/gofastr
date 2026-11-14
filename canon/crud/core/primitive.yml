@@ -1,0 +1,14 @@
+primitive: crud.core
+summary: The CrudHandler type, its field snapshot, key handling, value encoding, row pooling and refusal phrases.
+code:
+  - framework/crud/crud.go
+  - framework/crud/key.go
+  - framework/crud/fieldcache.go
+  - framework/crud/jsoncase.go
+  - framework/crud/jsonfield.go
+  - framework/crud/numberexact.go
+  - framework/crud/decimal_sqlite.go
+  - framework/crud/timestamp_layout.go
+  - framework/crud/pool.go
+  - framework/crud/logscrub.go
+  - framework/crud/reasons.go

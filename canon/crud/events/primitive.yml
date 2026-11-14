@@ -1,0 +1,24 @@
+primitive: crud.events
+summary: Staging lifecycle events to the outbox, emitting them on the live bus, and the per-entity event stream.
+code:
+  - framework/crud/crud_events.go
+  - framework/crud/event_stamp.go
+  - framework/crud/eventstream_seats.go
+docs:
+  - framework/docs/content/events.md
+invariants:
+  - id: events-follow-the-commit
+    rule: StageEvent runs inside the write's transaction, and a live-bus event for a write joined to an ambient transaction is published only after that transaction commits.
+    enforced_by:
+      - test: framework/crud.TestAmbientTxRollbackWithholdsEvents
+      - test: framework/crud.TestAmbientTxCommitEmitsEvents
+      - test: framework/crud.TestAmbientTxQueuePublishesOnDrainOnly
+      - test: framework/crud.TestAmbientProbeDropsOnDeadline
+  - id: stream-rechecks-authority
+    rule: An open event stream re-checks its caller's authority on every delivery and on a ticker, closes once the caller would be refused, and drops a record whose AfterGet hook errors.
+    enforced_by:
+      - test: framework/crud.TestEventStreamRevokesMidStream
+      - test: framework/crud.TestEventStreamIdleTickerClosesOnRevoke
+      - test: framework/crud.TestEventStreamRechecksReadScope
+      - test: framework/crud.TestEventStreamClosesOnTenantChange
+      - test: framework/crud.TestEventStreamRunsResponseHook
