@@ -230,7 +230,7 @@ What follows from that:
 - **The Overview is about a minute behind.** A minute's counts are
   written once it is over, at the next fifteen-second check. When the
   app stops, the minute in progress is written as far as it got.
-- **"Half within" and "95 in 100 within" are right to within a bucket.**
+- **p50 and p95 are right to within a bucket.**
   They are read from the buckets, not from each request's time, so 180
   ms may be anything from 100 to 200 ms. The screens show two digits for
   that reason. A request slower than ten seconds reads as "10 s or
@@ -276,7 +276,7 @@ without it belongs to no request.
 
 A request that panics keeps the call stack, cut to start at the function
 that panicked, and at most 8 KiB of it. The request's page shows it
-under "Where it failed"; `gofastr telemetry request` prints it and
+under "Stack"; `gofastr telemetry request` prints it and
 `telemetry_request` returns it as `stack`.
 
 The stack comes from whichever caught the panic. The log plugin's

@@ -169,7 +169,7 @@ func TestListsPageOlderAndNewer(t *testing.T) {
 func TestLogsLeaveOutQuietPathsByDefault(t *testing.T) {
 	h := longApp(t)
 	_, body := get(t, h, "/telemetry/logs", true)
-	if strings.Contains(body, "/__gofastr/runtime/x") || !strings.Contains(body, "are left out") {
+	if strings.Contains(body, "/__gofastr/runtime/x") || !strings.Contains(body, "Asset requests hidden") {
 		t.Fatal("the default page lists script fetches, or does not say they are left out")
 	}
 	// Only the page's own link value turns it on.
@@ -177,7 +177,7 @@ func TestLogsLeaveOutQuietPathsByDefault(t *testing.T) {
 		t.Fatal("all=yes was read as the choice, or echoed into the form")
 	}
 	_, with := get(t, h, "/telemetry/logs?all=1", true)
-	if !strings.Contains(with, "GET /__gofastr/runtime/x58.js → 200") || !strings.Contains(with, "are included") {
+	if !strings.Contains(with, "GET /__gofastr/runtime/x58.js → 200") || !strings.Contains(with, "Asset requests shown") {
 		t.Fatal("all=1 does not list script fetches")
 	}
 	if older := links(with)["Older"]; !strings.Contains(older, "all=1") {

@@ -35,7 +35,9 @@ few lines, and link the PR or the docs page for the rest.
   an exact phrase; it was one case-sensitive piece of text. A request no
   route took is stored as `GET (no route)` and `GET /{$}` as `GET /`
   (older lines keep the old spelling). On a phone no page scrolls
-  sideways and Issues shows every column. See
+  sideways and Issues shows every column. The screens' wording is
+  shorter: the sentences under each heading are gone, and the labels
+  say p50, p95, CPU, Memory, Disk, Jobs. See
   [telemetry](framework/docs/content/telemetry.md).
 - **A polled region no longer moves focus.** `data-cui-poll` skips a
   response identical to the last one, and waits while keyboard focus or

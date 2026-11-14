@@ -228,7 +228,7 @@ func TestEachRoundWritesTheFinishedMinutes(t *testing.T) {
 	}
 }
 
-// The machine is read once a minute, however many rounds the minute
+// Machine is read once a minute, however many rounds the minute
 // has, and each reading goes to the day's file and to the disk rule: a
 // disk that passes its line notifies once, and once more when it has
 // room again.

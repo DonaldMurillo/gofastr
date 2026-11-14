@@ -90,7 +90,7 @@ func TestRouteTableStopsAtItsLimit(t *testing.T) {
 	if n := strings.Count(out, "<tr") - 1; n != routesShown {
 		t.Fatalf("%d rows, want %d", n, routesShown)
 	}
-	if !strings.Contains(out, "10 quieter routes are not listed.") {
+	if !strings.Contains(out, "10 more routes not listed.") {
 		t.Error("the table does not say what it left out")
 	}
 	if !strings.Contains(out, "GET /r049") || strings.Contains(out, "GET /r050") {
@@ -99,7 +99,7 @@ func TestRouteTableStopsAtItsLimit(t *testing.T) {
 	if !strings.Contains(out, itel.OtherRoute) || strings.Contains(out, "route=%28other%29") {
 		t.Error("the row for the routes counted together is missing or is a link")
 	}
-	if all := string(s.routeTable(context.Background(), routes[:routesShown], url.Values{}, "")); strings.Contains(all, "quieter routes") {
+	if all := string(s.routeTable(context.Background(), routes[:routesShown], url.Values{}, "")); strings.Contains(all, "more routes not listed") {
 		t.Error("a table that lists every route says it left some out")
 	}
 }
@@ -156,7 +156,7 @@ func TestCountTableSorts(t *testing.T) {
 			t.Errorf("?%s: rows %s, want %s", query, got, want)
 		}
 	}
-	// Background work has no "slow" column: asked to sort by it, it
+	// Jobs has no "slow" column: asked to sort by it, it
 	// stays busiest first rather than sorting by a figure it hides.
 	q, _ := url.ParseQuery("jsort=slow")
 	if got := order(string(s.jobTable(context.Background(), slices.Clone(routes), q, ""))); got != "busy,failing,slow" {
@@ -186,7 +186,7 @@ func TestPeakSaysTheHighestBar(t *testing.T) {
 	ctx := context.Background()
 	whole := func(ctx context.Context, v float64) string { return i18n.Number(ctx, int(v)) }
 	bars := []ui.BarChartBar{{Label: "1:00", Value: 3}, {Label: "1:15", Value: 1200}, {Label: "1:30", Value: math.NaN()}, {Label: "1:45", Value: 1200}, {Label: "2:00", Value: 7}}
-	if got := peak(ctx, bars, whole); got != "Highest: 1,200, at 1:45 UTC." {
+	if got := peak(ctx, bars, whole); got != "Peak 1,200 at 1:45 UTC." {
 		t.Errorf("peak = %q", got)
 	}
 	for name, empty := range map[string][]ui.BarChartBar{

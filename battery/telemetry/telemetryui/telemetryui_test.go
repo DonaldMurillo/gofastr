@@ -98,7 +98,7 @@ func seed(t *testing.T, dir string, now time.Time) {
 	count(now.Add(-3*time.Minute), "POST /orders", 9, 3, 8*ms)
 	count(now.Add(-3*time.Minute), "POST /orders", 1, 0, 900*ms)
 	count(now.Add(-1*time.Minute), `GET /<script>alert(1)</script>`, 1, 0, ms)
-	// Background work, which no request total counts: six sends of a
+	// Jobs, which no request total counts: six sends of a
 	// queue job (two failed) and one scheduled run.
 	work := func(at time.Time, name string, n, failed int, dur time.Duration) {
 		r := itel.NewRollup()
@@ -109,7 +109,7 @@ func seed(t *testing.T, dir string, now time.Time) {
 	}
 	work(now.Add(-3*time.Minute), "process welcome-email", 6, 2, 40*ms)
 	work(now.Add(-2*time.Minute), "cron nightly", 1, 0, 3*time.Second)
-	// The machine, read twice in the last few minutes and once two
+	// Machine, read twice in the last few minutes and once two
 	// days ago, on a disk that is nearly full.
 	host := func(at time.Time, rest string) {
 		write(itel.KindHost, at, []byte(`{"time":"`+at.UTC().Format(time.RFC3339)+`",`+rest+"}\n"))
@@ -238,8 +238,8 @@ func TestOneRequestShowsItsStepsAndItsLogLines(t *testing.T) {
 		[]string{"payment declined", "cache cold", "HTTP GET GET", "note="})
 
 	for url, want := range map[string]string{
-		"/telemetry/requests?trace=" + strings.Repeat("b", 32): "This request is not in the files",
-		"/telemetry/requests?trace=not-an-id":                  "That is not a trace ID",
+		"/telemetry/requests?trace=" + strings.Repeat("b", 32): "Request not found",
+		"/telemetry/requests?trace=not-an-id":                  "A trace ID is 32 characters",
 	} {
 		code, body := get(t, h, url, true)
 		if code != http.StatusOK || !strings.Contains(body, want) || strings.Contains(body, "fui-waterfall") {
@@ -375,7 +375,7 @@ func TestIssuesGroupFailuresAndLeadToTheirRequests(t *testing.T) {
 		t.Fatalf("status %d", code)
 	}
 	has(t, "issues", body,
-		[]string{"card N declined", "POST /orders", "inventory", ">500<", "Issues", "What went wrong"},
+		[]string{"card N declined", "POST /orders", "inventory", ">500<", "Issues", "Error"},
 		[]string{"card 4411", "<b>inventory</b>", "GET /reports", "GET /orders/{id}", "Nothing failed"})
 	// Each issue has two links: its name, to every request that failed
 	// this way, and "Open", to the newest of them at the top of its page.
@@ -460,7 +460,7 @@ func TestOverviewCountsEveryRequestByRoute(t *testing.T) {
 		`href="/telemetry/requests?show=failed"`, `href="/telemetry/requests?show=slow"`,
 		`id="telemetry-chart-requests-title"`, `aria-labelledby="telemetry-chart-requests-title"`,
 		`aria-labelledby="telemetry-chart-failed-title"`, `aria-labelledby="telemetry-chart-p95-title"`,
-		"Each bar is 15 minutes.", "&lt;script&gt;alert(1)&lt;/script&gt;",
+		"15-minute bars.", "&lt;script&gt;alert(1)&lt;/script&gt;",
 		`data-cui-poll-src="/telemetry/_rows/overview"`,
 	}, []string{"GET /old", "<script>alert(1)</script>", "No requests counted yet"})
 	// The busiest route is listed first.
@@ -469,17 +469,17 @@ func TestOverviewCountsEveryRequestByRoute(t *testing.T) {
 	}
 
 	_, week := get(t, h, "/telemetry/overview?window=7d", true)
-	has(t, "the last 7 days", week, []string{"GET /old", ">58<", "Each bar is 2 hours.",
+	has(t, "the last 7 days", week, []string{"GET /old", ">58<", "2-hour bars.",
 		`href="/telemetry/requests?route=GET+%2Fold&amp;window=7d"`},
 		// Bars two hours wide do not refresh every ten seconds.
 		[]string{"data-cui-poll", "Live"})
 
 	_, hour := get(t, h, "/telemetry/overview?window=1h", true)
-	has(t, "the last hour", hour, []string{">51<", "Each bar is one minute.", `data-cui-poll-src="/telemetry/_rows/overview?window=1h"`}, []string{"GET /old"})
+	has(t, "the last hour", hour, []string{">51<", "1-minute bars.", `data-cui-poll-src="/telemetry/_rows/overview?window=1h"`}, []string{"GET /old"})
 
 	for _, w := range []string{"all", "nonsense", "24h"} {
 		_, other := get(t, h, "/telemetry/overview?window="+w, true)
-		has(t, "window="+w, other, []string{">51<", "Each bar is 15 minutes."}, []string{"GET /old"})
+		has(t, "window="+w, other, []string{">51<", "15-minute bars."}, []string{"GET /old"})
 	}
 
 	// The figures alone, for the timer: no heading, no filter.
@@ -513,24 +513,24 @@ func TestFailedRequestShowsWhatAndWhere(t *testing.T) {
 	h := newApp(t)
 	_, body := get(t, h, "/telemetry/requests?trace="+failedID, true)
 	has(t, "a failure with a stack", body,
-		[]string{"What went wrong", "card 4411 declined", "Where it failed", "app.charge(...)", "/app/pay.go:41", "app.&lt;b&gt;handler&lt;/b&gt;(...)"},
+		[]string{"Error", "card 4411 declined", "Stack", "app.charge(...)", "/app/pay.go:41", "app.&lt;b&gt;handler&lt;/b&gt;(...)"},
 		[]string{"app.<b>handler</b>"})
-	if strings.Index(body, "What went wrong") > strings.Index(body, "Where it failed") {
+	if strings.Index(body, "Error") > strings.Index(body, "Stack") {
 		t.Error("where comes before what")
 	}
 
 	_, body = get(t, h, "/telemetry/requests?trace="+failedAgainID, true)
-	has(t, "a failure with no stack", body, []string{"What went wrong", "card 9020 declined"}, []string{"Where it failed"})
+	has(t, "a failure with no stack", body, []string{"Error", "card 9020 declined"}, []string{"Stack"})
 
 	// A request that succeeded though a step failed has no error of its
 	// own to show, and no stack.
 	_, body = get(t, h, "/telemetry/requests?trace="+slowID, true)
-	has(t, "a request that did not fail", body, []string{"GET /reports"}, []string{"What went wrong", "Where it failed"})
+	has(t, "a request that did not fail", body, []string{"GET /reports"}, []string{"Error", "Stack"})
 
 	// A step failed and nothing said why: no empty box in place of the
 	// words.
 	_, body = get(t, h, "/telemetry/requests?trace="+okID, true)
-	has(t, "a failed step with no error text", body, []string{"GET /orders/{id}"}, []string{"What went wrong"})
+	has(t, "a failed step with no error text", body, []string{"GET /orders/{id}"}, []string{"Error"})
 }
 
 // The overview shows the machine as it was last read: how busy, how
@@ -541,12 +541,12 @@ func TestOverviewShowsTheMachine(t *testing.T) {
 	h := newApp(t)
 	_, body := get(t, h, "/telemetry/overview", true)
 	has(t, "the machine", body, []string{
-		"The machine", "CPU busy", ">37%<", "of all cores",
-		"Memory used", ">52%<", "2.1 GB of 4 GB",
-		"Disk used", ">92%<", "23 GB of 25 GB",
+		"Machine", ">CPU<", ">37%<", "of all cores",
+		">Memory<", ">52%<", "2.1 GB of 4 GB",
+		">Disk<", ">92%<", "23 GB of 25 GB",
 		"This app", ">80 MB<", "42 goroutines",
 		`aria-labelledby="telemetry-chart-cpu-title"`, `aria-labelledby="telemetry-chart-memory-title"`,
-	}, []string{"Not known here", ">99%<"})
+	}, []string{"Unknown", ">99%<"})
 	// The disk's figure is the one drawn as trouble.
 	// Counted on elements: the page's style sheet names the class too.
 	if n := len(regexp.MustCompile(`class="[^"]*fui-stat-card__trend--down`).FindAllString(body, -1)); n != 2 {
@@ -562,7 +562,7 @@ func TestOverviewShowsTheMachine(t *testing.T) {
 	}
 	// The figures alone, for the timer, carry the machine too.
 	_, part := get(t, h, "/telemetry/_rows/overview", true)
-	has(t, "the rows route", part, []string{"The machine", ">92%<"}, nil)
+	has(t, "the rows route", part, []string{"Machine", ">92%<"}, nil)
 }
 
 // A machine that says little (no /proc: not Linux) shows what it has and
@@ -591,13 +591,13 @@ func TestOverviewWithALittleOrNothingFromTheMachine(t *testing.T) {
 		_, body := get(t, app.Router(), "/telemetry/overview", true)
 		return body
 	}
-	has(t, "no reading yet", serve(""), []string{"No requests counted yet"}, []string{"The machine", "Background work"})
+	has(t, "no reading yet", serve(""), []string{"No requests counted yet"}, []string{"Machine", "Jobs"})
 
 	little := serve(`"goroutines":12,"heap":52428800`)
 	has(t, "a machine that says little", little,
-		[]string{"No requests counted yet", "The machine", "Not known here", ">50 MB<", "12 goroutines"},
+		[]string{"No requests counted yet", "Machine", "Unknown", ">50 MB<", "12 goroutines"},
 		[]string{"telemetry-chart-cpu", "telemetry-chart-memory", "%<"})
-	if n := strings.Count(little, "Not known here"); n != 3 {
+	if n := strings.Count(little, "Unknown"); n != 3 {
 		t.Errorf("%d figures say they are not known; want CPU, memory and disk", n)
 	}
 	// A disk with room is a figure like the others, not trouble.
@@ -608,7 +608,7 @@ func TestOverviewWithALittleOrNothingFromTheMachine(t *testing.T) {
 	}
 }
 
-// Background work has a table of its own under the routes, with runs
+// Jobs has a table of its own under the routes, with runs
 // in place of requests and no "slow", and none of it is in the request
 // totals. An app with no background work has no such table.
 func TestOverviewListsBackgroundWorkApart(t *testing.T) {
@@ -616,16 +616,16 @@ func TestOverviewListsBackgroundWorkApart(t *testing.T) {
 	_, body := get(t, h, "/telemetry/overview", true)
 	has(t, "the overview", body, []string{
 		">51<", // the requests, as before
-		">Background work</caption>", "process welcome-email", "2 (33%)", "cron nightly", ">3.5 s<",
+		">Jobs</caption>", "process welcome-email", "2 (33%)", "cron nightly", ">3.5 s<",
 		`href="/telemetry/requests?route=process+welcome-email"`,
 	}, []string{">58<"})
-	i := strings.Index(body, ">Background work</caption>")
+	i := strings.Index(body, ">Jobs</caption>")
 	table := body[i:][:strings.Index(body[i:], "</table>")]
-	has(t, "the background work table", table, []string{">Work<", ">Runs<", ">Failed<", ">Half within<"}, []string{">Slow<", ">Requests<", "GET /orders"})
+	has(t, "the background work table", table, []string{">Job<", ">Runs<", ">Failed<", ">p50<"}, []string{">Slow<", ">Requests<", "GET /orders"})
 	if strings.Index(table, "process welcome-email") > strings.Index(table, "cron nightly") {
 		t.Error("the work is not busiest first")
 	}
-	if strings.Index(body, ">Routes</caption>") > i || !strings.Contains(body, ">Routes</caption>") || strings.Index(body, "The machine") < i {
+	if strings.Index(body, ">Routes</caption>") > i || !strings.Contains(body, ">Routes</caption>") || strings.Index(body, "Machine") < i {
 		t.Error("the tables are out of order: routes, background work, the machine")
 	}
 }
@@ -652,5 +652,5 @@ func TestOverviewOfAWorkerWithNoRequests(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = app.Shutdown(context.Background()) })
 	_, body := get(t, app.Router(), "/telemetry/overview", true)
-	has(t, "a worker", body, []string{"No requests counted yet", ">Background work</caption>", "process resize-image", ">5<"}, []string{"Routes, busiest first"})
+	has(t, "a worker", body, []string{"No requests counted yet", ">Jobs</caption>", "process resize-image", ">5<"}, []string{"Routes, busiest first"})
 }

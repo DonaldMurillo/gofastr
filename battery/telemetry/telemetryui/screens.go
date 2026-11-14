@@ -766,7 +766,7 @@ func (s *Screens) request(ctx context.Context, id string, q url.Values) render.H
 		wentWrong = ui.Callout(ui.CalloutConfig{Variant: variant, Title: i18nui.TelemetryWentWrong.Text(ctx), Standing: true}, render.Text(tr.Err))
 	}
 	if tr.Stack != "" {
-		stack = ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryStack.Text(ctx), Description: i18nui.TelemetryStackSub.Text(ctx), Compact: true, Ctx: ctx},
+		stack = ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryStack.Text(ctx), Compact: true, Ctx: ctx},
 			// The first frame is the line that failed: the call and,
 			// under it, the file and line number.
 			ui.CodeBlock(ui.CodeBlockConfig{Code: tr.Stack, Scroll: true, ShowCopy: true, HighlightLines: []ui.LineRange{{From: 1, To: 2}},
@@ -778,7 +778,7 @@ func (s *Screens) request(ctx context.Context, id string, q url.Values) render.H
 		}}),
 		stack,
 		steps,
-		ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryRequestLogs.Text(ctx), Description: i18nui.TelemetryRequestLogsSub.Text(ctx), Compact: true, Ctx: ctx}, logs))
+		ui.Section(ui.SectionConfig{Heading: i18nui.TelemetryRequestLogs.Text(ctx), Compact: true, Ctx: ctx}, logs))
 }
 
 // detailAttrs are the span attributes worth a line under a step's name,
@@ -853,7 +853,6 @@ const issuesShown = 100
 func (s *Screens) Issues(ctx context.Context) render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryIssues.Text(ctx),
-		Subtitle: i18nui.TelemetryIssuesSub.Text(ctx),
 	})
 	store := s.tel.Reader()
 	if store == nil {
@@ -954,7 +953,6 @@ func (s *Screens) LogsRows(ctx context.Context) render.HTML { return s.logs(ctx,
 func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	header := ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryLogs.Text(ctx),
-		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
 	})
 	store := s.tel.Reader()
 	if store == nil {
@@ -1047,7 +1045,6 @@ func (s *Screens) logs(ctx context.Context, rowsOnly bool) render.HTML {
 	}
 	header = ui.PageHeader(ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryLogs.Text(ctx),
-		Subtitle: i18nui.TelemetryLogsSub.Text(ctx),
 		Actions:  s.liveBadge(ctx, cur),
 	})
 	return page(s.tabNav(ctx, tabLogs), header, controls(segments, ranges), filters, quiet, s.rows("logs", cur, src, stoppedNote, table, pages))

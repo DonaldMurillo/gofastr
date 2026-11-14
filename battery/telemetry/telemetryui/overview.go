@@ -77,7 +77,6 @@ func (s *Screens) overview(ctx context.Context, rowsOnly bool) render.HTML {
 	live := s.Live != nil && sp.step <= liveStepMax
 	header := ui.PageHeaderConfig{
 		Title:    i18nui.TelemetryOverview.Text(ctx),
-		Subtitle: i18nui.TelemetryOverviewSub.Text(ctx),
 	}
 	if live {
 		header.Actions = s.liveBadge(ctx, cursor{})
@@ -269,7 +268,7 @@ func (s *Screens) machine(ctx context.Context, sp span, host itel.HostSeries, no
 	cpuBars := make([]ui.BarChartBar, len(host.Points))
 	memBars := make([]ui.BarChartBar, len(host.Points))
 	for i, p := range host.Points {
-		at := i18n.DateTime(ctx, p.Time.UTC(), i18n.DateMedium, i18n.TimeShort)
+		at := barTime(ctx, p.Time, now)
 		cpuBars[i] = ui.BarChartBar{Label: at, Value: math.NaN()}
 		memBars[i] = ui.BarChartBar{Label: at, Value: math.NaN(), Color: "info"}
 		if p.CPU >= 0 {
@@ -307,7 +306,7 @@ func (s *Screens) charts(ctx context.Context, sp span, points []itel.StatsPoint,
 	failed := make([]ui.BarChartBar, len(points))
 	slowest := make([]ui.BarChartBar, len(points))
 	for i, p := range points {
-		at := i18n.DateTime(ctx, p.Time.UTC(), i18n.DateMedium, i18n.TimeShort)
+		at := barTime(ctx, p.Time, now)
 		requests[i] = ui.BarChartBar{Label: at, Value: float64(p.N)}
 		failed[i] = ui.BarChartBar{Label: at, Value: float64(p.Failed), Color: "danger"}
 		slowest[i] = ui.BarChartBar{Label: at, Value: float64(p.P95.Microseconds()) / 1000, Color: "warning"}
@@ -448,6 +447,16 @@ func (s *Screens) countTable(ctx context.Context, routes []itel.RouteStats, q ur
 // today. The card names its heading "<id>-title"; the chart is labelled
 // by it. top, when not zero, is the top of the scale: 100 for a
 // percentage.
+// barTime names a bar's start: the time alone for today's, the date
+// too for an earlier day's.
+func barTime(ctx context.Context, t, now time.Time) string {
+	u, n := t.UTC(), now.UTC()
+	if u.Year() == n.Year() && u.YearDay() == n.YearDay() {
+		return i18n.Time(ctx, u, i18n.TimeShort)
+	}
+	return i18n.DateTime(ctx, u, i18n.DateShort, i18n.TimeShort)
+}
+
 // percentOf100 writes a chart value that is already a percentage.
 func percentOf100(ctx context.Context, v float64) string { return i18n.Percent(ctx, v/100) }
 

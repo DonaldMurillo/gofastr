@@ -54,6 +54,8 @@ func TestLogSearchOutOfTimeCarriesOn(t *testing.T) {
 	s := NewScreens(tel, "/t", false)
 	s.searchBudget = time.Nanosecond
 	draw := func(url string) string {
+		// A browser keeps the fragment to itself; so does this.
+		url, _, _ = strings.Cut(url, "#")
 		r := httptest.NewRequest("GET", url, nil)
 		return string(s.Logs(appui.WithRequest(r.Context(), r)))
 	}
@@ -61,7 +63,7 @@ func TestLogSearchOutOfTimeCarriesOn(t *testing.T) {
 	for hop := 0; ; hop++ {
 		body := draw(url)
 		if strings.Contains(body, ">the-needle<") {
-			if strings.Contains(body, "The search stopped") {
+			if strings.Contains(body, "Search stopped") {
 				t.Fatal("the page that found the line still says the search stopped")
 			}
 			if hop == 0 {
@@ -70,8 +72,8 @@ func TestLogSearchOutOfTimeCarriesOn(t *testing.T) {
 			return
 		}
 		m := olderHref.FindStringSubmatch(body)
-		if !strings.Contains(body, "The search stopped") || m == nil {
-			t.Fatalf("hop %d found nothing, and offers no way on (note: %v, older link: %v)", hop, strings.Contains(body, "The search stopped"), m != nil)
+		if !strings.Contains(body, "Search stopped") || m == nil {
+			t.Fatalf("hop %d found nothing, and offers no way on (note: %v, older link: %v)", hop, strings.Contains(body, "Search stopped"), m != nil)
 		}
 		if next := html.UnescapeString(m[1]); next == url || !strings.Contains(next, "q=the-needle") {
 			t.Fatalf("hop %d: the Older link goes nowhere new or drops the search: %s", hop, next)
@@ -113,8 +115,8 @@ func TestFiringAlertIsShownOnThePages(t *testing.T) {
 	}
 	for name, f := range map[string]func(context.Context) render.HTML{"requests": s.Requests, "issues": s.Issues} {
 		body := draw(f)
-		for _, want := range []string{"37 failed requests in the last 10 minutes", "6 slow requests in the last 5 minutes", "failed &lt;requests&gt;",
-			"Alert “disk nearly full” is firing: the disk is 93% full."} {
+		for _, want := range []string{"37 failed in 10 min", "6 slow in 5 min", "failed &lt;requests&gt;",
+			"“disk nearly full” is firing: disk 93% full."} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: missing %q", name, want)
 			}
@@ -125,7 +127,7 @@ func TestFiringAlertIsShownOnThePages(t *testing.T) {
 		// One line each (run together they read as one sentence), in a
 		// notice that is part of the page, not an interruption: the
 		// page is drawn again every few seconds while a rule fires.
-		if n := strings.Count(body, "<div>Alert “"); n != 3 {
+		if n := strings.Count(body, "<div>“"); n != 3 {
 			t.Errorf("%s: %d alert lines in a box of their own, want 3", name, n)
 		}
 		if strings.Contains(body, `role="alert"`) {

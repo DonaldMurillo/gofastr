@@ -123,7 +123,7 @@ func TestMissingRequestOffersTheBox(t *testing.T) {
 	h := newApp(t)
 	for _, id := range []string{"nothex", strings.Repeat("0", 32)} {
 		_, body := get(t, h, "/telemetry/requests?trace="+id, true)
-		has(t, "trace="+id, body, []string{"This request is not in the files", `name="trace"`, `value="` + id + `"`}, nil)
+		has(t, "trace="+id, body, []string{"Request not found", `name="trace"`, `value="` + id + `"`}, nil)
 	}
 }
 
@@ -179,7 +179,7 @@ func TestLogSearchReadsWhatThePageShows(t *testing.T) {
 		has(t, "logs"+q, body, c.want, c.not)
 	}
 	_, body := get(t, h, "/telemetry/logs", true)
-	has(t, "the search box", body, []string{`placeholder="Words to find"`}, nil)
+	has(t, "the search box", body, []string{`placeholder="Search logs"`}, nil)
 }
 
 // The bare path keeps a query on its way to the overview.
@@ -204,7 +204,7 @@ func TestNarrowedEmptyListSaysWhy(t *testing.T) {
 	h := newApp(t)
 	for _, url := range []string{"/telemetry/requests?route=GET+%2Fnope", "/telemetry/requests?issue=0123456789abcdef"} {
 		_, body := get(t, h, url, true)
-		has(t, url, body, []string{"No kept request matches this route or issue", "<h2"}, []string{"wait for traffic"})
+		has(t, url, body, []string{"Nothing kept for this route or issue", "<h2"}, []string{"Try a wider time range"})
 	}
 }
 
