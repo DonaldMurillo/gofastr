@@ -90,7 +90,7 @@ func runCell(cfg config, c *cell) {
 	if c.Condition == conditionNudge {
 		prompt += nudge
 	}
-	agent := command(ctx, dir, cfg.claude,
+	args := []string{
 		"-p", prompt,
 		"--model", cfg.model,
 		"--output-format", "stream-json", "--verbose",
@@ -100,7 +100,11 @@ func runCell(cfg config, c *cell) {
 		"--strict-mcp-config",
 		"--no-session-persistence",
 		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.cellBudget),
-	)
+	}
+	if c.Condition == conditionHook {
+		args = append(args, "--settings", filepath.Join(dir, ".claude", "settings.json"))
+	}
+	agent := command(ctx, dir, cfg.claude, args...)
 	agent.Stdout = &stream
 	agent.Stderr = &stream
 	runErr := agent.Run()
@@ -188,8 +192,13 @@ func prepare(cfg config, t task, condition, dir string) error {
 			return err
 		}
 	}
-	if t.Ref != "" && condition == conditionRegistry {
+	if t.Ref != "" && (condition == conditionRegistry || condition == conditionHook) {
 		if err := overlayRegistry(ctx, cfg, t, dir, root); err != nil {
+			return err
+		}
+	}
+	if condition == conditionHook {
+		if err := errors.Join(root.MkdirAll(".claude", 0o700), root.WriteFile(".claude/settings.json", []byte(hookSettings), 0o600)); err != nil {
 			return err
 		}
 	}

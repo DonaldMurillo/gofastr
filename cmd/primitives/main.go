@@ -6,6 +6,8 @@
 //	primitives show <id>        one primitive in full, with its children
 //	primitives lint             check every reference in the registry against the tree
 //	primitives gen [--check]    write the generated files, or fail when they are stale
+//	primitives hook             a Claude Code PostToolUse hook: tells the agent, once per
+//	                            session, what else does the job of a file it changed
 //	primitives judge [--base <ref>] [--json]
 //	                            list the judged questions that apply to the changed files
 package main
@@ -18,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -119,10 +122,12 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 			len(c.Primitives), invariants, judged, decisions)
 	case "gen":
 		return gen(c, args, stdout, stderr)
+	case "hook":
+		return hook(c, os.Stdin, stdout)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "primitives: unknown command %q (list, for, show, lint, gen, judge)\n", cmd)
+		fmt.Fprintf(stderr, "primitives: unknown command %q (list, for, show, lint, gen, hook, judge)\n", cmd)
 		return 2
 	}
 	return 0
@@ -140,6 +145,99 @@ func relPath(root, arg string) string {
 	return filepath.ToSlash(rel)
 }
 
+// hook answers a Claude Code PostToolUse event. It looks at what the
+// working tree has changed, by any tool, and the first time a changed
+// file is a site of a twins entry it returns the same-job notice as
+// context for the agent. On input it cannot read it says nothing.
+func hook(c *primitives.Registry, stdin io.Reader, stdout io.Writer) int {
+	var event struct {
+		Event   string `json:"hook_event_name"`
+		Session string `json:"session_id"`
+	}
+	if err := json.NewDecoder(stdin).Decode(&event); err != nil {
+		return 0
+	}
+	changed, err := changedFiles(c.Root, "HEAD")
+	if err != nil {
+		return 0
+	}
+	told := toldFiles(c.Root, event.Session)
+	var b strings.Builder
+	var fresh []string
+	for _, file := range changed {
+		twins := c.TwinsOf(file)
+		if len(twins) == 0 || slices.Contains(told, file) {
+			continue
+		}
+		fresh = append(fresh, file)
+		fmt.Fprintf(&b, "You changed %s, and the primitives registry has a note on it.\n", file)
+		printTwins(&b, twins)
+	}
+	if len(fresh) == 0 {
+		return 0
+	}
+	rememberTold(c.Root, event.Session, append(told, fresh...))
+	out := map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event.Event, "additionalContext": b.String()}}
+	if err := json.NewEncoder(stdout).Encode(out); err != nil {
+		return 2
+	}
+	return 0
+}
+
+const hookStateDir = ".gofastr/primitives-hook"
+
+var sessionName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,80}$`)
+
+// toldFiles lists the files this session has already been told about.
+// A session the hook cannot name is told every time.
+func toldFiles(root, session string) []string {
+	if !sessionName.MatchString(session) {
+		return nil
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return nil
+	}
+	defer dir.Close()
+	data, err := dir.ReadFile(hookStateDir + "/" + session)
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(data))
+}
+
+func rememberTold(root, session string, files []string) {
+	if !sessionName.MatchString(session) {
+		return
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return
+	}
+	defer dir.Close()
+	if err := dir.MkdirAll(hookStateDir, 0o700); err != nil {
+		return
+	}
+	state, err := dir.OpenFile(hookStateDir+"/"+session, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return
+	}
+	defer state.Close()
+	if _, err := state.WriteString(strings.Join(files, "\n") + "\n"); err != nil {
+		return
+	}
+}
+
+func printTwins(w io.Writer, twins []primitives.Twin) {
+	for _, twin := range twins {
+		fmt.Fprintf(w, "\nSAME JOB IN SEVERAL PLACES: %s\n", twin.Job)
+		for _, site := range twin.Sites {
+			fmt.Fprintf(w, "  %s: %s\n", site.Path, site.Note)
+		}
+		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt.")
+	}
+}
+
 func printFor(c *primitives.Registry, w io.Writer, file string) {
 	chain := c.Chain(file)
 	twins := c.TwinsOf(file)
@@ -148,13 +246,7 @@ func printFor(c *primitives.Registry, w io.Writer, file string) {
 		return
 	}
 	fmt.Fprintf(w, "%s\n", file)
-	for _, twin := range twins {
-		fmt.Fprintf(w, "\nSAME JOB IN SEVERAL PLACES: %s\n", twin.Job)
-		for _, site := range twin.Sites {
-			fmt.Fprintf(w, "  %s: %s\n", site.Path, site.Note)
-		}
-		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt.")
-	}
+	printTwins(w, twins)
 	if len(chain) == 0 {
 		return
 	}

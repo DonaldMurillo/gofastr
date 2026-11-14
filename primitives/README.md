@@ -78,6 +78,16 @@ and says to check each one. A site need not be owned by the primitive
 that lists it. Prefer merging the sites into one implementation; record
 a twin when they have to stay apart.
 
+`go run ./cmd/primitives hook` is the same notice as a Claude Code
+PostToolUse hook: after any tool call it looks at what the working tree
+changed and, once per session, tells the agent about a changed file that
+is a twins site. It is not installed in this repository's settings.
+
+```json
+{"hooks": {"PostToolUse": [{"matcher": "Edit|Write|MultiEdit|Bash", "hooks": [
+  {"type": "command", "command": "cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}
+```
+
 ## What lint refuses
 
 - An unknown key, a missing `summary`, `rule` or `decision`, an id that is

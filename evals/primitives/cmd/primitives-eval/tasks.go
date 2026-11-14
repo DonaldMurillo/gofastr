@@ -8,6 +8,7 @@ const (
 	conditionBare     = "bare"
 	conditionPlain    = "plain"
 	conditionNudge    = "nudge"
+	conditionHook     = "hook"
 
 	suiteTrap   = "trap"
 	suiteReplay = "replay"
@@ -15,7 +16,7 @@ const (
 
 var suiteConditions = map[string][]string{
 	suiteTrap:   {conditionComments, conditionRegistry, conditionBare},
-	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry},
+	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry, conditionHook},
 }
 
 // registryPointer is the one paragraph a registry cell's CLAUDE.md gains.
@@ -23,6 +24,10 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 	"prints the primitives that own the file, their invariants and decisions,\n" +
 	"and any other place that does the same job. The registry lives in\n" +
 	"`primitives/`; its format is `primitives/README.md`.\n\n"
+
+// hookSettings runs the registry's hook after every tool that can change
+// a file, the shell included.
+const hookSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}` + "\n"
 
 const nudge = " Before you finish, check whether other code paths have the same defect, and fix those too."
 

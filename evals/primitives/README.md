@@ -53,7 +53,9 @@ Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and
 `registry` (the report alone, in a tree given the registry tooling, a
 `twins` entry naming the paths, and the pointer in `CLAUDE.md`; the
-entries are under `cmd/primitives-eval/overlays/`).
+entries are under `cmd/primitives-eval/overlays/`) and `hook` (the same
+tree, plus the registry's hook, so the notice arrives without the agent
+asking).
 Graders are held-out tests under `cmd/primitives-eval/graders/`, written
 so each fails before the real fix and passes after it. A cell is `fixed`
 when the reported path passes, and `twins fixed` counts the other paths.
