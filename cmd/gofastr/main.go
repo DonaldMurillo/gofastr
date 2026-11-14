@@ -337,6 +337,8 @@ var versionCheckedCommands = map[string]bool{
 	"build": true, "dev": true, "export": true, "new": true, "migrate": true, "m": true,
 	"test": true, "t": true, "semantic": true, "harness": true, "agents": true, "audit": true,
 	"verify": true, "unmount": true, "remount": true, "desktop": true, "release": true,
+	// deploy builds the project in this directory before it sends it.
+	"deploy": true,
 }
 
 // versionCheckApplies reports whether warnVersionMismatch speaks for
