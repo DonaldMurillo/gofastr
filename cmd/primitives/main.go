@@ -221,10 +221,11 @@ func stop(c *primitives.Registry, stdin io.Reader, stdout, stderr io.Writer) int
 }
 
 // stopCheck checks the registry and runs vet and the short tests of
-// every package changed since the base ref, and returns why the session
-// may not finish yet, or a warning when it could not tell. A session the
-// hook has already sent back once is let go, so a failure it cannot fix
-// does not hold it forever.
+// every package changed since the base ref, each group in the module
+// that owns it, and returns why the session may not finish yet, or a
+// warning when it could not tell. A session the hook has already sent
+// back once is let go, so a failure it cannot fix does not hold it
+// forever.
 func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string) {
 	var event struct {
 		Active  bool   `json:"stop_hook_active"`
@@ -242,8 +243,8 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 		return "", ""
 	}
 	changed = slices.DeleteFunc(changed, func(file string) bool { return commentOnly(c.Root, base, file) })
-	pkgs := changedPackages(c.Root, changed)
-	if len(pkgs) == 0 {
+	groups := changedPackageGroups(c.Root, changed)
+	if len(groups) == 0 {
 		return "", ""
 	}
 	state := treeState(c.Root, changed)
@@ -268,15 +269,22 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 		checks = nil
 	}
 	for _, args := range checks {
-		cmd := exec.CommandContext(ctx, "go", append(args, pkgs...)...)
-		cmd.Dir = c.Root
-		cmd.WaitDelay = 10 * time.Second
-		out, err := cmd.CombinedOutput()
-		if ctx.Err() != nil {
-			return "", fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(pkgs, " "))
+		failed := false
+		for _, g := range groups {
+			cmd := exec.CommandContext(ctx, "go", append(append([]string{}, args...), g.pkgs...)...)
+			cmd.Dir = g.dir
+			cmd.WaitDelay = 10 * time.Second
+			out, err := cmd.CombinedOutput()
+			if ctx.Err() != nil {
+				return "", fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(g.pkgs, " "))
+			}
+			if err != nil {
+				problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), failures(string(out), 40)))
+				failed = true
+				break
+			}
 		}
-		if err != nil {
-			problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), failures(string(out), 40)))
+		if failed {
 			break
 		}
 	}
@@ -409,24 +417,93 @@ func codeTokens(src []byte) ([]string, bool) {
 	}
 }
 
-// changedPackages lists, as ./dir patterns, the directories that hold a
-// changed Go file and still hold Go code.
+// packageGroup is one go vet / go test invocation: the module directory
+// to run in, and the package patterns relative to it. A nested go.mod
+// (battery/print/chromepdf) is a different module; `go vet` from the
+// repo root of a path under it fails with "main module does not contain
+// package".
+type packageGroup struct {
+	dir  string
+	pkgs []string
+}
+
+// changedPackages lists, as ./dir patterns from the repo root, the
+// directories that hold a changed Go file and still hold Go code.
 func changedPackages(root string, changed []string) []string {
 	var pkgs []string
+	for _, g := range changedPackageGroups(root, changed) {
+		rel, err := filepath.Rel(root, g.dir)
+		if err != nil {
+			continue
+		}
+		rel = filepath.ToSlash(rel)
+		for _, p := range g.pkgs {
+			switch {
+			case rel == ".":
+				pkgs = append(pkgs, p)
+			case p == ".":
+				pkgs = append(pkgs, "./"+rel)
+			default:
+				pkgs = append(pkgs, "./"+rel+"/"+strings.TrimPrefix(p, "./"))
+			}
+		}
+	}
+	return pkgs
+}
+
+// changedPackageGroups groups those packages by the go.mod that owns
+// them, so the stop check can run each group in its own module.
+func changedPackageGroups(root string, changed []string) []packageGroup {
+	seen := map[string][]string{}
+	var order []string
 	for _, file := range changed {
 		dir := path.Dir(file)
 		if !strings.HasSuffix(file, ".go") || strings.Contains("/"+dir+"/", "/testdata/") {
 			continue
 		}
-		pattern := "./" + dir
-		if slices.Contains(pkgs, pattern) {
+		abs := filepath.Join(root, filepath.FromSlash(dir))
+		if matches, _ := filepath.Glob(filepath.Join(abs, "*.go")); len(matches) == 0 {
 			continue
 		}
-		if matches, _ := filepath.Glob(filepath.Join(root, filepath.FromSlash(dir), "*.go")); len(matches) > 0 {
-			pkgs = append(pkgs, pattern)
+		mod := enclosingModule(root, abs)
+		rel, err := filepath.Rel(mod, abs)
+		if err != nil {
+			continue
+		}
+		pkg := "."
+		if rel != "." {
+			pkg = "./" + filepath.ToSlash(rel)
+		}
+		if _, ok := seen[mod]; !ok {
+			order = append(order, mod)
+		}
+		if !slices.Contains(seen[mod], pkg) {
+			seen[mod] = append(seen[mod], pkg)
 		}
 	}
-	return pkgs
+	out := make([]packageGroup, 0, len(order))
+	for _, dir := range order {
+		out = append(out, packageGroup{dir: dir, pkgs: seen[dir]})
+	}
+	return out
+}
+
+// enclosingModule is the nearest directory at or above dir that holds a
+// go.mod, or root when none does.
+func enclosingModule(root, dir string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		if dir == root {
+			return root
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return root
+		}
+		dir = parent
+	}
 }
 
 // treeState names the content of the changed files, so a tree that
