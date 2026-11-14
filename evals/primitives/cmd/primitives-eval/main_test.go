@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -84,6 +86,98 @@ func TestIsolateDropsHarnessAndProjectSettings(t *testing.T) {
 	}
 }
 
+func TestGradingIgnoresWhatTheAgentCommitted(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := gitOutput(dir, append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	write("a/a.go", "package a\n")
+	write("a/a_test.go", "package a // original\n")
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+	start := git("rev-parse", "HEAD")
+
+	// The agent weakens a test, adds one, commits both, and leaves a third
+	// untracked beside a source change.
+	write("a/a_test.go", "package a // weakened\n")
+	write("a/b_test.go", "package a // added and committed\n")
+	write("a/a.go", "package a // changed\n")
+	git("add", "-A")
+	git("commit", "-q", "-m", "agent")
+	write("a/c_test.go", "package a // added, untracked\n")
+
+	changed, err := changedSince(t.Context(), dir, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(changed, " "); got != "a/a.go a/a_test.go a/b_test.go a/c_test.go" {
+		t.Errorf("changedSince = %q: committed work must count", got)
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := restoreTests(dir, root, start); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := root.ReadFile("a/a_test.go"); string(got) != "package a // original\n" {
+		t.Errorf("the committed test change survived grading: %q", got)
+	}
+	for _, gone := range []string{"a/b_test.go", "a/c_test.go"} {
+		if _, err := root.Stat(gone); err == nil {
+			t.Errorf("%s, a test the agent added, survived", gone)
+		}
+	}
+	if got, _ := root.ReadFile("a/a.go"); string(got) != "package a // changed\n" {
+		t.Errorf("the agent's source change was lost: %q", got)
+	}
+}
+
+func TestEveryCellRunsUnderTheDenyPolicy(t *testing.T) {
+	for suite, conds := range suiteConditions {
+		for _, cond := range conds {
+			raw, err := cellSettings(cond)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings struct {
+				Permissions struct{ Deny []string }
+				Hooks       map[string]any
+			}
+			if err := json.Unmarshal(raw, &settings); err != nil {
+				t.Fatalf("%s/%s: %v", suite, cond, err)
+			}
+			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") {
+				t.Errorf("%s/%s runs without the deny policy: %v", suite, cond, settings.Permissions.Deny)
+			}
+			wantHooks := cond == conditionHook || cond == conditionHarness
+			if (len(settings.Hooks) > 0) != wantHooks {
+				t.Errorf("%s/%s: hooks present = %v, want %v", suite, cond, len(settings.Hooks) > 0, wantHooks)
+			}
+			if _, hasStop := settings.Hooks["Stop"]; hasStop != (cond == conditionHarness) {
+				t.Errorf("%s/%s: stop check present = %v", suite, cond, hasStop)
+			}
+		}
+	}
+}
+
 func TestReadTranscript(t *testing.T) {
 	stream := strings.Join([]string{
 		`not json`,
@@ -110,6 +204,17 @@ func TestRubricSeparatesAGoodAnswerFromAnEmptyOne(t *testing.T) {
 	}
 	good := "It is deliberate. The gate would refuse an ordinary reference onto an entity with CRUD off, such as posts.author_id onto users. " +
 		"A foreign key is a column of the caller's own row, and the write never returns the target's fields. A hidden row and a missing row both answer 404."
+	deliberate := question.Rubric[0].Pattern
+	for answer, want := range map[string]bool{
+		"**Deliberate, not an oversight.**":           true,
+		"It is deliberate.":                           true,
+		"This is not deliberate, it is an oversight.": false,
+		"It looks like an oversight to me.":           false,
+	} {
+		if deliberate.MatchString(answer) != want {
+			t.Errorf("%q: says-it-is-deliberate = %v, want %v", answer, !want, want)
+		}
+	}
 	for _, point := range question.Rubric {
 		if !point.Pattern.MatchString(good) {
 			t.Errorf("the reference answer misses %q", point.Name)

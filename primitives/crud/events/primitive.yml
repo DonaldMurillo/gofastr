@@ -15,7 +15,7 @@ invariants:
       - test: framework/crud.TestAmbientTxQueuePublishesOnDrainOnly
       - test: framework/crud.TestAmbientProbeDropsOnDeadline
   - id: stream-rechecks-authority
-    rule: An open event stream re-checks its caller's authority on every delivery and on a ticker, closes once the caller would be refused, and drops a record whose AfterGet hook errors.
+    rule: An open event stream re-checks its caller's authority on every delivery and on a ticker, closes once the caller would be refused, and passes each record through AfterGet before sending it.
     enforced_by:
       - test: framework/crud.TestEventStreamRevokesMidStream
       - test: framework/crud.TestEventStreamIdleTickerClosesOnRevoke

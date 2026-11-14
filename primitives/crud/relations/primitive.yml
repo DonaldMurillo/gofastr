@@ -9,7 +9,7 @@ docs:
   - framework/docs/content/includes.md
 invariants:
   - id: eager-load-scrubs
-    rule: EagerLoad with a registry excludes soft-deleted rows, serves only declared non-Hidden columns, and applies owner and tenant scope; a target it cannot resolve is an error.
+    rule: EagerLoad with a registry excludes soft-deleted rows, serves only declared non-Hidden columns, and applies owner and tenant scope unless the caller holds an explicit cross-scope grant for that scope; a target it cannot resolve is an error.
     enforced_by:
       - test: framework/crud.TestEagerLoadScrubsSoftDeleteAndHidden
       - test: framework/crud.TestEagerLoadFailsOnUnresolvedTarget
@@ -17,7 +17,7 @@ invariants:
       - test: framework/crud.TestEagerLoadScopesTenant
       - test: framework/crud.TestEagerLoadScopesOwner
   - id: included-child-scope-always-applies
-    rule: An included owner-scoped or multi-tenant child always carries the context owner or tenant predicate, even when the caller filters on that column, and matches no row when the context has neither.
+    rule: An included owner-scoped or multi-tenant child carries the context owner or tenant predicate, even when the caller filters on that column, unless the caller holds an explicit cross-scope grant for that scope, and matches no row when the context has neither.
     enforced_by:
       - test: framework/crud.TestInclude_ScopedFilterCannotBypassOwnerScope
       - test: framework/crud.TestInclude_RelatedTableTenantScope

@@ -60,9 +60,11 @@ Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and
 `registry` (the report alone, in a tree given the registry tooling, a
 `twins` entry naming the paths, and the pointer in `CLAUDE.md`; the
-entries are under `cmd/primitives-eval/overlays/`) and `hook` (the same
+entries are under `cmd/primitives-eval/overlays/`), `hook` (the same
 tree, plus the registry's hook, so the notice arrives without the agent
-asking).
+asking) and `harness` (the `hook` tree plus the stop check: tests for
+the changed packages, the question about sibling paths, and a changed
+part's `on_change` lines and untouched docs).
 Graders are held-out tests under `cmd/primitives-eval/graders/`, written
 so each fails before the real fix and passes after it. A cell is `fixed`
 when the reported path passes, and `twins fixed` counts the other paths.
@@ -93,6 +95,17 @@ a cell inside it would read this checkout's `CLAUDE.md`.
   inherit this repository's hooks and deny rules. The `hook` and
   `harness` conditions write their own.
 - The agent runs with project settings only and no MCP servers.
+- Tests are restored, and changes measured, against the cell's first
+  commit. An agent that commits inside the cell changes neither.
+
+A cell is not a sandbox. It is an agent with a shell on the machine that
+runs the eval. Every cell gets a small deny policy (no pushes, no `ssh`
+or `gh`, no reading of SSH keys or cloud credentials), which stops the
+usual spellings and nothing more. Run the eval somewhere disposable: a
+cloud session or a container, not a workstation with credentials on it.
+
+`-budget` stops new cells from starting. Cells already running finish,
+so a run can pass it by `-concurrency` times `-cell-budget`.
 
 ## What it does not show
 

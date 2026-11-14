@@ -166,7 +166,7 @@ func TestReattachRefusesProjectionWithoutIDWhenValuesMatch(t *testing.T) {
 	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"name": "n"}}); err == nil {
 		t.Fatal("a projection that drops the primary key was matched by the values it kept")
 	}
-	if _, ok := a["secret"]; !ok {
+	if a["secret"] != "S" {
 		t.Errorf("the row was mutated before the refusal: %#v", a)
 	}
 }

@@ -1,6 +1,7 @@
 package primitives
 
 import (
+	"errors"
 	"io/fs"
 	"maps"
 	"path"
@@ -17,14 +18,17 @@ func (c *Registry) Lint() []Finding {
 	owners := map[string][]*Primitive{}
 	for _, p := range c.Primitives {
 		l.p = p
-		if parent := parentID(p.ID); parent != "" && c.byID[parent] == nil {
+		if parent := parentID(p.ID); parent != "" && c.byID[parent] == nil && !c.unparsed[parent] {
 			l.errf(p.Line, "parent primitive %q has no %s", parent, PrimitiveFile)
 		}
 		if len(p.Code) == 0 {
 			l.errf(p.Line, "missing code: a primitive owns at least one path")
 		}
 		for _, ref := range p.Code {
-			files := l.expand(ref.Value)
+			files, err := l.expand(ref.Value)
+			if err != nil {
+				l.errf(ref.Line, "code %q could not be read in full: %v", ref.Value, err)
+			}
 			if len(files) == 0 {
 				l.errf(ref.Line, "code %q matches no file", ref.Value)
 			}
@@ -99,24 +103,32 @@ func (l *linter) isFile(rel string) bool {
 
 // expand lists the files a code entry covers: a trailing slash is a
 // directory tree, anything else a path.Match pattern.
-func (l *linter) expand(entry string) []string {
+func (l *linter) expand(entry string) ([]string, error) {
 	var out []string
 	if dir, ok := strings.CutSuffix(entry, "/"); ok {
+		var unread error
 		_ = fs.WalkDir(l.c.fsys, dir, func(p string, d fs.DirEntry, err error) error {
-			if err == nil && !d.IsDir() {
+			switch {
+			case err != nil:
+				// A missing directory is the "matches no file" finding; any
+				// other failure means part of the tree went unchecked.
+				if unread == nil && !errors.Is(err, fs.ErrNotExist) {
+					unread = err
+				}
+			case !d.IsDir():
 				out = append(out, p)
 			}
 			return nil
 		})
-		return out
+		return out, unread
 	}
-	matches, _ := fs.Glob(l.c.fsys, entry)
+	matches, err := fs.Glob(l.c.fsys, entry)
 	for _, m := range matches {
 		if l.isFile(m) {
 			out = append(out, m)
 		}
 	}
-	return out
+	return out, err
 }
 
 func (l *linter) imports(p *Primitive) {

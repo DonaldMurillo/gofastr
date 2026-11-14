@@ -1,6 +1,9 @@
 package main
 
-import "regexp"
+import (
+	"encoding/json"
+	"regexp"
+)
 
 const (
 	conditionComments = "comments"
@@ -26,14 +29,34 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 	"and any other place that does the same job. The registry lives in\n" +
 	"`primitives/`; its format is `primitives/README.md`.\n\n"
 
-// hookSettings runs the registry's hook after every tool that can change
-// a file, the shell included.
-const hookSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}` + "\n"
+// cellDeny is the policy every cell runs under. A cell is an agent with a
+// shell on this machine, not a sandbox: these rules keep the usual
+// spellings away from credentials and from anything that leaves the
+// machine, and the README says to run the eval somewhere disposable.
+var cellDeny = []string{
+	"Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.netrc)", "Read(~/.config/gh/**)",
+	"Bash(git push *)", "Bash(gh *)", "Bash(ssh *)", "Bash(scp *)",
+}
 
-// harnessSettings adds the stop check, which runs the changed packages'
-// tests, asks about sibling paths, and shows a changed part's on_change
-// lines and the docs it left untouched.
-const harnessSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives stop","timeout":420}]}]}}` + "\n"
+const (
+	// hookEvent runs the registry's hook after every tool that can change
+	// a file, the shell included.
+	hookEvent = `{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}`
+	// harnessEvents adds the stop check, which runs the changed packages'
+	// tests, asks about sibling paths, and shows a changed part's
+	// on_change lines and the docs it left untouched.
+	harnessEvents = `{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives stop","timeout":420}]}]}`
+)
+
+// cellSettings is the Claude Code settings file a cell runs with: the
+// deny policy, and the hooks of a condition that tests them.
+func cellSettings(condition string) ([]byte, error) {
+	settings := map[string]any{"permissions": map[string]any{"deny": cellDeny}}
+	if hooks := map[string]string{conditionHook: hookEvent, conditionHarness: harnessEvents}[condition]; hooks != "" {
+		settings["hooks"] = json.RawMessage(hooks)
+	}
+	return json.MarshalIndent(settings, "", "  ")
+}
 
 const nudge = " Before you finish, check whether other code paths have the same defect, and fix those too."
 
@@ -144,7 +167,7 @@ var tasks = []task{
 			"It does not apply the relationReachable gate that ?include= and many-to-many links apply. Is that an oversight? " +
 			"Answer in at most 150 words: say whether it is deliberate, and what would break or leak if the gate were added.",
 		Rubric: []rubricPoint{
-			{"says it is deliberate", regexp.MustCompile(`(?i)deliberate|on purpose|intentional|by design|not an oversight`)},
+			{"says it is deliberate", regexp.MustCompile(`(?i)\b(is|was|it's) (deliberate|intentional)|^\W*(deliberate|intentional)|on purpose|not an oversight`)},
 			{"references onto CRUD-off entities would be refused", regexp.MustCompile(`(?i)crud[^.]{0,40}(off|false|disabled)|exposure\.crud|author_id|not exposed|unexposed`)},
 			{"a foreign key is the caller's own column and returns nothing of the target", regexp.MustCompile(`(?i)own row|own column|caller's (own )?(row|record)|(never|not|n't|no) (return|expose|serve|read|leak)[^.]{0,60}(target|field|data)`)},
 			{"hidden and missing targets answer alike", regexp.MustCompile(`(?i)404|not.?found|oracle|same (answer|response|status)|indistinguishable|answer alike`)},

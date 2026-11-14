@@ -22,7 +22,7 @@ invariants:
       - test: framework/crud.TestRelWriteForeignBelongsToRefused
       - test: framework/crud.TestUpsertChecksBelongsToScope
   - id: foreign-key-ignores-relation-reachable
-    rule: A BelongsTo foreign-key write onto a target with CRUD off, or from a token without the target's read scope, succeeds, and a hidden target row answers the same as a missing one.
+    rule: A BelongsTo foreign-key write is not subject to relationReachable, so it succeeds onto a target with CRUD off and from a scope-restricted token that lacks the target's table read scope; the target row must still be readable under its owner, tenant and read scopes, and a hidden row answers the same as a missing one.
     enforced_by:
       - test: framework/crud.TestBelongsToFKSkipsRelationReachableOnPurpose
       - test: framework/crud.TestBelongsToFKUnscopedHiddenTargetAnswersAlike

@@ -32,7 +32,8 @@ primitive that owns the code (`primitives/**/primitive.yml`, format in
 `primitives/README.md`). An entry is a debt. It lists every site, says
 in `why` what keeps them apart today, and is deleted when they become
 one implementation. `go run ./cmd/primitives lint` prints how many are
-left, and that count is the number this skill exists to bring to zero.
+left. The target is none whose `why` is work not yet done; an entry
+whose sites cannot share code stays, pinned by a parity test.
 
 Recording a twin there is what makes the next agent see it: the hook in
 `.claude/settings.json` shows the entry to any session that changes one
@@ -206,9 +207,10 @@ registry itself:
 
 - `twins.md` has no family left open: each one is merged, pinned by a
   proven parity test, or recorded as intentional.
-- `go run ./cmd/primitives lint` counts no twin whose `why` is work not
-  yet done. Every entry left names a real reason code cannot be shared
-  and a parity test that enforces it.
+- No `twins` entry is left whose `why` is work not yet done. Lint counts
+  the entries and cannot judge a `why`, so read each one that
+  `go run ./cmd/primitives lint` still counts: it must name a real
+  reason code cannot be shared and a parity test that enforces it.
 - Every package over 2,000 lines is `RETIRED`, or was read after its
   last churn.
 - Two consecutive rounds found no Major and fewer than 5 twin findings.

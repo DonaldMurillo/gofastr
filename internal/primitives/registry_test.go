@@ -88,6 +88,7 @@ func lint(t *testing.T, root string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(c.Close)
 	findings = append(findings, c.Lint()...)
 	var out []string
 	for _, f := range findings {
@@ -153,6 +154,39 @@ func TestUnregisteredAnalyzerIsRefused(t *testing.T) {
 	write(t, root, "internal/analyzers/suite/suite.go", "package suite\n")
 	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, `analyzer "orderly" is not registered`) {
 		t.Fatalf("got:\n%s", got)
+	}
+}
+
+func TestLoaderRefusals(t *testing.T) {
+	for _, tc := range []struct{ name, file, body, want string }{
+		{"a dot in a directory name", "primitives/shop.till/primitive.yml", "primitive: shop.till\nsummary: Takes money.\ncode:\n  - docs/store.md\n", `directory "shop.till" is not a kebab-case primitive name`},
+		{"a blank list entry", "primitives/blank/primitive.yml", "primitive: blank\nsummary: Is blank.\ncode:\n  - docs/store.md\ndocs:\n  - \"\"\n", "docs entry is empty"},
+		{"a list where a string belongs", "primitives/listy/primitive.yml", "primitive: listy\nsummary: [a, b]\ncode:\n  - docs/store.md\n", "summary must be a string"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := fixture(t, validPrimitive)
+			write(t, root, tc.file, tc.body)
+			got := strings.Join(lint(t, root), "\n")
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("want a finding containing %q, got:\n%s", tc.want, got)
+			}
+			if tc.name == "a list where a string belongs" && strings.Contains(got, "summary is empty") {
+				t.Errorf("a non-scalar value drew a second, wrong finding:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestUnparsedParentIsNotCalledMissing(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	write(t, root, "primitives/shop/primitive.yml", "primitive: shop\nsummary: Sells.\ncode:\n  - docs/store.md\n   bad: indent\n")
+	write(t, root, "primitives/shop/till/primitive.yml", "primitive: shop.till\nsummary: Takes money.\ncode:\n  - docs/store.md\n")
+	got := strings.Join(lint(t, root), "\n")
+	if strings.Contains(got, "has no primitive.yml") {
+		t.Errorf("a parent that failed to parse was reported as missing:\n%s", got)
+	}
+	if !strings.Contains(got, "primitives/shop/primitive.yml:5:") {
+		t.Errorf("the parse error should carry its own line, got:\n%s", got)
 	}
 }
 

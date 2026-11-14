@@ -1,6 +1,6 @@
 ---
 name: eval-report
-description: The short report format for any eval result in this repo. Load it whenever you report on an eval: after running primitives-eval or any harness under evals/, when asked "how did the eval go", "is it working", "what did the runs show", or when summarising runs you or a subagent just finished. Four parts, in a fixed order, under 150 words.
+description: 'The short report format for any eval result in this repo. Load it whenever you report on an eval: after running primitives-eval or any harness under evals/, when asked "how did the eval go", "is it working", "what did the runs show", or when summarising runs you or a subagent just finished. Four parts, in a fixed order, under 150 words.'
 ---
 
 # Eval report

@@ -18,6 +18,7 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./**/.env)",
+      "Read(./**/.env.*)",
       "Read(~/.ssh/**)"
     ]
   },

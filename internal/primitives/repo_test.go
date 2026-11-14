@@ -2,10 +2,12 @@ package primitives
 
 import (
 	"maps"
+	"regexp"
 	"slices"
-	"strings"
 	"testing"
 )
+
+var sentenceBreak = regexp.MustCompile(`[.!?]\s+\S`)
 
 //gofastr:test-reads primitives/ *.go *.md
 func TestRepoRegistryIsClean(t *testing.T) {
@@ -13,6 +15,7 @@ func TestRepoRegistryIsClean(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer c.Close()
 	findings = append(findings, c.Lint()...)
 	for _, f := range findings {
 		t.Error(f)
@@ -28,8 +31,8 @@ func TestRepoRegistryIsClean(t *testing.T) {
 		t.Errorf("%s is %s: run `go run ./cmd/primitives gen`", rel, stale[rel])
 	}
 	for _, p := range c.Primitives {
-		if strings.Count(p.Summary, ". ") > 0 {
-			t.Errorf("%s: summary is one sentence", p.File)
+		if sentenceBreak.MatchString(p.Summary) {
+			t.Errorf("%s: summary must be one sentence, got %q", p.File, p.Summary)
 		}
 	}
 }

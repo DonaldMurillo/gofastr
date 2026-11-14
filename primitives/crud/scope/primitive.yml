@@ -39,7 +39,7 @@ invariants:
       - test: framework/crud.TestAnonymousListRejectedByDefault
       - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
   - id: one-scope-gate
-    rule: The routes and the Can*Scoped predicates take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture.
+    rule: The routes and the Can*Scoped predicates for an entity's own surface take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture; a read reached through a relation also applies relationReachable.
     enforced_by:
       - test: framework/crud.TestCanReadScoped_PostureMatrix
       - test: framework/crud.TestRequireReadRefusesAsListRoute

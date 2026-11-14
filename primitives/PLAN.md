@@ -18,7 +18,9 @@ They are in `evals/primitives/results/`. In short:
   (7 of 12 before), the upgrade note in 4 of 4 (0 of 7 before), the
   other sites of a recorded twin in 12 of 12 (2 of 12 before).
 - A registry entry helps only where someone recorded the right thing.
-  Entries written without knowing the bugs helped with none of them.
+  Entries written without knowing the bugs named none of the other
+  paths those fixes needed. Their reminders still worked once the stop
+  check showed them.
 
 So the registry is a memory of what a change needs, the harness is what
 delivers it, and tests are what enforce it.
@@ -77,6 +79,12 @@ check useful outside `framework/crud`.
 
 Done when `go run ./cmd/primitives for <path>` finds an owner for every
 non-test Go file under those three trees.
+
+One question to settle on the way: a file has one owner, so a rule that
+spans primitives is shown only for the files of the primitive that
+holds it. `crud.scope`'s one-builder rule applies in `eager.go` and
+`include.go`, which `crud.relations` owns. Decide how such a rule
+reaches the other places it applies.
 
 ## Rules for all four
 

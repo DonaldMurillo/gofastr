@@ -11,6 +11,9 @@ invariants:
     enforced_by:
       - test: framework/crud.TestInProcessReadsAreRawByDefault
       - test: framework/crud.TestMaskKeepsStoredValue
+  - id: screens-read-through-hooks
+    rule: The entity screens read and write rows through the hooked readers, never through the stored-value API directly.
+    enforced_by:
       - analyzer: hookedread
   - id: hooks-never-see-the-opt-in
     rule: A hook never receives the read-hook opt-in, on its context or on its request, so a hook that reads its own entity cannot recurse.

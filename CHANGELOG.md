@@ -30,7 +30,8 @@ few lines, and link the PR or the docs page for the rest.
   `primitives/` holds one file per part of the framework with its
   invariants, decisions and docs, and `go run ./cmd/primitives for <path>`
   prints what governs a file. `.claude/settings.json` is new: deny rules
-  for commands that cannot be undone, a hook that names the other places
+  for the usual spellings of commands that cannot be undone, a hook that
+  names the other places
   doing the same job as a file an agent changed, and a stop check that
   runs the changed packages' tests and shows what else the change needs.
   Nothing changes for an app built on GoFastr.

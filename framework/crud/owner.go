@@ -202,8 +202,9 @@ func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool 
 // scoped to nothing.
 //
 // Use this ONLY where the row scoping is provably applied separately. Today
-// that is exactly one caller: the include gate, whose eager loaders call
-// applyRelatedScope per node. Nested filters
+// that is two callers: the include gate (checkIncludeReadable), whose eager
+// loaders call applyRelatedScope per node, and the pivot gate
+// (checkPivotReadable), whose rows applyPivotScope scopes. Nested filters
 // looked like the same case and are not, their EXISTS subquery emits no owner
 // or tenant predicate, so choosing this gate there left a live count oracle
 // over rows the target's own route refuses. If you are reaching for this

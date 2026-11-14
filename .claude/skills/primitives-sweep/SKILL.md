@@ -18,16 +18,16 @@ says: agents found the rule in the test. So the sweep is fast for most
 comments and slow only for the few that state a rule nothing enforces.
 The order of work across packages is in `primitives/PLAN.md`.
 
-## What a sweep never touches
+## What a sweep never deletes
 
 - Directives: `//go:`, `//gofastr:allow(...)` with its reason,
   `//gofastr:test-reads`, `//gofastr:generated`, build tags, `// Output:`
-  in examples, licence headers.
-- Doc comments on exported identifiers. Trim one to the contract (what
-  it does, what it returns, when it errors) and move the history out,
-  but keep it.
-- Comments in `_test.go` files. A test says what it pins.
-- Generated files.
+  in examples, licence headers. Leave these exactly as they are.
+- Doc comments on exported identifiers. These are kept but may be
+  trimmed: cut one down to the contract (what it does, what it returns,
+  when it errors) and move the history out.
+- Comments in `_test.go` files. A test says what it pins. Leave them.
+- Generated files. Leave them.
 
 ## Steps
 
@@ -56,10 +56,10 @@ The order of work across packages is in `primitives/PLAN.md`.
    merely sounds right is not an enforcer. Record each proof in the PR
    description as `mutation -> failing test`.
 
-   Spend this effort where it pays. A rule whose test you have watched
-   fail can lose its comment without a registry entry. Write the entry
-   for a rule a contributor could break while every nearby test still
-   passes, and for every rule you had to write the test for.
+   Spend this effort where it pays. A rule that already had a test, one
+   you have now watched fail, can lose its comment without a registry
+   entry. A rule that had no test gets the test and an entry. So does a
+   rule a contributor could break while every nearby test still passes.
 
 5. **Reach for `judge` last.** Use it alone only when no test or
    analyzer can state the rule, and write it as a yes/no question where

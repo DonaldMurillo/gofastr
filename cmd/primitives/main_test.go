@@ -26,7 +26,7 @@ func TestCommands(t *testing.T) {
 		{[]string{"show", "crud.read-hooks"}, 0, "rejected Match by position: "},
 		{[]string{"show", "nope"}, 2, "usage: primitives show"},
 		{[]string{"lint"}, 0, "clean"},
-		{[]string{"gen", "--check"}, 0, ""},
+
 		{[]string{"bogus"}, 2, `unknown command "bogus"`},
 	} {
 		var stdout, stderr bytes.Buffer
@@ -35,6 +35,13 @@ func TestCommands(t *testing.T) {
 		if code != tc.code || !strings.Contains(out, tc.want) {
 			t.Errorf("primitives %v: exit %d, want %d and output containing %q, got:\n%s", tc.args, code, tc.code, tc.want, out)
 		}
+	}
+}
+
+func TestGenCheckIsSilentWhenCurrent(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run("../..", []string{"gen", "--check"}, &stdout, &stderr); code != 0 || stdout.Len()+stderr.Len() != 0 {
+		t.Errorf("gen --check on a current tree: exit %d, output %q %q", code, stdout.String(), stderr.String())
 	}
 }
 
@@ -70,6 +77,7 @@ func TestHook(t *testing.T) {
 	if err != nil || len(findings) > 0 {
 		t.Fatal(err, findings)
 	}
+	t.Cleanup(c.Close)
 	fire := func(event string) string {
 		t.Helper()
 		var out bytes.Buffer
@@ -140,11 +148,12 @@ func TestStop(t *testing.T) {
 	fire := func(event string) (int, string) {
 		t.Helper()
 		c, findings, err := primitives.Load(root)
-		if err != nil || len(findings) > 0 {
-			t.Fatal(err, findings)
+		if err != nil {
+			t.Fatal(err)
 		}
+		t.Cleanup(c.Close)
 		var out, errOut bytes.Buffer
-		if code := stop(c, strings.NewReader(event), &out, &errOut); code != 0 {
+		if code := stop(c, findings, strings.NewReader(event), &out, &errOut); code != 0 {
 			t.Fatalf("stop exits %d: a hook run through go run can only speak through its output", code)
 		}
 		if out.Len() == 0 {
@@ -219,8 +228,20 @@ func TestStop(t *testing.T) {
 	if passed := toldFiles(root, "stop-pass"); len(passed) != 1 {
 		t.Errorf("a pass was not remembered: %v", passed)
 	}
-	if got := changedPackages(root, []string{"a/a.go", "a/a_test.go", "a/testdata/x.go", "gone/g.go", "README.md"}); len(got) != 1 || got[0] != "./a" {
-		t.Errorf("changedPackages = %v", got)
+	groups := changedPackageGroups(root, []string{"a/a.go", "a/a_test.go", "a/testdata/x.go", "gone/g.go", "README.md"})
+	if len(groups) != 1 || len(groups[0].pkgs) != 1 || groups[0].pkgs[0] != "./a" {
+		t.Errorf("changedPackageGroups = %+v", groups)
+	}
+	if got := changedModules(root, []string{"go.sum", "a/a.go", "gone/go.mod"}); len(got) != 1 || got[0] != root {
+		t.Errorf("changedModules = %v, want the root module once", got)
+	}
+	write("gone.go", "")
+	empty := treeState(root, []string{"gone.go"})
+	if err := os.Remove(filepath.Join(root, "gone.go")); err != nil {
+		t.Fatal(err)
+	}
+	if deleted := treeState(root, []string{"gone.go"}); deleted == empty {
+		t.Error("a deleted file and an empty one hash alike: the second would skip its tests")
 	}
 }
 
@@ -262,8 +283,9 @@ func TestStopRunsNestedModuleInItsOwnModule(t *testing.T) {
 		if err != nil || len(findings) > 0 {
 			t.Fatal(err, findings)
 		}
+		t.Cleanup(c.Close)
 		var out, errOut bytes.Buffer
-		if code := stop(c, strings.NewReader(`{}`), &out, &errOut); code != 0 {
+		if code := stop(c, nil, strings.NewReader(`{}`), &out, &errOut); code != 0 {
 			t.Fatalf("stop exits %d: %s", code, errOut.String())
 		}
 		if out.Len() == 0 {
@@ -315,5 +337,47 @@ func TestFailuresKeepsWhatFailed(t *testing.T) {
 	}
 	if got := failures("line one\nline two", 1); got != "line two" {
 		t.Errorf("with nothing recognisable, want the tail, got %q", got)
+	}
+}
+
+func TestStopBlocksOnARegistryThatDoesNotParse(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":                     "module example.test/m\n\ngo 1.24\n",
+		"a/a.go":                     "package a\n",
+		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\n",
+	} {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "start"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "primitives/x/primitive.yml"), []byte("primitive: x\nsummary: Does x.\nowner: nobody\ncode:\n  - a/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := run(root, []string{"stop"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("stop exits %d on a broken registry; only a block decision sends the agent back", code)
+	}
+	_ = stdout // run reads os.Stdin for stop; the direct call below supplies the event
+	c, findings, err := primitives.Load(root)
+	if err != nil || len(findings) == 0 {
+		t.Fatalf("the fixture registry should not parse cleanly: %v %v", err, findings)
+	}
+	t.Cleanup(c.Close)
+	var out, errOut bytes.Buffer
+	stop(c, findings, strings.NewReader(`{}`), &out, &errOut)
+	if !strings.Contains(out.String(), `"decision":"block"`) || !strings.Contains(out.String(), "unknown key") {
+		t.Errorf("a registry with an unknown key did not block the stop: %q", out.String())
 	}
 }

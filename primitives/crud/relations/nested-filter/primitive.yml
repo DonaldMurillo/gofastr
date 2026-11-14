@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/query-dsl.md
 invariants:
   - id: single-segment-identifiers
-    rule: A nested-filter field name and every relation identifier spliced into the subquery is a single-segment SQL identifier, and anything else is refused.
+    rule: "A nested-filter field name and every key column spliced into the subquery is a single-segment SQL identifier; a relation table name is checked with query.SafeIdent and may be schema-qualified. Anything else is refused."
     enforced_by:
       - test: framework/crud.TestNestedFilter_SQLInjection
       - test: framework/crud.TestBuildExistsSubquery_UnsafeRelationIdentifiers
@@ -31,7 +31,7 @@ decisions:
     upholds: [subquery-carries-target-scope]
   - id: own-identifier-pattern
     status: accepted
-    decision: Nested filters keep their own identifier pattern, separate from core/query's.
+    decision: Nested-filter field names and key columns use their own single-segment pattern, separate from core/query's, while relation table names go through query.SafeIdent.
     rejected:
       - option: Reuse core/query's identifier pattern.
         why: It admits a dotted schema.table, which would loosen the single-segment field rule.

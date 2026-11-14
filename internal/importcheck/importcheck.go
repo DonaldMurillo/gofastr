@@ -18,7 +18,9 @@ type Ban struct {
 }
 
 // Run fails t for every banned package in the dependency closure of the
-// package whose test called it.
+// package whose test called it. The closure is the one go list builds
+// for the host OS and the default build tags: an import in a file behind
+// another GOOS or a build tag is not seen.
 func Run(t *testing.T, bans ...Ban) {
 	t.Helper()
 	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()

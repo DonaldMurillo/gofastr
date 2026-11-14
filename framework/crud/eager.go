@@ -37,7 +37,8 @@ import (
 //
 // Owner and tenant scopes are ANDed for every caller except one holding an
 // explicit cross-scope grant (owner.AllowCrossOwner, the target's
-// CrossOwnerRead, tenant.AllowCrossTenant).
+// CrossOwnerRead, tenant.AllowCrossTenant). Each grant lifts only its own
+// scope.
 // For everyone else the cross-table predicate is the IDOR back-door control
 // and is unconditional: lifting it would let an ?include= or an EagerLoad
 // caller reach across tenants and owners.
@@ -439,8 +440,10 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 // one tenant column = <ctx tenant>. With no owner or tenant in ctx the value
 // is empty, which matches no row. A caller holding an explicit cross-scope
 // grant (owner.AllowCrossOwner, the target's CrossOwnerRead permission,
-// tenant.AllowCrossTenant) gets no predicate for that scope, as on the
-// target's own routes. A nil target yields no filters.
+// tenant.AllowCrossTenant) gets no predicate for that scope. Each grant
+// lifts only its own scope. The foreign-key and cascade write checks use
+// this builder on purpose: a caller who may read a target row may
+// reference it. A nil target yields no filters.
 func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.ParsedFilter {
 	if target == nil {
 		return nil

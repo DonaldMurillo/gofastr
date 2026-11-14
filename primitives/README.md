@@ -8,8 +8,10 @@ checked by `go run ./cmd/primitives lint`.
 Where this is going, and in what order, is `PLAN.md` beside this file.
 
 It replaces prose. A rule that lives in a code comment, in `CLAUDE.md` or
-in an architecture document is not enforced and goes stale. A rule here
-names the test, analyzer or contract rule that fails when it is broken.
+in an architecture document is not enforced and goes stale. An enforced
+rule here names the test, analyzer or contract rule that fails when it
+is broken. The few that nothing can enforce carry a question for a
+reviewer instead (`judge`).
 
 ## Read it one level at a time
 

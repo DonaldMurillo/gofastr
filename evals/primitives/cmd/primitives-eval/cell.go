@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -39,6 +40,9 @@ type cell struct {
 	Condition string `json:"condition"`
 	Run       int    `json:"run"`
 	task      task
+	// start is the cell's first commit. The agent can commit in the cell,
+	// so everything measured or restored is taken against this, never HEAD.
+	start string
 
 	Outcome       string   `json:"outcome"`
 	Note          string   `json:"note,omitempty"`
@@ -81,10 +85,12 @@ func runCell(cfg config, c *cell) {
 	fail := func(err error) {
 		c.Outcome, c.Note = outcomeError, err.Error()
 	}
-	if err := prepare(cfg, c.task, c.Condition, dir); err != nil {
+	start, err := prepare(cfg, c.task, c.Condition, dir)
+	if err != nil {
 		fail(err)
 		return
 	}
+	c.start = start
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.timeout)
 	defer cancel()
 
@@ -109,9 +115,7 @@ func runCell(cfg config, c *cell) {
 		"--no-session-persistence",
 		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.cellBudget),
 	}
-	if c.Condition == conditionHook || c.Condition == conditionHarness {
-		args = append(args, "--settings", filepath.Join(dir, ".claude", "settings.json"))
-	}
+	args = append(args, "--settings", filepath.Join(dir, ".claude", "settings.json"))
 	agent := command(ctx, dir, cfg.claude, args...)
 	agent.Stdout = &stream
 	agent.Stderr = &stream
@@ -127,19 +131,16 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 
-	// Not gitOutput: it trims the output, and a porcelain line starts with
-	// two status columns that may be spaces.
-	statusCmd := command(ctx, dir, "git", "status", "--porcelain", "--untracked-files=all")
-	status, err := statusCmd.Output()
+	// Inspection and grading get their own clock: an agent that used its
+	// whole timeout still left a tree to measure.
+	gradeCtx, cancelGrade := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancelGrade()
+	changed, err := changedSince(gradeCtx, dir, c.start)
 	if err != nil {
-		fail(fmt.Errorf("git status: %w", err))
+		fail(err)
 		return
 	}
-	for line := range strings.SplitSeq(string(status), "\n") {
-		if len(line) < 4 {
-			continue
-		}
-		file := strings.TrimSpace(line[3:])
+	for _, file := range changed {
 		c.ChangedFiles = append(c.ChangedFiles, file)
 		switch {
 		case strings.HasPrefix(file, "framework/docs/content/"):
@@ -165,16 +166,61 @@ func runCell(cfg config, c *cell) {
 		}
 		return
 	}
-	// Grading gets its own clock: an agent that used its whole timeout
-	// still left a tree to grade.
-	gradeCtx, cancelGrade := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancelGrade()
 	gradeTests(gradeCtx, cfg, c, dir)
 }
 
+// restoreTests puts every test file back as the cell's first commit had
+// it, not as HEAD has it: an agent that committed a changed test would
+// otherwise keep it. A test file the agent added, committed or not, is
+// removed.
+func restoreTests(dir string, root *os.Root, start string) error {
+	const tests = ":(glob)**/*_test.go"
+	added, err := gitOutput(dir, "diff", "--name-only", "--diff-filter=A", start, "--", tests)
+	if err != nil {
+		return err
+	}
+	for _, file := range strings.Fields(added) {
+		if err := root.Remove(file); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	for _, args := range [][]string{
+		{"checkout", "-q", start, "--", tests},
+		{"clean", "-q", "-f", "--", tests},
+	} {
+		if _, err := gitOutput(dir, args...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// changedSince lists what differs between the cell's first commit and
+// its working tree: what the agent committed, what it left uncommitted,
+// and what it left untracked.
+func changedSince(ctx context.Context, dir, start string) ([]string, error) {
+	seen := map[string]bool{}
+	for _, args := range [][]string{
+		{"diff", "--name-only", "-z", start},
+		{"ls-files", "--others", "--exclude-standard", "-z"},
+	} {
+		out, err := command(ctx, dir, "git", args...).Output()
+		if err != nil {
+			return nil, fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+		}
+		for name := range strings.SplitSeq(string(out), "\x00") {
+			if name != "" {
+				seen[name] = true
+			}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen)), nil
+}
+
 // prepare writes one condition's tree into dir as a fresh one-commit
-// repository, so a cell cannot read this checkout's history.
-func prepare(cfg config, t task, condition, dir string) error {
+// repository, so a cell cannot read this checkout's history, and returns
+// that commit.
+func prepare(cfg config, t task, condition, dir string) (start string, err error) {
 	ref := cfg.head
 	switch {
 	case t.Ref != "":
@@ -183,54 +229,56 @@ func prepare(cfg config, t task, condition, dir string) error {
 		ref = cfg.base
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
+		return "", err
 	}
 	ctx := context.Background()
 	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", ref)
 	extract := command(ctx, dir, "tar", "-x")
 	pipe, err := archive.StdoutPipe()
 	if err != nil {
-		return err
+		return "", err
 	}
 	extract.Stdin = pipe
 	if err := extract.Start(); err != nil {
-		return err
+		return "", err
 	}
 	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
-		return fmt.Errorf("extract %s: %w", ref, err)
+		return "", fmt.Errorf("extract %s: %w", ref, err)
 	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer root.Close()
 	if err := isolate(root); err != nil {
-		return err
+		return "", err
 	}
 	if condition == conditionBare {
 		if err := stripRegistry(root); err != nil {
-			return err
+			return "", err
 		}
 	}
 	if t.Ref != "" && (condition == conditionRegistry || condition == conditionHook || condition == conditionHarness) {
 		if err := overlayRegistry(ctx, cfg, t, dir, root); err != nil {
-			return err
+			return "", err
 		}
 	}
-	if settings := map[string]string{conditionHook: hookSettings, conditionHarness: harnessSettings}[condition]; settings != "" {
-		if err := errors.Join(root.MkdirAll(".claude", 0o700), root.WriteFile(".claude/settings.json", []byte(settings), 0o600)); err != nil {
-			return err
-		}
+	settings, err := cellSettings(condition)
+	if err != nil {
+		return "", err
+	}
+	if err := errors.Join(root.MkdirAll(".claude", 0o700), root.WriteFile(".claude/settings.json", settings, 0o600)); err != nil {
+		return "", err
 	}
 	// A grader file is held out: every cell starts from the -base copy and
 	// meets the -head copy only when it is graded.
 	for _, file := range t.GraderFiles {
 		src, err := command(ctx, cfg.repo, "git", "show", cfg.base+":"+file).Output()
 		if err != nil {
-			return fmt.Errorf("grader file %s at %s: %w", file, cfg.base, err)
+			return "", fmt.Errorf("grader file %s at %s: %w", file, cfg.base, err)
 		}
 		if err := root.WriteFile(file, src, 0o600); err != nil {
-			return err
+			return "", err
 		}
 	}
 	for _, args := range [][]string{
@@ -239,10 +287,10 @@ func prepare(cfg config, t task, condition, dir string) error {
 		{"-c", "user.name=eval", "-c", "user.email=eval@example.invalid", "commit", "-q", "-m", "start"},
 	} {
 		if _, err := gitOutput(dir, args...); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return gitOutput(dir, "rev-parse", "HEAD")
 }
 
 // overlayRegistry gives a replay cell, cut from a commit older than the
@@ -382,21 +430,16 @@ var (
 // runs the task's enforcing tests against what the agent left.
 func gradeTests(ctx context.Context, cfg config, c *cell, dir string) {
 	fail := func(err error) { c.Outcome, c.Note = outcomeError, err.Error() }
-	for _, args := range [][]string{
-		{"checkout", "-q", "HEAD", "--", ":(glob)**/*_test.go"},
-		{"clean", "-q", "-f", "--", ":(glob)**/*_test.go"},
-	} {
-		if _, err := gitOutput(dir, args...); err != nil {
-			fail(err)
-			return
-		}
-	}
 	root, err := os.OpenRoot(dir)
 	if err != nil {
 		fail(err)
 		return
 	}
 	defer root.Close()
+	if err := restoreTests(dir, root, c.start); err != nil {
+		fail(err)
+		return
+	}
 	for _, file := range c.task.GraderFiles {
 		show := command(ctx, cfg.repo, "git", "show", cfg.head+":"+file)
 		src, err := show.Output()

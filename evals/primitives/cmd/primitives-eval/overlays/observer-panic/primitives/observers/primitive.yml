@@ -9,10 +9,10 @@ twins:
     why: Recorded for the replay eval; whether the sites can be merged was not assessed.
     sites:
       - path: framework/access/observe.go
-        note: SetObserver, called on every permission check
+        note: observe calls the installed observer inline on every permission check
       - path: framework/event/observe.go
-        note: SetObserver, called on every emission
+        note: observeEmission calls the installed observer on every emission
       - path: framework/hook/observe.go
-        note: SetObserver, called on every hook firing
+        note: the observer SetObserver installs is called on every hook firing
       - path: core/router/router.go
-        note: SetServeHook, called on every served request
+        note: the serveHook SetServeHook installs is called on every served request

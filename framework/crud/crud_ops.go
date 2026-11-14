@@ -405,7 +405,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 }
 
 // checkBelongsToScope refuses a create or update whose BelongsTo foreign
-// key names a row the caller cannot read, with errNotFound.
+// key names a row the caller cannot read, with errNotFound. WithServerWrites
+// contexts are exempt, and an unscoped target is not looked up.
 func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request, w fkWrite) error {
 	if err := ch.checkForeignKeyTuples(w); err != nil {
 		return err

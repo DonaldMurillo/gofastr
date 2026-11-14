@@ -26,7 +26,19 @@ type Registry struct {
 	Root       string
 	Primitives []*Primitive
 	byID       map[string]*Primitive
-	fsys       fs.FS
+	// unparsed holds the ids of primitives whose file did not parse, so a
+	// child is not told its parent is missing.
+	unparsed map[string]bool
+	dir      *os.Root
+	fsys     fs.FS
+}
+
+// Close releases the directory handle the registry reads the tree
+// through. A registry is not used after it.
+func (c *Registry) Close() {
+	if c != nil && c.dir != nil {
+		_ = c.dir.Close()
+	}
 }
 
 type Primitive struct {
@@ -129,6 +141,9 @@ func (f Finding) String() string { return fmt.Sprintf("%s:%d: %s", f.File, f.Lin
 
 var idPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
+// yamlErrorLine reads the line out of a core/yaml parse error.
+var yamlErrorLine = regexp.MustCompile(`^yaml:(\d+):`)
+
 // Load reads every primitive under root/primitives. Content problems come
 // back as findings; only a tree that cannot be read is an error.
 func Load(root string) (*Registry, []Finding, error) {
@@ -136,7 +151,7 @@ func Load(root string) (*Registry, []Finding, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	c := &Registry{Root: root, byID: map[string]*Primitive{}, fsys: dir.FS()}
+	c := &Registry{Root: root, byID: map[string]*Primitive{}, unparsed: map[string]bool{}, dir: dir, fsys: dir.FS()}
 	var findings []Finding
 	err = fs.WalkDir(c.fsys, Dir, func(rel string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -149,12 +164,26 @@ func Load(root string) (*Registry, []Finding, error) {
 		if err != nil {
 			return err
 		}
-		dir := strings.TrimPrefix(path.Dir(rel), Dir)
-		id := strings.ReplaceAll(strings.Trim(dir, "/"), "/", ".")
-		if prim := parsePrimitive(rel, id, src, &findings); prim != nil {
-			c.Primitives = append(c.Primitives, prim)
-			c.byID[prim.ID] = prim
+		segments := strings.Split(strings.Trim(strings.TrimPrefix(path.Dir(rel), Dir), "/"), "/")
+		id := strings.Join(segments, ".")
+		// The id is the directory path joined with dots, so a dot inside a
+		// directory name would name a different primitive than its place.
+		for _, seg := range segments {
+			if seg != "" && !idPattern.MatchString(seg) {
+				findings = append(findings, Finding{File: rel, Line: 1, Msg: fmt.Sprintf("directory %q is not a kebab-case primitive name", seg)})
+			}
 		}
+		if other := c.byID[id]; other != nil {
+			findings = append(findings, Finding{File: rel, Line: 1, Msg: fmt.Sprintf("primitive %q is also declared by %s", id, other.File)})
+			return nil
+		}
+		prim := parsePrimitive(rel, id, src, &findings)
+		if prim == nil {
+			c.unparsed[id] = true
+			return nil
+		}
+		c.Primitives = append(c.Primitives, prim)
+		c.byID[prim.ID] = prim
 		return nil
 	})
 	if err != nil {
@@ -244,7 +273,7 @@ func (d decoder) str(n *coreyaml.Node, key string, required bool) string {
 		return ""
 	}
 	s := d.scalar(v, key)
-	if s == "" && required {
+	if s == "" && required && v.Kind == coreyaml.Scalar {
 		d.errf(v.Line, "%s is empty", key)
 	}
 	return s
@@ -265,9 +294,14 @@ func (d decoder) list(n *coreyaml.Node, key string) []*coreyaml.Node {
 func (d decoder) refs(n *coreyaml.Node, key string) []Ref {
 	var out []Ref
 	for _, item := range d.list(n, key) {
-		if s := d.scalar(item, key+" entry"); s != "" {
-			out = append(out, Ref{Value: s, Line: item.Line})
+		s := d.scalar(item, key+" entry")
+		if s == "" {
+			if item.Kind == coreyaml.Scalar {
+				d.errf(item.Line, "%s entry is empty", key)
+			}
+			continue
 		}
+		out = append(out, Ref{Value: s, Line: item.Line})
 	}
 	return out
 }
@@ -284,7 +318,11 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 	d := decoder{file: file, findings: findings}
 	root, err := coreyaml.Parse(string(src))
 	if err != nil {
-		d.errf(1, "%v", err)
+		line := 1
+		if m := yamlErrorLine.FindStringSubmatch(err.Error()); m != nil {
+			line, _ = strconv.Atoi(m[1])
+		}
+		d.errf(line, "%v", err)
 		return nil
 	}
 	if !d.mapping(root, "primitive", "primitive", "summary", "code", "docs", "on_change", "imports", "twins", "invariants", "decisions") {
@@ -293,11 +331,6 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 	p := &Primitive{ID: id, File: file, Line: root.Line}
 	if id == "" {
 		d.errf(root.Line, "%s sits at the registry root: a primitive needs its own directory", PrimitiveFile)
-	}
-	for seg := range strings.SplitSeq(id, ".") {
-		if id != "" && !idPattern.MatchString(seg) {
-			d.errf(root.Line, "directory %q is not a kebab-case primitive name", seg)
-		}
 	}
 	if declared := d.str(root, "primitive", true); declared != "" && declared != id {
 		d.errf(root.Map["primitive"].Line, "primitive is %q but the directory makes it %q", declared, id)

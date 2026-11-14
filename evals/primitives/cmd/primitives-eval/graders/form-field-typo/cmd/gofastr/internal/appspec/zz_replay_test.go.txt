@@ -31,8 +31,14 @@ func replayForm(t *testing.T, fields, mode string) error {
 
 func replayRefused(t *testing.T, what, fields, mode string) {
 	t.Helper()
-	if err := replayForm(t, "property_id, visitor_name", ""); err != nil {
-		t.Fatalf("a form of drawable fields no longer loads: %v", err)
+	// The control is a valid form of the same mode, so a refusal of the
+	// case below is about its fields and not about the mode or the route.
+	control := "property_id, visitor_name"
+	if mode == "edit" {
+		control = "visitor_name"
+	}
+	if err := replayForm(t, control, mode); err != nil {
+		t.Fatalf("a %s form of drawable fields no longer loads: %v", mode, err)
 	}
 	if err := replayForm(t, fields, mode); err == nil {
 		t.Errorf("%s validated", what)

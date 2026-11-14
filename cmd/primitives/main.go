@@ -76,11 +76,15 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		return 2
 	}
+	defer c.Close()
 	cmd := "list"
 	if len(args) > 0 {
 		cmd, args = args[0], args[1:]
 	}
-	if cmd != "lint" && len(findings) > 0 {
+	// lint reports the findings itself, and stop turns them into a block:
+	// exiting 1 here would let a session finish on a registry that does
+	// not parse, since Claude Code treats that exit as non-blocking.
+	if cmd != "lint" && cmd != "stop" && len(findings) > 0 {
 		for _, f := range findings {
 			fmt.Fprintln(stderr, f)
 		}
@@ -137,7 +141,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 	case "hook":
 		return hook(c, os.Stdin, stdout)
 	case "stop":
-		return stop(c, os.Stdin, stdout, stderr)
+		return stop(c, findings, os.Stdin, stdout, stderr)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:
@@ -207,8 +211,8 @@ const stopBudget = 5 * time.Minute
 // reason. The decision goes to stdout with exit 0 because the hook runs
 // through `go run`, which reports every failing exit code as 1, and
 // Claude Code only treats 2 as blocking.
-func stop(c *primitives.Registry, stdin io.Reader, stdout, stderr io.Writer) int {
-	reason, warning := stopCheck(c, stdin)
+func stop(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Reader, stdout, stderr io.Writer) int {
+	reason, warning := stopCheck(c, loadFindings, stdin)
 	if warning != "" {
 		fmt.Fprintln(stderr, warning)
 	}
@@ -227,7 +231,7 @@ func stop(c *primitives.Registry, stdin io.Reader, stdout, stderr io.Writer) int
 // warning when it could not tell. A session the hook has already sent
 // back once is let go, so a failure it cannot fix does not hold it
 // forever.
-func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string) {
+func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Reader) (reason, warning string) {
 	var event struct {
 		Active  bool   `json:"stop_hook_active"`
 		Session string `json:"session_id"`
@@ -245,7 +249,9 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 	}
 	changed = slices.DeleteFunc(changed, func(file string) bool { return commentOnly(c.Root, base, file) })
 	groups := changedPackageGroups(c.Root, changed)
-	if len(groups) == 0 {
+	modules := changedModules(c.Root, changed)
+	registryChanged := slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, primitives.Dir+"/") })
+	if len(groups) == 0 && len(modules) == 0 && !registryChanged {
 		return "", ""
 	}
 	state := treeState(c.Root, changed)
@@ -255,7 +261,7 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 		notices = docsNotices(c, changed, toldFiles(c.Root, docsKey(event.Session)))
 	}
 	var problems []string
-	for _, f := range c.Lint() {
+	for _, f := range append(loadFindings, c.Lint()...) {
 		problems = append(problems, f.String())
 	}
 	if stale, err := c.Stale(); err == nil {
@@ -267,7 +273,21 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 	defer cancel()
 	checks := [][]string{{"vet"}, {"test", "-short", "-count=1"}}
 	if tested {
-		checks = nil
+		checks, modules = nil, nil
+	}
+	// A changed go.mod or go.sum can break packages no changed file is in,
+	// so its whole module has to build.
+	for _, dir := range modules {
+		cmd := exec.CommandContext(ctx, "go", "build", "./...")
+		cmd.Dir = dir
+		cmd.WaitDelay = 10 * time.Second
+		out, err := cmd.CombinedOutput()
+		if ctx.Err() != nil {
+			return "", fmt.Sprintf("primitives stop: go build did not finish in %s in %s; run it yourself before you call this done.", stopBudget, dir)
+		}
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("go build ./... failed in %s:\n%s", dir, failures(string(out), 40)))
+		}
 	}
 	for _, args := range checks {
 		failed := false
@@ -428,32 +448,31 @@ type packageGroup struct {
 	pkgs []string
 }
 
-// changedPackages lists, as ./dir patterns from the repo root, the
-// directories that hold a changed Go file and still hold Go code.
-func changedPackages(root string, changed []string) []string {
-	var pkgs []string
-	for _, g := range changedPackageGroups(root, changed) {
-		rel, err := filepath.Rel(root, g.dir)
-		if err != nil {
+// changedModules lists the module directories whose go.mod or go.sum
+// changed.
+func changedModules(root string, changed []string) []string {
+	tree, err := os.OpenRoot(root)
+	if err != nil {
+		return nil
+	}
+	defer tree.Close()
+	var dirs []string
+	for _, file := range changed {
+		if base := path.Base(file); base != "go.mod" && base != "go.sum" {
 			continue
 		}
-		rel = filepath.ToSlash(rel)
-		for _, p := range g.pkgs {
-			switch {
-			case rel == ".":
-				pkgs = append(pkgs, p)
-			case p == ".":
-				pkgs = append(pkgs, "./"+rel)
-			default:
-				pkgs = append(pkgs, "./"+rel+"/"+strings.TrimPrefix(p, "./"))
-			}
+		rel := path.Dir(file)
+		dir := filepath.Join(root, filepath.FromSlash(rel))
+		if _, err := tree.Stat(path.Join(rel, "go.mod")); err == nil && !slices.Contains(dirs, dir) {
+			dirs = append(dirs, dir)
 		}
 	}
-	return pkgs
+	return dirs
 }
 
-// changedPackageGroups groups those packages by the go.mod that owns
-// them, so the stop check can run each group in its own module.
+// changedPackageGroups lists the directories that hold a changed Go file
+// and still hold Go code, as ./dir patterns grouped by the go.mod that
+// owns them, so the stop check can run each group in its own module.
 func changedPackageGroups(root string, changed []string) []packageGroup {
 	seen := map[string][]string{}
 	var order []string
@@ -519,10 +538,14 @@ func treeState(root string, changed []string) string {
 	sum := sha256.New()
 	for _, file := range changed {
 		data, err := dir.ReadFile(file)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			fmt.Fprintf(sum, "%s deleted\n", file)
+			continue
+		case err != nil:
 			return ""
 		}
-		fmt.Fprintf(sum, "%s %d\n", file, len(data))
+		fmt.Fprintf(sum, "%s present %d\n", file, len(data))
 		sum.Write(data)
 	}
 	return hex.EncodeToString(sum.Sum(nil))

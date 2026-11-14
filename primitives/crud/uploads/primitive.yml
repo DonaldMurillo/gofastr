@@ -20,7 +20,7 @@ invariants:
       - test: framework/crud.TestCreate_RejectsMissingContentType
       - test: framework/crud.TestCrossSiteMultipartCreateRefused
   - id: failed-write-leaves-no-upload
-    rule: A file saved while parsing a multipart body is deleted on every failure path.
+    rule: A file saved while parsing a multipart body is deleted on every failure path where its storage delete succeeds; a failed delete is logged.
     enforced_by:
       - test: framework/crud.TestFailedCreateLeavesNoOrphanUpload
 decisions:

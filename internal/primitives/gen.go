@@ -30,7 +30,9 @@ func (c *Registry) Generate() (map[string][]byte, error) {
 	for _, p := range c.Primitives {
 		for _, rule := range p.Imports {
 			for _, from := range rule.From {
-				byPkg[from.Value] = append(byPkg[from.Value], ban{path.Join(module, rule.Deny), p.ID, rule.Why, rule.Instead})
+				// Two spellings of one directory must land in one file.
+				dir := path.Clean(from.Value)
+				byPkg[dir] = append(byPkg[dir], ban{path.Join(module, path.Clean(rule.Deny)), p.ID, rule.Why, rule.Instead})
 			}
 		}
 	}
