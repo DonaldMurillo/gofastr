@@ -224,6 +224,75 @@ func TestStop(t *testing.T) {
 	}
 }
 
+// A nested go.mod is a different module. go vet from the repo root of
+// a path under it fails with "main module does not contain package"
+// (battery/print/chromepdf). The stop check must run that package inside
+// the nested module, and still report a failure there.
+func TestStopRunsNestedModuleInItsOwnModule(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/m\n\ngo 1.24\n")
+	write("a/a.go", "package a\n")
+	write("nested/go.mod", "module example.test/nested\n\ngo 1.24\n")
+	write("nested/n.go", "package nested\n")
+	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\n")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+	fire := func() (int, string) {
+		t.Helper()
+		c, findings, err := primitives.Load(root)
+		if err != nil || len(findings) > 0 {
+			t.Fatal(err, findings)
+		}
+		var out, errOut bytes.Buffer
+		if code := stop(c, strings.NewReader(`{}`), &out, &errOut); code != 0 {
+			t.Fatalf("stop exits %d: %s", code, errOut.String())
+		}
+		if out.Len() == 0 {
+			return 0, errOut.String()
+		}
+		var decision struct{ Decision, Reason string }
+		if err := json.Unmarshal(out.Bytes(), &decision); err != nil || decision.Decision != "block" {
+			t.Fatalf("stop printed %q, want a block decision (%v)", out.String(), err)
+		}
+		return 2, decision.Reason
+	}
+	write("nested/n.go", "package nested\n\nfunc N() {}\n")
+	code, msg := fire()
+	if strings.Contains(msg, "does not contain package") {
+		t.Fatalf("vet ran the nested package from the parent module: %s", msg)
+	}
+	if code != 0 {
+		t.Fatalf("a passing nested-module change: stop = %d: %s", code, msg)
+	}
+	write("nested/n.go", "package nested\n\nvar _ = notDefined\n")
+	code, msg = fire()
+	if code != 2 || !strings.Contains(msg, "notDefined") {
+		t.Fatalf("a compile error in the nested module: stop = %d, message %q", code, msg)
+	}
+	if strings.Contains(msg, "does not contain package") {
+		t.Fatalf("the compile error was reported as a parent-module miss: %s", msg)
+	}
+}
+
 func TestFailuresKeepsWhatFailed(t *testing.T) {
 	out := strings.Join([]string{
 		"  server ready", "  Listening: http://127.0.0.1:1", "=== RUN   TestA",
