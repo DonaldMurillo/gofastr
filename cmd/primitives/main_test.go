@@ -171,6 +171,26 @@ func TestStop(t *testing.T) {
 	if code, msg := fire(`{}`); code != 0 {
 		t.Fatalf("a passing change: stop = %d: %s", code, msg)
 	}
+	git("add", "-A")
+	git("commit", "-q", "-m", "pass")
+	write("a/a.go", "package a\n\n// One returns one, always.\nfunc One() int { return 1 }\n")
+	if !commentOnly(root, "HEAD", "a/a.go") {
+		t.Error("an edit to a comment alone is comment-only")
+	}
+	if code, msg := fire(`{"session_id":"c"}`); code != 0 {
+		t.Errorf("a comment-only edit: stop = %d: %s", code, msg)
+	}
+	write("a/a.go", "//go:build linux\n\npackage a\n\n// One is one.\nfunc One() int { return 1 }\n")
+	if commentOnly(root, "HEAD", "a/a.go") {
+		t.Error("a new build constraint is a comment that changes the code")
+	}
+	write("a/a.go", "package a\n\n// One is one.\nfunc One() int { return 1 + 0 }\n")
+	if commentOnly(root, "HEAD", "a/a.go") {
+		t.Error("a changed expression is not comment-only")
+	}
+	if commentOnly(root, "HEAD", "a/new.go") {
+		t.Error("a file with no base version is not comment-only")
+	}
 	write("docs/x.md", "# x\n")
 	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\ndocs:\n  - docs/x.md\non_change:\n  - Add an upgrade note when a request is newly refused.\n")
 	git("add", "docs", "primitives")

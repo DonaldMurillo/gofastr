@@ -89,7 +89,8 @@ a twin when they have to stay apart.
   tells the agent about a changed file that is a twins site.
 - **`primitives stop`** runs when a session tries to finish. It checks
   the registry and runs vet and the short tests of every package changed
-  since `origin/main`. A failure sends the agent back once, with the
+  since `origin/main`, leaving out a file whose only change is to its
+  comments. A failure sends the agent back once, with the
   output, as a block decision on stdout: the hook runs through `go run`,
   which cannot pass on the exit code Claude Code treats as blocking. A tree that already passed is not tested again. When a
   primitive's code changed and none of its `docs` did, it names those

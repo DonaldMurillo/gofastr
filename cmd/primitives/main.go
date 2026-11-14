@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"io"
 	"io/fs"
 	"maps"
@@ -239,6 +241,7 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 	if err != nil {
 		return "", ""
 	}
+	changed = slices.DeleteFunc(changed, func(file string) bool { return commentOnly(c.Root, base, file) })
 	pkgs := changedPackages(c.Root, changed)
 	if len(pkgs) == 0 {
 		return "", ""
@@ -335,6 +338,57 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 		}
 	}
 	return out
+}
+
+// commentOnly reports whether a Go file differs from its base version in
+// comments alone. Such an edit cannot change what the code does, so it
+// needs no test run and no docs. Directive comments (//go:, //gofastr:,
+// // +build) count as code. A file that is new, gone or unreadable is
+// not comment-only.
+func commentOnly(root, base, file string) bool {
+	if !strings.HasSuffix(file, ".go") {
+		return false
+	}
+	before, err := exec.Command("git", "-C", root, "show", base+":"+file).Output()
+	if err != nil {
+		return false
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return false
+	}
+	defer dir.Close()
+	after, err := dir.ReadFile(file)
+	if err != nil {
+		return false
+	}
+	a, okA := codeTokens(before)
+	b, okB := codeTokens(after)
+	return okA && okB && slices.Equal(a, b)
+}
+
+// codeTokens is a Go file's token stream without its ordinary comments.
+func codeTokens(src []byte) ([]string, bool) {
+	var s scanner.Scanner
+	fset := token.NewFileSet()
+	ok := true
+	s.Init(fset.AddFile("", fset.Base(), len(src)), src, func(token.Position, string) { ok = false }, scanner.ScanComments)
+	var out []string
+	for {
+		_, tok, lit := s.Scan()
+		if tok == token.EOF {
+			return out, ok
+		}
+		if tok == token.COMMENT {
+			if !strings.HasPrefix(lit, "//go:") && !strings.HasPrefix(lit, "//gofastr:") && !strings.HasPrefix(lit, "// +build") {
+				continue
+			}
+		}
+		if tok == token.SEMICOLON && lit == "\n" {
+			lit = ";"
+		}
+		out = append(out, tok.String()+" "+lit)
+	}
 }
 
 // changedPackages lists, as ./dir patterns, the directories that hold a
