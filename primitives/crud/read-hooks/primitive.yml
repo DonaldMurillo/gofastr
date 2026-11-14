@@ -33,6 +33,7 @@ invariants:
       - test: framework/crud.TestReattachRefusesDuplicateRow
       - test: framework/crud.TestReattachRefusesUnknownRow
       - test: framework/crud.TestReattachRefusesProjectionWithoutID
+      - test: framework/crud.TestReattachRefusesProjectionWithoutIDWhenValuesMatch
       - test: framework/crud.TestReattachDoesNotMutateBeforeARefusal
   - id: failed-response-hook-answers-identity
     rule: When a write's response hook fails, the response carries the primary key only; it never echoes the row and never answers 500.

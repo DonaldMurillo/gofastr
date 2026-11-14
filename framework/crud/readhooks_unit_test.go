@@ -157,6 +157,20 @@ func TestReattachRefusesProjectionWithoutID(t *testing.T) {
 	}
 }
 
+// The kept values are not an identity: two rows can agree on every column a
+// projection keeps, so a row without its id is refused even when what it
+// kept matches exactly one loaded row.
+func TestReattachRefusesProjectionWithoutIDWhenValuesMatch(t *testing.T) {
+	a := map[string]any{"id": "a", "name": "n", "secret": "S"}
+	orig := []map[string]any{a}
+	if err := reattachHookResults("kids", []string{"id"}, orig, []map[string]any{{"name": "n"}}); err == nil {
+		t.Fatal("a projection that drops the primary key was matched by the values it kept")
+	}
+	if _, ok := a["secret"]; !ok {
+		t.Errorf("the row was mutated before the refusal: %#v", a)
+	}
+}
+
 // A row the loader never produced cannot be introduced through the hook.
 func TestReattachRefusesUnknownRow(t *testing.T) {
 	orig := []map[string]any{{"id": "a"}}
