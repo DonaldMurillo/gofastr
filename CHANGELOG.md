@@ -28,8 +28,11 @@ few lines, and link the PR or the docs page for the rest.
 - **`gofastr deploy <user@host>`** (experimental) puts an app on one
   Linux server over SSH as a systemd service: build for the server's
   CPU, copy, start, health check, and back to the release before when
-  the check fails. `rollback` and `status` beside it. The server needs
-  only sshd, systemd and bash. See
+  the check fails. `rollback` and `status` beside it. systemd holds the
+  app's port, so a deploy, a rollback or a crash does not close it:
+  `App.Start` now serves on a socket systemd passes it (`LISTEN_FDS`)
+  in place of opening its address. The server needs only sshd, systemd
+  and bash. See
   [Deployment](framework/docs/content/deploy.md).
 - **Telemetry screens: a review round.** A time range is one click and
   holds across the four pages; the Overview's tables sort by any column

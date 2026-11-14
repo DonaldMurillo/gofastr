@@ -30,6 +30,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
+	"github.com/DonaldMurillo/gofastr/internal/sdlisten"
 )
 
 const usage = `
@@ -257,6 +258,14 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 			return err
 		}
 	}
+	// A binary that can take a socket from systemd gets its port held
+	// for it; any other opens its own, as before.
+	if p.socket, err = takesSocket(bin); err != nil {
+		return err
+	}
+	if p.socket {
+		fmt.Fprintf(w, "  systemd holds port %d: restarts do not close it\n", o.port)
+	}
 	if err := send(ctx, o, r, bin, p.upload+"/bin"); err != nil {
 		return err
 	}
@@ -272,6 +281,34 @@ func deploy(ctx context.Context, w io.Writer, o *options, p plan, now time.Time,
 		return err
 	}
 	return report(w, o, out, code)
+}
+
+// takesSocket reports whether the binary at path links the framework's
+// socket hand-off, by the marker that code leaves in it.
+func takesSocket(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	marker := []byte(sdlisten.Marker)
+	// Read in pieces that overlap by a marker's length, so one that
+	// straddles two reads is still found.
+	buf := make([]byte, 1<<20)
+	keep := 0
+	for {
+		n, err := f.Read(buf[keep:])
+		if bytes.Contains(buf[:keep+n], marker) {
+			return true, nil
+		}
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		keep = copy(buf, buf[max(keep+n-len(marker)+1, 0):keep+n])
+	}
 }
 
 // send copies a local file to path on the server through ssh's stdin:

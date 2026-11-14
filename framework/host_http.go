@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/internal/sdlisten"
 	"net"
 	"net/http"
 	"os"
@@ -142,6 +143,16 @@ func (h *httpHost) Run(_ context.Context, s *Session) error {
 	// Bind first, then Serve, split from ListenAndServe so OnReady hooks
 	// fire only after the port is actually held. http.ListenAndServe
 	// defaults an empty Addr to ":http"; net.Listen needs that explicit.
+	if ln == nil {
+		// A socket systemd opened for this process comes first: it is
+		// the port already held, through restarts, and the address
+		// asked for would find it taken.
+		passed, err := sdlisten.Inherited()
+		if err != nil {
+			return fmt.Errorf("listen and serve: %w", err)
+		}
+		ln = passed
+	}
 	if ln == nil {
 		bound, err := net.Listen("tcp", listenAddrFor(h.addr))
 		if err != nil {

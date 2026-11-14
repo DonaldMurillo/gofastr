@@ -77,6 +77,30 @@ What it sets up, on the first deploy and kept the same on later ones:
   root and the app only. A deploy without `--env-file` leaves it as it is.
 - `/etc/systemd/system/<name>.service`: restarts the app after a crash,
   every time, and starts it at boot.
+- `/etc/systemd/system/<name>.socket`: systemd opens the app's port and
+  keeps it. See below.
+
+### Restarts do not close the port
+
+systemd holds the listening socket and hands it to the app when it
+starts (`App.Start` takes it in place of opening the address it was
+given). While the app is down, between one release and the next or
+after a crash, connections wait in the socket's queue and are answered
+by the app that starts: a deploy, a rollback or a crash is a slower
+request, not a refused one. Measured on a 1 CPU server at ten requests a
+second: none failed through a redeploy, a rollback and three `kill -9`
+in a row; the slowest took 1.4 seconds.
+
+The port in the socket unit is `--port`. The app's own address setting
+is not used while systemd passes it a socket.
+
+A binary that cannot take a socket (built on a GoFastr before this, or
+not a GoFastr app) is detected and opens its own port as before, with
+about a second of closed port on each restart. The first deploy that
+moves an app from one way to the other closes the port once.
+
+Each release keeps the units it was deployed with, in
+`releases/<time>/units/`, and going back to a release puts them back.
 
 ```sh
 gofastr deploy status deploy@203.0.113.7 --name shop     # release, service, health
@@ -94,7 +118,7 @@ one, and `--pkg` names the main package when it is not `.`.
 
 What it does not do: TLS (put a reverse proxy in front, or see
 [Serving HTTPS from the app](#serving-https-from-the-app)), a firewall,
-or more than one server. A restart closes the port for about a second.
+or more than one server.
 
 ## Production Dockerfile
 

@@ -17,6 +17,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/sdlisten"
 )
 
 // The test binary doubles as the app being deployed: started with this
@@ -54,6 +56,9 @@ type server struct {
 	built []string
 	// broken makes the next build produce a release that exits at once.
 	broken bool
+	// socketApp makes the next build produce a binary that can take a
+	// socket from systemd, as an app on this framework version is.
+	socketApp bool
 }
 
 func newServer(t *testing.T) *server {
@@ -94,8 +99,18 @@ case "$1" in
     # whatever is started next.
     if [ -f "`+s.dir+`/restart-errors" ]; then exit 1; fi
     ;;
+  enable)
+    if [ "$2" = "--now" ]; then touch "`+s.dir+`/socket-on"; fi
+    ;;
+  disable)
+    rm -f "`+s.dir+`/socket-on"
+    ;;
+  stop)
+    if [ -f "$pidfile" ]; then kill "$(cat "$pidfile")" 2>/dev/null || true; rm -f "$pidfile"; fi
+    ;;
   is-active)
     name="${@: -1}"
+    case "$name" in *.socket) [ -f "`+s.dir+`/socket-on" ]; exit $? ;; esac
     if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then [ "$2" = "--quiet" ] || echo active; exit 0; fi
     [ "$2" = "--quiet" ] || echo inactive; exit 3
     ;;
@@ -158,7 +173,11 @@ func (s *server) build(_ context.Context, pkg, arch, out string) error {
 	if s.broken {
 		broken = "GOFASTR_DEPLOY_TEST_BROKEN=1 "
 	}
-	return os.WriteFile(out, []byte("#!/bin/bash\n"+broken+"GOFASTR_DEPLOY_TEST_SERVE="+strconv.Itoa(s.port)+" exec "+self+"\n"), 0o755)
+	mark := ""
+	if s.socketApp {
+		mark = "# " + sdlisten.Marker + "\n"
+	}
+	return os.WriteFile(out, []byte("#!/bin/bash\n"+mark+broken+"GOFASTR_DEPLOY_TEST_SERVE="+strconv.Itoa(s.port)+" exec "+self+"\n"), 0o755)
 }
 
 func (s *server) run(at time.Time, args ...string) (string, error) {
@@ -539,5 +558,191 @@ func TestRollbackThatDoesNotComeUpIsNotCalledARollback(t *testing.T) {
 	}
 	if s.current() != rel0 {
 		t.Errorf("current is %q, want the release before left in place", s.current())
+	}
+}
+
+// A binary that can take a socket from systemd gets its port held for
+// it: a socket unit on the app's port, the service bound to it, and the
+// app running before stopped once so systemd can open the port. A
+// binary that cannot keeps opening its own, and a server that was
+// handed the port takes it back for such a binary.
+func TestPortIsHeldBySystemdWhenTheAppCanTakeIt(t *testing.T) {
+	s := newServer(t)
+	// An older build first: no socket unit.
+	if out, err := s.run(t0, "deploy@example.com", "--name", "shop"); err != nil || strings.Contains(out, "systemd holds port") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	sock := filepath.Join(s.dir, "etc/systemd/system/shop.socket")
+	if _, err := os.Stat(sock); err == nil {
+		t.Fatal("a socket unit was written for a binary that opens its own port")
+	}
+	unit, _ := os.ReadFile(filepath.Join(s.dir, "etc/systemd/system/shop.service"))
+	if strings.Contains(string(unit), "shop.socket") {
+		t.Errorf("the service is bound to a socket it does not have:\n%s", unit)
+	}
+
+	s.socketApp = true
+	out, err := s.run(t0.Add(time.Minute), "deploy@example.com", "--name", "shop")
+	if err != nil || !strings.Contains(out, "systemd holds port "+strconv.Itoa(s.port)) || !s.serving() {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	got, _ := os.ReadFile(sock)
+	if !strings.Contains(string(got), "ListenStream="+strconv.Itoa(s.port)+"\n") || !strings.Contains(string(got), "WantedBy=sockets.target") {
+		t.Errorf("the socket unit:\n%s", got)
+	}
+	unit, _ = os.ReadFile(filepath.Join(s.dir, "etc/systemd/system/shop.service"))
+	if !strings.Contains(string(unit), "Requires=shop.socket\nAfter=shop.socket\n") {
+		t.Errorf("the service is not bound to its socket:\n%s", unit)
+	}
+	calls, _ := os.ReadFile(filepath.Join(s.dir, "calls.log"))
+	stop, enable := strings.Index(string(calls), "systemctl stop shop\n"), strings.Index(string(calls), "systemctl enable --now shop.socket")
+	if stop < 0 || enable < 0 || stop > enable {
+		t.Errorf("the app holding the port was not stopped before systemd opened it:\n%s", calls)
+	}
+
+	// The next release finds the port held, and stops nothing.
+	if out, err := s.run(t0.Add(2*time.Minute), "deploy@example.com", "--name", "shop"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	calls, _ = os.ReadFile(filepath.Join(s.dir, "calls.log"))
+	if n := strings.Count(string(calls), "systemctl stop shop\n"); n != 1 {
+		t.Errorf("the app was stopped %d times across three deploys, want once: for the hand-over", n)
+	}
+	if n := strings.Count(string(calls), "enable --now shop.socket"); n != 1 {
+		t.Errorf("the socket was enabled %d times", n)
+	}
+
+	// Back to a binary that opens its own port.
+	s.socketApp = false
+	if out, err := s.run(t0.Add(3*time.Minute), "deploy@example.com", "--name", "shop"); err != nil || !s.serving() {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if _, err := os.Stat(sock); err == nil {
+		t.Error("the socket unit was left for a binary that opens its own port: the port would be taken")
+	}
+	calls, _ = os.ReadFile(filepath.Join(s.dir, "calls.log"))
+	if !strings.Contains(string(calls), "systemctl disable --now shop.socket") {
+		t.Errorf("the socket was not handed back:\n%s", calls)
+	}
+}
+
+// The marker is found wherever it sits in the file, a read boundary
+// included, and not in a file without it.
+func TestTakesSocketFindsTheMarker(t *testing.T) {
+	dir := t.TempDir()
+	for name, c := range map[string]struct {
+		body []byte
+		want bool
+	}{
+		"none":          {bytes.Repeat([]byte("x"), 3<<20), false},
+		"empty":         {nil, false},
+		"at the start":  {append([]byte(sdlisten.Marker), bytes.Repeat([]byte("x"), 100)...), true},
+		"at the end":    {append(bytes.Repeat([]byte("x"), 2<<20+17), sdlisten.Marker...), true},
+		"over a read":   {append(append(bytes.Repeat([]byte("x"), 1<<20-9), sdlisten.Marker...), bytes.Repeat([]byte("y"), 1<<20)...), true},
+		"over a second": {append(append(bytes.Repeat([]byte("x"), 2<<20-len(sdlisten.Marker)-3), sdlisten.Marker...), 'z'), true},
+		"cut short":     {append(bytes.Repeat([]byte("x"), 1<<20-5), sdlisten.Marker[:len(sdlisten.Marker)-1]...), false},
+	} {
+		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-"))
+		if err := os.WriteFile(path, c.body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := takesSocket(path); err != nil || got != c.want {
+			t.Errorf("%s: %v, %v; want %v", name, got, err, c.want)
+		}
+	}
+	if _, err := takesSocket(filepath.Join(dir, "missing")); err == nil {
+		t.Error("a file that is not there read as a binary")
+	}
+}
+
+// A release keeps the units it was deployed with, and going back to it
+// puts them back. Found on a real server: a release that opens its own
+// port failed after one that takes it from systemd, and the rollback
+// left the old release running without the socket it had.
+func TestRollbackRestoresTheReleasesOwnUnits(t *testing.T) {
+	s := newServer(t)
+	sock := filepath.Join(s.dir, "etc/systemd/system/shop.socket")
+	unit := func() string {
+		b, _ := os.ReadFile(filepath.Join(s.dir, "etc/systemd/system/shop.service"))
+		return string(b)
+	}
+	held := func() bool {
+		_, on := os.Stat(filepath.Join(s.dir, "socket-on"))
+		_, file := os.Stat(sock)
+		return on == nil && file == nil && strings.Contains(unit(), "Requires=shop.socket")
+	}
+	s.socketApp = true
+	if out, err := s.run(t0, "deploy@example.com", "--name", "shop"); err != nil || !held() {
+		t.Fatalf("setup: %v, port held %v\n%s", err, held(), out)
+	}
+	// A release that opens its own port, and does not come up.
+	s.socketApp, s.broken = false, true
+	out, err := s.run(t0.Add(time.Minute), "deploy@example.com", "--name", "shop")
+	s.broken = false
+	if err == nil || !strings.Contains(err.Error(), "back on release "+rel0) {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !held() || !s.serving() {
+		t.Fatalf("after the rollback: port held by systemd %v, serving %v; want the first release as it was deployed", held(), s.serving())
+	}
+
+	// The same by hand, both ways: forward to a release that opens its
+	// own port, back to the one that does not.
+	if out, err := s.run(t0.Add(2*time.Minute), "deploy@example.com", "--name", "shop"); err != nil || held() {
+		t.Fatalf("a release that opens its own port: %v, port still held %v\n%s", err, held(), out)
+	}
+	if strings.Contains(unit(), "shop.socket") {
+		t.Errorf("the service is still bound to the socket:\n%s", unit())
+	}
+	if out, err := s.run(t0, "rollback", "deploy@example.com", "--name", "shop"); err != nil || !held() || s.current() != rel0 {
+		t.Fatalf("rollback: %v, current %q, port held %v\n%s", err, s.current(), held(), out)
+	}
+	// Each release holds its own copy.
+	for rel, want := range map[string]bool{rel0: true, rel2: false} {
+		_, err := os.Stat(filepath.Join(s.dir, "opt/shop/releases", rel, "units/shop.socket"))
+		if (err == nil) != want {
+			t.Errorf("release %s keeps a socket unit: %v, want %v", rel, err == nil, want)
+		}
+		if _, err := os.Stat(filepath.Join(s.dir, "opt/shop/releases", rel, "units/shop.service")); err != nil {
+			t.Errorf("release %s keeps no service unit", rel)
+		}
+	}
+}
+
+// With systemd holding the port, a connection is accepted while the app
+// is down, and nothing answers it. The health check gives such a
+// connection two seconds, not for ever.
+func TestProbeDoesNotWaitForEver(t *testing.T) {
+	s := newServer(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(s.port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close() // held open, never answered
+		}
+	}()
+	type result struct {
+		out string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		out, err := s.run(t0, "status", "deploy@example.com", "--name", "shop")
+		done <- result{out, err}
+	}()
+	select {
+	case r := <-done:
+		if r.err != nil || !strings.Contains(r.out, "health: no answer") {
+			t.Errorf("status against a port that accepts and says nothing: %v\n%s", r.err, r.out)
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("the health check is still waiting on a connection nothing answers")
 	}
 }

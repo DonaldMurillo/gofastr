@@ -28,10 +28,13 @@ type plan struct {
 	release string // "20261114T033412Z"
 	upload  string // remote directory holding "bin" and, with hasEnv, "env"
 	hasEnv  bool
-	port    int
-	health  string // "/healthz"
-	wait    int    // seconds to wait for the health check
-	keep    int    // releases kept beside the running one
+	// socket hands the port to systemd, which keeps it open through
+	// restarts: set when the binary can take a socket passed to it.
+	socket bool
+	port   int
+	health string // "/healthz"
+	wait   int    // seconds to wait for the health check
+	keep   int    // releases kept beside the running one
 }
 
 // unit is the systemd unit of an app. It runs as its own user, may
@@ -41,12 +44,17 @@ type plan struct {
 // and XDG_STATE_HOME point there, so anything the app keeps by default
 // (the telemetry files among it) lands under /var/lib/<name>.
 func (p plan) unit() string {
+	held := ""
+	if p.socket {
+		// The service is started with the socket and never without it.
+		held = "Requires=" + p.name + ".socket\nAfter=" + p.name + ".socket\n"
+	}
 	return `[Unit]
 Description=` + p.name + `
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=0
-
+` + held + `
 [Service]
 User=` + p.name + `
 Group=` + p.name + `
@@ -75,6 +83,22 @@ WantedBy=multi-user.target
 `
 }
 
+// socketUnit is the unit that holds the app's port. systemd opens it
+// once and keeps it: while the app is down, between two releases or
+// after a crash, connections wait in its queue for the app that starts
+// next, where a port the app opened itself would refuse them.
+func (p plan) socketUnit() string {
+	return `[Unit]
+Description=` + p.name + ` port
+
+[Socket]
+ListenStream=` + strconv.Itoa(p.port) + `
+
+[Install]
+WantedBy=sockets.target
+`
+}
+
 // preamble is the head of every script: fail on the first error, and
 // the paths and the health check the scripts share.
 func (p plan) preamble() string {
@@ -84,6 +108,7 @@ func (p plan) preamble() string {
 	fmt.Fprintf(&b, "ROOT=%s\n", shellQuote(p.root))
 	b.WriteString(`APP="$ROOT/opt/$NAME"
 STATE="$ROOT/var/lib/$NAME"
+UNITS="$ROOT/etc/systemd/system"
 `)
 	fmt.Fprintf(&b, "PORT=%d\nHEALTH=%s\nWAIT=%d\n", p.port, shellQuote(p.health), p.wait)
 	// The check asks the app itself, over loopback, with nothing but
@@ -102,7 +127,9 @@ STATE="$ROOT/var/lib/$NAME"
 probe() {
   { exec 3<>"/dev/tcp/127.0.0.1/$PORT"; } 2>/dev/null || return 1
   printf 'GET %s HTTP/1.0\r\nHost: localhost\r\n\r\n' "$HEALTH" >&3
-  IFS= read -r line <&3 || line=""
+  # Two seconds for the first line: with systemd holding the port a
+  # connection is accepted while the app is down, and waits.
+  IFS= read -r -t 2 line <&3 || line=""
   exec 3<&- 3>&-
   case "$line" in "HTTP/"*" 2"[0-9][0-9]*) return 0 ;; esac
   return 1
@@ -126,6 +153,36 @@ start() {
 }
 running() {
   if [ -L "$APP/current" ]; then basename "$(readlink "$APP/current")"; fi
+}
+# apply makes release $1 the one in place: its units as well as its
+# binary. A release keeps the units it was deployed with, so going back
+# to it goes back to how it was run, the port's owner included: a
+# release that takes its port from systemd gets the socket unit, one
+# that opens its own gets the port back. (A release from before units
+# were kept has none, and the units in place stay.)
+apply() {
+  kept="$APP/releases/$1/units"
+  if [ -f "$kept/$NAME.service" ]; then
+    install -m 0644 "$kept/$NAME.service" "$UNITS/$NAME.service"
+    if [ -f "$kept/$NAME.socket" ]; then
+      install -m 0644 "$kept/$NAME.socket" "$UNITS/$NAME.socket"
+      systemctl daemon-reload
+      # The first time, the app running holds the port itself: it is
+      # stopped so systemd can open it. That hand-over is the last time
+      # the port closes.
+      if ! systemctl is-active --quiet "$NAME.socket"; then
+        systemctl stop "$NAME" >/dev/null 2>&1 || true
+        systemctl enable --now "$NAME.socket" >/dev/null 2>&1
+      fi
+    else
+      if [ -f "$UNITS/$NAME.socket" ]; then
+        systemctl disable --now "$NAME.socket" >/dev/null 2>&1 || true
+        rm -f "$UNITS/$NAME.socket"
+      fi
+      systemctl daemon-reload
+    fi
+  fi
+  point "$1"
 }
 `)
 	return b.String()
@@ -159,26 +216,27 @@ chown "root:$NAME" "$ROOT/etc/$NAME/env"
 	}
 	b.WriteString(`rm -rf "$UPLOAD"
 
-UNIT="$ROOT/etc/systemd/system/$NAME.service"
-install -d -m 0755 "$ROOT/etc/systemd/system"
-cat > "$UNIT.new" <<'GOFASTR_UNIT'
+install -d -m 0755 "$UNITS" "$APP/releases/$REL/units"
+cat > "$APP/releases/$REL/units/$NAME.service" <<'GOFASTR_UNIT'
 `)
 	b.WriteString(p.unit())
-	b.WriteString(`GOFASTR_UNIT
-chmod 0644 "$UNIT.new"
-mv "$UNIT.new" "$UNIT"
-systemctl daemon-reload
-systemctl enable "$NAME" >/dev/null 2>&1
-
+	b.WriteString("GOFASTR_UNIT\n")
+	if p.socket {
+		b.WriteString("cat > \"$APP/releases/$REL/units/$NAME.socket\" <<'GOFASTR_SOCKET'\n")
+		b.WriteString(p.socketUnit())
+		b.WriteString("GOFASTR_SOCKET\n")
+	}
+	b.WriteString(`
 PREV="$(running)"
-point "$REL"
+apply "$REL"
+systemctl enable "$NAME" >/dev/null 2>&1
 start
 
 if ! healthy; then
   echo "--- the last lines the new release logged ---"
   said
   if [ -n "$PREV" ] && [ "$PREV" != "$REL" ] && [ -x "$APP/releases/$PREV/$NAME" ]; then
-    point "$PREV"
+    apply "$PREV"
     start
     rm -rf "$APP/releases/$REL"
     # Said only once it is true: the release before answers again.
@@ -212,11 +270,11 @@ if [ -z "$CUR" ] || [ -z "$PREV" ]; then
   echo "NO-PREVIOUS"
   exit ` + strconv.Itoa(exitNoPrevious) + `
 fi
-point "$PREV"
+apply "$PREV"
 start
 if ! healthy; then
   said
-  point "$CUR"
+  apply "$CUR"
   start
   if healthy; then
     echo "ROLLED-BACK $CUR"
