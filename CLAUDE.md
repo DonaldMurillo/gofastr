@@ -263,7 +263,7 @@ skill). The registry covers `framework/crud` so far.
   generator. Aesthetics ship as components + tokens, so every surface
   inherits them.
 - New island? Use `core-ui/widget` builder.
-- Theme tokens? `framework/ui/theme` for the registryical theme;
+- Theme tokens? `framework/ui/theme` for the canonical theme;
   `core-ui/style` for the underlying machinery.
 - Entity model, columns, relations, validators, EntityDeclaration?
   `framework/entity/`. Most other framework subpackages depend on it.
