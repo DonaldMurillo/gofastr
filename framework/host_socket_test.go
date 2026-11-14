@@ -25,7 +25,8 @@ func TestStartServesOnASocketFromSystemd(t *testing.T) {
 		app.Router().Get("/hello", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("from the app")) }))
 		// An address nothing can bind: were the socket ignored, Start
 		// would fail here.
-		_ = app.Start("256.0.0.1:1")
+		err := app.Start("256.0.0.1:1")
+		fmt.Fprintf(os.Stderr, "child: Start returned %v\n", err)
 		os.Exit(4)
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -36,7 +37,12 @@ func TestStartServesOnASocketFromSystemd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0" -test.run=TestStartServesOnASocketFromSystemd`, os.Args[0])
+	// Not os.Args[0]: another test in the package may have rewritten it.
+	self, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0" -test.run=TestStartServesOnASocketFromSystemd`, self)
 	cmd.Env = append(os.Environ(), "GOFASTR_SOCKET_CHILD=1")
 	cmd.ExtraFiles = []*os.File{f}
 	var out bytes.Buffer
@@ -65,12 +71,16 @@ func TestStartServesOnASocketFromSystemd(t *testing.T) {
 // framework: this one does, and names it nowhere (the text below is put
 // together at run time, so it is not the copy found).
 func TestSocketMarkerIsInAnAppBinary(t *testing.T) {
-	self, err := os.ReadFile(os.Args[0])
+	path, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	self, err := os.ReadFile(path)
 	if err != nil {
 		t.Skip(err)
 	}
 	// Sprintf, not "+": the compiler folds joined constants into one.
-	marker := []byte(fmt.Sprintf("gofastr:%s-socket-v%d", "systemd", len(os.Args[:1])))
+	marker := []byte(fmt.Sprintf("gofastr:%s-socket-v%d", "systemd", len(path[:1])))
 	if !bytes.Contains(self, marker) {
 		t.Error("the marker is not in a binary that links the framework: a deploy would take the app for one that cannot be handed a socket")
 	}

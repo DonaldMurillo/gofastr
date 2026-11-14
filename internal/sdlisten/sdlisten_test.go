@@ -95,7 +95,12 @@ func TestChildServesOnThePassedSocket(t *testing.T) {
 	// LISTEN_PID must be the child's own pid, which exists only once it
 	// has started: a shell sets it and then becomes the child, as
 	// systemd sets it between fork and exec.
-	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0" -test.run=TestChildServesOnThePassedSocket`, os.Args[0])
+	// Not os.Args[0]: another test in the package may have rewritten it.
+	self, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	cmd := exec.Command("sh", "-c", `LISTEN_PID=$$ LISTEN_FDS=1 exec "$0" -test.run=TestChildServesOnThePassedSocket`, self)
 	cmd.Env = append(os.Environ(), "SDLISTEN_CHILD=1")
 	cmd.ExtraFiles = []*os.File{f} // descriptor 3
 	var stderr bytes.Buffer
@@ -122,7 +127,11 @@ func TestChildServesOnThePassedSocket(t *testing.T) {
 
 // The marker is in the binary: a deploy reads the file for it.
 func TestMarkerIsLinkedIn(t *testing.T) {
-	self, err := os.ReadFile(os.Args[0])
+	path, err := os.Executable()
+	if err != nil {
+		t.Skip(err)
+	}
+	self, err := os.ReadFile(path)
 	if err != nil {
 		t.Skip(err)
 	}
