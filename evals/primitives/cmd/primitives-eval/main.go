@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
 )
 
 type listFlag []string
@@ -126,10 +128,10 @@ func run(cfg config, tasksFilter, conditionsFilter []string, runs, concurrency i
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(cfg.out, "results.json"), append(data, '\n'), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(cfg.out, "results.json"), append(data, '\n')); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(cfg.out, "RESULTS.md"), []byte(renderMarkdown(report)), 0o600); err != nil {
+	if err := fileperm.WriteOwnerOnly(filepath.Join(cfg.out, "RESULTS.md"), []byte(renderMarkdown(report))); err != nil {
 		return err
 	}
 	fmt.Printf("\nspent $%.2f; results in %s\n", spent, cfg.out)

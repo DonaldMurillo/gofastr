@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -204,9 +205,13 @@ func stripRegistry(root *os.Root) error {
 	if err != nil {
 		return err
 	}
-	stripped := registryParagraph.ReplaceAll(guide, nil)
-	if bytes.Equal(stripped, guide) {
+	loc := registryParagraph.FindIndex(guide)
+	if loc == nil {
 		return fmt.Errorf("CLAUDE.md holds no registry paragraph to strip: the bare condition would not be bare")
+	}
+	stripped := slices.Concat(guide[:loc[0]], guide[loc[1]:])
+	if registryParagraph.Match(stripped) {
+		return fmt.Errorf("CLAUDE.md still names the registry after one paragraph was removed")
 	}
 	return root.WriteFile("CLAUDE.md", stripped, 0o600)
 }
