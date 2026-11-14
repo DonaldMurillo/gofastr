@@ -59,10 +59,14 @@ CLI flags override config values where they overlap:
 - `--clean` and `--no-clean` override `codegen.clean`.
 
 Plain `gofastr generate` also accepts `--dry-run`, `--json` and `--watch`.
-With `--json`, invalid flags and missing arguments produce one error
-document on stdout (`files: []`, `errors: [{message: ...}]`); prose and
-usage hints go to stderr. The same error shape applies to every generate
-verb, including a verb that rejects `--json` as unsupported.
+With `--json` and without `--watch`, stdout is exactly one document on
+success or failure.
+Invalid flags, missing arguments and unknown generator names produce an
+error document (`files: []`, `errors: [{message: ...}]`); all prose, warnings,
+progress and errors go to stderr. The same error shape applies to every
+generate verb, including one that rejects `--json` as unsupported.
+`--help` (or `-h`) under `--json` writes the addressed generator's usage to
+stderr with no document. Help also takes precedence over `--watch`.
 Any other argument is an error.
 Watch mode also tracks the enclosing `go.mod`, including when the codegen
 config lives in a subdirectory, so module-path edits rebuild generated imports.
@@ -182,6 +186,12 @@ A command extension is an arbitrary binary named by whichever
 `gofastr.settings.yml` is in the project, so it runs with a deliberately narrow
 contract:
 
+- **A discovered config does not run commands on its own.** When nobody
+  named the settings file on the command line, `gofastr generate` and
+  `gofastr build` refuse its command extensions. Run
+  `gofastr generate --config <path>` to name it (then
+  `gofastr build --no-generate`, since build takes no `--config`), or set
+  `GOFASTR_CODEGEN_ALLOW_COMMANDS=1`.
 - **The environment is an allowlist, not an inheritance.** The child gets what a
   build-time tool needs to run and nothing else: `PATH`, `HOME`, a temp dir,
   locale, and the Go toolchain variables. It does not see `GOFASTR_SECRET`,

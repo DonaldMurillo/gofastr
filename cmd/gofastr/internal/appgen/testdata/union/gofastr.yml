@@ -253,6 +253,8 @@ entities:
         order: 1
       columns: [number, amount, status, due_on]
       views:
+        - key: mine
+          label: Mine
         - key: open
           label: Open
           where: 'status = "open"'
@@ -848,7 +850,7 @@ screens:
     body:
       - kind: entity_form
         entity: customers
-        fields: [name, slug, cost, reference, logo, contract]
+        fields: [name, slug, logo, contract]
   - name: cards
     route: /cards
     title: Cards

@@ -21,6 +21,13 @@ import (
 	"unicode/utf8"
 )
 
+// Storable reports whether s is valid UTF-8 without a NUL byte. Postgres
+// rejects either with SQLSTATE 22021 rather than storing the text unchanged.
+// Lone surrogates encoded as WTF-8 are already invalid UTF-8.
+func Storable(s string) bool {
+	return utf8.ValidString(s) && strings.IndexByte(s, 0) < 0
+}
+
 // IsInvisible reports whether r is a zero-width, joiner, or bidi
 // control codepoint: no glyph of its own, present only to reorder or
 // hide neighbouring text. Trojan-Source (the bidi overrides and

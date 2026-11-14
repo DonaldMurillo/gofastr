@@ -29,6 +29,8 @@ import (
 //     or cta_href is set, so it needs a safe cta_href. Each plan's text
 //     props and every features entry must be text.
 //
+// These spec checks cannot share code with emitted Go constructors.
+// TestRenderPanicParity in render_parity_test.go keeps their refusals aligned.
 // Text props (catalogTextProps) are checked first, by validateCatalogText.
 func validateCatalogRequired(screenName, kind string, block AppSpecBlock) error {
 	if err := validateCatalogText(screenName, kind, block); err != nil {

@@ -303,12 +303,32 @@ few lines, and link the PR or the docs page for the rest.
   with no Referer redirects there, back to the form, instead of to the
   login error path. The app spec generator sets it to the screen
   holding the `signup_form`, and `gofastr init` sets `/register`.
-- **`framework.ValidateDisplay` and `entity.ValidateDefaults`** run the
-  boot checks for a `Display` block and for field defaults over a
-  config that never passed registration. They are for code generators;
-  `gofastr validate` uses both.
+- **`framework.ValidateDisplay`, `entity.ValidateDefaults`,
+  `framework.ValidateExposure` and `framework.ValidateEntityEndpointRoutes`**
+  run the boot checks for a `Display` block, field defaults, an
+  entity's exposure and its endpoint routes over a config that never
+  passed registration. They are for code generators; `gofastr validate`
+  uses all four. An overlap comes back as `*framework.EndpointRouteError`,
+  and `uihost.InvalidSitemapBaseURL` reports the base URL a sitemap
+  would refuse.
+- **`textsafe.Storable` and `textsafe.LogPanic`**
+  ([core packages](framework/docs/content/core-packages.md)).
+  `Storable` reports whether a string is valid UTF-8 with no NUL byte,
+  the text Postgres can store; the framework's own checks (schema,
+  filter, crud, entityui, auth, admin, webhook, a2a, setup, semantic,
+  ratelimit, desktop) all call it. `LogPanic` is a deferred
+  recover-and-log guard for callbacks; the access, event and hook
+  observers use it.
 
 ### Changed
+- **The pre-commit model review falls back to Claude on Haiku**
+  ([CONTRIBUTING](CONTRIBUTING.md)). Without the Codex CLI the hook failed
+  every commit. It now runs the same three reviews through the Claude
+  Code CLI on Haiku, read-only, and with neither CLI it warns and lets
+  the commit through.
+- **The `gofastr-host` agent skill describes when to load by intent**,
+  not by a list of about 150 trigger phrases. `gofastr agents skill`
+  writes the shorter description into a host app.
 - **BREAKING: `session.EncodeEvent` and `agent.MarshalArgs` are gone**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   Nothing called either helper in `framework/experimental/harness/session`
@@ -493,9 +513,12 @@ few lines, and link the PR or the docs page for the rest.
   - an `app.base_url` that is not a bare http(s) origin (a bare trailing
     `?` included, which uihost strict mode now refuses at boot too), and an
     `app.admin.path` that is not a clean prefix (`/` included);
-  - two entities whose create-flagged lists share one screen.
+  - two entities whose create-flagged lists share one screen;
+  - an entity with `exposure.mcp: true` and `exposure.crud: false`;
+  - sibling endpoints whose routes overlap.
 
-  It also warns on a `custom_form` that POSTs to a screen route, an
+  It also warns on a `nav[].href` nothing in the spec serves, a
+  `custom_form` that POSTs to a screen route, an
   image or file field with no file storage wired, and a screen, auth or
   admin mount, or entity API route whose first segment is a locale tag
   under `locale_prefixes`.
@@ -1708,6 +1731,12 @@ few lines, and link the PR or the docs page for the rest.
   from its product.
 - **The `keytrim` analyzer reads `r.PathValue` and identity headers** as
   request input, so a trimmed path or `X-Tenant-Id` value fires.
+- **The `recovercallback` analyzer reads atomic callback slots** loaded
+  directly, through a `Load` method value, or into an existing local. It
+  credits a deferred guard from another package only when the guard's
+  first statement always recovers and it never panics again, so a
+  helper that recovers after an early return, on the right of `&&`, or
+  re-panics no longer silences it.
 - **Docs:** crud lists default to 20 rows and the pagination parse
   helpers to 25 ([cursor pagination](framework/docs/content/cursor-pagination.md));
   `BoolDefault` answers its fallback when the flag store errors
@@ -1820,6 +1849,121 @@ few lines, and link the PR or the docs page for the rest.
   An edit form still needs the runtime: its native POST reaches a route
   that serves PUT and PATCH
   ([#715](https://github.com/DonaldMurillo/gofastr/issues/715)).
+- **Every CRUD read refuses a repeated single-value control** with 400
+  `query_key_repeated`: `cursor`, `direction`, `fields`, `limit`,
+  `offset`, `page`, `per_page`, `q`, `stream`, `trashed` and `where`, on
+  list (offset, cursor and stream pages), direct streaming and read-one.
+  The later values were never validated or applied, and
+  `?trashed=true&trashed=false` read `true`. A queryable column that
+  shares a control's name gets the same refusal. `sort` may still repeat
+  (16 clauses at most on an offset list), `include` keeps `include_repeated`, and a `q` the
+  host owns through `AllowedFilterParams` may repeat when the entity has
+  no `SearchFields` and no visible column whose name or wire name is `q`.
+  Each read now parses its query once, strictly; the cursor page used to
+  re-parse it up to eight times, leniently. The exported
+  `CrudHandler.ApplySoftDeleteFilter` and `ApplySoftDeleteFilterCount`
+  fail closed: an undecodable query or a repeated `trashed` keeps
+  `deleted_at IS NULL`. `filter.ListControlParams` lists the reserved
+  keys. **BREAKING** for a client that sent one twice.
+- **A CRUD read-one refuses a query pair that does not decode** with
+  400 `filter.query_undecodable`, as the list does. `?fields=x%ZZ`
+  returned the full row and `?trashed=true%ZZ` hid a trashed row.
+  **BREAKING** for a client that sent unencoded `;` or `%`.
+- **The admin Audit, Jobs and search pages show "Filter not applied"**
+  when a narrowing query pair does not decode, instead of listing every
+  row.
+- **The app spec refuses an entity or auth block under a node block**
+  (`type: div`, `header`, `article`, …), and **an `entity_form`
+  `fields:` entry the form cannot draw**: an unknown, hidden or
+  repeated name, or a read-only, auto-generated or server-filled field
+  on a create form. Both loaded before and drew nothing.
+- **`gofastr new route` refuses a `--handler` that is not a Go
+  identifier or selector**, and prints a hint to wrap a plain func in
+  `http.HandlerFunc`. `new route` and `new handler` refuse a `--method`
+  that is not an HTTP token.
+- **`gofastr build` names remedies it accepts** when it refuses a
+  settings file's command extension; it told you to pass `--config`,
+  which build does not take.
+- **The docpage pager's label and Previous/Next words translate**
+  through a new `PagerConfig.Ctx`.
+- **The relay never asks upstream for gzip**, so a client that sent no
+  `Accept-Encoding` gets the vendor's bytes as sent
+  ([relay](framework/docs/content/relay.md)).
+- **A plain cron leader lease that errors mid catch-up asks again at
+  the next minute**; one store error dropped the owed fixed-time jobs
+  for good.
+- **A panicking access observer no longer breaks `access.Can`** or the
+  router's serve hook; both recover, as hook and event do.
+- **`openapi.GatedHandler` applies the spec's `RequestView`**, so a
+  caller the predicate admits sees only the entities its session may
+  read. A predicate that admits callers with no session now hands them
+  a spec without the session-gated entities.
+- **`urlprefix.Middleware` rewrites an HTML body whose handler wrote
+  the status before any Content-Type**.
+- **`gofastr verify` reads the semantic-coverage manifest from the
+  go.work root**, where a workspace's tests write it.
+- **The 2FA boot refusal and the scaling guide spell the store's real
+  constructor**, `auth.NewEntityTwoFAStore(db, "auth_twofa",
+  auth.EntityTwoFAStoreConfig{EncryptionKey: key})`.
+- **uinodev1 refuses data-table columns that repeat a key**; the host
+  renderer panicked and the module route answered 500.
+- **Store slices**: a non-scalar slice's SSR stamp matches the
+  runtime's `JSON.stringify` paint (no `<` escapes, `""` for
+  null), and a Computed slice bound through `BindAttr` or `BindHTML`
+  is wired to the runtime.
+- **`html.TextArea` keeps a value's leading newline** through the HTML
+  parser.
+- **noderender**: an option with no `value` submits its text, and the
+  table family renders through the `core-ui/html` builders (`th` gets
+  its scope, `th` and `td` keep their `text`).
+- **repolint gates**: a URL string no longer hides an `Exposure.CRUD`
+  read, a `require (` opener with a comment is read, and every `test`
+  spelling of a `cmd/affected` substitution is flagged.
+- **Docs**: search query terms keep `-` and `_`; backup codes are eight
+  letters and digits; component sheets read the component-option
+  variables; seed references resolve only against one-column keys.
+- **semantic refuses text it cannot store**
+  ([semantic search](framework/docs/content/semantic-search.md)). `Index.Add`,
+  `IndexOwned` and the `/index` route refuse a document whose ID,
+  source, owner or text holds a NUL byte or invalid UTF-8. `Index.Add`
+  also refuses metadata whose JSON Postgres's jsonb cannot hold (an
+  escaped NUL, half a surrogate pair) and a `metadata["kind"]` that is
+  not valid UTF-8 without NUL; other metadata strings are normalized by
+  JSON encoding. A metadata number outside jsonb's numeric range
+  (`1e200000`) gets `*semantic.MetadataNumberRangeError` and 400
+  `document_metadata_number_out_of_range`, and Go metadata JSON cannot
+  encode (NaN) fails with its own error. Go callers get `*semantic.InvalidDocumentTextError`, and the route
+  answers 400 `document_invalid_text` for a NUL sent as `\u0000`, where
+  Postgres answered 500. Raw invalid UTF-8 in the body is still
+  `invalid_json_body`. The
+  memory store refuses the same text. Text a host `Options.Chunker`
+  produces is not re-checked.
+- **A panicking route gate or pre-route hook no longer escapes the
+  router.** A `SetRouteGate` panic is logged and counts as a refusal:
+  404 on the route, and the method is left out of a 405's `Allow`. A
+  `PreRoute` panic is logged and answers a localized 500 without
+  running middleware or the handler. Both used to abort the connection.
+  A CONNECT redirect no longer asks the gate about the bare target path.
+- **`gofastr --json` prints one JSON document on stdout on every
+  path** ([CLI](framework/docs/content/cli.md)). `generate <unknown>
+  --json` and `generate ts --json` printed prose and no document; status
+  lines no longer reach stdout in JSON mode. `generate --watch --json`
+  stays a stream, one document per generation. `--help` with `--json`
+  prints the usage on stderr and no document. Generator reports are
+  compact JSON and keep non-ASCII text as UTF-8.
+- **`gofastr generate entity -h` and `generate screen -h`** generated
+  files named `-h`; every generator answers help before doing work.
+- **`gofastr semantic clear --help` deleted the index**; it prints the
+  usage. `semantic stats` exits 1 when it cannot encode its report,
+  where it printed nothing and exited 0. A `--help` after `--` is text:
+  `semantic query -- --help` searches for it.
+- **A generated app boots with a `display.views` entry that has no
+  `where:`**; the view answers an error naming `extensions.go` until
+  its filter is registered there. Generated apps call
+  `fwApp.EntityUI(withViewStubs(fwApp, appExtensions))` in `app.go`; an app
+  generated earlier makes that edit by hand, since `--add` keeps
+  `app.go`, and copies `view_stubs.go` and the entity's
+  `view_stubs_<entity>_init.go` from a scratch regeneration.
 
 ## [0.96.0] - 2026-11-06
 

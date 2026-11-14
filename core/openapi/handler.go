@@ -74,7 +74,10 @@ func PublicHandler(spec *Spec) http.Handler {
 // disclosure we're trying to avoid). 404 keeps the existence of the
 // endpoint indistinguishable from a vanilla missing route. The allow
 // predicate is the only auth gate. The wrapped spec handler does NOT
-// re-check the user context.
+// re-check the user context. When the spec carries a RequestView, an
+// admitted caller gets that view, as with [Handler]: the predicate
+// decides who may read the spec, the view decides how much of it. A
+// spec with no RequestView is built once, when GatedHandler is called.
 //
 // Typical use:
 //
@@ -83,13 +86,19 @@ func PublicHandler(spec *Spec) http.Handler {
 //	    return ok && u.(*MyUser).IsAdmin()
 //	})
 func GatedHandler(spec *Spec, allow func(*http.Request) bool) http.Handler {
-	inner := PublicHandler(spec)
+	// A spec with no RequestView is one document for every caller:
+	// serve it built once, as PublicHandler does.
+	static := PublicHandler(spec)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if allow == nil || !allow(r) {
 			http.NotFound(w, r)
 			return
 		}
-		inner.ServeHTTP(w, r)
+		if spec.RequestView == nil {
+			static.ServeHTTP(w, r)
+			return
+		}
+		serveSpec(w, r, spec)
 	})
 }
 

@@ -18,7 +18,7 @@ shared store) or run on exactly one replica.
 | Subsystem | Default | Two-replica symptom | Replica-safe fix |
 |---|---|---|---|
 | Auth sessions | in-memory `MemorySessionStore` | login on A, logged-out on B; all sessions lost on restart | `auth.NewEntitySessionStore(db, "sessions")` |
-| 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | `auth.NewEntityTwoFAStore(db, "auth_twofa")`; the plugin creates the table itself |
+| 2FA enrollment | in-memory `MemoryTwoFAStore` | worse than scaling: a **restart** silently reverts 2FA accounts to password-only | `auth.NewEntityTwoFAStore(db, "auth_twofa", auth.EntityTwoFAStoreConfig{EncryptionKey: key})` (it returns an error too; see [auth](auth.md)); the plugin creates the table itself |
 | Magic-link, password-reset and email-verification tokens | in-memory `MemoryMagicLinkTokenStore`, one per plugin | link emailed from A is "invalid or expired" on B; a restart drops every pending link | `auth.NewSQLMagicLinkTokenStore(db)` as each plugin's `TokenStore` |
 | Login rate limits | in-process `RateLimiter` | attacker gets N attempts **per replica**; blocks don't propagate | set `RateLimiterConfig.Store: auth.NewSQLRateLimitStore(db, "auth_rate_limits")`; one budget across replicas, blocks propagate |
 | `framework/cron` scheduler | ticks in every process | every replica fires every job | one `GOFASTR_ROLE=worker` process owns it (see "Serve/worker roles"), or use `battery/queue`'s `DBQueue` (see below) |

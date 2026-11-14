@@ -409,3 +409,36 @@ func TestDirForPrefersTheOverrides(t *testing.T) {
 		t.Errorf("both overrides: DirFor = %q, want the semantic one", got)
 	}
 }
+
+// R11 U1-03: the writers resolve DefaultDir, which prefers the nearest
+// go.work ancestor, while DirFor returned the module root verify passed,
+// so a workspace layout read a manifest nobody wrote and reported "no
+// semantic-coverage manifest". Writer and reader now agree.
+func TestDirForFindsTheWorkspace(t *testing.T) {
+	t.Setenv("GOFASTR_SEMANTIC_COVERAGE_DIR", "")
+	t.Setenv("GOFASTR_AXE_COVERAGE_DIR", "")
+	ws, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := filepath.Join(ws, "app")
+	pkg := filepath.Join(app, "pkg")
+	if err := os.MkdirAll(pkg, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, body := range map[string]string{
+		filepath.Join(ws, "go.work"): "go 1.27\n\nuse ./app\n",
+		filepath.Join(app, "go.mod"): "module example.com/app\n",
+	} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(pkg) // where a test binary in the module runs
+	if w, r := DefaultDir(), DirFor(app); w != r || r != ws {
+		t.Fatalf("writer dir %q, reader dir %q; want both %q", w, r, ws)
+	}
+	if got := DirFor(filepath.Join(ws, "lone")); got != ws {
+		t.Errorf("DirFor under the workspace = %q, want %q", got, ws)
+	}
+}

@@ -118,6 +118,12 @@ func newTransport() *http.Transport {
 		ExpectContinueTimeout: 1 * time.Second,
 		ResponseHeaderTimeout: 10 * time.Second,
 		ForceAttemptHTTP2:     true,
+		// Proxied bytes pass byte-identical. Left on, a request that
+		// carries no Accept-Encoding gets "gzip" added by the transport,
+		// which then unpacks the answer: the client received plain bytes
+		// the vendor never sent. The client's own Accept-Encoding still
+		// reaches the vendor as sent.
+		DisableCompression: true,
 	}
 }
 

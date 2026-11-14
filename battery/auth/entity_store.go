@@ -15,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -431,7 +432,7 @@ func (s *EntityUserStore) FindByEmail(ctx context.Context, email string) (User, 
 // FindByID looks up a user by their unique ID. Returns ErrUserNotFound
 // when no row matches; any other error is returned verbatim.
 func (s *EntityUserStore) FindByID(ctx context.Context, id string) (User, error) {
-	if !storableText(id) {
+	if !textsafe.Storable(id) {
 		return nil, ErrUserNotFound
 	}
 	q := s.qByID("SELECT %s, %s, %s FROM %s WHERE %s = $1")

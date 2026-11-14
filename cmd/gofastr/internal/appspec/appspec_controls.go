@@ -124,6 +124,8 @@ func AppSpecTableRows(b AppSpecBlock) ([][]string, error) {
 	return out, nil
 }
 
+// These spec checks cannot share code with emitted Go constructors.
+// TestRenderPanicParity in render_parity_test.go keeps their refusals aligned.
 // validateAppSpecControlBlock enforces the props each control's
 // framework/ui component refuses to render without: a missing label or
 // name would otherwise ship as a panic on the generated screen.

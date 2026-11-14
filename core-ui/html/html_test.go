@@ -751,6 +751,20 @@ func TestTH(t *testing.T) {
 		assertContains(t, th, `scope="row"`)
 		assertContains(t, th, `role="rowheader"`)
 	})
+
+	// A row-group header heads rows; the scope keyword is ASCII
+	// case-insensitive, as HTML reads it.
+	for _, c := range []struct{ scope, scopeOut, role string }{
+		{"rowgroup", "rowgroup", "rowheader"},
+		{"RowGroup", "rowgroup", "rowheader"},
+		{"ROW", "row", "rowheader"},
+		{"colgroup", "colgroup", "columnheader"},
+		{"COLGROUP", "colgroup", "columnheader"},
+	} {
+		th := TH(THConfig{Scope: c.scope}, render.Text("Q1"))
+		assertContains(t, th, `scope="`+c.scopeOut+`"`)
+		assertContains(t, th, `role="`+c.role+`"`)
+	}
 }
 
 func TestTD(t *testing.T) {

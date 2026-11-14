@@ -235,9 +235,13 @@ type cliSpec struct {
 
 // RunGenerateCLI implements `gofastr generate cli`.
 func RunGenerateCLI(args []string) {
+	const usage = "Usage: gofastr generate cli [--from-openapi=<spec.json|url>] [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]"
+	if showGenerateHelp(args, usage) {
+		return
+	}
 	opts, err := parseCLIOptions(args)
 	if err != nil {
-		failGenerateArgs(args, err, "Usage: gofastr generate cli [--from-openapi=<spec.json|url>] [--out=cmd/<binary>] [--binary=<name>] [--api-prefix=api] [--only=a,b] [--exclude=c] [--verbs=list,get | --verbs='posts=list,get;users=*'] [--force] [--dry-run] [--json]", "--force only matters once, to replace an edited CLI written before the CLI became derived.")
+		failGenerateArgs(args, err, usage, "--force only matters once, to replace an edited CLI written before the CLI became derived.")
 		cli.OsExit(1)
 		return
 	}

@@ -34,7 +34,7 @@ func TestAuthFormActionFollowsBasePath(t *testing.T) {
 		bp.App.Auth.DevMode = true
 		bp.App.Auth.BasePath = base
 		bp.Screens = []AppSpecScreen{{Name: "signin", Route: "/signin", Type: "page", Body: []AppSpecBlock{{
-			Type:     "section",
+			Kind:     "section",
 			Children: []AppSpecBlock{{Kind: kind, Props: map[string]any{"action": action}}},
 		}}}}
 		return bp

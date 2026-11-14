@@ -117,6 +117,26 @@ func TestOpenAPI_GatedHandlerAdmitsAllowed(t *testing.T) {
 	}
 }
 
+// R11 U4-03: GatedHandler served the prebuilt full document, so a
+// spec's RequestView (the per-caller entity filter) never ran for a
+// caller the predicate admitted. An admitted caller sees only its view.
+func TestGatedHandlerUsesRequestView(t *testing.T) {
+	spec := docsSpec()
+	spec.RequestView = func(*http.Request) *Spec {
+		v := NewSpec("Orders", "2.1.0")
+		v.AddPath("GET", "/ping", *NewOperation())
+		return v
+	}
+	gated := GatedHandler(spec, func(*http.Request) bool { return true })
+
+	rr := httptest.NewRecorder()
+	gated.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK || strings.Contains(body, "/orders") || !strings.Contains(body, "/ping") {
+		t.Fatalf("SECURITY: [openapi] gated spec ignored RequestView (%d): %s", rr.Code, body)
+	}
+}
+
 // TestOpenAPI_GatedHandlerNilAllowDenies verifies a nil predicate
 // fail-closes, never returns the spec.
 func TestOpenAPI_GatedHandlerNilAllowDenies(t *testing.T) {
@@ -197,5 +217,21 @@ func TestDocsHandler_CarriesContentSecurityPolicy(t *testing.T) {
 
 	if rr.Header().Get("Content-Security-Policy") == "" {
 		t.Fatalf("SECURITY: [openapi] swagger UI missing Content-Security-Policy header: %#v", rr.Header())
+	}
+}
+
+// A spec with no RequestView is the same document for every admitted
+// caller, so GatedHandler serves bytes built once, as PublicHandler does,
+// and does not rebuild and marshal the spec per request.
+func TestGatedHandlerStaticSpecBuiltOnce(t *testing.T) {
+	spec := NewSpec("test", "1.0")
+	spec.SetDescription("at construction")
+	gated := GatedHandler(spec, func(*http.Request) bool { return true })
+	spec.SetDescription("rebuilt per request")
+
+	rr := httptest.NewRecorder()
+	gated.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if body := rr.Body.String(); rr.Code != http.StatusOK || !strings.Contains(body, "at construction") {
+		t.Fatalf("got %d %s, want the document built once at construction", rr.Code, body)
 	}
 }

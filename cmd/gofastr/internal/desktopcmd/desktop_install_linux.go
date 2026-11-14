@@ -19,10 +19,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/cmd/gofastr/internal/cli"
 	"github.com/DonaldMurillo/gofastr/core/handler"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 const linuxInstallReceiptName = ".gofastr-install.json"
@@ -254,7 +254,7 @@ func linuxUserInstallPaths() (linuxInstallPaths, error) {
 		data = filepath.Join(home, ".local", "share")
 	}
 	for _, value := range []string{home, data} {
-		if !filepath.IsAbs(value) || !utf8.ValidString(value) || strings.ContainsAny(value, "=\x00\n\r\t") {
+		if !filepath.IsAbs(value) || !textsafe.Storable(value) || strings.ContainsAny(value, "=\n\r\t") {
 			return linuxInstallPaths{}, fmt.Errorf("HOME and XDG_DATA_HOME must resolve to absolute UTF-8 paths without '=', NUL, or line/control separators")
 		}
 		for _, b := range []byte(value) {
@@ -577,7 +577,7 @@ func verifyLinuxInstalledMode(root *os.Root, name string, mode fs.FileMode) erro
 	return nil
 }
 func linuxInstalledDesktopEntry(manifest linuxBundleManifest, root, launcher string) ([]byte, error) {
-	if !utf8.ValidString(launcher) || strings.ContainsAny(launcher, "=\x00\n\r\t") {
+	if !textsafe.Storable(launcher) || strings.ContainsAny(launcher, "=\n\r\t") {
 		return nil, fmt.Errorf("desktop executable path contains unsupported characters")
 	}
 	quoted := `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "`", "\\`", `$`, `\$`, `%`, `%%`).Replace(launcher) + `"`

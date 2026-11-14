@@ -26,6 +26,9 @@ func (a *searchAdapter) Index(ctx context.Context, id, text string) error {
 // IndexOwned indexes a chunk as a search.Document owned by owner, so the
 // search store's eraser deletes it with the user.
 func (a *searchAdapter) IndexOwned(ctx context.Context, id, owner, text string) (err error) {
+	if err := validateDocumentText(Document{ID: id, Owner: owner, Text: text}); err != nil {
+		return err
+	}
 	// b is a host-supplied search.Backend reached from Index.Add/Remove on
 	// dispatch paths with no per-request recover; a panic becomes an
 	// attributed error instead of a process kill.

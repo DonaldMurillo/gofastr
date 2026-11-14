@@ -276,6 +276,7 @@ func Open(opts Options) (Index, error) {
 		opts.SnapshotEvery = 1000
 	}
 	idx := &index{
+		restoring:     true,
 		embedder:      opts.Embedder,
 		chunker:       opts.Chunker,
 		store:         opts.Store,
@@ -298,6 +299,7 @@ func Open(opts Options) (Index, error) {
 		}
 		return nil, err
 	}
+	idx.restoring = false
 	idx.storeDim() // seed the cache at startup, not on a write
 	idx.registerEraser()
 	return idx, nil

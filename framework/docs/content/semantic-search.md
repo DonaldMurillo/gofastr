@@ -144,7 +144,7 @@ w.Run(ctx, "./src", "./docs")     // until ctx cancellation
 w.ScanOnce(ctx, "./src")          // one-shot
 ```
 
-A file the chunker refuses (bytes that are not UTF-8, a fallback chunker that errors) is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
+A file refused for invalid document text or a chunking error is logged and left out of the index, along with any version of it indexed before; the scan goes on, and the watcher retries the file once it changes. An embedder or store error still stops `Run`.
 
 Only regular files are indexed. Symlinks, devices, sockets and pipes under a root are skipped, so a link to `~/.ssh/id_ed25519` or `/dev/zero` is never read, and a link inside the root to another file there is not indexed twice. Each file is opened through an `os.Root` on its root, so a path swapped for a link out of the root between the walk and the read is refused, not followed. The open does not wait, so a file swapped for a FIFO is skipped instead of blocking the scan until a writer appears, and a root directory swapped for one fails the scan with an error. The read stops at `MaxFileSize`: a file that grew past it since the walk measured it, or was deleted, is skipped, and the document indexed for its path before is removed, whether this watcher or an earlier process indexed it. A root may name one file (`ScanOnce(ctx, "README.md")`, `gofastr semantic index README.md`); it is confined to the file's directory and indexes only that file.
 
@@ -176,6 +176,13 @@ gofastr semantic clear
 `query` and `stats` write exactly one JSON document to stdout, including
 on failure. Errors use `{"error":"..."}`, print a diagnostic to stderr,
 and exit nonzero. A remote stats response must itself be one JSON document.
+
+`--help` (or `-h`) before `--` prints usage and exits successfully without
+running the command: `clear --help` keeps the index, and `index --help` or
+`watch --help` does not scan. Query and stats help goes to stderr without a
+JSON document. After `--`, help-shaped tokens are query text:
+`gofastr semantic query -- --help` searches for the literal `--help`;
+`q` is the query alias.
 
 `query` takes one query (quote a query of several words; `--` before one
 that starts with a dash) and its flags before or after it, as `-k 5` or
@@ -275,6 +282,38 @@ level with an orthogonal one. A response the route cannot encode answers 500 wit
 never a 200 with an empty one. `POST /index` answers 400 for a document with
 no id (`doc_id_is_required`) or one the chunker refuses
 (`document_unchunkable`); the chunker's error text stays in the log.
+Invalid UTF-8 in the JSON body answers 400 `invalid_json_body`. Decoded NULs
+in `id`, `source`, `text`, `owner`, or encoded metadata strings or keys answer
+400 `document_invalid_text`. `Index.Add` validates the last document per ID
+before chunking or storage with `*semantic.InvalidDocumentTextError`, whose
+`Field` identifies the refused field without echoing its value. Superseded
+duplicates do not participate. Metadata validation follows encoded JSON,
+including custom encoders, every nested string value and key, and duplicate
+object members. Omitted fields do not participate. Ordinary Go strings with
+invalid UTF-8 are normalized by JSON encoding, except `metadata["kind"]`:
+PgVectorStore also binds it raw to a text column, so that string must itself
+be valid UTF-8 without NUL bytes. An escape for half a surrogate pair
+(`"\ud800"` in a `json.RawMessage`) is refused too: Go would decode it to
+U+FFFD, but Postgres's jsonb input rejects it. A metadata number outside
+jsonb's numeric range (more than 131072 digits before the decimal point or
+16383 after it, or an exponent above 1073741823, which jsonb refuses even on
+zero; `1e200000`, `1e-16384`, `0e1073741824`) is refused on every store with
+`*semantic.MetadataNumberRangeError`, and the route answers 400
+`document_metadata_number_out_of_range`; numbers inside it, such as `1e400`,
+are kept as written. A Go caller's metadata that cannot be encoded as JSON at
+all (a NaN, a channel) fails on every store with a plain error naming the
+encoding, not an `InvalidDocumentTextError`; the route never sees one,
+since JSON has no NaN. The in-memory store and `IndexOwned` method
+of `WrapSearchBackend`'s owned keyword adapter also refuse unstorable text.
+The phrase keys are `semantic.document_invalid_text` and
+`semantic.document_metadata_number_out_of_range`; a host catalog can
+translate them without changing the wire reason.
+
+When opening an older index, invalid stored chunks retain their vectors but
+are skipped in the keyword index with a warning, both for snapshot rebuilds
+and WAL replay. Live additions and direct `IndexOwned` calls remain strict.
+The watcher logs document-text refusals separately from chunking failures
+and continues indexing the rest of the tree.
 
 `POST /index` and `POST /query` decode their bodies strictly: duplicate or
 case-folded top-level JSON keys are refused with 400 rather than silently
@@ -417,8 +456,9 @@ logging the mutation. In-memory stores return a nil error.
 **Replace is one transaction.** `Index.Add` and `Index.Remove` on a
 `PgVectorStore` delete a document's old chunks and insert its new ones in a
 single transaction. Metadata is marshalled before anything is deleted, and a
-failed insert (metadata JSON cannot carry, such as `NaN`, or a NUL byte in the
-text) rolls the delete back, so the old version stays. The transaction first
+failed insert (metadata JSON cannot carry, such as `NaN`) rolls the delete
+back, so the old version stays. Unstorable document text is refused by
+`Index.Add` before replacement begins. The transaction first
 takes a transaction-scoped advisory lock (`pg_advisory_xact_lock`) per
 document, keyed on the table's OID and the document ID, so two replicas
 replacing the same document run one after the other and the table keeps one

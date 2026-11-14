@@ -1,5 +1,9 @@
 # GoFastr UI architecture
 
+Strict sitemap origin validation lives in `uihost.InvalidSitemapBaseURL`.
+App-spec validation calls the same check before generation; an omitted
+origin remains valid there because generated apps default to localhost.
+
 After a repeater row removal, focus recovery tries remaining row controls
 in order and verifies that each focus attempt succeeded. Invisible controls
 must not strand focus on the document body; Add is the final fallback.
@@ -199,7 +203,8 @@ registered route cannot fill its required outlet.
 |---|---|---|
 | **Initial load** of any URL | Full SSR via `framework/uihost` → `app.RenderPage` → `ScreenLoader.Load(ctx)` → `Screen.RenderCtx(ctx)` | One HTML response with everything inline |
 | **Page → page navigation** (`/a` → `/b`) | Client-side router intercepts `<a>` click, fetches partial via `X-Gofastr-Navigate: 1` + `X-Gofastr-From: /a`, swaps the content cell of the deepest layout layer the two routes share (`X-Gofastr-Swap` names it), caches the previous page for instant back. No shared root → full fetch + shell swap | One small partial HTML response: only the screen content plus whatever layout layers actually differ; shared chrome never re-sent |
-| **In-page state change** (sort, paginate, expand a row, open a tab) | Click on an island element → RPC to the island's handler → server returns new island HTML → runtime swaps just the island's slot | One small RPC response with the changed island HTML |
+| **A list screen's own sort, page or filter** | A query-string link on the same route (`<a href="?p=2">`). The router intercepts it like a page navigation and the server renders the list from the query | The same partial response as a navigation |
+| **In-page state change on an island** (sort or page a region embedded in a page, expand a row, open a tab) | Click on an island element → RPC to the island's handler → server returns new island HTML → runtime swaps just the island's slot | One small RPC response with the changed island HTML |
 | **Passive freshness** (a counter, a status, a dashboard that should stay roughly current) | `data-cui-poll` region (or `Builder.Poll` widget) → interval GET of a server-rendered fragment → runtime swaps the region | One small GET per interval; no connection held, any replica answers |
 | **Server-pushed update** (background event, another user's action) | Server renders fresh island HTML and calls `Manager.PushUpdate` → `island` SSE frame → runtime swaps the matching `[data-island="…"]` region | SSE frames over a single long-lived connection |
 
@@ -255,7 +260,8 @@ RPC endpoints and (optionally) signal bindings. It owns:
 2. Its server-side state (in the DB: the interactive layer is stateless, so never in process RAM; any replica serves any request).
 3. Its update logic (handlers that re-render and respond).
 
-Pagination is an island. A sortable table is an island. A "favorite" toggle
+A pager or sortable table embedded in a page is an island (a list
+screen's own pager is query-string links; Hard rule 1). A "favorite" toggle
 on a card is an island. A page header that needs to react to user-scope
 changes is an island. **Inline content that never changes** (a static
 heading, a piece of marketing copy, a footer) is **not** an island. It's
@@ -299,7 +305,7 @@ called `render.ReserveID`. Explicit ids are never namespaced or changed.
 
 The framework primitives live in:
 
-- `core-ui/widget`: the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...).RPCWithSignal(...)`)
+- `core-ui/widget`: the builder API (`widget.New(name).Mount(...).Slot(...).Signal(...).RPC(...)`)
 - `core-ui/node`: the JSON-clean UI element tree (`Node`, `Action`, tree
   helpers). A dependency-free, serializable description of a screen. Both the
   app spec codegen (`cmd/gofastr`) and Kiln's World IR (`kiln/world`, which
@@ -2179,7 +2185,7 @@ Future agents: **if you find yourself doing one of these, stop and re-read this 
 > Symptom: every `<a href>` is hijacked by the runtime to do partial fetches.
 
 That breaks the model for two reasons:
-- **State-change interactions** like pagination should NOT be `<a href="?p=2">` links at all. They are island RPCs. The fact that I built pagination as a route-changing link is the root cause; "fixing" the link interception only papered over it.
+- **State-change interactions** on a region embedded in a page (a pager inside a card, an expand) are island RPCs, not plain links. `framework/ui.Pagination` keeps its anchors there and puts the RPC contract on them (`Island`), so the href still works without script. A list screen's own sort, page and filter are query-string links (`<a href="?p=2">`) that the router intercepts like any navigation; see Hard rule 1 below. The root cause was state that got a route of its own; "fixing" the link interception only papered over it.
 - **Cross-page navigation** (a real `/a` → `/b`) IS supposed to be intercepted (Angular-router style with cache). Don't disable that to "fix" pagination. Pagination wasn't a route in the first place.
 
 ### Failure 2: "Make every interaction a server round-trip via full nav"
@@ -2194,8 +2200,8 @@ island RPC.
 
 That's a different model (Stimulus-style). It conflicts with "islands are
 server-driven" and "the server is the source of truth". For datasets
-larger than first paint it just breaks. Use an island RPC and let the
-server do the math.
+larger than first paint it just breaks. Let the server do the math: a
+query-string link for a list screen, an island RPC for an embedded region.
 
 ### Failure 4: "Ship CSS from the app / generator to make it look right"
 > Symptom: an `AppSpecBaseCSS` string (or an app `theme.go`, or a page)
@@ -2295,14 +2301,15 @@ is cached; an accepted registration never loses to an in-flight build.
    ```go
    def := widget.New("customer-list").
        Slot("rows", &CustomerListRows{State: …}).
-       RPCWithSignal("POST", "/islands/customers/page", pageHandler, "customer-list-rows")
+       RPC("POST", "/islands/customers/page", pageHandler)
    ```
 2. The slot's component renders the current state. The handler reads
    request data, mutates state, returns the new HTML.
-3. The runtime sees `data-cui-rpc="/islands/customers/page"` on the
-   pagination button and `data-cui-signal="customer-list-rows"` with
-   mode=html on the rows wrapper. Click → RPC → response → swap.
-4. No `<a href>`. No URL change unless you opt into deep-linking via
+3. The runtime sees `data-cui-rpc="/islands/customers/page"` and
+   `data-cui-rpc-signal="customer-list-rows"` on the pagination control,
+   and `data-cui-signal="customer-list-rows"` with mode=html on the rows
+   wrapper. Click → RPC → response → swap.
+4. No route of its own. No URL change unless you opt into deep-linking via
    `pushState` from the handler's response (still no full reload).
 
 ### URL params are the source of truth
@@ -2998,7 +3005,7 @@ The host SSR-embeds an inert JSON block in `<head>`:
 The runtime reads `JSON.parse(document.getElementById('gofastr-catalog').textContent)`
 at boot, so `loadComponentCSS` can resolve a marker name to a URL.
 This is strict-CSP-clean (no inline JS, no separate script src).
-The legacy `/__gofastr/catalog.js` endpoint now returns 410 GONE.
+The legacy `/__gofastr/catalog.js` endpoint is removed and returns 404.
 
 ### The headless layer (`framework/headless`)
 

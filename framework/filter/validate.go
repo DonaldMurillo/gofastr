@@ -5,6 +5,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // predFieldIndex is the resolved allow-list a predicate's leaf fields are
@@ -207,7 +208,7 @@ func validateLeaf(p *Predicate, idx *predFieldIndex) error {
 	case OpLike:
 		// A substring, matched as text; never coerced, but bound as
 		// text, so it must be text Postgres stores (CoerceValue).
-		if !storableText(p.Value) {
+		if !textsafe.Storable(p.Value) {
 			return valueTypeError(sent, t)
 		}
 	case OpIn:

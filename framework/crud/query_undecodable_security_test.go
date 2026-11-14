@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
@@ -59,5 +60,36 @@ func TestStreamListRefusesUndecodable(t *testing.T) {
 	ch.ServeStreamingList(req.Context(), rec, req, []string{"id", "name"}, nil, nil, nil, 1, 10, nil)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "query_undecodable") {
 		t.Errorf("ServeStreamingList ?trashed=%%ZZ = %d %s, want 400 query_undecodable", rec.Code, rec.Body)
+	}
+}
+
+// Read-one read its query through URL.Query, which drops a pair that does
+// not decode: ?fields=name%ZZ answered 200 with the full row, ?include=
+// x%ZZ loaded nothing, and ?trashed=true%ZZ hid a trashed row the caller
+// asked for (404). It parses strictly, as the list does.
+func TestGetRefusesUndecodableQuery(t *testing.T) {
+	db := setupDB(t, `CREATE TABLE items (id TEXT PRIMARY KEY, name TEXT, deleted_at TEXT)`)
+	ent := entity.Define("items", entity.EntityConfig{
+		Name: "items", Table: "items",
+		Fields: []schema.Field{{Name: "name", Type: schema.String}},
+		Scope:  &entity.ScopeConfig{SoftDelete: true},
+	}.WithTimestamps(false))
+	ent.SetDB(db)
+	seedRows(t, db, "items", []map[string]any{{"id": "a", "name": "n", "deleted_at": "2024-01-01T00:00:00Z"}})
+	ch := NewCrudHandler(ent, db)
+	get := func(query string) *httptest.ResponseRecorder {
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/items/a"+query, nil), "u1")
+		req.SetPathValue("id", "a")
+		rec := httptest.NewRecorder()
+		ch.Get()(rec, req)
+		return rec
+	}
+	for _, q := range []string{"?fields=name%ZZ", "?include=x%ZZ", "?trashed=true%ZZ", "?trashed=true&x=%ZZ", "?trashed=true;x"} {
+		if rec := get(q); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "query_undecodable") {
+			t.Errorf("GET %s = %d %s, want 400 query_undecodable", q, rec.Code, rec.Body)
+		}
+	}
+	if rec := get("?trashed=true&fields=name"); rec.Code != http.StatusOK {
+		t.Errorf("GET ?trashed=true&fields=name = %d %s, want 200", rec.Code, rec.Body)
 	}
 }

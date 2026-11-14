@@ -34,8 +34,14 @@ host := uihost.New(ui,
 | Site icon | the host | `WithAppIcon` (preferred: one source image derives the whole icon surface) or `WithFavicon` |
 | Sitemap | the host | `WithSitemap` with a valid `BaseURL`: a bare http/https origin (host, no userinfo/query/fragment/path; deployment path prefixes belong in the static Builder's `BasePath`) |
 | Robots | the host | `WithRobots` |
-| Internal links | the site chrome (every layout's header, sidebar, footer), **at boot** | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, or any GET route on the framework router once the route table is complete. A catch-all GET route (`/{path...}`) satisfies the check for every path it claims, so links under one are accepted, not verified |
+| Internal links | the site chrome (every layout's header, sidebar, footer), **at boot** | every internal `href` resolves to something the app serves: a registered screen (dynamic routes included), a static file, or any registered HTTP path on the framework router once the route table is complete (the path-only probe also credits routes registered for other methods). A catch-all GET route (`/{path...}`) satisfies the check for every path it claims, so links under one are accepted, not verified |
 | Axe coverage | every page screen, **dev only** | the axe-coverage manifest records at least one scan that resolves to the route |
+
+`uihost.InvalidSitemapBaseURL(base)` returns the reason an origin is
+invalid, or an empty string when it is valid. Strict mode and app-spec
+validation share this check. An empty sitemap origin is invalid at
+runtime; an omitted `app.base_url` is allowed because generated apps
+fall back to localhost.
 
 Drawers, sheets, and dialogs are exempt from the screen checks: they
 render inside a page and own no `<head>`. Screens a battery registers
@@ -46,6 +52,12 @@ battery's *routes* are part of what the app serves, so the link check
 runs after batteries have initialized.
 
 ## The internal-link check
+
+For app specs, `gofastr validate` and generation warn about an unknown
+`nav[].href`, naming its spec path. They cannot enumerate routes from owned
+Go files or every static input. The lint estimates known routes, locale
+prefixes and static files; strict boot checks the complete mounted table
+and refuses an unserved chrome link.
 
 The chrome is where broken links are born: a footer's Legal column, a
 header's nav, a sidebar's entries are all declared as data at wiring

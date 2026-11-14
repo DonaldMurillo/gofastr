@@ -14,7 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	"github.com/DonaldMurillo/gofastr/battery/desktop/internal/ffi"
@@ -89,7 +88,7 @@ func validActivationScheme(s string) bool {
 }
 
 func validActivationURL(raw, scheme string) bool {
-	if len(raw) == 0 || len(raw) > activationURLLimit || !utf8.ValidString(raw) || strings.IndexByte(raw, 0) >= 0 {
+	if len(raw) == 0 || len(raw) > activationURLLimit || !textsafe.Storable(raw) {
 		return false
 	}
 	u, err := url.Parse(raw)
@@ -300,7 +299,7 @@ func (b *activationBroker) run(urls []string) {
 // Requiring an existing local bus avoids GIO's autolaunch fallback and remote
 // transports. No session bus is created and no desktop preferences are changed.
 func validActivationAddress(address string) bool {
-	if address == "" || len(address) > 4096 || !utf8.ValidString(address) || strings.IndexByte(address, 0) >= 0 {
+	if address == "" || len(address) > 4096 || !textsafe.Storable(address) {
 		return false
 	}
 	for _, entry := range strings.Split(address, ";") {

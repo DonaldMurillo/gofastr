@@ -188,6 +188,29 @@ of `Exposure.MCP`. To end up with no surface at all, the entity needs
 own access rules (an `Endpoint`'s HTTP handler inherits the route's
 middleware chain, its MCP twin does not — see `Endpoint.MCPGate`).
 
+`framework.ValidateExposure(name, cfg)` checks the same exposure contract
+as entity registration with a database: `Exposure.MCP: true` cannot be
+combined with `Exposure.CRUD: false`, because the generated MCP tools
+dispatch through the HTTP routes. It accepts the config returned by a
+declaration's `Config()`; grouped and flat declaration spellings have
+already normalized there. Registration without a database keeps its
+existing behavior and does not apply this check.
+
+Generators can also call `framework.ValidateEntityEndpointRoutes(mount,
+opts, withEntityUI, endpoints, existing...)` before publishing routes.
+Pass the CRUD mount (empty when disabled), its `crud.CrudRouteOptions`,
+and endpoints whose `Path` is the resolved absolute HTTP route, including
+API or group prefixes. `withEntityUI` includes bulk, export and picker
+routes; `existing` optionally supplies the app router's registered routes.
+The check refuses equal route shapes and overlapping ServeMux patterns,
+including sibling endpoints. Pass each entity's complete endpoint slice
+in registration order so sibling overlaps are checked together. A collision
+involving an endpoint, or a malformed endpoint route, returns
+`*framework.EndpointRouteError`; its zero-based `Index` identifies the refused
+endpoint in that slice, and `Unwrap` exposes the cause. Collisions while
+reserving generated CRUD or EntityUI routes return an ordinary error because
+no endpoint in the slice caused them. App registration uses this same check.
+
 Default-on routes are not default-open routes. Every one of them refuses an
 anonymous caller with 401 unless the entity declares `OwnerField`, `Access`,
 or `Public`. See **Default CRUD authentication** below, and note the limit
@@ -238,8 +261,9 @@ Empty
 text stays an
 empty string, since that is a value a user can mean.
 
-`String`, `Text`, `Relation`, `Image` and `File` values must be valid UTF-8
-without NUL bytes. Unstorable
+`String`, `Text`, `Relation`, `Image` and `File` values must pass
+`textsafe.Storable`: valid UTF-8 without NUL bytes. Postgres otherwise
+refuses a text bind with SQLSTATE `22021`. Unstorable
 text is a validation 400 with code `invalid_text` keyed by the field's wire
 name, before any database write. This applies to create, update and upsert,
 including form and multipart input. JSON fields also refuse NUL in decoded
@@ -1433,6 +1457,31 @@ name ends in a suffix but whose name before it is no field (`opt_in`
 with no `opt` field) filters as itself, at the top level, in
 `?rel.field=` and in `include=rel(…)`.
 
+**Single-value controls are sent once.** CRUD refuses a repeated
+`cursor`, `direction`, `fields`, `include`, `limit`, `offset`, `page`,
+`per_page`, `q`, `stream`, `trashed` or `where` key on every HTTP read:
+list (offset, cursor and stream modes), direct streaming, and read-one.
+The response is **400** `query_key_repeated` naming the key, except
+`include` keeps **400** `include_repeated` ([includes](includes.md)).
+Even two equal or empty values count as a repeat. If several controls
+repeat, the alphabetically first key decides the refusal. An undecodable
+query is refused before these checks (`filter.query_undecodable`, below).
+
+Name several fields in one value (`?fields=title,body`), include paths
+in one value (`?include=author,comments`), and combine predicates inside
+one `?where=` tree. **`sort` may repeat**: every occurrence contributes
+sort clauses on an offset list, up to 16 clauses in total. A cursor
+list orders by its cursor and reads no `sort`.
+
+The exception is a `q` in `AllowedFilterParams` on an entity with no
+`SearchFields` and no visible queryable column whose name or `WireName`
+is `q`: it belongs to the host, may repeat, and the host reads every
+value. A queryable column named `q` on an entity with no `SearchFields`
+still filters on list requests, and a repeated `q` there is refused at
+entry as `query_key_repeated`, on read-one too. Every other
+single-value control is checked at entry the same way, including when a
+column shares its name.
+
 **A bare key that reads two ways is a 400.** When an entity has both
 `check` and `check_in`, `?check_in=x` could mean `check_in = x` or
 `check IN (x)`. The parser does not guess: it answers **400**
@@ -1514,9 +1563,22 @@ separator and keeps the rest, so `?status=paid%ZZ` read as no filter
 and `?cursor=%ZZ` as no cursor (a walk restarted at page 1), each a 200
 with every row. The list (offset, cursor and stream pages alike)
 answers 400 `filter.query_undecodable` instead, `LenientFilters`
-included; send `;` as `%3B`. Code that reads a list query itself does
+included; send `;` as `%3B`. Read-one (`GET /api/<entity>/<id>`)
+answers the same 400: there `?fields=title%ZZ` returned the full row
+and `?trashed=true%ZZ` hid the trashed row asked for. Code that reads a list query itself does
 the same with `filter.ParseQueryStrict(r.URL.RawQuery)`, which
-`filter.ParseFilters` and `filter.ParseSort` now call.
+`filter.ParseFilters` and `filter.ParseSort` also call. CRUD parses the
+wire query strictly once at entry and shares the decoded values through
+pagination, cursor anchors, projection, includes, filtering and streaming.
+`filter.ListControlParams()` returns a sorted copy of the reserved list
+control keys for callers that need to classify those keys.
+
+The exported `crud.CrudHandler.ApplySoftDeleteFilter` and
+`crud.CrudHandler.ApplySoftDeleteFilterCount` helpers also parse strictly.
+They cannot return a query error, so an undecodable pair anywhere in the
+query or a repeated `trashed` key keeps the `deleted_at IS NULL` filter,
+even for an authenticated caller. A single `?trashed=true` grants trashed
+visibility only to an authenticated caller on a soft-delete entity.
 
 ## Nested predicate filters (`?where=`)
 

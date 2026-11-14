@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/DonaldMurillo/gofastr/battery/queue"
 	appui "github.com/DonaldMurillo/gofastr/core-ui/app"
@@ -146,9 +144,14 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 			Ctx:       ctx,
 		}
 	}
+	var dropped render.HTML
+	if droppedNarrowing(r, "status") {
+		dropped = filterNotApplied(ctx)
+	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
 		header,
 		resultNotice(ctx),
+		dropped,
 		b.queueFilter(ctx, status, stats),
 		b.jobsTable(ctx, jobs, status, page, canReplay, 2, pager, false),
 	)
@@ -292,7 +295,7 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 	// The id arrives percent-decoded. One that is not storable text
 	// (invalid UTF-8 or a NUL) names no job, and Postgres refuses it in
 	// the queue's and the audit log's text binds (22021, a 500).
-	if id == "" || !utf8.ValidString(id) || strings.IndexByte(id, 0) >= 0 {
+	if id == "" || !textsafe.Storable(id) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}

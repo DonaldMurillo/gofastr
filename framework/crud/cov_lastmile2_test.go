@@ -60,7 +60,7 @@ func covIncludeReq(t *testing.T, include string) *http.Request {
 // include.go:53: a path that yields zero segments ("." splits to nothing).
 func TestParseIncludeTree_EmptySegment(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
-	nodes, err := parseIncludeTree(covIncludeReq(t, "."), ch.Entity, reg)
+	nodes, err := parseIncludeTreeQ(queryValues(t, covIncludeReq(t, ".")), ch.Entity, reg)
 	if err != nil {
 		t.Fatalf("empty-segment include err = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestParseIncludeTree_NestedTargetUnregistered(t *testing.T) {
 	reg := stubRegistry{byName: map[string]*entity.Entity{
 		"posts": ch.Entity, // author -> users missing
 	}}
-	_, err := parseIncludeTree(covIncludeReq(t, "author.profile"), ch.Entity, reg)
+	_, err := parseIncludeTreeQ(queryValues(t, covIncludeReq(t, "author.profile")), ch.Entity, reg)
 	if err == nil || !strings.Contains(err.Error(), "not registered") {
 		t.Fatalf("nested unregistered target err = %v, want 'not registered'", err)
 	}
@@ -88,7 +88,7 @@ func TestParseIncludeTree_ScopedFilterParseError(t *testing.T) {
 	ch, _, reg := covRelWorld(t)
 	// An empty operator/value scoped filter ("=") is rejected by
 	// parseScopedFilters against the comments target fields.
-	_, err := parseIncludeTree(covIncludeReq(t, "comments(=bad)"), ch.Entity, reg)
+	_, err := parseIncludeTreeQ(queryValues(t, covIncludeReq(t, "comments(=bad)")), ch.Entity, reg)
 	if err == nil {
 		t.Fatalf("scoped-filter parse error expected, got nil")
 	}

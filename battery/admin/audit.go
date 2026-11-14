@@ -129,8 +129,10 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 	page := 1
 	var f auditFilter
 	var warned []string
+	dropped := false
 	carry := url.Values{}
 	if r := appui.RequestFromContext(ctx); r != nil {
+		dropped = droppedNarrowing(r, "actor", "entity", "op", "from", "to")
 		q := r.URL.Query()
 		limit = parseLimit(q.Get("limit"), b.cfg.AuditListLimit)
 		f, warned = b.parseAuditFilter(q)
@@ -160,6 +162,9 @@ func (b *Battery) renderAudit(ctx context.Context, _ map[string]string) render.H
 			ui.Callout(ui.CalloutConfig{Variant: ui.StatusDanger}, render.Text(i18nui.AdminAuditLoadFailed.Text(ctx))))
 	}
 	above := []render.HTML{header, b.auditFilterForm(ctx, f)}
+	if dropped {
+		above = append(above, filterNotApplied(ctx))
+	}
 	for _, param := range warned {
 		above = append(above, ui.Callout(ui.CalloutConfig{Variant: ui.StatusWarning},
 			render.Text(i18nui.AdminAuditBadFilter.Text(ctx, map[string]any{"param": param}))))

@@ -1,12 +1,6 @@
 package main
 
-import (
-	"go/ast"
-	"go/parser"
-	"go/token"
-	"strconv"
-	"testing"
-)
+import "testing"
 
 func TestVersionCheckApplies(t *testing.T) {
 	for _, tc := range []struct {
@@ -48,42 +42,20 @@ func TestProjectDirFlag(t *testing.T) {
 	}
 }
 
-// Every command dispatch's switch names is either checked or left out
-// on purpose, so a new command cannot slip past the decision. The
-// commands are read from main.go's dispatch function itself.
 func TestVersionCheckCoversEveryCommand(t *testing.T) {
-	f, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// telemetry reads an app's files wherever they are; it needs no project.
-	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true, "telemetry": true}
+	skipped := map[string]bool{"init": true, "version": true, "docs": true, "doc": true, "upgrade": true, "help": true,
+		// telemetry reads an app's files wherever they are.
+		"telemetry": true}
 	seen := 0
-	for _, d := range f.Decls {
-		fn, ok := d.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != "dispatch" {
-			continue
+	for _, command := range commands {
+		for _, name := range command.names {
+			seen++
+			if command.versionChecked == skipped[name] {
+				t.Errorf("command %q is both checked and skipped, or neither", name)
+			}
 		}
-		ast.Inspect(fn, func(n ast.Node) bool {
-			cc, ok := n.(*ast.CaseClause)
-			if !ok {
-				return true
-			}
-			for _, e := range cc.List {
-				lit, ok := e.(*ast.BasicLit)
-				if !ok || lit.Kind != token.STRING {
-					continue
-				}
-				cmd, _ := strconv.Unquote(lit.Value)
-				seen++
-				if versionCheckedCommands[cmd] == skipped[cmd] {
-					t.Errorf("command %q is both checked and skipped, or neither", cmd)
-				}
-			}
-			return true
-		})
 	}
 	if seen < 20 {
-		t.Fatalf("found %d commands in dispatch; the parse missed the switch", seen)
+		t.Fatalf("found only %d command names", seen)
 	}
 }

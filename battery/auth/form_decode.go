@@ -199,7 +199,7 @@ func CanonicalEmail(email string) (string, error) {
 // AuthConfig.CanonicalizeEmail override) and the package default
 // otherwise, so the override is total.
 func canonicalizeEmailWith(canonicalize func(string) (string, error), email string) (string, error) {
-	if !storableText(email) {
+	if !textsafe.Storable(email) {
 		return "", i18n.NewError(reasonInvalidEmail)
 	}
 	if canonicalize != nil {
@@ -207,7 +207,7 @@ func canonicalizeEmailWith(canonicalize func(string) (string, error), email stri
 		if err != nil {
 			return "", err
 		}
-		if !storableText(canonical) {
+		if !textsafe.Storable(canonical) {
 			return "", i18n.NewError(reasonInvalidEmail)
 		}
 		return canonical, nil

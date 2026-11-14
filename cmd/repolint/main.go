@@ -322,36 +322,46 @@ func lintConsumerModuleGraph(root string) ([]finding, error) {
 	inRequireBlock := false
 	inOtherBlock := false
 	for i, line := range strings.Split(string(body), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "//") {
+		// A go.mod comment runs from "//" to the end of the line, and a
+		// block opener or closer may carry one (`require ( // pinned`).
+		// Matching the raw line read that opener as some other block and
+		// skipped every entry in it.
+		code, _, _ := strings.Cut(line, "//")
+		trimmed := strings.TrimSpace(code)
+		if trimmed == "" {
 			continue
 		}
-		switch {
-		case trimmed == "require (":
-			inRequireBlock = true
+		if directive, ok := strings.CutSuffix(trimmed, "("); ok {
+			if strings.TrimSpace(directive) == "require" {
+				inRequireBlock = true
+			} else {
+				// replace ( / exclude ( / retract ( / tool ( …
+				inOtherBlock = true
+			}
 			continue
-		case strings.HasSuffix(trimmed, "("):
-			// replace ( / exclude ( / retract (
-			inOtherBlock = true
-			continue
-		case trimmed == ")":
+		}
+		if trimmed == ")" {
 			inRequireBlock, inOtherBlock = false, false
 			continue
 		}
 		if inOtherBlock {
 			continue
 		}
-		entry := trimmed
+		// The module path is the first field; the version follows it.
+		// Fields, not a cut at " ": go.mod separates with any blank, so
+		// `require\tx v1` is a require too.
+		fields := strings.Fields(trimmed)
 		if !inRequireBlock {
-			rest, ok := strings.CutPrefix(trimmed, "require ")
-			if !ok {
+			if len(fields) < 2 || fields[0] != "require" {
 				continue
 			}
-			entry = strings.TrimSpace(rest)
+			fields = fields[1:]
 		}
-		// The module path is the first field; the version and any
-		// `// indirect` marker follow it.
-		path, _, _ := strings.Cut(entry, " ")
+		// go.mod may quote a path ("x" or `x`).
+		path := fields[0]
+		if unq, err := strconv.Unquote(path); err == nil {
+			path = unq
+		}
 		for _, mod := range testOnlyModules {
 			// Exact match, or a submodule of it: testcontainers-go and
 			// testcontainers-go/modules/postgres are both the same problem,
@@ -632,12 +642,16 @@ func crudExposureRederivedLines(rel string, body []byte) []int {
 		return nil
 	}
 	var out []int
+	var st goLexState
 	for i, line := range strings.Split(string(body), "\n") {
-		code := line
-		if j := strings.Index(code, "//"); j >= 0 {
-			code = code[:j] // a comment naming the flag is not a read
-		}
-		if strings.Contains(code, "Exposure.CRUD") {
+		// A comment naming the flag is not a read. Strip comments with the
+		// string-aware lexer: cutting at the first "//" ended the line at a
+		// URL string and hid a read after it.
+		// A string naming the flag (a docs URL) is not a read either.
+		var code string
+		inRaw := st.inRawString
+		code, st = stripGoComments(line, st)
+		if strings.Contains(outsideGoStrings(code, inRaw), "Exposure.CRUD") {
 			out = append(out, i+1)
 		}
 	}
@@ -821,6 +835,37 @@ func moduleIs(root, module string) (bool, error) {
 type goLexState struct {
 	inBlockComment bool
 	inRawString    bool
+}
+
+// outsideGoStrings drops string and rune literal contents from a line
+// stripGoComments already cleared of comments, keeping the code around
+// them. inRaw says the line opens inside a raw string carried from the
+// line before.
+func outsideGoStrings(code string, inRaw bool) string {
+	var out strings.Builder
+	var quote byte
+	if inRaw {
+		quote = '`'
+	}
+	for i := 0; i < len(code); i++ {
+		c := code[i]
+		if quote != 0 {
+			if c == '\\' && quote != '`' {
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '"' || c == '\'' || c == '`' {
+			quote = c
+			continue
+		}
+		out.WriteByte(c)
+	}
+	return out.String()
 }
 
 // stripGoComments returns the code on one line of Go source with both comment

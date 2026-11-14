@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/internal/atomicfile"
 )
 
@@ -40,11 +42,15 @@ type chunkLister interface {
 }
 
 type index struct {
-	embedder Embedder
-	chunker  Chunker
-	store    Store
-	keyword  KeywordBackend
-	reranker Reranker
+	// restoring is true only during single-threaded Open: persisted text
+	// predating validation must not prevent reopening the vector store,
+	// so a keyword backend's text refusal skips that chunk instead.
+	restoring bool
+	embedder  Embedder
+	chunker   Chunker
+	store     Store
+	keyword   KeywordBackend
+	reranker  Reranker
 
 	path          string
 	snapshotEvery int
@@ -353,6 +359,11 @@ func (i *index) Add(ctx context.Context, docs ...Document) (err error) {
 		return nil
 	}
 	docs = lastPerID(docs)
+	for _, document := range docs {
+		if err := validateDocumentText(document); err != nil {
+			return err
+		}
+	}
 	var chunks []Chunk
 	for _, doc := range docs {
 		if doc.ID == "" {
@@ -734,6 +745,12 @@ func (i *index) keywordIndexChunks(ctx context.Context, chunks []Chunk) (err err
 			index = func(ctx context.Context, id, text string) error { return owned.IndexOwned(ctx, id, c.Owner, text) }
 		}
 		if err := index(ctx, c.ID, c.Text); err != nil {
+			// A backend that refuses text stored before validation skips
+			// that chunk on reopen; a backend that holds it keeps it.
+			if invalid := (*InvalidDocumentTextError)(nil); i.restoring && errors.As(err, &invalid) {
+				slog.Warn("semantic: keyword index skipped stored chunk with invalid document text", "chunk", textsafe.ScrubControlBytes(c.ID), "err", textsafe.ScrubControlBytes(err.Error()))
+				continue
+			}
 			return fmt.Errorf("semantic: keyword index %q: %w", c.ID, err)
 		}
 	}

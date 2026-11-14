@@ -18,8 +18,11 @@
 package docpage
 
 import (
+	"context"
+
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
+	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
 // Config holds the page's regions.
@@ -56,10 +59,16 @@ func Render(cfg Config) render.HTML {
 // PagerConfig names the neighbouring pages. An empty href draws no
 // card on that side.
 type PagerConfig struct {
+	// Ctx resolves the pager's own words (the nav label and the
+	// direction defaults) through i18nui in the request's language. Left
+	// unset, they come from the app's default translator in its fallback
+	// locale, and English only when that has no entry or there is no
+	// translator; pass the request context to follow the reader.
+	Ctx                 context.Context
 	PrevHref, PrevLabel string
 	NextHref, NextLabel string
 	// PrevDir and NextDir are the small direction labels; they default
-	// to "Previous" and "Next".
+	// to "Previous" and "Next" in the request's language.
 	PrevDir, NextDir string
 }
 
@@ -68,11 +77,15 @@ func Pager(cfg PagerConfig) render.HTML {
 	if cfg.PrevHref == "" && cfg.NextHref == "" {
 		return render.HTML("")
 	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if cfg.PrevDir == "" {
-		cfg.PrevDir = "Previous"
+		cfg.PrevDir = i18nui.PaginationPrevious.Text(ctx)
 	}
 	if cfg.NextDir == "" {
-		cfg.NextDir = "Next"
+		cfg.NextDir = i18nui.PaginationNext.Text(ctx)
 	}
 	card := func(href, dir, label string, next bool) render.HTML {
 		return html.LinkHTML(html.LinkHTMLConfig{
@@ -91,5 +104,5 @@ func Pager(cfg PagerConfig) render.HTML {
 	if cfg.NextHref != "" {
 		next = card(cfg.NextHref, cfg.NextDir, cfg.NextLabel, true)
 	}
-	return html.Nav(html.NavConfig{Class: Style.Pager(), Label: "More articles"}, prev, next)
+	return html.Nav(html.NavConfig{Class: Style.Pager(), Label: i18nui.NavMoreArticles.Text(ctx)}, prev, next)
 }

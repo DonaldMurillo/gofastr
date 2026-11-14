@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""Run three independent Codex reviews of a change and block only on 3/3.
+"""Run three independent reviews of a change and block only on 3/3.
+
+The reviewer is the Codex CLI when it is installed. Without Codex it is
+the Claude Code CLI (`claude -p`) on Haiku, read-only.
 
 Usage:
   review3.py [--range A...B | --staged | --uncommitted] [--model M]
-             [--codex PATH] [--json] [--check] [--timeout SECONDS]
+             [--codex PATH] [--claude PATH] [--json] [--check]
+             [--timeout SECONDS]
 
 Exit codes: 0 approve, 1 block (all three runs request changes),
 2 fewer than three usable answers or any other failure (a git error, a
-crash), 3 Codex not found (--check or a run). Only a vote exits 1.
+crash), 3 no reviewer found, neither Codex nor Claude (--check or a
+run). Only a vote exits 1.
 
 The repo's pre-commit hook runs it with --staged in the background
 while its test sweep runs; see .githooks/pre-commit.
 """
 
 import argparse
+import contextlib
 import glob
 import json
 import os
@@ -156,6 +162,18 @@ def codex_missing():
     return "codex not found (tried " + ", ".join(tried) + "): set CODEX_BIN or pass --codex"
 
 
+def find_claude(explicit):
+    """The fallback reviewer: --claude, then CLAUDE_BIN, then PATH."""
+    for cand in (explicit, os.environ.get("CLAUDE_BIN")):
+        if cand and os.path.isfile(cand) and (os.name == "nt" or os.access(cand, os.X_OK)):
+            return cand
+    return shutil.which("claude")
+
+
+def reviewer_missing():
+    return codex_missing() + "; claude not found either (tried --claude, CLAUDE_BIN, PATH)"
+
+
 def default_range():
     """Unpushed commits: upstream...HEAD, else the remote's default branch."""
     up = git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}", check=False)
@@ -167,7 +185,9 @@ def default_range():
     return None
 
 
-def build_prompt(rng, mode):
+def build_prompt(rng, mode, diff_file=None):
+    """The filled prompt. A diff past DIFF_CAP is summarized: the reviewer
+    reads the rest with git, or from diff_file when it cannot run git."""
     top = git("rev-parse", "--show-toplevel").strip()
     repo = os.path.basename(top)
     if mode == "staged":
@@ -183,8 +203,12 @@ def build_prompt(rng, mode):
         return None, rng
     if len(diff) > DIFF_CAP:
         stat = git("diff", "--stat", rng)
-        diff = ("The diff is too long to paste here. Its summary is below; "
-                f"read the full diff with `git diff {rng}`.\n\n" + stat)
+        how = f"read the full diff with `git diff {rng}`"
+        if diff_file:
+            with open(diff_file, "w", encoding="utf-8") as f:
+                f.write(diff)
+            how = f"read the full diff in the file {diff_file}"
+        diff = (f"The diff is too long to paste here. Its summary is below; {how}.\n\n" + stat)
     else:
         diff = "```diff\n" + diff + "\n```"
     with open(os.path.join(HERE, "prompt.md"), encoding="utf-8") as f:
@@ -207,13 +231,37 @@ def codex_env():
     return {k: v for k, v in os.environ.items() if k not in names}
 
 
-def command(codex, model, out_file):
-    cmd = [codex, "exec", "-s", "read-only", "-m", model,
-           "-c", 'model_reasoning_effort="high"',
-           "-c", 'web_search="disabled"',
-           "--ephemeral", "--ignore-user-config",
-           "-o", out_file, "-"]
-    if os.name == "nt" and codex.lower().endswith((".cmd", ".bat")):
+# What a Claude reviewer may do: read files, and nothing else. No Bash,
+# not even git: `git diff --output=<path>` writes a file, so no git
+# allowlist is read-only. dontAsk refuses everything else without a
+# prompt. A diff too long for the prompt is saved for it to Read.
+CLAUDE_TOOLS = ["Read", "Grep", "Glob"]
+CLAUDE_NOTE = ("\n\nIn this session you can read and search files but cannot run "
+               "commands. Judge the change from the diff and the files.\n")
+
+
+def command(kind, binary, model, out_file, diff_dir=None):
+    if kind == "claude":
+        # The answer comes on stdout; the prompt goes in on stdin. No
+        # user or project settings, no MCP servers, nothing saved.
+        cmd = [binary, "-p", "--model", model,
+               "--tools", ",".join(CLAUDE_TOOLS),
+               "--allowedTools", *CLAUDE_TOOLS,
+               "--permission-mode", "dontAsk",
+               "--setting-sources", "", "--strict-mcp-config",
+               "--no-session-persistence"]
+        if diff_dir:
+            # Only the directory holding the saved diff. The run
+            # directory holds the other runs' answers and logs, and a
+            # reviewer that read them would not be an independent vote.
+            cmd += ["--add-dir", diff_dir]
+    else:
+        cmd = [binary, "exec", "-s", "read-only", "-m", model,
+               "-c", 'model_reasoning_effort="high"',
+               "-c", 'web_search="disabled"',
+               "--ephemeral", "--ignore-user-config",
+               "-o", out_file, "-"]
+    if os.name == "nt" and binary.lower().endswith((".cmd", ".bat")):
         cmd = ["cmd", "/c", *cmd]
     return cmd
 
@@ -234,17 +282,23 @@ def parse(text):
     return found
 
 
-def run_one(n, codex, model, prompt, timeout, workdir, env):
+def run_one(n, kind, binary, model, prompt, timeout, workdir, env, diff_dir=None):
     out_file = os.path.join(workdir, f"run{n}.txt")
     log_file = os.path.join(workdir, f"run{n}.log")
-    with open(log_file, "w", encoding="utf-8") as log:
+    with open(log_file, "w", encoding="utf-8") as log, contextlib.ExitStack() as stack:
+        # codex writes its answer to out_file itself; claude prints it.
+        if kind == "claude":
+            out = stack.enter_context(open(out_file, "w", encoding="utf-8"))
+            err = log
+        else:
+            out, err = log, subprocess.STDOUT
         try:
-            proc = subprocess.Popen(command(codex, model, out_file), stdin=subprocess.PIPE,
-                                    stdout=log, stderr=subprocess.STDOUT, env=env,
+            proc = subprocess.Popen(command(kind, binary, model, out_file, diff_dir), stdin=subprocess.PIPE,
+                                    stdout=out, stderr=err, env=env,
                                     text=True, encoding="utf-8",
                                     start_new_session=os.name == "posix")
         except OSError as exc:
-            return {"run": n, "error": f"could not start codex: {exc}"}
+            return {"run": n, "error": f"could not start {kind}: {exc}"}
         with _children_lock:
             _children.append(proc)
             if _stopping:
@@ -256,9 +310,9 @@ def run_one(n, codex, model, prompt, timeout, workdir, env):
             proc.communicate()
             return {"run": n, "error": f"timed out after {timeout}s"}
     if proc.returncode != 0:
-        # codex exits 0 when the run finished; an answer left by a run
-        # that then failed is not a vote.
-        return {"run": n, "error": f"codex exited {proc.returncode}; see {log_file}"}
+        # The reviewer exits 0 when the run finished; an answer left by a
+        # run that then failed is not a vote.
+        return {"run": n, "error": f"{kind} exited {proc.returncode}; see {log_file}"}
     try:
         with open(out_file, encoding="utf-8") as f:
             answer = parse(f.read())
@@ -301,20 +355,29 @@ def main():
     ap.add_argument("--range", help="git range, e.g. origin/main...HEAD")
     ap.add_argument("--staged", action="store_true", help="review git diff --cached")
     ap.add_argument("--uncommitted", action="store_true", help="review git diff HEAD")
-    ap.add_argument("--model", default=os.environ.get("PUSH_REVIEW_MODEL", "gpt-6-luna"))
+    ap.add_argument("--model", help="reviewer model (default: PUSH_REVIEW_MODEL or gpt-6-luna "
+                    "with Codex, PUSH_REVIEW_CLAUDE_MODEL or haiku with Claude)")
     ap.add_argument("--codex", help="path to the codex binary (or set CODEX_BIN)")
+    ap.add_argument("--claude", help="path to the claude binary, used when there is no "
+                    "codex (or set CLAUDE_BIN)")
     ap.add_argument("--timeout", type=int, default=900)
     ap.add_argument("--json", action="store_true", help="print the result as JSON")
-    ap.add_argument("--check", action="store_true", help="only report whether Codex is available")
+    ap.add_argument("--check", action="store_true", help="only report which reviewer is available")
     a = ap.parse_args()
 
-    codex = find_codex(a.codex)
+    kind, binary = "codex", find_codex(a.codex)
+    if not binary:
+        kind, binary = "claude", find_claude(a.claude)
     if a.check:
-        print(codex or codex_missing())
-        return 0 if codex else 3
-    if not codex:
-        print("review-gate: " + codex_missing(), file=sys.stderr)
+        print(binary or reviewer_missing())
+        return 0 if binary else 3
+    if not binary:
+        print("review-gate: " + reviewer_missing(), file=sys.stderr)
         return 3
+    if kind == "codex":
+        model = a.model or os.environ.get("PUSH_REVIEW_MODEL", "gpt-6-luna")
+    else:
+        model = a.model or os.environ.get("PUSH_REVIEW_CLAUDE_MODEL", "haiku")
 
     mode = "staged" if a.staged else "uncommitted" if a.uncommitted else "range"
     rng = a.range or (default_range() if mode == "range" else None)
@@ -322,15 +385,23 @@ def main():
         fail("no upstream or origin/HEAD; pass --range, --staged or --uncommitted")
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, _stop)
-    prompt, rng = build_prompt(rng, mode)
+    workdir = tempfile.mkdtemp(prefix="review-gate-")
+    claude = kind == "claude"
+    # The saved diff gets a directory of its own, apart from the runs'
+    # answers and logs in workdir.
+    diff_dir = None
+    if claude:
+        diff_dir = os.path.join(workdir, "diff")
+        os.mkdir(diff_dir)
+    prompt, rng = build_prompt(rng, mode, os.path.join(diff_dir, "full.diff") if claude else None)
     if prompt is None:
         print(f"review-gate: nothing to review in {rng}")
         return 0
-
-    workdir = tempfile.mkdtemp(prefix="review-gate-")
+    if claude:
+        prompt += CLAUDE_NOTE
     with ThreadPoolExecutor(RUNS) as pool:
         env = codex_env()
-        results = list(pool.map(lambda n: run_one(n, codex, a.model, prompt, a.timeout, workdir, env),
+        results = list(pool.map(lambda n: run_one(n, kind, binary, model, prompt, a.timeout, workdir, env, diff_dir),
                                 range(1, RUNS + 1)))
 
     usable = [r for r in results if "decision" in r]
@@ -344,12 +415,12 @@ def main():
     findings = merge(usable)
 
     if a.json:
-        print(json.dumps({"decision": decision, "range": rng, "model": a.model,
+        print(json.dumps({"decision": decision, "range": rng, "reviewer": kind, "model": model,
                           "votes": votes, "usable": len(usable), "runs": results,
                           "findings": findings, "logs": workdir}, indent=1))
         return code
     print(f"review-gate: {decision} ({votes}/{len(usable)} usable runs request changes) "
-          f"on {rng}, model {a.model}")
+          f"on {rng}, {kind} model {model}")
     for r in results:
         if "error" in r:
             print(f"  run {r['run']}: {r['error']}")

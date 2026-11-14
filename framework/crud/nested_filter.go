@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
@@ -97,7 +96,7 @@ type nestedFilter struct {
 	table      string                // 1-hop fallback
 }
 
-// parseNestedFilters extracts dotted-path query params and resolves their
+// parseNestedFiltersValues extracts dotted-path query params and resolves their
 // relation references against the entity's declared relations. Multi-hop
 // nesting is supported up to depth 4 (e.g. `?comments.post.author.name=alice`).
 //
@@ -110,10 +109,6 @@ type nestedFilter struct {
 //
 // Unknown relations and unknown fields on the target return an error so
 // the caller can map to 400, silent ignoring would mask client typos.
-func parseNestedFilters(r *http.Request, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
-	return parseNestedFiltersValues(r.URL.Query(), ent, registry)
-}
-
 func parseNestedFiltersValues(q url.Values, ent *entity.Entity, registry entity.Registry) ([]nestedFilter, error) {
 	if ent == nil {
 		return nil, nil
@@ -304,7 +299,7 @@ type NestedFilter struct {
 // resolveNestedFilters maps in-process NestedFilter specs onto the internal
 // nestedFilter slice consumed by applyNestedFilters, running the same
 // relation/field validation and identifier-safety checks the HTTP path
-// applies in parseNestedFilters. Unknown relations, unknown fields, and
+// applies in parseNestedFiltersValues. Unknown relations, unknown fields, and
 // unsafe identifiers return an error so typed callers see the same 400-class
 // failures.
 func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []NestedFilter) ([]nestedFilter, error) {
@@ -422,7 +417,7 @@ func resolveNestedFilters(ent *entity.Entity, registry entity.Registry, specs []
 // key, column by column; a many_to_many hop joins on the parent's one key
 // column; a belongs_to hop joins the parent's foreign key to the target's
 // key. A hop whose columns do not line up matches nothing
-// (parseNestedFilters refuses it first).
+// (parseNestedFiltersValues refuses it first).
 func applyNestedFilters(addWhere func(sql string, args ...any), parentTable string, parentKey []string, filters []nestedFilter) {
 	for _, nf := range filters {
 		sql, args := buildExistsSubquery(parentTable, parentKey, nf)
@@ -439,7 +434,7 @@ func applyNestedFilters(addWhere func(sql string, args ...any), parentTable stri
 // is no parameter placeholder for an identifier. We refuse anything
 // that doesn't look like a plain `[A-Za-z_][A-Za-z0-9_]*` identifier so
 // payloads like `name OR 1=1 --` can't smuggle SQL fragments through
-// parseNestedFilters when the registry can't validate the field.
+// parseNestedFiltersValues when the registry can't validate the field.
 //
 // Relation metadata (parentTable, parentKey, rel.Entity, rel.FKColumns, rel.Through,
 // rel.LocalKey, rel.ForeignKeyTarget) may originate from dynamic definitions or API endpoints

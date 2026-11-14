@@ -227,29 +227,29 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 
 	// Multi-level path rejected.
 	r := httptest.NewRequest("GET", "/?author.team.name=x", nil)
-	if _, err := parseNestedFilters(r, ent, reg); err == nil {
+	if _, err := parseNestedFiltersValues(queryValues(t, r), ent, reg); err == nil {
 		t.Error("expected multi-level rejection")
 	}
 	// Unknown relation rejected.
 	r = httptest.NewRequest("GET", "/?nope.name=x", nil)
-	if _, err := parseNestedFilters(r, ent, reg); err == nil {
+	if _, err := parseNestedFiltersValues(queryValues(t, r), ent, reg); err == nil {
 		t.Error("expected unknown relation rejection")
 	}
 	// Unsafe field rejected.
 	r = httptest.NewRequest("GET", "/?author."+"name%20OR%201=1=x", nil)
-	if _, err := parseNestedFilters(r, ent, reg); err == nil {
+	if _, err := parseNestedFiltersValues(queryValues(t, r), ent, reg); err == nil {
 		t.Error("expected unsafe field rejection")
 	}
 	// Unknown field on target rejected (registry validates).
 	r = httptest.NewRequest("GET", "/?author.unknownfield=x", nil)
-	if _, err := parseNestedFilters(r, ent, reg); err == nil {
+	if _, err := parseNestedFiltersValues(queryValues(t, r), ent, reg); err == nil {
 		t.Error("expected unknown field rejection")
 	}
 	// _in coalesces into ONE filter carrying all values (emitted as a single
 	// IN (...)), so a to-one relation can actually match. Splitting into
 	// AND-ed equals made BelongsTo/HasOne unmatchable.
 	r = httptest.NewRequest("GET", "/?author.name_in=a,b,c", nil)
-	got, err := parseNestedFilters(r, ent, reg)
+	got, err := parseNestedFiltersValues(queryValues(t, r), ent, reg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestParseNestedFilters_Paths(t *testing.T) {
 	}
 	// _like suffix.
 	r = httptest.NewRequest("GET", "/?author.name_like=al%25", nil)
-	got, err = parseNestedFilters(r, ent, reg)
+	got, err = parseNestedFiltersValues(queryValues(t, r), ent, reg)
 	if err != nil || len(got) != 1 || got[0].Op != filter.OpLike {
 		t.Errorf("_like parse = %v, err=%v", got, err)
 	}
@@ -285,13 +285,13 @@ func TestParseNestedFilters_HiddenTargetFieldRejected(t *testing.T) {
 	}}
 
 	r := httptest.NewRequest("GET", "/?author.password_hash_like=%242a%2410%24", nil)
-	_, hiddenErr := parseNestedFilters(r, ent, reg)
+	_, hiddenErr := parseNestedFiltersValues(queryValues(t, r), ent, reg)
 	if hiddenErr == nil {
 		t.Fatal("SECURITY: hidden target field reachable as nested predicate")
 	}
 	// Non-leaky: a truly-absent field must produce the same error shape.
 	r2 := httptest.NewRequest("GET", "/?author.nonexistent_like=x", nil)
-	_, absentErr := parseNestedFilters(r2, ent, reg)
+	_, absentErr := parseNestedFiltersValues(queryValues(t, r2), ent, reg)
 	if absentErr == nil {
 		t.Fatal("nonexistent target field must also error")
 	}

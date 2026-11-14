@@ -6,6 +6,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/query"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Condition is a single WHERE fragment (SQL + args) produced by
@@ -52,7 +53,7 @@ func SearchConditions(fields []string, term string) ([]Condition, error) {
 	// The term binds as text: invalid UTF-8 or a NUL is Postgres's 22021
 	// (a 500) while SQLite answered an empty 200, so it is refused like
 	// every other filter value.
-	if !storableText(term) {
+	if !textsafe.Storable(term) {
 		return nil, valueTypeError("q", schema.Text)
 	}
 	tokens := tokenizeSearch(term)

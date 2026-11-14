@@ -200,9 +200,12 @@ func TestBackendCapabilityMapLinksResolve(t *testing.T) {
 }
 
 // TestBackendCapabilityMapCommandsAreReal checks every `gofastr <sub>` the map
-// tells a reader to run against the CLI's actual dispatch table. A
-// verification command that is not a command is the worst kind of wrong: the
-// reader runs it, gets a usage error, and distrusts the whole page.
+// tells a reader to run against the CLI's actual command registry (the
+// names of each `commands` entry in cmd/gofastr/main.go). A verification
+// command that is not a command is the worst kind of wrong: the reader runs
+// it, gets a usage error, and distrusts the whole page.
+//
+//gofastr:test-reads /cmd/gofastr/main.go
 func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 	body := backendMapBody(t)
 	root := repoRoot(t)
@@ -214,14 +217,14 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 		t.Fatalf("read cmd/gofastr/main.go: %v", err)
 	}
 	valid := map[string]bool{}
-	caseRe := regexp.MustCompile(`case ((?:"[a-z]+",? ?)+):`)
-	for _, m := range caseRe.FindAllStringSubmatch(string(main), -1) {
+	namesRe := regexp.MustCompile(`names: \[\]string\{((?:"[a-z]+",? ?)+)\}`)
+	for _, m := range namesRe.FindAllStringSubmatch(string(main), -1) {
 		for name := range strings.SplitSeq(m[1], ",") {
 			valid[strings.Trim(strings.TrimSpace(name), `"`)] = true
 		}
 	}
 	if len(valid) < 5 {
-		t.Fatalf("parsed only %d subcommands from main.go — the dispatch shape changed and this test cannot check anything", len(valid))
+		t.Fatalf("parsed only %d subcommands from main.go — the command registry's shape changed and this test cannot check anything", len(valid))
 	}
 
 	cmdRe := regexp.MustCompile(`gofastr ([a-z]+)`)
@@ -233,7 +236,7 @@ func TestBackendCapabilityMapCommandsAreReal(t *testing.T) {
 		}
 		seen[sub] = true
 		if !valid[sub] {
-			t.Errorf("names `gofastr %s`, which is not a subcommand — valid ones come from cmd/gofastr/main.go's dispatch", sub)
+			t.Errorf("names `gofastr %s`, which is not a subcommand — valid ones come from cmd/gofastr/main.go's command registry", sub)
 		}
 	}
 	if len(seen) == 0 {

@@ -462,6 +462,10 @@ func (p DataTableProps) validate(lim Limits) error {
 	if len(p.Columns) == 0 {
 		return errRequired("data-table.columns")
 	}
+	// The host renderer matches each row's cells to columns by key,
+	// and two columns under one key claim one cell: refuse the repeat
+	// here so a tree that passed Validate never reaches that panic.
+	seen := make(map[string]bool, len(p.Columns))
 	for i, c := range p.Columns {
 		if c.Key == "" || c.Label == "" {
 			return errRequiredIndex("data-table.columns", i)
@@ -469,6 +473,10 @@ func (p DataTableProps) validate(lim Limits) error {
 		if err := checkStrings(lim, "data-table.column", c.Key, c.Label); err != nil {
 			return err
 		}
+		if seen[c.Key] {
+			return errDupColumnKey(c.Key)
+		}
+		seen[c.Key] = true
 	}
 	for i, r := range p.Rows {
 		if err := checkPropItems(lim, "data-table.rows.cells", len(r.Cells)); err != nil {

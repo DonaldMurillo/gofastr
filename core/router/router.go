@@ -15,6 +15,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/middleware"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
 // Middleware is the same shape as middleware.Middleware: a function
@@ -215,6 +216,8 @@ func (r *Router) SetRegisterHook(fn func(method, pattern string)) {
 // Allow header. Framework code uses it to gate routes owned by a
 // disabled module. Pass nil to clear. Must be called on the root router;
 // setting on a child forwards to root.
+// A panic is recovered and logged as a refusal: the route answers 404,
+// and its method is excluded from the Allow header on a method mismatch.
 func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 	r.root.mu.Lock()
 	r.root.routeGate = fn
@@ -228,11 +231,32 @@ func (r *Router) SetRouteGate(fn func(pattern string) bool) {
 //
 // Test tooling uses it to record semantic coverage: which routes a suite
 // genuinely reached through the real router. Pass nil to clear. Must be
-// called on the root router; setting on a child forwards to root.
+// called on the root router; setting on a child forwards to root. A
+// panic in fn is recovered and logged; the request is still served.
 func (r *Router) SetServeHook(fn func(method, pattern string)) {
 	r.root.mu.Lock()
 	r.root.serveHook = fn
 	r.root.mu.Unlock()
+}
+
+// serveHookSafely runs the serve hook under a recover. The hook is test
+// tooling that runs before the middleware chain, so the app's recovery
+// middleware never sees its panic: a fault in it is logged and the
+// request is served as if no hook were installed.
+func serveHookSafely(ctx context.Context, hook func(method, pattern string), method, pattern string) {
+	defer textsafe.LogPanic(ctx, "router: serve hook panicked; ignored")
+	hook(method, pattern)
+}
+
+func routeGateSafely(ctx context.Context, gate func(string) bool, key string) (allowed bool) {
+	defer textsafe.LogPanic(ctx, "router: route gate panicked; refused")
+	return gate(key)
+}
+
+func preRouteSafely(req *http.Request, hook func(*http.Request) (*http.Request, string)) (next *http.Request, target string, completed bool) {
+	defer textsafe.LogPanic(req.Context(), "router: pre-route hook panicked; request failed")
+	next, target = hook(req)
+	return next, target, true
 }
 
 // Get registers a handler for GET requests on the given pattern.
@@ -488,7 +512,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	served := c.router.root.serveHook
 	c.router.root.mu.RUnlock()
 	if gate != nil {
-		if !gate(c.gateKey) {
+		if !routeGateSafely(req.Context(), gate, c.gateKey) {
 			http.NotFound(w, req)
 			return
 		}
@@ -497,7 +521,7 @@ func (c *cachedRoute) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// before the chain, so a request the middleware later rejects still
 	// counts as having exercised this route.
 	if served != nil {
-		served(c.method, c.pattern)
+		serveHookSafely(req.Context(), served, c.method, c.pattern)
 	}
 	// Per-route timeout: stamp the resolution BEFORE the chain runs so
 	// middleware.Timeout picks it up. Behind the root's atomic flag, an
@@ -991,7 +1015,11 @@ func (r *Router) MethodNotAllowed(handler http.Handler) {
 // or the mux's native 404.
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if fn := r.root.preRoute.Load(); fn != nil {
-		next, target := (*fn)(req)
+		next, target, completed := preRouteSafely(req, *fn)
+		if !completed {
+			i18n.HTTPError(w, req, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
+			return
+		}
 		if target != "" {
 			r.wrap(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				http.Redirect(w, req, target, http.StatusPermanentRedirect)
@@ -1028,10 +1056,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		//
 		// For CONNECT, net/http returns the bare target path, not the
 		// route's pattern. The route it completes to is methodless
-		// (" /tree/") or a CONNECT route ("CONNECT /tree/"); gate both.
-		allowed := r.gateAllows(pattern)
-		if !strings.ContainsAny(pattern, " \t") {
-			allowed = r.gateAllows(" "+pattern) && r.gateAllows(req.Method+" "+pattern)
+		// (" /tree/") or a CONNECT route ("CONNECT /tree/"); gate both,
+		// and never the bare path, which is no key the gate was promised.
+		var allowed bool
+		if strings.ContainsAny(pattern, " \t") {
+			allowed = r.gateAllows(req.Context(), pattern)
+		} else {
+			allowed = r.gateAllows(req.Context(), " "+pattern) && r.gateAllows(req.Context(), req.Method+" "+pattern)
 		}
 		if allowed {
 			r.wrap(h).ServeHTTP(w, req)
@@ -1132,6 +1163,8 @@ func (r *Router) sharedOwner(req *http.Request, methods []string) *Router {
 // sees "/pricing" for "/es/pricing", and a router served directly, as
 // tests do, behaves like the app. One hook per tree; a second call
 // replaces the first, and nil removes it.
+// A panic is recovered and logged, answers a localized 500 Internal
+// Server Error, and runs neither the middleware chain nor a handler.
 func (r *Router) PreRoute(fn func(*http.Request) (*http.Request, string)) {
 	if fn == nil {
 		r.root.preRoute.Store(nil)
@@ -1142,11 +1175,11 @@ func (r *Router) PreRoute(fn func(*http.Request) (*http.Request, string)) {
 
 // gateAllows reports whether the route gate permits the given
 // "METHOD /path" key. No gate installed = allow.
-func (r *Router) gateAllows(key string) bool {
+func (r *Router) gateAllows(ctx context.Context, key string) bool {
 	r.root.mu.RLock()
 	gate := r.root.routeGate
 	r.root.mu.RUnlock()
-	return gate == nil || gate(key)
+	return gate == nil || routeGateSafely(ctx, gate, key)
 }
 
 // allowedMethods returns the set of HTTP methods registered for the
@@ -1180,7 +1213,7 @@ func (r *Router) allowedMethods(req *http.Request) []string {
 		h, _ := probeMux.Handler(probe)
 		// Anything other than a probeRoute is the mux's own 404/405 or a
 		// synthesised redirect: the path has no route under m.
-		if pr, ok := h.(probeRoute); ok && r.gateAllows(string(pr)) {
+		if pr, ok := h.(probeRoute); ok && r.gateAllows(req.Context(), string(pr)) {
 			allowed = append(allowed, m)
 		}
 	}

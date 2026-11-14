@@ -482,7 +482,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// UTF-8 read from the request) is refused the same way: it would
 	// 500 on the first task write instead of identifying the caller.
 	owner, ok := s.owner(r)
-	if !ok || !utf8.ValidString(owner) || strings.ContainsRune(owner, 0) {
+	if !ok || !textsafe.Storable(owner) {
 		s.writeTransport(w, http.StatusUnauthorized, ErrUnauthenticated())
 		return
 	}
@@ -647,7 +647,7 @@ func decodeParams(raw json.RawMessage, v any) *Error {
 
 // validateStoreText refuses text SQL backends cannot bind, before any store call.
 func validateStoreText(field, value string) *Error {
-	if utf8.ValidString(value) && !strings.ContainsRune(value, 0) {
+	if textsafe.Storable(value) {
 		return nil
 	}
 	err := Errorf(CodeInvalidParams, "%s must be valid UTF-8 without NUL", field)
@@ -2233,7 +2233,7 @@ func (s *Server) callerScope(r *http.Request) taskScope {
 		// A tenant the store cannot bind can never scope a task: on
 		// Postgres it is SQLSTATE 22021 on the first write (a 500)
 		// where SQLite silently stores it. Refuse the request instead.
-		if !utf8.ValidString(t) || strings.ContainsRune(t, 0) {
+		if !textsafe.Storable(t) {
 			sc.refused = true
 			return sc
 		}

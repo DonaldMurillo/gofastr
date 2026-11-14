@@ -239,6 +239,33 @@ func TestCrudApplySoftDeleteFilterCount(t *testing.T) {
 	}
 }
 
+// Exported helpers are also used outside read routes, including write pre-images.
+// Malformed or ambiguous query input must never grant trashed visibility there.
+func TestCrudApplySoftDeleteFiltersFailClosed(t *testing.T) {
+	ent := entity.Define("posts", entity.EntityConfig{Scope: &entity.ScopeConfig{SoftDelete: true}})
+	ch := &crud.CrudHandler{Entity: ent}
+	for _, raw := range []string{
+		"trashed=true", "trashed=false", "trashed=%ZZ",
+		"trashed=true&other=%ZZ", "trashed=true&trashed=false",
+		"trashed=true&trashed=true", "trashed=true;other=x",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			req := authedTestUser(httptest.NewRequest(http.MethodGet, "/posts?"+raw, nil))
+			qb := query.Select("*").From("posts")
+			ch.ApplySoftDeleteFilter(qb, req)
+			selectSQL, _ := qb.Build()
+			cb := query.Count("posts")
+			ch.ApplySoftDeleteFilterCount(cb, req)
+			countSQL, _ := cb.Build()
+			for _, sql := range []string{selectSQL, countSQL} {
+				if got, want := strings.Contains(sql, "deleted_at IS NULL"), raw != "trashed=true"; got != want {
+					t.Errorf("filter applied = %v, want %v: %s", got, want, sql)
+				}
+			}
+		})
+	}
+}
+
 // ============================================================================
 // Test: Read-only and hidden field rejection in Create
 // ============================================================================

@@ -305,6 +305,8 @@ var (
 	NavPrimary       = i18n.Define("ui.nav.primary", "Primary")
 	NavMobilePrimary = i18n.Define("ui.nav.mobilePrimary", "Mobile primary")
 	NavToggle        = i18n.Define("ui.nav.toggle", "Toggle navigation")
+	// The previous/next pager under a help article (an app's docpage).
+	NavMoreArticles = i18n.Define("ui.nav.moreArticles", "More articles")
 
 	// Repeater extras
 	RepeaterRemoveItem = i18n.Define("ui.repeater.removeItem", "Remove item {{index}}")

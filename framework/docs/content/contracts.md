@@ -505,7 +505,8 @@ against the discovered surface. Every test binary merges into the same
 file under an OS lock on `.gofastr/semantic-coverage.lock`, so packages
 that finish together keep each other's records.
 
-The manifest sits under the project root unless
+The manifest sits under the project root, or under the Go workspace
+root when a `go.work` sits above the module, unless
 `GOFASTR_SEMANTIC_COVERAGE_DIR` or `GOFASTR_AXE_COVERAGE_DIR` is set, in
 which case the tests, the server and `gofastr verify` all use that
 directory. Set it the same way for all three, or verify reads a manifest
@@ -520,6 +521,10 @@ stay dependency-free leaves and a production binary pays one atomic load
 per check. A panicking observer is recovered and logged where it runs
 (the hook firing, the event emission): coverage tooling must not be able
 to take down the operation it observes.
+The observers and router serve hook share `textsafe.LogPanic`: a panic
+produces one error-level slog record with the scrubbed value and stack,
+while the permission verdict, hook execution, event emission, or route
+handler continues unchanged.
 
 | Dimension | Recorded when | Rule |
 |---|---|---|
@@ -660,7 +665,9 @@ must notice.
 
 With `--json`, stdout is exactly one JSON document on failures too,
 including invalid flags and unknown `--explain` rules. Operational errors
-carry an `error` string; human-readable error details go to stderr.
+carry an `error` string; all prose, warnings, progress and error details go
+to stderr. `--help` under `--json` writes usage to stderr with no document.
+The generation watch stream is a separate contract; see [Codegen](codegen.md).
 Report `root` is the absolute analysed directory even when vet stops
 the run before contracts execute.
 

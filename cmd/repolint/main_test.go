@@ -273,6 +273,51 @@ replace github.com/testcontainers/testcontainers-go => ../local/testcontainers
 	}
 }
 
+// `require ( // pinned` is valid go.mod; the opener check wanted the bare
+// "require (" and sent the whole block to the replace/exclude branch.
+func TestRequireBlockWithCommentIsRead(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/app\n\ngo 1.26\n\n"+
+		"require ( // pinned by CI\n\tgithub.com/testcontainers/testcontainers-go v0.34.0\n)\n\n"+
+		"replace ( // local\n\tgithub.com/testcontainers/testcontainers-go => ../tc\n)\n"+
+		"require\tgithub.com/testcontainers/testcontainers-go/modules/postgres\tv0.34.0\n")
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	var lines []int
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			lines = append(lines, f.Line)
+		}
+	}
+	if len(lines) != 2 || lines[0] != 6 || lines[1] != 12 {
+		t.Fatalf("flagged lines %v, want [6 12]: the require entries, not the replace", lines)
+	}
+}
+
+// go.mod may quote a module path ("x" or `x`); the quotes are not part
+// of the path the rule matches.
+func TestQuotedRequireIsRead(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "go.mod", "module example.com/app\n\ngo 1.26\n\n"+
+		"require (\n\t\"github.com/testcontainers/testcontainers-go\" v0.34.0\n)\n"+
+		"require `github.com/testcontainers/testcontainers-go/modules/postgres` v0.34.0\n")
+	findings, err := lintRepo(dir)
+	if err != nil {
+		t.Fatalf("lintRepo: %v", err)
+	}
+	var lines []int
+	for _, f := range findings {
+		if f.Rule == "test-only-dep-in-consumer-graph" {
+			lines = append(lines, f.Line)
+		}
+	}
+	if len(lines) != 2 || lines[0] != 6 || lines[1] != 8 {
+		t.Fatalf("flagged lines %v, want [6 8]: both quoted requires", lines)
+	}
+}
+
 // The rule must stay silent on a go.mod that requires none of them, or it
 // blocks every clean tree.
 func TestConsumerModuleGraphRuleQuietWhenAbsent(t *testing.T) {
@@ -663,6 +708,18 @@ func TestLintRepoFlagsRederivedCRUDExposure(t *testing.T) {
 	}
 	if !hasRule(findings, "crud-exposure-rederived") {
 		t.Fatalf("an unclassified file reading Exposure.CRUD must be flagged: %+v", findings)
+	}
+}
+
+// The rule cut each line at the first "//", so a URL string earlier on
+// the line hid the read after it.
+func TestCRUDExposureSeenPastAURLString(t *testing.T) {
+	body := "package docs\n\nfunc f(u string, e E) bool { u = \"https://example.com/x\"; return e.Exposure.CRUD != nil }\n" +
+		"func g(e E) bool { /* Exposure.CRUD */ return true }\n" +
+		"const link = \"https://docs.example.com/Exposure.CRUD\"\n" +
+		"var raw = `see\nExposure.CRUD in the docs`\n"
+	if got := crudExposureRederivedLines("battery/docs/site.go", []byte(body)); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("flagged lines %v, want [3]: the read after a URL string, not the block comment or a string naming the flag", got)
 	}
 }
 

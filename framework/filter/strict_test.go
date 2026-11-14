@@ -3,6 +3,8 @@ package filter
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -73,15 +75,17 @@ func TestStrictRejectsHiddenFilter(t *testing.T) {
 // Reserved list-control params are not entity fields and must never be
 // rejected as unknown filters.
 func TestStrictAllowsReservedControls(t *testing.T) {
-	reserved := "sort=-score&page=2&limit=10&offset=0&cursor=abc&direction=next" +
-		"&where=%7B%7D&fields=status&include=author&trashed=true&stream=true&q=hi"
-	if _, err := parseQuery(t, reserved); err != nil {
+	reserved := url.Values{}
+	for _, key := range []string{"sort", "page", "limit", "per_page", "offset", "cursor", "direction", "where", "fields", "include", "trashed", "stream", "q"} {
+		reserved.Set(key, "value")
+	}
+	if _, err := parseQuery(t, reserved.Encode()); err != nil {
 		t.Fatalf("reserved controls must not be rejected, got %v", err)
 	}
 }
 
 // Nested relation filters (?author.name=alice) are validated elsewhere
-// (parseNestedFilters); ParseFilters must skip dotted keys, not reject them.
+// (parseNestedFiltersValues); ParseFilters must skip dotted keys, not reject them.
 func TestStrictSkipsNestedDottedKeys(t *testing.T) {
 	if _, err := parseQuery(t, "author.name=alice"); err != nil {
 		t.Fatalf("dotted nested key must be skipped, got %v", err)
@@ -204,5 +208,22 @@ func TestParseQueryStrictRefusesDrops(t *testing.T) {
 	q, err := ParseQueryStrict("status=a%3Bb&sort=-status")
 	if err != nil || q.Get("status") != "a;b" {
 		t.Errorf("ParseQueryStrict(decodable) = %v, %v", q, err)
+	}
+}
+
+func TestListControlParamsSortedCopy(t *testing.T) {
+	keys := ListControlParams()
+	if len(keys) != len(reservedListParams) || !slices.IsSorted(keys) {
+		t.Fatalf("control keys must cover the reserved set in sorted order: %v", keys)
+	}
+	for _, key := range keys {
+		if !reservedListParams[key] {
+			t.Fatalf("unreserved control %q", key)
+		}
+	}
+	first := keys[0]
+	keys[0] = "changed"
+	if got := ListControlParams()[0]; got != first {
+		t.Fatalf("returned slice aliases the reserved set: %q", got)
 	}
 }

@@ -17,10 +17,10 @@ type Spec struct {
 	schemes  map[string]map[string]any
 
 	// RequestView optionally produces the spec served to ONE request.
-	// The framework's entity spec sets it so the auth-gated serving path
-	// (Handler, and DocsHandler's gated nested spec route) omits every
-	// entity the caller holds no read grant for — the same per-request
-	// read-scope filter /api/llm.md runs; an authenticated caller who
+	// The framework's entity spec sets it so the auth-gated serving paths
+	// (Handler, GatedHandler, and DocsHandler's gated nested spec route)
+	// omit every entity the caller holds no read grant for — the same
+	// per-request read-scope filter /api/llm.md runs; an authenticated caller who
 	// would only ever see 401/403 on an entity's rows never learns its
 	// name, paths, or columns from the spec (2026-09-05 red-probe
 	// round). PublicHandler — the WithPublicOpenAPI full-disclosure
