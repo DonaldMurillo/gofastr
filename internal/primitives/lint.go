@@ -40,6 +40,16 @@ func (c *Registry) Lint() []Finding {
 			}
 		}
 		l.imports(p)
+		for _, twin := range p.Twins {
+			if len(twin.Sites) < 2 {
+				l.errf(twin.Line, "twins entry %q names fewer than two sites", twin.Job)
+			}
+			for _, site := range twin.Sites {
+				if site.Path != "" && !l.isFile(site.Path) {
+					l.errf(site.Line, "site %q is not a file", site.Path)
+				}
+			}
+		}
 		l.invariants(p)
 		l.decisions(p)
 	}

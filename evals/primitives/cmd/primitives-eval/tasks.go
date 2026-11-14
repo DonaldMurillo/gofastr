@@ -15,8 +15,14 @@ const (
 
 var suiteConditions = map[string][]string{
 	suiteTrap:   {conditionComments, conditionRegistry, conditionBare},
-	suiteReplay: {conditionPlain, conditionNudge},
+	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry},
 }
+
+// registryPointer is the one paragraph a registry cell's CLAUDE.md gains.
+const registryPointer = "**Before changing a file, run `go run ./cmd/primitives for <path>`.** It\n" +
+	"prints the primitives that own the file, their invariants and decisions,\n" +
+	"and any other place that does the same job. The registry lives in\n" +
+	"`primitives/`; its format is `primitives/README.md`.\n\n"
 
 const nudge = " Before you finish, check whether other code paths have the same defect, and fix those too."
 

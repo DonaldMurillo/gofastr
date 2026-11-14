@@ -101,6 +101,9 @@ func TestEveryTaskCanBeGraded(t *testing.T) {
 			if err != nil || len(entries) == 0 || candidate.Ref == "" || len(candidate.Packages) == 0 {
 				t.Errorf("%s: a replay task needs graders, a ref and packages (%v)", candidate.ID, err)
 			}
+			if entries, err := fs.ReadDir(overlays, "overlays/"+candidate.ID); err != nil || len(entries) == 0 {
+				t.Errorf("%s: a replay task needs registry entries under overlays/ (%v)", candidate.ID, err)
+			}
 		case candidate.Tests == "" || len(candidate.Packages) == 0:
 			t.Errorf("%s has nothing to grade it", candidate.ID)
 		}

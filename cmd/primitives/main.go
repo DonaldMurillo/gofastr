@@ -142,11 +142,22 @@ func relPath(root, arg string) string {
 
 func printFor(c *primitives.Registry, w io.Writer, file string) {
 	chain := c.Chain(file)
-	if len(chain) == 0 {
+	twins := c.TwinsOf(file)
+	if len(chain) == 0 && len(twins) == 0 {
 		fmt.Fprintf(w, "%s: no primitive owns this path yet\n", file)
 		return
 	}
 	fmt.Fprintf(w, "%s\n", file)
+	for _, twin := range twins {
+		fmt.Fprintf(w, "\nSAME JOB IN SEVERAL PLACES: %s\n", twin.Job)
+		for _, site := range twin.Sites {
+			fmt.Fprintf(w, "  %s: %s\n", site.Path, site.Note)
+		}
+		fmt.Fprintln(w, "  In this repository a fix to one of these is not finished until every site has it. Fix them all, or say why a site is exempt.")
+	}
+	if len(chain) == 0 {
+		return
+	}
 	for _, p := range chain {
 		printPrimitive(c, w, p, false)
 	}

@@ -18,6 +18,13 @@ imports:
     from: [pkg/store]
     why: It is heavy.
     instead: Use the interface.
+twins:
+  - job: Sorting rows
+    sites:
+      - path: pkg/store/store.go
+        note: sorts on write
+      - path: pkg/heavy/heavy.go
+        note: sorts on export
 invariants:
   - id: rows-keep-order
     rule: Rows keep their order.
@@ -122,6 +129,9 @@ func TestLintRefuses(t *testing.T) {
 		{"upholds nothing", "upholds: [rows-keep-order]", "upholds: [gone]", `upholds "gone" names no invariant`},
 		{"duplicate invariant", "id: judged-only", "id: rows-keep-order", `invariant "rows-keep-order" is declared twice`},
 		{"duplicate decision", "id: old-way", "id: new-way", `decision "new-way" is declared twice`},
+		{"twin with one site", "      - path: pkg/heavy/heavy.go\n        note: sorts on export\n", "", "names fewer than two sites"},
+		{"twin site missing", "path: pkg/heavy/heavy.go", "path: pkg/heavy/gone.go", `site "pkg/heavy/gone.go" is not a file`},
+		{"twin site without note", "        note: sorts on export\n", "", "missing note"},
 		{"rejected without why", "        why: It was slow.\n", "", "missing why"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -187,6 +197,12 @@ func TestChainPicksTheDeepestOwner(t *testing.T) {
 	}
 	if got := ids("pkg/heavy/heavy.go"); got != "" {
 		t.Errorf("unowned file chain = %q", got)
+	}
+	if got := c.TwinsOf("pkg/heavy/heavy.go"); len(got) != 1 || got[0].Job != "Sorting rows" {
+		t.Errorf("twins of an unowned site = %+v", got)
+	}
+	if got := c.TwinsOf("docs/store.md"); len(got) != 0 {
+		t.Errorf("twins of a file in no entry = %+v", got)
 	}
 	checks := c.Checks([]string{"pkg/store/store.go", "pkg/store/store_test.go", "pkg/heavy/heavy.go"})
 	if len(checks) != 2 {

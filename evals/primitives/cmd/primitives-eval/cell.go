@@ -20,6 +20,9 @@ import (
 //go:embed graders
 var graders embed.FS
 
+//go:embed overlays
+var overlays embed.FS
+
 const (
 	outcomeFixed    = "fixed"
 	outcomeUnfixed  = "unfixed"
@@ -185,6 +188,11 @@ func prepare(cfg config, t task, condition, dir string) error {
 			return err
 		}
 	}
+	if t.Ref != "" && condition == conditionRegistry {
+		if err := overlayRegistry(ctx, cfg, t, dir, root); err != nil {
+			return err
+		}
+	}
 	// A grader file is held out: every cell starts from the -base copy and
 	// meets the -head copy only when it is graded.
 	for _, file := range t.GraderFiles {
@@ -206,6 +214,56 @@ func prepare(cfg config, t task, condition, dir string) error {
 		}
 	}
 	return nil
+}
+
+// overlayRegistry gives a replay cell, cut from a commit older than the
+// registry, the registry's tooling from -head, the task's own entries and
+// the pointer in CLAUDE.md.
+func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *os.Root) error {
+	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", cfg.head, "cmd/primitives", "internal/primitives", "primitives/README.md")
+	extract := command(ctx, dir, "tar", "-x")
+	pipe, err := archive.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	extract.Stdin = pipe
+	if err := extract.Start(); err != nil {
+		return err
+	}
+	if err := errors.Join(archive.Run(), extract.Wait()); err != nil {
+		return fmt.Errorf("overlay the registry tooling: %w", err)
+	}
+	base := path.Join("overlays", t.ID)
+	err = fs.WalkDir(overlays, base, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel := strings.TrimPrefix(p, base+"/")
+		if d.IsDir() {
+			if p == base {
+				return nil
+			}
+			return root.MkdirAll(rel, 0o700)
+		}
+		src, err := overlays.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return root.WriteFile(rel, src, 0o600)
+	})
+	if err != nil {
+		return fmt.Errorf("overlay %s: %w", t.ID, err)
+	}
+	guide, err := root.ReadFile("CLAUDE.md")
+	if err != nil {
+		return err
+	}
+	const anchor = "## TL;DR"
+	i := bytes.Index(guide, []byte(anchor))
+	if i < 0 {
+		return fmt.Errorf("CLAUDE.md at %s has no %q heading to put the registry pointer before", t.Ref, anchor)
+	}
+	return root.WriteFile("CLAUDE.md", slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
 }
 
 var registryParagraph = regexp.MustCompile(`(?s)\*\*Before changing a file, run .go run \./cmd/primitives for.*?\n\n`)

@@ -43,6 +43,13 @@ imports:                         # generated into primitives_imports_test.go
     from: [framework/crud]
     why: One sentence on what the ban protects.
     instead: What to do when you need the banned package.
+twins:                           # one job done in more than one place
+  - job: What the sites all do.
+    sites:
+      - path: framework/crud/include.go
+        note: Which function, and for what.
+      - path: framework/crud/eager.go
+        note: The other one.
 invariants:
   - id: match-by-primary-key
     rule: One present-tense sentence that is either true or false of the code.
@@ -66,6 +73,11 @@ decisions:
 Quote any string that holds `: ` or ` #`. Block scalars (`|`, `>`) are not
 read; a rule or a reason is one sentence on one line.
 
+`primitives for` on any site of a `twins` entry prints every other site
+and says to check each one. A site need not be owned by the primitive
+that lists it. Prefer merging the sites into one implementation; record
+a twin when they have to stay apart.
+
 ## What lint refuses
 
 - An unknown key, a missing `summary`, `rule` or `decision`, an id that is
@@ -74,6 +86,8 @@ read; a rule or a reason is one sentence on one line.
 - A `code` entry that matches no file, or a file claimed by two primitives
   where neither contains the other.
 - A `docs` path that is not a file.
+- A `twins` entry with fewer than two sites, or a site that is not a
+  file.
 - An `enforced_by` test that does not exist, an analyzer that is not
   registered, a contract rule that is not in the catalog.
 - An invariant with neither `enforced_by` nor `judge`.

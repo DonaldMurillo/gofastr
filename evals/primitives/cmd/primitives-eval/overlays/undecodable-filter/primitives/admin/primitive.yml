@@ -1,0 +1,13 @@
+primitive: admin
+summary: The admin screens a host mounts under /admin.
+code:
+  - battery/admin/
+twins:
+  - job: Narrowing an admin screen from the query string
+    sites:
+      - path: battery/admin/audit.go
+        note: the audit page reads entity, actor, op, from and to
+      - path: battery/admin/queue.go
+        note: the jobs page reads status
+      - path: battery/admin/palette.go
+        note: the search page reads q

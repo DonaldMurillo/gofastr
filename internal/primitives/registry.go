@@ -37,8 +37,23 @@ type Primitive struct {
 	Code       []Ref
 	Docs       []Ref
 	Imports    []ImportRule
+	Twins      []Twin
 	Invariants []Invariant
 	Decisions  []Decision
+}
+
+// Twin is one job done in more than one place: a defect or a change in
+// one site probably belongs in the others.
+type Twin struct {
+	Job   string
+	Sites []Site
+	Line  int
+}
+
+type Site struct {
+	Path string
+	Note string
+	Line int
 }
 
 // Ref is a path or pattern with the line that declared it.
@@ -268,7 +283,7 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 		d.errf(1, "%v", err)
 		return nil
 	}
-	if !d.mapping(root, "primitive", "primitive", "summary", "code", "docs", "imports", "invariants", "decisions") {
+	if !d.mapping(root, "primitive", "primitive", "summary", "code", "docs", "imports", "twins", "invariants", "decisions") {
 		return nil
 	}
 	p := &Primitive{ID: id, File: file, Line: root.Line}
@@ -297,6 +312,19 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 			Instead: d.str(n, "instead", true),
 			Line:    n.Line,
 		})
+	}
+	for _, n := range d.list(root, "twins") {
+		if !d.mapping(n, "twins entry", "job", "sites") {
+			continue
+		}
+		twin := Twin{Job: d.str(n, "job", true), Line: n.Line}
+		for _, s := range d.list(n, "sites") {
+			if !d.mapping(s, "site", "path", "note") {
+				continue
+			}
+			twin.Sites = append(twin.Sites, Site{Path: d.str(s, "path", true), Note: d.str(s, "note", true), Line: s.Line})
+		}
+		p.Twins = append(p.Twins, twin)
 	}
 	for _, n := range d.list(root, "invariants") {
 		if !d.mapping(n, "invariant", "id", "rule", "enforced_by", "judge") {

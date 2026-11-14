@@ -1,0 +1,13 @@
+primitive: crud
+summary: The generated HTTP, MCP and in-process CRUD surface for a declared entity.
+code:
+  - framework/crud/
+twins:
+  - job: Reading a query key that carries one value
+    sites:
+      - path: framework/crud/crud.go
+        note: List reads fields, where and q
+      - path: framework/crud/crud.go
+        note: Get reads fields
+      - path: framework/crud/crud_projection.go
+        note: parseFieldsParam reads fields for both

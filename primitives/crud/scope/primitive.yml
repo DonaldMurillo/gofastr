@@ -9,6 +9,13 @@ code:
 docs:
   - framework/docs/content/access-control.md
   - framework/docs/content/entity-declarations.md
+twins:
+  - job: Deciding whether a caller's read posture admits an entity
+    sites:
+      - path: framework/crud/owner.go
+        note: CanReadScoped answers as a boolean, requireScope as the HTTP gate
+      - path: framework/crud/write_gate.go
+        note: canScopedRecord answers per record
 invariants:
   - id: one-read-scope-builder
     rule: readScopeFilters is the only builder of ReadScope predicates, and every read sink renders its output.

@@ -49,8 +49,11 @@ reports one path. The real fix reached others with the same defect.
 | `observer-panic` | `ae4a44a9^` | a panicking permission observer | a panicking router serve hook |
 | `undecodable-filter` | `830f31b8^` | an undecodable filter on the admin audit page | the admin jobs and search pages |
 
-Conditions are `plain` (the report alone) and `nudge` (the report plus
-one sentence asking the agent to check other paths for the same defect).
+Conditions are `plain` (the report alone), `nudge` (the report plus one
+sentence asking the agent to check other paths for the same defect) and
+`registry` (the report alone, in a tree given the registry tooling, a
+`twins` entry naming the paths, and the pointer in `CLAUDE.md`; the
+entries are under `cmd/primitives-eval/overlays/`).
 Graders are held-out tests under `cmd/primitives-eval/graders/`, written
 so each fails before the real fix and passes after it. A cell is `fixed`
 when the reported path passes, and `twins fixed` counts the other paths.

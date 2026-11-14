@@ -7,6 +7,13 @@ code:
   - framework/crud/relation_keys.go
 docs:
   - framework/docs/content/includes.md
+twins:
+  - job: Building the owner and tenant predicate for a relation's target
+    sites:
+      - path: framework/crud/include.go
+        note: applyRelatedOwnerScope and applyRelatedTenantScope, for ?include=
+      - path: framework/crud/eager.go
+        note: eagerScopeFilters, for EagerLoad and nested filters
 invariants:
   - id: eager-load-scrubs
     rule: EagerLoad with a registry excludes soft-deleted rows, serves only declared non-Hidden columns, and applies owner and tenant scope; a target it cannot resolve is an error.

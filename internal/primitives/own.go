@@ -36,6 +36,22 @@ func (p *Primitive) Owns(file string) bool {
 	return false
 }
 
+// TwinsOf lists every twins entry, in any primitive, with a site in file.
+func (c *Registry) TwinsOf(file string) []Twin {
+	var out []Twin
+	for _, p := range c.Primitives {
+		for _, twin := range p.Twins {
+			for _, site := range twin.Sites {
+				if site.Path == file {
+					out = append(out, twin)
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
 // Check is one judged question and the changed files it applies to.
 type Check struct {
 	Primitive string   `json:"primitive"`
