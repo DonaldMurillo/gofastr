@@ -127,12 +127,15 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 
-	status, err := gitOutput(dir, "status", "--porcelain", "--untracked-files=all")
+	// Not gitOutput: it trims the output, and a porcelain line starts with
+	// two status columns that may be spaces.
+	statusCmd := command(ctx, dir, "git", "status", "--porcelain", "--untracked-files=all")
+	status, err := statusCmd.Output()
 	if err != nil {
-		fail(err)
+		fail(fmt.Errorf("git status: %w", err))
 		return
 	}
-	for line := range strings.SplitSeq(status, "\n") {
+	for line := range strings.SplitSeq(string(status), "\n") {
 		if len(line) < 4 {
 			continue
 		}
