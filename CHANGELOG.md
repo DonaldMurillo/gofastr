@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Added
+- **A registry of the framework's parts, for contributors**
+  ([primitives](primitives/README.md), [plan](primitives/PLAN.md)).
+  `primitives/` holds one file per part of the framework with its
+  invariants, decisions and docs, and `go run ./cmd/primitives for <path>`
+  prints what governs a file. `.claude/settings.json` is new: deny rules
+  for commands that cannot be undone, a hook that names the other places
+  doing the same job as a file an agent changed, and a stop check that
+  runs the changed packages' tests and shows what else the change needs.
+  Nothing changes for an app built on GoFastr.
 - **`gofastr deploy <user@host>`** (experimental) puts an app on one
   Linux server over SSH as a systemd service: build for the server's
   CPU, copy, start, health check, and back to the release before when
