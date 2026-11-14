@@ -3,25 +3,13 @@
 package crud_test
 
 import (
-	"os/exec"
-	"strings"
 	"testing"
+
+	"github.com/DonaldMurillo/gofastr/internal/importcheck"
 )
 
 func TestPrimitiveImports(t *testing.T) {
-	out, err := exec.Command("go", "list", "-deps", ".").CombinedOutput()
-	if err != nil {
-		t.Fatalf("go list -deps: %v\n%s", err, out)
-	}
-	deps := map[string]bool{}
-	for line := range strings.SplitSeq(string(out), "\n") {
-		deps[strings.TrimSpace(line)] = true
-	}
-	for _, ban := range []struct{ deny, primitive, why, instead string }{
-		{"github.com/DonaldMurillo/gofastr/framework/image", "crud.uploads", "framework/image links every image decoder and the WebP encoder, and crud is in nearly every app's dependency graph.", "Implement file.ImageDeriver in framework/imagefield."},
-	} {
-		if deps[ban.deny] {
-			t.Errorf("this package links %s, which primitive %s forbids.\nWhy: %s\nInstead: %s", ban.deny, ban.primitive, ban.why, ban.instead)
-		}
-	}
+	importcheck.Run(t,
+		importcheck.Ban{Deny: "github.com/DonaldMurillo/gofastr/framework/image", Primitive: "crud.uploads", Why: "framework/image links every image decoder and the WebP encoder, and crud is in nearly every app's dependency graph.", Instead: "Implement file.ImageDeriver in framework/imagefield."},
+	)
 }
