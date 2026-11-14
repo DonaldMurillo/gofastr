@@ -134,7 +134,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 	case "hook":
 		return hook(c, os.Stdin, stdout)
 	case "stop":
-		return stop(c, os.Stdin, stderr)
+		return stop(c, os.Stdin, stdout, stderr)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:
@@ -199,17 +199,37 @@ func hook(c *primitives.Registry, stdin io.Reader, stdout io.Writer) int {
 // it gives up and lets the session finish with a warning.
 const stopBudget = 5 * time.Minute
 
-// stop answers a Claude Code Stop event. It checks the registry and runs
-// vet and the short tests of every package changed since the base ref,
-// and exits 2, which sends the agent back, when any of that fails. A
-// session the hook has already sent back once is let go, so a failure it
-// cannot fix does not hold it forever.
-func stop(c *primitives.Registry, stdin io.Reader, stderr io.Writer) int {
+// stop answers a Claude Code Stop event. When stopCheck has something to
+// say it prints a block decision, which sends the agent back with the
+// reason. The decision goes to stdout with exit 0 because the hook runs
+// through `go run`, which reports every failing exit code as 1, and
+// Claude Code only treats 2 as blocking.
+func stop(c *primitives.Registry, stdin io.Reader, stdout, stderr io.Writer) int {
+	reason, warning := stopCheck(c, stdin)
+	if warning != "" {
+		fmt.Fprintln(stderr, warning)
+	}
+	if reason == "" {
+		return 0
+	}
+	if err := json.NewEncoder(stdout).Encode(map[string]string{"decision": "block", "reason": reason}); err != nil {
+		return 2
+	}
+	return 0
+}
+
+// stopCheck checks the registry and runs vet and the short tests of
+// every package changed since the base ref, and returns why the session
+// may not finish yet, or a warning when it could not tell. A session the
+// hook has already sent back once is let go, so a failure it cannot fix
+// does not hold it forever.
+func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string) {
 	var event struct {
-		Active bool `json:"stop_hook_active"`
+		Active  bool   `json:"stop_hook_active"`
+		Session string `json:"session_id"`
 	}
 	if err := json.NewDecoder(stdin).Decode(&event); err != nil || event.Active {
-		return 0
+		return "", ""
 	}
 	base := "origin/main"
 	if err := exec.Command("git", "-C", c.Root, "rev-parse", "--verify", "--quiet", base).Run(); err != nil {
@@ -217,16 +237,15 @@ func stop(c *primitives.Registry, stdin io.Reader, stderr io.Writer) int {
 	}
 	changed, err := changedFiles(c.Root, base)
 	if err != nil {
-		return 0
+		return "", ""
 	}
 	pkgs := changedPackages(c.Root, changed)
 	if len(pkgs) == 0 {
-		return 0
+		return "", ""
 	}
 	state := treeState(c.Root, changed)
-	if passed := toldFiles(c.Root, "stop-pass"); state != "" && slices.Contains(passed, state) {
-		return 0
-	}
+	tested := state != "" && slices.Contains(toldFiles(c.Root, "stop-pass"), state)
+	notices := docsNotices(c, changed, toldFiles(c.Root, docsKey(event.Session)))
 	var problems []string
 	for _, f := range c.Lint() {
 		problems = append(problems, f.String())
@@ -238,14 +257,17 @@ func stop(c *primitives.Registry, stdin io.Reader, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), stopBudget)
 	defer cancel()
-	for _, args := range [][]string{{"vet"}, {"test", "-short", "-count=1"}} {
+	checks := [][]string{{"vet"}, {"test", "-short", "-count=1"}}
+	if tested {
+		checks = nil
+	}
+	for _, args := range checks {
 		cmd := exec.CommandContext(ctx, "go", append(args, pkgs...)...)
 		cmd.Dir = c.Root
 		cmd.WaitDelay = 10 * time.Second
 		out, err := cmd.CombinedOutput()
 		if ctx.Err() != nil {
-			fmt.Fprintf(stderr, "primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.\n", args[0], stopBudget, strings.Join(pkgs, " "))
-			return 1
+			return "", fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(pkgs, " "))
 		}
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), tail(string(out), 40)))
@@ -253,13 +275,66 @@ func stop(c *primitives.Registry, stdin io.Reader, stderr io.Writer) int {
 		}
 	}
 	if len(problems) > 0 {
-		fmt.Fprintf(stderr, "primitives stop: what you changed does not pass yet. Fix it before you finish.\n\n%s\n", strings.Join(problems, "\n"))
-		return 2
+		return "What you changed does not pass yet. Fix it before you finish.\n\n" + strings.Join(problems, "\n"), ""
 	}
 	if state != "" {
 		rememberTold(c.Root, "stop-pass", []string{state})
 	}
-	return 0
+	if len(notices) > 0 {
+		var ids, lines []string
+		for _, n := range notices {
+			ids = append(ids, n.primitive)
+			lines = append(lines, n.text)
+		}
+		rememberTold(c.Root, docsKey(event.Session), append(toldFiles(c.Root, docsKey(event.Session)), ids...))
+		return "Before you finish:\n\n" + strings.Join(lines, "\n\n"), ""
+	}
+	return "", ""
+}
+
+func docsKey(session string) string { return session + "-docs" }
+
+type docsNotice struct{ primitive, text string }
+
+// docsNotices names, for each primitive whose code changed while none of
+// its docs did, the docs to update and anything else the primitive asks
+// for on a change. A primitive the session was already told about is
+// left out.
+func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
+	var out []docsNotice
+	seen := map[string]bool{}
+	for _, file := range changed {
+		if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		for _, p := range c.Chain(file) {
+			if seen[p.ID] || slices.Contains(told, p.ID) || (len(p.Docs) == 0 && len(p.OnChange) == 0) {
+				continue
+			}
+			seen[p.ID] = true
+			var docs []string
+			touched := false
+			for _, ref := range p.Docs {
+				docs = append(docs, ref.Value)
+				touched = touched || slices.Contains(changed, ref.Value)
+			}
+			if touched {
+				continue
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "You changed %s (%s)", p.ID, strings.TrimSuffix(p.Summary, "."))
+			if len(docs) > 0 {
+				fmt.Fprintf(&b, ", and none of its docs changed: %s. Update them, or say in your summary why this change needs none.", strings.Join(docs, ", "))
+			} else {
+				b.WriteString(".")
+			}
+			for _, ref := range p.OnChange {
+				fmt.Fprintf(&b, "\n  Also, for this part: %s", ref.Value)
+			}
+			out = append(out, docsNotice{p.ID, b.String()})
+		}
+	}
+	return out
 }
 
 // changedPackages lists, as ./dir patterns, the directories that hold a
@@ -392,6 +467,9 @@ func printPrimitive(c *primitives.Registry, w io.Writer, p *primitives.Primitive
 		for _, ref := range p.Docs {
 			fmt.Fprintf(w, "  docs: %s\n", ref.Value)
 		}
+	}
+	for _, ref := range p.OnChange {
+		fmt.Fprintf(w, "  on change: %s\n", ref.Value)
 	}
 	for _, rule := range p.Imports {
 		fmt.Fprintf(w, "  must not link %s. %s Instead: %s\n", rule.Deny, rule.Why, rule.Instead)

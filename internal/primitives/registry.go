@@ -36,6 +36,7 @@ type Primitive struct {
 	Summary    string
 	Code       []Ref
 	Docs       []Ref
+	OnChange   []Ref
 	Imports    []ImportRule
 	Twins      []Twin
 	Invariants []Invariant
@@ -283,7 +284,7 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 		d.errf(1, "%v", err)
 		return nil
 	}
-	if !d.mapping(root, "primitive", "primitive", "summary", "code", "docs", "imports", "twins", "invariants", "decisions") {
+	if !d.mapping(root, "primitive", "primitive", "summary", "code", "docs", "on_change", "imports", "twins", "invariants", "decisions") {
 		return nil
 	}
 	p := &Primitive{ID: id, File: file, Line: root.Line}
@@ -301,6 +302,7 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 	p.Summary = d.str(root, "summary", true)
 	p.Code = d.refs(root, "code")
 	p.Docs = d.refs(root, "docs")
+	p.OnChange = d.refs(root, "on_change")
 	for _, n := range d.list(root, "imports") {
 		if !d.mapping(n, "imports entry", "deny", "from", "why", "instead") {
 			continue

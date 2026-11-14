@@ -9,6 +9,7 @@ const (
 	conditionPlain    = "plain"
 	conditionNudge    = "nudge"
 	conditionHook     = "hook"
+	conditionHarness  = "harness"
 
 	suiteTrap   = "trap"
 	suiteReplay = "replay"
@@ -16,7 +17,7 @@ const (
 
 var suiteConditions = map[string][]string{
 	suiteTrap:   {conditionComments, conditionRegistry, conditionBare},
-	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry, conditionHook},
+	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry, conditionHook, conditionHarness},
 }
 
 // registryPointer is the one paragraph a registry cell's CLAUDE.md gains.
@@ -28,6 +29,10 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 // hookSettings runs the registry's hook after every tool that can change
 // a file, the shell included.
 const hookSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}` + "\n"
+
+// harnessSettings adds the stop check, which runs the changed packages'
+// tests and names the docs of a part that changed.
+const harnessSettings = `{"hooks":{"PostToolUse":[{"matcher":"Edit|Write|MultiEdit|Bash","hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}],"Stop":[{"hooks":[{"type":"command","command":"cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives stop","timeout":420}]}]}}` + "\n"
 
 const nudge = " Before you finish, check whether other code paths have the same defect, and fix those too."
 

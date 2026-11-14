@@ -2,6 +2,10 @@ primitive: admin
 summary: The admin screens a host mounts under /admin.
 code:
   - battery/admin/
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A change to what a request is allowed to do needs a note in internal/upgrade/releases/, in the file for the next release.
 twins:
   - job: Narrowing an admin screen from the query string
     sites:

@@ -38,6 +38,8 @@ code:                            # the files it owns
   - framework/imagefield/        # a trailing slash for a whole tree
 docs:
   - framework/docs/content/includes.md
+on_change:                       # one line each, shown when this part changes
+  - What a change here must also do, that no test can check.
 imports:                         # generated into primitives_imports_test.go
   - deny: framework/image
     from: [framework/crud]
@@ -88,7 +90,11 @@ a twin when they have to stay apart.
 - **`primitives stop`** runs when a session tries to finish. It checks
   the registry and runs vet and the short tests of every package changed
   since `origin/main`. A failure sends the agent back once, with the
-  output. A tree that already passed is not tested again.
+  output, as a block decision on stdout: the hook runs through `go run`,
+  which cannot pass on the exit code Claude Code treats as blocking. A tree that already passed is not tested again. When a
+  primitive's code changed and none of its `docs` did, it names those
+  docs and the primitive's `on_change` lines, once per session, and the
+  agent updates them or says why not.
 - **Deny rules** cover what cannot be taken back: a forced push, a push
   to `main`, discarding the whole working tree (`git reset --hard`,
   `git clean`, `git checkout .`, `git restore .`), and reading `.env`

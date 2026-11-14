@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -142,8 +143,18 @@ func TestStop(t *testing.T) {
 		if err != nil || len(findings) > 0 {
 			t.Fatal(err, findings)
 		}
-		var errOut bytes.Buffer
-		return stop(c, strings.NewReader(event), &errOut), errOut.String()
+		var out, errOut bytes.Buffer
+		if code := stop(c, strings.NewReader(event), &out, &errOut); code != 0 {
+			t.Fatalf("stop exits %d: a hook run through go run can only speak through its output", code)
+		}
+		if out.Len() == 0 {
+			return 0, errOut.String()
+		}
+		var decision struct{ Decision, Reason string }
+		if err := json.Unmarshal(out.Bytes(), &decision); err != nil || decision.Decision != "block" {
+			t.Fatalf("stop printed %q, want a block decision (%v)", out.String(), err)
+		}
+		return 2, decision.Reason
 	}
 	if code, msg := fire(`{}`); code != 0 {
 		t.Fatalf("nothing changed, yet stop = %d: %s", code, msg)
@@ -159,6 +170,24 @@ func TestStop(t *testing.T) {
 	write("a/a.go", "package a\n\n// One is one.\nfunc One() int { return 1 }\n")
 	if code, msg := fire(`{}`); code != 0 {
 		t.Fatalf("a passing change: stop = %d: %s", code, msg)
+	}
+	write("docs/x.md", "# x\n")
+	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\ndocs:\n  - docs/x.md\non_change:\n  - Add an upgrade note when a request is newly refused.\n")
+	git("add", "docs", "primitives")
+	git("commit", "-q", "-m", "docs")
+	const session = `{"session_id":"s1"}`
+	code, msg = fire(session)
+	for _, want := range []string{"You changed x (Does x)", "docs/x.md", "Add an upgrade note"} {
+		if code != 2 || !strings.Contains(msg, want) {
+			t.Fatalf("code changed and its docs did not: stop = %d, message %q, want %q", code, msg, want)
+		}
+	}
+	if code, msg := fire(session); code != 0 {
+		t.Errorf("the same session was asked about the same docs twice: %d %s", code, msg)
+	}
+	write("docs/x.md", "# x\n\nOne is one.\n")
+	if code, msg := fire(`{"session_id":"s2"}`); code != 0 {
+		t.Errorf("the docs changed with the code, yet stop = %d: %s", code, msg)
 	}
 	if passed := toldFiles(root, "stop-pass"); len(passed) != 1 {
 		t.Errorf("a pass was not remembered: %v", passed)

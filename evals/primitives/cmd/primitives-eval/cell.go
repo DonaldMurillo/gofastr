@@ -44,6 +44,8 @@ type cell struct {
 	Note          string   `json:"note,omitempty"`
 	ChangedSource bool     `json:"changed_source"`
 	ChangedTests  bool     `json:"changed_tests"`
+	ChangedDocs   bool     `json:"changed_docs"`
+	UpgradeNote   bool     `json:"upgrade_note"`
 	ChangedFiles  []string `json:"changed_files,omitempty"`
 	TestsPassed   int      `json:"tests_passed"`
 	TestsFailed   int      `json:"tests_failed"`
@@ -107,7 +109,7 @@ func runCell(cfg config, c *cell) {
 		"--no-session-persistence",
 		"--max-budget-usd", fmt.Sprintf("%.2f", cfg.cellBudget),
 	}
-	if c.Condition == conditionHook {
+	if c.Condition == conditionHook || c.Condition == conditionHarness {
 		args = append(args, "--settings", filepath.Join(dir, ".claude", "settings.json"))
 	}
 	agent := command(ctx, dir, cfg.claude, args...)
@@ -136,6 +138,12 @@ func runCell(cfg config, c *cell) {
 		}
 		file := strings.TrimSpace(line[3:])
 		c.ChangedFiles = append(c.ChangedFiles, file)
+		switch {
+		case strings.HasPrefix(file, "framework/docs/content/"):
+			c.ChangedDocs = true
+		case strings.HasPrefix(file, "internal/upgrade/releases/"):
+			c.UpgradeNote = true
+		}
 		if strings.HasSuffix(file, "_test.go") {
 			c.ChangedTests = true
 		} else if strings.HasSuffix(file, ".go") {
@@ -202,13 +210,13 @@ func prepare(cfg config, t task, condition, dir string) error {
 			return err
 		}
 	}
-	if t.Ref != "" && (condition == conditionRegistry || condition == conditionHook) {
+	if t.Ref != "" && (condition == conditionRegistry || condition == conditionHook || condition == conditionHarness) {
 		if err := overlayRegistry(ctx, cfg, t, dir, root); err != nil {
 			return err
 		}
 	}
-	if condition == conditionHook {
-		if err := errors.Join(root.MkdirAll(".claude", 0o700), root.WriteFile(".claude/settings.json", []byte(hookSettings), 0o600)); err != nil {
+	if settings := map[string]string{conditionHook: hookSettings, conditionHarness: harnessSettings}[condition]; settings != "" {
+		if err := errors.Join(root.MkdirAll(".claude", 0o700), root.WriteFile(".claude/settings.json", []byte(settings), 0o600)); err != nil {
 			return err
 		}
 	}
@@ -460,8 +468,8 @@ func lastLine(out []byte) string {
 func renderMarkdown(r report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Primitives eval\n\nModel `%s`, comments condition at `%s`, registry and bare at `%s`. Spent $%.2f.\n\n", r.Model, r.Base, r.Head, r.SpentUSD)
-	b.WriteString("| Task | Condition | Run | Outcome | Tests pass/fail | Twins fixed | Rubric | Changed source | Changed tests | Registry calls | Tool calls | Cost |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Task | Condition | Run | Outcome | Tests pass/fail | Twins fixed | Rubric | Changed source | Changed tests | Changed docs | Upgrade note | Registry calls | Tool calls | Cost |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, c := range r.Cells {
 		rubric := ""
 		if total := len(c.RubricHit) + len(c.RubricMissed); total > 0 {
@@ -471,8 +479,8 @@ func renderMarkdown(r report) string {
 		if c.TwinsTotal > 0 {
 			twins = fmt.Sprintf("%d/%d", c.TwinsFixed, c.TwinsTotal)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %d | %s | %d/%d | %s | %s | %t | %t | %d | %d | $%.2f |\n",
-			c.Task, c.Condition, c.Run, c.Outcome, c.TestsPassed, c.TestsFailed, twins, rubric, c.ChangedSource, c.ChangedTests, c.RegistryCalls, c.ToolCalls, c.CostUSD)
+		fmt.Fprintf(&b, "| %s | %s | %d | %s | %d/%d | %s | %s | %t | %t | %t | %t | %d | %d | $%.2f |\n",
+			c.Task, c.Condition, c.Run, c.Outcome, c.TestsPassed, c.TestsFailed, twins, rubric, c.ChangedSource, c.ChangedTests, c.ChangedDocs, c.UpgradeNote, c.RegistryCalls, c.ToolCalls, c.CostUSD)
 	}
 	return b.String()
 }
