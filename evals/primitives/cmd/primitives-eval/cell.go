@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 //go:embed graders
@@ -70,6 +71,11 @@ type report struct {
 func runCell(cfg config, c *cell) {
 	name := fmt.Sprintf("%s-%s-%d", c.Task, c.Condition, c.Run)
 	dir := filepath.Join(cfg.work, name)
+	if !cfg.keep {
+		// A cell is a full copy of the repository: left behind, a run of
+		// a few dozen fills the disk.
+		defer os.RemoveAll(dir)
+	}
 	fail := func(err error) {
 		c.Outcome, c.Note = outcomeError, err.Error()
 	}
@@ -148,7 +154,11 @@ func runCell(cfg config, c *cell) {
 		}
 		return
 	}
-	gradeTests(ctx, cfg, c, dir)
+	// Grading gets its own clock: an agent that used its whole timeout
+	// still left a tree to grade.
+	gradeCtx, cancelGrade := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancelGrade()
+	gradeTests(gradeCtx, cfg, c, dir)
 }
 
 // prepare writes one condition's tree into dir as a fresh one-commit

@@ -28,6 +28,7 @@ type config struct {
 	claude, model    string
 	work, out        string
 	timeout          time.Duration
+	keep             bool
 	cellBudget       float64
 }
 
@@ -37,10 +38,11 @@ func main() {
 	flag.StringVar(&cfg.base, "base", "origin/main", "ref for the comments condition")
 	flag.StringVar(&cfg.head, "head", "HEAD", "ref for the registry and bare conditions")
 	flag.StringVar(&cfg.claude, "claude", "claude", "Claude Code CLI program")
-	flag.StringVar(&cfg.model, "model", "sonnet", "model for every cell")
+	flag.StringVar(&cfg.model, "model", "opus", "model for every cell")
 	flag.StringVar(&cfg.work, "work", "", "directory for cell workspaces, outside the repository (default: a new temp dir)")
 	flag.StringVar(&cfg.out, "out", "", "artifact directory (default: dist/primitives-eval/<timestamp>)")
-	flag.DurationVar(&cfg.timeout, "timeout", 20*time.Minute, "timeout per cell")
+	flag.DurationVar(&cfg.timeout, "timeout", 25*time.Minute, "timeout per cell")
+	flag.BoolVar(&cfg.keep, "keep", false, "keep each cell's workspace after it is graded")
 	flag.Float64Var(&cfg.cellBudget, "cell-budget", 2, "most one cell may spend, in USD")
 	budget := flag.Float64("budget", 10, "stop starting cells once the run has spent this much, in USD")
 	suite := flag.String("suite", suiteTrap, "which tasks to run: trap, replay or all")

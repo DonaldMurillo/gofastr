@@ -63,7 +63,7 @@ when the reported path passes, and `twins fixed` counts the other paths.
 ## Run
 
 ```sh
-go run ./evals/primitives/cmd/primitives-eval -model sonnet -runs 2
+go run ./evals/primitives/cmd/primitives-eval -runs 2
 ```
 
 It needs the Claude Code CLI (`-claude`, default `claude`) signed in, and
