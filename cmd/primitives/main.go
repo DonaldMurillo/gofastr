@@ -270,7 +270,7 @@ func stopCheck(c *primitives.Registry, stdin io.Reader) (reason, warning string)
 			return "", fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(pkgs, " "))
 		}
 		if err != nil {
-			problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), tail(string(out), 40)))
+			problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), failures(string(out), 40)))
 			break
 		}
 	}
@@ -376,6 +376,27 @@ func treeState(root string, changed []string) string {
 		sum.Write(data)
 	}
 	return hex.EncodeToString(sum.Sum(nil))
+}
+
+var failureLine = regexp.MustCompile(`^(--- FAIL|FAIL|panic:|\S+\.go:\d+:\d*:? |\s+\S+_test\.go:\d+: )`)
+
+// failures keeps the lines of a go vet or go test run that say what
+// failed: the failing tests, their messages and the failing packages. A
+// run that names none falls back to its last lines.
+func failures(out string, n int) string {
+	var kept []string
+	for line := range strings.SplitSeq(out, "\n") {
+		if failureLine.MatchString(line) {
+			kept = append(kept, line)
+		}
+	}
+	if len(kept) == 0 {
+		return tail(out, n)
+	}
+	if len(kept) > n {
+		kept = append(kept[:n], fmt.Sprintf("... and %d more lines", len(kept)-n))
+	}
+	return strings.Join(kept, "\n")
 }
 
 func tail(s string, n int) string {

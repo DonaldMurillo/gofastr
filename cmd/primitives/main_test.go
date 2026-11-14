@@ -196,3 +196,28 @@ func TestStop(t *testing.T) {
 		t.Errorf("changedPackages = %v", got)
 	}
 }
+
+func TestFailuresKeepsWhatFailed(t *testing.T) {
+	out := strings.Join([]string{
+		"  server ready", "  Listening: http://127.0.0.1:1", "=== RUN   TestA",
+		"--- FAIL: TestA (0.01s)", "    a_test.go:12: got 2, want 1",
+		"  more noise", "FAIL", "FAIL\texample.test/m/a\t0.1s", "ok  \texample.test/m/b\t0.1s",
+	}, "\n")
+	got := failures(out, 40)
+	for _, want := range []string{"--- FAIL: TestA", "a_test.go:12: got 2, want 1", "FAIL\texample.test/m/a"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("failures dropped %q:\n%s", want, got)
+		}
+	}
+	for _, noise := range []string{"server ready", "Listening", "more noise", "ok  "} {
+		if strings.Contains(got, noise) {
+			t.Errorf("failures kept %q:\n%s", noise, got)
+		}
+	}
+	if got := failures("./a.go:3:5: undefined: x", 40); !strings.Contains(got, "undefined: x") {
+		t.Errorf("a vet finding was dropped: %q", got)
+	}
+	if got := failures("line one\nline two", 1); got != "line two" {
+		t.Errorf("with nothing recognisable, want the tail, got %q", got)
+	}
+}
