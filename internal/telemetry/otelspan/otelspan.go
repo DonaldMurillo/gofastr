@@ -116,7 +116,7 @@ func (p *Processor) OnEnd(s sdktrace.ReadOnlySpan) {
 	// scheduled run (an internal one). The collector reads this for a
 	// root only, and after it has set a lone call aside.
 	e.Job = s.SpanKind() != trace.SpanKindServer
-	e.Quiet = e.Root && e.Path != "" && slices.ContainsFunc(p.quiet, func(prefix string) bool { return strings.HasPrefix(e.Path, prefix) })
+	e.Quiet = e.Root && e.Path != "" && slices.ContainsFunc(p.quiet, func(prefix string) bool { return under(e.Path, prefix) })
 	p.c.SpanEnded(e)
 }
 
@@ -136,4 +136,11 @@ func readableRoute(route string) string {
 		return method + "(no route)"
 	}
 	return strings.TrimSuffix(route, "{$}")
+}
+
+// under reports whether path is the quiet prefix or below it. The match
+// stops at a path segment: "/healthz" covers "/healthz" and "/healthz/db"
+// and leaves "/healthz2" alone; "/assets/" covers what is below it.
+func under(path, prefix string) bool {
+	return path == prefix || strings.HasPrefix(path, strings.TrimSuffix(prefix, "/")+"/")
 }

@@ -281,7 +281,7 @@ func queriesMatchFullRead(t *testing.T, fx *fixture) {
 		}
 		var kept []string
 		for _, l := range slices.Backward(fx.logs) {
-			if !l.Time.Before(from) && !l.Time.After(to) && !strings.Contains(l.raw, `"path":"/orders`) && !strings.Contains(l.raw, `"path":"/customers/`) {
+			if !l.Time.Before(from) && !l.Time.After(to) && !strings.Contains(l.raw, `"path":"/orders"`) && !strings.Contains(l.raw, `"path":"/orders/`) && !strings.Contains(l.raw, `"path":"/customers/`) {
 				kept = append(kept, l.raw)
 			}
 		}

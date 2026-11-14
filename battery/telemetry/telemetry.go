@@ -63,9 +63,10 @@ type Config struct {
 	// Past it the oldest unfinished trace is dropped and counted.
 	// Default 32 MiB.
 	MaxMemoryBytes int64
-	// QuietPaths are path prefixes of requests kept only when they fail
-	// or are slow, never as part of the sample: static files, health
-	// checks. "/__gofastr/" and "/core-ui/", the framework's own scripts
+	// QuietPaths are paths whose requests, and those below them, are
+	// kept only when they fail or are slow, never as part of the sample:
+	// static files, health checks. A match stops at a path segment:
+	// "/healthz" covers "/healthz/db" and not "/healthz2". "/__gofastr/" and "/core-ui/", the framework's own scripts
 	// and styles, are always two. The Logs screen leaves these paths'
 	// access lines out unless asked for them.
 	QuietPaths []string

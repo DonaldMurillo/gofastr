@@ -233,7 +233,7 @@ func waterfallCSS(_ style.Theme) string {
   color: var(--color-text-muted, #52525B);
 }
 [data-cui-comp="ui-waterfall"] .fui-waterfall__num {
-  inline-size: 6.5rem;
+  inline-size: var(--ui-waterfall-num-width, 6.5rem);
   text-align: end;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
@@ -282,7 +282,7 @@ func waterfallCSS(_ style.Theme) string {
    started is what the bar's position already says. */
 @container (max-width: 36rem) {
   [data-cui-comp="ui-waterfall"] .fui-waterfall__start { display: none; }
-  [data-cui-comp="ui-waterfall"] .fui-waterfall__num { inline-size: 4.5rem; }
+  [data-cui-comp="ui-waterfall"] .fui-waterfall__num { inline-size: var(--ui-waterfall-num-width-narrow, 4.5rem); }
   /* The detail is what tells one step from the next (six SELECTs that
      differ in their last word): cut to one line here it shows a few
      characters, so it wraps. */

@@ -22,3 +22,25 @@ func TestReadableRoute(t *testing.T) {
 		}
 	}
 }
+
+// A quiet prefix stops at a path segment: a route that merely starts
+// with the same letters is not under it.
+func TestUnderStopsAtAPathSegment(t *testing.T) {
+	for _, c := range []struct {
+		path, prefix string
+		want         bool
+	}{
+		{"/assets/app.js", "/assets/", true},
+		{"/assets/", "/assets/", true},
+		{"/assets", "/assets/", false},
+		{"/assets2/app.js", "/assets/", false},
+		{"/healthz", "/healthz", true},
+		{"/healthz/db", "/healthz", true},
+		{"/healthz2", "/healthz", false},
+		{"/health", "/healthz", false},
+	} {
+		if got := under(c.path, c.prefix); got != c.want {
+			t.Errorf("under(%q, %q) = %v, want %v", c.path, c.prefix, got, c.want)
+		}
+	}
+}

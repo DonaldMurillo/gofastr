@@ -227,9 +227,9 @@ type LogQuery struct {
 	// open. A page of older lines is the same query with To set just
 	// before the oldest line already shown.
 	From, To time.Time
-	// SkipPaths leaves out access lines for paths under these prefixes
-	// ("/__gofastr/"): the fetches of scripts and styles that otherwise
-	// fill a page of the log.
+	// SkipPaths leaves out access lines for these paths and the ones
+	// below them ("/__gofastr/"): the fetches of scripts and styles that
+	// otherwise fill a page of the log.
 	SkipPaths []string
 	// OldestFirst takes the limit from the old end of the window: the
 	// lines just after From, which is the page of newer lines when From
@@ -256,11 +256,15 @@ const budgetEvery = 1024
 // whole window was read.
 func (s *Store) LogsWithin(q LogQuery, limit int, budget time.Duration) (out []LogEntry, stopped time.Time, err error) {
 	has := wordMatcher(q.Text)
-	skips := make([][]byte, len(q.SkipPaths))
-	for i, p := range q.SkipPaths {
-		// The path attribute, up to but not including its closing quote.
-		quoted := appendJSONString([]byte(`"path":`), p)
-		skips[i] = quoted[:len(quoted)-1]
+	// A prefix covers its own path and what is below it, and stops at a
+	// path segment, as the collector's quiet paths do: "/healthz" skips
+	// "/healthz" and "/healthz/db" and leaves "/healthz2" in.
+	skips := make([][]byte, 0, 2*len(q.SkipPaths))
+	for _, p := range q.SkipPaths {
+		// The path attribute whole, then up to but not including its
+		// closing quote.
+		below := appendJSONString([]byte(`"path":`), strings.TrimSuffix(p, "/")+"/")
+		skips = append(skips, appendJSONString([]byte(`"path":`), p), below[:len(below)-1])
 	}
 	pick := func(line []byte) (LogEntry, bool) {
 		if !has(line) {

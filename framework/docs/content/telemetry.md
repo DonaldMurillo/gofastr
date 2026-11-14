@@ -522,7 +522,7 @@ never part of the sample:
 | `KeepNoOrdinary` | false | keep failed and slow traces only |
 | `SlowThreshold` | 500 ms | when a trace counts as slow |
 | `MaxMemoryBytes` | 32 MiB | spans held for requests still running |
-| `QuietPaths` | none | path prefixes kept only when failed or slow |
+| `QuietPaths` | none | paths, and what is below them, kept only when failed or slow. A match stops at a path segment: `/healthz` covers `/healthz/db`, not `/healthz2` |
 | `Alerts` | ten failed in five minutes; disk 90% full | the rules checked every fifteen seconds |
 | `Notify` | none | who is told when a rule fires or resolves |
 | `NoAlerts` | false | turn alerts off |
