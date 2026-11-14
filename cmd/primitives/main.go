@@ -8,21 +8,30 @@
 //	primitives gen [--check]    write the generated files, or fail when they are stale
 //	primitives hook             a Claude Code PostToolUse hook: tells the agent, once per
 //	                            session, what else does the job of a file it changed
+//	primitives stop             a Claude Code Stop hook: sends the agent back while the
+//	                            packages it changed fail vet or their tests
 //	primitives judge [--base <ref>] [--json]
 //	                            list the judged questions that apply to the changed files
 package main
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/primitives"
 )
@@ -124,10 +133,12 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 		return gen(c, args, stdout, stderr)
 	case "hook":
 		return hook(c, os.Stdin, stdout)
+	case "stop":
+		return stop(c, os.Stdin, stderr)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "primitives: unknown command %q (list, for, show, lint, gen, hook, judge)\n", cmd)
+		fmt.Fprintf(stderr, "primitives: unknown command %q (list, for, show, lint, gen, hook, stop, judge)\n", cmd)
 		return 2
 	}
 	return 0
@@ -182,6 +193,122 @@ func hook(c *primitives.Registry, stdin io.Reader, stdout io.Writer) int {
 		return 2
 	}
 	return 0
+}
+
+// stopBudget is how long the Stop hook may spend on vet and tests before
+// it gives up and lets the session finish with a warning.
+const stopBudget = 5 * time.Minute
+
+// stop answers a Claude Code Stop event. It checks the registry and runs
+// vet and the short tests of every package changed since the base ref,
+// and exits 2, which sends the agent back, when any of that fails. A
+// session the hook has already sent back once is let go, so a failure it
+// cannot fix does not hold it forever.
+func stop(c *primitives.Registry, stdin io.Reader, stderr io.Writer) int {
+	var event struct {
+		Active bool `json:"stop_hook_active"`
+	}
+	if err := json.NewDecoder(stdin).Decode(&event); err != nil || event.Active {
+		return 0
+	}
+	base := "origin/main"
+	if err := exec.Command("git", "-C", c.Root, "rev-parse", "--verify", "--quiet", base).Run(); err != nil {
+		base = "HEAD"
+	}
+	changed, err := changedFiles(c.Root, base)
+	if err != nil {
+		return 0
+	}
+	pkgs := changedPackages(c.Root, changed)
+	if len(pkgs) == 0 {
+		return 0
+	}
+	state := treeState(c.Root, changed)
+	if passed := toldFiles(c.Root, "stop-pass"); state != "" && slices.Contains(passed, state) {
+		return 0
+	}
+	var problems []string
+	for _, f := range c.Lint() {
+		problems = append(problems, f.String())
+	}
+	if stale, err := c.Stale(); err == nil {
+		for _, rel := range slices.Sorted(maps.Keys(stale)) {
+			problems = append(problems, fmt.Sprintf("%s is %s: run `go run ./cmd/primitives gen`", rel, stale[rel]))
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), stopBudget)
+	defer cancel()
+	for _, args := range [][]string{{"vet"}, {"test", "-short", "-count=1"}} {
+		cmd := exec.CommandContext(ctx, "go", append(args, pkgs...)...)
+		cmd.Dir = c.Root
+		cmd.WaitDelay = 10 * time.Second
+		out, err := cmd.CombinedOutput()
+		if ctx.Err() != nil {
+			fmt.Fprintf(stderr, "primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.\n", args[0], stopBudget, strings.Join(pkgs, " "))
+			return 1
+		}
+		if err != nil {
+			problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), tail(string(out), 40)))
+			break
+		}
+	}
+	if len(problems) > 0 {
+		fmt.Fprintf(stderr, "primitives stop: what you changed does not pass yet. Fix it before you finish.\n\n%s\n", strings.Join(problems, "\n"))
+		return 2
+	}
+	if state != "" {
+		rememberTold(c.Root, "stop-pass", []string{state})
+	}
+	return 0
+}
+
+// changedPackages lists, as ./dir patterns, the directories that hold a
+// changed Go file and still hold Go code.
+func changedPackages(root string, changed []string) []string {
+	var pkgs []string
+	for _, file := range changed {
+		dir := path.Dir(file)
+		if !strings.HasSuffix(file, ".go") || strings.Contains("/"+dir+"/", "/testdata/") {
+			continue
+		}
+		pattern := "./" + dir
+		if slices.Contains(pkgs, pattern) {
+			continue
+		}
+		if matches, _ := filepath.Glob(filepath.Join(root, filepath.FromSlash(dir), "*.go")); len(matches) > 0 {
+			pkgs = append(pkgs, pattern)
+		}
+	}
+	return pkgs
+}
+
+// treeState names the content of the changed files, so a tree that
+// already passed is not tested again. It is empty when a file cannot be
+// read, which means "test".
+func treeState(root string, changed []string) string {
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		return ""
+	}
+	defer dir.Close()
+	sum := sha256.New()
+	for _, file := range changed {
+		data, err := dir.ReadFile(file)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return ""
+		}
+		fmt.Fprintf(sum, "%s %d\n", file, len(data))
+		sum.Write(data)
+	}
+	return hex.EncodeToString(sum.Sum(nil))
+}
+
+func tail(s string, n int) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
 
 const hookStateDir = ".gofastr/primitives-hook"

@@ -78,15 +78,22 @@ and says to check each one. A site need not be owned by the primitive
 that lists it. Prefer merging the sites into one implementation; record
 a twin when they have to stay apart.
 
-`go run ./cmd/primitives hook` is the same notice as a Claude Code
-PostToolUse hook: after any tool call it looks at what the working tree
-changed and, once per session, tells the agent about a changed file that
-is a twins site. It is not installed in this repository's settings.
+## What the harness enforces
 
-```json
-{"hooks": {"PostToolUse": [{"matcher": "Edit|Write|MultiEdit|Bash", "hooks": [
-  {"type": "command", "command": "cd \"$CLAUDE_PROJECT_DIR\" && go run ./cmd/primitives hook"}]}]}}
-```
+`.claude/settings.json` holds what must happen whatever an agent decides.
+
+- **`primitives hook`** runs after every tool call that can change a
+  file. It looks at what the working tree changed and, once per session,
+  tells the agent about a changed file that is a twins site.
+- **`primitives stop`** runs when a session tries to finish. It checks
+  the registry and runs vet and the short tests of every package changed
+  since `origin/main`. A failure sends the agent back once, with the
+  output. A tree that already passed is not tested again.
+- **Deny rules** cover what cannot be taken back: a forced push, a push
+  to `main`, discarding the whole working tree (`git reset --hard`,
+  `git clean`, `git checkout .`, `git restore .`), and reading `.env`
+  files or SSH keys. A deny rule matches the command as written, so it
+  stops the usual spelling, not every route to the same end.
 
 ## What lint refuses
 

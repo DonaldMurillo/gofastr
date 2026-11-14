@@ -108,3 +108,62 @@ func TestHook(t *testing.T) {
 		t.Errorf("unreadable input drew %q", got)
 	}
 }
+
+func TestStop(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/m\n\ngo 1.24\n")
+	write("a/a.go", "package a\n\nfunc One() int { return 1 }\n")
+	write("a/a_test.go", "package a\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif One() != 1 {\n\t\tt.Fatal(\"One is not 1\")\n\t}\n}\n")
+	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\n")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+	fire := func(event string) (int, string) {
+		t.Helper()
+		c, findings, err := primitives.Load(root)
+		if err != nil || len(findings) > 0 {
+			t.Fatal(err, findings)
+		}
+		var errOut bytes.Buffer
+		return stop(c, strings.NewReader(event), &errOut), errOut.String()
+	}
+	if code, msg := fire(`{}`); code != 0 {
+		t.Fatalf("nothing changed, yet stop = %d: %s", code, msg)
+	}
+	write("a/a.go", "package a\n\nfunc One() int { return 2 }\n")
+	code, msg := fire(`{}`)
+	if code != 2 || !strings.Contains(msg, "One is not 1") {
+		t.Fatalf("a failing test: stop = %d, message %q", code, msg)
+	}
+	if code, _ := fire(`{"stop_hook_active":true}`); code != 0 {
+		t.Errorf("a session already sent back once must be let go, got %d", code)
+	}
+	write("a/a.go", "package a\n\n// One is one.\nfunc One() int { return 1 }\n")
+	if code, msg := fire(`{}`); code != 0 {
+		t.Fatalf("a passing change: stop = %d: %s", code, msg)
+	}
+	if passed := toldFiles(root, "stop-pass"); len(passed) != 1 {
+		t.Errorf("a pass was not remembered: %v", passed)
+	}
+	if got := changedPackages(root, []string{"a/a.go", "a/a_test.go", "a/testdata/x.go", "gone/g.go", "README.md"}); len(got) != 1 || got[0] != "./a" {
+		t.Errorf("changedPackages = %v", got)
+	}
+}
