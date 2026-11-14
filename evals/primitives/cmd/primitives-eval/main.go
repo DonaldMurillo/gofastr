@@ -43,19 +43,20 @@ func main() {
 	flag.DurationVar(&cfg.timeout, "timeout", 20*time.Minute, "timeout per cell")
 	flag.Float64Var(&cfg.cellBudget, "cell-budget", 2, "most one cell may spend, in USD")
 	budget := flag.Float64("budget", 10, "stop starting cells once the run has spent this much, in USD")
+	suite := flag.String("suite", suiteTrap, "which tasks to run: trap, replay or all")
 	runs := flag.Int("runs", 1, "trials per task and condition")
 	concurrency := flag.Int("concurrency", 3, "cells running at once")
 	flag.Var(&tasksFilter, "task", "run only this task (repeatable)")
 	flag.Var(&conditionsFilter, "condition", "run only this condition (repeatable)")
 	flag.Parse()
 
-	if err := run(cfg, tasksFilter, conditionsFilter, *runs, *concurrency, *budget); err != nil {
+	if err := run(cfg, *suite, tasksFilter, conditionsFilter, *runs, *concurrency, *budget); err != nil {
 		fmt.Fprintf(os.Stderr, "primitives-eval: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run(cfg config, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {
+func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {
 	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return err
@@ -82,7 +83,10 @@ func run(cfg config, tasksFilter, conditionsFilter []string, runs, concurrency i
 		if len(tasksFilter) > 0 && !slices.Contains(tasksFilter, t.ID) {
 			continue
 		}
-		for _, c := range conditions {
+		if suite != "all" && suite != t.Suite {
+			continue
+		}
+		for _, c := range suiteConditions[t.Suite] {
 			if len(conditionsFilter) > 0 && !slices.Contains(conditionsFilter, c) {
 				continue
 			}
@@ -92,7 +96,7 @@ func run(cfg config, tasksFilter, conditionsFilter []string, runs, concurrency i
 		}
 	}
 	if len(cells) == 0 {
-		return fmt.Errorf("no cell matches the -task and -condition filters")
+		return fmt.Errorf("no cell matches the -suite, -task and -condition filters")
 	}
 
 	var (

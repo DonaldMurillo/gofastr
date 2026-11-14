@@ -1,0 +1,68 @@
+package crud
+
+import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+)
+
+func replayThings(t *testing.T) *CrudHandler {
+	t.Helper()
+	ch := thingsHandler(t, entity.EntityConfig{
+		Exposure:     &entity.ExposureConfig{Public: true},
+		SearchFields: []string{"title"},
+	})
+	if _, err := ch.DB.ExecContext(context.Background(), `INSERT INTO things (id, title) VALUES ('1', 'one')`); err != nil {
+		t.Fatal(err)
+	}
+	return ch
+}
+
+func replayList(ch *CrudHandler, raw string) int {
+	w := httptest.NewRecorder()
+	ch.List()(w, httptest.NewRequest(http.MethodGet, "/api/things?"+raw, nil))
+	return w.Code
+}
+
+func replayGet(ch *CrudHandler, raw string) int {
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/api/things/1?"+raw, nil)
+	r.SetPathValue("id", "1")
+	ch.Get()(w, r)
+	return w.Code
+}
+
+func replayWant(t *testing.T, what string, got, want int) {
+	t.Helper()
+	if got != want {
+		t.Errorf("%s = %d, want %d", what, got, want)
+	}
+}
+
+func TestReplayReportedListFields(t *testing.T) {
+	ch := replayThings(t)
+	replayWant(t, "list fields=title&fields=bogus", replayList(ch, "fields=title&fields=bogus"), http.StatusBadRequest)
+	replayWant(t, "list fields=title", replayList(ch, "fields=title"), http.StatusOK)
+}
+
+func TestReplayTwinListWhere(t *testing.T) {
+	ch := replayThings(t)
+	const where = `where={"field":"title","op":"eq","value":"one"}`
+	replayWant(t, "list repeated where", replayList(ch, where+"&where=NOTJSON"), http.StatusBadRequest)
+	replayWant(t, "list single where", replayList(ch, where), http.StatusOK)
+}
+
+func TestReplayTwinListQ(t *testing.T) {
+	ch := replayThings(t)
+	replayWant(t, "list q=one&q=zzz", replayList(ch, "q=one&q=zzz"), http.StatusBadRequest)
+	replayWant(t, "list q=one", replayList(ch, "q=one"), http.StatusOK)
+}
+
+func TestReplayTwinGetFields(t *testing.T) {
+	ch := replayThings(t)
+	replayWant(t, "read-one fields=title&fields=bogus", replayGet(ch, "fields=title&fields=bogus"), http.StatusBadRequest)
+	replayWant(t, "read-one fields=title", replayGet(ch, "fields=title"), http.StatusOK)
+}

@@ -36,6 +36,25 @@ means they pass; `broke` means one fails or the package no longer
 builds. The report also records whether the agent changed source or test
 files, and how many tool calls named `primitives/` or `cmd/primitives`.
 
+## The replay suite
+
+`-suite replay` asks a different question: on ordinary work, does the
+agent do the whole job? Each task replays a real past bug from this
+repository, starting from the commit just before its fix. The prompt
+reports one path. The real fix reached others with the same defect.
+
+| Task | Starts at | Reported path | Other paths the real fix reached |
+|---|---|---|---|
+| `repeated-query-key` | `81850a28^` | a repeated `fields` key on a list | repeated `where` and `q` on a list, `fields` on read-one |
+| `observer-panic` | `ae4a44a9^` | a panicking permission observer | a panicking router serve hook |
+| `undecodable-filter` | `830f31b8^` | an undecodable filter on the admin audit page | the admin jobs and search pages |
+
+Conditions are `plain` (the report alone) and `nudge` (the report plus
+one sentence asking the agent to check other paths for the same defect).
+Graders are held-out tests under `cmd/primitives-eval/graders/`, written
+so each fails before the real fix and passes after it. A cell is `fixed`
+when the reported path passes, and `twins fixed` counts the other paths.
+
 ## Run
 
 ```sh

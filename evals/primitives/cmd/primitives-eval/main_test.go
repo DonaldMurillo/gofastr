@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,9 +89,19 @@ func TestRubricSeparatesAGoodAnswerFromAnEmptyOne(t *testing.T) {
 	}
 }
 
-func TestEveryChangeTaskNamesItsTests(t *testing.T) {
+func TestEveryTaskCanBeGraded(t *testing.T) {
 	for _, candidate := range tasks {
-		if len(candidate.Rubric) == 0 && (candidate.Tests == "" || len(candidate.Packages) == 0) {
+		if len(suiteConditions[candidate.Suite]) == 0 {
+			t.Errorf("%s names no known suite", candidate.ID)
+		}
+		switch {
+		case len(candidate.Rubric) > 0:
+		case candidate.Graders != "":
+			entries, err := fs.ReadDir(graders, "graders/"+candidate.Graders)
+			if err != nil || len(entries) == 0 || candidate.Ref == "" || len(candidate.Packages) == 0 {
+				t.Errorf("%s: a replay task needs graders, a ref and packages (%v)", candidate.ID, err)
+			}
+		case candidate.Tests == "" || len(candidate.Packages) == 0:
 			t.Errorf("%s has nothing to grade it", candidate.ID)
 		}
 	}

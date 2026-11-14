@@ -4,17 +4,25 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 )
 
+//go:embed graders
+var graders embed.FS
+
 const (
+	outcomeFixed    = "fixed"
+	outcomeUnfixed  = "unfixed"
 	outcomeHeld     = "held"
 	outcomeBroke    = "broke"
 	outcomeAnswered = "answered"
@@ -35,6 +43,8 @@ type cell struct {
 	ChangedFiles  []string `json:"changed_files,omitempty"`
 	TestsPassed   int      `json:"tests_passed"`
 	TestsFailed   int      `json:"tests_failed"`
+	TwinsFixed    int      `json:"twins_fixed"`
+	TwinsTotal    int      `json:"twins_total"`
 	RubricHit     []string `json:"rubric_hit,omitempty"`
 	RubricMissed  []string `json:"rubric_missed,omitempty"`
 	RegistryCalls int      `json:"registry_calls"` // tool calls that name primitives/ or cmd/primitives
@@ -73,8 +83,12 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	var stream bytes.Buffer
+	prompt := c.task.Prompt
+	if c.Condition == conditionNudge {
+		prompt += nudge
+	}
 	agent := command(ctx, dir, cfg.claude,
-		"-p", c.task.Prompt,
+		"-p", prompt,
 		"--model", cfg.model,
 		"--output-format", "stream-json", "--verbose",
 		"--permission-mode", "acceptEdits",
@@ -134,7 +148,10 @@ func runCell(cfg config, c *cell) {
 // repository, so a cell cannot read this checkout's history.
 func prepare(cfg config, t task, condition, dir string) error {
 	ref := cfg.head
-	if condition == conditionComments {
+	switch {
+	case t.Ref != "":
+		ref = t.Ref
+	case condition == conditionComments:
 		ref = cfg.base
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -290,6 +307,10 @@ func gradeTests(ctx context.Context, cfg config, c *cell, dir string) {
 			return
 		}
 	}
+	if c.task.Graders != "" {
+		gradeReplay(ctx, c, dir, root)
+		return
+	}
 	args := append([]string{"test", "-count=1", "-v", "-run", c.task.Tests}, c.task.Packages...)
 	out, err := command(ctx, dir, "go", args...).CombinedOutput()
 	c.TestsPassed = len(testPass.FindAll(out, -1))
@@ -306,6 +327,54 @@ func gradeTests(ctx context.Context, cfg config, c *cell, dir string) {
 	}
 }
 
+var replayResult = regexp.MustCompile(`(?m)^--- (PASS|FAIL): TestReplay(Reported|Twin)\w*`)
+
+// gradeReplay copies a replay task's held-out tests into the cell and
+// scores the reported path and each twin path separately.
+func gradeReplay(ctx context.Context, c *cell, dir string, root *os.Root) {
+	fail := func(err error) { c.Outcome, c.Note = outcomeError, err.Error() }
+	base := path.Join("graders", c.task.Graders)
+	err := fs.WalkDir(graders, base, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		src, err := graders.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return root.WriteFile(strings.TrimSuffix(strings.TrimPrefix(p, base+"/"), ".txt"), src, 0o600)
+	})
+	if err != nil {
+		fail(err)
+		return
+	}
+	args := append([]string{"test", "-count=1", "-v", "-run", "^TestReplay(Reported|Twin)"}, c.task.Packages...)
+	out, runErr := command(ctx, dir, "go", args...).CombinedOutput()
+	reported, reportedPassed := 0, 0
+	for _, m := range replayResult.FindAllSubmatch(out, -1) {
+		passed := string(m[1]) == "PASS"
+		if string(m[2]) == "Reported" {
+			reported++
+			if passed {
+				reportedPassed++
+			}
+			continue
+		}
+		c.TwinsTotal++
+		if passed {
+			c.TwinsFixed++
+		}
+	}
+	switch {
+	case reported == 0:
+		c.Outcome, c.Note = outcomeBroke, fmt.Sprintf("the graders did not run (%v): %s", runErr, lastLine(out))
+	case reportedPassed == reported:
+		c.Outcome, c.Note = outcomeFixed, fmt.Sprintf("twins %d/%d", c.TwinsFixed, c.TwinsTotal)
+	default:
+		c.Outcome, c.Note = outcomeUnfixed, fmt.Sprintf("twins %d/%d", c.TwinsFixed, c.TwinsTotal)
+	}
+}
+
 func lastLine(out []byte) string {
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	return lines[len(lines)-1]
@@ -314,15 +383,19 @@ func lastLine(out []byte) string {
 func renderMarkdown(r report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Primitives eval\n\nModel `%s`, comments condition at `%s`, registry and bare at `%s`. Spent $%.2f.\n\n", r.Model, r.Base, r.Head, r.SpentUSD)
-	b.WriteString("| Task | Condition | Run | Outcome | Tests pass/fail | Rubric | Changed source | Changed tests | Registry calls | Tool calls | Cost |\n")
-	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|\n")
+	b.WriteString("| Task | Condition | Run | Outcome | Tests pass/fail | Twins fixed | Rubric | Changed source | Changed tests | Registry calls | Tool calls | Cost |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|---|---|---|---|\n")
 	for _, c := range r.Cells {
 		rubric := ""
 		if total := len(c.RubricHit) + len(c.RubricMissed); total > 0 {
 			rubric = fmt.Sprintf("%d/%d", len(c.RubricHit), total)
 		}
-		fmt.Fprintf(&b, "| %s | %s | %d | %s | %d/%d | %s | %t | %t | %d | %d | $%.2f |\n",
-			c.Task, c.Condition, c.Run, c.Outcome, c.TestsPassed, c.TestsFailed, rubric, c.ChangedSource, c.ChangedTests, c.RegistryCalls, c.ToolCalls, c.CostUSD)
+		twins := ""
+		if c.TwinsTotal > 0 {
+			twins = fmt.Sprintf("%d/%d", c.TwinsFixed, c.TwinsTotal)
+		}
+		fmt.Fprintf(&b, "| %s | %s | %d | %s | %d/%d | %s | %s | %t | %t | %d | %d | $%.2f |\n",
+			c.Task, c.Condition, c.Run, c.Outcome, c.TestsPassed, c.TestsFailed, twins, rubric, c.ChangedSource, c.ChangedTests, c.RegistryCalls, c.ToolCalls, c.CostUSD)
 	}
 	return b.String()
 }
