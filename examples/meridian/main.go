@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/battery/admin"
@@ -82,7 +83,7 @@ func main() {
 	// shows them (Requests and Logs in its sidebar). Telemetry registers
 	// before the log plugin so the files are open for its first line.
 	tel := telemetry.New(telemetry.Config{
-		Dir: getEnv("TELEMETRY_DIR", "meridian-telemetry"),
+		Dir: telemetryDir(),
 		// Fonts and static files are fetched on every page; they are
 		// worth a trace only when they fail or are slow.
 		QuietPaths: []string{"/fonts/", "/static/"},
@@ -211,6 +212,23 @@ func sdkDistFS() fs.FS {
 		return nil
 	}
 	return os.DirFS("gen/sdk/dist")
+}
+
+// telemetryDir is where the telemetry files go: TELEMETRY_DIR when set,
+// else a directory beside the SQLite database file, so an app started
+// against a database somewhere else (a test's temporary directory) does
+// not write into the directory it was started from.
+func telemetryDir() string {
+	const name = "meridian-telemetry"
+	if dir := os.Getenv("TELEMETRY_DIR"); dir != "" {
+		return dir
+	}
+	file, ok := strings.CutPrefix(getEnv("DATABASE_URL", "file:meridian.db"), "file:")
+	if !ok {
+		return name
+	}
+	file, _, _ = strings.Cut(file, "?")
+	return filepath.Join(filepath.Dir(file), name)
 }
 
 func getEnv(key, fallback string) string {
