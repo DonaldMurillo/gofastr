@@ -51,6 +51,20 @@ registry and what no primitive can own.
 Done when `CLAUDE.md` is under 60 lines and the replay eval on Opus
 shows no drop from the numbers above.
 
+Status: `CLAUDE.md` is 51 lines. Hard rules 1 to 8 are registry entries
+in `runtime`, `uihost`, `ui`, `ui.styling` and `crud.scope`, reaching
+the trees they govern through `applies`; rule 9 is an `on_change` line;
+rules 10 to 12, the commands and the code map moved to
+`docs/contributing.md`. The numbered list stays, one line per rule,
+because code cites the rules by number, and `TestClaudeMDNamesRealRules`
+keeps its pointers real.
+
+The replay suite cannot see this step. Each replay cell is cut from a
+commit older than the registry and gets the pointer paragraph spliced
+into that commit's `CLAUDE.md`, so its numbers measure the tooling, not
+the file. Measuring the shrink needs a condition that gives a cell this
+`CLAUDE.md` and the new primitives.
+
 ### 2. Sweep the comments, one package at a time
 
 Follow the `primitives-sweep` skill. History and narration go. A rule
