@@ -265,3 +265,22 @@ func TestATwinThatDidNotRunIsNotDroppedFromTheTotal(t *testing.T) {
 		t.Errorf("no reported result gave %s, want broke", c.Outcome)
 	}
 }
+
+func TestACellKeptFromAnEarlierRunIsRefusedAndLeftAlone(t *testing.T) {
+	work := t.TempDir()
+	kept := filepath.Join(work, "observer-panic-plain-1")
+	if err := os.MkdirAll(kept, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "notes.txt"), []byte("kept"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := &cell{Task: "observer-panic", Condition: conditionPlain, Run: 1}
+	runCell(config{work: work}, c)
+	if c.Outcome != outcomeError || !strings.Contains(c.Note, "pass another -work") {
+		t.Errorf("outcome %s, note %q: want the kept directory refused", c.Outcome, c.Note)
+	}
+	if got, err := os.ReadFile(filepath.Join(kept, "notes.txt")); err != nil || string(got) != "kept" {
+		t.Errorf("a run without -keep removed a directory it did not make: %v", err)
+	}
+}

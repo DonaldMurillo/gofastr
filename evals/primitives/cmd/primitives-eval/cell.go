@@ -77,13 +77,19 @@ type report struct {
 func runCell(cfg config, c *cell) {
 	name := fmt.Sprintf("%s-%s-%d", c.Task, c.Condition, c.Run)
 	dir := filepath.Join(cfg.work, name)
+	fail := func(err error) {
+		c.Outcome, c.Note = outcomeError, err.Error()
+	}
+	// Made before the cleanup is scheduled: a directory this run did not
+	// make, kept from an earlier one, is refused and left as it is.
+	if err := makeCellDir(dir); err != nil {
+		fail(err)
+		return
+	}
 	if !cfg.keep {
 		// A cell is a full copy of the repository: left behind, a run of
 		// a few dozen fills the disk.
 		defer os.RemoveAll(dir)
-	}
-	fail := func(err error) {
-		c.Outcome, c.Note = outcomeError, err.Error()
 	}
 	start, err := prepare(cfg, c.task, c.Condition, dir)
 	if err != nil {
@@ -217,6 +223,19 @@ func changedSince(ctx context.Context, dir, start string) ([]string, error) {
 	return slices.Sorted(maps.Keys(seen)), nil
 }
 
+// makeCellDir makes the directory one cell runs in. Mkdir, not MkdirAll,
+// for the cell itself: a directory kept from an earlier run holds that
+// run's repository and files.
+func makeCellDir(dir string) error {
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		return fmt.Errorf("cell directory: %w (a cell kept from an earlier run? pass another -work)", err)
+	}
+	return nil
+}
+
 // prepare writes one condition's tree into dir as a fresh one-commit
 // repository, so a cell cannot read this checkout's history, and returns
 // that commit.
@@ -227,14 +246,6 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 		ref = t.Ref
 	case condition == conditionComments:
 		ref = cfg.base
-	}
-	// Mkdir, not MkdirAll, for the cell itself: a directory kept from an
-	// earlier run holds that run's repository and files.
-	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
-		return "", err
-	}
-	if err := os.Mkdir(dir, 0o700); err != nil {
-		return "", fmt.Errorf("cell directory: %w (a cell kept from an earlier run? pass another -work)", err)
 	}
 	ctx := context.Background()
 	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", ref)

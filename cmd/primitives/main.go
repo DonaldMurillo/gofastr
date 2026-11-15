@@ -43,7 +43,7 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	os.Exit(run(root, os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(root, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 func fail(err error) {
@@ -70,12 +70,12 @@ func repoRoot() (string, error) {
 	}
 }
 
-func run(root string, args []string, stdout, stderr io.Writer) int {
+func run(root string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	c, findings, err := primitives.Load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "primitives: %v\n", err)
 		if len(args) > 0 && args[0] == "stop" {
-			return stopUnreadable(err, os.Stdin, stdout)
+			return stopUnreadable(err, stdin, stdout)
 		}
 		return 2
 	}
@@ -144,7 +144,7 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 	case "hook":
 		return hook(c, os.Stdin, stdout)
 	case "stop":
-		return stop(c, findings, os.Stdin, stdout, stderr)
+		return stop(c, findings, stdin, stdout, stderr)
 	case "judge":
 		return judge(c, args, stdout, stderr)
 	default:

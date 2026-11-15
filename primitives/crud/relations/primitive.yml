@@ -17,7 +17,7 @@ invariants:
       - test: framework/crud.TestEagerLoadScopesTenant
       - test: framework/crud.TestEagerLoadScopesOwner
   - id: included-child-scope-always-applies
-    rule: An included owner-scoped or multi-tenant child carries the context owner or tenant predicate, even when the caller filters on that column, unless the caller holds an explicit cross-scope grant for that scope, and matches no row when the context has neither.
+    rule: An included owner-scoped or multi-tenant child carries the context owner or tenant predicate, even when the caller filters on that column, and matches no row when the context has neither. A caller holding an explicit cross-scope grant for a scope gets no predicate for that scope.
     enforced_by:
       - test: framework/crud.TestInclude_ScopedFilterCannotBypassOwnerScope
       - test: framework/crud.TestInclude_RelatedTableTenantScope

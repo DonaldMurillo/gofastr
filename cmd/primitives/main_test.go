@@ -31,7 +31,7 @@ func TestCommands(t *testing.T) {
 		{[]string{"bogus"}, 2, `unknown command "bogus"`},
 	} {
 		var stdout, stderr bytes.Buffer
-		code := run("../..", tc.args, &stdout, &stderr)
+		code := run("../..", tc.args, strings.NewReader(""), &stdout, &stderr)
 		out := stdout.String() + stderr.String()
 		if code != tc.code || !strings.Contains(out, tc.want) {
 			t.Errorf("primitives %v: exit %d, want %d and output containing %q, got:\n%s", tc.args, code, tc.code, tc.want, out)
@@ -41,7 +41,7 @@ func TestCommands(t *testing.T) {
 
 func TestGenCheckIsSilentWhenCurrent(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := run("../..", []string{"gen", "--check"}, &stdout, &stderr); code != 0 || stdout.Len()+stderr.Len() != 0 {
+	if code := run("../..", []string{"gen", "--check"}, strings.NewReader(""), &stdout, &stderr); code != 0 || stdout.Len()+stderr.Len() != 0 {
 		t.Errorf("gen --check on a current tree: exit %d, output %q %q", code, stdout.String(), stderr.String())
 	}
 }
@@ -363,23 +363,22 @@ func TestStopBlocksOnARegistryThatDoesNotParse(t *testing.T) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "primitives/x/primitive.yml"), []byte("primitive: x\nsummary: Does x.\nowner: nobody\ncode:\n  - a/\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	var stdout, stderr bytes.Buffer
-	if code := run(root, []string{"stop"}, &stdout, &stderr); code != 0 {
-		t.Fatalf("stop exits %d on a broken registry; only a block decision sends the agent back", code)
-	}
-	_ = stdout // run reads os.Stdin for stop; the direct call below supplies the event
-	c, findings, err := primitives.Load(root)
-	if err != nil || len(findings) == 0 {
-		t.Fatalf("the fixture registry should not parse cleanly: %v %v", err, findings)
-	}
-	t.Cleanup(c.Close)
-	var out, errOut bytes.Buffer
-	stop(c, findings, strings.NewReader(`{}`), &out, &errOut)
-	if !strings.Contains(out.String(), `"decision":"block"`) || !strings.Contains(out.String(), "unknown key") {
-		t.Errorf("a registry with an unknown key did not block the stop: %q", out.String())
+	for name, tc := range map[string]struct{ body, want string }{
+		"an unknown key": {"primitive: x\nsummary: Does x.\nowner: nobody\ncode:\n  - a/\n", "unknown key"},
+		"malformed YAML": {"primitive: x\nsummary: Does x.\ncode:\n  - a/\n   bad: indent\n", "primitives/x/primitive.yml:"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(root, "primitives/x/primitive.yml"), []byte(tc.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr bytes.Buffer
+			if code := run(root, []string{"stop"}, strings.NewReader(`{}`), &stdout, &stderr); code != 0 {
+				t.Fatalf("stop exits %d on a broken registry; only a block decision sends the agent back", code)
+			}
+			if !strings.Contains(stdout.String(), `"decision":"block"`) || !strings.Contains(stdout.String(), tc.want) {
+				t.Errorf("the stop was not blocked with the finding: %q", stdout.String())
+			}
+		})
 	}
 }
 
@@ -444,19 +443,18 @@ func TestStopBlocksOnARegistryThatCannotBeRead(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "primitives/x/primitive.yml")); err != nil {
 		t.Skip("no symlinks here:", err)
 	}
-	_, _, loadErr := primitives.Load(root)
-	if loadErr == nil {
+	if _, _, err := primitives.Load(root); err == nil {
 		t.Fatal("the fixture registry loaded")
 	}
-	var out bytes.Buffer
-	if code := stopUnreadable(loadErr, strings.NewReader(`{}`), &out); code != 0 {
+	var out, errOut bytes.Buffer
+	if code := run(root, []string{"stop"}, strings.NewReader(`{}`), &out, &errOut); code != 0 {
 		t.Fatalf("exit %d: only a block decision sends the agent back", code)
 	}
 	if !strings.Contains(out.String(), `"decision":"block"`) || !strings.Contains(out.String(), "cannot be read") {
 		t.Errorf("no block decision: %q", out.String())
 	}
 	out.Reset()
-	stopUnreadable(loadErr, strings.NewReader(`{"stop_hook_active":true}`), &out)
+	run(root, []string{"stop"}, strings.NewReader(`{"stop_hook_active":true}`), &out, &errOut)
 	if out.Len() != 0 {
 		t.Errorf("a session already sent back was blocked again: %q", out.String())
 	}
