@@ -99,7 +99,7 @@ func TestCascadeChildHookErrorHidesReadBack(t *testing.T) {
 	}
 	rec := sendPosts(ch, http.MethodPost, "/posts", "", `{"title":"t","notes":[{"status":"published","body":"SECRET"}]}`)
 	if rec.Code != http.StatusCreated {
-		return
+		t.Fatalf("cascade create: status %d, want 201: %s", rec.Code, rec.Body.String())
 	}
 	if strings.Contains(rec.Body.String(), "SECRET") {
 		t.Fatalf("cascade child under erroring Before hooks was echoed whole: %s", rec.Body.String())

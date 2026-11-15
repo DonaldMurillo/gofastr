@@ -19,8 +19,13 @@ func TestRegisteredLLMMDRouteIsReadGated(t *testing.T) {
 	RegisterCrudRoutes(r, ordersHandlerWithReadPermission(t), "/orders")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, reqWithRolesOnly(httptest.NewRequest(http.MethodGet, "/orders/llm.md", nil), "u1"))
-	if rec.Code == http.StatusOK {
-		t.Fatalf("registered llm.md served a caller without orders:read")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("registered llm.md answered %d to a caller without orders:read, want 403", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, reqWithGrant(httptest.NewRequest(http.MethodGet, "/orders/llm.md", nil), "u1", "orders:read"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("registered llm.md answered %d to a caller with orders:read, want 200", rec.Code)
 	}
 }
 
