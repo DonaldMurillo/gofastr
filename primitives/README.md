@@ -23,7 +23,9 @@ go run ./cmd/primitives show <id>       # one primitive in full, and its childre
 
 Run `primitives for` on the files you are about to change. It prints the chain
 of primitives that own them, outermost first, with every invariant and
-decision on that chain. Nothing else needs reading first.
+decision on that chain. That is all the registry holds for those files.
+`CLAUDE.md` still names the architecture documents to read before adding
+or moving code they cover.
 
 ## Layout
 

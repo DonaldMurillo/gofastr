@@ -4,6 +4,7 @@
 package primitives
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -187,7 +188,7 @@ func Load(root string) (*Registry, []Finding, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Join(err, dir.Close())
 	}
 	slices.SortFunc(c.Primitives, func(a, b *Primitive) int { return strings.Compare(a.ID, b.ID) })
 	return c, findings, nil

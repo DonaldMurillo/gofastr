@@ -13,6 +13,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"golang.org/x/mod/modfile"
 )
 
 // ImportsTestFile is the generated test each package under an imports
@@ -107,10 +109,8 @@ func modulePath(fsys fs.FS) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	for line := range strings.SplitSeq(string(src), "\n") {
-		if mod, ok := strings.CutPrefix(strings.TrimSpace(line), "module "); ok {
-			return strings.TrimSpace(mod), nil
-		}
+	if mod := modfile.ModulePath(src); mod != "" {
+		return mod, nil
 	}
 	return "", fmt.Errorf("go.mod names no module")
 }

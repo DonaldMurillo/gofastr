@@ -2,10 +2,12 @@ package primitives
 
 import (
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"maps"
 	"path"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -171,8 +173,6 @@ func (l *linter) invariants(p *Primitive) {
 	}
 }
 
-var testFunc = regexp.MustCompile(`(?m)^func (Test\w+)\(`)
-
 func (l *linter) enforcer(e Enforcer) {
 	switch e.Kind {
 	case KindTest:
@@ -213,8 +213,15 @@ func (l *linter) testsIn(dir string) map[string]bool {
 		if err != nil {
 			continue
 		}
-		for _, m := range testFunc.FindAllSubmatch(src, -1) {
-			names[string(m[1])] = true
+		// Parsed, not matched: a test inside a block comment is not a test.
+		file, err := parser.ParseFile(token.NewFileSet(), f, src, parser.SkipObjectResolution)
+		if file == nil {
+			continue
+		}
+		for _, decl := range file.Decls {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+				names[fn.Name.Name] = true
+			}
 		}
 	}
 	l.tests[dir] = names

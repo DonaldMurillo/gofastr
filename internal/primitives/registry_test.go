@@ -297,3 +297,28 @@ func TestGenerateAndStale(t *testing.T) {
 		t.Errorf("with a stray file: %q", got)
 	}
 }
+
+func TestACommentedOutTestEnforcesNothing(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	write(t, root, "pkg/store/store_test.go", "package store\n\n/*\nfunc TestOrder(t *testing.T) {}\n*/\n")
+	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, "test TestOrder does not exist in pkg/store") {
+		t.Fatalf("a test inside a block comment was accepted as enforcing:\n%s", got)
+	}
+}
+
+func TestModulePathIgnoresATrailingComment(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	write(t, root, "go.mod", "module\texample.test/m // the shop\n")
+	c, _, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	files, err := c.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src := string(files["pkg/store/"+ImportsTestFile]); !strings.Contains(src, `"example.test/m/pkg/heavy"`) {
+		t.Errorf("the module path was not read cleanly:\n%s", src)
+	}
+}

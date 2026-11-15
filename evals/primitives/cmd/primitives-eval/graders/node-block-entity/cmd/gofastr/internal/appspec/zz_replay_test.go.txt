@@ -11,6 +11,12 @@ func replayNodeBlock(t *testing.T, what, body string) {
 	if err := loadEntityFormSpec(t, entityFormSpec(ok, "", "")); err != nil {
 		t.Fatalf("an entity_list at the top of a screen no longer loads: %v", err)
 	}
+	// A node block that holds only node blocks still loads, so a fix that
+	// refuses every node block with children does not pass.
+	nested := "\n      - type: header\n        children:\n          - type: div\n            children:\n              - type: p\n                text: hello\n"
+	if err := loadEntityFormSpec(t, entityFormSpec(nested, "", "")); err != nil {
+		t.Fatalf("a node block under a node block no longer loads: %v", err)
+	}
 	src := entityFormSpec(body, "", "")
 	if strings.Contains(body, "entity_detail") {
 		src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}", 1)

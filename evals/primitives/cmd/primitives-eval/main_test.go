@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -243,5 +244,24 @@ func TestEveryTaskCanBeGraded(t *testing.T) {
 		case candidate.Tests == "" || len(candidate.Packages) == 0:
 			t.Errorf("%s has nothing to grade it", candidate.ID)
 		}
+	}
+}
+
+func TestATwinThatDidNotRunIsNotDroppedFromTheTotal(t *testing.T) {
+	// framework/access passes; core/router, which holds the twin test, no
+	// longer builds, so its test prints no result line.
+	out := []byte("--- PASS: TestReplayReportedObserver (0.00s)\nok  \texample.test/framework/access\t0.1s\nFAIL\texample.test/core/router [build failed]\n")
+	c := &cell{}
+	scoreReplay(c, out, errors.New("exit status 1"), 1, 1)
+	if c.Outcome != outcomeFixed || c.TwinsFixed != 0 || c.TwinsTotal != 1 {
+		t.Errorf("outcome %s twins %d/%d, want fixed 0/1", c.Outcome, c.TwinsFixed, c.TwinsTotal)
+	}
+	if !strings.Contains(c.Note, "1 did not run") {
+		t.Errorf("the note hides the grader that did not run: %q", c.Note)
+	}
+	c = &cell{}
+	scoreReplay(c, []byte("FAIL\texample.test/framework/access [build failed]\n"), errors.New("exit status 1"), 1, 1)
+	if c.Outcome != outcomeBroke {
+		t.Errorf("no reported result gave %s, want broke", c.Outcome)
 	}
 }

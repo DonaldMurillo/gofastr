@@ -74,6 +74,9 @@ func run(root string, args []string, stdout, stderr io.Writer) int {
 	c, findings, err := primitives.Load(root)
 	if err != nil {
 		fmt.Fprintf(stderr, "primitives: %v\n", err)
+		if len(args) > 0 && args[0] == "stop" {
+			return stopUnreadable(err, os.Stdin, stdout)
+		}
 		return 2
 	}
 	defer c.Close()
@@ -204,7 +207,7 @@ func hook(c *primitives.Registry, stdin io.Reader, stdout io.Writer) int {
 
 // stopBudget is how long the Stop hook may spend on vet and tests before
 // it gives up and lets the session finish with a warning.
-const stopBudget = 5 * time.Minute
+var stopBudget = 5 * time.Minute
 
 // stop answers a Claude Code Stop event. When stopCheck has something to
 // say it prints a block decision, which sends the agent back with the
@@ -223,6 +226,27 @@ func stop(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Re
 		return 2
 	}
 	return 0
+}
+
+// stopUnreadable answers the Stop hook when the registry could not be
+// read at all. Exiting non-zero would let the session finish, so it
+// blocks once, and lets a session it has already sent back go.
+func stopUnreadable(loadErr error, stdin io.Reader, stdout io.Writer) int {
+	var event struct {
+		Active bool `json:"stop_hook_active"`
+	}
+	if err := json.NewDecoder(stdin).Decode(&event); err != nil || event.Active {
+		return 0
+	}
+	reason := stopBlock([]string{fmt.Sprintf("the primitives registry cannot be read: %v", loadErr)})
+	if err := json.NewEncoder(stdout).Encode(map[string]string{"decision": "block", "reason": reason}); err != nil {
+		return 2
+	}
+	return 0
+}
+
+func stopBlock(problems []string) string {
+	return "What you changed does not pass yet. Fix it before you finish.\n\n" + strings.Join(problems, "\n")
 }
 
 // stopCheck checks the registry and runs vet and the short tests of
@@ -271,6 +295,14 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), stopBudget)
 	defer cancel()
+	// A check that runs out of time is a warning, and what the earlier
+	// checks found still blocks.
+	unfinished := func(warning string) (string, string) {
+		if len(problems) == 0 {
+			return "", warning
+		}
+		return stopBlock(problems), warning
+	}
 	checks := [][]string{{"vet"}, {"test", "-short", "-count=1"}}
 	if tested {
 		checks, modules = nil, nil
@@ -283,7 +315,7 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 		cmd.WaitDelay = 10 * time.Second
 		out, err := cmd.CombinedOutput()
 		if ctx.Err() != nil {
-			return "", fmt.Sprintf("primitives stop: go build did not finish in %s in %s; run it yourself before you call this done.", stopBudget, dir)
+			return unfinished(fmt.Sprintf("primitives stop: go build did not finish in %s in %s; run it yourself before you call this done.", stopBudget, dir))
 		}
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("go build ./... failed in %s:\n%s", dir, failures(string(out), 40)))
@@ -297,7 +329,7 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 			cmd.WaitDelay = 10 * time.Second
 			out, err := cmd.CombinedOutput()
 			if ctx.Err() != nil {
-				return "", fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(g.pkgs, " "))
+				return unfinished(fmt.Sprintf("primitives stop: go %s did not finish in %s for %s; run it yourself before you call this done.", args[0], stopBudget, strings.Join(g.pkgs, " ")))
 			}
 			if err != nil {
 				problems = append(problems, fmt.Sprintf("go %s failed:\n%s", strings.Join(args, " "), failures(string(out), 40)))
@@ -310,7 +342,7 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 		}
 	}
 	if len(problems) > 0 {
-		return "What you changed does not pass yet. Fix it before you finish.\n\n" + strings.Join(problems, "\n"), ""
+		return stopBlock(problems), ""
 	}
 	if state != "" {
 		rememberTold(c.Root, "stop-pass", []string{state})

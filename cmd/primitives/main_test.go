@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/internal/primitives"
 )
@@ -379,5 +380,84 @@ func TestStopBlocksOnARegistryThatDoesNotParse(t *testing.T) {
 	stop(c, findings, strings.NewReader(`{}`), &out, &errOut)
 	if !strings.Contains(out.String(), `"decision":"block"`) || !strings.Contains(out.String(), "unknown key") {
 		t.Errorf("a registry with an unknown key did not block the stop: %q", out.String())
+	}
+}
+
+func TestStopKeepsWhatItFoundWhenACheckRunsOutOfTime(t *testing.T) {
+	root := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":                     "module example.test/m\n\ngo 1.24\n",
+		"a/a.go":                     "package a\n",
+		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\n",
+	} {
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "start"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	// A registry finding and a changed package, with no time for go vet.
+	for name, body := range map[string]string{
+		"a/a.go":                     "package a\n\nvar A = 1\n",
+		"primitives/x/primitive.yml": "primitive: x\nsummary: Does x.\ncode:\n  - a/\ndocs:\n  - docs/gone.md\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c, findings, err := primitives.Load(root)
+	if err != nil || len(findings) > 0 {
+		t.Fatal(err, findings)
+	}
+	t.Cleanup(c.Close)
+	budget := stopBudget
+	stopBudget = time.Nanosecond
+	t.Cleanup(func() { stopBudget = budget })
+	reason, warning := stopCheck(c, nil, strings.NewReader(`{"session_id":"s1"}`))
+	if !strings.Contains(warning, "did not finish") {
+		t.Fatalf("want the timeout warning, got %q", warning)
+	}
+	if !strings.Contains(reason, "docs/gone.md") {
+		t.Errorf("the timeout dropped the registry finding: %q", reason)
+	}
+}
+
+func TestStopBlocksOnARegistryThatCannotBeRead(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "primitives/x"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// A manifest that points outside the tree is one the loader refuses to read.
+	outside := filepath.Join(t.TempDir(), "primitive.yml")
+	if err := os.WriteFile(outside, []byte("primitive: x\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "primitives/x/primitive.yml")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	_, _, loadErr := primitives.Load(root)
+	if loadErr == nil {
+		t.Fatal("the fixture registry loaded")
+	}
+	var out bytes.Buffer
+	if code := stopUnreadable(loadErr, strings.NewReader(`{}`), &out); code != 0 {
+		t.Fatalf("exit %d: only a block decision sends the agent back", code)
+	}
+	if !strings.Contains(out.String(), `"decision":"block"`) || !strings.Contains(out.String(), "cannot be read") {
+		t.Errorf("no block decision: %q", out.String())
+	}
+	out.Reset()
+	stopUnreadable(loadErr, strings.NewReader(`{"stop_hook_active":true}`), &out)
+	if out.Len() != 0 {
+		t.Errorf("a session already sent back was blocked again: %q", out.String())
 	}
 }

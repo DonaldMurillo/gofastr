@@ -29,7 +29,7 @@ func replayForm(t *testing.T, fields, mode string) error {
 	return loadEntityFormSpec(t, src)
 }
 
-func replayRefused(t *testing.T, what, fields, mode string) {
+func replayRefused(t *testing.T, what, fields, mode string) error {
 	t.Helper()
 	// The control is a valid form of the same mode, so a refusal of the
 	// case below is about its fields and not about the mode or the route.
@@ -40,13 +40,19 @@ func replayRefused(t *testing.T, what, fields, mode string) {
 	if err := replayForm(t, control, mode); err != nil {
 		t.Fatalf("a %s form of drawable fields no longer loads: %v", mode, err)
 	}
-	if err := replayForm(t, fields, mode); err == nil {
+	err := replayForm(t, fields, mode)
+	if err == nil {
 		t.Errorf("%s validated", what)
 	}
+	return err
 }
 
 func TestReplayReportedTypo(t *testing.T) {
-	replayRefused(t, "a misspelled field", "property_id, visitor_name, visitor_emial", "")
+	// The request asks for an error that names the entry.
+	err := replayRefused(t, "a misspelled field", "property_id, visitor_name, visitor_emial", "")
+	if err != nil && !strings.Contains(err.Error(), "visitor_emial") {
+		t.Errorf("the refusal does not name the entry: %v", err)
+	}
 }
 
 func TestReplayTwinTypoOnEdit(t *testing.T) {
