@@ -1,0 +1,18 @@
+primitive: observers
+summary: The coverage callbacks a host or a test installs to record what ran.
+code:
+  - framework/access/observe.go
+  - framework/event/observe.go
+  - framework/hook/observe.go
+twins:
+  - job: Calling a coverage callback a host or a test installed
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/access/observe.go
+        note: observe calls the installed observer inline on every permission check
+      - path: framework/event/observe.go
+        note: observeEmission calls the installed observer on every emission
+      - path: framework/hook/observe.go
+        note: the observer SetObserver installs is called on every hook firing
+      - path: core/router/router.go
+        note: the serveHook SetServeHook installs is called on every served request

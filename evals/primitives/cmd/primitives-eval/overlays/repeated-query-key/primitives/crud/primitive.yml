@@ -1,0 +1,19 @@
+primitive: crud
+summary: The generated HTTP, MCP and in-process CRUD surface for a declared entity.
+code:
+  - framework/crud/
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/query-dsl.md
+on_change:
+  - A change to what a request is allowed to do needs a note in internal/upgrade/releases/, in the file for the next release.
+twins:
+  - job: Reading a query key that carries one value
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: framework/crud/crud.go
+        note: List reads fields, where and q
+      - path: framework/crud/crud.go
+        note: Get reads fields
+      - path: framework/crud/crud_projection.go
+        note: projectFromRequestQ reads fields for both

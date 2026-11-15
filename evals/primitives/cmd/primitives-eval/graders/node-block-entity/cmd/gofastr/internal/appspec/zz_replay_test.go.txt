@@ -1,0 +1,73 @@
+package appspec
+
+import (
+	"strings"
+	"testing"
+)
+
+func replayNodeBlock(t *testing.T, what, body string) {
+	t.Helper()
+	ok := "\n      - kind: entity_list\n        entity: tours\n        fields: [visitor_name]\n"
+	if err := loadEntityFormSpec(t, entityFormSpec(ok, "", "")); err != nil {
+		t.Fatalf("an entity_list at the top of a screen no longer loads: %v", err)
+	}
+	// A node block that holds only node blocks still loads, so a fix that
+	// refuses every node block with children does not pass.
+	nested := "\n      - type: header\n        children:\n          - type: div\n            children:\n              - type: p\n                text: hello\n"
+	if err := loadEntityFormSpec(t, entityFormSpec(nested, "", "")); err != nil {
+		t.Fatalf("a node block under a node block no longer loads: %v", err)
+	}
+	src := entityFormSpec(body, "", "")
+	if strings.Contains(body, "entity_detail") {
+		src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}", 1)
+	}
+	if err := loadEntityFormSpec(t, src); err == nil {
+		t.Errorf("%s validated", what)
+	}
+}
+
+func TestReplayReportedEntityListInHeader(t *testing.T) {
+	replayNodeBlock(t, "an entity_list under a header block", `
+      - type: header
+        children:
+          - kind: entity_list
+            entity: tours
+            fields: [visitor_name]
+`)
+}
+
+func TestReplayTwinEntityFormInDiv(t *testing.T) {
+	replayNodeBlock(t, "an entity_form under a div block", `
+      - type: div
+        children:
+          - kind: entity_form
+            entity: tours
+`)
+}
+
+func TestReplayTwinEntityDetailInSection(t *testing.T) {
+	replayNodeBlock(t, "an entity_detail under a type: section block", `
+      - type: section
+        children:
+          - kind: entity_detail
+            entity: tours
+`)
+}
+
+func TestReplayTwinLoginFormDeep(t *testing.T) {
+	replayNodeBlock(t, "a login_form two node blocks deep", `
+      - type: article
+        children:
+          - type: div
+            children:
+              - kind: login_form
+`)
+}
+
+func TestReplayTwinSignupFormSpelledType(t *testing.T) {
+	replayNodeBlock(t, "a signup_form spelled type:", `
+      - type: div
+        children:
+          - type: signup_form
+`)
+}

@@ -1,0 +1,126 @@
+primitive: uinode
+summary: "The ui.node.v1 path that turns a process module's JSON screen tree into host-owned HTML: a closed validator in core-ui/uinodev1 and a design-system renderer in framework/uihost/uinoderender that trusts what the validator let through."
+code:
+  - core-ui/uinodev1/doc.go
+  - framework/uihost/uinoderender/doc.go
+docs:
+  - framework/docs/content/process-modules.md
+  - core-ui/ARCHITECTURE.md
+on_change:
+  - "A change to the components, props, enum values, limits or action_ref rules a tree may carry updates the UI rendering section of framework/docs/content/process-modules.md and the ui.node.v1 render path section of core-ui/ARCHITECTURE.md in the same commit."
+  - "A change that makes Validate refuse a tree it used to accept (a removed component or prop, a narrower enum, a lower default limit) is BREAKING: add a note with breaking true, a nodetect line (the tree is runtime module output, no host source spelling shows it) and guidance to internal/upgrade/releases/<next version>.yml, plus a BREAKING entry under Unreleased in CHANGELOG.md."
+  - "A new component needs all four of a Comp constant in types.go, a prop struct with propsMarker in types.go, a componentDecoders entry in registry.go and a case in renderNode in renderer.go; only the first three are cross-checked by a test, so a missing renderer case validates and then fails every render with no mapping."
+  - "Renaming or dropping a component or prop also updates the trees examples/processmodule-demo/main.go returns, which framework/processmodule_gate_test.go and framework/processmoduletest drive end to end."
+  - "framework/processmodule_proxy.go decodeBody is the only production caller and must keep running uinodev1.Validate before Renderer.Render; the renderer panics on shapes only the validator refuses."
+twins:
+  - job: "Enumerate the closed set of ui.node.v1 component kinds, each with its own handling."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: "The Comp* Component constants (stack through image), the wire names."
+      - path: core-ui/uinodev1/registry.go
+        note: "componentDecoders, the map from each Component to its typed prop decoder; a kind absent here is refused as unknown."
+      - path: framework/uihost/uinoderender/renderer.go
+        note: "Renderer.renderNode switch, one case per kind; a kind missing here falls through to errUnknownComponent and fails every render of a tree that validated."
+      - path: framework/uihost/uinoderender/renderer_escape_inventory_test.go
+        note: "TestEscapeInventoryMatchesSchema parses the constants, componentDecoders and the propsMarker union and fails on drift between those three, but does not read the renderNode switch."
+      - path: core-ui/uinodev1/validate_test.go
+        note: "TestValidateAcceptsAllComponents, a hand-written list of one valid tree per kind."
+      - path: framework/uihost/uinoderender/renderer_test.go
+        note: "TestRenderAllComponentsNoPanic, a hand-written list of one minimal node per kind."
+  - job: "Pair each component kind with exactly one concrete prop struct type, which the renderer then type-asserts without checking."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/registry.go
+        note: "componentDecoders fixes the pairing (CompHeading to decodeAs[HeadingProps] and so on), and decodeProps never leaves Props nil."
+      - path: core-ui/uinodev1/validate.go
+        note: "enforceComponentRules asserts props.(LinkProps) unchecked in the CompLink case."
+      - path: framework/uihost/uinoderender/renderer.go
+        note: "renderNode and renderStack, renderCluster, renderGrid, renderSection, renderCard, renderDataTable, renderButton and renderLink each assert n.Props.(uinodev1.XProps) unchecked; a nil or mismatched Props panics."
+      - path: framework/uihost/uinoderender/renderer_audit_test.go
+        note: "TestHandBuiltTreeWithoutPropsPanics pins today's panic on nil or wrong-typed Props; flip it to an error assertion when the assertions are hardened."
+  - job: "Keep every prop shape a design-system primitive panics on away from it, either by the validator refusing it or the renderer guarding it."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: "HeadingProps.validate (level 1 to 6), DataTableProps.validate (columns non-empty, every column key and label non-empty), ImageProps.validate (src required), LinkProps.validate with enforceComponentRules (to or action_ref present)."
+      - path: framework/uihost/uinoderender/renderer.go
+        note: "The CompHeading case passes p.Level unchecked; renderDataTable guards empty Columns with an EmptyState but not an empty column Key; renderSection falls back to i18nui.Section for the label; CompImage passes p.Src unchecked."
+      - path: core-ui/html/text.go
+        note: "Heading panics when Level is outside 1 to 6."
+      - path: framework/ui/datatable.go
+        note: "DataTable panics on empty Columns and on a Column with an empty Key."
+      - path: core-ui/html/structure.go
+        note: "Section panics without Label or LabelledBy."
+      - path: core-ui/html/media.go
+        note: "Image panics on an empty Src."
+      - path: framework/ui/link.go
+        note: "Link panics on an empty Href, which renderLink avoids by passing To or a resolved non-empty URL."
+  - job: "Hold the same permitted values for each enum-shaped prop, from the wire check to the design-system variant it maps to."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: "StackProps.validate (direction horizontal or vertical), isAlignValue, CardProps.validate (elevation flat, low, high), isToneValue, StatCardProps.validate (trend up, down, flat), isButtonVariant, GridProps.validate (columns 0 to 12)."
+      - path: framework/uihost/uinoderender/renderer.go
+        note: "renderStack (only horizontal is special), badgeTone, cardVariant, statDirection, ui.ParseButtonVariant with the primary fallback in renderButton, the ui.Align cast, gridMinForColumns; a wire value with no arm here renders as the default silently."
+      - path: framework/ui/layout.go
+        note: "layoutModifierClasses, the align and gap steps ui.Align and ui.Gap resolve to classes; an unlisted value gets no class."
+      - path: framework/uihost/uinoderender/renderer_escape_inventory_test.go
+        note: "escapeExemptions restates each enum's value set as the reason the field needs no escape surface."
+  - job: "Apply the action_ref placement rules for button and link."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/validate.go
+        note: "enforceComponentRules (button requires action_ref, link takes exactly one of to or action_ref, every other kind refuses it) and validateActionRef (length and no whitespace or control bytes)."
+      - path: framework/uihost/uinoderender/renderer.go
+        note: "renderButton, renderLink (to wins when both are set, so a hand-built link with both silently drops the ref) and resolveActionRef (empty ref, nil resolver or unresolved ref is an error)."
+      - path: framework/processmodule_proxy.go
+        note: "moduleSlot.uiRenderer, the ActionResolver that maps a ref to one of the module's own declared route paths."
+  - job: "Account for every string field of every prop struct in the length cap, the total-text budget and the escape inventory."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: "Each XProps.validate lists its free-text fields in checkStrings, and each XProps.estimatedTextSize sums them; a new field missed in either escapes MaxPropString or MaxTotalText."
+      - path: core-ui/uinodev1/validate.go
+        note: "decodeNode adds estimatedTextSize and the action_ref length to walker.totalText against MaxTotalText."
+      - path: framework/uihost/uinoderender/renderer_security_test.go
+        note: "escapeSurfaces, one payload tree per free-text field."
+      - path: framework/uihost/uinoderender/renderer_escape_inventory_test.go
+        note: "escapeExemptions and TestEscapeInventoryMatchesSchema, which fail when a string field has neither a surface nor an exemption; nothing checks checkStrings or estimatedTextSize coverage."
+  - job: "Bound each prop array by Limits.MaxPropItems and name the bounded arrays."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/types.go
+        note: "validatePairs (detail-list and key-value items) and DataTableProps.validate (columns, rows, cells per row), each calling checkPropItems separately."
+      - path: core-ui/uinodev1/array_limits_security_test.go
+        note: "TestPropArraysAreBounded lists the five arrays by hand; a new array prop needs a case here."
+      - path: framework/docs/content/process-modules.md
+        note: "The UI rendering section names the arrays MaxPropItems bounds."
+      - path: core-ui/ARCHITECTURE.md
+        note: "The ui.node.v1 render path section names the same arrays."
+  - job: "Refuse URL shapes that leave the host origin (scheme, scheme-relative, backslash, control bytes) for module-supplied href and src values."
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: core-ui/uinodev1/url.go
+        note: "IsValidHostRelative, the wire gate for link.to and image.src."
+      - path: core-ui/urlsafe/urlsafe.go
+        note: "The downstream scrub ui.Link (CleanAnchor) and html.Image (ImageSource) apply again; its backslash rule names IsValidHostRelative as the same posture."
+invariants:
+  - id: wiring-is-a-bijection
+    rule: "Every Comp* constant has a componentDecoders entry, every entry decodes into a struct in the sealed Props union, and every struct in the union is decoded by some component."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestEscapeInventoryMatchesSchema
+  - id: validated-tree-renders-without-module-attributes
+    rule: "A tree that passes Validate renders to markup whose only data-cui-rpc value is the URL the ActionResolver returned, with no module-supplied id or event handler."
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRoundTripNoModuleAttrInOutput
+decisions:
+  - id: closed-wire-type-not-noderender
+    date: 2026-11-14
+    status: accepted
+    decision: "Module screens use a closed wire type with one typed prop struct per component and no attribute passthrough, so forged data-cui-* and on* keys cannot be represented at all."
+    rejected:
+      - option: "Reuse core-ui/node and core-ui/noderender for module trees."
+        why: "noderender is a denylist whose extraAttrs passthrough forwards every prop but style, srcdoc and on*, so a module could forge the data-cui-rpc attributes runtime.js trusts."
+    revisit_if: "Modules need a prop the typed structs cannot express."
+    upholds: [validated-tree-renders-without-module-attributes]

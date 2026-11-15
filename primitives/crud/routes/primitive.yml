@@ -1,0 +1,10 @@
+primitive: crud.routes
+summary: Route mounting and paths, the MCP tools, the llm.md pages, and in-process redispatch through the router.
+code:
+  - framework/crud/crud_routes.go
+  - framework/crud/mcp.go
+  - framework/crud/mcp_names.go
+  - framework/crud/llmmd.go
+  - framework/crud/redispatch.go
+docs:
+  - framework/docs/content/mcp.md

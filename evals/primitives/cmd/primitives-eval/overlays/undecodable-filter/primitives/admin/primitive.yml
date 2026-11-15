@@ -1,0 +1,18 @@
+primitive: admin
+summary: The admin screens a host mounts under /admin.
+code:
+  - battery/admin/
+docs:
+  - framework/docs/content/admin.md
+on_change:
+  - A change to what a request is allowed to do needs a note in internal/upgrade/releases/, in the file for the next release.
+twins:
+  - job: Narrowing an admin screen from the query string
+    why: Recorded for the replay eval; whether the sites can be merged was not assessed.
+    sites:
+      - path: battery/admin/audit.go
+        note: the audit page reads entity, actor, op, from and to
+      - path: battery/admin/queue.go
+        note: the jobs page reads status
+      - path: battery/admin/palette.go
+        note: the search page reads q

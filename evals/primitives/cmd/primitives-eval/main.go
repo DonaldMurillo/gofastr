@@ -1,0 +1,199 @@
+// primitives-eval measures whether the primitives registry carries what
+// code comments carried. See evals/primitives/README.md.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/DonaldMurillo/gofastr/internal/fileperm"
+)
+
+type listFlag []string
+
+func (f *listFlag) String() string     { return strings.Join(*f, ",") }
+func (f *listFlag) Set(v string) error { *f = append(*f, v); return nil }
+
+type config struct {
+	repo, base, head string
+	claude, model    string
+	work, out        string
+	timeout          time.Duration
+	keep             bool
+	cellBudget       float64
+}
+
+func main() {
+	var tasksFilter, conditionsFilter listFlag
+	cfg := config{}
+	flag.StringVar(&cfg.base, "base", "origin/main", "ref for the comments condition")
+	flag.StringVar(&cfg.head, "head", "HEAD", "ref for the registry and bare conditions")
+	flag.StringVar(&cfg.claude, "claude", "claude", "Claude Code CLI program")
+	flag.StringVar(&cfg.model, "model", "opus", "model for every cell")
+	flag.StringVar(&cfg.work, "work", "", "directory for cell workspaces, outside the repository (default: a new temp dir)")
+	flag.StringVar(&cfg.out, "out", "", "artifact directory (default: dist/primitives-eval/<timestamp>)")
+	flag.DurationVar(&cfg.timeout, "timeout", 25*time.Minute, "timeout per cell")
+	flag.BoolVar(&cfg.keep, "keep", false, "keep each cell's workspace after it is graded")
+	flag.Float64Var(&cfg.cellBudget, "cell-budget", 2, "most one cell may spend, in USD")
+	budget := flag.Float64("budget", 10, "stop starting cells once the run has spent this much, in USD; cells already running finish, so a run can pass it by -concurrency times -cell-budget")
+	suite := flag.String("suite", suiteTrap, "which tasks to run: trap, replay or all")
+	runs := flag.Int("runs", 1, "trials per task and condition")
+	concurrency := flag.Int("concurrency", 3, "cells running at once")
+	flag.Var(&tasksFilter, "task", "run only this task (repeatable)")
+	flag.Var(&conditionsFilter, "condition", "run only this condition (repeatable)")
+	flag.Parse()
+
+	if err := run(cfg, *suite, tasksFilter, conditionsFilter, *runs, *concurrency, *budget); err != nil {
+		fmt.Fprintf(os.Stderr, "primitives-eval: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// insideDir reports whether path is dir or below it. Both are absolute.
+// It compares path segments, so a child named ..cells is inside, and it
+// follows symlinks first, so a link outside dir that points into it is
+// inside too.
+func insideDir(dir, path string) (bool, error) {
+	rel, err := filepath.Rel(resolveExisting(dir), resolveExisting(path))
+	if err != nil {
+		return false, err
+	}
+	return filepath.IsLocal(rel), nil
+}
+
+// resolveExisting follows the symlinks in the part of path that exists
+// and keeps the rest as written: a work directory is usually not there
+// yet, but the directory it will be made in is.
+func resolveExisting(path string) string {
+	rest := ""
+	for dir := path; ; {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
+}
+
+func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {
+	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	cfg.repo = repo
+	stamp := time.Now().UTC().Format("20060102-150405.000000000")
+	if cfg.out == "" {
+		cfg.out = filepath.Join(repo, "dist", "primitives-eval", stamp)
+	}
+	if cfg.work == "" {
+		if cfg.work, err = os.MkdirTemp("", "primitives-eval-"); err != nil {
+			return err
+		}
+	}
+	if cfg.work, err = filepath.Abs(cfg.work); err != nil {
+		return err
+	}
+	inside, err := insideDir(repo, cfg.work)
+	if err != nil {
+		return fmt.Errorf("-work %s cannot be placed against the repository: %w", cfg.work, err)
+	}
+	if inside {
+		return fmt.Errorf("-work %s is inside the repository: a cell there would read this checkout's CLAUDE.md", cfg.work)
+	}
+	if err := os.MkdirAll(cfg.out, 0o700); err != nil {
+		return err
+	}
+
+	var cells []*cell
+	for _, t := range tasks {
+		if len(tasksFilter) > 0 && !slices.Contains(tasksFilter, t.ID) {
+			continue
+		}
+		if suite != "all" && suite != t.Suite {
+			continue
+		}
+		for _, c := range suiteConditions[t.Suite] {
+			if len(conditionsFilter) > 0 && !slices.Contains(conditionsFilter, c) {
+				continue
+			}
+			for n := 1; n <= runs; n++ {
+				cells = append(cells, &cell{Task: t.ID, Condition: c, Run: n, task: t})
+			}
+		}
+	}
+	if len(cells) == 0 {
+		return fmt.Errorf("no cell matches the -suite, -task and -condition filters")
+	}
+
+	var (
+		mu    sync.Mutex
+		spent float64
+		wg    sync.WaitGroup
+		slots = make(chan struct{}, max(concurrency, 1))
+	)
+	for _, c := range cells {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			mu.Lock()
+			over := spent >= budget
+			mu.Unlock()
+			if over {
+				c.Outcome, c.Note = outcomeSkipped, "run budget reached"
+				return
+			}
+			runCell(cfg, c)
+			mu.Lock()
+			spent += c.CostUSD
+			mu.Unlock()
+			fmt.Printf("%-16s %-9s run %d: %-8s $%.2f %s\n", c.Task, c.Condition, c.Run, c.Outcome, c.CostUSD, c.Note)
+		}()
+	}
+	wg.Wait()
+
+	report := report{Model: cfg.model, Base: cfg.base, Head: cfg.head, Started: stamp, SpentUSD: spent, Cells: cells}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := fileperm.WriteOwnerOnly(filepath.Join(cfg.out, "results.json"), append(data, '\n')); err != nil {
+		return err
+	}
+	if err := fileperm.WriteOwnerOnly(filepath.Join(cfg.out, "RESULTS.md"), []byte(renderMarkdown(report))); err != nil {
+		return err
+	}
+	fmt.Printf("\nspent $%.2f; results in %s\n", spent, cfg.out)
+	return nil
+}
+
+func gitOutput(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func command(ctx context.Context, dir, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.WaitDelay = 10 * time.Second
+	return cmd
+}

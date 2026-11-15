@@ -1,11 +1,6 @@
 package crud
 
-import (
-	"context"
-
-	"github.com/DonaldMurillo/gofastr/core/handler"
-	"github.com/DonaldMurillo/gofastr/framework/owner"
-)
+import "context"
 
 // CanUpdateRecordScoped reports whether ctx may update the record id: the
 // boolean mirror of the gates PUT /<entity>/{id} runs before the write
@@ -30,33 +25,8 @@ func (ch *CrudHandler) CanDeleteRecordScoped(ctx context.Context, id string) boo
 	return ch.canScopedRecord(ctx, opDelete, id)
 }
 
-// canScopedRecord is requireScope(op) as a boolean about one record: the
-// default posture's session requirement, owner, tenant, then op's
-// permission asked about Ref{Type, ID}. Deliberately not
-// requireOwnerContext: that honours owner.AllowCrossOwner and the route's
-// RequireOwner does not, so a host applying the exported marker to a
-// request context would make screens show or write rows the route
-// refuses. It answers the stricter of the two.
+// canScopedRecord reports whether requireScope(op) would let ctx through
+// for record id: it asks scopeGate, the decision the route writes.
 func (ch *CrudHandler) canScopedRecord(ctx context.Context, op crudOp, id string) bool {
-	if ch == nil || ch.Entity == nil {
-		return false
-	}
-	if ch.sessionGated() {
-		if _, ok := handler.GetUser(ctx); !ok {
-			return false
-		}
-	}
-	if ch.Entity.Config.Scope.OwnerField != "" {
-		if _, ok := owner.Get(ctx); !ok {
-			return false
-		}
-	}
-	if ch.requireTenantContext(ctx) != nil {
-		return false
-	}
-	perm := ch.permissionForOp(op)
-	if perm == "" {
-		return true
-	}
-	return ch.accessAllows(ctx, perm, id)
+	return ch != nil && ch.Entity != nil && ch.scopeGate(ctx, op, id) == nil
 }

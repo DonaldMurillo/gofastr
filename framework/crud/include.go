@@ -15,8 +15,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 	"github.com/DonaldMurillo/gofastr/framework/hook"
-	"github.com/DonaldMurillo/gofastr/framework/owner"
-	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
 const (
@@ -621,8 +619,7 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 	}
 	budget := newIncludeBudget()
 	for _, node := range nodes {
-		applyRelatedOwnerScope(ctx, node)
-		applyRelatedTenantScope(ctx, node)
+		applyRelatedScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
 		applyPivotScope(ctx, node)
 		if err := ch.applyChildBeforeHooks(ctx, node); err != nil {
@@ -694,8 +691,7 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 		loaded[id] = make(map[string]any)
 	}
 	for _, node := range children {
-		applyRelatedOwnerScope(ctx, node)
-		applyRelatedTenantScope(ctx, node)
+		applyRelatedScope(ctx, node)
 		applyRelatedReadScope(ctx, node)
 		applyPivotScope(ctx, node)
 		if err := ch.applyChildBeforeHooks(ctx, node); err != nil {
@@ -1094,54 +1090,16 @@ func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintp
 	}
 }
 
-// applyRelatedOwnerScope prepends an owner-scope filter to the include
-// node when the related entity has an OwnerField configured. This is
-// the cross-table half of owner scoping, without it, ?include=comments
-// on /posts would honour owner scope on posts but not on comments,
-// letting alice's response include bob's comments on a post she owns.
-//
-// If no owner extractor is wired or the request has no owner in
-// context, the predicate becomes `owner_field = ""` which matches no
-// real row, fail-safe.
-func applyRelatedOwnerScope(ctx context.Context, node *IncludeNode) {
+// applyRelatedScope prepends the target's owner and tenant predicates to
+// the include node's filters. They come from eagerScopeFilters, the one
+// builder of those predicates, and are always ANDed in front of whatever
+// the caller sent: a caller's own filter on the owner or tenant column
+// narrows the result further and never replaces the scope.
+func applyRelatedScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Target == nil {
 		return
 	}
-	ownerField := node.Target.Config.Scope.OwnerField
-	if ownerField == "" {
-		return
-	}
-	// Cross-owner callers see every row on the routes (ApplyOwnerScope and its
-	// update/delete siblings all branch on this pair). Without the same branch
-	// here, an include for that posture silently returned a near-empty relation
-	// rather than the rows the caller is entitled to, the identical defect
-	// applyRelatedTenantScope had for tenants, fixed alongside this one.
-	//
-	// The grant is read from the TARGET entity, because these are the target's
-	// rows: a probe handler is the same shape the include gate uses.
-	if owner.IsCrossOwner(ctx) {
-		return
-	}
-	if probe := (&CrudHandler{Entity: node.Target}); probe.crossOwnerReadGranted(ctx) {
-		return
-	}
-	// Always AND the context-derived owner predicate, even when the node
-	// already carries a filter on the owner field. On the HTTP path
-	// node.Filters comes from the attacker-controlled
-	// `include=rel(owner_field=val)` query string; treating that as an
-	// opt-out would let a forged `user_id=bob` disable cross-table owner
-	// scoping (IDOR). Intersecting it with the real owner instead means a
-	// forged value matches nothing, fail-closed. A legitimate caller who
-	// filters on their own id gets a redundant-but-harmless predicate.
-	var val string
-	if id, ok := owner.Get(ctx); ok && id != nil {
-		val = fmt.Sprintf("%v", id)
-	}
-	node.Filters = append([]filter.ParsedFilter{{
-		Field: ownerField,
-		Op:    filter.OpEq,
-		Value: val,
-	}}, node.Filters...)
+	node.Filters = append(eagerScopeFilters(ctx, node.Target), node.Filters...)
 }
 
 // applyPivotScope sets the predicates a many_to_many's join entity puts
@@ -1155,43 +1113,8 @@ func applyPivotScope(ctx context.Context, node *IncludeNode) {
 	node.PivotScopes = pivotScopes(ctx, node.Pivot)
 }
 
-// applyRelatedTenantScope is the tenant analog of applyRelatedOwnerScope.
-// When the included child entity is MultiTenant, it prepends a
-// `tenant_id = <ctx tenant>` predicate so an ?include= can't reach across
-// tenants, without it, `/posts?include=comments` would scope posts to the
-// caller's tenant but pull EVERY comment whose post_id matches, including
-// other tenants' rows on a shared post id.
-//
-// If the request has no tenant in context, the predicate becomes
-// `tenant_id = ""` which matches no real row, fail-closed, exactly like
-// the owner version. As with the owner scope, this is always ANDed (never
-// an opt-out) so an attacker-supplied scoped filter on the tenant column
-// can't disable it.
-func applyRelatedTenantScope(ctx context.Context, node *IncludeNode) {
-	if node == nil || node.Target == nil {
-		return
-	}
-	if !node.Target.Config.Scope.MultiTenant {
-		return
-	}
-	// Cross-tenant callers see every tenant's rows on the routes
-	// (RequireTenant and ApplyTenantScope both branch on this). Without the
-	// same branch here, an include for that posture silently returned an empty
-	// relation rather than the rows the caller is entitled to, fail-closed,
-	// but contradicting the documented contract.
-	if tenant.IsCrossTenant(ctx) {
-		return
-	}
-	node.Filters = append([]filter.ParsedFilter{{
-		Field: node.Target.Config.TenantColumn(),
-		Op:    filter.OpEq,
-		Value: tenant.GetTenantID(ctx),
-	}}, node.Filters...)
-}
-
 // applyRelatedReadScope attaches the TARGET's Exposure.ReadScope predicates
-// to the include node, the read-scope sibling of applyRelatedOwnerScope /
-// applyRelatedTenantScope. Without it, `?include=posts` on another entity
+// to the include node, the read-scope sibling of applyRelatedScope. Without it, `?include=posts` on another entity
 // serves the drafts the posts entity's own route hides; the include path is
 // exactly where cross-table leaks live.
 //

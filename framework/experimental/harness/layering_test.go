@@ -16,8 +16,7 @@ import (
 //
 // This is the enforceable form of that boundary. A future "just import it
 // here, it's simpler" refactor fails here instead of silently reversing
-// the layering. The shape mirrors framework/ui/layering_test.go and
-// framework/crud/layering_test.go.
+// the layering. The shape mirrors framework/ui/layering_test.go.
 func TestFrameworkRootDoesNotImportHarness(t *testing.T) {
 	const root = "github.com/DonaldMurillo/gofastr/framework"
 	const harnessPrefix = "github.com/DonaldMurillo/gofastr/framework/experimental/harness"

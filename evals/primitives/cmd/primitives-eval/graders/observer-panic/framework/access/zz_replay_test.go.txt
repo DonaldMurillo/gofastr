@@ -1,0 +1,25 @@
+package access
+
+import (
+	"context"
+	"testing"
+)
+
+func TestReplayReportedObserver(t *testing.T) {
+	SetObserver(func(Evaluation) { panic("observer boom") })
+	defer SetObserver(nil)
+	defer func() {
+		if recover() != nil {
+			t.Error("the observer's panic crossed the permission check")
+		}
+	}()
+	policy := NewRolePolicy()
+	policy.Grant("editor", "posts:read")
+	ctx := WithRoles(WithPolicy(context.Background(), policy), []string{"editor"})
+	if !Can(ctx, "posts:read") {
+		t.Error("granted permission was denied after the observer panicked")
+	}
+	if Can(ctx, "posts:delete") {
+		t.Error("ungranted permission was allowed after the observer panicked")
+	}
+}

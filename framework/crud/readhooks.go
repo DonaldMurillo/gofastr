@@ -606,46 +606,8 @@ func (ch *CrudHandler) runResponseHooks(r *http.Request, result map[string]any) 
 	return payload.Result, nil
 }
 
-// reattachHookResults folds a child AfterList hook's output back into the maps
-// the include loader has already attached to their parents.
-//
-// The parent read path can simply take payload.Results, because it owns the
-// slice it is about to serialise. An include cannot: each row is already
-// referenced from one or more parent rows, so replacing the slice would leave
-// those references pointing at the pre-hook maps, the hook would appear to
-// run and change nothing, which is the silent-fail-open shape this whole
-// change exists to remove.
-//
-// Rows are matched by PRIMARY KEY, not by position and not by pointer.
-//
-// Position was the first attempt: it corrupts the moment a hook reorders,
-// writing each row's contents into a different parent's attachment and, since
-// it mutates originals that later iterations still read as sources, turning
-// [A,B,C] → [C,B,A] into [C,B,C], one row duplicated, one destroyed, one
-// attributed to a parent whose own foreign key names a different row, served
-// with a 200.
-//
-// Pointer identity was the second: it recognises a reorder only when the hook
-// mutated in place. The documented alternative, replacing an element with a
-// redacted copy, yields fresh maps, so a hook that projects AND sorts looked
-// like a slice of new rows and folded positionally, reproducing the identical
-// corruption. It also made a legitimate sorting hook a hard 500, which is
-// data-dependent: whether a request works then depends on the stored rows, so
-// anyone able to insert a child row could permanently break another user's
-// include.
-//
-// The primary key is what actually identifies a row across both shapes:
-// pkKeys names its columns as the rows spell them, and a composite key
-// matches on the record id they join to. Every
-// documented mask preserves it (assign a constant, delete the masked key), so
-// matching on it accepts in-place edits, projections, and any ordering, while
-// still refusing the cases that cannot be honoured: a changed row count, a
-// duplicate, a row the loader never produced, or a replacement that dropped
-// its own id. Ordering is a no-op either way, what the client sees comes from
-// the attachment the loader built, which this function never touches.
-//
-// Nothing is mutated until every element has been matched, so a refused
-// payload is left exactly as it was.
+// reattachHookResults folds a child AfterList hook's output back into the
+// rows the include loader already attached to their parents.
 func reattachHookResults(relation string, pkKeys []string, original, returned []map[string]any) error {
 	pkKey := strings.Join(pkKeys, ", ")
 	if len(returned) != len(original) {

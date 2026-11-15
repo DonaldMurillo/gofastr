@@ -1,0 +1,76 @@
+package appspec
+
+import (
+	"strings"
+	"testing"
+)
+
+const replayExtraFields = `
+      - name: id
+        type: string
+      - name: notes
+        type: string
+        hidden: true
+      - name: code
+        type: string
+        read_only: true`
+
+func replayForm(t *testing.T, fields, mode string) error {
+	t.Helper()
+	form := "\n      - kind: entity_form\n        entity: tours\n"
+	if mode != "" {
+		form += "        mode: " + mode + "\n"
+	}
+	form += "        fields: [" + fields + "]\n"
+	src := entityFormSpec(form, replayExtraFields, "")
+	if mode == "edit" {
+		src = strings.Replace(src, "route: /schedule-tour", "route: /tours/{id}/edit", 1)
+	}
+	return loadEntityFormSpec(t, src)
+}
+
+func replayRefused(t *testing.T, what, fields, mode string) error {
+	t.Helper()
+	// The control is a valid form of the same mode, so a refusal of the
+	// case below is about its fields and not about the mode or the route.
+	control := "property_id, visitor_name"
+	if mode == "edit" {
+		control = "visitor_name"
+	}
+	if err := replayForm(t, control, mode); err != nil {
+		t.Fatalf("a %s form of drawable fields no longer loads: %v", mode, err)
+	}
+	err := replayForm(t, fields, mode)
+	if err == nil {
+		t.Errorf("%s validated", what)
+	}
+	return err
+}
+
+func TestReplayReportedTypo(t *testing.T) {
+	// The request asks for an error that names the entry.
+	err := replayRefused(t, "a misspelled field", "property_id, visitor_name, visitor_emial", "")
+	if err != nil && !strings.Contains(err.Error(), "visitor_emial") {
+		t.Errorf("the refusal does not name the entry: %v", err)
+	}
+}
+
+func TestReplayTwinTypoOnEdit(t *testing.T) {
+	replayRefused(t, "a misspelled field on an edit form", "visitor_nmae", "edit")
+}
+
+func TestReplayTwinHidden(t *testing.T) {
+	replayRefused(t, "a hidden field", "property_id, visitor_name, notes", "")
+}
+
+func TestReplayTwinReadOnlyOnCreate(t *testing.T) {
+	replayRefused(t, "a read_only field on a create form", "property_id, visitor_name, code", "")
+}
+
+func TestReplayTwinSystemColumn(t *testing.T) {
+	replayRefused(t, "a server-filled column on a create form", "property_id, visitor_name, id", "")
+}
+
+func TestReplayTwinListedTwice(t *testing.T) {
+	replayRefused(t, "a field listed twice", "property_id, visitor_name, visitor_name", "")
+}

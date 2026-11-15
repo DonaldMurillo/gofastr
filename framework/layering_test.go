@@ -12,8 +12,8 @@ import (
 // facade, and framework/uihost stays below the framework/ui component
 // layer. The gofastr verify gate enforces layer order but permits
 // intra-layer edges, so until now these three invariants held by
-// convention only. Same enforcement style as framework/ui/layering_test.go
-// and framework/crud/layering_test.go: go list, then fail on the edge.
+// convention only. Same enforcement style as framework/ui/layering_test.go:
+// go list, then fail on the edge.
 
 const modRoot = "github.com/DonaldMurillo/gofastr"
 

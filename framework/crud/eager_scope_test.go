@@ -11,7 +11,7 @@ import (
 
 // TestEagerLoadScopesTenant pins that the exported EagerLoad scopes a
 // MultiTenant target to the caller's tenant, mirroring the include path's
-// applyRelatedTenantScope. Two tenants' related rows share the same FK; ctx
+// applyRelatedScope. Two tenants' related rows share the same FK; ctx
 // carries tenant-A, so only tenant-A's row may come back. Before the fix both
 // tenants' rows loaded.
 func TestEagerLoadScopesTenant(t *testing.T) {
@@ -60,7 +60,7 @@ func TestEagerLoadScopesTenant(t *testing.T) {
 }
 
 // TestEagerLoadScopesOwner pins that EagerLoad scopes an owner-scoped target
-// to the caller's owner, mirroring applyRelatedOwnerScope. Two owners' rows
+// to the caller's owner, mirroring applyRelatedScope. Two owners' rows
 // share the same FK; ctx carries owner alice, so only alice's row may come
 // back. Before the fix both owners' rows loaded.
 func TestEagerLoadScopesOwner(t *testing.T) {

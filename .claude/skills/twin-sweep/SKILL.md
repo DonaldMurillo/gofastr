@@ -25,6 +25,22 @@ the code is. This skill goes after both causes: twins become single
 implementations, and every hunt records what it read, so the next round
 can be planned from that record.
 
+## Where an open twin is recorded
+
+In the repository, in the primitives registry: a `twins` entry on the
+primitive that owns the code (`primitives/**/primitive.yml`, format in
+`primitives/README.md`). An entry is a debt. It lists every site, says
+in `why` what keeps them apart today, and is deleted when they become
+one implementation. `go run ./cmd/primitives lint` prints how many are
+left. The target is none whose `why` is work not yet done; an entry
+whose sites cannot share code stays, pinned by a parity test.
+
+Recording a twin there is what makes the next agent see it: the hook in
+`.claude/settings.json` shows the entry to any session that changes one
+of its sites, and the stop check asks every session about sibling paths
+before it finishes. `twins.md`, below, stays as the hunt's own history
+of families and what was decided; the registry holds what is still open.
+
 ## Where the history lives
 
 - State for this skill, outside git: `~/programming/gofastr-hunt-state/`
@@ -112,11 +128,14 @@ fix landing there.
    append one `coverage.tsv` row per package read, even when the read
    was clean. For every finding, append a `findings.tsv` row with shape
    and family. A `twin` finding with no family starts a new family in
-   `twins.md`.
+   `twins.md` and a `twins` entry in the registry, on the primitive that
+   owns the sites. If the path has no primitive yet, add one
+   (`go run ./cmd/primitives for <path>` says whether it does).
 4. **Fix with the registry open.** A fixer touching a family's rule reads
-   that family's sites first. Then it merges the pair (see below) or
-   fixes every site in the same commit and adds the site to the
-   family's parity test.
+   that family's sites first: `go run ./cmd/primitives for <file>` lists
+   them, and the hook shows them unasked on the first edit. Then it
+   merges the pair (see below) or fixes every site in the same commit
+   and adds the site to the family's parity test.
 5. **Close the round.** Run `density.sh shapes` and put the round's line
    in the hunt's memory note: count, Majors, share of twin findings,
    packages retired.
@@ -131,24 +150,33 @@ Work the families in `twins.md` by finding count, highest first
    same refusal message, the same `i18n.Phrase`, the same helper name
    across dialect/transport files. Sweep by the invariant, not by a name
    ([[feedback_sweep_by_invariant_not_name]]).
-2. **Pick one, and record it in `twins.md`:**
+2. **Pick one, and record it in `twins.md` and in the registry:**
    - **Merge (preferred).** One function, which every site calls. Delete
      the copies in the same change, with no shim
-     ([[feedback_no_legacy_no_deprecation]]).
-   - **Parity test.** Use it when the sites cannot share code (Go vs
+     ([[feedback_no_legacy_no_deprecation]]). Delete the `twins` entry,
+     add an invariant saying there is one implementation, and a decision
+     naming the copy that was removed. The model is
+     `primitives/crud/scope/primitive.yml` (`one-scope-gate`).
+   - **Parity test.** Use it only when the sites cannot share code (Go vs
      `runtime.js`, Postgres vs SQLite SQL). One table of inputs runs
      through every site and the outcomes are compared. The model is
      `framework/crud/readhook_parity_security_test.go`
-     (`TestReadHookParityCrud`). A new site joins by adding a case.
-   - **Intentional difference.** Write down the reason, and put a
-     one-line comment at each site that points at the other.
+     (`TestReadHookParityCrud`). A new site joins by adding a case. The
+     `twins` entry stays, its `why` names the reason code cannot be
+     shared, and an invariant names the parity test as its enforcer.
+   - **Intentional difference.** The sites are not twins. Delete the
+     entry and record a decision with the reason. Do not leave a comment
+     at each site: the registry is where a reader finds it.
 3. **Prove the parity test.** Break one site, watch the test fail, then
    put the site back (Hard rule 11). A parity test nobody has seen fail
    is unproven.
 4. **Batch.** 4–5 families per PR, one PR per round, never one PR per
    family ([[feedback_batch_prs_hard_rule]]).
 
-Families to seed `twins.md` with (from rounds 10–11):
+Families to seed `twins.md` with (from rounds 10–11). Each one still
+open also needs its `twins` entry; check first, since several were
+merged in #719 and the two crud scope families were merged with the
+registry itself:
 - **crud query parse:** List, Get, include, fields, where, q, trashed
   (strict decode and repeated-key refusal)
 - **query-pair undecodable warning:** entityui lists vs admin Audit and
@@ -179,6 +207,10 @@ Families to seed `twins.md` with (from rounds 10–11):
 
 - `twins.md` has no family left open: each one is merged, pinned by a
   proven parity test, or recorded as intentional.
+- No `twins` entry is left whose `why` is work not yet done. Lint counts
+  the entries and cannot judge a `why`, so read each one that
+  `go run ./cmd/primitives lint` still counts: it must name a real
+  reason code cannot be shared and a parity test that enforces it.
 - Every package over 2,000 lines is `RETIRED`, or was read after its
   last churn.
 - Two consecutive rounds found no Major and fewer than 5 twin findings.

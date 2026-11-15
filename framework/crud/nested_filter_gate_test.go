@@ -310,28 +310,28 @@ func TestRelatedScopeHelpersHonourCrossScopeMarkers(t *testing.T) {
 
 	t.Run("owner scope is applied for an ordinary caller", func(t *testing.T) {
 		node := &IncludeNode{Target: ownerTarget}
-		applyRelatedOwnerScope(context.Background(), node)
+		applyRelatedScope(context.Background(), node)
 		if len(node.Filters) != 1 {
 			t.Fatalf("want one owner predicate, got %d", len(node.Filters))
 		}
 	})
 	t.Run("owner scope is skipped for a cross-owner caller", func(t *testing.T) {
 		node := &IncludeNode{Target: ownerTarget}
-		applyRelatedOwnerScope(owner.AllowCrossOwner(context.Background()), node)
+		applyRelatedScope(owner.AllowCrossOwner(context.Background()), node)
 		if len(node.Filters) != 0 {
 			t.Errorf("a cross-owner caller had the relation narrowed to their own rows: %+v", node.Filters)
 		}
 	})
 	t.Run("tenant scope is applied for an ordinary caller", func(t *testing.T) {
 		node := &IncludeNode{Target: tenantTarget}
-		applyRelatedTenantScope(tenant.SetTenantID(context.Background(), "a"), node)
+		applyRelatedScope(tenant.SetTenantID(context.Background(), "a"), node)
 		if len(node.Filters) != 1 {
 			t.Fatalf("want one tenant predicate, got %d", len(node.Filters))
 		}
 	})
 	t.Run("tenant scope is skipped for a cross-tenant caller", func(t *testing.T) {
 		node := &IncludeNode{Target: tenantTarget}
-		applyRelatedTenantScope(tenant.AllowCrossTenant(context.Background()), node)
+		applyRelatedScope(tenant.AllowCrossTenant(context.Background()), node)
 		if len(node.Filters) != 0 {
 			t.Errorf("a cross-tenant caller had the relation narrowed: %+v", node.Filters)
 		}
@@ -411,16 +411,13 @@ func TestRelatedScopeHelpersNoOpWhenUnscoped(t *testing.T) {
 		Exposure: &entity.ExposureConfig{CRUD: new(true), Public: true},
 	})
 	node := &IncludeNode{Target: plain}
-	applyRelatedOwnerScope(context.Background(), node)
-	applyRelatedTenantScope(context.Background(), node)
+	applyRelatedScope(context.Background(), node)
 	if len(node.Filters) != 0 {
 		t.Errorf("an unscoped entity gained %d predicate(s): %+v", len(node.Filters), node.Filters)
 	}
 	// Nil node and nil target must not panic.
-	applyRelatedOwnerScope(context.Background(), nil)
-	applyRelatedTenantScope(context.Background(), nil)
-	applyRelatedOwnerScope(context.Background(), &IncludeNode{})
-	applyRelatedTenantScope(context.Background(), &IncludeNode{})
+	applyRelatedScope(context.Background(), nil)
+	applyRelatedScope(context.Background(), &IncludeNode{})
 }
 
 // resolveNestedFilters is the in-process twin of the HTTP parser: typed repos
@@ -464,12 +461,10 @@ func TestResolveNestedFiltersCarriesSoftDeleteAndResolvedTable(t *testing.T) {
 	}
 }
 
-// eagerScopeFilters is the EagerLoad twin of the include path's
-// applyRelatedOwnerScope / applyRelatedTenantScope. When those learned to
-// exempt cross-scope callers, this one did not, while its own comment still
-// claimed it mirrored them "exactly". The result: a caller holding
-// AllowCrossOwner got every row through ?include= and an empty relation
-// through EagerLoad.
+// eagerScopeFilters exempts a caller holding a cross-scope grant. It was
+// once a second copy of the include path's rule and missed that exemption:
+// a caller holding AllowCrossOwner got every row through ?include= and an
+// empty relation through EagerLoad. The include path now calls it.
 func TestEagerScopeFiltersExemptCrossScopeCallers(t *testing.T) {
 	ownerScoped := gateEntity(t, "notes", entity.EntityConfig{
 		Scope:    &entity.ScopeConfig{OwnerField: "owner_id"},
