@@ -12,13 +12,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// keyInClause renders the WHERE condition matching the records ids name,
-// with placeholders numbered from start: "a IN ($1, $2)" for a one-column
-// key, "(a, b) IN (($1, $2), ($3, $4))" for a composite one. Each id is a
-// record id as entity.JoinKey spells it; one that does not split into
-// the key columns is skipped. It reports false when no id survives.
-// Columns go in validated and spelled the way the DDL wrote them: bare,
-// a keyword quoted (query.QuoteKeyword).
+// keyInClause renders "a IN ($1, $2)" or "(a, b) IN (($1, $2), ...)" for
+// the record ids, numbered from start; an id that does not split into the
+// key columns is skipped, and false means none survived.
 func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 	safe := make([]string, len(cols))
 	for i, c := range cols {
@@ -56,8 +52,6 @@ func keyInClause(cols, ids []string, start int) (string, []any, bool, error) {
 	return lhs + " IN (" + strings.Join(tuples, ", ") + ")", args, true, nil
 }
 
-// safeColumns validates each of cols with query.SafeIdent. The names go
-// into SQL unquoted, the way the DDL wrote them.
 func safeColumns(cols []string) ([]string, error) {
 	out := make([]string, len(cols))
 	for i, c := range cols {
@@ -70,9 +64,7 @@ func safeColumns(cols []string) ([]string, error) {
 	return out, nil
 }
 
-// oneFK returns rel's foreign-key column when it has exactly one, as a
-// cascade write needs (entity.CheckRelationKeys refuses it several), or
-// "" when it has none or several.
+// oneFK is rel's foreign-key column, or "" unless it has exactly one.
 func oneFK(rel entity.Relation) string {
 	if len(rel.ForeignKey) != 1 {
 		return ""
@@ -80,8 +72,6 @@ func oneFK(rel entity.Relation) string {
 	return rel.ForeignKey[0]
 }
 
-// relationFKs returns rel's foreign-key columns validated for SQL: one,
-// or one per key column of a composite key it references.
 func relationFKs(rel entity.Relation) ([]string, error) {
 	fks := rel.ForeignKey
 	if len(fks) == 0 {
@@ -94,10 +84,8 @@ func relationFKs(rel entity.Relation) ([]string, error) {
 	return cols, nil
 }
 
-// scannedKey reads the values columns cols hold in one scanned row (names
-// the row's columns, matched case-insensitively, vals its values) as one
-// record id, the spelling entity.JoinKey gives the ids a loader is handed.
-// It reports false when a column is missing or NULL: an absent reference.
+// scannedKey joins the values of cols in one scanned row into a record id;
+// false when a column is missing or NULL.
 func scannedKey(names []string, vals []any, cols []string) (string, bool) {
 	parts := make([]string, len(cols))
 	for i, c := range cols {
@@ -114,12 +102,9 @@ func scannedKey(names []string, vals []any, cols []string) (string, bool) {
 	return entity.JoinKey(parts), true
 }
 
-// belongsToFKs reads the foreign key fks of each parent row ids names,
-// from the parent table keyed on cols. It returns each parent's foreign
-// key by record id, the key of several columns joined the way
-// entity.JoinKey joins a record id, and the distinct keys in first-seen
-// order. A foreign key with a NULL column is an absent optional relation
-// and is left out.
+// belongsToFKs reads each parent's foreign key, by parent record id, and
+// the distinct keys in first-seen order; a key with a NULL column is left
+// out.
 func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols, fks []string, ids []string) (map[string]string, []string, error) {
 	safeTable, err := query.SafeIdent(table)
 	if err != nil {
@@ -175,8 +160,6 @@ func belongsToFKs(ctx context.Context, db DBExecutor, table string, cols, fks []
 	return bySource, unique, rows.Err()
 }
 
-// pivotScopes is a many_to_many join entity's own row scope: the owner
-// and tenant predicates (eagerScopeFilters) and its read scope.
 func pivotScopes(ctx context.Context, pivot *entity.Entity) []filter.ParsedFilter {
 	if pivot == nil {
 		return nil
@@ -184,9 +167,8 @@ func pivotScopes(ctx context.Context, pivot *entity.Entity) []filter.ParsedFilte
 	return append(eagerScopeFilters(ctx, pivot), readScopeFilters(ctx, pivot)...)
 }
 
-// pivotClause renders the join entity's conditions on its Through table,
-// numbered from startIdx: " AND t.deleted_at IS NULL" when it soft
-// deletes, and its scopes. A migrator-made pivot (nil) has none.
+// pivotClause renders the join entity's soft-delete and scope conditions
+// on its Through table, numbered from startIdx.
 func pivotClause(pivot *entity.Entity, scopes []filter.ParsedFilter, safeThrough string, startIdx int) (string, []any) {
 	out := ""
 	if pivot != nil && pivot.Config.Scope.SoftDelete {

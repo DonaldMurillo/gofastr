@@ -16,6 +16,7 @@ invariants:
       - test: framework/crud.TestEagerLoadDropsUndeclaredColumns
       - test: framework/crud.TestEagerLoadScopesTenant
       - test: framework/crud.TestEagerLoadScopesOwner
+      - test: framework/crud.TestRelationsSweepManyToManyOwnerScopeIsQualified
   - id: included-child-scope-always-applies
     rule: An included owner-scoped or multi-tenant child carries the context owner or tenant predicate, even when the caller filters on that column, and matches no row when the context has neither. A caller holding an explicit cross-scope grant for a scope gets no predicate for that scope.
     enforced_by:
@@ -29,6 +30,86 @@ invariants:
       - test: framework/crud.TestEagerScopeFiltersExemptCrossScopeCallers
       - test: framework/crud.TestInclude_RelatedTableOwnerScope
       - test: framework/crud.TestEagerLoadScopesOwner
+  - id: include-is-bounded
+    rule: An ?include= of more than 4 hops or 32 paths answers 400, and so does one whose scanned rows and serialised row references pass 20000, a shared subtree counting once per reference and a shared row gathered once per level.
+    enforced_by:
+      - test: framework/crud.TestIncludeDepthBudget
+      - test: framework/crud.TestIncludeMentionCountBounded
+      - test: framework/crud.TestIncludeBudgetAccounting
+      - test: framework/crud.TestIncludeErrorStatusSplit
+      - test: framework/crud.TestRelationsSweepGatherLoadedRowsYieldsSharedRowOnce
+  - id: include-error-statuses
+    rule: A failed include answers 400 for a blown row budget or a child Before hook's refusal, 403 naming the entity for an unreadable target, and an opaque 500 otherwise.
+    enforced_by:
+      - test: framework/crud.TestWriteIncludeErrorStatusMapping
+      - test: framework/crud.TestIncludeErrorStatusSplit
+      - test: framework/crud.TestChildHookRefusalMatchesRoute
+      - test: framework/crud.TestPivotHookRefusalMatchesRoute
+  - id: include-target-resolves
+    rule: An include segment, leaf included, that resolves to no registered entity is refused, and an include node without a resolved target is never loaded.
+    enforced_by:
+      - test: framework/crud.TestParseIncludeTree_NestedTargetUnregistered
+      - test: framework/crud.TestRelationsSweepLoadIncludeNodeRefusesNilTarget
+  - id: include-checks-target-posture
+    rule: Over HTTP an include whose target or registered pivot, at any depth, fails the read posture of its own list route answers 403, on an empty parent page too; an in-process include is not posture-checked.
+    enforced_by:
+      - test: framework/crud.TestCheckIncludeReadableRecursesAndRefuses
+      - test: framework/crud.TestPivotReadGateRBAC
+      - test: framework/crud.TestPivotReadGateTokenScope
+      - test: framework/crud.TestRelationsSweepIncludePostureCheckedOnEmptyParent
+      - test: framework/crud.TestListAll_WithIncludes
+      - test: framework/crud.TestGetOne_WithIncludes
+  - id: hidden-relations-are-unnamed
+    rule: A relation the entity hides (entity.HidesRelation) cannot be included and is never offered by the near-miss hint.
+    enforced_by:
+      - test: framework/crud.TestHiddenRelationIsNotIncludable
+      - test: framework/crud.TestMaskedForeignKeyRelationIsNotIncludable
+      - test: framework/crud.TestRelationHiddenRefusesInclude
+  - id: scoped-filters-follow-top-level-rules
+    rule: A scoped include filter names a visible field by column or wire key and binds the column, refuses a Hidden field as unknown and a NoQuery one as not filterable under either name, caps an IN list at 256 values, renders a run of one IN term as one list, and reads _like as a literal case-insensitive substring.
+    enforced_by:
+      - test: framework/crud.TestScopedFilterHiddenFieldRejected
+      - test: framework/crud.TestScopedFilter_AcceptsWireNameAndEmitsColumn
+      - test: framework/crud.TestRelationsSweepNoQueryWireKeyIsNotFilterable
+      - test: framework/crud.TestParseScopedFilters_CapsInListSize
+      - test: framework/crud.TestInclude_MultiValueINReturnsAllMatches
+      - test: framework/crud.TestScopedINAliasTermsAreANDed
+      - test: framework/crud.TestRelationsSweepScopedLikeIsLiteralSubstring
+  - id: repeated-relation-keeps-each-filter
+    rule: A relation mentioned with distinct scoped-filter sets serves the union of each set's rows, each row once per parent, and IN terms split at different places are distinct sets.
+    enforced_by:
+      - test: framework/crud.TestIncludeRepeatKeepsItsOwnNode
+      - test: framework/crud.TestIncludeRepeatedRelationKeepsFilters
+      - test: framework/crud.TestIncludeRepeatedRelationNoDuplicates
+      - test: framework/crud.TestIncludeNestedRepeatNoDuplicates
+      - test: framework/crud.TestScopedClauseDedupKeepsTermBoundaries
+  - id: included-rows-serve-target-reads
+    rule: An included or eager-loaded row is read from the target's table, with soft-deleted rows excluded under a table-qualified deleted_at, only declared non-Hidden columns served under their declared names, and values decoded as the target's own read returns them.
+    enforced_by:
+      - test: framework/crud.TestIncludeResolvesByNameNotTable
+      - test: framework/crud.TestEagerLoadResolvesNameNotTable
+      - test: framework/crud.TestInclude_SoftDeleteAndHiddenScrub
+      - test: framework/crud.TestSoftDelete_IncludeHidesDeletedRelatedRows
+      - test: framework/crud.TestRelationsSweepManyToManySoftDeleteIsQualified
+      - test: framework/crud.TestInclude_RelatedHiddenFieldNotLeaked
+      - test: framework/crud.TestIncludedMixedCaseFieldsDecode
+      - test: framework/crud.TestJSONFieldDecodedThroughInclude
+      - test: framework/crud.TestIncludedDecimalReadsAsString
+      - test: framework/crud.TestIncludedAndGroupedDateIsDate
+      - test: framework/crud.TestEagerLoadDecodesLikeInclude
+  - id: included-rows-use-target-wire-keys
+    rule: Each include hop's keys convert with its own target's wire map, merged across repeated mentions of a relation, a schema.JSON column keeps its stored keys, and conversion terminates on a row that references itself.
+    enforced_by:
+      - test: framework/crud.TestIncludedJSONKeepsStoredKeys
+      - test: framework/crud.TestNestedIncludeRunsHooksUnderWireName
+      - test: framework/crud.TestRelationsSweepRepeatedRelationMergesNestedWireKeys
+      - test: framework/crud.TestRelationsSweepDeepConvertTerminatesOnCycle
+  - id: unsafe-identifier-matches-nothing
+    rule: renderFilterClause and hookScopeSubquery render a predicate matching no row when a table, column or key name fails validation.
+    enforced_by:
+      - test: framework/crud.TestRelationsSweepUnsafeIdentifiersMatchNoRow
+    applies:
+      - framework/crud/readhooks.go
 decisions:
   - id: include-uses-the-eager-builder
     date: 2026-11-14
@@ -44,4 +125,89 @@ decisions:
     rejected:
       - option: A deny-list of Hidden fields.
         why: Undeclared columns leaked, namely another version's field, a removed field, or an extra column on an unmanaged table.
+    upholds: [eager-load-scrubs]
+  - id: bound-includes-three-ways
+    date: 2026-11-15
+    status: accepted
+    decision: An include is bounded by depth (4 hops), path count (32) and a per-request budget of 20000 scanned rows and serialised row references, and a blown budget answers 400.
+    rejected:
+      - option: A depth cap alone.
+        why: "Breadth is unbounded: include=a.b,c.d,... stays within depth, and 512 distinct scoped mentions answered 200 after 514 queries."
+      - option: A budget on scanned rows alone.
+        why: N parents sharing one belongs_to row scan it once and serialise it N times, so the response still multiplied; a 23-byte include reached 13.7 MB.
+    upholds: [include-is-bounded]
+  - id: every-segment-resolves
+    date: 2026-11-15
+    status: accepted
+    decision: Every include segment, the leaf included, must resolve to a registered entity against the source entity's version, and an include with no registry is refused.
+    rejected:
+      - option: Exempt the leaf and SELECT * from the relation's table by name.
+        why: Every scrub hangs off the resolved target, so a relation to a self-migrated auth_users table served password_hash.
+      - option: Resolve with registry.Get.
+        why: It prefers the unversioned declaration, so a /api/v1 include adopted another version's Hidden set and scopes.
+    upholds: [eager-load-scrubs, include-target-resolves]
+  - id: one-node-per-filter-set
+    date: 2026-11-15
+    status: accepted
+    decision: Each distinct scoped-filter set mentioned for a relation loads as its own sibling node, and the loaders union them by relation name.
+    rejected:
+      - option: AND every mentioned set into the first node.
+        why: Two sets that disagree compose a predicate no row satisfies, and the relation came back empty.
+      - option: Merge an unfiltered mention into a filtered node.
+        why: It drops every row the filter excludes.
+    upholds: [repeated-relation-keeps-each-filter]
+  - id: read-scope-apart-from-filters
+    date: 2026-11-15
+    status: accepted
+    decision: A target's ReadScope predicates travel in IncludeNode.ReadScopes, rendered by renderReadScope, never in Filters.
+    rejected:
+      - option: Append them to Filters.
+        why: Filters coalesce same-field IN runs, so a scope status_in=published beside a caller's status_in=draft became one IN list, OR where the scope demands AND, and served the drafts.
+    upholds: [crud.scope/one-read-scope-builder]
+  - id: include-posture-over-http-only
+    date: 2026-11-15
+    status: accepted
+    decision: The target and pivot read posture is checked for requests arriving over HTTP, before any load and before the empty-parent return, at every depth.
+    rejected:
+      - option: Check it for in-process reads too.
+        why: The programmatic API and typed repos are trusted server code with no session, the same reason the session gate is HTTP-only while owner and tenant scope apply everywhere.
+      - option: Return early on an empty parent page before the check.
+        why: The same request then answered 200 on an empty table and 403 once a row existed, a table-emptiness oracle.
+    upholds: [include-checks-target-posture]
+  - id: anonymous-owner-scoped-include-is-200
+    date: 2026-11-15
+    status: accepted
+    decision: An anonymous include of an owner-scoped target answers 200 with an empty relation, where the target's own route answers 401, because canReadEntityGate skips the session check for owner-scoped targets.
+    revisit_if: canReadEntityGate gains a mode that applies the session check to owner-scoped targets, so the two status codes can match.
+    upholds: [included-child-scope-always-applies]
+  - id: write-checks-use-the-read-builder
+    date: 2026-11-15
+    status: accepted
+    decision: The foreign-key and cascade write checks build their target predicates with eagerScopeFilters, so a caller may reference exactly the target rows it may read.
+    upholds: [one-related-scope-builder]
+  - id: memoise-conversion-by-map
+    date: 2026-11-15
+    status: accepted
+    decision: Wire-key conversion of included rows is memoised by source map, and every reference to a memoised subtree is charged its full row count.
+    rejected:
+      - option: Copy each attached subtree per parent.
+        why: A belongs_to target attached to every parent was re-copied at every level, turning a 23-byte include into 13.7 MB.
+    upholds: [include-is-bounded]
+  - id: each-hop-uses-its-target-wire-map
+    date: 2026-11-15
+    status: accepted
+    decision: Each include hop converts keys with its own target's wire map, keeps a schema.JSON column's stored keys, and merges the trees of a relation mentioned twice.
+    rejected:
+      - option: Convert every depth with the parent handler's wire map.
+        why: posts aliasing body_text to summary renamed comments' body_text too, ignoring comments' own alias.
+      - option: Convert keys inside a JSON document.
+        why: A stored key_name read back as keyName and the next save rewrote the document.
+    upholds: [included-rows-use-target-wire-keys]
+  - id: served-columns-fold-case
+    date: 2026-11-15
+    status: accepted
+    decision: servedCols keys each column by its case-folded name and serves it under its declared spelling.
+    rejected:
+      - option: Key it by the name the driver reports.
+        why: Postgres reports a declared Sku as sku, and the row then missed the Date, JSON and Decimal decoding and the wire names, which all look up declared names.
     upholds: [eager-load-scrubs]
