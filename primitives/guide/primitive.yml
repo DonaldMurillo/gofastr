@@ -1,0 +1,18 @@
+primitive: guide
+summary: The agent guide at the repo root, which says how to find the registry and lists the hard rules by number.
+code:
+  - CLAUDE.md
+docs:
+  - docs/contributing.md
+  - primitives/README.md
+on_change:
+  - A rule or a reason that would lengthen CLAUDE.md goes into the primitive it governs, or into docs/contributing.md when no primitive can own it.
+invariants:
+  - id: stays-short
+    rule: CLAUDE.md is at most 60 lines.
+    enforced_by:
+      - test: internal/primitives.TestClaudeMDStaysShort
+  - id: names-real-rules
+    rule: Every numbered hard rule in CLAUDE.md that names a registry invariant names one that exists.
+    enforced_by:
+      - test: internal/primitives.TestClaudeMDNamesRealRules
