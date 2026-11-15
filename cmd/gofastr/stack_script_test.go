@@ -105,6 +105,11 @@ func TestStackScriptMergeResumesARunningMerge(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "merge u-1: merged") {
 		t.Fatalf("409 for a running merge: exit %d, output:\n%s", code, out)
 	}
+	failed := `{"status":"failed","details":{"message":"Required status check \"ci\" is failing"}}`
+	out, code, _ = runStackScriptEnv(t, running, []string{"PUT_EXIT=1", "POLL=" + failed}, "merge", "9")
+	if code == 0 || !strings.Contains(out, "merge u-1: failed") || !strings.Contains(out, `Required status check "ci" is failing`) {
+		t.Fatalf("a merge GitHub rejects must name the reason: exit %d, output:\n%s", code, out)
+	}
 	out, code, _ = runStackScriptEnv(t, `{"status":"merged"}`, nil, "merge", "9")
 	if code != 0 || strings.TrimSpace(out) != "merge: merged" {
 		t.Fatalf("merge already done: exit %d, output:\n%s", code, out)
