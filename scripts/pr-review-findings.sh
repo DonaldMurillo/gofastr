@@ -38,7 +38,11 @@ owner="${REPO%%/*}"; name="${REPO##*/}"
 # pageInfo), and --jq runs once per page, so each open thread prints one
 # line (newlines in its body flattened) and the count is taken over all
 # of them. A failed call fails the script: the gate never passes blind.
-unresolved=$(gh api graphql --paginate -f query='
+# Claude Code cloud sessions cannot reach GraphQL; there, the same
+# threads come from the REST route the session proxy serves. If both
+# calls fail, the script fails.
+threads_graphql() {
+  gh api graphql --paginate -f query='
   query($owner: String!, $name: String!, $pr: Int!, $endCursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $pr) {
@@ -50,7 +54,15 @@ unresolved=$(gh api graphql --paginate -f query='
     }
   }' -F owner="$owner" -F name="$name" -F pr="$PR" --jq \
   '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved | not) | .comments.nodes[0] as $c |
-   "  ! \($c.author.login) \($c.path):\($c.line // "?"): \(($c.body // "") | gsub("[\r\n]+"; " ") | .[0:120])"')
+   "  ! \($c.author.login) \($c.path):\($c.line // "?"): \(($c.body // "") | gsub("[\r\n]+"; " ") | .[0:120])"'
+}
+threads_rest() {
+  gh api "repos/$REPO/pulls/$PR/ccr/review_threads" --jq \
+  '.[] | select(.resolved | not) | "  ! \(.path):\(.line // "?"): comments \(.comment_ids | map(tostring) | join(","))"'
+}
+if ! unresolved=$(threads_graphql 2>/dev/null); then
+  unresolved=$(threads_rest)
+fi
 count=$(printf '%s\n' "$unresolved" | grep -c '^  ! ' || true)
 echo "$count unresolved"
 if [ -n "$unresolved" ]; then
