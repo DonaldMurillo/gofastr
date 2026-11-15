@@ -10,17 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// defaultEventStreamSeats is the per-principal stream cap a zero-value
-// CrudHandler gets: the same default core/stream's SSE broker and core/mcp's
-// SSE notification stream use, so the three seat policies in the tree read as
-// one number. Sixteen covers multi-tab / multi-device use of one account
-// while bounding what a single low-privilege principal can hold resident
-// (each stream is a goroutine, a 32-entry buffer, and three bus
-// subscriptions until it disconnects).
 const defaultEventStreamSeats = 16
 
-// eventStreamSeatsFor resolves EventStreamSeats: 0 = the default,
-// negative = unlimited (deployments that bound seats elsewhere).
 func eventStreamSeatsFor(n int) int {
 	if n == 0 {
 		return defaultEventStreamSeats
@@ -28,29 +19,17 @@ func eventStreamSeatsFor(n int) int {
 	return n
 }
 
-// streamSeat is one admitted EventStream connection, held from connect until
-// the handler returns. done is closed once, by an EvictOldest admission, and
-// the handler's select loop treats it as a disconnect.
+// streamSeat is one admitted EventStream connection; done is closed when
+// an EvictOldest admission takes its seat.
 type streamSeat struct {
 	principal string
 	done      chan struct{}
 
-	// cut ends a write the handler is parked in (a past write deadline on
-	// the response). Closing done only reaches a handler waiting in its
-	// select; one parked inside a write to a client that stopped reading
-	// never looks at done, and with no server WriteTimeout (the usual SSE
-	// setting) it stayed resident after eviction gave its seat away, so the
-	// per-principal cap stopped bounding handlers. cutMu and returned keep
-	// cut from running once the handler has returned: the response then
-	// belongs to net/http, and a keep-alive connection may already carry
-	// the next request. core/stream's SSE broker carries the same three.
 	cutMu    sync.Mutex
 	cut      func()
 	returned bool
 }
 
-// interruptWrite unblocks a write the evicted handler may be parked in.
-// Called after the eviction released the registry lock, never under it.
 func (s *streamSeat) interruptWrite() {
 	s.cutMu.Lock()
 	defer s.cutMu.Unlock()
@@ -59,22 +38,17 @@ func (s *streamSeat) interruptWrite() {
 	}
 }
 
-// markReturned retires cut: the handler is done with the response.
 func (s *streamSeat) markReturned() {
 	s.cutMu.Lock()
 	s.returned = true
 	s.cutMu.Unlock()
 }
 
-// SeatDone implements stream.SeatMember so the shared
-// admission helper (stream.AdmitSeat) can count, evict, and close the
-// seat.
+// SeatDone implements stream.SeatMember.
 func (s *streamSeat) SeatDone() chan struct{} { return s.done }
 
-// streamSeatRegistry tracks live EventStream seats per principal as a FIFO,
-// the shape the SeatOverflowEvictOldest policy pops from. It is a pointer
-// field on CrudHandler so the tx-bound copies inTx makes share one registry:
-// seats belong to the handler's stream surface, not to a transaction.
+// streamSeatRegistry holds each principal's live EventStream seats, oldest
+// first.
 type streamSeatRegistry struct {
 	mu    sync.Mutex
 	order map[string][]*streamSeat
@@ -84,24 +58,13 @@ func newStreamSeatRegistry() *streamSeatRegistry {
 	return &streamSeatRegistry{order: make(map[string][]*streamSeat)}
 }
 
-// spliceSeatLocked removes seat from its principal's FIFO; the caller holds
-// r.mu. A no-op when the seat is already gone (released after an eviction,
-// or evicted after a release), so a seat is removed exactly once and the
-// FIFO never retains a departed stream. The splice itself is
-// stream.SpliceSeat, shared with core/stream's broker and core/mcp's SSE
-// notification stream.
+// spliceSeatLocked removes seat if still present; the caller holds r.mu.
 func (r *streamSeatRegistry) spliceSeatLocked(seat *streamSeat) {
 	stream.SpliceSeat(r.order, seat.principal, seat)
 }
 
-// admit seats one stream for principal under the handler's cap and overflow
-// policy, returning the seat; cut is the new stream's write interrupt. The
-// bool is false when the principal is at the cap and the policy is Refuse;
-// the caller answers 429 with Retry-After (EventSource backs off) and holds
-// nothing. Under EvictOldest the principal's oldest seat is closed and
-// removed in the same critical section, the new stream is seated, and the
-// evicted stream's parked write is cut once the lock is released. The body
-// is the shared stream.AdmitSeat, which this registry formerly duplicated.
+// admit seats one stream for principal, cut being its write interrupt, and
+// reports false when the principal is at cap under the Refuse policy.
 func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.SeatOverflowPolicy, cut func()) (*streamSeat, bool) {
 	r.mu.Lock()
 	var oldest *streamSeat
@@ -111,9 +74,6 @@ func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.Se
 	seat, ok := stream.AdmitSeat(r.order, principal, eventStreamSeatsFor(cap), overflow,
 		func(p string) *streamSeat { return &streamSeat{principal: p, done: make(chan struct{}), cut: cut} })
 	r.mu.Unlock()
-	// AdmitSeat evicts only the FIFO head and closes its done channel; a
-	// release never closes it, so a closed head is the seat just evicted. A
-	// refused admission closes nothing.
 	if oldest != nil {
 		select {
 		case <-oldest.done:
@@ -124,11 +84,6 @@ func (r *streamSeatRegistry) admit(principal string, cap int, overflow stream.Se
 	return seat, ok
 }
 
-// release departs a seat: voluntary disconnect, write error, or a re-auth
-// refusal closing the stream. Splicing is idempotent, so releasing a seat an
-// EvictOldest admission already removed is a no-op. It retires the seat's
-// cut first: the handler is returning, and an eviction racing it must not
-// set a deadline on a response net/http is about to reuse.
 func (r *streamSeatRegistry) release(seat *streamSeat) {
 	seat.markReturned()
 	r.mu.Lock()
@@ -136,9 +91,6 @@ func (r *streamSeatRegistry) release(seat *streamSeat) {
 	r.mu.Unlock()
 }
 
-// liveSeats returns the number of seats currently held, across principals.
-// The disconnect-accounting observable for tests: after every stream ends it
-// must return to zero on a fresh handler.
 func (r *streamSeatRegistry) liveSeats() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -149,10 +101,6 @@ func (r *streamSeatRegistry) liveSeats() int {
 	return n
 }
 
-// seatRegistry returns the handler's stream-seat registry, allocating it the
-// first time EventStream is mounted (NewCrudHandler pre-allocates for the
-// normal path; this covers hand-built CrudHandler literals). Route mounting
-// happens before serving, so the write races nothing.
 func (ch *CrudHandler) seatRegistry() *streamSeatRegistry {
 	if ch.seats == nil {
 		ch.seats = newStreamSeatRegistry()
@@ -160,11 +108,8 @@ func (ch *CrudHandler) seatRegistry() *streamSeatRegistry {
 	return ch.seats
 }
 
-// streamSeatPrincipal derives the caller identity the seat cap counts by:
-// the owner id for OwnerField entities, else the authenticated user, else
-// the tenant, else "". Anonymous callers on a Public stream share ONE bucket
-// (""), so the cap bounds them collectively — the same posture core/stream's
-// broker takes when it has no way to tell callers apart.
+// streamSeatPrincipal is the identity the seat cap counts by: owner, else
+// user, else tenant, else the one anonymous bucket "".
 func (ch *CrudHandler) streamSeatPrincipal(r *http.Request, ownerID any) string {
 	if ownerID != nil {
 		return "owner:" + fmt.Sprint(ownerID)
@@ -182,20 +127,15 @@ func (ch *CrudHandler) streamSeatPrincipal(r *http.Request, ownerID any) string 
 }
 
 // WithEventStreamSeats sets the per-principal cap on concurrent EventStream
-// connections. Zero keeps the default (16); a negative value lifts the cap
-// for deployments that bound seats elsewhere. Values are taken verbatim —
-// the resolution rules live in eventStreamSeatsFor.
+// connections: zero keeps the default of 16, a negative value lifts the cap.
 func (ch *CrudHandler) WithEventStreamSeats(n int) *CrudHandler {
 	ch.EventStreamSeats = n
 	return ch
 }
 
-// WithEventStreamSeatOverflow selects what a principal at its seat cap does
-// with its next stream: stream.SeatOverflowRefuse (the default) answers 429
-// with Retry-After at connect, stream.SeatOverflowEvictOldest closes that
-// principal's oldest stream and seats the new one — the multi-tab-friendly
-// policy for apps whose clients reconnect faster than a half-open
-// connection's seat is reclaimed by its re-auth ticker.
+// WithEventStreamSeatOverflow selects what a principal at its seat cap gets
+// for its next stream: stream.SeatOverflowRefuse (the default) answers 429
+// with Retry-After, stream.SeatOverflowEvictOldest closes its oldest stream.
 func (ch *CrudHandler) WithEventStreamSeatOverflow(p stream.SeatOverflowPolicy) *CrudHandler {
 	ch.EventStreamSeatOverflow = p
 	return ch
