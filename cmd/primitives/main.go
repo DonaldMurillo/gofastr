@@ -281,7 +281,8 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 	groups := changedPackageGroups(c.Root, changed)
 	modules := changedModules(c.Root, changed)
 	registryChanged := slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, primitives.Dir+"/") })
-	if len(groups) == 0 && len(modules) == 0 && !registryChanged {
+	governed := slices.ContainsFunc(changed, func(file string) bool { return len(c.AppliedTo(file)) > 0 })
+	if len(groups) == 0 && len(modules) == 0 && !registryChanged && !governed {
 		return "", ""
 	}
 	state := ""
@@ -397,7 +398,24 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 	var out []docsNotice
 	seen := map[string]bool{}
 	for _, file := range changed {
-		if !strings.HasSuffix(file, ".go") || strings.HasSuffix(file, "_test.go") {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		// A rule held elsewhere governs any file it names, CSS and
+		// JavaScript included; the docs notice below is for Go code.
+		for _, a := range c.AppliedTo(file) {
+			key := a.Primitive.ID + "/" + a.Invariant.ID
+			if seen[key] || slices.Contains(told, key) {
+				continue
+			}
+			seen[key] = true
+			text := fmt.Sprintf("You changed %s, which %s also governs: %s", file, key, a.Invariant.Rule)
+			if a.Invariant.Judge != "" {
+				text += "\n  Ask of your change: " + a.Invariant.Judge
+			}
+			out = append(out, docsNotice{key, text})
+		}
+		if !strings.HasSuffix(file, ".go") {
 			continue
 		}
 		for _, p := range c.Chain(file) {
@@ -425,18 +443,6 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 				fmt.Fprintf(&b, "\n  Also, for this part: %s", ref.Value)
 			}
 			out = append(out, docsNotice{p.ID, b.String()})
-		}
-		for _, a := range c.AppliedTo(file) {
-			key := a.Primitive.ID + "/" + a.Invariant.ID
-			if seen[key] || slices.Contains(told, key) {
-				continue
-			}
-			seen[key] = true
-			text := fmt.Sprintf("You changed %s, which %s also governs: %s", file, key, a.Invariant.Rule)
-			if a.Invariant.Judge != "" {
-				text += "\n  Ask of your change: " + a.Invariant.Judge
-			}
-			out = append(out, docsNotice{key, text})
 		}
 	}
 	return out

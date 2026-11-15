@@ -605,4 +605,10 @@ func TestAppliedRulesReachForAndStop(t *testing.T) {
 	if msg := fire(`{"session_id":"s1"}`); strings.Contains(msg, "x/no-css") {
 		t.Errorf("the same session was shown the same rule twice:\n%s", msg)
 	}
+	git("add", "-A")
+	git("commit", "-q", "-m", "go change")
+	write("b/site.css", ".x { color: red; }\n")
+	if msg := fire(`{"session_id":"s2"}`); !strings.Contains(msg, "x/no-css") {
+		t.Errorf("a rule applied to a tree governs its CSS too, yet stop did not show it:\n%s", msg)
+	}
 }
