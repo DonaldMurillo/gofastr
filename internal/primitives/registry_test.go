@@ -307,18 +307,26 @@ func TestACommentedOutTestEnforcesNothing(t *testing.T) {
 }
 
 func TestModulePathIgnoresATrailingComment(t *testing.T) {
-	root := fixture(t, validPrimitive)
-	write(t, root, "go.mod", "module\texample.test/m // the shop\n")
-	c, _, err := Load(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(c.Close)
-	files, err := c.Generate()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if src := string(files["pkg/store/"+ImportsTestFile]); !strings.Contains(src, `"example.test/m/pkg/heavy"`) {
-		t.Errorf("the module path was not read cleanly:\n%s", src)
+	for name, gomod := range map[string]string{
+		"a tab and a trailing comment": "module\texample.test/m // the shop\n",
+		"a quoted path":                "module \"example.test/m\"\n",
+		"a quoted path and a comment":  "module \"example.test/m\" // the shop\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := fixture(t, validPrimitive)
+			write(t, root, "go.mod", gomod)
+			c, _, err := Load(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(c.Close)
+			files, err := c.Generate()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if src := string(files["pkg/store/"+ImportsTestFile]); !strings.Contains(src, `"example.test/m/pkg/heavy"`) {
+				t.Errorf("the module path was not read cleanly:\n%s", src)
+			}
+		})
 	}
 }
