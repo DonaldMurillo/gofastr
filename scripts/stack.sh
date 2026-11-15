@@ -26,13 +26,25 @@ case "$cmd" in
   view)
     [ "$#" -eq 1 ] || usage
     gh api "repos/$REPO/stacks?pull_request=$1" --jq \
-      '.[]? // . | "stack #\(.number) on \(.base.ref), open=\(.open)", (.pull_requests[] | "  #\(.number) \(.state)")'
+      'if length == 0 then "#'"$1"' is in no stack" else .[] | "stack #\(.number) on \(.base.ref), open=\(.open)", (.pull_requests[] | "  #\(.number) \(.state)") end'
     ;;
   merge)
     [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
     pr="$1"; method="${2:-merge}"
-    uuid=$(jq -nc --arg m "$method" '{merge_method: $m, merge_action: "default"}' |
-      gh api -X PUT "repos/$REPO/pulls/$pr/merge-async" --input - --jq '.details.uuid')
+    # The body is read even when the call fails: a 409 means a merge of
+    # this stack is already running, and its body names that merge.
+    resp=$(jq -nc --arg m "$method" '{merge_method: $m, merge_action: "default"}' |
+      gh api -X PUT "repos/$REPO/pulls/$pr/merge-async" --input - 2>/dev/null) || true
+    status=$(jq -r '.status // empty' <<<"$resp" 2>/dev/null || true)
+    uuid=$(jq -r '.details.uuid // empty' <<<"$resp" 2>/dev/null || true)
+    if [ "$status" = merged ] || [ "$status" = enqueued ]; then
+      echo "merge: $status"
+      exit 0
+    fi
+    if [ -z "$uuid" ]; then
+      echo "merge request refused: ${resp:-no response}" >&2
+      exit 1
+    fi
     for _ in $(seq 1 60); do
       status=$(gh api "repos/$REPO/pulls/$pr/merge-async/$uuid" --jq '.status')
       [ "$status" != pending ] && break
