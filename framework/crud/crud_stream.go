@@ -14,53 +14,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
-// streamListThreshold is the limit beyond which the List handler
-// auto-switches to a streaming JSON encoder so the full result set never
-// has to live in memory. Clients can also opt in explicitly via
-// ?stream=true regardless of limit.
+// streamListThreshold is the limit at which List streams its rows.
 const streamListThreshold = 1000
 
-// ServeStreamingList writes the list response row-by-row through a
-// json.Encoder rather than buffering everything into a slice first. Used
-// for very large pages (limit ≥ streamListThreshold) or when the caller
-// asks for it via ?stream=true.
-//
-// The wire shape is identical to the regular list envelope so existing
-// clients keep working: {"data": [...], "total": N, "page": P, "perPage":
-// N, "totalPages": T}. Streaming applies only to the data array, the
-// envelope fields are written before the rows start flowing.
-//
-// `page` is honoured the same way the non-stream List handler honours it:
-// OFFSET (page-1)*limit. Without this, ?page=2&stream=true would re-stream
-// page 1 while reporting page 1, silently dropping the offset. An explicit
-// ?offset= overrides the page-derived offset, matching the buffered path.
+// ServeStreamingList writes the list envelope List answers, encoding the
+// rows one at a time instead of buffering them. It applies List's scope,
+// query and offset checks, and refuses an entity with AfterList hooks.
+// An explicit ?offset= overrides the offset page implies.
 func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
-	// Same no-store posture as List: the streamed rows are the same
-	// per-caller data, and this entrypoint is exported and callable
-	// without going through List.
 	w.Header().Set("Cache-Control", "no-store")
-
-	// Same owner+tenant gate the public List handler enforces. Direct
-	// callers (in-process or chained from List) must not bypass it,
-	// without this the streaming variant would happily return every row to
-	// an anonymous caller on an OwnerField entity, or every tenant's rows
-	// on a MultiTenant entity with no tenant in context.
 	if !ch.requireScope(w, r, opRead) {
 		return
 	}
-	// Same AfterList refusal List() enforces before it delegates here.
-	// Streaming never materialises the full slice AfterList runs over, so
-	// the hook cannot run at all — and an AfterList registered as a
-	// redactor would then be silently BYPASSED, putting the stored values
-	// it exists to hide straight on the wire. List() already refuses this
-	// combination, but a direct in-process caller reaches this method
-	// without passing through it, exactly as it does for the owner/tenant
-	// gate above.
 	if ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0 {
 		writeJSONError(w, r, http.StatusBadRequest, reasonStreamAfterList)
 		return
 	}
-	// Direct callers share the same strict gate as List.
 	q, err := ch.readQuery(r)
 	if err != nil {
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
@@ -69,23 +38,16 @@ func (ch *CrudHandler) ServeStreamingList(ctx context.Context, w http.ResponseWr
 	ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, limit, extraWhere)
 }
 
-// serveStreamingList consumes List's parsed values or the direct entry's values.
 func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, filters []filter.ParsedFilter, nested []nestedFilter, sorts []filter.ParsedSort, page, limit int, extraWhere []hook.WhereClause) {
-	// Direct callers have the same offset bound as List.
 	streamPage, streamPerPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 	if !ch.requireBoundedOffset(w, r, q, streamPage, streamPerPage) {
 		return
 	}
-	// COUNT first so the envelope has the totals up front.
 	countQb := query.Count(ch.Entity.GetTable())
 	filter.ApplyToCountQuery(countQb, filters)
 	ch.ApplyTenantScopeCount(countQb, r)
 	ch.ApplyOwnerScopeCount(countQb, r)
 	ch.ApplyReadScopeCount(countQb, r)
-	// Soft-delete's ?trashed= gate authorizes against the REQUEST user, so it
-	// must read r.Context(), not the DB-operation ctx (which callers may seed
-	// with a different identity for in-process execution). The buffered List()
-	// path uses r.Context() here; keep the stream path identical.
 	ch.applySoftDeleteFilterCountQ(countQb, q, r.Context())
 	applyNestedFilters(
 		func(sql string, args ...any) { countQb.Where(sql, args...) },
@@ -117,15 +79,10 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	}
 	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
 	qb.Limit(limit)
-	// An explicit ?offset= overrides the page-derived offset, matching the
-	// buffered List() path, otherwise ?offset=N&stream=true would silently
-	// serve page 1 (the process-module broker paginates by raw offset).
 	if o, ok := explicitOffsetValues(q); ok {
 		if o > 0 {
 			qb.Offset(o)
 		}
-		// The envelope's page follows the skip, as in List. A host
-		// calling this directly may pass no limit; the page stays as sent.
 		if limit > 0 {
 			page = o/limit + 1
 		}
@@ -145,8 +102,6 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	w.Header().Set("Content-Type", "application/json")
 	flusher, _ := w.(http.Flusher)
 
-	// Manually frame the envelope so we can stream "data" between the
-	// opening "[" and closing "]" without holding the slice.
 	enc := json.NewEncoder(w)
 	if _, err := fmt.Fprintf(w, `{"data":[`); err != nil {
 		return
@@ -157,8 +112,6 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	for rows.Next() {
 		row, err := scanRowsOne(rows, cols, ch.convertKey, boolCols)
 		if err != nil {
-			// The status is already sent. Closing the envelope would pass a
-			// truncated list off as complete; left open, it fails to parse.
 			logf("crud: stream scan failed: %v", err)
 			return
 		}
@@ -173,24 +126,14 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 			return
 		}
 		first = false
-		// Encoder.Encode writes a trailing newline; we don't strip it because
-		// JSON parsers ignore whitespace between tokens, and flushing each
-		// row keeps the response shape correct even if a client streams-parses.
 		if flusher != nil {
 			flusher.Flush()
 		}
 	}
-	// A cancelled or failed cursor ends rows.Next early: leave the
-	// envelope open, as on a scan error above.
 	if err := rows.Err(); err != nil {
 		logf("crud: stream rows failed: %v", err)
 		return
 	}
-	// Guard the division: ServeStreamingList is an exported in-process
-	// entrypoint taking an arbitrary limit, and a limit < 1 used to
-	// panic here with "integer divide by zero" (OffsetForPage guards its
-	// own division for the same reason). totalPages 0 is the coherent
-	// companion of perPage 0 in the envelope.
 	totalPages := 0
 	if limit > 0 {
 		totalPages = total / limit
@@ -201,9 +144,7 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	fmt.Fprintf(w, `],"total":%d,"page":%d,"perPage":%d,"totalPages":%d}`, total, page, limit, totalPages)
 }
 
-// scanRowsOne pulls a single row from an *sql.Rows that's already been
-// positioned (rows.Next returned true). Same column mapping the rest of
-// the framework uses.
+// scanRowsOne scans the current row of rows into a map keyed by keyFunc.
 func scanRowsOne(rows interface {
 	Scan(...any) error
 }, cols []string, keyFunc func(string) string, boolColumns ...[]bool) (map[string]any, error) {

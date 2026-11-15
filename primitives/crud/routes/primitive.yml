@@ -8,3 +8,127 @@ code:
   - framework/crud/redispatch.go
 docs:
   - framework/docs/content/mcp.md
+invariants:
+  - id: route-patterns-match-registration
+    rule: CrudRoutePatterns lists exactly the routes RegisterCrudRoutes mounts for the same options.
+    enforced_by:
+      - test: framework/crud.TestCrudRoutePatternsMatchRegistration
+  - id: routes-answer-to-their-table
+    rule: Every route RegisterCrudRoutes mounts carries the entity's table as its router resource, wherever it is mounted, and a record route answers a key segment that is not storable text as a missing id.
+    enforced_by:
+      - test: framework/crud.TestRegisteredRoutesNameTheirMount
+      - test: framework/crud.TestRecordRoutesRefuseUnstorableID
+  - id: llmmd-describes-the-mount
+    rule: An entity's llm.md documents the routes its mount serves, at the path it is mounted (BasePath included), omitting write routes and Create/Update columns on a read-only mount, and the index counts and links what each mount serves.
+    enforced_by:
+      - test: framework/crud.TestLLMMD_ReadOnlyMountMustNotAdvertiseWriteRoutes
+      - test: framework/crud.TestEntityLLMMD_ReadOnlyOmitsWriteSections
+      - test: framework/crud.TestRegisteredRoutesNameTheirMount
+      - test: framework/crud.TestRegistryLLMMD_ReadOnlyMountCountsReadRoutes
+      - test: framework/crud.TestRegistryLLMMD_RouteReality
+      - test: framework/crud.TestRegistryIndexPagesLinkFollowsPath
+  - id: llmmd-is-read-gated
+    rule: The registered llm.md route answers only a caller List would answer, and the llm.md index lists only the entities whose List the caller passes, token scopes, owner and tenant context included.
+    enforced_by:
+      - test: framework/crud.TestRegisteredLLMMDRouteIsReadGated
+      - test: framework/crud.TestLLMMDRequiresTheSamePermissionAsList
+      - test: framework/crud.TestLLMMDHandler_AuthGate
+      - test: framework/crud.TestRegistryLLMMDHandler_AuthGate
+      - test: framework/crud.TestLLMMDIndexHidesUngrantedEntities
+      - test: framework/crud.TestLLMMDIndexFollowsTokenScopes
+      - test: framework/crud.TestLLMMDIndexHidesEntitiesWithoutScopeContext
+  - id: llmmd-tells-the-route-truth
+    rule: The llm.md filter table derives from filter.FilterSuffixes and filter.OpSuitsType, its examples are requests the route answers (typed values, bracket spellings for ambiguous keys, a plain like substring), and it documents the entity's own list limit, no cursor total, no Hidden relation or NoQuery filter, and escapes pipes in cells.
+    enforced_by:
+      - test: framework/crud.TestLLMMDFilterExamplesAreAccepted
+      - test: framework/crud.TestLLMMDExampleBracketsAmbiguousKey
+      - test: framework/crud.TestLLMMDDocumentsBracketKeys
+      - test: framework/crud.TestLLMMD_LimitDocMustReflectEntityMaxListLimit
+      - test: framework/crud.TestLLMMDListEnvelopesMatchRoute
+      - test: framework/crud.TestLLMMDNamesNoHiddenRelation
+      - test: framework/crud.TestLLMMDFilterExampleSkipsLeadingNoQueryField
+      - test: framework/crud.TestLLMMDEscapesPipeInsideEnumValue
+      - test: framework/crud.TestSanitizeDefaultCutsOnRuneBoundary
+  - id: mcp-tools-are-gated-like-routes
+    rule: Every entity tool carries a gate that refuses the caller the route's Access permission would refuse, where the MCP context can tell, and leaves the tool listed for the route to judge otherwise.
+    enforced_by:
+      - test: framework/crud.TestMCPToolGateBranches
+      - test: framework/crud.TestMCPMovesRequireOwnPermission
+  - id: mcp-dev-implied-writes-are-marked
+    rule: The write tools of an entity whose MCP exposure only the dev loop implied are registered dev-implied; its read tools and every tool of an entity with Exposure.MCP are not.
+    enforced_by:
+      - test: framework/crud.TestMCPDevImpliedMarksWriteToolsOnly
+  - id: mcp-list-forwards-only-advertised-params
+    rule: The list tool forwards exactly the params listToolSchema advertises (no Hidden or NoQuery field, no operator the type refuses, q only with SearchFields), and refuses an empty or comma-holding _in list, a list for a scalar key and the plain key of a JSON field.
+    enforced_by:
+      - test: framework/crud.TestMCP_ListToolOmitsHiddenFieldFilters
+      - test: framework/crud.TestMCPListToolDropsNoQueryArguments
+      - test: framework/crud.TestMCPListToolDropsUnadvertisedParams
+      - test: framework/crud.TestMCPListToolFilterShapes
+      - test: framework/crud.TestToolFilterValuesRefusesOffSchemaShapes
+      - test: framework/crud.TestMCPSchemaMatchesOpMatrix
+      - test: framework/crud.TestNoQueryAbsentFromAgentSurfaces
+  - id: mcp-numbers-stay-exact
+    rule: Tool parameters render integers as exact decimals and JSON arrays as repeated values, and a tool result keeps every number as the route wrote it.
+    enforced_by:
+      - test: framework/crud.TestToolParamValuesShapes
+      - test: framework/crud.TestMCPNumericFilterMatchesStoredInt
+      - test: framework/crud.TestMCPIntegerKeyPathKeepsDigits
+      - test: framework/crud.TestMCPToolResultKeepsBigInt
+  - id: redispatch-re-presents-the-caller
+    rule: A tool call is served through the router as the original caller, with every field of its credential headers, its peer and proxy-address headers, its host and its verified CSRF token, and nothing else from the original request.
+    enforced_by:
+      - test: framework/crud.TestMCPRedispatchPreservesEveryCookieField
+      - test: framework/crud.TestMCPRedispatchReattachesAPIKey
+      - test: framework/crud.TestRedispatch_ReinjectsTheEmbedGrant
+      - test: framework/crud.TestRedispatchKeepsCallerPeer
+      - test: framework/crud.TestRedispatchKeepsCallerHost
+      - test: framework/crud.TestMCPWriteToolPassesCSRF
+      - test: framework/crud.TestRedispatch_ReinjectsOriginatingHeaders
+  - id: route-refusals-reach-the-agent
+    rule: A route's 4xx and a refusal of the tool's own arguments reach the caller as an RPC error with the reason, never redacted to an internal tool error.
+    enforced_by:
+      - test: framework/crud.TestMCPTools_AnonymousCallsRejected
+      - test: framework/crud.TestMCPListToolFilterShapes
+  - id: mcp-schemas-type-what-the-route-takes
+    rule: Tool schemas type a key argument by its key column, an integer reference whose target is not yet registered as integer or string, a like filter as a substring and a Decimal as a string, and leave server-stamped owner and tenant columns and the guarded state field off the update body.
+    enforced_by:
+      - test: framework/crud.TestMCPKeyArgsTypedFromKeyColumn
+      - test: framework/crud.TestMCPToolsTakeAnIntegerReferenceRegisteredBeforeItsTarget
+      - test: framework/crud.TestMCPLikeOnEnumTakesSubstring
+      - test: framework/crud.TestMcpFieldSchema_AllTypes
+      - test: framework/crud.TestMCPWriteOmitsScopeFields
+      - test: framework/crud.TestWriteToolSchemaNarrowsStates
+decisions:
+  - id: mcp-dispatches-through-the-router
+    status: accepted
+    decision: MCP tool calls and Redispatch are served through the app router, never the bare CRUD handler, so the full middleware chain runs on them.
+    rejected:
+      - option: Call the CRUD handler directly.
+        why: It skips auth, recovery, logging and scope middleware.
+  - id: redispatch-is-caller-authority-only
+    status: accepted
+    decision: Redispatch carries only the caller's authority; the process-module broker applies the module grant before calling it.
+    rejected:
+      - option: Check capabilities inside Redispatch.
+        why: The broker owns the module-grant check, and a second one here would drift from it.
+  - id: unadvertised-filters-widen
+    status: accepted
+    decision: The list tool drops a Hidden or NoQuery field's filter, or an operator the type refuses, and runs the call unfiltered.
+    rejected:
+      - option: Forward it and let the route answer 400.
+        why: Neither is advertised, so only a malformed call sends one, and a wider page leaks no oracle bit about a secret column.
+    upholds: [mcp-list-forwards-only-advertised-params]
+  - id: llmmd-asks-the-mount
+    status: accepted
+    decision: The llm.md page and index describe the mount the app performed (MountInfo, LLMMDOptions), not the entity declaration.
+    rejected:
+      - option: Derive the routes from Exposure.
+        why: Exposure cannot say that App.View mounts an entity read-only or that an entity has no DB, so the docs advertised routes that answer 404 or 405.
+    upholds: [llmmd-describes-the-mount]
+  - id: flat-mcp-tool-names
+    status: accepted
+    decision: An entity with no MCP namespace keeps the flat "<entity>_<action>" tool names; a namespace gives "<ns>.<entity>.<action>".
+    rejected:
+      - option: Always namespace.
+        why: The flat names are the public agent surface of unversioned entities.
