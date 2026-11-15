@@ -520,3 +520,19 @@ func TestTheSameChangeOverAnotherBaseIsAnotherTree(t *testing.T) {
 		t.Error("a pass over one base commit would be reused over another")
 	}
 }
+
+func TestRelPathComparesPathSegments(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "repo")
+	outside := filepath.Join(filepath.Dir(root), "elsewhere", "a.go")
+	for arg, want := range map[string]string{
+		filepath.Join(root, "framework", "crud", "crud.go"): "framework/crud/crud.go",
+		// A name that only starts with two dots is inside the root.
+		filepath.Join(root, "..notes", "a.go"): "..notes/a.go",
+		// Outside the root there is nothing to make it relative to.
+		outside: filepath.ToSlash(outside),
+	} {
+		if got := relPath(root, arg); got != want {
+			t.Errorf("relPath(%s) = %q, want %q", arg, got, want)
+		}
+	}
+}

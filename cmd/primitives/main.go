@@ -160,10 +160,25 @@ func relPath(root, arg string) string {
 		return filepath.ToSlash(arg)
 	}
 	rel, err := filepath.Rel(root, abs)
-	if err != nil || strings.HasPrefix(rel, "..") {
+	if err != nil || !filepath.IsLocal(rel) {
 		return filepath.ToSlash(arg)
 	}
 	return filepath.ToSlash(rel)
+}
+
+// hookEvent is what the hooks read of the event Claude Code writes to
+// their stdin.
+type hookEvent struct {
+	Event   string `json:"hook_event_name"`
+	Session string `json:"session_id"`
+	Active  bool   `json:"stop_hook_active"`
+}
+
+func readHookEvent(stdin io.Reader) (hookEvent, error) {
+	var event hookEvent
+	//gofastr:allow(GOFASTR1407) not a request body: the event comes from the Claude Code process that started this hook, with no second parser to disagree with, and it carries keys this command does not read, which the strict decoder refuses
+	err := json.NewDecoder(stdin).Decode(&event)
+	return event, err
 }
 
 // hook answers a Claude Code PostToolUse event. It looks at what the
@@ -171,11 +186,8 @@ func relPath(root, arg string) string {
 // file is a site of a twins entry it returns the same-job notice as
 // context for the agent. On input it cannot read it says nothing.
 func hook(c *primitives.Registry, stdin io.Reader, stdout io.Writer) int {
-	var event struct {
-		Event   string `json:"hook_event_name"`
-		Session string `json:"session_id"`
-	}
-	if err := json.NewDecoder(stdin).Decode(&event); err != nil {
+	event, err := readHookEvent(stdin)
+	if err != nil {
 		return 0
 	}
 	changed, err := changedFiles(c.Root, "HEAD")
@@ -232,10 +244,7 @@ func stop(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Re
 // read at all. Exiting non-zero would let the session finish, so it
 // blocks once, and lets a session it has already sent back go.
 func stopUnreadable(loadErr error, stdin io.Reader, stdout io.Writer) int {
-	var event struct {
-		Active bool `json:"stop_hook_active"`
-	}
-	if err := json.NewDecoder(stdin).Decode(&event); err != nil || event.Active {
+	if event, err := readHookEvent(stdin); err != nil || event.Active {
 		return 0
 	}
 	reason := stopBlock([]string{fmt.Sprintf("the primitives registry cannot be read: %v", loadErr)})
@@ -256,11 +265,8 @@ func stopBlock(problems []string) string {
 // back once is let go, so a failure it cannot fix does not hold it
 // forever.
 func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin io.Reader) (reason, warning string) {
-	var event struct {
-		Active  bool   `json:"stop_hook_active"`
-		Session string `json:"session_id"`
-	}
-	if err := json.NewDecoder(stdin).Decode(&event); err != nil || event.Active {
+	event, err := readHookEvent(stdin)
+	if err != nil || event.Active {
 		return "", ""
 	}
 	base := "origin/main"
