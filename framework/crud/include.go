@@ -18,53 +18,19 @@ import (
 )
 
 const (
-	// maxIncludeDepth bounds how many relation hops a single ?include= path
-	// may take. Every hop multiplies the loaded row set by that relation's
-	// fan-out, so an unbounded path is exponential in a request the client
-	// pays ~8 bytes per level for: `include=up.down.up.down.up.down` on a
-	// self-referencing entity turned 23 request bytes into 13.7 MB, and two
-	// more levels exhausted memory. Four hops covers every include the docs
-	// show and every one the app generator emits.
 	maxIncludeDepth = 4
 
-	// maxIncludePaths bounds how many comma-separated ?include= paths
-	// one request may carry. Depth and the row budget do not bound
-	// BREADTH of the node set: every mention carrying a DISTINCT
-	// scoped-filter set gets its own IncludeNode and its own SELECT,
-	// and a zero-row node still costs a query (a network round trip on
-	// Postgres), so 512 such mentions answered 200 after ~514 queries
-	// with the 20k-row budget never tripping. Real usage is a handful
-	// of relations; 32 paths × 4 hops still leaves generous room.
 	maxIncludePaths = 32
 
-	// maxIncludeRows bounds the total number of rows an eager-load may scan
-	// across every node of one request's include forest, and, separately,
-	// the number of row references the assembled response tree may carry.
-	// The depth cap alone does not bound breadth (`include=a.b,c.d,e.f,…`
-	// stays within depth while multiplying node count), and neither cap
-	// bounds a relation whose fan-out is large at every level. Counting
-	// references matters as much as counting scans: N parents sharing one
-	// eager-loaded row scan it once but serialise it N times, so a bound on
-	// scans alone still lets the response multiply. This is the backstop
-	// that makes the worst case a 400 instead of an OOM.
 	maxIncludeRows = 20000
 )
 
-// errIncludeBudget marks an include that exceeded maxIncludeRows. It is a
-// client-caused bound, so the HTTP surfaces render it as 400 (narrow the
-// include or paginate) rather than as a 500.
 var errIncludeBudget = i18n.NewError(reasonIncludeBudget)
 
-// includeBudget is the per-request row allowance, spent by every eager-load
-// as it scans. Threaded rather than stored on CrudHandler because a handler
-// is shared across concurrent requests.
 type includeBudget struct{ remaining int }
 
 func newIncludeBudget() *includeBudget { return &includeBudget{remaining: maxIncludeRows} }
 
-// spend charges n rows. Returns errIncludeBudget once the request has run
-// through its allowance so the caller can stop mid-scan or mid-walk rather
-// than materialising the rest.
 func (b *includeBudget) spend(n int) error {
 	if b == nil {
 		return nil
@@ -76,11 +42,7 @@ func (b *includeBudget) spend(n int) error {
 	return nil
 }
 
-// convertedSubtree is one memoised deep-conversion: the JSON-cased output
-// and the number of row references the subtree serialises to. The count is
-// what lets a shared subtree be converted once but charged to the budget
-// every time it is referenced, the conversion is shared, the bytes on the
-// wire are not.
+// convertedSubtree is a converted map and the row references it serialises to.
 type convertedSubtree struct {
 	out   map[string]any
 	nodes int
@@ -90,53 +52,31 @@ type convertedSubtree struct {
 // expression. The tree is rooted at the request's entity; each node carries
 // the relation taken to reach it and any deeper child includes.
 //
-// Filters narrows the eager-load to rows on the target that match every
-// scoped predicate, e.g. include=comments(status=published) attaches only
-// published comments. Operator suffixes work the same way they do for
-// top-level filters (filter.FilterSuffixes, one shared table).
+// Filters holds the scoped filters of include=rel(field=value), with the
+// same operator suffixes as top-level filters.
 type IncludeNode struct {
 	Name     string                // segment name (matches the relation's Name)
 	Relation entity.Relation       // relation declared on the parent entity
 	Target   *entity.Entity        // the entity Reached by following Relation
 	Filters  []filter.ParsedFilter // scoped filters applied during eager-load
-	// ReadScopes carries the TARGET's Exposure.ReadScope predicates, set by
-	// applyRelatedReadScope. It is deliberately a SEPARATE slice from
-	// Filters: Filters are caller-controlled and rendered with IN-run
-	// coalescing, so merging a scope `status_in=[published]` with a caller's
-	// `include=rel(status_in=draft)` would coalesce the two runs into one
-	// IN list, OR where the declaration demands AND, and serve the drafts
-	// the scope exists to hide.
+	// ReadScopes holds the target's Exposure.ReadScope predicates, kept apart
+	// from Filters.
 	ReadScopes []filter.ParsedFilter
-	// HookScopes carries the WHERE clauses the TARGET's own BeforeList
-	// (and, for a to-one relation, BeforeGet) hooks appended, set by
-	// applyChildBeforeHooks. They render as one key-IN subquery on the
-	// target table, so a clause written against GET /<target> reads the
-	// same columns here.
+	// HookScopes holds the clauses the target's own BeforeList, and for a
+	// to-one relation BeforeGet, hooks appended.
 	HookScopes []hook.WhereClause
-	// Pivot is the registered entity owning a many_to_many's Through
-	// table, nil when the migrator created it. PivotScopes carries its
-	// owner, tenant and read-scope predicates (applyPivotScope): a link
-	// row the join entity's own route hides links nothing.
-	Pivot       *entity.Entity
-	PivotScopes []filter.ParsedFilter
-	// PivotHookScopes carries the clauses the join entity's own BeforeList
-	// appended (applyChildBeforeHooks), rendered as one key-IN subquery on
-	// the Through table.
+	// Pivot is the registered entity owning a many_to_many's Through table,
+	// nil when the migrator created it; PivotScopes and PivotHookScopes are
+	// its own scope predicates and BeforeList clauses.
+	Pivot           *entity.Entity
+	PivotScopes     []filter.ParsedFilter
 	PivotHookScopes []hook.WhereClause
 	Children        []*IncludeNode // deeper includes, e.g. for "author.profile" the "profile" child of "author"
-	// scopedNodes, on the first node parsed for a relation, maps each
-	// scoped-filter set mentioned for it (the empty set included) to the
-	// node that loads it: this node or a sibling spawned for a distinct
-	// set. A repeat of a set continues on that node, so its children
-	// attach there and no second load of the same rows runs.
-	scopedNodes map[string]*IncludeNode
-	childMap    map[string]*IncludeNode
+	scopedNodes     map[string]*IncludeNode
+	childMap        map[string]*IncludeNode
 }
 
-// scopedClauseKey is the canonical spelling of a scoped-filter set:
-// field/op/value per filter, so whitespace variations of one clause
-// still match. parsed must come from parseScopedFilters. Field and op are
-// identifiers; the value is quoted, so no value can forge a separator.
+// scopedClauseKey is the canonical spelling of a scoped-filter set.
 func scopedClauseKey(parsed []filter.ParsedFilter) string {
 	var b strings.Builder
 	for _, f := range parsed {
@@ -145,11 +85,6 @@ func scopedClauseKey(parsed []filter.ParsedFilter) string {
 		b.WriteString(string(f.Op))
 		b.WriteByte(' ')
 		b.WriteString(strconv.Quote(f.Value))
-		// The term an IN value came from: a_in=1|2,a[in]=2 and
-		// a_in=1,a[in]=2|2 spell one value run but are different
-		// predicates (two lists ANDed, split at different places).
-		// Only IN needs it: a scalar term is one predicate whichever
-		// spelling (column or wire alias) named it.
 		if f.Op == filter.OpIn {
 			b.WriteByte(' ')
 			b.WriteString(strconv.Quote(f.Key()))
@@ -159,23 +94,14 @@ func scopedClauseKey(parsed []filter.ParsedFilter) string {
 	return b.String()
 }
 
-// parseIncludeTreeQ splits comma-separated dotted include paths and resolves
-// each segment against the registry. Returns the roots of the include forest.
-//
-// Example: "author.profile, comments" against a posts entity yields two
-// roots: author (with profile as a child) and comments (no children).
+// parseIncludeTreeQ parses ?include= ("author.profile,comments") into the
+// roots of the include forest, resolving each segment against the registry.
 func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registry) ([]*IncludeNode, error) {
 	raw := strings.TrimSpace(q.Get("include"))
 	if raw == "" {
 		return nil, nil
 	}
 	if registry == nil {
-		// No registry means no schema for the target entity, and every
-		// eager-load guard is keyed off that schema: the Hidden-column
-		// scrub, owner scope, tenant scope, the soft-delete filter and the
-		// scoped-filter field allow-list. Serving the include anyway is a
-		// `SELECT *` of a table nobody vouched for, that is how a related
-		// auth table's password_hash reaches a caller. Refuse instead.
 		return nil, i18n.NewError(reasonIncludeNoRegistry, map[string]any{"include": strconv.Quote(raw)})
 	}
 
@@ -209,21 +135,6 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 				}
 				return nil, i18n.NewError(reasonUnknownInclude, map[string]any{"include": strconv.Quote(path), "segment": strconv.Quote(seg), "entity": strconv.Quote(currentEntity.GetName())})
 			}
-			// Resolve the target entity. Registration is required for EVERY
-			// segment, leaf included. The leaf used to be exempt, "EagerLoad
-			// just hits the relation's target table by name", but that
-			// dropped the entire guard set that hangs off Target: the
-			// Hidden-column scrub (eager_filtered.go), owner scope, tenant
-			// scope, the soft-delete filter and the scoped-filter field
-			// allow-list. A relation pointed at a self-migrated table
-			// (auth_users) then returned every column of any row the FK
-			// named. Unresolvable target = refuse, at every depth.
-			// Resolve against the SOURCE entity's version. registry.Get prefers
-			// the unversioned registration, so a request under /api/v1 whose
-			// relation targets a name that also exists unversioned would adopt
-			// the unversioned entity's Hidden set and scopes, disclosing
-			// columns v1 hides and returning rows v1's owner/tenant/soft-delete
-			// scopes exclude. Ambiguity is an error, never a silent pick.
 			target, err := entity.ResolveTarget(registry, ent, rel.Entity)
 			if err != nil {
 				return nil, i18n.Wrap(reasonIncludeUnregistered, err, map[string]any{"include": strconv.Quote(path), "relation": strconv.Quote(seg), "entity": strconv.Quote(rel.Entity)})
@@ -252,24 +163,11 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 			}
 			var parsed []filter.ParsedFilter
 			if filterClause != "" {
-				// Scoped filters are validated against the TARGET entity's
-				// fields, the allow-list that keeps `include=rel(col=v)`
-				// from naming an arbitrary column. Target is always resolved
-				// now, so this list is never empty.
 				parsed, err = parseScopedFilters(filterClause, entity.ValueFields(registry, target), path)
 				if err != nil {
 					return nil, err
 				}
 			}
-			// Each filter set mentioned for this relation, the empty one
-			// included, has its own node. ANDing a second set into the
-			// first node composed a predicate no row satisfies when the
-			// sets disagree, and merging an unfiltered mention into a
-			// filtered node dropped every row the filter excludes; either
-			// way the relation silently came back short. Distinct sets
-			// load as sibling nodes, and the loaders union them per
-			// relation name. A repeat of a set continues on the node that
-			// holds it, wherever that node sits among the siblings.
 			key := scopedClauseKey(parsed)
 			next, seen := node.scopedNodes[key]
 			if !seen {
@@ -296,10 +194,6 @@ func parseIncludeTreeQ(q url.Values, ent *entity.Entity, registry entity.Registr
 }
 
 // splitSegmentFilter splits "rel(filter=val)" into ("rel", "filter=val").
-// Returns the unparenthesized name with empty filter if no parens are
-// present. Treats unbalanced parens as a parse error by returning the raw
-// segment with an empty filter, the relation lookup will then fail with
-// a clear error.
 func splitSegmentFilter(seg string) (name, filter string) {
 	open := strings.Index(seg, "(")
 	if open < 0 {
@@ -312,13 +206,7 @@ func splitSegmentFilter(seg string) (name, filter string) {
 	return seg[:open], seg[open+1 : close]
 }
 
-// splitIncludeDelim splits s on sep, but only at paren depth 0 so filter
-// clauses keep their parenthesised content intact:
-// "comments(status=draft,body_like=x),author" split on ',' must yield
-// ["comments(status=draft,body_like=x)", "author"], not four broken
-// fragments; an include path split on '.' keeps dotted filter values
-// whole. It replaces the former splitIncludeList and splitIncludePath,
-// verbatim copies of each other differing only in the separator.
+// splitIncludeDelim splits s on sep outside parentheses.
 func splitIncludeDelim(s string, sep byte) []string {
 	var out []string
 	depth := 0
@@ -346,46 +234,19 @@ func splitIncludeDelim(s string, sep byte) []string {
 	return out
 }
 
-// parseScopedFilters parses "status=published,body_like=%foo%" into a slice
-// of ParsedFilter, honouring the same suffix operators (_gt/_gte/_lt/_lte/
-// _like/_in) that top-level filters do. fields can be nil, in that case
-// every field name is accepted at parse time.
+// parseScopedFilters parses "status=published,body_like=foo" with the
+// top-level suffix operators; nil fields accepts every name.
 func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string) ([]filter.ParsedFilter, error) {
 	knownField := map[string]bool{}
-	// colType records each visible column's schema type so the built
-	// ParsedFilters carry the same coercion ParseFiltersValues applies
-	// (a raw "true" binds TEXT against SQLite's INTEGER Bool storage).
 	colType := map[string]schema.FieldType{}
 	var noQueryField map[string]bool
-	// wireAlias maps a field's wire key to its column, so a scoped filter may
-	// use the name clients are actually told, ?include=comments(content=x)
-	// must work for the same reason ?content=x does at the top level.
-	// Populated only for non-Hidden fields, so a hidden column stays
-	// unreachable under its alias as well as its column name.
 	wireAlias := map[string]string{}
 	for _, f := range fields {
-		// A Hidden column is treated as NOT declared, the identical
-		// "not on target entity" error a nonexistent field gets. The
-		// eager loader scrubs Hidden columns from the OUTPUT, but a
-		// scoped filter on one would still reach the WHERE clause, and
-		// the related row's presence/absence in the response leaks
-		// whether the value matched, the same value-disclosure oracle
-		// the top-level and nested filter paths close (see
-		// nested_filter.go), one relation hop away. NoQuery columns are
-		// blocked for the same reason, but tracked separately so the error
-		// can name them, they are visible in the response, so folding them
-		// into "not on target entity" only sends a developer hunting for a
-		// typo in a column they can plainly see.
 		if f.NoQuery && !f.Hidden {
 			if noQueryField == nil {
 				noQueryField = map[string]bool{}
 			}
 			noQueryField[f.Name] = true
-			// Under its wire key too. The alias is what clients are told to
-			// send, so a refusal that only knows the column name would let
-			// ?include=comments(writer=x) through as "not on target entity"
-			// at best, and, if the alias ever reached knownField, past the
-			// guard entirely.
 			if f.WireName != "" && f.WireName != f.Name {
 				noQueryField[f.WireName] = true
 			}
@@ -411,18 +272,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			return nil, i18n.NewError(reasonScopedMissingEq, map[string]any{"include": strconv.Quote(pathForErrors), "filter": strconv.Quote(kv)})
 		}
 		key, value := kv[:eq], kv[eq+1:]
-		// Split the key the way the top-level parser does (filter.ReadKey):
-		// name[op] names the whole field before the brackets, a suffix
-		// counts only when the name before it is a declared field, a key
-		// that is itself a field (opt_in) is that field under equality, and
-		// a key that is both (check beside check_in) is refused. With fields
-		// nil every name is accepted, so the first suffix cut stands, as it
-		// always has: a key cannot read two ways against no field list.
 		named := func(n string) bool { return knownField[n] || noQueryField[n] }
 		if fields == nil {
-			// Any cut name or bracket name is a field; the whole key is
-			// never asked about, so a suffixed key cuts and a plain one
-			// falls back to itself under equality.
 			named = func(n string) bool { return n != key }
 		}
 		field, op, _, err := filter.ReadKey(key, named)
@@ -436,9 +287,6 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			return nil, i18n.NewError(reasonScopedUnknownField, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field)})
 		}
 		sent := field
-		// Resolve the wire key to its column AFTER the allow-list check:
-		// ParsedFilter.Field reaches the WHERE clause, so emitting the alias
-		// would name a column that does not exist.
 		if col, ok := wireAlias[field]; ok {
 			field = col
 		}
@@ -448,9 +296,6 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 			}
 		}
 		if op == filter.OpIn {
-			// Count separators before splitting, so an oversized list is
-			// rejected without materializing it. Same shape as the top-level
-			// ?field_in= path (filter.SplitINValuesBounded).
 			if n := strings.Count(value, "|") + 1; n > maxScopedINEntries {
 				return nil, i18n.NewError(reasonScopedInListOverCap, map[string]any{"include": strconv.Quote(pathForErrors), "field": strconv.Quote(field), "count": n, "max": maxScopedINEntries})
 			}
@@ -460,9 +305,6 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 				if err != nil {
 					return nil, err
 				}
-				// Tag each value with its term, so author_id_in=1|2 and
-				// its alias writer_in=3, or check_in=a and check[in]=b,
-				// render as two ANDed IN lists.
 				out = append(out, pf.InList(key))
 			}
 		} else {
@@ -476,10 +318,8 @@ func parseScopedFilters(raw string, fields []schema.Field, pathForErrors string)
 	return out, nil
 }
 
-// scopedTyped checks a scoped filter's value against its column type
-// (the error names the field the caller sent, pf.Field) and returns the
-// filter on column col with its typed value, so a mistyped value inside
-// ?include=rel(...) answers 400 on both dialects.
+// scopedTyped types pf's value for column type t and points it at column
+// col; a mistyped value is an error naming the field the caller sent.
 func scopedTyped(pf filter.ParsedFilter, col string, t schema.FieldType, pathForErrors string) (filter.ParsedFilter, error) {
 	typed, err := pf.Typed(t)
 	if err != nil {
@@ -489,18 +329,10 @@ func scopedTyped(pf filter.ParsedFilter, col string, t schema.FieldType, pathFor
 	return typed, nil
 }
 
-// maxScopedINEntries caps the size of a single `field_in=a|b|c|…` list
-// passed through an include's scoped filter. Without a cap, a single
-// request can blow up a JOIN with thousands of bind parameters, a
-// cheap DoS even before SQL parameter limits start refusing the query.
 const maxScopedINEntries = 256
 
-// relationByName looks up a Relation a caller may name on an entity. A
-// relation behind a Hidden field, or a belongs_to over a NoQuery key
-// (entity.HidesRelation), is not found, the answer a name that is no
-// relation gets: its include would put the related record, and the hidden
-// or masked key, in the response, and a nested filter across it would
-// test the record's values.
+// relationByName finds the relation a caller may name; one the entity
+// hides (entity.HidesRelation) is not found.
 func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 	for _, rel := range ent.Config.Relations {
 		if rel.Name == name && !ent.HidesRelation(rel) {
@@ -510,13 +342,8 @@ func relationByName(ent *entity.Entity, name string) (entity.Relation, bool) {
 	return entity.Relation{}, false
 }
 
-// includeNearMiss names the relation an unknown include segment most
-// likely meant: the segment plus "_id" (a relation named after its
-// foreign key, ?include=issue for issue_id), the foreign key itself, or
-// the target entity in either number (?include=users for author). Only
-// a guess this close gets an answer; the error never lists the entity's
-// relations, so an unrelated probe learns nothing about the schema, and
-// it never names a relation relationByName would not find.
+// includeNearMiss names the relation an unknown segment most likely meant
+// (its foreign key or target entity), or "".
 func includeNearMiss(ent *entity.Entity, seg string) string {
 	for _, rel := range ent.Config.Relations {
 		if ent.HidesRelation(rel) {
@@ -531,30 +358,18 @@ func includeNearMiss(ent *entity.Entity, seg string) string {
 	return ""
 }
 
-// writeIncludeError renders an eager-load failure. A blown row budget is
-// the client's doing, it asked for more related rows than one response may
-// carry, so it renders as 400 with an actionable message. Everything else
-// is a server fault and stays an opaque 500 with the detail in the log.
+// writeIncludeError renders an include failure: 400 for a blown row budget
+// or a child hook's refusal, 403 for an unreadable target, else 500.
 func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, err error) {
 	if errors.Is(err, errIncludeBudget) {
 		writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 		return
 	}
 	if forbidden, ok := errors.AsType[*includeForbiddenError](err); ok {
-		// The refusal the target entity's own list route would give for an
-		// RBAC or session failure. It is not byte-for-byte parity in every
-		// posture: an owner-scoped target skips the session check here (see
-		// canReadEntityGate), so an anonymous include answers 200 with an
-		// empty relation where the target's own route answers 401. Nothing
-		// leaks either way, the owner scope matches no row, but the two
-		// status codes differ.
 		writeErrJSON(w, r, http.StatusForbidden, forbidden, i18n.Phrase{})
 		return
 	}
 	if refused, ok := errors.AsType[*childHookError](err); ok {
-		// The child's own route answers its Before hook's error as 400 with
-		// the hook's wording or phrase (List and Get in crud.go), so the
-		// same refusal reached through the relation answers the same.
 		writeErrJSON(w, r, http.StatusBadRequest, refused.err, i18n.Phrase{})
 		return
 	}
@@ -562,57 +377,24 @@ func writeIncludeError(w http.ResponseWriter, r *http.Request, surface string, e
 	writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
-// applyIncludeTree eager-loads the include forest onto the parent rows. Top-
-// level rows are JSON-cased (as they came out of scanRows); nested rows are
-// kept in raw DB casing during recursion so further EagerLoad calls can find
-// foreign-key columns. The very last step deep-converts everything attached
-// under the include keys to JSON case.
-//
-// Before dispatching each node we inject an owner-scope filter when the
-// related entity has an OwnerField configured. Without this, a request
-// like `/posts?include=comments` would honour owner-scope on /posts (so
-// only alice's posts come back) but pull EVERY comment whose post_id
-// matches, including bob's comments on alice's post. The scope inherits
-// from the request's owner extractor; if no owner is in context, the
-// scope predicate becomes `owner_field = ""` which matches no real row.
+// applyIncludeTree loads the include forest onto rows, which carry wire
+// keys. Nested rows keep raw column names until the last step converts
+// everything attached to wire keys.
 func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]any, nodes []*IncludeNode) error {
 	if len(nodes) == 0 {
 		return nil
 	}
-	// An include is a read of ANOTHER entity's rows, so that entity's posture
-	// governs it. Every other guard hanging off Target, the Hidden scrub,
-	// owner scope, tenant scope, soft delete, was already applied here, but
-	// Exposure.Access was not: `GET /api/posts?include=author` returned whole
-	// rows of an entity whose own route answers 403, and
-	// `?include=comments.author` dumped the entire table in one request.
-	//
-	// Enforced only for a request arriving over HTTP. The in-process callers
-	// of this function, the programmatic API and typed repos, are trusted
-	// server-side code running with no session by design, exactly as the
-	// baseline session gate is an HTTP-only concern (requireAuthenticated)
-	// while owner and tenant scoping, which are data scoping, apply to both.
-	// Checked before any load and at every depth, so a nested segment cannot
-	// reach past a readable parent.
 	if _, overHTTP := ctx.Value(realRequestKey{}).(*http.Request); overHTTP {
 		if err := ch.checkIncludeReadable(ctx, nodes); err != nil {
 			return err
 		}
 	}
-	// Only AFTER the posture check. Returning early on an empty parent made the
-	// answer depend on whether the table happened to have rows: the same
-	// request answered 200 while empty and 403 once a row existed, which is a
-	// table-emptiness oracle and disagreed with the nested-filter check, which
-	// refuses before it queries anything.
 	if len(rows) == 0 {
 		return nil
 	}
-	// Rows are named by record id, so a composite-key parent loads the
-	// relations its key allows (see entity.CheckRelationKeys).
 	parentKey := ch.keyCols()
 	ids := collectRowKeys(rows, parentKey, ch.convertKey)
 
-	// Build the result map shape once; loadIncludeNode populates it relation
-	// by relation so scoped filters can be applied per-node.
 	loaded := make(map[string]map[string]any, len(ids))
 	for _, id := range ids {
 		loaded[id] = make(map[string]any)
@@ -631,11 +413,6 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 			}
 			return fmt.Errorf("eager load %s: %w", node.Relation.Name, err)
 		}
-		// An included row's schema.JSON columns get the same treatment as
-		// the parent's, keyed by raw DB column because the eager loaders
-		// case-convert only at the end of the walk. Without this a JSON
-		// field is an object on GET /children and a string one relation
-		// hop away.
 		decodeEntityReadColumns(node.Target, gatherLoadedRows(loaded, node.Relation.Name))
 	}
 	dedupeRepeatedRelations(nodes, loaded)
@@ -644,15 +421,6 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		return err
 	}
 
-	// Attach to parent rows + deep-convert keys (top-level outer key uses
-	// JSON case, the entire nested subtree gets the same treatment). The
-	// converted-map memo is per-response: a BelongsTo attaches the very same
-	// target map to every parent that names it, so without sharing the
-	// conversion the subtree is re-copied once per parent at every level.
-	//
-	// The memo is keyed by map alone, so every map must convert under one
-	// tree: duplicate mentions of a relation share their rows, and so share
-	// one tree merged from all of them.
 	converted := map[uintptr]*convertedSubtree{}
 	trees := ch.includeConvTrees(nodes)
 	for _, row := range rows {
@@ -672,14 +440,11 @@ func (ch *CrudHandler) applyIncludeTree(ctx context.Context, rows []map[string]a
 		}
 	}
 
-	// Child read hooks run last, on the converted maps now attached to the
-	// parent rows. See applyChildReadHooks for why the ordering matters.
 	return ch.applyChildReadHooks(ctx, nodes, rows)
 }
 
-// recurseLoadOnRawRows operates on rows that are still in raw DB casing, the
-// nested data EagerLoad produced. It re-runs EagerLoad with each child's
-// target relation against those rows, then recurses again.
+// recurseLoadOnRawRows loads children onto rawRows, which carry raw column
+// names, and recurses.
 func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.Entity, children []*IncludeNode, rawRows []map[string]any, budget *includeBudget) error {
 	key := target.KeyColumns()
 	ids := collectRowKeys(rawRows, key, nil)
@@ -709,8 +474,6 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	if err := ch.recurseIncludeChildren(ctx, children, loaded, budget); err != nil {
 		return err
 	}
-	// Attach onto the raw rows under the raw relation name (no case conversion
-	// here, that happens once at the outermost merge).
 	for _, row := range rawRows {
 		id, ok := rawRowKey(row, key)
 		if !ok {
@@ -725,11 +488,8 @@ func (ch *CrudHandler) recurseLoadOnRawRows(ctx context.Context, target *entity.
 	return nil
 }
 
-// dedupeRepeatedRelations keeps each child row once per parent for a
-// relation the include names more than once. Each mention loads with its
-// own filters and appends to the same slot, so a row matching two of them
-// arrived twice. Rows are told apart by the target's key, still in raw DB
-// casing here; a row with no readable key is kept.
+// dedupeRepeatedRelations keeps each child row once per parent, by key, for
+// a relation the include names more than once.
 func dedupeRepeatedRelations(nodes []*IncludeNode, loaded map[string]map[string]any) {
 	mentions := make(map[string]int, len(nodes))
 	for _, node := range nodes {
@@ -744,8 +504,6 @@ func dedupeRepeatedRelations(nodes []*IncludeNode, loaded map[string]map[string]
 		done[name] = true
 		key := node.Target.KeyColumns()
 		for _, bucket := range loaded {
-			// A HasOne or BelongsTo slot holds one row, which the second
-			// load replaced rather than appended to: only a list repeats.
 			var children []map[string]any
 			switch v := bucket[name].(type) {
 			case []map[string]any:
@@ -769,10 +527,7 @@ func dedupeRepeatedRelations(nodes []*IncludeNode, loaded map[string]map[string]
 	}
 }
 
-// recurseIncludeChildren walks the include nodes that carry children of
-// their own and recurses the freshly loaded rows into them. It is the
-// single loop behind the verbatim copies that used to close out
-// applyIncludeTree and recurseLoadOnRawRows.
+// recurseIncludeChildren loads each node's children onto its loaded rows.
 func (ch *CrudHandler) recurseIncludeChildren(ctx context.Context, nodes []*IncludeNode, loaded map[string]map[string]any, budget *includeBudget) error {
 	for _, node := range nodes {
 		if len(node.Children) == 0 || node.Target == nil {
@@ -789,14 +544,7 @@ func (ch *CrudHandler) recurseIncludeChildren(ctx context.Context, nodes []*Incl
 	return nil
 }
 
-// gatherLoadedRows walks loaded[parentID][relName] entries and returns the
-// flat list of nested rows, regardless of HasOne/HasMany/etc. shape.
-//
-// Rows are deduplicated by map identity. A BelongsTo attaches the SAME
-// target map to every parent whose FK names it, so N parents pointing at
-// one row used to yield that row N times, the next level then re-loaded
-// and re-attached it N times, which is the per-level multiplication that
-// made a six-hop include exponential.
+// gatherLoadedRows flattens the rows loaded under relName, each map once.
 func gatherLoadedRows(loaded map[string]map[string]any, relName string) []map[string]any {
 	var out []map[string]any
 	seen := map[uintptr]bool{}
@@ -825,9 +573,7 @@ func gatherLoadedRows(loaded map[string]map[string]any, relName string) []map[st
 	return out
 }
 
-// collectRowKeys returns each row's record id, read from the key columns
-// cols under the names names gives them (see entity.RowKey). Rows without
-// a usable id are skipped.
+// collectRowKeys returns the rows' record ids; nil names reads raw rows.
 func collectRowKeys(rows []map[string]any, cols []string, names func(string) string) []string {
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -844,9 +590,7 @@ func collectRowKeys(rows []map[string]any, cols []string, names func(string) str
 	return out
 }
 
-// rawRowKey is a raw database row's record id. Postgres reports a
-// mixed-case column under its folded name, so a key column is matched
-// ignoring case when its exact name is absent.
+// rawRowKey is a raw row's record id, its key columns matched ignoring case.
 func rawRowKey(row map[string]any, cols []string) (string, bool) {
 	return entity.RowKey(row, cols, func(c string) string {
 		if _, ok := row[c]; ok {
@@ -861,8 +605,6 @@ func rawRowKey(row map[string]any, cols []string) (string, bool) {
 	})
 }
 
-// rawRelationValue normalises a relation-attached value while keeping raw DB
-// keys (no JSON casing). Used during recursive nested loading.
 func rawRelationValue(rel entity.Relation, val any, present bool) any {
 	switch rel.Type {
 	case entity.RelHasMany, entity.RelManyToMany:
@@ -886,23 +628,14 @@ func rawRelationValue(rel entity.Relation, val any, present bool) any {
 	}
 }
 
-// convTree is the wire-key converter for one include hop's rows, and by
-// raw relation name the trees for the hops nested under it.
-//
-// documents names the hop's schema.JSON columns. Their values are stored
-// documents, data and not wire keys, so their keys are kept as stored, the
-// way a direct read keeps them. Converted, a stored {"key_name": 1} read
-// back as keyName through ?include= and the next save of that value
-// rewrote the document.
+// convTree converts one include hop's keys, with the trees of the hops
+// under it by relation name; documents names its schema.JSON columns.
 type convTree struct {
 	conv      func(string) string
 	children  map[string]*convTree
 	documents map[string]bool
 }
 
-// hopTree is the converter tree of one hop over target's rows, without
-// the hops nested under it. A nil target converts with the handler's own
-// keys and treats no column as a document.
 func (ch *CrudHandler) hopTree(target *entity.Entity) *convTree {
 	if target == nil {
 		return &convTree{conv: ch.convertKey}
@@ -919,14 +652,7 @@ func (ch *CrudHandler) hopTree(target *entity.Entity) *convTree {
 	return t
 }
 
-// includeConvTrees builds the converter tree of each relation nodes
-// include, by relation name. Each hop's rows belong to that hop's
-// target, so its keys convert with the target's wire map: posts aliasing
-// body_text->"summary" must not rename comments' body_text, which
-// declares its own alias "content", and neither may rename the
-// enrollments included under a comment's student. A relation mentioned
-// twice with distinct filters is two nodes over one set of rows; their
-// trees merge, at every depth.
+// includeConvTrees builds each relation's converter tree, by relation name.
 func (ch *CrudHandler) includeConvTrees(nodes []*IncludeNode) map[string]*convTree {
 	out := map[string]*convTree{}
 	for _, node := range nodes {
@@ -946,7 +672,6 @@ func (ch *CrudHandler) includeConvTrees(nodes []*IncludeNode) map[string]*convTr
 	return out
 }
 
-// mergeConvTree adds src's nested trees to dst, merging those both hold.
 func mergeConvTree(dst, src *convTree) {
 	for k, v := range src.children {
 		if d, ok := dst.children[k]; ok {
@@ -957,13 +682,8 @@ func mergeConvTree(dst, src *convTree) {
 	}
 }
 
-// formatRelationValueDeep is like formatRelationValue but recursively
-// converts every nested map's keys to JSON case, including any subtrees
-// previously attached during recurseLoadOnRawRows. tree converts each
-// hop with its own target's wire map; nil converts rel's target only.
-// Resolution is version-aware (entity.ResolveTarget) for the same reason
-// the include tree is: a v1 request must not adopt an unversioned
-// declaration's field naming.
+// formatRelationValueDeep converts an attached relation value, and every
+// subtree under it, to wire keys with tree.
 func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, tree *convTree, val any, present bool, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, error) {
 	if tree == nil {
 		tree = ch.hopTreeFor(rel.Entity)
@@ -1002,22 +722,9 @@ func (ch *CrudHandler) formatRelationValueDeep(rel entity.Relation, tree *convTr
 	}
 }
 
-// deepConvertMap walks a value tree, converting every map key (including
-// keys inside nested maps and slices) with tree's converter, and the
-// value under a nested relation's key with that relation's tree. A nil
-// tree converts with ch.convertKey. Non-map values pass through
-// unchanged.
-//
-// converted memoises by source-map identity, so a subtree reached from many
-// parents is converted once and the result shared. Both the aliasing and the
-// memo matter: eager-loading attaches one BelongsTo target map to every
-// parent that names it, and copying that subtree per parent at every level
-// is what turned a 23-byte include into 13.7 MB. Recording the output map
-// before filling it also makes a self-referential row terminate instead of
-// recursing forever.
-// Returns the converted value plus the number of row references it
-// serialises to, so callers can charge a re-referenced subtree its full
-// weight without re-walking it.
+// deepConvertMap converts every map key under v with tree, memoised by map
+// identity in converted, and returns the value and the row references it
+// serialises to.
 func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintptr]*convertedSubtree, budget *includeBudget) (any, int, error) {
 	if tree == nil || tree.conv == nil {
 		tree = &convTree{conv: ch.convertKey}
@@ -1026,9 +733,6 @@ func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintp
 	case map[string]any:
 		id := reflect.ValueOf(x).Pointer()
 		if prev, ok := converted[id]; ok {
-			// Already converted for another parent: reuse the output, but
-			// charge the whole subtree again, this reference costs the
-			// response the same bytes the first one did.
 			if err := budget.spend(prev.nodes); err != nil {
 				return nil, 0, err
 			}
@@ -1038,8 +742,6 @@ func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintp
 			return nil, 0, err
 		}
 		out := make(map[string]any, len(x))
-		// Recorded before the walk so a self-referential row terminates
-		// instead of recursing forever.
 		entry := &convertedSubtree{out: out, nodes: 1}
 		converted[id] = entry
 		total := 1
@@ -1091,10 +793,7 @@ func (ch *CrudHandler) deepConvertMap(v any, tree *convTree, converted map[uintp
 }
 
 // applyRelatedScope prepends the target's owner and tenant predicates to
-// the include node's filters. They come from eagerScopeFilters, the one
-// builder of those predicates, and are always ANDed in front of whatever
-// the caller sent: a caller's own filter on the owner or tenant column
-// narrows the result further and never replaces the scope.
+// node.Filters.
 func applyRelatedScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Target == nil {
 		return
@@ -1102,10 +801,6 @@ func applyRelatedScope(ctx context.Context, node *IncludeNode) {
 	node.Filters = append(eagerScopeFilters(ctx, node.Target), node.Filters...)
 }
 
-// applyPivotScope sets the predicates a many_to_many's join entity puts
-// on its own rows: owner, tenant and read scope, the ones its list route
-// applies. A link the caller cannot see on the join entity does not link
-// the two sides for them either.
 func applyPivotScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Pivot == nil {
 		return
@@ -1113,17 +808,6 @@ func applyPivotScope(ctx context.Context, node *IncludeNode) {
 	node.PivotScopes = pivotScopes(ctx, node.Pivot)
 }
 
-// applyRelatedReadScope attaches the TARGET's Exposure.ReadScope predicates
-// to the include node, the read-scope sibling of applyRelatedScope. Without it, `?include=posts` on another entity
-// serves the drafts the posts entity's own route hides; the include path is
-// exactly where cross-table leaks live.
-//
-// The predicates land in node.ReadScopes, NOT node.Filters: Filters render
-// with IN-run coalescing against caller-controlled scoped filters, and a
-// coalesced run would OR the scope's values with the caller's instead of
-// ANDing them (see IncludeNode.ReadScopes). An unrestricted caller (the
-// ReadScope's own rule) gets no predicates at all, and an entity without a
-// ReadScope is untouched.
 func applyRelatedReadScope(ctx context.Context, node *IncludeNode) {
 	if node == nil || node.Target == nil {
 		return
@@ -1131,21 +815,8 @@ func applyRelatedReadScope(ctx context.Context, node *IncludeNode) {
 	node.ReadScopes = readScopeFilters(ctx, node.Target)
 }
 
-// hopTreeFor returns the converter tree for the entity a relation points
-// at, so an included row is renamed by ITS OWN schema rather than the
-// parent handler's.
-//
-// Without this, deepConvertMap applied the parent's wire map at every depth:
-// posts aliasing body_text->"summary" renamed comments' body_text to
-// "summary" too, ignoring comments' own alias, and a parent with no matching
-// column fell through to plain case conversion, so the included entity's
-// declared wire contract was never honoured at all.
-//
-// Resolution is version-aware for the same reason the include tree is: a v1
-// request must not adopt an unversioned declaration's field naming. On any
-// resolution failure this falls back to the handler's own converter, which is
-// the pre-existing behaviour, the include tree has already refused
-// unresolvable targets by this point, so this path is defensive only.
+// hopTreeFor is the converter tree of the entity targetName resolves to
+// from this handler's version, or the handler's own when it resolves to none.
 func (ch *CrudHandler) hopTreeFor(targetName string) *convTree {
 	if ch.Registry == nil {
 		return ch.hopTree(nil)
@@ -1160,7 +831,6 @@ func (ch *CrudHandler) hopTreeFor(targetName string) *convTree {
 // wireConverterOf converts target's columns to the keys its included rows
 // carry: a field's WireName, else this handler's JSON case.
 func (ch *CrudHandler) wireConverterOf(target *entity.Entity) func(string) string {
-	// Build the target's wire map once per relation, not per row.
 	wire := make(map[string]string, len(target.GetFields()))
 	for _, f := range target.GetFields() {
 		if f.WireName != "" {
@@ -1168,7 +838,6 @@ func (ch *CrudHandler) wireConverterOf(target *entity.Entity) func(string) strin
 		}
 	}
 	if len(wire) == 0 {
-		// No aliases on the target: plain case conversion, same as before.
 		return ch.convertKeyRaw
 	}
 	return func(k string) string {
@@ -1179,9 +848,7 @@ func (ch *CrudHandler) wireConverterOf(target *entity.Entity) func(string) strin
 	}
 }
 
-// includeForbiddenError marks an include whose target entity the caller may not
-// read. Carried as a distinct type so the HTTP layer answers 403 naming the
-// entity, rather than the generic 500 every other include failure gets.
+// includeForbiddenError is an include whose target the caller may not read.
 type includeForbiddenError struct{ Entity string }
 
 func (e *includeForbiddenError) Error() string {
@@ -1192,12 +859,8 @@ func (e *includeForbiddenError) Phrased() (i18n.Phrase, map[string]any) {
 	return reasonIncludeForbidden, map[string]any{"entity": e.Entity}
 }
 
-// checkIncludeReadable walks the include forest and refuses any node whose
-// target entity fails the same read posture its own list route enforces.
-//
-// The check is recursive because include paths are: `comments.author` reaches
-// `author` through a `comments` the caller legitimately reads, so permitting
-// the first segment says nothing about the second.
+// checkIncludeReadable refuses the forest when any node's target, or its
+// registered pivot, fails the read posture of its own list route.
 func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*IncludeNode) error {
 	for _, node := range nodes {
 		if node == nil || node.Target == nil {
@@ -1207,11 +870,6 @@ func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*Includ
 		if !target.relationReachable(ctx, "read") || !target.canReadEntityGate(ctx) {
 			return &includeForbiddenError{Entity: node.Target.GetName()}
 		}
-		// A many_to_many reads the join entity's rows too: which members a
-		// group has IS the memberships table. A registered pivot answers
-		// for itself the way the target does; its owner, tenant and read
-		// scope narrow the rows (applyPivotScope), so the gate half is the
-		// one to ask here. A migrator-made pivot (nil) has no posture.
 		if err := ch.checkPivotReadable(ctx, node.Pivot); err != nil {
 			return err
 		}
@@ -1222,10 +880,8 @@ func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*Includ
 	return nil
 }
 
-// checkPivotReadable refuses a many_to_many whose registered join entity the
-// caller may not read: its own route answers 403, so the associations it
-// holds are not readable through ?include= or ?rel.field= either. nil (a
-// migrator-made pivot) passes.
+// checkPivotReadable refuses a registered join entity the caller may not
+// read; nil passes.
 func (ch *CrudHandler) checkPivotReadable(ctx context.Context, pivot *entity.Entity) error {
 	if pivot == nil {
 		return nil
