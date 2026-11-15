@@ -133,9 +133,14 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	readTranscript(c, stream.Bytes())
-	if runErr != nil && c.Answer == "" {
+	agentNote, fatal := agentFailure(runErr, ctx.Err() != nil, c)
+	if fatal {
 		fail(fmt.Errorf("agent: %w", runErr))
 		return
+	}
+	if agentNote != "" {
+		// Kept beside whatever grading says about the tree.
+		defer func() { c.Note = strings.TrimPrefix(c.Note+"; "+agentNote, "; ") }()
 	}
 
 	// Inspection and grading get their own clock: an agent that used its
@@ -174,6 +179,21 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	gradeTests(gradeCtx, cfg, c, dir)
+}
+
+// agentFailure says what an agent that exited with an error and no answer
+// means for its cell. An agent that ran out of time on a task graded by
+// tests left a tree, and that tree is graded with a note. Anything else
+// has nothing to grade: an agent that never ran would score as having
+// left the code alone.
+func agentFailure(runErr error, timedOut bool, c *cell) (note string, fatal bool) {
+	if runErr == nil || c.Answer != "" {
+		return "", false
+	}
+	if timedOut && len(c.task.Rubric) == 0 {
+		return "the agent ran out of time; the tree it left was graded", false
+	}
+	return "", true
 }
 
 // restoreTests puts every test file back as the cell's first commit had

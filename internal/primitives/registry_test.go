@@ -330,3 +330,11 @@ func TestModulePathIgnoresATrailingComment(t *testing.T) {
 		})
 	}
 }
+
+func TestAHelperNamedLikeATestEnforcesNothing(t *testing.T) {
+	root := fixture(t, strings.Replace(validPrimitive, "pkg/store.TestOrder", "pkg/store.Testorder", 1))
+	write(t, root, "pkg/store/store_test.go", "package store\n\nfunc Testorder(t *testing.T) {}\n")
+	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, "test Testorder does not exist in pkg/store") {
+		t.Fatalf("a function go test does not run was accepted as enforcing:\n%s", got)
+	}
+}

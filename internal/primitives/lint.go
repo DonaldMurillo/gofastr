@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Lint checks every reference in the registry against the tree: owned
@@ -219,13 +221,24 @@ func (l *linter) testsIn(dir string) map[string]bool {
 			continue
 		}
 		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && strings.HasPrefix(fn.Name.Name, "Test") {
+			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && isTestName(fn.Name.Name) {
 				names[fn.Name.Name] = true
 			}
 		}
 	}
 	l.tests[dir] = names
 	return names
+}
+
+// isTestName follows the go command: Test, or Test followed by anything
+// but a lower-case letter. Testhelper is a helper, not a test.
+func isTestName(name string) bool {
+	rest, ok := strings.CutPrefix(name, "Test")
+	if !ok {
+		return false
+	}
+	first, _ := utf8.DecodeRuneInString(rest)
+	return rest == "" || !unicode.IsLower(first)
 }
 
 func (l *linter) decisions(p *Primitive) {

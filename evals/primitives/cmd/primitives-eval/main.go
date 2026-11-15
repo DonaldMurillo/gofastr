@@ -58,6 +58,16 @@ func main() {
 	}
 }
 
+// insideDir reports whether path is dir or below it. Both are absolute.
+// It compares path segments, so a child named ..cells is inside.
+func insideDir(dir, path string) (bool, error) {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false, err
+	}
+	return filepath.IsLocal(rel), nil
+}
+
 func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {
 	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -76,11 +86,11 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 	if cfg.work, err = filepath.Abs(cfg.work); err != nil {
 		return err
 	}
-	rel, err := filepath.Rel(repo, cfg.work)
+	inside, err := insideDir(repo, cfg.work)
 	if err != nil {
 		return fmt.Errorf("-work %s cannot be placed against the repository: %w", cfg.work, err)
 	}
-	if rel == "." || !strings.HasPrefix(rel, "..") {
+	if inside {
 		return fmt.Errorf("-work %s is inside the repository: a cell there would read this checkout's CLAUDE.md", cfg.work)
 	}
 	if err := os.MkdirAll(cfg.out, 0o700); err != nil {

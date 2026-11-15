@@ -238,11 +238,11 @@ func TestStop(t *testing.T) {
 		t.Errorf("changedModules = %v, want the root module once (testdata skipped)", got)
 	}
 	write("gone.go", "")
-	empty := treeState(root, []string{"gone.go"})
+	empty := treeState(root, "base", []string{"gone.go"})
 	if err := os.Remove(filepath.Join(root, "gone.go")); err != nil {
 		t.Fatal(err)
 	}
-	if deleted := treeState(root, []string{"gone.go"}); deleted == empty {
+	if deleted := treeState(root, "base", []string{"gone.go"}); deleted == empty {
 		t.Error("a deleted file and an empty one hash alike: the second would skip its tests")
 	}
 }
@@ -504,5 +504,19 @@ func TestStopBlocksOnARegistryThatCannotBeRead(t *testing.T) {
 	run(root, []string{"stop"}, strings.NewReader(`{"stop_hook_active":true}`), &out, &errOut)
 	if out.Len() != 0 {
 		t.Errorf("a session already sent back was blocked again: %q", out.String())
+	}
+}
+
+func TestTheSameChangeOverAnotherBaseIsAnotherTree(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/m\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	one := treeState(root, "1111111", []string{"go.mod"})
+	if one == "" || one != treeState(root, "1111111", []string{"go.mod"}) {
+		t.Fatalf("the state of an unchanged tree is not stable: %q", one)
+	}
+	if one == treeState(root, "2222222", []string{"go.mod"}) {
+		t.Error("a pass over one base commit would be reused over another")
 	}
 }

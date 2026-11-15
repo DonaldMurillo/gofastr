@@ -287,3 +287,43 @@ func TestACellKeptFromAnEarlierRunIsRefusedAndLeftAlone(t *testing.T) {
 		t.Errorf("a run without -keep removed a directory it did not make: %v", err)
 	}
 }
+
+func TestAnAgentThatRanOutOfTimeIsStillGraded(t *testing.T) {
+	failed := errors.New("signal: killed")
+	tests, rubric := task{}, task{Rubric: []rubricPoint{{Name: "x"}}}
+	for _, tc := range []struct {
+		name      string
+		runErr    error
+		timedOut  bool
+		c         *cell
+		wantNote  bool
+		wantFatal bool
+	}{
+		{"it finished", nil, false, &cell{task: tests}, false, false},
+		{"it failed but answered", failed, false, &cell{task: tests, Answer: "done"}, false, false},
+		{"it timed out on a task graded by tests", failed, true, &cell{task: tests}, true, false},
+		{"it timed out on a question", failed, true, &cell{task: rubric}, false, true},
+		{"it never ran", failed, false, &cell{task: tests}, false, true},
+	} {
+		note, fatal := agentFailure(tc.runErr, tc.timedOut, tc.c)
+		if fatal != tc.wantFatal || (note != "") != tc.wantNote {
+			t.Errorf("%s: note %q, fatal %t", tc.name, note, fatal)
+		}
+	}
+}
+
+func TestWorkDirectoryInsideTheRepositoryIsRefused(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	for path, want := range map[string]bool{
+		repo:                                  true,
+		filepath.Join(repo, "dist", "cells"):  true,
+		filepath.Join(repo, "..cells"):        true,
+		filepath.Join(repo, "..", "cells"):    false,
+		filepath.Join(repo, "..", "repo-two"): false,
+	} {
+		got, err := insideDir(repo, path)
+		if err != nil || got != want {
+			t.Errorf("insideDir(%s) = %t, %v; want %t", path, got, err, want)
+		}
+	}
+}

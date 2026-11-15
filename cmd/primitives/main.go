@@ -278,7 +278,10 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 	if len(groups) == 0 && len(modules) == 0 && !registryChanged {
 		return "", ""
 	}
-	state := treeState(c.Root, changed)
+	state := ""
+	if commit, err := exec.Command("git", "-C", c.Root, "rev-parse", "--verify", "--quiet", base).Output(); err == nil {
+		state = treeState(c.Root, strings.TrimSpace(string(commit)), changed)
+	}
 	tested := state != "" && slices.Contains(toldFiles(c.Root, "stop-pass"), state)
 	var notices []docsNotice
 	if sessionName.MatchString(event.Session) {
@@ -570,16 +573,19 @@ func enclosingModule(root, dir string) string {
 	}
 }
 
-// treeState names the content of the changed files, so a tree that
-// already passed is not tested again. It is empty when a file cannot be
-// read, which means "test".
-func treeState(root string, changed []string) string {
+// treeState names the base commit and the content of the files changed
+// since it, so a tree that already passed is not tested again. The base
+// is part of it because the same changed files over another base are
+// another tree. It is empty when a file cannot be read, which means
+// "test".
+func treeState(root, baseCommit string, changed []string) string {
 	dir, err := os.OpenRoot(root)
 	if err != nil {
 		return ""
 	}
 	defer dir.Close()
 	sum := sha256.New()
+	fmt.Fprintf(sum, "base %s\n", baseCommit)
 	for _, file := range changed {
 		data, err := dir.ReadFile(file)
 		switch {
