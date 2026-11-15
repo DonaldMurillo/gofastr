@@ -397,6 +397,9 @@ type docsNotice struct{ primitive, text string }
 func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 	var out []docsNotice
 	seen := map[string]bool{}
+	applied := map[string]int{}
+	appliedFiles := map[string][]string{}
+	appliedRules := map[string]primitives.Invariant{}
 	for _, file := range changed {
 		if strings.HasSuffix(file, "_test.go") {
 			continue
@@ -405,15 +408,17 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 		// JavaScript included; the docs notice below is for Go code.
 		for _, a := range c.AppliedTo(file) {
 			key := a.Primitive.ID + "/" + a.Invariant.ID
-			if seen[key] || slices.Contains(told, key) {
+			if slices.Contains(told, key) {
 				continue
 			}
-			seen[key] = true
-			text := fmt.Sprintf("You changed %s, which %s also governs: %s", file, key, a.Invariant.Rule)
-			if a.Invariant.Judge != "" {
-				text += "\n  Ask of your change: " + a.Invariant.Judge
+			if _, ok := applied[key]; ok {
+				appliedFiles[key] = append(appliedFiles[key], file)
+				continue
 			}
-			out = append(out, docsNotice{key, text})
+			applied[key] = len(out)
+			appliedFiles[key] = []string{file}
+			out = append(out, docsNotice{primitive: key})
+			appliedRules[key] = a.Invariant
 		}
 		if !strings.HasSuffix(file, ".go") {
 			continue
@@ -444,6 +449,14 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 			}
 			out = append(out, docsNotice{p.ID, b.String()})
 		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(applied)) {
+		inv := appliedRules[key]
+		text := fmt.Sprintf("You changed %s, which %s also governs: %s", strings.Join(appliedFiles[key], ", "), key, inv.Rule)
+		if inv.Judge != "" {
+			text += "\n  Ask of your change: " + inv.Judge
+		}
+		out[applied[key]].text = text
 	}
 	return out
 }
