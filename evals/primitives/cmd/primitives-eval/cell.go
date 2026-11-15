@@ -430,7 +430,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 
 // overlayRegistry gives a replay cell, cut from a commit older than the
 // registry, the registry's tooling from -head, the task's own entries and
-// the pointer in CLAUDE.md.
+// the pointer in the agent guide.
 func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *os.Root) error {
 	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", cfg.head, "cmd/primitives", "internal/primitives", "primitives/README.md")
 	extract := command(ctx, dir, "tar", "-x")
@@ -466,16 +466,26 @@ func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *
 	if err != nil {
 		return fmt.Errorf("overlay %s: %w", t.ID, err)
 	}
-	guide, err := root.ReadFile("CLAUDE.md")
+	name := guideFile(root)
+	guide, err := root.ReadFile(name)
 	if err != nil {
 		return err
 	}
 	const anchor = "## TL;DR"
 	i := bytes.Index(guide, []byte(anchor))
 	if i < 0 {
-		return fmt.Errorf("CLAUDE.md at %s has no %q heading to put the registry pointer before", t.Ref, anchor)
+		return fmt.Errorf("%s at %s has no %q heading to put the registry pointer before", name, t.Ref, anchor)
 	}
-	return root.WriteFile("CLAUDE.md", slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
+	return root.WriteFile(name, slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
+}
+
+// guideFile names the file that holds a tree's agent guide: AGENTS.md
+// where it exists, with CLAUDE.md only importing it, else CLAUDE.md.
+func guideFile(root *os.Root) string {
+	if _, err := root.Stat("AGENTS.md"); err == nil {
+		return "AGENTS.md"
+	}
+	return "CLAUDE.md"
 }
 
 // isolate removes from a cell's tree what no condition may inherit from
@@ -502,24 +512,31 @@ func stripRegistry(root *os.Root) error {
 			return err
 		}
 	}
-	guide, err := root.ReadFile("CLAUDE.md")
+	name := guideFile(root)
+	guide, err := root.ReadFile(name)
 	if err != nil {
 		return err
 	}
 	loc := registryParagraph.FindIndex(guide)
 	if loc == nil {
-		return fmt.Errorf("CLAUDE.md holds no registry paragraph to strip: the bare condition would not be bare")
+		return fmt.Errorf("%s holds no registry paragraph to strip: the bare condition would not be bare", name)
 	}
 	stripped := slices.Concat(guide[:loc[0]], guide[loc[1]:])
 	if registryParagraph.Match(stripped) {
-		return fmt.Errorf("CLAUDE.md still names the registry after one paragraph was removed")
+		return fmt.Errorf("%s still names the registry after one paragraph was removed", name)
 	}
-	// CLAUDE.md links docs/contributing.md: a pointer left there would
-	// lead a bare cell back to the command.
-	for _, guide := range []struct {
+	// The guide links docs/contributing.md, and CLAUDE.md may only import
+	// AGENTS.md: a pointer left in either would lead a bare cell back to
+	// the command.
+	type file struct {
 		name string
 		src  []byte
-	}{{"CLAUDE.md", stripped}, {"docs/contributing.md", nil}} {
+	}
+	check := []file{{name, stripped}, {"docs/contributing.md", nil}}
+	if name != "CLAUDE.md" {
+		check = append(check, file{"CLAUDE.md", nil})
+	}
+	for _, guide := range check {
 		if guide.src == nil {
 			var err error
 			if guide.src, err = root.ReadFile(guide.name); errors.Is(err, fs.ErrNotExist) {
@@ -532,7 +549,7 @@ func stripRegistry(root *os.Root) error {
 			return fmt.Errorf("%s still names cmd/primitives: the bare condition would not be bare", guide.name)
 		}
 	}
-	return root.WriteFile("CLAUDE.md", stripped, 0o600)
+	return root.WriteFile(name, stripped, 0o600)
 }
 
 type streamEvent struct {

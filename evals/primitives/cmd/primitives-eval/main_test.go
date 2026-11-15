@@ -68,6 +68,36 @@ func TestStripRegistry(t *testing.T) {
 	}
 }
 
+// Once the guide lives in AGENTS.md, the strip works on it and still
+// refuses a CLAUDE.md that names the command.
+func TestStripRegistryInAgentsMD(t *testing.T) {
+	dir := t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	para := "intro\n\n**Before changing a file, run `go run ./cmd/primitives for <path>`.** It\nprints things.\n\n## Next\n"
+	if err := errors.Join(root.WriteFile("AGENTS.md", []byte(para), 0o600), root.WriteFile("CLAUDE.md", []byte("@AGENTS.md\n"), 0o600)); err != nil {
+		t.Fatal(err)
+	}
+	if err := stripRegistry(root); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := root.ReadFile("AGENTS.md"); string(got) != "intro\n\n## Next\n" {
+		t.Errorf("AGENTS.md = %q", got)
+	}
+	if got, _ := root.ReadFile("CLAUDE.md"); string(got) != "@AGENTS.md\n" {
+		t.Errorf("CLAUDE.md = %q, want the import left alone", got)
+	}
+	if err := errors.Join(root.WriteFile("AGENTS.md", []byte(para), 0o600), root.WriteFile("CLAUDE.md", []byte("@AGENTS.md\nRun cmd/primitives.\n"), 0o600)); err != nil {
+		t.Fatal(err)
+	}
+	if err := stripRegistry(root); err == nil || !strings.Contains(err.Error(), "CLAUDE.md still names cmd/primitives") {
+		t.Errorf("a pointer left in CLAUDE.md must refuse the strip, got %v", err)
+	}
+}
+
 func TestIsolateDropsHarnessAndProjectSettings(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{".claude/settings.json", ".claude/skills/x/SKILL.md", "evals/primitives/README.md", "evals/other/README.md"} {

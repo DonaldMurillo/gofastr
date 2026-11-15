@@ -1,6 +1,6 @@
 # Analyzer and lint catalog
 
-Moved out of `CLAUDE.md`, which loads into every agent session. Each
+Moved out of `AGENTS.md`, which loads into every agent session. Each
 entry names the round that added or widened a rule; the registered set
 is `internal/analyzers/suite/suite.go` and each analyzer's package doc
 is its full contract. The first analyzers registered were `mapwriter`,

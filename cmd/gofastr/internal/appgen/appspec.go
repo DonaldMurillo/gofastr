@@ -5748,7 +5748,7 @@ func appSpecMissingFontSlugs(bp appspec.AppSpec, files []GeneratedFile) []string
 // <static_dir>/fonts/. Returns "" when the theme declares no fonts.
 // The rule itself is emitted by core-ui/style, not spelled out here: a
 // generator that writes its own `@font-face` string owns a second
-// styling surface, which is the drift CLAUDE.md hard rule 7 is about.
+// styling surface, which is the drift AGENTS.md hard rule 7 is about.
 // `gofastr verify` flags this exact shape (GOFASTR1801), and
 // style.FontFaceCSS is the upstream primitive that finding asked for.
 func appSpecFontFaceCSS(theme map[string]string) string {

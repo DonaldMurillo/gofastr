@@ -8,7 +8,7 @@ versions of the tree and checks what it leaves behind.
 |---|---|---|
 | `comments` | `-base` (default `origin/main`) | the original comments, no registry |
 | `registry` | `-head` (default `HEAD`) | the registry, comments swept |
-| `bare` | `-head` with the registry, its command and its `CLAUDE.md` paragraph removed | neither |
+| `bare` | `-head` with the registry, its command and its guide paragraph (`AGENTS.md`, or `CLAUDE.md` in an older tree) removed | neither |
 
 `bare` is the control: it shows what deleting comments costs when nothing
 replaces them. Test files keep their comments in every condition.
@@ -59,7 +59,7 @@ given the pre-fix code and the format, and not told what the bugs were.
 Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and
 `registry` (the report alone, in a tree given the registry tooling, a
-`twins` entry naming the paths, and the pointer in `CLAUDE.md`; the
+`twins` entry naming the paths, and the pointer in the guide; the
 entries are under `cmd/primitives-eval/overlays/`), `hook` (the same
 tree, plus the registry's hook, so the notice arrives without the agent
 asking) and `harness` (the `hook` tree plus the stop check: tests for

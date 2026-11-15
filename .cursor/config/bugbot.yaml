@@ -19,5 +19,5 @@ prSummary:
   mode: disabled
 
 autofix:
-  # Findings are triaged by hand (CLAUDE.md hard rule 10).
+  # Findings are triaged by hand (AGENTS.md hard rule 10).
   mode: disabled

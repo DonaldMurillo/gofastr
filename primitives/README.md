@@ -7,7 +7,7 @@ checked by `go run ./cmd/primitives lint`.
 
 Where this is going, and in what order, is `PLAN.md` beside this file.
 
-It replaces prose. A rule that lives in a code comment, in `CLAUDE.md` or
+It replaces prose. A rule that lives in a code comment, in `AGENTS.md` or
 in an architecture document is not enforced and goes stale. An enforced
 rule here names the test, analyzer or contract rule that fails when it
 is broken. The few that nothing can enforce carry a question for a
@@ -24,7 +24,7 @@ go run ./cmd/primitives show <id>       # one primitive in full, and its childre
 Run `primitives for` on the files you are about to change. It prints the chain
 of primitives that own them, outermost first, with every invariant and
 decision on that chain. That is all the registry holds for those files.
-`CLAUDE.md` still names the architecture documents to read before adding
+`AGENTS.md` still names the architecture documents to read before adding
 or moving code they cover.
 
 ## Layout

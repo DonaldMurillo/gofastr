@@ -3,7 +3,7 @@ package main
 // =============================================================================
 // axe-core accessibility gate for the Meridian flagship app.
 //
-// Meridian is the design-system completeness canary (CLAUDE.md hard rule 9):
+// Meridian is the design-system completeness canary (AGENTS.md hard rule 9):
 // every surface, marketing, auth, app, admin, is scanned under BOTH color
 // schemes, plus the first OPEN-WIDGET scan in the repo (the Quick-add modal
 // scanned in its open state). The reusable harness lives in internal/axetest;

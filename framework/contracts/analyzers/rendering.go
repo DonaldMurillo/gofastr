@@ -198,7 +198,7 @@ var designSystemPrefixes = []string{
 // devOnlyPrefixes are the surfaces exempt from the single-SSE-bus and
 // hard-navigation rules. Dev tooling ships its own livereload stream and
 // reloads the page on purpose, that is its entire job, and none of it
-// runs in production. This is the exception class CLAUDE.md already
+// runs in production. This is the exception class AGENTS.md already
 // carves out for livereload, applied here rather than left to every
 // project's config.
 var devOnlyPrefixes = []string{"framework/dev/", "kiln/"}

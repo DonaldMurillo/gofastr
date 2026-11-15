@@ -64,7 +64,7 @@ func auditLint(root string) ([]LintFinding, error) {
 	if err != nil {
 		return nil, err
 	}
-	// App spec rule: unscoped PII (CLAUDE.md hard rule #6) in a
+	// App spec rule: unscoped PII (AGENTS.md hard rule #6) in a
 	// conventional gofastr.yml/.yaml/.json at the audited root.
 	all = append(all, lintAppSpecPIIRoot(root)...)
 	sort.Slice(all, func(i, j int) bool {
@@ -101,7 +101,7 @@ func lintFile(rel string, body []byte) []LintFinding {
 	out = append(out, ruleRenderHTMLConcat(rel, body)...)
 	out = append(out, ruleSQLConcatUserInput(rel, body)...)
 	// Go-declared entities are linted with the same unscoped-PII rule as
-	// the app spec path (CLAUDE.md hard rule #6), it's the same defect.
+	// the app spec path (AGENTS.md hard rule #6), it's the same defect.
 	out = append(out, lintGoSourcePII(rel, fset, file)...)
 	return out
 }

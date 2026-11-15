@@ -33,7 +33,7 @@ import (
 //     signed id — nothing outside the signed bytes is read or trusted.
 //
 // Each guard below was made to fail by mutation before being trusted
-// (CLAUDE.md hard rule 11); see the audit report for the mutation log.
+// (AGENTS.md hard rule 11); see the audit report for the mutation log.
 
 // TestRejectsTamperedMAC mutates only the MAC segment. The original
 // suite's tamper tests change id/created; this one proves the MAC

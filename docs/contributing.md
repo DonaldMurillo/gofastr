@@ -1,13 +1,13 @@
 # Contributing to GoFastr: commands, process and where things live
 
-`CLAUDE.md` is the short version. This page holds what it points to: how to
+`AGENTS.md` is the short version. This page holds what it points to: how to
 build, test and check the tree, how a pull request is reviewed and merged,
 and where each kind of code lives. Rules about the code itself live in the
-primitives registry; `CLAUDE.md` says how to look a file's rules up.
+primitives registry; `AGENTS.md` says how to look a file's rules up.
 
 ## Before you start, at length
 
-The original form of CLAUDE.md's reading list, with the history behind it.
+The original form of the guide's reading list, with the history behind it.
 
 **Before writing any UI, runtime, `framework/uihost`, OR code that *emits*
 UI, read [`core-ui/ARCHITECTURE.md`](core-ui/ARCHITECTURE.md). Emitting UI
@@ -44,7 +44,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 `framework/docs/mcptools`; package framework never imports the corpus)
 expose them to agents connected to a live app.**
 
-The registry paragraph that opened this list is still in `CLAUDE.md`.
+The registry paragraph that opened this list is still in `AGENTS.md`.
 
 ## Common operations
 
@@ -135,7 +135,7 @@ The registry paragraph that opened this list is still in `CLAUDE.md`.
 
 ## Pull requests and proving guards
 
-These are CLAUDE.md's Hard rules 10 to 12 in full.
+These are the guide's Hard rules 10 to 12 in full.
 
 10. **Read the PR's line-level review comments before merging.** After
     opening a PR and after every push to it, run

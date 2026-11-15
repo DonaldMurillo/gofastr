@@ -19,12 +19,12 @@ permissions:
 #      own runner (they contend for Chrome/sockets when sharing one):
 #        - examples/site, including the axe gate in its own isolated
 #          invocation (it flakes when sharing a go-test run with the
-#          other chromedp tests, CLAUDE.md).
+#          other chromedp tests, AGENTS.md).
 #        - cmd/gofastr TestAppSpecCLIGeneratesEntireWorkingAppE2E
 #          ("chrome failed to start" under parallel load when it ran
 #          inside the blocking job, 3/6 runs, serialized here).
 #        - kiln/integration: chromedp-heavy, grouped here per
-#          CLAUDE.md's slow-suite guidance.
+#          AGENTS.md's slow-suite guidance.
 #      This job was continue-on-error while TestAxe_AllPagesAreClean
 #      failed 6/6 on Linux runners. Root cause: Linux Chrome defaults
 #      to prefers-color-scheme: light, so CI audited the site's LIGHT
@@ -295,7 +295,7 @@ jobs:
         run: go run ./cmd/affected -- go vet
 
       - name: Vet (repo analyzers)
-        # CLAUDE.md hard rules as machine checks: no Go-emitted hard
+        # AGENTS.md hard rules as machine checks: no Go-emitted hard
         # navigation / bespoke EventSource, no *BaseCSS outside the
         # design system, no map-ordered SSR output. See internal/analyzers.
         # Affected packages, except that a change under internal/analyzers
@@ -353,7 +353,7 @@ jobs:
         #   - examples/site, kiln/integration, core-ui/runtime,
         #     core-ui/widget (whole packages, the latter two host the
         #     hydration chromedp suites and are documented flaky under
-        #     parallel package load; see CLAUDE.md)
+        #     parallel package load; see AGENTS.md)
         #   - examples/meridian (the 16-surface visual canary exhausts its
         #     bounded 12s capture attempts when another chromedp suite runs
         #     beside it under -p 2, the exact starvation class the other
@@ -648,7 +648,7 @@ jobs:
   browser-e2e:
     # One matrix shard per chromedp suite. These suites were serialized in
     # a single job because they contend for Chrome/sockets when they share
-    # a runner (CLAUDE.md documents the flake classes); separate runners
+    # a runner (AGENTS.md documents the flake classes); separate runners
     # don't contend, so the matrix keeps every suite exactly as isolated
     # while running them concurrently, wall clock drops from the ~28m
     # serial sum to the slowest shard. fail-fast is off
@@ -685,7 +685,7 @@ jobs:
           # scans for about 85 s, so the gate runs whole again (#598).
           # GOFASTR_AXE_SHARD=k/n still splits its work list
           # (examples/site/axe_test.go) if it grows back. Its own shard:
-          # CLAUDE.md documents the axe suite flaking when it shares a
+          # AGENTS.md documents the axe suite flaking when it shares a
           # go-test run with the other chromedp tests. 30m: a 15m limit
           # once failed slow runners with nothing hung.
           - suite: site-axe
@@ -723,7 +723,7 @@ jobs:
             # The runtime hydration suite launches a real Chrome per test
             # binary; under the deterministic job's -p 2 package
             # parallelism the chromedp websocket connect starves and times
-            # out ("websocket url timeout reached", CLAUDE.md documents
+            # out ("websocket url timeout reached", AGENTS.md documents
             # this package as flaky under parallel load, run isolated).
             # 20m: main's run took 581s on 2026-11-01, 19s under the old
             # 10m cap, and the next run on a PR hit it.

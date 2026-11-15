@@ -56,10 +56,12 @@ in `runtime`, `uihost`, `ui`, `ui.styling` and `crud.scope`, reaching
 the trees they govern through `applies`; rule 9 is an `on_change` line;
 rules 10 to 12, the commands and the code map moved to
 `docs/contributing.md`. The numbered list stays, one line per rule,
-because code cites the rules by number, and `TestClaudeMDNamesRealRules`
+because code cites the rules by number, and `TestAgentsMDNamesRealRules`
 keeps its pointers real.
-`TestClaudeMDStaysShort` (`guide/stays-short`) fails the build when
-`CLAUDE.md` passes 60 lines, so the file cannot grow back.
+`TestAgentsMDStaysShort` (`guide/stays-short`) fails the build when
+the guide passes 60 lines, so it cannot grow back. The guide now lives
+in `AGENTS.md`, which every coding agent reads; `CLAUDE.md` holds only
+`@AGENTS.md` (`guide/claude-md-only-imports`).
 
 The replay suite cannot see this step. Each replay cell is cut from a
 commit older than the registry and gets the pointer paragraph spliced

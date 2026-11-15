@@ -253,7 +253,7 @@ Two ways:
 
 After the pass: run `./scripts/test-all.sh` and confirm exit 0;
 audit `find . -maxdepth 3 -type f -size +500k …` for stray binaries
-per `CLAUDE.md`; review the pass's commit messages for the
+per `AGENTS.md`; review the pass's commit messages for the
 keep/flip/delete rationale.
 
 ## Two-pass protocol (MANDATORY)

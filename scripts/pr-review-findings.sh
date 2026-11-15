@@ -3,7 +3,7 @@
 #
 # Collects EVERY review signal on a PR — line comments, review bodies
 # (where findings that couldn't attach to a line hide), and issue-level
-# comments — from any reviewer, human or bot. This is CLAUDE.md hard
+# comments — from any reviewer, human or bot. This is AGENTS.md hard
 # rule 10 as a command: --paginate everywhere (an unpaginated fetch
 # silently stops at the first page), and review BODIES are printed, not
 # just counted.

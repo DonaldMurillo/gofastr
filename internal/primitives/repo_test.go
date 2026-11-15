@@ -40,12 +40,12 @@ func TestRepoRegistryIsClean(t *testing.T) {
 	}
 }
 
-// claudeMDMaxLines is the guide/stays-short limit.
-const claudeMDMaxLines = 60
+// agentsMDMaxLines is the guide/stays-short limit.
+const agentsMDMaxLines = 60
 
-//gofastr:test-reads /CLAUDE.md
-func TestClaudeMDStaysShort(t *testing.T) {
-	guide, err := os.ReadFile(filepath.Join("..", "..", "CLAUDE.md"))
+//gofastr:test-reads /AGENTS.md
+func TestAgentsMDStaysShort(t *testing.T) {
+	guide, err := os.ReadFile(filepath.Join("..", "..", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,15 +53,26 @@ func TestClaudeMDStaysShort(t *testing.T) {
 	if len(guide) > 0 && guide[len(guide)-1] != '\n' {
 		lines++
 	}
-	if lines > claudeMDMaxLines {
-		t.Errorf("CLAUDE.md is %d lines, over the %d-line limit (guide/stays-short): move the new rule into the primitive it governs, or into docs/contributing.md when no primitive can own it", lines, claudeMDMaxLines)
+	if lines > agentsMDMaxLines {
+		t.Errorf("AGENTS.md is %d lines, over the %d-line limit (guide/stays-short): move the new rule into the primitive it governs, or into docs/contributing.md when no primitive can own it", lines, agentsMDMaxLines)
 	}
 }
 
 //gofastr:test-reads /CLAUDE.md
-func TestClaudeMDNamesRealRules(t *testing.T) {
+func TestClaudeMDOnlyImportsAgentsMD(t *testing.T) {
+	got, err := os.ReadFile(filepath.Join("..", "..", "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "@AGENTS.md" {
+		t.Errorf("CLAUDE.md holds %q, want only the line @AGENTS.md (guide/claude-md-only-imports): put the text in AGENTS.md, which every agent reads", got)
+	}
+}
+
+//gofastr:test-reads /AGENTS.md
+func TestAgentsMDNamesRealRules(t *testing.T) {
 	root := filepath.Join("..", "..")
-	guide, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	guide, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,14 +87,14 @@ func TestClaudeMDNamesRealRules(t *testing.T) {
 		named++
 		p := c.Primitive(m[1])
 		if p == nil {
-			t.Errorf("CLAUDE.md names %s/%s, and there is no primitive %s", m[1], m[2], m[1])
+			t.Errorf("AGENTS.md names %s/%s, and there is no primitive %s", m[1], m[2], m[1])
 			continue
 		}
 		if c.Invariant(p, m[2]) == nil {
-			t.Errorf("CLAUDE.md names %s/%s, which is not an invariant of %s", m[1], m[2], m[1])
+			t.Errorf("AGENTS.md names %s/%s, which is not an invariant of %s", m[1], m[2], m[1])
 		}
 	}
 	if named == 0 {
-		t.Fatal("CLAUDE.md names no registry invariant: the hard rules lost their pointers")
+		t.Fatal("AGENTS.md names no registry invariant: the hard rules lost their pointers")
 	}
 }
