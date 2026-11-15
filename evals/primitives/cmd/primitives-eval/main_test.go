@@ -532,4 +532,13 @@ func TestWorkBelowAGuideIsRefused(t *testing.T) {
 	if got := ancestorGuide(work); got != filepath.Join(resolveExisting(work), "CLAUDE.md") {
 		t.Errorf("a CLAUDE.md in the work directory itself is a parent of every cell, got %q", got)
 	}
+	if _, err := gitOutput(".", "rev-parse", "--show-toplevel"); err != nil {
+		t.Skip("not inside a git checkout:", err)
+	}
+	// The task filter matches nothing, so a run that got past the refusal
+	// would stop there instead of starting cells.
+	err := run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, 1, 1, 0)
+	if err == nil || !strings.Contains(err.Error(), "Claude Code loads it into every cell") {
+		t.Errorf("run with -work under a CLAUDE.md returned %v, want the refusal", err)
+	}
 }
