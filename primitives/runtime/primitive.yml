@@ -32,9 +32,16 @@ invariants:
       - framework/
       - battery/
       - examples/
+      - cmd/gofastr/
   - id: no-list-math-in-js
     rule: Pagination, sort and filter are computed on the server; the runtime only follows the links and swaps the regions the server returns.
     judge: Does this change compute a page, a sort order or a filter result in JavaScript instead of asking the server?
+    applies:
+      - framework/ui/
+      - framework/uihost/
+      - battery/
+      - examples/
+      - cmd/gofastr/
 decisions:
   - id: poll-before-push
     status: accepted
