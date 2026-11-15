@@ -596,8 +596,9 @@ func TestAppliedRulesReachForAndStop(t *testing.T) {
 		return decision.Reason
 	}
 	write("b/b.go", "package b\n\nfunc Two() int { return 1 + 1 }\n")
+	write("b/c.go", "package b\n\nfunc Three() int { return 3 }\n")
 	msg := fire(`{"session_id":"s1"}`)
-	for _, want := range []string{"You changed b/b.go, which x/no-css also governs", "Ask of your change: Does this change add CSS"} {
+	for _, want := range []string{"You changed b/b.go, b/c.go, which x/no-css also governs", "Ask of your change: Does this change add CSS"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("stop after changing b/b.go lacks %q:\n%s", want, msg)
 		}
