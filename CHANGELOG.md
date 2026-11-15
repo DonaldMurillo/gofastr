@@ -24,6 +24,12 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Changed
+- **`primitives stop` skips testdata modules** when a nested `go.mod`
+  or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
+  are meant not to type-check; `go build ./...` there is no longer a
+  reason to send the session back.
+
 ### Added
 - **A registry of the framework's parts, for contributors**
   ([primitives](primitives/README.md), [plan](primitives/PLAN.md)).

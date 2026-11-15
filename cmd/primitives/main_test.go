@@ -233,8 +233,9 @@ func TestStop(t *testing.T) {
 	if len(groups) != 1 || len(groups[0].pkgs) != 1 || groups[0].pkgs[0] != "./a" {
 		t.Errorf("changedPackageGroups = %+v", groups)
 	}
-	if got := changedModules(root, []string{"go.sum", "a/a.go", "gone/go.mod"}); len(got) != 1 || got[0] != root {
-		t.Errorf("changedModules = %v, want the root module once", got)
+	write("testdata/go.mod", "module example.test/td\n")
+	if got := changedModules(root, []string{"go.sum", "a/a.go", "gone/go.mod", "testdata/go.mod", "testdata/go.sum"}); len(got) != 1 || got[0] != root {
+		t.Errorf("changedModules = %v, want the root module once (testdata skipped)", got)
 	}
 	write("gone.go", "")
 	empty := treeState(root, []string{"gone.go"})
@@ -313,6 +314,52 @@ func TestStopRunsNestedModuleInItsOwnModule(t *testing.T) {
 	}
 	if strings.Contains(msg, "does not contain package") {
 		t.Fatalf("the compile error was reported as a parent-module miss: %s", msg)
+	}
+}
+
+// A nested testdata module is a fixture tree that is allowed not to
+// compile (cmd/check-embed/testdata). Changing its go.mod must not send
+// the session back for `go build ./...`.
+func TestStopDoesNotBuildTestdataModule(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/m\n\ngo 1.24\n")
+	write("a/a.go", "package a\n")
+	write("testdata/go.mod", "module example.test/td\n\ngo 1.24\n")
+	write("testdata/broken.go", "package td\n\nvar _ = doesNotExist\n")
+	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\n")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+	write("testdata/go.mod", "module example.test/td\n\ngo 1.24\n\n// changed\n")
+	c, findings, err := primitives.Load(root)
+	if err != nil || len(findings) > 0 {
+		t.Fatal(err, findings)
+	}
+	t.Cleanup(c.Close)
+	var out, errOut bytes.Buffer
+	if code := stop(c, nil, strings.NewReader(`{}`), &out, &errOut); code != 0 {
+		t.Fatalf("stop exits %d: %s", code, errOut.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("a testdata module that does not type-check blocked stop: %s", out.String())
 	}
 }
 

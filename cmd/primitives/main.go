@@ -308,7 +308,8 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 		checks, modules = nil, nil
 	}
 	// A changed go.mod or go.sum can break packages no changed file is in,
-	// so its whole module has to build.
+	// so its whole module has to build. testdata modules are skipped: they
+	// exist to be wrong, and `go build ./...` there is supposed to fail.
 	for _, dir := range modules {
 		cmd := exec.CommandContext(ctx, "go", "build", "./...")
 		cmd.Dir = dir
@@ -480,8 +481,16 @@ type packageGroup struct {
 	pkgs []string
 }
 
+// testdataPath reports whether rel (slash-separated, from the repo root)
+// sits under a testdata directory. Those trees exist to be wrong: the go
+// command skips them, and so does the stop check.
+func testdataPath(rel string) bool {
+	return strings.Contains("/"+path.Clean(rel)+"/", "/testdata/")
+}
+
 // changedModules lists the module directories whose go.mod or go.sum
-// changed.
+// changed, leaving out testdata modules (cmd/check-embed/testdata and
+// the like), which are fixture trees that do not type-check.
 func changedModules(root string, changed []string) []string {
 	tree, err := os.OpenRoot(root)
 	if err != nil {
@@ -494,6 +503,9 @@ func changedModules(root string, changed []string) []string {
 			continue
 		}
 		rel := path.Dir(file)
+		if testdataPath(rel) {
+			continue
+		}
 		dir := filepath.Join(root, filepath.FromSlash(rel))
 		if _, err := tree.Stat(path.Join(rel, "go.mod")); err == nil && !slices.Contains(dirs, dir) {
 			dirs = append(dirs, dir)
@@ -510,7 +522,7 @@ func changedPackageGroups(root string, changed []string) []packageGroup {
 	var order []string
 	for _, file := range changed {
 		dir := path.Dir(file)
-		if !strings.HasSuffix(file, ".go") || strings.Contains("/"+dir+"/", "/testdata/") {
+		if !strings.HasSuffix(file, ".go") || testdataPath(dir) {
 			continue
 		}
 		abs := filepath.Join(root, filepath.FromSlash(dir))
