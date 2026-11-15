@@ -46,12 +46,16 @@ case "$cmd" in
       exit 1
     fi
     for _ in $(seq 1 60); do
-      status=$(gh api "repos/$REPO/pulls/$pr/merge-async/$uuid" --jq '.status')
+      poll=$(gh api "repos/$REPO/pulls/$pr/merge-async/$uuid")
+      status=$(jq -r '.status' <<<"$poll")
       [ "$status" != pending ] && break
       sleep 10
     done
     echo "merge $uuid: $status"
-    [ "$status" = merged ] || [ "$status" = enqueued ]
+    if [ "$status" != merged ] && [ "$status" != enqueued ]; then
+      jq -r '.details.message // .message // empty' <<<"$poll" >&2
+      exit 1
+    fi
     ;;
   *) usage ;;
 esac
