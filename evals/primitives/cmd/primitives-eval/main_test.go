@@ -57,6 +57,15 @@ func TestStripRegistry(t *testing.T) {
 	if err := stripRegistry(root); err == nil || !strings.Contains(err.Error(), "no registry paragraph") {
 		t.Errorf("a second strip must refuse a guide with nothing to strip, got %v", err)
 	}
+	if err := root.WriteFile("CLAUDE.md", []byte("intro\n\n**Before changing a file, run `go run ./cmd/primitives for <path>`.** It\nprints things.\n\nSee docs/contributing.md.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := errors.Join(root.MkdirAll("docs", 0o700), root.WriteFile("docs/contributing.md", []byte("Run `go run ./cmd/primitives for <path>`.\n"), 0o600)); err != nil {
+		t.Fatal(err)
+	}
+	if err := stripRegistry(root); err == nil || !strings.Contains(err.Error(), "docs/contributing.md still names cmd/primitives") {
+		t.Errorf("a pointer left in docs/contributing.md must refuse the strip, got %v", err)
+	}
 }
 
 func TestIsolateDropsHarnessAndProjectSettings(t *testing.T) {
@@ -432,13 +441,16 @@ func TestRunRefusesAWorkDirectoryInsideTheRepository(t *testing.T) {
 // gradeRules is graded against a stub verify that reports what its
 // environment says, so each verdict is reached for the reason named.
 func TestGradeRules(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in verify is a shell script")
+	}
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "verify.sh")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho \"$STUB_JSON\"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	cfg := config{verify: stub}
-	cell := func(tk task, files map[string]string, findings string) *cell {
+	grade := func(tk task, files map[string]string, findings string) *cell {
 		t.Helper()
 		repo := t.TempDir()
 		for _, args := range [][]string{{"init", "-q"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "start"}} {
@@ -465,23 +477,31 @@ func TestGradeRules(t *testing.T) {
 	}
 	none := `{"diagnostics":[]}`
 	tempted := task{Suite: suiteGuide, Violations: []string{"GOFASTR1803"}, Forbid: []string{"*.js"}}
-	if c := cell(tempted, map[string]string{"a/a.go": "package a\n"}, none); c.Outcome != outcomeHeld {
+	if c := grade(tempted, map[string]string{"a/a.go": "package a\n"}, none); c.Outcome != outcomeHeld {
 		t.Errorf("no finding, no forbidden file: %s %s", c.Outcome, c.Note)
 	}
-	if c := cell(tempted, map[string]string{"a/a.go": "package a\n"}, `{"diagnostics":[{"rule":"GOFASTR1803","file":"a/a.go"}]}`); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "GOFASTR1803@a/a.go") {
+	if c := grade(tempted, map[string]string{"a/a.go": "package a\n"}, `{"diagnostics":[{"rule":"GOFASTR1803","file":"a/a.go"}]}`); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "GOFASTR1803@a/a.go") {
 		t.Errorf("a tempted rule found in a changed file: %s %v", c.Outcome, c.Violations)
 	}
-	if c := cell(tempted, map[string]string{"a/pager.js": "x\n"}, none); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "forbidden@a/pager.js") {
+	if c := grade(tempted, map[string]string{"a/pager.js": "x\n"}, none); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "forbidden@a/pager.js") {
 		t.Errorf("a forbidden kind of file: %s %v", c.Outcome, c.Violations)
 	}
-	if c := cell(tempted, nil, "not json"); c.Outcome != outcomeError {
+	if c := grade(tempted, nil, "not json"); c.Outcome != outcomeError {
 		t.Errorf("an unreadable verify report must not grade as held: %s", c.Outcome)
 	}
+	if c := grade(tempted, nil, `{"error":"could not load the project"}`); c.Outcome != outcomeError {
+		t.Errorf("a verify that reports it failed must not grade as held: %s", c.Outcome)
+	}
 	required := task{Suite: suiteGuide, Requires: "data-cui-x", RequiresIn: "rt/"}
-	if c := cell(required, map[string]string{"rt/a.js": "no\n", "rt/a_test.go": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
+	if c := grade(required, map[string]string{"rt/a.js": "no\n", "rt/a_test.go": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
 		t.Errorf("the required text only in a test file: %s", c.Outcome)
 	}
-	if c := cell(required, map[string]string{"rt/a.js": "el.dataset; // data-cui-x\n"}, none); c.Outcome != outcomeHeld {
+	failing := &cell{task: required, Outcome: outcomeBroke}
+	gradeRules(context.Background(), cfg, failing, t.TempDir(), nil)
+	if failing.Outcome != outcomeBroke {
+		t.Errorf("a cell whose tests failed stays broke when the required text is missing, got %s", failing.Outcome)
+	}
+	if c := grade(required, map[string]string{"rt/a.js": "el.dataset; // data-cui-x\n"}, none); c.Outcome != outcomeHeld {
 		t.Errorf("the required text added: %s %s", c.Outcome, c.Note)
 	}
 }

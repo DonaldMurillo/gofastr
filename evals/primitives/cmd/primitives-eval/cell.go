@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -228,6 +229,7 @@ func contractFindings(ctx context.Context, cfg config, dir, start string, rules 
 	}
 	out, err := command(ctx, dir, cfg.verify, "verify", "--no-vet", "--json", "--changed="+start, "--rule", strings.Join(rules, ",")).Output()
 	var report struct {
+		Error       string `json:"error"`
 		Diagnostics []struct {
 			Rule string `json:"rule"`
 			File string `json:"file"`
@@ -235,6 +237,12 @@ func contractFindings(ctx context.Context, cfg config, dir, start string, rules 
 	}
 	if jerr := json.Unmarshal(out, &report); jerr != nil {
 		return nil, fmt.Errorf("gofastr verify: %w (%v)", jerr, err)
+	}
+	// verify exits 1 when it reports findings and 2 when it could not run;
+	// a report that says it failed is not a clean tree.
+	var exit *exec.ExitError
+	if report.Error != "" || (errors.As(err, &exit) && exit.ExitCode() != 1) || (err != nil && !errors.As(err, &exit)) {
+		return nil, fmt.Errorf("gofastr verify did not run: %s (%v)", report.Error, err)
 	}
 	seen := map[string]bool{}
 	for _, d := range report.Diagnostics {
@@ -245,11 +253,16 @@ func contractFindings(ctx context.Context, cfg config, dir, start string, rules 
 
 // addsText reports whether a changed file under prefix holds text.
 func addsText(dir string, changed []string, prefix, text string) bool {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
 	for _, file := range changed {
 		if !strings.HasPrefix(file, prefix) || strings.HasSuffix(file, "_test.go") {
 			continue
 		}
-		src, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
+		src, err := root.ReadFile(file)
 		if err == nil && bytes.Contains(src, []byte(text)) {
 			return true
 		}
@@ -491,6 +504,24 @@ func stripRegistry(root *os.Root) error {
 	stripped := slices.Concat(guide[:loc[0]], guide[loc[1]:])
 	if registryParagraph.Match(stripped) {
 		return fmt.Errorf("CLAUDE.md still names the registry after one paragraph was removed")
+	}
+	// CLAUDE.md links docs/contributing.md: a pointer left there would
+	// lead a bare cell back to the command.
+	for _, guide := range []struct {
+		name string
+		src  []byte
+	}{{"CLAUDE.md", stripped}, {"docs/contributing.md", nil}} {
+		if guide.src == nil {
+			var err error
+			if guide.src, err = root.ReadFile(guide.name); errors.Is(err, fs.ErrNotExist) {
+				continue
+			} else if err != nil {
+				return err
+			}
+		}
+		if bytes.Contains(guide.src, []byte("cmd/primitives")) {
+			return fmt.Errorf("%s still names cmd/primitives: the bare condition would not be bare", guide.name)
+		}
 	}
 	return root.WriteFile("CLAUDE.md", stripped, 0o600)
 }
