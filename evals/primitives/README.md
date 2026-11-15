@@ -118,3 +118,6 @@ so a run can pass it by `-concurrency` times `-cell-budget`.
   right facts, not being right.
 - Cost and tool-call counts vary between runs. Use `-runs 3` or more
   before comparing them.
+- A cell stopped by its timeout records no cost: the CLI reports what a
+  session cost in its last message, and a stopped session never sends
+  one. A run's total leaves those cells out.
