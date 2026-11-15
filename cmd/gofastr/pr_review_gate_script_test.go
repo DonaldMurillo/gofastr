@@ -12,15 +12,15 @@ import (
 // gh --paginate does, $PAGE2 only when the query declares
 // $endCursor: String and asks for pageInfo; with $GQL_FAIL set it fails,
 // as it does in a Claude Code cloud session. The REST review-thread
-// route prints $REST, or fails with $REST_FAIL set. Other REST calls
-// print nothing. Output goes through the --jq expression with the real
+// route prints $REST and, under --paginate, $REST2, or fails with
+// $REST_FAIL set. Other REST calls print nothing. Output goes through the --jq expression with the real
 // jq, as gh applies it.
 const fakeGH = `#!/usr/bin/env bash
 if [ "$1 $2" = "api graphql" ]; then
   [ -z "$GQL_FAIL" ] || exit 1
 else
   case "$*" in
-    *ccr/review_threads*) [ -z "$REST_FAIL" ] || exit 1; PAGE1="$REST"; PAGE2="" ;;
+    *ccr/review_threads*) [ -z "$REST_FAIL" ] || exit 1; PAGE1="$REST"; PAGE2="$REST2"; rest=1 ;;
     *) exit 0 ;;
   esac
 fi
@@ -35,7 +35,7 @@ while [ $# -gt 0 ]; do
 done
 emit() { if [ -n "$jqexpr" ]; then printf '%s' "$1" | jq -r "$jqexpr"; else printf '%s\n' "$1"; fi; }
 emit "$PAGE1"
-if [ "$paginate" = 1 ] && [[ "$query" == *'$endCursor: String'* ]] && [[ "$query" == *pageInfo* ]]; then
+if [ "$paginate" = 1 ] && { [ -n "$rest" ] || { [[ "$query" == *'$endCursor: String'* ]] && [[ "$query" == *pageInfo* ]]; }; }; then
   emit "$PAGE2"
 fi
 `
@@ -130,6 +130,9 @@ func TestReviewGateFallsBackToREST(t *testing.T) {
 	resolved := `[{"comment_ids":[3],"line":null,"path":"b.go","resolved":true}]`
 	if out, err := runReviewGate(t, "", "", "GQL_FAIL=1", "REST="+resolved); err != nil || !strings.Contains(out, "GATE: all review threads resolved.") {
 		t.Fatalf("gate over REST with every thread resolved (%v):\n%s", err, out)
+	}
+	if out, err := runReviewGate(t, "", "", "GQL_FAIL=1", "REST="+resolved, "REST2="+open); err == nil || !strings.Contains(out, "GATE: 1 unresolved") {
+		t.Fatalf("gate over REST missed an open thread on page 2 (%v):\n%s", err, out)
 	}
 }
 

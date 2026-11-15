@@ -57,7 +57,7 @@ threads_graphql() {
    "  ! \($c.author.login) \($c.path):\($c.line // "?"): \(($c.body // "") | gsub("[\r\n]+"; " ") | .[0:120])"'
 }
 threads_rest() {
-  gh api "repos/$REPO/pulls/$PR/ccr/review_threads" --jq \
+  gh api --paginate "repos/$REPO/pulls/$PR/ccr/review_threads" --jq \
   '.[] | select(.resolved | not) | "  ! \(.path):\(.line // "?"): comments \(.comment_ids | map(tostring) | join(","))"'
 }
 if ! unresolved=$(threads_graphql 2>/dev/null); then
