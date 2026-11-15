@@ -10,17 +10,27 @@ import (
 )
 
 // fakeStackGH stands in for gh: every call prints $BODY through its
-// --jq expression with the real jq, and $CALLS records that gh ran.
+// --jq expression with the real jq, and $CALLS records that gh ran. A
+// poll of a running merge (merge-async/<id>) prints $POLL instead, and a
+// call that starts a merge exits $PUT_EXIT after printing, as gh does on
+// an HTTP error.
 const fakeStackGH = `#!/usr/bin/env bash
 echo "$*" >> "$CALLS"
+case "$*" in *merge-async/*) BODY="$POLL" ;; esac
 jqexpr=""
 while [ $# -gt 0 ]; do
   case "$1" in --jq) jqexpr="$2"; shift 2 ;; *) shift ;; esac
 done
 if [ -n "$jqexpr" ]; then printf '%s' "$BODY" | jq -r "$jqexpr"; else printf '%s\n' "$BODY"; fi
+case "$*" in *"-X PUT"*merge-async) exit "${PUT_EXIT:-0}" ;; esac
 `
 
 func runStackScript(t *testing.T, body string, args ...string) (out string, code int, called bool) {
+	t.Helper()
+	return runStackScriptEnv(t, body, nil, args...)
+}
+
+func runStackScriptEnv(t *testing.T, body string, env []string, args ...string) (out string, code int, called bool) {
 	t.Helper()
 	for _, tool := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(tool); err != nil {
@@ -40,6 +50,7 @@ func runStackScript(t *testing.T, body string, args ...string) (out string, code
 	cmd.Env = append(os.Environ(),
 		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"BODY="+body, "CALLS="+calls)
+	cmd.Env = append(cmd.Env, env...)
 	raw, err := cmd.CombinedOutput()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
@@ -79,5 +90,26 @@ func TestStackScriptViewsAPRInNoStack(t *testing.T) {
 	out, code, _ = runStackScript(t, stack, "view", "2")
 	if code != 0 || !strings.Contains(out, "stack #5 on main, open=true") || !strings.Contains(out, "  #2 open") {
 		t.Fatalf("view of a stacked PR: exit %d, output:\n%s", code, out)
+	}
+}
+
+// A merge already running answers 409 with its id: the script polls that
+// merge instead of failing. A merge already done ends at once, and a
+// refusal with no id fails.
+//
+//gofastr:test-reads scripts/stack.sh
+func TestStackScriptMergeResumesARunningMerge(t *testing.T) {
+	running := `{"message":"A merge request already exists","status":"pending","details":{"uuid":"u-1"}}`
+	out, code, _ := runStackScriptEnv(t, running, []string{"PUT_EXIT=1", `POLL={"status":"merged"}`}, "merge", "9")
+	if code != 0 || !strings.Contains(out, "merge u-1: merged") {
+		t.Fatalf("409 for a running merge: exit %d, output:\n%s", code, out)
+	}
+	out, code, _ = runStackScriptEnv(t, `{"status":"merged"}`, nil, "merge", "9")
+	if code != 0 || strings.TrimSpace(out) != "merge: merged" {
+		t.Fatalf("merge already done: exit %d, output:\n%s", code, out)
+	}
+	out, code, _ = runStackScriptEnv(t, `{"message":"Not mergeable"}`, []string{"PUT_EXIT=1"}, "merge", "9")
+	if code == 0 || !strings.Contains(out, "Not mergeable") {
+		t.Fatalf("a refusal with no id: exit %d, output:\n%s", code, out)
 	}
 }
