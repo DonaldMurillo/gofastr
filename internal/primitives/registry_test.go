@@ -1,8 +1,10 @@
 package primitives
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -336,5 +338,33 @@ func TestAHelperNamedLikeATestEnforcesNothing(t *testing.T) {
 	write(t, root, "pkg/store/store_test.go", "package store\n\nfunc Testorder(t *testing.T) {}\n")
 	if got := strings.Join(lint(t, root), "\n"); !strings.Contains(got, "test Testorder does not exist in pkg/store") {
 		t.Fatalf("a function go test does not run was accepted as enforcing:\n%s", got)
+	}
+}
+
+func TestStaleDoesNotReadWhereGoWouldNotLook(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	c, _, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	files, err := c.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rel, src := range files {
+		write(t, root, rel, string(src))
+	}
+	// A real orphan is found; a file of the same name under a directory
+	// the go command ignores is not, because the walk never goes there.
+	for _, dir := range []string{"pkg/heavy", "_scratch/appspecs/app", ".cache/pkg", "pkg/store/testdata/x"} {
+		write(t, root, dir+"/"+ImportsTestFile, "package x\n")
+	}
+	stale, err := c.Stale()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := slices.Sorted(maps.Keys(stale)); !slices.Equal(got, []string{"pkg/heavy/" + ImportsTestFile}) {
+		t.Errorf("stale = %v, want only the orphan under pkg/heavy", got)
 	}
 }

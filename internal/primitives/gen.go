@@ -87,8 +87,17 @@ func (c *Registry) Stale() (map[string]string, error) {
 			return err
 		}
 		if d.IsDir() {
-			switch d.Name() {
-			case ".git", "node_modules", "dist", "testdata":
+			// Where the go command would not look for a package, a
+			// generated test cannot be an orphan. Those directories
+			// (.git, .gofastr, _scratch) also hold what other tools
+			// and tests rewrite as they run, so reading them would
+			// make this check's result depend on run state.
+			name := d.Name()
+			if rel != "." && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_")) {
+				return fs.SkipDir
+			}
+			switch name {
+			case "node_modules", "dist", "testdata":
 				return fs.SkipDir
 			}
 			return nil
