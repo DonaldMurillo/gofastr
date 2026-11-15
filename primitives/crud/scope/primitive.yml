@@ -41,6 +41,15 @@ invariants:
       - test: framework/crud.TestAnonymousCreateRejectedByDefault
       - test: framework/crud.TestAnonymousListRejectedByDefault
       - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
+  - id: per-user-entity-is-scoped
+    rule: An entity holding per-user data that auto-CRUD exposes sets Scope.OwnerField.
+    enforced_by:
+      - contract: GOFASTR1901
+    applies:
+      - framework/entity/
+      - battery/
+      - examples/
+      - cmd/gofastr/
   - id: one-scope-gate
     rule: The routes and the Can*Scoped predicates for an entity's own surface take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture; a read reached through a relation also applies relationReachable.
     enforced_by:

@@ -1,0 +1,37 @@
+primitive: ui.styling
+summary: The one styling surface, theme tokens, component sheets and the owned style sheets an app may add.
+code:
+  - framework/ui/theme/
+  - core-ui/style/
+  - core-ui/ownstyle/
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/codegen.md
+on_change:
+  - Screenshot the rendered examples/meridian (marketing, app, auth, admin, phone width, light and dark) and look at it; a DOM dump or computed style cannot show layout.
+invariants:
+  - id: one-styling-surface
+    rule: All CSS lives in the design system (component sheets, layouts, theme tokens) or in an app's owned style sheet, scoped to its own markup and written in tokens; generators and apps ship no other CSS.
+    enforced_by:
+      - contract: GOFASTR1801
+      - contract: GOFASTR1804
+      - contract: GOFASTR1806
+      - contract: GOFASTR1807
+      - contract: GOFASTR1810
+      - contract: GOFASTR1817
+      - contract: GOFASTR1823
+    judge: Does this change add CSS, an inline style or an invented class outside the design system and the owned style sheet, or set a value where a var(--*) token belongs?
+    applies:
+      - framework/ui/
+      - core-ui/
+      - battery/
+      - examples/
+      - cmd/gofastr/
+decisions:
+  - id: generator-ships-no-css
+    status: accepted
+    decision: The app generator emits no CSS; a surface that needs styling the kit lacks gets a component, layout or token upstream.
+    rejected:
+      - option: Let the generator carry its own base stylesheet.
+        why: Building Meridian it grew about 70 bespoke rules that duplicated or worked around existing components.
+    upholds: [one-styling-surface]
