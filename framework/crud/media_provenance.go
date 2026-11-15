@@ -14,31 +14,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
-// Storage-key provenance for schema.Image / schema.File fields.
-//
-// A relative value in a file field is a storage key, and EraseUserData
-// deletes every key the erased user's rows name. If a caller could write any
-// key it liked, it could copy another user's key (published in that user's
-// /uploads/<key> URLs) into its own row and erase itself to delete the other
-// user's object. So a write may set a relative value, in the field or in a
-// `<field>_variants` storage_ref, only when one of these holds:
-//
-//   - this write saved the object: the multipart parse put the key in the
-//     request's ledger, or host code passed it through WithUploadedKeys;
-//   - the key is already on the row being written (an unchanged value sent
-//     back on update or upsert), read under the caller's write scope;
-//   - the write is trusted server code (WithServerWrites).
-//
-// An absolute http(s) URL is an external link, not a storage key: any write
-// may set one, and erasure never deletes it.
-
 type uploadedKeysCtx struct{}
 
-// WithUploadedKeys returns a context recording keys the caller saved to
-// storage for the write it is about to make, so CreateOne, UpdateOne,
-// UpsertOne and the batch helpers accept them in an Image/File field or a
-// `<field>_variants` storage_ref. Call it with the StorageRef that
-// file.ProcessFileField (or your own Storage.Save) returned:
+// WithUploadedKeys returns a context recording storage keys the caller just
+// saved, adding to any already recorded, so the in-process writes accept them
+// in an Image/File field or a `<field>_variants` storage_ref:
 //
 //	ff, err := file.ProcessFileField(ctx, store, r, name, "profiles", "avatar")
 //	...
@@ -66,15 +46,11 @@ func uploadedKeys(ctx context.Context) map[string]bool {
 	return m
 }
 
-// mediaRef is one storage reference a write body sets, with the body field
-// that carries it (the file field itself or its variants column).
 type mediaRef struct {
 	field string
 	ref   string
 }
 
-// variantsColumn returns the declared `<name>_variants` column of a file
-// field, or "" when the entity does not declare one.
 func (ch *CrudHandler) variantsColumn(name string) string {
 	v := name + derivedColumnSuffixes.variants
 	for _, f := range ch.snapshotFields() {
@@ -85,8 +61,6 @@ func (ch *CrudHandler) variantsColumn(name string) string {
 	return ""
 }
 
-// variantRefsOf reads the storage refs of a variants value as it arrives in
-// a body: JSON text, or an already-decoded array.
 func variantRefsOf(v any) []string {
 	var raw []byte
 	switch t := v.(type) {
@@ -109,7 +83,6 @@ func variantRefsOf(v any) []string {
 	return refs
 }
 
-// bodyMediaRefs lists every storage reference body sets, in field order.
 func (ch *CrudHandler) bodyMediaRefs(body map[string]any) []mediaRef {
 	var out []mediaRef
 	for _, f := range ch.snapshotFields() {
@@ -128,10 +101,9 @@ func (ch *CrudHandler) bodyMediaRefs(body map[string]any) []mediaRef {
 	return out
 }
 
-// checkMediaProvenance refuses a storage key the caller did not upload. See
-// the comment at the top of this file. current reads the keys already on the
-// row being written; it is nil for a create and is called at most once, only
-// when a key is not otherwise accounted for.
+// checkMediaProvenance refuses a storage key in body that this write did not
+// save and the row does not already hold. current reads the row's keys (nil
+// for a create); it is called at most once.
 func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string]any, current func() (map[string]bool, error)) error {
 	if ch.Entity == nil || serverWrites(ctx) {
 		return nil
@@ -160,13 +132,8 @@ func (ch *CrudHandler) checkMediaProvenance(ctx context.Context, body map[string
 	return nil
 }
 
-// currentMediaKeys returns a reader for the storage keys on the row whose
-// key values are key (nil when the write names no row yet), under the
-// same tenant, owner and soft-delete WHERE the UPDATE applies, so "the
-// row's current value" never means a row this caller cannot write. An
-// update passes the record id it names, and a row whose own id is not
-// that one has no keys (see keyWhere); an upsert, which writes the row
-// its key values match, passes "".
+// currentMediaKeys returns a reader for the storage keys on the row keyed by
+// key, read as rowObjects reads it; id is "" for an upsert.
 func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id string, key []any) func() (map[string]bool, error) {
 	return func() (map[string]bool, error) {
 		objs, err := ch.rowObjects(ctx, r, id, key, false)
@@ -184,16 +151,11 @@ func (ch *CrudHandler) currentMediaKeys(ctx context.Context, r *http.Request, id
 	}
 }
 
-// storedObject is a file column's storage key on one row, with the
-// renditions its variants column lists. The renditions belong to the
-// key: they are derived from it and copied wherever it is.
 type storedObject struct {
 	key        string
 	renditions []string
 }
 
-// mediaFields lists the entity's Image/File columns, each paired with its
-// variants column ("" when it has none).
 func (ch *CrudHandler) mediaFields() [][2]string {
 	var out [][2]string
 	for _, f := range ch.snapshotFields() {
@@ -204,10 +166,8 @@ func (ch *CrudHandler) mediaFields() [][2]string {
 	return out
 }
 
-// rowObjects reads the stored objects on the row currentMediaKeys
-// describes, under the same scope. trashed reads the soft-deleted row
-// (a purge) instead of the live one. A row that is not there, or that a
-// key mismatch disowns, has none.
+// rowObjects reads the stored objects on the row keyed by key under the
+// write's scope; trashed reads the soft-deleted row.
 func (ch *CrudHandler) rowObjects(ctx context.Context, r *http.Request, id string, key []any, trashed bool) ([]storedObject, error) {
 	fields := ch.mediaFields()
 	cols := mediaColumns(fields)
@@ -265,7 +225,6 @@ func (ch *CrudHandler) rowObjects(ctx context.Context, r *http.Request, id strin
 	return appendObjects([]storedObject{}, fields, got), nil
 }
 
-// mediaColumns lists the file and variants columns of fields.
 func mediaColumns(fields [][2]string) []string {
 	var cols []string
 	for _, mf := range fields {
@@ -277,14 +236,10 @@ func mediaColumns(fields [][2]string) []string {
 	return cols
 }
 
-// appendObjects adds the objects one row's file columns hold, read into
-// got by column name.
 func appendObjects(objs []storedObject, fields [][2]string, got map[string]string) []storedObject {
 	for _, mf := range fields {
 		o := storedObject{key: got[mf[0]]}
 		if mf[1] != "" {
-			// A column that does not parse is not a rendition list; the
-			// erasure path reads it with the same function.
 			o.renditions, _ = file.VariantStorageRefs([]byte(got[mf[1]]))
 		}
 		if o.key != "" || len(o.renditions) > 0 {

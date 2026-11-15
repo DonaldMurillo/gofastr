@@ -64,7 +64,144 @@ invariants:
       - test: framework/crud.TestUpdateHidesReadScopedRowAnon
       - test: framework/crud.TestCreateHidesReadScopedRow
       - test: framework/crud.TestBatchUpdateHidesReadScopedRow
+  - id: blank-write-refused
+    rule: A write a declared Access block leaves blank is refused to every caller, a wildcard role included, except under WithElevation.
+    enforced_by:
+      - test: framework/crud.TestBlankWriteRefused
+      - test: framework/crud.TestElevationLiftsBlankWrite
+  - id: gates-ignore-cross-owner-marker
+    rule: The routes' owner gate and the Can*Scoped predicates do not honour owner.AllowCrossOwner; only the in-process requireOwnerContext does.
+    enforced_by:
+      - test: framework/crud.TestCanReadScoped_IgnoresCrossOwnerMarker
+  - id: gate-order
+    rule: scopeGate answers owner, tenant, the baseline session and then the permission, so a caller with no owner on an owner-scoped, Access-gated entity gets 401, not 403.
+    enforced_by:
+      - test: framework/crud.TestScopeGateOrderOwnerBeforePermission
+  - id: missing-owner-or-tenant-is-401
+    rule: A request with no owner on an OwnerField entity, or no tenant and no cross-tenant grant on a MultiTenant entity, is refused 401 by the routes and false by the Can*Scoped predicates.
+    enforced_by:
+      - test: framework/crud.TestOwnerScope_AnonymousListIsRejected
+      - test: framework/crud.TestOwnerScope_AnonymousCreateIsRejected
+      - test: framework/crud.TestCanReadScopedRefusesMissingTenant
+  - id: in-process-scope-fails-closed
+    rule: An in-process call on an OwnerField entity with no owner (and no AllowCrossOwner), or on a MultiTenant entity with no tenant, errors instead of running unscoped.
+    enforced_by:
+      - test: framework/crud.TestCrud_MissingOwnerContextRejects
+      - test: framework/crud.TestUpsert_AnonymousCallerRejectedOnOwnerScopedEntity
+      - test: framework/crud.TestCrud_MissingTenantContextRejects
+      - test: framework/crud.TestTypedQuery_FindFailsClosedNoTenant
+  - id: decider-asked-per-record
+    rule: The record-level gates ask a Decider about the record id, the batch update and delete routes ask it about every item, and CanReadScoped asks about the collection only.
+    enforced_by:
+      - test: framework/crud.TestCanReadRecordScoped_ConsultsThePerRecordDecider
+      - test: framework/crud.TestWriteGatesAskDeciderPerRecord
+      - test: framework/crud.TestBatchUpdateAsksDeciderPerItem
+      - test: framework/crud.TestBatchDeleteAsksDeciderPerItem
+  - id: relation-reach
+    rule: An entity with Exposure.CRUD=false is unreachable through another entity's relations (include, nested filter, cascade, related screens), and a scope-restricted request reaches it only holding "<table>:<verb>".
+    enforced_by:
+      - test: battery/auth.TestCRUDOffTargetRefusedOnRelations
+      - test: battery/auth.TestCRUDOffTargetRefusedOnCascade
+      - test: battery/auth.TestScopedTokenIncludeNeedsTargetScope
+      - test: battery/auth.TestScopedTokenCascadeNeedsTargetScope
+      - test: battery/auth.TestEmbedGrantIncludeNeedsTargetScope
+      - test: framework/entityui.TestPickerRefusesCRUDOffTarget
+      - test: framework/entityui.TestPickerRefusesTokenWithoutScope
+  - id: cascade-write-runs-child-gates
+    rule: A cascade write into a child runs the child's owner, tenant, baseline session and RBAC gates unless WithServerWrites is set; only the in-process API skips the session gate and relation reach.
+    enforced_by:
+      - test: framework.TestCascadeWriteHonorsSessionGate
+      - test: battery/auth.TestScopedTokenCascadeNeedsTargetScope
+  - id: entity-gate-only-beside-row-scope
+    rule: canReadEntityGate, which leaves out owner and tenant, is called only where the rows it admits are owner- and tenant-scoped separately.
+    enforced_by:
+      - test: framework.TestIncludeGateRefusesADefaultPostureTarget
+    judge: Does this change call canReadEntityGate on a path that does not itself apply owner and tenant scope to the rows it returns or counts?
+  - id: cross-owner-read-is-read-only
+    rule: Scope.CrossOwnerRead lifts owner scope on reads only, is asked of the Decider, is never granted by WithElevation, and never applies to a call stamped WithBrokeredCall.
+    enforced_by:
+      - test: framework/crud.TestCrossOwnerReadWritesStayScoped
+      - test: framework/crud.TestCrossOwnerReadCannotPurgeForeign
+      - test: framework/crud.TestCrossOwnerReadHonorsDecider
+      - test: framework/crud.TestElevationKeepsOwnerScope
+      - test: framework/crud.TestBrokeredCallKeepsOwnerScope
+  - id: elevation-lifts-access-only
+    rule: WithElevation lifts the Exposure.Access checks of the entities it names and nothing else; a Decider's deny still refuses, lifecycle hooks run without it, and a later call replaces the set.
+    enforced_by:
+      - test: framework/crud.TestElevationLiftsAccess
+      - test: framework/crud.TestElevationNamesItsEntities
+      - test: framework/crud.TestElevationKeepsDeciderDeny
+      - test: framework/crud.TestElevationSkipsHooks
+      - test: framework/crud.TestElevationReplacesItsSet
+  - id: read-scope-lift
+    rule: A ReadScope with Unrestricted set is lifted only for a caller the Decider-aware access check grants; with Unrestricted empty any signed-in caller lifts it and an anonymous caller is filtered.
+    enforced_by:
+      - test: framework/crud.TestReadScopeHonorsDecider
+      - test: framework/crud.TestReadScope_AnonymousFilteredSignedInFull
+  - id: read-scope-renders-safely
+    rule: A ReadScope value binds as its column's type, two declared in predicates on one column render as two ANDed lists, an unsafe column or qualifier renders a predicate matching no row, and an entity with no Exposure block has no scope.
+    enforced_by:
+      - test: framework/crud.TestReadScopeEqBindsBoolTyped
+      - test: framework/crud.TestReadScopeTwoInPredicatesStayApart
+      - test: framework/crud.TestRenderReadScopeUnsafeIdentifierMatchesNothing
+      - test: framework/crud.TestReadScopeNilExposure
+  - id: events-read-scope-fails-closed
+    rule: The _events read-scope evaluator excludes a record it cannot evaluate (not a map, a missing column, an unknown operator) and a NULL value under every operator, finds a column under its wire key, and compares values as the SQL side binds them.
+    enforced_by:
+      - test: framework/crud.TestReadScopeAllowsRecordEveryBranch
+      - test: framework/crud.TestReadScopeAllowsRecordFindsTheWireKey
+      - test: framework/crud.TestReadScopeAllowsRecordComparesTyped
+  - id: before-hook-check-fails-closed
+    rule: The Before-hook visibility check reads a row as hidden when its key does not fit, the table or key is unsafe, the query fails, or a hook errors.
+    enforced_by:
+      - test: framework/crud.TestBeforeScopeCheckFailsClosed
+      - test: framework/crud.TestWriteResponseHookErrorHidesRow
+      - test: framework/crud.TestUpsertHookErrorRefuses
+      - test: framework/crud.TestHiddenRowWriteHookErrorFailsClosed
+      - test: framework/crud.TestCascadeChildHookErrorHidesReadBack
+  - id: hook-hidden-rows-stay-hidden
+    rule: A write response, a cascade read-back and an upsert onto an existing row treat a row the caller's own Before hooks hide as hidden.
+    enforced_by:
+      - test: framework/crud.TestWriteResponseRunsBeforeGetScope
+      - test: framework/crud.TestTransitionResponseRunsBeforeGetScope
+      - test: framework/crud.TestCascadeHonoursChildBeforeHookScope
+      - test: framework/crud.TestCascadeReadBackHonoursChildBeforeHookScope
+      - test: framework/crud.TestHiddenRowUpsertRefusedAsForeign
+  - id: guarded-hooks-see-touchable-ids
+    rule: With a BeforeUpdate or BeforeDelete hook registered, a record write answers 404 for an id outside its owner, tenant and soft-delete scope before the hook runs, under WithServerWrites too.
+    enforced_by:
+      - test: framework/crud.TestBeforeWriteHooksSkipUntouchableIDs
+      - test: framework/crud.TestHiddenRowCheckKeepsWriteScope
+      - test: framework/crud.TestServerWritesStillProbeGuardedTarget
+  - id: hook-binding-request
+    rule: Before hooks bind a check made for an HTTP request always and an in-process one only under WithReadHooks, a route that runs its write in process passes its own request to them, and WithServerWrites skips the BeforeGet clauses.
+    enforced_by:
+      - test: framework/crud.TestHiddenRowInProcessWritesHonourReadHooks
+      - test: framework/crud.TestHiddenRowTransitionAnswers404
+      - test: framework/crud.TestStateRefusalHidesFromBeforeGetScope
+      - test: framework/crud.TestServerWritesSkipBeforeGetScope
 decisions:
+  - id: entity-gate-leaves-out-row-scope
+    status: accepted
+    decision: canReadEntityGate checks the baseline session and RBAC but not owner or tenant, because the include and pivot loaders scope rows per node and a caller scoped to nothing gets zero rows.
+    rejected:
+      - option: Fold owner and tenant into the gate.
+        why: It turns an empty, scoped result into a 403 for callers legitimately scoped to nothing.
+    upholds: [entity-gate-only-beside-row-scope]
+  - id: scope-text-compares-as-text
+    status: accepted
+    decision: The _events evaluator compares a value as text after the coercion the SQL side applies, with Decimals as exact rationals.
+    rejected:
+      - option: Compare typed Go values.
+        why: A record's numbers are int64 in process and float64 after the fanout bridge's JSON round trip.
+    upholds: [events-read-scope-fails-closed]
+  - id: read-scope-identifiers-validated-not-quoted
+    status: accepted
+    decision: Read-scope columns are validated and written as the DDL wrote them, quoting only keywords.
+    rejected:
+      - option: Quote every identifier.
+        why: A quoted mixed-case name misses the case-folded column on Postgres.
+    upholds: [read-scope-renders-safely]
   - id: predicates-ask-the-route-gate
     date: 2026-11-14
     status: accepted

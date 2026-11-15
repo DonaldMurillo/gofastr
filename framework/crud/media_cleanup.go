@@ -17,28 +17,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
-// Stored-object cleanup for schema.Image / schema.File fields.
-//
-// A hard delete, a purge, and a write that replaces a file each leave
-// objects their row no longer names. Left in storage they stay served at
-// /uploads/<key> to anyone holding the link, and storage only grows. Each
-// of those writes now deletes the objects its row let go, after its
-// transaction commits, with these exceptions:
-//
-//   - a key another row of the table still names (a soft-deleted row, or
-//     one default a seed set on many rows) is kept, renditions and all;
-//   - an http(s) URL is an external link and is never deleted;
-//   - a soft delete keeps its objects, so a restore gets them back;
-//   - a write on a transaction with no commit queue (a bare db.WithTx, or
-//     a handler bound to a *sql.Tx) keeps them, since nothing tells it
-//     that the commit happened.
-//
-// A failed delete is logged, not returned: the row change has committed.
-
 // objectsBefore reads the stored objects on the row a write is about to
-// change, for releaseObjects to compare against. It reads nothing when the
-// handler has no Storage to delete from, or when body (nil for a delete)
-// sets no file or variants column. Arguments are rowObjects'.
+// change, nothing when there is no Storage or body (nil for a delete) sets no
+// file or variants column.
 func (ch *CrudHandler) objectsBefore(ctx context.Context, r *http.Request, id string, key []any, body map[string]any, trashed bool) ([]storedObject, error) {
 	if ch.Storage == nil {
 		return nil, nil
@@ -61,9 +42,8 @@ func setsMediaColumn(fields [][2]string, body map[string]any) bool {
 	return false
 }
 
-// releaseObjects queues the delete of the objects before held that the
-// row no longer does: all of them when the row is gone, else those the
-// row as written (re-read under the same scope) dropped.
+// releaseObjects queues the delete of the objects before held that the row,
+// re-read unless gone, no longer holds.
 func (ch *CrudHandler) releaseObjects(ctx context.Context, r *http.Request, id string, key []any, before []storedObject, gone bool) error {
 	if len(before) == 0 {
 		return nil
@@ -83,9 +63,8 @@ func (ch *CrudHandler) releaseObjects(ctx context.Context, r *http.Request, id s
 	return nil
 }
 
-// releasedObjects returns the keys of before's objects that after no
-// longer holds and that no row of the table still names, each with the
-// renditions after does not keep.
+// releasedObjects returns the keys of before's objects, with their
+// renditions, that after does not hold and no row of the table names.
 func (ch *CrudHandler) releasedObjects(ctx context.Context, before, after []storedObject) ([]string, error) {
 	if ch.Storage == nil || len(before) == 0 {
 		return nil, nil
@@ -121,10 +100,7 @@ func (ch *CrudHandler) releasedObjects(ctx context.Context, before, after []stor
 	return out, nil
 }
 
-// tableNamesKey reports whether any row of the table, live or
-// soft-deleted and in any tenant, holds key in a file column. It runs on
-// the write's own transaction, after the write, so the row that let the
-// key go no longer counts.
+// tableNamesKey reports whether any row, trashed or in any tenant, holds key.
 func (ch *CrudHandler) tableNamesKey(ctx context.Context, key string) (bool, error) {
 	var conds []string
 	var args []any
@@ -148,24 +124,19 @@ func (ch *CrudHandler) tableNamesKey(ctx context.Context, key string) (bool, err
 	return true, nil
 }
 
-// deleteAfterCommit deletes keys once the write's transaction commits. A
-// rollback drops the queued delete with the rest of the write, and a write
-// with no commit queue deletes nothing.
+// deleteAfterCommit deletes keys once the write's transaction commits; a
+// write in a transaction with no commit queue deletes nothing.
 func (ch *CrudHandler) deleteAfterCommit(ctx context.Context, keys []string) {
 	if len(keys) == 0 || ch.Storage == nil {
 		return
 	}
 	store := ch.Storage
 	run := func() {
-		// The queue runs after the handler's own panic net is gone: a
-		// backend that panics must not take the process with it.
 		defer func() {
 			if rec := recover(); rec != nil {
 				logf("crud: delete of released stored objects panicked: %s", textsafe.Recovered(rec))
 			}
 		}()
-		// The delete outlives the request: a client that hung up after the
-		// commit cancelled ctx, and a backend refuses a cancelled Delete.
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		for _, key := range keys {
@@ -178,7 +149,6 @@ func (ch *CrudHandler) deleteAfterCommit(ctx context.Context, keys []string) {
 		q.Add(run)
 		return
 	}
-	// On the pool with no transaction the statement committed on its own.
 	if _, inTx := db.TxFromContext(ctx); !inTx {
 		if _, pool := ch.DB.(db.Beginner); pool {
 			run()
@@ -186,8 +156,6 @@ func (ch *CrudHandler) deleteAfterCommit(ctx context.Context, keys []string) {
 	}
 }
 
-// deleteReturningObjects runs a bulk DELETE built by del and releases the
-// stored objects of the rows it removed. It returns the row count.
 func (ch *CrudHandler) deleteReturningObjects(ctx context.Context, del *query.DeleteBuilder) (int, error) {
 	fields := ch.mediaFields()
 	cols := mediaColumns(fields)
