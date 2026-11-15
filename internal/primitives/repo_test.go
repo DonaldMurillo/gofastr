@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -39,9 +40,24 @@ func TestRepoRegistryIsClean(t *testing.T) {
 	}
 }
 
-// CLAUDE.md names a registry entry for each hard rule a test or analyzer
-// can hold; a rename in the registry must not leave the pointer dangling.
-//
+// claudeMDMaxLines is the guide/stays-short limit.
+const claudeMDMaxLines = 60
+
+//gofastr:test-reads /CLAUDE.md
+func TestClaudeMDStaysShort(t *testing.T) {
+	guide, err := os.ReadFile(filepath.Join("..", "..", "CLAUDE.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Count(string(guide), "\n")
+	if len(guide) > 0 && guide[len(guide)-1] != '\n' {
+		lines++
+	}
+	if lines > claudeMDMaxLines {
+		t.Errorf("CLAUDE.md is %d lines, over the %d-line limit (guide/stays-short): move the new rule into the primitive it governs, or into docs/contributing.md when no primitive can own it", lines, claudeMDMaxLines)
+	}
+}
+
 //gofastr:test-reads /CLAUDE.md
 func TestClaudeMDNamesRealRules(t *testing.T) {
 	root := filepath.Join("..", "..")

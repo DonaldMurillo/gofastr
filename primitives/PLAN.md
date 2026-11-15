@@ -58,6 +58,8 @@ rules 10 to 12, the commands and the code map moved to
 `docs/contributing.md`. The numbered list stays, one line per rule,
 because code cites the rules by number, and `TestClaudeMDNamesRealRules`
 keeps its pointers real.
+`TestClaudeMDStaysShort` (`guide/stays-short`) fails the build when
+`CLAUDE.md` passes 60 lines, so the file cannot grow back.
 
 The replay suite cannot see this step. Each replay cell is cut from a
 commit older than the registry and gets the pointer paragraph spliced
