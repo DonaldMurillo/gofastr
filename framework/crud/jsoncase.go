@@ -1,9 +1,6 @@
 package crud
 
-// JSONCase defines the casing convention for JSON keys in API responses.
-//
-// CaseCamel: camelCase (default, web standard)
-// CaseSnake: snake_case (database-style)
+// JSONCase is the casing of JSON keys in API responses; CaseCamel is the default.
 type JSONCase string
 
 const (

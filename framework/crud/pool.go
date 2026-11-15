@@ -7,13 +7,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/schema"
 )
 
-// maxPooledMapEntries caps the size of pooled maps and slices. Entries
-// larger than this are dropped on return so a single oversized request
-// can't pin a giant allocation in the pool forever (mirrors
-// uihost/builder_pool.go's 64KB builder cap).
+// maxPooledMapEntries is the largest map or slice put back in a pool.
 const maxPooledMapEntries = 4096
 
-// rowSlicePool caches pre-allocated []map[string]any slices.
 var rowSlicePool = sync.Pool{
 	New: func() any {
 		s := make([]map[string]any, 0, 32)
@@ -21,7 +17,6 @@ var rowSlicePool = sync.Pool{
 	},
 }
 
-// rowMapPool caches individual row maps.
 var rowMapPool = sync.Pool{
 	New: func() any {
 		m := make(map[string]any, 16)
@@ -29,7 +24,6 @@ var rowMapPool = sync.Pool{
 	},
 }
 
-// ptrSlicePool caches []any slices used for scan pointers.
 var ptrSlicePool = sync.Pool{
 	New: func() any {
 		s := make([]any, 0, 16)
@@ -37,28 +31,10 @@ var ptrSlicePool = sync.Pool{
 	},
 }
 
-// anySlicePool caches the per-row []any scratch buffer handed to rows.Scan
-// (the slice whose element addresses become sql.RawBytes / string / int64
-// destinations). Without this pool the previous code allocated a fresh
-// []any per row, at 50 rows that's 50 small allocations that live just
-// long enough to drive GC. The slice is borrowed per row and returned
-// after the row map is built, mirroring borrowPtrSlice/returnPtrSlice.
-var anySlicePool = sync.Pool{
-	New: func() any {
-		s := make([]any, 0, 16)
-		return &s
-	},
-}
-
-// borrowRowSlice gets a pre-allocated slice from the pool.
 func borrowRowSlice() *[]map[string]any {
 	return rowSlicePool.Get().(*[]map[string]any)
 }
 
-// returnRowSlice clears and returns the slice to the pool.
-// Individual row maps within are also cleared and returned to rowMapPool.
-// Oversized maps and the slice itself are dropped instead of pooled so a
-// pathological row size can't pin huge allocations in the pool forever.
 func returnRowSlice(s *[]map[string]any) {
 	for i := range *s {
 		m := (*s)[i]
@@ -78,7 +54,6 @@ func returnRowSlice(s *[]map[string]any) {
 	rowSlicePool.Put(s)
 }
 
-// borrowPtrSlice gets a pre-allocated []any for scan pointers.
 func borrowPtrSlice(n int) *[]any {
 	s := ptrSlicePool.Get().(*[]any)
 	if cap(*s) < n {
@@ -89,8 +64,6 @@ func borrowPtrSlice(n int) *[]any {
 	return s
 }
 
-// returnPtrSlice returns a pointer slice to the pool. Oversized slices are
-// dropped rather than retained so the pool's high-water mark stays bounded.
 func returnPtrSlice(s *[]any) {
 	for i := range *s {
 		(*s)[i] = nil
@@ -102,8 +75,7 @@ func returnPtrSlice(s *[]any) {
 	ptrSlicePool.Put(s)
 }
 
-// scanRowsPooled scans rows using pooled maps to reduce allocations.
-// The caller must call returnRowSlice on the result after encoding.
+// scanRowsPooled scans rows into pooled maps; the caller returns the result with returnRowSlice.
 func scanRowsPooled(rows *sql.Rows, cols []string, keyFunc func(string) string) (*[]map[string]any, error) {
 	return scanRowsPooledForEntity(rows, cols, keyFunc, nil)
 }
@@ -122,22 +94,17 @@ func scanRowsPooledWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields
 	boolCols := databaseBoolColumnsForEntity(rows, ncol, fields, cols)
 	for rows.Next() {
 		ptrs := borrowPtrSlice(ncol)
-		valuesPtr := borrowAnySlice(ncol)
+		valuesPtr := borrowPtrSlice(ncol)
 		values := *valuesPtr
-		// Point each slot at the address of the corresponding scratch slot.
-		// rows.Scan writes through these pointers; the row map below copies
-		// the decoded values out before the scratch slice is returned to
-		// the pool, so no pooled slot escapes into the result.
 		for i := range ncol {
 			(*ptrs)[i] = &values[i]
 		}
 		if err := rows.Scan(*ptrs...); err != nil {
 			returnPtrSlice(ptrs)
-			returnAnySlice(valuesPtr)
+			returnPtrSlice(valuesPtr)
 			returnRowSlice(results)
 			return nil, err
 		}
-		// Use pooled map instead of make
 		rowPtr := rowMapPool.Get().(*map[string]any)
 		row := *rowPtr
 		for i := range ncol {
@@ -145,43 +112,13 @@ func scanRowsPooledWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields
 		}
 		*results = append(*results, row)
 		returnPtrSlice(ptrs)
-		returnAnySlice(valuesPtr)
+		returnPtrSlice(valuesPtr)
 	}
-	// A false rows.Next() can be a mid-iteration error, not just EOF. Propagate
-	// it rather than returning a truncated result set as success (mirrors
-	// scanRowsWithKeys and the eager loaders). Return the borrowed slice first.
 	if err := rows.Err(); err != nil {
 		returnRowSlice(results)
 		return nil, err
 	}
 	return results, nil
-}
-
-// borrowAnySlice gets a pre-allocated []any scratch slice sized to n. The
-// pool's high-water mark caps the retained capacity; oversized slices are
-// dropped on return so one wide row can't pin a huge buffer.
-func borrowAnySlice(n int) *[]any {
-	s := anySlicePool.Get().(*[]any)
-	if cap(*s) < n {
-		*s = make([]any, n)
-	} else {
-		*s = (*s)[:n]
-	}
-	return s
-}
-
-// returnAnySlice clears and returns a scratch slice to the pool. Oversized
-// slices are dropped (mirrors returnPtrSlice) so a pathological row width
-// can't pin a giant allocation in the pool forever.
-func returnAnySlice(s *[]any) {
-	for i := range *s {
-		(*s)[i] = nil
-	}
-	if cap(*s) > maxPooledMapEntries {
-		return
-	}
-	*s = (*s)[:0]
-	anySlicePool.Put(s)
 }
 
 func convertedKeys(cols []string, keyFunc func(string) string) []string {
