@@ -34,7 +34,8 @@ const registryPointer = "**Before changing a file, run `go run ./cmd/primitives 
 // spellings away from credentials and from anything that leaves the
 // machine, and the README says to run the eval somewhere disposable.
 var cellDeny = []string{
-	"Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.netrc)", "Read(~/.config/gh/**)",
+	"Read(~/.ssh/**)", "Read(~/.aws/**)", "Read(~/.config/gcloud/**)", "Read(~/.azure/**)",
+	"Read(~/.netrc)", "Read(~/.config/gh/**)",
 	"Bash(git push *)", "Bash(gh *)", "Bash(ssh *)", "Bash(scp *)",
 }
 

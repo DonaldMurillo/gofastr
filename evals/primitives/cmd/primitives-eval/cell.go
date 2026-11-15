@@ -55,6 +55,7 @@ type cell struct {
 	TestsFailed   int      `json:"tests_failed"`
 	TwinsFixed    int      `json:"twins_fixed"`
 	TwinsTotal    int      `json:"twins_total"`
+	TwinsNotRun   int      `json:"twins_not_run,omitempty"` // declared by the graders, never reported
 	RubricHit     []string `json:"rubric_hit,omitempty"`
 	RubricMissed  []string `json:"rubric_missed,omitempty"`
 	RegistryCalls int      `json:"registry_calls"` // tool calls that name primitives/ or cmd/primitives
@@ -547,13 +548,14 @@ func scoreReplay(c *cell, out []byte, runErr error, wantReported, wantTwins int)
 		}
 	}
 	c.TwinsTotal = wantTwins
+	c.TwinsNotRun = max(wantTwins-twinsRan, 0)
 	note := fmt.Sprintf("twins %d/%d", c.TwinsFixed, c.TwinsTotal)
-	if missing := wantTwins - twinsRan; missing > 0 {
-		note += fmt.Sprintf(", %d did not run: %s", missing, lastLine(out))
+	if c.TwinsNotRun > 0 {
+		note += fmt.Sprintf(", %d did not run: %s", c.TwinsNotRun, lastLine(out))
 	}
 	switch {
 	case reported < wantReported || reported == 0:
-		c.Outcome, c.Note = outcomeBroke, fmt.Sprintf("the graders did not run (%v): %s", runErr, lastLine(out))
+		c.Outcome, c.Note = outcomeBroke, fmt.Sprintf("the reported grader did not run (%v); %s", runErr, note)
 	case reportedPassed == reported:
 		c.Outcome, c.Note = outcomeFixed, note
 	default:
@@ -579,6 +581,9 @@ func renderMarkdown(r report) string {
 		twins := ""
 		if c.TwinsTotal > 0 {
 			twins = fmt.Sprintf("%d/%d", c.TwinsFixed, c.TwinsTotal)
+		}
+		if c.TwinsNotRun > 0 {
+			twins += fmt.Sprintf(" (%d did not run)", c.TwinsNotRun)
 		}
 		fmt.Fprintf(&b, "| %s | %s | %d | %s | %d/%d | %s | %s | %t | %t | %t | %t | %d | %d | $%.2f |\n",
 			c.Task, c.Condition, c.Run, c.Outcome, c.TestsPassed, c.TestsFailed, twins, rubric, c.ChangedSource, c.ChangedTests, c.ChangedDocs, c.UpgradeNote, c.RegistryCalls, c.ToolCalls, c.CostUSD)

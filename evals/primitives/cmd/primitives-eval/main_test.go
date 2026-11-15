@@ -259,10 +259,13 @@ func TestATwinThatDidNotRunIsNotDroppedFromTheTotal(t *testing.T) {
 	if !strings.Contains(c.Note, "1 did not run") {
 		t.Errorf("the note hides the grader that did not run: %q", c.Note)
 	}
+	if table := renderMarkdown(report{Cells: []*cell{c}}); !strings.Contains(table, "0/1 (1 did not run)") {
+		t.Errorf("the report shows a twin that did not run as one that failed:\n%s", table)
+	}
 	c = &cell{}
 	scoreReplay(c, []byte("FAIL\texample.test/framework/access [build failed]\n"), errors.New("exit status 1"), 1, 1)
-	if c.Outcome != outcomeBroke {
-		t.Errorf("no reported result gave %s, want broke", c.Outcome)
+	if c.Outcome != outcomeBroke || c.TwinsNotRun != 1 || !strings.Contains(c.Note, "1 did not run") {
+		t.Errorf("no result at all gave %s, %d not run, note %q: want broke with the twin counted", c.Outcome, c.TwinsNotRun, c.Note)
 	}
 }
 

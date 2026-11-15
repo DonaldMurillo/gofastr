@@ -205,9 +205,10 @@ func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool 
 // that is two callers: the include gate (checkIncludeReadable), whose eager
 // loaders call applyRelatedScope per node, and the pivot gate
 // (checkPivotReadable), whose rows applyPivotScope scopes. Nested filters
-// looked like the same case and are not, their EXISTS subquery emits no owner
-// or tenant predicate, so choosing this gate there left a live count oracle
-// over rows the target's own route refuses. If you are reaching for this
+// once used this gate while their EXISTS subquery carried no owner or tenant
+// predicate, which left a count oracle over rows the target's own route
+// refuses; they now ask CanReadScoped and scope the subquery as well. If you
+// are reaching for this
 // predicate, first find the code that applies owner and tenant for your path;
 // if you cannot point at it, you want CanReadScoped.
 func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
