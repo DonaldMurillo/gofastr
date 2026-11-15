@@ -21,33 +21,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
-// Errors RunTransition and the state write check answer with. In-process
-// callers map them the way writeCRUDError does.
+// Errors RunTransition and the state write checks answer with.
 var (
-	// ErrNoStates: the entity declares no EntityConfig.States.
-	ErrNoStates = errors.New("crud: entity declares no states")
-	// ErrUnknownTransition: no move has that key (404 on the route, which
-	// also answers it for a System move).
-	ErrUnknownTransition = errors.New("crud: no such move")
-	// ErrStateOverrideUnaudited: WithStateOverride changed a state field
-	// on an entity no audit log records. The override's only trail is
-	// the audit row, so it is refused without one (App.WithAuditLog).
+	ErrNoStates               = errors.New("crud: entity declares no states")
+	ErrUnknownTransition      = errors.New("crud: no such move")
 	ErrStateOverrideUnaudited = errors.New("crud: a state override needs an audit log on the entity")
-	// ErrStateOverrideNoReason: WithStateOverride was given an empty
-	// reason.
-	ErrStateOverrideNoReason = errors.New("crud: a state override needs a reason")
-	// ErrBulkStateWrite: TypedQuery.UpdateAll named the state field or a
-	// stamp. One value written onto many rows is a move per row, so run
-	// RunTransition per record instead.
-	ErrBulkStateWrite = errors.New("crud: a bulk update cannot change the state field or a stamp; run the move per record")
-	// ErrReentrantMove: RunTransition was called, from a hook, on the
-	// record whose update or move is running that hook (409 on the route).
-	// Run the move after the write commits.
-	ErrReentrantMove = errors.New("crud: a move cannot run on a record while a write of that record is in flight")
+	ErrStateOverrideNoReason  = errors.New("crud: a state override needs a reason")
+	ErrBulkStateWrite         = errors.New("crud: a bulk update cannot change the state field or a stamp; run the move per record")
+	ErrReentrantMove          = errors.New("crud: a move cannot run on a record while a write of that record is in flight")
 )
 
-// recordWrite is the chain of records whose update or move is running on
-// ctx. inTx leaves it in place, so a hook's nested RunTransition sees it.
 type recordWrite struct {
 	entity, id string
 	parent     *recordWrite
@@ -70,8 +53,9 @@ func recordWriteInFlight(ctx context.Context, entity, id string) bool {
 }
 
 // StateError refuses a write that changes the state field or a stamp
-// outside a move. It answers 422 and names the moves open from the
-// stored value (an update) or the values a create may start at.
+// outside a move (422). It names the moves open from the stored value, or
+// on a create the values it may start at, unless the caller cannot read
+// the record.
 type StateError struct {
 	Field   string   // the state field or stamp the write changed
 	Current string   // the stored state; empty on a create
@@ -104,8 +88,8 @@ func (e *StateError) Phrased() (i18n.Phrase, map[string]any) {
 }
 
 // TransitionConflictError refuses a move whose From does not hold the
-// record's current value, including the race where another write moved
-// it first. It answers 409 and names the moves that are open.
+// record's current value (409), naming the moves that are open unless the
+// caller cannot read the record.
 type TransitionConflictError struct {
 	Key     string
 	Current string
@@ -131,16 +115,12 @@ func (e *TransitionConflictError) Phrased() (i18n.Phrase, map[string]any) {
 
 type stateOverrideKey struct{}
 
-// WithStateOverride lets trusted Go code (seeds, imports, repair jobs)
-// write an entity's state field and stamps directly, outside a move. It is
-// set only from Go, never from a request value. Every write that changes
-// a guarded column under it is audited: the audit row (App.WithAuditLog)
-// carries the reason and the operation "state_override" on an update, and
-// the write is refused on an entity with no audit log. WithServerWrites
-// does not release the state field; this does, and only this.
-//
-// TypedQuery.UpdateAll refuses guarded columns even under the override:
-// a bulk UPDATE runs no hooks, so it would leave no audit row.
+// WithStateOverride lets trusted Go code write an entity's state field
+// and stamps outside a move; set it only from Go, never from request data.
+// A write that changes a guarded column under it needs a non-empty reason
+// and an audit log on the entity, and an update is audited as
+// "state_override". WithServerWrites does not release the state field.
+// TypedQuery.UpdateAll refuses guarded columns even under the override.
 func WithStateOverride(ctx context.Context, reason string) context.Context {
 	return context.WithValue(ctx, stateOverrideKey{}, stateOverride{reason: strings.TrimSpace(reason)})
 }
@@ -148,8 +128,7 @@ func WithStateOverride(ctx context.Context, reason string) context.Context {
 type stateOverride struct{ reason string }
 
 // StateOverrideReason returns the reason WithStateOverride put on ctx, or
-// "" when there is none. The audit log writes it to the row's reason
-// column.
+// "".
 func StateOverrideReason(ctx context.Context) string {
 	o, _ := ctx.Value(stateOverrideKey{}).(stateOverride)
 	return o.reason
@@ -163,15 +142,13 @@ func hasStateOverride(ctx context.Context) bool {
 type transitionKey struct{}
 
 // TransitionFromContext returns the key of the move whose hooks are
-// running, or "" outside RunTransition. A BeforeUpdate hook that needs to
-// tell a move from an edit reads it.
+// running, or "" outside RunTransition.
 func TransitionFromContext(ctx context.Context) string {
 	k, _ := ctx.Value(transitionKey{}).(string)
 	return k
 }
 
-// enforcedStates returns the entity's states when the CRUD handler
-// enforces them: declared and not Advisory.
+// enforcedStates is the entity's states unless absent or Advisory.
 func (ch *CrudHandler) enforcedStates() *entity.StatesConfig {
 	st := ch.Entity.Config.States
 	if st == nil || st.Advisory {
@@ -180,26 +157,18 @@ func (ch *CrudHandler) enforcedStates() *entity.StatesConfig {
 	return st
 }
 
-// writesStateDefault reports whether a create writes f's Default although
-// f is ReadOnly or Hidden: f is the state field, whose Default Define
-// fills from Initial when it has none. The field loops leave every other
-// such column to the table's DDL default, and a table created before the
-// state field had a Default has none, so the row would start at NULL.
+// writesStateDefault reports whether a create writes f's Default though
+// f is ReadOnly or Hidden: only the state field's.
 func (ch *CrudHandler) writesStateDefault(f schema.Field) bool {
 	st := ch.Entity.Config.States
 	return st != nil && f.Name == st.Field
 }
 
-// stateOverrideColumn reports whether col is a guarded column ctx's state
-// override releases, so the field loops write it even when the schema
-// marks it ReadOnly or Hidden.
 func (ch *CrudHandler) stateOverrideColumn(ctx context.Context, col string) bool {
 	st := ch.enforcedStates()
 	return st != nil && hasStateOverride(ctx) && slices.Contains(st.Guarded(), col)
 }
 
-// allowStateOverride is the gate every guarded-column change under
-// WithStateOverride passes: a reason, and an audit log on the entity.
 func (ch *CrudHandler) allowStateOverride(ctx context.Context) error {
 	if StateOverrideReason(ctx) == "" {
 		return ErrStateOverrideNoReason
@@ -210,8 +179,6 @@ func (ch *CrudHandler) allowStateOverride(ctx context.Context) error {
 	return nil
 }
 
-// openMoves returns the non-system moves open from value: the ones a
-// caller could run.
 func openMoves(st *entity.StatesConfig, value string) []string {
 	var keys []string
 	for _, key := range st.Open(value) {
@@ -222,11 +189,8 @@ func openMoves(st *entity.StatesConfig, value string) []string {
 	return keys
 }
 
-// checkStateCreate is the state check for a create, run after the
-// BeforeCreate hooks so a hook cannot set the field either. The state
-// field may be absent (the Default, which the boot check holds to
-// Initial) or an Initial value; a stamp may be absent or null. Under
-// WithStateOverride any value passes once allowStateOverride does.
+// checkStateCreate refuses a create that sets the state field to a value
+// outside Initial, or sets a stamp, unless an override allows it.
 func (ch *CrudHandler) checkStateCreate(ctx context.Context, body map[string]any) error {
 	st := ch.enforcedStates()
 	if st == nil {
@@ -263,14 +227,9 @@ func (ch *CrudHandler) checkStateCreate(ctx context.Context, body map[string]any
 	return e
 }
 
-// checkStateUpdate is the state check for an update of row id, run after
-// the BeforeUpdate hooks and just before the SQL. A guarded column sent
-// with its stored value is dropped from body: writing it back is not a
-// change, and dropping it means a concurrent move can never be clobbered
-// by a stale round-trip. A different value is refused with a StateError
-// naming the open moves. Under WithStateOverride, a change passes once
-// allowStateOverride does, and the audit row's operation becomes
-// "state_override"; the returned ctx carries that.
+// checkStateUpdate refuses an update that changes a guarded column of row
+// id unless an override allows it, and drops one sent with its stored
+// value from body.
 func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (context.Context, error) {
 	st := ch.enforcedStates()
 	if st == nil {
@@ -287,8 +246,6 @@ func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id
 	if !touched {
 		return ctx, nil
 	}
-	// Read under the UPDATE's own WHERE, columns named directly so a
-	// Hidden state field is still compared.
 	stored, err := ch.selectMoveTarget(ctx, r, id, guarded)
 	if err != nil {
 		return ctx, err
@@ -323,11 +280,8 @@ func (ch *CrudHandler) checkStateUpdate(ctx context.Context, r *http.Request, id
 	return ctx, e
 }
 
-// checkStateUpsert is the state check for UpsertOne, run after its
-// preflight: an update of the row the body's key names when that row is
-// visible, a create otherwise. UpsertOne also keeps every guarded column
-// out of its DO UPDATE SET (unless overridden), so the insert arm's
-// Default can never clobber a stored state on conflict.
+// checkStateUpsert checks an upsert as an update of the visible row its
+// key names, else as a create.
 func (ch *CrudHandler) checkStateUpsert(ctx context.Context, r *http.Request, body map[string]any) (context.Context, error) {
 	if ch.enforcedStates() == nil {
 		return ctx, nil
@@ -342,12 +296,7 @@ func (ch *CrudHandler) checkStateUpsert(ctx context.Context, r *http.Request, bo
 }
 
 // upsertSetsGuarded reports whether UpsertOne's DO UPDATE SET may name
-// col. A guarded column enters it only when the caller sent it (an omitted
-// one carries the insert arm's Default, which is not the stored state) and
-// a state override that allowStateOverride passes releases it. The reason
-// gate is checked here as well as in checkStateUpsert: a row committed
-// after that check read it as absent takes the insert arm's value, and an
-// initial value passes the create check without a reason.
+// col: a guarded column only when sent under an override that passes.
 func (ch *CrudHandler) upsertSetsGuarded(ctx context.Context, col string, sent bool) bool {
 	st := ch.enforcedStates()
 	if st == nil || !slices.Contains(st.Guarded(), col) {
@@ -357,8 +306,7 @@ func (ch *CrudHandler) upsertSetsGuarded(ctx context.Context, col string, sent b
 }
 
 // checkStateBulk refuses a TypedQuery.UpdateAll body that names a guarded
-// column. Comparing against a stored value is per row, and a bulk UPDATE
-// runs no hooks to audit an override, so the refusal has no exception.
+// column.
 func (ch *CrudHandler) checkStateBulk(body map[string]any) error {
 	st := ch.enforcedStates()
 	if st == nil {
@@ -381,10 +329,8 @@ func (ch *CrudHandler) fieldByName(name string) schema.Field {
 	return schema.Field{Name: name}
 }
 
-// sameGuardedValue reports whether given is stored written back: the same
-// enum string, or the same date or instant however the driver and the
-// client spell it. Anything it cannot read as the field's type is a
-// change, so the check fails closed.
+// sameGuardedValue reports whether given is stored written back, however
+// the driver and the client spell a date or instant.
 func sameGuardedValue(f schema.Field, stored, given any) bool {
 	if stored == nil || given == nil {
 		return stored == nil && given == nil
@@ -399,9 +345,6 @@ func sameGuardedValue(f schema.Field, stored, given any) bool {
 		b, okB := instantOf(given)
 		return okA && okB && a.Equal(b)
 	default:
-		// The state field is an Enum and every stamp a Date or
-		// Timestamp (registration refuses anything else), so this arm
-		// compares an Enum's strings.
 	}
 	s, okS := stringOf(stored)
 	g, okG := given.(string)
@@ -418,8 +361,6 @@ func stringOf(v any) (string, bool) {
 	return "", false
 }
 
-// timeLayouts are the spellings a Date or Timestamp arrives in: JSON
-// clients send RFC 3339, SQLite stores the driver's text forms.
 var timeLayouts = []string{
 	time.RFC3339Nano,
 	"2006-01-02 15:04:05.999999999-07:00",
@@ -459,28 +400,16 @@ func dateOf(v any) (string, bool) {
 	return s[:len(time.DateOnly)], true
 }
 
-// RunTransition runs the move key on record id: the one way an enforced
-// state field changes. In order:
-//
-//   - The caller may move: a System move skips this (no route reaches
-//     it; only Go code calls it); any other asks the entity's update
-//     permission and, when the move sets one, its Permission, both about
-//     this record so a Decider can answer per row. WithServerWrites does
-//     not skip it.
-//   - A read of the row under tenant, owner-write and soft-delete scope:
-//     not visible answers errNotFound (404), so another owner's id
-//     reveals nothing. A visible row whose value is not in From answers a
-//     TransitionConflictError (409) naming the open moves.
-//   - BeforeUpdate hooks, with the move's writes as the body and its key
-//     on ctx (TransitionFromContext). A hook can veto; changes it makes to
-//     the body are not written.
-//   - One conditional UPDATE under the same scope, pinned to From:
-//     SET field = To, stamp = <server's UTC date or time>. Zero rows means
-//     another write moved the record first: a TransitionConflictError.
-//   - AfterUpdate hooks, the audit row (operation "transition:<key>") and
-//     the entity.updated event, in the same transaction.
-//
-// It works on an Advisory entity too, where the moves stay as calls.
+// RunTransition runs the move key on record id, the one way an enforced
+// state field changes, and returns the moved row. A non-System move needs
+// the update permission and the move's own Permission for this record
+// (WithServerWrites does not skip them); a row outside the caller's
+// tenant, owner write or soft-delete scope answers errNotFound; a row
+// whose value is not in From, or that another write moved first, answers
+// a TransitionConflictError. BeforeUpdate hooks see the move's writes and
+// its key (TransitionFromContext) and may veto; the audit operation is
+// "transition:<key>". It also runs on an Advisory entity. Called from a
+// hook on the record being written, it answers ErrReentrantMove.
 func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[string]any, error) {
 	ctx = withEventStamps(ctx)
 	st := ch.Entity.Config.States
@@ -527,8 +456,6 @@ func (ch *CrudHandler) RunTransition(ctx context.Context, id, key string) (map[s
 	return result, nil
 }
 
-// transitionDeniedError is RunTransition's permission refusal (403 on
-// the route).
 type transitionDeniedError struct{ perm string }
 
 func (e *transitionDeniedError) Error() string {
@@ -536,9 +463,7 @@ func (e *transitionDeniedError) Error() string {
 	return p.Format(params)
 }
 
-// Phrased implements i18n.Phrased. A blank Update in a declared Access
-// block names no permission a role could hold, so it answers the
-// operation-refused reason, the way requirePermission does.
+// Phrased implements i18n.Phrased.
 func (e *transitionDeniedError) Phrased() (i18n.Phrase, map[string]any) {
 	if e.perm == permRefused {
 		return reasonOpRefused, nil
@@ -546,22 +471,11 @@ func (e *transitionDeniedError) Phrased() (i18n.Phrase, map[string]any) {
 	return handler.ReasonMissingPermission, map[string]any{"permission": e.perm}
 }
 
-// doTransition runs the move inside the caller's transaction; see
-// RunTransition for the steps.
 func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id string, st *entity.StatesConfig, t entity.Transition) (map[string]any, error) {
-	// Take the write lock before the read. SQLite's deferred transaction
-	// otherwise reads under a snapshot and refuses the later UPDATE with
-	// SQLITE_BUSY when any other connection committed in between, after
-	// the BeforeUpdate hooks ran. A statement that writes no row takes the
-	// lock (waiting out the busy timeout), so the read below sees the
-	// latest commit and a racing move answers a conflict. On Postgres it
-	// is a no-op; the conditional UPDATE already serializes there.
 	lock := "UPDATE " + query.QuoteFolded(ch.Entity.GetTable()) + " SET " + query.QuoteFolded(st.Field) + " = " + query.QuoteFolded(st.Field) + " WHERE 1 = 0"
 	if _, err := ch.conn(ctx).ExecContext(ctx, lock); err != nil {
 		return nil, err
 	}
-	// A row the caller's BeforeGet hooks hide answers GET's 404, read
-	// under the lock like the move target below (hook_scope.go).
 	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive); err != nil {
 		return nil, err
 	}
@@ -627,8 +541,6 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	sqlStr, args := ub.Build()
 	result, err := ch.writeOwn(ctx, id, visFields, sqlStr, args)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Another write moved the record (or removed it) between the read
-		// and this statement. Re-read to name where it stands now.
 		now, rerr := ch.selectMoveTarget(ctx, r, id, cols)
 		if rerr != nil {
 			return nil, rerr
@@ -652,8 +564,6 @@ func (ch *CrudHandler) doTransition(ctx context.Context, r *http.Request, id str
 	return result, nil
 }
 
-// selectMoveTarget reads cols of row id under the move's WHERE (tenant,
-// owner-write scope, deleted_at IS NULL); absent answers errNotFound.
 func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
 	kc, ka := ch.keyWhere(id)
 	qb := query.Select(ch.keyedCols(cols)...).
@@ -672,14 +582,8 @@ func (ch *CrudHandler) selectMoveTarget(ctx context.Context, r *http.Request, id
 	return row, err
 }
 
-// refusalState is the stored state and open moves a refusal of a write
-// to record id names: both, when the caller's read scope admits the
-// record and the state field is visible, and neither (hidden) when the
-// field or record is hidden or the check fails, so a
-// caller who may write but not read a record learns nothing of its state
-// from a 409 or 422. The read scope is the declared ReadScope and the
-// BeforeGet chain GET /<entity>/{id} runs (getScopeHidesRow); an in-process
-// write honours the hook only under WithReadHooks, as GetOne does.
+// refusalState is the stored state and open moves a refusal names, or
+// hidden when the caller may not read the field or the record.
 func (ch *CrudHandler) refusalState(ctx context.Context, r *http.Request, id string, st *entity.StatesConfig, current string) (string, []string, bool) {
 	if ch.fieldByName(st.Field).Hidden {
 		return "", nil, true
@@ -698,8 +602,6 @@ func (ch *CrudHandler) refusalState(ctx context.Context, r *http.Request, id str
 	return current, openMoves(st, current), false
 }
 
-// stampValue is the server's current UTC date for a Date stamp, or the
-// current time for a Timestamp one, bound the way updated_at is.
 func stampValue(f schema.Field) any {
 	if f.Type == schema.Date {
 		return time.Now().UTC().Format(time.DateOnly)
@@ -707,7 +609,6 @@ func stampValue(f schema.Field) any {
 	return generateFieldValue(schema.AutoTimestamp)
 }
 
-// nonNil keeps an empty move list a JSON [] rather than null.
 func nonNil(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -716,11 +617,10 @@ func nonNil(s []string) []string {
 }
 
 // Transition is the HTTP handler for POST <path>/{id}/transitions/{key}:
-// RunTransition behind the update route's gates (owner, tenant, session,
-// the update permission for this id) and its JSON content-type check,
-// which a cross-site form cannot satisfy. The route takes no body. A
-// System move answers 404, as an unknown key does. The response is the
-// moved record in Update's envelope.
+// RunTransition behind the update route's gates and JSON content-type
+// check. It takes no body; an unknown or System move answers 404. It
+// answers the moved record as Update does, or its id only when the
+// caller's read scope hides it.
 func (ch *CrudHandler) Transition() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -736,22 +636,17 @@ func (ch *CrudHandler) Transition() http.HandlerFunc {
 			writeJSONError(w, r, http.StatusNotFound, i18n.StatusPhrase(http.StatusNotFound))
 			return
 		}
-		// Tagged with the route's own request, so a refusal hides the
-		// state of a row the caller's BeforeGet hides (refusalState).
 		result, err := ch.RunTransition(withRealRequest(WithAuditRequest(r.Context(), r), r), id, key)
 		if err != nil {
 			writeCRUDError(w, r, err, ch.convertKey)
 			return
 		}
-		// The move is committed; a read-scope probe that fails hides the
-		// row rather than risk returning one the caller may not read.
 		hidden, herr := ch.readScopeHidesRow(r.Context(), result)
 		ch.writeUpdated(w, r, result, hidden || herr != nil)
 	}
 }
 
-// RoutableTransitions returns the moves the transition route and the MCP
-// tools serve: every non-system move, in declared order.
+// RoutableTransitions returns every non-System move, in declared order.
 func RoutableTransitions(st *entity.StatesConfig) []entity.Transition {
 	if st == nil {
 		return nil

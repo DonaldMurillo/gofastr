@@ -9,10 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/db"
 )
 
-// conn is what a statement runs on: the transaction ctx carries
-// (App.InTx, a hook's), else ch.DB. Writes join it through inTx; a read
-// on the pool inside App.InTx missed the transaction's own uncommitted
-// rows, and on a one-connection pool waited on the transaction forever.
+// conn is the transaction ctx carries, else ch.DB.
 func (ch *CrudHandler) conn(ctx context.Context) DBExecutor {
 	if tx, ok := db.TxFromContext(ctx); ok {
 		return tx
@@ -20,31 +17,10 @@ func (ch *CrudHandler) conn(ctx context.Context) DBExecutor {
 	return ch.DB
 }
 
-// inTx executes fn within a database transaction. On error, the transaction
-// is rolled back; otherwise it commits. A transaction in ctx, or a handler
-// whose DB is already a *sql.Tx, gets a savepoint instead, and the caller
-// owns the transaction lifecycle. An executor with neither (a mock without
-// tx support) runs fn as is.
-//
-// fn receives a derived context carrying the *sql.Tx (accessible via
-// db.TxFromContext) and a tx-bound copy of the handler, its DB field points
-// at the transaction so all queries within fn participate.
-//
-// Every write enters here, so this is where an audit operation override
-// stops: a hook that writes during a restore or purge calls back in
-// through inTx, and its write records its own operation even when it
-// names the same record.
+// inTx runs fn in a transaction, or in a savepoint of the one ctx or
+// ch.DB already holds, with a handler bound to it.
 func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch *CrudHandler) error) error {
 	ctx = withoutAuditOperation(ctx)
-	// Reuse an ambient transaction already in the context (e.g. one opened by
-	// App.InTx). This is what lets several CRUD operations, and any
-	// hand-written query-builder SQL run on the same tx, compose into one
-	// atomic unit: the operation joins the outer transaction and the outer
-	// owner commits or rolls back. We must NOT begin a nested tx or commit here.
-	// The operation runs under a savepoint, so one that fails undoes its own
-	// writes: a caller that handles the error and commits keeps only what
-	// succeeded, and on Postgres the failed statement does not abort the
-	// outer transaction.
 	if tx, ok := db.TxFromContext(ctx); ok {
 		opCtx, held := holdCascadeEmits(ctx)
 		if err := db.InSavepoint(opCtx, tx, func(ctx context.Context, tx *sql.Tx) error {
@@ -58,13 +34,6 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 		held.release(ctx, ch.DB)
 		return nil
 	}
-	// A handler bound to a caller's transaction (ch.DB is the *sql.Tx)
-	// runs the operation under a savepoint too: run straight on the
-	// transaction, a batch whose third item failed left the first two
-	// written for a caller that handled the error and committed. Its
-	// live-bus events still go out once the operation succeeds: nothing
-	// tells this handler when, or whether, the caller commits, which is
-	// what a context-carried transaction (App.InTx) is for.
 	if tx, ok := ch.DB.(*sql.Tx); ok {
 		opCtx, held := holdCascadeEmits(ctx)
 		if err := db.InSavepoint(opCtx, tx, func(ctx context.Context, _ *sql.Tx) error {
@@ -92,10 +61,6 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 	txCh.root = ch.dialectHandle()
 	txCh.DB = tx
 	txCtx, queue := db.WithTxQueue(ctx, tx)
-	// The deferred rollback guarantees the tx is closed on EVERY exit path,
-	// including a panicking hook inside fn: without it the panic unwinds
-	// past both Rollback and Commit and the pooled connection (plus any row
-	// locks) leaks until the finalizer. Mirrors App.InTx.
 	committed := false
 	defer func() {
 		if !committed {
@@ -109,22 +74,11 @@ func (ch *CrudHandler) inTx(ctx context.Context, fn func(ctx context.Context, ch
 		return err
 	}
 	committed = true
-	// Emissions staged inside the tx (e.g. a hook calling another entity's
-	// CreateOne with the tx context) fire only now, on confirmed commit;
-	// every other exit path drops the queue with the rollback.
 	queue.RunAfterCommit()
 	return nil
 }
 
-// cascadeEmits holds what a cascade's child writes announce until the
-// operation they belong to has succeeded. A child write runs on the
-// operation's transaction, so its handler is bound to the *sql.Tx and
-// EmitEvent has no pool to confirm the write against: it published at
-// once, and a cascade that failed on a later item had already announced
-// the first child. An operation inTx owns parks those emissions on its
-// commit queue, which drops them with the rollback; an operation that
-// joins a caller's transaction with no queue, or runs on a handler bound
-// to one, holds them here and releases them only when it succeeds.
+// cascadeEmits holds a cascade's child events until the operation succeeds.
 type cascadeEmits struct {
 	mu      sync.Mutex
 	pending []cascadeEmit
@@ -139,18 +93,11 @@ type cascadeEmit struct {
 
 type cascadeEmitsKey struct{}
 
-// holdCascadeEmits gives the operation about to run a collector.
 func holdCascadeEmits(ctx context.Context) (context.Context, *cascadeEmits) {
 	held := &cascadeEmits{}
 	return context.WithValue(ctx, cascadeEmitsKey{}, held), held
 }
 
-// emitCascade announces a cascade child's write. A commit queue in ctx
-// comes first: it holds the emission until commit and drops it when the
-// savepoint or transaction rolls back, and the transaction it belongs to
-// can commit on its own even if an enclosing held operation fails. Under a
-// collector the emission waits for the operation to succeed; otherwise it
-// goes out as EmitEvent sends it.
 func (ch *CrudHandler) emitCascade(ctx context.Context, eventType string, record any) {
 	if _, queued := db.CommitQueueFromContext(ctx); !queued {
 		if held, ok := ctx.Value(cascadeEmitsKey{}).(*cascadeEmits); ok {
@@ -164,12 +111,6 @@ func (ch *CrudHandler) emitCascade(ctx context.Context, eventType string, record
 	ch.EmitEvent(ctx, eventType, record)
 }
 
-// release sends what the succeeded operation held. Inside an enclosing
-// operation that also holds (a hook's write within a cascade), the
-// emissions join that operation's and wait for it. Otherwise each goes
-// out on a handler bound to base, the operation's own connection: on a
-// pool, EmitEvent confirms the write once the caller's transaction ends,
-// the check the operation's own record gets.
 func (held *cascadeEmits) release(ctx context.Context, base DBExecutor) {
 	if held == nil {
 		return
