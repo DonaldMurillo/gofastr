@@ -3,7 +3,7 @@
 `CLAUDE.md` is the short version. This page holds what it points to: how to
 build, test and check the tree, how a pull request is reviewed and merged,
 and where each kind of code lives. Rules about the code itself live in the
-primitives registry (`go run ./cmd/primitives for <path>`).
+primitives registry; `CLAUDE.md` says how to look a file's rules up.
 
 ## Before you start, at length
 
@@ -44,14 +44,7 @@ MCP tools `framework_docs_list` / `framework_docs_get` /
 `framework/docs/mcptools`; package framework never imports the corpus)
 expose them to agents connected to a live app.**
 
-**Before changing a file, run `go run ./cmd/primitives for <path>`.** It
-prints the primitives that own the file with their invariants (each
-naming the test or analyzer that enforces it) and decisions. The registry
-lives in `primitives/`, one `primitive.yml` per primitive, format in
-`primitives/README.md`; `go run ./cmd/primitives lint` checks it and `gen` writes
-the import tests it declares. A rule or a "why" that would have gone
-into a comment or into this file goes there instead (the `primitives-sweep`
-skill). The registry covers `framework/crud` so far.
+The registry paragraph that opened this list is still in `CLAUDE.md`.
 
 ## Common operations
 
