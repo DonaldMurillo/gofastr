@@ -73,14 +73,14 @@ func insideDir(dir, path string) (bool, error) {
 	return filepath.IsLocal(rel), nil
 }
 
-// ancestorGuide returns the first CLAUDE.md or CLAUDE.local.md in dir or
-// a directory above it, following symlinks, or "" when there is none.
+// ancestorGuide returns the first CLAUDE.md, CLAUDE.local.md or AGENTS.md
+// in dir or a directory above it, following symlinks, or "" when there is none.
 // Every cell is a directory inside dir, and Claude Code reads those files
 // from every parent of its working directory, so one there would be read
 // in every cell and blur the conditions.
 func ancestorGuide(dir string) string {
 	for d := resolveExisting(dir); ; d = filepath.Dir(d) {
-		for _, name := range []string{"CLAUDE.md", "CLAUDE.local.md"} {
+		for _, name := range []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"} {
 			if info, err := os.Stat(filepath.Join(d, name)); err == nil && !info.IsDir() {
 				return filepath.Join(d, name)
 			}

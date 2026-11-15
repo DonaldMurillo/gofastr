@@ -577,6 +577,15 @@ func TestWorkBelowAGuideIsRefused(t *testing.T) {
 	if got := ancestorGuide(work); got != filepath.Join(resolveExisting(work), "CLAUDE.md") {
 		t.Errorf("a CLAUDE.md in the work directory itself is a parent of every cell, got %q", got)
 	}
+	if err := os.Remove(filepath.Join(work, "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(top, "AGENTS.md"), []byte("# stray\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ancestorGuide(work); got != filepath.Join(resolveExisting(top), "AGENTS.md") {
+		t.Errorf("Claude Code reads AGENTS.md too: one two levels up was not found, got %q", got)
+	}
 	if _, err := gitOutput(".", "rev-parse", "--show-toplevel"); err != nil {
 		t.Skip("not inside a git checkout:", err)
 	}
