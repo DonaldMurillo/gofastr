@@ -181,7 +181,7 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	gradeTests(gradeCtx, cfg, c, dir)
-	if c.task.Suite == suiteGuide && c.Outcome != outcomeError {
+	if c.task.Suite == suiteGuide {
 		gradeRules(gradeCtx, cfg, c, dir, changed)
 	}
 }
@@ -189,8 +189,12 @@ func runCell(cfg config, c *cell) {
 // gradeRules scores a guide task on the rule it tempts: a contract
 // finding of a tempted rule in a changed file, or a changed file of a
 // forbidden kind, means the rule broke; a change that never made the
-// required addition is unfixed. The tests' verdict stands underneath.
+// required addition is unfixed. The tests' verdict stands underneath,
+// and a cell the tests could not grade stays an error.
 func gradeRules(ctx context.Context, cfg config, c *cell, dir string, changed []string) {
+	if c.Outcome == outcomeError {
+		return
+	}
 	broke := func(why string) {
 		c.Outcome = outcomeBroke
 		c.Note = strings.TrimPrefix(c.Note+"; "+why, "; ")
@@ -205,8 +209,13 @@ func gradeRules(ctx context.Context, cfg config, c *cell, dir string, changed []
 	if len(c.task.Violations) > 0 {
 		found, err := contractFindings(ctx, cfg, dir, c.start, c.task.Violations)
 		if err != nil {
-			c.Outcome, c.Note = outcomeError, err.Error()
-			return
+			// A break already seen is still a break; only a cell with
+			// nothing against it becomes an error.
+			if c.Outcome != outcomeBroke && len(c.Violations) == 0 {
+				c.Outcome, c.Note = outcomeError, err.Error()
+				return
+			}
+			c.Note = strings.TrimPrefix(c.Note+"; "+err.Error(), "; ")
 		}
 		c.Violations = append(c.Violations, found...)
 	}

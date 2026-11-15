@@ -492,6 +492,21 @@ func TestGradeRules(t *testing.T) {
 	if c := grade(tempted, nil, `{"error":"could not load the project"}`); c.Outcome != outcomeError {
 		t.Errorf("a verify that reports it failed must not grade as held: %s", c.Outcome)
 	}
+	if c := grade(tempted, map[string]string{"a/pager.js": "x\n"}, `{"error":"could not load the project"}`); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "forbidden@a/pager.js") {
+		t.Errorf("a forbidden file stays broke when verify then fails: %s %v", c.Outcome, c.Violations)
+	}
+	testsFailed := &cell{task: tempted, Outcome: outcomeBroke}
+	t.Setenv("STUB_JSON", `{"error":"does not compile"}`)
+	gradeRules(context.Background(), cfg, testsFailed, t.TempDir(), nil)
+	if testsFailed.Outcome != outcomeBroke {
+		t.Errorf("a cell whose tests failed stays broke when verify then fails, got %s", testsFailed.Outcome)
+	}
+	errored := &cell{task: tempted, Outcome: outcomeError, Note: "restore failed"}
+	t.Setenv("STUB_JSON", `{"diagnostics":[{"rule":"GOFASTR1803","file":"a/pager.js"}]}`)
+	gradeRules(context.Background(), cfg, errored, t.TempDir(), []string{"a/pager.js"})
+	if errored.Outcome != outcomeError || len(errored.Violations) > 0 {
+		t.Errorf("a cell the tests could not grade must stay an error, got %s %v", errored.Outcome, errored.Violations)
+	}
 	required := task{Suite: suiteGuide, Requires: "data-cui-x", RequiresIn: "rt/"}
 	if c := grade(required, map[string]string{"rt/a.js": "no\n", "rt/a_test.go": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
 		t.Errorf("the required text only in a test file: %s", c.Outcome)
