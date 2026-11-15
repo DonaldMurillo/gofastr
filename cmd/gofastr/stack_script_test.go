@@ -15,14 +15,15 @@ import (
 // call that starts a merge exits $PUT_EXIT after printing, as gh does on
 // an HTTP error.
 const fakeStackGH = `#!/usr/bin/env bash
-echo "$*" >> "$CALLS"
-case "$*" in *merge-async/*) BODY="$POLL" ;; esac
+args="$*"
+echo "$args" >> "$CALLS"
+case "$args" in *merge-async/*) BODY="$POLL" ;; esac
 jqexpr=""
 while [ $# -gt 0 ]; do
   case "$1" in --jq) jqexpr="$2"; shift 2 ;; *) shift ;; esac
 done
 if [ -n "$jqexpr" ]; then printf '%s' "$BODY" | jq -r "$jqexpr"; else printf '%s\n' "$BODY"; fi
-case "$*" in *"-X PUT"*merge-async) exit "${PUT_EXIT:-0}" ;; esac
+case "$args" in *"-X PUT"*merge-async*) exit "${PUT_EXIT:-0}" ;; esac
 `
 
 func runStackScript(t *testing.T, body string, args ...string) (out string, code int, called bool) {
