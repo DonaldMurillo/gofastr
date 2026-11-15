@@ -628,4 +628,10 @@ func TestAppliedRulesReachForAndStop(t *testing.T) {
 	if strings.Contains(msg, "You changed d ") {
 		t.Errorf("a non-Go file of a docs-only primitive asks for docs:\n%s", msg)
 	}
+	git("add", "-A")
+	git("commit", "-q", "-m", "mixed")
+	write("s/site.css", ".s { color: var(--y); }\n")
+	if msg := fire(`{"session_id":"s4"}`); !strings.Contains(msg, "Screenshot the rendered page") {
+		t.Errorf("a CSS-only change brings its owner's on_change line:\n%s", msg)
+	}
 }

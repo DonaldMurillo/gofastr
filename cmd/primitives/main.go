@@ -281,7 +281,9 @@ func stopCheck(c *primitives.Registry, loadFindings []primitives.Finding, stdin 
 	groups := changedPackageGroups(c.Root, changed)
 	modules := changedModules(c.Root, changed)
 	registryChanged := slices.ContainsFunc(changed, func(file string) bool { return strings.HasPrefix(file, primitives.Dir+"/") })
-	governed := slices.ContainsFunc(changed, func(file string) bool { return len(c.AppliedTo(file)) > 0 })
+	governed := slices.ContainsFunc(changed, func(file string) bool {
+		return len(c.AppliedTo(file)) > 0 || slices.ContainsFunc(c.Chain(file), func(p *primitives.Primitive) bool { return len(p.OnChange) > 0 })
+	})
 	if len(groups) == 0 && len(modules) == 0 && !registryChanged && !governed {
 		return "", ""
 	}
