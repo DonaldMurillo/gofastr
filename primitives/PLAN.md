@@ -66,8 +66,12 @@ in `AGENTS.md`, which every coding agent reads; `CLAUDE.md` holds only
 The replay suite cannot see this step. Each replay cell is cut from a
 commit older than the registry and gets the pointer paragraph spliced
 into that commit's `CLAUDE.md`, so its numbers measure the tooling, not
-the file. Measuring the shrink needs a condition that gives a cell this
-`CLAUDE.md` and the new primitives.
+the file. The guide suite measured the file instead: both the long
+guide and the short one held 12 of 12 hard-rule traps
+(`2026-11-15-guide.md`, `2026-11-15-guide-agents.md`).
+
+Done. The replay eval on Opus after the change held or rose on every
+number (`2026-11-15-replay-step1.md`).
 
 ### 2. Sweep the comments, one package at a time
 
