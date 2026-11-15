@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"testing"
 	"time"
+	"weak"
 
 	fdb "github.com/DonaldMurillo/gofastr/framework/db"
 	_ "github.com/DonaldMurillo/gofastr/sqlite/stdlib"
@@ -110,31 +111,46 @@ func TestDialectIsRememberedThroughATransaction(t *testing.T) {
 }
 
 func TestDialectMemoDoesNotKeepADatabaseAlive(t *testing.T) {
-	count := func() int {
-		n := 0
-		knownDialect.Range(func(any, any) bool { n++; return true })
-		return n
-	}
-	before := count()
-	func() {
-		for range 20 {
+	// The test follows its own twenty databases by key. A count of the
+	// whole memo would also count what earlier tests left in it, and
+	// those entries go whenever the collector gets to them.
+	keys := func() []weak.Pointer[sql.DB] {
+		dbs := make([]*sql.DB, 20)
+		keys := make([]weak.Pointer[sql.DB], len(dbs))
+		for i := range dbs {
 			db, err := sql.Open("sqlite3", ":memory:")
 			if err != nil {
 				t.Fatal(err)
 			}
 			isPostgres(context.Background(), db, db)
 			_ = db.Close()
+			dbs[i], keys[i] = db, weak.Make(db)
 		}
+		for i, key := range keys {
+			if _, ok := knownDialect.Load(key); !ok {
+				t.Fatalf("setup: database %d was not remembered", i)
+			}
+		}
+		// Held until the check above has read the memo: a database
+		// collected halfway through the loop would take its entry with it.
+		runtime.KeepAlive(dbs)
+		return keys
 	}()
-	if count() < before+20 {
-		t.Fatalf("setup: the twenty databases were not remembered (%d entries, %d before)", count(), before)
+	remembered := func() int {
+		n := 0
+		for _, key := range keys {
+			if _, ok := knownDialect.Load(key); ok {
+				n++
+			}
+		}
+		return n
 	}
 	for range 50 {
 		runtime.GC()
-		if count() <= before {
+		if remembered() == 0 {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Errorf("%d entries left after the databases were collected, %d before: closed databases are held for good", count(), before)
+	t.Errorf("%d of %d closed databases are still remembered after collection: the memo holds them for good", remembered(), len(keys))
 }
