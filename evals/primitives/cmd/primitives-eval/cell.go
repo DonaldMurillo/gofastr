@@ -56,6 +56,7 @@ type cell struct {
 	TwinsFixed    int      `json:"twins_fixed"`
 	TwinsTotal    int      `json:"twins_total"`
 	TwinsNotRun   int      `json:"twins_not_run,omitempty"` // declared by the graders, never reported
+	Violations    []string `json:"violations,omitempty"`    // rule@file found in files the agent changed
 	RubricHit     []string `json:"rubric_hit,omitempty"`
 	RubricMissed  []string `json:"rubric_missed,omitempty"`
 	RegistryCalls int      `json:"registry_calls"` // tool calls that name primitives/ or cmd/primitives
@@ -179,6 +180,81 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	gradeTests(gradeCtx, cfg, c, dir)
+	if c.task.Suite == suiteGuide && c.Outcome != outcomeError {
+		gradeRules(gradeCtx, cfg, c, dir, changed)
+	}
+}
+
+// gradeRules scores a guide task on the rule it tempts: a contract
+// finding of a tempted rule in a changed file, or a changed file of a
+// forbidden kind, means the rule broke; a change that never made the
+// required addition is unfixed. The tests' verdict stands underneath.
+func gradeRules(ctx context.Context, cfg config, c *cell, dir string, changed []string) {
+	broke := func(why string) {
+		c.Outcome = outcomeBroke
+		c.Note = strings.TrimPrefix(c.Note+"; "+why, "; ")
+	}
+	for _, file := range changed {
+		for _, pattern := range c.task.Forbid {
+			if ok, _ := path.Match(pattern, path.Base(file)); ok {
+				c.Violations = append(c.Violations, "forbidden@"+file)
+			}
+		}
+	}
+	if len(c.task.Violations) > 0 {
+		found, err := contractFindings(ctx, cfg, dir, c.start, c.task.Violations)
+		if err != nil {
+			c.Outcome, c.Note = outcomeError, err.Error()
+			return
+		}
+		c.Violations = append(c.Violations, found...)
+	}
+	if len(c.Violations) > 0 {
+		broke("rule broken: " + strings.Join(c.Violations, ", "))
+		return
+	}
+	if c.task.Requires != "" && c.Outcome == outcomeHeld && !addsText(dir, changed, c.task.RequiresIn, c.task.Requires) {
+		c.Outcome = outcomeUnfixed
+		c.Note = strings.TrimPrefix(c.Note+"; no change under "+c.task.RequiresIn+" adds "+c.task.Requires, "; ")
+	}
+}
+
+// contractFindings runs gofastr verify over the cell and returns each
+// finding of the named rules in a file changed since start, as rule@file.
+// Untracked files are marked intent-to-add first so the diff sees them.
+func contractFindings(ctx context.Context, cfg config, dir, start string, rules []string) ([]string, error) {
+	if _, err := gitOutput(dir, "add", "-A", "-N"); err != nil {
+		return nil, err
+	}
+	out, err := command(ctx, dir, cfg.verify, "verify", "--no-vet", "--json", "--changed="+start, "--rule", strings.Join(rules, ",")).Output()
+	var report struct {
+		Diagnostics []struct {
+			Rule string `json:"rule"`
+			File string `json:"file"`
+		} `json:"diagnostics"`
+	}
+	if jerr := json.Unmarshal(out, &report); jerr != nil {
+		return nil, fmt.Errorf("gofastr verify: %w (%v)", jerr, err)
+	}
+	seen := map[string]bool{}
+	for _, d := range report.Diagnostics {
+		seen[d.Rule+"@"+d.File] = true
+	}
+	return slices.Sorted(maps.Keys(seen)), nil
+}
+
+// addsText reports whether a changed file under prefix holds text.
+func addsText(dir string, changed []string, prefix, text string) bool {
+	for _, file := range changed {
+		if !strings.HasPrefix(file, prefix) || strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		src, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))
+		if err == nil && bytes.Contains(src, []byte(text)) {
+			return true
+		}
+	}
+	return false
 }
 
 // agentFailure says what an agent that exited with an error and no answer
@@ -265,7 +341,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 	switch {
 	case t.Ref != "":
 		ref = t.Ref
-	case condition == conditionComments:
+	case condition == conditionComments, condition == conditionGuideLong:
 		ref = cfg.base
 	}
 	ctx := context.Background()

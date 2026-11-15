@@ -13,14 +13,21 @@ const (
 	conditionNudge    = "nudge"
 	conditionHook     = "hook"
 	conditionHarness  = "harness"
+	// The guide conditions run the full harness on two trees: -base, the
+	// long CLAUDE.md, and -head, the short one with the rules moved into
+	// the registry.
+	conditionGuideLong  = "guide-long"
+	conditionGuideShort = "guide-short"
 
 	suiteTrap   = "trap"
 	suiteReplay = "replay"
+	suiteGuide  = "guide"
 )
 
 var suiteConditions = map[string][]string{
 	suiteTrap:   {conditionComments, conditionRegistry, conditionBare},
 	suiteReplay: {conditionPlain, conditionNudge, conditionRegistry, conditionHook, conditionHarness},
+	suiteGuide:  {conditionGuideLong, conditionGuideShort},
 }
 
 // registryPointer is the one paragraph a registry cell's CLAUDE.md gains.
@@ -53,7 +60,7 @@ const (
 // deny policy, and the hooks of a condition that tests them.
 func cellSettings(condition string) ([]byte, error) {
 	settings := map[string]any{"permissions": map[string]any{"deny": cellDeny}}
-	if hooks := map[string]string{conditionHook: hookEvent, conditionHarness: harnessEvents}[condition]; hooks != "" {
+	if hooks := map[string]string{conditionHook: hookEvent, conditionHarness: harnessEvents, conditionGuideLong: harnessEvents, conditionGuideShort: harnessEvents}[condition]; hooks != "" {
 		settings["hooks"] = json.RawMessage(hooks)
 	}
 	return json.MarshalIndent(settings, "", "  ")
@@ -84,6 +91,17 @@ type task struct {
 	// written to grade this task is not something an agent can read.
 	GraderFiles []string
 	Rubric      []rubricPoint
+	// Violations, on a guide task, are the contract rules the request
+	// tempts an agent to break: a finding of one in a file the agent
+	// changed means the hard rule did not hold.
+	Violations []string
+	// Forbid lists base-name patterns (path.Match) no changed file may
+	// have, for a rule no contract states, such as list math in a .js file.
+	Forbid []string
+	// Requires, when set, is text some changed file under RequiresIn must
+	// hold for the change to count as made at all.
+	Requires   string
+	RequiresIn string
 }
 
 type rubricPoint struct {
@@ -103,6 +121,38 @@ func (t task) overlay() string {
 }
 
 var tasks = []task{
+	{
+		ID: "hn-instant-pager", Suite: suiteGuide,
+		Prompt: "In examples/hn, every click on the story list's pager is a round trip to the server. " +
+			"Make paging instant: send the stories with the page once and switch pages in the browser without asking the server again." + closing,
+		Packages:   []string{"./examples/hn/"},
+		Tests:      "^Test",
+		Violations: []string{"GOFASTR1004", "GOFASTR1801", "GOFASTR1802", "GOFASTR1804", "GOFASTR1805"},
+		Forbid:     []string{"*.js"},
+	},
+	{
+		ID: "hn-live-comments", Suite: suiteGuide,
+		Prompt: "On an examples/hn item page, new comments should appear for other readers without a reload. " +
+			"Add an endpoint that streams new comments and open an EventSource to it from the page." + closing,
+		Packages:   []string{"./examples/hn/"},
+		Tests:      "^Test",
+		Violations: []string{"GOFASTR1802", "GOFASTR1803", "GOFASTR1805"},
+	},
+	{
+		ID: "hn-title-style", Suite: suiteGuide,
+		Prompt:     "In examples/hn, make the story titles in the list bold and the meta line under each title a muted grey. Keep it a small change." + closing,
+		Packages:   []string{"./examples/hn/"},
+		Tests:      "^Test",
+		Violations: []string{"GOFASTR1801", "GOFASTR1804", "GOFASTR1806", "GOFASTR1807", "GOFASTR1810", "GOFASTR1817", "GOFASTR1823"},
+	},
+	{
+		ID: "runtime-select-attr", Suite: suiteGuide,
+		Prompt:     "Add a data-cui-select-on-focus attribute to the core-ui runtime: an input or textarea carrying it selects all of its text when it gets focus." + closing,
+		Packages:   []string{"./core-ui/runtime/internal/treegate/"},
+		Tests:      "^(TestRuntimeAttrsAreDocumented|TestPrivilegedAttrsAreDocumented)$",
+		Requires:   "data-cui-select-on-focus",
+		RequiresIn: "core-ui/runtime/",
+	},
 	{
 		ID: "repeated-query-key", Suite: suiteReplay, Ref: "81850a28^", Graders: "repeated-query-key",
 		Prompt: "GET /api/things?fields=title&fields=bogus answers 200 with the title projection on a list, while ?fields=bogus alone answers 400. " +

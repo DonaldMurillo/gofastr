@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -170,11 +171,12 @@ func TestEveryCellRunsUnderTheDenyPolicy(t *testing.T) {
 			if !slices.Contains(settings.Permissions.Deny, "Bash(git push *)") || !slices.Contains(settings.Permissions.Deny, "Read(~/.ssh/**)") {
 				t.Errorf("%s/%s runs without the deny policy: %v", suite, cond, settings.Permissions.Deny)
 			}
-			wantHooks := cond == conditionHook || cond == conditionHarness
+			fullHarness := cond == conditionHarness || cond == conditionGuideLong || cond == conditionGuideShort
+			wantHooks := cond == conditionHook || fullHarness
 			if (len(settings.Hooks) > 0) != wantHooks {
 				t.Errorf("%s/%s: hooks present = %v, want %v", suite, cond, len(settings.Hooks) > 0, wantHooks)
 			}
-			if _, hasStop := settings.Hooks["Stop"]; hasStop != (cond == conditionHarness) {
+			if _, hasStop := settings.Hooks["Stop"]; hasStop != fullHarness {
 				t.Errorf("%s/%s: stop check present = %v", suite, cond, hasStop)
 			}
 		}
@@ -424,5 +426,62 @@ func TestRunRefusesAWorkDirectoryInsideTheRepository(t *testing.T) {
 	}
 	if _, statErr := os.Stat(work); statErr == nil {
 		t.Errorf("run created %s before refusing it", work)
+	}
+}
+
+// gradeRules is graded against a stub verify that reports what its
+// environment says, so each verdict is reached for the reason named.
+func TestGradeRules(t *testing.T) {
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "verify.sh")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho \"$STUB_JSON\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{verify: stub}
+	cell := func(tk task, files map[string]string, findings string) *cell {
+		t.Helper()
+		repo := t.TempDir()
+		for _, args := range [][]string{{"init", "-q"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "--allow-empty", "-m", "start"}} {
+			if _, err := gitOutput(repo, args...); err != nil {
+				t.Fatal(err)
+			}
+		}
+		start, _ := gitOutput(repo, "rev-parse", "HEAD")
+		var changed []string
+		for name, body := range files {
+			p := filepath.Join(repo, filepath.FromSlash(name))
+			if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			changed = append(changed, name)
+		}
+		t.Setenv("STUB_JSON", findings)
+		c := &cell{task: tk, start: start, Outcome: outcomeHeld}
+		gradeRules(context.Background(), cfg, c, repo, changed)
+		return c
+	}
+	none := `{"diagnostics":[]}`
+	tempted := task{Suite: suiteGuide, Violations: []string{"GOFASTR1803"}, Forbid: []string{"*.js"}}
+	if c := cell(tempted, map[string]string{"a/a.go": "package a\n"}, none); c.Outcome != outcomeHeld {
+		t.Errorf("no finding, no forbidden file: %s %s", c.Outcome, c.Note)
+	}
+	if c := cell(tempted, map[string]string{"a/a.go": "package a\n"}, `{"diagnostics":[{"rule":"GOFASTR1803","file":"a/a.go"}]}`); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "GOFASTR1803@a/a.go") {
+		t.Errorf("a tempted rule found in a changed file: %s %v", c.Outcome, c.Violations)
+	}
+	if c := cell(tempted, map[string]string{"a/pager.js": "x\n"}, none); c.Outcome != outcomeBroke || !slices.Contains(c.Violations, "forbidden@a/pager.js") {
+		t.Errorf("a forbidden kind of file: %s %v", c.Outcome, c.Violations)
+	}
+	if c := cell(tempted, nil, "not json"); c.Outcome != outcomeError {
+		t.Errorf("an unreadable verify report must not grade as held: %s", c.Outcome)
+	}
+	required := task{Suite: suiteGuide, Requires: "data-cui-x", RequiresIn: "rt/"}
+	if c := cell(required, map[string]string{"rt/a.js": "no\n", "rt/a_test.go": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
+		t.Errorf("the required text only in a test file: %s", c.Outcome)
+	}
+	if c := cell(required, map[string]string{"rt/a.js": "el.dataset; // data-cui-x\n"}, none); c.Outcome != outcomeHeld {
+		t.Errorf("the required text added: %s %s", c.Outcome, c.Note)
 	}
 }

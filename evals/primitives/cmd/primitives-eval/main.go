@@ -30,6 +30,9 @@ type config struct {
 	timeout          time.Duration
 	keep             bool
 	cellBudget       float64
+	// verify is a gofastr binary built from this checkout, so every guide
+	// cell is graded by the same contract catalog.
+	verify string
 }
 
 func main() {
@@ -115,6 +118,13 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 	}
 	if err := os.MkdirAll(cfg.out, 0o700); err != nil {
 		return err
+	}
+
+	if suite == suiteGuide || suite == "all" {
+		cfg.verify = filepath.Join(cfg.out, "gofastr")
+		if out, err := command(context.Background(), repo, "go", "build", "-o", cfg.verify, "./cmd/gofastr").CombinedOutput(); err != nil {
+			return fmt.Errorf("build gofastr for grading: %v\n%s", err, out)
+		}
 	}
 
 	var cells []*cell
