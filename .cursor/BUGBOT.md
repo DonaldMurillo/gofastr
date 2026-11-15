@@ -1,6 +1,6 @@
 # Bugbot review rules for GoFastr
 
-The repo's `CLAUDE.md` hard rules are the review contract. Flag a change that
+The repo's `AGENTS.md` hard rules are the review contract. Flag a change that
 breaks one of them and name the rule by number. Read
 `core-ui/ARCHITECTURE.md` and `framework/ARCHITECTURE.md` when a change
 touches UI, the runtime, or the `framework/` package layout.

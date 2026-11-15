@@ -51,6 +51,24 @@ registry and what no primitive can own.
 Done when `CLAUDE.md` is under 60 lines and the replay eval on Opus
 shows no drop from the numbers above.
 
+Status: `CLAUDE.md` is 51 lines. Hard rules 1 to 8 are registry entries
+in `runtime`, `uihost`, `ui`, `ui.styling` and `crud.scope`, reaching
+the trees they govern through `applies`; rule 9 is an `on_change` line;
+rules 10 to 12, the commands and the code map moved to
+`docs/contributing.md`. The numbered list stays, one line per rule,
+because code cites the rules by number, and `TestAgentsMDNamesRealRules`
+keeps its pointers real.
+`TestAgentsMDStaysShort` (`guide/stays-short`) fails the build when
+the guide passes 60 lines, so it cannot grow back. The guide now lives
+in `AGENTS.md`, which every coding agent reads; `CLAUDE.md` holds only
+`@AGENTS.md` (`guide/claude-md-only-imports`).
+
+The replay suite cannot see this step. Each replay cell is cut from a
+commit older than the registry and gets the pointer paragraph spliced
+into that commit's `CLAUDE.md`, so its numbers measure the tooling, not
+the file. Measuring the shrink needs a condition that gives a cell this
+`CLAUDE.md` and the new primitives.
+
 ### 2. Sweep the comments, one package at a time
 
 Follow the `primitives-sweep` skill. History and narration go. A rule
@@ -80,11 +98,9 @@ check useful outside `framework/crud`.
 Done when `go run ./cmd/primitives for <path>` finds an owner for every
 non-test Go file under those three trees.
 
-One question to settle on the way: a file has one owner, so a rule that
-spans primitives is shown only for the files of the primitive that
-holds it. `crud.scope`'s one-builder rule applies in `eager.go` and
-`include.go`, which `crud.relations` owns. Decide how such a rule
-reaches the other places it applies.
+A rule that spans primitives keeps one home and lists the other files
+it governs under `applies` (settled in step 1: `crud.scope`'s
+one-builder rule reaches `eager.go` and `include.go` that way).
 
 ## Rules for all four
 

@@ -9,7 +9,7 @@ import (
 )
 
 // Go-source PII lint: the Go-declared counterpart of lintAppSpecPIIRoot.
-// CLAUDE.md hard rule #6 is a property of the declared entity, not of the
+// AGENTS.md hard rule #6 is a property of the declared entity, not of the
 // authoring format: an `app.Entity("members", framework.EntityConfig{
 // Fields: []schema.Field{{Name: "email", Type: schema.String}}})` with
 // auto-CRUD on and no owner_field/multi_tenant/access exposes every row to

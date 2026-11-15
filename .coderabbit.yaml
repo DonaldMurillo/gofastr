@@ -1,6 +1,6 @@
 ## CodeRabbit configuration. Docs: https://docs.coderabbit.ai/reference/configuration
 ## Goal: spend the review budget on source, and point findings at the
-## repo's own contracts (CLAUDE.md hard rules) instead of generic advice.
+## repo's own contracts (AGENTS.md hard rules) instead of generic advice.
 
 language: "en-US"
 
@@ -25,7 +25,7 @@ reviews:
   path_instructions:
     - path: "**/*.go"
       instructions: |
-        This repo's CLAUDE.md hard rules are the review contract:
+        This repo's AGENTS.md hard rules are the review contract:
         in-page state changes are islands, never routes; pagination/
         sort/filter math is server-side; SSE is push-only and lives on
         the single /__gofastr/sse bus (dev-reload tooling is the only

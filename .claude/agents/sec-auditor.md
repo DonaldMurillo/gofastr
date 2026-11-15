@@ -102,4 +102,4 @@ For each candidate (yours OR a `sec-recon` finding):
 - Every delete/weaken/flip records its why in the commit message and a
   comment beside the surviving test, never a permanently-skipped test.
 - After the pass: `./scripts/test-all.sh` exit 0, stray-binary audit
-  per `CLAUDE.md`.
+  per `AGENTS.md`.

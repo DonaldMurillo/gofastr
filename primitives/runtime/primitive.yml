@@ -1,0 +1,52 @@
+primitive: runtime
+summary: The browser runtime that hydrates server-rendered pages, routes cross-page navigation client-side, swaps islands and listens on the one SSE bus.
+code:
+  - core-ui/runtime/
+docs:
+  - core-ui/ARCHITECTURE.md
+  - framework/docs/content/reactivity.md
+on_change:
+  - A new or renamed data-cui-* attribute gets its row in the core-ui/ARCHITECTURE.md attribute table and a runtime test in the same change.
+invariants:
+  - id: attributes-are-documented
+    rule: Every data-cui-* attribute the runtime or a registered behaviour reads has a row in the core-ui/ARCHITECTURE.md attribute table.
+    enforced_by:
+      - test: core-ui/runtime/internal/treegate.TestRuntimeAttrsAreDocumented
+      - test: core-ui/runtime/internal/treegate.TestPrivilegedAttrsAreDocumented
+  - id: no-hard-navigation
+    rule: Navigation goes through the client router; nothing assigns location.href or reloads the page to move between pages or to refresh one.
+    enforced_by:
+      - contract: GOFASTR1802
+    applies:
+      - framework/ui/
+      - framework/uihost/
+      - battery/
+      - examples/
+      - cmd/gofastr/
+  - id: sse-is-push-only
+    rule: Server-sent events travel on the single /__gofastr/sse bus and carry only background events (presence, collaboration, sub-second updates), never the answer to a user action; passive freshness polls with data-cui-poll.
+    enforced_by:
+      - contract: GOFASTR1803
+    judge: Does this change deliver the result of a user action over SSE, or open an EventSource outside the /__gofastr/sse bus and dev-mode reload tooling?
+    applies:
+      - framework/
+      - battery/
+      - examples/
+      - cmd/gofastr/
+  - id: no-list-math-in-js
+    rule: Pagination, sort and filter are computed on the server; the runtime only follows the links and swaps the regions the server returns.
+    judge: Does this change compute a page, a sort order or a filter result in JavaScript instead of asking the server?
+    applies:
+      - framework/ui/
+      - framework/uihost/
+      - battery/
+      - examples/
+      - cmd/gofastr/
+decisions:
+  - id: poll-before-push
+    status: accepted
+    decision: Passive freshness (dashboards, counters, statuses) polls with data-cui-poll; SSE is the last rung.
+    rejected:
+      - option: Push every change over SSE.
+        why: It holds a connection per tab and needs fanout across replicas, for updates nobody needs within a second.
+    upholds: [sse-is-push-only]

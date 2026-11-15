@@ -185,7 +185,7 @@ func familyCall(pass *analysis.Pass, call *ast.CallExpr) (string, bool) {
 			}
 		}
 		if pkgName != nil {
-			// The repo's own decoders, the spellings CLAUDE.md steers
+			// The repo's own decoders, the spellings AGENTS.md steers
 			// every inbound seam to: discarding their error is the same
 			// bug, and the zero value marches on all the same.
 			switch pkgName.Imported().Path() + "." + sel.Sel.Name {

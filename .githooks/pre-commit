@@ -205,7 +205,7 @@ echo ""
 go run ./cmd/affected -- go vet
 pass "go vet clean"
 
-# ---- 5b. repo analyzers (CLAUDE.md hard rules as vet checks) ----
+# ---- 5b. repo analyzers (AGENTS.md hard rules as vet checks) ----
 # Affected packages, except that a change under internal/analyzers or
 # cmd/vettool vets everything: a new rule can flag code nobody touched.
 # The binary goes in a fresh mktemp dir, never a fixed /tmp name: every

@@ -323,4 +323,4 @@ new RPC is still in flight.
 
 - `gofastr-ui`: the broader SSR-with-hydration architecture this builds on.
 - `gofastr-docs`: docs ship with the same commit as a new component.
-- Verify with pixels, not probes: `go test` ≠ "works in a browser" (see gofastr-ui + CLAUDE.md Hard rule 9).
+- Verify with pixels, not probes: `go test` ≠ "works in a browser" (see gofastr-ui + AGENTS.md Hard rule 9).

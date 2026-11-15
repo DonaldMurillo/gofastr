@@ -93,7 +93,7 @@ primitives:
 	go run ./cmd/primitives lint
 	go run ./cmd/primitives gen --check
 
-# Repo-local go/analysis analyzers (internal/analyzers): CLAUDE.md hard
+# Repo-local go/analysis analyzers (internal/analyzers): AGENTS.md hard
 # rules as vet checks. Runs in CI's vet step and the pre-commit hook.
 # Affected packages, except that a change under internal/analyzers or
 # cmd/vettool vets everything: a new rule can flag code nobody touched.

@@ -10,7 +10,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/router"
 )
 
-// TestSecPerUserDocNotPublic asserts the CLAUDE.md rule-#6 property: a
+// TestSecPerUserDocNotPublic asserts the AGENTS.md rule-#6 property: a
 // document with the default access policy is NOT world-readable.
 func TestSecPerUserDocNotPublic(t *testing.T) {
 	b := New(Config{}).Document(Document{ // no Access, no DefaultAccess override

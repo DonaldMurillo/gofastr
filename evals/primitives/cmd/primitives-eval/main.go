@@ -30,6 +30,9 @@ type config struct {
 	timeout          time.Duration
 	keep             bool
 	cellBudget       float64
+	// verify is a gofastr binary built from this checkout, so every guide
+	// cell is graded by the same contract catalog.
+	verify string
 }
 
 func main() {
@@ -70,6 +73,24 @@ func insideDir(dir, path string) (bool, error) {
 	return filepath.IsLocal(rel), nil
 }
 
+// ancestorGuide returns the first CLAUDE.md, CLAUDE.local.md or AGENTS.md
+// in dir or a directory above it, following symlinks, or "" when there is none.
+// Every cell is a directory inside dir, and Claude Code reads those files
+// from every parent of its working directory, so one there would be read
+// in every cell and blur the conditions.
+func ancestorGuide(dir string) string {
+	for d := resolveExisting(dir); ; d = filepath.Dir(d) {
+		for _, name := range []string{"CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"} {
+			if info, err := os.Stat(filepath.Join(d, name)); err == nil && !info.IsDir() {
+				return filepath.Join(d, name)
+			}
+		}
+		if filepath.Dir(d) == d {
+			return ""
+		}
+	}
+}
+
 // resolveExisting follows the symlinks in the part of path that exists
 // and keeps the rest as written: a work directory is usually not there
 // yet, but the directory it will be made in is.
@@ -98,6 +119,11 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 	if cfg.out == "" {
 		cfg.out = filepath.Join(repo, "dist", "primitives-eval", stamp)
 	}
+	// Each cell runs the verifier from its own directory, so a relative
+	// -out would point the verifier inside the cell.
+	if cfg.out, err = filepath.Abs(cfg.out); err != nil {
+		return err
+	}
 	if cfg.work == "" {
 		if cfg.work, err = os.MkdirTemp("", "primitives-eval-"); err != nil {
 			return err
@@ -113,8 +139,18 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 	if inside {
 		return fmt.Errorf("-work %s is inside the repository: a cell there would read this checkout's CLAUDE.md", cfg.work)
 	}
+	if guide := ancestorGuide(cfg.work); guide != "" {
+		return fmt.Errorf("-work %s is at or below %s: Claude Code loads it into every cell, whatever tree the cell holds", cfg.work, guide)
+	}
 	if err := os.MkdirAll(cfg.out, 0o700); err != nil {
 		return err
+	}
+
+	if suite == suiteGuide || suite == "all" {
+		cfg.verify = filepath.Join(cfg.out, "gofastr")
+		if out, err := command(context.Background(), repo, "go", "build", "-o", cfg.verify, "./cmd/gofastr").CombinedOutput(); err != nil {
+			return fmt.Errorf("build gofastr for grading: %v\n%s", err, out)
+		}
 	}
 
 	var cells []*cell

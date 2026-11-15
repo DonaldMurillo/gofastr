@@ -187,7 +187,7 @@ mega-commits.
 
 ## Where to start reading
 
-- `CLAUDE.md`: repo working agreements (humans benefit too).
+- `AGENTS.md`: repo working agreements (humans benefit too).
 - `core-ui/ARCHITECTURE.md`: mandatory before any UI/runtime work.
 - `framework/ARCHITECTURE.md`: mandatory before touching `framework/` layout.
 - `framework/docs/content/*.md`: the user-facing docs, embedded into the

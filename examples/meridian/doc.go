@@ -1,5 +1,5 @@
 // Package main is Meridian, the GoFastr flagship demo, and the
-// design-system completeness canary (CLAUDE.md hard rule 9).
+// design-system completeness canary (AGENTS.md hard rule 9).
 //
 // # Maintenance model: two generator-owned trees, the rest hand-maintained
 //

@@ -64,7 +64,7 @@ contracts:
     GOFASTR1803: # rendering/bespoke-event-source
       exempt:
         - framework/contracts/**
-        # Same exception class CLAUDE.md already carves out for dev
+        # Same exception class AGENTS.md already carves out for dev
         # tooling (framework/dev livereload, kiln's build-mode reload):
         # the harness sidecar is a developer tool with its own stream and
         # no app surface to share a bus with.

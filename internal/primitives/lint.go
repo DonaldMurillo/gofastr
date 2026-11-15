@@ -172,6 +172,19 @@ func (l *linter) invariants(p *Primitive) {
 		for _, e := range inv.EnforcedBy {
 			l.enforcer(e)
 		}
+		for _, ref := range inv.Applies {
+			files, err := l.expand(ref.Value)
+			if err != nil {
+				l.errf(ref.Line, "applies %q could not be read in full: %v", ref.Value, err)
+			}
+			if len(files) == 0 {
+				l.errf(ref.Line, "applies %q matches no file", ref.Value)
+				continue
+			}
+			if !slices.ContainsFunc(files, func(f string) bool { return !slices.Contains(l.c.Chain(f), p) }) {
+				l.errf(ref.Line, "applies %q matches only files %s owns: the rule is shown there already", ref.Value, p.ID)
+			}
+		}
 	}
 }
 

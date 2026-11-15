@@ -19,7 +19,7 @@ rule held on one path and was missing on its twin. Examples:
 - the access observer vs the hook/event recover (U4-02)
 
 The November bashes found the same thing ("about half of that corpus was
-parity drift", CLAUDE.md). 16 of the 28 came from packages no recent round
+parity drift", AGENTS.md). 16 of the 28 came from packages no recent round
 had read. So the count measures where a round looked more than how buggy
 the code is. This skill goes after both causes: twins become single
 implementations, and every hunt records what it read, so the next round

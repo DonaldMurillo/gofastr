@@ -1,0 +1,37 @@
+primitive: guide
+summary: The agent guide, AGENTS.md at the repo root, which says how to find the registry and lists the hard rules by number.
+code:
+  - AGENTS.md
+  - CLAUDE.md
+docs:
+  - docs/contributing.md
+  - primitives/README.md
+on_change:
+  - A rule or a reason that would lengthen AGENTS.md goes into the primitive it governs, or into docs/contributing.md when no primitive can own it.
+invariants:
+  - id: stays-short
+    rule: AGENTS.md is at most 60 lines.
+    enforced_by:
+      - test: internal/primitives.TestAgentsMDStaysShort
+  - id: names-real-rules
+    rule: Every numbered hard rule in AGENTS.md that names a registry invariant names one that exists.
+    enforced_by:
+      - test: internal/primitives.TestAgentsMDNamesRealRules
+  - id: claude-md-only-imports
+    rule: CLAUDE.md holds nothing but the line @AGENTS.md, so every agent reads one guide.
+    enforced_by:
+      - test: internal/primitives.TestClaudeMDOnlyImportsAgentsMD
+decisions:
+  - id: agents-md-is-the-guide
+    date: 2026-11-15
+    status: accepted
+    decision: The guide lives in AGENTS.md, the file most coding agents read, and CLAUDE.md imports it for Claude Code.
+    rejected:
+      - option: Keep the guide in CLAUDE.md.
+        why: Only Claude Code reads CLAUDE.md, so Codex, Cursor and Copilot would see no rules.
+      - option: Make CLAUDE.md a symlink to AGENTS.md.
+        why: Symlinks break on Windows checkouts without developer mode, and an import line works everywhere.
+      - option: Delete CLAUDE.md and rely on Claude Code reading AGENTS.md itself.
+        why: Claude Code 2.1.325 does read AGENTS.md alone, but older versions and other tools that look for CLAUDE.md do not, and with the import AGENTS.md still loads once.
+    revisit_if: Every Claude Code version in use reads AGENTS.md without the import.
+    upholds: [claude-md-only-imports]

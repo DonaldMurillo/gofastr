@@ -1,0 +1,17 @@
+primitive: uihost
+summary: Serves pages, partials, islands, actions and assets to the runtime, server-rendered first.
+code:
+  - framework/uihost/
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: in-page-state-stays-on-its-route
+    rule: A screen's own sort, page and filter live in its query string, and a region embedded in a page is an island; neither gets a route of its own.
+    enforced_by:
+      - contract: GOFASTR1004
+    judge: Does this change register a new route for state that belongs to an existing page, such as a page number, sort, tab or expanded region?
+    applies:
+      - framework/ui/
+      - battery/
+      - examples/
+      - cmd/gofastr/

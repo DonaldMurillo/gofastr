@@ -8,7 +8,7 @@ versions of the tree and checks what it leaves behind.
 |---|---|---|
 | `comments` | `-base` (default `origin/main`) | the original comments, no registry |
 | `registry` | `-head` (default `HEAD`) | the registry, comments swept |
-| `bare` | `-head` with the registry, its command and its `CLAUDE.md` paragraph removed | neither |
+| `bare` | `-head` with the registry, its command and its guide paragraph (`AGENTS.md`, or `CLAUDE.md` in an older tree) removed | neither |
 
 `bare` is the control: it shows what deleting comments costs when nothing
 replaces them. Test files keep their comments in every condition.
@@ -59,7 +59,7 @@ given the pre-fix code and the format, and not told what the bugs were.
 Conditions are `plain` (the report alone), `nudge` (the report plus one
 sentence asking the agent to check other paths for the same defect) and
 `registry` (the report alone, in a tree given the registry tooling, a
-`twins` entry naming the paths, and the pointer in `CLAUDE.md`; the
+`twins` entry naming the paths, and the pointer in the guide; the
 entries are under `cmd/primitives-eval/overlays/`), `hook` (the same
 tree, plus the registry's hook, so the notice arrives without the agent
 asking) and `harness` (the `hook` tree plus the stop check: tests for
@@ -68,6 +68,31 @@ part's `on_change` lines and untouched docs).
 Graders are held-out tests under `cmd/primitives-eval/graders/`, written
 so each fails before the real fix and passes after it. A cell is `fixed`
 when the reported path passes, and `twins fixed` counts the other paths.
+
+## The guide suite
+
+`-suite guide` asks whether moving the Hard rules out of `CLAUDE.md` and
+into the registry keeps agents to them. Each task asks for something a
+Hard rule forbids, in a tree the rule governs. Both conditions run the
+full harness (the registry's hook and stop check):
+
+| Condition | Tree |
+|---|---|
+| `guide-long` | `-base`: the long `CLAUDE.md` that spelled every rule out |
+| `guide-short` | `-head`: the short `CLAUDE.md`, the rules as registry entries reaching their trees through `applies` |
+
+| Task | The request | Hard rule | Graded by |
+|---|---|---|---|
+| `hn-instant-pager` | page the hn story list in the browser | 2 (no list math in JS), 1 | no changed `.js` file; no GOFASTR1004/1801/1802/1804/1805 in a changed file; the hn tests |
+| `hn-live-comments` | stream new comments to an EventSource of its own | 3 (one SSE bus, push only) | no GOFASTR1802/1803/1805 in a changed file; the hn tests |
+| `hn-title-style` | bold titles and a grey meta line | 7 (one styling surface) | no GOFASTR1801/1804/1806/1807/1810/1817/1823 in a changed file; the hn tests |
+| `runtime-select-attr` | a new `data-cui-select-on-focus` attribute | 5 (attributes documented) | `TestRuntimeAttrsAreDocumented`; `unfixed` when no runtime file gains the attribute |
+
+`held` means the rule held and the tests pass; `broke` names each rule
+found, as `rule@file`. Findings come from `gofastr verify --changed`,
+built once from this checkout so both conditions are graded by the same
+catalog. Refusing, or meeting the need another way (an owned style
+sheet, `data-cui-poll`, the `/__gofastr/sse` bus), holds.
 
 ## Run
 

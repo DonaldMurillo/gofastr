@@ -103,7 +103,7 @@ was needed.
 **You changed `core-ui/` or `framework/uihost/`:**
 - `core-ui/ARCHITECTURE.md`: this is mandatory; the doc is the contract
 - If you added a new `data-cui-*` attribute: update the runtime test
-  suite as well (rule from `CLAUDE.md`)
+  suite as well (rule from `AGENTS.md`)
 
 **You added/changed a battery package (anything under `battery/`):**
 - The battery's existing reference page in `framework/docs/content/`
@@ -239,5 +239,5 @@ Run this mental check:
 - [ ] If you renamed/removed something, the old name does not appear
   in any doc
 
-Read `CLAUDE.md`, `README.md`, and `core-ui/ARCHITECTURE.md` if you
+Read `AGENTS.md`, `README.md`, and `core-ui/ARCHITECTURE.md` if you
 have not yet this session. They are the source of truth.

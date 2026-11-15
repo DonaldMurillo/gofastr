@@ -326,7 +326,7 @@ func TestE2E_LiveDashboard_AcknowledgeButtonBumpsCount(t *testing.T) {
 		// back to static text (no data-cui-signal attr).
 		chromedp.WaitVisible(ackCountSel, chromedp.ByQuery),
 		chromedp.Text(ackCountSel, &before, chromedp.ByQuery),
-		// Click (NOT Submit, see CLAUDE.md). data-cui-signal-inc is
+		// Click (NOT Submit, see AGENTS.md). data-cui-signal-inc is
 		// a click delegator; no form submission is involved.
 		chromedp.Click(ackBtnSel, chromedp.ByQuery),
 		// Poll for the DOM to reflect the new signal value. The

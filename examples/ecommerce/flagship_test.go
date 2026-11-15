@@ -160,7 +160,7 @@ func TestFlagship_AllSurfacesFromAppSpec(t *testing.T) {
 // TestOrdersOwnerScoped asserts the orders entity, which carries customer
 // PII (name, email, phone, addresses), is owner-scoped: anonymous REST and
 // MCP access is refused outright, while a logged-in customer can create and
-// read their own orders. This is the CLAUDE.md hard-rule-6 check; the
+// read their own orders. This is the AGENTS.md hard-rule-6 check; the
 // app spec previously shipped with auth disabled and orders wide open.
 func TestOrdersOwnerScoped(t *testing.T) {
 	if testing.Short() {

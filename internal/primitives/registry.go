@@ -93,7 +93,10 @@ type Invariant struct {
 	Rule       string
 	EnforcedBy []Enforcer
 	Judge      string
-	Line       int
+	// Applies lists files outside the primitive's own code that the rule
+	// also governs, in the same pattern form as Code.
+	Applies []Ref
+	Line    int
 }
 
 // Enforcer names what fails when an invariant is broken.
@@ -366,10 +369,10 @@ func parsePrimitive(file, id string, src []byte, findings *[]Finding) *Primitive
 		p.Twins = append(p.Twins, twin)
 	}
 	for _, n := range d.list(root, "invariants") {
-		if !d.mapping(n, "invariant", "id", "rule", "enforced_by", "judge") {
+		if !d.mapping(n, "invariant", "id", "rule", "enforced_by", "judge", "applies") {
 			continue
 		}
-		inv := Invariant{ID: d.id(n, "invariant"), Rule: d.str(n, "rule", true), Judge: d.str(n, "judge", false), Line: n.Line}
+		inv := Invariant{ID: d.id(n, "invariant"), Rule: d.str(n, "rule", true), Judge: d.str(n, "judge", false), Applies: d.refs(n, "applies"), Line: n.Line}
 		for _, e := range d.list(n, "enforced_by") {
 			if !d.mapping(e, "enforced_by entry", KindTest, KindAnalyzer, KindContract) {
 				continue

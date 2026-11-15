@@ -7,7 +7,7 @@ checked by `go run ./cmd/primitives lint`.
 
 Where this is going, and in what order, is `PLAN.md` beside this file.
 
-It replaces prose. A rule that lives in a code comment, in `CLAUDE.md` or
+It replaces prose. A rule that lives in a code comment, in `AGENTS.md` or
 in an architecture document is not enforced and goes stale. An enforced
 rule here names the test, analyzer or contract rule that fails when it
 is broken. The few that nothing can enforce carry a question for a
@@ -24,7 +24,7 @@ go run ./cmd/primitives show <id>       # one primitive in full, and its childre
 Run `primitives for` on the files you are about to change. It prints the chain
 of primitives that own them, outermost first, with every invariant and
 decision on that chain. That is all the registry holds for those files.
-`CLAUDE.md` still names the architecture documents to read before adding
+`AGENTS.md` still names the architecture documents to read before adding
 or moving code they cover.
 
 ## Layout
@@ -67,6 +67,8 @@ invariants:
       - analyzer: mapwriter              # a registered internal/analyzers package
       - contract: GOFASTR1407            # a framework/contracts rule
     judge: A yes/no question where yes means a violation?
+    applies:                             # files outside code: this rule governs too
+      - framework/crud/eager.go          # same pattern form as code
 decisions:
   - id: match-by-primary-key
     date: 2026-11-14
@@ -81,6 +83,12 @@ decisions:
 
 Quote any string that holds `: ` or ` #`. Block scalars (`|`, `>`) are not
 read; a rule or a reason is one sentence on one line.
+
+A file has one owner chain, but a rule can govern files of other
+primitives. `applies` names them, in the same form as `code`, and the
+rule then shows for those files too: in `primitives for`, in the stop
+check's notice and as a `judge` question. The rule keeps one home.
+Do not copy a rule into each primitive it governs.
 
 A twins entry is a debt, not a feature. One job belongs in one
 implementation, and the fix for a twin is to merge its sites and delete
@@ -109,7 +117,9 @@ the primitive that lists it.
   code passes it asks, once per session, whether another code path does
   the same job and needs the same change. For each primitive whose code
   changed it shows the `on_change` lines, and names the `docs` when none
-  of them changed.
+  of them changed. For each changed file it shows, once per session,
+  every rule another primitive `applies` to it, with its `judge`
+  question.
 - **Deny rules** cover what cannot be taken back: a forced push, a push
   to `main`, discarding the whole working tree (`git reset --hard`,
   `git clean`, `git checkout .`, `git restore .`), and reading `.env`
@@ -124,6 +134,8 @@ the primitive that lists it.
 - A `code` entry that matches no file, or a file claimed by two primitives
   where neither contains the other.
 - A `docs` path that is not a file.
+- An `applies` entry that matches no file, or only files its own
+  primitive already owns.
 - A `twins` entry with no `why`, with fewer than two sites, or with a
   site that is not a file.
 - An `enforced_by` test that does not exist, an analyzer that is not

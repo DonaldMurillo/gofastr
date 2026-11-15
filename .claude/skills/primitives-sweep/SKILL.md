@@ -1,6 +1,6 @@
 ---
 name: primitives-sweep
-description: Move what a package's comments and prose claim into the registry (primitives/**/primitive.yml), then delete the comments. Load it when asked to sweep, strip or cut comments, to add a primitive, invariant or decision to the registry, to record why something was built a certain way, or to shrink CLAUDE.md or an ARCHITECTURE.md into registry entries. Also load it before writing a comment longer than two lines in framework code, because the comment probably belongs in the registry instead.
+description: Move what a package's comments and prose claim into the registry (primitives/**/primitive.yml), then delete the comments. Load it when asked to sweep, strip or cut comments, to add a primitive, invariant or decision to the registry, to record why something was built a certain way, or to shrink AGENTS.md or an ARCHITECTURE.md into registry entries. Also load it before writing a comment longer than two lines in framework code, because the comment probably belongs in the registry instead.
 ---
 
 # Primitives sweep
@@ -91,10 +91,14 @@ End with a table: comments removed by kind, invariants added, decisions
 added, mutations proven, and every rule left unenforced with the reason.
 An unenforced rule is a finding, not a footnote.
 
-## Moving prose out of CLAUDE.md and the architecture documents
+## Moving prose out of AGENTS.md and the architecture documents
 
 Same steps, with the paragraph as the comment. A hard rule becomes an
 invariant on the primitive it governs, enforced by the analyzer or
-contract rule that already checks it. Delete the paragraph once
-`primitives for` on a governed file prints the rule. What stays in CLAUDE.md
+contract rule that already checks it. A rule that governs files of
+several primitives lives on one of them and lists the rest under
+`applies`; never copy it. Delete the paragraph once
+`primitives for` prints the rule on a file in every tree the rule
+governs, each `applies` entry included; a tree it does not reach yet
+keeps the paragraph. What stays in AGENTS.md
 is how to find the registry and what no primitive can own.

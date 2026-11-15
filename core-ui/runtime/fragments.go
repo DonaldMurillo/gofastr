@@ -8,7 +8,7 @@ package runtime
 // Nothing in this file changes runtime.js or src/*.js. It is pure
 // declaration; the gate that enforces it lives in fragment_map_test.go.
 //
-// Hard rule 5 (CLAUDE.md) already forbids shipping a new data-cui-*
+// Hard rule 5 (AGENTS.md) already forbids shipping a new data-cui-*
 // attribute without updating ARCHITECTURE.md and the runtime test suite.
 // This map extends that obligation: a new attribute must also declare an
 // owning fragment here, or the build fails.

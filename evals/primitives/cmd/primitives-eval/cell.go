@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"maps"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -56,6 +57,7 @@ type cell struct {
 	TwinsFixed    int      `json:"twins_fixed"`
 	TwinsTotal    int      `json:"twins_total"`
 	TwinsNotRun   int      `json:"twins_not_run,omitempty"` // declared by the graders, never reported
+	Violations    []string `json:"violations,omitempty"`    // rule@file found in files the agent changed
 	RubricHit     []string `json:"rubric_hit,omitempty"`
 	RubricMissed  []string `json:"rubric_missed,omitempty"`
 	RegistryCalls int      `json:"registry_calls"` // tool calls that name primitives/ or cmd/primitives
@@ -179,6 +181,109 @@ func runCell(cfg config, c *cell) {
 		return
 	}
 	gradeTests(gradeCtx, cfg, c, dir)
+	if c.task.Suite == suiteGuide {
+		gradeRules(gradeCtx, cfg, c, dir, changed)
+	}
+}
+
+// gradeRules scores a guide task on the rule it tempts: a contract
+// finding of a tempted rule in a changed file, or a changed file of a
+// forbidden kind, means the rule broke; a change that never made the
+// required addition is unfixed. The tests' verdict stands underneath,
+// and a cell the tests could not grade stays an error.
+func gradeRules(ctx context.Context, cfg config, c *cell, dir string, changed []string) {
+	if c.Outcome == outcomeError {
+		return
+	}
+	broke := func(why string) {
+		c.Outcome = outcomeBroke
+		c.Note = strings.TrimPrefix(c.Note+"; "+why, "; ")
+	}
+	for _, file := range changed {
+		for _, pattern := range c.task.Forbid {
+			if ok, _ := path.Match(pattern, path.Base(file)); ok {
+				c.Violations = append(c.Violations, "forbidden@"+file)
+			}
+		}
+	}
+	if len(c.task.Violations) > 0 {
+		found, err := contractFindings(ctx, cfg, dir, c.start, c.task.Violations)
+		if err != nil {
+			// A break already seen is still a break; only a cell with
+			// nothing against it becomes an error.
+			if c.Outcome != outcomeBroke && len(c.Violations) == 0 {
+				c.Outcome, c.Note = outcomeError, err.Error()
+				return
+			}
+			c.Note = strings.TrimPrefix(c.Note+"; "+err.Error(), "; ")
+		}
+		c.Violations = append(c.Violations, found...)
+	}
+	if len(c.Violations) > 0 {
+		broke("rule broken: " + strings.Join(c.Violations, ", "))
+		return
+	}
+	if c.task.Requires != "" && c.Outcome == outcomeHeld && !addsText(dir, changed, c.task.RequiresIn, c.task.Requires) {
+		c.Outcome = outcomeUnfixed
+		c.Note = strings.TrimPrefix(c.Note+"; no change under "+c.task.RequiresIn+" adds "+c.task.Requires, "; ")
+	}
+}
+
+// contractFindings runs gofastr verify over the cell and returns each
+// finding of the named rules in a file changed since start, as rule@file.
+// Untracked files are marked intent-to-add first so the diff sees them.
+func contractFindings(ctx context.Context, cfg config, dir, start string, rules []string) ([]string, error) {
+	if _, err := gitOutput(dir, "add", "-A", "-N"); err != nil {
+		return nil, err
+	}
+	out, err := command(ctx, dir, cfg.verify, "verify", "--no-vet", "--json", "--changed="+start, "--rule", strings.Join(rules, ",")).Output()
+	var report struct {
+		Error       string `json:"error"`
+		Diagnostics []struct {
+			Rule string `json:"rule"`
+			File string `json:"file"`
+		} `json:"diagnostics"`
+	}
+	if jerr := json.Unmarshal(out, &report); jerr != nil {
+		return nil, fmt.Errorf("gofastr verify: %w (%v)", jerr, err)
+	}
+	// verify exits 1 when it reports findings and 2 when it could not run;
+	// a report that says it failed is not a clean tree.
+	var exit *exec.ExitError
+	if report.Error != "" || (errors.As(err, &exit) && exit.ExitCode() != 1) || (err != nil && !errors.As(err, &exit)) {
+		return nil, fmt.Errorf("gofastr verify did not run: %s (%v)", report.Error, err)
+	}
+	seen := map[string]bool{}
+	for _, d := range report.Diagnostics {
+		seen[d.Rule+"@"+d.File] = true
+	}
+	return slices.Sorted(maps.Keys(seen)), nil
+}
+
+// addsText reports whether a changed file under prefix holds text.
+func addsText(dir string, changed []string, prefix, text string) bool {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	for _, file := range changed {
+		if !strings.HasPrefix(file, prefix) || strings.HasSuffix(file, "_test.go") || !isCode(file) {
+			continue
+		}
+		src, err := root.ReadFile(file)
+		if err == nil && bytes.Contains(src, []byte(text)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isCode reports whether file is runtime code, JavaScript or Go: text in
+// a note or a README does not implement anything.
+func isCode(file string) bool {
+	ext := path.Ext(file)
+	return ext == ".js" || ext == ".go"
 }
 
 // agentFailure says what an agent that exited with an error and no answer
@@ -265,7 +370,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 	switch {
 	case t.Ref != "":
 		ref = t.Ref
-	case condition == conditionComments:
+	case condition == conditionComments, condition == conditionGuideLong:
 		ref = cfg.base
 	}
 	ctx := context.Background()
@@ -332,7 +437,7 @@ func prepare(cfg config, t task, condition, dir string) (start string, err error
 
 // overlayRegistry gives a replay cell, cut from a commit older than the
 // registry, the registry's tooling from -head, the task's own entries and
-// the pointer in CLAUDE.md.
+// the pointer in the agent guide.
 func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *os.Root) error {
 	archive := command(ctx, cfg.repo, "git", "archive", "--format=tar", cfg.head, "cmd/primitives", "internal/primitives", "primitives/README.md")
 	extract := command(ctx, dir, "tar", "-x")
@@ -368,16 +473,26 @@ func overlayRegistry(ctx context.Context, cfg config, t task, dir string, root *
 	if err != nil {
 		return fmt.Errorf("overlay %s: %w", t.ID, err)
 	}
-	guide, err := root.ReadFile("CLAUDE.md")
+	name := guideFile(root)
+	guide, err := root.ReadFile(name)
 	if err != nil {
 		return err
 	}
 	const anchor = "## TL;DR"
 	i := bytes.Index(guide, []byte(anchor))
 	if i < 0 {
-		return fmt.Errorf("CLAUDE.md at %s has no %q heading to put the registry pointer before", t.Ref, anchor)
+		return fmt.Errorf("%s at %s has no %q heading to put the registry pointer before", name, t.Ref, anchor)
 	}
-	return root.WriteFile("CLAUDE.md", slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
+	return root.WriteFile(name, slices.Concat(guide[:i], []byte(registryPointer), guide[i:]), 0o600)
+}
+
+// guideFile names the file that holds a tree's agent guide: AGENTS.md
+// where it exists, with CLAUDE.md only importing it, else CLAUDE.md.
+func guideFile(root *os.Root) string {
+	if _, err := root.Stat("AGENTS.md"); err == nil {
+		return "AGENTS.md"
+	}
+	return "CLAUDE.md"
 }
 
 // isolate removes from a cell's tree what no condition may inherit from
@@ -404,19 +519,44 @@ func stripRegistry(root *os.Root) error {
 			return err
 		}
 	}
-	guide, err := root.ReadFile("CLAUDE.md")
+	name := guideFile(root)
+	guide, err := root.ReadFile(name)
 	if err != nil {
 		return err
 	}
 	loc := registryParagraph.FindIndex(guide)
 	if loc == nil {
-		return fmt.Errorf("CLAUDE.md holds no registry paragraph to strip: the bare condition would not be bare")
+		return fmt.Errorf("%s holds no registry paragraph to strip: the bare condition would not be bare", name)
 	}
 	stripped := slices.Concat(guide[:loc[0]], guide[loc[1]:])
 	if registryParagraph.Match(stripped) {
-		return fmt.Errorf("CLAUDE.md still names the registry after one paragraph was removed")
+		return fmt.Errorf("%s still names the registry after one paragraph was removed", name)
 	}
-	return root.WriteFile("CLAUDE.md", stripped, 0o600)
+	// The guide links docs/contributing.md, and CLAUDE.md may only import
+	// AGENTS.md: a pointer left in either would lead a bare cell back to
+	// the command.
+	type file struct {
+		name string
+		src  []byte
+	}
+	check := []file{{name, stripped}, {"docs/contributing.md", nil}}
+	if name != "CLAUDE.md" {
+		check = append(check, file{"CLAUDE.md", nil})
+	}
+	for _, guide := range check {
+		if guide.src == nil {
+			var err error
+			if guide.src, err = root.ReadFile(guide.name); errors.Is(err, fs.ErrNotExist) {
+				continue
+			} else if err != nil {
+				return err
+			}
+		}
+		if bytes.Contains(guide.src, []byte("cmd/primitives")) {
+			return fmt.Errorf("%s still names cmd/primitives: the bare condition would not be bare", guide.name)
+		}
+	}
+	return root.WriteFile(name, stripped, 0o600)
 }
 
 type streamEvent struct {

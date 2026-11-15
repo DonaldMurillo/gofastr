@@ -21,6 +21,9 @@ invariants:
       - test: framework/crud.TestReadScope_InProcessAPIScopes
       - test: framework/crud.TestReadScope_TypedQueryScopes
     judge: Does this change build or render a ReadScope predicate anywhere other than readScopeFilters and renderReadScope?
+    applies:
+      - framework/crud/eager.go
+      - framework/crud/include.go
   - id: unknown-operator-matches-nothing
     rule: A read-scope operator the renderer does not know renders as a predicate that matches no row.
     enforced_by:
@@ -38,6 +41,16 @@ invariants:
       - test: framework/crud.TestAnonymousCreateRejectedByDefault
       - test: framework/crud.TestAnonymousListRejectedByDefault
       - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
+  - id: per-user-entity-is-scoped
+    rule: An entity holding per-user data that auto-CRUD exposes sets Scope.OwnerField.
+    enforced_by:
+      - contract: GOFASTR1901
+    judge: Does this change expose through auto-CRUD an entity whose rows belong to one user without setting Scope.OwnerField, whatever its field names or Access block?
+    applies:
+      - framework/entity/
+      - battery/
+      - examples/
+      - cmd/gofastr/
   - id: one-scope-gate
     rule: The routes and the Can*Scoped predicates for an entity's own surface take one decision, scopeGate, so a screen and the route it mirrors give the same answer for every posture; a read reached through a relation also applies relationReachable.
     enforced_by:
