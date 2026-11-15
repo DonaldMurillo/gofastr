@@ -6,9 +6,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestStripRegistry(t *testing.T) {
@@ -325,5 +327,77 @@ func TestWorkDirectoryInsideTheRepositoryIsRefused(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("insideDir(%s) = %t, %v; want %t", path, got, err, want)
 		}
+	}
+}
+
+// stubCell builds a one-package repository and a stand-in for the CLI,
+// and returns the config to run a cell against them.
+func stubCell(t *testing.T, script string) (config, task) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the stand-in CLI is a shell script")
+	}
+	repo := t.TempDir()
+	for name, body := range map[string]string{
+		"go.mod":      "module example.test/m\n\ngo 1.24\n",
+		"a/a.go":      "package a\n\nfunc A() int { return 1 }\n",
+		"a/a_test.go": "package a\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {\n\tif A() != 1 {\n\t\tt.Fatal(\"A changed\")\n\t}\n}\n",
+	} {
+		p := filepath.Join(repo, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "-A"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "start"}} {
+		if _, err := gitOutput(repo, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cli := filepath.Join(t.TempDir(), "cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\n"+script+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{repo: repo, base: "HEAD", head: "HEAD", claude: cli, model: "none", work: t.TempDir(), out: t.TempDir(), timeout: 500 * time.Millisecond, cellBudget: 1}
+	return cfg, task{ID: "stub", Packages: []string{"./a/"}, Tests: "TestA"}
+}
+
+func TestACellWhoseAgentRanOutOfTimeIsGradedWithANote(t *testing.T) {
+	cfg, stub := stubCell(t, "exec sleep 30")
+	c := &cell{Task: stub.ID, Condition: conditionRegistry, Run: 1, task: stub}
+	runCell(cfg, c)
+	if c.Outcome != outcomeHeld || c.TestsPassed == 0 {
+		t.Errorf("outcome %s with %d tests passed, note %q: the tree the agent left was not graded", c.Outcome, c.TestsPassed, c.Note)
+	}
+	if !strings.Contains(c.Note, "ran out of time") {
+		t.Errorf("the note does not say the agent ran out of time: %q", c.Note)
+	}
+}
+
+func TestACellWhoseAgentNeverRanIsAnError(t *testing.T) {
+	cfg, stub := stubCell(t, "exit 3")
+	c := &cell{Task: stub.ID, Condition: conditionRegistry, Run: 1, task: stub}
+	runCell(cfg, c)
+	if c.Outcome != outcomeError {
+		t.Errorf("outcome %s, note %q: an untouched tree was graded as if an agent had worked on it", c.Outcome, c.Note)
+	}
+}
+
+func TestRunRefusesAWorkDirectoryInsideTheRepository(t *testing.T) {
+	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Skip("not inside a git checkout:", err)
+	}
+	work := filepath.Join(repo, "..cells")
+	// The task filter matches nothing, so a run that got past the refusal
+	// would stop there instead of starting cells.
+	err = run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, 1, 1, 0)
+	if err == nil || !strings.Contains(err.Error(), "is inside the repository") {
+		t.Errorf("run with -work %s returned %v, want the refusal", work, err)
+	}
+	if _, statErr := os.Stat(work); statErr == nil {
+		t.Errorf("run created %s before refusing it", work)
 	}
 }
