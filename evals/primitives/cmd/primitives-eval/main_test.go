@@ -391,10 +391,14 @@ func TestAWorkDirectoryReachedThroughASymlinkIsInside(t *testing.T) {
 	if err := os.Mkdir(repo, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(repo, "kept"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Symlink(repo, link); err != nil {
 		t.Skip("no symlinks here:", err)
 	}
 	for path, want := range map[string]bool{
+		filepath.Join(link, "kept"):                true,
 		filepath.Join(link, "cells"):               true,
 		filepath.Join(link, "not", "there", "yet"): true,
 		filepath.Join(base, "outside", "cells"):    false,
