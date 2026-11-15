@@ -38,6 +38,8 @@ invariants:
   - id: judged-only
     rule: Names are kind.
     judge: Is a name unkind?
+    applies:
+      - pkg/heavy/
 decisions:
   - id: old-way
     status: superseded
@@ -137,6 +139,9 @@ func TestLintRefuses(t *testing.T) {
 		{"twin with one site", "      - path: pkg/heavy/heavy.go\n        note: sorts on export\n", "", "names fewer than two sites"},
 		{"twin site missing", "path: pkg/heavy/heavy.go", "path: pkg/heavy/gone.go", `site "pkg/heavy/gone.go" is not a file`},
 		{"twin site without note", "        note: sorts on export\n", "", "missing note"},
+		{"applies matches nothing", "      - pkg/heavy/\n", "      - pkg/gone/\n", `applies "pkg/gone/" matches no file`},
+		{"applies only to own files", "      - pkg/heavy/\n", "      - pkg/store/*.go\n", `applies "pkg/store/*.go" matches only files store owns`},
+		{"applies is not a list", "    applies:\n      - pkg/heavy/\n", "    applies: pkg/heavy/\n", "applies must be a list"},
 		{"rejected without why", "        why: It was slow.\n", "", "missing why"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -246,7 +251,7 @@ func TestChainPicksTheDeepestOwner(t *testing.T) {
 	if len(checks) != 2 {
 		t.Fatalf("want 2 checks, got %+v", checks)
 	}
-	if checks[0].Invariant != "judged-only" || strings.Join(checks[0].Files, ",") != "pkg/store/store.go,pkg/store/store_test.go" {
+	if checks[0].Invariant != "judged-only" || strings.Join(checks[0].Files, ",") != "pkg/store/store.go,pkg/store/store_test.go,pkg/heavy/heavy.go" {
 		t.Errorf("parent check = %+v", checks[0])
 	}
 	if checks[1].Invariant != "row-is-whole" || strings.Join(checks[1].Files, ",") != "pkg/store/store.go" {
@@ -366,5 +371,36 @@ func TestStaleDoesNotReadWhereGoWouldNotLook(t *testing.T) {
 	}
 	if got := slices.Sorted(maps.Keys(stale)); !slices.Equal(got, []string{"pkg/heavy/" + ImportsTestFile}) {
 		t.Errorf("stale = %v, want only the orphan under pkg/heavy", got)
+	}
+}
+
+func TestAppliesReachesFilesOutsideTheOwner(t *testing.T) {
+	root := fixture(t, validPrimitive)
+	write(t, root, "primitives/heavy/primitive.yml", "primitive: heavy\nsummary: Exports rows.\ncode:\n  - pkg/heavy/heavy.go\ninvariants:\n  - id: own-rule\n    rule: Exports are whole.\n    judge: Is an export partial?\n    applies:\n      - pkg/\n")
+	c, findings, err := Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(c.Close)
+	if got := append(findings, c.Lint()...); len(got) != 0 {
+		t.Fatalf("findings: %v", got)
+	}
+	applied := c.AppliedTo("pkg/heavy/heavy.go")
+	if len(applied) != 1 || applied[0].Primitive.ID != "store" || applied[0].Invariant.ID != "judged-only" {
+		t.Fatalf("AppliedTo(heavy.go) = %+v, want store/judged-only alone: heavy's own rule is on its chain already", applied)
+	}
+	if got := c.AppliedTo("pkg/store/store.go"); len(got) != 1 || got[0].Primitive.ID != "heavy" {
+		t.Errorf("AppliedTo(store.go) = %+v, want only heavy/own-rule: store's own rules are on its chain", got)
+	}
+	if got := c.AppliedTo("docs/store.md"); len(got) != 0 {
+		t.Errorf("AppliedTo(docs/store.md) = %+v, want none", got)
+	}
+	var keys []string
+	for _, ch := range c.Checks([]string{"pkg/heavy/heavy.go"}) {
+		keys = append(keys, ch.Primitive+"/"+ch.Invariant)
+	}
+	slices.Sort(keys)
+	if want := []string{"heavy/own-rule", "store/judged-only"}; !slices.Equal(keys, want) {
+		t.Errorf("Checks(heavy.go) = %v, want %v: an applied judge question is asked too", keys, want)
 	}
 }

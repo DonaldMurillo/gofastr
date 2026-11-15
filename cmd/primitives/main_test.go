@@ -536,3 +536,73 @@ func TestRelPathComparesPathSegments(t *testing.T) {
 		}
 	}
 }
+
+func TestAppliedRulesReachForAndStop(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		p := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("go.mod", "module example.test/m\n\ngo 1.24\n")
+	write("a/a.go", "package a\n\nfunc One() int { return 1 }\n")
+	write("b/b.go", "package b\n\nfunc Two() int { return 2 }\n")
+	write("primitives/x/primitive.yml", "primitive: x\nsummary: Does x.\ncode:\n  - a/\ninvariants:\n  - id: no-css\n    rule: No file ships its own CSS.\n    judge: Does this change add CSS outside the design system?\n    applies:\n      - b/\n")
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = root
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "-q")
+	git("add", "-A")
+	git("commit", "-q", "-m", "start")
+
+	var stdout, stderr bytes.Buffer
+	if code := run(root, []string{"for", "b/b.go"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("for b/b.go: exit %d: %s", code, stderr.String())
+	}
+	for _, want := range []string{"Also governed by rules held elsewhere", "x/no-css: No file ships its own CSS.", "judge: Does this change add CSS"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Errorf("for b/b.go output lacks %q:\n%s", want, stdout.String())
+		}
+	}
+	if strings.Contains(stdout.String(), "no primitive owns") {
+		t.Errorf("a file a rule applies to is not unowned:\n%s", stdout.String())
+	}
+
+	fire := func(event string) string {
+		t.Helper()
+		c, findings, err := primitives.Load(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(c.Close)
+		var out, errOut bytes.Buffer
+		stop(c, findings, strings.NewReader(event), &out, &errOut)
+		var decision struct{ Decision, Reason string }
+		if out.Len() > 0 {
+			if err := json.Unmarshal(out.Bytes(), &decision); err != nil {
+				t.Fatalf("stop printed %q: %v", out.String(), err)
+			}
+		}
+		return decision.Reason
+	}
+	write("b/b.go", "package b\n\nfunc Two() int { return 1 + 1 }\n")
+	msg := fire(`{"session_id":"s1"}`)
+	for _, want := range []string{"You changed b/b.go, which x/no-css also governs", "Ask of your change: Does this change add CSS"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("stop after changing b/b.go lacks %q:\n%s", want, msg)
+		}
+	}
+	if msg := fire(`{"session_id":"s1"}`); strings.Contains(msg, "x/no-css") {
+		t.Errorf("the same session was shown the same rule twice:\n%s", msg)
+	}
+}

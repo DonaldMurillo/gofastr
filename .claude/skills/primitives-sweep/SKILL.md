@@ -95,6 +95,8 @@ An unenforced rule is a finding, not a footnote.
 
 Same steps, with the paragraph as the comment. A hard rule becomes an
 invariant on the primitive it governs, enforced by the analyzer or
-contract rule that already checks it. Delete the paragraph once
+contract rule that already checks it. A rule that governs files of
+several primitives lives on one of them and lists the rest under
+`applies`; never copy it. Delete the paragraph once
 `primitives for` on a governed file prints the rule. What stays in CLAUDE.md
 is how to find the registry and what no primitive can own.

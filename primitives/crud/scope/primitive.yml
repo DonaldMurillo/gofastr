@@ -21,6 +21,9 @@ invariants:
       - test: framework/crud.TestReadScope_InProcessAPIScopes
       - test: framework/crud.TestReadScope_TypedQueryScopes
     judge: Does this change build or render a ReadScope predicate anywhere other than readScopeFilters and renderReadScope?
+    applies:
+      - framework/crud/eager.go
+      - framework/crud/include.go
   - id: unknown-operator-matches-nothing
     rule: A read-scope operator the renderer does not know renders as a predicate that matches no row.
     enforced_by:

@@ -80,11 +80,9 @@ check useful outside `framework/crud`.
 Done when `go run ./cmd/primitives for <path>` finds an owner for every
 non-test Go file under those three trees.
 
-One question to settle on the way: a file has one owner, so a rule that
-spans primitives is shown only for the files of the primitive that
-holds it. `crud.scope`'s one-builder rule applies in `eager.go` and
-`include.go`, which `crud.relations` owns. Decide how such a rule
-reaches the other places it applies.
+A rule that spans primitives keeps one home and lists the other files
+it governs under `applies` (settled in step 1: `crud.scope`'s
+one-builder rule reaches `eager.go` and `include.go` that way).
 
 ## Rules for all four
 

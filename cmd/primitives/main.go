@@ -390,7 +390,8 @@ type docsNotice struct{ primitive, text string }
 
 // docsNotices names, for each primitive whose code changed, what the
 // primitive asks for on a change and, when none of its docs changed, the
-// docs to update. A primitive the session was already told about is left
+// docs to update, and each rule another primitive applies to a changed
+// file. A primitive the session was already told about is left
 // out, and so is a session the hook cannot name.
 func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 	var out []docsNotice
@@ -424,6 +425,18 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 				fmt.Fprintf(&b, "\n  Also, for this part: %s", ref.Value)
 			}
 			out = append(out, docsNotice{p.ID, b.String()})
+		}
+		for _, a := range c.AppliedTo(file) {
+			key := a.Primitive.ID + "/" + a.Invariant.ID
+			if seen[key] || slices.Contains(told, key) {
+				continue
+			}
+			seen[key] = true
+			text := fmt.Sprintf("You changed %s, which %s also governs: %s", file, key, a.Invariant.Rule)
+			if a.Invariant.Judge != "" {
+				text += "\n  Ask of your change: " + a.Invariant.Judge
+			}
+			out = append(out, docsNotice{key, text})
 		}
 	}
 	return out
@@ -694,19 +707,41 @@ func printTwins(w io.Writer, twins []primitives.Twin) {
 func printFor(c *primitives.Registry, w io.Writer, file string) {
 	chain := c.Chain(file)
 	twins := c.TwinsOf(file)
-	if len(chain) == 0 && len(twins) == 0 {
+	applied := c.AppliedTo(file)
+	if len(chain) == 0 && len(twins) == 0 && len(applied) == 0 {
 		fmt.Fprintf(w, "%s: no primitive owns this path yet\n", file)
 		return
 	}
 	fmt.Fprintf(w, "%s\n", file)
 	printTwins(w, twins)
-	if len(chain) == 0 {
-		return
-	}
 	for _, p := range chain {
 		printPrimitive(c, w, p, false)
 	}
-	fmt.Fprintf(w, "Next: primitives show %s (rejected options and revisit conditions)\n", chain[len(chain)-1].ID)
+	printApplied(w, applied)
+	if len(chain) > 0 {
+		fmt.Fprintf(w, "Next: primitives show %s (rejected options and revisit conditions)\n", chain[len(chain)-1].ID)
+	}
+}
+
+// printApplied shows the rules other primitives hold over a file.
+func printApplied(w io.Writer, applied []primitives.Applied) {
+	if len(applied) == 0 {
+		return
+	}
+	fmt.Fprintln(w, "\nAlso governed by rules held elsewhere:")
+	for _, a := range applied {
+		fmt.Fprintf(w, "  %s/%s: %s\n", a.Primitive.ID, a.Invariant.ID, a.Invariant.Rule)
+		printEnforcers(w, a.Invariant)
+	}
+}
+
+func printEnforcers(w io.Writer, inv primitives.Invariant) {
+	for _, e := range inv.EnforcedBy {
+		fmt.Fprintf(w, "    %s %s\n", e.Kind, e.Ref)
+	}
+	if inv.Judge != "" {
+		fmt.Fprintf(w, "    judge: %s\n", inv.Judge)
+	}
 }
 
 func printPrimitive(c *primitives.Registry, w io.Writer, p *primitives.Primitive, full bool) {
@@ -727,11 +762,11 @@ func printPrimitive(c *primitives.Registry, w io.Writer, p *primitives.Primitive
 	}
 	for _, inv := range p.Invariants {
 		fmt.Fprintf(w, "  invariant %s: %s\n", inv.ID, inv.Rule)
-		for _, e := range inv.EnforcedBy {
-			fmt.Fprintf(w, "    %s %s\n", e.Kind, e.Ref)
-		}
-		if inv.Judge != "" {
-			fmt.Fprintf(w, "    judge: %s\n", inv.Judge)
+		printEnforcers(w, inv)
+		if full {
+			for _, ref := range inv.Applies {
+				fmt.Fprintf(w, "    applies: %s\n", ref.Value)
+			}
 		}
 	}
 	for _, d := range p.Decisions {
