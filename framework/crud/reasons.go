@@ -2,9 +2,6 @@ package crud
 
 import "github.com/DonaldMurillo/gofastr/core/i18n"
 
-// The CRUD routes' refusals, under "error.<code>", and the field-level
-// constraint messages, under "validation.<code>". Generic statuses use
-// i18n.StatusPhrase; the shared guards' phrases live in core/handler.
 var (
 	reasonMissingID        = i18n.Define("error.missing_id", "missing id")
 	reasonItemsEmpty       = i18n.Define("error.items_empty", "items must be non-empty")
@@ -32,9 +29,6 @@ var (
 	reasonBadMultipart     = i18n.Define("error.malformed_multipart", "malformed multipart body")
 	reasonOpRefused        = i18n.Define("error.operation_refused", "access denied: this entity declares no permission for the operation")
 
-	// The {{detail}} of a _batch envelope's invalid_body refusal
-	// (checkEnvelopeKeys). The frame's code stays invalid_body: these sit
-	// in its params, not in its wrapped chain.
 	reasonEnvelopeNotObject    = i18n.Define("error.envelope.not_object", "the body must be a JSON object")
 	reasonEnvelopeBadKey       = i18n.Define("error.envelope.malformed_key", "malformed object key")
 	reasonEnvelopeDuplicateKey = i18n.Define("error.envelope.duplicate_key", "duplicate key {{key}}")
@@ -104,6 +98,4 @@ var (
 	reasonKeyNotUploaded   = i18n.Define("validation.key_not_uploaded", "storage key was not uploaded by this request")
 )
 
-// reasonSearchNotConfigured refuses a non-blank ?q= on an entity that
-// declares no SearchFields.
 var reasonSearchNotConfigured = i18n.Define("error.search_not_configured", "?q= search is not configured for this entity: it declares no search fields")
