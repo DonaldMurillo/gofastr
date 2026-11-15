@@ -45,6 +45,7 @@ invariants:
     rule: An entity holding per-user data that auto-CRUD exposes sets Scope.OwnerField.
     enforced_by:
       - contract: GOFASTR1901
+    judge: Does this change expose through auto-CRUD an entity whose rows belong to one user without setting Scope.OwnerField, whatever its field names or Access block?
     applies:
       - framework/entity/
       - battery/
