@@ -505,3 +505,31 @@ func TestGradeRules(t *testing.T) {
 		t.Errorf("the required text added: %s %s", c.Outcome, c.Note)
 	}
 }
+
+// A CLAUDE.md above the work directory reaches every cell: the run must
+// refuse it, as it refuses a work directory inside the repository.
+func TestWorkBelowAGuideIsRefused(t *testing.T) {
+	top := t.TempDir()
+	work := filepath.Join(top, "a", "cells")
+	if got := ancestorGuide(work); got != "" {
+		t.Fatalf("no guide yet, got %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(top, "CLAUDE.md"), []byte("# stray\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := ancestorGuide(work); got != filepath.Join(resolveExisting(top), "CLAUDE.md") {
+		t.Errorf("a CLAUDE.md two levels up was not found: %q", got)
+	}
+	if err := os.MkdirAll(work, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, "CLAUDE.md"), []byte("# own\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(top, "CLAUDE.md")); err != nil {
+		t.Fatal(err)
+	}
+	if got := ancestorGuide(work); got != filepath.Join(resolveExisting(work), "CLAUDE.md") {
+		t.Errorf("a CLAUDE.md in the work directory itself is a parent of every cell, got %q", got)
+	}
+}
