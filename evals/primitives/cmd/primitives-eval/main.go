@@ -59,13 +59,33 @@ func main() {
 }
 
 // insideDir reports whether path is dir or below it. Both are absolute.
-// It compares path segments, so a child named ..cells is inside.
+// It compares path segments, so a child named ..cells is inside, and it
+// follows symlinks first, so a link outside dir that points into it is
+// inside too.
 func insideDir(dir, path string) (bool, error) {
-	rel, err := filepath.Rel(dir, path)
+	rel, err := filepath.Rel(resolveExisting(dir), resolveExisting(path))
 	if err != nil {
 		return false, err
 	}
 	return filepath.IsLocal(rel), nil
+}
+
+// resolveExisting follows the symlinks in the part of path that exists
+// and keeps the rest as written: a work directory is usually not there
+// yet, but the directory it will be made in is.
+func resolveExisting(path string) string {
+	rest := ""
+	for dir := path; ; {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return path
+		}
+		rest = filepath.Join(filepath.Base(dir), rest)
+		dir = parent
+	}
 }
 
 func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {

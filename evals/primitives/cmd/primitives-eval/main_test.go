@@ -385,6 +385,27 @@ func TestACellWhoseAgentNeverRanIsAnError(t *testing.T) {
 	}
 }
 
+func TestAWorkDirectoryReachedThroughASymlinkIsInside(t *testing.T) {
+	base := t.TempDir()
+	repo, link := filepath.Join(base, "repo"), filepath.Join(base, "elsewhere")
+	if err := os.Mkdir(repo, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(repo, link); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	for path, want := range map[string]bool{
+		filepath.Join(link, "cells"):               true,
+		filepath.Join(link, "not", "there", "yet"): true,
+		filepath.Join(base, "outside", "cells"):    false,
+	} {
+		got, err := insideDir(repo, path)
+		if err != nil || got != want {
+			t.Errorf("insideDir(%s) = %t, %v; want %t", path, got, err, want)
+		}
+	}
+}
+
 func TestRunRefusesAWorkDirectoryInsideTheRepository(t *testing.T) {
 	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
 	if err != nil {
