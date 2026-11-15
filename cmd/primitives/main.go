@@ -405,7 +405,8 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 			continue
 		}
 		// A rule held elsewhere governs any file it names, CSS and
-		// JavaScript included; the docs notice below is for Go code.
+		// JavaScript included. Below, a non-Go file brings only its
+		// owners' on_change lines; the docs notice is for Go code.
 		for _, a := range c.AppliedTo(file) {
 			key := a.Primitive.ID + "/" + a.Invariant.ID
 			if slices.Contains(told, key) {
@@ -420,11 +421,12 @@ func docsNotices(c *primitives.Registry, changed, told []string) []docsNotice {
 			out = append(out, docsNotice{primitive: key})
 			appliedRules[key] = a.Invariant
 		}
-		if !strings.HasSuffix(file, ".go") {
-			continue
-		}
+		goFile := strings.HasSuffix(file, ".go")
 		for _, p := range c.Chain(file) {
 			if seen[p.ID] || slices.Contains(told, p.ID) || (len(p.Docs) == 0 && len(p.OnChange) == 0) {
+				continue
+			}
+			if !goFile && len(p.OnChange) == 0 {
 				continue
 			}
 			seen[p.ID] = true

@@ -10,14 +10,14 @@ primitives registry; `AGENTS.md` says how to look a file's rules up.
 The original form of the guide's reading list, with the history behind it.
 
 **Before writing any UI, runtime, `framework/uihost`, OR code that *emits*
-UI, read [`core-ui/ARCHITECTURE.md`](core-ui/ARCHITECTURE.md). Emitting UI
+UI, read [`core-ui/ARCHITECTURE.md`](../core-ui/ARCHITECTURE.md). Emitting UI
 covers the app generator (`cmd/gofastr`), batteries, and anything
 that produces markup or CSS. This is mandatory.
 Emitting a styled `<div>` is writing UI. A generator that ships CSS is a
 generator writing UI badly.**
 
 **Before adding, moving, or extracting anything under `framework/`, read
-[`framework/ARCHITECTURE.md`](framework/ARCHITECTURE.md).** It captures the
+[`framework/ARCHITECTURE.md`](../framework/ARCHITECTURE.md).** It captures the
 package layout, the layering rules, the cycle-breaking interfaces
 (`entity.Registry`, `db.Executor`), and the recipe for new extractions.
 

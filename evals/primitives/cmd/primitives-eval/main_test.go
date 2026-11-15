@@ -541,6 +541,9 @@ func TestGradeRules(t *testing.T) {
 	if c := grade(required, map[string]string{"rt/a.js": "no\n", "rt/a_test.go": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
 		t.Errorf("the required text only in a test file: %s", c.Outcome)
 	}
+	if c := grade(required, map[string]string{"rt/a.js": "no\n", "rt/notes.txt": "data-cui-x"}, none); c.Outcome != outcomeUnfixed {
+		t.Errorf("the required text only in a note: %s", c.Outcome)
+	}
 	failing := &cell{task: required, Outcome: outcomeBroke}
 	gradeRules(context.Background(), cfg, failing, t.TempDir(), nil)
 	if failing.Outcome != outcomeBroke {

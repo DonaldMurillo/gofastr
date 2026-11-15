@@ -119,6 +119,11 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 	if cfg.out == "" {
 		cfg.out = filepath.Join(repo, "dist", "primitives-eval", stamp)
 	}
+	// Each cell runs the verifier from its own directory, so a relative
+	// -out would point the verifier inside the cell.
+	if cfg.out, err = filepath.Abs(cfg.out); err != nil {
+		return err
+	}
 	if cfg.work == "" {
 		if cfg.work, err = os.MkdirTemp("", "primitives-eval-"); err != nil {
 			return err

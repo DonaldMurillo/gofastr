@@ -268,7 +268,7 @@ func addsText(dir string, changed []string, prefix, text string) bool {
 	}
 	defer root.Close()
 	for _, file := range changed {
-		if !strings.HasPrefix(file, prefix) || strings.HasSuffix(file, "_test.go") {
+		if !strings.HasPrefix(file, prefix) || strings.HasSuffix(file, "_test.go") || !isCode(file) {
 			continue
 		}
 		src, err := root.ReadFile(file)
@@ -277,6 +277,13 @@ func addsText(dir string, changed []string, prefix, text string) bool {
 		}
 	}
 	return false
+}
+
+// isCode reports whether file is runtime code, JavaScript or Go: text in
+// a note or a README does not implement anything.
+func isCode(file string) bool {
+	ext := path.Ext(file)
+	return ext == ".js" || ext == ".go"
 }
 
 // agentFailure says what an agent that exited with an error and no answer

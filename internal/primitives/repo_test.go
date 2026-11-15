@@ -69,6 +69,27 @@ func TestClaudeMDOnlyImportsAgentsMD(t *testing.T) {
 	}
 }
 
+// ruleRef is the primitive/invariant pair that ends a numbered rule,
+// whatever separates the rule from it. Paths earlier in the rule, such
+// as `framework/ui`, are not references.
+var ruleRef = regexp.MustCompile("(?m)^\\d+\\. .*`([a-z0-9.-]+)/([a-z0-9-]+)`\\.?$")
+
+func ruleRefs(guide string) [][2]string {
+	var refs [][2]string
+	for _, m := range ruleRef.FindAllStringSubmatch(guide, -1) {
+		refs = append(refs, [2]string{m[1], m[2]})
+	}
+	return refs
+}
+
+func TestRuleRefsIgnoreTheSeparator(t *testing.T) {
+	got := ruleRefs("1. A rule: `a/b-c`.\n2. Another rule \u2014 `ui.x/not-a-rule`.\n3. Survey `framework/ui` first.\n- not numbered `c/d`\n")
+	want := [][2]string{{"a", "b-c"}, {"ui.x", "not-a-rule"}}
+	if !slices.Equal(got, want) {
+		t.Errorf("ruleRefs = %v, want %v", got, want)
+	}
+}
+
 //gofastr:test-reads /AGENTS.md
 func TestAgentsMDNamesRealRules(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -81,17 +102,16 @@ func TestAgentsMDNamesRealRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(c.Close)
-	rule := regexp.MustCompile("(?m)^\\d+\\. .*: `([a-z0-9.-]+)/([a-z0-9-]+)`")
 	named := 0
-	for _, m := range rule.FindAllStringSubmatch(string(guide), -1) {
+	for _, ref := range ruleRefs(string(guide)) {
 		named++
-		p := c.Primitive(m[1])
+		p := c.Primitive(ref[0])
 		if p == nil {
-			t.Errorf("AGENTS.md names %s/%s, and there is no primitive %s", m[1], m[2], m[1])
+			t.Errorf("AGENTS.md names %s/%s, and there is no primitive %s", ref[0], ref[1], ref[0])
 			continue
 		}
-		if c.Invariant(p, m[2]) == nil {
-			t.Errorf("AGENTS.md names %s/%s, which is not an invariant of %s", m[1], m[2], m[1])
+		if c.Invariant(p, ref[1]) == nil {
+			t.Errorf("AGENTS.md names %s/%s, which is not an invariant of %s", ref[0], ref[1], ref[0])
 		}
 	}
 	if named == 0 {

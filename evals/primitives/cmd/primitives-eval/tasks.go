@@ -98,8 +98,8 @@ type task struct {
 	// Forbid lists base-name patterns (path.Match) no changed file may
 	// have, for a rule no contract states, such as list math in a .js file.
 	Forbid []string
-	// Requires, when set, is text some changed file under RequiresIn must
-	// hold for the change to count as made at all.
+	// Requires, when set, is text some changed .js or .go file under
+	// RequiresIn must hold for the change to count as made at all.
 	Requires   string
 	RequiresIn string
 }

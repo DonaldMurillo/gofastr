@@ -612,4 +612,20 @@ func TestAppliedRulesReachForAndStop(t *testing.T) {
 	if msg := fire(`{"session_id":"s2"}`); !strings.Contains(msg, "x/no-css") {
 		t.Errorf("a rule applied to a tree governs its CSS too, yet stop did not show it:\n%s", msg)
 	}
+
+	write("docs/d.md", "# d\n")
+	write("primitives/s/primitive.yml", "primitive: s\nsummary: Styles.\ncode:\n  - s/\non_change:\n  - Screenshot the rendered page.\n")
+	write("primitives/d/primitive.yml", "primitive: d\nsummary: Data.\ncode:\n  - d/\ndocs:\n  - docs/d.md\n")
+	git("add", "-A")
+	git("commit", "-q", "-m", "owners")
+	write("s/site.css", ".s { color: var(--x); }\n")
+	write("d/d.css", ".d { color: var(--x); }\n")
+	write("a/a.go", "package a\n\nfunc One() int { return 0 + 1 }\n")
+	msg = fire(`{"session_id":"s3"}`)
+	if !strings.Contains(msg, "Screenshot the rendered page") {
+		t.Errorf("a CSS change brings its owner's on_change line, even beside unrelated Go code:\n%s", msg)
+	}
+	if strings.Contains(msg, "You changed d ") {
+		t.Errorf("a non-Go file of a docs-only primitive asks for docs:\n%s", msg)
+	}
 }
