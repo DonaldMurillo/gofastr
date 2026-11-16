@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"path/filepath"
@@ -122,5 +123,45 @@ func TestSweepAuditRedactPanicKeepsPreRedactRow(t *testing.T) {
 	diff, _ := rows[0]["diff"].(string)
 	if !strings.Contains(diff, `"title":"hello"`) {
 		t.Fatalf("diff = %q, want the pre-redact row", diff)
+	}
+}
+
+// A Redact whose output cannot be marshalled leaves the pre-redact row in
+// the diff, on create and on update, rather than an empty change.
+func TestSweepAuditUnmarshalableRedactKeepsEvidence(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	ta := TestHarness(t, auditAppWithRedact(t, db, func(_ string, row map[string]any) map[string]any {
+		row["poison"] = func() {}
+		return row
+	}))
+	create := ta.Post("/posts", map[string]any{"title": "before"})
+	create.AssertStatus(t, http.StatusCreated)
+	var created map[string]any
+	if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
+		t.Fatal(err)
+	}
+	ta.Put("/posts/"+created["id"].(string), map[string]any{"title": "after"}).AssertStatus(t, http.StatusOK)
+	rows := readAuditRows(t, db)
+	if len(rows) != 2 {
+		t.Fatalf("audit rows = %d, want 2", len(rows))
+	}
+	for i, want := range []string{`"title":"before"`, `"title":"after"`} {
+		if diff, _ := rows[i]["diff"].(string); !strings.Contains(diff, want) {
+			t.Errorf("%s diff = %q, want it to hold %s", rows[i]["op"], diff, want)
+		}
+	}
+}
+
+// An update with no captured pre-image has no "old" key in its diff.
+func TestSweepAuditUpdateDiffOmitsMissingOld(t *testing.T) {
+	var got map[string]any
+	if err := json.Unmarshal(buildAuditUpdateDiff(nil, map[string]any{"a": 1}, nil, nil, nil), &got); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["old"]; ok {
+		t.Fatalf("diff = %v, want no old key", got)
+	}
+	if buildAuditDeleteDiff(nil, nil, nil) != nil {
+		t.Fatal("a delete with no pre-image and no request meta has a diff, want NULL")
 	}
 }
