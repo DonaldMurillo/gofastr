@@ -214,7 +214,7 @@ pass "go vet clean"
 # vetted with that branch's analyzer set. The dir is outside the worktree
 # so cmd/affected never sees it as a change.
 vettool_dir=$(mktemp -d "${TMPDIR:-/tmp}/gofastr-vettool.XXXXXX")
-go build -o "$vettool_dir/vettool" ./cmd/vettool
+go build -buildvcs=false -o "$vettool_dir/vettool" ./cmd/vettool
 go run ./cmd/affected -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/ -- go vet -vettool="$vettool_dir/vettool"
 rm -rf "$vettool_dir"
 vettool_dir=""
