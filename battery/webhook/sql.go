@@ -25,7 +25,7 @@ import (
 // Schemas:
 //
 //	webhook_subscribers(
-//	    id       TEXT PRIMARY KEY,
+//	    id       TEXT PRIMARY KEY NOT NULL,
 //	    url      TEXT NOT NULL,
 //	    secret   TEXT NOT NULL,
 //	    events   TEXT NOT NULL,   -- JSON array
@@ -35,7 +35,7 @@ import (
 //	)
 //
 //	webhook_deliveries(
-//	    id              TEXT PRIMARY KEY,
+//	    id              TEXT PRIMARY KEY NOT NULL,
 //	    subscriber_id   TEXT NOT NULL,
 //	    event           TEXT NOT NULL,
 //	    payload         BLOB NOT NULL,           -- BYTEA on postgres
@@ -139,7 +139,7 @@ func (s *SQLStore) ensureTables() error {
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id      TEXT PRIMARY KEY,
+			id      TEXT PRIMARY KEY NOT NULL,
 			url     TEXT NOT NULL,
 			secret  TEXT NOT NULL,
 			events  TEXT NOT NULL,
@@ -148,7 +148,7 @@ func (s *SQLStore) ensureTables() error {
 			auth    TEXT NOT NULL DEFAULT ''
 		)`, s.subTable, ts),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id              TEXT PRIMARY KEY,
+			id              TEXT PRIMARY KEY NOT NULL,
 			subscriber_id   TEXT NOT NULL,
 			event           TEXT NOT NULL,
 			payload         %s NOT NULL,

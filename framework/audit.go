@@ -108,7 +108,7 @@ func EnsureAuditTable(db *sql.DB, table string) error {
 	stmt := fmt.Sprintf(
 		//gofastr:allow(GOFASTR1415) EraseUserData anonymizes this table on its built-in audit plane (actor_id and the diff); registerAuditExport below covers the export
 		`CREATE TABLE IF NOT EXISTS %s (
-		id          TEXT PRIMARY KEY,
+		id          TEXT PRIMARY KEY NOT NULL,
 		entity      TEXT NOT NULL,
 		op          TEXT NOT NULL,
 		record_id   TEXT NOT NULL,

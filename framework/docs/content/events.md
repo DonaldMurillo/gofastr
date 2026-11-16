@@ -496,7 +496,7 @@ handler)` + `ob.StartRelay(ctx)`.
 
   ```sql
   CREATE TABLE event_outbox (
-      id              TEXT PRIMARY KEY,
+      id              TEXT PRIMARY KEY NOT NULL,
       type            TEXT NOT NULL,
       payload         TEXT,
       status          TEXT NOT NULL DEFAULT 'pending',  -- pending|dispatched

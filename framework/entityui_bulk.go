@@ -65,7 +65,7 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 	jobs := query.QuoteFolded(bulkJobsTable)
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id          TEXT PRIMARY KEY,
+			id          TEXT PRIMARY KEY NOT NULL,
 			entity      TEXT NOT NULL,
 			action      TEXT NOT NULL,
 			count       INTEGER NOT NULL,

@@ -367,7 +367,7 @@ func (q *DBQueue) ensureTable() error {
 		}
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id            TEXT PRIMARY KEY,
+		id            TEXT PRIMARY KEY NOT NULL,
 		occurrence_id TEXT NOT NULL DEFAULT '',
 		type          TEXT NOT NULL,
 		payload       TEXT,

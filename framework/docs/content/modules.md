@@ -143,7 +143,7 @@ When the app has a DB (`WithDB`), the module state persists in a
 
 | column | type |
 |---|---|
-| `name` | TEXT PRIMARY KEY |
+| `name` | TEXT PRIMARY KEY NOT NULL |
 | `enabled` | BOOLEAN NOT NULL |
 | `updated_at` | TIMESTAMP NOT NULL |
 

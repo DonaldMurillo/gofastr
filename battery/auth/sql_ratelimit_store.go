@@ -83,7 +83,7 @@ func (s *SQLRateLimitStore) EnsureSchema(ctx context.Context) error {
 		}
 	}
 	stmts := []string{
-		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT PRIMARY KEY, blocked_until_ms BIGINT NOT NULL)",
+		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT PRIMARY KEY NOT NULL, blocked_until_ms BIGINT NOT NULL)",
 			query.QuoteFolded(s.table)),
 		fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (rl_key TEXT NOT NULL, attempted_at_ms BIGINT NOT NULL)",
 			query.QuoteFolded(s.table+"_attempts")),

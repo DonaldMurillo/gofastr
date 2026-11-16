@@ -153,7 +153,7 @@ func NewSQLModuleStore(db *sql.DB) (*SQLModuleStore, error) {
 
 func (s *SQLModuleStore) ensureTable() error {
 	stmt := `CREATE TABLE IF NOT EXISTS gofastr_modules (
-		name       TEXT PRIMARY KEY,
+		name       TEXT PRIMARY KEY NOT NULL,
 		enabled    BOOLEAN NOT NULL,
 		updated_at TIMESTAMP NOT NULL
 	)`

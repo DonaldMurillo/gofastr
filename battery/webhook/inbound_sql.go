@@ -21,7 +21,7 @@ import (
 // Schema:
 //
 //	webhook_inbound(
-//	    id          TEXT PRIMARY KEY,
+//	    id          TEXT PRIMARY KEY NOT NULL,
 //	    source      TEXT NOT NULL,
 //	    dedupe_key  TEXT NOT NULL DEFAULT '',  -- '' means no dedupe
 //	    headers     TEXT NOT NULL DEFAULT '{}', -- JSON object, allowlisted subset
@@ -90,7 +90,7 @@ func (s *SQLInboundStore) ensureTable() error {
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id          TEXT PRIMARY KEY,
+			id          TEXT PRIMARY KEY NOT NULL,
 			source      TEXT NOT NULL,
 			dedupe_key  TEXT NOT NULL DEFAULT '',
 			headers     TEXT NOT NULL DEFAULT '{}',

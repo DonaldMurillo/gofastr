@@ -82,7 +82,7 @@ running this conversion.
 -- +migrate Name create_posts
 -- +migrate Up
 CREATE TABLE posts (
-    id    TEXT PRIMARY KEY,
+    id    TEXT PRIMARY KEY NOT NULL,
     title TEXT NOT NULL,
     body  TEXT
 );
@@ -887,6 +887,14 @@ neither `DiffSchema` nor `migrate generate` proposes a change for it. If
 such a table is later rebuilt for another change, a row with a `NULL` key
 fails the copy and the migration rolls back: give those rows a key first
 (`SELECT … WHERE <key> IS NULL`).
+The tables the framework and its batteries create for themselves (audit
+log, outbox, queue, webhooks, idempotency keys, feature flags, the auth
+stores and the rest) follow the same rule: a new one refuses a `NULL` key
+on SQLite, and one that already exists is left as it was. For a `CREATE
+TABLE` you write by hand, `gofastr verify` reports a primary-key column
+with no `NOT NULL` (`GOFASTR1418`): write `id TEXT PRIMARY KEY NOT NULL`,
+and `NOT NULL` on each column a `PRIMARY KEY (a, b)` names. The rule reads
+SQL written in Go strings; a `.sql` migration file is yours to check.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's

@@ -28,7 +28,7 @@ import (
 // Schema (all dialects):
 //
 //	idempotency_keys(
-//	    key            TEXT PRIMARY KEY,
+//	    key            TEXT PRIMARY KEY NOT NULL,
 //	    fingerprint    TEXT NOT NULL,
 //	    status         INTEGER,           -- nullable while in-flight
 //	    headers        TEXT,              -- JSON, http.Header shape
@@ -160,7 +160,7 @@ func (s *SQLIdempotencyStore) ensureTable() error {
 		tsType, blobType = "TIMESTAMPTZ", "BYTEA"
 	}
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		key         TEXT PRIMARY KEY,
+		key         TEXT PRIMARY KEY NOT NULL,
 		fingerprint TEXT NOT NULL,
 		status      INTEGER,
 		headers     TEXT,
