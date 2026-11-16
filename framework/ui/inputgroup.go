@@ -8,37 +8,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── InputGroup ─────────────────────────────────────────────────────
-//
-// Composite input wrapper that prepends and/or appends decorative
-// content (text, icons, currency symbols, units) to a core input
-// element, rendered through headless.InputGroup. Pure CSS, no runtime
-// JS needed.
-
 // InputGroupConfig configures an InputGroup.
 type InputGroupConfig struct {
-	// Prepend is optional content rendered before the input (text, icon, etc.).
+	// Prepend is decoration drawn before the input, hidden from assistive tech.
 	Prepend render.HTML
-	// Input is the actual input element (required). Inside a
-	// FormField builder, build it from the wiring the field handed
-	// the closure — ui.Control, a typed control, or headless directly
-	// — so the id and the description chain arrive with it.
+	// Input is the control. Required; inside a FormField builder, build
+	// it from the wiring the field hands the closure.
 	Input render.HTML
-	// Append is optional content rendered after the input.
-	Append render.HTML
-	// Class adds extra CSS classes to the wrapper.
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the group's root wrapper
-	// div. Keys the component owns are dropped: class and id (use
-	// Class) and data-cui-*.
+	// Append is decoration drawn after the input, hidden from assistive tech.
+	Append     render.HTML
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
 // InputGroup renders an input with optional prepend and append addons.
-// The prepend/append addons share borders with the input for a merged
-// appearance.
 func InputGroup(cfg InputGroupConfig) render.HTML {
 	if cfg.Input == "" {
 		panic("ui: InputGroup requires Input")

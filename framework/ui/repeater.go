@@ -11,15 +11,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Repeater ───────────────────────────────────────────────────────
-//
-// A dynamic list of form rows over headless.Repeater: every row is the
-// caller's fields, the add and remove controls are named submit
-// buttons, and when RPCPath is set the same buttons carry the
-// framework's RPC contract with the operation in the endpoint's query,
-// so the region swaps in place and the module restores focus to the
-// row or the add control.
-
 // RepeaterConfig configures a dynamic form repeater.
 type RepeaterConfig struct {
 	Name        string
@@ -31,33 +22,14 @@ type RepeaterConfig struct {
 	RemoveLabel string
 	Template    func(index int) render.HTML
 	Items       []render.HTML
-	// RPCPath, when set, makes add/remove a region update: the
-	// endpoint the operations POST to and the signal whose region the
-	// answer replaces (the items container, "<ID>-items").
-	RPCPath string
-
-	// ExtraAttrs forwards additional attributes to the repeater's root
-	// element. Keys the component owns are dropped: class, id,
-	// data-cui-*, and every data-hui-* hook.
+	// RPCPath makes add and remove an island update of "<ID>-items".
+	RPCPath    string
 	ExtraAttrs html.Attrs
 
-	// Ctx carries the per-request context used to resolve i18n strings
-	// (AddLabel, RemoveLabel defaults). When nil, context.Background()
-	// is used and English fallbacks are returned.
+	// Ctx resolves the default labels; nil reads English.
 	Ctx context.Context
 }
 
-// repeaterClasses dresses headless.Repeater's parts in this package's
-// own vocabulary — the names the registered ui-repeater sheet matches.
-//
-// The row's remove and the add control are kit buttons: they wear the
-// button classes (buttonClassTokens, the LoadAlways ui-button sheet)
-// under this component's marker, the way ToggleAction and
-// OptimisticAction do, so they read as the same controls as every
-// other button on the page — a ghost remove beside each row, a
-// secondary add under the list. PartDefaultAction is deliberately
-// absent: the hidden default submit must take no class, since the
-// button sheet's display would beat the UA's [hidden] rule.
 var repeaterClasses = headless.Classes{
 	headless.PartRoot:           "fui-repeater",
 	headless.PartLabel:          "fui-repeater__label",
@@ -70,12 +42,6 @@ var repeaterClasses = headless.Classes{
 	headless.PartStatus:         "fui-visually-hidden",
 }
 
-// repeaterFields wraps one row's rendered content for
-// headless.RepeaterItem.Fields: an empty render.HTML carries none of
-// the caller's markup, so it is an empty slice rather than a
-// one-element slice holding nothing — headless.Repeater's own marking
-// keys off whether a row's Fields is empty to find the boundary
-// between a caller's row and one with nothing in it.
 func repeaterFields(item render.HTML) []render.HTML {
 	if item == "" {
 		return nil
@@ -91,11 +57,8 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	}
 	id := cfg.ID
 	if id == "" {
-		// "-items" is the items container and the RPC region's signal.
 		id = scopedID(cfg.Ctx, "rep", "-items")
 	} else {
-		// An explicit id is kept; reserving it (and its -items region)
-		// suffixes a later auto repeater instead of repeating it.
 		render.ReserveID(cfg.Ctx, id, "-items")
 	}
 
@@ -103,9 +66,6 @@ func Repeater(cfg RepeaterConfig) render.HTML {
 	for _, item := range cfg.Items {
 		items = append(items, headless.RepeaterItem{Fields: repeaterFields(item)})
 	}
-	// A Template with no seeded items seeds the minimum (one row when
-	// no minimum): a repeater that renders no row and no way to add
-	// one is a list that cannot start.
 	if len(items) == 0 && cfg.Template != nil {
 		count := cfg.MinItems
 		if count == 0 {
