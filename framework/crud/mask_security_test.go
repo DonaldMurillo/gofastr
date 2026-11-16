@@ -228,11 +228,6 @@ func TestMaskRefusesKeyAndCursorField(t *testing.T) {
 	}
 }
 
-// The request path reads masks from the handler's field snapshot, not the
-// live declarations (TestFieldMutationDuringServeIsRaceFree). A Mask a host
-// adds, replaces or removes after NewCrudHandler therefore applies once
-// VisibleFields republishes the snapshot, and the snapshot's signature
-// must notice each of the three or the read would go on unmasked.
 func TestMaskChangedAfterConstructionAppliesOnRepublish(t *testing.T) {
 	for _, tc := range []struct {
 		name, field string
