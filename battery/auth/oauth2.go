@@ -320,6 +320,33 @@ func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Get(basePath+"/oauth/{provider}", p.redirectHandler())
 	r.Get(basePath+"/oauth/{provider}/link", p.linkHandler())
 	r.Get(basePath+"/oauth/{provider}/callback", p.callbackHandler())
+	r.Post(basePath+"/oauth/{provider}/callback", p.formPostCallbackHandler())
+}
+
+func (p *OAuth2Plugin) formPostCallbackHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fp, ok := p.providers[router.Param(r, "provider")].(OAuth2FormPostProvider)
+		if !ok || !fp.CallbackIsFormPost() {
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+		if !parseAuthFormOrRefuse(w, r) {
+			return
+		}
+		q := url.Values{}
+		for _, k := range []string{"code", "state", "error"} {
+			if v := r.PostFormValue(k); v != "" {
+				q.Set(k, v)
+			}
+		}
+		target, ok := sameOriginTarget(&http.Request{URL: &url.URL{Path: r.URL.Path, RawPath: r.URL.RawPath, RawQuery: q.Encode()}})
+		if !ok {
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
+			return
+		}
+		writeSameSiteHop(w, r, p.mgr.config.Pages, handler.SameSiteHopTarget(r, target), oauthSignInTitle)
+	}
 }
 
 // ─── Redirect handler ──────────────────────────────────────────────────────

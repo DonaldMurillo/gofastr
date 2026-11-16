@@ -1,0 +1,87 @@
+primitive: auth.emailcode
+summary: Passwordless sign-in with an eight-digit code mailed to the address and typed into the browser that asked for it.
+code:
+  - battery/auth/email_code.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: code-bound-to-requesting-browser
+    rule: Verify accepts a code only beside the challenge cookie send set for it; no cookie, another challenge's cookie or a made-up one answers 401 and signs in nobody.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_CodeIsBoundToTheRequestingBrowser
+  - id: cross-site-forms-refused
+    rule: Send and verify refuse a cross-site form post with 403 before reading it, and the refused verify spends no guess.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_CrossSiteFormsRefused
+  - id: guesses-budgeted-before-compare
+    rule: A challenge takes five guesses and is then dropped, an address takes AddressGuessLimit guesses across all its challenges, and both are spent before the code is compared.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_ChallengeDroppedAfterFiveGuesses
+      - test: battery/auth.TestEmailCode_AddressGuessBudgetSpansChallenges
+  - id: budget-store-error-refuses
+    rule: The address budget is spent before the challenge's, and a guess-budget store error answers 503 and spends no challenge guess, so the code still works once the store is back.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_GuessBudgetStoreErrorRefuses
+  - id: foreign-token-spends-nothing
+    rule: A token minted for another flow reads as an unknown challenge before any guess is spent, and is not consumed.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_TokensDoNotCrossFlows
+  - id: code-spent-once
+    rule: A right code consumes its challenge and clears the cookie, so the same code and cookie sign in nobody a second time.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_SendThenVerify_SignsInNewVerifiedAccount
+  - id: cooldown-challenge-indistinguishable
+    rule: Inside the per-address mail cooldown, send stores a challenge whose code is mailed to no one and answers exactly as a mailed send does, and that challenge is kept on resend and locks after the same guesses.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_CooldownChallengeIsIndistinguishable
+      - test: battery/auth.TestEmailCode_AddressCooldownLooksLikeASend
+  - id: resend-keeps-live-challenge
+    rule: A resend inside the cooldown from a browser holding a live challenge for the same address keeps that cookie, one for another address gets a new challenge, and a challenge-store read error answers 503 with the cookie untouched.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_ResendInCooldownKeepsLiveChallenge
+      - test: battery/auth.TestEmailCode_ResendInCooldownForAnotherAddressGetsDecoy
+      - test: battery/auth.TestEmailCode_ResendKeepsChallengeOnStoreReadFailure
+  - id: code-derived-from-jwt-secret
+    rule: The code is an HMAC of the challenge token under a key derived from JWTSecret, so replicas sharing the token store and secret check each other's codes and a replica with another secret does not.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_ReplicasShareCodes
+  - id: two-factor-stays-pending
+    rule: A code sign-in of a 2FA account mints a pending session and points at TwoFactorURL, and Init refuses a missing TwoFactorURL next to a 2FA plugin.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_TwoFactorAccountStaysPending
+      - test: battery/auth.TestEmailCode_InitNeedsTwoFactorURLNextToTwoFA
+  - id: delivery-fails-closed
+    rule: Without an EmailSender send answers 503 unless DevMode is set, and the DevMode log carries hashes of the address and code, never either value.
+    enforced_by:
+      - test: battery/auth.TestEmailCode_NoSenderFailsClosed
+      - test: battery/auth.TestEmailCode_DevModeLogsNoCode
+  - id: production-refuses-memory-store
+    rule: Outside DevMode and AllowInMemoryStores, Init refuses the in-memory challenge store it mints when TokenStore is unset.
+    enforced_by:
+      - test: battery/auth.TestLinkPluginsRefuseMemoryStore
+decisions:
+  - id: eight-digit-code
+    date: 2026-11-16
+    status: accepted
+    decision: The code is eight digits.
+    rejected:
+      - option: Six digits.
+        why: The address guess budget allows about 240 guesses a day, which puts a six-digit code within reach of a patient guesser over months.
+    revisit_if: The address guess budget is tightened enough that six digits keep the yearly guess odds below one in a thousand.
+    upholds: [guesses-budgeted-before-compare]
+  - id: code-derived-not-stored
+    date: 2026-11-16
+    status: accepted
+    decision: The code is derived from the challenge token, and the stored payload is the bare address.
+    rejected:
+      - option: Store a digest of a random code beside the address in the payload.
+        why: Password reset and change purge outstanding challenges by exact payload, and a payload carrying the code digest matches no purge.
+    upholds: [code-derived-from-jwt-secret]
+  - id: cooldown-stores-real-challenge
+    date: 2026-11-16
+    status: accepted
+    decision: Inside the mail cooldown send stores a real challenge whose code nobody gets.
+    rejected:
+      - option: Answer with a decoy cookie stored nowhere.
+        why: A replayed decoy got a fresh cookie where a live one is kept, and it never locked after five wrong guesses, so a client could tell someone had asked for mail to the address.
+    upholds: [cooldown-challenge-indistinguishable]

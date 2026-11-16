@@ -40,6 +40,8 @@ const (
 	purposeVerify    tokenPurpose = "verify"
 	purposeMagicLink tokenPurpose = "magiclink"
 
+	purposeEmailCode tokenPurpose = "emailcode"
+
 	// Passkey ceremony challenges. A registration challenge carries the
 	// user id it was issued to; a sign-in challenge carries nothing.
 	purposePasskeyRegister tokenPurpose = "passkeyreg"

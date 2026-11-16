@@ -110,8 +110,9 @@ func registerCanonicalErasers() {
 	// no such table, so this eraser is a no-op (skipped at erase time).
 	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+		Canonicalize: canonicalEmailOrEmpty(nil),
 	})
-	for _, p := range []tokenPurpose{purposeMagicLink, purposeReset, purposeVerify, purposePasskeyRegister} {
+	for _, p := range []tokenPurpose{purposeMagicLink, purposeEmailCode, purposeReset, purposeVerify, purposePasskeyRegister} {
 		registerTokenEraser("magic_link_tokens", p)
 	}
 }
@@ -137,9 +138,16 @@ func resolveEraseTables(mgr *AuthManager) {
 			Name: "users_oauth_links", Source: "auth", Table: us.oauthLinksTable(),
 			Column: "user_id", Mode: datexport.EraseDelete,
 		})
+	}
+	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
 		datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 			Table: us.table, IDColumn: us.fieldMap.ID, ValueColumn: us.fieldMap.Email,
+			Canonicalize: canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail),
 		})
+	} else if r, ok := datexport.ResolveIdentity(datexport.IdentityEmail); ok &&
+		(r.Canonicalize == nil || (r.Table == "auth_users" && r.IDColumn == "id" && r.ValueColumn == "email")) {
+		r.Canonicalize = canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail)
+		datexport.RegisterIdentityResolver(datexport.IdentityEmail, r)
 	}
 	if ss, ok := mgr.SessionStore().(*EntitySessionStore); ok {
 		datexport.RegisterEraser(datexport.DataEraser{
@@ -188,6 +196,13 @@ func resolveEraseTables(mgr *AuthManager) {
 			}
 		}
 	}
+	if p, ok := mgr.Plugin("email-code"); ok {
+		if ep, ok := p.(*EmailCodePlugin); ok {
+			if ms, ok := ep.tokenStore.(*SQLMagicLinkTokenStore); ok {
+				registerTokenEraser(ms.table, purposeEmailCode)
+			}
+		}
+	}
 	if p, ok := mgr.Plugin("password-reset"); ok {
 		if rp, ok := p.(*PasswordResetPlugin); ok {
 			if ms, ok := rp.store.(*SQLMagicLinkTokenStore); ok {
@@ -219,10 +234,22 @@ func resolveEraseTables(mgr *AuthManager) {
 	}
 }
 
+// canonicalEmailOrEmpty is a resolver's Canonicalize over canonicalize.
+func canonicalEmailOrEmpty(canonicalize func(string) (string, error)) func(string) string {
+	return func(email string) string {
+		c, err := canonicalizeEmailWith(canonicalize, email)
+		if err != nil {
+			return ""
+		}
+		return c
+	}
+}
+
 // registerTokenEraser registers the eraser for one flow's tokens in table.
 // The payload column holds "<purpose>:<value>", so the purpose tag is the
-// ValuePrefix. Magic-link payloads carry the email (IdentityEmail); reset,
-// verification and passkey-registration payloads carry the user id. The
+// ValuePrefix. Magic-link and email-code payloads carry the email
+// (IdentityEmail); reset, verification and passkey-registration payloads
+// carry the user id. The
 // magic-link eraser keeps the "magic_link_tokens" name it was first
 // registered under.
 func registerTokenEraser(table string, p tokenPurpose) {
@@ -231,10 +258,11 @@ func registerTokenEraser(table string, p tokenPurpose) {
 		Column: "email", Mode: datexport.EraseDelete,
 		ValuePrefix: string(p) + ":",
 	}
-	if p == purposeMagicLink {
-		e.Identity = datexport.IdentityEmail
-	} else {
+	if p != purposeMagicLink {
 		e.Name = "magic_link_tokens_" + string(p)
+	}
+	if p == purposeMagicLink || p == purposeEmailCode {
+		e.Identity = datexport.IdentityEmail
 	}
 	datexport.RegisterEraser(e)
 }

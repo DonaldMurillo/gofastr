@@ -75,8 +75,8 @@ results, the harness contract) are exempt. The exemption list lives in
 - [Access control](access-control.md): `RolePolicy`,
   `RequirePermission`, custom `Policy` implementations.
 - [Authentication](auth.md): `battery/auth`: AuthManager + plugins
-  (login, OAuth, magic-link, 2FA, accounts, email verification,
-  password reset), optional UserStore/SessionStore extensions,
+  (login, OAuth, magic-link, emailed codes, 2FA, accounts, email
+  verification, password reset), optional UserStore/SessionStore extensions,
   cookie + rate-limit posture, threat model.
 - [Multi-tenant scoping](multi-tenant.md): auto-inject, auto-scope,
   the tenant header middleware.

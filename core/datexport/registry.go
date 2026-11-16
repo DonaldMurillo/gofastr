@@ -186,10 +186,14 @@ type Equals struct {
 // SELECT finds no row (the user row is already gone on an idempotent re-run),
 // means the identity cannot be resolved: erasers declaring it are SKIPPED with
 // a note rather than failed (nothing left to match).
+//
+// Canonicalize, when set, rewrites the resolved value before it is bound;
+// an empty result binds the raw value.
 type DataIdentityResolver struct {
-	Table       string
-	IDColumn    string
-	ValueColumn string
+	Table        string
+	IDColumn     string
+	ValueColumn  string
+	Canonicalize func(string) string
 }
 
 var (

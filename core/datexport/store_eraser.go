@@ -32,11 +32,28 @@ import (
 // Erase runs after the commit, so its failure cannot roll the SQL erasure
 // back: EraseUserData returns an error naming the store, and the caller
 // erases again once the store is reachable.
+//
+// EraseResolved runs in place of Erase and also gets the identities the
+// erasure resolved before its SQL part. Set exactly one of the two.
 type StoreEraser struct {
-	Name     string
-	Source   string
-	Erase    func(ctx context.Context, userID string, dryRun bool) (int, error)
-	Producer bool
+	Name          string
+	Source        string
+	Erase         func(ctx context.Context, userID string, dryRun bool) (int, error)
+	EraseResolved func(ctx context.Context, user ErasedUser, dryRun bool) (int, error)
+	Producer      bool
+}
+
+// ErasedUser is the user an erasure removes: the id and each identity
+// that resolved for it.
+type ErasedUser struct {
+	ID         string
+	Identities map[IdentityKind]string
+}
+
+// Identity returns the resolved value of kind and whether it resolved.
+func (u ErasedUser) Identity(kind IdentityKind) (string, bool) {
+	v, ok := u.Identities[kind]
+	return v, ok && v != ""
 }
 
 // storeErasers holds the registered entries. Each is a distinct pointer,
@@ -52,8 +69,8 @@ var storeErasers []*StoreEraser
 // would leave the store out of every erasure. Calling the returned func
 // again does nothing.
 func RegisterStoreEraser(e StoreEraser) (name string, unregister func()) {
-	if e.Name == "" || e.Erase == nil {
-		panic(fmt.Sprintf("datexport: RegisterStoreEraser: %q needs a Name and an Erase func", e.Name))
+	if e.Name == "" || (e.Erase == nil) == (e.EraseResolved == nil) {
+		panic(fmt.Sprintf("datexport: RegisterStoreEraser: %q needs a Name and exactly one of Erase and EraseResolved", e.Name))
 	}
 	entry := &e
 	mu.Lock()

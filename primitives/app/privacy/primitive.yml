@@ -4,6 +4,7 @@ code:
   - framework/export_data.go
   - framework/erase_data.go
   - framework/erase_shared_keys.go
+  - core/datexport/
 docs:
   - framework/docs/content/data-export.md
 on_change:
@@ -230,6 +231,19 @@ invariants:
       - test: framework.TestImportAdvancesSerialSequence
       - test: framework.TestImportAdvancesRawSerial
       - test: framework.TestImportSerialBelowSequenceMin
+  - id: identities-resolved-once-before-delete
+    rule: EraseUserData resolves each identity an eraser declares once before any row is deleted, and every registered identity when a store eraser sets EraseResolved, and hands them to that store eraser in an ErasedUser on the dry run and the erasure alike.
+    enforced_by:
+      - test: framework.TestEraseUserData_StoreEraserGetsResolvedIdentities
+      - test: core/datexport.TestErasedUserIdentity
+  - id: resolver-canonicalize-rewrites-value
+    rule: A resolver's Canonicalize rewrites the resolved value before it is bound, and an empty result binds the raw value.
+    enforced_by:
+      - test: framework.TestEraseUserData_EmailIdentityCanonicalizes
+  - id: store-eraser-has-one-erase-func
+    rule: RegisterStoreEraser panics unless exactly one of Erase and EraseResolved is set.
+    enforced_by:
+      - test: core/datexport.TestStoreEraserNeedsExactlyOneEraseFunc
 decisions:
   - id: erasure-is-hard-delete
     date: 2026-11-16

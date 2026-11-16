@@ -257,11 +257,16 @@ deployments.
 | `magiclink.requested` | A magic link was sent. |
 | `magiclink.consumed` | A magic link token was redeemed for a session. |
 | `magiclink_tokens.purged` | A password change (`reason=password_change`) or a completed reset (`reason=password_reset`) spent the user's outstanding magic links (`count`). A token store without `MagicLinkTokenPurger` keeps them and logs a warning. |
+| `emailcode.requested` | A sign-in code was requested. Fires for every address; `throttled=address` when the per-address mail cooldown held it back. |
+| `emailcode.failed` | A wrong sign-in code was entered. |
+| `emailcode.locked` | A challenge spent its five guesses (and was dropped), or the address spent its guess budget. |
+| `emailcode.consumed` | A sign-in code was redeemed for a session (`two_factor=pending` when the account still owes its second factor). |
+| `emailcode_tokens.purged` | A password change or completed reset dropped the user's outstanding sign-in codes (`reason`, `count`). |
 | `passkey.registered` | A passkey was added (`alg`, `backup_eligible`). |
 | `passkey.deleted` | A passkey was removed by its owner, or a completed reset removed all of them (`reason=password_reset`, `count`). |
 | `passkey.refused` | A passkey ceremony failed a check (`ceremony=login` or `register`). `reason` is one of `client_data`, `challenge`, `attestation`, `credential_mismatch`, `unknown_credential`, `user_handle`, `signature`, `backup_eligibility`, `account_gone`. |
 | `passkey.clone_suspected` | A sign-in presented a signature counter that did not move past the stored one (`stored`, `presented`). |
-| `account.claimed` | A magic link (`via=magic_link`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
+| `account.claimed` | A magic link (`via=magic_link`), an emailed sign-in code (`via=email_code`) or a completed reset (`via=password_reset`) proved the mailbox of an account whose address was unverified. The account's OAuth links, API tokens and sessions were removed (counts in `oauth_links_removed`, `tokens_revoked`, `sessions_revoked`), its password too when `password_cleared=true`, its passkeys (`passkeys_removed`), and it is now verified. |
 
 OAuth sign-in success events are recorded only after session creation and
 the final provider-link recheck succeed. A fail-closed second-factor check

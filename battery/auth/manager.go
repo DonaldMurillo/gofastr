@@ -179,7 +179,8 @@ type AuthConfig struct {
 	// owns its own invisible-character policy: wrap auth.CanonicalEmail
 	// rather than starting from scratch.
 	//
-	// The function must be safe for concurrent use. An error from it
+	// The function must be idempotent (canonicalizing a canonical address
+	// returns it unchanged) and safe for concurrent use. An error from it
 	// (auth.ErrEmailNotComposed, or any other) fails the request with
 	// 400 at every email-ingesting endpoint.
 	CanonicalizeEmail func(email string) (string, error)

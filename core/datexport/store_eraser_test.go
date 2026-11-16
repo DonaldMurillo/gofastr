@@ -75,3 +75,43 @@ func TestProducersListedFirst(t *testing.T) {
 		t.Errorf("store erasers in order %v, want %v", got, want)
 	}
 }
+
+// A store eraser takes exactly one of Erase and EraseResolved: neither
+// would leave the store out of every erasure, and both leave which one
+// runs to chance.
+func TestStoreEraserNeedsExactlyOneEraseFunc(t *testing.T) {
+	Reset(t)
+	t.Cleanup(func() { Reset(t) })
+	resolved := func(context.Context, ErasedUser, bool) (int, error) { return 0, nil }
+	for name, e := range map[string]StoreEraser{
+		"neither": {Name: "s", Source: "a"},
+		"both":    {Name: "s", Source: "a", Erase: nopErase, EraseResolved: resolved},
+	} {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("%s: registered", name)
+				}
+			}()
+			RegisterStoreEraser(e)
+		}()
+	}
+	_, un := RegisterStoreEraser(StoreEraser{Name: "s", Source: "a", EraseResolved: resolved})
+	un()
+}
+
+// Identity reports a kind as resolved only when it carries a value: an
+// erasure records nothing for a kind it could not resolve, and an empty
+// value would match nothing a store keys on.
+func TestErasedUserIdentity(t *testing.T) {
+	u := ErasedUser{ID: "u1", Identities: map[IdentityKind]string{IdentityEmail: "a@example.com"}}
+	if v, ok := u.Identity(IdentityEmail); !ok || v != "a@example.com" {
+		t.Errorf("resolved email = %q, %v", v, ok)
+	}
+	if _, ok := (ErasedUser{ID: "u1"}).Identity(IdentityEmail); ok {
+		t.Error("an unresolved kind reads as resolved")
+	}
+	if _, ok := (ErasedUser{Identities: map[IdentityKind]string{IdentityEmail: ""}}).Identity(IdentityEmail); ok {
+		t.Error("an empty value reads as resolved")
+	}
+}
