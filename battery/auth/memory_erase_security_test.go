@@ -129,3 +129,43 @@ func TestMemoryTokenStoreErasedByResolvedEmail(t *testing.T) {
 		}
 	}
 }
+
+// The emailed-code plugin's own in-memory store is erased too, not only a
+// store it happens to share with the magic-link plugin.
+func TestMemoryEmailCodeStoreErased(t *testing.T) {
+	ctx := context.Background()
+	codes := NewMemoryMagicLinkTokenStore()
+	mgr := New(AuthConfig{JWTSecret: "x", DevMode: true, UserStore: newMemoryUserStore(), AllowInMemoryStores: true})
+	mgr.Use(NewEmailCodePlugin(EmailCodeConfig{TokenStore: codes, DevMode: true}))
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = mgr.OnStop(context.Background()) })
+	for _, email := range []string{"gone@example.com", "keep@example.com"} {
+		if _, err := createPurposeToken(ctx, codes, purposeEmailCode, email, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var eraser *datexport.StoreEraser
+	for _, e := range datexport.AllStoreErasers() {
+		if e.Name == mgr.memoryEraseName {
+			eraser = &e
+		}
+	}
+	if eraser == nil {
+		t.Fatal("no in-memory store eraser registered for the email-code store")
+	}
+	gone := datexport.ErasedUser{ID: "u-gone", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: "gone@example.com"}}
+	if n, err := eraser.EraseResolved(ctx, gone, true); err != nil || n != 1 {
+		t.Fatalf("dry run counted %d, %v; want 1", n, err)
+	}
+	if n, err := eraser.EraseResolved(ctx, gone, false); err != nil || n != 1 {
+		t.Fatalf("erased %d, %v; want 1", n, err)
+	}
+	if n := countMatching(codes.tokens, func(e *magicLinkEntry) bool { return e.email == "emailcode:gone@example.com" }); n != 0 {
+		t.Errorf("the erased address's code survived: %d", n)
+	}
+	if n := countMatching(codes.tokens, func(e *magicLinkEntry) bool { return e.email == "emailcode:keep@example.com" }); n != 1 {
+		t.Errorf("another address's code: %d, want 1", n)
+	}
+}
