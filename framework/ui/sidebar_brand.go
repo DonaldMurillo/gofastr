@@ -7,14 +7,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── SidebarBrand ──────────────────────────────────────────────────
-//
-// The product mark at the head of a sidebar: a square logo tile (the
-// logo image, or the name's initial on the inverted surface), the name
-// in semibold and an optional muted line under it ("Back office", a
-// workspace's plan). Give it to SidebarConfig.Prepend through a
-// component so the drawer body carries it too.
-
 // SidebarBrandConfig configures a SidebarBrand.
 type SidebarBrandConfig struct {
 	// Name is the product or workspace name. Required.
@@ -23,13 +15,11 @@ type SidebarBrandConfig struct {
 	Sub string
 	// Logo is the tile's image URL. Empty draws the name's initial.
 	Logo string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the root element. Keys the component owns
-	// are dropped: class, id and data-cui-*.
+	// ExtraAttrs land on the root; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// SidebarBrand renders the brand block.
+// SidebarBrand renders the product mark for a sidebar's Prepend.
 func SidebarBrand(cfg SidebarBrandConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: SidebarBrand requires Name")
@@ -49,7 +39,6 @@ func SidebarBrand(cfg SidebarBrandConfig) render.HTML {
 
 var sidebarBrandStyle = registry.RegisterStyle("ui-sidebar-brand", sidebarBrandCSS)
 
-// Knob: --ui-sidebar-brand-tile (1.75rem) is the logo tile's square.
 func sidebarBrandCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-sidebar-brand"] {
   display: flex;

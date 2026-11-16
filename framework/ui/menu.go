@@ -11,9 +11,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// MenuPosition controls which corner of the trigger the menu panel
-// anchors to. Defaults to MenuBottomStart (panel hangs below the
-// trigger, aligned to its inline-start edge).
+// MenuPosition is the trigger corner the panel anchors to; empty is MenuBottomStart.
 type MenuPosition string
 
 const (
@@ -23,271 +21,93 @@ const (
 	MenuTopEnd      MenuPosition = "top-end"
 )
 
-// MenuItem is one row in a Menu: either an actionable item (Label
-// required, Href / OnClickAttr / RPC etc. as supplied) or a
-// separator. The framework owns the role attributes; callers only
-// describe semantics.
+// MenuItem is one row in a Menu; Href wins over RPC, and the other row kinds panic when mixed.
 type MenuItem struct {
-	// Label is the item's visible text. Required unless Separator.
+	// Label is the row's text. Required unless Separator.
 	Label string
-
-	// Href turns the item into an <a> link. Mutually exclusive with
-	// custom action attrs; if both are supplied, Href wins.
+	// Href makes the row a link.
 	Href string
-
-	// RPC + RPCMethod wire the item to a server-side handler via
-	// data-cui-rpc / data-cui-rpc-method. Use for "Delete this row"
-	// menu items.
+	// RPC and RPCMethod make the row call a server handler.
 	RPC, RPCMethod string
-
-	// Confirm asks the user to confirm before the RPC fires. Maps to
-	// data-cui-confirm, which the runtime honors on RPC dispatch and on
-	// any form submit. A menu item is neither unless it carries RPC, so
-	// on a plain link item the attribute is inert.
+	// Confirm asks before the RPC fires; inert without RPC.
 	Confirm string
-
-	// Icon is rendered to the left of Label. Inline HTML; caller
-	// supplies an <svg>, character, or render.Text("⚙").
+	// Icon is drawn before Label.
 	Icon render.HTML
-
-	// Variant tints destructive items (red), purely a visual hint;
-	// the actual confirm step is Confirm above.
+	// Danger tints a destructive row.
 	Danger bool
-
-	// Disabled greys the item out and removes it from keyboard
-	// navigation.
+	// Disabled greys the row and takes it out of keyboard navigation.
 	Disabled bool
-
-	// Separator renders a horizontal divider instead of an item.
-	// Label and other fields are ignored when true.
+	// Separator renders a divider; every other field is ignored.
 	Separator bool
-
-	// ID becomes the rendered row's id attribute, so page JS, test
-	// suites, or aria wiring elsewhere on the page can address this
-	// exact item (a Help Mode toggle a script binds to, an Imports
-	// row a shortcut targets). Uniqueness is caller-owned within one
-	// menu, like any HTML id: the menu refuses duplicates it can see.
-	// Ignored on separators, like every other field. Empty emits no
-	// id, leaving the output identical to a menu that never set it.
+	// ID is the row's id; the caller keeps it unique.
 	ID string
-
-	// Radio, when non-empty, renders the row as a radio option:
-	// role="menuitemradio" plus aria-checked (see Checked) and
-	// data-hui-menu-radio="<Radio>". Every item sharing the same Radio
-	// value within one Menu forms a radio group — across submenus too:
-	// a picker whose rarer options sit behind a "More" submenu is one
-	// group, not two. Exactly one of them should carry Checked (like
-	// ID, uniqueness is caller-owned, not enforced here). The runtime's
-	// menu module arbitrates the group client-side on activation
-	// (click / Enter / Space): the activated row is checked, its
-	// same-group siblings — anywhere in the same menu — unchecked, so
-	// pure-client menus feel like radios without a round trip; a row
-	// carrying RPC or Href still fires it and the server re-render
-	// stays authoritative. Mutually exclusive with Children (a radio
-	// row is a leaf command, a submenu parent is a disclosure) — both
-	// set panics at render time. Empty renders the plain menuitem, so
-	// zero-value output is unchanged.
+	// Radio makes the row a menuitemradio in the menu-wide group of that name.
 	Radio string
-
-	// Check renders the row as a checkbox option (menuitemcheckbox)
-	// with a check mark while Checked. The state is the server's: pair
-	// it with Href (a link that toggles the option) or RPC. Mutually
-	// exclusive with Radio and Children.
+	// Check makes the row a menuitemcheckbox whose state is the server's.
 	Check bool
-
-	// Checked sets aria-checked on a Radio or Check row. Inert on a
-	// plain menuitem: there is no checked state to render.
+	// Checked sets aria-checked on a Radio or Check row.
 	Checked bool
-
-	// Action renders the row as a form submission instead of a link or
-	// RPC, for hosts whose command rows hit PRG endpoints (stop
-	// impersonation, sign out with server-side sessions) where a plain
-	// Href would widen a state-changing endpoint to GET. Nil (the zero
-	// value) renders nothing — Action is a pointer exactly so the
-	// unconfigured case cannot half-render. See MenuAction for the
-	// CSRF contract. Mutually exclusive with Href, RPC, Radio, and
-	// Children: incoherent combos panic at render time.
+	// Action makes the row a form submission (see MenuAction).
 	Action *MenuAction
-
-	// Children nests a submenu behind this row: the row renders as a
-	// <summary role="menuitem" aria-haspopup="menu"> whose activation
-	// reveals a nested role="menu" panel, reusing the same disclosure
-	// machinery the top level uses (Escape, SPA-nav close,
-	// aria-expanded mirroring, focus-on-open). Keyboard: the menu
-	// module opens it on ArrowRight (ArrowLeft in RTL) and enters,
-	// closes it on ArrowLeft (ArrowRight in RTL) and ArrowUp-style
-	// roving focus applies inside it; Escape closes one level at a
-	// time. The parent row is purely a disclosure: setting Href, RPC,
-	// or Radio on it panics at render time. Disabled greys the row out
-	// and removes it from keyboard navigation like any other item; the
-	// children still render (closed, unreachable) so a server-side
-	// state change only needs to flip Disabled.
+	// Children nest a submenu behind the row, which is then only a disclosure.
 	Children []MenuItem
-
-	// Do renders the row as a button carrying a built RPC, effects and
-	// toasts included: a Delete that confirms, re-fetches the page on
-	// success and toasts a refusal. Mutually exclusive with Href, RPC,
-	// Action, Copy, Radio and Children.
+	// Do makes the row a button carrying a built RPC with its effects and toasts.
 	Do *interactive.Action
-
-	// Copy renders the row as a copy-to-clipboard command over another
-	// element's text, as CopyButton does. Mutually exclusive with Href,
-	// RPC, Do, Action, Radio and Children.
+	// Copy makes the row copy another element's text, as CopyButton does.
 	Copy *MenuCopy
-
-	// Class appends to the rendered item's class list (rare; mainly
-	// for testing or one-off hooks).
+	// Class appends to the row's class list.
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) onto the rendered item
-	// element. Keys the item owns are dropped: class (use Class),
-	// id (use ID), the runtime wiring (data-cui-*), and the menuitem
-	// contract (type, href, tabindex, role, aria-disabled, disabled,
-	// aria-checked).
+	// ExtraAttrs land on the row; class, id, data-cui-* and the menuitem contract are dropped.
 	ExtraAttrs map[string]string
 }
 
-// MenuCopy is MenuItem's copy row: Target is the id of the element
-// whose text it copies (a leading "#" is allowed), Toast the title of
-// the success toast, empty for none.
+// MenuCopy is MenuItem's copy row: the Target element's id and an optional Toast title.
 type MenuCopy = headless.MenuCopy
 
-// MenuAction is MenuItem's form-POST row. The menuitem is a submit
-// button inside <form method action>; Fields supplies the hidden
-// inputs.
-//
-// CSRF contract: the framework never mints or verifies tokens — the
-// caller's form middleware owns that exactly as it would for any
-// inline form. But a state-changing POST with NO hidden inputs is
-// almost certainly a forgotten token, so the default refuses it: an
-// Action with no Fields panics unless Unsafe explicitly acknowledges
-// the endpoint carries its own protection (same-origin POST + session
-// checks, a one-shot token in the path, or a reviewed exception like
-// the port's tokenless parity surface). Unsafe is greppable debt, not
-// a recommendation.
+// MenuAction is MenuItem's form row; with no Fields it panics unless Unsafe, CSRF being the caller's.
 type MenuAction struct {
 	// Path is the form's action URL.
 	Path string
-
-	// Method defaults to POST. GET is allowed for completeness but
-	// defeats the point; prefer Href for navigations.
+	// Method defaults to POST.
 	Method string
-
-	// Fields are the hidden inputs, first use: the CSRF token.
+	// Fields are the hidden inputs, the CSRF token first.
 	Fields map[string]string
-
-	// Unsafe acknowledges the no-Fields case deliberately.
+	// Unsafe accepts an Action with no Fields.
 	Unsafe bool
 }
 
-// MenuConfig describes a dropdown menu: a trigger that, when
-// activated, reveals a list of MenuItems with proper roles, keyboard
-// navigation, and theming.
+// MenuConfig describes a dropdown menu.
 type MenuConfig struct {
-	// ID becomes the dropdown's stable identifier. Used to pair the
-	// trigger with the panel for aria-controls + analytics. Optional
-	// auto-generated when empty.
+	// ID pairs the trigger with the panel; empty derives one.
 	ID string
-
-	// Label is the trigger's visible text. Mutually exclusive with
-	// TriggerHTML.
+	// Label is the trigger's text, or its accessible name.
 	Label string
-
-	// TriggerHTML overrides Label with custom inline HTML. Use for
-	// avatar buttons and other custom triggers.
+	// TriggerHTML replaces Label with inline HTML.
 	TriggerHTML render.HTML
-
-	// Icon names a registered icon drawn before Label on the trigger
-	// (a list's Columns menu). It panics beside TriggerHTML,
-	// TriggerElement, IconOnly or Avatar, which draw the trigger
-	// themselves, and on a name that is not registered.
+	// Icon names a registered icon drawn before Label.
 	Icon string
-
-	// IconOnly draws the trigger as the "more" glyph, a compact square
-	// like an icon button, with Label as its accessible name and no
-	// caret: a table row's actions, where the row already says what
-	// the menu acts on. Ignored with TriggerHTML or TriggerElement.
+	// IconOnly draws the trigger as the "more" glyph named by Label, unless another trigger is set.
 	IconOnly bool
-
-	// Avatar draws the trigger as that avatar alone: round, borderless,
-	// 2rem, with a focus ring (the account menu in an app bar). Label
-	// stays the trigger's accessible name, after the avatar's own name.
-	// Mutually exclusive with TriggerHTML, TriggerElement and IconOnly.
+	// Avatar draws the trigger as that avatar alone, named by Label.
 	Avatar *AvatarConfig
-
-	// TriggerElement replaces the framework-rendered summary with a
-	// caller-owned interactive element: inline HTML for a real <button>
-	// (or <a>). The menu renders a summary-less disclosure holding the
-	// panel, with the element in a presentation wrapper beside it, and
-	// the runtime makes the element the disclosure controller: click,
-	// Enter, and Space toggle the panel; aria-haspopup /
-	// aria-controls / aria-expanded are wired onto the element at
-	// hydration (attributes cannot be injected into raw caller HTML
-	// server-side); focus lands on the first menuitem on open; Escape
-	// closes one level at a time and returns focus to the element; Tab
-	// closes the chain. Use for host-styled triggers whose markup and
-	// classes the page owns: routing such an element through
-	// TriggerHTML nests an interactive control inside the summary
-	// control, which axe reports as nested-interactive (SERIOUS).
-	// Activation is preventDefaulted — the element opens the menu, it
-	// does not navigate or submit; put navigation on menu items.
-	// Overrides Label and TriggerHTML. Auto-generated IDs fold the
-	// markup in, but two structurally identical trigger menus on one
-	// page still need distinct IDs.
+	// TriggerElement is the caller's own button the runtime makes the controller; it never navigates.
 	TriggerElement render.HTML
-
-	// Items is the menu's contents. Required (empty menus panic at
-	// render time. They signal a bug, not a runtime state).
+	// Items are the rows. Required.
 	Items []MenuItem
-
 	// Position anchors the panel relative to the trigger.
 	Position MenuPosition
-
-	// LazyPanel keeps the panel's rows out of the document tree until
-	// the menu is first opened: SSR wraps them in an inert
-	// <template data-hui-menu-lazy> as the panel's only child, and the
-	// menu module moves them into the panel on first open (the panel
-	// <div> itself always renders, so aria-controls still resolves
-	// while closed). Use it when page-scoped consumers must not see
-	// closed-menu rows in the live DOM: host test contracts that pin
-	// getByText('Theme') to a visible element or getByLabel to exactly
-	// one. The rows are still in the HTML source, so this hides
-	// nothing from a crawler that parses the response. The cost: rows
-	// are not in the DOM until first open, so host JS that binds rows
-	// by id at page load must use delegated listeners instead, and
-	// with JavaScript disabled the menu opens empty (only the module
-	// mounts the rows). The zero value (false) renders rows inline
-	// exactly as before. Applies to the summary path and
-	// TriggerElement alike; nested submenus live inside the template
-	// and mount with the rest.
+	// LazyPanel keeps the rows out of the live DOM until the first open (empty without script).
 	LazyPanel bool
-
-	// TriggerClass / PanelClass append to the rendered element class
-	// lists (rare).
+	// TriggerClass and PanelClass append to those elements' classes.
 	TriggerClass string
 	PanelClass   string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the menu's root element
-	// (the <details> on the summary path, the wrapper <div> when
-	// TriggerElement is set). Keys the component owns are dropped:
-	// class, id, and the disclosure/menu wiring.
+	// ExtraAttrs land on the root; class, id and the menu wiring are dropped.
 	ExtraAttrs html.Attrs
 }
 
 var menuStyle = registry.RegisterStyle("ui-menu", menuCSS)
 
-// Menu renders a dropdown. The trigger toggles the panel; the panel
-// is a `role=menu` list with `role=menuitem` rows — `menuitemradio`
-// rows for items with Radio set, and nested `role=menu` submenus for
-// items with Children. Renders headless.Menu dressed with the fui-menu
-// class map: the disclosure machinery (Escape one level at a time,
-// SPA-nav close, aria-expanded mirroring) is headless-disclosure's,
-// and the keyboard contract (roving focus, type-ahead, RTL-aware
-// submenus, radio arbitration) is headless-menu's. With
-// TriggerElement set there is no framework summary: the caller's
-// element is the controller (see MenuConfig.TriggerElement).
+// Menu renders a trigger and its role=menu panel through headless.Menu.
 func Menu(cfg MenuConfig) render.HTML {
 	items := make([]headless.MenuItem, len(cfg.Items))
 	for i, it := range cfg.Items {
@@ -366,8 +186,6 @@ func Menu(cfg MenuConfig) render.HTML {
 	return menuStyle.WrapHTML(out)
 }
 
-// headlessMenuItem maps one row, without its children, onto the
-// headless row.
 func headlessMenuItem(it MenuItem) headless.MenuItem {
 	extras := headless.Safe(it.ExtraAttrs)
 	if it.Class != "" {
