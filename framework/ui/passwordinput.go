@@ -10,59 +10,24 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── PasswordInput ──────────────────────────────────────────────────
-//
-// The affix-shell password control, rendered through headless.Password:
-// a div carrying data-hui-affix with a borderless input and a reveal
-// button inside, the shell owning the one border. The headless
-// behaviour module (not a component of its own) binds the reveal
-// button's data-hui-reveal: it retypes the input, flips the button's
-// aria-pressed, and keeps the caret where the reader left it. The
-// button is a toggle button: its name ("Show password") and its word
-// ("Show") never change, and the kit paints the pressed state. SSR
-// ships the hidden state.
-//
-// The component is a control, not a field: it renders no message of
-// its own. Wrap it in a FormField and let the field own the error;
-// this is what the Field wiring below carries.
-
 // PasswordInputConfig configures a PasswordInput.
 type PasswordInputConfig struct {
-	// Name is the form-field name (required).
+	// Name is the form-field name. Required.
 	Name string
-	// ID is the input element's id — the id a surrounding label's
-	// for= points at. Required unless Field carries one.
-	ID string
-	// Placeholder renders the native placeholder.
+	// ID is the input's id. Required unless Field carries one.
+	ID          string
 	Placeholder string
-	// Required marks the field required.
-	Required bool
-	// Autocomplete sets the autocomplete attribute (e.g. "current-password", "new-password").
+	Required    bool
+	// Autocomplete lands on the inner input.
 	Autocomplete string
-	// Class adds extra CSS classes to the shell.
-	Class string
-	// ExtraAttrs forwards additional attributes to the shell's root
-	// element — the same contract every component's ExtraAttrs
-	// carries (data-* test hooks, analytics markers). Keys the
-	// component owns are dropped: class (use Class), id, the input's
-	// type, name, placeholder, required, autocomplete, aria-invalid
-	// and aria-describedby (the field's wiring owns them), plus every
-	// data-cui-* and data-hui-* key — the reveal hooks are the
-	// runtime's contract, not a caller's to forge. Autocomplete has
-	// its own field because it belongs to the input that submits.
+	Class        string
+	// ExtraAttrs lands on the shell; keys the component owns are dropped.
 	ExtraAttrs map[string]string
 
-	// Ctx carries the per-request context used to resolve the reveal
-	// button's name and word (ui.StringsFor: ShowPassword,
-	// RevealShow). When nil, the English defaults are used.
+	// Ctx resolves the reveal button's words; nil reads English.
 	Ctx context.Context
 
-	// Field is the wiring an enclosing FormField handed its builder
-	// (the headless.FieldControl its Input closure received). Applied
-	// to the inner input — the id the outer label points at, the
-	// described-by chain, the invalid state and the required flag —
-	// and it wins over the config's own: two sources for one fact is
-	// how they drift. Zero value means standalone.
+	// Field is an enclosing FormField's wiring; it wins over ID and Required.
 	Field headless.FieldControl
 }
 
@@ -80,19 +45,10 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		panic("ui: PasswordInput requires ID (or a Field carrying one)")
 	}
 
-	// Autocomplete is an attribute of the inner input (it tells the
-	// browser what to fill), so it travels the headless Extra seam the
-	// props document for exactly that. A caller's ExtraAttrs go to
-	// the shell's root, the contract every component's ExtraAttrs
-	// carries — never the input that submits.
 	inputExtra := html.Attrs{}
 	if cfg.Autocomplete != "" {
 		inputExtra["autocomplete"] = cfg.Autocomplete
 	}
-	// A nil Ctx resolves through i18nui's English defaults rather
-	// than the bridge's nil short-circuit, the behaviour the
-	// component always had: the bytes are the same (the bridge pins
-	// them), and a host that swaps the default table is heard.
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
