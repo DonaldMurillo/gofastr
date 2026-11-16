@@ -3,11 +3,9 @@ package auth
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/binary"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -289,15 +287,18 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		p.mgr.emitSecurity(r.Context(), requested)
 		// A resend inside the cooldown keeps this browser's live
 		// challenge for the same address: the code already mailed is
-		// the one the user will type. Anyone else gets a decoy cookie,
-		// stored nowhere, so the cooldown says nothing about the address.
+		// the one the user will type. Anyone else gets a stored
+		// challenge whose code is mailed to no one. It answers send and
+		// verify exactly as a mailed one does (cookie, kept on resend,
+		// guess budget, lock), so nothing a client can try tells a
+		// cooldown from a mail.
 		if !p.holdsLiveChallenge(r, email) {
-			decoy := make([]byte, 32)
-			if _, err := rand.Read(decoy); err != nil {
+			token, err := createPurposeToken(r.Context(), p.tokenStore, purposeEmailCode, email, p.config.CodeTTL)
+			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
 				return
 			}
-			p.setChallengeCookie(w, hex.EncodeToString(decoy))
+			p.setChallengeCookie(w, token)
 		}
 		p.writeSent(w, r)
 		return

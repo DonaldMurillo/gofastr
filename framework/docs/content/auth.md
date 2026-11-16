@@ -1737,7 +1737,10 @@ How a code is protected:
 - **Mail is metered** by the per-IP `RateLimit` (default 10 a minute)
   and by `AuthConfig.MailAddressRateLimit`, the cooldown the link
   plugins share. An address in its cooldown gets the same answer and a
-  cookie, but no mail and no code.
+  challenge cookie whose code is mailed to no one, and that challenge
+  behaves like a mailed one on resend and verify. A browser that already
+  holds a live challenge for the address keeps it, so the code it was
+  mailed still works.
 - **A password change or reset drops outstanding codes**, as it drops
   magic links (`emailcode_tokens.purged`). Erasure deletes them too.
 

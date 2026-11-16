@@ -260,6 +260,47 @@ func TestEmailCode_AddressCooldownLooksLikeASend(t *testing.T) {
 	}
 }
 
+// Nothing a client can try tells a cooldown challenge from a mailed one:
+// replaying either cookie on a second send gets the same answer, and
+// both lock after the same number of wrong guesses.
+func TestEmailCode_CooldownChallengeIsIndistinguishable(t *testing.T) {
+	cooldown := &RateLimiterConfig{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour}
+	resend := func(f *emailCodeFixture, c *http.Cookie) (int, bool, string) {
+		w := f.post(t, "/auth/email-code/send", map[string]string{"email": "hal@example.com"}, c)
+		return w.Code, cookieNamed(w.Result().Cookies(), f.plugin.cookieName()) != nil, w.Body.String()
+	}
+
+	mailed := newEmailCodeFixture(t, emailCodeOpts{mail: cooldown})
+	real, _ := mailed.send(t, "hal@example.com")
+
+	held := newEmailCodeFixture(t, emailCodeOpts{mail: cooldown})
+	held.send(t, "hal@example.com") // another browser spends the cooldown
+	decoy, _ := held.send(t, "hal@example.com")
+	if held.sender.sent != 1 {
+		t.Fatalf("the cooldown challenge's code must be mailed to no one: sent %d", held.sender.sent)
+	}
+
+	aCode, aCookie, aBody := resend(mailed, real)
+	bCode, bCookie, bBody := resend(held, decoy)
+	if aCode != bCode || aCookie != bCookie || aBody != bBody {
+		t.Fatalf("resend answers differ: mailed (%d, cookie %v, %q) vs cooldown (%d, cookie %v, %q)",
+			aCode, aCookie, aBody, bCode, bCookie, bBody)
+	}
+
+	for name, c := range map[string]*http.Cookie{"mailed": real, "cooldown": decoy} {
+		f := mailed
+		if name == "cooldown" {
+			f = held
+		}
+		for i := 0; i < emailCodeChallengeGuesses; i++ {
+			f.verify(t, "00000000", c)
+		}
+		if w := f.verify(t, "00000000", c); w.Code != http.StatusTooManyRequests {
+			t.Fatalf("%s challenge past its guesses: %d", name, w.Code)
+		}
+	}
+}
+
 // A resend inside the cooldown from the browser holding the live
 // challenge keeps it: the code already mailed still signs in.
 func TestEmailCode_ResendInCooldownKeepsLiveChallenge(t *testing.T) {
