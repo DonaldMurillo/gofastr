@@ -74,6 +74,16 @@ invariants:
     enforced_by:
       - test: battery/auth.TestInitKeepsHostEmailResolver
 decisions:
+  - id: erasure-canonicalizes-the-stored-address
+    date: 2026-11-16
+    status: accepted
+    decision: Erasure canonicalizes the stored address before matching email-keyed tokens, and AuthConfig.CanonicalizeEmail must be idempotent.
+    rejected:
+      - option: Bind the stored address as it is.
+        why: A row stored before canonicalization kept its raw spelling and missed tokens written under the canonical one.
+      - option: Bind both the stored and the canonicalized address.
+        why: An eraser binds one value, and password reset's purge already canonicalizes the stored address, so an idempotent canonicalizer is a contract the battery holds anyway.
+    upholds: [erasure-reaches-email-keyed-tokens]
   - id: hop-on-refusal-not-on-arrival
     date: 2026-11-16
     status: accepted

@@ -1162,7 +1162,9 @@ store keyed on raw bytes) installs `AuthConfig.CanonicalizeEmail`; it
 replaces the default at every ingestion point — including the invisible
 strip, an override owns its own invisible-character policy — and may
 return `auth.ErrEmailNotComposed` (or any error) to refuse an address,
-which the handlers surface as `400`:
+which the handlers surface as `400`. It must be idempotent: password
+reset and erasure canonicalize the stored address again before matching
+the tokens it was written into.
 
 ```go
 mgr := auth.New(auth.AuthConfig{

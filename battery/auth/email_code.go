@@ -379,10 +379,10 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !p.spendGuess(w, r, p.challenge, "challenge:"+sha256hex(token), token, email) {
+	if !p.spendGuess(w, r, p.address, "address:"+sha256hex(email), "", email) {
 		return
 	}
-	if !p.spendGuess(w, r, p.address, "address:"+sha256hex(email), "", email) {
+	if !p.spendGuess(w, r, p.challenge, "challenge:"+sha256hex(token), token, email) {
 		return
 	}
 

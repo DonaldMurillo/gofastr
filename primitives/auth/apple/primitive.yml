@@ -28,7 +28,7 @@ invariants:
     applies:
       - battery/auth/oauth2.go
   - id: bff-passes-form-post-callback
-    rule: WithBFFPosture lets a POST to a form-post callback path past its CSRF check and origin guard, and no other auth POST.
+    rule: "WithBFFPosture lets every POST to {BasePath}/oauth/{provider}/callback, for any provider name, past its CSRF check and origin guard, beside its logout CSRF exemption, and the callback handler then refuses a provider that is not a form-post one."
     enforced_by:
       - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
       - test: battery/auth.TestIsFormPostCallback

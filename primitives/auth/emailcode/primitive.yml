@@ -19,7 +19,7 @@ invariants:
       - test: battery/auth.TestEmailCode_ChallengeDroppedAfterFiveGuesses
       - test: battery/auth.TestEmailCode_AddressGuessBudgetSpansChallenges
   - id: budget-store-error-refuses
-    rule: A guess-budget store error answers 503 and leaves the challenge in place.
+    rule: The address budget is spent before the challenge's, and a guess-budget store error answers 503 and spends no challenge guess, so the code still works once the store is back.
     enforced_by:
       - test: battery/auth.TestEmailCode_GuessBudgetStoreErrorRefuses
   - id: foreign-token-spends-nothing

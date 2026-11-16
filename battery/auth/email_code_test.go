@@ -208,7 +208,7 @@ func TestEmailCode_ChallengeDroppedAfterFiveGuesses(t *testing.T) {
 		t.Fatalf("right code on the last guess: %d %s", w.Code, w.Body)
 	}
 
-	c, code = f.send(t, "alice@example.com")
+	c, code = f.send(t, "alan@example.com") // a fresh address budget: only the challenge limits
 	for i := 0; i < emailCodeChallengeGuesses; i++ {
 		f.verify(t, wrong(code), c)
 	}
@@ -522,12 +522,20 @@ func (failingLimitStore) Allow(context.Context, string, RateLimiterConfig) (bool
 func TestEmailCode_GuessBudgetStoreErrorRefuses(t *testing.T) {
 	f := newEmailCodeFixture(t, emailCodeOpts{})
 	c, code := f.send(t, "eve@example.com")
+	healthy := f.plugin.address
 	f.plugin.address = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 10, Window: time.Hour, BlockDuration: time.Hour, Store: failingLimitStore{}}, "emailcode_address")
-	if w := f.verify(t, code, c); w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("verify with the budget store down: %d, want 503", w.Code)
+	// More failed attempts than the challenge has guesses: none may spend one.
+	for i := 0; i <= emailCodeChallengeGuesses; i++ {
+		if w := f.verify(t, code, c); w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("verify %d with the budget store down: %d, want 503", i, w.Code)
+		}
 	}
 	if _, err := f.plugin.peeker.PeekToken(context.Background(), c.Value); err != nil {
 		t.Fatal("a store error must not drop the challenge")
+	}
+	f.plugin.address = healthy
+	if w := f.verify(t, code, c); w.Code != http.StatusOK {
+		t.Fatalf("the code once the store is back: %d %s", w.Code, w.Body)
 	}
 }
 
