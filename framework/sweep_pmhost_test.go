@@ -168,3 +168,40 @@ func TestSweepPMHostProbeChildEnvOmitsHostEnv(t *testing.T) {
 		}
 	}
 }
+
+// A grant view holding a non-grantable scope denies every reverse call,
+// even one its other grants would satisfy, and never reaches the host.
+func TestSweepPMHostNonGrantableViewDenies(t *testing.T) {
+	grants := []access.Permission{"notes:read", "search:query", "orders:emit", "*:read"}
+	view := ModuleGrantView{Name: "m", Grants: grants}
+	var hit atomic.Bool
+	search := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hit.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[],"total":0}`))
+	})
+	b := NewBroker(fakeSuccessRouter(&hit), brokerRegistry(brokerEntity("notes", "notes", nil)), event.NewEventBus(), "",
+		WithBrokerSearchEndpoint(search))
+
+	t.Run("entity", func(t *testing.T) {
+		_, err := callReverse(t, b.entityHandler(view, opQuery), moduleproto.EntityQueryParams{Entity: "notes"})
+		wantNonGrantableDenial(t, err)
+	})
+	t.Run("search", func(t *testing.T) {
+		_, err := callReverse(t, b.searchHandler(view), moduleproto.SearchQueryParams{Query: "x"})
+		wantNonGrantableDenial(t, err)
+	})
+	t.Run("event", func(t *testing.T) {
+		_, err := callReverse(t, b.eventHandler(view), moduleproto.EventEmitParams{Topic: "orders"})
+		wantNonGrantableDenial(t, err)
+	})
+	wantNotHit(t, &hit)
+}
+
+func wantNonGrantableDenial(t *testing.T, err error) {
+	t.Helper()
+	wantDenied(t, err)
+	if we := moduleproto.AsError(err); we == nil || !strings.Contains(we.Message, "non-grantable") {
+		t.Fatalf("denial = %v, want the non-grantable-scope denial", err)
+	}
+}
