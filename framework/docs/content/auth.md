@@ -514,7 +514,9 @@ tracker. The gate would read a signed-in user as signed out and send
 them to the login page. `SessionMiddleware` answers that one case
 instead. When all of these hold:
 
-- the request is a `GET` or `HEAD` with `Sec-Fetch-Site: cross-site`,
+- the request is a `GET` or `HEAD` that `handler.IsCrossSiteRequest`
+  calls cross-site (`Sec-Fetch-Site: cross-site`, or `same-site` from a
+  sibling subdomain that sends no matching `Origin`), with
   `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
 - it carries no session cookie at all,
 - and the app is about to answer `401`, or a gate is about to redirect

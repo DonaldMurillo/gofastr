@@ -3,6 +3,8 @@ package auth
 import (
 	"io"
 	"net/http"
+
+	"github.com/DonaldMurillo/gofastr/core/handler"
 )
 
 // withheldCookieArrival reports a top-level page load that began on
@@ -12,7 +14,7 @@ func withheldCookieArrival(r *http.Request, cookie string) bool {
 		return false
 	}
 	h := r.Header
-	return h.Get("Sec-Fetch-Site") == "cross-site" && h.Get("Sec-Fetch-Mode") == "navigate" &&
+	return handler.IsCrossSiteRequest(r) && h.Get("Sec-Fetch-Mode") == "navigate" &&
 		h.Get("Sec-Fetch-Dest") == "document" && len(r.CookiesNamed(cookie)) == 0
 }
 

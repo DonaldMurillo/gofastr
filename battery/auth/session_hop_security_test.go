@@ -148,6 +148,18 @@ func TestCrossSiteArrivalAtPublicPageIsServedDirectly(t *testing.T) {
 
 // Anything but a cookieless top-level GET or HEAD from another site
 // gets the gate's own answer.
+// The hop asks handler.IsCrossSiteRequest, the one cross-site predicate:
+// a sibling subdomain's navigation that cannot prove its origin counts.
+func TestHopUsesTheSharedCrossSitePredicate(t *testing.T) {
+	g := newHopRig(t)
+	if w := g.do(http.MethodGet, "/app/orders", navigation("same-site"), ""); w.Code != http.StatusOK || w.Header().Get("Refresh") != "0;url=/app/orders" {
+		t.Fatalf("same-site navigation = %d Refresh %q, want the hop", w.Code, w.Header().Get("Refresh"))
+	}
+	if w := g.do(http.MethodGet, "/app/orders", navigation("same-origin"), ""); w.Code != http.StatusSeeOther || w.Header().Get("Refresh") != "" {
+		t.Fatalf("the hop's reload = %d Refresh %q, want the gate's 303", w.Code, w.Header().Get("Refresh"))
+	}
+}
+
 func TestOnlyCookielessCrossSiteNavigationsHop(t *testing.T) {
 	g := newHopRig(t)
 	with := func(site, mode, dest string, more ...string) http.Header {
@@ -172,7 +184,6 @@ func TestOnlyCookielessCrossSiteNavigationsHop(t *testing.T) {
 		{"frame", http.MethodGet, "", with("cross-site", "navigate", "iframe")},
 		{"image", http.MethodGet, "", with("cross-site", "no-cors", "image")},
 		{"prefetch with no mode", http.MethodGet, "", with("cross-site", "", "document")},
-		{"same-site navigation", http.MethodGet, "", with("same-site", "navigate", "document")},
 		{"typed address", http.MethodGet, "", with("none", "navigate", "document")},
 		{"same-origin navigation", http.MethodGet, "", with("same-origin", "navigate", "document")},
 		{"no Fetch Metadata", http.MethodGet, "", with("", "", "")},

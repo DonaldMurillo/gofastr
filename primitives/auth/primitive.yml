@@ -6,7 +6,7 @@ docs:
   - framework/docs/content/auth.md
 invariants:
   - id: cross-site-arrival-reloads-same-site
-    rule: SessionMiddleware answers a cookieless cross-site document navigation (GET or HEAD) that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
+    rule: SessionMiddleware answers a cookieless document navigation (GET or HEAD) that handler.IsCrossSiteRequest calls cross-site and that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
     enforced_by:
       - test: battery/auth.TestCrossSiteArrivalAtGuardedPageHops
       - test: battery/auth.TestCrossSiteArrivalHopDoesNotLoop
