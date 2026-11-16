@@ -15,8 +15,8 @@ count() {
   local label="$1"; shift
   find "${dirs[@]}" -name '*.go' "$@" \
     ! -path '*/testdata/*' ! -path '*/vendor/*' ! -path '*/node_modules/*' -print0 |
-    xargs -0 grep -L -E '^// Code generated .* DO NOT EDIT\.$|^//gofastr:generated' >"$files" || true
-  tr '\n' '\0' <"$files" | xargs -0 cat | awk -v label="$label" '
+    xargs -0 -r grep -L -E '^// Code generated .* DO NOT EDIT\.$|^//gofastr:generated' >"$files" || true
+  tr '\n' '\0' <"$files" | xargs -0 -r cat | awk -v label="$label" '
       { line = $0; sub(/^[ \t]+/, "", line) }
       line == "" { next }
       line ~ /^\/\/(go:|gofastr:|nolint|line |export )/ || line ~ /^\/\/ ?\+build/ { code++; next }
