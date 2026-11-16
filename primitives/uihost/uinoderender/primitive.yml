@@ -4,3 +4,100 @@ code:
   - framework/uihost/uinoderender/
 docs:
   - framework/docs/content/process-modules.md
+invariants:
+  - id: unmapped-shape-is-an-error
+    rule: A nil tree or a component the renderer has no mapping for returns an error and no HTML, never improvised markup.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestSweepSeoUnknownComponentErrors
+      - test: framework/uihost/uinoderender.TestSweepSeoNilTreeErrors
+  - id: tree-is-all-or-nothing
+    rule: One child that fails to render fails the whole tree, which returns no HTML.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestSweepSeoChildErrorRejectsWholeTree
+  - id: action-ref-fails-closed
+    rule: A button or action link whose ActionRef is empty, is refused by the resolver, resolves to an empty URL or meets a nil resolver is an error, never a guessed URL.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderButtonUnresolvedFailsClosed
+      - test: framework/uihost/uinoderender.TestRenderNilResolverFailsClosed
+      - test: framework/uihost/uinoderender.TestSweepSeoEmptyOrBlankActionRefErrors
+  - id: host-assigns-rpc-url
+    rule: A button carries the resolved URL in data-cui-rpc, and an ActionRef link carries it as both href and data-cui-rpc, so the link still works without JavaScript.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderButtonActionRefResolves
+      - test: framework/uihost/uinoderender.TestRenderLinkActionRefResolvedToRpcURL
+  - id: hand-built-table-never-panics
+    rule: A data table with no columns renders an empty state, an empty or repeated column key is an error, and cells past the column count are dropped, so no tree can panic ui.DataTable.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderDataTableEmptyColumns
+      - test: framework/uihost/uinoderender.TestDataTableDupKeysErrNoPanic
+      - test: framework/uihost/uinoderender.TestSweepSeoDataTableDropsExtraCells
+  - id: section-always-labelled
+    rule: A section's landmark label is its title, else its subtitle, else the translated word for section, so html.Section never lacks the label it panics without.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderSectionFallbackLabel
+  - id: wire-values-map-to-host-variants
+    rule: Wire tones, elevations, trends, button variants and column counts map to design-system variants in the renderer, and an unlisted or empty value takes the default (neutral badge, elevated card, flat trend, primary button, framework grid width).
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderBadgeToneMapsToStatusVariant
+      - test: framework/uihost/uinoderender.TestRenderButtonDefaultVariantPrimary
+      - test: framework/uihost/uinoderender.TestSweepSeoCardAndTrendMapping
+      - test: framework/uihost/uinoderender.TestSweepSeoGridColumnsMapToMin
+  - id: key-value-is-a-detail-list
+    rule: A key-value item renders as a detail-list row whose term is the key and whose value is the value.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderKeyValueReusesDetailList
+      - test: framework/uihost/uinoderender.TestSweepSeoKeyValueKeyIsTheLabel
+  - id: horizontal-stack-is-a-nowrap-cluster
+    rule: A horizontal stack renders as a non-wrapping ui.Cluster and a vertical one as ui.Stack.
+    enforced_by:
+      - test: framework/uihost/uinoderender.TestRenderStackHorizontalMapsToCluster
+decisions:
+  - id: closed-tree-and-host-mapping
+    date: 2026-11-16
+    status: accepted
+    decision: Module trees render through the closed uinodev1 type and a host-side mapping that assigns every id, class, ARIA attribute, variant and data-cui-rpc URL.
+    rejected:
+      - option: Rendering module output through core-ui/noderender.
+        why: It is a denylist over first-party IR, and a third party could forge the data-cui-* attributes the runtime acts on through its extra-attribute passthrough.
+    upholds: [unmapped-shape-is-an-error, action-ref-fails-closed]
+  - id: guard-not-recover
+    date: 2026-11-16
+    status: accepted
+    decision: The renderer guards the known panics of html.Section and ui.DataTable before calling them instead of recovering.
+    rejected:
+      - option: A recover around the render.
+        why: It would hide a real component bug behind an empty render.
+    upholds: [hand-built-table-never-panics, section-always-labelled]
+  - id: grid-columns-approximate-with-min
+    date: 2026-11-16
+    status: accepted
+    decision: A requested column count maps to a minimum track width on the auto-fit ui.Grid, from 60rem for one column down to 8rem for six or more.
+    rejected:
+      - option: An inline grid-template-columns style.
+        why: The strict CSP refuses inline styles and the one styling surface allows no bespoke CSS.
+    revisit_if: ui.Grid gains a fixed column count.
+    upholds: [wire-values-map-to-host-variants]
+  - id: wire-names-differ-from-framework
+    date: 2026-11-16
+    status: accepted
+    decision: The wire's badge tones (positive, negative, warning, info, neutral) are names of their own, mapped to ui.StatusVariant in the renderer.
+    rejected:
+      - option: Putting the framework's variant names on the wire.
+        why: A rename in framework/ui would then break the module protocol.
+    upholds: [wire-values-map-to-host-variants]
+  - id: key-value-reuses-detail-list
+    date: 2026-11-16
+    status: accepted
+    decision: Key-value renders through ui.DetailList, as detail-list does.
+    rejected:
+      - option: A separate key-value component.
+        why: The design system has none, and a flat key-value map is a description list.
+    upholds: [key-value-is-a-detail-list]
+  - id: horizontal-stack-as-cluster
+    date: 2026-11-16
+    status: accepted
+    decision: A horizontal stack is a ui.Cluster with NoWrap.
+    rejected:
+      - option: A direction on ui.Stack.
+        why: ui.Stack is vertical only, and Cluster is the same layout family.
+    upholds: [horizontal-stack-is-a-nowrap-cluster]

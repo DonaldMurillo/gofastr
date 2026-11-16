@@ -8,3 +8,167 @@ code:
   - framework/uihost/organization.go
 docs:
   - framework/docs/content/seo.md
+invariants:
+  - id: sitemap-lists-readable-pages
+    rule: The sitemap lists each static route, and a dynamic route only through its StaticPaths, leaving out redirects, ExcludePaths prefixes and every page whose policy redirects or blocks an anonymous GET, whoever requests the sitemap.
+    enforced_by:
+      - test: framework/uihost.TestSitemapSkipsDynamicWithoutStaticPaths
+      - test: framework/uihost.TestSitemapExcludePaths
+      - test: framework/uihost.TestSitemapOmitsPolicyGatedScreens
+      - test: framework/uihost.TestSweepSeoSitemapSkipsRedirects
+  - id: sitemap-policy-sees-the-page-request
+    rule: The sitemap judges a page by the render's policy phase, resolver state included, run on a GET of the page's escaped path, so a key holding "?" stays in the path and a failed resolver read leaves the page out.
+    enforced_by:
+      - test: framework/uihost.TestSitemapPolicyReadsResolver
+      - test: framework/uihost.TestSweepSeoSitemapPolicySeesEscapedPath
+  - id: sitemap-loc-is-escaped
+    rule: A <loc> spells each route parameter as one escaped path segment, so a key holding "/" or a space names the page that serves it.
+    enforced_by:
+      - test: framework/uihost.TestSitemapKeepsKeyOneSegment
+  - id: sitemap-splits-at-protocol-limits
+    rule: A sitemap past 50,000 URLs or 50 MiB becomes an index at /sitemap.xml naming parts at /sitemap/<n>.xml, none of them past either limit.
+    enforced_by:
+      - test: framework/uihost.TestSitemapSplitsPastURLCap
+      - test: framework/uihost.TestSitemapSplitsPastByteCap
+  - id: sitemap-part-miss-falls-through
+    rule: A /sitemap/<name> path that names no sitemap part is served by the page catch-all, not answered by the sitemap handler.
+    enforced_by:
+      - test: framework/uihost.TestSweepSeoSitemapPartMissFallsThroughToPage
+  - id: live-sitemap-is-memoised
+    rule: The live sitemap renders at most once a minute, shared by concurrent requests, except under gofastr dev, where every request renders it.
+    enforced_by:
+      - test: framework/uihost.TestSitemapRenderIsMemoised
+      - test: framework/uihost.TestSitemapDevRendersEachTime
+  - id: sitemap-entry-per-readable-locale
+    rule: With path locales a page has one entry per locale whose StaticPaths list it and whose policy, run in that locale's context, admits an anonymous reader, each entry naming those same alternates, and x-default is kept only when the default locale is.
+    enforced_by:
+      - test: framework/uihost.TestSitemapStaticPathsPerLocale
+      - test: framework/uihost.TestSitemapPolicyPerLocale
+      - test: framework/uihost.TestSitemapXDefaultFollowsDefault
+  - id: sitemap-keep-drops-entries-and-alternates
+    rule: A page SitemapFiles' keep refuses is neither an entry nor another entry's alternate.
+    enforced_by:
+      - test: framework/uihost.TestSitemapFilesKeepPerLocale
+      - test: framework/static.TestSitemapListsOnlyExportedPages
+  - id: mount-path-added-once
+    rule: A static export's mount path is added to the BaseURL once, even when the BaseURL already ends in it.
+    enforced_by:
+      - test: framework/uihost.TestSweepSeoJoinBaseURLAddsMountOnce
+      - test: framework/static.TestBuildSitemapRobotsBasePath
+  - id: robots-rules-as-authored
+    rule: robots.txt writes Allow and Disallow prefixes as authored, repeats each under every prefixed locale except "/", and lets basePath change only the derived Sitemap URL.
+    enforced_by:
+      - test: framework/uihost.TestRobotsRulesCoverPrefixes
+      - test: framework/uihost.TestSweepSeoRobotsRootRuleNotPrefixed
+      - test: framework/uihost.TestSweepSeoRobotsBasePathOnlyMovesSitemap
+  - id: robots-defaults
+    rule: An empty RobotsConfig yields "User-agent *" with "Allow /", and an empty SitemapURL is derived from WithSitemap's BaseURL.
+    enforced_by:
+      - test: framework/uihost.TestRobotsDefaultsToAllow
+      - test: framework/uihost.TestRobotsDerivesSitemapFromBaseURL
+  - id: allowed-ai-bots-share-the-host-group
+    rule: Allowed AI crawlers are extra User-agent lines of the main group, so the host's Disallow rules bind them, and denied ones each get a group of their own that disallows "/".
+    enforced_by:
+      - test: framework/uihost.TestRobots_AIBotAllow_InheritsHostDisallow
+      - test: framework/uihost.TestRobots_AIBotDeny
+  - id: robots-content-signal
+    rule: A configured content signal is written as a Content-Signal line of robots.txt.
+    enforced_by:
+      - test: framework/uihost.TestRobots_ContentSignal
+  - id: bundle-field-beats-interface
+    rule: A set ScreenSEO field beats the per-concern interface for the same value, and an empty one falls through to it.
+    enforced_by:
+      - test: framework/uihost.TestSEOBundleDescriptionOverrides
+      - test: framework/uihost.TestSEOBundleRobotsBeatsScreenRobots
+      - test: framework/uihost.TestSEOBundleFallsThroughEmptyFields
+  - id: seo-reads-the-loaded-instance
+    rule: SEO resolves against the per-request loaded component when there is one, so a dynamic route's description comes from its params, not from the registration template.
+    enforced_by:
+      - test: framework/uihost.TestDynamicMetaDescriptionLoaded
+  - id: one-description-per-page
+    rule: A page carries one meta description, a tag the HTML tokenizer reads as such, and the site description is the first one in WithHeadHTML before WithDescription's.
+    enforced_by:
+      - test: framework/uihost.TestOneDescriptionPerPage
+      - test: framework/uihost.TestSweepSeoDescriptionNameIsCaseAndSpaceFree
+  - id: unsafe-head-url-dropped
+    rule: An og:image, og:url or twitter:image that isSafeHeadURL refuses is not emitted.
+    enforced_by:
+      - test: framework/uihost.TestSEO_BundleURLsRejectUnsafeSchemes
+  - id: article-fills-gaps-only
+    rule: An article screen (AsArticle or ScreenArticle) gets an Article JSON-LD item and og:type article, its headline from the screen title, unless it already declares an Article, and the OG fields it declares are kept.
+    enforced_by:
+      - test: framework/uihost.TestScreenArticleSynthesizesMetadata
+      - test: framework/uihost.TestScreenArticleDoesNotDuplicateSchema
+      - test: framework/uihost.TestScreenArticlePreservesExplicitOG
+      - test: framework/uihost.TestAsArticleDerivesFromScreenTitle
+  - id: front-matter-mirrors-the-head
+    rule: A page's llm.md front matter carries the resolved SEO its head emits, opens with the title, drops every URL and hreflang entry the head drops, and is empty when no SEO field is set.
+    enforced_by:
+      - test: framework/uihost.TestScreenLLMMD_InheritsSEOFrontMatter
+      - test: framework/uihost.TestScreenSEOFrontMatter_NoValuesReturnsEmpty
+      - test: framework/uihost.TestScreenLLMMD_NoSEOOmitsFrontMatter
+      - test: framework/uihost.TestSweepSeoFrontMatterDropsUnsafeURLs
+  - id: front-matter-values-double-quoted
+    rule: Every front-matter value is a YAML double-quoted scalar with backslash, quote, CR, LF, tab, the other C0 controls and DEL escaped.
+    enforced_by:
+      - test: framework/uihost.TestSweepSeoYAMLQuoteEscapesControls
+  - id: organization-jsonld-cannot-close-script
+    rule: Organization JSON-LD is built with encoding/json and has "</" escaped, so no config value ends the script element.
+    enforced_by:
+      - test: framework/uihost.TestOrganizationJSONLD_EscapingGuard
+  - id: organization-jsonld-shape
+    rule: Organization JSON-LD appears in every full page head when configured, its contactPoint only when an email or phone is set (contactType defaulting to customer support), and its address only when an address field is set.
+    enforced_by:
+      - test: framework/uihost.TestOrganizationJSONLD_RenderShape
+      - test: framework/uihost.TestSweepSeoOrganizationOmitsEmptyParts
+      - test: framework/uihost.TestOrganizationJSONLD_InPageHead
+decisions:
+  - id: sitemap-memo-a-minute
+    date: 2026-11-16
+    status: accepted
+    decision: The live sitemap keeps one render for a minute, and the requests that find it stale share one render through singleflight.
+    rejected:
+      - option: Rendering the sitemap on every request.
+        why: Each render runs every dynamic route's StaticPaths and every page's policy, which an anonymous GET must not trigger at will.
+    upholds: [live-sitemap-is-memoised]
+  - id: ai-bot-allow-in-main-group
+    date: 2026-11-16
+    status: accepted
+    decision: Allowed AI crawlers join the main robots.txt group as extra User-agent lines.
+    rejected:
+      - option: A separate "Allow /" group per allowed crawler.
+        why: RFC 9309 applies only a crawler's most specific group, so that group would shadow the host's Disallow rules for it.
+    upholds: [allowed-ai-bots-share-the-host-group]
+  - id: robots-prefixes-not-rebased
+    date: 2026-11-16
+    status: accepted
+    decision: robots.txt Allow and Disallow prefixes are not rebased onto a static export's mount path.
+    rejected:
+      - option: Prefixing every rule with basePath.
+        why: The rules are the app's own route prefixes, and a subpath deploy that needs them prefixed can author them that way.
+    upholds: [robots-rules-as-authored]
+  - id: front-matter-always-double-quoted
+    date: 2026-11-16
+    status: accepted
+    decision: Front-matter values are always YAML double-quoted strings.
+    rejected:
+      - option: Plain YAML scalars where they parse.
+        why: "Leading indicators, a colon followed by a space and reserved words change a plain scalar's meaning, and quoting everything keeps the block parseable whatever the value."
+    upholds: [front-matter-values-double-quoted]
+  - id: front-matter-hreflang-tags-only
+    date: 2026-11-16
+    status: accepted
+    decision: The front matter lists hreflang tags without their URLs, and schema_types names each JSON-LD item's @type read back from its JSON.
+    rejected:
+      - option: Listing each alternate's URL.
+        why: The URLs are already in the head and would only bloat the front matter.
+      - option: A @type accessor on core-ui/seo.
+        why: Marshalling the item as seo.Render does reads the same value without widening that package's API.
+    upholds: [front-matter-mirrors-the-head]
+  - id: ld-json-tags-in-separate-literals
+    date: 2026-11-16
+    status: accepted
+    decision: ldJSONScript writes the opening and closing script tags as separate string literals, as core-ui/seo.Render does.
+    rejected:
+      - option: One literal holding the whole element.
+        why: The inline-script contract (GOFASTR1805) reads each literal and would flag JSON-LD, which is inert data the browser never runs.

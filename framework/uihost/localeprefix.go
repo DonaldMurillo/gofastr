@@ -10,21 +10,15 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// SetPathLocales tells the host that the app names the reader's locale
-// in the URL; framework.WithLocalePrefixes calls it at Mount. The host
-// then gives each page that declares no hreflang one alternate per
-// locale plus x-default (absolute URLs on the WithSitemap BaseURL, so
-// the alternates need one), puts the request's prefix on a declared
-// canonical and og:url, lists every page once per locale in the
-// sitemap, and publishes the set to the runtime, which keeps client
-// navigation in the reader's locale. Call it before the first request.
+// SetPathLocales tells the host the app names the reader's locale in the
+// URL prefix: pages get generated hreflang alternates (absolute on the
+// WithSitemap BaseURL), prefixed canonical and og:url, one sitemap entry
+// per locale, and the runtime gets the set. Call it before the first request.
 func (ds *UIHost) SetPathLocales(set i18n.PathLocales) {
 	ds.pathLocales = &set
 }
 
-// PathLocales returns the set SetPathLocales installed; ok is false for
-// an app that does not route by locale prefix. The static exporter
-// writes one page tree per prefixed locale from it.
+// PathLocales returns the set SetPathLocales installed; ok is false without one.
 func (ds *UIHost) PathLocales() (set i18n.PathLocales, ok bool) {
 	if ds.pathLocales == nil {
 		return i18n.PathLocales{}, false
@@ -32,8 +26,6 @@ func (ds *UIHost) PathLocales() (set i18n.PathLocales, ok bool) {
 	return *ds.pathLocales, true
 }
 
-// siteBase returns the sitemap's BaseURL without a trailing slash, or
-// "" when none is configured.
 func (ds *UIHost) siteBase() string {
 	if ds.sitemapConfig == nil {
 		return ""
@@ -41,9 +33,6 @@ func (ds *UIHost) siteBase() string {
 	return strings.TrimRight(ds.sitemapConfig.BaseURL, "/")
 }
 
-// localeAlternates returns the page's hreflang alternates: one per
-// locale and x-default, the unprefixed page. Nil without path locales
-// or a BaseURL, since hreflang URLs must be absolute.
 func (ds *UIHost) localeAlternates(ctx context.Context, pagePath string) []HreflangLink {
 	base := ds.siteBase()
 	if ds.pathLocales == nil || base == "" {
@@ -56,16 +45,12 @@ func (ds *UIHost) localeAlternates(ctx context.Context, pagePath string) []Hrefl
 
 type staticBasePathKey struct{}
 
-// WithStaticBasePath supplies a static export's mount path for generated
-// hreflang URLs. The static builder sets it for each render; callers rendering
-// static pages directly may pass it to RenderStaticPage or RenderStaticPageResult.
+// WithStaticBasePath sets a static export's mount path, which generated
+// hreflang URLs carry, for RenderStaticPage and RenderStaticPageResult.
 func WithStaticBasePath(ctx context.Context, basePath string) context.Context {
 	return context.WithValue(ctx, staticBasePathKey{}, basePath)
 }
 
-// localeLinks takes the page path in routing form (app.RoutePath, a
-// sitemap path) and escapes it: a "?" in it is part of the path, and a
-// key value's "/" stays %2F.
 func localeLinks(set i18n.PathLocales, base, pagePath string) []HreflangLink {
 	p := app.EscapeRoutePath(pagePath)
 	var out []HreflangLink
@@ -75,10 +60,6 @@ func localeLinks(set i18n.PathLocales, base, pagePath string) []HreflangLink {
 	return append(out, HreflangLink{Lang: "x-default", URL: base + p})
 }
 
-// localizeSEO is a page's resolved SEO as the request's locale serves
-// it: generated hreflang alternates when the page declares none, and
-// the prefix on its canonical and og:url. The HTML head and the page's
-// markdown both read it; the markdown kept the English canonical.
 func (ds *UIHost) localizeSEO(ctx context.Context, pagePath string, s SEO) SEO {
 	if len(s.Hreflangs) == 0 {
 		s.Hreflangs = ds.localeAlternates(ctx, pagePath)
@@ -92,9 +73,6 @@ func (ds *UIHost) localizeSEO(ctx context.Context, pagePath string, s SEO) SEO {
 	return s
 }
 
-// localizeURL puts the request's locale prefix on a URL a page declares
-// for itself (canonical, og:url), root-relative or absolute on the
-// BaseURL; the response rewriter leaves <link> and <meta> alone.
 func (ds *UIHost) localizeURL(ctx context.Context, u string) string {
 	prefix := i18n.PathPrefix(ctx)
 	if prefix == "" || u == "" {
@@ -108,10 +86,6 @@ func (ds *UIHost) localizeURL(ctx context.Context, u string) string {
 	return urlprefix.Path(u, rule)
 }
 
-// localesJSON is the locale set the runtime reads as
-// window.__gofastr_locales: {"default":"en","prefixes":["es"],"base":""}.
-// base is the subpath a static export is mounted under. Nil without
-// path locales.
 func (ds *UIHost) localesJSON(basePath string) []byte {
 	if ds.pathLocales == nil {
 		return nil
@@ -124,9 +98,6 @@ func (ds *UIHost) localesJSON(basePath string) []byte {
 	return b
 }
 
-// localesJSONScript embeds the locale set as inert JSON for a page that
-// is its own file (a static export); live pages get it from
-// manifest.js.
 func (ds *UIHost) localesJSONScript() string {
 	b := ds.localesJSON("")
 	if b == nil {
