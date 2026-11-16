@@ -689,8 +689,11 @@ to `/admin/modules/_enable`, `_disable`, `_bump` and `_revoke`, and need
 the `modules:manage` permission on top of the gate, held through the
 caller's roles in `Config.Policy` and not denied by an `access.Decider`;
 without it, or without a policy, the page is read-only. Each lever writes an audit row (`module_enable`, ...), and
-a refused one a `*_refused` row. A failed lever answers a generic
-notice and logs the error.
+a refused one a `*_refused` row. A lever the supervisor refuses
+answers 409 with a generic notice, logs the error and writes no audit
+row. Revoking a capability the module does not hold is one: the
+supervisor returns an error and changes nothing, so the page never
+reports or audits a revoke that took nothing away.
 
 ### Email previews
 

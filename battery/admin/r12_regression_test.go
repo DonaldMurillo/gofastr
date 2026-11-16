@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -386,5 +387,28 @@ func TestAuditOpsCoverWhatTheAdminWrites(t *testing.T) {
 	}
 	if opIcon(opModuleRevoke) != "shield" || opIcon(opModuleBump) != "repeat" {
 		t.Errorf("module icons: revoke %q, bump %q", opIcon(opModuleRevoke), opIcon(opModuleBump))
+	}
+}
+
+// A lever the supervisor refuses is not audited as done and answers the
+// module-failed notice: a revoke of a capability the module does not hold
+// is such a refusal (framework.TestRevokeGrantsOfAnUnheldGrantErrors).
+func TestRefusedModuleLeverIsNotAuditedAsDone(t *testing.T) {
+	for _, lever := range []string{"enable", "disable", "bump", "revoke"} {
+		t.Run(lever, func(t *testing.T) {
+			f := &fakeModules{err: errors.New(`revoke "users:read" covers no held grant`)}
+			x := modulesEnv(t, f)
+			fields := map[string]any{"module": "billing", "grant": "users:read"}
+			rr := rpc(x.as(theAdmin), "/admin/modules/_"+lever, fields)
+			if rr.Code != http.StatusConflict || strings.Contains(rr.Header().Get("X-Gofastr-Toast"), "success") || strings.Contains(rr.Body.String(), "users:read") {
+				t.Fatalf("refused %s = %d %s, toast %q", lever, rr.Code, rr.Body.String(), rr.Header().Get("X-Gofastr-Toast"))
+			}
+			if !strings.Contains(rr.Body.String(), "did not accept that change") {
+				t.Errorf("refused %s names no reason: %s", lever, rr.Body.String())
+			}
+			if len(f.calls) != 1 || len(x.auditOps("module")) != 0 {
+				t.Errorf("refused %s: calls %v, audit %v", lever, f.calls, x.auditOps("module"))
+			}
+		})
 	}
 }
