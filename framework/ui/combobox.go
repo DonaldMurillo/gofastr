@@ -10,67 +10,37 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Combobox ──────────────────────────────────────────────────────
-//
-// An input that owns a listbox of suggestions, rendered through
-// headless.Combobox dressed with the fui-combobox class map: the field
-// look (label, bordered input) the retired core-ui/patterns/combobox
-// shipped, on the primitive's accessibility contract. The label is
-// visible (LabelHidden folds it into the visually-hidden recipe); the
-// result-count status region is always visually hidden — it exists for
-// the reader, not the eye.
-//
-// Options is the static shape: the headless-combobox module filters the
-// inline rows client-side, no round-trip. Island + NoScriptAction is
-// the typed shape: every keystroke debounces an RPC that re-renders the
-// listbox through the signal, and a reader without script gets the
-// same-origin GET form.
-//
-// The style marker rides the wrapper this component renders around the
-// primitive (the primitive's own outermost tag changes shape with the
-// no-script form), so the root rules below are compound and every
-// other rule scopes under the wrapper.
-
 // ComboboxConfig configures a Combobox.
 type ComboboxConfig struct {
-	// ID is the input element id (the listbox takes <ID>-listbox).
-	// Required, page-unique.
-	ID string
-	// Name is the form-submit name on the input. Required.
-	Name string
-	// Label is the visible label text. Required.
+	// ID, Name and Label are required; the listbox takes <ID>-listbox.
+	ID    string
+	Name  string
 	Label string
-	// LabelHidden folds the label into the visually-hidden recipe (the
-	// placeholder or surrounding chrome already names the field).
+	// LabelHidden keeps the label for readers only.
 	LabelHidden bool
-	// Placeholder for the input.
 	Placeholder string
 
-	// Options is a static list the module filters client-side. Takes
-	// precedence over Island.
+	// Options is a static list the module filters client-side. It
+	// takes precedence over Island.
 	Options []headless.ComboboxOption
 
-	// Island is the typed in-page results contract: the endpoint that
-	// re-renders the listbox and the signal the region is bound to.
+	// Island is the endpoint that re-renders the listbox and its signal.
 	Island *headless.Island
-	// NoScriptAction is the form's action URL, the no-script
-	// destination: same-origin, a GET that submits the query. Required
-	// when Island is set; refused when it is "#".
+	// NoScriptAction is the same-origin GET a reader without script
+	// submits the query to. Required with Island.
 	NoScriptAction string
 
-	// DebounceMs bounds the input debounce. Default 250.
+	// DebounceMs is the input debounce. Default 250.
 	DebounceMs int
 
 	// Class rides the wrapper beside the component's own class.
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the combobox's root.
-	// Keys the component owns are dropped, as everywhere.
+	// ExtraAttrs forwards attributes to the combobox's root; keys the
+	// component owns are dropped.
 	ExtraAttrs html.Attrs
 
-	// Ctx carries the per-request context used to resolve the
-	// combobox's sentences. When nil, English fallbacks apply.
+	// Ctx resolves the combobox's sentences. Nil means English.
 	Ctx context.Context
 }
 
@@ -106,8 +76,6 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 		ExtraAttrs:     headless.Safe(cfg.ExtraAttrs),
 		Strings:        StringsFor(ctx),
 	}, classes)
-	// The wrapper below is the root; the whole headless render sits
-	// inside it and is the component's own.
 	out = headless.Own(out)
 
 	cls := "fui-combobox"
@@ -121,8 +89,6 @@ func Combobox(cfg ComboboxConfig) render.HTML {
 var comboboxStyle = registry.RegisterStyle("ui-combobox", comboboxCSS)
 
 func comboboxCSS(_ style.Theme) string {
-	// Knobs: --ui-combobox-max-width (24rem) caps the control;
-	// --ui-combobox-listbox-max-height (18rem) caps the open list.
 	return `:where([data-cui-comp="ui-combobox"]).fui-combobox {
   position: relative;
   display: block;

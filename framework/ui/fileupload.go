@@ -12,93 +12,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── FileUpload ─────────────────────────────────────────────────────
-//
-// A labelled file picker rendered through headless.FileUpload: the
-// drop zone is a <label> for the real <input type="file">, so the
-// whole target opens the picker with no script at all (WCAG 2.5.7 —
-// dragging is an enhancement, never the only route). The headless
-// behaviour module owns the drag-and-drop on data-hui-drop: it
-// forwards dropped files into the input, lists the chosen names in
-// the role="list" region, and announces the pick through the
-// role="status" span, saying the FileSelected / FilesSelected
-// sentences this component resolves per request through the strings
-// bridge.
-
 // FileUploadConfig configures a file upload.
 type FileUploadConfig struct {
-	// Name is the form-field name. Required.
-	Name string
-
-	// Label is the visible label inside the drop zone. Required.
+	// Name and Label are required; Label is shown inside the drop zone.
+	Name  string
 	Label string
-
-	// ID is the input element's id. Defaults to Name.
-	ID string
-
-	// Accept is the MIME-type filter passed to the native input.
-	// Example: "image/*", ".pdf,.docx"
-	Accept string
-
-	// Multiple allows selecting multiple files.
+	// ID is the input's id. Defaults to Name.
+	ID       string
+	Accept   string
 	Multiple bool
-
-	// Required marks the field as required in form submission.
 	Required bool
-
-	// Disabled disables interaction.
 	Disabled bool
-
-	// MaxSizeMB, when > 0, is announced in the hint so users
-	// understand the constraint. The native input doesn't enforce
-	// it; server-side validation must.
+	// MaxSizeMB is announced in the hint; the server enforces it.
 	MaxSizeMB int
-
-	// Help renders supporting text inside the drop zone (beside the
-	// size hint, joined with " · ").
+	// Help is shown in the zone beside the size hint.
 	Help string
-
-	// Error overrides Help's described-by slot and switches the field
-	// to error state: the input is marked aria-invalid and the
-	// message renders below the zone as a role="alert" paragraph the
-	// input's aria-describedby names.
+	// Error marks the input invalid and renders below the zone as an
+	// alert the input's aria-describedby names.
 	Error string
-
 	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the component's root
-	// element. Keys the component owns are dropped: class (use
-	// Class), id, and data-cui-*.
+	// ExtraAttrs forwards attributes to the root; keys the component
+	// owns, every data-hui-* key included, are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve the zone's
-	// drop sentence and the announcement sentences. When nil, English
-	// fallbacks apply.
+	// Ctx resolves the drop sentence and announcements. Nil means English.
 	Ctx context.Context
 }
 
-// FileUpload renders a drag-drop file picker.
-//
-// Markup shape:
-//
-//	<div class="fui-upload-field" data-cui-comp="ui-fileupload">
-//	  <div class="fui-upload" data-hui-drop …>
-//	    <label class="fui-upload__zone" for="…">
-//	      <span class="fui-upload__label">…</span>
-//	      <span class="fui-upload__cta">Drop a file here, or click to browse</span>
-//	      <span class="fui-upload__hint">…</span>
-//	    </label>
-//	    <input type="file" class="fui-upload__input" …>
-//	    <ul class="fui-upload__list" role="list" data-hui-drop-list></ul>
-//	    <span class="fui-upload__status" role="status" data-hui-drop-status></span>
-//	  </div>
-//	  <p class="fui-upload__error" role="alert">…</p>  ← only when Error is set
-//	</div>
-//
-// The list and the status are filled by the headless module after a
-// pick or a drop, so the chosen names are on screen as well as
-// announced.
+// FileUpload renders a drag-drop file picker whose zone is a label
+// for the real file input.
 func FileUpload(cfg FileUploadConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: FileUpload requires Name")
@@ -138,8 +79,6 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 			return ""
 		}(),
 	}, uploadClasses)
-	// The wrapper below is the root; the whole headless render sits
-	// inside it and is the component's own.
 	children := []render.HTML{headless.Own(field)}
 	if cfg.Error != "" {
 		children = append(children, render.Tag("p", html.Attrs{
@@ -154,10 +93,6 @@ func FileUpload(cfg FileUploadConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	// The field wrapper takes the caller's extras, minus the runtime's
-	// own vocabulary: a forged data-hui-drop here would arm a second,
-	// mostly inert drop root around the real one. The hooks belong to
-	// the zone the component renders.
 	attrs := map[string]string{}
 	for k, v := range html.SafeExtraAttrs(cfg.ExtraAttrs) {
 		if strings.HasPrefix(strings.ToLower(k), "data-hui-") {
