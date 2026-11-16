@@ -367,6 +367,7 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 	// mountGenerated mounts every screen; the screens render through the
 	// appUI builders, which resolve each entity at render time.
 	mountGenerated(fwApp, site, db)
+	mountAuthRecoveryScreens(site)
 	{
 		stack := preset.ToastStack("app-toasts").Build()
 		widget.Mount(fwApp.Router(), &stack)
@@ -385,7 +386,15 @@ func RegisterGenerated(fwApp *framework.App, site *app.App, db *sql.DB) {
 		authCfg.UserStore = auth.NewEntityUserStore(db, "auth_users")
 		authCfg.SessionStore = auth.NewEntitySessionStore(db, "auth_sessions")
 		authMgr = auth.New(authCfg)
-		authMgr.Use(auth.NewCorePlugin())
+		// A form login of an account with a second factor lands on
+		// /login/2fa (auth_screens.go), whose form finishes it.
+		authMgr.Use(auth.NewCorePlugin().WithTwoFactorURL("/login/2fa"))
+		authMgr.Use(auth.NewTwoFAPlugin(auth.TwoFAConfig{Issuer: "Meridian"}))
+		// The sign-in page's "Forgot your password?" runs this reset:
+		// the mailed link opens /reset-password. With no EmailSender in
+		// dev mode the battery logs hashed identifiers only, never the
+		// link; set an EmailSender to deliver it.
+		authMgr.Use(auth.NewPasswordResetPlugin(auth.PasswordResetConfig{BaseURL: siteOrigin, LinkPath: "/reset-password", DevMode: true}))
 		// Scoped API tokens (PATs): logged-in users mint them at
 		// POST /auth/tokens (session-only, a leaked token can't mint
 		// siblings) and the generated CLI under cli/ sends them as

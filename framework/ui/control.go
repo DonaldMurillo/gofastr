@@ -44,14 +44,23 @@ type ControlConfig struct {
 	Min, Max, Step string
 	// MinLength and MaxLength are the length constraints.
 	MinLength, MaxLength int
+	// EnterKeyHint labels the on-screen keyboard's enter key ("next",
+	// "go", "done", "send"), and InputMode picks the keyboard itself
+	// ("numeric", "email", "tel"): the enterkeyhint and inputmode
+	// attributes.
+	EnterKeyHint, InputMode string
+	// NoSpellCheck sets spellcheck="false" and autocapitalize="off":
+	// for identifiers, codes and anything else a spell checker would
+	// only flag or a phone would capitalise.
+	NoSpellCheck bool
 	// Class appends to the control's own class.
 	Class string
 	// ExtraAttrs forwards additional attributes (data-* test hooks, a
 	// relation's data-rel-entity, pattern and title) onto the input.
 	// Keys the control owns are dropped: class and id, type, name,
 	// value, placeholder, autocomplete, minlength, maxlength, min,
-	// max, step, required, disabled, aria-invalid and
-	// aria-describedby.
+	// max, step, enterkeyhint, inputmode, spellcheck, autocapitalize,
+	// required, disabled, aria-invalid and aria-describedby.
 	ExtraAttrs html.Attrs
 }
 
@@ -77,7 +86,8 @@ func Control(cfg ControlConfig) render.HTML {
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"type", "name", "value", "placeholder", "autocomplete", "minlength", "maxlength",
-		"min", "max", "step", "required", "disabled", "aria-invalid", "aria-describedby")
+		"min", "max", "step", "enterkeyhint", "inputmode", "spellcheck", "autocapitalize",
+		"required", "disabled", "aria-invalid", "aria-describedby")
 	if extra == nil {
 		extra = html.Attrs{}
 	}
@@ -89,6 +99,16 @@ func Control(cfg ControlConfig) render.HTML {
 	}
 	if cfg.MaxLength > 0 {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
+	}
+	if cfg.EnterKeyHint != "" {
+		extra["enterkeyhint"] = cfg.EnterKeyHint
+	}
+	if cfg.InputMode != "" {
+		extra["inputmode"] = cfg.InputMode
+	}
+	if cfg.NoSpellCheck {
+		extra["spellcheck"] = "false"
+		extra["autocapitalize"] = "off"
 	}
 	return inputHTML(headless.InputProps{
 		Type:        cfg.Type,

@@ -747,6 +747,7 @@ var kitComponents = []kitComponent{
 	{name: "Pagination", fn: Pagination, prep: prepSet("Pages", 3, "Page", 1)},
 	{name: "PaletteResults", fn: PaletteResults},
 	{name: "PaneHost", fn: PaneHost, required: []string{"Primary"}},
+	{name: "OneTimeCode", fn: OneTimeCode},
 	{name: "PasswordInput", fn: PasswordInput},
 	{name: "PieChart", fn: PieChart},
 	{name: "PipelineImage", fn: PipelineImage},
@@ -827,6 +828,7 @@ var kitComponents = []kitComponent{
 	// default icon variant never reaches (its two glyphs are constants
 	// that carry the mark themselves).
 	{name: "ThemeToggle", fn: ThemeToggle, prep: prepSet("Variant", ThemeTogglePill)},
+	{name: "ColorScheme", fn: ColorScheme, prep: func(args []reflect.Value) { args[0].Set(reflect.ValueOf(SchemeDark)) }},
 	{name: "Themed", fn: Themed, prep: func(args []reflect.Value) { args[0].Set(reflect.ValueOf(style.RegisterThemeOverride(theme.Default()))) }},
 	{name: "TimePicker", fn: TimePicker},
 	{name: "Timeline", fn: Timeline, prep: prepInstead("Lead", "Title")},

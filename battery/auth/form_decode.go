@@ -137,6 +137,26 @@ func parseAuthFormOrRefuse(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+// decodeFormFields reads the named fields of an HTML form post, capped at
+// the auth body limit. A field sent twice is refused, for the reason
+// decodeAuthCredentials gives: the form and JSON parsers would keep
+// different copies.
+func decodeFormFields(w http.ResponseWriter, r *http.Request, fields ...string) (map[string]string, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+	if !parseAuthFormOrRefuse(w, r) {
+		return nil, false
+	}
+	out := make(map[string]string, len(fields))
+	for _, field := range fields {
+		if len(r.PostForm[field]) > 1 {
+			writeAuthError(w, r, http.StatusBadRequest, i18n.ReasonInvalidForm)
+			return nil, false
+		}
+		out[field] = r.PostFormValue(field)
+	}
+	return out, true
+}
+
 // canonicalizeDecodedEmail is the shared tail of both decode branches:
 // canonicalize (refusing decomposed Unicode), then bound the length so
 // the limiter key / user-table value stays finite.

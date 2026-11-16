@@ -16,6 +16,7 @@ Form components for GoFastr: HTML primitives, framework UI components, form patt
 | Component | Function | Self-labeled | Runtime JS |
 |-----------|----------|:---:|:---:|
 | PasswordInput | `ui.PasswordInput(PasswordInputConfig)` | ✗ (use FormField) | ✓ toggle |
+| OneTimeCode | `ui.OneTimeCode(OneTimeCodeConfig)` | ✗ (use FormField) | ✗ |
 | SearchInput | `ui.SearchInput(SearchInputConfig)` | ✗ (use FormField) | ✓ clear |
 | InputGroup | `ui.InputGroup(InputGroupConfig)` | ✗ (use FormField) | — |
 | NumberInput | `ui.NumberInput(NumberInputConfig)` | ✓ | ✓ stepper |

@@ -117,6 +117,7 @@
 //	Workbench:            scrolling rail beside a filling pane (inspector shell)
 //	PaneHost:             primary pane + openable secondary/tertiary side panes
 //	PasswordInput:        password field with show/hide toggle
+//	OneTimeCode:          one-time code input (autocomplete=one-time-code, digits)
 //	Pagination:           numeric page pager over a list (typed query props, optional island)
 //	PieChart:             SVG ratio chart (donut variant via InnerRadius)
 //	Gauge:                semicircle dial for one reading against a range (ARIA meter, tone bands)
@@ -186,6 +187,7 @@
 //	Control:              styled native input for a FormField builder
 //	TextField:            typed labelled native text field
 //	Themed:               wraps a subtree in a registered theme override
+//	ColorScheme:          pins a subtree to the theme's dark or light scheme
 //	ThemePicker:          whole-page switch between registered theme overrides
 //	ThemeToggle:          dark/light/auto toggle persisting color-scheme
 //	Thumbnail:            square lazily loaded image preview (sm/md/lg)

@@ -552,6 +552,7 @@ screens:
           action: /auth/login
           next: /app
           register_href: /signup
+          forgot_href: /forgot-password
 
   - name: signup
     route: /signup

@@ -124,9 +124,10 @@ auth.DefaultHasher = auth.Argon2Hasher{} // argon2id: 64 MiB, t=3, p=2
 ## Changing the password
 
 `POST /auth/password` takes `{"current_password": "…", "password": "…"}`
-(JSON only) from a signed-in user and replaces their password. A form
-also sends `confirm_password`, which must equal `password`. It
-refuses:
+(JSON only) from a signed-in user and replaces their password. A client
+may also send `confirm_password`, which must then equal `password`; the
+admin's account page does not, it asks once and offers a show toggle.
+It refuses:
 
 - a request with no session (401), an API token or an embed grant
   (401): only the interactive session behind the cookie changes it;
@@ -431,6 +432,63 @@ Wire a plain HTML login form like this:
 ```
 
 No client-side JavaScript needed beyond the framework runtime.
+
+Build it from the kit rather than raw inputs, so password managers and
+phones get the hints they read:
+
+```go
+ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in"},
+    html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}),
+    ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true,
+        Input: func(c headless.FieldControl) render.HTML {
+            return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email",
+                AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
+        }}),
+    ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true,
+        Input: func(c headless.FieldControl) render.HTML {
+            return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password",
+                Autocomplete: "current-password", EnterKeyHint: "go"})
+        }}),
+    ui.Link(ui.LinkConfig{Href: "/forgot-password", Text: i18nui.AuthForgotPassword.Text(ctx)}),
+)
+```
+
+- The identifier field asks for `autocomplete="username"`, not `email`:
+  that is the token a password manager pairs with the password field.
+- `ui.PasswordInput` has a show toggle, so a sign-up form asks for the
+  new password once (`autocomplete="new-password"`, `MinLength: 8`). Its
+  input never spell-checks or auto-capitalises, also while revealed.
+- Link a forgot-password page from the sign-in form (next section).
+
+### Password reset from HTML forms
+
+`/auth/forgot-password` and `/auth/reset-password` take form posts too:
+
+| Form | Fields | Answer |
+|---|---|---|
+| `POST /auth/forgot-password` | `email`, `next` | `303` to `next` (or `/`) for **every** address, known or not |
+| `POST /auth/reset-password` | `token`, `password`, `next` | `303` to `next` (or `/`) once the password is set; a failure is the usual `303` back with `?error=` |
+
+`PasswordResetConfig.LinkPath` is the page the mailed link opens, with
+`?token=<token>` appended; default `<BasePath>/reset-password`, the
+endpoint itself. Point it at your own page, whose form posts the token
+back with the new password:
+
+```go
+mgr.Use(auth.NewPasswordResetPlugin(auth.PasswordResetConfig{
+    BaseURL:     "https://app.example.com",
+    LinkPath:    "/reset-password",  // a same-origin path; Init refuses anything else
+    EmailSender: sender,
+}))
+```
+
+A reset signs nobody in (it revokes every session), so send `next` to
+your sign-in page. The forgot page's `next` should land on a notice that
+says a link is on its way *if* an account uses the address: the battery
+answers every address the same way. A failed reset redirects back to
+the `Referer` without its query, so the token is not carried back; the
+`minlength` on the field stops the common failure before it posts.
+`examples/meridian` has the three screens (`auth_screens.go`).
 
 ### Owner extractor: global state and its limit
 
@@ -1500,6 +1558,28 @@ POST /auth/2fa/challenge    → 200, Set-Cookie: a fresh session with TwoFactorV
                               (the pending one is deleted)
 GET  /auth/me               → 200
 ```
+
+A **form** login of an account with a second factor answers `303` to
+`NewCorePlugin().WithTwoFactorURL` instead. That page posts the code
+back as a form: `POST /auth/2fa/challenge` with `code` (and `next`)
+answers `303` to `next` (or `/`) with the verified session's cookie, and
+a wrong code is the usual `303` back with `?error=invalid_code`. Draw the
+field with `ui.OneTimeCode`, which asks for `autocomplete="one-time-code"`
+on the digit keyboard:
+
+```go
+ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/2fa/challenge", Method: "POST", SubmitLabel: "Verify"},
+    html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/app"}),
+    ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthOneTimeCode.Text(ctx), For: "auth-code", Required: true,
+        Input: func(c headless.FieldControl) render.HTML {
+            return ui.OneTimeCode(ui.OneTimeCodeConfig{Field: c})
+        }}),
+)
+```
+
+`ui.OneTimeCode` takes six digits only. A backup code (eight letters and
+digits) needs a plain `ui.Control` with `NoSpellCheck: true`; both post
+as `code`.
 
 The challenge replaces the pending session rather than marking it in
 place: a pending token that existed before the code was typed (one an

@@ -1108,7 +1108,7 @@ func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 			Body: ui.Form(ui.FormConfig{Action: "/auth/login", Method: "POST", SubmitLabel: "Sign in", SubmitFullWidth: true},
 				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: next}),
 				emailField(),
-				passwordField("current-password", 0),
+				passwordField(ctx, "current-password", 0),
 			),
 			Footer: ui.Link(ui.LinkConfig{Href: "/register", Text: "Create an account"}),
 		}),
@@ -1134,7 +1134,7 @@ func (s *RegisterScreen) RenderCtx(ctx context.Context) render.HTML {
 			Body: ui.Form(ui.FormConfig{Action: "/auth/register", Method: "POST", SubmitLabel: "Create account", SubmitFullWidth: true},
 				html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/login?registered=1"}),
 				emailField(),
-				passwordField("new-password", 8),
+				passwordField(ctx, "new-password", 8),
 			),
 			Footer: ui.Link(ui.LinkConfig{Href: "/login", Text: "Already have an account? Sign in"}),
 		}),
@@ -1143,15 +1143,16 @@ func (s *RegisterScreen) RenderCtx(ctx context.Context) render.HTML {
 
 func emailField() render.HTML {
 	return ui.FormField(ui.FormFieldConfig{Label: "Email", For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
-		return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"})
+		return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
 	}})
 }
 
 // minLength mirrors battery/auth's 8-character rule on the register
-// form only: a sign-in form leaves the check to the server.
-func passwordField(autocomplete string, minLength int) render.HTML {
+// form only: a sign-in form leaves the check to the server. The field
+// has a show-password toggle.
+func passwordField(ctx context.Context, autocomplete string, minLength int) render.HTML {
 	return ui.FormField(ui.FormFieldConfig{Label: "Password", For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
-		return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: autocomplete, MinLength: minLength})
+		return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password", Autocomplete: autocomplete, MinLength: minLength, EnterKeyHint: "go"})
 	}})
 }
 

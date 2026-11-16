@@ -82,6 +82,10 @@ var (
 	AuthEmail      = i18n.Define("ui.auth.email", "Email")
 	AuthPassword   = i18n.Define("ui.auth.password", "Password") // nosecret: UI label, not a credential
 	AuthRememberMe = i18n.Define("ui.auth.rememberMe", "Remember me")
+	// AuthOneTimeCode labels a ui.OneTimeCode field.
+	AuthOneTimeCode = i18n.Define("ui.auth.oneTimeCode", "Authentication code")
+	// AuthForgotPassword is the sign-in form's link to the password reset.
+	AuthForgotPassword = i18n.Define("ui.auth.forgotPassword", "Forgot your password?") // nosecret: UI label, not a credential
 
 	// Repeater
 	RepeaterAdd    = i18n.Define("ui.repeater.add", "Add item")

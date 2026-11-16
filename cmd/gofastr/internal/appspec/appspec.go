@@ -3763,7 +3763,7 @@ func validateAppSpecBlock(screenName string, entities map[string]framework.Entit
 		// problem in this validator does. urlsafe.Anchor is the SAME predicate
 		// the renderer applies (http(s), relative, fragment, mailto, tel), so
 		// validate and render cannot disagree about what is safe.
-		for _, key := range []string{"register_href", "login_href"} {
+		for _, key := range []string{"register_href", "login_href", "forgot_href"} {
 			href, _ := block.Props[key].(string)
 			if href == "" {
 				continue

@@ -315,10 +315,15 @@ func Password(p PasswordProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Password requires Name — a control with no name submits nothing")
 	}
+	// The reveal retypes the input to text, where a spell checker (some
+	// send the text off the device) and auto-capitalisation would read
+	// or change the secret: both stay off whichever type it shows.
 	input := Merge(Safe(p.Extra), html.Attrs{
 		"data-hui-affix-input": "",
 		"type":                 "password",
 		"name":                 p.Name,
+		"spellcheck":           "false",
+		"autocapitalize":       "off",
 	})
 	attrsSet(input, "placeholder", p.Placeholder)
 	attrsSet(input, "id", p.ID)

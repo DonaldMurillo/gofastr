@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -39,6 +40,11 @@ type PasswordInputConfig struct {
 	Required bool
 	// Autocomplete sets the autocomplete attribute (e.g. "current-password", "new-password").
 	Autocomplete string
+	// MinLength sets the input's minlength (a new password's floor).
+	MinLength int
+	// EnterKeyHint labels the on-screen keyboard's enter key
+	// ("go", "done", "next"; see the enterkeyhint attribute).
+	EnterKeyHint string
 	// Class adds extra CSS classes to the shell.
 	Class string
 	// ExtraAttrs forwards additional attributes to the shell's root
@@ -89,6 +95,12 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	if cfg.Autocomplete != "" {
 		inputExtra["autocomplete"] = cfg.Autocomplete
 	}
+	if cfg.MinLength > 0 {
+		inputExtra["minlength"] = strconv.Itoa(cfg.MinLength)
+	}
+	if cfg.EnterKeyHint != "" {
+		inputExtra["enterkeyhint"] = cfg.EnterKeyHint
+	}
 	// A nil Ctx resolves through i18nui's English defaults rather
 	// than the bridge's nil short-circuit, the behaviour the
 	// component always had: the bytes are the same (the bridge pins
@@ -109,6 +121,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		Parts: headless.Parts{Attrs: headless.PartAttrs{
 			headless.PartRoot: html.SafeExtraAttrs(cfg.ExtraAttrs,
 				"type", "name", "placeholder", "required", "autocomplete",
+				"minlength", "enterkeyhint", "spellcheck", "autocapitalize",
 				"aria-invalid", "aria-describedby"),
 		}},
 		Strings: StringsFor(ctx),

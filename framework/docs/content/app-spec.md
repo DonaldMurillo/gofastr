@@ -1757,7 +1757,14 @@ screens:
           action: /auth/login    # default <base_path>/login; any other path is refused
           next: /admin           # where to land after login (default /)
           register_href: /signup  # optional link
+          forgot_href: /forgot-password  # optional: a "Forgot your password?" link under the field
 ```
+
+The email field asks for `autocomplete="username"`, so a password manager
+pairs it with the password, plus `enterkeyhint="next"` and
+`spellcheck="false"`. The password is a `ui.PasswordInput` with its show
+toggle. `forgot_href` names the page of your password reset (see
+[auth](auth.md#password-reset-from-html-forms)); there is no link without it.
 
 An app spec with `app.auth.enabled: true` and no `login_form` on any
 screen gets one anyway: the generator adds a `/login` screen holding a

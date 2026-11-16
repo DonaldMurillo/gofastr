@@ -48,8 +48,7 @@ var (
 	AdminCurrentPassword = i18n.Define("ui.admin.currentPassword", "Current password") // not-a-secret: UI label
 	AdminNewPassword     = i18n.Define("ui.admin.newPassword", "New password")         // not-a-secret: UI label
 	AdminNewPasswordHelp = i18n.Define("ui.admin.newPasswordHelp", "At least {{min}} characters.")
-	AdminConfirmPassword = i18n.Define("ui.admin.confirmPassword", "Confirm new password") // not-a-secret: UI label
-	AdminChangePassword  = i18n.Define("ui.admin.changePassword", "Change password")       // not-a-secret: UI label
+	AdminChangePassword  = i18n.Define("ui.admin.changePassword", "Change password") // not-a-secret: UI label
 	AdminPasswordChanged = i18n.Define("ui.admin.passwordChanged", "Password changed")
 	AdminNoPassword      = i18n.Define("ui.admin.noPassword", "Your account signs in without a password. Use \"Forgot password\" on the sign-in page to set one.") // not-a-secret: UI label
 )

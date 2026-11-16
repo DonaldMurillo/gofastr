@@ -32,6 +32,14 @@ func authError(ctx context.Context) render.HTML {
 		return render.Text(authErrRateLimit.Text(ctx))
 	case "email_taken", "user_exists", "duplicate":
 		return render.Text(authErrEmailTaken.Text(ctx))
+	case "invalid_token":
+		return render.Text(authErrBadToken.Text(ctx))
+	case "invalid_code", "code_required":
+		return render.Text(authErrBadCode.Text(ctx))
+	case "weak_password":
+		return render.Text(authErrWeakPass.Text(ctx))
+	case "not_authenticated", "too_many_attempts":
+		return render.Text(authErrSignAgain.Text(ctx))
 	default:
 		return render.Text(authErrUnknown.Text(ctx))
 	}
