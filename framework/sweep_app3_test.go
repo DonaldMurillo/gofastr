@@ -126,7 +126,8 @@ func TestSweepApp3CatchAllRouteBesideEntityRegisters(t *testing.T) {
 }
 
 // lookupHookRegistry runs on the request path and never creates a
-// registry, so it cannot grow the map.
+// registry, so it cannot grow the map. HookRegistry labels what it makes
+// with the entity's name.
 func TestSweepApp3LookupHookRegistryNeverCreates(t *testing.T) {
 	app := NewApp(WithoutDefaultMiddleware())
 	if reg := app.lookupHookRegistry("ghosts"); reg != nil {
@@ -136,6 +137,9 @@ func TestSweepApp3LookupHookRegistryNeverCreates(t *testing.T) {
 		t.Fatal("lookupHookRegistry created a registry")
 	}
 	made := app.HookRegistry("posts")
+	if made.Label() != "posts" {
+		t.Errorf("HookRegistry(posts) label = %q, want posts", made.Label())
+	}
 	if got := app.lookupHookRegistry("posts"); got != made {
 		t.Fatal("lookupHookRegistry did not return the registry HookRegistry made")
 	}
