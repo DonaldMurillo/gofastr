@@ -7,3 +7,120 @@ code:
 docs:
   - framework/docs/content/hooks-and-transactions.md
   - framework/docs/content/embed.md
+invariants:
+  - id: secret-length-floor
+    rule: WithSecret and WithSecretRotation panic on a current or previous secret shorter than 32 characters.
+    enforced_by:
+      - test: framework.TestWithSecretRejectsShort
+      - test: framework.TestWithSecretRotationRejectsShortCurrent
+      - test: framework.TestWithSecretRotationRejectsShortPrevious
+  - id: distinct-purposes-derive-distinct-keys
+    rule: Every key purpose derives its own key from the app secret through HKDF-SHA256, so the session key, the embed nonce key and the embed grant key of one secret all differ.
+    enforced_by:
+      - test: framework.TestDeriveKeySeparatesPurposes
+      - test: framework.TestEmbedKeysRequireASecret
+      - test: framework.TestEmbedPreviousKeysForMount
+  - id: previous-secrets-are-derived
+    rule: A previous secret reaches a mount only as a key derived with the same purpose as the current one, never as raw bytes.
+    enforced_by:
+      - test: framework.TestSessionKeysForMountDerivesPrevious
+      - test: framework.TestEmbedPreviousKeysForMount
+  - id: replicas-need-a-secret
+    rule: With a fanout attached and no app secret, mounting a UI host fails boot instead of signing sessions with a per-boot key.
+    enforced_by:
+      - test: framework.TestSessionKeyFanoutNoSecretFails
+      - test: framework.TestSessionKeysForMountFanoutNoSecretFails
+  - id: embeds-need-a-secret
+    rule: Mounting an embed host without an app secret fails boot; embeds have no per-boot key fallback.
+    enforced_by:
+      - test: framework.TestEmbedKeysRequireASecret
+  - id: with-secret-closes-rotation
+    rule: WithSecret drops any previous secrets an earlier WithSecretRotation set.
+    enforced_by:
+      - test: framework.TestSweepServeWithSecretDropsEarlierRotation
+  - id: previous-secret-keeps-its-spelling
+    rule: A GOFASTR_SECRET_PREVIOUS holding one value also verifies under that value exactly as written, whitespace and line break included.
+    enforced_by:
+      - test: framework.TestSecretRotationKeepsAWhitespaceCarryingSecret
+  - id: nested-intx-is-a-savepoint
+    rule: InTx with a transaction already on the context runs fn under a savepoint of it, so fn's error undoes only fn's writes, and refuses options with ErrTxOptionsNested.
+    enforced_by:
+      - test: framework.TestNestedInTxErrorKeepsOuterWrites
+      - test: framework.TestNestedInTxRefusesOptions
+  - id: intx-closes-on-panic
+    rule: A panic in an InTx callback rolls the transaction back and returns its connection to the pool.
+    enforced_by:
+      - test: framework.TestInTx_PanicReleasesConn
+  - id: after-commit-work-waits-for-commit
+    rule: Work queued on an InTx transaction for after the commit, such as live-bus events, runs only once Commit succeeds and is dropped on rollback.
+    enforced_by:
+      - test: framework.TestInTxRollbackWithholdsEvents
+  - id: sqlite-read-only-is-real
+    rule: A read-only InTx on SQLite refuses writes, and the connection it used goes back to the pool writable.
+    enforced_by:
+      - test: framework.TestInTxReadOnlyRefusesWrites
+      - test: framework.TestReadOnlyTxLeavesPoolWritable
+  - id: dialect-probe-failure-not-cached
+    rule: A failed dialect probe is not remembered, so the next read-only InTx probes again.
+    enforced_by:
+      - test: framework.TestSweepServeTxDialectProbeFailureIsNotCached
+  - id: no-db-no-context-value
+    rule: WithDBContext with a nil DB returns the context unchanged, and DBContextMiddleware on an App with no DB passes requests through.
+    enforced_by:
+      - test: framework.TestWithDBContextNilDBIsNoOp
+      - test: framework.TestAppDBContextMiddlewarePassThroughWithoutDB
+decisions:
+  - id: embed-two-purposes
+    date: 2026-11-16
+    status: accepted
+    decision: The embed handshake nonce and the frame grant are signed with keys derived under two purposes.
+    rejected:
+      - option: One embed key, with the token prefix telling a nonce from a grant.
+        why: The two carry near-identical claims, so only the prefix would keep a single-use nonce from passing as a long-lived grant; two keys make the swap impossible rather than checked.
+    upholds: [distinct-purposes-derive-distinct-keys]
+  - id: embeds-have-no-per-boot-key
+    date: 2026-11-16
+    status: accepted
+    decision: An embed host requires an app secret, unlike a session, which falls back to a per-boot key on a single replica.
+    rejected:
+      - option: A self-minted per-boot key, as sessions have.
+        why: A session that fails to verify is re-minted on the next render, but an embed nonce is single-use and lives in a page on another site the app cannot re-render, so every restart and every second replica would break it.
+    upholds: [embeds-need-a-secret]
+  - id: versioned-key-purposes
+    date: 2026-11-16
+    status: accepted
+    decision: Key purposes are versioned strings such as gofastr/uihost/session/v1.
+    rejected:
+      - option: Unversioned purposes.
+        why: Changing one derivation would then silently invalidate keys it does not concern.
+  - id: secret-floor-panics
+    date: 2026-11-16
+    status: accepted
+    decision: A secret below 32 characters panics at NewApp.
+    rejected:
+      - option: Warn and run.
+        why: A short secret weakens every derived key at once.
+    upholds: [secret-length-floor]
+  - id: previous-secret-extra-spellings
+    date: 2026-11-16
+    status: accepted
+    decision: A GOFASTR_SECRET_PREVIOUS entry carrying whitespace verifies both trimmed and as written, because GOFASTR_SECRET is used untrimmed and a secret read from a file keeps its line break.
+    rejected:
+      - option: Trim every entry.
+        why: A secret that signed with its trailing newline would stop verifying the moment it moved to the previous list; the extra spellings are verify-only and grant nothing the operator did not configure.
+    upholds: [previous-secret-keeps-its-spelling]
+  - id: sqlite-read-only-by-pragma
+    date: 2026-11-16
+    status: accepted
+    decision: A read-only InTx on SQLite runs on a connection of its own with PRAGMA query_only set, cleared before the connection returns to the pool, and the connection is discarded when the pragma cannot be cleared.
+    rejected:
+      - option: sql.TxOptions.ReadOnly alone.
+        why: The SQLite driver accepts the flag and ignores it.
+    upholds: [sqlite-read-only-is-real]
+  - id: db-on-the-context
+    date: 2026-11-16
+    status: accepted
+    decision: The App puts its *sql.DB on every request context for screens and handlers to read with DBFromContext.
+    rejected:
+      - option: A package-level *sql.DB captured in main.
+        why: A shared screen package could not be reused across apps.

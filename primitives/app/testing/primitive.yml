@@ -5,3 +5,70 @@ code:
   - framework/semanticcoverage.go
 docs:
   - framework/docs/content/testkit.md
+twins:
+  - job: Install the semantic-coverage observers (routes and entity operations, permissions and roles, hooks, events).
+    why: Nothing but work not yet done; the two differ only in when they flush, at test cleanup or after each newly seen route.
+    sites:
+      - path: framework/semanticcoverage.go
+        note: RecordSemanticCoverage, for a test process.
+      - path: framework/semanticcoverage.go
+        note: enableSemanticCoverageFromEnv, for a serving process under GOFASTR_SEMANTIC_COVERAGE=1.
+invariants:
+  - id: harness-initializes-plugins
+    rule: TestHarness runs InitPlugins before it returns, so plugin and battery wiring is in place for the first request.
+    enforced_by:
+      - test: framework.TestSweepServeHarnessInitializesPlugins
+  - id: harness-fails-on-retired-markup
+    rule: A harness response carrying retired markup fails the test, on full pages, nav partials and island responses alike.
+    enforced_by:
+      - test: framework.TestHarnessReportsRetiredMarkup
+      - test: framework.TestHarnessScansNavPartials
+      - test: framework.TestHarnessScansIslandResponses
+  - id: builder-error-fails-the-response
+    rule: A WithBody marshal failure is not dispatched; the response Execute returns fails every assertion.
+    enforced_by:
+      - test: framework.TestResponseCreationErrors
+  - id: assert-json-compares-values
+    rule: AssertJSON compares decoded values exactly, so an integer matches its exponent spelling and large integers do not round.
+    enforced_by:
+      - test: framework.TestAssertJSONComparesBigIntegers
+  - id: coverage-records-every-verdict
+    rule: Semantic coverage records a permission check and its roles whatever the verdict, and every hook firing and event emission.
+    enforced_by:
+      - test: framework.TestPermissionEvaluationsAreRecorded
+      - test: framework.TestHookFiringsAreRecorded
+  - id: coverage-flushes-without-exit-hook
+    rule: RecordSemanticCoverage writes the manifest when each recording test ends, and a serving process under GOFASTR_SEMANTIC_COVERAGE=1 writes it after each newly seen route, never only at exit.
+    enforced_by:
+      - test: framework.TestSweepServeSemanticCoverageFlushesAtTestEnd
+      - test: framework.TestServingProcessRecordsWhenEnvIsSet
+  - id: coverage-entity-from-last-segment
+    rule: A served route pattern is credited to the entity its last non-parameter segment names, by table or by name.
+    enforced_by:
+      - test: framework.TestSweepServeEntityForPatternPrefersTheLastSegment
+      - test: framework.TestEntityForPatternResolvesThroughTheTableName
+decisions:
+  - id: coverage-flush-per-test
+    date: 2026-11-16
+    status: accepted
+    decision: RecordSemanticCoverage flushes at each recording test's cleanup, merging with what is on disk.
+    rejected:
+      - option: One flush at process exit.
+        why: testing.TB has no exit hook, and a suite that panics halfway would leave no manifest.
+    upholds: [coverage-flushes-without-exit-hook]
+  - id: coverage-flush-from-serve-hook
+    date: 2026-11-16
+    status: accepted
+    decision: A serving process flushes the manifest from the serve hook when a route is first seen.
+    rejected:
+      - option: Flush at Shutdown.
+        why: The e2e harness that runs the binary usually kills it, so no shutdown path runs.
+    upholds: [coverage-flushes-without-exit-hook]
+  - id: coverage-records-denials
+    date: 2026-11-16
+    status: accepted
+    decision: Permission checks are recorded whether they grant or deny.
+    rejected:
+      - option: Record grants only.
+        why: A test that asserts a denial proves the boundary as well, and the failure coverage exists to catch is a check never reached.
+    upholds: [coverage-records-every-verdict]

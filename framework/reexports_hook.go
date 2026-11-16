@@ -2,8 +2,7 @@ package framework
 
 import "github.com/DonaldMurillo/gofastr/framework/hook"
 
-// Root spellings of framework/hook. framework.X is the public API; the
-// extraction moved the implementation, not the name callers write.
+// Root spellings of framework/hook.
 
 type (
 	HookType     = hook.HookType
@@ -30,5 +29,4 @@ type (
 	HookWhereClause = hook.WhereClause
 )
 
-// NewHookRegistry wraps hook.NewHookRegistry.
 func NewHookRegistry() *hook.HookRegistry { return hook.NewHookRegistry() }

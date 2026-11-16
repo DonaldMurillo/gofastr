@@ -19,3 +19,291 @@ docs:
   - framework/docs/content/local-runs.md
 on_change:
   - "A change to start or shutdown order is a change to what every battery sees at boot: run the battery start and stop tests, not only this package's."
+invariants:
+  - id: run-once
+    rule: Run refuses a nil context or Host before boot, an App runs once (a later Run, Start or Serve returns ErrAlreadyStarted), and a run that begins after Shutdown returns nil and starts nothing.
+    enforced_by:
+      - test: framework.TestRunAdmission
+  - id: no-listener-refuses-ready-hooks
+    rule: A host with no HTTP listener fails a run that has OnReady hooks, whether they were registered before boot, from a plugin's Init or from a start hook.
+    enforced_by:
+      - test: framework.TestRunRefusesOnReadyWithoutListener
+  - id: init-declared-schema-is-migrated
+    rule: An entity a plugin or battery declares in Init is migrated and seeded before the OnStart hooks run.
+    enforced_by:
+      - test: framework.TestRunServicesHostLocalInstallation
+  - id: interactive-setup-defers-start
+    rule: With interactive setup, OnStart hooks and the outbox relay run only after the setup swap, ServicesReady closes only once they succeed, and a swap after Shutdown began starts nothing.
+    enforced_by:
+      - test: framework.TestStartInteractiveSetupDefersServicesReady
+      - test: framework.TestLateSetupSwapAfterShutdownStartsNothing
+      - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
+  - id: setup-swap-serves-app-first
+    rule: The setup swap serves the real router before the deferred OnStart hooks start, so requests during them never get the wizard.
+    enforced_by:
+      - test: framework.TestSweepServeSetupSwapServesAppDuringDeferredHooks
+  - id: deferred-start-ends-on-every-path
+    rule: The deferred start ends its phase even when a hook panics, and a failed or panicking deferred start shuts the App down without closing ServicesReady.
+    enforced_by:
+      - test: framework.TestDeferredStartPanicEndsThePhase
+  - id: teardown-never-under-a-running-phase
+    rule: A Shutdown while a boot phase or the deferred start runs waits for that phase to return before any teardown runs, and the host is never run once a Shutdown has landed before boot ended.
+    enforced_by:
+      - test: framework.TestStopAtEndOfBootSkipsHost
+      - test: framework.TestHostFailureDuringDeferredStartWaitsForIt
+      - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
+  - id: stop-during-boot-is-not-a-failure
+    rule: While a Shutdown is under way, a boot phase whose error is only the stop's cancellation (context.Canceled, sql.ErrTxDone, SQLITE_INTERRUPT, or a join of only these) makes Run return nil; any other error, or the same error with no Shutdown under way, fails Run.
+    enforced_by:
+      - test: framework.TestStopShaped
+      - test: framework.TestRunCancelledDatabaseWorkIsGraceful
+      - test: framework.TestRunContextCancelDuringBoot
+      - test: framework.TestSweepServeCanceledWithoutStopFailsRun
+  - id: run-ends-in-shutdown
+    rule: Run shuts the App down when its context ends and when the host returns nil with no Shutdown under way.
+    enforced_by:
+      - test: framework.TestRunContextCancelDuringBoot
+      - test: framework.TestRunRollsBackFailures
+  - id: late-teardown-gets-its-own-budget
+    rule: A teardown left to a boot phase by a Shutdown whose context ended first runs on a fresh five-second budget that keeps that context's values.
+    enforced_by:
+      - test: framework.TestShutdownDuringBootKeepsTheStopsBudget
+  - id: host-stop-panic-contained
+    rule: A panic in a host's Stop is returned by Shutdown as an error and the rest of the teardown still runs.
+    enforced_by:
+      - test: framework.TestShutdownReportsHostStopFailure
+  - id: outbox-relay-worker-only
+    rule: The outbox relay starts only in the all and worker roles.
+    enforced_by:
+      - test: framework.TestServeRole_OutboxRelaySkipped
+  - id: outbox-relay-drained-at-stop
+    rule: Shutdown waits for the outbox relay loop to exit before it returns.
+    judge: Does this change let Shutdown return, or the OnStop hooks registered before Start run, while the outbox relay loop may still be delivering a batch?
+  - id: no-server-adopted-after-shutdown
+    rule: The HTTP host adopts no server once a Shutdown has begun, and its Stop then closes a caller's listener instead.
+    enforced_by:
+      - test: framework.TestStartAdoptsNoServerAfterShutdown
+      - test: framework.TestServeStopDuringBootReleasesListener
+  - id: systemd-socket-before-bind-guards
+    rule: A socket systemd passed is the listener, and the dev-surface bind guards read its address, not the address Start was given.
+    enforced_by:
+      - test: framework.TestStartServesOnASocketFromSystemd
+      - test: framework.TestSocketFromSystemdDecidesTheDevToolsGuard
+  - id: server-timeouts-explicit-wins
+    rule: An explicit HTTPServerTimeouts field, zero included, sets that server deadline; DisableRequestTimeout zeroes only the read and write deadlines left unset; a RequestTimeout past the default write deadline raises it.
+    enforced_by:
+      - test: framework.TestHTTPServerTimeoutsExplicitZeroDisables
+      - test: framework.TestHTTPServerTimeoutsBeatDisableRequestTimeout
+      - test: framework.TestDisableTimeoutRelaxesServer
+      - test: framework.TestRaisedRequestTimeoutRaisesDefaultWriteTimeout
+  - id: bind-failure-fails-start
+    rule: Start returns the bind error when its address cannot be bound.
+    enforced_by:
+      - test: framework.TestSweepServeStartReportsBindFailure
+  - id: unix-socket-is-not-loopback
+    rule: Only a TCP listener records a bound host, so a unix socket path that reads like 127.0.0.1:8080 never counts as a loopback bind.
+    enforced_by:
+      - test: framework.TestSweepServeUnixSocketPathIsNotABoundHost
+  - id: sigterm-drains
+    rule: Unless DisableSignalHandling is set, SIGINT and SIGTERM start a graceful Shutdown and Start returns only once it finishes.
+    enforced_by:
+      - test: framework.TestSIGTERMDrainsApp
+  - id: no-ready-hook-after-shutdown
+    rule: No OnReady hook starts once a Shutdown has begun.
+    enforced_by:
+      - test: framework.TestOnReadyFiresAfterBind
+  - id: wrap-server-latched
+    rule: WrapServer panics once the HTTP host has begun applying the wrappers, including from inside a wrapper.
+    enforced_by:
+      - test: framework.TestSweepServeWrapServerDuringWrapPanics
+      - test: framework.TestWrapServerAfterStartPanics
+  - id: shutdown-ends-long-lived-responses
+    rule: Shutdown ends every GET event stream and hijacked connection when the drain starts, closes a WebSocket with 1001, and closes any connection still open once the drain's budget runs out.
+    enforced_by:
+      - test: framework.TestShutdownEndsEventStreams
+      - test: framework.TestShutdownClosesWebSocket
+      - test: framework.TestShutdownClosesHijackedConn
+      - test: framework.TestSweepServeShutdownClosesWebSocketWith1001
+      - test: framework.TestSweepServeStreamEndForcesStuckClose
+      - test: framework.TestSweepServeShutdownClosesHandlerPastDeadline
+  - id: stream-membership-by-response
+    rule: A request joins the open-stream set by what its handler does (a GET answered as text/event-stream, or a hijack), never by its Accept header; a POST answered as a stream and a JSON GET drain the normal way.
+    enforced_by:
+      - test: framework.TestShutdownDrainsStreamPOST
+      - test: framework.TestJSONGetDrainsNormally
+      - test: framework.TestStreamWithoutAcceptEnds
+  - id: nothing-hijacked-past-the-drain
+    rule: Once the drain starts, a Hijack is refused, and a connection or WebSocket handed over after its stream ended is closed at once.
+    enforced_by:
+      - test: framework.TestUpgradeDuringDrainRefused
+      - test: framework.TestHijackAfterEndIsClosed
+      - test: framework.TestLateWebSocketClosed
+  - id: stream-writer-is-transparent
+    rule: The stream-watching writer reports the underlying Flush error, leaves an event stream in the set when a Hijack fails, and a hijacked connection leaves the set when it closes.
+    enforced_by:
+      - test: framework.TestFlushErrorPassesThrough
+      - test: framework.TestFailedHijackKeepsStream
+      - test: framework.TestClosedWebSocketLeavesSet
+  - id: tls-config-validated
+    rule: Start fails unless AppConfig.TLS sets exactly one source, with both files, AutoCert with Domains and a CacheDir, or a Config that supplies a certificate and no MinVersion below TLS 1.2.
+    enforced_by:
+      - test: framework.TestTLSConfigRefused
+  - id: tls-floor-everywhere
+    rule: Every TLS source serves no version below TLS 1.2, including a config a GetConfigForClient callback returns.
+    enforced_by:
+      - test: framework.TestTLSCallbackConfigKeepsMinimum
+      - test: framework.TestSweepServeTLSFilesSourceSetsFloor
+  - id: tls-files-reload
+    rule: A certificate pair is read again on the next handshake after either file changes, and a pair that does not load keeps the last good one serving.
+    enforced_by:
+      - test: framework.TestTLSReloadsRenewedCert
+      - test: framework.TestSweepServeTLSKeepsLastGoodPair
+  - id: role-resolution
+    rule: WithRole wins over GOFASTR_ROLE, read case-insensitively, which wins over RoleAll, and an unknown value in either panics in NewApp.
+    enforced_by:
+      - test: framework.TestRole_EnvSetsRole
+      - test: framework.TestRole_BadOptionPanics
+      - test: framework.TestRole_BadEnvPanics
+  - id: role-surfaces
+    rule: The worker role serves only the health routes, the agent role only /mcp, the A2A path and the health routes through the app router, and neither serve nor agent starts worker-scoped consumers.
+    enforced_by:
+      - test: framework.TestWorkerRole_EntityRouteNotServed
+      - test: framework.TestAgentRole_EntityRouteNotServed
+      - test: framework.TestA2A_AgentRoleServesExchange
+      - test: framework.TestServeRole_QueueDoesNotStart
+      - test: framework.TestAgentRole_QueueDoesNotStart
+  - id: setup-env-fails-loud
+    rule: GOFASTR_SETUP accepts only empty, auto, off and force, case-insensitively; any other value fails Start.
+    enforced_by:
+      - test: framework.TestResolveSetupEnv_Force
+      - test: framework.TestResolveSetupEnv_Invalid
+  - id: seed-hooks-abort-start
+    rule: WithSeed hooks run in order, and the first to fail or panic aborts Start with an error.
+    enforced_by:
+      - test: framework.TestSeedHookErrorAbortsChain
+      - test: framework.TestSeedHookPanicContained
+  - id: local-run-only-when-local
+    rule: A local run record is written only for a dev, service or loopback run unless forced, never when opted out, and a wildcard bind it does record points at 127.0.0.1.
+    enforced_by:
+      - test: framework.TestLocalRunSkipsWildcardDeployment
+      - test: framework.TestLocalRunForcedOn
+      - test: framework.TestLocalRunOptOut
+      - test: framework.TestStartRecordsLocalRun
+  - id: export-receipt-only-for-a-run
+    rule: The export receipt is written only when GOFASTR_EXPORT_RUN names a run.
+    enforced_by:
+      - test: framework.TestSweepServeExportReceiptNeedsARun
+  - id: export-carries-live-csp
+    rule: A static export carries the Content-Security-Policy the app serves live.
+    enforced_by:
+      - test: framework.TestExportStaticUsesAppCSP
+decisions:
+  - id: lifecycle-engine-owns-boot
+    date: 2026-11-16
+    status: accepted
+    decision: App.Run owns every boot and shutdown phase, and a Host owns only its transport and how long it runs.
+    rejected:
+      - option: Each host runs its own migrate, seed and hook sequence.
+        why: Every host would repeat the boot order and the shutdown races with it.
+  - id: stop-is-not-a-failure
+    date: 2026-11-16
+    status: accepted
+    decision: A stop that interrupts a boot phase returns nil, like a shutdown at any later point.
+    rejected:
+      - option: Return the interrupted phase's error.
+        why: A SIGTERM mid-migration would read as a crash.
+    upholds: [stop-during-boot-is-not-a-failure]
+  - id: bind-then-serve
+    date: 2026-11-16
+    status: accepted
+    decision: The HTTP host binds with net.Listen, runs OnReady, then serves on the listener.
+    rejected:
+      - option: http.Server.ListenAndServe.
+        why: OnReady could not know the port is held.
+  - id: signals-handled-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: Start installs a SIGINT and SIGTERM handler that drains, with DisableSignalHandling for a process that owns its signals.
+    rejected:
+      - option: No handler by default.
+        why: docker stop and rollouts send SIGTERM, and without a handler the process dies mid-request with no drain, battery stop or OnStop hooks.
+    upholds: [sigterm-drains]
+  - id: timeouts-are-pointers
+    date: 2026-11-16
+    status: accepted
+    decision: Each HTTPServerTimeouts field is a *time.Duration, nil keeping the default.
+    rejected:
+      - option: Plain time.Duration fields.
+        why: A zero could not mean "disable this deadline" as net/http reads it, distinct from "keep the default".
+    upholds: [server-timeouts-explicit-wins]
+  - id: streams-ended-not-waited
+    date: 2026-11-16
+    status: accepted
+    decision: Shutdown cancels event streams and closes hijacked connections when the drain starts, waiting at most two seconds for WebSocket close handshakes.
+    rejected:
+      - option: Let http.Server.Shutdown drain them.
+        why: An event stream never goes idle, so it held the drain to its deadline, and Server.Shutdown neither waits for nor closes a hijacked connection, which then outlived the batteries it used.
+    upholds: [shutdown-ends-long-lived-responses]
+  - id: stream-membership-by-handler
+    date: 2026-11-16
+    status: accepted
+    decision: A request counts as a stream by its response Content-Type or a hijack.
+    rejected:
+      - option: By the request's Accept header.
+        why: curl -N sends */* and gets a stream, and a JSON GET may list text/event-stream with q=0.
+    upholds: [stream-membership-by-response]
+  - id: tls-reload-on-stat
+    date: 2026-11-16
+    status: accepted
+    decision: A certificate pair is reloaded on the handshake after either file's modification time or size changes.
+    rejected:
+      - option: Read the pair once at Start.
+        why: A certbot renewal or a remounted secret would need a restart.
+    upholds: [tls-files-reload]
+  - id: autocert-requires-domains-and-cache
+    date: 2026-11-16
+    status: accepted
+    decision: AutoCert requires Domains and a CacheDir.
+    rejected:
+      - option: Any host name, and no cache.
+        why: A scanner could make the app request certificates for names it does not serve, and without a cache every restart asks the authority again and hits its rate limits.
+    upholds: [tls-config-validated]
+  - id: setup-runner-interface-here
+    date: 2026-11-16
+    status: accepted
+    decision: SetupRunner is defined in framework and implemented by battery/setup.
+    rejected:
+      - option: framework imports battery/setup.
+        why: battery/setup imports framework, so that would be a cycle.
+  - id: seed-hooks-share-the-seed-lock
+    date: 2026-11-16
+    status: accepted
+    decision: WithSeed hooks run behind the advisory lock entity seeds take, apart from the migration lock, and on SQLite without it; they have no ledger, so they run on every replica and must be idempotent.
+    rejected:
+      - option: Run them unserialized.
+        why: Two replicas booting together would race a hook.
+      - option: Take the lock on SQLite too.
+        why: SQLite is single-process, and the lock's pinned connection would fight the pool the hooks use.
+  - id: deployments-skip-local-run-record
+    date: 2026-11-16
+    status: accepted
+    decision: A server bound to every interface writes no local run record unless forced, and a failed registration is logged, never fatal.
+    rejected:
+      - option: Record every run.
+        why: A container or VM has no reader for the record and often a missing or read-only home directory.
+    upholds: [local-run-only-when-local]
+  - id: declaration-driven-export
+    date: 2026-11-16
+    status: accepted
+    decision: ExportStatic renders every declared route through the static builder.
+    rejected:
+      - option: A wget mirror of the running site.
+        why: The crawl baked "?v=" into the split runtime modules and 404'd them.
+  - id: deferred-start-failure-shuts-down
+    date: 2026-11-16
+    status: accepted
+    decision: A deferred start that fails logs and shuts the App down, so the next boot finds setup complete and fails Start on the normal path.
+    rejected:
+      - option: Keep serving without the hooks.
+        why: The app would be half up, without its consumers.
+    upholds: [deferred-start-ends-on-every-path]

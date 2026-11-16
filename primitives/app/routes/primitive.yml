@@ -7,3 +7,72 @@ code:
 docs:
   - framework/docs/content/i18n.md
   - framework/docs/content/endpoints.md
+invariants:
+  - id: api-miss-is-problem-json
+    rule: A request under the API namespace (the APIPrefix, or /api without one), under /mcp, or to /openapi.json that matches no route answers 404 application/problem+json, and one with a method its route does not take answers 405 problem+json with the router's Allow header and mints no session.
+    enforced_by:
+      - test: framework.TestAPIMissAnswersProblemJSON
+      - test: framework.TestAPIWrongMethodIsProblemJSON
+      - test: framework.TestAPIWrongMethodMintsNoSession
+      - test: framework.TestMCPMissIsProblemJSON
+  - id: api-miss-escapes-the-path
+    rule: The request path appears in an API miss only inside the JSON detail, HTML-escaped.
+    enforced_by:
+      - test: framework.TestAPIMissDoesNotReflectHostilePathUnescaped
+  - id: default-locale-prefix-redirects-on-site
+    rule: A path prefixed with the default locale, however the tag is spelled, answers 308 to the escaped rest of the path with its query, and to / when that target would leave the site.
+    enforced_by:
+      - test: framework.TestDefaultPrefixRedirectStaysLocal
+      - test: framework.TestDefaultPrefixRedirects308
+  - id: locale-prefix-cut-from-escaped-path
+    rule: A locale prefix is cut from both the decoded and the escaped path, so an escaped slash after it survives.
+    enforced_by:
+      - test: framework.TestRawPathStrippedToo
+  - id: from-header-follows-the-locale
+    rule: An X-Gofastr-From header in the request's locale loses its prefix, and one from another locale is dropped.
+    enforced_by:
+      - test: framework.TestSameLocaleFromStripped
+      - test: framework.TestCrossLocaleFromDropped
+  - id: locale-route-refused
+    rule: A route whose first segment names a catalog locale panics at Start, since the prefix split would make it unreachable.
+    enforced_by:
+      - test: framework.TestLocaleSegmentRoutePanics
+      - test: framework.TestStartRefusesLocaleRoute
+  - id: url-decides-the-locale
+    rule: WithLocalePrefixes panics at NewApp together with WithLocaleResolver or without WithI18n.
+    enforced_by:
+      - test: framework.TestLocalePrefixesRefuseResolver
+      - test: framework.TestLocalePrefixesNeedI18n
+  - id: server-wrappers-see-the-path-locale
+    rule: A WrapServer wrapper, which runs before the router splits the prefix, sees the locale the path names on its request context.
+    enforced_by:
+      - test: framework.TestServeLocaleReadsPrefix
+  - id: endpoint-route-collisions-refused
+    rule: ValidateEntityEndpointRoutes refuses an endpoint whose route equals or overlaps the entity's generated CRUD routes, its EntityUI routes, an existing route or a sibling endpoint.
+    enforced_by:
+      - test: framework.TestEndpointRouteRefusesCRUDCollision
+decisions:
+  - id: api-namespace-defaults-to-api
+    date: 2026-11-16
+    status: accepted
+    decision: Without an APIPrefix the JSON miss guard covers /api.
+    rejected:
+      - option: Guard only a configured APIPrefix.
+        why: The framework mounts /api/docs and /api/llm.md there whatever the prefix, and /api is what agents and scanners probe.
+    upholds: [api-miss-is-problem-json]
+  - id: default-locale-keeps-plain-paths
+    date: 2026-11-16
+    status: accepted
+    decision: The fallback locale serves the plain paths, and its prefixed spelling redirects to them.
+    rejected:
+      - option: Prefix every locale, the default included.
+        why: Each page would then have two URLs in the default language.
+    upholds: [default-locale-prefix-redirects-on-site]
+  - id: url-locale-excludes-resolver
+    date: 2026-11-16
+    status: accepted
+    decision: Locale prefixes refuse WithLocaleResolver.
+    rejected:
+      - option: Let a stored locale choose when the URL has no prefix.
+        why: A page linked as hreflang="en" could then answer in French; readers move between languages by links built with i18n.LocalePath.
+    upholds: [url-decides-the-locale]
