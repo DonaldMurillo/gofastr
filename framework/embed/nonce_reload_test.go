@@ -44,15 +44,16 @@ func expiringHosts(t *testing.T, mutate func(*Config), fn func(t *testing.T, h *
 		{"sqlite", func(t *testing.T) BurnStore { return newSQLiteBurnStore(t) }},
 	} {
 		t.Run(s.name, func(t *testing.T) {
-			// Expiry is whole seconds, rounded down: start a second fresh so a 1s TTL is not cut to ~0.
-			time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
-			fn(t, testHost(t, func(c *Config) {
+			h := testHost(t, func(c *Config) {
 				c.NonceTTL = time.Second
 				c.BurnStore = s.mk(t)
 				if mutate != nil {
 					mutate(c)
 				}
-			}))
+			})
+			// Expiry is whole seconds, rounded down: mint at the top of a second so a 1s TTL is not cut to ~0.
+			time.Sleep(time.Until(time.Now().Truncate(time.Second).Add(time.Second)))
+			fn(t, h)
 		})
 	}
 }
