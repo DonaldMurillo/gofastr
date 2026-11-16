@@ -113,6 +113,9 @@ func TestEraseRefusesNullKeyChild(t *testing.T) {
 		},
 		ForeignKeys: []migrate.ForeignKey{{Columns: []string{"doc_id"}, RefTable: "docs"}},
 	})
+	// Made by hand, as an older build made it: AutoMigrate's own CREATE
+	// TABLE now refuses a NULL key on SQLite.
+	cascadeExec(t, db, `CREATE TABLE doc_tags (tag TEXT PRIMARY KEY, doc_id TEXT, FOREIGN KEY (doc_id) REFERENCES docs(id))`)
 	if err := AutoMigrate(db, app.Registry); err != nil {
 		t.Fatalf("AutoMigrate: %v", err)
 	}

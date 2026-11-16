@@ -28,7 +28,7 @@ type modalPanel struct {
 // (the /tasks snapshot renders TaskList content verbatim), so every
 // title and line is scrubbed here — whole escape sequences and
 // C0/DEL/C1/bidi bytes alike — the same boundary rule every
-// terminal.go ingest path applies through sanitizeAgentText.
+// terminal.go ingest path applies through textsafe.ScrubTerminal.
 func (t *TUI) openModal(title string, lines []string) {
 	clean := make([]string, len(lines))
 	for i, ln := range lines {

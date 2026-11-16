@@ -502,7 +502,9 @@ run `AfterList`; an unhooked in-process read still returns stored values.
 
 A field's declared `Mask` (entity-declarations.md, "Masked fields") runs
 on the same paths, in-process ones under the same opt-in, before these
-hooks and without registering one.
+hooks and without registering one. An update that sends a masked field
+back as it was read leaves that column alone, and its `BeforeUpdate`
+hooks get the body without it.
 
 `ch.ReadHooksRestrict(ctx, id)` answers whether the caller's `BeforeList`
 or `BeforeGet` hooks append any clause for a read of `id` (a hook error

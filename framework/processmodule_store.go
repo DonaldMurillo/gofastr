@@ -144,7 +144,7 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			module            TEXT PRIMARY KEY,
+			module            TEXT PRIMARY KEY NOT NULL,
 			desired_generation %s NOT NULL DEFAULT 1,
 			enabled           %s NOT NULL DEFAULT %s,
 			artifact_sha256   TEXT NOT NULL,

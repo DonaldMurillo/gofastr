@@ -44,7 +44,7 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 		return "", err
 	}
 	inner, args := qb.Build()
-	if f.Type == schema.Decimal && !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx)) {
+	if f.Type == schema.Decimal && !ch.onPostgres(ctx) {
 		return ch.sumDecimalRows(ctx, inner, args)
 	}
 	var total any
@@ -122,7 +122,7 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 	}
 	inner, args := qb.Build()
 	q := query.QuoteFolded(col)
-	stmt := "SELECT " + q + ", COUNT(*) FROM (" + inner + ") AS agg_src GROUP BY " + q + " ORDER BY " + q
+	stmt := "SELECT " + q + ", COUNT(*) FROM (" + inner + ") AS agg_src GROUP BY " + q + " ORDER BY " + query.OrderTerm(q, "", ch.pinsNulls(ctx, col))
 	if limit > 0 {
 		stmt += " LIMIT " + strconv.Itoa(limit)
 	}

@@ -22,7 +22,7 @@ import (
 // Schema:
 //
 //	feature_flags(
-//	    key      TEXT PRIMARY KEY,
+//	    key      TEXT PRIMARY KEY NOT NULL,
 //	    enabled  INTEGER NOT NULL,
 //	    rollout  INTEGER NOT NULL,
 //	    users    TEXT NOT NULL,    -- JSON array
@@ -104,7 +104,7 @@ func (s *SQLStore) registerData() {
 
 func (s *SQLStore) ensureTable() error {
 	stmt := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		key      TEXT PRIMARY KEY,
+		key      TEXT PRIMARY KEY NOT NULL,
 		enabled  INTEGER NOT NULL,
 		rollout  INTEGER NOT NULL,
 		users    TEXT NOT NULL,

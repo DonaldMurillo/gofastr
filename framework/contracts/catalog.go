@@ -124,6 +124,7 @@ const (
 	RuleEraseCover         = "GOFASTR1415"
 	RuleDDLConstraint      = "GOFASTR1416"
 	RuleSettleStamp        = "GOFASTR1417"
+	RuleNullableKey        = "GOFASTR1418"
 )
 
 // Performance rules.
@@ -826,8 +827,8 @@ func securityRules() []Rule {
 		Fix:     "Declare the constraint once, where it runs whoever made the table: a standalone `CREATE [UNIQUE] INDEX IF NOT EXISTS` after the CREATE TABLE, with no UNIQUE inline and no Unique on the entity field beside it. A constraint that must stay inline says why: `//gofastr:allow(GOFASTR1416) <why>`.",
 		Doc:     "security",
 		Examples: []Example{{
-			Bad:  "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, token TEXT UNIQUE NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
-			Good: "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, token TEXT NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
+			Bad:  "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY NOT NULL, token TEXT UNIQUE NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
+			Good: "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY NOT NULL, token TEXT NOT NULL)`)\n\tif err != nil {\n\t\treturn err\n\t}\n\t_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_token ON sessions (token)`)\n\treturn err\n}",
 		}},
 	}, {
 		ID: RuleSettleStamp, Slug: "security/status-update-skips-stamps",
@@ -840,6 +841,18 @@ func securityRules() []Rule {
 		Examples: []Example{{
 			Bad:  "func (q *Queue) ack(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='done', updated_at=$1 WHERE id=$2`, now(), id)\n}\n\nfunc (q *Queue) nack(id, why string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), why, id)\n}\n\nfunc (q *Queue) sweep(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed' WHERE id=$1`, id)\n}",
 			Good: "func (q *Queue) ack(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='done', updated_at=$1 WHERE id=$2`, now(), id)\n}\n\nfunc (q *Queue) nack(id, why string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), why, id)\n}\n\nfunc (q *Queue) sweep(id string) {\n\tq.db.Exec(`UPDATE jobs SET status='failed', updated_at=$1, last_error=$2 WHERE id=$3`, now(), \"lease expired\", id)\n}",
+		}},
+	}, {
+		ID: RuleNullableKey, Slug: "security/nullable-primary-key",
+		Title:      "A hand-written primary key that accepts NULL",
+		Capability: CapSecurity, Severity: SeverityError,
+		Summary: "A CREATE TABLE string (a literal, a fmt.Sprintf format or a concatenation) declares a primary key column without NOT NULL: inline (`id TEXT PRIMARY KEY`) or through a table-level `PRIMARY KEY (a, b)` whose column lacks it. A column or table named through a verb or an operand is read as that expression. Quiet on a lone `INTEGER PRIMARY KEY` (SQLite's rowid) and a SERIAL key, which the engine fills itself, on DDL assembled piece by piece (a strings.Builder, a joined slice), on .sql files, and on _test.go files.",
+		Why:     "SQLite lets NULL into every primary key column but a lone INTEGER one, any number of times; Postgres refuses the row. A store that reads or deletes by key never finds such a row, so it cannot be fetched, updated, erased or exported, and the two engines disagree about which inserts succeed. AutoMigrate writes NOT NULL on the keys it creates; about thirty hand-written framework, battery and core tables (audit, outbox, queue, webhook, idempotency, feature flags, A2A, the auth stores) did not.",
+		Fix:     "Write NOT NULL on every primary key column: `id TEXT PRIMARY KEY NOT NULL`, and NOT NULL on each column a table-level PRIMARY KEY names. A table that already exists keeps the definition it was created with. A key that is filled by the engine in a way the rule cannot see says so: `//gofastr:allow(GOFASTR1418) <why>`.",
+		Doc:     "security",
+		Examples: []Example{{
+			Bad:  "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS flags (key TEXT PRIMARY KEY, enabled BOOLEAN NOT NULL)`)\n\treturn err\n}",
+			Good: "func (s *Store) ensure() error {\n\t_, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS flags (key TEXT PRIMARY KEY NOT NULL, enabled BOOLEAN NOT NULL)`)\n\treturn err\n}",
 		}},
 	}, {
 		ID: RuleFoldedKey, Slug: "security/folded-key-save",

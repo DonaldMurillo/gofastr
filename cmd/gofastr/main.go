@@ -6,6 +6,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"path/filepath"
 	"slices"
@@ -158,7 +159,7 @@ func printHelp() {
   gofastr verify
   gofastr verify security --json
   gofastr verify --explain GOFASTR1002
-`, cli.Bold("GoFastr"), cli.ScrubTerminalOutput(project.CliVersion()), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
+`, cli.Bold("GoFastr"), textsafe.ScrubTerminal(project.CliVersion()), cli.Bold("Usage"), cli.Bold("Commands"), cli.Bold("Flags"), cli.Bold("Examples"))
 }
 
 func main() {

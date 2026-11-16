@@ -103,7 +103,7 @@ func TestDialectIsRememberedThroughATransaction(t *testing.T) {
 		t.Errorf("%d probes across three writes, want 1", q.n)
 	}
 	// A handler bound to a caller's transaction from the start has no
-	// database to remember under, and asks each time.
+	// database to remember under; NewCrudHandler gives it its own memo.
 	bound := &CrudHandler{DB: tx}
 	if bound.dialectHandle() != nil {
 		t.Error("a handler that only ever saw a transaction claims a database")

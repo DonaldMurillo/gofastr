@@ -194,6 +194,12 @@ func (c *liveRedis) LRem(_ context.Context, key string, count int64, value any) 
 	return n, err
 }
 
+func (c *liveRedis) LLen(_ context.Context, key string) (int64, error) {
+	v, err := c.do("LLEN", key)
+	n, _ := v.(int64)
+	return n, err
+}
+
 func (c *liveRedis) Eval(_ context.Context, script string, keys []string, args ...any) (any, error) {
 	all := []any{"EVAL", script, len(keys)}
 	for _, k := range keys {

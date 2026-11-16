@@ -242,10 +242,13 @@ func (s *bucketStore) take(key string) (bool, time.Duration, int, time.Duration)
 		gained := int(elapsed/s.rate) * s.refill
 		if gained > 0 {
 			b.tokens += gained
-			if b.tokens > s.capacity {
-				b.tokens = s.capacity
-			}
 			b.lastSeen = b.lastSeen.Add(time.Duration(gained/s.refill) * s.rate)
+			if b.tokens >= s.capacity {
+				// A full bucket earns nothing while it waits: the tick clock
+				// restarts here, or a refill could land right after this burst.
+				b.tokens = s.capacity
+				b.lastSeen = now
+			}
 		}
 	}
 
