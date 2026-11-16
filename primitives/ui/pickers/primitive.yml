@@ -1,0 +1,19 @@
+primitive: ui.pickers
+summary: Value pickers - sliders, ratings, color, date and time pickers, combobox, multi-select, tag input, picker, file upload, drop zone, inline edit and segmented control.
+code:
+  - framework/ui/rangeslider.go
+  - framework/ui/slider.go
+  - framework/ui/rating.go
+  - framework/ui/rating_display.go
+  - framework/ui/colorfield.go
+  - framework/ui/colorpicker.go
+  - framework/ui/datepicker.go
+  - framework/ui/timepicker.go
+  - framework/ui/combobox.go
+  - framework/ui/multiselect.go
+  - framework/ui/taginput.go
+  - framework/ui/picker.go
+  - framework/ui/fileupload.go
+  - framework/ui/dropzone.go
+  - framework/ui/inlineedit.go
+  - framework/ui/segmented.go

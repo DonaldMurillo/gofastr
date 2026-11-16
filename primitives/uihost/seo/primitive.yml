@@ -1,0 +1,10 @@
+primitive: uihost.seo
+summary: Search metadata - screen SEO, Open Graph and Twitter tags, the sitemap and robots, Article and Organization JSON-LD, and the SEO front matter of page markdown.
+code:
+  - framework/uihost/seo.go
+  - framework/uihost/seo_screen.go
+  - framework/uihost/article_seo.go
+  - framework/uihost/llmmd_seo.go
+  - framework/uihost/organization.go
+docs:
+  - framework/docs/content/seo.md

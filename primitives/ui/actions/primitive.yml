@@ -1,0 +1,17 @@
+primitive: ui.actions
+summary: Action components - confirm action and dialog, optimistic and toggle actions, the signal toggle, copy button, command palette, global search, search input, shortcut hints and sheet, and the toolbar.
+code:
+  - framework/ui/confirmaction.go
+  - framework/ui/confirmdialog.go
+  - framework/ui/optimisticaction.go
+  - framework/ui/toggleaction.go
+  - framework/ui/signal_toggle.go
+  - framework/ui/copybutton.go
+  - framework/ui/commandpalette.go
+  - framework/ui/globalsearch.go
+  - framework/ui/searchinput.go
+  - framework/ui/shortcuthint.go
+  - framework/ui/shortcutsheet.go
+  - framework/ui/toolbar.go
+docs:
+  - framework/docs/content/optimistic-ui.md

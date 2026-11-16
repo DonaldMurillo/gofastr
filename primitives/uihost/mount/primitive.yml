@@ -1,0 +1,5 @@
+primitive: uihost.mount
+summary: Mounting the host on the router - route patterns, the screen and static dispatch, per-page llms markdown, static page rendering and the route-match middleware.
+code:
+  - framework/uihost/mount.go
+  - framework/uihost/routematch.go

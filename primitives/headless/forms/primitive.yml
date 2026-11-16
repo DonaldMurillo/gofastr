@@ -1,0 +1,11 @@
+primitive: headless.forms
+summary: Headless forms - the form and its typed Action, fields, fieldsets, text inputs, selects, choices, switches, validation summary and file upload.
+code:
+  - framework/headless/form.go
+  - framework/headless/field.go
+  - framework/headless/control.go
+  - framework/headless/choice.go
+  - framework/headless/validation.go
+  - framework/headless/upload.go
+  - framework/headless/leaveguard_behavior.go
+  - framework/headless/when_behavior.go

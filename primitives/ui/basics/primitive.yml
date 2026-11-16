@@ -1,0 +1,16 @@
+primitive: ui.basics
+summary: The basic components - page header, section, form field and section wrappers, buttons and link buttons, status badge, empty state, callout, stat card, avatar, code block, card, divider, link, inline code, tag, spinner and status pill, with their sheets.
+code:
+  - framework/ui/components.go
+  - framework/ui/styles_components.go
+  - framework/ui/card.go
+  - framework/ui/divider.go
+  - framework/ui/link.go
+  - framework/ui/inline_code.go
+  - framework/ui/tag.go
+  - framework/ui/spinner.go
+  - framework/ui/status_pill.go
+  - framework/ui/buttonvariant.go
+  - framework/ui/muted.go
+  - framework/ui/icon.go
+  - framework/ui/icons/

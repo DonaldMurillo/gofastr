@@ -1,0 +1,6 @@
+primitive: uihost.pwa
+summary: The progressive web app surface - the manifest, the service worker and its precache list.
+code:
+  - framework/uihost/pwa.go
+docs:
+  - framework/docs/content/pwa.md

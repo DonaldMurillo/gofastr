@@ -1,0 +1,7 @@
+primitive: uihost.agentready
+summary: The agent-ready surface - llms.txt, the agent card and its signing, and the discovery links.
+code:
+  - framework/uihost/agentready.go
+  - framework/uihost/agentcard_signing.go
+docs:
+  - framework/docs/content/agent-ready.md

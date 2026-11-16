@@ -1,0 +1,20 @@
+primitive: ui.layout
+summary: Layout and page frames - stack, cluster, grid, box, sticky, container, content row, list-detail, workbench, pane host, anchored rail, hero and fact box.
+code:
+  - framework/ui/layout.go
+  - framework/ui/content_row.go
+  - framework/ui/container.go
+  - framework/ui/list_detail.go
+  - framework/ui/workbench.go
+  - framework/ui/panehost.go
+  - framework/ui/anchored_rail.go
+  - framework/ui/styles_anchored_rail.go
+  - framework/ui/styles_primitives.go
+  - framework/ui/hero.go
+  - framework/ui/hero_split.go
+  - framework/ui/styles_pageheader.go
+  - framework/ui/fact_box.go
+  - framework/ui/responsive.go
+docs:
+  - framework/docs/content/layouts.md
+  - framework/docs/content/pane-host.md

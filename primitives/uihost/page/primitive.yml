@@ -1,0 +1,14 @@
+primitive: uihost.page
+summary: The full-page render - ServeHTTP and handlePage, the document shell, chrome and head injection, the inline head data, first-paint CSS inlining, script registration and stale-markup reloads.
+code:
+  - framework/uihost/page.go
+  - framework/uihost/headdata.go
+  - framework/uihost/firstpaint.go
+  - framework/uihost/firstpaint_prune.go
+  - framework/uihost/markupskew.go
+  - framework/uihost/register_script.go
+  - framework/uihost/docredirect.go
+  - framework/uihost/renderscreen.go
+  - framework/uihost/toaststack.go
+docs:
+  - core-ui/ARCHITECTURE.md

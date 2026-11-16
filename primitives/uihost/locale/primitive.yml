@@ -1,0 +1,7 @@
+primitive: uihost.locale
+summary: Locale path prefixes, per-locale render caching and the alternate links between locales.
+code:
+  - framework/uihost/localecache.go
+  - framework/uihost/localeprefix.go
+docs:
+  - framework/docs/content/i18n.md

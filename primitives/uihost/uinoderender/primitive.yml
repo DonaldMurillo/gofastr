@@ -1,0 +1,6 @@
+primitive: uihost.uinoderender
+summary: Rendering ui.node.v1 trees from process-isolated modules into HTML.
+code:
+  - framework/uihost/uinoderender/
+docs:
+  - framework/docs/content/process-modules.md

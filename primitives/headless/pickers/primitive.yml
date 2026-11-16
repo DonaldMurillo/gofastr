@@ -1,0 +1,14 @@
+primitive: headless.pickers
+summary: Headless value pickers - number inputs, sliders, ratings, combobox, multi-select, date picker, tag input and repeater, with their behaviours.
+code:
+  - framework/headless/controls.go
+  - framework/headless/controls_behavior.go
+  - framework/headless/combobox.go
+  - framework/headless/combobox_behavior.go
+  - framework/headless/multiselect.go
+  - framework/headless/multiselect_behavior.go
+  - framework/headless/datepicker.go
+  - framework/headless/datepicker_behavior.go
+  - framework/headless/collections.go
+  - framework/headless/collections_behavior.go
+  - framework/headless/numbers_behavior.go

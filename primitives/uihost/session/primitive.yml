@@ -1,0 +1,9 @@
+primitive: uihost.session
+summary: The signed session token, its cookie, minting and verification, the mutating-request guards, and the SSE live channel with its presence topics.
+code:
+  - framework/uihost/session.go
+  - framework/uihost/live.go
+  - framework/uihost/presence_declared.go
+  - framework/uihost/internal/
+docs:
+  - framework/docs/content/presence.md

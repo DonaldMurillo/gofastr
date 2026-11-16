@@ -1,0 +1,23 @@
+primitive: ui.media
+summary: Media and content - images and the image pipeline, gallery, lightbox, carousel, thumbnail, avatar group, markdown, syntax highlight, code tabs, terminal block, comment thread, pricing, collapsible, step wizard and the theme picker and toggle.
+code:
+  - framework/ui/image.go
+  - framework/ui/image_placeholder.go
+  - framework/ui/pipeline_image.go
+  - framework/ui/gallery.go
+  - framework/ui/lightbox.go
+  - framework/ui/carousel.go
+  - framework/ui/thumbnail.go
+  - framework/ui/avatargroup.go
+  - framework/ui/markdown.go
+  - framework/ui/highlight.go
+  - framework/ui/codetabs.go
+  - framework/ui/terminal_block.go
+  - framework/ui/commentthread.go
+  - framework/ui/pricing.go
+  - framework/ui/collapsible.go
+  - framework/ui/stepwizard.go
+  - framework/ui/themepicker.go
+  - framework/ui/themetoggle.go
+docs:
+  - framework/docs/content/image.md

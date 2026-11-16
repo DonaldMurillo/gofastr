@@ -1,0 +1,8 @@
+primitive: uihost.navigation
+summary: Client-side navigation on the server - partial pages, deferred parts, the route script the router reads, and the not-found, error and method-not-allowed pages on every arm.
+code:
+  - framework/uihost/partial.go
+  - framework/uihost/routescript.go
+  - framework/uihost/errorpages.go
+docs:
+  - core-ui/ARCHITECTURE.md

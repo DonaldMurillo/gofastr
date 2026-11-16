@@ -1,0 +1,20 @@
+primitive: headless.content
+summary: Headless layout and content - stack, cluster, grid and container, page header, empty state, stat card, detail list, card, table, tree, JSON tree, sortable list, selection, carousel, gallery, lightbox and step wizard.
+code:
+  - framework/headless/layout.go
+  - framework/headless/page.go
+  - framework/headless/surface.go
+  - framework/headless/table.go
+  - framework/headless/tree.go
+  - framework/headless/tree_behavior.go
+  - framework/headless/jsontree.go
+  - framework/headless/sortablelist.go
+  - framework/headless/sortablelist_behavior.go
+  - framework/headless/selection.go
+  - framework/headless/carousel.go
+  - framework/headless/carousel_behavior.go
+  - framework/headless/carousel_spec.go
+  - framework/headless/gallery.go
+  - framework/headless/lightbox.go
+  - framework/headless/stepwizard.go
+  - framework/headless/wizard_behavior.go

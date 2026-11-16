@@ -1,0 +1,20 @@
+primitive: ui.forms
+summary: The form family - form, fields, frame, repeaters, conditional fields, inputs, textarea, select, input group, password and number inputs, toggle and the auth card.
+code:
+  - framework/ui/form.go
+  - framework/ui/form_fields.go
+  - framework/ui/form_inputs.go
+  - framework/ui/formframe.go
+  - framework/ui/formrepeater.go
+  - framework/ui/repeater.go
+  - framework/ui/conditionalfield.go
+  - framework/ui/control.go
+  - framework/ui/textarea.go
+  - framework/ui/select.go
+  - framework/ui/inputgroup.go
+  - framework/ui/passwordinput.go
+  - framework/ui/numberinput.go
+  - framework/ui/toggle.go
+  - framework/ui/auth_card.go
+docs:
+  - framework/docs/content/form-module.md

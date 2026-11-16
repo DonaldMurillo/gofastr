@@ -1,0 +1,19 @@
+primitive: ui.charts
+summary: Charts and numbers - bar, line, pie, scatter, sparkline, heatmap, gauge and waterfall charts, their empty state, palette and finite checks, relative time, counters and progress.
+code:
+  - framework/ui/barchart.go
+  - framework/ui/linechart.go
+  - framework/ui/piechart.go
+  - framework/ui/scatterchart.go
+  - framework/ui/sparkline.go
+  - framework/ui/heatmap.go
+  - framework/ui/gauge.go
+  - framework/ui/waterfall.go
+  - framework/ui/chart_empty.go
+  - framework/ui/chart_finite.go
+  - framework/ui/chart_palette.go
+  - framework/ui/ago.go
+  - framework/ui/animatedcounter.go
+  - framework/ui/counter.go
+  - framework/ui/progress.go
+  - framework/ui/progresssteps.go

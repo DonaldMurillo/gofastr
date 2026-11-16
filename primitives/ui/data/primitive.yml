@@ -1,0 +1,21 @@
+primitive: ui.data
+summary: Data display - data table, filter toolbar, chips and rows, column picker, detail and entry lists, record summary, stat strip, JSON and diff viewers, tree, timeline, change list, action list, search results, sortable list and selection.
+code:
+  - framework/ui/datatable.go
+  - framework/ui/filtertoolbar.go
+  - framework/ui/filterchipbar.go
+  - framework/ui/filterrows.go
+  - framework/ui/columnpicker.go
+  - framework/ui/detail_list.go
+  - framework/ui/entrylist.go
+  - framework/ui/record_summary.go
+  - framework/ui/statstrip.go
+  - framework/ui/jsonviewer.go
+  - framework/ui/diffviewer.go
+  - framework/ui/tree.go
+  - framework/ui/timeline.go
+  - framework/ui/changelist.go
+  - framework/ui/actionlist.go
+  - framework/ui/searchresults.go
+  - framework/ui/sortablelist.go
+  - framework/ui/selection.go

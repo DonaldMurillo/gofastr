@@ -117,6 +117,11 @@ among them, own all 87 files. `TestCoveredPackagesHaveNoUnownedFile`
 fails when a file in a covered package has no owner; add a package to
 its list as this step reaches it.
 
+`framework/headless` (`headless` and five children), `framework/uihost`
+(thirteen children; `uihost.go` was split into files by job so each has
+one) and `framework/ui` (ten children beside `ui.styling`) are covered
+too, ahead of their sweeps.
+
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s
 one-builder rule reaches `eager.go` and `include.go` that way).

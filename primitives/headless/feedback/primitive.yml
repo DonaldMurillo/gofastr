@@ -1,0 +1,17 @@
+primitive: headless.feedback
+summary: Headless actions and feedback - buttons, optimistic and toggle actions, toasts and the notification bell, alerts and live regions, spinners, skeletons, progress, counters, disclosure and the system banner.
+code:
+  - framework/headless/action.go
+  - framework/headless/button.go
+  - framework/headless/notification.go
+  - framework/headless/bell_behavior.go
+  - framework/headless/feedback.go
+  - framework/headless/feedback_behavior.go
+  - framework/headless/status.go
+  - framework/headless/progress.go
+  - framework/headless/counter.go
+  - framework/headless/system.go
+  - framework/headless/disclosure.go
+  - framework/headless/disclosure_behavior.go
+  - framework/headless/copy_behavior.go
+  - framework/headless/selectioncopy_behavior.go

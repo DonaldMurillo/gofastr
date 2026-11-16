@@ -1,0 +1,6 @@
+primitive: uihost.actions
+summary: Server actions and widget scripts - compiling a screen's actions, serving their JavaScript and answering action requests.
+code:
+  - framework/uihost/actions.go
+docs:
+  - framework/docs/content/interactive-patterns.md

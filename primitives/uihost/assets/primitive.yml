@@ -1,0 +1,12 @@
+primitive: uihost.assets
+summary: The app stylesheet, component and bundle CSS, theme variants, the static directory, content-hashed asset URLs, the app icon and the runtime module manifest.
+code:
+  - framework/uihost/css.go
+  - framework/uihost/static.go
+  - framework/uihost/asset_url.go
+  - framework/uihost/assetserve.go
+  - framework/uihost/appicon.go
+  - framework/uihost/manifestjs.go
+  - framework/uihost/themevariant.go
+docs:
+  - framework/docs/content/theming.md

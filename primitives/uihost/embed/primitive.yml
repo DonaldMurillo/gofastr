@@ -1,0 +1,7 @@
+primitive: uihost.embed
+summary: Embedding screens in other sites - the embed host, its content route and grants, and the boot check that refuses server actions on embeddable screens.
+code:
+  - framework/uihost/embed.go
+  - framework/uihost/embed_actions.go
+docs:
+  - framework/docs/content/embed.md

@@ -1,0 +1,11 @@
+primitive: ui.feedback
+summary: Feedback - toasts, notifications and the bell, banners, the network retry banner, the polling indicator, skeleton presets and tooltips.
+code:
+  - framework/ui/toast.go
+  - framework/ui/notification.go
+  - framework/ui/notificationbell.go
+  - framework/ui/banner.go
+  - framework/ui/networkretrybanner.go
+  - framework/ui/pollingindicator.go
+  - framework/ui/skeletonpresets.go
+  - framework/ui/tooltip.go

@@ -1,0 +1,6 @@
+primitive: uihost.strict
+summary: Strict mode - the boot findings a host refuses or warns on, by level and exemption.
+code:
+  - framework/uihost/strict.go
+docs:
+  - framework/docs/content/strict-mode.md

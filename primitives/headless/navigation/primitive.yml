@@ -1,0 +1,18 @@
+primitive: headless.navigation
+summary: Headless navigation - badges, tags and toolbars, menus, breadcrumbs, sidebar, rail, tabs, table of contents and the pane host, with their behaviours.
+code:
+  - framework/headless/nav.go
+  - framework/headless/navigation_behavior.go
+  - framework/headless/menu.go
+  - framework/headless/menu_behavior.go
+  - framework/headless/breadcrumbs.go
+  - framework/headless/sidebar.go
+  - framework/headless/sidebar_behavior.go
+  - framework/headless/rail.go
+  - framework/headless/rail_behavior.go
+  - framework/headless/tabs.go
+  - framework/headless/tabs_behavior.go
+  - framework/headless/toc.go
+  - framework/headless/toc_behavior.go
+  - framework/headless/panehost.go
+  - framework/headless/panehost_behavior.go

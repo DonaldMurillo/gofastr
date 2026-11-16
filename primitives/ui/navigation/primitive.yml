@@ -1,0 +1,18 @@
+primitive: ui.navigation
+summary: Navigation components - sidebar, menu, breadcrumbs, tab nav, tabs, table of contents, pagination, segmented links, step rail, back to top, language menu, sign out, dropdown and drawer bar.
+code:
+  - framework/ui/sidebar.go
+  - framework/ui/sidebar_brand.go
+  - framework/ui/menu.go
+  - framework/ui/breadcrumbs.go
+  - framework/ui/tabnav.go
+  - framework/ui/tabs.go
+  - framework/ui/toc.go
+  - framework/ui/pagination.go
+  - framework/ui/segmentedlinks.go
+  - framework/ui/step_rail.go
+  - framework/ui/backtotop.go
+  - framework/ui/languagemenu.go
+  - framework/ui/sign_out.go
+  - framework/ui/dropdown.go
+  - framework/ui/drawerbar.go
