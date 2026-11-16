@@ -301,20 +301,32 @@ func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, re
 	return nil
 }
 
-// dropMagicLinks spends every outstanding magic link mailed to the user.
-// A link mailed before a password change or reset, the one an attacker
-// with mailbox access may hold, otherwise still signs in afterwards. The
-// magic-link store keys on the canonical address the send handler wrote,
-// so the stored address is canonicalized first: a raw "Mixed@Example.com"
-// matched no row. A token store without MagicLinkTokenPurger keeps the
-// links, and that gap is logged; the error is a purge that failed.
+// dropMagicLinks spends every outstanding magic link and emailed sign-in
+// code mailed to the user. One mailed before a password change or reset,
+// the one an attacker with mailbox access may hold, otherwise still signs
+// in afterwards. Both stores key on the canonical address the send
+// handler wrote, so the stored address is canonicalized first: a raw
+// "Mixed@Example.com" matched no row. A token store without
+// MagicLinkTokenPurger keeps them, and that gap is logged; the error is
+// a purge that failed.
 func (m *AuthManager) dropMagicLinks(ctx context.Context, userID, reason, remote string) error {
-	p, ok := m.Plugin("magic-link")
-	if !ok {
-		return nil
+	type mailed struct {
+		store   MagicLinkTokenStore
+		purpose tokenPurpose
+		kind    string
 	}
-	mp, ok := p.(*MagicLinkPlugin)
-	if !ok {
+	var flows []mailed
+	if p, ok := m.Plugin("magic-link"); ok {
+		if mp, ok := p.(*MagicLinkPlugin); ok {
+			flows = append(flows, mailed{mp.tokenStore, purposeMagicLink, "magiclink_tokens.purged"})
+		}
+	}
+	if p, ok := m.Plugin("email-code"); ok {
+		if ep, ok := p.(*EmailCodePlugin); ok {
+			flows = append(flows, mailed{ep.tokenStore, purposeEmailCode, "emailcode_tokens.purged"})
+		}
+	}
+	if len(flows) == 0 {
 		return nil
 	}
 	user, err := m.UserStore().FindByID(ctx, userID)
@@ -325,20 +337,25 @@ func (m *AuthManager) dropMagicLinks(ctx context.Context, userID, reason, remote
 	if err != nil {
 		email = user.GetEmail()
 	}
-	n, supported, err := purgePurposeTokens(ctx, mp.tokenStore, purposeMagicLink, email)
-	switch {
-	case err != nil:
-		return err
-	case !supported:
-		slog.Warn("could not drop outstanding magic links: token store does not implement MagicLinkTokenPurger",
-			"reason", reason, "user_hash", hashedIdentifier(userID))
-	case n > 0:
-		m.emitSecurity(ctx, SecurityEvent{
-			Kind: "magiclink_tokens.purged", UserID: userID, Remote: remote,
-			Meta: map[string]string{"reason": reason, "count": strconv.Itoa(n)},
-		})
+	var firstErr error
+	for _, f := range flows {
+		n, supported, err := purgePurposeTokens(ctx, f.store, f.purpose, email)
+		switch {
+		case err != nil:
+			if firstErr == nil {
+				firstErr = err
+			}
+		case !supported:
+			slog.Warn("could not drop outstanding mailed sign-ins: token store does not implement MagicLinkTokenPurger",
+				"flow", string(f.purpose), "reason", reason, "user_hash", hashedIdentifier(userID))
+		case n > 0:
+			m.emitSecurity(ctx, SecurityEvent{
+				Kind: f.kind, UserID: userID, Remote: remote,
+				Meta: map[string]string{"reason": reason, "count": strconv.Itoa(n)},
+			})
+		}
 	}
-	return nil
+	return firstErr
 }
 
 // writeAuthFieldError answers 422 with the form-errors envelope: the

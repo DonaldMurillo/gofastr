@@ -10,8 +10,9 @@ import (
 
 type gateSender struct{}
 
-func (gateSender) Send(_ context.Context, _, _ string) error          { return nil }
-func (gateSender) SendMagicLink(_ context.Context, _, _ string) error { return nil }
+func (gateSender) Send(_ context.Context, _, _ string) error           { return nil }
+func (gateSender) SendMagicLink(_ context.Context, _, _ string) error  { return nil }
+func (gateSender) SendSignInCode(_ context.Context, _, _ string) error { return nil }
 
 // The link plugins mint their own in-memory token store when none is set:
 // a link minted on one replica is invalid on the next. Production refuses
@@ -24,6 +25,9 @@ func TestLinkPluginsRefuseMemoryStore(t *testing.T) {
 		},
 		"magic-link": func() auth.AuthPlugin {
 			return auth.NewMagicLinkPlugin(auth.MagicLinkConfig{EmailSender: gateSender{}})
+		},
+		"email-code": func() auth.AuthPlugin {
+			return auth.NewEmailCodePlugin(auth.EmailCodeConfig{EmailSender: gateSender{}})
 		},
 		"email-verification": func() auth.AuthPlugin {
 			return auth.NewEmailVerificationPlugin(auth.EmailVerificationConfig{EmailSender: gateSender{}})

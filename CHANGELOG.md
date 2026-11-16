@@ -74,6 +74,11 @@ few lines, and link the PR or the docs page for the rest.
   reason to send the session back.
 
 ### Added
+- **Emailed sign-in codes (`auth.EmailCodePlugin`).** Passwordless
+  sign-in with an eight-digit code mailed to the address and typed into
+  the browser that asked for it (`POST /auth/email-code/{send,verify}`).
+  Same account rules as the magic link, which now shares its sign-in
+  code path. See [Emailed sign-in codes](framework/docs/content/auth.md#emailed-sign-in-codes).
 - **A registry of the framework's parts, for contributors**
   ([primitives](primitives/README.md), [plan](primitives/PLAN.md)).
   `primitives/` holds one file per part of the framework with its

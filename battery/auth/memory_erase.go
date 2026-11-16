@@ -65,6 +65,8 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 			addTokens(p.store)
 		case *MagicLinkPlugin:
 			addTokens(p.tokenStore)
+		case *EmailCodePlugin:
+			addTokens(p.tokenStore)
 		}
 	}
 	if sessions == nil && twofa == nil && passkeys == nil && len(tokens) == 0 {

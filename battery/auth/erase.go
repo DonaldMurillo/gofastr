@@ -111,7 +111,7 @@ func registerCanonicalErasers() {
 	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
 	})
-	for _, p := range []tokenPurpose{purposeMagicLink, purposeReset, purposeVerify, purposePasskeyRegister} {
+	for _, p := range []tokenPurpose{purposeMagicLink, purposeEmailCode, purposeReset, purposeVerify, purposePasskeyRegister} {
 		registerTokenEraser("magic_link_tokens", p)
 	}
 }
@@ -188,6 +188,13 @@ func resolveEraseTables(mgr *AuthManager) {
 			}
 		}
 	}
+	if p, ok := mgr.Plugin("email-code"); ok {
+		if ep, ok := p.(*EmailCodePlugin); ok {
+			if ms, ok := ep.tokenStore.(*SQLMagicLinkTokenStore); ok {
+				registerTokenEraser(ms.table, purposeEmailCode)
+			}
+		}
+	}
 	if p, ok := mgr.Plugin("password-reset"); ok {
 		if rp, ok := p.(*PasswordResetPlugin); ok {
 			if ms, ok := rp.store.(*SQLMagicLinkTokenStore); ok {
@@ -221,7 +228,8 @@ func resolveEraseTables(mgr *AuthManager) {
 
 // registerTokenEraser registers the eraser for one flow's tokens in table.
 // The payload column holds "<purpose>:<value>", so the purpose tag is the
-// ValuePrefix. Magic-link payloads carry the email (IdentityEmail); reset,
+// ValuePrefix. Magic-link and email-code payloads carry the email
+// (IdentityEmail); reset,
 // verification and passkey-registration payloads carry the user id. The
 // magic-link eraser keeps the "magic_link_tokens" name it was first
 // registered under.
@@ -231,10 +239,11 @@ func registerTokenEraser(table string, p tokenPurpose) {
 		Column: "email", Mode: datexport.EraseDelete,
 		ValuePrefix: string(p) + ":",
 	}
-	if p == purposeMagicLink {
-		e.Identity = datexport.IdentityEmail
-	} else {
+	if p != purposeMagicLink {
 		e.Name = "magic_link_tokens_" + string(p)
+	}
+	if p == purposeMagicLink || p == purposeEmailCode {
+		e.Identity = datexport.IdentityEmail
 	}
 	datexport.RegisterEraser(e)
 }
