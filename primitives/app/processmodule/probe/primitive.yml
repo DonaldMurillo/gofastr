@@ -1,0 +1,4 @@
+primitive: app.processmodule.probe
+summary: The sandbox conformance probes P1 to P7 a runner must pass before it may launch an untrusted module.
+code:
+  - framework/processmodule_probe*.go

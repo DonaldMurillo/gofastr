@@ -1,0 +1,10 @@
+primitive: app.processmodule.sandbox
+summary: "How a child is launched: runner selection by trust tier, the per-OS sandbox backends and process-group hygiene."
+code:
+  - framework/processmodule_runner.go
+  - framework/processmodule_sandbox.go
+  - framework/processmodule_sandbox_darwin.go
+  - framework/processmodule_sandbox_linux.go
+  - framework/processmodule_sandbox_windows.go
+  - framework/processmodule_sandbox_other.go
+  - framework/processmodule_sysproc_*.go

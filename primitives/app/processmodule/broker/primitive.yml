@@ -1,0 +1,5 @@
+primitive: app.processmodule.broker
+summary: The capability broker that answers a child's host.* reverse requests, and its interface.
+code:
+  - framework/processmodule_broker.go
+  - framework/processmodule_broker_iface.go

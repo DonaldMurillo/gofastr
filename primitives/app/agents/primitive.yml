@@ -1,0 +1,12 @@
+primitive: app.agents
+summary: "The agent-facing discovery surface: A2A task exchange, the well-known documents, auth.md and OAuth protected-resource metadata."
+code:
+  - framework/a2a.go
+  - framework/agents.go
+  - framework/agent_extras.go
+  - framework/wellknown.go
+  - framework/authmd.go
+  - framework/oauth_resource.go
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/a2a.md

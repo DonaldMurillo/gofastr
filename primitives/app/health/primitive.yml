@@ -1,0 +1,8 @@
+primitive: app.health
+summary: The liveness and readiness routes and the metrics store.
+code:
+  - framework/health.go
+  - framework/metrics.go
+docs:
+  - framework/docs/content/health-checks.md
+  - framework/docs/content/observability.md

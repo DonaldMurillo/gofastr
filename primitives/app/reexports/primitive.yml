@@ -1,0 +1,6 @@
+primitive: app.reexports
+summary: The framework.X spellings of types and functions that live in subpackages.
+code:
+  - framework/reexports_*.go
+on_change:
+  - "A re-export follows its subpackage: add or remove the root spelling in the same change as the subpackage symbol."

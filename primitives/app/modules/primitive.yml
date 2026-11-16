@@ -1,0 +1,10 @@
+primitive: app.modules
+summary: The units a host plugs into an App (plugins, batteries and modules) with their manifests, dependencies and lifecycle.
+code:
+  - framework/plugin.go
+  - framework/battery.go
+  - framework/module.go
+docs:
+  - framework/docs/content/plugins.md
+  - framework/docs/content/modules.md
+  - framework/docs/content/plugin-platform.md

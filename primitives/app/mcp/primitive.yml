@@ -1,0 +1,10 @@
+primitive: app.mcp
+summary: "The App's MCP server wiring: introspection, control and contract tools, MCP Apps, the manifest and the dev-only bind."
+code:
+  - framework/mcp_*.go
+  - framework/devmcp_bind.go
+docs:
+  - framework/docs/content/mcp.md
+  - framework/docs/content/contracts.md
+on_change:
+  - "A new MCP tool is a public surface: document it in mcp.md and decide whether it is dev-only before it ships."

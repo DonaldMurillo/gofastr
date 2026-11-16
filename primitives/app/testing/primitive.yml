@@ -1,0 +1,7 @@
+primitive: app.testing
+summary: "Test support the root package ships: the in-memory TestApp and semantic-coverage recording."
+code:
+  - framework/testharness.go
+  - framework/semanticcoverage.go
+docs:
+  - framework/docs/content/testkit.md

@@ -1,0 +1,4 @@
+primitive: app.processmodule.supervisor
+summary: The supervisor that spawns, watches, restarts and stops each process module.
+code:
+  - framework/processmodule_supervisor.go

@@ -1,0 +1,11 @@
+primitive: app.entities
+summary: "What the App holds about declared entities: the versioned registry, the boot checks on display and exposure, and typed hooks."
+code:
+  - framework/registry.go
+  - framework/display_check.go
+  - framework/exposure_check.go
+  - framework/typed_hooks.go
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/api-versioning.md
+  - framework/docs/content/hooks-and-transactions.md

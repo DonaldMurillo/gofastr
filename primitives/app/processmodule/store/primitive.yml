@@ -1,0 +1,5 @@
+primitive: app.processmodule.store
+summary: The SQL coordination store for process modules and their migrations, run by the host on the module's behalf.
+code:
+  - framework/processmodule_store.go
+  - framework/processmodule_migrate.go

@@ -1,0 +1,9 @@
+primitive: app.data
+summary: "How handlers reach the database and the app secret: the DB and transaction on the context, and the keys derived from the secret."
+code:
+  - framework/dbctx.go
+  - framework/tx.go
+  - framework/secret.go
+docs:
+  - framework/docs/content/hooks-and-transactions.md
+  - framework/docs/content/embed.md

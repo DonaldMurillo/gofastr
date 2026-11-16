@@ -1,0 +1,9 @@
+primitive: app.routes
+summary: "Route-level behaviour the App adds around mounted handlers: JSON answers for API misses, locale URL prefixes and the entity endpoint collision check."
+code:
+  - framework/api_miss.go
+  - framework/localeprefix.go
+  - framework/endpoint_check.go
+docs:
+  - framework/docs/content/i18n.md
+  - framework/docs/content/endpoints.md

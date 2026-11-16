@@ -1,0 +1,5 @@
+primitive: app.processmodule.surface
+summary: "What a process module adds to the host's surface: its namespaced MCP tools and its proxied HTTP routes."
+code:
+  - framework/processmodule_tools.go
+  - framework/processmodule_proxy.go

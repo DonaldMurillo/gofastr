@@ -1,0 +1,11 @@
+primitive: app.processmodule
+summary: "Third-party modules run as child processes: the manifest and trust tiers, and the App wiring that mounts them."
+code:
+  - framework/processmodule.go
+  - framework/processmodule_app.go
+  - framework/processmodule_sandbox_app.go
+docs:
+  - framework/docs/content/process-modules.md
+  - framework/docs/content/isolation.md
+on_change:
+  - "A change to what a child process may reach is a security change: run the sandbox conformance probes on every OS arm it touches."

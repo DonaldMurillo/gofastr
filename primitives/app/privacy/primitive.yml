@@ -1,0 +1,10 @@
+primitive: app.privacy
+summary: "A user's data lifecycle: export and import of everything an app holds for them, and erasure of it."
+code:
+  - framework/export_data.go
+  - framework/erase_data.go
+  - framework/erase_shared_keys.go
+docs:
+  - framework/docs/content/data-export.md
+on_change:
+  - An entity, column kind or stored-object reference that export learns to read, erase must learn to delete, and the reverse.

@@ -107,6 +107,12 @@ check useful outside `framework/crud`.
 Done when `go run ./cmd/primitives for <path>` finds an owner for every
 non-test Go file under those three trees.
 
+Status: done ahead of order for the root `framework` package, so its
+sweep had owners to write to: `app` and its children, `app.processmodule`
+among them, own all 87 files. `TestCoveredPackagesHaveNoUnownedFile`
+fails when a file in a covered package has no owner; add a package to
+its list as this step reaches it.
+
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s
 one-builder rule reaches `eager.go` and `include.go` that way).

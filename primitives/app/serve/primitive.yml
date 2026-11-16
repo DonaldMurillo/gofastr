@@ -1,0 +1,21 @@
+primitive: app.serve
+summary: "Serving a booted App: the HTTP host, the listener and TLS, the boot role, first-run setup, seeding, static export and the drain of streams at shutdown."
+code:
+  - framework/host.go
+  - framework/host_http.go
+  - framework/tls.go
+  - framework/shutdown_streams.go
+  - framework/role.go
+  - framework/setup.go
+  - framework/seed.go
+  - framework/localrun_app.go
+  - framework/export.go
+docs:
+  - framework/docs/content/application-hosts.md
+  - framework/docs/content/deploy.md
+  - framework/docs/content/scaling.md
+  - framework/docs/content/first-run.md
+  - framework/docs/content/static-export.md
+  - framework/docs/content/local-runs.md
+on_change:
+  - "A change to start or shutdown order is a change to what every battery sees at boot: run the battery start and stop tests, not only this package's."

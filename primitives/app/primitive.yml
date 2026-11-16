@@ -1,0 +1,21 @@
+primitive: app
+summary: "The App a host builds with NewApp: its options and config, entity and route mounting, start and shutdown."
+code:
+  - framework/app.go
+  - framework/doc.go
+  - framework/flags.go
+  - framework/inprocess.go
+  - framework/unmounted.go
+  - framework/i18n.go
+docs:
+  - framework/docs/content/overview.md
+  - framework/docs/content/unmount.md
+  - framework/docs/content/feature-flags.md
+on_change:
+  - "A new or changed AppOption, App method or AppConfig field is exported API: document it in framework/docs/content and note a breaking change in upgrading.md."
+invariants:
+  - id: every-file-has-an-owner
+    rule: Every non-test Go file directly in framework/ and in framework/crud/ is in the code list of exactly one primitive chain.
+    enforced_by:
+      - test: internal/primitives.TestCoveredPackagesHaveNoUnownedFile
+      - test: internal/primitives.TestFileHasOneOwnerChain

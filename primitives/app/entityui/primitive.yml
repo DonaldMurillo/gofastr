@@ -1,0 +1,7 @@
+primitive: app.entityui
+summary: "The App's side of the entity screens: the host that mounts them and the bulk-action snapshot tables."
+code:
+  - framework/entityui_host.go
+  - framework/entityui_bulk.go
+docs:
+  - framework/docs/content/entityui.md
