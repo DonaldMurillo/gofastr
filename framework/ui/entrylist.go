@@ -1,17 +1,5 @@
 package ui
 
-// ─── EntryList ──────────────────────────────────────────────────────
-//
-// A dense list of links to read: each entry a title link, the source it
-// leads to in muted text beside it, and a meta line under it (who posted
-// it, when, its discussion). A news front page, a reading list, a
-// digest. Ranked draws the list as an <ol> numbered from Start, so page
-// two of a thirty-entry list reads 31, 32, …; the numbers are the
-// browser's own list markers, so they cost no markup and read as list
-// positions to assistive tech. Distinct from SearchResults, which is a
-// whole search page with its form, and from DataTable, which is for
-// records with columns.
-
 import (
 	"strconv"
 
@@ -25,43 +13,33 @@ import (
 
 // Entry is one row of an EntryList.
 type Entry struct {
-	// Title is the link text. Required.
+	// Title and Href are required.
 	Title string
-	// Href is where the title leads: another site, or the entry's own
-	// page. Required.
-	Href string
-	// Source is short text beside the title naming where Href leads (a
-	// site's domain). Optional.
+	Href  string
+	// Source names where Href leads, beside the title.
 	Source string
-	// Meta is the line under the title: points, author, age, a link to
-	// the discussion. It is the caller's markup. Optional.
+	// Meta is the caller's markup for the line under the title.
 	Meta render.HTML
-	// ID is the row's id, so a page can link to one entry. Optional.
-	ID string
+	ID   string
 }
 
 // EntryListConfig configures an EntryList.
 type EntryListConfig struct {
-	// Entries are the rows, in order.
 	Entries []Entry
-	// Label names the list for assistive tech ("Top stories").
-	// Required: a page often holds more than one list.
+	// Label names the list. Required.
 	Label string
-	// Ranked numbers the entries, an <ol> starting at Start.
+	// Ranked draws an <ol> numbered from Start (at least 1).
 	Ranked bool
-	// Start is the first entry's number; less than 1 starts at 1.
-	// Ignored unless Ranked.
-	Start int
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes to the list root. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// style, start, aria-label and data-cui-*. A role replaces the
-	// unranked list's default role="list".
+	Start  int
+	ID     string
+	Class  string
+	// ExtraAttrs land on the list; class, id, style, start, aria-label
+	// and data-cui-* are the component's. A role replaces role="list".
 	ExtraAttrs html.Attrs
 }
 
-// EntryList renders the list. It panics without a Label.
+// EntryList renders a dense list of links to read, each with a source
+// and a meta line. It panics without a Label.
 func EntryList(cfg EntryListConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: EntryList requires Label — the page may hold more than one list")
@@ -102,9 +80,6 @@ func EntryList(cfg EntryListConfig) render.HTML {
 		attrs["id"] = cfg.ID
 	}
 	tag := "ul"
-	// The unranked list drops its markers (list-style: none), which
-	// costs it list semantics in WebKit/VoiceOver unless it says so. A
-	// caller's own role (ExtraAttrs) wins.
 	if _, set := attrs["role"]; !set && !cfg.Ranked {
 		attrs["role"] = "list"
 	}
@@ -118,10 +93,6 @@ func EntryList(cfg EntryListConfig) render.HTML {
 
 var entryListStyle = registry.RegisterStyle("ui-entry-list", entryListCSS)
 
-// Knobs: --ui-entry-list-gap (the space between entries) and
-// --ui-entry-list-rank-width (the column the rank numbers sit in, wide
-// enough for "300."). The items keep display: list-item: a grid or flex
-// item draws no ::marker, and the marker is the rank.
 func entryListCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-entry-list"] {
   display: grid;
