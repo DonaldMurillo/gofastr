@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core-ui/uinodev1"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/moduleproto"
 	"github.com/DonaldMurillo/gofastr/framework/access"
@@ -278,5 +279,26 @@ func TestSweepPMHostConformsNeedsEveryPass(t *testing.T) {
 		if r.Conforms() {
 			t.Errorf("a report with one %s probe conforms", st)
 		}
+	}
+}
+
+// A module's ui.node.v1 action_ref resolves only to one of that module's own
+// declared routes; a ref naming no declared route fails the render.
+func TestSweepPMHostUIActionRefResolvesOwnRoutesOnly(t *testing.T) {
+	sl := &moduleSlot{desc: ProcessModuleDescriptor{Routes: []RouteDeclaration{{ID: "refresh", Path: "/demo/refresh"}}}}
+	render := func(ref string) (string, error) {
+		tree, err := uinodev1.Validate([]byte(`{"component":"button","props":{"label":"Go"},"action_ref":"`+ref+`"}`), uinodev1.DefaultLimits())
+		if err != nil {
+			t.Fatalf("validate: %v", err)
+		}
+		html, err := sl.uiRenderer(context.Background()).Render(tree)
+		return string(html), err
+	}
+	html, err := render("refresh")
+	if err != nil || !strings.Contains(html, "/demo/refresh") {
+		t.Fatalf("declared ref: html=%q err=%v, want the route's path", html, err)
+	}
+	if html, err := render("logout"); err == nil {
+		t.Fatalf("undeclared ref rendered %q, want an error", html)
 	}
 }
