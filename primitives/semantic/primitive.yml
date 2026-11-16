@@ -1,0 +1,49 @@
+primitive: semantic
+summary: Semantic search, covering the index's Add and Query, the flat and pgvector stores, the keyword leg and the HTTP routes.
+code:
+  - battery/semantic/
+docs:
+  - framework/docs/content/semantic-search.md
+twins:
+  - job: Apply Filter.MetaMatch as per-key JSON equality.
+    why: FlatStore compares decoded Go values in process and PgVectorStore compares JSONB in SQL, so the comparison cannot be one function.
+    sites:
+      - path: battery/semantic/store_flat.go
+        note: filterMatcher, which FlatStore.Candidates and hydrateKeywordHits both use.
+      - path: battery/semantic/store_pgvector.go
+        note: The meta -> key = value::jsonb predicates Candidates builds.
+invariants:
+  - id: meta-match-is-equality-on-every-store
+    rule: Filter.MetaMatch matches a chunk by per-key JSON equality on FlatStore and PgVectorStore alike, with numbers compared by value.
+    enforced_by:
+      - test: battery/semantic.TestMetaMatchIsEqualityFlat
+      - test: battery/semantic.TestMetaMatchIsEqualityPgVector
+      - test: battery/semantic.TestMetaMatchNumbersCompareByValue
+  - id: one-filter-matcher
+    rule: The flat store's candidate loop and the keyword leg's hydration match a chunk through one filterMatcher, which reads the filter's MetaMatch once per query and compares a number in time linear in its literal.
+    enforced_by:
+      - test: battery/semantic.TestHybridFilterHoldsOnKeywordLeg
+      - test: battery/semantic.TestQueryMetaMatchHugeExponentIsCheap
+      - test: battery/semantic.TestMetaMatchNumbersCompareByValue
+  - id: query-is-held-to-the-write-bounds
+    rule: Query refuses, as an InvalidQueryError that the /query route answers 400 query_invalid, text or a filter value that Add could not store, checking filter.meta_match once with storableMetadataJSON, the write path's check and number bound.
+    enforced_by:
+      - test: battery/semantic.TestQueryCallerFaultsAnswer400
+      - test: battery/semantic.TestQueryMetaMatchHugeExponentIsCheap
+  - id: query-recovers-backend-panics
+    rule: Query turns a panic in the embedder, the store or the reranker into an error and returns no hits.
+    enforced_by:
+      - test: battery/semantic.TestQueryRecoversBackendPanics
+  - id: flat-candidates-honour-ctx
+    rule: FlatStore.Candidates returns the context's error when ctx is done.
+    enforced_by:
+      - test: battery/semantic.TestFlatStoreCandidatesHonorsCancel
+decisions:
+  - id: query-shares-the-write-number-bound
+    date: 2026-11-16
+    status: accepted
+    decision: A query's meta_match is validated by storableMetadataJSON, the check Add runs on document metadata, and matched by filterMatcher's canonical number form; the per-chunk big.Rat comparison in metaEqual is removed.
+    rejected:
+      - option: Keep comparing numbers as big.Rat for every chunk, with no bound on the filter.
+        why: big.Rat computes the power of ten, so a filter such as 1e999999 cost CPU for every stored chunk.
+    upholds: [query-is-held-to-the-write-bounds, one-filter-matcher]

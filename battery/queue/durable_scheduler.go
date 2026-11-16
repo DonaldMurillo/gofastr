@@ -21,6 +21,10 @@ import (
 
 const durableSchedulerLeaseName = "scheduler"
 
+// schedulerJobSweepEraser names the second delete on the jobs table. Erasers
+// run in name order, and it must sort after "queue_scheduler_schedules".
+const schedulerJobSweepEraser = "queue_scheduler_swept_jobs"
+
 // DurableSchedulerConfig identifies one scheduler replica and controls how
 // quickly another replica may reclaim its leadership lease after a heartbeat
 // stops. OwnerID defaults to a random process-local ID. LeaseDuration defaults
@@ -148,6 +152,15 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 		Name:   datexport.ScopedName("queue_scheduler_schedules", table),
 		Source: "queue",
 		Table:  table,
+		Column: "user_id",
+		Mode:   datexport.EraseDelete,
+	})
+	// The jobs go a second time once the schedules are gone: a tick that
+	// commits while the erasure runs writes its job after the first delete.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name:   datexport.ScopedName(schedulerJobSweepEraser, q.table),
+		Source: "queue",
+		Table:  q.table,
 		Column: "user_id",
 		Mode:   datexport.EraseDelete,
 	})
@@ -780,7 +793,7 @@ func (s *DurableScheduler) ensureTables() error {
 	statements := []string{
 		//gofastr:allow(GOFASTR1415) NewDurableScheduler registers this table's eraser under its configured name, on user_id (added by ensureHardeningSchema), so the rule's static scan cannot see it
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY NOT NULL,
 			job_type TEXT NOT NULL,
 			payload TEXT NOT NULL,
 			interval_ns BIGINT NOT NULL DEFAULT 0,
@@ -795,7 +808,7 @@ func (s *DurableScheduler) ensureTables() error {
 			version BIGINT NOT NULL DEFAULT 0
 		)`, s.queue.schedulerSchedulesTable(), tsType, tsType),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			occurrence_id TEXT PRIMARY KEY,
+			occurrence_id TEXT PRIMARY KEY NOT NULL,
 			schedule_id TEXT NOT NULL,
 			scheduled_tick %s NOT NULL,
 			status TEXT NOT NULL,
@@ -808,7 +821,7 @@ func (s *DurableScheduler) ensureTables() error {
 		)`, s.queue.schedulerOccurrencesTable(), tsType, tsType),
 		//gofastr:allow(GOFASTR1415) owner_id is the replica holding the scheduler lease, not a user; the table holds no user data
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			name TEXT PRIMARY KEY,
+			name TEXT PRIMARY KEY NOT NULL,
 			owner_id TEXT NOT NULL,
 			fence BIGINT NOT NULL,
 			expires_at %s NOT NULL,

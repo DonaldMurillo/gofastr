@@ -1,0 +1,59 @@
+primitive: admin
+summary: The admin battery, covering the dashboard, entity screens, the palette, the audit log and the ops pages for jobs and modules.
+code:
+  - battery/admin/
+docs:
+  - framework/docs/content/admin.md
+invariants:
+  - id: one-new-link-gate
+    rule: The dashboard, its count fragment and the palette offer an entity's New link through one check, canCreateEntity, which needs the caller to read and to create the entity and the admin to serve its writes.
+    enforced_by:
+      - test: battery/admin.TestNewLinkNeedsReadAndCreateEverywhere
+    judge: Does this change decide whether to draw a New link for an entity anywhere other than canCreateEntity?
+  - id: read-only-view-gets-no-admin-writes
+    rule: An entity the app mounted read-only (a columned App.View) gets no admin write route, and its admin screens draw no write control.
+    enforced_by:
+      - test: battery/admin.TestReadOnlyViewGetsNoAdminWrites
+  - id: op-reports-only-what-happened
+    rule: An admin ops post audits and answers success only for a change the backend says it made, so a replay that queued nothing and a module lever the supervisor refused write no audit row and answer a refusal.
+    enforced_by:
+      - test: battery/admin.TestReplayOfAJobThatIsNotFailedDoesNothing
+      - test: battery/admin.TestReplayAllAuditsOnlyWhatItQueued
+      - test: battery/admin.TestRefusedModuleLeverIsNotAuditedAsDone
+      - test: battery/queue.TestReplayJobReportsWhetherItQueued
+      - test: framework.TestRevokeGrantsOfAnUnheldGrantErrors
+  - id: single-replay-is-one-queue-call
+    rule: A single replay makes one call to the queue and never reads the job list, and a queue without ReplayReporter replays and audits as a plain Replay does.
+    enforced_by:
+      - test: battery/admin.TestSingleReplayNeverScansTheFailedList
+  - id: dropped-filter-warns
+    rule: The Audit and Jobs pages warn that a filter was not applied when a narrowing query pair cannot be decoded or holds a value the page cannot use, an unknown ?status= on the Jobs page included, instead of silently listing wider.
+    enforced_by:
+      - test: battery/admin.TestUndecodablePairWarns
+      - test: battery/admin.TestAuditFilterIgnoresBadValues
+      - test: battery/admin.TestUnknownFilterValueWarns
+  - id: audit-ops-cover-admin-writes
+    rule: Every op the admin's own pages write on success is one the audit filter's ?op= takes, and a module lever's op is tinted and drawn by its verb.
+    enforced_by:
+      - test: battery/admin.TestAuditOpsCoverWhatTheAdminWrites
+decisions:
+  - id: new-link-asks-can-create-entity
+    date: 2026-11-16
+    status: accepted
+    decision: The palette calls canCreateEntity, which now asks read as well as create; the palette's own read-and-create check is removed.
+    rejected:
+      - option: Add the read check to the dashboard's copy and keep the palette's.
+        why: The two copies had already drifted, the dashboard and count fragment offering New to a caller who could create but not read, where the palette did not.
+    upholds: [one-new-link-gate]
+  - id: backend-says-nothing-happened-in-its-answer
+    date: 2026-11-16
+    status: accepted
+    decision: A backend tells the admin that nothing happened in the answer to the call that would have done it, which for a replay is queue.ReplayReporter.ReplayJob's report and for a module revoke is the supervisor's error.
+    rejected:
+      - option: Read the failed list first and replay only an id found in it.
+        why: The scan was wrong past the 10,000 failed jobs it reads, and a job replayed elsewhere between the read and the replay was still audited.
+      - option: Treat a nil from Replayable.Replay as a replay that happened.
+        why: Replay is by contract a nil no-op for a job that is not failed, so the admin audited and reported replays that queued nothing.
+      - option: Add a report to the module supervisor as well.
+        why: A revoke that removes nothing is already an error, and enable and disable set a state, so they are audited as the operator's request even when the state already held.
+    upholds: [op-reports-only-what-happened, single-replay-is-one-queue-call]

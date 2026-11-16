@@ -41,6 +41,7 @@ func (v View) render(dialect Dialect) (up, down string) {
 	if err != nil {
 		panic(fmt.Sprintf("migrate: view name %q is not a valid SQL identifier: %v", v.Name, err))
 	}
+	name = ddlIdent(name)
 	kind := "VIEW"
 	materialized := v.Materialized && dialect == DialectPostgres
 	if materialized {
@@ -206,7 +207,7 @@ func pgReplaceView(ctx context.Context, exec execQueryer, v View, dependents []V
 // for a plain view, "m" for a materialized one, "" when there is none
 // (or it is some other kind of relation, which the view's Up reports).
 func pgLiveViewKind(ctx context.Context, q execQueryer, v View) (string, error) {
-	rows, err := q.QueryContext(ctx, `SELECT relkind::text FROM pg_class WHERE oid = to_regclass($1) AND relkind IN ('v', 'm')`, v.Name)
+	rows, err := q.QueryContext(ctx, `SELECT relkind::text FROM pg_class WHERE oid = to_regclass($1) AND relkind IN ('v', 'm')`, ddlIdent(v.Name))
 	if err != nil {
 		return "", fmt.Errorf("read the live kind: %w", err)
 	}

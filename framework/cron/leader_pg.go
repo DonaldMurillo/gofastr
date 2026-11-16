@@ -135,7 +135,7 @@ func (p *PostgresAdvisoryLease) ensureTicksTable(ctx context.Context, conn *sql.
 		return nil
 	}
 	const ddl = `CREATE TABLE IF NOT EXISTS ` + cronTicksTable + ` (
-		lease_key BIGINT PRIMARY KEY,
+		lease_key BIGINT PRIMARY KEY NOT NULL,
 		last_tick TIMESTAMPTZ NOT NULL
 	)`
 	if _, err := conn.ExecContext(ctx, ddl); err != nil {
