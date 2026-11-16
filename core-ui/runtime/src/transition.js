@@ -197,33 +197,37 @@
   };
 
   // A running view transition hit-tests every point to <html>, so a
-  // click during the animation reaches no element (measured in the
-  // spike: the second of two quick clicks was lost). Capture-phase,
+  // click during the animation reaches no element. Capture-phase,
   // before the navigation handler: skip the running transition, then
-  // deliver the click to the element now under the pointer.
-  document.addEventListener('click', (e) => {
-    const vt = document.activeViewTransition;
-    if (!vt || e.target !== document.documentElement) return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    const x = e.clientX, y = e.clientY;
-    vt.skipTransition();
-    vt.finished.finally(() => {
-      const el = document.elementFromPoint(x, y);
-      if (!el || el === document.documentElement) return;
+  // deliver the click to the element under the pointer once the
+  // transition has finished. Clicks stay in the order they were made:
+  // a click that reaches an element while earlier ones still wait is
+  // preceded by them, so an older click never lands after a newer one.
+  let _held = [];
+  const _deliverHeld = () => {
+    for (const c of _held.splice(0)) {
+      const el = document.elementFromPoint(c.clientX, c.clientY);
+      if (!el || el === document.documentElement) continue;
       // A dispatched MouseEvent carries the real click's modality
-      // (detail 1, the pointer shape) and its coordinates, so the
-      // re-delivered navigation reads as the pointer click it stands
-      // in for — el.click() would synthesize detail 0, the keyboard
-      // shape, and paint the focus ring — with no side channel into
-      // core (frag/nav.js keys _navRing off e.detail alone).
+      // (detail 1, the pointer shape) and its coordinates; el.click()
+      // would synthesize detail 0, the keyboard shape, and paint the
+      // focus ring (frag/nav.js keys _navRing off e.detail alone).
       try {
         el.dispatchEvent(new MouseEvent('click', {
           bubbles: true, cancelable: true,
-          detail: e.detail || 1, clientX: x, clientY: y,
+          detail: c.detail || 1, clientX: c.clientX, clientY: c.clientY,
         }));
       } catch (_) { /* a detached element between the checks */ }
-    });
+    }
+  };
+  document.addEventListener('click', (e) => {
+    const vt = document.activeViewTransition;
+    if (!vt || e.target !== document.documentElement) return _deliverHeld();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    _held.push(e);
+    vt.skipTransition();
+    vt.finished.finally(_deliverHeld);
   }, true);
 
   // ─── Self-attachment ────────────────────────────────────────────────

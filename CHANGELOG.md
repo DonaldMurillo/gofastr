@@ -24,6 +24,30 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+- **Cursor pages over seeded SQLite timestamps no longer repeat.** A
+  managed entity paged on `created_at` whose rows a seed script or
+  migration inserted as `2026-01-02T03:04:05Z` served its first page
+  again on every request. On SQLite the cursor now carries the stored
+  text for every entity, not only `Unmanaged` ones. Nothing to change;
+  see [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **No data race when a host rewrites field declarations mid-serve.**
+  A list request read the live declarations in two places (the default
+  `created_at` sort and field masks) instead of the handler's snapshot.
+  Both now read the snapshot. A `Mask` changed after `NewCrudHandler`
+  applies once `VisibleFields()` is called, like a changed `Hidden`;
+  `VisibleFields()` now rebuilds the snapshot on every call.
+- **Two quick clicks during a page transition land on the second.** A
+  click made while a view transition ran was held until the transition
+  finished, and a later click could run first; the held one then
+  overrode it and the first link's page was shown. Held clicks are now
+  delivered in the order they were made. Nothing to change.
+- **Erasure counts a row once when two entities spell its table
+  differently.** With one entity on `Notes` and another on `notes`,
+  `EraseUserData` treated them as two tables and reported each erased
+  row twice. Table names now fold the way export and the SQL already
+  did, so `EraseTableResult.Table` is the lower-case name.
+
 ### Changed
 - **CI runs side by side.** The `build · vet · test` job ran every gate
   in series for 21 minutes. The repo analyzers, cross builds and Linux

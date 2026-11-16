@@ -13,68 +13,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/localrun"
 )
 
-// ReadinessCheck is a named probe run by GET /readyz. Implementations
-// must be fast (sub-second), idempotent, and safe to invoke concurrently.
-// Return a non-nil error to mark the app "not ready", clients (load
-// balancers, k8s, Fly health checks) treat a 503 from /readyz as a
-// signal to stop routing traffic.
+// ReadinessCheck is a named probe GET /readyz runs. Check must be fast,
+// idempotent and safe to call concurrently; an error answers 503.
 type ReadinessCheck struct {
 	Name  string
 	Check func(ctx context.Context) error
 }
 
-// ReadinessRegistrar is the optional interface plugins and batteries
-// implement to contribute checks. The framework's plugin/battery
-// machinery probes for it during InitPlugins and calls
-// RegisterReadinessChecks before health endpoints mount.
-//
-// The method is deliberately named RegisterReadinessChecks (plural) to
-// avoid colliding with App.RegisterReadiness(name, fn), the two are
-// different surfaces, and embedding *App into a battery would otherwise
-// produce an ambiguous selector.
+// ReadinessRegistrar is implemented by a plugin or battery that adds
+// readiness checks; InitPlugins calls it.
 type ReadinessRegistrar interface {
 	RegisterReadinessChecks(app *App)
 }
 
-// healthState owns the registered readiness checks and tuning knobs.
 type healthState struct {
 	mu      sync.RWMutex
 	checks  []ReadinessCheck
 	timeout time.Duration
-	verbose bool // when true, /readyz includes error.Error() strings
-	// drain is the WithReadinessDrain grace; nil keeps the default.
-	drain *time.Duration
+	verbose bool
+	drain   *time.Duration
 }
 
-// productionReadinessDrain is the default grace between /readyz turning
-// 503 and the listener closing. Load balancers probe every few seconds
-// (Kubernetes' default readiness period is 10s with endpoint removal
-// usually inside 5s; an AWS ALB target's deregistration starts on the
-// first failed check), so five seconds covers a typical probe interval
-// without stretching every rollout.
 const productionReadinessDrain = 5 * time.Second
 
 // WithReadinessDrain sets how long Shutdown keeps serving after /readyz
-// starts answering 503, so a load balancer that probes /readyz notices
-// and stops routing new requests here before the listener closes. During
-// the grace the server accepts and serves as before, and /healthz stays
-// 200 (a failed liveness probe restarts the process; it does not drain
-// it). Zero skips the wait; a negative value is zero.
-//
-// The default is 5s in production and 0 where no balancer probes: a Go
-// test binary, `gofastr dev`, a battery/service run, an app whose
-// listener is bound to a loopback address only (the desktop battery
-// always is), and an in-process listener handed to Serve (network
-// "memory" or "pipe"). An explicit WithReadinessDrain wins over every default.
-//
-// The grace counts against Shutdown's context. It takes at most half of
-// the time that context has left when the grace starts, so the HTTP
-// drain, process modules, batteries and OnStop hooks after it keep the
-// other half, and it ends early when the context does. The default
-// SIGTERM handler adds the grace to AppConfig.ShutdownTimeout, so a grace
-// no longer than ShutdownTimeout runs in full there and the drain after
-// it keeps its whole budget. A caller passing its own deadline to
-// Shutdown should size it the same way.
+// starts answering 503, before the listener closes; /healthz stays 200.
+// The default is 5s, and 0 under test, `gofastr dev`, a battery/service
+// run, a loopback bind or an in-process listener. The grace takes at most
+// half of what Shutdown's context has left. A negative d is zero.
 func WithReadinessDrain(d time.Duration) AppOption {
 	d = max(d, 0)
 	return func(a *App) {
@@ -85,7 +51,6 @@ func WithReadinessDrain(d time.Duration) AppOption {
 	}
 }
 
-// readinessDrain returns the grace Shutdown waits after flipping /readyz.
 func (a *App) readinessDrain() time.Duration {
 	if a.health != nil && a.health.drain != nil {
 		return *a.health.drain
@@ -93,10 +58,6 @@ func (a *App) readinessDrain() time.Duration {
 	return defaultReadinessDrain(localrun.UnderTest(), dev.Enabled(), a.servesLocalOnly())
 }
 
-// defaultReadinessDrain is the grace when WithReadinessDrain was not
-// given: none in a test binary, under `gofastr dev`, or for a local-only
-// run (see [App.servesLocalOnly]), where no balancer is probing and
-// every stop would otherwise wait it out.
 func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
 	if underTest || devMode || local {
 		return 0
@@ -104,14 +65,6 @@ func defaultReadinessDrain(underTest, devMode, local bool) time.Duration {
 	return productionReadinessDrain
 }
 
-// servesLocalOnly reports whether nothing but this machine reaches the
-// app, so no load balancer probes /readyz: a battery/service run, a
-// listener bound to a loopback address (the desktop battery refuses any
-// other bind), or an in-process listener handed to Serve (a mobile
-// shell's, network "memory" or "pipe"). A wildcard or routable bind is
-// not local, and neither is a unix socket, which a proxy can front, or
-// any other network. Before the listener binds only
-// the service mark counts.
 func (a *App) servesLocalOnly() bool {
 	a.serverMu.Lock()
 	host, inProcess := a.boundHost, a.boundInProcess
@@ -119,10 +72,6 @@ func (a *App) servesLocalOnly() bool {
 	return inProcess || a.isLocalRun(host)
 }
 
-// capReadinessDrain bounds the grace to half of the time ctx has left,
-// so the teardown after it (the HTTP drain, process modules, batteries,
-// OnStop hooks) keeps the other half. With no deadline the grace stands;
-// with an expired one it is zero.
 func capReadinessDrain(ctx context.Context, grace time.Duration) time.Duration {
 	dl, ok := ctx.Deadline()
 	if !ok {
@@ -131,10 +80,6 @@ func capReadinessDrain(ctx context.Context, grace time.Duration) time.Duration {
 	return max(min(grace, time.Until(dl)/2), 0)
 }
 
-// drainReadiness turns /readyz to 503 and, when the app is serving,
-// keeps serving for the readiness grace before Shutdown closes the
-// listener. The grace takes at most half of what is left of ctx
-// ([capReadinessDrain]) and ends early when ctx does.
 func (a *App) drainReadiness(ctx context.Context) {
 	a.draining.Store(true)
 	a.serverMu.Lock()
@@ -155,9 +100,6 @@ func (a *App) drainReadiness(ctx context.Context) {
 	}
 }
 
-// signalShutdownTimeout is the deadline the default SIGTERM handler
-// gives Shutdown: AppConfig.ShutdownTimeout (15s when unset) for the
-// drain, plus the readiness grace spent before it.
 func (a *App) signalShutdownTimeout() time.Duration {
 	timeout := a.Config.ShutdownTimeout
 	if timeout <= 0 {
@@ -166,13 +108,10 @@ func (a *App) signalShutdownTimeout() time.Duration {
 	return timeout + a.readinessDrain()
 }
 
-// defaultReadinessTimeout bounds how long /readyz will wait for the
-// slowest check before reporting partial results.
 const defaultReadinessTimeout = 5 * time.Second
 
-// WithReadinessTimeout overrides the /readyz and app_readiness deadline.
-// Default 5 seconds. Checks that don't return within the deadline are
-// reported as errors with status "timeout".
+// WithReadinessTimeout sets the /readyz deadline, 5s by default. A check
+// still running at it reports status "timeout".
 func WithReadinessTimeout(d time.Duration) AppOption {
 	return func(a *App) {
 		if a.health == nil {
@@ -182,14 +121,9 @@ func WithReadinessTimeout(d time.Duration) AppOption {
 	}
 }
 
-// WithVerboseReadiness opts in to including each check's error.Error()
-// string in the /readyz JSON response. Default is to omit error text
-// because /readyz is typically reachable without authentication and
-// raw error strings frequently leak internal IPs, connection strings,
-// or other infrastructure detail.
-//
-// Turn this on only when the probes are scoped to a trusted listener
-// or behind auth.
+// WithVerboseReadiness includes each failed check's error text in the
+// /readyz response, which is otherwise "check failed". Use it only where
+// /readyz is not public.
 func WithVerboseReadiness() AppOption {
 	return func(a *App) {
 		if a.health == nil {
@@ -199,13 +133,7 @@ func WithVerboseReadiness() AppOption {
 	}
 }
 
-// RegisterReadiness adds a readiness check. Names are not required to be
-// unique, duplicates surface in the /readyz response as repeated rows,
-// which is occasionally useful (the same backend probed at two layers).
-//
-// Pass a timeout on the context if your check could hang; /readyz also
-// applies an overall deadline, but per-check timeouts give better
-// signal in the response.
+// RegisterReadiness adds a readiness check. Names need not be unique.
 func (a *App) RegisterReadiness(name string, check func(ctx context.Context) error) *App {
 	if a.health == nil {
 		a.health = &healthState{}
@@ -216,8 +144,6 @@ func (a *App) RegisterReadiness(name string, check func(ctx context.Context) err
 	return a
 }
 
-// readinessChecks returns a snapshot of the registered checks. Safe to
-// call concurrently with new registrations.
 func (a *App) readinessChecks() []ReadinessCheck {
 	if a.health == nil {
 		return nil
@@ -229,7 +155,6 @@ func (a *App) readinessChecks() []ReadinessCheck {
 	return cp
 }
 
-// readinessTimeout returns the configured per-request deadline.
 func (a *App) readinessTimeout() time.Duration {
 	if a.health == nil || a.health.timeout <= 0 {
 		return defaultReadinessTimeout
@@ -237,15 +162,10 @@ func (a *App) readinessTimeout() time.Duration {
 	return a.health.timeout
 }
 
-// readinessVerbose reports whether the verbose error-text opt-in is on.
 func (a *App) readinessVerbose() bool {
 	return a.health != nil && a.health.verbose
 }
 
-// probeReadinessRegistrars invokes RegisterReadinessChecks on every
-// plugin and battery that satisfies the optional interface. Called from
-// InitPlugins after lightweight plugins and batteries have initialised
-// so they can publish their own checks before /readyz mounts.
 func (a *App) probeReadinessRegistrars() {
 	if a.Plugins != nil {
 		for _, p := range a.Plugins.All() {
@@ -263,12 +183,6 @@ func (a *App) probeReadinessRegistrars() {
 	}
 }
 
-// healthHandlers returns the liveness and readiness handlers so they can
-// be mounted on BOTH the full app router (registerHealthEndpoints) and
-// the worker-only health surface (workerHealthMux) without duplicating
-// their bodies. Both handlers close over the App and read the live
-// readiness-check state per request, so registering a check after the
-// handlers are mounted still surfaces in /readyz.
 func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 	liveness = func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -279,9 +193,6 @@ func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 	}
 	readiness = func(w http.ResponseWriter, r *http.Request) {
 		if a.draining.Load() {
-			// Shutdown has begun: say so at once, without running the
-			// checks, so the balancer stops routing here while the
-			// server still serves what it sends during the grace.
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -314,10 +225,6 @@ func (a *App) healthHandlers() (liveness, readiness http.HandlerFunc) {
 	return liveness, readiness
 }
 
-// registerHealthEndpoints mounts /healthz (liveness) and /readyz
-// (readiness) on the app router. Called during App.Start (for roles
-// that serve the full router) after plugins/batteries have had a chance
-// to register their own checks.
 func (a *App) registerHealthEndpoints() {
 	liveness, readiness := a.healthHandlers()
 	a.router.Get("/healthz", liveness)
@@ -333,24 +240,11 @@ type ReadinessResponse struct {
 // ReadinessResult is one row in the /readyz response.
 type ReadinessResult struct {
 	Name   string `json:"name"`
-	Status string `json:"status"` // "ok", "error", or "timeout"
+	Status string `json:"status"` // ok, error or timeout
 	Error  string `json:"error,omitempty"`
 	DurMS  int64  `json:"durationMs"`
 }
 
-// runReadinessChecks invokes every check in parallel with the supplied
-// context. Each goroutine recovers from panics (a bad check should not
-// crash the process) and respects ctx cancellation so a check that
-// hangs past the deadline is reported as "timeout" instead of blocking
-// the response.
-//
-// Only this function writes the result rows. Each check goroutine sends
-// its row over a channel buffered for every check, so a check that
-// finishes after the deadline sends into the buffer and exits; it used
-// to write out[i] while the timeout path was reading and copying the
-// slice, a data race on a struct of strings. The timeout path tells a
-// finished row by its done flag, not by an empty Name, which reported a
-// passed check registered without a name as a timeout.
 func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bool) ReadinessResponse {
 	if len(checks) == 0 {
 		return ReadinessResponse{Status: "ready", Checks: []ReadinessResult{}}
@@ -391,8 +285,6 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 			}
 		}(i, c)
 	}
-	// Race the wait against the deadline so a check that ignores ctx
-	// can't keep /readyz waiting longer than the request timeout.
 	for completed := 0; completed < len(checks); completed++ {
 		select {
 		case r := <-resultCh:
@@ -414,18 +306,11 @@ func runReadinessChecks(ctx context.Context, checks []ReadinessCheck, verbose bo
 	return ReadinessResponse{Checks: out}
 }
 
-// RunReadinessChecks executes all registered readiness checks in
-// parallel and returns the structured response. Exported so batteries
-// (e.g. battery/setup's HealthStep) can run the same checks /readyz
-// does without going through HTTP.
+// RunReadinessChecks runs the checks /readyz runs and returns its body.
 func (a *App) RunReadinessChecks(ctx context.Context) ReadinessResponse {
 	return runReadinessChecks(ctx, a.readinessChecks(), a.readinessVerbose())
 }
 
-// redactError returns a fixed string when verbose mode is off so
-// /readyz cannot leak internal error text (IPs, DSNs, etc.) to an
-// unauthenticated probe. When verbose is on, the original message is
-// passed through for operator-side debugging.
 func redactError(msg string, verbose bool) string {
 	if verbose {
 		return msg
@@ -433,15 +318,10 @@ func redactError(msg string, verbose bool) string {
 	return "check failed"
 }
 
-// dbReadinessCheck is the default check registered when App has a DB.
-// Uses PingContext so a configured connection timeout is honoured.
 func dbReadinessCheck(a *App) ReadinessCheck {
 	return ReadinessCheck{
 		Name: "db",
 		Check: func(ctx context.Context) error {
-			// Caller already gated on a.DB != nil at registration time;
-			// no defensive nil-check here so a stale DB pointer surfaces
-			// as a real failure instead of a silent "ok".
 			return a.DB.PingContext(ctx)
 		},
 	}

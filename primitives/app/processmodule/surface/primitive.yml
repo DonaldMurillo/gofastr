@@ -1,0 +1,84 @@
+primitive: app.processmodule.surface
+summary: "What a process module adds to the host's surface: its namespaced MCP tools and its proxied HTTP routes."
+code:
+  - framework/processmodule_tools.go
+  - framework/processmodule_proxy.go
+invariants:
+  - id: tools-are-namespaced
+    rule: A module tool is registered as module.<name>.<tool>, and a name another module or a non-module tool already holds is a registration error.
+    enforced_by:
+      - test: framework.TestModuleToolRegistry_Namespacing
+      - test: framework.TestModuleToolNamespace_roundTrips
+      - test: framework.TestSplitModuleTool_validAndInvalid
+      - test: framework.TestModuleToolRegistry_Collides
+      - test: framework.TestRegisterTools_shadowedByNonModuleTool
+  - id: tool-gate-follows-enabled
+    rule: A module tool is omitted and refused unless its module is registered and enabled.
+    enforced_by:
+      - test: framework.TestModuleToolRegistry_DisabledGate
+      - test: framework.TestGateForModule_nilSupervisorErrors
+  - id: tool-digest-is-canonical
+    rule: ModuleToolDigest hashes the JSON of id, name, description and input_schema in that order, so any change to one of them changes the digest.
+    enforced_by:
+      - test: framework.TestModuleToolDigest_Canonical
+  - id: not-serving-is-503
+    rule: A proxied route or tool call reaches the child only when its state is Ready and its lease is healthy; otherwise a route answers a buffered 503 with Retry-After and a tool call is not ready.
+    enforced_by:
+      - test: framework.TestServingState_onlyReadyHealthyPasses
+      - test: framework.TestSweepPMHostLeaseFailingServesNothing
+      - test: framework.TestWriteProxy503_setsRetryAfter
+  - id: request-headers-allow-listed
+    rule: The proxy forwards to the child only Content-Type, Accept, Accept-Language, Accept-Encoding, User-Agent, X-Request-ID and X-Correlation-ID; no credential or forwarding header reaches it.
+    enforced_by:
+      - test: framework.TestSweepPMHostProxyNeverForwardsCredentials
+      - test: framework.TestBuildHTTPRequestParams_carriesQueryAndBody
+  - id: response-headers-allow-listed
+    rule: Only the headers in moduleResponseHeaders cross from the child, Vary adds to the host's value, Content-Type is always the body kind's with nosniff, and a status outside 200 to 599 answers the buffered 503.
+    enforced_by:
+      - test: framework.TestModuleResponseHeadersAllowListed
+      - test: framework.TestModuleResponseVaryAdds
+      - test: framework.TestCommitBufferedResponse_derivesContentType
+      - test: framework.TestModuleResponseBadStatus503
+  - id: oversize-body-is-413
+    rule: A request body whose module.http frame would exceed the module's frame cap answers 413 and is never sent truncated.
+    enforced_by:
+      - test: framework.TestProxyBodyOverFrameIs413
+  - id: cancel-names-the-frame-id
+    rule: When a proxied or tool call's context ends, module.cancel names the frame id the call was sent with, as a decimal string.
+    enforced_by:
+      - test: framework.TestServeProxyDeadlineCancelReachesChild
+      - test: framework.TestToolCallCancelReachesChild
+  - id: ui-node-rendered-by-host
+    rule: A ui.node.v1 body is validated and rendered by the host, a tree that fails validation answers 503, and an action_ref resolves only to one of the module's own declared routes.
+    enforced_by:
+      - test: framework/processmoduletest.TestGate_UIContainment
+      - test: framework.TestSweepPMHostUIActionRefResolvesOwnRoutesOnly
+  - id: caller-block-is-diagnostic
+    rule: The Subject and Tenant a proxied or tool call sends the child are diagnostic only; authority on the reverse path comes from the delegation handle.
+    judge: Does this change make an authorization decision from a Subject or Tenant value the child echoes back?
+decisions:
+  - id: unregister-tools-is-a-no-op
+    date: 2026-11-16
+    status: accepted
+    decision: UnregisterTools leaves the tool installed and its owner recorded, and the call gate hides it.
+    rejected:
+      - option: Clear the tool's owner on unregister.
+        why: A tool with no owner falls through to the in-process gate, which passes it.
+    revisit_if: core/mcp gains a tool-removal API.
+    upholds: [tool-gate-follows-enabled]
+  - id: two-layer-gate
+    date: 2026-11-16
+    status: accepted
+    decision: The route and tool-list gates check only Enabled (404 or omitted), and the handlers check Ready (503 or retryable error).
+    rejected:
+      - option: One gate on Ready.
+        why: A crash or restart would make an enabled module's routes and tools vanish instead of answering retryably.
+    upholds: [not-serving-is-503]
+  - id: proxy-buffers-whole-response
+    date: 2026-11-16
+    status: accepted
+    decision: The proxy holds the child's whole response before writing any header.
+    rejected:
+      - option: Stream the response.
+        why: A child that dies mid-call would leave a truncated 200 instead of a 503.
+    upholds: [not-serving-is-503]

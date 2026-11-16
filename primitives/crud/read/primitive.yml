@@ -10,14 +10,6 @@ code:
 docs:
   - framework/docs/content/query-dsl.md
   - framework/docs/content/cursor-pagination.md
-twins:
-  - job: Validate a nested relation filter and resolve it to hops, a column and a typed value.
-    why: The HTTP path reads suffix and bracket spellings and repeated keys from a query string while the in-process path takes a typed NestedFilter; nothing but the work of a shared spec keeps them apart.
-    sites:
-      - path: framework/crud/nested_filter.go
-        note: parseNestedFiltersValues, for ?rel.field= keys.
-      - path: framework/crud/nested_filter.go
-        note: resolveNestedFilters, for ListOptions and TypedQuery NestedFilter specs.
 invariants:
   - id: one-strict-query-read
     rule: Every HTTP read parses the wire query once, through readQuery, which refuses an undecodable pair or a repeated single-value key, except a repeated q on an entity whose host reads q itself.
@@ -136,48 +128,6 @@ invariants:
       - test: framework/crud.TestUpdateAllRestampsUpdatedAt
       - test: framework/crud.TestUpdateAllKeepsSuppliedUpdatedAt
       - test: framework/crud.TestUpdateAllNamesColumnsLikeUpdateOne
-  - id: nested-filter-parses-like-top-level
-    rule: A nested filter names a declared visible column (by column, wire or camelCase name) and reaches SQL as that column on both surfaces; over HTTP it splits its operator as filter.ReadKey does, checks its value against the column type, refuses a repeated scalar key and parses keys in sorted order.
-    applies:
-      - framework/crud/nested_filter.go
-    enforced_by:
-      - test: framework/crud.TestNestedFilter_AcceptsWireNameAndEmitsColumn
-      - test: framework/crud.TestNestedFilterBracketForm
-      - test: framework/crud.TestNestedFilterValueTypeChecked
-      - test: framework/crud.TestNestedLikeRefusesUnstorableText
-      - test: framework/crud.TestNestedFilterRepeatedScalarKeyRefused
-      - test: framework/crud.TestInProcessNestedFilterEmitsColumn
-      - test: framework/crud.TestNestedFilterOrderIsStable
-      - test: framework/crud.TestListAll_NestedFilterParity
-  - id: nested-filter-identifiers
-    rule: A nested field renders only as one plain identifier and a table as an identifier or a schema-qualified one, and a hop whose foreign key does not line up with the key it references joins nothing; anything else renders the filter as 1 = 0.
-    applies:
-      - framework/crud/nested_filter.go
-    enforced_by:
-      - test: framework/crud.TestNestedFilterFieldIsOneIdentifier
-      - test: framework/crud.TestTableQualifierRefusesInjection
-      - test: framework/crud.TestNestedFilterMisalignedHopMatchesNothing
-  - id: nested-filter-counts-only-readable-rows
-    rule: Every hop of a nested filter's EXISTS carries the target's owner, tenant, read and soft-delete scope and its pivot's scopes; the target's and pivot's own BeforeList clauses join over HTTP, and in process under WithReadHooks only.
-    applies:
-      - framework/crud/nested_filter.go
-    enforced_by:
-      - test: framework/crud.TestNestedFilterCountsOnlyTheCallersOwnRows
-      - test: framework/crud.TestBuildExistsSubqueryHidesSoftDeletedInEveryShape
-      - test: framework/crud.TestNestedFilterPivotScopesReachSQL
-      - test: framework/crud.TestNestedFilterRunsChildBeforeList
-      - test: framework/crud.TestNestedM2MRunsPivotBeforeList
-      - test: framework/crud.TestInProcessM2MRunsPivotHooks
-      - test: framework/crud.TestNestedFilterInProcessHookScopesAreOptIn
-  - id: nested-filter-posture-is-http-only
-    rule: Over HTTP a nested filter whose hop or pivot reaches an entity the caller may not read is refused; in process no posture is asked and only the scopes narrow.
-    applies:
-      - framework/crud/nested_filter.go
-    enforced_by:
-      - test: framework/crud.TestScopeNestedFiltersForCallerStillRefusesUnreadableTargets
-      - test: framework/crud.TestNestedFilterHopRefusesUnreadableTarget
-      - test: framework/crud.TestPivotReadGateRBAC
-      - test: framework/crud.TestListAll_NestedFilterParity
 decisions:
   - id: cursor-carries-values-then-key
     date: 2026-11-15
@@ -224,16 +174,3 @@ decisions:
       - option: Run AfterList as well.
         why: It would redact more than the entity's own routes do.
     upholds: [typed-reads-match-http-reads]
-  - id: nested-filter-uses-exists
-    status: accepted
-    decision: A nested filter is one EXISTS subquery per filter, the same SQL for every relation type.
-    rejected:
-      - option: A JOIN.
-        why: It duplicates parent rows through has_many and many_to_many relations.
-  - id: nested-posture-http-only
-    status: accepted
-    decision: The may-read posture check runs for HTTP nested filters only, while the scope predicates run on both surfaces.
-    rejected:
-      - option: Ask the posture in process too.
-        why: In-process callers run with no session by construction, so it refused every nested filter a job or typed repo makes and protected nothing.
-    upholds: [nested-filter-posture-is-http-only]

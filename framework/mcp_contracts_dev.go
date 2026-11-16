@@ -10,34 +10,12 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
-	// registry is empty and contracts_verify would report every tree
-	// clean. See the guard in contracts.Run.
 	_ "github.com/DonaldMurillo/gofastr/framework/contracts/analyzers"
 )
 
-// The catalog tools (contracts_list / _explain / _capabilities) answer
-// "what are the rules". These two answer "what is wrong with THIS tree,
-// and fix it", which means reading, and for contracts_fix writing, the
-// source directory the process was started from.
-//
-// That makes them categorically different from the read-only catalog, and
-// they are registered ONLY in the dev loop. Not gated in production:
-// absent. A deployed binary has no source tree to analyse, so a tool that
-// could only ever fail would still have leaked, through its schema in
-// tools/list, that the server will read files off local disk on request.
-//
-// The dev loop already pins the MCP transport to loopback (see the
-// DevMCPEnabled block in App.Start), which is what keeps a DNS-rebound
-// page from reaching the file-writing half of this pair.
-
-// getwd is a seam. A dev server outlives the directory it was started in
-// when someone moves or deletes the checkout, and os.Getwd then fails,
-// but not reproducibly across platforms (macOS still resolves a removed
-// directory), so the failure is injected rather than staged.
+// getwd is a test seam: a dev server can outlive its working directory.
 var getwd = os.Getwd
 
-// contractsSourceRoot is the directory these tools analyse: the process
-// working directory, which under `gofastr dev` is the project root.
 func contractsSourceRoot() (string, error) {
 	wd, err := getwd()
 	if err != nil {
@@ -97,13 +75,6 @@ func (a *App) registerContractDevTools() error {
 		if a.skipDevEntityMCPCollision(t.name) {
 			continue
 		}
-		// contracts_fix WRITES TO DISK and contracts_verify hands out the
-		// source tree's lint findings (file paths, line numbers, code),
-		// and this pair registers only under the dev-loop
-		// feature gate with no role gate (there is no auth to satisfy
-		// in the dev loop). Both are marked dev-implied so the bind guard
-		// withdraws them on a non-loopback listener, the same set the
-		// entity write tools and battery/log's read tools belong to.
 		opts := []mcp.ToolOption{mcp.WithDevImplied()}
 		if err := a.MCP.RegisterTool(t.name, t.description, t.schema, t.handler, opts...); err != nil {
 			return fmt.Errorf("framework: register MCP contract dev tool %q: %w", t.name, err)
@@ -112,17 +83,7 @@ func (a *App) registerContractDevTools() error {
 	return nil
 }
 
-// runContractsPass builds the pass and report both dev tools work from.
-//
-// applyBaseline separates the two callers on purpose. contracts_verify
-// honours the baseline so an agent's view of the tree matches every other
-// one. contracts_fix does NOT: the baseline records debt the team agreed
-// to carry, and paying it down is the point, a fix tool that silently
-// skipped every baselined finding would look broken.
 func runContractsPass(capability string, applyBaseline bool) (*contracts.Report, error) {
-	// The argument is judged before the tree is touched: a capability
-	// that does not exist is refused whatever the config or the scan
-	// would say, and costs neither.
 	var opts contracts.RunOptions
 	if capability != "" {
 		parsed, err := contracts.ParseCapability(capability)
@@ -150,10 +111,6 @@ func runContractsPass(capability string, applyBaseline bool) (*contracts.Report,
 	if !applyBaseline {
 		return report, nil
 	}
-	// Honour the same baseline `gofastr verify`, `gofastr build`, and the
-	// dev watcher read. An agent that saw the project's accepted debt as
-	// live findings would disagree with every other view of the same tree,
-	// and would set about "fixing" what the team decided to carry.
 	baseline, baselineErr := contracts.ReadBaseline(filepath.Join(root, contracts.BaselineFileName))
 	if baselineErr != nil {
 		return nil, fmt.Errorf("read baseline: %w", baselineErr)
@@ -181,32 +138,16 @@ func (a *App) toolContractsVerify(ctx context.Context, params map[string]any) (a
 		Fixable    bool   `json:"fixable"`
 	}
 	out := struct {
-		Root       string    `json:"root"`
-		Findings   []finding `json:"findings"`
-		Errors     int       `json:"errors"`
-		Warnings   int       `json:"warnings"`
-		Infos      int       `json:"infos"`
-		Suppressed int       `json:"suppressed"`
-		// Baselined is accepted debt this run absorbed. Reported so a
-		// clean result never hides that the project is carrying findings.
-		Baselined int `json:"baselined"`
-		// Unparsed counts files the parser rejected, blind spots the
-		// findings above cannot speak for.
-		Unparsed int `json:"unparsed"`
-		// AnalyzerErrors are checks that errored instead of completing,
-		// including recovered analyzer panics, relayed verbatim. Without
-		// them, passed=false with zero findings gives an agent nothing
-		// to act on. Verbatim is a considered choice, not an oversight:
-		// these tools are dev-loop only on a loopback transport, and the
-		// caller by definition has direct file access (contracts_fix
-		// writes this very tree), so error text cannot cross a boundary
-		// the caller is not already on the inside of. The finding-level
-		// secret redaction is different, findings travel into reports
-		// that get pasted and persisted; an error string that embedded
-		// source would too, which is why in-tree analyzers keep source
-		// content out of their error paths.
-		AnalyzerErrors []string `json:"analyzerErrors,omitempty"`
-		Passed         bool     `json:"passed"`
+		Root           string    `json:"root"`
+		Findings       []finding `json:"findings"`
+		Errors         int       `json:"errors"`
+		Warnings       int       `json:"warnings"`
+		Infos          int       `json:"infos"`
+		Suppressed     int       `json:"suppressed"`
+		Baselined      int       `json:"baselined"`
+		Unparsed       int       `json:"unparsed"`
+		AnalyzerErrors []string  `json:"analyzerErrors,omitempty"`
+		Passed         bool      `json:"passed"`
 	}{Root: rep.Root, Findings: []finding{}, Suppressed: rep.Suppressed, Baselined: rep.Baselined,
 		Unparsed: rep.Unparsed, AnalyzerErrors: rep.Errors, Passed: rep.Passed()}
 	for _, d := range rep.Diagnostics {
@@ -218,8 +159,6 @@ func (a *App) toolContractsVerify(ctx context.Context, params map[string]any) (a
 		default:
 			out.Infos++
 		}
-		// A redacted diagnostic (the hardcoded-secret rule) must not echo
-		// what it found back over the wire.
 		msg := d.Message
 		if d.RedactSnippet && d.Rule != nil {
 			msg = d.Rule.Title
@@ -246,9 +185,6 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 	}
 	rule, ok := contracts.LookupRule(name)
 	if !ok {
-		// Same help contracts_explain gives. An agent that mistyped an ID
-		// copied out of a report should not have to list the catalog to
-		// find the one character it got wrong.
 		if near := contracts.SuggestRules(name); len(near) > 0 {
 			return nil, contractRefusal("contracts_fix: unknown rule %q; did you mean %s", name, strings.Join(near, ", "))
 		}
@@ -263,13 +199,6 @@ func (a *App) toolContractsFix(ctx context.Context, params map[string]any) (any,
 	}
 	applied, err := rep.Only(rule.ID).Apply()
 	if err != nil {
-		// Apply stops at the first file that refuses, but the files
-		// before it are already rewritten, and the agent's next read of
-		// the tree will not match its last one unless the result says
-		// so. A tool error result carries it to the agent: a returned
-		// error would be redacted to "internal tool error". The text is
-		// the caller's own tree (dev loop, loopback only), the same
-		// posture contracts_verify takes with analyzer errors.
 		msg := "contracts_fix: " + err.Error()
 		if len(applied) > 0 {
 			written := map[string]bool{}

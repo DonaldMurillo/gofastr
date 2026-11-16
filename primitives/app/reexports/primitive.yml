@@ -1,0 +1,23 @@
+primitive: app.reexports
+summary: The framework.X spellings of types and functions that live in subpackages.
+code:
+  - framework/reexports_*.go
+on_change:
+  - "A re-export follows its subpackage: add or remove the root spelling in the same change as the subpackage symbol."
+invariants:
+  - id: wrappers-delegate
+    rule: Every wrapper function in reexports_*.go returns what the subpackage function it names returns, for the same arguments.
+    enforced_by:
+      - test: framework.TestFacadeAccessWrappersDelegate
+      - test: framework.TestFacadeCrudWrappersDelegate
+      - test: framework.TestFacadeEntityWrappersDelegate
+      - test: framework.TestFacadeTenantCronEventHookWrappersDelegate
+      - test: framework.TestSweepServeReexportsDelegate
+decisions:
+  - id: root-entity-openapi-without-route-check
+    date: 2026-11-16
+    status: accepted
+    decision: framework.EntityOpenAPI documents by Exposure alone, in camelCase and under no API prefix, while App.OpenAPISpec documents only the CRUD routes the App mounted and follows its JSONCase and APIPrefix.
+    rejected:
+      - option: Give the root wrapper the App's route check.
+        why: It has no App; a host serving an App's routes calls App.OpenAPISpec.

@@ -194,6 +194,7 @@ func TestMaskPanicReadsAsNull(t *testing.T) {
 			f.ch.Entity.Config.Fields[i].Mask = func(context.Context, any) any { panic("bad card") }
 		}
 	}
+	f.ch.VisibleFields()
 	code, body := f.get("/cards/c1")
 	if code != http.StatusOK || !strings.Contains(body, `"number":null`) || strings.Contains(body, "4111") {
 		t.Errorf("GET with a panicking Mask = %d %s, want 200 and the number null", code, body)
@@ -225,4 +226,53 @@ func TestMaskRefusesKeyAndCursorField(t *testing.T) {
 			entity.Define("masked_"+name, cfg.WithTimestamps(false))
 		})
 	}
+}
+
+func TestMaskChangedAfterConstructionAppliesOnRepublish(t *testing.T) {
+	for _, tc := range []struct {
+		name, field string
+		mask        func(context.Context, any) any
+		want        string
+	}{
+		{"added", "id", func(context.Context, any) any { return "hidden-id" }, `"id":"hidden-id"`},
+		{"replaced", "number", func(context.Context, any) any { return "swapped" }, `"number":"swapped"`},
+		{"removed", "pin", nil, `"pin":1234`},
+		{"replaced by a closure of the same function", "number", maskTo("first"), `"number":"second"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := maskCrud(t)
+			found := false
+			for i := range f.ch.Entity.Config.Fields {
+				if f.ch.Entity.Config.Fields[i].Name == tc.field {
+					f.ch.Entity.Config.Fields[i].Mask = tc.mask
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("no field %q", tc.field)
+			}
+			f.ch.VisibleFields()
+			if tc.want == `"number":"second"` {
+				f.get("/cards/c1")
+				for i := range f.ch.Entity.Config.Fields {
+					if f.ch.Entity.Config.Fields[i].Name == tc.field {
+						f.ch.Entity.Config.Fields[i].Mask = maskTo("second")
+					}
+				}
+				f.ch.VisibleFields()
+			}
+			code, body := f.get("/cards/c1")
+			if code != http.StatusOK || !strings.Contains(body, tc.want) {
+				t.Errorf("GET /cards/c1 = %d %s, want 200 with %s: the mask %s on the live declarations did not reach the read after VisibleFields", code, body, tc.want, tc.name)
+			}
+		})
+	}
+}
+
+// maskTo's closures share one code pointer; noinline keeps the compiler
+// from giving each call site its own copy.
+//
+//go:noinline
+func maskTo(v string) func(context.Context, any) any {
+	return func(context.Context, any) any { return v }
 }

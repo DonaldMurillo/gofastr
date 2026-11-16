@@ -71,7 +71,7 @@ func (ch *CrudHandler) refuseNullKey(row map[string]any) error {
 func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.ParsedSort {
 	out := slices.Clone(sorts)
 	if len(sorts) == 0 && ch.Entity != nil {
-		for _, f := range ch.Entity.GetFields() {
+		for _, f := range ch.snapshotFields() {
 			if f.Name == "created_at" && f.Type == schema.Timestamp && f.AutoGenerate != schema.AutoNone {
 				out = append(out, filter.ParsedSort{Field: f.Name})
 				break

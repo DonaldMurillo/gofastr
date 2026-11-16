@@ -46,9 +46,6 @@ func TestFieldSnapshot_NilEntity(t *testing.T) {
 	if len(s.visible) != 0 {
 		t.Error("nil entity should yield an empty visible set")
 	}
-	if ch.fieldCacheSignature() != 0 {
-		t.Error("nil entity signature should be 0")
-	}
 }
 
 // covCamelHandler builds a handler with snake_case DB columns + camelCase JSON.

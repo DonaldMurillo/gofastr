@@ -26,7 +26,6 @@ type fieldCacheData struct {
 	timestampColumns map[string]struct{}
 	boolColumns      map[string]struct{}
 	jsonCase         JSONCase
-	sig              uint64
 }
 
 // fieldCache is held by pointer so inTx's handler copies share it.
@@ -74,12 +73,9 @@ func (ch *CrudHandler) snapshot() *fieldCacheData {
 	return ch.fcache.load()
 }
 
-// refreshFieldCacheIfStale is for single-threaded host reads (VisibleFields), never the request path.
-func (ch *CrudHandler) refreshFieldCacheIfStale() {
+// republishFieldSnapshot is for single-threaded host reads (VisibleFields), never the request path.
+func (ch *CrudHandler) republishFieldSnapshot() {
 	if ch.fcache == nil {
-		return
-	}
-	if s := ch.fcache.load(); s != nil && s.sig == ch.fieldCacheSignature() {
 		return
 	}
 	ch.fcache.publish(buildFieldSnapshot(ch))
@@ -101,7 +97,6 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 	}
 	s.jsonCase = ch.JSONCase
 	if ch.Entity == nil {
-		s.sig = ch.fieldCacheSignature()
 		return s
 	}
 	fields := ch.Entity.GetFields()
@@ -148,7 +143,6 @@ func buildFieldSnapshot(ch *CrudHandler) *fieldCacheData {
 		}
 	}
 	s.visibleJSONs = convertedKeys(s.visible, func(col string) string { return s.wireKeyOf[col] })
-	s.sig = ch.fieldCacheSignature()
 	return s
 }
 

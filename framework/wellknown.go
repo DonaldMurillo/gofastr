@@ -1,19 +1,5 @@
 package framework
 
-// wellknown.go: the agent-readiness well-known endpoints that the
-// isitagentready scanner scores. Each is auto-served when its precondition
-// holds, so a host that wires the basics scores without per-route work:
-//
-//   - /.well-known/api-catalog                 (RFC 9727 linkset+json): when the app has an API (entities)
-//   - /.well-known/mcp/server-card.json:         when WithMCP exposes /mcp
-//     (plus the /mcp/server-card alias and /.well-known/mcp/catalog.json,
-//     both also gated on WithMCP)
-//   - /.well-known/agent-skills/index.json:      opt-in (host declares skills)
-//   - /.well-known/oauth-authorization-server  (RFC 8414): opt-in (host is an OAuth issuer)
-//
-// The scanner only requires a 200 at each path; we emit real, spec-shaped
-// bodies so the artifacts are useful, not just present.
-
 import (
 	"encoding/json"
 	"log/slog"
@@ -23,37 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// resolveWellKnownBase returns the canonical origin for absolute URLs in
-// well-known docs.
-//
-// AppConfig.BaseURL wins outright when set: a configured origin is the
-// one the operator publishes, and it varies with no request input.
-//
-// Without one, the request is the source of truth, under two rules:
-//
-//   - X-Forwarded-Host is NOT honored. It is a plain request header, so
-//     any client sets it, and the value ends up in the `Link:
-//     rel="service"` header naming the MCP endpoint. Reflecting an
-//     arbitrary origin there, with no Vary, is a cache-poisoning
-//     primitive that redirects a later visitor's agent at an attacker's
-//     server. That is the same reasoning battery/print already documents
-//     for its BaseURL ("deliberately NOT derived from the request Host
-//     header, which is client-controlled").
-//
-//   - r.Host is used: still client-supplied, but it is the authority the
-//     request was actually addressed to, and varyWellKnown below keeps
-//     caches from serving one caller's value to another.
-//
-//   - X-Forwarded-Proto is honored ONLY from a configured trusted proxy
-//     (AppConfig.TrustedProxies), as an exact "http"/"https". The raw
-//     value is request-controlled and this origin is reflected into the
-//     well-known document's absolute URLs, so a forged
-//     "https://evil.example/p" would paint an attacker-named origin into
-//     cacheable output, and "https,http" (a two-hop proxy chain) is not a
-//     scheme at all. Vary narrows who receives a poisoned entry; it does
-//     not clean the value. Same enum as framework/uihost/agentready.go
-//     and framework/pluginhost/assets.go, same trust list the rate
-//     limiters apply to X-Forwarded-For (internal/clientip).
 func (a *App) resolveWellKnownBase(r *http.Request) string {
 	if base := strings.TrimRight(a.Config.BaseURL, "/"); base != "" {
 		return base
@@ -70,16 +25,10 @@ func (a *App) resolveWellKnownBase(r *http.Request) string {
 	return strings.TrimRight(scheme+"://"+r.Host, "/")
 }
 
-// wellKnownVaries reports whether the well-known documents' bodies vary
-// on request inputs (true unless AppConfig.BaseURL pins the origin).
 func (a *App) wellKnownVaries() bool {
 	return strings.TrimRight(a.Config.BaseURL, "/") == ""
 }
 
-// varyWellKnown declares the request inputs the response body depends
-// on, so a shared cache keys on them instead of serving the first
-// caller's absolute URLs to everyone behind it. A configured BaseURL
-// removes the dependency, and the Vary with it.
 func (a *App) varyWellKnown(w http.ResponseWriter) {
 	if !a.wellKnownVaries() {
 		return
@@ -91,8 +40,6 @@ func (a *App) varyWellKnown(w http.ResponseWriter) {
 func (a *App) writeWellKnownJSON(w http.ResponseWriter, r *http.Request, doc any) {
 	b, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		// A document that cannot encode (a host-filled field with no
-		// JSON form) would answer with an empty body; answer 500.
 		slog.Warn("well-known: encode document", "error", err)
 		i18n.HTTPError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
@@ -104,11 +51,6 @@ func (a *App) writeWellKnownJSON(w http.ResponseWriter, r *http.Request, doc any
 	w.Write([]byte("\n"))
 }
 
-// ── API catalog (RFC 9727 linkset+json) ────────────────────────────
-
-// handleAPICatalog emits a linkset advertising the OpenAPI spec
-// (service-desc) + Swagger docs (service-doc) + status. Served when the
-// app has entities (i.e. /openapi.json is mounted).
 func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
 	base := a.resolveWellKnownBase(r)
 	prefix := a.apiPrefix() // "" or "/api"
@@ -131,22 +73,7 @@ func (a *App) handleAPICatalog(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── MCP server card ────────────────────────────────────────────────
-
-// handleMCPServerCard serves the MCP Server Card (experimental extension
-// SEP-2127) in the spec shape ($schema/name/version/description/remotes),
-// at both the spec-reserved and scanner-probed paths. See the body comment.
 func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
-	// MCP Server Card (experimental extension SEP-2127 /
-	// modelcontextprotocol/experimental-ext-server-card): $schema, name
-	// (reverse-DNS), version, description, remotes[]. Media type
-	// application/mcp-server-card+json. Served at both GET /mcp/server-card
-	// (spec-reserved) and /.well-known/mcp/server-card.json (the path
-	// isitagentready probes, which the live spec discourages) so both the
-	// spec and the scanner are satisfied.
-	// Same Vary discipline as every sibling well-known document: the
-	// card body embeds remotes[].url built from r.Host and
-	// X-Forwarded-Proto, so a shared cache must key on those inputs.
 	a.varyWellKnown(w)
 	b, err := json.MarshalIndent(a.buildMCPServerCard(r), "", "  ")
 	if err != nil {
@@ -160,8 +87,6 @@ func (a *App) handleMCPServerCard(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("\n"))
 }
 
-// handleMCPCatalog serves /.well-known/mcp/catalog.json, the spec-
-// recommended well-known that points at the server card.
 func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 	base := a.resolveWellKnownBase(r)
 	a.writeWellKnownJSON(w, r, map[string]any{
@@ -175,7 +100,6 @@ func (a *App) handleMCPCatalog(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// buildMCPServerCard assembles the spec-shaped server card.
 func (a *App) buildMCPServerCard(r *http.Request) map[string]any {
 	base := a.resolveWellKnownBase(r)
 	_, version := a.MCP.ServerInfo()
@@ -191,8 +115,6 @@ func (a *App) buildMCPServerCard(r *http.Request) map[string]any {
 	}
 }
 
-// mcpCardName returns a reverse-DNS identifier for the server card
-// (spec pattern ^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$), derived from Config.Name.
 func (a *App) mcpCardName() string {
 	app := strings.ToLower(a.Config.Name)
 	if app == "" {
@@ -228,10 +150,7 @@ func (a *App) mcpCardDescription() string {
 	return "GoFastr MCP server"
 }
 
-// ── Agent skills index (cloudflare/agent-skills-discovery-rfc) ─────
-
-// AgentSkillEntry is one skill in the /.well-known/agent-skills/index.json.
-// Mirrors the v0.2.0 discovery schema.
+// AgentSkillEntry is one skill in /.well-known/agent-skills/index.json.
 type AgentSkillEntry struct {
 	Name        string `json:"name"`
 	Type        string `json:"type"` // "skill-md" (default) or "archive"
@@ -240,20 +159,13 @@ type AgentSkillEntry struct {
 	Digest      string `json:"digest"` // "sha256:<hex>" of the artifact at URL
 }
 
-// WithAgentSkills serves /.well-known/agent-skills/index.json enumerating
-// the host's published Agent Skills (per the agent-skills-discovery-rfc).
-// The host provides the entries (name/type/url/digest of each SKILL.md or
-// archive it publishes); an empty list still satisfies the discovery check.
+// WithAgentSkills serves /.well-known/agent-skills/index.json listing the
+// host's published Agent Skills; an empty list is a valid index.
 func WithAgentSkills(skills []AgentSkillEntry) AppOption {
 	return func(a *App) { a.agentSkills = skills }
 }
 
 func (a *App) handleAgentSkillsIndex(w http.ResponseWriter, r *http.Request) {
-	// Default onto a per-request copy, never into a.agentSkills: the
-	// slice WithAgentSkills installed is wiring-time configuration
-	// shared by every request, and writing it here is an unsynchronized
-	// mutation of process-global state (a data race under -race and a
-	// leak of one request's normalization into every other's).
 	skills := make([]AgentSkillEntry, len(a.agentSkills))
 	copy(skills, a.agentSkills)
 	for i := range skills {
@@ -267,12 +179,8 @@ func (a *App) handleAgentSkillsIndex(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ── OAuth Authorization Server (RFC 8414) ──────────────────────────
-
 // OAuthAuthorizationServerConfig configures
-// /.well-known/oauth-authorization-server (RFC 8414). Relevant when the
-// host acts as an OAuth2/OpenID issuer (battery/auth is a client by
-// default, so this is opt-in).
+// /.well-known/oauth-authorization-server (RFC 8414).
 type OAuthAuthorizationServerConfig struct {
 	Issuer                            string // REQUIRED: issuer identifier URL
 	AuthorizationEndpoint             string
@@ -287,8 +195,7 @@ type OAuthAuthorizationServerConfig struct {
 }
 
 // WithOAuthAuthorizationServer serves /.well-known/oauth-authorization-server
-// (RFC 8414). Use it when the app is an OAuth2/OpenID issuer so clients can
-// discover endpoints + supported capabilities.
+// (RFC 8414), for an app that is an OAuth2 or OpenID issuer.
 func WithOAuthAuthorizationServer(cfg OAuthAuthorizationServerConfig) AppOption {
 	return func(a *App) { a.oauthAuthServer = &cfg }
 }
@@ -322,8 +229,6 @@ func (a *App) handleOAuthAuthorizationServer(w http.ResponseWriter, r *http.Requ
 	if len(cfg.TokenEndpointAuthMethodsSupported) > 0 {
 		doc["token_endpoint_auth_methods_supported"] = cfg.TokenEndpointAuthMethodsSupported
 	}
-	// WorkOS agentic-registration profile: merge agent_auth when WithAuthMD
-	// configured an AgentAuth block.
 	if ab := a.agentAuthBlock(r); ab != nil {
 		doc["agent_auth"] = ab
 	}

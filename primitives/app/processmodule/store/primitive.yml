@@ -1,0 +1,109 @@
+primitive: app.processmodule.store
+summary: The SQL coordination store for process modules and their migrations, run by the host on the module's behalf.
+code:
+  - framework/processmodule_store.go
+  - framework/processmodule_migrate.go
+invariants:
+  - id: host-runs-module-migrations
+    rule: A process module holds no database handle or credential; the host runs its migrations from the operator-approved SQL in the digest-verified artifact, never SQL the running child sends.
+    judge: Does this change hand a process module child a database handle, DSN or credential, or run migration SQL that came from the child at runtime?
+  - id: plan-validates-group-version-digest
+    rule: Plan refuses a migration set with no named group, a repeated version, an empty name, or an Up whose SHA-256 differs from its approved digest, and its lint warnings never block.
+    enforced_by:
+      - test: framework.TestCoord_PlanRejectsDefaultGroup
+      - test: framework.TestCoord_PlanRejectsDuplicate
+      - test: framework.TestCoord_PlanRejectsDigestMismatch
+      - test: framework.TestPlan_rejectsEmptyMigrationName
+      - test: framework.TestCoord_PlanCarriesLintWarnings
+  - id: sqlite-refuses-untrusted-ddl
+    rule: On SQLite, Apply refuses an untrusted module's migrations and runs a trusted module's against the host pool.
+    enforced_by:
+      - test: framework.TestCoord_SQLiteUntrustedFailsClosed
+      - test: framework.TestCoord_SQLiteTrustedApplies
+  - id: postgres-role-fence
+    rule: Postgres provisioning re-asserts the module role's password and NOINHERIT, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOREPLICATION and NOBYPASSRLS on every run, grants it USAGE and CREATE on its own schema only, and revokes everything on public.
+    enforced_by:
+      - test: framework.TestModuleSchemaRoleStmtsResetPasswordOnReprovision
+      - test: framework.TestModuleSchemaRoleStmtsReassertPrivilegeFence
+      - test: framework.TestModuleProvisionGrantsOnlyOwnSchema
+  - id: migrations-run-as-the-role
+    rule: On Postgres the migrations run on a separate one-connection pool that logs in as the module role, not by SET ROLE from the host's session.
+    enforced_by:
+      - test: framework.TestCoord_PG_SetRoleEscalationFails
+      - test: framework.TestCoord_PG_HostilePublicDenied
+      - test: framework.TestCoord_PG_ModuleSchemaIsolation
+  - id: distinct-modules-distinct-schemas
+    rule: Two distinct module names always derive distinct schema and role names.
+    enforced_by:
+      - test: framework.TestModuleSchemaNamesDoNotCollide
+  - id: role-dsn-keeps-connection-params-only
+    rule: The module-role DSN keeps only the admin DSN's server and connection parameters (roleDSNParams), so no admin login, option, search_path or role setting outranks the role.
+    enforced_by:
+      - test: framework.TestModuleRoleDSNDropsAdminParams
+  - id: provisioning-errors-hide-password
+    rule: A provisioning statement quoted in an error has its role password redacted.
+    enforced_by:
+      - test: framework.TestModuleSchemaRoleExecErrDoesNotLeakPassword
+  - id: stamp-bound-to-artifact
+    rule: MigrationsAppliedAt is stamped only while the row still names the artifact the migrations ran for, and a boot with another artifact clears it.
+    enforced_by:
+      - test: framework.TestStampRefusesChangedArtifact
+      - test: framework.TestArtifactUpgradeClearsMigrationStamp
+  - id: boot-reconcile-keeps-revokes
+    rule: InstallOrUpdate never hands back a grant an operator revoked at runtime, disables a module whose grants widened, and keeps enabled when they only narrowed.
+    enforced_by:
+      - test: framework.TestProcessModuleRebootKeepsState
+      - test: framework.TestNarrowGiveBackSurvivesBoot
+  - id: generation-is-the-revoke-lever
+    rule: SetEffectiveGrants, RemoveEffectiveGrants and BumpGeneration bump desired_generation; SetEnabled does not.
+    enforced_by:
+      - test: framework.TestProcessModuleStore_setEffectiveGrantsBumps
+      - test: framework.TestProcessModuleStore_setEnabledNoBump
+  - id: revoke-is-compare-and-swap
+    rule: RemoveEffectiveGrants writes only if the generation it read is unchanged, so a concurrent revoke is never undone by a stale read.
+    enforced_by:
+      - test: framework.TestRevokeKeepsConcurrentRevoke
+  - id: desired-state-exported
+    rule: EnsureSchema registers the desired-state table with App.ExportData, so a restore keeps modules disabled and grants revoked; the heartbeat table is not exported.
+    enforced_by:
+      - test: framework.TestExportRestoresModuleState
+decisions:
+  - id: coordination-tables-not-a-migration-group
+    date: 2026-11-16
+    status: accepted
+    decision: The desired-state and heartbeat tables are created by an idempotent EnsureSchema, as battery/auth does.
+    rejected:
+      - option: A core/migrate migration group.
+        why: They are host coordination state, not DDL a module owns.
+  - id: process-modules-fail-closed-on-store-loss
+    date: 2026-11-16
+    status: accepted
+    decision: The store returns read errors as they are, and the supervisor's state lease drains a module it cannot refresh.
+    rejected:
+      - option: Fail open on a store-read error, as in-process module toggling does.
+        why: A third-party module under revoke would keep running while the store is unreachable.
+  - id: migration-lint-is-advisory
+    date: 2026-11-16
+    status: accepted
+    decision: The SQL lint flags statements beyond plain CREATE TABLE, CREATE INDEX and ALTER TABLE ADD COLUMN for the operator and never blocks; the role's privileges are the boundary.
+    rejected:
+      - option: A keyword allowlist that refuses other statements.
+        why: Comments, dollar quoting, chained statements and CREATE TABLE AS SELECT bypass it, so it would fail open.
+    revisit_if: A real SQL parser is available to the coordinator.
+    upholds: [postgres-role-fence]
+  - id: module-role-can-log-in
+    date: 2026-11-16
+    status: accepted
+    decision: The module role is LOGIN with a generated password, so the coordinator can authenticate as it.
+    rejected:
+      - option: A NOLOGIN role reached by SET ROLE.
+        why: RESET ROLE climbs back to the privileged session; a separate login makes the role's own privileges the ceiling.
+    upholds: [migrations-run-as-the-role]
+  - id: folded-names-get-a-digest
+    date: 2026-11-16
+    status: accepted
+    decision: A module name the identifier sanitiser would fold (upper case, hyphen, underscore) gets a digest suffix on its schema and role; a lowercase alphanumeric name keeps the bare stem.
+    rejected:
+      - option: Sanitise every name to its stem alone.
+        why: Two modules would share one schema and role, and reprovisioning either rotates the other's password.
+    upholds: [distinct-modules-distinct-schemas]
