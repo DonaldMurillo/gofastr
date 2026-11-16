@@ -329,3 +329,12 @@ func TestSweepModulesTypedHookIntegersStayInt64(t *testing.T) {
 		t.Fatalf("meta.n = %#v (%T), want the json.Number with its digits", meta["n"], meta["n"])
 	}
 }
+
+// A typed hook's decode aliases never overwrite a key the payload holds
+// under its own spelling.
+func TestSweepModulesHookAliasKeepsOwnKeys(t *testing.T) {
+	got := hookDecodeKeys(map[string]any{"is_admin": true, "isAdmin": false})
+	if got["is_admin"] != true || got["isAdmin"] != false {
+		t.Fatalf("decode keys = %v, want is_admin=true and isAdmin=false kept", got)
+	}
+}
