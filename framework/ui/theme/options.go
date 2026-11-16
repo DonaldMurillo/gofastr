@@ -10,7 +10,9 @@ type Density int
 
 const (
 	DensityUnset Density = iota
+	// Comfortable is the default: 44px controls (the WCAG 2.5.5 tap target), md gaps.
 	Comfortable
+	// Compact is 36px controls and sm gaps.
 	Compact
 )
 
@@ -43,8 +45,11 @@ type ButtonTreatment int
 
 const (
 	TreatmentUnset ButtonTreatment = iota
+	// Filled is a solid primary background with primary-fg text and no border.
 	Filled
+	// Outline is no fill, with primary text and border.
 	Outline
+	// Soft is the soft surface tint with primary text and no border.
 	Soft
 )
 
@@ -81,8 +86,11 @@ type ButtonRadius int
 
 const (
 	RadiusUnset ButtonRadius = iota
+	// Round is the theme's md radius token.
 	Round
+	// Square is no rounding.
 	Square
+	// Pill is fully rounded.
 	Pill
 )
 
@@ -119,7 +127,9 @@ type FieldLayout int
 
 const (
 	LayoutUnset FieldLayout = iota
+	// Stacked puts the label above its control.
 	Stacked
+	// Inline puts the label beside its control; a narrow context may still stack it.
 	Inline
 )
 
@@ -152,7 +162,9 @@ type FieldRadius int
 
 const (
 	FieldRadiusUnset FieldRadius = iota
+	// FieldRound is the md radius token on a field's controls.
 	FieldRound
+	// FieldSquare is no rounding on a field's controls.
 	FieldSquare
 )
 
@@ -286,9 +298,9 @@ func sortedOptionKeys(m map[string]string) []string {
 // Option is one catalogue entry: a flattened key, its members in declaration
 // order, and its default.
 type Option struct {
-	Key     string
-	Members []string
-	Default string
+	Key     string   // the flattened style.Theme.Components key
+	Members []string // the values OptionsFromFlattened accepts
+	Default string   // the value DefaultOptions carries
 }
 
 // Options returns the catalogue of every option key, in a fixed order.
