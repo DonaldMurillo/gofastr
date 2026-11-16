@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -190,5 +192,23 @@ func TestSweepApp2TimeoutAnswersInLocale(t *testing.T) {
 	a.Router().ServeHTTP(rr, req)
 	if rr.Code != http.StatusGatewayTimeout || strings.TrimSpace(rr.Body.String()) != "délai dépassé" {
 		t.Fatalf("got %d %q, want 504 in French", rr.Code, rr.Body.String())
+	}
+}
+
+// Options run after the dotenv load, so an option reading the
+// environment sees a value set only in .env.
+func TestSweepApp2OptionsSeeDotEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	const k = "GOFASTR_SWEEP_APP2_DOTENV"
+	t.Setenv(k, "")
+	os.Unsetenv(k)
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(k+"=from-file\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var seen string
+	NewApp(func(*App) { seen = os.Getenv(k) })
+	if seen != "from-file" {
+		t.Fatalf("option saw %s=%q, want the .env value", k, seen)
 	}
 }
