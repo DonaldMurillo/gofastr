@@ -88,9 +88,10 @@ invariants:
     enforced_by:
       - test: framework/crud.TestDecimalSQLiteRefusesDigitsItWouldDrop
       - test: framework/crud.TestDecimalSQLiteStorageBoundaries
-  - id: legacy-timestamp-keyset-binds-stored-text
-    rule: On an Unmanaged SQLite entity a cursor over a Timestamp column binds the anchor row's stored text, checked as a timestamp spelling, so a walk serves the sorted list once whatever layout the rows hold.
+  - id: sqlite-timestamp-keyset-binds-stored-text
+    rule: On SQLite a cursor over a Timestamp column binds the anchor row's stored text, checked as a timestamp spelling, on a managed entity as on an Unmanaged one, so a walk serves the sorted list once whatever layout the rows hold.
     enforced_by:
+      - test: framework/crud.TestCursorOverSeededTimestamps
       - test: framework/crud.TestLegacyTimestampLayouts
       - test: framework/crud.TestLegacyTimestampCursorRefusesNonTimestamp
   - id: legacy-timestamp-comparison-refused
@@ -269,6 +270,18 @@ decisions:
         why: SQLite compares text, so "2026-03-03 10:00:00" read as earlier than a canonical bind of 09:00 and at_gt dropped the row.
     revisit_if: Comparisons parse the stored text as an instant on SQLite.
     upholds: [legacy-timestamp-comparison-refused]
+  - id: keyset-binds-stored-text-on-managed-entities
+    status: accepted
+    decision: On SQLite the keyset reads and binds a Timestamp cursor column's stored text for every entity, managed ones included, at the cost of one extra selected expression per page.
+    rejected:
+      - option: Bind the canonical layout on a managed entity, since crud writes every row in it.
+        why: A seed script or migration writes "2026-01-02T03:04:05Z" into a managed table; the canonical bind "…05.000000Z" sorts before it as text, so the next page began with the cursor's own row and a walk never left the first page.
+      - option: Refuse the page with 500 timestamp_layout, as a filter on an Unmanaged entity does.
+        why: The check reads the whole column on every page, and the walk needs no instant comparison, only the text ORDER BY already sorts.
+      - option: Compare through strftime or julianday so the keyset is chronological.
+        why: SQLite's date functions keep milliseconds, so two rows a few microseconds apart would tie, and the expression cannot use the column's index.
+    revisit_if: Filters on a managed entity start checking the stored layout, or SQLite timestamps move to a non-text storage class.
+    upholds: [sqlite-timestamp-keyset-binds-stored-text]
   - id: refuse-inexact-sqlite-decimals
     status: accepted
     decision: On SQLite a Decimal the column would round (past schema.SQLiteDecimalDigits or below schema.SQLiteDecimalMinMagnitude) is refused, since SQLite has no exact decimal type.
