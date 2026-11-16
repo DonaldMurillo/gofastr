@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"log/slog"
 	"maps"
@@ -65,7 +66,7 @@ func RunTelemetry(args []string) {
 		return
 	}
 	if !errors.Is(err, flag.ErrHelp) {
-		cli.Fail("%s", cli.ScrubTerminalOutput(err.Error()))
+		cli.Fail("%s", textsafe.ScrubTerminal(err.Error()))
 	}
 	if errors.Is(err, errUsage) || errors.Is(err, flag.ErrHelp) {
 		fmt.Print(usage)
@@ -218,7 +219,7 @@ func (o options) directory() (string, error) {
 // A line break goes too: one entry is one line, and a message must not
 // be able to start a second that looks like another entry.
 func clean(s string) string {
-	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(cli.ScrubTerminalOutput(s))
+	return strings.NewReplacer("\n", " ", "\r", " ", "\t", " ").Replace(textsafe.ScrubTerminal(s))
 }
 
 // jsonLine makes a stored line safe to print as --json. The table

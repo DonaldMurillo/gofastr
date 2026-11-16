@@ -218,7 +218,7 @@ func (s *Server) handleResourcesRead(ctx context.Context, req Request) Response 
 				Code: ErrMethodNotFound, Message: fmt.Sprintf("resource %q not found", params.URI),
 			})}
 		}
-		return handlerErrorResponse(req, err, "mcp: resource contents func failed", "internal resource error",
+		return handlerErrorResponse(ctx, req, err, "mcp: resource contents func failed", "internal resource error",
 			slog.String("uri", res.URI))
 	}
 	mime := contents.MimeType

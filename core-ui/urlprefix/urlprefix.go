@@ -7,11 +7,12 @@
 // keeps following Spanish links.
 //
 // The rewrite reaches the navigation and request URLs of an HTML
-// response (anchor and area href, form action, button formaction, and
-// the URL-valued data-cui-* attributes) and the Location,
-// X-Gofastr-Location, X-Gofastr-Push-State and X-Gofastr-Document
-// headers. It leaves assets alone (src, srcset,
-// <link>), the runtime's /__gofastr/ endpoints, external and
+// response (anchor and area href, form action, button formaction, the
+// URL-valued data-cui-* attributes, and a meta refresh) and the
+// Location, Content-Location, Refresh, X-Gofastr-Location,
+// X-Gofastr-Push-State and X-Gofastr-Document headers. It leaves assets
+// alone (src, srcset, <link>, the Link header), the runtime's
+// /__gofastr/ endpoints, external and
 // protocol-relative URLs, fragments, query-only and relative URLs, an
 // anchor with hreflang (a language switcher, already built with
 // i18n.LocalePath) or download, any URL whose first segment already
@@ -122,6 +123,64 @@ func Path(u string, rule Rule) string {
 	return rule.Prefix + u
 }
 
+// Refresh returns v, the value of a Refresh header or of a meta
+// refresh's content ("0;url=/orders"), with the rule applied to its
+// URL. It finds the URL the way a browser does (the HTML standard's
+// shared declarative refresh steps), so a value a browser ignores, or
+// one with no URL, comes back unchanged.
+func Refresh(v string, rule Rule) string {
+	start, end, ok := refreshURL(v)
+	if !ok || rule.Prefix == "" {
+		return v
+	}
+	return v[:start] + Path(v[start:end], rule) + v[end:]
+}
+
+// refreshURL finds the URL in a refresh value: v[start:end].
+func refreshURL(v string) (start, end int, ok bool) {
+	space := func(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' }
+	i := 0
+	skip := func() {
+		for i < len(v) && space(v[i]) {
+			i++
+		}
+	}
+	skip()
+	t := i
+	for i < len(v) && (v[i] >= '0' && v[i] <= '9' || v[i] == '.') {
+		i++
+	}
+	if i == t || i == len(v) || !(v[i] == ';' || v[i] == ',' || space(v[i])) {
+		return 0, 0, false
+	}
+	skip()
+	if i < len(v) && (v[i] == ';' || v[i] == ',') {
+		i++
+	}
+	skip()
+	// "url" with no "=" after it is the start of the URL itself.
+	if len(v)-i >= 3 && strings.EqualFold(v[i:i+3], "url") {
+		at := i
+		i += 3
+		skip()
+		if i == len(v) || v[i] != '=' {
+			i = at
+		} else {
+			i++
+			skip()
+		}
+	}
+	end = len(v)
+	if i < len(v) && (v[i] == '\'' || v[i] == '"') {
+		q := v[i]
+		i++
+		if j := strings.IndexByte(v[i:], q); j >= 0 {
+			end = i + j
+		}
+	}
+	return i, end, i < end
+}
+
 // HTML returns page with the rule applied to each navigation and
 // request URL attribute. Markup it does not change keeps its bytes; a
 // tag it changes is written back in normalized form. A page the
@@ -159,7 +218,9 @@ func HTML(page []byte, rule Rule) []byte {
 // any changed.
 func rewriteTag(tok *html.Token, rule Rule) bool {
 	switch tok.Data {
-	case "link", "meta", "script", "img", "source", "video", "audio", "iframe":
+	case "meta":
+		return rewriteMetaRefresh(tok, rule)
+	case "link", "script", "img", "source", "video", "audio", "iframe":
 		return false
 	}
 	if tok.Data == "a" || tok.Data == "area" {
@@ -182,6 +243,29 @@ func rewriteTag(tok *html.Token, rule Rule) bool {
 	return changed
 }
 
+// rewriteMetaRefresh applies rule to the URL of a meta refresh, the
+// Refresh header written in the page, and reports whether it changed.
+func rewriteMetaRefresh(tok *html.Token, rule Rule) bool {
+	refresh, content := false, -1
+	for i, a := range tok.Attr {
+		switch a.Key {
+		case "http-equiv":
+			refresh = strings.EqualFold(strings.TrimSpace(a.Val), "refresh")
+		case "content":
+			content = i
+		}
+	}
+	if !refresh || content < 0 {
+		return false
+	}
+	v := Refresh(tok.Attr[content].Val, rule)
+	if v == tok.Attr[content].Val {
+		return false
+	}
+	tok.Attr[content].Val = v
+	return true
+}
+
 func urlAttr(tag, key string) bool {
 	switch key {
 	case "href":
@@ -196,8 +280,9 @@ func urlAttr(tag, key string) bool {
 
 // Middleware rewrites the responses to a request whose URL named a
 // prefixed locale (i18n.PathPrefix is not empty): text/html bodies
-// through [HTML] and the Location, X-Gofastr-Location,
-// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path].
+// through [HTML], the Location, Content-Location, X-Gofastr-Location,
+// X-Gofastr-Push-State and X-Gofastr-Document headers through [Path],
+// and the Refresh header through [Refresh].
 // Any other request passes straight through. An HTML body is buffered
 // until the handler returns, so Flush waits for it; other bodies stream.
 // A body with no Content-Type is typed by the sniff net/http applies, over
@@ -253,10 +338,15 @@ const sniffLen = 512
 
 func (w *writer) rewriteHeaders() {
 	h := w.ResponseWriter.Header()
-	for _, k := range []string{"Location", "X-Gofastr-Location", "X-Gofastr-Push-State", "X-Gofastr-Document"} {
+	for _, k := range []string{"Location", "Content-Location", "X-Gofastr-Location", "X-Gofastr-Push-State", "X-Gofastr-Document"} {
 		if v := h.Get(k); v != "" {
 			h.Set(k, Path(v, w.rule))
 		}
+	}
+	// Every Refresh line, not the first: which one a browser follows
+	// differs, so none may leave the locale.
+	for i, v := range h.Values("Refresh") {
+		h["Refresh"][i] = Refresh(v, w.rule)
 	}
 }
 

@@ -99,9 +99,8 @@ func PathLocale(ctx context.Context) (set PathLocales, tag string, ok bool) {
 
 // PathPrefix returns the request's locale prefix ("/es"), or "" for the
 // default locale and for an app that does not route by locale prefix.
-// Code that builds a URL the response rewriter cannot see (a
-// meta-refresh, a JSON field, an SSE push) puts it in front of a
-// root-relative path.
+// Code that builds a URL the response rewriter cannot see (a JSON
+// field, an SSE push) puts it in front of a root-relative path.
 func PathPrefix(ctx context.Context) string {
 	set, tag, ok := PathLocale(ctx)
 	if !ok {

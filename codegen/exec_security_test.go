@@ -136,11 +136,9 @@ func TestCommandExtensionWaitIsBounded(t *testing.T) {
 // or reposition the cursor to overpaint output the operator already read — the
 // last of which lets a failing generator fake a success line.
 //
-// Fixed with codegen's own scrubTerminalBytes rather than by sharing one of the
-// three above: each strips a different set because each protocol frames
-// differently (SSE must keep LF, a header value must keep neither CR nor LF, a
-// terminal must keep LF and lose CR). The family is deliberately not one
-// function.
+// The terminal scrub is textsafe.ScrubTerminal, shared with every other
+// sink that prints to the operator; SSE and header values frame differently
+// and keep their own.
 func TestCommandExtensionStderrIsScrubbed(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell probe")

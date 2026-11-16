@@ -1,7 +1,12 @@
 package crud
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
@@ -75,5 +80,82 @@ func (ch *CrudHandler) maskOwn(ctx context.Context, rows ...map[string]any) {
 }
 
 func (ch *CrudHandler) hasMasks() bool {
-	return ch.Entity != nil && len(maskFieldsOf(ch.snapshotFields())) > 0
+	return len(ch.maskFields()) > 0
+}
+
+// maskFields is the handler's visible Mask fields, read from the snapshot.
+func (ch *CrudHandler) maskFields() []schema.Field {
+	if ch.Entity == nil {
+		return nil
+	}
+	return maskFieldsOf(ch.snapshotFields())
+}
+
+func (ch *CrudHandler) carriesMasked(body map[string]any) bool {
+	for _, f := range ch.maskFields() {
+		if _, sent := body[f.Name]; sent {
+			return true
+		}
+	}
+	return false
+}
+
+// maskedEchoes names the Mask fields body sends back as the masked form
+// of stored's value. A stored NULL is never an echo.
+func (ch *CrudHandler) maskedEchoes(ctx context.Context, body, stored map[string]any) []string {
+	if stored == nil {
+		return nil
+	}
+	var out []string
+	for _, f := range ch.maskFields() {
+		given, sent := body[f.Name]
+		held := stored[ch.convertKey(f.Name)]
+		if !sent || held == nil {
+			continue
+		}
+		if sameWireValue(runMask(hookCtx(ctx), ch.Entity, f, held), given) {
+			out = append(out, f.Name)
+		}
+	}
+	return out
+}
+
+// dropMaskedEchoes removes row id's masked echoes from body, reading the
+// row under the write scope when the caller has no pre-image of it.
+func (ch *CrudHandler) dropMaskedEchoes(ctx context.Context, r *http.Request, id string, body, pre map[string]any) error {
+	if !ch.carriesMasked(body) {
+		return nil
+	}
+	if pre == nil {
+		var cols []string
+		for _, f := range ch.maskFields() {
+			if _, sent := body[f.Name]; sent {
+				cols = append(cols, f.Name)
+			}
+		}
+		stored, err := ch.selectStored(ctx, r, id, cols)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		pre = stored
+	}
+	for _, name := range ch.maskedEchoes(ctx, body, pre) {
+		delete(body, name)
+	}
+	return nil
+}
+
+// sameWireValue reports whether given is what a client read as masked:
+// equal as JSON, or its text when a form sent it.
+func sameWireValue(masked, given any) bool {
+	text, isText := given.(string)
+	if m, ok := stringOf(masked); ok {
+		return isText && m == text
+	}
+	a, errA := json.Marshal(masked)
+	b, errB := json.Marshal(given)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return bytes.Equal(a, b) || (isText && masked != nil && string(a) == text)
 }

@@ -269,7 +269,10 @@ matches (decoded, with a segment's `/` and `%` still `%2F` and `%25`),
 and `app.EscapeRoutePath` turns it back.
 
 Both `:slug` and `{slug}` are the same route; the framework normalizes the
-brace form to the colon form at registration. If a dynamic route's screen
+brace form to the colon form at registration. A trailing slash on a dynamic
+pattern is dropped there too, so `/products/:slug/` is `/products/:slug`
+everywhere a pattern is compared: `ScreenByPattern`, intercept origins and
+the route manifest. If a dynamic route's screen
 does **not** implement `SetParams`, the app panics at startup; the
 parameters would otherwise be silently dropped. The contract is enforced at
 boot, never at request time.

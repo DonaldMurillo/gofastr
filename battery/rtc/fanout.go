@@ -69,11 +69,9 @@ type fanoutMsg struct {
 	// is the only way the loss shows. Zero means unnumbered.
 	Seq     uint64 `json:"q,omitempty"`
 	ToOrder int64  `json:"o,omitempty"`
-	// At is the sender's clock at publish, unix nanoseconds. A join
-	// mirror older than the local socket it would displace is stale (the
-	// peer moved HERE after that mirror left) and is dropped; see
-	// remoteJoinLocked. Replica clocks therefore need to agree to within a
-	// client's reconnect time, the usual NTP posture for a cluster.
+	// At is the publish clock, still stamped so an older replica keeps
+	// its stale-mirror guard during a rolling upgrade. Nothing here
+	// reads it.
 	At int64 `json:"t,omitempty"`
 }
 
@@ -226,9 +224,9 @@ func publishEmptyRosters(f fanout.Fanout, nodeID string, roomNames []string) {
 	ctx, cancel := context.WithTimeout(context.Background(), rtcGraceTimeout)
 	defer cancel()
 	for _, name := range roomNames {
-		// Node and At as publishFanout stamps them: a receiver drops a
-		// message naming no node.
-		msg := fanoutMsg{Node: nodeID, Kind: evRoster, Room: name, Members: []PeerInfo{}, At: time.Now().UnixNano()}
+		// Node as publishFanout stamps it: a receiver drops a message
+		// naming no node.
+		msg := fanoutMsg{Node: nodeID, Kind: evRoster, Room: name, Members: []PeerInfo{}}
 		body, err := json.Marshal(msg)
 		if err != nil {
 			continue
@@ -363,17 +361,15 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	// performs a closing handshake that can wait out CloseTimeout,
 	// and this subscriber goroutine must keep draining the lane (a
 	// stall here would expire live remote entries on other replicas).
-	for _, conn := range kick {
-		go conn.Close()
-	}
+	closeDetached(kick...)
 	for _, conn := range full {
 		s.logger.Warn("rtc: peer closed", "reason", "room_full")
 		go func() { _ = conn.CloseWithStatus(4000+http.StatusConflict, "room full") }()
 	}
-	for _, conn := range lost {
+	for range lost {
 		s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
-		go conn.Close()
 	}
+	closeDetached(lost...)
 }
 
 // mirrorLocked publishes one event mirror (join/leave/status) to the
@@ -445,12 +441,11 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 	prev := s.remoteViewLocked(msg.Room, time.Time{})
 	if rm := s.rooms[msg.Room]; rm != nil {
 		if old := rm.peers[msg.Peer.ID]; old != nil {
-			// A mirror published before this socket joined is the peer's
-			// OLD seat announcing itself late (a bus that delivered one
-			// replica's lane behind the client's reconnect), not a move
-			// away: dropping it keeps the live socket. Order is the local
-			// join time in the same unit. #474.
-			if msg.At != 0 && msg.At < old.info.Order {
+			// A mirror for a seat no newer than this socket is the peer's
+			// OLD seat announcing itself late, not a move away: dropping it
+			// keeps the live socket. Order is each seat's join instant; the
+			// mirror's publish time is not, as it can trail the join. #474.
+			if msg.Peer.Order <= old.info.Order {
 				return
 			}
 			delete(rm.peers, msg.Peer.ID)
@@ -464,7 +459,7 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 				s.markEmptyLocked(rm)
 			}
 			s.broadcastRosterLocked(msg.Room)
-			*kick = append(*kick, old.conn)
+			*kick = append(*kick, s.detachLocked(rm, old))
 			// The room just heard a leave, so the join below is owed
 			// whatever the remote view held for the id.
 			delete(prev, msg.Peer.ID)

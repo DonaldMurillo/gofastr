@@ -113,6 +113,16 @@ multi-column ordering, at most 16, the cap `?sort=` applies. Direction
 defaults to `ASC` when omitted; `asc`/`desc` match in any ASCII case
 (a look-alike such as `deſc` is an error, not `DESC`).
 
+Rows with no value in the ordered column come last ascending and first
+descending on SQLite and Postgres alike, the order `?sort=` gives. The
+builder does not know the database, so for a column that can hold NULL
+it writes the position out: `order(views DESC)` builds
+`ORDER BY views DESC NULLS FIRST`. That is Postgres's default, so a
+plain index still serves it. A key, `Required` or framework-generated
+column gets a bare `ORDER BY`. A query built by hand takes the same
+term from `QueryBuilder.OrderPinNulls` or `query.OrderTerm`; plain
+`Order` leaves the null position to the database.
+
 ### `limit(N)`
 
 `N` must be a positive integer. There is no `offset()`; use cursor

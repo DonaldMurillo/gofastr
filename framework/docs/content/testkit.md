@@ -207,7 +207,7 @@ import (
 
 func TestMyFeature(t *testing.T) {
     db := testkit.NewIsolatedDB(t, adminDSN, func(db *sql.DB) error {
-        _, err := db.ExecContext(ctx, `CREATE TABLE posts (id TEXT PRIMARY KEY)`)
+        _, err := db.ExecContext(ctx, `CREATE TABLE posts (id TEXT PRIMARY KEY NOT NULL)`)
         return err
     })
     // db is a *sql.DB pointing at the fresh database.

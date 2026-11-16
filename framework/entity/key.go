@@ -313,3 +313,9 @@ func RowKey(row map[string]any, cols []string, names func(string) string) (strin
 	}
 	return JoinKey(parts), true
 }
+
+// CanHoldNull reports whether f's column can hold NULL: a key column, a
+// Required field and a framework-generated one always carry a value.
+func CanHoldNull(f schema.Field, keyCols []string) bool {
+	return !slices.Contains(keyCols, f.Name) && !f.Required && f.AutoGenerate == schema.AutoNone
+}

@@ -77,7 +77,7 @@ func (ch *CrudHandler) serveStreamingList(ctx context.Context, w http.ResponseWr
 	for _, c := range extraWhere {
 		qb.Where(c.SQL, c.Args...)
 	}
-	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
+	filter.ApplySortToQuery(qb, ch.sortTerms(ctx, sorts))
 	qb.Limit(limit)
 	if o, ok := explicitOffsetValues(q); ok {
 		if o > 0 {

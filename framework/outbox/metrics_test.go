@@ -68,11 +68,53 @@ func TestOutbox_MetricsCollector(t *testing.T) {
 	if !strings.Contains(out, `outbox_pending{consumer="orders"} 1`) {
 		t.Errorf("missing outbox_pending orders line:\n%s", out)
 	}
-	if !strings.Contains(out, "# TYPE outbox_dead_letter_total counter") {
+	if !strings.Contains(out, "# TYPE outbox_dead_letter_deliveries gauge") {
 		t.Errorf("missing dead_letter TYPE:\n%s", out)
 	}
-	if !strings.Contains(out, `outbox_dead_letter_total{consumer="billing"} 1`) {
+	if !strings.Contains(out, `outbox_dead_letter_deliveries{consumer="billing"} 1`) {
 		t.Errorf("missing dead_letter billing line:\n%s", out)
+	}
+}
+
+// The dead-letter figure is a COUNT of the rows dead now, so a Replay makes
+// it fall: declared a counter named _total, every fall read as a reset.
+func TestOutboxDeadLetterMetricIsAGauge(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Skip("sqlite3 driver not available")
+	}
+	t.Cleanup(func() { db.Close() })
+	o, err := New(db)
+	if err != nil {
+		t.Fatalf("new outbox: %v", err)
+	}
+	ctx := context.Background()
+	for _, row := range []string{"row-1", "row-2"} {
+		if _, err := db.ExecContext(ctx, fmt.Sprintf(
+			`INSERT INTO %s (row_id, consumer, status, attempts, created_at) VALUES ($1, 'billing', 'dead', 99, $2)`,
+			o.qd()), row, time.Now().UTC()); err != nil {
+			t.Fatalf("seed dead: %v", err)
+		}
+	}
+	scrape := func() string {
+		var buf bytes.Buffer
+		o.MetricsCollector()(&buf)
+		return buf.String()
+	}
+	out := scrape()
+	for _, want := range []string{"# TYPE outbox_dead_letter_deliveries gauge", `outbox_dead_letter_deliveries{consumer="billing"} 2`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("metrics output missing %q\ngot:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "_total") || strings.Contains(out, " counter") {
+		t.Fatalf("a value that falls must not be a counter or named _total:\n%s", out)
+	}
+	if err := o.ReplayConsumer(ctx, "row-1", "billing"); err != nil {
+		t.Fatal(err)
+	}
+	if out := scrape(); !strings.Contains(out, `outbox_dead_letter_deliveries{consumer="billing"} 1`) {
+		t.Fatalf("after a replay the gauge should read 1\ngot:\n%s", out)
 	}
 }
 

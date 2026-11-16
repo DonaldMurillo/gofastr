@@ -78,6 +78,11 @@ func (q *TypedQuery[T]) buildSelect(ctx context.Context) (*query.QueryBuilder, e
 		c.Apply(qb)
 	}
 	for _, o := range q.orders {
+		col, dir := o.Term()
+		if q.handler.pinsNulls(ctx, col) {
+			qb.OrderPinNulls(col, dir)
+			continue
+		}
 		o.Apply(qb)
 	}
 	if len(q.nestedFilters) > 0 {
