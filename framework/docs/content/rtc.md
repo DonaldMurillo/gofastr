@@ -370,11 +370,12 @@ can bring the merged room past `MaxPeers`; every replica then ranks the
 merged room by join order and closes its own peers past the cap with
 `4409` room full, so the latest seats lose. A beat cannot restate a peer this replica holds (local wins on the
 join mirror as on the leave mirror). A join mirror for a peer this
-replica holds displaces the local socket only when the mirror is newer
-than that socket (every lane message carries the sender's clock): one
-that arrives late, after the peer already reconnected here, is the old
-seat announcing itself and is dropped, so a bus delivering one
-replica's lane behind a client's reconnect cannot kick the live socket.
+replica holds displaces the local socket only when the seat it names
+joined after that socket did (each seat carries its join time, by its
+replica's clock): one that arrives late, after the peer already
+reconnected here, is the old seat announcing itself and is dropped, so
+neither a bus delivering one replica's lane behind a client's reconnect
+nor a replica that publishes the mirror late can kick the live socket.
 Replica clocks need to agree to within that reconnect time, the usual
 NTP posture; a sender whose clock lags by more than that has its genuine
 move-away mirror dropped too, so the peer's old socket here stays in the
