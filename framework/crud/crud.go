@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
-	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -246,7 +245,7 @@ func (ch *CrudHandler) entityFields() []string {
 // VisibleFields returns the non-Hidden field names. It re-reads the
 // entity's declarations and republishes the field snapshot when they changed.
 func (ch *CrudHandler) VisibleFields() []string {
-	ch.refreshFieldCacheIfStale()
+	ch.republishFieldSnapshot()
 	return append([]string(nil), ch.snapshot().visible...)
 }
 
@@ -276,46 +275,6 @@ func (ch *CrudHandler) jsonKeysFor(cols []string) []string {
 		}
 	}
 	return convertedKeys(cols, ch.convertKey)
-}
-
-func (ch *CrudHandler) fieldCacheSignature() uint64 {
-	if ch.Entity == nil {
-		return 0
-	}
-	const (
-		offset64 = 1469598103934665603
-		prime64  = 1099511628211
-	)
-	h := uint64(offset64)
-	for i := range ch.JSONCase {
-		h ^= uint64(ch.JSONCase[i])
-		h *= prime64
-	}
-	for _, f := range ch.Entity.GetFields() {
-		for i := range f.Name {
-			h ^= uint64(f.Name[i])
-			h *= prime64
-		}
-		for i := range f.WireName {
-			h ^= uint64(f.WireName[i])
-			h *= prime64
-		}
-		if f.Hidden {
-			h ^= 1
-		} else {
-			h ^= 2
-		}
-		h *= prime64
-		h ^= uint64(f.Type)
-		h *= prime64
-		h ^= uint64(f.AutoGenerate)
-		h *= prime64
-		if f.Mask != nil {
-			h ^= uint64(reflect.ValueOf(f.Mask).Pointer())
-		}
-		h *= prime64
-	}
-	return h
 }
 
 // convertKey is a column's wire key: its WireName, else the column in the JSONCase.
