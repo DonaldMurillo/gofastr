@@ -1239,7 +1239,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 	}
 	offset = max(offset, 0)
 	base := fmt.Sprintf(`SELECT id, occurrence_id, type, payload, priority, lane, attempts,
-		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key, max_age_ns, sequence_key FROM %s`, q.qt())
+		max_attempts, created_at, scheduled_at, status, updated_at, last_error, unique_key, max_age_ns, sequence_key, user_id FROM %s`, q.qt())
 	args := []any{}
 	if status != "" && status != "all" {
 		base += " WHERE status = $1"
@@ -1260,7 +1260,7 @@ func (q *DBQueue) ListJobs(ctx context.Context, status string, limit, offset int
 		var createdAt, scheduledAt, updatedAt any
 		if err := rows.Scan(&j.ID, &j.OccurrenceID, &j.Type, &payload, &j.Priority,
 			&j.Lane, &j.Attempts, &j.MaxAttempts, &createdAt, &scheduledAt,
-			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey, &j.MaxAge, &j.SequenceKey); err != nil {
+			&j.Status, &updatedAt, &j.LastError, &j.UniqueKey, &j.MaxAge, &j.SequenceKey, &j.UserID); err != nil {
 			return nil, err
 		}
 		j.CreatedAt, err = query.ParseDBTime(createdAt)

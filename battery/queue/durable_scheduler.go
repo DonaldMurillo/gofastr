@@ -21,6 +21,10 @@ import (
 
 const durableSchedulerLeaseName = "scheduler"
 
+// schedulerJobSweepEraser names the second delete on the jobs table. Erasers
+// run in name order, and it must sort after "queue_scheduler_schedules".
+const schedulerJobSweepEraser = "queue_scheduler_swept_jobs"
+
 // DurableSchedulerConfig identifies one scheduler replica and controls how
 // quickly another replica may reclaim its leadership lease after a heartbeat
 // stops. OwnerID defaults to a random process-local ID. LeaseDuration defaults
@@ -148,6 +152,15 @@ func NewDurableScheduler(q *DBQueue, cfg DurableSchedulerConfig) (*DurableSchedu
 		Name:   datexport.ScopedName("queue_scheduler_schedules", table),
 		Source: "queue",
 		Table:  table,
+		Column: "user_id",
+		Mode:   datexport.EraseDelete,
+	})
+	// The jobs go a second time once the schedules are gone: a tick that
+	// commits while the erasure runs writes its job after the first delete.
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name:   datexport.ScopedName(schedulerJobSweepEraser, q.table),
+		Source: "queue",
+		Table:  q.table,
 		Column: "user_id",
 		Mode:   datexport.EraseDelete,
 	})

@@ -197,7 +197,10 @@ holds the queue still while it runs: a `Dequeue`, `Nack` or `Replay` waits
 for it, so none carries a job from a store the erasure has not read yet
 into one it already has. The in-memory `Scheduler` is erased before the
 store-erased queues it feeds, so a tick cannot enqueue the user's job into
-them again. A `DBQueue`'s rows go in the SQL erasure, which commits before
+them again. A `DurableScheduler`'s schedules go in the SQL erasure with
+the jobs: it deletes the user's jobs, then their schedules, then the jobs
+again, so a tick that commits while the erasure runs leaves no job
+behind. A `DBQueue`'s rows go in the SQL erasure, which commits before
 any store eraser runs, so a tick in between can write the user's job back;
 the scheduler's eraser therefore deletes the user's rows from every
 `DBQueue` it feeds once its schedules are gone, and counts them in its
@@ -523,12 +526,17 @@ pager its total.
 claims, returning dead-letter listings, and handing a job to its handler;
 editing a caller or handler payload cannot change a pending retry.
 
-MemoryQueue and RedisQueue can only enumerate their dead-letter store,
-so only `"failed"`, `"all"` or `""` returns results. DBQueue can enumerate any
+MemoryQueue and RedisQueue can only list their dead-letter store,
+so only `"failed"`, `"all"` or `""` returns results. `Stats` counts the
+jobs `ListJobs` can list, so theirs holds `"failed"` alone and a pager
+can sum its keys. Their waiting jobs are counted for the `queue_depth`
+metric only (see [Observability](observability.md)). `RedisClient` has
+no `LLEN`, so RedisQueue reads a list whole to count it.
+DBQueue can enumerate any
 status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
 with `WithDoneRetention`, and `"all"` or `""` lists every status.
 
-A job DBQueue lists carries `Status`, `UpdatedAt` (when its state last
+Every backend's listing carries `UserID`. A job DBQueue lists also carries `Status`, `UpdatedAt` (when its state last
 changed: enqueue, claim, retry, failure, replay or completion) and
 `LastError`, the error its last failed attempt returned through the
 worker, with control bytes scrubbed and cut to 500 runes. A replay
@@ -554,8 +562,9 @@ any worker polls.
 On shutdown (the context passed to `Start` cancelled), a DBQueue worker
 that has claimed a job but not started its handler hands the job back
 with its attempt refunded, so the next process runs it; a handler that
-is already running gets the cancelled context, and its result settles as
-usual. A worker that finds a claimed job's type gated hands it back the
+is already running gets the cancelled context: a nil result is acked, an
+`ErrPermanent` dead-letters, and any other error hands the job back with
+the attempt refunded (see [Shutdown during a handler](#shutdown-during-a-handler)). A worker that finds a claimed job's type gated hands it back the
 same way. A claim the database committed while the shutdown cancelled the
 query cannot be handed back; that job reruns when its lease expires.
 
@@ -665,8 +674,8 @@ of a schedule whose payload is about one person (a per-user digest).
 
 `Every(d)` schedules fire on a fixed interval of one millisecond or more
 (`Register` refuses a negative interval or a shorter positive one, the
-same floor as the durable scheduler; `Every(0)` fires on every tick of
-the one-minute floor); `Cron(spec)` schedules
+same floor as the durable scheduler; `Every(0)` fires every time the
+loop wakes, at least once a minute); `Cron(spec)` schedules
 fire when the cron expression's next time arrives; use it for
 time-of-day work like "every day at 02:00" that an interval cannot
 express. A cron schedule is evaluated in the zone of the time it was
@@ -678,7 +687,8 @@ so the queue does not carry a second cron parser; it accepts the same
 5-field syntax and `@shortcuts` (e.g. `@daily`). The two kinds coexist
 in one scheduler.
 
-`Register()` returns an `error`, and registers nothing, when the
+`Register()` returns an `error`, and registers nothing, when no job
+type was set (`Job` was not called, or was given `""`), when the
 payload given to `Job` cannot be encoded as JSON (a `NaN`, a channel),
 or when a `Cron` spec is invalid or has no firing in the next five
 years (`0 0 30 2 *`, February 30, which `DurableScheduler` refuses too).
@@ -688,13 +698,15 @@ since 2100 is not a leap year). `RegisterAt(base)` is the deterministic
 variant: it anchors the first run to `base` instead of `time.Now()`,
 which is handy for tests and replayed fixtures.
 
-When the scheduler runs, the wake interval is the smallest of the
-interval schedules and one minute (cron resolution); a cron-only
-scheduler wakes once per minute. **Jobs registered after `Start`
-still fire**; the loop re-reads the schedule set each tick and a
-`Register` nudges it to re-arm immediately, so the natural "start
-subsystems, then register jobs" wiring works (it previously snapshotted
-once at `Start` and dropped everything registered later).
+When the scheduler runs, it sleeps until the earliest next run, for at
+most one minute. An interval schedule keeps its phase: each run is one
+interval after the last one was due, not after the loop woke, so
+`Every(90 * time.Second)` fires every 90 seconds beside any other
+schedule. Runs missed while the process could not wake are skipped, not
+replayed. **Jobs registered after `Start` still fire**; the loop re-reads
+the schedule set each pass and a `Register` nudges it to re-arm
+immediately, so the natural "start subsystems, then register jobs" wiring
+works.
 
 This mode is intentionally non-durable. A restart recomputes the first tick,
 and multiple scheduler replicas may enqueue the same tick. It remains useful

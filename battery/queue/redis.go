@@ -1358,20 +1358,42 @@ func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit, offset 
 	return out, nil
 }
 
-// Stats implements [Browsable] for the Redis backend. It reports the count
-// of dead-lettered jobs under the "failed" key; pending/in-flight jobs are
-// not enumerable without a full scan and are omitted. Cheap: a single
-// LRange(0, -1) length read.
+// Stats implements [Browsable] for the Redis backend. It counts what
+// ListJobs can list: the dead-lettered jobs, under "failed". RedisClient
+// has no LLEN, so the count reads the list whole.
 func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
-	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, -1)
+	n, err := q.listLen(ctx, q.deadLetterQueue)
 	if err != nil {
 		return nil, fmt.Errorf("stats: read dead-letter queue: %w", err)
 	}
 	stats := JobStats{}
-	if n := len(entries); n > 0 {
+	if n > 0 {
 		stats["failed"] = n
 	}
 	return stats, nil
+}
+
+// pendingDepth is the queue_depth gauge's number: the jobs on the main and
+// delayed lists. In-flight jobs are not counted.
+func (q *RedisQueue) pendingDepth(ctx context.Context) (int, error) {
+	total := 0
+	for _, key := range []string{q.queueName, q.delayedQueue} {
+		n, err := q.listLen(ctx, key)
+		if err != nil {
+			return 0, fmt.Errorf("depth: read %s: %w", key, err)
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// listLen reads a list whole to count it; a missing list counts zero.
+func (q *RedisQueue) listLen(ctx context.Context, key string) (int, error) {
+	entries, err := q.client.LRange(ctx, key, 0, -1)
+	if err != nil && !errors.Is(err, ErrRedisEmpty) {
+		return 0, err
+	}
+	return len(entries), nil
 }
 
 // Start launches a background goroutine that calls Reclaim on every tick

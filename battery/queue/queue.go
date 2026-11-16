@@ -186,7 +186,8 @@ type Queue interface {
 
 // JobStats is a snapshot of job counts grouped by status. The keys
 // are status names (DBQueue: "pending", "claimed", "failed", and
-// "done" under WithDoneRetention).
+// "done" under WithDoneRetention; MemoryQueue and RedisQueue: "failed").
+// A backend counts only the jobs its ListJobs can list.
 type JobStats map[string]int
 
 // Browsable is the optional read-only inspection interface, implemented

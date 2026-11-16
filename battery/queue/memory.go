@@ -907,9 +907,8 @@ func (q *MemoryQueue) ListJobs(_ context.Context, status string, limit, offset i
 	return out, nil
 }
 
-// Stats implements [Browsable]. The in-memory backend can only count the
-// retained dead-letter jobs (pending/claimed jobs are transient on the
-// heap), so it reports those under "failed".
+// Stats implements [Browsable]. It counts what ListJobs can list: the
+// retained dead-letter jobs, under "failed".
 func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 	q.deadMu.Lock()
 	n := len(q.dead)
@@ -919,6 +918,14 @@ func (q *MemoryQueue) Stats(_ context.Context) (JobStats, error) {
 		stats["failed"] = n
 	}
 	return stats, nil
+}
+
+// pendingDepth is the queue_depth gauge's number: the jobs on the pending
+// heap, delayed and gate-deferred ones included.
+func (q *MemoryQueue) pendingDepth(context.Context) (int, error) {
+	q.pmu.Lock()
+	defer q.pmu.Unlock()
+	return len(q.pending.items), nil
 }
 
 // Replay implements [Replayable]: it moves a retained terminally-failed job
