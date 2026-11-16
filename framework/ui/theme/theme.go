@@ -7,22 +7,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// Default returns the canonical adaptive framework theme, including complete
-// light and dark semantic palettes.
-//
-// Pass an Overrides value to swap individual tokens. Overrides are
-// applied on top of the typed style.DefaultTheme(); unset fields keep
-// their defaults.
-//
-// Example. Swap primary from indigo to teal in both palettes:
-//
-//	t := theme.Default(theme.Overrides{
-//		Primary: "#0F766E",
-//		Dark:    &theme.Overrides{Primary: "#5EEAD4"},
-//	})
-//
-// Every component referencing --color-primary updates without any
-// code change.
+// Default returns the adaptive framework theme with every override applied
+// in order; an unset field keeps its default.
 func Default(overrides ...Overrides) style.Theme {
 	t := baseTheme()
 	for _, o := range overrides {
@@ -31,11 +17,8 @@ func Default(overrides ...Overrides) style.Theme {
 	return t
 }
 
-// Overrides is the set of tokens a host can swap to re-skin the
-// framework theme. All fields are optional. Empty strings are
-// ignored, zero-value RadiusXX ints likewise.
+// Overrides is the set of tokens a host can swap; zero fields are ignored.
 type Overrides struct {
-	// Color tokens (CSS hex values).
 	Background, Surface, SurfaceSoft         string
 	Border, BorderStrong                     string
 	Text, TextMuted, TextSubtle              string
@@ -43,71 +26,29 @@ type Overrides struct {
 	Accent                                   string
 	Success, Warning, Danger, DangerFg, Info string
 
-	// Code-display surface tokens (ui.CodeBlock + demo source panels).
-	// Intentionally a separate pair so dark mode reskins code blocks
-	// independently of the page Text/Background pair.
 	CodeSurface, CodeText, CodeBorder string
 
-	// Dark is the dark-mode twin of the colour fields above: the same
-	// typed fields, compiled into the theme's dark palette
-	// (style.Theme.DarkColors) keyed by the CSS names the dark-scheme
-	// blocks read. Light colour fields are not copied into dark mode
-	// automatically because a contrast-safe dark value is usually
-	// different; a light override with no dark twin logs a warning
-	// naming the field.
-	//
-	// Dark changes colours only: setting Components, a font, a radius
-	// or a nested Dark inside it panics when the theme is built. A
-	// non-nil Dark with no colour set (Dark: &theme.Overrides{}) means
-	// "the framework's dark palette is deliberate" and silences the
-	// light-only warning.
+	// Dark holds the dark palette's colours; any other field set in it panics.
 	Dark *Overrides
 
-	// Components are the typed component options (Density, the button
-	// family's Treatment and Radius). Zero values mean "leave the
-	// construction base unchanged" while overrides merge, exactly like
-	// the string fields above; an explicit Comfortable, Filled or Round
-	// resets an earlier override. The merged result is flattened into
-	// style.Theme.Components complete, so every theme this package
-	// produces declares a full option set.
 	Components ComponentOptions
 
-	// Font families.
 	FontBody, FontHeading, FontMono string
 
-	// Reskin extras: only apply if you really need them.
 	RadiusSm, RadiusMd, RadiusLg int // px
 }
 
-// baseTheme is the framework's opinionated default: style.DefaultTheme's
-// neutral zinc palette (near-black primary, white page, hairline
-// borders) plus a complete dark palette.
 func baseTheme() style.Theme {
 	t := style.DefaultTheme()
 	t.Name = "framework-ui"
-	// The framework theme is adaptive by default. core-ui's lower-level
-	// style.DefaultTheme intentionally remains light-only for compatibility;
-	// host applications and generated projects should use this theme so a
-	// ThemeToggle and the synchronous OS-preference bootstrap always have a
-	// complete, contrast-safe dark palette to switch to.
 	t.DarkColors = style.DefaultDarkColors()
-	// The complete default option set, flattened. Every theme built
-	// here carries a full option set, which is what makes option
-	// variables nest: each boundary redeclares the whole set.
 	t.Components = DefaultOptions.Flattened()
 	return t
 }
 
-// colorFields pairs every colour-bearing Overrides field with the CSS
-// token name it compiles to. One table drives the three walks that
-// must agree — the light setters, the Dark compile into
-// style.Theme.DarkColors, and the light-only warning — so a colour
-// field can never exist in one walk and not the others. That drift is
-// exactly what made the old string-keyed DarkColors map silently drop
-// a typo'd token name ("surfce-soft" compiled and did nothing).
 var colorFields = []struct {
-	field string // Go field name, for panic and warning messages
-	css   string // key in style.Theme.DarkColors
+	field string
+	css   string
 	get   func(*Overrides) string
 	set   func(*style.Theme, string)
 }{
@@ -132,11 +73,6 @@ var colorFields = []struct {
 	{"CodeBorder", "code-border", func(o *Overrides) string { return o.CodeBorder }, func(t *style.Theme, v string) { t.Colors.CodeBorder.Value = v }},
 }
 
-// applyOverrides mutates t in place: only non-zero override fields
-// touch the theme. Token Name preserved; only Value swaps. A Dark
-// override is validated first (dark mode changes colours only) and
-// then compiled into t.DarkColors, the map the dark-scheme CSS
-// blocks read.
 func applyOverrides(t *style.Theme, o Overrides) {
 	if o.Dark != nil {
 		o.Dark.mustBeColourOnly()
@@ -173,10 +109,6 @@ func applyOverrides(t *style.Theme, o Overrides) {
 	applyComponentOptions(t, o.Components)
 }
 
-// applyDark compiles a Dark override's colour fields into the theme's
-// dark palette (style.Theme.DarkColors), keyed by the CSS names the
-// dark-scheme blocks read. Empty fields are ignored, exactly like the
-// light setters.
 func applyDark(t *style.Theme, dark *Overrides) {
 	if dark == nil {
 		return
@@ -193,11 +125,6 @@ func applyDark(t *style.Theme, dark *Overrides) {
 	}
 }
 
-// mustBeColourOnly panics when a Dark override carries anything but
-// colour fields. Dark mode changes colours only: component options,
-// fonts and radii are scheme-independent and belong on the top level,
-// and a nested Dark has no meaning. Failing at theme build turns a
-// configuration mistake the compiler accepted into an error at boot.
 func (d *Overrides) mustBeColourOnly() {
 	if d.Components != (ComponentOptions{}) {
 		panic("theme: Dark.Components is set; dark mode changes colours only. Put Components on the top level.")
@@ -228,12 +155,6 @@ func (d *Overrides) mustBeColourOnly() {
 	}
 }
 
-// warnLightOnly names every colour field the override sets for light
-// mode while the theme carries a dark value for that token: dark mode
-// keeps painting that dark value, which is rarely what a re-skin
-// wants. One slog.Warn per field per theme build. A non-nil Dark —
-// even with no colour set, which says the framework's dark palette is
-// deliberate — silences the warning.
 func warnLightOnly(t *style.Theme, o Overrides) {
 	for _, f := range colorFields {
 		light := f.get(&o)
@@ -250,11 +171,6 @@ func warnLightOnly(t *style.Theme, o Overrides) {
 	}
 }
 
-// applyComponentOptions merges the typed options into the theme's
-// flattened map: only non-unset fields write their key, so an
-// explicit Comfortable, Filled or Round resets an earlier override
-// while an unset one leaves the base value standing. The base map is
-// complete, so the result is too.
 func applyComponentOptions(t *style.Theme, o ComponentOptions) {
 	flat := o.Flattened()
 	if len(flat) == 0 {

@@ -15,3 +15,219 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: component-options-root-floor
+    rule: framework/ui registers its component-options compiler at init with the complete theme.DefaultOptions set as the root floor, so an optionless or partial theme still declares every --fui-* option variable at :root and in every scope.
+    enforced_by:
+      - test: framework/ui.TestOptionlessThemeCarriesTheRootFloor
+      - test: framework/ui.TestPartialRootThemeKeepsDefaultFloor
+      - test: framework/ui.TestOptionlessScopeDeclaresDefaults
+  - id: options-compiler-refuses-unknown-vocabulary
+    rule: The component-options compiler panics on a Components key or value outside the theme option vocabulary.
+    enforced_by:
+      - test: framework/ui.TestCompilerPanicsOnUnknownOption
+      - test: framework/ui.TestCompilerPanicsOnNonMemberValue
+  - id: comfortable-density-rides-touch-target
+    rule: Comfortable density declares --fui-density-control-h as var(--spacing-touch-target) and compact declares the literal 36px.
+    enforced_by:
+      - test: framework/ui.TestCompilerEmitsDensityVariables
+  - id: treated-variant-reads-its-own-colours
+    rule: Each treated button variant's option trio reads its own colour and -fg pair, so a filled danger button's foreground is --color-danger-fg.
+    enforced_by:
+      - test: framework/ui.TestCompilerEmitsTreatmentVariables
+  - id: button-edge-knob
+    rule: The filled and soft treatments draw their border from var(--ui-button-edge, transparent) and the outline treatment draws it in the variant colour.
+    enforced_by:
+      - test: framework/ui.TestCompilerEmitsTreatmentVariables
+  - id: inline-field-control-track-shrinks
+    rule: The inline field layout's control track is minmax(0, 3fr), so a long value cannot push the field wider than its box.
+    enforced_by:
+      - test: framework/ui.TestCompilerEmitsFieldVariables
+  - id: option-variables-only-at-boundaries
+    rule: Component rules read the --fui-* option variables and never redeclare them, and no rule styles a component through a descendant theme selector.
+    judge: Does this change declare a --fui-density, --fui-button or --fui-field option variable inside a component rule, or write a rule such as .cui-theme-x .fui-button?
+  - id: extra-attrs-serialize-sorted
+    rule: serializeExtraAttrs writes attributes in sorted key order, so a string-built root renders the same bytes every time.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreExtraAttrsSerializeSorted
+  - id: scoped-id-follows-the-id-scope
+    rule: A component given no ID takes it from the render context's id scope when there is one, so the page and the island's RPC answer carry the same id; only a render with no scope uses the process counter.
+    enforced_by:
+      - test: framework/ui.TestAutoIDsMatchInAnIsland
+  - id: request-slot-renders-per-request
+    rule: A mounted widget's requestSlot builds its body from each render's context, so its words follow the reader's locale and not the mount's.
+    enforced_by:
+      - test: framework/ui.TestConfirmDialogWordsPerRequest
+      - test: framework/ui.TestBellEmptyTextPerRequest
+      - test: framework/ui.TestShortcutSheetTitlePerRequest
+  - id: rpc-path-is-same-origin
+    rule: checkRPCPath panics unless the path starts with a single slash and survives urlsafe.CleanAnchor.
+    enforced_by:
+      - test: framework/ui.TestRPCControlsRefuseUnsafePaths
+  - id: scrub-attrs-drops-handlers-and-control-bytes
+    rule: scrubAttrs drops every on* key and every key or value holding a control byte, and returns a new map.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreScrubAttrsDropsHandlersAndControlBytes
+  - id: image-url-admits-raster-data
+    rule: safeImageURL cleans with urlsafe.ImageSource, so an image source keeps a raster data URI that an anchor or resource URL would lose.
+    enforced_by:
+      - test: framework/ui.TestImageSrcAcceptsRasterDataURL
+  - id: invalidate-screens-accepts-only-cache-keys
+    rule: InvalidateScreens keeps only "*" and root-relative paths free of control bytes, and sets no header when none is valid.
+    enforced_by:
+      - test: framework/ui.TestInvalidateScreensDropsInvalid
+      - test: framework/ui.TestInvalidateScreensWildcard
+      - test: framework/ui.TestInvalidateScreensNoValidPathsNoHeader
+  - id: invalidate-screens-accumulates
+    rule: Repeated InvalidateScreens calls accumulate into one ASCII-only JSON array, and an existing header that does not decode whole is replaced, not extended.
+    enforced_by:
+      - test: framework/ui.TestInvalidateScreensAccumulates
+      - test: framework/ui.TestInvalidateHeaderIsASCII
+      - test: framework/ui.TestSweepCoreInvalidateScreensDropsAHalfDecodedHeader
+  - id: short-id-shape
+    rule: ShortID panics on an empty Value, shows the first Length runes (8 by default), and derives its copy target id from a hash of the value, so it is the same on every render.
+    enforced_by:
+      - test: framework/ui.TestShortIDRequiresValue
+      - test: framework/ui.TestShortIDCopiesTheFullValue
+      - test: framework/ui.TestSweepCoreShortIDTargetIsTheSameOnEveryRender
+  - id: strings-bridge-maps-every-field
+    rule: stringsKeys maps exactly the exported fields of headless.Strings, each to an i18nui key.
+    enforced_by:
+      - test: framework/ui.TestStringsForMapsEveryField
+  - id: strings-for-keeps-placeholder-sets
+    rule: StringsFor keeps a field's English when the translation's {{name}} placeholder set differs from it.
+    enforced_by:
+      - test: framework/ui.TestStringsForRefusesPlaceholderDrift
+  - id: strings-for-reads-the-request
+    rule: StringsFor resolves every field and the number format through ctx, and returns headless.DefaultStrings for a nil ctx.
+    enforced_by:
+      - test: framework/ui.TestNumbersSpeakCtx
+      - test: framework/ui.TestStringsForNilCtxIsHeadlessEnglish
+  - id: themed-wraps-in-the-override-class
+    rule: Themed wraps its children in one div whose only attribute is the theme override's class.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreThemedWrapsInTheOverrideClass
+  - id: unknown-variant-panics
+    rule: Button, LinkButton, Card and every StatusVariant consumer panic at render on a variant or size that is neither built in nor registered.
+    enforced_by:
+      - test: framework/ui.TestUnregisteredVariantStillPanics
+      - test: framework/ui.TestCardUnknownVariantPanics
+  - id: variant-registration-is-checked
+    rule: A variant registration panics on an invalid name, a built-in or reserved name, a taken name, empty Props, an odd count in Props, Hover or Focus, or a sheet already built.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreVariantRegistrationNamesItsFault
+      - test: framework/ui.TestReservedVariantNamePanics
+      - test: framework/ui.TestDuplicateVariantPanics
+      - test: framework/ui.TestRegisterAfterBuildPanics
+  - id: status-registration-is-checked
+    rule: RegisterStatusVariant panics on an empty Color, an Icon holding a quote, a backslash or a newline, or a name a consumer's modifier class already uses.
+    enforced_by:
+      - test: framework/ui.TestBadVariantShapePanics
+      - test: framework/ui.TestSweepCoreStatusIconRefusesCSSBreakers
+      - test: framework/ui.TestSweepCoreStatusVariantRefusesConsumerModifierNames
+  - id: registered-button-variant-styles-every-wearer
+    rule: A registered button variant or size joins buttonClasses and is emitted once as a plain .fui-button--<name> rule, so Button, LinkButton, ToggleAction and OptimisticAction all draw it.
+    enforced_by:
+      - test: framework/ui.TestRegisteredVariantLandsInTheClassMap
+      - test: framework/ui.TestCustomVariantStylesToggleAction
+      - test: framework/ui.TestSweepCoreButtonVariantRuleIsAPlainClassRule
+  - id: registered-variants-emit-sorted
+    rule: A variant set's snapshot lists its names sorted, so the registered rules land in the sheet in the same order every build.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreVariantSnapshotIsSorted
+  - id: status-variant-in-every-consumer-sheet
+    rule: A registered status variant is emitted into the badge, tag, callout and notification sheets in each one's built-in pattern, with a bullet as the default icon.
+    enforced_by:
+      - test: framework/ui.TestStatusVariantCSSInAllSheets
+  - id: registered-status-colour-resolves-tokens
+    rule: registeredStatusColor expands {colors.*} references to var(--color-*) before a chart uses the colour.
+    enforced_by:
+      - test: framework/ui.TestBarChartStatusVariantColor
+  - id: button-class-tokens-default-primary
+    rule: buttonClassTokens draws an empty variant as primary, because the button's colours live in the variant rules.
+    enforced_by:
+      - test: framework/ui.TestSweepCoreButtonClassTokensDefaultToPrimary
+  - id: component-css-only-what-renders
+    rule: ComponentCSS returns only the sheets of components the document renders, and WithComponentCSS puts them just before </head>, or before the whole document when it has no head.
+    enforced_by:
+      - test: framework/ui.TestStandaloneDocumentIncludesOnlyRenderedComponentCSS
+      - test: framework/ui.TestSweepCoreComponentCSSGoesInsideHead
+  - id: inventories-name-every-component
+    rule: The package doc in framework/ui/doc.go and framework/docs/content/ui-new-components.md name every exported Config-taking constructor of framework/ui.
+    enforced_by:
+      - test: framework/ui/internal/treegate.TestDocGoInventoryComplete
+      - test: framework/ui/internal/treegate.TestCatalogDocListsAllComponents
+decisions:
+  - id: compact-density-is-a-literal
+    date: 2026-11-16
+    status: accepted
+    decision: Comfortable controls ride --spacing-touch-target and compact controls are a fixed 36px.
+    rejected:
+      - option: Size compact controls from a token too.
+        why: Compact is a deliberate squeeze below the 44px WCAG 2.5.5 floor, and the token is what an accessibility skin raises.
+    upholds: [comfortable-density-rides-touch-target]
+  - id: options-travel-by-inheritance
+    date: 2026-11-16
+    status: accepted
+    decision: Theme boundaries declare the whole --fui-* option set, again in every scope block, light and dark, and component rules only read it.
+    rejected:
+      - option: Descendant option rules such as .cui-theme-a .fui-button.
+        why: They outrank the component's own variant and state selectors.
+      - option: Declare the option variables once at :root.
+        why: A var() reference resolves where it is declared, so a scope with its own palette would inherit the root's colours.
+    upholds: [option-variables-only-at-boundaries, component-options-root-floor]
+  - id: variant-rules-are-plain-class-rules
+    date: 2026-11-16
+    status: accepted
+    decision: Registered button variants and sizes are emitted once as plain .fui-button--<name> rules after the built-ins, so they win by source order; card variants stay scoped to the ui-card marker.
+    rejected:
+      - option: Scope button variant rules to the ui-button marker, with a copy for each action component's marker.
+        why: A ui-button-scoped rule cannot reach ToggleAction or OptimisticAction, and the per-marker copies had to be kept in step.
+    upholds: [registered-button-variant-styles-every-wearer]
+  - id: brand-variants-register
+    date: 2026-11-16
+    status: accepted
+    decision: An app's own button, card or status variant is registered at init, which extends the render-time validation and routes its CSS into the component's sheet.
+    rejected:
+      - option: Let an app ship CSS for its variant class.
+        why: It would be bespoke CSS outside the styling surface, and a typo in the variant would no longer panic.
+    upholds: [variant-registration-is-checked, ui.styling/one-styling-surface]
+  - id: one-classes-map-per-part-owner
+    date: 2026-11-16
+    status: accepted
+    decision: Each headless primitive gets its own Classes map (fieldClasses for Field, inputClasses for Input and so on), passed alone.
+    rejected:
+      - option: One merged map for a field and its control.
+        why: Field and Input both key their root on PartRoot, so one of the two root classes would be lost.
+  - id: extra-attrs-closed-only-to-handlers
+    date: 2026-11-16
+    status: accepted
+    decision: ExtraAttrs stays open to data-*, aria-*, dir, lang and the like, and is closed only to on* handlers and control bytes.
+    rejected:
+      - option: A typed config field per attribute.
+        why: There are too many legitimate attributes to give each its own knob.
+      - option: Pass event handlers through.
+        why: On a dynamic surface (an article body, a search result) that makes ExtraAttrs a stored-XSS path.
+    upholds: [scrub-attrs-drops-handlers-and-control-bytes]
+  - id: invalidate-drops-bad-paths
+    date: 2026-11-16
+    status: accepted
+    decision: InvalidateScreens drops an invalid path silently, and drops one with control bytes rather than escaping it, because the values only ever key the client's screen cache.
+    rejected:
+      - option: Escape control bytes in the path.
+        why: DEL survives JSON encoding unescaped and Go's HTTP/2 writer silently drops a header value holding it.
+    upholds: [invalidate-screens-accepts-only-cache-keys]
+  - id: strings-reuse-existing-keys
+    date: 2026-11-16
+    status: accepted
+    decision: stringsKeys reuses the i18nui key a component already says the same word with, and a new key takes headless's English as its default.
+    rejected:
+      - option: A new key for every headless.Strings field.
+        why: A host would translate the same word twice, and the no-translator page would drift from the goldens.
+    upholds: [strings-bridge-maps-every-field]
+  - id: tone-words-have-their-own-keys
+    date: 2026-11-16
+    status: accepted
+    decision: The tone word said before an Alert's or SystemBanner's title has its own i18nui keys.
+    rejected:
+      - option: Reuse the ui.toast.* keys.
+        why: Those keys name a surface a host may have translated with toast wording.

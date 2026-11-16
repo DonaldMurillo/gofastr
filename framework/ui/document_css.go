@@ -8,10 +8,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// WithComponentCSS includes the styles used by a standalone HTML document.
-// It lets a plugin demo render the standard controls without mounting a
-// second UIHost or duplicating their CSS. It adds no scripts or behaviors;
-// UIHost remains the normal host for interactive framework applications.
+// WithComponentCSS puts ComponentCSS in a <style> before </head>, or before the
+// document when it has no head. It adds no scripts.
 func WithComponentCSS(document render.HTML, theme style.Theme) render.HTML {
 	css := ComponentCSS(document, theme)
 	if css == "" {
@@ -24,9 +22,8 @@ func WithComponentCSS(document render.HTML, theme style.Theme) render.HTML {
 	return render.Join(render.Raw(block), document)
 }
 
-// ComponentCSS collects only the component styles used in document. Static
-// writers can save it in an external stylesheet under a strict style policy.
-// The host must also emit theme.CSSCustomProperties() for token values.
+// ComponentCSS returns the sheets of the components document renders; the host
+// still emits the theme's custom properties.
 func ComponentCSS(document render.HTML, theme style.Theme) string {
 	var css strings.Builder
 	hash := style.ThemeHash(theme)
