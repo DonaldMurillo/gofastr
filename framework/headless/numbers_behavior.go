@@ -10,11 +10,7 @@ import (
 var numbersJS string
 
 // NumbersBehaviorName is the runtime module that writes a number-mode
-// signal (data-cui-signal-mode="number") the way the page's language
-// writes numbers, so a counter's live value matches the i18n.Number
-// text the server rendered. The host serves it at
-// /__gofastr/runtime/headless-numbers.js; it lives here, not in the
-// core runtime, so a page with no live number pays nothing for it.
+// signal (data-cui-signal-mode="number") in the page's locale.
 const NumbersBehaviorName = "headless-numbers"
 
 var _ = uiregistry.RegisterBehavior(NumbersBehaviorName, numbersJS,

@@ -9,18 +9,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The stateful form controls: a number input flanked by steppers, a
-// labelled range slider with an output, the two-thumb range pair, and
-// the rating radio group. Every one of them is a native control first
-// — a number input, a range input, a radio — so the no-script page is
-// not a degraded page but the same page, and the module that binds
-// the data-hui-* hooks (headless-controls) only ever enhances: it
-// steps the number, mirrors the slider's output, and cross-clamps the
-// pair, and it never repairs contradictory server props — those are
-// refused here, at render.
-
-// NumberInput parts. The input is the control the label points at;
-// the two buttons are the component's own.
+// NumberInput parts.
 const (
 	PartNumberDecrement Part = "number-decrement"
 	PartNumberIncrement Part = "number-increment"
@@ -30,43 +19,29 @@ const (
 type NumberInputProps struct {
 	// Name is the form-field name. Required.
 	Name string
-	// Label is the visible label. Required: it names the control and
-	// the two buttons (through NumberDecrement / NumberIncrement).
+	// Label names the control and both buttons. Required.
 	Label string
-	// Value is the initial value as text, so a decimal step's value
-	// travels unchanged. Empty means no value. A value that is not a
-	// number, or violates a supplied bound, is refused.
+	// Value is the initial value as text, rendered as given.
 	Value string
-	// Min and Max bound the value. Nil leaves the bound to the
-	// server; a Min above a Max is refused.
+	// Min and Max bound the value; nil is unbounded, Min above Max is refused.
 	Min *int
 	Max *int
 	// Step is the stepper granularity. Default 1; positive only.
-	Step int
-	// Required and Disabled are the input's own states; Disabled also
-	// takes the buttons out.
+	Step     int
 	Required bool
+	// Disabled also disables the buttons.
 	Disabled bool
-	// Help is the rule the value obeys; Error is the violation. Both
-	// reach the input's description, the error first.
+	// Help and Error describe the input, the error first.
 	Help  string
 	Error string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the two
-	// buttons' names.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context. With no ID the input's id is the
-	// Name, handed out through Ctx's id scope (render.UniqueID), so a
-	// second control with the same Name on the page gets a -2 suffix;
-	// an explicit ID is never changed. With no Ctx the Name is used as
-	// is.
+	// Ctx scopes the id derived from Name when ID is empty.
 	Ctx context.Context
 }
 
@@ -75,7 +50,6 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: NumberInput requires Name — a control with no name submits nothing")
 	}
-	// Trimmed: a label of spaces names nothing, exactly like no label.
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: NumberInput requires Label — the control and both buttons are named from it")
 	}
@@ -90,19 +64,12 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 		panic("headless: NumberInput Min " + strconv.Itoa(*p.Min) + " is above Max " + strconv.Itoa(*p.Max) + " — an empty range is a configuration error, not a field")
 	}
 	id := instanceID(p.Ctx, p.ID, p.Name, "-hint", "-error")
-	// The value is DATA, not configuration: a form re-rendered with
-	// what the reader posted renders it back as given (the browser
-	// marks it invalid against the bounds; the Error prop is how the
-	// server says so). Only the control bytes are scrubbed.
 	value := scrubControlBytes(p.Value)
 
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
 	describedBy, hintID, errID := Describe(id, p.Help, p.Error)
 
-	// The input: a real, named number control. The −/+ hooks ride the
-	// buttons; the input is found through data-hui-number-input-for,
-	// so an island swap that replaces the row rebinds on arrival.
 	input := html.Attrs{
 		"type": "number",
 		"name": p.Name,
@@ -138,10 +105,6 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 
 	kids := []render.HTML{
 		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": id})), render.Text(p.Label)),
-		// The three controls draw one bordered row in the sheet, which
-		// is why they share a wrapper: a pill border belongs to the
-		// trio, not to each element of it. None of the row holds caller
-		// content, so the mark sits on the row and not its children.
 		b.El("div", PartFieldRow, Internal(nil),
 			stepper(PartNumberDecrement, "data-hui-number-input-decrement",
 				w.fill(w.NumberDecrement, "label", p.Label), "−"),
@@ -159,11 +122,6 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 			Internal(Attrs(map[string]string{"id": hintID})), render.Text(p.Help)))
 	}
 
-	// The id is the input's alone: the label's for and the buttons'
-	// data-hui-number-input-for name it. The browser resolves the
-	// label's for page-wide, to the first element carrying the id, and
-	// a group that carried it too was that first element. The module
-	// looks only among the buttons' row siblings.
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label", "type", "name", "step",
 		"value", "min", "max", "disabled", "required", "aria-invalid", "aria-describedby"),
 		Attrs(map[string]string{
@@ -172,8 +130,6 @@ func NumberInput(p NumberInputProps, s Classes) render.HTML {
 		}))
 	return b.El("div", PartRoot, own, kids...)
 }
-
-// ─── Slider ─────────────────────────────────────────────────────────
 
 // Slider parts.
 const (
@@ -188,37 +144,26 @@ type SliderProps struct {
 	Name string
 	// Label is the visible label. Required.
 	Label string
-	// Min and Max bound the range. Both zero means 0..100; a Min
-	// above or equal to a Max is refused.
+	// Min and Max bound the range; both zero means 0..100, Min not below Max is refused.
 	Min int
 	Max int
 	// Step is the granularity. Default 1; positive only.
 	Step int
-	// Value is the initial value. Outside the range clamps to the
-	// nearest bound, the way the browser treats a dragged thumb; a
-	// value between steps renders as given and snaps on first
-	// interaction — the module mirrors whatever the thumb says, so
-	// there is no disagreement to refuse.
+	// Value is the initial value, clamped into Min..Max.
 	Value int
-	// ShowValue renders the output beside the label and the hook the
-	// module mirrors the live value through.
+	// ShowValue renders a live output beside the label.
 	ShowValue bool
 	// ShowEdgeLabels renders Min and Max under the track.
 	ShowEdgeLabels bool
-	// Disabled disables the control.
-	Disabled bool
+	Disabled       bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context: the derived id goes through its id
-	// scope, as NumberInputProps.Ctx describes.
+	// Ctx scopes the id derived from Name when ID is empty.
 	Ctx context.Context
 }
 
@@ -227,7 +172,6 @@ func Slider(p SliderProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Slider requires Name — a control with no name submits nothing")
 	}
-	// Trimmed: a label of spaces names nothing, exactly like no label.
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: Slider requires Label — the control is named by it")
 	}
@@ -246,11 +190,6 @@ func Slider(p SliderProps, s Classes) render.HTML {
 	if step <= 0 {
 		panic("headless: Slider Step " + strconv.Itoa(p.Step) + " must be positive")
 	}
-	// The value is data: a re-rendered form clamps what was posted
-	// into the range the props declare, the way the browser would —
-	// configuration errors (an empty range, a non-positive step) are
-	// refused above, a value between steps is not a configuration
-	// error.
 	value := p.Value
 	if value < min {
 		value = min
@@ -275,10 +214,6 @@ func Slider(p SliderProps, s Classes) render.HTML {
 
 	var output render.HTML
 	if p.ShowValue {
-		// A real <output for>: the browser associates it with the
-		// input, and the module (through data-hui-slider-output)
-		// keeps the text in step while the thumb moves. The SSR text
-		// is the true value, so the number is right before script.
 		output = b.El("output", PartSliderOutput, Internal(html.Attrs{
 			"for":                    id,
 			"data-hui-slider-output": "",
@@ -291,16 +226,12 @@ func Slider(p SliderProps, s Classes) render.HTML {
 		b.El("input", PartControl, Internal(input)),
 	}
 	if p.ShowEdgeLabels {
-		// Neither edge label is caller content, so the mark sits on
-		// the wrapper and not the two spans inside it.
 		kids = append(kids, b.El("div", PartSliderEdges, Internal(nil),
 			b.El("span", PartSliderEdge, nil, render.Text(w.Number(min))),
 			b.El("span", PartSliderEdge, nil, render.Text(w.Number(max))),
 		))
 	}
 
-	// The id is the range input's alone (the label and the output
-	// point at it), as in NumberInput.
 	own := Safe(p.ExtraAttrs, "role", "aria-label", "type", "name",
 		"min", "max", "step", "value", "disabled", "aria-label")
 	Mark(own, "data-hui-slider")
@@ -310,10 +241,7 @@ func Slider(p SliderProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, kids...)
 }
 
-// ─── RangeSlider ────────────────────────────────────────────────────
-
-// RangeSlider parts. The two inputs are the component's thumbs; the
-// track is the positioning context the sheet overlays them on.
+// RangeSlider parts.
 const (
 	PartRangeLow    Part = "range-low"
 	PartRangeHigh   Part = "range-high"
@@ -323,45 +251,28 @@ const (
 
 // RangeSliderProps configures the two-thumb range pair.
 type RangeSliderProps struct {
-	// Name is the base form-field name. Two inputs ship, Name+"-min"
-	// and Name+"-max", so the server receives the pair without
-	// parsing a composite string.
+	// Name is the base form-field name; the thumbs submit as Name-min and Name-max.
 	Name string
-	// Label is the group's name, read by assistive technology and
-	// built into each thumb's name (RangeLow / RangeHigh).
+	// Label names the group and both thumbs. Required.
 	Label string
 	// Min, Max, Step as for Slider.
 	Min  int
 	Max  int
 	Step int
-	// ValueLow and ValueHigh are the thumbs' values. Nil means unset:
-	// an unset low sits on Min and an unset high on Max, so a pair
-	// left unset spans the whole range. Any set value is honoured, a
-	// 0..0 pair included. Values outside the bounds clamp to them, and
-	// a crossed pair is ordered low, high — the same repair the module
-	// makes of a dragged pair.
+	// ValueLow and ValueHigh are the thumbs' values; nil sits on Min or Max.
 	ValueLow  *int
 	ValueHigh *int
-	// ShowValue renders the pair's one output sentence, from
-	// RangeValue; the module keeps it in step using the same
-	// sentence, which travels with the output.
+	// ShowValue renders the pair's output sentence (Strings.RangeValue).
 	ShowValue bool
-	// Disabled disables both thumbs.
-	Disabled bool
+	Disabled  bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the two
-	// thumbs' names and the output sentence.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context: the derived id the two thumbs' ids
-	// are built from goes through its id scope, as
-	// NumberInputProps.Ctx describes.
+	// Ctx scopes the id derived from Name when ID is empty.
 	Ctx context.Context
 }
 
@@ -370,7 +281,6 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: RangeSlider requires Name — a control with no name submits nothing")
 	}
-	// Trimmed: a label of spaces names nothing, exactly like no label.
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: RangeSlider requires Label — the group and both thumbs are named from it")
 	}
@@ -388,10 +298,6 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	if step <= 0 {
 		panic("headless: RangeSlider Step " + strconv.Itoa(p.Step) + " must be positive")
 	}
-	// The values are data: both clamp into the declared range and a
-	// crossed pair is ordered low, high — the same repair the browser
-	// makes of a dragged pair, so a re-rendered form shows the posted
-	// pair as a valid range.
 	lo, hi := min, max
 	if p.ValueLow != nil {
 		lo = *p.ValueLow
@@ -436,9 +342,6 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 
 	var output render.HTML
 	if p.ShowValue {
-		// The hook carries the sentence's SHAPE and the text carries
-		// the sentence: the module re-formats through the shape as a
-		// thumb moves, so a translated page keeps its own words live.
 		output = b.El("output", PartRangeOutput, Internal(html.Attrs{
 			"for":                          id + "-min " + id + "-max",
 			"data-hui-range-slider-output": w.RangeValue,
@@ -458,8 +361,6 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own,
 		b.El("span", PartLabel, Internal(nil), render.Text(p.Label)),
 		output,
-		// Neither thumb is caller content, so the mark sits on the
-		// track and not the two inputs inside it.
 		b.El("div", PartRangeTrack, Internal(nil),
 			thumb(PartRangeLow, "min", "data-hui-range-slider-low",
 				w.fill(w.RangeLow, "label", p.Label), lo),
@@ -469,63 +370,36 @@ func RangeSlider(p RangeSliderProps, s Classes) render.HTML {
 	)
 }
 
-// ─── Rating ─────────────────────────────────────────────────────────
-
-// Rating parts: each choice is one radio (PartControl) wrapped by its
-// label (PartOption), the glyph inside the label aria-hidden.
+// Rating parts.
 const (
 	PartOptionChoice Part = "option-choice"
 )
 
 // RatingProps configures a rating as a radio group.
 type RatingProps struct {
-	// Name is the form-field name. Required; the group submits the
-	// chosen value 1..Max under it.
+	// Name is the form-field name the chosen value 1..Max submits under. Required.
 	Name string
-	// Label names the group for assistive technology. Required.
+	// Label names the group. Required.
 	Label string
 	// Max is the ceiling. Default 5; below 1 is refused.
 	Max int
 	// Value is the current choice, 0 (none) to Max.
 	Value int
-	// Icon is the glyph cloned into every choice. The default is a
-	// star; a caller's icon reaches every choice the same way.
-	Icon render.HTML
-	// Disabled disables every radio.
+	// Icon is the glyph in every choice; the default is a star.
+	Icon     render.HTML
 	Disabled bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry each
-	// choice's name (RatingChoice).
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context. The choices' ids are <ID>-1..<ID>-Max
-	// when ID is set (the ID is reserved with them), and are built from
-	// Name otherwise: through Ctx's id scope (render.UniqueID) a second
-	// rating with the same Name on the page builds them from Name-2
-	// instead of repeating them. With no Ctx the Name is used as is.
+	// Ctx scopes the choice ids (<ID or Name>-1..-Max).
 	Ctx context.Context
 }
 
-// Rating renders the radio group.
-//
-// The fieldset/legend and the radio inputs ARE the contract: native
-// arrows move between choices, the form POSTs the chosen value, and
-// every choice is named ("3 out of 5") — which is why no behaviour
-// module exists for it. A second state owner would add nothing the
-// radios do not already guarantee.
-//
-// The choices render in forward order (1..Max), so the DOM order is
-// the reading order: native arrows move the way the stars read (and
-// follow the page's direction in RTL), as WCAG 2.4.3 asks. A sheet
-// fills the stars up to the checked or hovered one with :has()
-// (a choice that has a later checked radio or hovered choice after
-// it), with no script at all.
+// Rating renders the rating as a radio group, choices in order 1..Max.
 func Rating(p RatingProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Rating requires Name — a control with no name submits nothing")
@@ -540,9 +414,6 @@ func Rating(p RatingProps, s Classes) render.HTML {
 	if max < 1 {
 		panic("headless: Rating Max " + strconv.Itoa(max) + " is below 1 — a rating with no choices is decoration")
 	}
-	// The value is data: it clamps into 0..Max rather than refusing,
-	// so a re-rendered form with a posted out-of-range value still
-	// renders a group.
 	value := p.Value
 	if value < 0 {
 		value = 0
@@ -563,9 +434,6 @@ func Rating(p RatingProps, s Classes) render.HTML {
 		"aria-label": p.Label,
 		"id":         p.ID,
 	}))
-	// The choices' ids build from the instance id (instanceID): the
-	// caller's ID, reserved as is, or else the Name handed out through
-	// the id scope — each with every choice's suffix taken with it.
 	family := make([]string, max)
 	for i := range family {
 		family[i] = "-" + strconv.Itoa(i+1)
@@ -586,8 +454,6 @@ func Rating(p RatingProps, s Classes) render.HTML {
 		}
 		Flag(radio, "disabled", p.Disabled)
 		items = append(items, b.El("input", PartControl, Internal(radio)))
-		// The glyph is the caller's unless it is the default star or a
-		// composer Own'd it; then the whole label is the component's.
 		label := internalIf(p.Icon == "" || ownedSlot(p.Icon), html.Attrs{"for": idV})
 		items = append(items, b.El("label", PartOptionChoice, label,
 			b.El("span", PartIcon, Attrs(map[string]string{"aria-hidden": "true"}), glyph)))
