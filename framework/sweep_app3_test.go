@@ -5,13 +5,16 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/cron"
 	fembed "github.com/DonaldMurillo/gofastr/framework/embed"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 	"github.com/DonaldMurillo/gofastr/framework/event"
@@ -277,5 +280,117 @@ func TestSweepApp3BannerNamesMCPEndpoint(t *testing.T) {
 	app.printStartupBanner("127.0.0.1:8080", "tcp", "demo", false, false, "")
 	if out := buf.String(); !strings.Contains(out, "http://127.0.0.1:8080/mcp  (1 tools") {
 		t.Fatalf("banner does not name /mcp with its tool count: %q", out)
+	}
+}
+
+// Under RoleServe AddCron and AddQueue register neither a start hook nor a
+// drainer; under RoleWorker each registers both.
+func TestSweepApp3WorkersAreWorkerScoped(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	for _, tc := range []struct {
+		role Role
+		want int
+	}{{RoleServe, 0}, {RoleWorker, 2}} {
+		app := NewApp(WithoutDefaultMiddleware(), WithRole(tc.role))
+		hooks := len(app.startHooks)
+		app.AddCron(cron.NewScheduler())
+		app.AddQueue(&blockedCloseQueue{release: make(chan struct{})})
+		if got := len(app.startHooks) - hooks; got != tc.want {
+			t.Errorf("role %v: %d start hooks added, want %d", tc.role, got, tc.want)
+		}
+	}
+}
+
+// A cron job that ignores its cancelled context is abandoned at the
+// Shutdown deadline instead of hanging the teardown.
+func TestSweepApp3CronDrainHonorsShutdownDeadline(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware())
+	block := make(chan struct{})
+	started := make(chan struct{})
+	s := cron.NewScheduler()
+	if err := s.Register(cron.CronJob{Name: "stuck", Spec: "* * * * *", Run: func(context.Context) error {
+		close(started)
+		<-block
+		return nil
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	app.AddCron(s)
+	if err := app.runStartHooks(); err != nil {
+		t.Fatal(err)
+	}
+	s.RunOnce(context.Background(), time.Now().Truncate(time.Minute))
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- app.Shutdown(ctx) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Error("Shutdown abandoned a running job without reporting it")
+		}
+	case <-time.After(10 * time.Second):
+		close(block)
+		t.Fatal("Shutdown hung on a cron job that ignores its context")
+	}
+	close(block)
+}
+
+// A scheduler added during a module's Init skips its jobs while the
+// module is disabled.
+func TestSweepApp3ModuleCronSkipsWhileDisabled(t *testing.T) {
+	t.Setenv("GOFASTR_ROLE", "")
+	app := NewApp(WithoutDefaultMiddleware())
+	var ran atomic.Int32
+	s := cron.NewScheduler()
+	if err := s.Register(cron.CronJob{Name: "tick", Spec: "* * * * *", Run: func(context.Context) error { ran.Add(1); return nil }}); err != nil {
+		t.Fatal(err)
+	}
+	app.RegisterModule(&modStub{name: "m1", init: func(app *App) error { app.AddCron(s); return nil }})
+	if err := app.InitPlugins(); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().Truncate(time.Minute)
+	if err := app.Modules().Disable(context.Background(), "m1"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunOnce(context.Background(), now)
+	s.Stop()
+	if n := ran.Load(); n != 0 {
+		t.Fatalf("job ran %d times while its module was disabled", n)
+	}
+	if err := app.Modules().Enable(context.Background(), "m1"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunOnce(context.Background(), now)
+	s.Stop()
+	if n := ran.Load(); n != 1 {
+		t.Fatalf("job ran %d times once its module was enabled, want 1", n)
+	}
+}
+
+// /.debug/* is mounted only with AppConfig.DebugEndpoints.
+func TestSweepApp3DebugEndpointsOnlyWhenEnabled(t *testing.T) {
+	admin := handler.SetUser(context.Background(), debugRoleUser{roles: []string{"admin"}})
+	for _, enabled := range []bool{false, true} {
+		app := NewApp(WithoutDefaultMiddleware())
+		app.Config.DebugEndpoints = enabled
+		if err := app.InitPlugins(); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := app.finalizeRoutes(); err != nil {
+			t.Fatal(err)
+		}
+		rec := httptest.NewRecorder()
+		app.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.debug/stats", nil).WithContext(admin))
+		want := http.StatusNotFound
+		if enabled {
+			want = http.StatusOK
+		}
+		if rec.Code != want {
+			t.Errorf("DebugEndpoints=%v: /.debug/stats = %d, want %d", enabled, rec.Code, want)
+		}
 	}
 }
