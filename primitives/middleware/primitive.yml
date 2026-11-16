@@ -1,10 +1,11 @@
 primitive: middleware
-summary: The HTTP middleware of core/middleware, among them idempotency keys with their memory and SQL stores and the token-bucket rate limit.
+summary: The HTTP middleware of core/middleware, among them idempotency keys with their memory and SQL stores, the token-bucket rate limit, and the /metrics store that subsystem collectors write to.
 code:
   - core/middleware/
 docs:
   - framework/docs/content/idempotency.md
   - framework/docs/content/rate-limit.md
+  - framework/docs/content/observability.md
 twins:
   - job: Expire an idempotency entry at its TTL and drop expired entries about once a minute.
     why: The memory store holds a map under a mutex and compares Go times, while the SQL store holds rows other replicas read and expires them by a SQL comparison on expires_at, which SQLite makes as text.
@@ -29,3 +30,36 @@ invariants:
     enforced_by:
       - test: core/middleware.TestRateLimitFullBucketRestartsClock
       - test: core/middleware.TestRateLimitPartialRefillKeepsClock
+  - id: counter-is-fed-by-an-add-only-source
+    rule: Every Prometheus metric the repository declares is listed in emittedMetrics with the source of its number; a counter is named _total, nothing else is, and no counter is fed by a count of current state (COUNT, len, Stats).
+    enforced_by:
+      - test: framework.TestEveryCounterIsFedByAnAddOnlySource
+      - test: framework/outbox.TestOutboxDeadLetterMetricIsAGauge
+      - test: battery/queue.TestDeadLetterMetricIsAGauge
+    judge: Does this change declare a counter whose value can fall while the process runs, such as a row count, a list length or a sum over things that can be removed?
+    applies:
+      - framework/metrics.go
+      - framework/outbox/metrics.go
+      - framework/slowquery/metrics.go
+      - battery/webhook/webhook.go
+      - battery/log/metrics_handler.go
+      - battery/queue/metrics.go
+decisions:
+  - id: outbox-dead-letter-gauge-has-no-alias
+    date: 2026-11-16
+    status: accepted
+    decision: outbox_dead_letter_total, a COUNT of the delivery rows dead now, is renamed to the gauge outbox_dead_letter_deliveries with no alias, as queue_dead_letter_total was.
+    rejected:
+      - option: Keep it a counter and count dead-letter events in process memory.
+        why: Deliveries are dead-lettered by any replica and the figure must survive a restart, so an in-process count would differ per replica and reset on deploy while the rows remain.
+      - option: Emit the old name beside the new one for a release.
+        why: The old series would still be a counter that falls on a Replay, a purge or an erasure, so a dashboard left on it stays wrong with no error to show it.
+    upholds: [counter-is-fed-by-an-add-only-source]
+  - id: remaining-counters-are-atomic-adds
+    date: 2026-11-16
+    status: accepted
+    decision: http_requests_total, the two webhook totals, slow_queries_total and the four gofastr_log totals stay counters because each loads an atomic that is only added to, and the two db_pool wait totals because sql.DBStats documents them as running totals.
+    rejected:
+      - option: Prove each with a test that tries to make it fall.
+        why: No operation removes from an add-only atomic, so such a test has nothing to drive; the table pins the expression each number is loaded from instead.
+    upholds: [counter-is-fed-by-an-add-only-source]

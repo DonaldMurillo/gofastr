@@ -220,8 +220,8 @@ decisions:
     status: accepted
     decision: query.OrderTerm renders every ORDER BY term, pinned or not; the query builder's own inline column and direction rendering is removed, and crud's aggregate calls OrderTerm for its group order.
     rejected:
-      - option: Append the NULLS words in crud where it knows the dialect.
-        why: The column scrub and the direction clamp would then be written beside the builder's, and the null position in a third place.
+      - option: Keep the builder's inline rendering and write the pinned term where it is needed.
+        why: GroupCountAll builds its ORDER BY as a string outside the builder, so it would have carried a second copy of the column scrub, the direction clamp and the null position.
     upholds: [sort-nulls-order-as-postgres]
   - id: cursor-carries-values-then-key
     date: 2026-11-15

@@ -391,6 +391,13 @@ few lines, and link the PR or the docs page for the rest.
   code that serves a requested path; `static.Refuses(path)` no longer
   refuses short names, since a tree walk yields only real names, so a
   static export now publishes a `~digit` file.
+- **BREAKING: a `crud.CrudHandler` literal over a wrapped database
+  panics.** A handler over a `DB` that is not a `*sql.DB` (a wrapper, a
+  transaction) asked the database for its dialect on every sort, decimal
+  write and keyed write. One built with `crud.NewCrudHandler` now asks
+  once. One built as `&crud.CrudHandler{...}` over such a `DB` has
+  nowhere to keep the answer and panics at the first operation that
+  needs it: build it with `crud.NewCrudHandler`.
 - **BREAKING (SQLite): a sort puts rows with no value where Postgres
   does** ([#698](https://github.com/DonaldMurillo/gofastr/issues/698)).
   `?sort=` on a column that can hold NULL listed the null rows first
@@ -409,6 +416,22 @@ few lines, and link the PR or the docs page for the rest.
   reset. There is no alias: point dashboards and alerts at the new name
   and drop `rate()` or `increase()` around it. `queue_depth` now reports
   the real backlog on the memory and Redis queues; it read 0 there.
+- **BREAKING: `outbox_dead_letter_total` is now the gauge
+  `outbox_dead_letter_deliveries`** ([observability](framework/docs/content/observability.md)).
+  It was declared a counter but is the number of dead-lettered
+  deliveries the outbox holds now, so it fell on a `Replay`, a purge or
+  an erasure. There is no alias: point dashboards and alerts at the new
+  name and drop `rate()` or `increase()` around it.
+- **BREAKING: `RedisQueue` counts only with `LLEN`**
+  ([queue](framework/docs/content/queue.md#optional-listlengther)).
+  `Stats` read the whole dead-letter list, every payload included, on
+  each `/metrics` scrape and each admin Jobs page load. It now asks the
+  client for the length (`queue.ListLengther`). Over a client without
+  `LLen`, `Stats` returns an error, the collector emits neither
+  `queue_depth` nor `queue_dead_letter_jobs`, and the admin shows the
+  failed jobs with no counts, no pager and no "Replay N failed" button:
+  add the one-line `LLen` method to the adapter. `Replay` now reads the
+  dead-letter list a page at a time instead of whole.
 - **BREAKING: the in-memory scheduler's `Register` refuses a schedule
   with no job type** ([queue](framework/docs/content/queue.md)). It
   returned nil and registered nothing, so the schedule never fired; the
@@ -435,6 +458,15 @@ few lines, and link the PR or the docs page for the rest.
   text key, or sends `NULL`, is refused as on Postgres. An existing table
   is not rebuilt and no migration is proposed for it; a later rebuild of
   one fails on a row whose key is `NULL`, so give those rows a key first.
+  The tables the framework, the batteries and core create for themselves
+  (audit log, modules, outbox, bulk jobs, queue and its schedules,
+  webhooks, saved views, the auth stores, idempotency keys, feature
+  flags, A2A tasks, embed nonces, the harness session store) and the
+  migration `gofastr init` writes say `NOT NULL` on their keys too, under
+  the same terms: new tables only. `gofastr verify` has a new error,
+  `GOFASTR1418`, for a hand-written `CREATE TABLE` whose primary-key
+  column has no `NOT NULL`: add it, or mark the line
+  `//gofastr:allow(GOFASTR1418) <why>`.
 - **BREAKING: generated read shapes carry optional scalars as
   pointers** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   In the generated entities model struct and the generated Go client's read
@@ -923,6 +955,15 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **A hop page under a locale prefix reloads the prefixed path**
+  ([i18n](framework/docs/content/i18n.md),
+  [auth](framework/docs/content/auth.md)). With
+  `framework.WithLocalePrefixes`, the same-site hop page answered on
+  `/es/orders` sent `Refresh: 0;url=/orders`, so the reload left the
+  reader's language. The response rewrite now covers the `Refresh`
+  header, a `<meta http-equiv="refresh">` and `Content-Location`, for
+  every handler, as it covers `Location`. A URL that already carries a
+  locale, another site's URL and a `//host` URL stay as written.
 - **A signed-in user who follows an outside link into a guarded page
   lands on the page** ([auth](framework/docs/content/auth.md),
   [admin](framework/docs/content/admin.md)). The browser withholds the

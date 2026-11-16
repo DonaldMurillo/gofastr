@@ -41,6 +41,13 @@ invariants:
     rule: A SQLite table created before its key said NOT NULL boots with no rebuild and its rows kept, and neither the live diff nor migrate generate proposes a change for it.
     enforced_by:
       - test: framework/migrate.TestOlderSQLiteKeyTableBootsUnchanged
+  - id: hand-written-keys-say-not-null
+    rule: Every primary-key column in a CREATE TABLE string written by hand in non-test Go code, in the framework, the batteries, core and the files gofastr init writes, says NOT NULL, except a lone INTEGER PRIMARY KEY and a SERIAL key, which the engine fills itself.
+    enforced_by:
+      - contract: GOFASTR1418
+      - test: framework/contracts/analyzers.TestNullableKeyRuleMatchesSQLite
+      - test: framework/contracts/analyzers.TestNullableKeySpellings
+    judge: Does this change build a CREATE TABLE piece by piece (a strings.Builder, a joined slice) with a primary-key column that lacks NOT NULL, which the contract rule cannot read?
 decisions:
   - id: column-readers-share-one-parser
     date: 2026-11-16
@@ -66,5 +73,15 @@ decisions:
     rejected:
       - option: Tighten existing tables to match.
         why: SQLite needs a full table rebuild for it, which is destructive and fails on a row that already holds a NULL key.
-    revisit_if: The hand-written framework and battery tables (audit, outbox, queue, webhook, idempotency and others declare TEXT PRIMARY KEY with no NOT NULL) are brought under the same rule.
     upholds: [key-columns-refuse-null, older-sqlite-key-tables-stay-as-they-are]
+  - id: hand-written-keys-checked-by-a-contract-rule
+    date: 2026-11-16
+    status: accepted
+    decision: The hand-written framework, battery and core tables say NOT NULL on their keys in the CREATE TABLE text, and contract rule GOFASTR1418 reads every CREATE TABLE string in non-test code for a key column without it; tables that already exist are left as they are, as for the migrator.
+    rejected:
+      - option: One table test that boots every store on SQLite and inserts a NULL key.
+        why: It covers only the stores someone lists, cannot boot the Postgres-only ones on SQLite, and does not reach a host app's own tables; the rule reads every statement, and its test runs each spelling on SQLite to show it fires exactly where a NULL key is stored.
+      - option: Rebuild existing SQLite tables to add the NOT NULL.
+        why: The same reason as for the migrator's tables, a rebuild is destructive and fails on a row that already holds a NULL key.
+    revisit_if: A store builds its CREATE TABLE piece by piece, which the rule cannot read.
+    upholds: [hand-written-keys-say-not-null]

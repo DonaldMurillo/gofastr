@@ -30,17 +30,23 @@ invariants:
       - test: battery/queue.TestReplayJobReportsWhetherItQueued
     judge: Does this change give a backend's Replay a body of its own instead of calling its ReplayJob and dropping the report?
   - id: stats-count-what-list-jobs-lists
-    rule: On MemoryQueue and RedisQueue every Stats key counts exactly the jobs ListJobs lists under that status, so a waiting or delayed job appears under no key.
+    rule: On the memory, Redis and SQL queues every Stats key counts exactly the jobs ListJobs lists under that status and the keys sum to what ListJobs lists in all, so on MemoryQueue and RedisQueue, which list dead-letter jobs only, a waiting or delayed job appears under no key.
     enforced_by:
-      - test: battery/queue.TestStatsKeysAreListableOnMemoryAndRedis
+      - test: battery/queue.TestStatsKeysAreListableOnEveryBackend
   - id: queue-depth-is-the-backlog
     rule: The queue_depth gauge reads the jobs waiting on the memory, Redis and SQL queues, a delayed job included.
     enforced_by:
       - test: battery/queue.TestQueueDepthMetricOnEveryBackend
-  - id: redis-depth-needs-llen
-    rule: A RedisQueue counts its depth with LLEN through ListLengther and never reads the main or delayed list to count it; a client without LLEN gets no queue_depth sample and still gets queue_dead_letter_jobs.
+  - id: redis-counts-need-llen
+    rule: A RedisQueue takes every count (Stats' failed count and the queue_depth backlog) with LLEN through ListLengther and reads no list to count it; over a client without LLEN, Stats returns an error and no count, and MetricsCollector emits no sample.
     enforced_by:
-      - test: battery/queue.TestRedisQueueDepthNeedsLLEN
+      - test: battery/queue.TestRedisQueueCountsNeedLLEN
+      - test: battery/admin.TestRedisQueueJobsPageCountsOnlyWithLLEN
+  - id: redis-request-reads-are-paged
+    rule: RedisQueue's Stats, MetricsCollector scrape, ListJobs and ReplayJob never read a list to its end in one LRANGE, and ReplayJob reads the dead-letter list in pages of at most maxSkipDrain entries, starting over when an entry between two pages moved and returning an error when it keeps moving.
+    enforced_by:
+      - test: battery/queue.TestRedisQueueRequestPathsReadBoundedPages
+      - test: battery/queue.TestRedisReplayRestartsWhenTheDeadListShifts
   - id: dead-letter-metric-is-a-gauge
     rule: The dead-letter count is emitted as the gauge queue_dead_letter_jobs, falls on a Replay, and no metric named _total carries it.
     enforced_by:
@@ -95,15 +101,31 @@ decisions:
       - option: Add a pending key to MemoryQueue's and RedisQueue's Stats.
         why: A pager sums the keys and pages ListJobs by them, so a count ListJobs cannot list gives pages with no rows.
     upholds: [stats-count-what-list-jobs-lists, queue-depth-is-the-backlog]
-  - id: redis-depth-never-falls-back-to-lrange
+  - id: redis-counts-never-read-a-list
     date: 2026-11-16
     status: accepted
-    decision: RedisQueue's depth needs the optional ListLengther (LLEN), and a client without it gets no queue_depth sample.
+    decision: RedisQueue counts only with the optional ListLengther (LLEN), and over a client without it Stats is an error, so the scrape emits nothing and the admin Jobs page shows no counts, no pager and no Replay N failed.
     rejected:
       - option: Count with LRANGE 0 -1 when the client has no LLEN.
-        why: It pulls every waiting job's payload on every scrape to take a length.
-    revisit_if: RedisClient gains a required length read.
-    upholds: [redis-depth-needs-llen]
+        why: It pulls every job's payload on every scrape and every admin page load to take a length.
+      - option: Count with LRANGE 0 N-1 and report N as N or more.
+        why: JobStats is a map of plain counts with no way to mark one as cut off, so the admin and the gauge would show the cap as an exact total, and each scrape would still transfer up to N payloads.
+      - option: Keep emitting queue_dead_letter_jobs without LLEN, as before this decision.
+        why: That sample came from the whole-list read.
+    revisit_if: RedisClient gains a required length read, or JobStats gains a way to mark a count as a lower bound.
+    upholds: [redis-counts-need-llen]
+  - id: redis-replay-pages-the-dead-list
+    date: 2026-11-16
+    status: accepted
+    decision: ReplayJob finds its job by reading the dead-letter list newest first in pages that double from 32 to maxSkipDrain entries, each page overlapping the last by one entry to detect a shift; the erase script, promoteDue and Reclaim keep their whole reads.
+    rejected:
+      - option: Read the dead-letter list whole on each replay.
+        why: Replay all calls ReplayJob up to 10,000 times in one request, each transferring every dead job's payload.
+      - option: Page without the overlap entry.
+        why: A replay or an erasure between two pages shifts the list, the scan steps over an entry, and ReplayJob answers false for a job that is still failed.
+      - option: Page the erase script's LRANGE 0 -1, promoteDue or Reclaim's HGETALL the same way.
+        why: The script runs inside Redis and returns one integer, and its single step is what proves the user's jobs gone; promoteDue already pages by maxSkipDrain on the worker path; the pop and processing hashes hold only jobs in flight.
+    upholds: [redis-request-reads-are-paged]
   - id: durable-erase-sweeps-jobs-twice
     date: 2026-11-16
     status: accepted

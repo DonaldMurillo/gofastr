@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -22,9 +23,10 @@ func TestSchedulerFiresEveryIntervalOnTime(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				rq := &recordQueue{}
+				rq := &timedQueue{}
 				s := NewScheduler(rq)
 				defer s.Close()
+				start := time.Now()
 				types := []string{"watched", "other"}
 				for i, iv := range tc.intervals {
 					if err := s.Every(iv).Job(types[i], nil).Register(); err != nil {
@@ -36,9 +38,13 @@ func TestSchedulerFiresEveryIntervalOnTime(t *testing.T) {
 				synctest.Wait()
 				got := 0
 				rq.mu.Lock()
-				for _, j := range rq.jobs {
-					if j.Type == "watched" {
-						got++
+				for i, j := range rq.jobs {
+					if j.Type != "watched" {
+						continue
+					}
+					got++
+					if at, want := rq.at[i].Sub(start), time.Duration(got)*tc.intervals[0]; at != want {
+						t.Errorf("run %d fired at +%s, want +%s", got, at, want)
 					}
 				}
 				rq.mu.Unlock()
@@ -48,6 +54,19 @@ func TestSchedulerFiresEveryIntervalOnTime(t *testing.T) {
 			})
 		})
 	}
+}
+
+// timedQueue is recordQueue that also records when each job arrived.
+type timedQueue struct {
+	recordQueue
+	at []time.Time
+}
+
+func (q *timedQueue) Enqueue(ctx context.Context, j Job) error {
+	q.mu.Lock()
+	q.at = append(q.at, time.Now())
+	q.mu.Unlock()
+	return q.recordQueue.Enqueue(ctx, j)
 }
 
 // A process that slept through several runs fires once and keeps its phase.

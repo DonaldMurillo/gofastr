@@ -21,10 +21,10 @@ notes:
     breaking: true
     nodetect: "a fact of the request and the database: a key declared without AutoGenerate is ordinary, and only a write that sends no key value changes answer"
     guidance: "Send the key, or declare it generated (AutoGenerate: schema.AutoUUID). Rows already stored under a NULL key cannot be read, updated or deleted through the CRUD routes: find them with SELECT ... WHERE <key> IS NULL and give them a key or delete them."
-  - change: "BREAKING on SQLite - CREATE TABLE (boot, migrate generate, the table rebuild) writes NOT NULL on a one-column primary key, for entities and migrate.Table, except a lone INTEGER PRIMARY KEY; SQLite used to take NULL in such a key, any number of times, where Postgres refuses it"
+  - change: "BREAKING on SQLite - CREATE TABLE (boot, migrate generate, the table rebuild) writes NOT NULL on a one-column primary key, for entities and migrate.Table, except a lone INTEGER PRIMARY KEY; SQLite used to take NULL in such a key, any number of times, where Postgres refuses it. The tables the framework, batteries and core create for themselves and the migration gofastr init writes say it too, and gofastr verify reports a hand-written CREATE TABLE whose primary-key column has no NOT NULL as error GOFASTR1418"
     breaking: true
     nodetect: "a fact of the SQL a host runs: only a raw insert that leaves out or nulls a text key on a newly created SQLite table changes answer"
-    guidance: "Send the key in raw SQL inserts and test fixtures (INSERT INTO t (id, ...) VALUES (...)). An existing table keeps its column: boot does not rebuild it and neither DiffSchema nor migrate generate proposes a change. Before a migration that rebuilds an older table, give its NULL-key rows a key or delete them (SELECT ... WHERE <key> IS NULL), or the copy fails and the migration rolls back."
+    guidance: "Send the key in raw SQL inserts and test fixtures (INSERT INTO t (id, ...) VALUES (...)). An existing table keeps its column: boot does not rebuild it and neither DiffSchema nor migrate generate proposes a change. Before a migration that rebuilds an older table, give its NULL-key rows a key or delete them (SELECT ... WHERE <key> IS NULL), or the copy fails and the migration rolls back. For GOFASTR1418, write NOT NULL on the key column of your own CREATE TABLE (id TEXT PRIMARY KEY NOT NULL, and on each column a PRIMARY KEY (a, b) names); the table you already created keeps its column, so nothing has to be migrated."
   - change: "BREAKING on SQLite - a sort on a column that can hold NULL (?sort=, ?stream=true, ListAll, TypedQuery.Order, the DSL's order(), GroupCountAll's groups) puts the rows with no value last ascending and first descending, the order Postgres gives; SQLite used to put them first ascending and last descending"
     breaking: true
     nodetect: "a fact of the stored rows: a sort on a nullable column is ordinary, and only rows holding NULL in it change place"
@@ -415,4 +415,19 @@ notes:
   - change: "POST /semantic/query answers 400 query_invalid (semantic.InvalidQueryError from Index.Query) for an mmr_lambda out of range, rerank with no Reranker, unstorable text or filter text, or a filter.meta_match number outside the write path's bound; these answered 500"
     guidance: "Nothing to change. A Go caller can tell a caller fault apart with errors.As on *semantic.InvalidQueryError."
     nodetect: "depends on the query sent at runtime"
+  - change: "under framework.WithLocalePrefixes the response rewrite adds the locale prefix to the URL of a Refresh header, of a meta refresh and of Content-Location, as it does to Location; the auth same-site hop page on /es/orders reloads /es/orders, where it reloaded /orders"
+    guidance: "Nothing to change. A handler that prepends i18n.PathPrefix to such a URL itself keeps working: a URL that already starts with a locale is left as written."
+    nodetect: "the header is written at runtime and only differs on a request under a locale prefix"
 
+  - change: "BREAKING - a crud.CrudHandler built as a struct literal whose DB is not a *sql.DB (a wrapper, a transaction) panics at the first operation that depends on the dialect (a sort, a decimal write, a keyed write on an Unmanaged entity); a handler from crud.NewCrudHandler asks the database for its dialect once instead of on each such operation"
+    breaking: true
+    guidance: "Build the handler with crud.NewCrudHandler(ent, db) and set the remaining fields on the result. A literal over a *sql.DB keeps working."
+    nodetect: "a CrudHandler literal is ordinary in tests over a *sql.DB; only the DB value's type at runtime decides"
+  - change: "BREAKING - the Prometheus metric outbox_dead_letter_total (declared a counter) is now the gauge outbox_dead_letter_deliveries, with no alias"
+    breaking: true
+    guidance: "Point dashboards and alerts at outbox_dead_letter_deliveries and remove rate() or increase() around it: it is the current count of dead-lettered outbox deliveries and falls on a Replay, a purge or an erasure."
+    nodetect: "the metric name lives in dashboards and alert rules outside the app's source"
+  - change: "BREAKING - queue.RedisQueue.Stats counts the dead-letter list with LLEN through the optional queue.ListLengther and no longer reads the list; over a client without LLen it returns an error, queue.MetricsCollector emits neither queue_depth nor queue_dead_letter_jobs, and the admin Jobs page shows no counts, no pager and no Replay N failed button"
+    breaking: true
+    guidance: "Add LLen(ctx, key) (int64, error) to the RedisClient adapter; with go-redis it is return c.rdb.LLen(ctx, key).Result(). An adapter that already has it needs nothing."
+    nodetect: "whether the adapter type has an LLen method is a property of a host type the scanner cannot tie to the RedisClient passed to NewRedisQueue"

@@ -250,4 +250,19 @@ func TestOlderSQLiteKeyTableBootsUnchanged(t *testing.T) {
 	if err != nil || len(changes) != 0 {
 		t.Errorf("live diff: %+v, %v", changes, err)
 	}
+	// migrate generate against a snapshot that recorded the older DDL.
+	_, _, snap, err := migrate.GeneratePlan(migrate.Plan{Registry: fkReg{codes}}, migrate.SchemaSnapshot{}, migrate.DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	older := 0
+	for table, recorded := range snap.TableDDL {
+		snap.TableDDL[table] = strings.Replace(recorded, "code TEXT PRIMARY KEY NOT NULL", "code TEXT PRIMARY KEY", 1)
+		if snap.TableDDL[table] != recorded {
+			older++
+		}
+	}
+	if up, _, _, err := migrate.GeneratePlan(migrate.Plan{Registry: fkReg{codes}}, snap, migrate.DialectSQLite); err != nil || up != "" || older != 1 {
+		t.Errorf("generate against the older snapshot (%d table rewritten): %q, %v", older, up, err)
+	}
 }

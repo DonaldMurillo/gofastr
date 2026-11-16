@@ -531,6 +531,12 @@ same-origin, so it is never answered with the page again: a visitor who
 is really signed out gets the gate's own redirect or `401` on it, one
 page load later than before.
 
+With `framework.WithLocalePrefixes`, a visitor who arrived on
+`/es/orders` is reloaded on `/es/orders`: the `Refresh` header and the
+link keep the locale prefix, like every other URL in a `/es/` response
+([i18n](i18n.md)). This holds for each hop page in this document, and
+for one drawn by your own `auth.Pages`: write `d.Target` as given.
+
 Nothing else changes. A public page, and a redirect that is no refusal,
 reach a cross-site visitor directly. A fetch, a form RPC, an island or
 `data-cui-poll` request, an event stream, a frame, a `POST`, a request

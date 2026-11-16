@@ -25,6 +25,20 @@ invariants:
       - core/handler/fetchmeta.go
       - battery/admin/admin.go
       - battery/admin/shell.go
+  - id: hop-keeps-the-locale-prefix
+    rule: Under a locale prefix (framework.WithLocalePrefixes) every URL a hop page carries, in the Refresh header, a meta refresh and its link, names the path the browser asked for with the prefix on once. The hop writes its target as the router sees it and core-ui/urlprefix adds the prefix to the Refresh header and a meta refresh as it does to Location, for any handler's Refresh; an external, protocol-relative or already prefixed URL stays as written. The setup wizard answers ahead of the router and reloads the path as it came.
+    enforced_by:
+      - test: battery/auth.TestHopKeepsLocalePrefix
+      - test: battery/auth.TestPrefixedHopIsNoOpenRedirect
+      - test: core-ui/urlprefix.TestRefreshRule
+      - test: core-ui/urlprefix.TestRefreshRuleIdempotent
+      - test: core-ui/urlprefix.TestRefreshHeaderGainsPrefix
+      - test: core-ui/urlprefix.TestMetaRefreshGainsPrefix
+      - test: battery/setup.TestHopUnderLocalePrefixReloadsSamePath
+    judge: Does this change write a same-origin URL into a response header or attribute that core-ui/urlprefix does not rewrite, or prepend the locale prefix to a hop target by hand?
+    applies:
+      - core-ui/urlprefix/
+      - battery/setup/render.go
 decisions:
   - id: hop-on-refusal-not-on-arrival
     date: 2026-11-16
