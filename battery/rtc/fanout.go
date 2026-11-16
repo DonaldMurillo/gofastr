@@ -69,6 +69,10 @@ type fanoutMsg struct {
 	// is the only way the loss shows. Zero means unnumbered.
 	Seq     uint64 `json:"q,omitempty"`
 	ToOrder int64  `json:"o,omitempty"`
+	// At is the publish clock, still stamped so an older replica keeps
+	// its stale-mirror guard during a rolling upgrade. Nothing here
+	// reads it.
+	At int64 `json:"t,omitempty"`
 }
 
 // remoteEntry is one replica's contributed roster for a room plus its
@@ -85,6 +89,7 @@ type remoteEntry struct {
 // included; nil leaves the loss to the lossy lane.
 func publishFanout(send func([]byte, func(error)), nodeID string, msg fanoutMsg, failed func(error)) {
 	msg.Node = nodeID
+	msg.At = time.Now().UnixNano()
 	body, err := json.Marshal(msg)
 	if err != nil {
 		if failed != nil {
