@@ -39,7 +39,7 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 
 // OnAfterCreate registers a typed AfterCreate hook on the inserted row. The
 // fields fn changes reach the response, not the stored row. It runs before
-// commit; an error rolls the write back.
+// commit; an error rolls back the write.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T
