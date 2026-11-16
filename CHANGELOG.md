@@ -630,6 +630,13 @@ few lines, and link the PR or the docs page for the rest.
   under `locale_prefixes`.
 
 ### Security
+- **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
+  Six places stripped control characters from text bound for an
+  operator's terminal, each with its own set: codegen extension stderr
+  and module probe detail kept C1 controls and bidi overrides, and
+  `service logs` kept bidi and zero-width characters. All of them, with
+  the CLI, the contracts report and the harness TUI, now print through
+  `textsafe.ScrubTerminal`.
 - **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,
   up from `go 1.27.3`. Go 1.27.3's net/http carries GO-2026-6859, an
   HTTP/1 server crash through a `MaxBytesReader` header race, and every

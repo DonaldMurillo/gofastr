@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -592,9 +593,9 @@ func parseProbeOutput(p ProbeID, stdout string, timedOut bool, stderr string) Pr
 		}
 		return ProbeResult{ID: p, Status: ProbeStatusPass, Detail: detail, Reported: true}
 	case strings.HasPrefix(first, probeOutBreach):
-		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))), Reported: true}
+		return ProbeResult{ID: p, Status: ProbeStatusFail, Detail: textsafe.ScrubTerminal(strings.TrimSpace(strings.TrimPrefix(first, probeOutBreach))), Reported: true}
 	case strings.HasPrefix(first, probeOutUnreachable):
-		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: scrubTerminalBytes(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))), Reported: true}
+		return ProbeResult{ID: p, Status: ProbeStatusUnreachable, Detail: textsafe.ScrubTerminal(strings.TrimSpace(strings.TrimPrefix(first, probeOutUnreachable))), Reported: true}
 	default:
 		// No sentinel line at all: the child exited without finishing its
 		// protocol (killed by the sandbox mid-attempt, or crashed). The
@@ -630,44 +631,7 @@ func tailForDetail(s string) string {
 	if len(s) > 200 {
 		s = "…" + s[len(s)-200:]
 	}
-	return scrubTerminalBytes(s)
-}
-
-// scrubTerminalBytes strips the control bytes that let a subprocess
-// *drive* the operator's terminal rather than merely write to it. Copied
-// (string-typed) from codegen/extension_command.go scrubTerminalBytes /
-// cmd/gofastr/internal/cli/generate.go ScrubTerminalOutput — same contract: C0 except
-// \n and \t, plus DEL, so newlines and tabs survive as layout while ESC/
-// BEL/CR and kin cannot rewrite the window title or clipboard from
-// inside an error string.
-func scrubTerminalBytes(s string) string {
-	clean := true
-	for i := range len(s) {
-		if terminalCtrlByte(s[i]) {
-			clean = false
-			break
-		}
-	}
-	if clean { // fast path: ordinary output is the common case
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i := range len(s) {
-		if !terminalCtrlByte(s[i]) {
-			b.WriteByte(s[i])
-		}
-	}
-	return b.String()
-}
-
-// terminalCtrlByte mirrors codegen's terminalCtrlByte: LF and TAB are
-// layout, everything else in C0 plus DEL drives the terminal.
-func terminalCtrlByte(c byte) bool {
-	if c == '\n' || c == '\t' {
-		return false
-	}
-	return c < 0x20 || c == 0x7f
+	return textsafe.ScrubTerminal(s)
 }
 
 // buildProbeChildEnv assembles the probe child's environment: the minimal

@@ -431,3 +431,7 @@ notes:
     breaking: true
     guidance: "Add LLen(ctx, key) (int64, error) to the RedisClient adapter; with go-redis it is return c.rdb.LLen(ctx, key).Result(). An adapter that already has it needs nothing."
     nodetect: "whether the adapter type has an LLen method is a property of a host type the scanner cannot tie to the RedisClient passed to NewRedisQueue"
+  - change: "text this process did not write and prints to a terminal (codegen extension stderr, module probe detail, service logs and tool errors, the contracts report, the harness TUI, CLI output) goes through one scrub, textsafe.ScrubTerminal, which removes C0 and C1 controls, DEL, bidi and zero-width characters and bytes that are not valid UTF-8, keeping newline and tab; the six earlier copies each kept a different set"
+    guidance: "Nothing to change. Output that carried such characters prints without them."
+    nodetect: "depends on the bytes a child process or log line carries at runtime"
+

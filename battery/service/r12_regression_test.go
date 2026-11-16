@@ -1,7 +1,11 @@
 package service
 
 import (
+	"errors"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -23,8 +27,20 @@ func TestCanonicalRedirectFollowsBrowserAddr(t *testing.T) {
 	}
 }
 
-func TestScrubControlDropsC1(t *testing.T) {
-	if got := scrubControl("GET /x\u009b31mred\u009dtitle\u009c\x1b[0m\x7f\tok\n"); got != "GET /x31mredtitle[0m\tok\n" {
-		t.Fatalf("scrubControl = %q", got)
+// Tool output and log lines are data: both reach the terminal through
+// textsafe.ScrubTerminal, C1 controls and escapes dropped, lines kept.
+func TestToolOutputAndLogsAreScrubbedForTheTerminal(t *testing.T) {
+	const raw = "GET /x\u009b31mred\u009dtitle\u009c\x1b[0m\x7f\tok\nnext\u202e\n"
+	const want = "GET /x31mredtitle[0m\tok\nnext"
+	if got := toolError("launchctl", nil, []byte(raw), errors.New("exit 1")).Error(); !strings.HasSuffix(got, ": "+want) {
+		t.Errorf("toolError = %q", got)
+	}
+	path := filepath.Join(t.TempDir(), "app.log")
+	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	if err := tailFile(&out, path, 10, false); err != nil || out.String() != want+"\n" {
+		t.Errorf("tailFile printed %q, err %v", out.String(), err)
 	}
 }
