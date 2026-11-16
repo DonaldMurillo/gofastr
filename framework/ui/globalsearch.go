@@ -11,58 +11,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── GlobalSearch ───────────────────────────────────────────────────
-//
-// Sticky page-level search bar: headless.Combobox dressed with the
-// fui-global-search class map, a `/`-shortcut focus chord, and an
-// optional hint chip. Distinct from CommandPalette (which is a
-// focus-trapped ⌘K modal): GlobalSearch is inline, persistent, and
-// per-page.
-
 // GlobalSearchConfig configures a GlobalSearch.
 type GlobalSearchConfig struct {
-	// ID is the input element id (the listbox takes <ID>-listbox).
-	// Required, page-unique.
+	// ID is the page-unique input id. Required.
 	ID string
-	// Name is the form-submit name on the input. Required.
+	// Name is the input's form name. Required.
 	Name string
-	// Label is the visible label text (required, used as <label for=…>;
-	// visually hidden by the bar's shape).
+	// Label is the visually hidden label. Required.
 	Label string
-	// RPCPath is the search endpoint. Required. POSTed with the query
-	// in `<Name>=<value>`; the listbox re-renders through the signal.
+	// RPCPath is the search endpoint. Required.
 	RPCPath string
-	// SignalName is the rpc-signal value used to swap the listbox HTML
-	// after each search response. Required.
+	// SignalName is the signal the listbox HTML is swapped through. Required.
 	SignalName string
-	// NoScriptAction is the same-origin GET destination the wrapping
-	// form submits to without script. Required: a reader without
-	// script must still reach the results page. `#` is refused.
+	// NoScriptAction is the same-origin GET destination without script. Required.
 	NoScriptAction string
-	// Placeholder for the input. Default "Search…".
+	// Placeholder defaults to "Search…".
 	Placeholder string
-	// Shortcut is the chord that focuses the input at runtime
-	// (`data-hui-shortcut-focus="<chord>"`). Empty takes the default
-	// "/"; a single space (" ") turns the shortcut and its hint off.
+	// Shortcut is the chord that focuses the input. Empty is "/"; " " turns it off.
 	Shortcut string
-	// ShowHint renders a small "Press <chord>" hint chip on the right
-	// of the input. Default true when Shortcut is set.
+	// ShowHint draws the chord chip. Default true when there is a shortcut.
 	ShowHint *bool
 	// DebounceMs is the input debounce window. Default 200.
 	DebounceMs int
-	// Sticky toggles position: sticky on the wrapper. Default true.
+	// Sticky pins the bar under the sticky header.
 	Sticky bool
 	Class  string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the search bar's root
-	// wrapper. Keys the component owns are dropped: class, the
-	// data-hui-* wiring, and the shortcut chords.
+	// ExtraAttrs land on the wrapper; class, the data-hui-* wiring and the chords are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve i18n labels
-	// (placeholder, the combobox's sentences). When nil, English
-	// fallbacks apply.
+	// Ctx resolves the default words. Nil uses English.
 	Ctx context.Context
 }
 
@@ -93,9 +69,6 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	}
 	shortcut := cfg.Shortcut
 	if cfg.Shortcut == "" && cfg.Shortcut != " " {
-		// Default to "/" unless caller explicitly passed " " to disable.
-		// Use a sentinel " " to express "off" because zero-value
-		// collides with "default".
 		shortcut = "/"
 	}
 	if cfg.Shortcut == " " {
@@ -130,13 +103,8 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 		DebounceMS:     debounceMs,
 		Strings:        StringsFor(ctx),
 	}, classes)
-	// The combobox is built from this component's config; the wrapper
-	// below is the root.
 	box = headless.Own(box)
 
-	// The bar's wrapper owns the class, the sticky posture, the chord,
-	// and the hint chip: one element the page composes, one place the
-	// shortcut lives.
 	cls := "fui-global-search"
 	if cfg.Sticky {
 		cls += " fui-global-search--sticky"
@@ -152,8 +120,6 @@ func GlobalSearch(cfg GlobalSearchConfig) render.HTML {
 	}
 	children := []render.HTML{box}
 	if showHint && shortcut != "" {
-		// Built entirely from shortcut (a string), never caller markup:
-		// this component's own.
 		children = append(children, html.Span(html.TextConfig{
 			Class:      "fui-global-search__hint",
 			ExtraAttrs: html.Attrs{"aria-hidden": "true", "data-cui-internal": ""},
