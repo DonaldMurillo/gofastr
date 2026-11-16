@@ -15,9 +15,10 @@ invariants:
     enforced_by:
       - test: framework/ui.TestKitMarksInternalSubtrees
   - id: banner-dismiss-cookie-skips-render
-    rule: A Banner with a DismissID whose Ctx request carries the cookie gofastr.banner-dismiss.<DismissID>=1 renders nothing, and any other cookie leaves it rendered.
+    rule: A Banner with a DismissID whose Ctx request carries the cookie gofastr.banner-dismiss.<encodeURIComponent(DismissID)>=1 renders nothing, and any other cookie leaves it rendered.
     enforced_by:
       - test: framework/ui.TestBannerSkipsRenderOnDismissCookie
+      - test: framework/ui.TestDismissedBannerCookieIsTheOneBannerReads
   - id: banner-dismiss-cookie-matches-the-module
     rule: The cookie prefix Banner reads is the one framework/headless/behavior.js writes when it remembers a dismissal.
     enforced_by:
@@ -27,6 +28,10 @@ invariants:
     enforced_by:
       - test: framework/ui.TestBannerVariantsRoleSemantics
       - test: framework/ui.TestBannerExtraAttrsCannotOverrideOwned
+  - id: banner-id-is-the-root-id
+    rule: The ID of a Banner and of a NetworkRetryBanner is the root element's id.
+    enforced_by:
+      - test: framework/ui.TestBannersRenderTheirID
   - id: banner-identity-is-stable
     rule: A Banner's system id is its DismissID, else its ID, else a hash of its Variant, Title and Body that is the same on every render and differs when any of them does.
     enforced_by:
@@ -126,10 +131,11 @@ invariants:
       - test: framework/ui.TestToastTemplateCarriesTheKitSkin
       - test: framework/ui.TestSweepFeedbackToastTemplateCarriesEveryVariant
   - id: tooltip-describes-its-trigger
-    rule: Tooltip gives its trigger an aria-describedby naming a role=tooltip pop whose id is ID, or tip- and the slug of Text.
+    rule: Tooltip gives its trigger an aria-describedby naming a role=tooltip pop whose id is ID, or else tip- and the slug of Text (a hash of Text when the slug is empty), made unique on the page by Ctx's id scope.
     enforced_by:
       - test: framework/ui.TestTooltipWrapsTriggerAndAddsAriaDescribedBy
       - test: framework/ui.TestTooltipCustomIDOverridesSlug
+      - test: framework/ui.TestTooltipsGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
     rule: The aria-describedby splice goes into the trigger's first open tag past leading whitespace and comments, before a self-closing slash, ignores a > inside quotes, and is skipped only when that tag already carries the attribute.
     enforced_by:

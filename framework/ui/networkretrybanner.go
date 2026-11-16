@@ -59,10 +59,6 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 		retryLabel = i18nui.NetworkRetryNowText.Text(cfg.Ctx)
 	}
 	noDismiss := false
-	parts := headless.Parts{}
-	if cfg.Class != "" {
-		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
-	}
 	retry := render.Tag("a", map[string]string{
 		"href":                   cfg.HealthEndpoint,
 		"class":                  buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " fui-network-retry-banner__retry",
@@ -78,7 +74,8 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 		Offline: true,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "role", "aria-live", "hidden",
 			"data-fui-network-retry-health", "data-fui-network-retry-threshold"),
-		Parts:   parts,
+		Parts:   bannerRootParts(cfg.Class),
+		DOMID:   cfg.ID,
 		Strings: StringsFor(cfg.Ctx),
 	}, networkRetryClasses))
 }

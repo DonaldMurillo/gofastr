@@ -178,7 +178,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **bottomsheet**: `core-ui/widget/preset.BottomSheet`, bottom-anchored Drawer variant
 - **popover**: `core-ui/widget/preset.Popover`, click-triggered floating surface
 - **floatingpanel**: `core-ui/widget/preset.FloatingPanel`, corner-anchored persistent panel
-- **tooltip**: `framework/ui.Tooltip`, CSS-only hover/focus reveal
+- **tooltip**: `framework/ui.Tooltip`, CSS-only hover/focus reveal. Pass `Ctx` (the page's render context) so two tooltips with the same `Text` get different ids
 - **toast**: `core-ui/widget/preset.ToastStack`, client-side slide-in notifications (no SSE, no server queue)
 - **notificationbell**: `framework/ui.NotificationBell`, bell + unread badge + popover dropdown.
   The trigger is an anchor to `Href`; its accessible name keeps the required
@@ -309,7 +309,7 @@ fragments do not repeat the response-signal binding inside that region.
 - **themetoggle**: `framework/ui.ThemeToggle`, dark/light/auto toggle that persists color-scheme mode; fresh scaffolds mount the adaptive `framework/ui/theme.Default()` palette, while app-owned themes must keep `DarkColors` complete; `Fill` stretches the pill across its container, the options sharing the width
 - **themepicker**: `framework/ui.ThemePicker`, switches the whole page between the app theme and registered overrides (`style.RegisterThemeOverride`) by putting the override class on `<html>`; the choice persists per browser (see theming → "Page themes"); `Fill` stretches its pill as `ThemeToggle`'s does
 - **backtotop**: `framework/ui.BackToTop`, fixed scroll affordance that appears after a threshold
-- **banner**: `framework/ui.Banner`, page-level persistent status strip
+- **banner**: `framework/ui.Banner`, page-level persistent status strip; `ID` is the root element's `id`
 - **callout**: `framework/ui.Callout`, persistent inline info / warning / danger / neutral block; a warning or danger one is `role="alert"` unless `Standing`, which is for a notice that is part of the page as drawn (a failed record's reason, a notice inside a region that refreshes on a timer) and must not interrupt a screen reader each time
 - **notification**: `framework/ui.Notification`, toast-styled inline notification (variant + dismiss)
 - **emptystate**: `framework/ui.EmptyState`, centered title + description + optional CTA for no-data screens; `Compact` draws one muted line in a small panel, for an empty list inside another screen

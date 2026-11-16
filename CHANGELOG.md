@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A dismissed Banner stays dismissed when its `DismissID` holds a space,
+  a slash, `(`, or a letter outside ASCII.** The runtime writes the cookie
+  under `encodeURIComponent(id)` and `Banner` looked it up raw, so it
+  rendered again on the next request. `Banner` now reads the encoded
+  name. Nothing to change.
+- **`BannerConfig.ID` and `NetworkRetryBannerConfig.ID` render as the
+  root's `id`.** They were documented as passed through and were dropped.
+  `headless.SystemBannerProps` gains `DOMID` for this.
+- **Two `Tooltip`s with the same `Text` no longer share an `id`.** Pass the
+  new `TooltipConfig.Ctx` and the derived id is unique on the page
+  (`tip-need-help`, then `tip-need-help-2`). Text with no letters or digits,
+  such as an emoji, gets a hash of the text instead of a bare `tip-`.
 - **`ui.Notification` with an `ID` keeps its classes.** Setting `ID`
   dropped the `Class`, floating `Position` and registered-variant
   classes from the root; they now render with it.
