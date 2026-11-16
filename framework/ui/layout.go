@@ -9,19 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Layout primitives ──────────────────────────────────────────────
-//
-// Stack, Cluster, Grid and Spacer render through their headless
-// primitives dressed with this package's fui-* class map; Center, Box,
-// Sticky and AspectRatio are layout facts with no accessibility
-// contract of their own, and stay styled divs under the same fui-*
-// vocabulary. All share one registered sheet (ui-layout) so the
-// family loads as one unit.
-//
-// Apps that need anything beyond the canonical tokens are expected to
-// reach for raw CSS via Class. These primitives intentionally don't
-// proliferate options.
-
 // Gap is a named spacing token. Maps to var(--spacing-*).
 type Gap string
 
@@ -57,10 +44,6 @@ const (
 	JustifyAround  Justify = "around"
 )
 
-// layoutModifierClasses is the shared modifier half of the layout
-// family's class maps: the named gap, alignment and justify steps the
-// headless primitives look up as root variants. One builder serves
-// Stack, Cluster and Grid because the three share the scale.
 func layoutModifierClasses(root string) headless.Classes {
 	c := headless.Classes{headless.PartRoot: "fui-layout " + root}
 	for _, g := range []string{"none", "xs", "sm", "lg", "xl", "2xl"} {
@@ -86,8 +69,6 @@ var (
 	spacerClasses = headless.Classes{headless.PartRoot: "fui-layout fui-spacer"}
 )
 
-// ─── Stack: vertical flex column ───────────────────────────────────
-
 // StackConfig configures a vertical stack.
 type StackConfig struct {
 	Gap     Gap     // gap between children (default md)
@@ -95,45 +76,20 @@ type StackConfig struct {
 	Justify Justify // main-axis (vertical) alignment
 	ID      string
 	Class   string
-	// TrimMargins lets Gap own vertical rhythm by removing direct children's
-	// block margins. Useful for a stack of paragraphs or headings.
+	// TrimMargins drops direct children's block margins so Gap owns the vertical rhythm.
 	TrimMargins bool
-	// Screen makes the stack at least one viewport tall and pushes its
-	// last child to the bottom: the page-frame option a recipe uses to
-	// keep a short page's footer at the bottom of the screen, the way
-	// a shell's flex column does. The stack is the page column — do
-	// not nest one screen-tall stack inside another, and put the site
-	// header inside it as the first child: a screen-tall stack below a
-	// header is a viewport plus the header tall, which opens a dead band
-	// above the last child on every page.
+	// Screen makes the stack the page column, at least one viewport tall with its
+	// last child at the bottom. Put the site header inside it; never nest two.
 	Screen bool
-	// StickyHeader pins the stack's <header> child (the banner
-	// landmark) to the top while the page scrolls, and tells everything
-	// below it where the header ends: the stack publishes the header's
-	// height, the --size-header-height token, as --ui-sticky-top, so
-	// every sticky part inside the page (a Sticky ContentRow's nav
-	// column and toolbar, a StepRail, a SectionMenu rail, a
-	// TableOfContents, an AnchoredRail, a GlobalSearch, a
-	// NetworkRetryBanner, a top-edge Sticky, a FormFrame side panel, an
-	// anchored Section) stops under the header instead of sliding
-	// behind it. A region that scrolls on its own (a bounded Box, a
-	// pinned nav column, a ListDetail list) resets the offset to 0. The layout says the header is sticky once;
-	// no component takes a flag for it. The header's bar must be that
-	// token tall. Children above the header (an announcement strip)
-	// scroll away.
+	// StickyHeader pins the <header> child and publishes --size-header-height as
+	// --ui-sticky-top, the offset every sticky part below it reads.
 	StickyHeader bool
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the stack's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-cui-* and the data-hui-* hooks.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Stack renders children in a vertical column with consistent gap, on
-// headless.Stack under this package's class map. The default
-// replacement for hand-rolled `<div style="display:flex;
-// flex-direction:column;gap:…">` patterns.
+// Stack renders children in a vertical column with a consistent gap.
 func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	if cfg.TrimMargins {
 		cfg.Class = cls(cfg.Class, "fui-stack--trim-margins")
@@ -154,34 +110,24 @@ func Stack(cfg StackConfig, children ...render.HTML) render.HTML {
 	}, stackClasses, children...))
 }
 
-// ─── Cluster: horizontal flex row with wrap ────────────────────────
-
 // ClusterConfig configures a horizontal cluster.
 type ClusterConfig struct {
 	Gap     Gap
 	Align   Align
 	Justify Justify
-	// NoWrap opts out of the default responsive wrapping behavior. Use it only
-	// for compact chrome that is guaranteed to fit, such as two icon controls.
+	// NoWrap keeps the row on one line; use it only for chrome that always fits.
 	NoWrap bool
-	// Shrink lets the row narrow below its content, and its last child
-	// take the squeeze while the earlier children keep their size: the
-	// lead side of a toolbar whose last child truncates (a menu button,
-	// then a breadcrumb trail that ellipsizes). Pair it with NoWrap.
+	// Shrink lets the row narrow below its content, its last child taking the
+	// squeeze (a truncating breadcrumb after a menu button). Pair it with NoWrap.
 	Shrink bool
 	ID     string
 	Class  string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the cluster's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-cui-* and the data-hui-* hooks.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Cluster renders children in a horizontal row that wraps onto
-// multiple lines when narrow, on headless.Cluster. Good for tag
-// lists, action rows, breadcrumb trails.
+// Cluster renders children in a horizontal row that wraps when narrow.
 func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 	return layoutStyle.WrapHTML(headless.Cluster(headless.ClusterProps{
 		Gap:        string(cfg.Gap),
@@ -194,7 +140,6 @@ func Cluster(cfg ClusterConfig, children ...render.HTML) render.HTML {
 	}, clusterClasses, children...))
 }
 
-// clusterClass is the caller's class plus the Shrink modifier.
 func clusterClass(cfg ClusterConfig) string {
 	if !cfg.Shrink {
 		return cfg.Class
@@ -202,37 +147,21 @@ func clusterClass(cfg ClusterConfig) string {
 	return strings.TrimSpace("fui-cluster--shrink " + cfg.Class)
 }
 
-// ─── Grid: responsive CSS grid ─────────────────────────────────────
-
 // GridConfig configures a CSS grid.
 type GridConfig struct {
-	// Min is the minimum column width (e.g. "20rem"). The grid uses
-	// `repeat(auto-fit, minmax(<Min>, 1fr))` so columns wrap at the
-	// breakpoint implied by the minimum. Defaults to "16rem".
+	// Min is the minimum column width, default 16rem; columns auto-fit at it.
 	Min string
 	Gap Gap
-	// Fill keeps the row's empty columns (auto-fill rather than
-	// auto-fit), so a short last row, or a grid of one card, keeps a
-	// full row's column width instead of stretching across it.
+	// Fill keeps empty columns (auto-fill), so a short last row keeps full-row widths.
 	Fill  bool
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the grid's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style, data-cui-*, data-hui-* and data-min (use Min).
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Grid renders children in an auto-fitting CSS grid, on headless.Grid
-// under this package's class map. The default replacement for
-// hand-rolled `grid-template-columns` declarations.
-//
-// Min rides on the root's data-min attribute and the stylesheet maps it
-// onto `--ui-grid-min` (typed attr() where supported, whole-rem steps
-// from 1rem to 64rem elsewhere), so no inline `style="…"` is emitted,
-// strict-CSP clean.
+// Grid renders children in an auto-fitting CSS grid.
 func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	min := cfg.Min
 	if min == "" {
@@ -248,8 +177,6 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 		class = strings.TrimSpace("fui-grid--fill " + class)
 	}
 	if class != "" {
-		// The class rides in the same root attrs as the hook: a part
-		// map set beside them would be replaced, not merged.
 		attrs["class"] = class
 	}
 	return layoutStyle.WrapHTML(headless.Grid(headless.GridProps{
@@ -259,26 +186,18 @@ func Grid(cfg GridConfig, children ...render.HTML) render.HTML {
 	}, gridClasses, children...))
 }
 
-// ─── Center: single child centered both axes ───────────────────────
-
 // CenterConfig configures a centered region.
 type CenterConfig struct {
-	// MinHeight maps to a class: "viewport" (100vh), "screen" (100dvh
-	// where supported), or "" (auto). Used for empty-state landing /
-	// onboarding panels. Any other value panics.
+	// MinHeight is "", "viewport" (100vh) or "screen" (100dvh); anything else panics.
 	MinHeight string
 	ID        string
 	Class     string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the region's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Center centers its children both horizontally and vertically. A
-// layout fact with no accessibility contract: it stays a styled div.
+// Center centers its children on both axes.
 func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 	cls := "fui-layout fui-center"
 	switch cfg.MinHeight {
@@ -298,17 +217,10 @@ func Center(cfg CenterConfig, children ...render.HTML) render.HTML {
 	}, children...))
 }
 
-// ─── Spacer: flexible filler ───────────────────────────────────────
-
-// Spacer renders an empty flexible element that grows to fill
-// available space, on headless.Spacer. Use inside a Stack or Cluster
-// to push a sibling (e.g. an action button) to the far edge.
-// Aria-hidden because it's purely visual.
+// Spacer renders an aria-hidden filler that grows to push a sibling to the far edge.
 func Spacer() render.HTML {
 	return layoutStyle.WrapHTML(headless.Spacer(headless.SpacerProps{Grow: 1}, spacerClasses))
 }
-
-// ─── Box: wrapper with optional padding / background ───────────────
 
 // BoxPad selects a named padding value. "" is no padding.
 type BoxPad string
@@ -326,27 +238,16 @@ type BoxConfig struct {
 	Pad      BoxPad // padding (none | sm | md | lg | xl)
 	Surface  bool   // when true, applies the surface background + border-radius
 	Outlined bool   // when true, applies a 1px border (pairs well with Surface=false)
-	// Bounded caps the box's block size at the --ui-box-bounded-size
-	// knob (20rem by default) and scrolls whatever overflows it. It is a
-	// window onto content taller than the place it sits: a long log or
-	// list in a panel, or a component that is viewport-height by design
-	// (Workbench, a Screen stack) previewed inside a page.
+	// Bounded caps the block size at --ui-box-bounded-size (20rem) and scrolls the overflow.
 	Bounded bool
 	ID      string
 	Class   string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the box's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Box is a wrapper that applies token-scaled padding and optional
-// surface chrome. A layout fact with no accessibility contract: it
-// stays a styled div. Use as the visible shell of any "content card"
-// that doesn't need the full Card primitive's header/body/footer
-// slots.
+// Box wraps children in token-scaled padding with optional surface chrome.
 func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	cls := "fui-layout fui-box"
 	switch cfg.Pad {
@@ -375,8 +276,6 @@ func Box(cfg BoxConfig, children ...render.HTML) render.HTML {
 	}, children...))
 }
 
-// ─── Sticky ────────────────────────────────────────────────────────
-
 // StickyEdge selects which edge the element sticks to.
 type StickyEdge string
 
@@ -397,49 +296,24 @@ const (
 )
 
 // StickyConfig configures a position:sticky wrapper.
-//
-// Wraps children in a div that sticks to the chosen viewport edge
-// on scroll. Uses theme tokens for z-index so sticky elements
-// layer consistently with modals, widgets, and other surfaces.
-//
-// Usage:
-//
-//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop},
-//		ui.Button(ui.ButtonConfig{Label: "Save"}),
-//	)
-//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyTop, Offset: ui.StickyOffsetLg}, header)
-//	ui.Sticky(ui.StickyConfig{Edge: ui.StickyBottom}, toolbar)
 type StickyConfig struct {
-	// Edge selects which edge to stick to.
-	// Defaults to StickyTop when empty.
+	// Edge is the edge to stick to, StickyTop when empty.
 	Edge StickyEdge
 
-	// Offset selects the distance preset from the edge.
-	// Defaults to StickyOffsetNone when empty.
+	// Offset is the distance preset from the edge, StickyOffsetNone when empty.
 	Offset StickyOffset
 
-	// ZIndexTier selects the z-index tier. Defaults to "sticky" when
-	// empty. Valid values are exactly the five built-in ZIndexSet tiers
-	// "sticky", "dropdown", "modal", "popover", "toast", which the
-	// stylesheet maps to z-index: var(--z-<tier>). These are fixed
-	// built-ins, not arbitrary theme-supplied tokens: validation and
-	// the generated CSS only know these five, so an unknown tier panics
-	// (a typo would otherwise silently fall back to the default layer).
+	// ZIndexTier is sticky (the default), dropdown, modal, popover or toast; any other value panics.
 	ZIndexTier string
 
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the sticky wrapper's root
-	// <div>. Keys the component owns are dropped: class and id (use
-	// Class / ID), style and data-cui-* (which covers the derived
-	// data-fui-z-tier).
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// Sticky wraps children in a position:sticky container. A layout
-// fact with no accessibility contract: it stays a styled div.
+// Sticky wraps children in a position:sticky container.
 func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	edge := cfg.Edge
 	if edge == "" {
@@ -485,12 +359,6 @@ func Sticky(cfg StickyConfig, children ...render.HTML) render.HTML {
 	return stickyStyle.WrapHTML(render.Tag("div", attrs, children...))
 }
 
-// ─── AspectRatio ───────────────────────────────────────────────────
-//
-// Pure-CSS aspect-ratio wrapper that prevents layout shift for images,
-// videos, and embeds whose dimensions aren't known at SSR time. A
-// layout fact with no accessibility contract: it stays a styled div.
-
 // AspectRatio selects a CSS aspect-ratio bucket.
 type AspectRatio string
 
@@ -507,8 +375,7 @@ const (
 
 // AspectRatioConfig configures an aspect-ratio wrapper.
 type AspectRatioConfig struct {
-	// Ratio is the aspect-ratio bucket (required). Use one of the
-	// AspectRatio* constants; an empty or unknown value panics.
+	// Ratio is the aspect-ratio bucket, required: one of the AspectRatio* constants.
 	Ratio AspectRatio
 
 	// Class adds extra CSS classes.
@@ -517,26 +384,17 @@ type AspectRatioConfig struct {
 	// ID sets the element id.
 	ID string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the wrapper's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// AspectRatio wraps a single child in a container with the given
-// aspect ratio. The child is absolutely positioned to fill the box.
-//
-// Use for responsive images, video embeds, placeholder skeletons
-// with known proportions, or any content whose intrinsic size is
-// unknown at SSR time.
+// AspectRatioComponent wraps one child in a box of the given aspect ratio, the
+// child filling it, so media of unknown size causes no layout shift.
 func AspectRatioComponent(cfg AspectRatioConfig, child render.HTML) render.HTML {
 	switch cfg.Ratio {
 	case AspectRatio1_1, AspectRatio4_3, AspectRatio16_9, AspectRatio21_9,
 		AspectRatio3_4, AspectRatio3_2, AspectRatio2_3, AspectRatioAuto:
 	default:
-		// An unknown bucket has no aspect-ratio rule, so the absolutely
-		// positioned child fills a 0px box and the media is invisible.
 		panic("ui: AspectRatio Ratio must be one of the AspectRatio* constants, got " + strconv.Quote(string(cfg.Ratio)))
 	}
 	cls := "fui-ar--" + string(cfg.Ratio)

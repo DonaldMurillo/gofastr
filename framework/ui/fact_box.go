@@ -1,15 +1,5 @@
 package ui
 
-// FactBox: one labelled value tile. Single component, two variants:
-//
-//   FactStyleLabelFirst (default): small muted label on top, body-size
-//     value below. For parameters and specs ("Prereqs: Go 1.26+, git").
-//   FactStyleValueFirst: big display value on top, small caption label
-//     below. For KPIs and counts ("53 docs").
-//
-// Two render functions previously (FactBox + StatTile) were collapsed
-// into one because they differ only in source order and value typography.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -21,12 +11,9 @@ import (
 type FactStyle string
 
 const (
-	// FactStyleLabelFirst renders the label on top (small, muted)
-	// and the value below (body-size). Default.
+	// FactStyleLabelFirst puts a small muted label above the value. The default.
 	FactStyleLabelFirst FactStyle = ""
-	// FactStyleValueFirst renders the value on top (large display
-	// type) and the label below (small, muted). Use for KPI-style
-	// stat bands.
+	// FactStyleValueFirst puts a large display value above the label, for KPI bands.
 	FactStyleValueFirst FactStyle = "value-first"
 )
 
@@ -34,27 +21,20 @@ const (
 type FactBoxConfig struct {
 	Label string // required short label
 	Value string // visible value; mutually exclusive with ValueHTML
-	// ValueHTML lets the value contain inline markup (code, links).
-	// If non-empty, takes precedence over Value.
+	// ValueHTML is the value as inline markup; it wins over Value.
 	ValueHTML render.HTML
 	// Style picks the visual hierarchy. Default FactStyleLabelFirst.
 	Style FactStyle
-	// FullWidth, when true, marks the box to span the full grid row
-	// (the consuming grid still controls the column template).
+	// FullWidth spans the box across its grid row.
 	FullWidth bool
 	ID        string
 	Class     string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the fact's root div.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// FactBox renders one labelled tile. Pair with a CSS grid to lay out
-// multiple. The framework does not provide a grid wrapper, so
-// consumers pick their own column template.
+// FactBox renders one labelled value tile.
 func FactBox(cfg FactBoxConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: FactBox requires Label")
@@ -83,8 +63,6 @@ func FactBox(cfg FactBoxConfig) render.HTML {
 		value = render.Text(cfg.Value)
 	}
 	label := html.Span(html.TextConfig{Class: "fui-fact-box__label", ExtraAttrs: html.Attrs{"data-cui-internal": ""}}, render.Text(cfg.Label))
-	// The value span holds a caller's markup only when ValueHTML is
-	// set; otherwise it is Value, a plain string, rendered as text.
 	var valAttrs html.Attrs
 	if cfg.ValueHTML == "" {
 		valAttrs = html.Attrs{"data-cui-internal": ""}

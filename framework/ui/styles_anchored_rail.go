@@ -4,24 +4,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// Registered stylesheet for ui.AnchoredRail, which renders
-// headless.Rail dressed with the fui-anchored-rail class map.
-// Token-resolved via the typed StyleSheet DSL so apps re-skin via
-// their theme (`--color-primary`, `--color-text`, `--spacing-md`,
-// etc.) without overriding selectors.
-//
-// Active state targets both .is-active and aria-current="true" because
-// the headless-rail module sets BOTH; supporting either lets apps
-// style with the attribute selector (no JS state class required) or
-// the class selector (more familiar to teams with custom CSS
-// pipelines).
-
 func anchoredRailCSS(t style.Theme) string {
 	return style.NewComponentSheet("ui-anchored-rail", t).
 		Rule("&").
 		Set(
 			"position", "sticky",
-			// --ui-sticky-top: under a StickyHeader page's header, or the window's top.
 			"top", "calc(var(--ui-sticky-top, 0px) + var(--spacing-lg, 16px))",
 			"align-self", "start",
 			"font-size", "var(--text-sm, 0.875rem)",
@@ -61,8 +48,6 @@ func anchoredRailCSS(t style.Theme) string {
 			"font-family", "{fonts.mono}",
 			"font-size", "var(--text-xs, 0.75rem)",
 			"color", "{colors.text-subtle}",
-			// Knob: --ui-anchored-rail-eyebrow-case (none) sets the
-			// eyebrow's letter case.
 			"text-transform", "var(--ui-anchored-rail-eyebrow-case, none)",
 		).End().
 		Rule(".fui-anchored-rail__count").
@@ -72,8 +57,6 @@ func anchoredRailCSS(t style.Theme) string {
 			"color", "{colors.text-subtle}",
 			"text-align", "end",
 		).End().
-		// Active state: the headless-rail module sets BOTH .is-active
-		// and aria-current.
 		Rule(`.fui-anchored-rail__list a.is-active, .fui-anchored-rail__list a[aria-current="true"]`).
 		Set("color", "{colors.text}").End().
 		Rule(`.fui-anchored-rail__list a.is-active .fui-anchored-rail__eyebrow, .fui-anchored-rail__list a[aria-current="true"] .fui-anchored-rail__eyebrow`).
@@ -81,9 +64,6 @@ func anchoredRailCSS(t style.Theme) string {
 		MustBuild() + anchoredRailSheetCSS
 }
 
-// In an open phone sheet (PhoneSheet) the sheet's title row names the
-// rail and the sheet scrolls it; the rows grow to a thumb's height. A
-// rail in any other popover keeps its own label and stickiness.
 const anchoredRailSheetCSS = `
 :where(.cui-phone-sheet__sheet:popover-open) [data-cui-comp="ui-anchored-rail"] { position: static; }
 .cui-phone-sheet__sheet:popover-open [data-cui-comp="ui-anchored-rail"] .fui-anchored-rail__label { display: none; }

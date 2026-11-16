@@ -1,13 +1,5 @@
 package ui
 
-// ─── Container ──────────────────────────────────────────────────────
-//
-// Max-width page wrapper with breakpoint-aware horizontal padding.
-// Pairs with Stack/Cluster/Grid (which manage internal spacing).
-// Container manages the OUTER bounds: the gutter against the viewport.
-// headless.Container renders the measure; this adapter dresses it with
-// the fui-container class map.
-
 import (
 	"strings"
 
@@ -28,38 +20,23 @@ const (
 	ContainerDefault ContainerWidth = ""
 	// ContainerWide caps at the wide width (1280px default): dashboards.
 	ContainerWide ContainerWidth = "wide"
-	// ContainerPage caps at the page measure (Theme.Layout.PageWidth,
-	// --size-page-width, 66rem default): the editorial column of a
-	// marketing page.
-	// A recipe's main and its header/footer bands share it. Like the
-	// bands, the content box is the measure and the page gutter sits
-	// outside it, so main's text starts on the header brand's edge.
+	// ContainerPage caps at the page measure (--size-page-width, 66rem), the column a
+	// recipe's main shares with its header and footer bands; the gutter sits outside it.
 	ContainerPage ContainerWidth = "page"
 	// ContainerFull removes the cap; padding still applies.
 	ContainerFull ContainerWidth = "full"
 )
 
-// ContainerPad picks the block padding: the page's rhythm between the
-// site header, the content and the footer. The two sizes are CSS
-// variables (--ui-container-pad-start, --ui-container-pad-end) a theme
-// can retune. A padded container is page-level, so it also takes the
-// page gutter (--size-page-gutter) inline at every Width, the edge the
-// header and footer bands use; inside an app frame's content area
-// (ui.ContentRow with a Sidebar) the frame's padding is the gutter and
-// the container adds none.
+// ContainerPad picks the block padding between the site header, the content and
+// the footer. A padded container also takes the page gutter, except in an app frame.
 type ContainerPad string
 
 const (
-	// ContainerPadNone adds no block padding: a container nested inside
-	// a page, or a page whose first block owns its own top spacing.
+	// ContainerPadNone adds no block padding.
 	ContainerPadNone ContainerPad = ""
-	// ContainerPadPage pads both ends: roomy under the header
-	// (clamp(40px, 6vw, 64px)), roomier above the footer
-	// (clamp(48px, 7vw, 80px)). The main region of a marketing or
-	// editorial page.
+	// ContainerPadPage pads both ends: the main region of a marketing or editorial page.
 	ContainerPadPage ContainerPad = "page"
-	// ContainerPadEnd pads only the end: a compact page whose first
-	// block sits right under the header but still clears the footer.
+	// ContainerPadEnd pads only the end, clearing the footer.
 	ContainerPadEnd ContainerPad = "end"
 )
 
@@ -69,28 +46,17 @@ type ContainerConfig struct {
 	Width ContainerWidth
 	// Pad picks the block padding. Defaults to ContainerPadNone.
 	Pad ContainerPad
-	// Start pins the column to the inline start and drops the
-	// container's own gutter: a measure inside a frame that already
-	// pads its content, such as a settings page in an app shell's
-	// content pane, whose text must start on the same edge as the
-	// shell's other pages. Default centers the column inside its
-	// gutter.
+	// Start pins the column to the inline start with no gutter, for a frame that pads
+	// its own content. The default centers it.
 	Start bool
-	// As lets the caller pick a non-<div> tag (e.g. "section", "main").
-	// Defaults to "div".
+	// As picks the tag, "div" by default.
 	As    string
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the wrapper element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), style and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// containerClasses dresses headless.Container: the measure names map
-// to this package's width vocabulary (narrow / wide / full), the
-// default carrying no modifier.
 var containerClasses = headless.Classes{
 	headless.PartRoot:                "fui-container",
 	headless.Part("root--size-sm"):   "fui-container--narrow",
@@ -140,11 +106,6 @@ func Container(cfg ContainerConfig, children ...render.HTML) render.HTML {
 var containerStyle = registry.RegisterStyle("ui-container", containerCSS)
 
 func containerCSS(_ style.Theme) string {
-	// Width caps are theme tokens (Theme.Layout: NarrowWidth,
-	// ContentWidth, WideWidth, PageWidth, PageGutter), so a marketing
-	// site that wants a 1240px wide cap sets
-	//   t.Layout.WideWidth.Value = "1240px"
-	// on its theme.
 	return `[data-cui-comp="ui-container"] {
   display: block;
   inline-size: 100%;
