@@ -15,60 +15,39 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Heatmap ────────────────────────────────────────────────────────
-//
-// A grid of values shaded by size: sign-ups by weekday and hour, errors
-// by service and day. Each cell takes one of four strengths of one theme
-// color, from the lowest value to the highest, so the busy cells stand
-// out at a glance. Pure SVG, no script. Each cell's <title> names its
-// row, column and value.
-
 // HeatmapConfig configures a Heatmap.
 type HeatmapConfig struct {
-	// Rows and Cols label the grid's sides. A row label longer than 17
-	// characters is cut with an ellipsis; the cell titles keep it whole.
+	// Rows and Cols label the grid's sides; a row label past 17
+	// characters is cut, the cell titles keep it whole.
 	Rows, Cols []string
-	// Values holds one row per Rows entry, each with one value per Cols
-	// entry; a mismatch panics. NaN or Inf is a reading that never
-	// arrived: the cell draws empty and its title says "no data". With
-	// no reading at all the chart renders the shared empty state.
+	// Values holds one row per Rows entry of one value per Cols entry; a
+	// mismatch panics. A NaN or Inf cell draws empty.
 	Values [][]float64
-	// Color is the palette token the cells shade: "primary" (default),
-	// "info", "success", "warning" or "danger". Anything else falls back
-	// to primary.
+	// Color is the palette token the cells shade; anything else is primary.
 	Color string
-	// Format writes a value in its cell's title. Default: the number,
-	// to two decimals at most.
+	// Format writes a value in its cell's title. Default two decimals.
 	Format func(float64) string
-	// Width in CSS pixels; the height follows from the row count. A grid
-	// whose cells would fall under 4px wide widens the chart instead.
-	// Default 360.
+	// Width in CSS pixels, default 360; the height follows the rows.
 	Width int
-	// ShowLegend renders a "Less … More" strip of the four strengths
-	// under the grid.
+	// ShowLegend renders a "Less … More" strip under the grid.
 	ShowLegend bool
-	// LabelledBy is the id of an element naming the chart for AT.
-	// Without it the chart is aria-hidden, like the other charts.
+	// LabelledBy names the chart; without it the chart is aria-hidden.
 	LabelledBy string
 	ID         string
 	Class      string
-	// ExtraAttrs forwards additional attributes to the root <svg>. Keys
-	// the component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, width, height, viewBox, xmlns, role, aria-labelledby
-	// (use LabelledBy) and aria-hidden.
+	// ExtraAttrs go on the root <svg>, less the keys the chart derives.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the chart's numbers and words follow the
-	// reader's locale. Nil writes English.
+	// Ctx sets the locale of numbers and words; nil is English.
 	Ctx context.Context
 }
 
 const (
-	heatTop    = 16.0 // column labels
+	heatTop    = 16.0
 	heatGap    = 2.0
 	heatCellH  = 20.0
 	heatLegend = 24.0
-	heatCharW  = 8.0 // label width per character at --text-xs, wide glyphs
-	heatRowMax = 17  // row label characters before the ellipsis
+	heatCharW  = 8.0
+	heatRowMax = 17
 )
 
 // Heatmap renders a grid of values shaded by size.
@@ -115,16 +94,12 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 	}
 	nc, nr := len(cfg.Cols), len(cfg.Rows)
 	cellW := max((float64(w)-left-heatGap*float64(nc-1))/float64(nc), 4)
-	// At the smallest cell the grid can outgrow Width: widen the chart
-	// rather than clip the right-hand columns.
 	w = max(w, int(math.Ceil(left+float64(nc)*cellW+heatGap*float64(nc-1))))
 	gridH := float64(nr)*heatCellH + float64(nr-1)*heatGap
 	h := heatTop + gridH
 	if cfg.ShowLegend {
 		h += heatLegend
 	}
-	// Draw every stride-th column label, so long labels over narrow
-	// cells don't overlap.
 	widest := 0.0
 	for _, c := range cfg.Cols {
 		widest = max(widest, float64(utf8.RuneCountInString(c))*heatCharW)
@@ -223,13 +198,11 @@ func Heatmap(cfg HeatmapConfig) render.HTML {
 	return heatmapStyle.WrapHTML(render.HTML(sb.String()))
 }
 
-// heatLevel places v on four steps between lo and hi: the lowest value
-// is 1, the highest 4. With no spread every value is 4.
+// heatLevel places v on steps 1 to 4 between lo and hi; no spread is 4.
 func heatLevel(v, lo, hi float64) int {
 	if hi == lo {
 		return 4
 	}
-	// Halves keep a range past the float limit finite.
 	return 1 + min(int((v/2-lo/2)/(hi/2-lo/2)*4), 3)
 }
 

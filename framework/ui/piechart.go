@@ -12,53 +12,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── PieChart / DonutChart ──────────────────────────────────────────
-//
-// Pure-SVG ratio chart. Slice colors come from a palette of theme
-// tokens (primary, info, success, warning, danger, …); callers can
-// override per slice. Donut mode is a configurable inner-radius cut.
-
 // PieSlice is one slice of the pie.
 type PieSlice struct {
-	// Label is the accessible label for the slice (required when
-	// LabelledBy is set on the chart, used as <title> for AT).
+	// Label is the slice's <title>.
 	Label string
-	// Value is the slice value (≥0). Slices with Value=0 are skipped.
+	// Value is the slice's size, at least 0; a zero slice is skipped.
 	Value float64
-	// Color overrides the default palette pick. Optional CSS color
-	// or one of: "primary", "info", "success", "warning", "danger".
+	// Color is a palette token or a raw CSS color; empty cycles the palette.
 	Color string
 }
 
 // PieChartConfig configures a PieChart.
 type PieChartConfig struct {
-	// Slices are the entries (≥1 with non-zero Value).
 	Slices []PieSlice
-	// Size is the SVG square side in CSS pixels. Default 160.
+	// Size is the square's side in CSS pixels. Default 160.
 	Size int
-	// InnerRadius (0–1, fraction of outer radius) cuts the center
-	// out, turning it into a donut. Default 0 (pie).
+	// InnerRadius, a fraction of the radius up to 0.95, cuts a donut hole.
 	InnerRadius float64
-	// CenterLabel renders a label in the middle of the donut hole.
-	// Ignored when InnerRadius=0.
-	CenterLabel string
-	// CenterSubtext renders smaller text under the CenterLabel.
+	// CenterLabel and CenterSubtext are drawn in a donut's hole.
+	CenterLabel   string
 	CenterSubtext string
-	// LabelledBy is the id of an element naming the chart for AT.
-	// Without it the chart is aria-hidden.
+	// LabelledBy names the chart; without it the chart is aria-hidden.
 	LabelledBy string
 	ID         string
 	Class      string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the chart's <svg> root,
-	// or to the shared zero-data placeholder when there is nothing to
-	// draw. Keys the component owns are dropped: class and
-	// id (use Class / ID), data-cui-*, and the sizing and naming
-	// attributes the SVG derives from config (width, height, viewBox,
-	// xmlns, role, aria-labelledby, aria-hidden).
+	// ExtraAttrs go on the root <svg>, less the keys the chart derives.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the chart's numbers and words follow the
-	// reader's locale. Nil writes English.
+	// Ctx sets the locale of numbers and words; nil is English.
 	Ctx context.Context
 }
 
@@ -69,7 +49,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	}
 	var total float64
 	for _, s := range cfg.Slices {
-		// A NaN or Inf value is a reading that never arrived: no slice.
 		if !finite(s.Value) {
 			continue
 		}
@@ -79,7 +58,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		total += s.Value
 	}
 	if total == 0 || !finite(total) {
-		// A zero or overflowing total has no drawable ratios.
 		return chartEmpty(cfg.Ctx, cfg.ID, cfg.LabelledBy, cfg.Class, "", cfg.ExtraAttrs)
 	}
 
@@ -89,7 +67,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	}
 	cx := float64(size) / 2
 	cy := float64(size) / 2
-	r := float64(size)/2 - 2 // 2px padding so stroke doesn't clip
+	r := float64(size)/2 - 2
 	ir := cfg.InnerRadius
 	if ir < 0 {
 		ir = 0
@@ -103,9 +81,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// Caller extras land after the owned attributes. render.Attr
-	// validates the key and escapes the value, matching what the
-	// html primitives do for map-built roots.
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")
 
@@ -137,8 +112,7 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	sb.WriteString(serializeExtraAttrs(extra))
 	sb.WriteString(`>`)
 
-	// Draw slices as arc paths.
-	start := -math.Pi / 2 // 12 o'clock start
+	start := -math.Pi / 2
 	paletteIdx := 0
 	for _, s := range cfg.Slices {
 		if s.Value == 0 || !finite(s.Value) {
@@ -168,12 +142,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		y2 := cy + r*math.Sin(end)
 
 		if frac > 0.5 && ftoa(x1) == ftoa(x2) && ftoa(y1) == ftoa(y2) {
-			// A slice that is the whole pie (the only one with a value,
-			// or one beside slivers too thin to move the written
-			// coordinates) starts and ends on one point, and an arc
-			// between a point and itself draws nothing. Two half
-			// circles draw the disc; a donut's hole is the same pair
-			// wound the other way.
 			sb.WriteString(`<path d="`)
 			sb.WriteString(pieFullCircle(cx, cy, r, 1))
 			if ir > 0 {
@@ -184,7 +152,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 			sb.WriteString(cls)
 			sb.WriteString(`"`)
 		} else if ir > 0 {
-			// Donut: trace outer arc, line in, inner arc back, line out.
 			rin := r * ir
 			ix1 := cx + rin*math.Cos(start)
 			iy1 := cy + rin*math.Sin(start)
@@ -244,8 +211,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 			sb.WriteString(cls)
 			sb.WriteString(`"`)
 		}
-		// If color isn't a palette key, treat as raw CSS color via
-		// inline fill attribute (SVG attribute, NOT CSP-blocked inline style).
 		isPalette := color == "primary" || color == "info" ||
 			color == "success" || color == "warning" || color == "danger"
 		if !isPalette {
@@ -264,7 +229,6 @@ func PieChart(cfg PieChartConfig) render.HTML {
 		start = end
 	}
 
-	// Donut center label.
 	if ir > 0 && cfg.CenterLabel != "" {
 		sb.WriteString(`<text x="`)
 		sb.WriteString(ftoa(cx))
@@ -288,8 +252,8 @@ func PieChart(cfg PieChartConfig) render.HTML {
 	return pieChartStyle.WrapHTML(render.HTML(sb.String()))
 }
 
-// pieFullCircle is a closed circle as two half arcs from 12 o'clock,
-// wound clockwise (sweep 1) or counter-clockwise (sweep 0).
+// pieFullCircle is a circle as two half arcs from 12 o'clock, clockwise
+// for sweep 1.
 func pieFullCircle(cx, cy, r float64, sweep int) string {
 	arc := " A" + ftoa(r) + "," + ftoa(r) + " 0 1 " + strconv.Itoa(sweep) + " "
 	top := ftoa(cx) + "," + ftoa(cy-r)
