@@ -109,10 +109,10 @@ func TestCursorCleanColumnsDefine(t *testing.T) {
 	}
 }
 
-// A keyset column that can hold NULL breaks the walk: SQLite sorts NULLs
-// first and Postgres last, and the row comparison (a, id) > ($1, $2) is
-// never true for a NULL a, so those rows are skipped. A cursor column must
-// be a key column, Required, or framework-generated (AutoGenerate).
+// A keyset column that can hold NULL breaks the walk: the row comparison
+// (a, id) > ($1, $2) is never true for a NULL a, so those rows are
+// skipped. A cursor column must be a key column, Required, or
+// framework-generated (AutoGenerate).
 func TestCursorNullableColumnPanics(t *testing.T) {
 	expectCursorPanic(t, "cursor field \"published_at\" can hold NULL", EntityConfig{
 		Fields: []schema.Field{

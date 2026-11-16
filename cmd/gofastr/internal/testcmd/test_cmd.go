@@ -3,6 +3,7 @@ package testcmd
 import (
 	"bufio"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"os/exec"
 	"strings"
@@ -82,7 +83,7 @@ func RunTest(args []string) {
 // data), so it is scrubbed before the colour goes on and the caller
 // prints the result raw.
 func colorizeTestLine(line string, passed, failed *int) string {
-	line = cli.ScrubTerminalOutput(line)
+	line = textsafe.ScrubTerminal(line)
 	switch {
 	case strings.HasPrefix(line, "=== RUN"):
 		return "  " + cli.Bold(line)

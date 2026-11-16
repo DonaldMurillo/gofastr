@@ -866,7 +866,7 @@ func (ch *CrudHandler) checkIncludeReadable(ctx context.Context, nodes []*Includ
 		if node == nil || node.Target == nil {
 			continue
 		}
-		target := &CrudHandler{Entity: node.Target, DB: ch.DB, Registry: ch.Registry}
+		target := ch.forEntity(node.Target)
 		if !target.relationReachable(ctx, "read") || !target.canReadEntityGate(ctx) {
 			return &includeForbiddenError{Entity: node.Target.GetName()}
 		}
@@ -886,7 +886,7 @@ func (ch *CrudHandler) checkPivotReadable(ctx context.Context, pivot *entity.Ent
 	if pivot == nil {
 		return nil
 	}
-	probe := &CrudHandler{Entity: pivot, DB: ch.DB, Registry: ch.Registry}
+	probe := ch.forEntity(pivot)
 	if !probe.relationReachable(ctx, "read") || !probe.canReadEntityGate(ctx) {
 		return &includeForbiddenError{Entity: pivot.GetName()}
 	}

@@ -49,6 +49,9 @@ func WithResourceTemplateMeta(meta map[string]any) ResourceTemplateOption {
 //
 // battery/auth's MCPUser() / MCPRole("admin") are ready-made gates.
 func WithResourceTemplateGate(gate func(ctx context.Context) error) ResourceTemplateOption {
+	if gate == nil {
+		panic("mcp.WithResourceTemplateGate: nil gate — a nil precondition would silently allow every caller")
+	}
 	return func(t *ResourceTemplate) { t.gate = gate }
 }
 

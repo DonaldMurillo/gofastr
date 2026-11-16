@@ -110,12 +110,16 @@
       if (cancel) cancel.addEventListener('click', (e) => { e.preventDefault(); finish(false); });
       // A click on the backdrop lands on the dialog element itself.
       dlg.addEventListener('click', (e) => { if (e.target === dlg) finish(false); });
-      dlg.addEventListener('close', () => {
+      // runtime/confirm-closes-in-the-closing-task: not the close event.
+      const gone = new MutationObserver(() => {
+        if (!mine.opened || dlg.open) return;
+        gone.disconnect();
         if (pending === mine) pending = null;
         dlg.remove();
         if (back && back.isConnected && typeof back.focus === 'function') back.focus();
         resolve(answer);
-      }, { once: true });
+      });
+      gone.observe(dlg, { attributes: true, attributeFilter: ['open'] });
       // The template is inert, so the host's first paint left the
       // dialog's sheets out. Open once they have loaded: showModal on an
       // unstyled clone paints the browser's default dialog for a round

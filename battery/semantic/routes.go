@@ -254,6 +254,10 @@ func queryHandler(idx Index) http.Handler {
 		}
 		hits, err := idx.Query(r.Context(), q)
 		if err != nil {
+			if invalid := (*InvalidQueryError)(nil); errors.As(err, &invalid) {
+				writeErr(w, r, http.StatusBadRequest, reasonQueryInvalid)
+				return
+			}
 			writeErr(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}

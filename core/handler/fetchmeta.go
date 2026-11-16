@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 )
 
 // IsForgeableRequest reports whether a cross-site page could have sent
@@ -167,4 +169,21 @@ func SameSiteHopTarget(r *http.Request, target string) string {
 		return path + "?" + SameSiteHopParam + "=1"
 	}
 	return target + "&" + SameSiteHopParam + "=1"
+}
+
+type sessionRefusalKey struct{}
+
+// TrackSessionRefusal returns a context NoteSessionRefusal can mark,
+// and a func that reads the mark. battery/auth's SessionMiddleware uses it.
+func TrackSessionRefusal(ctx context.Context) (context.Context, func() bool) {
+	var noted atomic.Bool
+	return context.WithValue(ctx, sessionRefusalKey{}, &noted), noted.Load
+}
+
+// NoteSessionRefusal says the redirect a gate is about to write sends
+// the request away for want of a session. A 401 needs no note.
+func NoteSessionRefusal(ctx context.Context) {
+	if noted, ok := ctx.Value(sessionRefusalKey{}).(*atomic.Bool); ok {
+		noted.Store(true)
+	}
 }

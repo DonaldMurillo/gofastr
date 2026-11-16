@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -132,9 +133,10 @@ func TestRetainedIndexDroppedOnRemoval(t *testing.T) {
 			t.Fatal(err)
 		}
 		apply(up)
-		ins := "INSERT INTO " + table + " (" + strings.Join(cols, ", ") + ") VALUES ('a', 'b')"
-		fkExec(t, db, ins)
-		if _, err := db.Exec(ins); err != nil {
+		// Each row names its id: a SQLite key column is NOT NULL.
+		ins := "INSERT INTO " + table + " (id, " + strings.Join(cols, ", ") + ") VALUES ('%s', 'a', 'b')"
+		fkExec(t, db, fmt.Sprintf(ins, "r1"))
+		if _, err := db.Exec(fmt.Sprintf(ins, "r2")); err != nil {
 			t.Errorf("the index was removed, and a duplicate is still refused: %v\nmigration:\n%s", err, up)
 		}
 	})

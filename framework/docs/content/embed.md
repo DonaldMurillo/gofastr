@@ -329,6 +329,11 @@ Origins are compared normalized, not as strings: `https://acme.com`,
 origin written four ways, and comparing the raw strings means a customer's
 trailing slash silently never matches.
 
+A host whose last label is a number, decimal or `0x` hex (`https://127.1`,
+`https://0x7f000001`, `https://example.123`), is refused unless it is a
+dotted-quad IPv4 address: a browser rewrites the first two to
+`https://127.0.0.1` and rejects the third, so the entry could never match.
+
 The browser-enforced control is the embed document's CSP `frame-ancestors`
 directive. No `Origin` header is sent on a navigation GET, so at the moment the
 header is written the server does not know who the framer is. Listing origins

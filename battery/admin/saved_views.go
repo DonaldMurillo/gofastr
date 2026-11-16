@@ -60,7 +60,7 @@ func newSavedViews(ctx context.Context, db *sql.DB, table string) (*sqlSavedView
 	s := &sqlSavedViews{db: db, table: table, pg: pg}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id         TEXT PRIMARY KEY,
+			id         TEXT PRIMARY KEY NOT NULL,
 			owner      TEXT NOT NULL,
 			tenant     TEXT NOT NULL DEFAULT '',
 			entity     TEXT NOT NULL,

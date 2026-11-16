@@ -86,6 +86,74 @@ func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.Parse
 	return out
 }
 
+// sortTerms is withKeyTiebreak with PinNulls set where pinsNulls says, so
+// every list path orders nulls as Postgres does.
+func (ch *CrudHandler) sortTerms(ctx context.Context, sorts []filter.ParsedSort) []filter.ParsedSort {
+	out := ch.withKeyTiebreak(sorts)
+	for i := range out {
+		out[i].PinNulls = ch.pinsNulls(ctx, out[i].Field)
+	}
+	return out
+}
+
+// pinsNulls reports whether an ORDER BY on column must spell the null
+// position: the column can hold NULL and the database is SQLite.
+func (ch *CrudHandler) pinsNulls(ctx context.Context, column string) bool {
+	if ch.Entity == nil {
+		return false
+	}
+	keys := ch.keyCols()
+	for _, f := range ch.Entity.GetFields() {
+		if f.Name == column && !entity.CanHoldNull(f, keys) {
+			return false
+		}
+	}
+	return !ch.onPostgres(ctx)
+}
+
+// dialectMemo holds one handler's dialect, for a DB that is a wrapper
+// or a transaction and so has no *sql.DB to remember it under.
+type dialectMemo struct {
+	mu    sync.Mutex
+	known bool
+	pg    bool
+}
+
+// onPostgres is the one way a handler learns its dialect: asked once per
+// *sql.DB when there is one, else once per handler, in its memo.
+func (ch *CrudHandler) onPostgres(ctx context.Context) bool {
+	if handle := ch.dialectHandle(); handle != nil {
+		return isPostgres(ctx, handle, ch.conn(ctx))
+	}
+	if ch.dialect == nil {
+		panic("crud: a CrudHandler whose DB is not a *sql.DB has no place to remember its dialect; build it with NewCrudHandler")
+	}
+	ch.dialect.mu.Lock()
+	defer ch.dialect.mu.Unlock()
+	if !ch.dialect.known {
+		ch.dialect.pg, ch.dialect.known = probeDialect(ctx, ch.conn(ctx))
+	}
+	return ch.dialect.pg
+}
+
+// forEntity is a handler for another entity on this handler's database,
+// sharing what it knows of the dialect; for posture and gate probes.
+func (ch *CrudHandler) forEntity(ent *entity.Entity) *CrudHandler {
+	return &CrudHandler{Entity: ent, DB: ch.DB, Registry: ch.Registry, root: ch.root, dialect: ch.dialect}
+}
+
+// probeDialect asks q for SELECT version(); certain is false for an
+// error other than SQLite's "no such function".
+func probeDialect(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (pg, certain bool) {
+	var v string
+	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
+		return false, strings.Contains(strings.ToLower(err.Error()), "no such function")
+	}
+	return strings.Contains(strings.ToLower(v), "postgresql"), true
+}
+
 func (ch *CrudHandler) keyColumn() (string, error) {
 	cols := ch.keyCols()
 	if len(cols) != 1 {
@@ -222,7 +290,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 		return res.RowsAffected()
 	}
-	if isPostgres(ctx, ch.dialectHandle(), ch.DB) {
+	if ch.onPostgres(ctx) {
 		sqlStr, args := build(ch.keyCols())
 		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
 		if err != nil {
@@ -283,15 +351,8 @@ func isPostgres(ctx context.Context, handle any, q interface {
 			return known.(bool)
 		}
 	}
-	var v string
-	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
-		if stable && strings.Contains(strings.ToLower(err.Error()), "no such function") {
-			rememberDialect(db, false)
-		}
-		return false
-	}
-	pg := strings.Contains(strings.ToLower(v), "postgresql")
-	if stable {
+	pg, certain := probeDialect(ctx, q)
+	if stable && certain {
 		rememberDialect(db, pg)
 	}
 	return pg

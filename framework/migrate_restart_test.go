@@ -79,9 +79,9 @@ func TestRepeatedStartsPreserveExistingRows(t *testing.T) {
 		// First boot creates the table.
 		bootTickets(t, db, ticketFields())
 
-		if _, err := db.Exec(`INSERT INTO tickets (title) VALUES (?)`, "grader-created"); err != nil {
+		if _, err := db.Exec(`INSERT INTO tickets (id, title) VALUES (?, ?)`, "t-grader", "grader-created"); err != nil {
 			// Postgres uses $1; retry rather than branch on dialect.
-			if _, err2 := db.Exec(`INSERT INTO tickets (title) VALUES ($1)`, "grader-created"); err2 != nil {
+			if _, err2 := db.Exec(`INSERT INTO tickets (id, title) VALUES ($1, $2)`, "t-grader", "grader-created"); err2 != nil {
 				t.Fatalf("seed row: %v / %v", err, err2)
 			}
 		}
@@ -130,8 +130,8 @@ func TestRepeatedStartsPreserveEveryRow(t *testing.T) {
 		const seeded = 50
 		for i := range seeded {
 			title := fmt.Sprintf("ticket-%03d", i)
-			if _, err := db.Exec(`INSERT INTO tickets (title) VALUES (?)`, title); err != nil {
-				if _, err2 := db.Exec(`INSERT INTO tickets (title) VALUES ($1)`, title); err2 != nil {
+			if _, err := db.Exec(`INSERT INTO tickets (id, title) VALUES (?, ?)`, title, title); err != nil {
+				if _, err2 := db.Exec(`INSERT INTO tickets (id, title) VALUES ($1, $2)`, title, title); err2 != nil {
 					t.Fatalf("seed row %d: %v / %v", i, err, err2)
 				}
 			}

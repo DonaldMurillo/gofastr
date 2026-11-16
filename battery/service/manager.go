@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"io"
 	"os/exec"
 	"runtime"
@@ -114,22 +115,11 @@ func (b *Battery) run(name string, args ...string) error {
 }
 
 func toolError(name string, args []string, out []byte, err error) error {
-	msg := strings.TrimSpace(scrubControl(string(out)))
+	msg := strings.TrimSpace(textsafe.ScrubTerminal(string(out)))
 	if msg == "" {
 		return fmt.Errorf("service: %s %s: %w", name, strings.Join(args, " "), err)
 	}
 	return fmt.Errorf("service: %s %s: %w: %s", name, strings.Join(args, " "), err, msg)
-}
-
-// scrubControl drops C0 control bytes and DEL except newline and tab,
-// so tool output and log lines cannot drive the user's terminal.
-func scrubControl(s string) string {
-	return strings.Map(func(r rune) rune {
-		if (r < 0x20 && r != '\n' && r != '\t') || r == 0x7f {
-			return -1
-		}
-		return r
-	}, s)
 }
 
 // exitCode returns the tool's exit status, or -1 when err is not an

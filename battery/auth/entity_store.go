@@ -146,7 +146,7 @@ func (s *EntityUserStore) EnsureSchema(ctx context.Context) error {
 		boolType, boolFalse = "BOOLEAN", "FALSE"
 	}
 	stmt := fmt.Sprintf(
-		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s %s NOT NULL DEFAULT %s)",
+		"CREATE TABLE IF NOT EXISTS %s (%s TEXT PRIMARY KEY NOT NULL, %s TEXT UNIQUE NOT NULL, %s TEXT NOT NULL DEFAULT '', %s TEXT NOT NULL DEFAULT '[]', %s %s NOT NULL DEFAULT %s)",
 		query.QuoteFolded(s.table),
 		query.QuoteFolded(s.fieldMap.ID),
 		query.QuoteFolded(s.fieldMap.Email),

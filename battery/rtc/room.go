@@ -387,7 +387,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 			User:        join.User,
 			DisplayName: join.DisplayName,
 			// Order sorts the roster and doubles as the join instant a
-			// late fanout join mirror is compared against (fanoutMsg.At).
+			// late fanout join mirror's seat is compared against.
 			Order: time.Now().UnixNano(),
 		},
 		conn:    conn,
@@ -396,7 +396,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		recheck: recheck,
 	}
 
-	var oldConn *stream.WebSocketConn
+	var displaced []*stream.WebSocketConn
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -427,7 +427,7 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		s.mirrorLocked(join.Room, fanoutMsg{Kind: evLeave, ID: peerID})
 		s.broadcastRosterLocked(join.Room)
 		s.spliceSeatLocked(old.seat)
-		oldConn = old.conn
+		displaced = append(displaced, s.detachLocked(rm, old))
 	}
 	rm.peers[peerID] = p
 	rm.emptySince = time.Time{}
@@ -435,14 +435,9 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 	// principal's cap the oldest one is displaced (evict-oldest, the
 	// replace-on-rejoin policy across rooms), and its connection is
 	// closed outside the lock below.
-	displaced := s.admitSeatLocked(join.Room, p, join.User)
+	displaced = append(displaced, s.admitSeatLocked(join.Room, p, join.User)...)
 	s.mu.Unlock()
-	if oldConn != nil {
-		oldConn.Close()
-	}
-	for _, c := range displaced {
-		c.Close()
-	}
+	closeDetached(displaced...)
 	// Hydrate BEFORE announcing. The channel registers a socket only
 	// when its snapshot job runs, and delivers an event only to sockets
 	// registered when the event is dequeued. Publishing the join first
@@ -506,6 +501,21 @@ func (s *Signaler) serve(w http.ResponseWriter, r *http.Request, join Join, rech
 		case evStatus:
 			s.handleStatus(join.Room, p, in)
 		}
+	}
+}
+
+// detachLocked stops rm's channel delivering to a displaced socket and
+// returns it for closeDetached, after the unlock. Caller holds s.mu.
+func (s *Signaler) detachLocked(rm *room, p *roomPeer) *stream.WebSocketConn {
+	rm.channel.Unregister(p.conn)
+	return p.conn
+}
+
+// closeDetached closes sockets off the caller's goroutine: Close waits
+// out the peer's close handshake, up to CloseTimeout on a half-open one.
+func closeDetached(conns ...*stream.WebSocketConn) {
+	for _, conn := range conns {
+		go conn.Close()
 	}
 }
 
@@ -642,7 +652,7 @@ func (s *Signaler) handleSignal(roomName string, p *roomPeer, in inboundMsg) {
 		// peer's close frame.
 		publishFanout(send, nodeID, msg, func(error) {
 			s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
-			go p.conn.Close()
+			closeDetached(p.conn)
 		})
 	}
 }

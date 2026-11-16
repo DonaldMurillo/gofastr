@@ -1,0 +1,25 @@
+primitive: mcp
+summary: The MCP server, which registers tools, prompts and resources and answers their JSON-RPC methods.
+code:
+  - core/mcp/
+docs:
+  - framework/docs/content/mcp.md
+invariants:
+  - id: one-callback-error-rule
+    rule: tools/call, prompts/get and resources/read decide which callback error crosses the transport in one function, callerFacingError, so an RPCError (wrapped or not) crosses as itself, a typed 4xx handler.Error crosses as invalid params with its code, and every other error is answered with a generic message.
+    enforced_by:
+      - test: core/mcp.TestCallbackErrorAnswersAlikeOnEveryMethod
+    judge: Does this change decide outside callerFacingError whether a tool, prompt or resource callback's error text reaches the client?
+  - id: nil-gate-panics
+    rule: WithToolGate, WithResourceGate, WithResourceTemplateGate, WithPromptGate and Gated panic on a nil gate.
+    enforced_by:
+      - test: core/mcp.TestNilGateOptionsPanic
+decisions:
+  - id: callback-errors-share-one-function
+    date: 2026-11-16
+    status: accepted
+    decision: callTool and handlerErrorResponse both ask callerFacingError; callTool's inline typed-4xx branch and handlerErrorResponse's own unwrapped RPCError type assertion are removed.
+    rejected:
+      - option: Keep the prompt and resource copy and add the missing cases to it.
+        why: It was the second copy of the rule and had already drifted, answering a wrapped RPCError and a typed 4xx as internal errors where tools/call let them cross.
+    upholds: [one-callback-error-rule]
