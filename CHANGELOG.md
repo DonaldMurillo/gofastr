@@ -25,6 +25,13 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A dynamic screen registered with a trailing slash no longer panics at
+  mount.** `/items/{slug}/` made `uihost.Mount` panic with a nil pointer
+  in `ValidateIntercepts`, and the same screen was left out of the route
+  manifest, the sitemap, the static export and llm.md. The router now
+  drops the trailing slash from a dynamic pattern at registration, so
+  `Screen.Path`, `ScreenByPattern`, `Paths` and intercept origins all
+  spell it `/items/:slug`. Nothing to change.
 - **Cursor pages over seeded SQLite timestamps no longer repeat.** A
   managed entity paged on `created_at` whose rows a seed script or
   migration inserted as `2026-01-02T03:04:05Z` served its first page
