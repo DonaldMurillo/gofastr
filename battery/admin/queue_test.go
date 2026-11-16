@@ -336,3 +336,51 @@ func TestQueueReplayRefusesUnstorableID(t *testing.T) {
 		t.Errorf("a refused replay audited %v", ops)
 	}
 }
+
+// llenRedis is listRedis with LLEN (queue.ListLengther).
+type llenRedis struct{ *listRedis }
+
+func (m llenRedis) LLen(_ context.Context, key string) (int64, error) {
+	return int64(len(m.lists[key])), nil
+}
+
+// A RedisQueue counts with LLEN alone. Over a client with none, the Jobs
+// page lists the failed jobs and shows no count; with it, the exact count.
+func TestRedisQueueJobsPageCountsOnlyWithLLEN(t *testing.T) {
+	for _, llen := range []bool{true, false} {
+		t.Run(fmt.Sprintf("llen=%v", llen), func(t *testing.T) {
+			ctx := context.Background()
+			bare := &listRedis{lists: map[string][]string{}, hashes: map[string]map[string]string{}}
+			var client queue.RedisClient = bare
+			if llen {
+				client = llenRedis{bare}
+			}
+			q := queue.NewRedisQueue(client, "jobs")
+			t.Cleanup(func() { _ = q.Close() })
+			for _, id := range []string{"j1", "j2"} {
+				if err := q.Enqueue(ctx, queue.Job{ID: id, Type: "send.email", MaxAttempts: 1}); err != nil {
+					t.Fatal(err)
+				}
+				job, err := q.Dequeue(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := q.Nack(ctx, job); err != nil {
+					t.Fatal(err)
+				}
+			}
+			x := queueEnv(t, q)
+			body := get(x.as(theAdmin), "/admin/queue").Body.String()
+			for _, id := range []string{"j1", "j2"} {
+				if !strings.Contains(body, `<tr id="`+id+`"`) {
+					t.Fatalf("the jobs page does not list %s", id)
+				}
+			}
+			counted := strings.Contains(body, `class="fui-seglinks__count"`)
+			replayAll := strings.Contains(body, "Replay 2 failed")
+			if counted != llen || replayAll != llen {
+				t.Errorf("count shown = %v, Replay 2 failed shown = %v; want both %v", counted, replayAll, llen)
+			}
+		})
+	}
+}

@@ -148,15 +148,16 @@ type PopRecorder interface {
 
 // ListLengther is the optional capability a RedisClient implements when it
 // can report a list's length (LLEN) without reading the list. RedisQueue
-// uses it for the queue_depth metric ([MetricsCollector]): counting with
-// LRANGE would pull every waiting job's payload on every scrape. go-redis:
+// counts with it and with nothing else: Stats (the dead-letter count) and
+// the queue_depth metric ([MetricsCollector]). go-redis:
 //
 //	func (c adapter) LLen(ctx context.Context, key string) (int64, error) {
 //		return c.rdb.LLen(ctx, key).Result()
 //	}
 //
 // A missing list is length 0. A client that does not implement it still
-// runs the queue, but MetricsCollector emits no queue_depth for it.
+// runs the queue, but Stats returns an error and MetricsCollector emits
+// nothing for it: counting with LRANGE would pull every job's payload.
 type ListLengther interface {
 	LLen(ctx context.Context, key string) (int64, error)
 }
@@ -1294,55 +1295,92 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 // ReplayJob implements [ReplayReporter]: Replay, reporting whether a
 // dead-lettered job moved back onto the main queue.
 func (q *RedisQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
-	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, -1)
+	raw, job, found, err := q.findDead(ctx, jobID)
+	if err != nil || !found {
+		return false, err
+	}
+	// Reset for a fresh set of retries. The old ClaimToken named a claim
+	// that is over; the next Dequeue mints a fresh one.
+	job.Attempts = 0
+	job.ClaimToken = ""
+	requeued, err := json.Marshal(job)
 	if err != nil {
-		return false, fmt.Errorf("replay: read dead-letter queue: %w", err)
+		return false, fmt.Errorf("replay: marshal job: %w", err)
 	}
 
-	for _, raw := range entries {
-		var job Job
-		if err := json.Unmarshal([]byte(raw), &job); err != nil {
-			// Skip corrupt dead-list entries rather than letting one bad row
-			// block replay of valid jobs.
-			continue
-		}
-		if job.ID != jobID {
-			continue
-		}
-
-		// Reset for a fresh set of retries, then re-marshal. ClaimToken is
-		// cleared too, it identified a claim that is now terminal; the next
-		// Dequeue mints a fresh one.
-		job.Attempts = 0
-		job.ClaimToken = ""
-		requeued, err := json.Marshal(job)
+	// With a script the move is one step, and only while the dead list
+	// still holds the entry: an erasure that removed it after the read
+	// leaves nothing to replay.
+	if runner, ok := q.client.(ScriptRunner); ok {
+		moved, err := q.scriptMove(ctx, runner, q.deadLetterQueue, false, q.queueName, false, moveEntry{"", raw, "", string(requeued)})
 		if err != nil {
-			return false, fmt.Errorf("replay: marshal job: %w", err)
+			return false, fmt.Errorf("replay: move job: %w", err)
 		}
-
-		// With a script the move is one step, and only while the dead list
-		// still holds the entry: an erasure that removed it after the read
-		// above leaves nothing to replay.
-		if runner, ok := q.client.(ScriptRunner); ok {
-			moved, err := q.scriptMove(ctx, runner, q.deadLetterQueue, false, q.queueName, false, moveEntry{"", raw, "", string(requeued)})
-			if err != nil {
-				return false, fmt.Errorf("replay: move job: %w", err)
-			}
-			return moved > 0, nil
-		}
-		// Enqueue first so a failure here leaves the original on the dead list
-		// (no loss); only then remove the original dead-list entry.
-		if err := q.client.LPush(ctx, q.queueName, requeued); err != nil {
-			return false, fmt.Errorf("replay: re-enqueue job: %w", err)
-		}
-		if _, err := q.client.LRem(ctx, q.deadLetterQueue, 1, raw); err != nil {
-			return false, fmt.Errorf("replay: remove from dead-letter queue: %w", err)
-		}
-		return true, nil
+		return moved > 0, nil
 	}
+	// Enqueue first so a failure here leaves the original on the dead list
+	// (no loss); only then remove the original dead-list entry.
+	if err := q.client.LPush(ctx, q.queueName, requeued); err != nil {
+		return false, fmt.Errorf("replay: re-enqueue job: %w", err)
+	}
+	if _, err := q.client.LRem(ctx, q.deadLetterQueue, 1, raw); err != nil {
+		return false, fmt.Errorf("replay: remove from dead-letter queue: %w", err)
+	}
+	return true, nil
+}
 
-	// No matching dead-lettered job, idempotent no-op.
-	return false, nil
+// deadScanTries is how many times findDead starts over when the dead-letter
+// list changes under its pages.
+const deadScanTries = 4
+
+var errDeadListMoved = errors.New("replay: the dead-letter list kept changing while it was read; try again")
+
+// deadScanFirst is findDead's first page. Pages double up to maxSkipDrain,
+// so replaying a recent job reads few payloads and an old one few pages.
+const deadScanFirst = 32
+
+// findDead returns the dead-letter entry holding jobID, newest first. It
+// reads a page at a time and stops at the match.
+func (q *RedisQueue) findDead(ctx context.Context, jobID string) (raw string, job Job, found bool, err error) {
+	for range deadScanTries {
+		var moved bool
+		raw, job, found, moved, err = q.scanDead(ctx, jobID)
+		if err != nil || !moved {
+			return raw, job, found, err
+		}
+	}
+	return "", Job{}, false, errDeadListMoved
+}
+
+// scanDead is one pass of findDead. Each page after the first starts on the
+// last entry of the one before: a different entry there means the list
+// shifted and an entry may have been passed over, which moved reports.
+func (q *RedisQueue) scanDead(ctx context.Context, jobID string) (raw string, job Job, found, moved bool, err error) {
+	anchor := ""
+	size := int64(deadScanFirst)
+	for start := int64(0); ; start, size = start+size, min(size*2, maxSkipDrain) {
+		page, err := q.client.LRange(ctx, q.deadLetterQueue, max(start-1, 0), start+size-1)
+		if err != nil && !errors.Is(err, ErrRedisEmpty) {
+			return "", Job{}, false, false, fmt.Errorf("replay: read dead-letter queue: %w", err)
+		}
+		if start > 0 {
+			if len(page) == 0 || page[0] != anchor {
+				return "", Job{}, false, true, nil
+			}
+			page = page[1:]
+		}
+		for _, raw := range page {
+			// An entry that does not decode names no job and is skipped.
+			var job Job
+			if json.Unmarshal([]byte(raw), &job) == nil && job.ID == jobID {
+				return raw, job, true, false, nil
+			}
+		}
+		if int64(len(page)) < size {
+			return "", Job{}, false, false, nil
+		}
+		anchor = page[len(page)-1]
+	}
 }
 
 // ListJobs implements [Browsable] for the Redis backend. The only durable
@@ -1382,12 +1420,12 @@ func (q *RedisQueue) ListJobs(ctx context.Context, status string, limit, offset 
 }
 
 // Stats implements [Browsable] for the Redis backend. It counts what
-// ListJobs can list: the dead-lettered jobs, under "failed". RedisClient
-// has no LLEN, so the count reads the list whole.
+// ListJobs can list: the dead-lettered jobs, under "failed", by LLEN. A
+// client that is not a [ListLengther] gets an error and no count.
 func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
 	n, err := q.listLen(ctx, q.deadLetterQueue)
 	if err != nil {
-		return nil, fmt.Errorf("stats: read dead-letter queue: %w", err)
+		return nil, fmt.Errorf("stats: length of the dead-letter queue: %w", err)
 	}
 	stats := JobStats{}
 	if n > 0 {
@@ -1397,34 +1435,33 @@ func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
 }
 
 // pendingDepth is the queue_depth gauge's number: the jobs on the main and
-// delayed lists, by LLEN. In-flight jobs are not counted. A client that is
-// not a [ListLengther] gets errNoListLength: a scrape must not LRANGE a
-// backlog to count it.
+// delayed lists. In-flight jobs are not counted.
 func (q *RedisQueue) pendingDepth(ctx context.Context) (int, error) {
-	lengther, ok := q.client.(ListLengther)
-	if !ok {
-		return 0, errNoListLength
-	}
-	total := int64(0)
+	total := 0
 	for _, key := range []string{q.queueName, q.delayedQueue} {
-		n, err := lengther.LLen(ctx, key)
-		if err != nil && !errors.Is(err, ErrRedisEmpty) {
+		n, err := q.listLen(ctx, key)
+		if err != nil {
 			return 0, fmt.Errorf("depth: length of %s: %w", key, err)
 		}
-		total += max(n, 0)
+		total += n
 	}
-	return int(total), nil
+	return total, nil
 }
 
 var errNoListLength = errors.New("redis queue: the client has no LLEN (queue.ListLengther)")
 
-// listLen reads a list whole to count it; a missing list counts zero.
+// listLen is a list's length by LLEN; a missing list counts zero. A client
+// with no LLEN gets errNoListLength: no count is taken by reading a list.
 func (q *RedisQueue) listLen(ctx context.Context, key string) (int, error) {
-	entries, err := q.client.LRange(ctx, key, 0, -1)
+	lengther, ok := q.client.(ListLengther)
+	if !ok {
+		return 0, errNoListLength
+	}
+	n, err := lengther.LLen(ctx, key)
 	if err != nil && !errors.Is(err, ErrRedisEmpty) {
 		return 0, err
 	}
-	return len(entries), nil
+	return int(max(n, 0)), nil
 }
 
 // Start launches a background goroutine that calls Reclaim on every tick

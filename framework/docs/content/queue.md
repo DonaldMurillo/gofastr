@@ -535,9 +535,14 @@ MemoryQueue and RedisQueue can only list their dead-letter store,
 so only `"failed"`, `"all"` or `""` returns results. `Stats` counts the
 jobs `ListJobs` can list, so theirs holds `"failed"` alone and a pager
 can sum its keys. Their waiting jobs are counted for the `queue_depth`
-metric only (see [Observability](observability.md)); on RedisQueue that
-needs a client with `LLEN` ([`ListLengther`](#optional-listlengther)).
-RedisQueue's `Stats` reads the dead-letter list whole to count it.
+metric only (see [Observability](observability.md)). RedisQueue takes
+both counts with `LLEN`, so its client must implement
+[`ListLengther`](#optional-listlengther): without it `Stats` returns an
+error and no count. RedisQueue's `ListJobs` reads the one page asked
+for, and `Replay` reads the dead-letter list newest first, a page of at
+most 1,024 entries at a time, until it finds the job. If the list keeps
+changing under those pages it returns an error instead of guessing; try
+again.
 DBQueue can enumerate any
 status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
 with `WithDoneRetention`, and `"all"` or `""` lists every status.
@@ -1074,8 +1079,9 @@ type ListLengther interface {
 }
 ```
 
-`queue.MetricsCollector` reports `queue_depth` for a `RedisQueue` as the
-length of its main and delayed lists, read with `LLEN`. With go-redis:
+A `RedisQueue` counts with `LLEN` and nothing else: `Stats` is the length
+of the dead-letter list, and `queue.MetricsCollector` reports `queue_depth`
+as the length of the main and delayed lists. With go-redis:
 
 ```go
 func (c adapter) LLen(ctx context.Context, key string) (int64, error) {
@@ -1084,9 +1090,13 @@ func (c adapter) LLen(ctx context.Context, key string) (int64, error) {
 ```
 
 A missing list has length 0. An adapter that does not implement it still
-runs the queue, but the collector emits no `queue_depth` for it: counting
-with `LRANGE` would read every waiting job's payload on every scrape.
-`queue_dead_letter_jobs` is reported either way.
+runs the queue, lists its failed jobs and replays them, but it cannot
+count: `Stats` returns an error, the collector emits neither
+`queue_depth` nor `queue_dead_letter_jobs`, and the admin's Jobs page
+shows the failed jobs with no counts, no pager and no "Replay N failed"
+button. Counting with `LRANGE` would read every job's payload on every
+scrape and every page load, and a count cut off at a limit would read as
+exact.
 
 ### Optional: `ScriptRunner`
 

@@ -15,12 +15,12 @@ import (
 // single /metrics endpoint. lane is the label value (the queue's name/lane).
 //
 // queue_depth is Stats' "pending" count, or the backend's own count where
-// Stats covers dead-letter jobs only (MemoryQueue, RedisQueue). A RedisQueue
-// whose client is not a [ListLengther] gets no queue_depth sample, as does
-// a scrape whose depth read failed.
+// Stats covers dead-letter jobs only (MemoryQueue, RedisQueue). A scrape
+// whose depth read failed gets no queue_depth sample.
 //
 // The collector tolerates a Stats error by emitting nothing for that scrape
-// (a transient DB error must never break /metrics).
+// (a transient DB error must never break /metrics). A RedisQueue whose
+// client is not a [ListLengther] cannot count, so it emits nothing at all.
 func MetricsCollector(q Browsable, lane string) func(io.Writer) {
 	return func(w io.Writer) {
 		stats, err := q.Stats(context.Background())

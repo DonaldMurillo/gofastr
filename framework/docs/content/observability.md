@@ -58,7 +58,7 @@ that produce them are wired:
 | `db_pool_wait_count_total` | counter | — | `sql.DBStats` | `WithDB` + `WithMetrics` |
 | `db_pool_wait_duration_seconds_total` | counter | — | `sql.DBStats` | `WithDB` + `WithMetrics` |
 | `outbox_pending` | gauge | `consumer` | transactional outbox | `WithOutbox` + `WithMetrics` |
-| `outbox_dead_letter_total` | counter | `consumer` | transactional outbox | `WithOutbox` + `WithMetrics` |
+| `outbox_dead_letter_deliveries` | gauge | `consumer` | transactional outbox | `WithOutbox` + `WithMetrics` |
 | `queue_depth` | gauge | `lane` | `battery/queue` | queue registered (see below) |
 | `queue_dead_letter_jobs` | gauge | `lane` | `battery/queue` | queue registered (see below) |
 | `webhook_deliveries_total` | counter | — | `battery/webhook` | manager registered (see below) |
@@ -67,13 +67,16 @@ that produce them are wired:
 
 `queue_dead_letter_jobs` is the number of dead-lettered jobs the queue holds
 now, so it falls when one is replayed or erased; alert on its value, not on
-a rate.
+a rate. `outbox_dead_letter_deliveries` is the same for the outbox: the
+dead-lettered deliveries it holds now, which fall on a `Replay`, a purge or
+an erasure. A metric named `_total` is a counter that only rises; every
+other metric here is a current reading.
 `queue_depth` counts waiting jobs on every backend, delayed ones included:
 `DBQueue` reads its `pending` status count, and `MemoryQueue` and `RedisQueue`
 count their own waiting jobs, which their `Stats` does not report.
-On `RedisQueue` the count is two `LLEN` calls, so the client adapter must
-implement `queue.ListLengther`; without it no `queue_depth` is emitted for
-that queue (see [queue](queue.md#optional-listlengther)).
+`RedisQueue` counts with `LLEN` only, so the client adapter must implement
+`queue.ListLengther`; without it neither queue metric is emitted for that
+queue (see [queue](queue.md#optional-listlengther)).
 
 The DB-pool and outbox metrics are zero-config: any code path that takes the
 app's metrics handle (a battery's `Init`, or an explicit `app.Metrics()`

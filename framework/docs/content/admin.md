@@ -386,7 +386,11 @@ through `queue.ReplayReporter`, which `DBQueue`, `MemoryQueue` and
 so each of its replays is reported and audited. A failed job whose `UniqueKey` a newer live job holds
 is not replayed: one replay answers 409 with a notice, and "Replay N
 failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
-logs the driver error; the page never prints it. The Jobs page shows
+logs the driver error; the page never prints it. A queue that cannot count
+(a `RedisQueue` whose client has no `LLEN`, see
+[queue](queue.md#optional-listlengther)) lists its first page of jobs with
+no counts, no pager and no "Replay N failed" button, and the dashboard's
+Failed jobs figure reads "—". The Jobs page shows
 `QueueListLimit` jobs a page (default 50), newest first; the pager
 under the table turns pages through `?p=` and keeps the status. The
 audit page reads
