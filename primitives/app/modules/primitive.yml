@@ -8,3 +8,131 @@ docs:
   - framework/docs/content/plugins.md
   - framework/docs/content/modules.md
   - framework/docs/content/plugin-platform.md
+invariants:
+  - id: module-name-valid
+    rule: Plugin and battery registration refuses a nil module and a name that is empty, whitespace-only, holds a control character or is longer than 128 bytes.
+    enforced_by:
+      - test: framework.TestPluginNameRejected
+      - test: framework.TestCovBatteryInvalidName
+  - id: module-name-unique
+    rule: A second plugin, or a second battery, under a name already registered is refused.
+    enforced_by:
+      - test: framework.TestSweepModulesPluginDuplicateNameRefused
+      - test: framework.TestBatteryManager_DuplicateName
+  - id: init-retry-skips-done
+    rule: A retried InitAll runs only the plugins and batteries whose Init has not yet succeeded, so a retry after a partial failure does not register their routes twice.
+    enforced_by:
+      - test: framework.TestInitPluginsRetrySkipsSucceeded
+      - test: framework.TestCovInitAllSkipsInitialized
+  - id: battery-dependency-order
+    rule: Batteries init and start after the batteries they depend on, independent ones in name order, and stop in the reverse order; an unknown or circular dependency fails InitAll.
+    enforced_by:
+      - test: framework.TestSweepModulesBatteryInitFollowsDependencies
+      - test: framework.TestBatteryManager_StopReverseOrder
+      - test: framework.TestBatteryManager_MissingDependency
+      - test: framework.TestBatteryManager_CircularDependency
+  - id: stop-drains-every-battery
+    rule: StopAll calls every battery's OnStop even after an earlier one returns an error or panics, and returns every failure joined.
+    enforced_by:
+      - test: framework.TestSweepModulesStopAllStopsEveryBattery
+      - test: framework.TestBatteryOnStopPanicContained
+  - id: module-panic-is-an-error
+    rule: A panic in a plugin or battery Init, OnStart or OnStop becomes an error naming the module and phase, its stack goes to the App's logger, the panic value reaches neither the log nor the error, and a log location the handler reports is quoted in the error.
+    enforced_by:
+      - test: framework.TestModulePanicLogsStack
+      - test: framework.TestModulePanicLogsToAppLogger
+      - test: framework.TestModulePanicNamesLogFile
+      - test: framework.TestPluginRouteConflictAttributed
+  - id: module-init-attribution
+    rule: The routes (keyed by method and pattern), MCP tools and entities registered during a Module's Init are attributed to that module, and nothing registered outside a Module's Init is.
+    enforced_by:
+      - test: framework.TestRouteAttributionDuringModuleInit
+      - test: framework.TestMCPToolAttributionDuringModuleInit
+      - test: framework.TestRecordEntityDuringModuleInit
+      - test: framework.TestAttributionNoCurrentModule
+      - test: framework.TestDisabledModuleRoute404s
+  - id: register-module-before-init
+    rule: RegisterModule panics once InitPlugins has run.
+    enforced_by:
+      - test: framework.TestRegisterModuleAfterInit
+  - id: module-default-enabled
+    rule: An in-process module with no stored state is enabled.
+    enforced_by:
+      - test: framework.TestModuleEnabledByDefault
+      - test: framework.TestModuleList
+  - id: module-store-fails-closed
+    rule: An app with a database whose module table cannot be created fails boot at loadFromStore, never falling back to the in-memory store.
+    enforced_by:
+      - test: framework.TestNewModuleManagerStoreErrOnDBError
+  - id: process-module-closed-without-supervisor
+    rule: A process module whose coordinator cannot toggle it reads as disabled in Enabled and List, and Enable on it errors.
+    enforced_by:
+      - test: framework.TestSweepModulesProcessModuleWithoutTogglerIsClosed
+  - id: toggle-respects-dependencies
+    rule: Enable refuses a module whose DependsOn names an unregistered or disabled module, and Disable refuses a module an enabled module depends on, without cascading.
+    enforced_by:
+      - test: framework.TestEnableRefusesIfDependencyDisabled
+      - test: framework.TestEnableUnregisteredDependency
+      - test: framework.TestDisableRefusesIfDependentEnabled
+  - id: toggles-serialized
+    rule: Enable and Disable hold toggleMu across the dependency check, the store write and the cache flip, so two concurrent toggles cannot reach a state either check forbids.
+    judge: Does this change let an Enable or Disable read the dependency state and write the new state without holding toggleMu throughout?
+  - id: toggle-audit-only-committed
+    rule: The toggle audit callback runs only for an Enable or Disable that returned nil, after toggleMu is released.
+    enforced_by:
+      - test: framework.TestSweepModulesRefusedToggleWritesNoAudit
+      - test: framework.TestModuleTogglesWriteActorAudit
+  - id: remote-toggle-is-refresh
+    rule: A fanout toggle message from another replica only makes this replica re-read the store; its Enabled value, a name that is not a registered module, and the replica's own publish change nothing.
+    enforced_by:
+      - test: framework.TestHandleRemoteToggleCraftedPayloadIgnored
+      - test: framework.TestHandleRemoteToggleRefreshFromStore
+      - test: framework.TestHandleRemoteToggleIgnoresUnknown
+      - test: framework.TestModuleFanoutSelfDedup
+  - id: module-state-exported
+    rule: The SQL module store declares gofastr_modules to ExportData, so a restore keeps a disabled module disabled.
+    enforced_by:
+      - test: framework.TestExportRestoresModuleState
+decisions:
+  - id: plugin-or-battery
+    date: 2026-11-16
+    status: accepted
+    decision: An extension with no dependencies and no lifecycle of its own is a Plugin; one that needs another module initialized first, or start and stop hooks apart from the App's, is a Battery.
+    rejected:
+      - option: One module interface with optional dependency and lifecycle methods.
+        why: The two kinds would blur, and most extensions need neither.
+      - option: Optional interfaces for routes, middleware, hooks and MCP tools.
+        why: Init can do all of it through the App, and the router binds middleware late, so there is no ordering to declare.
+  - id: no-memory-fallback-on-store-failure
+    date: 2026-11-16
+    status: accepted
+    decision: A module store that cannot be created on a database is kept as an error and fails the boot.
+    rejected:
+      - option: Fall back to the in-memory store.
+        why: Every module an operator disabled would boot enabled.
+    upholds: [module-store-fails-closed]
+  - id: fanout-message-is-a-refresh-signal
+    date: 2026-11-16
+    status: accepted
+    decision: A remote toggle triggers a re-read of the store, which stays the source of truth; if that read fails the replica keeps its cache and logs a warning.
+    rejected:
+      - option: Apply the message's Enabled value.
+        why: Message order would matter, and a crafted payload could flip a module.
+      - option: Close the module when the refresh read fails.
+        why: A flaky store would take modules down on every peer's toggle; process modules get fail-closed behaviour from their supervisor's own state lease instead.
+    upholds: [remote-toggle-is-refresh]
+  - id: panic-logs-type-not-value
+    date: 2026-11-16
+    status: accepted
+    decision: A recovered module panic logs its stack and the panic value's type name, and the error names where the stack was logged.
+    rejected:
+      - option: Log or return the panic value.
+        why: A panic(config) would leak a secret and panicked-on bytes could forge log lines.
+      - option: Rely on GOTRACEBACK.
+        why: It prints nothing for a recovered panic.
+    upholds: [module-panic-is-an-error]
+  - id: migration-group-informational
+    date: 2026-11-16
+    status: accepted
+    decision: ModuleManifest.MigrationGroup is shown in introspection and never checked against the registered migration groups.
+    revisit_if: A module's migrations need to be gated or rolled back with the module.
