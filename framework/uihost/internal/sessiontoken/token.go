@@ -1,13 +1,5 @@
-// Package sessiontoken mints and verifies the stateless HMAC-signed
-// tokens that replace the uihost's in-memory session map. A token is
-//
-//	sess-<128-bit random>.<unix-seconds>.<base64url HMAC-SHA256>
-//
-// and carries no state beyond its own id and mint time, so any replica
-// holding the same key accepts a token minted by any other, the
-// multi-replica session contract (issue #112). The id portion
-// ("sess-…") doubles as the SSE stream / presence key, exactly like the
-// map-era session ids did.
+// Package sessiontoken mints and verifies stateless session tokens of the
+// form sess-<random>.<unix-seconds>.<base64url HMAC-SHA256>.
 package sessiontoken
 
 import (
@@ -21,25 +13,16 @@ import (
 	"time"
 )
 
-// macContext domain-separates the session MAC from any other use of the
-// same key material. Versioned so a future format change can coexist
-// with old tokens during a rollout.
 const macContext = "gofastr-uihost-session-v1"
 
-// clockSkew is how far in the future a token's mint time may sit before
-// verification rejects it: tolerance for replicas with drifting clocks,
-// not a feature.
 const clockSkew = 2 * time.Minute
 
-// maxTokenLen bounds what Verify will even look at; the longest
-// legitimate token is well under this.
 const maxTokenLen = 256
 
-// minKeyLen rejects keys too short to be a real secret. Derived keys
-// (HKDF-SHA256) are 32 bytes; anything under 16 is a misconfiguration.
 const minKeyLen = 16
 
-// Mint returns a signed token and the bare session id embedded in it.
+// Mint returns a signed token and the bare session id embedded in it. It
+// errors when key is shorter than 16 bytes.
 func Mint(key []byte, now time.Time) (token, id string, err error) {
 	if len(key) < minKeyLen {
 		return "", "", errors.New("sessiontoken: key must be at least 16 bytes")
@@ -54,23 +37,13 @@ func Mint(key []byte, now time.Time) (token, id string, err error) {
 	return token, id, nil
 }
 
-// Verify authenticates token signed under key and returns its session
-// id. maxAge bounds how old a token may be; tokens minted more than
-// clockSkew in the future are rejected. Constant-time on the MAC
-// comparison. For graceful key rotation use VerifyAny, which accepts a
-// set of verify-only previous keys alongside the current one.
+// Verify authenticates token under key and returns its session id; a token
+// older than maxAge or minted in the future is refused.
 func Verify(key []byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
 	return VerifyAny(key, nil, token, now, maxAge)
 }
 
-// VerifyAny authenticates token against the current signing key OR any
-// of the previous keys (graceful rotation, mirroring the CSRF
-// AdditionalKeys idiom). New tokens are always signed with the current
-// key (see Mint, which the uihost calls with its primary key); the
-// previous keys are verify-only, accepted only for the drain window so
-// a GOFASTR_SECRET rotation does not log every user out at once. Each
-// candidate MAC is compared with hmac.Equal (constant-time); the count
-// and order of keys is not secret, so first-match-return is sound.
+// VerifyAny is Verify accepting the current key or any previous key.
 func VerifyAny(current []byte, previous [][]byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
 	if id, ok := verifyOne(current, token, now, maxAge); ok {
 		return id, true
@@ -83,9 +56,6 @@ func VerifyAny(current []byte, previous [][]byte, token string, now time.Time, m
 	return "", false
 }
 
-// verifyOne is the single-key authentication path shared by Verify and
-// VerifyAny. It performs the constant-time MAC check and the
-// freshness/window bounds.
 func verifyOne(key []byte, token string, now time.Time, maxAge time.Duration) (id string, ok bool) {
 	if len(key) < minKeyLen || len(token) > maxTokenLen {
 		return "", false
@@ -116,9 +86,7 @@ func verifyOne(key []byte, token string, now time.Time, maxAge time.Duration) (i
 }
 
 // MintedAt returns the signing time a token carries. It authenticates
-// nothing: call it only on a token Verify or VerifyAny accepted, to learn
-// when that token stops verifying (MintedAt plus the maxAge passed
-// there).
+// nothing: call it only on a token Verify accepted.
 func MintedAt(token string) (time.Time, bool) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
