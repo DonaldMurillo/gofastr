@@ -5,105 +5,43 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// systemTones are the tones a banner may be drawn in; the tone drives
-// both the class map's root--<tone> class and the word said before the
-// title.
 var systemTones = map[string]bool{
 	"info": true, "success": true, "warning": true, "danger": true,
 }
 
-// systemToneWord is the tone said before the title, from Strings: unlike an alert, whose title may already say which kind it is
-// ("Deploy failed"), a system banner's title says WHAT is true of the
-// system and the tone is the only thing saying how serious it is.
-func systemToneWord(w *Strings, tone string) string {
-	switch tone {
-	case "success":
-		return w.ToneSuccess
-	case "warning":
-		return w.ToneWarning
-	case "danger":
-		return w.ToneDanger
-	default:
-		return w.ToneInfo
-	}
-}
-
-// SystemBannerProps is a message about the system rather than the
-// page: offline, a deploy in progress, maintenance, a new version.
-//
-// The difference from an Alert is who owns it. An alert is part of a
-// page's answer; a system banner is placed once at the top of the
-// shell, above every page, and what it says is true of the system the
-// reader is standing in. That is also why it ships hidden: the slot is
-// always there, and a message arrives in it — the runtime shows the
-// offline one when the framework reports the connection lost, and
-// anything else is a server render or an island swap into the slot.
+// SystemBannerProps is a message about the system rather than the page:
+// offline, a deploy in progress, maintenance, a new version.
 type SystemBannerProps struct {
-	// ID is the message's identity, not just the element's: the
-	// runtime remembers it so the same message is not shown twice.
-	// Required.
+	// ID is the message's identity, which the runtime remembers so it is not shown twice. Required.
 	ID string
-	// Tone is "info" (the default), "warning", "danger" or
-	// "success". The class map looks it up as root--<tone>, and the word
-	// a screen reader hears is derived from it, so a tone nobody
-	// spelled is refused rather than silently rendered untinted.
+	// Tone is "info" (the default), "warning", "danger" or "success"; any other is refused.
 	Tone string
-	// Title is the headline. Required: "Connection lost" is the
-	// message; the detail is detail.
+	// Title is the headline. Required.
 	Title string
 	// Text is the detail, in prose.
 	Text string
-	// Action is the one control the message offers — "Retry now",
-	// "View the deploy". One, because a system banner is a bar
-	// across the top of the page, not a form.
+	// Action is the one control the message offers.
 	Action render.HTML
-	// Dismiss renders the dismiss button. Nil means yes: a system
-	// message the reader cannot send away is furniture that outstays
-	// its news, and the cases that want it gone — the offline
-	// banner, whose ending is the reconnect — say so explicitly:
-	// Dismiss on an Offline banner is refused at render.
+	// Dismiss renders the dismiss button; nil means yes, and an Offline banner must set it false.
 	Dismiss *bool
-	// DismissLabel names the dismiss control. Defaults to
-	// "Dismiss: <Title>", because three banners each called
-	// "Dismiss" say which nothing.
+	// DismissLabel names the dismiss control; empty names it after the Title.
 	DismissLabel string
-	// Shown renders the banner visible. The default is hidden: the
-	// banner ships hidden and something shows it.
+	// Shown renders the banner visible; it ships hidden by default.
 	Shown bool
-	// Icon is decoration beside the title, hidden from assistive
-	// technology (the tone word in words carries the severity).
+	// Icon is decoration beside the title, hidden from assistive technology.
 	Icon render.HTML
-	// Offline marks this banner as the built-in connection message.
-	// The root carries data-hui-system-offline for the module that
-	// binds it to show when the framework reports the connection lost
-	// and hide on reconnect — so it always ships hidden, and Shown on
-	// an Offline banner is refused: that module owns it.
+	// Offline marks the built-in connection message, which the runtime shows and
+	// hides; it always ships hidden.
 	Offline bool
 
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs only. Nothing here is fillable — Action
-	// already takes the page's own control, and everything else a
-	// banner draws is what a screen reader is given to tell one
-	// message from another.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// SystemBanner renders the message.
-//
-// role="status" rather than alert: a system message is important and
-// must not interrupt. It is on screen at the top of the shell, and a
-// polite region is read at the next pause — announcing itself over
-// whatever the reader was doing would make the top of every page a
-// shout. The offline banner is the one exception, and it is the
-// exception because losing the connection is the one system message
-// worth interrupting for: everything the reader does next will fail
-// until it is back. It carries role="alert" and aria-live="assertive"
-// both, as the framework banner it replaces did, so either attribute
-// alone still says how urgent it is.
+// SystemBanner renders the message: role=status, or role=alert with
+// aria-live=assertive when Offline.
 func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.ID == "" {
@@ -116,14 +54,10 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	if _, known := systemTones[tone]; !known {
 		panic("headless: SystemBanner unknown Tone " + tone)
 	}
-	word := systemToneWord(p.Strings.Resolve(), tone)
+	word := toneWord(tone, p.Strings.Resolve())
 	if p.Offline && p.Shown {
 		panic("headless: SystemBanner Offline is the runtime's — it shows the banner when the connection is lost, so it cannot ship shown")
 	}
-	// The offline banner's ending is the reconnect, so it carries no
-	// dismiss: a dismissal remembered for the session would hide the
-	// next outage too, and the module skips the dismissed set for it
-	// precisely because there is nothing to dismiss.
 	if p.Offline && (p.Dismiss == nil || *p.Dismiss) {
 		panic("headless: an Offline SystemBanner carries no Dismiss — its ending is the reconnect, and a remembered dismissal would hide the next outage")
 	}
@@ -144,15 +78,7 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 		own["class"] = cls
 	}
 
-	// The tone in words, read before the title so the kind of message
-	// arrives before the message. The trailing space is inside the
-	// hidden span: without it screen readers run the two together
-	// ("WarningConnection lost"). Same shape as Alert's tone word,
-	// derived here because the tone is the banner's own prop.
 	title := []render.HTML{
-		// Through the Box: the tone word is the PartVisuallyHidden the
-		// spec declares, and attrs or binds a caller sets on it land
-		// here or they land nowhere.
 		b.El("span", PartVisuallyHidden, nil, render.Text(word+": ")),
 		render.Text(p.Title),
 	}

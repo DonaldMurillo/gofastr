@@ -7,63 +7,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The disclosure: a native <details> whose open state is the browser's
-// and whose accessibility state the module keeps honest. The no-script
-// contract is the element itself — a summary a reader activates, a
-// panel the UA shows — so the module adds only what the platform
-// leaves missing: the aria-expanded mirror on the controller (a native
-// summary reports as a button with no state), Escape closing the
-// deepest open disclosure with focus returned to its controller, the
-// close-on-navigation for disclosures that are not persistent, and the
-// optional focus containment of the trap mode. The trap is the widget
-// runtime's technique — Tab containment over the kernel's shared focus
-// selector — not a second trap implementation.
-
-// Disclosure parts. The summary and the panel are shared with Menu,
-// which composes this anatomy for its dropdown panels.
+// Disclosure parts, shared with Menu.
 const (
 	PartSummary Part = "summary"
 	PartPanel   Part = "panel"
 )
 
-// DisclosureProps configures one disclosure.
+// DisclosureProps configures one native <details> disclosure.
 type DisclosureProps struct {
-	// Summary is the always-visible controller. Required and
-	// non-blank: a details whose summary says nothing is a button with
-	// no name.
+	// Summary is the always-visible controller. Required and non-blank.
 	Summary render.HTML
 	// Content is the revealed panel.
 	Content render.HTML
 	// Open renders the details expanded.
 	Open bool
-	// Trap opts the open disclosure into focus containment: Tab walks
-	// inside it and comes back, the drawer posture. The containment is
-	// the widget runtime's own (the kernel's focus selector), armed by
-	// the module while the disclosure is open.
+	// Trap contains focus inside the open disclosure.
 	Trap bool
-	// Dismiss makes the open disclosure a popup: a press anywhere
-	// outside it closes it (light dismiss), as a menu does. Leave it off
-	// for a section the reader opens to read beside the rest of the
-	// page; an accordion does not close because the reader clicked on.
+	// Dismiss closes the open disclosure on a press outside it (light dismiss).
 	Dismiss bool
-	// Name, when set, is the details element's name attribute: the
-	// browser groups disclosures that share it and opens one at a time
-	// (the native accordion) — opening one closes the others with no
-	// script at all. Control bytes are refused: the value is a group
-	// key the browser matches verbatim.
+	// Name is the details name attribute: the browser opens one disclosure of a
+	// name at a time. Control bytes are refused.
 	Name string
-	// PersistKey, when set, keeps the open state across client-side
-	// navigation AND restores it on arrival from the session store,
-	// namespaced and component-encoded so two disclosures never share
-	// one key. Empty means the ordinary dialect: closed by a
-	// navigation, whatever the reader left open.
+	// PersistKey keeps the open state across client-side navigation; empty means
+	// a navigation closes it.
 	PersistKey string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root, the summary and the panel. The summary
-	// is fillable — its content is the caller's — and so is the panel.
 	Parts Parts
 }
 
@@ -97,10 +68,6 @@ func Disclosure(p DisclosureProps, s Classes) render.HTML {
 		Mark(own, "open")
 	}
 	content := b.Fill(PartPanel, p.Content)
-	// The panel is the caller's whenever there is content to show it,
-	// unless that content is a component's own (headless.Own), as the
-	// summary is; an empty panel renders nothing of the caller's, so the
-	// boundary sits on the panel wrapper itself.
 	panelOwn := Internal(nil)
 	if content != "" {
 		panelOwn = internalIf(ownedSlot(content), nil)

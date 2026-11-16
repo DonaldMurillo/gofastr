@@ -9,11 +9,9 @@ import (
 //go:embed bell.js
 var bellJS string
 
-// BellBehaviorName is the runtime module that keeps the notification
-// bell's accessible name saying the count its badge shows, when a
-// signal changes the badge after first paint.
+// BellBehaviorName is the runtime module that keeps the bell's accessible name
+// saying the count its badge shows.
 const BellBehaviorName = "headless-bell"
 
-// The marker: the bell's anchor.
 var _ = uiregistry.RegisterBehavior(BellBehaviorName, bellJS,
 	uiregistry.Markers("[data-hui-notification-bell]"))

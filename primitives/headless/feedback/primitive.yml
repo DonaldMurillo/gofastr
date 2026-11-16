@@ -15,3 +15,467 @@ code:
   - framework/headless/disclosure_behavior.go
   - framework/headless/copy_behavior.go
   - framework/headless/selectioncopy_behavior.go
+invariants:
+  - id: action-endpoint-same-origin
+    rule: OptimisticAction and ToggleAction panic at render on an empty Endpoint and on an Endpoint or UntoggleEndpoint that is not same-origin.
+    enforced_by:
+      - test: framework/headless.TestAnActionRefusesAnEndpointItCanNeverFire
+  - id: action-method-is-a-runtime-verb
+    rule: An action's Method renders no attribute when empty or POST, renders PUT, PATCH or DELETE as data-hui-action-method, and panics on anything else.
+    enforced_by:
+      - test: framework/headless.TestAnActionRefusesAnEndpointItCanNeverFire
+      - test: framework/headless.TestSweepFeedbackActionMethodOmitsPOST
+  - id: action-labels-differ
+    rule: An action panics when its two labels are equal after trimming space and folding case.
+    enforced_by:
+      - test: framework/headless.TestActionsRefuseIdenticalLabels
+  - id: action-lifecycle-attrs-are-owned
+    rule: Neither ExtraAttrs nor root Parts attrs set an action button's type, disabled, data-state, aria-busy, aria-pressed or aria-live, and the caller's Parts maps are never written to.
+    enforced_by:
+      - test: framework/headless.TestActionExtraAttrsCannotStealTheLifecycle
+      - test: framework/headless.TestSweepFeedbackActionPartsCannotStealTheLifecycle
+  - id: action-never-ships-pending
+    rule: An action button ships data-state idle or committed, never pending, and carries no aria-busy.
+    enforced_by:
+      - test: framework/headless.TestOptimisticActionsNeverShipPending
+  - id: action-labels-match-the-state
+    rule: Exactly the label span opposite the shipped state carries hidden, and only ToggleAction renders aria-pressed, true when Committed.
+    enforced_by:
+      - test: framework/headless.TestToggleActionPressedMatchesItsShippedState
+  - id: toggle-keeps-one-name
+    rule: A ToggleAction's aria-label is IdleLabel in both states unless the caller set one, and an OptimisticAction renders no aria-label.
+    enforced_by:
+      - test: framework/headless.TestToggleButtonsKeepOneName
+  - id: untoggle-endpoint-implies-untoggle
+    rule: A ToggleAction renders data-hui-action-untoggle when AllowUntoggle or UntoggleEndpoint is set, carrying the endpoint, or empty for a local revert.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackUntoggleEndpointImpliesUntoggle
+  - id: action-failure-is-announced
+    rule: An action button carries data-hui-action-failed on its root, FailedText or else Strings.ActionFailed, and a role=status span with no aria-live.
+    enforced_by:
+      - test: framework/headless.TestAFailedActionHasSomewhereToSayItAndSomethingToSay
+  - id: button-needs-a-name
+    rule: Button panics when both Label and AriaLabel are empty.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackButtonNeedsAName
+  - id: button-action-vocabulary
+    rule: Button folds Action keys to lower case and panics on a key under two spellings or outside the request and wiring vocabulary, and ExtraAttrs carries none of that vocabulary.
+    enforced_by:
+      - test: framework/headless.TestButtonActionAcceptsOnlyRequestAttributes
+      - test: framework/headless.TestButtonActionFoldsAndRefusesDuplicateSpellings
+      - test: framework/headless.TestButtonCarriesARequestOnlyThroughAction
+  - id: button-action-values-checked
+    rule: Each Action value is checked for what the runtime reads, with endpoints and history URLs same-origin, names non-empty, bodies and toasts valid JSON, methods and pane names from their fixed sets, and prefetch names in the loader's charset.
+    enforced_by:
+      - test: framework/headless.TestButtonActionChecksItsValues
+  - id: button-link-carries-wiring-only
+    rule: A Button with Href panics on any Action key but data-cui-open, push-state, deeplink, prefetch, nav and the three intercept marks, and the intercept marks panic without Href.
+    enforced_by:
+      - test: framework/headless.TestButtonRefusesAnActionOnALink
+      - test: framework/headless.TestButtonLinkCarriesOnlyLinkLegalActions
+      - test: framework/headless.TestButtonInterceptMarksAreLinkOnly
+  - id: widget-close-is-request-free
+    rule: An Action's data-cui-action takes only the value close, on a button, and panics beside data-cui-rpc.
+    enforced_by:
+      - test: framework/headless.TestButtonActionAdmitsTheWidgetClose
+      - test: framework/headless.TestButtonActionRefusesTheWidgetCloseBesideARequest
+  - id: success-toast-action-checked
+    rule: A data-cui-rpc-success-action is a label with RPC-only attrs checked as a Button's own, and panics without a data-cui-rpc-success-toast beside it.
+    enforced_by:
+      - test: framework/headless.TestSuccessToastActionChecked
+    applies:
+      - framework/headless/form.go
+  - id: confirm-wording-rides-the-gate
+    rule: A data-cui-confirm-title, -accept or -tone panics when empty, when the tone is not danger, and when no data-cui-confirm in any letter case rides beside it.
+    enforced_by:
+      - test: framework/headless.TestConfirmWordingRefusals
+      - test: framework/headless.TestConfirmWordingSeesAFoldedGate
+    applies:
+      - framework/headless/form.go
+  - id: dead-link-is-inert
+    rule: A Button whose Href is Disabled or refused by the anchor policy renders an anchor with no href and no Action keys, with aria-disabled=true, tabindex=-1 and role=link.
+    enforced_by:
+      - test: framework/headless.TestDisabledLinkButtonCarriesNoWiring
+      - test: framework/headless.TestHrefsGoThroughTheAnchorPolicy
+  - id: external-link-owns-target-and-rel
+    rule: An External Button link renders target=_blank and rel noopener noreferrer whatever ExtraAttrs spells.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackExternalOwnsTargetAndRel
+  - id: popup-trigger-starts-collapsed
+    rule: A Button with PopoverTarget and HasPopup renders aria-expanded=false, and one without HasPopup renders no aria-expanded.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackPopoverTriggerStartsCollapsed
+  - id: toast-refuses-broken-props
+    rule: Toast panics with neither Title nor Body, on a Tone or Live outside its set, and on a TTLMS below zero or past math.MaxInt32.
+    enforced_by:
+      - test: framework/headless.TestToastRefusesBrokenConfigurations
+      - test: framework/headless.TestToastFamilyRefusesTheEdgesOfItsRanges
+  - id: toast-role-from-live
+    rule: A Toast renders role=status, or role=alert when Live is LiveAssertive.
+    enforced_by:
+      - test: framework/headless.TestToastToneWordAndDismiss
+  - id: toast-scrubs-text
+    rule: Toast scrubs control bytes from its Title and Body.
+    enforced_by:
+      - test: framework/headless.TestToastScrubsControlBytesInTitleAndBody
+  - id: dismiss-is-an-island
+    rule: A Toast or Alert with DismissHref panics without a complete Island, and renders the island's GET contract beside the href.
+    enforced_by:
+      - test: framework/headless.TestToastRefusesBrokenConfigurations
+      - test: framework/headless.TestAlertDismissIsAnIsland
+  - id: tone-word-before-the-title
+    rule: Toast, Alert and SystemBanner render the tone word and a colon before the title, in a span a reader hears.
+    enforced_by:
+      - test: framework/headless.TestToastToneWordAndDismiss
+      - test: framework/headless.TestAlertToneSurvivesWithoutColour
+      - test: framework/headless.TestSystemBannerToneIsSaidInWords
+  - id: toast-template-names-checked
+    rule: ToastTemplate panics on a Variants name outside [a-z0-9][a-z0-9-]* or naming one of the four tones, and on a StyleName outside the marker charset.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackToastTemplateRefusesBadNames
+  - id: toast-stack-carries-both-contracts
+    rule: ToastStack panics on a blank Label or a negative Max and renders a role=region named by Label, with data-cui-toast-stack beside data-hui-toast-stack and the tone words module-built toasts say.
+    enforced_by:
+      - test: framework/headless.TestToastStackCarriesBothContracts
+      - test: framework/headless.TestToastStackRefusesAnUnnamedOrNegativeStack
+      - test: framework/headless.TestToastFamilyRefusesTheEdgesOfItsRanges
+      - test: framework/headless.TestToastStackCarriesTheToneWords
+  - id: bell-says-its-count
+    rule: NotificationBell's aria-label is Label followed by the count sentence, and its badge renders only for a positive UnreadCount or an UnreadBind.
+    enforced_by:
+      - test: framework/headless.TestNotificationBellSpeaksItsCount
+  - id: bell-refuses-broken-triggers
+    rule: NotificationBell panics on a blank Label, an Href the anchor policy refuses, a negative UnreadCount, and an Opens carrying whitespace or control bytes.
+    enforced_by:
+      - test: framework/headless.TestNotificationBellRefusesBrokenTriggers
+      - test: framework/headless.TestNotificationBellRefusesAWronglyShapedOpensName
+  - id: bell-badge-inside-the-glyph
+    rule: The bell's badge renders inside its aria-hidden glyph span, never beside it.
+    enforced_by:
+      - test: framework/headless.TestSpecGolden
+  - id: alert-quiet-by-default
+    rule: An Alert renders no role at LiveOff, role=status at LivePolite and role=alert at LiveAssertive, and never aria-live.
+    enforced_by:
+      - test: framework/headless.TestAlertDoesNotAnnounceByDefault
+      - test: framework/headless.TestAlertDoesNotStateItsRoleTwice
+  - id: alert-requires-content
+    rule: Alert panics when Title, Text and Body are all empty.
+    enforced_by:
+      - test: framework/headless.TestSweepFeedbackAlertRequiresContent
+  - id: alert-focus-is-not-a-tab-stop
+    rule: An Alert with Focus renders tabindex=-1 and autofocus, never tabindex=0.
+    enforced_by:
+      - test: framework/headless.TestAMessageThatIsAlreadyThereTakesFocus
+  - id: dismiss-names-its-target
+    rule: A default dismiss label fills Strings.DismissTitled with the Title, an Alert falling back to its Text and panicking with neither.
+    enforced_by:
+      - test: framework/headless.TestAlertDismissNamesWhatItDismisses
+      - test: framework/headless.TestAlertDismissNamedWithoutTitle
+      - test: framework/headless.TestSystemBannerDismissIsAButtonWithAName
+  - id: spinner-quiet-unless-announced
+    rule: A Spinner renders role=status only when Announce is set, and never role=progressbar.
+    enforced_by:
+      - test: framework/headless.TestSpinnerSaysWhatItIsWaitingFor
+  - id: skeleton-bars-are-hidden
+    rule: Every Skeleton bar is aria-hidden, and the root is a role=status region around the visually hidden Label.
+    enforced_by:
+      - test: framework/headless.TestSkeletonBarsAreNeverAnnounced
+  - id: progress-clamps-carried-numbers
+    rule: Progress clamps Value into [0, Max], renders a negative or non-finite Value with no value attribute, and takes 100 for a Max that is not positive and finite.
+    enforced_by:
+      - test: framework/headless.TestProgressClampsCarriedValues
+      - test: framework/headless.TestProgressIndeterminateOmitsValue
+  - id: progress-is-named
+    rule: Progress panics on a blank Label, and LabelVisible wires the label to the bar through aria-labelledby instead of aria-label.
+    enforced_by:
+      - test: framework/headless.TestProgressRefusesANamelessBar
+      - test: framework/headless.TestProgressVisibleLabelIsWiredToTheBar
+  - id: counter-speaks-the-kernel-increment
+    rule: Counter's buttons carry data-cui-signal-inc, the increment as the bare signal for a step of one and signal:n otherwise, and the decrement always as signal:-n.
+    enforced_by:
+      - test: framework/headless.TestCounterRendersTheKernelIncrementContract
+  - id: counter-seeds-once
+    rule: A stepping Counter renders data-hui-counter-value only when it is not Seeded and its value is exact as a JavaScript number, and a Display counter never does.
+    enforced_by:
+      - test: framework/headless.TestCounterSeedsItsValueOnlyWhenNothingElseDoes
+  - id: counter-animates-only-exact-values
+    rule: A Counter renders the animation hooks only when AnimateFrom is set and both values lie within 2^53-1.
+    enforced_by:
+      - test: framework/headless.TestCounterHugeValueSkipsAnimation
+  - id: counter-refuses-broken-props
+    rule: Counter panics on an empty or reserved Signal, a negative Step, a negative DurationMS and a Display with a Name.
+    enforced_by:
+      - test: framework/headless.TestCounterRefusesAReservedSignalAndBadStep
+  - id: named-counter-binds-the-value
+    rule: A named Counter's input follows the signal through its value attribute in the kernel's attr mode.
+    enforced_by:
+      - test: framework/headless.TestNamedCounterBindsTheValueAttribute
+  - id: counter-blank-label-takes-the-default
+    rule: A blank or whitespace Counter Label takes Strings.CounterLabel.
+    enforced_by:
+      - test: framework/headless.TestCounterWhitespaceLabelTakesTheDefault
+  - id: counter-display-is-a-figure
+    rule: A Display Counter renders no step buttons, no group role or aria-label, and no aria-live.
+    enforced_by:
+      - test: framework/headless.TestSpecGolden
+  - id: system-banner-refuses-broken-props
+    rule: SystemBanner panics without an ID or Title, on an unknown Tone, and on an Offline banner that is Shown or whose Dismiss is not false.
+    enforced_by:
+      - test: framework/headless.TestSystemBannerRequiresAnIDAndATitle
+      - test: framework/headless.TestSystemBannerRefusesAnUnknownTone
+      - test: framework/headless.TestSystemBannerOfflineRefusesShown
+      - test: framework/headless.TestSystemBannerOfflineCarriesNoDismiss
+  - id: system-banner-ships-hidden
+    rule: A SystemBanner ships hidden unless Shown, as role=status, and an Offline one ships hidden as role=alert with aria-live=assertive.
+    enforced_by:
+      - test: framework/headless.TestSystemBannerShipsHiddenUntilShown
+      - test: framework/headless.TestSystemBannerIsQuietUnlessOffline
+  - id: system-banner-dismiss-by-default
+    rule: A SystemBanner renders its dismiss button unless Dismiss points at false.
+    enforced_by:
+      - test: framework/headless.TestSystemBannerDismissDefaultsToYes
+  - id: disclosure-refuses-broken-props
+    rule: Disclosure panics on a blank Summary, an invalid PersistKey and a Name carrying control bytes, and ExtraAttrs cannot set open or name.
+    enforced_by:
+      - test: framework/headless.TestDisclosureRefusesBrokenConfiguration
+      - test: framework/headless.TestDisclosureNameMakesAnExclusiveGroup
+  - id: feedback-module-markers
+    rule: headless-feedback loads on data-hui-copy, data-hui-toast-stack, data-cui-toast-stack and data-hui-network-retry.
+    enforced_by:
+      - test: framework/headless.TestEveryRegisteredBehaviorIsRegisteredWithItsMarkers
+decisions:
+  - id: action-announces-its-own-failure
+    date: 2026-11-16
+    status: accepted
+    decision: Action buttons render their own role=status span and failure sentence, which the headless module fills when the runtime rolls a mutation back.
+    rejected:
+      - option: Rely on the framework runtime's rollback alone.
+        why: It plays a shake and announces nothing.
+    upholds: [action-failure-is-announced]
+  - id: one-action-renderer
+    date: 2026-11-16
+    status: accepted
+    decision: OptimisticAction and ToggleAction render through one renderAction and differ only in attributes and initial state.
+    rejected:
+      - option: A renderer per component.
+        why: The runtime expects one shape from both, and a drifted copy would work until a page held the other one.
+    upholds: [action-labels-match-the-state]
+  - id: endpoints-refused-at-render
+    date: 2026-11-16
+    status: accepted
+    decision: A missing or cross-origin action endpoint, Button Action URL or method the runtime will not send panics at render.
+    rejected:
+      - option: Let the runtime decline it.
+        why: The runtime's origin check drops a cross-origin URL silently, leaving a button that looks wired and does nothing.
+    upholds: [action-endpoint-same-origin, button-action-values-checked]
+  - id: action-parts-attrs-only
+    date: 2026-11-16
+    status: accepted
+    decision: Action buttons take Parts attrs only and have no fillable part.
+    rejected:
+      - option: Fillable labels.
+        why: A slot that replaced a label could make the button say it did something it did not.
+  - id: label-flip-is-the-state-change
+    date: 2026-11-16
+    status: accepted
+    decision: An action's two labels must read differently, because the flip between them is the state change.
+    rejected:
+      - option: Allow equal labels and let colour carry the state.
+        why: Colour may not be the only carrier of meaning (WCAG 1.4.1).
+    upholds: [action-labels-differ]
+  - id: toggle-name-is-the-idle-label
+    date: 2026-11-16
+    status: accepted
+    decision: A toggle's accessible name is IdleLabel in both states and aria-pressed carries the state, the APG toggle button.
+    rejected:
+      - option: A name that follows the visible label.
+        why: It read Following, pressed, the state said twice.
+    upholds: [toggle-keeps-one-name]
+  - id: button-action-is-its-own-seam
+    date: 2026-11-16
+    status: accepted
+    decision: A Button's request or wiring rides the Action prop, in one reviewable place, never ExtraAttrs.
+    rejected:
+      - option: Requests through ExtraAttrs.
+        why: ExtraAttrs is for what a page knows, a test id or a title, and Safe drops every data-cui-* key from it so decoration never becomes a request.
+    upholds: [button-action-vocabulary]
+  - id: link-navigates-button-acts
+    date: 2026-11-16
+    status: accepted
+    decision: An anchor carries only the wiring keys that say where a click goes.
+    rejected:
+      - option: Requests, panes, toasts or signal mutations on an anchor.
+        why: The href and the runtime would both answer the click.
+    upholds: [button-link-carries-wiring-only]
+  - id: widget-close-fires-no-request
+    date: 2026-11-16
+    status: accepted
+    decision: A close that follows a request is data-cui-rpc-close, and data-cui-action=close never rides beside data-cui-rpc.
+    rejected:
+      - option: Allow both on one button.
+        why: The widget runtime's click handler dispatches the data-cui-rpc first and returns, so the close is never reached.
+    upholds: [widget-close-is-request-free]
+  - id: dead-link-drops-the-href
+    date: 2026-11-16
+    status: accepted
+    decision: A disabled or refused Button href is dropped along with the Action wiring, and the anchor says aria-disabled.
+    rejected:
+      - option: Keep the href or the wiring beside aria-disabled.
+        why: The link stays live, and the runtime's delegates read no aria-disabled, so a dead-looking link kept opening its widget.
+    upholds: [dead-link-is-inert]
+  - id: alert-silent-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: LiveOff is the Alert default, and a live alert writes only its role.
+    rejected:
+      - option: Announce every alert.
+        why: An alert the server rendered with the page has not happened, and announcing it reads page furniture over the reader on every load.
+      - option: Write aria-live beside the role.
+        why: role=alert and role=status already imply it, and stating both can announce a message twice.
+    upholds: [alert-quiet-by-default]
+  - id: present-message-takes-focus
+    date: 2026-11-16
+    status: accepted
+    decision: A message present at load, such as the confirmation after a post-and-redirect, is announced by moving focus to it.
+    rejected:
+      - option: role=alert at load.
+        why: Content present when the document loads is no change, and role=alert at load is reported inconsistently across screen readers.
+    upholds: [alert-focus-is-not-a-tab-stop]
+  - id: spinner-is-not-a-progressbar
+    date: 2026-11-16
+    status: accepted
+    decision: Spinner announces through role=status, and only when Announce is set for a spinner that replaces content after an action.
+    rejected:
+      - option: role=progressbar.
+        why: A progressbar promises a value, and a spinner has none.
+    upholds: [spinner-quiet-unless-announced]
+  - id: skeleton-says-loading-once
+    date: 2026-11-16
+    status: accepted
+    decision: A skeleton's bars are empty aria-hidden spans and its Label is said once, politely.
+    rejected:
+      - option: Bars filled with placeholder text.
+        why: Empty boxes read aloud, or each shimmer announced, is worse than silence.
+    upholds: [skeleton-bars-are-hidden]
+  - id: progress-clamps-not-refuses
+    date: 2026-11-16
+    status: accepted
+    decision: A progress value a request carried is clamped, or rendered indeterminate when it is not a number.
+    rejected:
+      - option: Panic on an out-of-range value.
+        why: A hostile or garbled number must never panic a render.
+    upholds: [progress-clamps-carried-numbers]
+  - id: system-banner-polite-unless-offline
+    date: 2026-11-16
+    status: accepted
+    decision: A system banner is role=status, and only the offline banner interrupts, with role=alert and aria-live=assertive both, as the framework banner it replaced did.
+    rejected:
+      - option: role=alert for every system message.
+        why: The banner sits at the top of every page, and interrupting would make each page start with a shout.
+    upholds: [system-banner-ships-hidden]
+  - id: offline-banner-has-no-dismiss
+    date: 2026-11-16
+    status: accepted
+    decision: The offline banner carries no dismiss, and its ending is the reconnect.
+    rejected:
+      - option: A dismissable offline banner.
+        why: A dismissal remembered for the session would hide the next outage too.
+    upholds: [system-banner-refuses-broken-props]
+  - id: toast-carries-its-own-live-role
+    date: 2026-11-16
+    status: accepted
+    decision: Each toast carries its own live role, polite by default, and the stack is a named region that is not live.
+    rejected:
+      - option: A live stack around silent rows.
+        why: Server-rendered and runtime-inserted toasts would not announce alike.
+    upholds: [toast-role-from-live]
+  - id: toast-stack-two-names
+    date: 2026-11-16
+    status: accepted
+    decision: The stack carries the kernel's data-cui-toast-stack beside this package's data-hui-toast-stack.
+    rejected:
+      - option: One name.
+        why: The kernel's response-header path and auto-mount look for the framework's name, infrastructure this package does not own, while the module binds this package's.
+    upholds: [toast-stack-carries-both-contracts]
+  - id: toast-words-travel-on-the-stack
+    date: 2026-11-16
+    status: accepted
+    decision: The dismiss label and tone words a module-built toast says travel as attributes on the stack and the template.
+    rejected:
+      - option: Words written in feedback.js.
+        why: The module would say English on a translated page.
+    upholds: [toast-stack-carries-both-contracts]
+  - id: toast-ttl-zero-is-forever
+    date: 2026-11-16
+    status: accepted
+    decision: A zero TTLMS keeps a toast until it is dismissed, and a TTLMS past math.MaxInt32 is refused.
+    rejected:
+      - option: Hand any TTL to the timer.
+        why: HTML's timer clamps a delay past 2^31-1 to zero, so the toast would leave at once.
+    upholds: [toast-refuses-broken-props]
+  - id: toast-variants-in-one-json-attribute
+    date: 2026-11-16
+    status: accepted
+    decision: Variants beyond the four tones travel as one JSON map in data-hui-toast-variants, while each tone has attributes of its own.
+    rejected:
+      - option: One attribute per variant.
+        why: The names are the kit's and the app's, an open set the hook gates cannot know by name.
+    upholds: [toast-template-names-checked]
+  - id: bell-badge-on-the-glyph
+    date: 2026-11-16
+    status: accepted
+    decision: The bell's badge is laid out on the glyph's top-end corner, and its count is said in the anchor's name.
+    rejected:
+      - option: Pin the badge to the anchor.
+        why: A 44px touch target centres a 20px glyph, and a badge on the anchor covered half the glyph.
+    upholds: [bell-badge-inside-the-glyph, bell-says-its-count]
+  - id: counter-value-lives-in-the-signal
+    date: 2026-11-16
+    status: accepted
+    decision: A counter's value lives in a kernel signal stepped by data-cui-signal-inc, and this package only seeds it and animates its presentation, with the final value as SSR text.
+    rejected:
+      - option: A module of this package owning the number.
+        why: The kernel's signals module is the one increment path, and a reader without script must see the true count.
+    upholds: [counter-speaks-the-kernel-increment, counter-seeds-once]
+  - id: counter-exact-values-only
+    date: 2026-11-16
+    status: accepted
+    decision: A counter value outside 2^53-1 renders without the animation and without the seed.
+    rejected:
+      - option: Animate or seed any int.
+        why: The module counts in JavaScript numbers, which round past 2^53-1 and would end on a figure the server never sent.
+    upholds: [counter-animates-only-exact-values, counter-seeds-once]
+  - id: named-counter-uses-bind
+    date: 2026-11-16
+    status: accepted
+    decision: A named counter's input follows its signal through Bind in attr mode on the value attribute.
+    rejected:
+      - option: A text binding on the input.
+        why: The kernel set the void input's textContent, left its value alone so the form submitted the server's number, and stamped role=status over its spinbutton role.
+    upholds: [named-counter-binds-the-value]
+  - id: display-counter-is-not-live
+    date: 2026-11-16
+    status: accepted
+    decision: A Display counter is a figure named by the page around it, with no group role and no live region.
+    rejected:
+      - option: Keep the group role and the live region.
+        why: The role would announce Counter, group before the number, and a live region would read out every frame of the tick-up.
+    upholds: [counter-display-is-a-figure]
+  - id: disclosure-is-native-details
+    date: 2026-11-16
+    status: accepted
+    decision: Disclosure is a native details element, and its module adds only the aria-expanded mirror, Escape to the deepest open disclosure, close on navigation unless persistent, and the trap.
+    rejected:
+      - option: A scripted disclosure.
+        why: The element is the no-script contract, a summary the reader activates and a panel the browser shows.
+      - option: A focus trap of its own.
+        why: The trap is the widget runtime's Tab containment over the kernel's shared focus selector, not a second implementation.
+    upholds: [disclosure-refuses-broken-props]
+  - id: copy-splits-from-feedback
+    date: 2026-11-16
+    status: accepted
+    decision: The copy control binds through its own headless-copy module, while headless-feedback keeps the data-hui-copy marker so a copy that toasts finds the toast runtime loaded.
+    rejected:
+      - option: One feedback module for both.
+        why: The clipboard-outcome fix took headless-feedback past the 3 KB module budget.
+    upholds: [feedback-module-markers]

@@ -19,38 +19,22 @@ const (
 
 // SpinnerProps is the "working" indicator.
 type SpinnerProps struct {
-	// Label says what is being waited for — "Loading apps". Required,
-	// and it is not decoration: a spinner with no label is a moving
-	// shape that tells a screen reader user nothing at all, and the
-	// one thing they need to know is that waiting is the correct thing
-	// to be doing right now.
+	// Label says what is being waited for. Required.
 	Label string
-	// Announce puts the label in a live region, so it is read when the
-	// spinner appears. Off by default: a spinner rendered WITH the
-	// page has not "happened" — the same rule Alert follows — and
-	// announcing it on load talks over the page.
-	//
-	// Turn it on for a spinner that replaces content after an action.
+	// Announce renders role=status, for a spinner that replaces content after an action.
 	Announce bool
 	// Size is a class-map hint ("sm", "lg").
 	Size string
-	// Variant is the animated shape, a class-map hint: "" draws a
-	// bordered ring, "dots" three pulsing dots, "grid" a rippling
-	// square of nine. Every shape is aria-hidden — the shape is a
-	// picture of waiting and the label is what waiting is FOR.
+	// Variant is the shape: "" a ring, "dots" or "grid"; every shape is aria-hidden.
 	Variant string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root and the shape.
 	Parts Parts
 }
 
 // Spinner renders the indicator.
-//
-// role="status" rather than role="progressbar": a progressbar promises
-// a value, and a spinner has none — that is what makes it a spinner
 func Spinner(p SpinnerProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Spinner requires Label — a moving shape says nothing on its own")
@@ -82,9 +66,6 @@ func Spinner(p SpinnerProps, s Classes) render.HTML {
 		}
 		shape = b.El("span", PartSpinnerGrid, hidden, cells...)
 	default:
-		// The ring is the animation, and it is hidden: what it means
-		// is in the text beside it, and a spinning shape has no
-		// meaning to announce.
 		shape = b.El("span", PartSpinnerRing, hidden, render.HTML(""))
 	}
 	return b.El("span", PartRoot, own,
@@ -95,31 +76,20 @@ func Spinner(p SpinnerProps, s Classes) render.HTML {
 
 // SkeletonProps is the placeholder shown while content loads.
 type SkeletonProps struct {
-	// Label is what is loading, announced once through a live region
-	// — "Loading apps". Required for the same reason Spinner's is.
+	// Label is what is loading, announced once. Required.
 	Label string
 	// Lines is how many bars to draw. Zero means one.
 	Lines int
-	// Shape is a class map hint: "text", "title", "block", "circle".
+	// Shape is a class-map hint: "text", "title", "block", "circle".
 	Shape string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root and the bars.
 	Parts Parts
 }
 
-// Skeleton renders the placeholder.
-//
-// The bars are aria-hidden, every one of them. A skeleton is a picture
-// of content that does not exist yet, and a screen reader reading out
-// eight empty boxes — or worse, announcing each shimmer as it
-// animates — is strictly worse than silence. What it does instead is
-// say "Loading apps" once, politely, and then wait.
-//
-// This is also why the bars are not <p> or <div> full of nbsp: there
-// is no text to read, so there should be no text.
+// Skeleton renders the placeholder: aria-hidden bars and the label in a status region.
 func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	if p.Label == "" {
 		panic("headless: Skeleton requires Label")
@@ -132,8 +102,6 @@ func Skeleton(p SkeletonProps, s Classes) render.HTML {
 	bars := make([]render.HTML, 0, n+1)
 	for i := range n {
 		attrs := Internal(Attrs(map[string]string{"aria-hidden": "true"}))
-		// The last line of a paragraph is short, and a skeleton that
-		// draws every line full width reads as a block, not as text.
 		if n > 1 && i == n-1 {
 			attrs["data-hui-skeleton-last"] = ""
 		}
