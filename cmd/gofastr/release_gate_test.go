@@ -517,12 +517,14 @@ func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {
 
 // The Go cache's path list is part of its cache version, so a restore step
 // whose list drifts from the saving step's never hits, and nothing fails:
-// the job just runs cold. Every step on the go-test key lists the same
-// paths, and every restore runs before Set up Go: setup-go's `go env`
-// downloads the go.mod toolchain into the module cache as read-only files,
-// and a snapshot restored on top of them fails tar. Only main saves, since
-// pull request entries evict main's from the repo's 10 GB cache. The
-// coverage manifests share the entry, so the two are saved together.
+// the job just runs cold. Every step on a go-<family>- key (go-test-, and
+// the lint and race jobs' own entries) lists the same paths, and every
+// restore runs before Set up Go: setup-go's `go env` downloads the go.mod
+// toolchain into the module cache as read-only files, and a snapshot
+// restored on top of them fails tar. Each family is restored and saved
+// exactly once, by main only, since pull request entries evict main's from
+// the repo's 10 GB cache. The coverage manifests share the entry, so the
+// two are saved together.
 func TestGoCachePathsMatch(t *testing.T) {
 	var wf struct {
 		Jobs map[string]struct {
@@ -537,28 +539,37 @@ func TestGoCachePathsMatch(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
 		t.Fatal(err)
 	}
+	family := regexp.MustCompile(`^go-([a-z]+)-\$\{\{ runner\.os \}\}-`)
 	var want, wantAt string
-	saves, restores := 0, 0
+	saves, restores := map[string]int{}, map[string]int{}
 	for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
 		setupGo := false
 		for _, step := range wf.Jobs[job].Steps {
 			if strings.Contains(step.Uses, "actions/setup-go@") {
 				setupGo = true
 			}
-			if !strings.HasPrefix(step.With["key"], "go-test-") {
+			m := family.FindStringSubmatch(step.With["key"])
+			if m == nil {
 				continue
 			}
+			fam := m[1]
 			at := job + ": " + step.Name
+			// Each family restores from its own entries only.
+			for _, rk := range strings.Split(step.With["restore-keys"], "\n") {
+				if rk = strings.TrimSpace(rk); rk != "" && !strings.HasPrefix(rk, "go-"+fam+"-") {
+					t.Errorf("%s restores %s from %q, another family's entry", at, fam, rk)
+				}
+			}
 			// actions/cache (no suffix) restores, and saves in its post step.
 			plain := strings.Contains(step.Uses, "actions/cache@")
 			if plain || strings.Contains(step.Uses, "actions/cache/save@") {
-				saves++
+				saves[fam]++
 				if !strings.Contains(step.If, "github.ref == 'refs/heads/main'") {
 					t.Errorf("%s saves outside main; pull request entries evict main's from the 10 GB cache", at)
 				}
 			}
 			if plain || strings.Contains(step.Uses, "actions/cache/restore@") {
-				restores++
+				restores[fam]++
 				if setupGo {
 					t.Errorf("%s restores after Set up Go; tar fails on the toolchain setup-go already downloaded", at)
 				}
@@ -576,7 +587,260 @@ func TestGoCachePathsMatch(t *testing.T) {
 			}
 		}
 	}
-	if restores == 0 || saves != 1 {
-		t.Fatalf("want go-test cache restores and exactly one save, found %d restores and %d saves", restores, saves)
+	for _, fam := range []string{"test", "lint", "race"} {
+		if restores[fam] == 0 || saves[fam] != 1 {
+			t.Errorf("want go-%s- cache restores and exactly one save, found %d restores and %d saves", fam, restores[fam], saves[fam])
+		}
+	}
+	for fam := range saves {
+		if restores[fam] == 0 {
+			t.Errorf("go-%s- is saved but never restored", fam)
+		}
+	}
+}
+
+// A job that saves a go-<family>- entry ages the cache right after
+// restoring it and prunes it right before the save, under the save's own
+// condition (scripts/go-cache-prune.sh). Without the pair the entry keeps
+// every object of the last five days: go-test- reached 5.1 GB against a
+// fresh 1.0 GB, and pushed the lint and race entries out of the 10 GB.
+// Aging is the first step after the restore: an entry a go command read
+// before it would be aged afterwards and pruned though the run used it.
+func TestGoCacheIsPrunedBeforeSave(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Uses string            `yaml:"uses"`
+				Run  string            `yaml:"run"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	const script = "scripts/go-cache-prune.sh"
+	saving := 0
+	for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		steps := wf.Jobs[job].Steps
+		restore, save := -1, -1
+		for i, step := range steps {
+			if !strings.HasPrefix(step.With["key"], "go-") {
+				continue
+			}
+			switch {
+			case strings.Contains(step.Uses, "actions/cache/restore@"):
+				restore = i
+			case strings.Contains(step.Uses, "actions/cache/save@"):
+				save = i
+			}
+		}
+		if save < 0 {
+			continue
+		}
+		saving++
+		if restore < 0 || restore+1 >= len(steps) || save == 0 {
+			t.Errorf("%s saves a Go cache it does not restore in a step of its own", job)
+			continue
+		}
+		age, prune := steps[restore+1], steps[save-1]
+		if strings.TrimSpace(age.Run) != script+" age" {
+			t.Errorf("%s: the step after the cache restore runs %q, want %q", job, age.Run, script+" age")
+		}
+		if !strings.Contains(age.If, "github.ref == 'refs/heads/main'") {
+			t.Errorf("%s: the age step runs outside main, where nothing is saved", job)
+		}
+		if strings.TrimSpace(prune.Run) != script+" prune" {
+			t.Errorf("%s: the step before the cache save runs %q, want %q", job, prune.Run, script+" prune")
+		}
+		if prune.If != steps[save].If {
+			t.Errorf("%s: the prune step runs if %q, the save if %q; they must match", job, prune.If, steps[save].If)
+		}
+	}
+	if saving != 3 {
+		t.Errorf("found %d jobs saving a Go cache, want 3 (test, lint, race); the parser or ci.yml changed shape", saving)
+	}
+}
+
+// CI's lint job and `make analyze` vet every affected package once, as
+// the machine's own OS, and then only the packages whose Go files differ
+// on windows and darwin (cmd/affected -files-differ-from). What a narrowed
+// pass skips is what the full pass read, so the full pass comes first and
+// unfiltered, and the narrowed ones compare against its environment as go
+// reports it, cgo included: against a hand-written one, a file the full
+// pass did not build (a `!cgo` file, say) could count as read and be
+// vetted by no pass.
+//
+//gofastr:test-reads /Makefile
+func TestNarrowedVetPassesCompareWithTheFullPass(t *testing.T) {
+	// passes checks one script's vet lines against the reference its
+	// narrowed passes must name, and returns the full pass's line.
+	passes := func(where string, lines []string, ref string) int {
+		t.Helper()
+		full, narrowed := -1, 0
+		for i, line := range lines {
+			line = strings.TrimSpace(line)
+			switch {
+			case !strings.Contains(line, "go vet -vettool="):
+			case strings.Contains(line, "-files-differ-from"):
+				narrowed++
+				if full < 0 || !strings.Contains(line, `-files-differ-from "`+ref+`"`) {
+					t.Errorf("%s: a narrowed vet pass must follow the full pass and compare with %s:\n%s", where, ref, line)
+				}
+			case strings.Contains(line, "GOOS="):
+				t.Errorf("%s: an unfiltered vet pass under another GOOS; narrow it with -files-differ-from \"%s\":\n%s", where, ref, line)
+			default:
+				if full >= 0 {
+					t.Errorf("%s: a second full vet pass:\n%s", where, line)
+				}
+				full = i
+			}
+		}
+		if full < 0 {
+			t.Errorf("%s: no full vet pass; a narrowed pass skips what the full one read", where)
+		}
+		if narrowed == 0 {
+			t.Errorf("%s: no vet pass uses -files-differ-from; windows and darwin files are vetted by no pass, or by a full one each", where)
+		}
+		return full
+	}
+	const env = `GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) CGO_ENABLED=$(go env CGO_ENABLED)`
+
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	var script []string
+	for _, step := range wf.Jobs["lint"].Steps {
+		if step.Name == "Vet (repo analyzers)" {
+			script = strings.Split(step.Run, "\n")
+		}
+	}
+	if script == nil {
+		t.Fatal("the lint job has no \"Vet (repo analyzers)\" step; the parser or ci.yml changed shape")
+	}
+	full := passes("ci.yml", script, "$first")
+	firstAt := slices.IndexFunc(script, func(l string) bool { return strings.TrimSpace(l) == `first="`+env+`"` })
+	if firstAt < full || full < 0 {
+		t.Errorf("ci.yml: want the line first=\"%s\" after the full vet pass (line %d), found it at %d", env, full, firstAt)
+	}
+
+	mk, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, recipe, ok := strings.Cut(string(mk), "\nanalyze:")
+	if !ok {
+		t.Fatal("the Makefile has no analyze target")
+	}
+	recipe, _, _ = strings.Cut(recipe, "\n\n")
+	passes("make analyze", strings.Split(recipe, "\n"), "$(ANALYZE_HOST)")
+	// $(shell ...) runs in make's own environment, the one the full pass
+	// gets, not under a recipe line's GOOS.
+	host := "\nANALYZE_HOST = " + strings.NewReplacer("$(go env ", "$(shell go env ").Replace(env) + "\n"
+	if !strings.Contains(string(mk), host) {
+		t.Errorf("the Makefile does not define the full pass's environment from go env; want the line%s", host)
+	}
+}
+
+// Each browser-e2e row decides whether its suite runs by matching its
+// matrix.pkg with grep -E against the import paths e2e-scope lists, where
+// cmd/affected -match used Go's regexp. The two read literals, `.`, `|`,
+// groups, `?`, `*`, `+` and the `^`/`$` anchors alike over one import path
+// per line; escapes, classes, bounded repeats and Go's (?flags) groups they
+// do not, and a row would then skip a suite its change reaches. A pattern
+// is held to the shared part, and must also compile in Go.
+func TestBrowserE2EPatternsArePortable(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Include []map[string]string `yaml:"include"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	rows := wf.Jobs["browser-e2e"].Strategy.Matrix.Include
+	if len(rows) == 0 {
+		t.Fatal("browser-e2e has no matrix rows; the parser or ci.yml changed shape")
+	}
+	portable := regexp.MustCompile(`^[A-Za-z0-9_/.|()?*+^$-]+$`)
+	for _, row := range rows {
+		pkg := row["pkg"]
+		if pkg == "" {
+			t.Errorf("row %q has no pkg pattern", row["suite"])
+			continue
+		}
+		if !portable.MatchString(pkg) || strings.Contains(pkg, "(?") {
+			t.Errorf("row %q: pkg %q uses syntax grep -E and Go's regexp read differently; keep to literals, . | ( ) ? * + ^ $", row["suite"], pkg)
+		}
+		if _, err := regexp.Compile(pkg); err != nil {
+			t.Errorf("row %q: pkg %q: %v", row["suite"], pkg, err)
+		}
+	}
+}
+
+// Every setup-chrome step installs one fixed Chrome. A moving version
+// (latest, the default, or a release channel) installs a new build under a
+// new directory that lands on PATH, and Go's test cache keys each result on
+// the variables a test read: a snapshot bump re-ran 175 of 403 packages on
+// a main run that changed three files (2026-11-16). One value across the
+// steps, so the browser suites test the Chrome the cached results saw.
+func TestChromeIsPinned(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", ".github", "workflows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := regexp.MustCompile(`^([0-9]+|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$`)
+	versions := map[string][]string{}
+	steps := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		var wf struct {
+			Jobs map[string]struct {
+				Steps []struct {
+					Name string            `yaml:"name"`
+					Uses string            `yaml:"uses"`
+					With map[string]string `yaml:"with"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal([]byte(workflowSource(t, e.Name())), &wf); err != nil {
+			t.Fatalf("parse %s: %v", e.Name(), err)
+		}
+		for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
+			for _, step := range wf.Jobs[job].Steps {
+				if !strings.HasPrefix(step.Uses, "browser-actions/setup-chrome@") {
+					continue
+				}
+				steps++
+				at := e.Name() + ": " + job + ": " + step.Name
+				v := step.With["chrome-version"]
+				if !fixed.MatchString(v) {
+					t.Errorf("%s installs chrome-version %q; pin a snapshot number or a four-part version, since a moving one changes PATH and empties the test cache", at, v)
+				}
+				versions[v] = append(versions[v], at)
+			}
+		}
+	}
+	if steps == 0 {
+		t.Fatal("found no setup-chrome step; the parser or the workflows changed shape")
+	}
+	if len(versions) > 1 {
+		t.Errorf("setup-chrome steps install different versions; bump them together: %v", versions)
 	}
 }

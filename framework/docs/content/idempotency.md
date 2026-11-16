@@ -236,12 +236,15 @@ Two stores are bundled:
   default store: `MaxStoreEntries` and `MaxStoreEntryBytes` (0 keeps the
   defaults; ignored when you pass your own `Store`). Store-level options
   `WithMemoryStoreMaxEntries(n)` / `WithMemoryStoreMaxEntryBytes(n)`
-  exist for direct construction. The map is per replica: a retry that
+  exist for direct construction. Expired entries are dropped about once
+  a minute, on the next request that claims a key. The map is per replica: a retry that
   reaches another replica runs again, so `NewApp` logs a warning when
   `WithIdempotency` keeps the default store beside `WithFanout`.
 - `NewSQLIdempotencyStore(db, opts...)`: SQL-backed (sqlite + postgres),
   creates `idempotency_keys` on first use (`body` is `BLOB` on SQLite,
-  `BYTEA` on Postgres). The middleware's store key joins its parts with
+  `BYTEA` on Postgres). Times are written in UTC, so a server whose
+  local clock goes back an hour does not keep expired rows alive on
+  SQLite. The middleware's store key joins its parts with
   NUL bytes, which Postgres `TEXT` refuses, so on Postgres the key column
   holds it with `\` written as `\\` and NUL as `\0`; SQLite keeps the
   key as is. The `principal` column is never encoded (a NUL-bearing

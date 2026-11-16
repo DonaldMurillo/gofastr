@@ -1,0 +1,304 @@
+primitive: ui.forms
+summary: The form family - form, fields, frame, repeaters, conditional fields, inputs, textarea, select, input group, password and number inputs, toggle and the auth card.
+code:
+  - framework/ui/form.go
+  - framework/ui/form_fields.go
+  - framework/ui/form_inputs.go
+  - framework/ui/formframe.go
+  - framework/ui/formrepeater.go
+  - framework/ui/repeater.go
+  - framework/ui/conditionalfield.go
+  - framework/ui/control.go
+  - framework/ui/textarea.go
+  - framework/ui/select.go
+  - framework/ui/inputgroup.go
+  - framework/ui/passwordinput.go
+  - framework/ui/numberinput.go
+  - framework/ui/toggle.go
+  - framework/ui/auth_card.go
+docs:
+  - framework/docs/content/form-module.md
+twins:
+  - job: Render the hidden _csrf input that carries the request's masked CSRF token.
+    why: framework/ui sits below battery/ and cannot import battery/auth, so Form keeps its own copy of the markup.
+    sites:
+      - path: framework/ui/form.go
+        note: csrfHiddenInput, stamped by Form on a POST with a token on Ctx.
+      - path: battery/auth/csrf.go
+        note: renderCSRFInput, behind CSRFInputFromCtx.
+invariants:
+  - id: form-method-is-get-or-post
+    rule: Form panics on a Method other than GET or POST and treats an empty Method as POST.
+    enforced_by:
+      - test: framework/ui.TestFormPanicOnInvalidMethod
+      - test: framework/ui.TestForm_MethodInjection
+  - id: form-stamps-csrf-on-post-only
+    rule: A POST Form whose Ctx carries a CSRF token renders it masked in a hidden _csrf input before the fields, and a GET form, a nil Ctx or a Ctx with no token renders none.
+    enforced_by:
+      - test: framework/ui.TestFormAutoStampsCSRFInput
+      - test: framework/ui.TestFormCSRFOmittedOnGET
+      - test: framework/ui.TestFormCSRFOmittedWhenNoTokenOnCtx
+  - id: form-csrf-field-is-the-middleware-default
+    rule: The hidden input Form stamps is accepted by middleware.CSRF with its default FormField.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsCSRFStampPassesTheDefaultMiddleware
+  - id: form-summary-on-errors-or-sentence
+    rule: Form renders a ValidationSummary with id ID+"-errors" whenever Errors or Summary is non-empty, panics then without ID, and fills the general row with the FormErrorsSummary sentence when Summary is empty.
+    enforced_by:
+      - test: framework/ui.TestFormRendersASummaryForAGeneralOnlyFailure
+      - test: framework/ui.TestFormErrorsRequireAnID
+      - test: framework/ui.TestSweepFormsDefaultSummarySentence
+  - id: form-wiring-keys-take-the-request-seam
+    rule: Form sends every ExtraAttrs key starting data-cui-, data-fui- or data-action-, compared lower-cased, through headless's Request and the rest through its ExtraAttrs, and panics on one key under two spellings.
+    enforced_by:
+      - test: framework/ui.TestFormRequestGeneratorShape
+      - test: framework/ui.TestSweepFormsWiringKeysTakeTheRequestSeam
+      - test: framework/ui.TestSweepFormsOneKeyTwoSpellingsPanics
+  - id: summary-row-targets-a-known-control
+    rule: A ValidationSummary row links to FieldIDs[name] when the map holds the field, renders as text when a non-nil FieldIDs lacks it, and links to the field name when FieldIDs is nil.
+    enforced_by:
+      - test: framework/ui.TestValidationSummaryUnknownFieldRendersAsText
+      - test: framework/ui.TestValidationSummaryFallsBackToKeyWithoutFieldIDs
+  - id: summary-rows-are-ordered
+    rule: ValidationSummary renders the FieldOrder rows first, the remaining fields alphabetically, and the General sentence last as text.
+    enforced_by:
+      - test: framework/ui.TestFieldOrderControlsRowOrder
+      - test: framework/ui.TestAlphabeticalFallback
+      - test: framework/ui.TestFormSummaryGeneralRowRendersAsText
+  - id: summary-row-reads-label-then-message
+    rule: "A ValidationSummary row reads \"<label>: <message>\", the label taken from FieldLabels and else the field name."
+    enforced_by:
+      - test: framework/ui.TestUsesFieldLabel
+      - test: framework/ui.TestValidationSummaryRendersErrors
+  - id: form-field-for-reads-its-error
+    rule: FormFieldFor renders the FormField with Error set to errs[name] when errs holds the name.
+    enforced_by:
+      - test: framework/ui.TestFormFieldForPullsErrorByName
+  - id: explicit-ids-are-reserved
+    rule: An explicit ID on a typed field, Select, Checkbox, Radio, Switch or group is reserved with its -hint and -error family in the request's ID scope, so a later derived id is suffixed instead of repeating it.
+    enforced_by:
+      - test: framework/ui.TestFieldIDFamiliesStayReserved
+      - test: framework/ui.TestChoiceFamiliesStayScoped
+  - id: fields-own-their-attributes
+    rule: TextField and TextArea drop from ExtraAttrs every attribute they render from their config, name, placeholder, length bounds and aria-describedby included.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsFieldsOwnTheirAttributes
+  - id: number-field-keeps-a-zero-bound
+    rule: NumberField renders a bound whose pointer is set, zero included, and omits a nil one.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsNumberFieldKeepsAZeroBound
+  - id: datetime-step-is-positive-and-finite
+    rule: DateTimeField renders step only for a positive, finite Step.
+    enforced_by:
+      - test: framework/ui.TestDateTimeFieldWiresBoundsAndStep
+      - test: framework/ui.TestDateTimeFieldFractionalStep
+  - id: label-hidden-keeps-the-name
+    rule: LabelHidden on a typed field or a Select adds the fui-field--label-hidden modifier to the field root.
+    enforced_by:
+      - test: framework/ui.TestTypedFieldsLabelHidden
+      - test: framework/ui.TestSelectLabelHidden
+  - id: control-takes-the-field-wiring
+    rule: Control panics without Field.ID and takes its id, description, invalid state and required flag from Field alone.
+    enforced_by:
+      - test: framework/ui.TestControlRequiresTheFieldAndName
+      - test: framework/ui.TestControlTakesTheIDAndRequiredFromTheField
+      - test: framework/ui.TestControlCarriesWiringAndTypedAttributes
+  - id: control-owns-its-attributes
+    rule: Control drops from ExtraAttrs every attribute it renders from its config, the bounds included.
+    enforced_by:
+      - test: framework/ui.TestControlCarriesOwnedBounds
+  - id: shared-class-maps-are-never-mutated
+    rule: withRootClass returns a copy of the class map with the caller's class on the root part and never writes to the map it was given.
+    enforced_by:
+      - test: framework/ui.TestRadioGroupStructure
+  - id: textarea-defaults
+    rule: TextArea's control id is ID or else Name, and it renders rows="3" when Rows is zero.
+    enforced_by:
+      - test: framework/ui.TestTextAreaLabelForMatchesID
+      - test: framework/ui.TestTextAreaExtraAttrsCannotOverrideOwned
+  - id: textarea-mono-rides-the-field-root
+    rule: Monospace adds fui-textarea--mono to the TextArea's field root, the class the sheet reads the control under.
+    enforced_by:
+      - test: framework/ui.TestTextAreaMonoVariant
+  - id: textarea-json-sentence-is-translated
+    rule: A JSON TextArea's check sentence is i18nui.TextAreaInvalidJSON resolved through Ctx.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsTextAreaJSONSentenceIsTranslated
+  - id: controls-carry-their-own-marker
+    rule: The <select> of a Select and the <textarea> of a TextArea carry their own ui-select or ui-textarea data-cui-comp marker inside the field's, so their sheet loads wherever the control renders.
+    enforced_by:
+      - test: framework/ui.TestSelectCarriesItsOwnMarkerBesideTheFields
+      - test: framework/ui.TestTextAreaControlCarriesItsOwnMarker
+  - id: form-family-marks-own-subtrees
+    rule: Select marks its control as its own content, and AuthCard puts data-cui-internal on its panel when every slot is empty and on its title alone when any slot is filled.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: select-chooses-like-the-browser
+    rule: A non-empty Selected beats the options' flags, among flagged options the last wins, and with nothing chosen and no Placeholder the first option is selected when some option's value is empty.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsSelectedOverridesTheFlags
+      - test: framework/ui.TestSweepFormsSelectLastFlaggedOptionWins
+      - test: framework/ui.TestSelectUnflaggedKeepsFirstOption
+  - id: select-action-shares-the-row
+    rule: A Select's Action renders after the select inside one fui-select__row.
+    enforced_by:
+      - test: framework/ui.TestSelectActionSitsOnTheRow
+  - id: input-group-addons-are-decoration
+    rule: InputGroup panics without Input and renders Prepend and Append aria-hidden.
+    enforced_by:
+      - test: framework/ui.TestInputGroupRequiresInput
+      - test: framework/ui.TestInputGroupPrependHasAriaHidden
+  - id: password-takes-the-field-wiring
+    rule: PasswordInput takes its id from Field.ID over ID, is required when either Required is set, and panics when neither ID nor Field.ID is set.
+    enforced_by:
+      - test: framework/ui.TestPasswordInputCarriesTheFieldsWiring
+      - test: framework/ui.TestPasswordInputRequiresID
+  - id: password-attributes-find-their-element
+    rule: PasswordInput puts Autocomplete on the inner input and ExtraAttrs on the shell, dropping the input's own attributes from ExtraAttrs.
+    enforced_by:
+      - test: framework/ui.TestPasswordInputAutocomplete
+      - test: framework/ui.TestPasswordInputAttrsCannotOverrideName
+  - id: password-nil-ctx-reads-the-default-table
+    rule: A PasswordInput with a nil Ctx resolves its reveal words through i18nui's default table, not StringsFor's nil short-circuit.
+    enforced_by:
+      - test: framework/ui.TestPasswordInputShowUsesI18n
+  - id: number-input-bounds
+    rule: NumberInput renders no bounds when Min and Max are both zero, otherwise min=Min even at zero, and max only for a non-zero Max.
+    enforced_by:
+      - test: framework/ui.TestNumberInputOneSidedBoundBadRange
+  - id: number-input-state-classes
+    rule: NumberInput's root carries is-error when Error is set and is-disabled when Disabled is.
+    enforced_by:
+      - test: framework/ui.TestNumberInputErrorState
+      - test: framework/ui.TestSweepFormsNumberInputStateClasses
+  - id: conditional-field-visibility-is-the-module-s
+    rule: ConditionalField drops hidden and aria-hidden from ExtraAttrs, leaving the region's visibility to the headless module.
+    enforced_by:
+      - test: framework/ui.TestConditionalFieldExtraAttrsCannotOverrideOwned
+  - id: auth-card-messages-announce
+    rule: AuthCard renders Alert as role=alert and Notice as role=status.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsAuthCardAlertInterrupts
+      - test: framework/ui.TestAuthCardNoticeIsStatus
+  - id: form-frame-names-its-modifiers
+    rule: FormFrame panics on a SideWidth other than "", narrow or wide, adds fui-form-frame--side-<width> for a named one and fui-form-frame--side-panel for SidePanel, and drops style from ExtraAttrs.
+    enforced_by:
+      - test: framework/ui.TestFormFrameSideWidthIsANamedModifier
+      - test: framework/ui.TestFormFrameSidePanelSticksBesideFields
+      - test: framework/ui.TestFormFrameSeams
+  - id: form-frame-splits-only-with-both-columns
+    rule: FormFrame arms the two-column modifier only when Main and Side are both non-empty, and renders no columns wrapper when both are empty.
+    enforced_by:
+      - test: framework/ui.TestLayoutFormFrameSideOnlyIsOneColumn
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: form-frame-splits-on-its-own-width
+    rule: FormFrame's root is an inline-size query container and its two-column split is an @container rule, never a viewport media query.
+    enforced_by:
+      - test: framework/ui.TestFormFrameSwitchesOnItsOwnWidth
+  - id: form-repeater-submits-named-actions
+    rule: FormRepeater's Add submits <Name>_add=1 and each row's Remove submits <Name>_remove=<row index>, riding the surrounding form.
+    enforced_by:
+      - test: framework/ui.TestFormRepeaterRendersEmpty
+      - test: framework/ui.TestFormRepeaterRendersItems
+  - id: repeater-controls-are-kit-buttons
+    rule: FormRepeater's remove wears the danger kit button classes and its add the secondary ones, and its sheet draws no button of its own.
+    enforced_by:
+      - test: framework/ui.TestFormRepeaterControlsWearKitButtonClasses
+      - test: framework/ui.TestFormRepeaterSheetCarriesNoButtonRules
+  - id: default-action-takes-no-class
+    rule: The class maps of Repeater, FormRepeater and StepWizard give PartDefaultAction no class, so the button sheet's display never beats the UA's [hidden] rule on the hidden default submit.
+    enforced_by:
+      - test: framework/ui.TestDefaultActionTakesNoClass
+    applies:
+      - framework/ui/stepwizard.go
+  - id: repeater-seeds-a-row-it-can-start-from
+    rule: A Repeater with a Template and no Items renders MinItems template rows, or one row when MinItems is zero.
+    enforced_by:
+      - test: framework/ui.TestRepeaterUsesTemplateWhenNoItems
+      - test: framework/ui.TestRepeaterCtxLocaleRemove
+  - id: repeater-ids-are-scoped
+    rule: Repeater reserves an explicit ID and its -items suffix in the request's ID scope, and its RPC add and remove swap the "<ID>-items" region.
+    enforced_by:
+      - test: framework/ui.TestRepeaterReservesExplicitID
+      - test: framework/ui.TestSweepFormsRepeaterRPCSwapsItsItems
+  - id: repeater-empty-row-holds-no-fields
+    rule: A Repeater row whose item renders empty hands headless no fields, so the row is marked as the component's own.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: choice-error-sits-outside-the-label
+    rule: A standalone Checkbox, Radio or Switch with Error wraps its run in fui-choice-field with a role=alert paragraph of id ID+"-error" carrying data-hui-field-error outside the label, marks the input aria-invalid, describes it by that id and renders no Help.
+    enforced_by:
+      - test: framework/ui.TestCheckboxErrorWiresAriaAndAlertOutsideTheRun
+      - test: framework/ui.TestSwitchMessageWiresDescribedBy
+      - test: framework/ui.TestSweepFormsChoiceErrorReplacesHelp
+      - test: framework/ui.TestSweepFormsChoiceErrorCarriesTheFormErrorsHook
+  - id: switch-help-is-described
+    rule: A Switch with Help and no Error renders the hint after the run with id ID+"-hint" and describes the input by it.
+    enforced_by:
+      - test: framework/ui.TestSwitchMessageWiresDescribedBy
+  - id: choice-input-takes-the-caller-attributes
+    rule: A Checkbox's, Radio's or Switch's ExtraAttrs and Required land on its input, with a caller's for= dropped.
+    enforced_by:
+      - test: framework/ui.TestToggleExtraAttrsLandOnTheInput
+      - test: framework/ui.TestSweepFormsSwitchShipsRequiredAndNoFor
+  - id: choice-class-reaches-the-root
+    rule: A Checkbox's, Radio's or Switch's Class lands on its root on every render path, the errored shell's included.
+    enforced_by:
+      - test: framework/ui.TestToggleCustomClassReachesTheRootOfAllThree
+  - id: radio-id-slugs-the-value
+    rule: A Radio with no ID derives Name+"-"+slug(Value) within the request's ID scope.
+    enforced_by:
+      - test: framework/ui.TestSweepFormsRadioIDSlugsTheValue
+  - id: choice-label-hidden-keeps-the-name
+    rule: LabelHidden on a Checkbox or Radio folds its label text into fui-visually-hidden, leaving it the input's accessible name.
+    enforced_by:
+      - test: framework/ui.TestCheckboxLabelHidden
+  - id: group-message-belongs-to-the-group
+    rule: A RadioGroup or CheckboxGroup renders its Error, else its Help, as the fieldset's last paragraph and names it in the fieldset's aria-describedby, never on a leaf.
+    enforced_by:
+      - test: framework/ui.TestGroupErrorBelongsOnTheGroup
+      - test: framework/ui.TestGroupHelpWiresDescribedBy
+      - test: framework/ui.TestSweepFormsGroupErrorReplacesHelp
+  - id: group-required-reaches-every-leaf
+    rule: A Required group marks its legend required and puts the required attribute on every leaf's input.
+    enforced_by:
+      - test: framework/ui.TestRequiredGroupMarksTheLegendAndTheLeaves
+  - id: group-leaf-ids-derive-from-the-group
+    rule: A group's leaf inputs take the ids <group id>-<index>.
+    enforced_by:
+      - test: framework/ui.TestRadioGroupStructure
+decisions:
+  - id: form-frame-is-its-own-component
+    date: 2026-11-16
+    status: accepted
+    decision: The record-form split of a wide main column beside a narrow side column is FormFrame, a layout fact with plain divs and no landmark or region name, placed inside the form.
+    rejected:
+      - option: ContentRow.
+        why: It is the page frame, with nav and aside landmarks around a main region, and does not fit inside a form.
+      - option: Grid.
+        why: It lays out peer cells and has no narrow rail.
+      - option: Workbench.
+        why: It is a viewport-height inspector, not a column inside a form.
+    upholds: [form-frame-splits-on-its-own-width]
+  - id: form-frame-split-is-opt-in
+    date: 2026-11-16
+    status: accepted
+    decision: Form keeps its readable measure cap below FormFrame's split point, so a frame stacks until the host sets FormConfig.Wide.
+    rejected:
+      - option: Let a FormFrame widen its form on its own.
+        why: The one-column form stays the default, and a record page opts into the rail.
+  - id: number-input-draws-its-own-step-buttons
+    date: 2026-11-16
+    status: accepted
+    decision: NumberInput flanks the number input with real decrement and increment buttons that the headless module binds, the input staying a plain named number control without script.
+    rejected:
+      - option: The browser's spinner arrows.
+        why: They are tiny, hidden on touch, and disabled while the input is in a validation error state.
+  - id: choice-message-is-either-or
+    date: 2026-11-16
+    status: accepted
+    decision: A standalone Checkbox, Radio or Switch, and a RadioGroup or CheckboxGroup, shows its Error in place of its Help, outside the label.
+    rejected:
+      - option: Field's shape, the hint kept visible beside the error.
+        why: A choice has no rule paragraph to keep beside the violation, and a message inside the label would join the control's accessible name.
+    upholds: [choice-error-sits-outside-the-label]

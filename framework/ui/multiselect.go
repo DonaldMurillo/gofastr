@@ -10,49 +10,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── MultiSelect ───────────────────────────────────────────────────
-//
-// Renders headless.MultiSelect dressed with the fui-multiselect class
-// map: a checkbox group inside a native disclosure with a chips strip
-// above it. The submit contract is the plain form — every checkbox
-// shares the field name and a page with script blocked submits the
-// checked options as repeated keys — and the chips (rebuilt from the
-// checkboxes' own state by the registered headless-multiselect module)
-// are the enhancement. The disclosure itself is ui.Collapsible's
-// primitive (headless.Disclosure): Escape to close with focus
-// returned, the aria-expanded mirror.
-
-// MultiSelectOption is one checkbox option: Value is the form-submit
-// value, Label the visible text, Selected the first-paint state,
-// Disabled the greyed-out unsubmitting state.
+// MultiSelectOption is one checkbox option.
 type MultiSelectOption = headless.MultiSelectOption
 
 // MultiSelectConfig configures one multiselect.
 type MultiSelectConfig struct {
-	// Name is the form-field name every checkbox shares. Required.
-	Name string
-	// Label is the group's accessible name and the disclosure's
-	// summary. Required.
+	// Name, shared by every checkbox, Label and Options are required.
+	Name  string
 	Label string
-	// Placeholder is what the chips strip says when nothing is
-	// picked. Defaults to "Choose…" through the Strings table.
+	// Placeholder is shown when nothing is picked; it defaults to the
+	// localized "Choose…".
 	Placeholder string
-	// Options are the choices, in order. Required.
-	Options []MultiSelectOption
+	Options     []MultiSelectOption
 	// Open renders the disclosure expanded.
 	Open bool
 
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes to the wrapper. Keys
-	// the component owns are dropped: class and id (use Class / ID).
+	// ExtraAttrs forwards attributes to the wrapper; keys the component
+	// owns are dropped.
 	ExtraAttrs html.Attrs
 
-	// Ctx resolves the Strings table through the request's translator.
 	Ctx context.Context
 }
 
-// MultiSelect renders the checkbox-group disclosure.
+// MultiSelect renders a checkbox group in a disclosure, with a chips
+// strip the module rebuilds from the checkboxes.
 func MultiSelect(cfg MultiSelectConfig) render.HTML {
 	classes := headless.Classes{
 		headless.PartRoot:             "fui-multiselect",

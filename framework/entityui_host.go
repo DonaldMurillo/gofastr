@@ -17,23 +17,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// EntityUI returns this app's entity screens: lists and records drawn from
-// each entity's schema, Display and States, with ext's kinds, view funcs,
-// tabs and actions. Call it once. It checks every name ext uses and panics
-// at boot on a bad one, naming it, the way App.Entity refuses a bad
-// declaration, so ext can only name entities registered before the call.
-// An entity registered after it gets the same checks at App.Entity.
-//
-// It mounts the bulk bar's routes beside each entity's write routes:
-// POST <api>/_bulk, GET <api>/_export.csv and the relation picker's
-// POST <api>/_pick?field=<field>, for the entities registered
-// before the call and for every one registered after it. With ext.Jobs set it also
-// creates the snapshot tables queued runs walk (gofastr_bulk_jobs and
-// gofastr_bulk_items), which needs a database, and at App.Start re-hands
-// the JobRunner any job a crash left unenqueued and deletes finished jobs
-// older than entityui.BulkRetention (UI.ResumeBulkJobs and
-// UI.PruneBulkJobs; an app that runs for long schedules both). A second
-// call panics: the routes belong to one UI, so share the one it returned.
+// EntityUI returns this app's entity screens, built from each entity's
+// schema, Display and States plus ext, and mounts POST <api>/_bulk,
+// GET <api>/_export.csv and POST <api>/_pick beside each entity's write
+// routes, for entities registered before and after the call. With ext.Jobs
+// set it creates the bulk snapshot tables and, at App.Start, resumes
+// unenqueued jobs and prunes finished ones. It panics on a name in ext no
+// registered entity has, on ext.Jobs without a database, on a route
+// overlap, and on a second call.
 func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	if a.entityUI != nil {
 		panic("framework: EntityUI was already called on this app; its bulk and export routes belong to that UI, so pass the *entityui.UI it returned instead of building a second")
@@ -79,14 +70,8 @@ func (a *App) EntityUI(ext entityui.Extensions) *entityui.UI {
 	return u
 }
 
-// bulkResumeGrace is how old an unenqueued job must be before a start
-// hands it over again: younger ones may belong to a confirm still between
-// writing its snapshot and enqueuing it.
 const bulkResumeGrace = time.Minute
 
-// resumeAndPruneBulkJobs hands over the jobs a crash left unenqueued and
-// drops finished jobs past entityui.BulkRetention. A failure is logged,
-// not fatal: the app serves without it, and the next start tries again.
 func resumeAndPruneBulkJobs(ctx context.Context, u *entityui.UI) {
 	if n, err := u.ResumeBulkJobs(ctx, bulkResumeGrace); err != nil {
 		slog.ErrorContext(ctx, "framework: EntityUI: resume bulk jobs", "resumed", n, "error", err)
@@ -114,10 +99,6 @@ func (a *App) entityUIWouldOwn(ent *entity.Entity) bool {
 	return true
 }
 
-// mountEntityUIRoutes mounts e's bulk, export and picker routes once EntityUI has
-// run, when e has write routes and its name resolves to it. recordCrudMount
-// calls it too, so an entity registered after EntityUI is not left with a
-// bar whose posts 404.
 func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return
@@ -125,9 +106,6 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	if _, ok := (entityUIHost{a: a}).APIPath(e); !ok {
 		return
 	}
-	// On the router the entity's CRUD routes went on: a group's
-	// sub-router carries the group's middleware, and a route beside it
-	// would skip that guard.
 	m := a.crudMounts[e]
 	r := crud.EntityRouter(m.r, e)
 	r.Post(m.rel+"/_bulk", a.entityUIOwned(e, a.entityUI.BulkHandler(e.GetName())))
@@ -135,18 +113,11 @@ func (a *App) mountEntityUIRoutes(e *entity.Entity) {
 	r.Post(m.rel+"/_pick", a.entityUIOwned(e, a.entityUI.PickerHandler(e.GetName())))
 }
 
-// entityUIOwns reports whether e is the entity its name resolves to. The
-// screens and the bulk handlers look an entity up by name, so a version
-// the name does not resolve to (another one is unversioned, or several
-// versions share the name) gets no routes: they would run the other
-// entity's handler, hooks and access rules under this version's path.
 func (a *App) entityUIOwns(e *entity.Entity) bool {
 	got, err := a.Registry.Get(e.GetName())
 	return err == nil && got == e
 }
 
-// entityUIOwned answers 404 once e no longer owns its name: an entity
-// registered after the routes mounted can take it over.
 func (a *App) entityUIOwned(e *entity.Entity, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !a.entityUIOwns(e) {
@@ -157,8 +128,6 @@ func (a *App) entityUIOwned(e *entity.Entity, h http.Handler) http.Handler {
 	})
 }
 
-// entityUIMounted reports whether EntityUI's bulk and export routes answer
-// for e, for the OpenAPI document.
 func (a *App) entityUIMounted(e *entity.Entity) bool {
 	if a.entityUI == nil || !a.entityUIOwns(e) {
 		return false
@@ -167,7 +136,6 @@ func (a *App) entityUIMounted(e *entity.Entity) bool {
 	return ok
 }
 
-// entityUIHost is entityui's view of one App.
 type entityUIHost struct {
 	a     *App
 	store *sqlBulkStore
@@ -179,10 +147,7 @@ func (h entityUIHost) Crud(e *entity.Entity) (*crud.CrudHandler, error) {
 	return h.a.CrudHandlerForEntity(e)
 }
 
-// APIPath reports where the entity's write routes mounted: a grouped
-// entity lives under its group's prefix, not the API prefix. Only an
-// entity with CRUD routes is recorded there, so a read-only view
-// (App.View) or CRUD turned off draws read-only screens.
+// APIPath reports where e's write routes mounted; false when it has none.
 func (h entityUIHost) APIPath(e *entity.Entity) (string, bool) {
 	m, ok := h.a.crudMounts[e]
 	return m.full, ok
@@ -190,9 +155,8 @@ func (h entityUIHost) APIPath(e *entity.Entity) (string, bool) {
 
 func (h entityUIHost) Translator() *i18n.Translator { return h.a.Translator() }
 
-// HasScreen asks every mounted UI host (uihost.UIHost answers it) whether
-// a screen serves path, so an entityui list can warn when its row links
-// lead nowhere. With no UI host mounted the answer is unknown.
+// HasScreen asks every mounted ScreenHost whether a screen serves path;
+// known is false when none answers.
 func (h entityUIHost) HasScreen(path string) (has, known bool) {
 	for _, m := range h.a.Mountables() {
 		sh, ok := m.(entityui.ScreenHost)
@@ -216,9 +180,6 @@ func (h entityUIHost) Audit() entityui.AuditReader {
 	return auditTrail{db: h.a.DB, table: h.a.auditTable, cfg: h.a.auditCfg, reg: h.a.Registry}
 }
 
-// auditTrail reads one record's audit rows for the Activity tab. The
-// record's own read gate has already passed; the rows are further held to
-// the caller's tenant, the scope the audit writer stamped.
 type auditTrail struct {
 	db    *sql.DB
 	table string
@@ -226,8 +187,6 @@ type auditTrail struct {
 	reg   *Registry
 }
 
-// softDeletes reports whether the entity soft-deletes, so a delete row
-// is not the end of its record.
 func (t auditTrail) softDeletes(ent string) bool {
 	if t.reg == nil {
 		return false
@@ -254,12 +213,6 @@ func (t auditTrail) Trail(ctx context.Context, ent, recordID string, limit int) 
 		inTenant, endTenant, nextTenant = " AND a.tenant_id = $3", " AND e.tenant_id = $3", " AND n.tenant_id = $3"
 		args = append(args, tid)
 	}
-	// A hand-assigned key can be reused once its record is gone, so the
-	// trail starts after the key's last end that a later row follows: a
-	// purge, or a delete where the entity has no soft delete (there a
-	// restore undoes it). Without the bound a new record showed the old
-	// one's history. A key whose last row is its end keeps that life's
-	// rows, the end included.
 	ends := "'purge', 'delete'"
 	if t.softDeletes(ent) {
 		ends = "'purge'"

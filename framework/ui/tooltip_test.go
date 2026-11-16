@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestTooltipRequiresText(t *testing.T) {
 
 func TestTooltipWrapsTriggerAndAddsAriaDescribedBy(t *testing.T) {
 	trigger := render.HTML(`<button class="fui-button">Help</button>`)
-	h := Tooltip(TooltipConfig{Text: "Need help?"}, trigger)
+	h := Tooltip(TooltipConfig{Text: "Need help?", Ctx: render.WithIDScope(context.Background())}, trigger)
 	for _, want := range []string{
 		`data-cui-comp="ui-tooltip"`,
 		`role="tooltip"`,
@@ -63,7 +64,7 @@ func TestTooltipExtraAttrsOnRoot(t *testing.T) {
 // being wired, or the tooltip's own relationship never lands.
 func TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy(t *testing.T) {
 	trigger := render.HTML(`<button class="fui-button"><svg aria-label="info" aria-describedby="icon-note"></svg>Help</button>`)
-	h := Tooltip(TooltipConfig{Text: "Need help?"}, trigger)
+	h := Tooltip(TooltipConfig{Text: "Need help?", Ctx: render.WithIDScope(context.Background())}, trigger)
 	s := string(h)
 	// The root button carries the tooltip's id.
 	if !strings.Contains(s, `<button class="fui-button" aria-describedby="tip-need-help">`) {
@@ -81,7 +82,7 @@ func TestTooltipWiresTheRootWhenADescendantCarriesDescribedBy(t *testing.T) {
 // attribute into the value.
 func TestTooltipSplicesPastAGtInsideAQuotedValue(t *testing.T) {
 	trigger := render.HTML(`<button type="button" title="small > large">Sort</button>`)
-	h := Tooltip(TooltipConfig{Text: "Sort order"}, trigger)
+	h := Tooltip(TooltipConfig{Text: "Sort order", Ctx: render.WithIDScope(context.Background())}, trigger)
 	// The value is intact and the attribute landed after it, inside
 	// the real tag close.
 	mustContain(t, h, `<button type="button" title="small > large" aria-describedby="tip-sort-order">`)
@@ -99,5 +100,18 @@ func TestTooltipIdempotentWhenRootCarriesDescribedBy(t *testing.T) {
 	h := Tooltip(TooltipConfig{Text: "Need help?", ID: "tip-x"}, trigger)
 	if n := strings.Count(string(h), `aria-describedby="tip-x"`); n != 1 {
 		t.Errorf("aria-describedby rendered %d times, want 1:\n%s", n, h)
+	}
+}
+
+// TestTooltipsWithoutAScopeGetDistinctIDs: with no id scope on Ctx (or
+// no Ctx), two same-text tooltips still get two ids.
+func TestTooltipsWithoutAScopeGetDistinctIDs(t *testing.T) {
+	trigger := render.HTML(`<button>?</button>`)
+	for _, ctx := range []context.Context{nil, context.Background()} {
+		a := tooltipID(t, Tooltip(TooltipConfig{Text: "Need help?", Ctx: ctx}, trigger))
+		b := tooltipID(t, Tooltip(TooltipConfig{Text: "Need help?", Ctx: ctx}, trigger))
+		if a == b || !strings.HasPrefix(a, "tip-need-help-") {
+			t.Errorf("ctx %v: unscoped same-text tooltips got ids %q and %q", ctx, a, b)
+		}
 	}
 }

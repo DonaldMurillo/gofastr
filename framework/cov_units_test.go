@@ -97,8 +97,8 @@ func TestCovStringifyPK(t *testing.T) {
 	}
 }
 
-// buildAuditCreateDiff falls back to original when redacted can't marshal,
-// and to the {} sentinel when both fail.
+// buildAuditCreateDiff falls back to original's keys, masked, when redacted
+// can't marshal, and to the {} sentinel when the meta can't either.
 func TestCovBuildCreateDiffFallback(t *testing.T) {
 	bad := map[string]any{"fn": func() {}} // not JSON-marshalable
 	good := map[string]any{"ok": 1}
@@ -106,8 +106,10 @@ func TestCovBuildCreateDiffFallback(t *testing.T) {
 	if string(out) == "" {
 		t.Fatal("expected a diff")
 	}
-	// both unmarshalable → sentinel
-	out2 := buildAuditCreateDiff(bad, bad, nil)
+	if got := string(buildAuditCreateDiff(bad, bad, nil)); got != `{"new":{"fn":"[redaction failed]"}}` {
+		t.Fatalf("expected masked keys, got %s", got)
+	}
+	out2 := buildAuditCreateDiff(bad, bad, map[string]any{"x": func() {}})
 	if string(out2) != `{"new":{}}` {
 		t.Fatalf("expected sentinel, got %s", out2)
 	}
@@ -122,8 +124,10 @@ func TestCovBuildUpdateDiffFallback(t *testing.T) {
 	if string(out) == "" || string(out) == `{"new":{}}` {
 		t.Fatalf("expected recovery via originalOld, got %s", out)
 	}
-	// everything poisoned → sentinel
-	out2 := buildAuditUpdateDiff(bad, bad, bad, bad, nil)
+	if got := string(buildAuditUpdateDiff(bad, bad, bad, bad, nil)); got != `{"new":{"fn":"[redaction failed]"},"old":{"fn":"[redaction failed]"}}` {
+		t.Fatalf("expected masked keys, got %s", got)
+	}
+	out2 := buildAuditUpdateDiff(bad, bad, bad, bad, map[string]any{"x": func() {}})
 	if string(out2) != `{"new":{}}` {
 		t.Fatalf("expected sentinel, got %s", out2)
 	}

@@ -16,8 +16,205 @@ invariants:
     enforced_by:
       - test: framework/crud.TestReadQueryGuard
       - test: framework/crud.TestReadQueryParity
+      - test: framework/crud.TestRepeatedIncludeKeyIsRefused
+      - test: framework/crud.TestReadQueryControlClassification
+  - id: host-owns-q-only-when-framework-reads-none
+    rule: A repeated ?q= passes readQuery only when q is in AllowedFilterParams, the entity declares no SearchFields and no filterable column is named q.
+    enforced_by:
+      - test: framework/crud.TestReadQueryRepeatedQOwnership
+  - id: soft-delete-helpers-fail-closed
+    rule: ApplySoftDeleteFilter and ApplySoftDeleteFilterCount keep deleted_at IS NULL when the query has an undecodable pair or a repeated trashed key.
+    enforced_by:
+      - test: framework/crud.TestSoftDeleteHelpersFailClosed
+  - id: projection-keeps-key-and-required
+    rule: A ?fields= projection always selects the key and every visible Required column, accepts a column or wire name, and refuses an unknown name without echoing it.
+    enforced_by:
+      - test: framework/crud.TestGet_WithIncludesAndProjection
+      - test: framework/crud.TestCursorPageHonorsFields
+      - test: framework/crud.TestCamelCase_CreateAndList
+      - test: framework/crud.TestGet_BadProjection
   - id: cursor-fields-match
     rule: A decoded cursor is refused unless its field names equal the page's expected set.
     enforced_by:
       - test: framework/crud.TestDecodeCursor_RejectsMismatchedFields
       - test: framework/crud.TestCursorSingleFieldForeignNameRejected
+      - test: framework/crud.TestReleasedCursorKeepsItsMeaning
+      - test: framework/crud.TestSingleFieldCursorRefusesComposite
+  - id: cursor-total-order
+    rule: A keyset page orders by the cursor fields and then every key column they do not name, and a backward page is returned in ascending order.
+    enforced_by:
+      - test: framework/crud.TestCursorFields_SingleAndComposite
+      - test: framework/crud.TestBackwardPageIsAscending
+  - id: cursor-value-is-typed
+    rule: A cursor value that is not of its column's type, a direction other than forward or backward, or a NULL keyset value in the last row is refused, never bound or minted.
+    enforced_by:
+      - test: framework/crud.TestLegacyTimestampCursorRefusesNonTimestamp
+      - test: framework/crud.TestCursorDirectionJunkRefused
+      - test: framework/crud.TestCursorPageRefusesNullKeyset
+  - id: cursor-fits-the-decoder
+    rule: A cursor carries every cursor field when that fits the decoder's cap and the key alone otherwise; a key too long to fit is refused as cursor_key_too_long when the page is built.
+    enforced_by:
+      - test: framework/crud.TestCursorPastFieldCapCarriesKey
+      - test: framework/crud.TestCursorPagesPastLongSortValue
+      - test: framework/crud.TestCursorRefusesKeyPastCap
+  - id: cursor-anchor-is-scoped
+    rule: The anchor row of a key-only cursor is read under the page's tenant, owner, read, soft-delete and BeforeList scope but not the client's ?q= or ?where=, and a row that scope hides answers 400 cursor_anchor_gone.
+    enforced_by:
+      - test: framework/crud.TestCursorAnchorGoneRefused
+      - test: framework/crud.TestCursorAnchorKeepsBeforeListScope
+      - test: framework/crud.TestCursorAnchorSkipsSoftDeleted
+      - test: framework/crud.TestCursorAnchorIgnoresClientWhere
+  - id: cursor-taken-from-stored-values
+    rule: The next cursor is built from the stored row before includes, masks and AfterList run, and a cursor column the projection leaves out is read for it and kept off the rows.
+    enforced_by:
+      - test: framework/crud.TestCursorTakenBeforeIncludes
+      - test: framework/crud.TestCursorUnprojectedColumnStaysOffRows
+  - id: every-list-page-runs-the-read-hooks
+    rule: Offset, keyset and stream pages mask Own fields, and keyset pages run AfterList with the same payload, Where included, as offset pages.
+    enforced_by:
+      - test: framework/crud.TestReadHookParityCrud
+      - test: framework/crud.TestCursorRejectsRowCountChange
+      - test: framework/crud.TestCursorAfterListSeesWhere
+  - id: stream-keeps-list-gates
+    rule: ServeStreamingList applies List's scope, strict query, offset bound and no-store header even when called directly, refuses an entity with AfterList hooks, and reads ?trashed= against the request's user.
+    enforced_by:
+      - test: framework/crud.TestServeStreamingList_AnonymousOwnerScopedRequestReturnsNoRows
+      - test: framework/crud.TestReadQueryParity
+      - test: framework/crud.TestWithMaxOffsetBoundsList
+      - test: framework/crud.TestStreamDirectWithHooksRefuses
+      - test: framework/crud.TestReadPagesAreNoStore
+      - test: framework/crud.TestStreamTrashedGateReadsRequestUser
+  - id: stream-envelope
+    rule: A stream honours an explicit ?offset= over the page and reports the page the offset implies, takes a zero limit without dividing by it, and leaves the envelope unclosed when the rows fail partway.
+    enforced_by:
+      - test: framework/crud.TestListEnvelopePageFollowsOffset
+      - test: framework/crud.TestStreamingListZeroLimitNoPanic
+      - test: framework/crud.TestStreamErrorLeavesJSONOpen
+  - id: aggregates-pass-no-mask
+    rule: Under WithReadHooks an aggregate over an entity with AfterList hooks or a field with a Mask answers ErrAggregateMasked, and a group value reads as a list read would carry it.
+    enforced_by:
+      - test: framework/crud.TestMaskRefusesAggregates
+      - test: framework/crud.TestGroupCountDecimalIsString
+      - test: framework/crud.TestGroupCountAllNormalizesBool
+  - id: sort-nulls-order-as-postgres
+    rule: A sort on a column that can hold NULL puts the null rows last ascending and first descending on SQLite and Postgres alike, on the offset list, the stream, ListAll, TypedQuery.Order, the DSL's order() and GroupCountAll's groups; crud pins the position only on SQLite and only for such a column, through query.OrderTerm.
+    enforced_by:
+      - test: framework.TestSortNullOrderMatchesAcrossDialects
+      - test: framework/crud.TestSortPinsNullsOnlyOnSQLiteNullableColumns
+      - test: core/query.TestOrderTermPinsPostgresNullPosition
+      - test: framework.TestBuildDSLQuery
+    applies:
+      - framework/crud/key.go
+      - framework/crud/crud.go
+      - framework/crud/crud_api.go
+      - framework/dsl/dsl.go
+      - framework/filter/filter.go
+      - core/query/query.go
+  - id: typed-reads-match-http-reads
+    rule: A TypedQuery refuses a MultiTenant read with no tenant on ctx, orders an offset page by the key, runs AfterList on Find and AfterGet (not AfterList) on First under WithReadHooks, and hands its includes the caller's ctx.
+    enforced_by:
+      - test: framework/crud.TestTypedQuery_FindFailsClosedNoTenant
+      - test: framework/crud.TestTypedOffsetOrdersByKey
+      - test: framework/crud.TestTypedFindRejectsRowCountChange
+      - test: framework/crud.TestTypedFirstRunsAfterGet
+      - test: framework/crud.TestTypedIncludeKeepsReadHooks
+  - id: typed-decode-is-exact
+    rule: UnmarshalEntity and MarshalEntity keep integers above 2^53 exact, and a Date column decodes into a time.Time.
+    enforced_by:
+      - test: framework/crud.TestTypedReadKeepsHugeInts
+      - test: framework/crud.TestMarshalEntityKeepsHugeInt
+      - test: framework/crud.TestTypedDateReadsIntoTimeAndString
+  - id: bulk-writes-mirror-update
+    rule: UpdateAll and DeleteAll run in ctx's transaction under the tenant and owner scopes, skip soft-deleted rows, and UpdateAll applies UpdateOne's column naming, storage-key, integer-exactness and reference-scope checks without changing the caller's map.
+    enforced_by:
+      - test: framework/crud.TestReadsInTxSeeOwnWrites
+      - test: framework/crud.TestTypedQuery_UpdateAllScopesByOwner
+      - test: framework/crud.TestBulkCleanupKeepsReferencedFiles
+      - test: framework/crud.TestTypedQuery_DeleteAllSkipsSoftDeleted
+      - test: framework/crud.TestUpdateAllNamesColumnsLikeUpdateOne
+      - test: framework/crud.TestUpdateAllRefusesStorageKey
+      - test: framework/crud.TestUpdateAllRefusesInexactInt
+      - test: framework/crud.TestTypedQuery_UpdateAllBelongsToScopeEnforced
+      - test: framework/crud.TestDeleteAllRemovesStoredFiles
+  - id: update-all-stamps-like-update-one
+    rule: UpdateAll restamps updated_at unless the body supplies it, and a body that sets nothing but the stamp is refused.
+    enforced_by:
+      - test: framework/crud.TestUpdateAllRestampsUpdatedAt
+      - test: framework/crud.TestUpdateAllKeepsSuppliedUpdatedAt
+      - test: framework/crud.TestUpdateAllNamesColumnsLikeUpdateOne
+decisions:
+  - id: sqlite-sorts-nulls-as-postgres
+    date: 2026-11-16
+    status: accepted
+    decision: SQLite takes Postgres's default null order (last ascending, first descending) for every sort the framework emits; Postgres SQL from crud is unchanged, and only a column that can hold NULL gets the NULLS term (maintainer decision, issue 698).
+    rejected:
+      - option: Emit SQLite's order (nulls first ascending) on both dialects.
+        why: On Postgres a null position other than the index's own stops a plain index from serving the sort.
+      - option: Document the drift beside ?sort=.
+        why: An app built on SQLite would still page a different list on Postgres.
+      - option: Write the NULLS term after every order column on SQLite.
+        why: SQLite then sorts instead of walking a composite index over never-null columns, which is what the default created_at, key order and a keyset page use.
+    revisit_if: A third dialect is supported, or a Required column that holds NULL in old rows needs the same order.
+    upholds: [sort-nulls-order-as-postgres]
+  - id: dsl-pins-nulls-on-both-dialects
+    date: 2026-11-16
+    status: accepted
+    decision: The DSL's order() has no dialect to ask, so it writes the NULLS term for a column that can hold NULL on SQLite and Postgres alike, through query.OrderPinNulls.
+    rejected:
+      - option: Leave the DSL's order bare.
+        why: The same DSL query would page different rows on the two dialects, the drift issue 698 closes.
+    revisit_if: BuildDSLQuery is given the dialect, when it can leave Postgres SQL bare as crud does.
+    upholds: [sort-nulls-order-as-postgres]
+  - id: one-order-term-renderer
+    date: 2026-11-16
+    status: accepted
+    decision: query.OrderTerm renders every ORDER BY term, pinned or not; the query builder's own inline column and direction rendering is removed, and crud's aggregate calls OrderTerm for its group order.
+    rejected:
+      - option: Keep the builder's inline rendering and write the pinned term where it is needed.
+        why: GroupCountAll builds its ORDER BY as a string outside the builder, so it would have carried a second copy of the column scrub, the direction clamp and the null position.
+    upholds: [sort-nulls-order-as-postgres]
+  - id: cursor-carries-values-then-key
+    date: 2026-11-15
+    status: accepted
+    decision: A cursor carries the last row's cursor-field values when they fit the decoder's 16 KiB cap, and the key alone otherwise, read back through an anchor row.
+    rejected:
+      - option: Always carry the values.
+        why: A sort value can be any length (a Text column), and a cursor past the cap stopped paging partway.
+      - option: Always carry the key alone.
+        why: A row edited between pages, as in an updated_at feed, would move the position past the rows after it.
+    upholds: [cursor-fits-the-decoder]
+  - id: anchor-ignores-client-search
+    date: 2026-11-15
+    status: accepted
+    decision: The anchor lookup keeps the page's scopes and BeforeList clauses but not the client's ?q= or ?where=.
+    rejected:
+      - option: Apply every clause the page applies.
+        why: A readable row edited out of the search would stop marking a position, where a plain ?field= filter never did.
+    upholds: [cursor-anchor-is-scoped]
+  - id: cursor-page-has-no-total
+    status: accepted
+    decision: A keyset page omits total and ignores ?sort=; the cursor fields own ORDER BY.
+    rejected:
+      - option: Count the matches as an offset page does.
+        why: Skipping the COUNT scan is what keyset paging is for.
+  - id: stream-envelope-left-open
+    status: accepted
+    decision: A stream that fails after its status is sent leaves the JSON envelope unclosed.
+    rejected:
+      - option: Close the envelope.
+        why: It would pass a truncated list off as complete; left open it fails to parse.
+    upholds: [stream-envelope]
+  - id: typed-query-gates-tenant-not-owner
+    status: accepted
+    decision: A TypedQuery refuses a MultiTenant read with no tenant on ctx but reads across owners when ctx has no owner.
+    rejected:
+      - option: Gate owner scope too.
+        why: Typed repositories are trusted in-process code, and an admin or system caller with no owner reads across owners on purpose (TestTypedQuery_AdminCallerWithoutOwnerSeesAll).
+    upholds: [typed-reads-match-http-reads]
+  - id: typed-first-runs-after-get
+    status: accepted
+    decision: TypedQuery.First runs AfterGet, the chain GET /entity/{id} runs.
+    rejected:
+      - option: Run AfterList as well.
+        why: It would redact more than the entity's own routes do.
+    upholds: [typed-reads-match-http-reads]

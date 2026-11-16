@@ -8,15 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The breadcrumb trail: a navigation landmark whose ordered list walks
-// the reader from the page they are on up the hierarchy that holds
-// it. The whole trail is server-rendered — an ordered list, because
-// the order IS the hierarchy — and the current page is the last item,
-// marked aria-current="page" and rendered as text, not a link: a
-// trail that links to itself is a trail with a dead end in it. No
-// script: nothing here changes in-page.
-
-// Breadcrumb parts.
 const (
 	PartBreadcrumbList      Part = "breadcrumb-list"
 	PartBreadcrumbItem      Part = "breadcrumb-item"
@@ -28,32 +19,22 @@ const (
 type Breadcrumb struct {
 	// Text is the step's visible label. Required.
 	Text string
-	// Href is the step's destination. Empty on the last step (the
-	// current page names itself, it does not link to itself); a value
-	// on the last step links it unless Current is also set. Empty on a
-	// middle step renders plain text that is not the current page (a
-	// grouping level with no page of its own).
+	// Href is the step's destination; the last step without one is the current page.
 	Href string
-	// Current marks the step as the current page whatever its Href:
-	// rendered as text with aria-current="page" rather than a link,
-	// for a page that appears in its own trail with a link.
+	// Current marks the step as the current page, rendered as text, whatever its Href.
 	Current bool
 }
 
 // BreadcrumbsProps configures the trail.
 type BreadcrumbsProps struct {
-	// Label names the navigation landmark. Empty takes
-	// Strings.BreadcrumbsLabel.
+	// Label names the landmark; empty takes Strings.BreadcrumbsLabel.
 	Label string
-	// Items are the steps, shallowest first. Required and non-empty:
-	// a trail with no steps is a landmark that says nothing.
+	// Items are the steps, shallowest first. Required.
 	Items []Breadcrumb
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the list. No part is fillable: the
-	// trail is the contract.
 	Parts   Parts
 	Strings *Strings
 }
@@ -80,22 +61,11 @@ func Breadcrumbs(p BreadcrumbsProps, s Classes) render.HTML {
 
 	items := make([]render.HTML, 0, len(p.Items))
 	for i, c := range p.Items {
-		// A dangerous Href (javascript:, vbscript:, data:, a
-		// protocol-relative host, a smuggled control byte) is dropped
-		// and the step degrades to plain text rather than a clickable
-		// XSS vector. The LAST step with no Href is the current page;
-		// a middle step with none (a grouping level with no page of its
-		// own) and a refused Href are plain text but not current, so
-		// the trail keeps exactly one current step.
 		href := urlsafe.CleanAnchor(c.Href)
 		current := c.Current || (c.Href == "" && i == len(p.Items)-1)
 		refused := !current && href == ""
 		kids := []render.HTML{}
 		if i > 0 {
-			// The separator is real markup so its glyph can be styled
-			// without a pseudo-element, and aria-hidden so the trail
-			// reads "Docs, Modeling, Entities" — the order already
-			// says what the slashes would.
 			kids = append(kids, b.El("span", PartBreadcrumbSeparator,
 				Attrs(map[string]string{"aria-hidden": "true"}), render.Text("/")))
 		}

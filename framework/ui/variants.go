@@ -9,133 +9,54 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Custom variants ────────────────────────────────────────────────
-//
-// The built-in variant sets (ButtonPrimary…ButtonGhost, StatusSuccess…
-// StatusNeutral, CardElevated…CardRow) are validated at render time:
-// an unknown value panics so typos surface immediately. Apps that need
-// a brand variant register it here instead of shipping loose CSS: the
-// registration extends the validation set AND routes the variant's CSS
-// into the component's registered stylesheet, so it loads, scopes, and
-// content-hashes exactly like the built-ins. Apps still ship zero
-// bespoke CSS.
-//
-// Registration is init-time and process-global, matching
-// registry.RegisterStyle semantics:
-//
-//	// package-level, in the app
-//	var Brand = ui.RegisterButtonVariant("brand", ui.VariantCSS{
-//	    Props: []string{"background", "{colors.primary}", "color", "#fff"},
-//	})
-//
-//	// at render sites
-//	ui.Button(ui.ButtonConfig{Label: "Buy", Variant: Brand})
-//
-// Registering after the component's stylesheet has been built (i.e.
-// after the app started serving) panics: a late registration would
-// pass validation but silently miss the sheet.
-
-// VariantCSS declares the look of a registered custom variant as flat
-// property/value pairs, the same shape style.StyleSheet.Set takes:
-//
-//	ui.VariantCSS{
-//	    Props: []string{"background", "{colors.primary}", "color", "#fff"},
-//	    Hover: []string{"filter", "none", "opacity", "0.9"},
-//	}
-//
-// Values may reference theme tokens: "{colors.primary}" resolves to
-// "var(--color-primary)", so registered variants re-skin with the
-// theme like every other component. Button rules are emitted as
-// plain `.fui-button--<name>` class rules, appended after the
-// sheet's built-ins, so Props override the default look by source
-// order without !important; card rules stay marker-scoped
-// (`[data-cui-comp="ui-card"].fui-card--<name>`).
+// VariantCSS is a registered variant's look as property, value pairs;
+// "{colors.primary}" resolves to var(--color-primary).
 type VariantCSS struct {
-	// Props is the variant's base-state declarations. Required.
+	// Props is the base state. Required.
 	Props []string
-	// Hover is emitted under :hover. Optional. Note the component base
-	// sheet may apply its own hover treatment (Button dims via
-	// `filter: brightness(0.95)`). Include "filter", "none" to replace
-	// it rather than stack on it.
+	// Hover is emitted under :hover.
 	Hover []string
-	// Focus is emitted under :focus-visible. Optional; without it the
-	// component's default focus ring applies.
+	// Focus is emitted under :focus-visible.
 	Focus []string
 }
 
-// StatusVariantCSS declares the palette of a registered custom status
-// variant. Status variants are a color story: one accent color fans
-// out to every status-coded component in that component's own pattern
-// (badge/tag tint the pill from it, Callout and Notification color
-// their accent rail and icon from it).
+// StatusVariantCSS is a registered status variant's accent colour and icon.
 type StatusVariantCSS struct {
-	// Color is the variant's accent. Required. Token references like
-	// "{colors.primary}" resolve to "var(--color-primary)".
+	// Color is the accent. Required.
 	Color string
-	// Icon is the glyph Callout and Notification display for this
-	// variant (a short string, typically one character). Defaults to
-	// "•". Must not contain `"` or `\`. It is embedded in a CSS
-	// string literal.
+	// Icon is Callout's and Notification's glyph, "•" when empty; no `"`, `\` or newline.
 	Icon string
 }
 
-// RegisterButtonVariant registers a custom ButtonVariant under name and
-// returns the typed value to pass as ButtonConfig.Variant /
-// LinkButtonConfig.Variant (the two share the variant set and the
-// ui-button stylesheet). The CSS lands in the registered ui-button
-// sheet as plain `.fui-button--<name>` class rules, and the class
-// itself joins the shared button class map, so every wearer — Button,
-// LinkButton, ToggleAction, OptimisticAction — draws it.
-//
-// Call at package init. Panics on: empty/invalid name (allowed:
-// lowercase letters, digits, hyphens), a built-in or already-registered
-// name, empty or odd-count Props/Hover/Focus, or registration after
-// the ui-button sheet was built.
+// RegisterButtonVariant registers a ButtonVariant for every button-classed
+// component. Call it at init; it panics on an invalid, reserved or taken name,
+// empty or odd Props, Hover or Focus, or after the ui-button sheet was built.
 func RegisterButtonVariant(name string, css VariantCSS) ButtonVariant {
 	buttonMods.register("RegisterButtonVariant", name, kindVariant, css)
 	registerButtonClass(name)
 	return ButtonVariant(name)
 }
 
-// RegisterButtonSize registers a custom ButtonSize under name (shared
-// by Button and LinkButton, same rules as RegisterButtonVariant:
-// sizes and variants share the ui-button--<name> class namespace, so
-// a name can only be one or the other).
+// RegisterButtonSize is RegisterButtonVariant for a ButtonSize.
 func RegisterButtonSize(name string, css VariantCSS) ButtonSize {
 	buttonMods.register("RegisterButtonSize", name, kindSize, css)
 	registerButtonClass(name)
 	return ButtonSize(name)
 }
 
-// registerButtonClass adds one root--<name> entry to the button class
-// map under the set's mutex, beside the entry the registration already
-// wrote into the validation set. Registrations are init-time and the
-// set seals when the ui-button sheet is first built (a late
-// registration panics), so the map is complete before the first
-// request reads it.
 func registerButtonClass(name string) {
 	buttonClasses[headless.Part("root--"+name)] = "fui-button--" + name
 }
 
-// RegisterCardVariant registers a custom CardVariant under name. The
-// CSS lands in the registered ui-card sheet as
-// `[data-cui-comp="ui-card"].fui-card--<name>` rules. Same rules and
-// panics as RegisterButtonVariant ("interactive" is reserved: Card
-// uses it for the Href form).
+// RegisterCardVariant registers a CardVariant, with RegisterButtonVariant's panics.
 func RegisterCardVariant(name string, css VariantCSS) CardVariant {
 	cardMods.register("RegisterCardVariant", name, kindVariant, css)
 	return CardVariant(name)
 }
 
-// RegisterStatusVariant registers a custom StatusVariant under name.
-// One registration extends every StatusVariant consumer: StatusBadge,
-// Tag (and therefore FilterChipBar chips), Callout, and Notification,
-// each component deriving its own variant rules from the registered
-// accent color in its own sheet, exactly as the built-ins do.
-//
-// Call at package init. Panics on: empty/invalid name, a built-in or
-// already-registered name, an empty Color, an Icon containing `"` or
-// `\`, or registration after any status-consuming sheet was built.
+// RegisterStatusVariant registers a StatusVariant for StatusBadge, Tag, Callout
+// and Notification. It panics like RegisterButtonVariant, and on an empty Color
+// or an Icon holding `"`, `\` or a newline.
 func RegisterStatusVariant(name string, css StatusVariantCSS) StatusVariant {
 	if css.Color == "" {
 		panic("ui: RegisterStatusVariant(" + name + "): Color is required")
@@ -150,8 +71,6 @@ func RegisterStatusVariant(name string, css StatusVariantCSS) StatusVariant {
 	return StatusVariant(name)
 }
 
-// ─── internals ──────────────────────────────────────────────────────
-
 type variantKind string
 
 const (
@@ -159,17 +78,15 @@ const (
 	kindSize    variantKind = "Size"
 )
 
-// variantSet is the process-global record of registered custom
-// variants for one component class namespace.
 type variantSet struct {
-	sheet    string          // component sheet the CSS routes into, e.g. "ui-button"
-	reserved map[string]bool // built-in names + modifier classes sharing the namespace
+	sheet    string
+	reserved map[string]bool
 
 	mu      sync.RWMutex
 	sealed  bool
 	kinds   map[string]variantKind
 	entries map[string]VariantCSS
-	status  map[string]StatusVariantCSS // statusMods only
+	status  map[string]StatusVariantCSS
 }
 
 var (
@@ -186,10 +103,6 @@ var (
 			"outlined": true, "flat": true, "row": true, "interactive": true,
 		},
 	}
-	// statusMods guards one shared validation set for every
-	// StatusVariant consumer. Reserved names cover the built-in
-	// variants plus modifier classes any consumer already claims
-	// (ui-tag--interactive, ui-notification--floating/--at-*).
 	statusMods = &variantSet{
 		sheet: "ui-badge, ui-tag, ui-callout, ui-notification",
 		reserved: map[string]bool{
@@ -202,14 +115,6 @@ var (
 	}
 )
 
-// buttonClasses dresses headless.Button for this package: the
-// fui-button root, its variant and size modifiers (a variant looks up
-// "root--<name>", the same key a Classes value uses for any part),
-// and the icon part. Class names are the same under every theme; a
-// theme never picks classes. This is the one place the styled layer
-// meets the structure's part vocabulary — Button, LinkButton,
-// ToggleAction and OptimisticAction all take their root classes from
-// it, so a registered variant styles every one of them.
 var buttonClasses = headless.Classes{
 	headless.PartRoot: "fui-button",
 	"root--primary":   "fui-button--primary",
@@ -222,11 +127,6 @@ var buttonClasses = headless.Classes{
 	headless.PartIcon: "fui-button__icon",
 }
 
-// buttonClassTokens joins the root and modifier classes the map holds
-// for one variant/size pair, for the action components that wear the
-// button's classes under their own marker. A default variant resolves
-// to primary because the stylesheet's colours live in the variant
-// rules, not the base.
 func buttonClassTokens(variant ButtonVariant, size ButtonSize) string {
 	if variant == "" {
 		variant = ButtonPrimary
@@ -241,10 +141,6 @@ func buttonClassTokens(variant ButtonVariant, size ButtonSize) string {
 	return strings.Join(classes, " ")
 }
 
-// fieldClasses dresses headless.Field: the fui-field root and its
-// label, hint and error parts. Passed to Field ALONE, never merged
-// with a control's map: Field and Input both key their root on
-// PartRoot, and one merged map would lose a root class.
 var fieldClasses = headless.Classes{
 	headless.PartRoot:  "fui-field",
 	headless.PartLabel: "fui-field__label",
@@ -252,36 +148,25 @@ var fieldClasses = headless.Classes{
 	headless.PartError: "fui-field__error",
 }
 
-// formClasses dresses headless.Form.
 var formClasses = headless.Classes{
 	headless.PartRoot:        "fui-form",
 	headless.PartFormBody:    "fui-form__body",
 	headless.PartFormActions: "fui-form__actions",
 }
 
-// inputClasses dresses the single-line controls (headless.Input) a
-// field builds. The input's classes are consumed by the FIELD sheet:
-// an input only ever renders inside a field, so the field's
-// data-cui-comp marker is what fetches the sheet that styles it.
 var inputClasses = headless.Classes{
 	headless.PartRoot: "fui-input",
 }
 
-// selectClasses dresses headless.Select. The select's own sheet
-// (ui-select) is fetched by the marker Select wraps its control with,
-// so a Select rendered outside any Form still loads both sheets it
-// needs: its own and the field's.
 var selectClasses = headless.Classes{
 	headless.PartRoot:   "fui-select",
 	headless.PartOption: "fui-select__option",
 }
 
-// inputGroupClasses dresses headless.InputGroup.
 var inputGroupClasses = headless.Classes{
 	headless.PartRoot: "fui-input-group",
 }
 
-// validationSummaryClasses dresses headless.ValidationSummary.
 var validationSummaryClasses = headless.Classes{
 	headless.PartRoot:      "fui-validation-summary",
 	headless.PartTitle:     "fui-validation-summary__title",
@@ -290,12 +175,6 @@ var validationSummaryClasses = headless.Classes{
 	headless.PartErrorLink: "fui-validation-summary__link",
 }
 
-// choiceClasses dresses headless.Choice (Checkbox, Radio and the
-// groups' leaves). The variant class (fui-choice--checkbox /
-// --radio) is appended on the root per call, the way a caller's own
-// Class is, so one shared map serves both types. The hint span rides
-// inside the text part: a choice row is one inline run, the label
-// wrapped around the control.
 var choiceClasses = headless.Classes{
 	headless.PartRoot:    "fui-choice",
 	headless.PartControl: "fui-choice__input",
@@ -303,47 +182,29 @@ var choiceClasses = headless.Classes{
 	headless.PartHint:    "fui-choice__hint",
 }
 
-// switchClasses dresses headless.Switch. headless.Switch carries no
-// hint part, so a standalone Switch with a message wraps itself in
-// the fui-choice-field shell beside the message paragraph.
 var switchClasses = headless.Classes{
 	headless.PartRoot:    "fui-switch",
 	headless.PartControl: "fui-switch__input",
 	headless.PartText:    "fui-switch__text",
 }
 
-// choiceGroupClasses dresses headless.Group (RadioGroup,
-// CheckboxGroup). The group's hint and error paragraphs are ui-owned
-// children handed to Group beside the rendered leaves; the fieldset's
-// aria-describedby points at whichever of them rendered.
 var choiceGroupClasses = headless.Classes{
 	headless.PartRoot:  "fui-choice-group",
 	headless.PartLabel: "fui-choice-group__legend",
 }
 
-// passwordClasses dresses headless.Password's affix shell: the input
-// and the reveal button inside it. The shell owns the one border;
-// the invalid state arrives as data-invalid on the shell.
 var passwordClasses = headless.Classes{
 	headless.PartRoot:        "fui-password",
 	headless.PartControl:     "fui-password__input",
 	headless.PartAffixButton: "fui-password__reveal",
 }
 
-// colorClasses dresses headless.Color's affix shell: the swatch
-// (PartAffixSwatch, out of the tab order) and the hex text input
-// (PartControl, the source of truth and the control that submits).
 var colorClasses = headless.Classes{
 	headless.PartRoot:        "fui-color",
 	headless.PartControl:     "fui-color__text",
 	headless.PartAffixSwatch: "fui-color__swatch",
 }
 
-// uploadClasses dresses headless.FileUpload: the drop zone (a label
-// for the input, so the whole target opens the picker with no
-// script), the CTA and hint spans inside it, the visually-hidden
-// input, the chosen-files list the runtime fills, and the status span
-// that announces the pick.
 var uploadClasses = headless.Classes{
 	headless.PartRoot:      "fui-upload",
 	headless.PartDropZone:  "fui-upload__zone",
@@ -355,14 +216,10 @@ var uploadClasses = headless.Classes{
 	headless.PartStatus:    "fui-upload__status",
 }
 
-// textAreaClasses dresses headless.Textarea. Like the select, the
-// control carries this component's own marker so its sheet loads
-// wherever a TextArea renders, inside a Form or alone.
 var textAreaClasses = headless.Classes{
 	headless.PartRoot: "fui-textarea",
 }
 
-// whenClasses dresses headless.ConditionalField's region.
 var whenClasses = headless.Classes{
 	headless.PartRoot: "fui-when",
 }
@@ -404,17 +261,12 @@ func (s *variantSet) register(api, name string, kind variantKind, css VariantCSS
 	s.entries[name] = css
 }
 
-// has reports whether name is registered with the given kind.
 func (s *variantSet) has(name string, kind variantKind) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.kinds[name] == kind
 }
 
-// sealAndSnapshot marks the set sealed (no further registrations) and
-// returns the registered names in stable order plus the entry maps.
-// Called from the component styleFns, so the seal coincides with the
-// first materialization of a consuming sheet.
 func (s *variantSet) sealAndSnapshot() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -440,8 +292,6 @@ func validVariantName(name string) bool {
 	}
 	return name[0] != '-'
 }
-
-// ─── render-time validation helpers ─────────────────────────────────
 
 func checkButtonVariant(component string, v ButtonVariant) {
 	switch v {
@@ -491,20 +341,12 @@ func checkCardVariant(v CardVariant) {
 		". Pick one of: \"\" (elevated), outlined, flat, row, or register it via ui.RegisterCardVariant")
 }
 
-// registeredStatusIcon returns the registered icon glyph for a custom
-// status variant ("" when the variant isn't registered).
 func registeredStatusIcon(v StatusVariant) string {
 	statusMods.mu.RLock()
 	defer statusMods.mu.RUnlock()
 	return statusMods.status[string(v)].Icon
 }
 
-// registeredStatusColor returns the resolved accent CSS color for a
-// registered custom status variant, with its {colors.*} token shorthand
-// expanded to var(--color-*) the same way customStatusCSS does (the
-// resolution is purely syntactic: var names come from the token name,
-// never the value, so DefaultTheme yields the same result as any host
-// theme). ok is false when name is not a registered status variant.
 func registeredStatusColor(name string) (color string, ok bool) {
 	statusMods.mu.RLock()
 	defer statusMods.mu.RUnlock()
@@ -515,11 +357,6 @@ func registeredStatusColor(name string) (color string, ok bool) {
 	return style.DefaultTheme().ResolveAll(entry.Color), true
 }
 
-// ─── CSS emission (called from the component styleFns) ──────────────
-
-// customModsCSS renders the registered entries of set as scoped rules
-// in the named component sheet, using classPrefix--<name> selectors on
-// the marker element. Seals the set.
 func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme) string {
 	names := set.sealAndSnapshot()
 	if len(names) == 0 {
@@ -547,14 +384,6 @@ func customModsCSS(set *variantSet, sheet, classPrefix string, t style.Theme) st
 	return "\n" + cs.MustBuild()
 }
 
-// buttonModsCSS renders the registered button variants and sizes as
-// plain .fui-button--<name> class rules, ONCE. Every element that
-// wears the class matches them under any marker — Button, LinkButton,
-// ToggleAction, OptimisticAction — which is why they are plain class
-// rules rather than marker-scoped ones: the action components carry
-// the same classes under their own data-cui-comp markers, so a rule
-// scoped to ui-button could never style them, and the dual-scope
-// copies that peculiarity used to need are gone. Seals the set.
 func buttonModsCSS(t style.Theme) string {
 	names := buttonMods.sealAndSnapshot()
 	if len(names) == 0 {
@@ -582,9 +411,6 @@ func buttonModsCSS(t style.Theme) string {
 	return "\n" + ss.CSS()
 }
 
-// customStatusCSS renders the registered status variants into one
-// consuming component's sheet, following that component's own built-in
-// variant pattern. Seals the status set on the first consuming build.
 func customStatusCSS(sheet, classPrefix string, t style.Theme) string {
 	names := statusMods.sealAndSnapshot()
 	if len(names) == 0 {
@@ -607,16 +433,12 @@ func customStatusCSS(sheet, classPrefix string, t style.Theme) string {
 		}
 		switch sheet {
 		case "ui-badge", "ui-tag":
-			// Same soft-tint pattern as the built-in success/warning/…
-			// rules: 15% accent surface, full-accent text, 30% border.
 			cs.Rule("&."+classPrefix+"--"+n).Set(
 				"background", statusTint(c, "15%", "85%"),
 				"color", c,
 				"border-color", statusTint(c, "30%", "70%"),
 			).End()
 		case "ui-callout":
-			// Callout's variant hook is a pair of custom properties the
-			// base rules consume.
 			cs.Rule("&."+classPrefix+"--"+n).Set(
 				"--ui-callout-accent", c,
 				"--ui-callout-icon", `"`+icon+`"`,
@@ -631,8 +453,6 @@ func customStatusCSS(sheet, classPrefix string, t style.Theme) string {
 	return "\n" + cs.MustBuild()
 }
 
-// statusTint mixes the accent color with the surface token: the same
-// color-mix recipe the built-in status variants use.
 func statusTint(color, accentPct, surfacePct string) string {
 	return "color-mix(in oklab, " + color + " " + accentPct +
 		", var(--color-surface, #fff) " + surfacePct + ")"

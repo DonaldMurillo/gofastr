@@ -1,0 +1,70 @@
+primitive: app.processmodule
+summary: "Third-party modules run as child processes: the manifest and trust tiers, and the App wiring that mounts them."
+code:
+  - framework/processmodule.go
+  - framework/processmodule_app.go
+  - framework/processmodule_sandbox_app.go
+docs:
+  - framework/docs/content/process-modules.md
+  - framework/docs/content/isolation.md
+on_change:
+  - "A change to what a child process may reach is a security change: run the sandbox conformance probes on every OS arm it touches."
+  - The surface digest's canonical JSON is a contract with every module child, so a change to surfaceCanonical's fields or their order breaks every installed module's handshake.
+invariants:
+  - id: limits-lower-never-raise
+    rule: A descriptor limit of zero takes the host default, and a deadline, frame size or inflight count above the host default is refused at validation.
+    enforced_by:
+      - test: framework.TestValidateDescriptor_rejectsRaisedLimits
+      - test: framework.TestValidate_rejectsBadLimits
+  - id: non-grantable-carve-out
+    rule: "CrossOwnerRead, a bare *, *:* and *:read are refused as non_grantable before scope validation, while a resource wildcard such as articles:* is grantable."
+    enforced_by:
+      - test: framework.TestValidateDescriptor_rejectsNonGrantable
+      - test: framework.TestNonGrantableReason_carveOuts
+      - test: framework.TestValidateDescriptor_allowsResourceWildcard
+  - id: effective-grants-are-the-intersection
+    rule: The effective grants are the requested grants an approved scope matches, in requested order without duplicates; a grant the operator did not approve is dropped.
+    enforced_by:
+      - test: framework.TestIntersectGrants_preservesOrderDropsDups
+  - id: route-path-is-root-relative
+    rule: A route path must begin with one slash; a protocol-relative path (// or /\) is refused at validation with an error naming the module, the route and the path.
+    enforced_by:
+      - test: framework.TestValidate_rejectsBadRouteMethodAndPath
+  - id: untrusted-validates-before-probe
+    rule: RegisterProcessModule validates an untrusted descriptor before it probes the sandbox, so an invalid descriptor panics with its validation error and runs no probe.
+    enforced_by:
+      - test: framework.TestApp_UntrustedInvalidDescriptorRefusedBeforeProbe
+  - id: sandbox-probed-once-per-app
+    rule: ProcessModuleSandbox probes the backend once per App and returns the kept runner or error on every later call.
+    enforced_by:
+      - test: framework.TestApp_ProcessModuleSandboxProbesOnce
+  - id: nil-backend-fails-closed
+    rule: WithSandboxBackend(nil) is the explicit choice to host no untrusted modules, so every untrusted registration panics instead of falling back to the host default backend.
+    enforced_by:
+      - test: framework.TestApp_UntrustedModuleNilBackendFailsClosed
+  - id: module-tools-gated-by-module
+    rule: The App's MCP call gate sends a module-namespaced tool to the module tool registry's gate, so a disabled process module's tools are refused, and every other tool to the in-process gate.
+    enforced_by:
+      - test: framework.TestModuleControlToolsDriveProcess
+decisions:
+  - id: carve-out-is-heuristic
+    date: 2026-11-16
+    status: accepted
+    decision: The non-grantable carve-out is a fixed list of tokens and wildcards, because no closed permission catalog exists to decide which scopes reach across owners.
+    rejected:
+      - option: Refuse every wildcard grant.
+        why: "A resource wildcard cannot subsume a cross-owner verb, which is namespaced per resource (tickets:read:all), so refusing it only takes a useful grant away."
+    revisit_if: A closed permission catalog lands that can name the cross-owner and cross-tenant scopes.
+    upholds: [non-grantable-carve-out]
+  - id: approval-is-a-parameter
+    date: 2026-11-16
+    status: accepted
+    decision: Operator approval is the ApprovedGrants set the caller passes to RegisterProcessModule, not an install UI.
+    revisit_if: An install tool with an approval screen ships.
+  - id: misconfiguration-panics
+    date: 2026-11-16
+    status: accepted
+    decision: RegisterProcessModule panics on an invalid descriptor, a missing DB, a refused sandbox or a call after InitPlugins, as other registration misconfiguration does.
+    rejected:
+      - option: Return an error from RegisterProcessModule.
+        why: It is a chaining AppOption-style call made at wiring time, and a host that should boot without a sandbox calls ProcessModuleSandbox first instead.

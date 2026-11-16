@@ -15,27 +15,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/renderdiag"
 )
 
-// TestApp wraps an App for in-memory testing (no real HTTP listener).
-// Uses httptest.NewRequest + http.Handler.ServeHTTP for speed.
+// TestApp drives an App's router in memory, with no listener.
 type TestApp struct {
 	App    *App
 	router http.Handler
-	user   any // set via AsUser; nil = anonymous
-	tenant any // set via AsTenant; nil = no tenant
+	user   any
+	tenant any
 }
 
-// AsUser returns a copy of the harness whose Get/Post/Put/Delete/Request
-// calls carry an authenticated caller in context (core/handler.SetUser).
-// Needed because auto-CRUD is secure-by-default: an entity declaring
-// neither OwnerField nor Access nor Public requires a session for every
-// operation (see EntityConfig.Public, framework/docs/content/security.md
-// "Default CRUD authentication"). user can be any non-nil value, a bare
-// struct{ ID string }{ID: "u1"} is enough to pass the baseline gate; use
-// a real user type when the test also needs battery/auth's owner
-// extractor or an access.Policy to resolve roles from it.
-//
-//	ta := TestHarness(t, app).AsUser(struct{ ID string }{ID: "u1"})
-//	ta.Post("/posts", body).AssertStatus(t, http.StatusCreated)
+// AsUser returns a copy of the harness whose requests carry user as the
+// authenticated caller (core/handler.SetUser). Any non-nil value passes
+// auto-CRUD's default session gate.
 func (ta *TestApp) AsUser(user any) *TestApp {
 	return &TestApp{App: ta.App, router: ta.router, user: user, tenant: ta.tenant}
 }
@@ -45,22 +35,14 @@ func (ta *TestApp) AsTenant(t any) *TestApp {
 	return &TestApp{App: ta.App, router: ta.router, user: ta.user, tenant: t}
 }
 
-// TestHarness creates an in-memory test harness around an App.
-// No real HTTP server is started, requests go directly through the router.
-//
-// Calls app.InitPlugins() internally so plugin / battery wiring is in
-// place before the first request. Without this, RegisterPlugin'd
-// behaviour silently does nothing under the harness (Init never fires).
-// Idempotent guard inside InitPlugins makes this safe even if Start is
-// called later by the same test.
+// TestHarness returns an in-memory harness around app. It runs
+// InitPlugins, records semantic coverage, and fails the test on a render
+// diagnostic or retired markup in a response.
 func TestHarness(t testing.TB, app *App) *TestApp {
 	t.Helper()
 	if err := app.InitPlugins(); err != nil {
 		t.Fatalf("TestHarness: InitPlugins: %v", err)
 	}
-	// Every harness request records which route it reached, so a suite
-	// already using TestHarness gets semantic coverage without changing a
-	// line. Opt out with GOFASTR_NO_SEMANTIC_COVERAGE.
 	RecordSemanticCoverage(t, app)
 	return &TestApp{
 		App: app,
@@ -69,9 +51,6 @@ func TestHarness(t testing.TB, app *App) *TestApp {
 				t.Helper()
 				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
 			})
-			// Retired markup (names the upgrade registry retired, found
-			// in rendered HTML) fails the test the same way, through its
-			// own channel: it is a migration finding, never a 500.
 			ctx = renderdiag.WithRetiredReporter(ctx, func(message string) {
 				t.Helper()
 				t.Errorf("%s %s: %s", r.Method, r.URL.Path, message)
@@ -119,7 +98,6 @@ func (ta *TestApp) Request(method, path string, body io.Reader) *TestRequest {
 	}
 }
 
-// doRequest builds and executes a request in one step.
 func (ta *TestApp) doRequest(method, path string, body any, headers map[string]string) *TestResponse {
 	var bodyReader io.Reader
 	if body != nil {
@@ -153,20 +131,16 @@ func (ta *TestApp) doRequest(method, path string, body any, headers map[string]s
 	return &TestResponse{recorder: rec}
 }
 
-// Close is a no-op for in-memory testing (provided for API consistency).
+// Close is a no-op.
 func (ta *TestApp) Close() {
-	_ = ta // no live resources to release under the in-memory harness
+	_ = ta
 }
-
-// ---------------------------------------------------------------------------
-// TestRequest: builder for custom requests
-// ---------------------------------------------------------------------------
 
 // TestRequest wraps an http.Request with a fluent builder API.
 type TestRequest struct {
 	testApp *TestApp
 	request *http.Request
-	err     error // retained builder error (e.g. a WithBody marshal failure)
+	err     error
 }
 
 // WithHeader adds a header to the request.
@@ -175,9 +149,8 @@ func (tr *TestRequest) WithHeader(key, value string) *TestRequest {
 	return tr
 }
 
-// WithBody sets the request body. Non-reader values are marshalled as JSON.
-// A marshal failure is retained on the TestRequest and surfaced by Execute
-// as a failed TestResponse, so a test can never run with the wrong body.
+// WithBody sets the request body, marshalling a non-reader as JSON. A
+// marshal failure fails the response Execute returns.
 func (tr *TestRequest) WithBody(body any) *TestRequest {
 	var r io.Reader
 	if br, ok := body.(io.Reader); ok {
@@ -197,10 +170,8 @@ func (tr *TestRequest) WithBody(body any) *TestRequest {
 	return tr
 }
 
-// Execute sends the request and returns a TestResponse. If the builder
-// captured an error (e.g. a WithBody marshal failure), Execute returns a
-// failed TestResponse carrying it instead of dispatching the malformed
-// request, the failure surfaces through the assertion helpers.
+// Execute sends the request, or returns a failed TestResponse when the
+// builder recorded an error.
 func (tr *TestRequest) Execute() *TestResponse {
 	if tr.err != nil {
 		return &TestResponse{err: tr.err}
@@ -210,14 +181,10 @@ func (tr *TestRequest) Execute() *TestResponse {
 	return &TestResponse{recorder: rec}
 }
 
-// ---------------------------------------------------------------------------
-// TestResponse: assertions
-// ---------------------------------------------------------------------------
-
 // TestResponse wraps the recorded response with assertion helpers.
 type TestResponse struct {
 	recorder *httptest.ResponseRecorder
-	err      error // stored creation error, if any
+	err      error
 }
 
 // AssertStatus asserts the HTTP status code. Chainable.
@@ -232,8 +199,8 @@ func (tr *TestResponse) AssertStatus(t testing.TB, expected int) *TestResponse {
 	return tr
 }
 
-// AssertJSON asserts the response body equals expected after JSON normalisation.
-// Compares decoded values (not raw strings) so key order and number types don't matter.
+// AssertJSON asserts the response body decodes to the same JSON value as
+// expected, ignoring key order and number spelling. Chainable.
 func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 	t.Helper()
 	if tr.err != nil {
@@ -264,9 +231,6 @@ func (tr *TestResponse) AssertJSON(t testing.TB, expected any) *TestResponse {
 	return tr
 }
 
-// canonicalNumber is jsonexact.Lossless with an integer it keeps exact
-// spelled in plain decimal, so 1e20 on one side matches
-// 100000000000000000000 on the other.
 func canonicalNumber(n json.Number) (any, error) {
 	v, err := jsonexact.Lossless(n)
 	if err != nil {
@@ -329,7 +293,7 @@ func (tr *TestResponse) Status() int {
 	return 0
 }
 
-// Close is a no-op (API consistency).
+// Close is a no-op.
 func (tr *TestResponse) Close() {
-	_ = tr // no live resources to release; the recorder is in-memory
+	_ = tr
 }

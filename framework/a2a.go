@@ -18,66 +18,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/uihost"
 )
 
-// a2a.go wires core/a2a's Agent2Agent task exchange into the App: one
-// option mounts it at a path behind the app router (session/bearer auth,
-// owner context, recovery, request logging all apply), derives one skill
-// per entity that has MCP tools, and exposes the skill list for the
-// uihost agent card. The exchange itself — wire methods, task lifecycle,
-// store, streaming, push — is core/a2a's; see framework/docs/content/a2a.md.
-
-// A2AConfig configures the Agent2Agent v1.0 task exchange mounted by
-// WithA2A.
+// A2AConfig configures the Agent2Agent v1.0 task exchange mounted by WithA2A.
 type A2AConfig struct {
-	// Path is the JSON-RPC endpoint path. Default "/a2a". Must start
-	// with "/" (NewApp panics otherwise, the same fail-fast as every
-	// other invalid option value). A path the app already mounts is a
-	// route-conflict panic at Start, the same contract WithMCP documents
-	// for /mcp: pick one owner per path.
+	// Path is the JSON-RPC endpoint, default "/a2a"; NewApp panics on one
+	// that does not start with "/".
 	Path string
-	// Skills are hand-written skills, invoked by name (metadata.skill or
-	// a data part carrying "skill"). Combined with the derived entity
-	// skills; at least one skill overall or Start fails.
+	// Skills are hand-written skills; Start fails when there is no skill at all.
 	Skills []a2a.Skill
-	// DisableEntitySkills turns OFF the derived per-entity skills. The
-	// zero value means ON: every registered entity with MCP tools gets
-	// one skill. A Disable* boolean rather than a *bool, matching how
-	// the repo's other default-on flags read (Config.NoLLMMD,
-	// DisableSignalHandling).
+	// DisableEntitySkills turns off the skill derived for each entity with MCP tools.
 	DisableEntitySkills bool
-	// Store persists tasks and push configs. Nil → a2a.NewSQLStore on
-	// the app's DB (tables created IF NOT EXISTS), or a2a.NewMemoryStore
-	// when the app has no DB. The SQL store is shared across replicas;
-	// the memory store is per process.
+	// Store persists tasks and push configs; nil means an SQL store on the
+	// app's DB, or a per-process memory store without one.
 	Store a2a.Store
-	// ExtendedCard, when set, serves GetExtendedAgentCard. Nil → the
-	// method answers CodeExtendedAgentCardNotConfigured.
+	// ExtendedCard serves GetExtendedAgentCard; nil answers
+	// CodeExtendedAgentCardNotConfigured.
 	ExtendedCard func(ctx context.Context, owner string) (map[string]any, error)
-	// AllowPrivatePush permits push-notification URLs targeting internal
-	// hosts (loopback, RFC1918, CGNAT, link-local). Tests and internal
-	// deployments only: a caller-registered URL the server POSTs to is
-	// an SSRF vector otherwise.
+	// AllowPrivatePush admits push URLs on internal hosts. Tests and internal
+	// deployments only.
 	AllowPrivatePush bool
-	// AllowedOrigins permits browser Origins that are not same-origin with
-	// the request (tunnels, split-origin web clients). The default refuses
-	// a present Origin naming any authority other than the request's own
-	// Host, mirroring the MCP transport; native A2A clients send no Origin
-	// and always pass. Forwarded to a2a.Config.AllowedOrigins.
+	// AllowedOrigins admits browser Origins other than the request's own host.
 	AllowedOrigins []string
-	// TaskTimeout is the ceiling on one skill-handler run. Default
-	// 5 minutes.
+	// TaskTimeout caps one skill-handler run; default 5 minutes.
 	TaskTimeout time.Duration
 }
 
-// WithA2A mounts the Agent2Agent v1.0 task exchange (core/a2a) at
-// A2AConfig.Path, default "/a2a". The route goes through the app router
-// so the app's middleware chain — session/bearer auth, owner context,
-// recovery, request logging — applies to every exchange request, the
-// same argument RegisterEntityMCPTools makes for its router parameter.
-//
-// The server is built during Start, after entities, plugins, and
-// batteries have registered their MCP tools (entity skills derive from
-// the tool registry). Combine with uihost.WithAgentReady:
-// AgentCardConfig{A2AEndpoint: "/a2a", Skills: app.A2ASkills()}.
+// WithA2A mounts the Agent2Agent v1.0 task exchange at A2AConfig.Path on the
+// app router. The server is built during Start.
 func WithA2A(cfg A2AConfig) AppOption {
 	return func(a *App) {
 		if cfg.Path != "" && !strings.HasPrefix(cfg.Path, "/") {
@@ -87,26 +53,13 @@ func WithA2A(cfg A2AConfig) AppOption {
 	}
 }
 
-// A2A returns the mounted Agent2Agent exchange server, or nil when
-// WithA2A was never called or Start has not mounted it yet (the server
-// is built during Start, once the MCP tool registry is complete).
+// A2A returns the mounted exchange server, or nil without WithA2A or before
+// Start mounts it.
 func (a *App) A2A() *a2a.Server { return a.a2a }
 
-// A2ASkills returns the exchange's skills as uihost.AgentSkill entries
-// for the agent card: every hand-written A2AConfig skill plus one
-// entity.<name> skill per registered entity with MCP tools, sorted by
-// id. Call it after your entity declarations (entity skills are read
-// from the MCP tool registry, which those declarations fill). Nil when
-// WithA2A was never called. Feed the result straight into
-// uihost.AgentCardConfig.Skills.
-//
-// The card is public, so its entity skills come from what an anonymous
-// tools/list would show: none when the server-wide gate (WithMCPGate)
-// refuses an anonymous caller, and only the operations whose tool gates
-// admit one. A skill's description names the entity and its field names,
-// the disclosure the gate withholds on /mcp. Hand-written skills stay:
-// the host chose to publish them. The exchange itself still serves every
-// entity skill, each call gated by CallToolFor.
+// A2ASkills returns the exchange's skills for the agent card, sorted by id:
+// the hand-written skills and the entity skills an anonymous caller may
+// list. It returns nil without WithA2A.
 func (a *App) A2ASkills() []uihost.AgentSkill {
 	if a.a2aCfg == nil {
 		return nil
@@ -132,10 +85,6 @@ func (a *App) A2ASkills() []uihost.AgentSkill {
 	return out
 }
 
-// mountA2A builds and mounts the exchange. Called from Start in the
-// same phase that mounts /mcp: entity MCP tools are registered by then
-// (app.Entity registers them immediately), so the derived skills see
-// the complete tool registry.
 func (a *App) mountA2A() error {
 	cfg := *a.a2aCfg
 	path := cfg.Path
@@ -155,13 +104,10 @@ func (a *App) mountA2A() error {
 		}
 	}
 	srv, err := a2a.NewServer(a2a.Config{
-		Skills: a.a2aSkills(),
-		Store:  store,
-		Owner:  a2aOwnerPrincipal,
-		Scopes: a2aCallerScopes,
-		// The tenant the app's tenant middleware resolved: a task's results
-		// stay with the tenant it ran in, and the owner stays the user id,
-		// which erasure deletes by.
+		Skills:         a.a2aSkills(),
+		Store:          store,
+		Owner:          a2aOwnerPrincipal,
+		Scopes:         a2aCallerScopes,
 		Tenant:         requestTenantID,
 		ExtendedCard:   cfg.ExtendedCard,
 		Push:           a2a.PushOptions{AllowPrivate: cfg.AllowPrivatePush},
@@ -174,21 +120,10 @@ func (a *App) mountA2A() error {
 	}
 	a.a2a = srv
 	a.a2aPath = path
-	// POST only; the server answers GET with 405. Routed through
-	// a.router so the app's middleware chain applies to the exchange.
 	a.router.Post(path, srv)
 	return nil
 }
 
-// a2aOwnerPrincipal resolves the A2A caller the way ownerPrincipal does
-// (the framework's owner extractor, formatted with %v) but WITHOUT the
-// credential-fingerprint fallback. Idempotency keys anonymous traffic by
-// its credential because an anonymous response carries no per-user
-// data. The task exchange is per-user data: every task row is owned,
-// and hard rule 6 (no per-user data without owner scoping) means a
-// caller that resolved to no owner must be refused (401), never
-// bucketed into a shared "anon" namespace where one caller could read
-// and resume another's tasks.
 func a2aOwnerPrincipal(r *http.Request) (string, bool) {
 	id, ok := owner.Get(r.Context())
 	if !ok || id == nil {
@@ -197,10 +132,6 @@ func a2aOwnerPrincipal(r *http.Request) (string, bool) {
 	return fmt.Sprintf("%v", id), true
 }
 
-// a2aCallerScopes reports the scopes an API token or embed grant narrowed
-// the A2A caller to (access.HeldScopes). The server records them on each
-// task, so a narrower credential of the same user cannot read what a
-// session or a broader token ran.
 func a2aCallerScopes(r *http.Request) ([]string, bool) {
 	held, ok := access.HeldScopes(r.Context())
 	if !ok {
@@ -213,31 +144,18 @@ func a2aCallerScopes(r *http.Request) ([]string, bool) {
 	return out, true
 }
 
-// entityActions are the CRUD tool actions crud.RegisterEntityMCPTools
-// generates per entity, in canonical display order.
 var entityActions = []string{"list", "get", "create", "update", "delete"}
 
-// entitySkillSet groups one entity's MCP tools: the entity name, its
-// namespace ("" for the flat tool names), and action → tool.
 type entitySkillSet struct {
 	ns     string
 	entity string
 	tools  map[string]mcp.Tool
 }
 
-// entitySkillSets walks the MCP tool registry and groups the entity CRUD
-// tools by entity: "<entity>_<action>" flat names and
-// "<ns>.<entity>.<action>" namespaced ones. The registry, not a fresh
-// schema walk, is the source: it is the same walk OpenAPI, the CLI, the
-// SDK, and tools/list share, so the skill descriptions cannot drift
-// from the tools they invoke. A prefix match alone cannot tell an
-// entity tool from a custom tool whose name happens to end in "_list",
-// so the entity half must also exist in the registry.
 func (a *App) entitySkillSets() []entitySkillSet {
 	return a.entitySkillSetsFrom(a.MCP.ListTools())
 }
 
-// entitySkillSetsFrom groups the entity tools found in tools.
 func (a *App) entitySkillSetsFrom(tools []mcp.Tool) []entitySkillSet {
 	entities := a.Registry.All()
 	byKey := map[string]*entitySkillSet{}
@@ -250,7 +168,7 @@ func (a *App) entitySkillSetsFrom(tools []mcp.Tool) []entitySkillSet {
 			ns, entity, action = parts[0], parts[1], parts[2]
 			key = ns + "." + entity
 		} else if strings.Contains(tool.Name, ".") {
-			continue // not an entity tool shape
+			continue
 		} else {
 			var found bool
 			for _, act := range entityActions {
@@ -282,16 +200,10 @@ func (a *App) entitySkillSetsFrom(tools []mcp.Tool) []entitySkillSet {
 	return out
 }
 
-// a2aSkills is the one skill-list builder: hand-written skills from the
-// WithA2A config plus one skill per entity with MCP tools (unless
-// disabled). mountA2A passes it to a2a.Config.Skills and A2ASkills
-// converts it for the card, so the exchange and the card advertise one
-// list from one source.
 func (a *App) a2aSkills() []a2a.Skill {
 	return a.a2aSkillsFrom(a.MCP.ListTools())
 }
 
-// a2aSkillsFrom builds the skill list with entity skills drawn from tools.
 func (a *App) a2aSkillsFrom(tools []mcp.Tool) []a2a.Skill {
 	skills := slices.Clone(a.a2aCfg.Skills)
 	if !a.a2aCfg.DisableEntitySkills {
@@ -302,10 +214,6 @@ func (a *App) a2aSkillsFrom(tools []mcp.Tool) []a2a.Skill {
 	return skills
 }
 
-// newEntitySkill builds the skill for one entity's CRUD tools. The
-// handler speaks the data-part contract: one data part whose object
-// carries "operation" (one of the entity's tool actions) and
-// "arguments" (the tool's params object).
 func (a *App) newEntitySkill(set entitySkillSet) a2a.Skill {
 	id := "entity." + set.entity
 	entityKey := set.entity
@@ -333,9 +241,6 @@ func (a *App) newEntitySkill(set entitySkillSet) a2a.Skill {
 	}
 }
 
-// entitySkillDescription lists one line per operation with the tool's
-// input-schema property keys, so an integrator reading the card knows
-// the data-part contract without a tools/list round trip.
 func entitySkillDescription(set entitySkillSet) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "CRUD on %s records through the app's MCP tools. Send one data part carrying skill, operation, and arguments:", set.entity)
@@ -355,8 +260,6 @@ func entitySkillDescription(set entitySkillSet) string {
 	return b.String()
 }
 
-// capitalize upper-cases the first ASCII letter. Entity names are ASCII
-// identifiers by construction (they are table/column name fragments).
 func capitalize(s string) string {
 	if s == "" {
 		return s
@@ -368,15 +271,6 @@ func capitalize(s string) string {
 	return s
 }
 
-// entitySkillHandler is the skill handler for one entity's tools. The
-// tool call re-dispatches with the ORIGINAL request on the context
-// (mcp.WithRequest): the entity tool copies the caller's credential
-// headers onto its in-process request through the app router, so owner
-// scoping applies to A2A exactly as to MCP and REST. CallToolFor runs
-// the server-wide gate (WithMCPGate) against the A2A caller, so a host
-// that closes /mcp closes these skills too, then the call gate, so a
-// tool the framework hides from agents (a disabled module's) stays
-// hidden here as well.
 func (a *App) entitySkillHandler(set entitySkillSet) a2a.Handler {
 	available := func() string {
 		var acts []string
@@ -417,12 +311,6 @@ func (a *App) entitySkillHandler(set entitySkillSet) a2a.Handler {
 	}
 }
 
-// entityInvocation reads the data-part contract from the message: the
-// first data part whose object carries a string "operation" (a part
-// whose object lacks the key is skipped, a present non-string is a
-// client error), with an optional "arguments" object (missing → empty
-// arguments; a present non-object is a client error). A nil error
-// return means ok.
 func entityInvocation(msg *a2a.Message) (operation string, args map[string]any, ierr error) {
 	if msg != nil {
 		for i := range msg.Parts {
@@ -436,10 +324,6 @@ func entityInvocation(msg *a2a.Message) (operation string, args map[string]any, 
 			}
 			raw, present := obj["operation"]
 			if !present {
-				// Absent key: this part carries no invocation, keep
-				// scanning (a failed type assertion on a missing key
-				// is not absence — that error shape used to reject a
-				// valid operation in a LATER part).
 				continue
 			}
 			op, isStr := raw.(string)

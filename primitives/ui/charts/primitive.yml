@@ -1,0 +1,340 @@
+primitive: ui.charts
+summary: Charts and numbers - bar, line, pie, scatter, sparkline, heatmap, gauge and waterfall charts, their empty state, palette and finite checks, relative time, counters and progress.
+code:
+  - framework/ui/barchart.go
+  - framework/ui/linechart.go
+  - framework/ui/piechart.go
+  - framework/ui/scatterchart.go
+  - framework/ui/sparkline.go
+  - framework/ui/heatmap.go
+  - framework/ui/gauge.go
+  - framework/ui/waterfall.go
+  - framework/ui/chart_empty.go
+  - framework/ui/chart_finite.go
+  - framework/ui/chart_palette.go
+  - framework/ui/ago.go
+  - framework/ui/animatedcounter.go
+  - framework/ui/counter.go
+  - framework/ui/progress.go
+  - framework/ui/progresssteps.go
+docs:
+  - framework/docs/content/ui-new-components.md
+twins:
+  - job: Resolve a series Color into a palette class or a raw fill or stroke.
+    why: LineChart and PieChart write a Color that is no palette token verbatim as the stroke or fill, and moving them onto seriesTone changes that markup for a status variant name or an invalid value.
+    sites:
+      - path: framework/ui/chart_palette.go
+        note: seriesTone, used by BarChart and ScatterChart.
+      - path: framework/ui/linechart.go
+        note: LineChart's line, area and legend swatch color, resolved inline.
+      - path: framework/ui/piechart.go
+        note: PieChart's slice color, resolved inline.
+  - job: Write a chart's root svg with its size, class, id, accessible name or aria-hidden, component mark and safe extras.
+    why: Work not yet done; each chart writes the same root with its own string builder.
+    sites:
+      - path: framework/ui/barchart.go
+        note: BarChart.
+      - path: framework/ui/linechart.go
+        note: LineChart.
+      - path: framework/ui/piechart.go
+        note: PieChart.
+      - path: framework/ui/scatterchart.go
+        note: ScatterChart.
+      - path: framework/ui/heatmap.go
+        note: Heatmap.
+      - path: framework/ui/sparkline.go
+        note: Sparkline, which also writes width 100% and preserveAspectRatio for FullWidth.
+invariants:
+  - id: empty-data-is-a-state
+    rule: A chart with no drawable data renders the shared ui-chart-empty placeholder instead of panicking, while a programmer error (a negative value, a missing series name or label, an unknown tone, shape or color) panics.
+    enforced_by:
+      - test: framework/ui.TestBarChartEmptyRendersEmptyState
+      - test: framework/ui.TestPieChartAllZeroRendersEmptyState
+      - test: framework/ui.TestBarChartRejectsNegative
+      - test: framework/ui.TestLineChartSeriesRequiresName
+      - test: framework/ui.TestSparklineRefusesUnknownColor
+  - id: empty-keeps-caller-hooks
+    rule: A chart's zero-data branch, the shared placeholder or Sparkline's dash, keeps the caller's ID, Class and safe ExtraAttrs.
+    enforced_by:
+      - test: framework/ui.TestChartEmptyKeepsID
+      - test: framework/ui.TestChartExtraAttrsOnEmptyPlaceholder
+      - test: framework/ui.TestSparklineTooFewPointsKeepsID
+  - id: non-finite-is-a-missing-reading
+    rule: A NaN or Inf value is a reading that never arrived; it draws no mark, widens no scale, and no chart writes NaN or Inf into its markup.
+    enforced_by:
+      - test: framework/ui.TestChartsNeverWriteNaN
+      - test: framework/ui.TestChartsDrawTheReadingsThatArrived
+      - test: framework/ui.TestHeatmapNaNCellIsEmpty
+      - test: framework/ui.TestGaugeNonFiniteIsEmpty
+  - id: overflowing-span-measured-in-halves
+    rule: A scale whose span between two finite values overflows float64 is measured in halves, so chartFrac, heatLevel and the scatter axes stay finite near the float limit.
+    enforced_by:
+      - test: framework/ui.TestChartsNeverWriteNaN
+      - test: framework/ui.TestHeatmapHugeSpanKeepsLevels
+      - test: framework/ui.TestScatterHugeValuesFinish
+  - id: series-color-falls-back
+    rule: seriesTone makes a palette token a class, a registered status variant its accent fill, a plausible CSS color a raw fill, and anything else the palette's pick, so a typo never draws a black mark.
+    enforced_by:
+      - test: framework/ui.TestBarChartStatusVariantColor
+      - test: framework/ui.TestBarChartInvalidColorFallsBack
+      - test: framework/ui.TestScatterColorFallsBack
+  - id: series-color-parity
+    rule: BarChart, ScatterChart, LineChart and PieChart all draw a palette token as a palette class and a hex color as the raw fill or stroke.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsSeriesColorParity
+  - id: svg-root-parity
+    rule: Every SVG chart root carries role img and aria-labelledby when LabelledBy is set and aria-hidden otherwise, keeps the caller's id and safe extras, and drops an extra that names a key the chart owns.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsSVGRootParity
+  - id: no-style-attribute
+    rule: No chart writes a style attribute; a raw color or a position is an SVG attribute or a viewBox number.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsWriteNoStyleAttribute
+  - id: bar-scale-has-headroom
+    rule: BarChart's scale tops out at the tallest bar over 0.85 rounded up to a nice number, or at Max when set and not exceeded, and falls back to the data maximum when that is not finite.
+    enforced_by:
+      - test: framework/ui.TestBarChartUniformDataHasHeadroom
+      - test: framework/ui.TestBarChartMaxFixesTheScale
+      - test: framework/ui.TestBarChartExtremeScaleStaysFinite
+      - test: framework/ui.TestChartScaleHoldsForSubnormals
+  - id: bar-axis-fits-its-labels
+    rule: BarChart's axis gutter fits its longest tick label at the phone's larger text size, and the top and bottom tick labels have half a line of room past the plot.
+    enforced_by:
+      - test: framework/ui.TestBarChartAxisGutterFitsItsLongestLabel
+      - test: framework/ui.TestSweepChartsAxisGutterFitsPhoneText
+      - test: framework/ui.TestBarChartAxisLabelsStayInsideTheDrawing
+  - id: bars-stay-in-the-plot
+    rule: Every bar is drawn inside Width, at most 56px thick, and a non-zero bar is at least 2px tall.
+    enforced_by:
+      - test: framework/ui.TestBarChartManyBarsStayInsideThePlot
+      - test: framework/ui.TestSweepChartsBarThicknessIsCapped
+      - test: framework/ui.TestSweepChartsTinyBarKeepsANub
+  - id: bar-labels-fit-their-slot
+    rule: A category label wraps to at most two lines that fit its slot at 7px a rune, ellipsizing the rest, and a slot too narrow for a rune gets the ellipsis alone.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsLabelWrapsToTwoLines
+      - test: framework/ui.TestBarChartLabelsFitSlot
+      - test: framework/ui.TestSweepChartsLabelFloorIsOneRune
+  - id: bar-fit-height
+    rule: FitHeight with no Height sizes the plot so the tallest bar is 96px tall and the SVG height follows from the gutters.
+    enforced_by:
+      - test: framework/ui.TestBarChartFitHeightHugsTallestBar
+  - id: line-series-share-the-x-axis
+    rule: In LineChart value i of every series and label i sit at the same x, spaced by the longest series, and a label past its last point is dropped.
+    enforced_by:
+      - test: framework/ui.TestLineChartShortSeriesSharesTheXAxis
+      - test: framework/ui.TestLineChartLabelsSitOnPoints
+  - id: line-stays-in-the-drawing
+    rule: LineChart insets the line 4px from the plot's top and bottom, anchors its first and last x labels inward, keeps a plot at a tiny Height, and wraps its legend by runes.
+    enforced_by:
+      - test: framework/ui.TestLineChartInsetsLineAndDrawsGrid
+      - test: framework/ui.TestLineChartEdgeLabelsAnchorInward
+      - test: framework/ui.TestLineChartTinyHeightKeepsPlot
+      - test: framework/ui.TestLineChartLegendWrapsByRunes
+  - id: line-area-closes-under-drawn-points
+    rule: A LineChart area closes under its first and last finite points, so a missing reading at either end leaves no slab.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsLineAreaClosesUnderDrawnPoints
+  - id: line-needs-two-points
+    rule: A LineChart series with fewer than two finite values renders the not-enough-data empty state.
+    enforced_by:
+      - test: framework/ui.TestLineChartTooFewPointsRendersEmptyState
+  - id: pie-whole-slice-is-a-disc
+    rule: A pie slice whose arc starts and ends on one written point is drawn as two half circles, and a donut's hole as the same pair wound the other way.
+    enforced_by:
+      - test: framework/ui.TestPieChartWholePieSliceDrawsACircle
+  - id: pie-total-must-be-drawable
+    rule: A PieChart whose finite total is zero or overflows renders the empty state, and InnerRadius is clamped to between 0 and 0.95.
+    enforced_by:
+      - test: framework/ui.TestPieChartAllZeroRendersEmptyState
+      - test: framework/ui.TestPieOverflowShowsEmptyState
+      - test: framework/ui.TestSweepChartsDonutHoleIsClamped
+  - id: sparkline-stroke-stays-inside
+    rule: A Sparkline keeps its line 1px inside its height, and FullWidth stretches the viewBox with preserveAspectRatio none.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsSparklineKeepsStrokeInside
+      - test: framework/ui.TestSparklineFullWidthEmitsPercentWidth
+  - id: sparkline-color-is-a-token
+    rule: A Sparkline Color outside the SparklineColor constants panics; a new color is a theme token.
+    enforced_by:
+      - test: framework/ui.TestSparklineRefusesUnknownColor
+  - id: heatmap-never-clips
+    rule: A Heatmap whose cells would fall under 4px widens past Width, draws only every column label that fits, and cuts a row label past 17 runes.
+    enforced_by:
+      - test: framework/ui.TestHeatmapWidensForColumns
+      - test: framework/ui.TestHeatmapThinsColumnLabels
+      - test: framework/ui.TestHeatmapTruncatesLongRows
+  - id: scatter-axes-read-cleanly
+    rule: ScatterChart's left gutter fits its widest tick label, no two ticks read the same, and a zero-width or unrepresentable range still draws two axis ends.
+    enforced_by:
+      - test: framework/ui.TestScatterGutterFitsLabels
+      - test: framework/ui.TestScatterTickLabelsDiffer
+      - test: framework/ui.TestSweepChartsScatterSameLargeValuesHaveTwoEnds
+      - test: framework/ui.TestScatterHugeValuesFinish
+  - id: waterfall-bars-stay-on-the-axis
+    rule: A Waterfall bar is at least 4 of the axis's 1000 units wide and never leaves the axis, the axis is at least 1ns, and Depth is clamped to between 0 and 6.
+    enforced_by:
+      - test: framework/ui.TestWaterfallKeepsEveryBarInsideTheAxis
+  - id: gauge-is-a-meter
+    rule: Gauge's root is a named ARIA meter whose arc is clamped to the range while aria-valuetext keeps the reading, toned by the band with the highest From at or below it.
+    enforced_by:
+      - test: framework/ui.TestGaugeIsANamedMeter
+      - test: framework/ui.TestGaugeClampsValue
+      - test: framework/ui.TestGaugeBandPicksTone
+  - id: progress-steps-states-are-explicit
+    rule: ProgressSteps passes every step's Status to headless.Steps as an explicit state, links only a complete step, and marks the list it splices in data-cui-internal.
+    enforced_by:
+      - test: framework/ui.TestProgressStepsUpcomingBeforeCurrentIsTodo
+      - test: framework/ui.TestProgressStepsUpcomingStepIgnoresHref
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: counter-paints-the-request-seed
+    rule: A Counter over a Slice paints the value the request seeded, and hands the runtime no seed of its own.
+    enforced_by:
+      - test: framework/ui.TestCounterSliceStampsTheRequestSeed
+      - test: framework/ui.TestSweepChartsCounterHandsNoSecondSeed
+  - id: animated-counter-is-a-figure
+    rule: AnimatedCounter renders its To value on the server with no step buttons, the headless counter collapsed into one internal mark.
+    enforced_by:
+      - test: framework/ui.TestAnimatedCounterSSRRendersFinalValue
+      - test: framework/ui.TestAnimatedCounterHasNoStepButtons
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: ago-reads-now-and-utc-dates
+    rule: Ago reads a time after now as now and writes a time past a month as its UTC date.
+    enforced_by:
+      - test: framework/ui.TestSweepChartsAgoFutureIsNowAndDatesAreUTC
+decisions:
+  - id: empty-data-renders-a-placeholder
+    date: 2026-11-16
+    status: accepted
+    decision: A chart given no rows renders a calm placeholder, since a data-bound chart for a new user legitimately has none.
+    rejected:
+      - option: Panic on empty data as on other misuse.
+        why: It crashes the whole screen, and behind the SSR host's panic recovery the first page a new user sees answers 404.
+    upholds: [empty-data-is-a-state]
+  - id: empty-height-is-a-token
+    date: 2026-11-16
+    status: accepted
+    decision: The placeholder's height floor is the --ui-chart-empty-min-height knob in its sheet, not the chart's configured height.
+    rejected:
+      - option: Size the placeholder to the chart's Height.
+        why: That needs an inline style, which the framework forbids.
+    upholds: [no-style-attribute]
+  - id: raw-colors-are-svg-attributes
+    date: 2026-11-16
+    status: accepted
+    decision: A raw CSS color is written as the mark's fill or stroke attribute, and a waterfall bar's position as viewBox units on an SVG that stretches.
+    rejected:
+      - option: An inline style attribute.
+        why: A strict CSP blocks inline styles, and the one styling surface forbids them.
+    upholds: [no-style-attribute, ui.styling/one-styling-surface]
+  - id: bare-word-colors-fall-back
+    date: 2026-11-16
+    status: accepted
+    decision: plausibleCSSColor checks only the shape of hex, a color function or var(--…), and a bare word is a status variant or a mistake, so CSS named colors are written as hex or var().
+    rejected:
+      - option: Pass any unrecognized Color through as the fill.
+        why: A typo such as "draft" drew an invalid fill, which renders black.
+    upholds: [series-color-falls-back]
+  - id: bar-headroom-lives-in-the-scale
+    date: 2026-11-16
+    status: accepted
+    decision: BarChart's scale tops out at the tallest bar over 0.85 rounded up to a nice number, so the tallest bar lands near 85% of the plot.
+    rejected:
+      - option: Scale to the data maximum.
+        why: Uniform and near-equal data (8/8/8, 6/5/5) rendered as identical full-height slabs.
+    upholds: [bar-scale-has-headroom]
+  - id: bar-max-grows-for-a-taller-bar
+    date: 2026-11-16
+    status: accepted
+    decision: Max keeps a known top such as 100%, and a bar past Max grows the scale to hold it.
+    rejected:
+      - option: Always round the scale up from the data.
+        why: A 96% bar drawn against a scale of 150 says nothing.
+      - option: Clip a bar past Max.
+        why: It is beyond what the caller said can be, and clipping hides it.
+    upholds: [bar-scale-has-headroom]
+  - id: bar-axis-labels-grow-on-a-phone
+    date: 2026-11-16
+    status: accepted
+    decision: Under 480px the axis labels are drawn at the base text size, 16/12 of the usual, and the gutter is sized for that larger text at every width.
+    rejected:
+      - option: One label size at every width.
+        why: A phone draws a 340px chart at about two thirds of its size, and 12px labels came out at 8px.
+      - option: A fixed 30px gutter.
+        why: It held three characters, so "1,500" lost its "1,".
+    upholds: [bar-axis-fits-its-labels]
+  - id: bar-slots-narrow-the-gap-first
+    date: 2026-11-16
+    status: accepted
+    decision: Bars stand 8px apart while each keeps 3px, then the gap narrows, then bar and gap share the slot three to one.
+    rejected:
+      - option: A fixed 3px bar on a fixed 8px gap.
+        why: 40 bars in the default 320px drew 29, and the tallest bar could be among the lost ones.
+    upholds: [bars-stay-in-the-plot]
+  - id: bar-label-width-per-rune
+    date: 2026-11-16
+    status: accepted
+    decision: A category label line gets its slot less 4px at 7px a rune, and a slot too narrow for a rune gets the ellipsis alone.
+    rejected:
+      - option: 5 to 6.5px a rune, the width of plain 12px text.
+        why: Capitals, accents and translated labels run wider, and the last slot's label was cut by the plot edge.
+      - option: A floor wider than one rune.
+        why: It spilled the label past its slot, and the last one past the plot edge.
+    upholds: [bar-labels-fit-their-slot]
+  - id: bar-chart-height-follows-width
+    date: 2026-11-16
+    status: accepted
+    decision: The bar chart's block size is auto, so a narrow container that shrinks the drawing shrinks its height too.
+    rejected:
+      - option: Keep the configured height.
+        why: The drawing scaled down inside a box that stayed tall, with a blank band above and below it.
+  - id: chart-log10-for-subnormals
+    date: 2026-11-16
+    status: accepted
+    decision: chartLog10 computes a subnormal's log through math.Log2, and keeps math.Log10 for normal values.
+    rejected:
+      - option: math.Log10 for every value.
+        why: On amd64 math.Log reads a subnormal as normal, and log10(1e-310) came out -307.95.
+    revisit_if: math.Log10 returns the exact answer for subnormals on every GOARCH the framework supports.
+    upholds: [bar-scale-has-headroom]
+  - id: line-series-on-one-axis
+    date: 2026-11-16
+    status: accepted
+    decision: Every LineChart series is spaced by the longest series, so a shorter one ends early.
+    rejected:
+      - option: Scale each series to its own length.
+        why: A short series stretched across the plot and its points sat under the wrong labels.
+    upholds: [line-series-share-the-x-axis]
+  - id: scatter-exponent-past-plain-decimals
+    date: 2026-11-16
+    status: accepted
+    decision: exactText writes Go's exponent form for a value past 1e15 or under 1e-6, and tickText the significant digits that tell two ticks apart past 1e9.
+    rejected:
+      - option: The locale's decimal form at every size.
+        why: CLDR's table in core/i18n does not cover exponent notation, and plain decimals wrote 7.500000000000005e+299.
+    revisit_if: core/i18n formats numbers in exponent notation.
+    upholds: [scatter-axes-read-cleanly]
+  - id: counter-page-owns-the-seed
+    date: 2026-11-16
+    status: accepted
+    decision: Counter tells headless.Counter the signal is Seeded, since Slice seeds it into the signals block and a bare SignalName is the app's to seed.
+    rejected:
+      - option: Let the primitive hand the runtime its own value.
+        why: A second seed beats a server value that changed across an island swap.
+    upholds: [counter-paints-the-request-seed]
+  - id: progress-steps-explicit-states
+    date: 2026-11-16
+    status: accepted
+    decision: ProgressSteps passes each step's Status as an explicit state and draws this package's check icon for a complete step.
+    rejected:
+      - option: headless.Steps' derivation from Current.
+        why: It marks every step before Current done, so an upcoming step before the current one renders as finished.
+    upholds: [progress-steps-states-are-explicit]
+  - id: waterfall-is-a-table
+    date: 2026-11-16
+    status: accepted
+    decision: Waterfall is a table whose cells hold the start and duration as text, with the bar a decorative SVG beside them, and a toned step also says its tone in its Note.
+    rejected:
+      - option: A chart of bars alone.
+        why: Assistive tech reads nothing from a picture, and a color tells nothing to someone who cannot see it or tell red from black.
+    upholds: [waterfall-bars-stay-on-the-axis]

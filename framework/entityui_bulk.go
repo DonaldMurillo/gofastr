@@ -17,18 +17,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Bulk snapshot tables: one row per queued run, one per record its
-// selection resolved to at confirm.
 const (
 	bulkJobsTable  = "gofastr_bulk_jobs"
 	bulkItemsTable = "gofastr_bulk_items"
 )
 
-// bulkInsertBatch is how many item rows one INSERT carries.
 const bulkInsertBatch = 500
 
-// AuditEvent writes a bulk run's summary row to the app's audit log, with
-// the actor WithAuditLog resolves. An app with no audit log writes nothing.
+// AuditEvent writes a bulk run's summary row to the audit log, if any.
 func (h entityUIHost) AuditEvent(ctx context.Context, ent, op, recordID string, detail map[string]any) error {
 	if h.a.auditTable == "" || h.a.DB == nil {
 		return nil
@@ -40,8 +36,7 @@ func (h entityUIHost) AuditEvent(ctx context.Context, ent, op, recordID string, 
 	return AppendAuditEvent(ctx, h.a.DB, h.a.auditTable, ent, op, recordID, actor, detail)
 }
 
-// BulkStore is the snapshot store queued runs walk, present only when
-// EntityUI was given Extensions.Jobs.
+// BulkStore is the snapshot store, nil unless EntityUI had Extensions.Jobs.
 func (h entityUIHost) BulkStore() entityui.BulkStore {
 	if h.store == nil {
 		return nil
@@ -49,13 +44,11 @@ func (h entityUIHost) BulkStore() entityui.BulkStore {
 	return h.store
 }
 
-// sqlBulkStore keeps queued bulk runs in the app's database.
 type sqlBulkStore struct {
 	db      *sql.DB
 	dialect migrate.Dialect
 }
 
-// newSQLBulkStore creates the snapshot tables if they are missing.
 func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 	s := &sqlBulkStore{db: db, dialect: migrate.DetectDialect(db)}
 	ts := "DATETIME"
@@ -65,7 +58,7 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 	jobs := query.QuoteFolded(bulkJobsTable)
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id          TEXT PRIMARY KEY,
+			id          TEXT PRIMARY KEY NOT NULL,
 			entity      TEXT NOT NULL,
 			action      TEXT NOT NULL,
 			count       INTEGER NOT NULL,
@@ -83,8 +76,6 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 			created_at  %[2]s NOT NULL,
 			finished_at %[2]s
 		)`, jobs, ts),
-		// One queued job per confirmed run: a second confirm of the same
-		// run while it waits finds the first instead of racing it in.
 		fmt.Sprintf(`CREATE UNIQUE INDEX IF NOT EXISTS %s (run_key) WHERE status = 'queued'`,
 			query.IndexOn(s.dialect == migrate.DialectSQLite, query.QuoteIndexName(bulkJobsTable+"_run_key"), jobs)),
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -106,12 +97,6 @@ func newSQLBulkStore(ctx context.Context, db *sql.DB) (*sqlBulkStore, error) {
 	return s, nil
 }
 
-// registerBulkTables declares the snapshot tables to App.ExportData and
-// App.EraseUserData. A job is the record of an admin action, so an
-// erasure keeps it and tombstones its creator: RunBulkJob's Principal
-// then cannot rebuild the erased user's context, and a queued run of
-// theirs stops instead of acting for them. The items hold record ids
-// only, no user, so they are exported and left alone.
 func registerBulkTables() {
 	datexport.Register(datexport.DataExporter{
 		Name: bulkJobsTable, Source: "entityui", Table: bulkJobsTable, PrimaryKey: "id",
@@ -128,7 +113,6 @@ func registerBulkTables() {
 	})
 }
 
-// bulkJobColumns is what Job and Unenqueued read, in scanJob's order.
 const bulkJobColumns = `id, entity, action, count, creator, tenant, filter_hash, run_key, status, done, skipped, failed`
 
 func scanJob(row interface{ Scan(...any) error }) (entityui.BulkJob, error) {
@@ -137,7 +121,6 @@ func scanJob(row interface{ Scan(...any) error }) (entityui.BulkJob, error) {
 	return j, err
 }
 
-// queuedByKey reads the queued job holding key, if one does.
 func (s *sqlBulkStore) queuedByKey(ctx context.Context, key string) (entityui.BulkJob, bool, error) {
 	j, err := scanJob(s.db.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT %s FROM %s WHERE run_key = $1 AND status = $2`, bulkJobColumns, query.QuoteFolded(bulkJobsTable)),
@@ -148,8 +131,6 @@ func (s *sqlBulkStore) queuedByKey(ctx context.Context, key string) (entityui.Bu
 	return j, err == nil, err
 }
 
-// Create writes the job and its ids in one transaction, or returns the
-// queued job that already holds job.Key.
 func (s *sqlBulkStore) Create(ctx context.Context, job entityui.BulkJob, ids []string) (entityui.BulkJob, error) {
 	if job.Key == "" {
 		return entityui.BulkJob{}, errors.New("bulk store: job has no run key")
@@ -158,8 +139,6 @@ func (s *sqlBulkStore) Create(ctx context.Context, job entityui.BulkJob, ids []s
 	if err == nil {
 		return held, nil
 	}
-	// The unique index on a queued run_key refused the insert: answer
-	// the job that holds it.
 	if j, ok, lerr := s.queuedByKey(ctx, job.Key); lerr == nil && ok {
 		return j, nil
 	}
@@ -203,7 +182,6 @@ func (s *sqlBulkStore) create(ctx context.Context, job entityui.BulkJob, ids []s
 	return job, tx.Commit()
 }
 
-// Enqueued marks the job handed to the JobRunner.
 func (s *sqlBulkStore) Enqueued(ctx context.Context, id string) error {
 	res, err := s.db.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET enqueued = 1 WHERE id = $1`, query.QuoteFolded(bulkJobsTable)), id)
 	if err != nil {
@@ -215,10 +193,8 @@ func (s *sqlBulkStore) Enqueued(ctx context.Context, id string) error {
 	return nil
 }
 
-// errBulkJobUnknown answers a job id the store does not hold.
 var errBulkJobUnknown = errors.New("bulk store: unknown job")
 
-// Job reads one job.
 func (s *sqlBulkStore) Job(ctx context.Context, id string) (entityui.BulkJob, error) {
 	j, err := scanJob(s.db.QueryRowContext(ctx, fmt.Sprintf(
 		`SELECT %s FROM %s WHERE id = $1`, bulkJobColumns, query.QuoteFolded(bulkJobsTable)), id))
@@ -228,9 +204,6 @@ func (s *sqlBulkStore) Job(ctx context.Context, id string) (entityui.BulkJob, er
 	return j, err
 }
 
-// Claim gives runner the lease until until, or renews it, in one
-// conditional UPDATE: the job must be queued and either unclaimed,
-// already runner's, or held under a lease that expired at or before now.
 func (s *sqlBulkStore) Claim(ctx context.Context, id, runner string, now, until time.Time) (bool, error) {
 	if runner == "" {
 		return false, errors.New("bulk store: claim needs a runner token")
@@ -247,7 +220,6 @@ func (s *sqlBulkStore) Claim(ctx context.Context, id, runner string, now, until 
 	return n == 1, err
 }
 
-// Pending returns up to limit unsettled ids in confirm order.
 func (s *sqlBulkStore) Pending(ctx context.Context, id string, limit int) ([]string, error) {
 	if limit <= 0 {
 		return nil, nil
@@ -270,11 +242,6 @@ func (s *sqlBulkStore) Pending(ctx context.Context, id string, limit int) ([]str
 	return out, rows.Err()
 }
 
-// holdLease opens tx's write on the job row for runner: an UPDATE that
-// matches only while runner holds the queued job's lease. It locks the
-// row (Postgres) or the database (SQLite) until tx ends, so no other
-// runner's Claim can take the lease between the check and the writes
-// that follow it.
 func (s *sqlBulkStore) holdLease(ctx context.Context, tx *sql.Tx, id, runner string) error {
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(
 		`UPDATE %s SET claim_token = claim_token WHERE id = $1 AND claim_token = $2 AND status = $3`,
@@ -290,9 +257,6 @@ func (s *sqlBulkStore) holdLease(ctx context.Context, tx *sql.Tx, id, runner str
 	return nil
 }
 
-// Settle records each id's outcome while runner holds the lease. An id
-// already settled keeps its first outcome, so a retried chunk never
-// rewrites what ran.
 func (s *sqlBulkStore) Settle(ctx context.Context, id, runner string, outcomes map[string]string) (err error) {
 	for _, rid := range slices.Sorted(maps.Keys(outcomes)) {
 		switch outcomes[rid] {
@@ -322,7 +286,6 @@ func (s *sqlBulkStore) Settle(ctx context.Context, id, runner string, outcomes m
 	return tx.Commit()
 }
 
-// Tally counts the job's settled ids by outcome.
 func (s *sqlBulkStore) Tally(ctx context.Context, id string) (map[string]int, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT outcome, COUNT(*) FROM %s WHERE job_id = $1 AND outcome IS NOT NULL GROUP BY outcome`,
@@ -343,8 +306,6 @@ func (s *sqlBulkStore) Tally(ctx context.Context, id string) (map[string]int, er
 	return out, rows.Err()
 }
 
-// Finish, under runner's lease, closes the job with its tally and deletes
-// its ids in one transaction.
 func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at time.Time) (err error) {
 	switch status {
 	case entityui.BulkDone, entityui.BulkStopped:
@@ -362,7 +323,6 @@ func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at
 	}()
 	if err = s.holdLease(ctx, tx, id, runner); err != nil {
 		if errors.Is(err, entityui.ErrBulkLeaseLost) {
-			// Out of the transaction first: SQLite may hold one connection.
 			_ = tx.Rollback()
 			if _, jerr := s.Job(ctx, id); errors.Is(jerr, errBulkJobUnknown) {
 				return errBulkJobUnknown
@@ -389,8 +349,6 @@ func (s *sqlBulkStore) Finish(ctx context.Context, id, runner, status string, at
 	return tx.Commit()
 }
 
-// Unenqueued lists queued jobs created before before that were never
-// marked Enqueued or whose non-null bulk lease expired before before.
 func (s *sqlBulkStore) Unenqueued(ctx context.Context, before time.Time) ([]entityui.BulkJob, error) {
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(
 		`SELECT %s FROM %s WHERE status = $1 AND created_at < $2 AND (enqueued = 0 OR lease_until < $2) ORDER BY created_at, id`,
@@ -410,8 +368,6 @@ func (s *sqlBulkStore) Unenqueued(ctx context.Context, before time.Time) ([]enti
 	return out, rows.Err()
 }
 
-// Prune deletes the jobs that finished before before, with any ids a
-// finish left behind.
 func (s *sqlBulkStore) Prune(ctx context.Context, before time.Time) (_ int, err error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

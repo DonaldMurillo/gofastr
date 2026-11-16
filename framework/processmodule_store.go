@@ -18,140 +18,75 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// ProcessModuleStore is the SQL-backed coordination substrate for
-// process-isolated modules (design §8 "coordination substrate"). It persists
-// the authoritative desired state and a replica-liveness registry on top of
-// the same *sql.DB the app already uses, via an idempotent CREATE TABLE IF
-// NOT EXISTS schema (mirrors battery/auth's EnsureSchema pattern, NOT a
-// #33 migrate group; this is host coordination state, not module-owned DDL).
-//
-// It works on SQLite and Postgres. DDL is chosen per-dialect at
-// [SQLProcessModuleStore.EnsureSchema] time.
-//
-// # State lease vs in-process fail-open (design §8)
-//
-// In-process module toggling [ModuleManager.handleRemoteToggle] FAILS OPEN on
-// a store-read error (logs WARN, keeps cache). For a third-party module under
-// revoke that is a security hole, so process modules INVERT it: the
-// supervisor (above this store) holds a short-TTL state lease per replica; if
-// it cannot refresh [GetDesired] past the lease TTL it drains children and
-// serves 503/404. The lease policy lives in the supervisor, not here. This
-// store is just rows. The divergence is documented at
-// [ProcessModuleSupervisor.refreshDesired] and tested by the
-// "store_unreachable_drains" test.
-//
-// # Revoke / upgrade lever
-//
-// Revoke (a grants change) and upgrade (an artifact change) are both
-// expressed as a desired_generation bump: [BumpGeneration] atomically
-// increments the row's counter and every replica's reconcile loop sees the
-// higher value on its next [GetDesired] read. A grant-set change via
-// [SetEffectiveGrants] also bumps generation (§5: a grant change is a
-// generation change).
+// ProcessModuleStore persists process modules' desired state and replica
+// heartbeats. A revoke or upgrade is a desired_generation bump.
 type ProcessModuleStore interface {
-	// EnsureSchema creates the desired-state and heartbeat tables if
-	// absent. Idempotent; safe to call on every boot.
+	// EnsureSchema creates the tables if absent; safe on every boot.
 	EnsureSchema(ctx context.Context) error
 
-	// Install writes a new desired-state row for module. Returns
-	// [ErrModuleInstalled] if a row already exists, re-install is an
-	// explicit generation bump via [SetEffectiveGrants] /
-	// [BumpGeneration], or the boot-time [InstallOrUpdate].
+	// Install writes a new row, or returns [ErrModuleInstalled].
 	Install(ctx context.Context, d DesiredState) error
 
-	// InstallOrUpdate inserts the row when absent and otherwise
-	// reconciles the stored row with d: the path a module takes when the
-	// app boots again against a database an earlier boot (or another
-	// replica) wrote. [InstallOutcome] spells out each case; a grant-set
-	// change disables the module.
+	// InstallOrUpdate inserts the row when absent and otherwise reconciles
+	// it with d, as [InstallOutcome] describes.
 	InstallOrUpdate(ctx context.Context, d DesiredState) (InstallResult, error)
 
-	// GetDesired returns the desired-state row for module. Returns
-	// [ErrNoDesiredRow] if no row exists, and the underlying SQL error if
-	// the store is unreachable (the lease-enforcing read path).
+	// GetDesired returns the row, [ErrNoDesiredRow], or the SQL error.
 	GetDesired(ctx context.Context, module string) (DesiredState, error)
 
-	// ListDesired returns every desired-state row, ordered by module name.
-	// Used by introspection / a coordinator process.
+	// ListDesired returns every row, ordered by module name.
 	ListDesired(ctx context.Context) ([]DesiredState, error)
 
-	// SetEnabled toggles enabled WITHOUT bumping generation (design §8:
-	// enable/disable is not a revoke lever; the cache flip is the gate).
+	// SetEnabled toggles enabled without bumping generation.
 	SetEnabled(ctx context.Context, module string, enabled bool) error
 
-	// BumpGeneration atomically increments desired_generation and returns
-	// the new value. The revoke / upgrade lever: every replica's reconcile
-	// loop sees the higher value on its next GetDesired read.
+	// BumpGeneration increments desired_generation and returns it.
 	BumpGeneration(ctx context.Context, module string) (uint64, error)
 
-	// SetEffectiveGrants replaces the effective grant JSON AND bumps
-	// generation (§5: a grant change is a generation change). Returns the
-	// new generation.
+	// SetEffectiveGrants replaces the grant set and bumps generation.
 	SetEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error)
 
-	// RemoveEffectiveGrants takes grants out of the effective grant set,
-	// keeping the rest, AND bumps generation. Two removals at once both
-	// stick. It refuses an empty grants. Returns the new generation.
+	// RemoveEffectiveGrants removes grants from the set and bumps
+	// generation. It refuses an empty grants.
 	RemoveEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error)
 
-	// SetMigrationsAppliedAt records the timestamp pending migrations
-	// finished at. Nil clears it.
+	// SetMigrationsAppliedAt records when migrations finished; nil clears.
 	SetMigrationsAppliedAt(ctx context.Context, module string, at *time.Time) error
 
-	// RecordHeartbeat upserts a replica heartbeat row (module, replica_id)
-	// with observed_generation, phase, and updated_at = now. The TTL
-	// semantics are READ-side (LiveReplicas): a row older than 3× the
-	// heartbeat interval is treated as a dead replica, not a blocker.
+	// RecordHeartbeat upserts a replica heartbeat row stamped now.
 	RecordHeartbeat(ctx context.Context, module, replicaID string, observedGen uint64, phase string) error
 
-	// LiveReplicas returns heartbeat rows for module whose updated_at is
-	// within now-ttl..now. Rows older than ttl are dead and excluded.
+	// LiveReplicas returns heartbeat rows newer than ttl.
 	LiveReplicas(ctx context.Context, module string, ttl time.Duration) ([]ReplicaHeartbeat, error)
 
-	// DeleteHeartbeat removes a replica's heartbeat row. Called on
-	// graceful drain so the next LiveReplicas reflects the departure.
+	// DeleteHeartbeat removes a replica's heartbeat row.
 	DeleteHeartbeat(ctx context.Context, module, replicaID string) error
 }
 
-// DesiredState is the authoritative desired-state row for one module
-// (design §8). Every field here is operator-/host-authored; the child never
-// writes any of it.
+// DesiredState is one module's host-authored desired-state row.
 type DesiredState struct {
 	Module string
 
-	// DesiredGeneration is the monotonic desired-state counter. READ at
-	// spawn (not minted); bumped only on a grant change, revoke, or
-	// upgrade. The restart circuit is keyed to (module, generation).
+	// DesiredGeneration is bumped on a grant change, revoke or upgrade.
 	DesiredGeneration uint64
 
-	// Enabled is the desired enable/disable state. The supervisor's
-	// reconcile loop reads this; the cache flip is what the route gate
-	// actually checks.
 	Enabled bool
 
-	// ArtifactSHA256 is the approved executable digest. Verified by the
-	// runner before exec.
+	// ArtifactSHA256 is the approved executable digest.
 	ArtifactSHA256 string
 
-	// EffectiveGrants is the post-approval, post-carve-out grant set. A
-	// change here bumps DesiredGeneration.
+	// EffectiveGrants is the approved grant set, non-grantables removed.
 	EffectiveGrants []access.Permission
 
-	// RevokedGrants is every grant an operator took away at runtime
-	// ([ProcessModuleStore.RemoveEffectiveGrants], or a narrower
-	// [ProcessModuleStore.SetEffectiveGrants]). The boot-time
-	// [ProcessModuleStore.InstallOrUpdate] subtracts it from the
-	// descriptor's grants, so a revoke outlives the next boot. A grant
-	// SetEffectiveGrants gives back leaves it.
+	// RevokedGrants are grants an operator took away at runtime;
+	// InstallOrUpdate does not hand them back.
 	RevokedGrants []access.Permission
 
-	// MigrationsAppliedAt is nil until the migration coordinator has run
-	// pending migrations; the supervisor refuses Ready while nil for a
-	// module with a declared migration group.
+	// MigrationsAppliedAt is nil until the migration coordinator ran.
 	MigrationsAppliedAt *time.Time
 }
 
-// ReplicaHeartbeat is one replica's liveness row for a module (design §8).
+// ReplicaHeartbeat is one replica's liveness row for a module.
 type ReplicaHeartbeat struct {
 	Module      string
 	ReplicaID   string
@@ -168,27 +103,20 @@ var ErrModuleInstalled = errors.New("processmodule: module already installed")
 // module has no desired-state row.
 var ErrNoDesiredRow = errors.New("processmodule: no desired-state row")
 
-// SQLProcessModuleStore is the SQL-backed [ProcessModuleStore]. It owns no
-// state beyond the *sql.DB; concurrent supervisors (one per replica) share
-// the same store.
+// SQLProcessModuleStore is the SQL-backed [ProcessModuleStore], on SQLite
+// or Postgres.
 type SQLProcessModuleStore struct {
-	db      *sql.DB
-	dialect migrate.Dialect
-	// afterGrantsRead, when set, runs between RemoveEffectiveGrants'
-	// read and its write: a test's window for a concurrent write.
+	db              *sql.DB
+	dialect         migrate.Dialect
 	afterGrantsRead func()
 }
 
-// NewSQLProcessModuleStore constructs a SQL-backed store over db. EnsureSchema
-// is NOT called here; callers (the app wiring) call it explicitly at boot so
-// the schema-creation error surfaces where the operator expects it.
+// NewSQLProcessModuleStore constructs a store over db. It does not call
+// EnsureSchema, and errors when the dialect cannot be detected.
 func NewSQLProcessModuleStore(db *sql.DB) (*SQLProcessModuleStore, error) {
 	if db == nil {
 		return nil, errors.New("processmodule: NewSQLProcessModuleStore(nil db)")
 	}
-	// Schema decisions (column types, INSERT OR IGNORE vs ON CONFLICT) hang
-	// off this answer and it is cached for the store's lifetime, so a
-	// transient probe failure must not resolve to a guessed SQLite.
 	dialect, err := migrate.DetectDialectStrict(db)
 	if err != nil {
 		return nil, fmt.Errorf("processmodule: NewSQLProcessModuleStore: %w", err)
@@ -199,19 +127,12 @@ func NewSQLProcessModuleStore(db *sql.DB) (*SQLProcessModuleStore, error) {
 // Dialect reports the detected dialect (debug / introspection).
 func (s *SQLProcessModuleStore) Dialect() migrate.Dialect { return s.dialect }
 
-// Tables.
 const (
 	desiredTable   = "gofastr_process_modules"
 	heartbeatTable = "gofastr_process_module_heartbeats"
 )
 
 // EnsureSchema creates the desired-state and heartbeat tables idempotently.
-// DDL is dialect-aware (Postgres vs SQLite): the two dialects differ only
-// in type words (BIGINT/INTEGER, BOOLEAN/INTEGER, JSONB/TEXT grants), so
-// one statement pair carries both. It replaces the former per-dialect
-// ensureSchemaPostgres / ensureSchemaSQLite copies. The schema is
-// intentionally narrow: no module-owned DDL touches this store (design
-// §7, host coordination state, NOT module bookkeeping).
 func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 	label := "sqlite"
 	intType, boolType, boolDefault := "INTEGER", "INTEGER", "0"
@@ -223,7 +144,7 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			module            TEXT PRIMARY KEY,
+			module            TEXT PRIMARY KEY NOT NULL,
 			desired_generation %s NOT NULL DEFAULT 1,
 			enabled           %s NOT NULL DEFAULT %s,
 			artifact_sha256   TEXT NOT NULL,
@@ -252,12 +173,6 @@ func (s *SQLProcessModuleStore) EnsureSchema(ctx context.Context) error {
 	return nil
 }
 
-// registerProcessModuleExport declares the desired-state table to
-// App.ExportData, so a restore keeps a process module an operator turned
-// off turned off and keeps the grants an operator revoked revoked. The
-// heartbeat table stays out: it records which replicas were alive, which
-// a restored deployment has to observe afresh. No eraser: the rows name
-// modules, not users.
 func registerProcessModuleExport() {
 	datexport.Register(datexport.DataExporter{
 		Name: desiredTable, Source: "processmodules", Table: desiredTable, PrimaryKey: "module",
@@ -266,10 +181,6 @@ func registerProcessModuleExport() {
 	})
 }
 
-// addRevokedColumn adds revoked_grants to a desired-state table an older
-// build created without it. Postgres says ADD COLUMN IF NOT EXISTS; SQLite
-// has no such clause, so the catalog is read first, and a failed ADD
-// rereads it and passes when another replica added the column meanwhile.
 func (s *SQLProcessModuleStore) addRevokedColumn(ctx context.Context, grantsType string) error {
 	const col = "revoked_grants"
 	clause := "ADD COLUMN"
@@ -294,7 +205,6 @@ func (s *SQLProcessModuleStore) addRevokedColumn(ctx context.Context, grantsType
 	return nil
 }
 
-// desiredColumns is the column list scanDesired reads, in its order.
 const desiredColumns = "module, desired_generation, enabled, artifact_sha256, effective_grants, migrations_applied_at, revoked_grants"
 
 // Install writes a new desired-state row. Returns ErrModuleInstalled if a
@@ -304,7 +214,7 @@ func (s *SQLProcessModuleStore) Install(ctx context.Context, d DesiredState) err
 		return errors.New("processmodule: Install: empty module name")
 	}
 	if d.DesiredGeneration == 0 {
-		d.DesiredGeneration = 1 // first install starts at gen 1
+		d.DesiredGeneration = 1
 	}
 	grantsJSON, err := marshalGrants(d.EffectiveGrants)
 	if err != nil {
@@ -320,15 +230,10 @@ func (s *SQLProcessModuleStore) Install(ctx context.Context, d DesiredState) err
 	return nil
 }
 
-// execer is the ExecContext half shared by *sql.DB and *sql.Tx.
 type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-// insertIfAbsent inserts d's row unless one exists for the module, and
-// reports whether it inserted. On Postgres it is ON CONFLICT DO NOTHING, on
-// SQLite INSERT OR IGNORE; both tell "row existed" apart from a SQL error
-// through the affected-row count.
 func (s *SQLProcessModuleStore) insertIfAbsent(ctx context.Context, ex execer, d DesiredState, grantsJSON []byte) (bool, error) {
 	enabledInt := boolToInt(d.Enabled)
 	revokedJSON, err := marshalGrants(d.RevokedGrants)
@@ -357,29 +262,22 @@ func (s *SQLProcessModuleStore) insertIfAbsent(ctx context.Context, ex execer, d
 	return n > 0, nil
 }
 
-// InstallOutcome says what [ProcessModuleStore.InstallOrUpdate] did with
-// the row it found.
+// InstallOutcome says what [ProcessModuleStore.InstallOrUpdate] did.
 type InstallOutcome int
 
 const (
-	// InstallCreated: no row existed; one was inserted as by Install.
+	// InstallCreated: no row existed; one was inserted.
 	InstallCreated InstallOutcome = iota + 1
-	// InstallUnchanged: the row's artifact digest and grant set match;
-	// nothing was written, so the enabled flag and generation stand.
+	// InstallUnchanged: digest and grants match; nothing was written.
 	InstallUnchanged
-	// InstallArtifactChanged: only the artifact digest differs (a
-	// deploy). The digest is updated and the generation bumped; the
-	// enabled flag stands.
+	// InstallArtifactChanged: only the digest differs. It is updated, the
+	// generation bumped and the migrations stamp cleared.
 	InstallArtifactChanged
-	// InstallGrantsChanged: the descriptor's grants, less the stored
-	// revokes, add a grant the row does not hold. Grants and digest are
-	// updated, the generation bumped, and the module disabled until an
-	// operator re-enables it.
+	// InstallGrantsChanged: the grants, less revokes, add a grant. The row
+	// is updated, the generation bumped and the module disabled.
 	InstallGrantsChanged
-	// InstallGrantsNarrowed: the descriptor's grants, less the stored
-	// revokes, drop grants the row holds and add none. Grants and digest
-	// are updated and the generation bumped; the enabled flag stands,
-	// since nothing new runs unseen.
+	// InstallGrantsNarrowed: the grants, less revokes, only drop grants. The
+	// row is updated and the generation bumped; enabled stands.
 	InstallGrantsNarrowed
 )
 
@@ -403,21 +301,13 @@ func (o InstallOutcome) String() string {
 // InstallResult is what [ProcessModuleStore.InstallOrUpdate] returns.
 type InstallResult struct {
 	Outcome InstallOutcome
-	// Row is the desired-state row as stored after the call.
+	// Row is the row as stored after the call.
 	Row DesiredState
-	// PreviousGrants is the grant set the row held before a grants
-	// change or narrowing; nil for every other outcome.
+	// PreviousGrants is the prior grant set for a grants change, else nil.
 	PreviousGrants []access.Permission
 }
 
-// InstallOrUpdate is the boot-time install: the same module registering
-// again (a restart, or another replica) against a row an earlier boot
-// wrote. It inserts the row when absent and otherwise reconciles it with
-// d in one transaction, by the rules on [InstallOutcome]. d.Enabled is
-// used only for a new row; an existing row's flag is never raised here.
-// For an existing row the grant set written is d.EffectiveGrants less the
-// row's RevokedGrants: a runtime revoke wins over the descriptor that
-// still requests the grant.
+// InstallOrUpdate is the boot-time install; see [ProcessModuleStore].
 func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredState) (InstallResult, error) {
 	if d.Module == "" {
 		return InstallResult{}, errors.New("processmodule: InstallOrUpdate: empty module name")
@@ -444,9 +334,6 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 		}
 		return InstallResult{Outcome: InstallCreated, Row: d}, nil
 	}
-	// The row exists. Lock it (Postgres) so a concurrent boot of another
-	// replica reconciles against this one's write, not a stale read.
-	// SQLite's write lock is already held: the INSERT OR IGNORE took it.
 	sel := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s WHERE module = %s`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	if s.dialect == migrate.DialectPostgres {
@@ -459,19 +346,12 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	res := InstallResult{Outcome: InstallUnchanged}
 	var upd string
 	var args []any
-	// A new artifact brings its own migrations: the previous artifact's
-	// approval does not cover them, so the migration coordinator must run
-	// again before the module may reach Ready.
 	unstamp := ""
 	artifactChanged := asciicase.Lower(prev.ArtifactSHA256) != asciicase.Lower(d.ArtifactSHA256)
 	if artifactChanged {
 		unstamp = ", migrations_applied_at = NULL"
 	}
 	target := withoutRevoked(d.EffectiveGrants, prev.RevokedGrants)
-	// A grant given back narrower than its revoke (orders:read after
-	// orders:* was revoked) is still a pattern match for the revoke, so
-	// the subtraction drops it. The stored row holds it and the descriptor
-	// still covers it: keep it.
 	for _, g := range prev.EffectiveGrants {
 		if !slices.Contains(target, g) && access.ScopeMatch(d.EffectiveGrants, g) {
 			target = append(target, g)
@@ -519,7 +399,6 @@ func (s *SQLProcessModuleStore) InstallOrUpdate(ctx context.Context, d DesiredSt
 	return res, nil
 }
 
-// withoutRevoked returns grants less every grant a revoked pattern covers.
 func withoutRevoked(grants, revoked []access.Permission) []access.Permission {
 	if len(revoked) == 0 {
 		return grants
@@ -529,8 +408,6 @@ func withoutRevoked(grants, revoked []access.Permission) []access.Permission {
 	})
 }
 
-// grantsWithin reports whether every grant in a is also in b: a adds
-// nothing b does not already hold.
 func grantsWithin(a, b []access.Permission) bool {
 	for _, g := range a {
 		if !slices.Contains(b, g) {
@@ -540,7 +417,6 @@ func grantsWithin(a, b []access.Permission) bool {
 	return true
 }
 
-// unionGrants returns a with every grant of b it lacks appended.
 func unionGrants(a, b []access.Permission) []access.Permission {
 	out := slices.Clone(a)
 	for _, g := range b {
@@ -551,8 +427,6 @@ func unionGrants(a, b []access.Permission) []access.Permission {
 	return out
 }
 
-// sameGrantSet reports whether a and b hold the same permissions,
-// ignoring order and repeats.
 func sameGrantSet(a, b []access.Permission) bool {
 	norm := func(g []access.Permission) []access.Permission {
 		out := slices.Clone(g)
@@ -611,8 +485,6 @@ func (s *SQLProcessModuleStore) SetEnabled(ctx context.Context, module string, e
 // BumpGeneration atomically increments desired_generation and returns the
 // new value.
 func (s *SQLProcessModuleStore) BumpGeneration(ctx context.Context, module string) (uint64, error) {
-	// Postgres supports RETURNING; SQLite (pre 3.35) does too in modern
-	// drivers, but we play safe with a read-after-update under a tx.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("processmodule: BumpGeneration %q: begin: %w", module, err)
@@ -650,8 +522,6 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 		return 0, fmt.Errorf("processmodule: SetEffectiveGrants %q: begin: %w", module, err)
 	}
 	defer tx.Rollback() //nolint:errcheck
-	// The revoked set follows the replacement: a grant it drops is
-	// remembered as revoked, a grant it gives back is no longer.
 	sel := fmt.Sprintf(`SELECT `+desiredColumns+` FROM %s WHERE module = %s`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1))
 	if s.dialect == migrate.DialectPostgres {
@@ -695,18 +565,12 @@ func (s *SQLProcessModuleStore) SetEffectiveGrants(ctx context.Context, module s
 	return uint64(gen), nil
 }
 
-// errNoGrantsNamed is a removal that names no grant.
 var errNoGrantsNamed = errors.New("names no grant")
 
-// removeGrantsAttempts bounds RemoveEffectiveGrants' retries when other
-// writes keep moving the generation.
 const removeGrantsAttempts = 8
 
-// RemoveEffectiveGrants takes grants out of the effective grant set and
-// bumps generation. The write is a compare-and-swap on the generation
-// it read, retried when another write moved it, so a grant change that
-// lands between the read and the write is kept: replacing the set from
-// a stale read would put back a grant another revoke took away.
+// RemoveEffectiveGrants removes grants from the effective set and bumps
+// generation, retrying while other writes move the generation.
 func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, module string, grants []access.Permission) (uint64, error) {
 	if len(grants) == 0 {
 		return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, errNoGrantsNamed)
@@ -740,8 +604,6 @@ func (s *SQLProcessModuleStore) RemoveEffectiveGrants(ctx context.Context, modul
 		if err != nil {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)
 		}
-		// Remember the revoke, so the next boot's InstallOrUpdate does not
-		// hand the grant back from the descriptor.
 		revokedJSON, err := marshalGrants(unionGrants(d.RevokedGrants, grants))
 		if err != nil {
 			return 0, fmt.Errorf("processmodule: RemoveEffectiveGrants %q: %w", module, err)
@@ -775,9 +637,6 @@ func (s *SQLProcessModuleStore) SetMigrationsAppliedAt(ctx context.Context, modu
 	return AssertRow(res, module)
 }
 
-// setMigrationsAppliedFor stamps the migrations-applied timestamp only
-// while the row still names artifactSHA256, in one UPDATE. It reports
-// false when the row names another artifact.
 func (s *SQLProcessModuleStore) setMigrationsAppliedFor(ctx context.Context, module, artifactSHA256 string, at time.Time) (bool, error) {
 	q := fmt.Sprintf(`UPDATE %s SET migrations_applied_at = %s WHERE module = %s AND LOWER(artifact_sha256) = LOWER(%s)`,
 		query.QuoteFolded(desiredTable), place(s.dialect, 1), place(s.dialect, 2), place(s.dialect, 3))
@@ -866,8 +725,7 @@ func (s *SQLProcessModuleStore) DeleteHeartbeat(ctx context.Context, module, rep
 	return nil
 }
 
-// AssertRow wraps a sql.Result from an UPDATE, translating zero-rows-affected
-// into ErrNoDesiredRow so callers see a single typed error.
+// AssertRow returns [ErrNoDesiredRow] (wrapped) when res affected no row.
 func AssertRow(res sql.Result, module string) error {
 	n, err := res.RowsAffected()
 	if err != nil {
@@ -879,7 +737,6 @@ func AssertRow(res sql.Result, module string) error {
 	return nil
 }
 
-// scanner is the common subset of *sql.Row and *sql.Rows.
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -889,11 +746,6 @@ func scanDesired(sc scanner, dialect migrate.Dialect) (DesiredState, error) {
 	var gen int64
 	var grantsRaw, revokedRaw string
 	var migMs sql.NullInt64
-	// `enabled` is BOOLEAN on Postgres and INTEGER (0/1) on SQLite; scanning
-	// a PG bool into *int fails ("converting driver.Value type bool to int"),
-	// which used to abort the whole row scan before migrations_applied_at
-	// was reached. Scan into an any and normalize per-dialect so both paths
-	// read every column.
 	var enabledVal any
 	if err := sc.Scan(&d.Module, &gen, &enabledVal, &d.ArtifactSHA256, &grantsRaw, &migMs, &revokedRaw); err != nil {
 		return DesiredState{}, err
@@ -910,8 +762,6 @@ func scanDesired(sc scanner, dialect migrate.Dialect) (DesiredState, error) {
 	return d, nil
 }
 
-// enabledBool normalizes the `enabled` column across dialects: Postgres
-// returns a bool, SQLite returns an int64 (0/1). Any other shape is false.
 func enabledBool(v any) bool {
 	switch x := v.(type) {
 	case bool:
@@ -928,7 +778,6 @@ func enabledBool(v any) bool {
 	return false
 }
 
-// marshalGrants serializes a grant set as a JSON string array.
 func marshalGrants(grants []access.Permission) ([]byte, error) {
 	if grants == nil {
 		grants = []access.Permission{}
@@ -944,7 +793,6 @@ func marshalGrants(grants []access.Permission) ([]byte, error) {
 	return b, nil
 }
 
-// unmarshalGrants parses a JSON string array back into a grant set.
 func unmarshalGrants(raw string) []access.Permission {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || raw == "null" {
@@ -964,7 +812,6 @@ func unmarshalGrants(raw string) []access.Permission {
 	return out
 }
 
-// place returns the n-th dialect placeholder (Postgres: $n; SQLite: ?).
 func place(dialect migrate.Dialect, n int) string {
 	if dialect == migrate.DialectPostgres {
 		return fmt.Sprintf("$%d", n)
@@ -972,7 +819,6 @@ func place(dialect migrate.Dialect, n int) string {
 	return "?"
 }
 
-// boolToInt maps a bool to the integer encoding used in both dialects.
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -980,7 +826,6 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// timeToMillis encodes a *time.Time as epoch millis (sql.NullInt64-friendly).
 func timeToMillis(t *time.Time) any {
 	if t == nil {
 		return nil

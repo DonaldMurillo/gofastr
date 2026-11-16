@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -49,7 +50,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 	result, err := scanRun(root, notes, sinks)
 	if err != nil {
 		var b strings.Builder
-		fmt.Fprintf(&b, "NOTE: could not scan this project (%s); no lines are\n", cli.ScrubTerminalOutput(err.Error()))
+		fmt.Fprintf(&b, "NOTE: could not scan this project (%s); no lines are\n", textsafe.ScrubTerminal(err.Error()))
 		b.WriteString("      pointed at below, but every note still carries its guidance.\n\n")
 		b.WriteString(formatUpgradeNotes(nil, inRange))
 		return b.String(), 0
@@ -72,7 +73,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unscanned)-maxNoteHits)
 				break
 			}
-			b.WriteString("  " + cli.ScrubTerminalOutput(f) + "\n")
+			b.WriteString("  " + textsafe.ScrubTerminal(f) + "\n")
 		}
 		b.WriteString("\n")
 	}
@@ -84,7 +85,7 @@ func upgradeReport(root string, inRange []upgrade.Release, sinks upgrade.MarkerS
 				fmt.Fprintf(&b, "  … and %d more\n", len(result.Unexplained)-maxNoteHits)
 				break
 			}
-			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(cli.ScrubTerminalOutput(h.Why), "\n", "\n      "))
+			fmt.Fprintf(&b, "  %s  %s\n", hitPos(h), strings.ReplaceAll(textsafe.ScrubTerminal(h.Why), "\n", "\n      "))
 		}
 	}
 	// Edit hits only, the ones the report files as edits (hitsFor): a
@@ -110,7 +111,7 @@ func brokenList(broken []string) string {
 	if len(broken) > max {
 		shown, extra = broken[:max], len(broken)-max
 	}
-	s := cli.ScrubTerminalOutput(strings.Join(shown, ", "))
+	s := textsafe.ScrubTerminal(strings.Join(shown, ", "))
 	if extra > 0 {
 		s += fmt.Sprintf(", and %d more", extra)
 	}
@@ -197,9 +198,9 @@ func renderNotes(releases []upgrade.Release, pick func(*upgrade.Note) ([]scan.Hi
 					fmt.Fprintf(&b, "        … and %d more\n", len(hits)-maxNoteHits)
 					break
 				}
-				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), cli.ScrubTerminalOutput(h.Why))
+				fmt.Fprintf(&b, "        %s  %s\n", hitPos(h), textsafe.ScrubTerminal(h.Why))
 				if h.Err != "" {
-					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(cli.ScrubTerminalOutput(h.Err), "\n", "\n          "))
+					fmt.Fprintf(&b, "          compile error: %s\n", strings.ReplaceAll(textsafe.ScrubTerminal(h.Err), "\n", "\n          "))
 				}
 			}
 		}
@@ -237,7 +238,7 @@ func hitPos(h scan.Hit) string {
 	if h.File == "" {
 		return "(no position)"
 	}
-	file := cli.ScrubTerminalOutput(h.File)
+	file := textsafe.ScrubTerminal(h.File)
 	if h.Col > 0 {
 		return fmt.Sprintf("%s:%d:%d", file, h.Line, h.Col)
 	}
@@ -254,7 +255,7 @@ func resolveLatestVersion() (string, error) {
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) && len(ee.Stderr) > 0 {
-			return "", fmt.Errorf("%w: %s", err, cli.ScrubTerminalOutput(strings.TrimSpace(string(ee.Stderr))))
+			return "", fmt.Errorf("%w: %s", err, textsafe.ScrubTerminal(strings.TrimSpace(string(ee.Stderr))))
 		}
 		return "", err
 	}

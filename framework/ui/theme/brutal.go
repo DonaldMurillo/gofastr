@@ -2,17 +2,9 @@ package theme
 
 import "github.com/DonaldMurillo/gofastr/core-ui/style"
 
-// Brutal is the framework theme re-skinned as neo-brutalism: the same
-// token names with square corners, 2px strokes, hard offset shadows,
-// Archivo type and a yellow primary on cream, in light and dark. The
-// shadows are drawn in the border colour, so they flip with the scheme
-// (black on cream, cream on near-black). Register it as a page theme
-// (style.RegisterThemeOverride) and offer it in a ui.ThemePicker, or
-// build an app on it.
-//
-// Archivo is named first in the font stacks; an app that wants the face
-// itself self-hosts it (the strict CSP blocks font CDNs), and without it
-// the stack falls back to the system sans.
+// Brutal is the framework theme as neo-brutalism: square corners, 2px
+// strokes, hard offset shadows in the border colour, Archivo type and a
+// yellow primary, in light and dark.
 func Brutal() style.Theme {
 	const ink, cream = "#111111", "#F5EFD6"
 	archivo := `"Archivo", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif`

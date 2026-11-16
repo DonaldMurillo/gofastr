@@ -13,69 +13,36 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── NetworkRetryBanner ─────────────────────────────────────────────
-//
-// Persistent banner that auto-shows when network connectivity looks
-// degraded: either the SSE stream has gone silent for too long or
-// the app has reported a consecutive run of RPC failures. The banner
-// hides when (a) the Retry button's health-check returns 2xx, or
-// (b) app code explicitly calls
-// `window.__gofastr.networkStatus.reportRecovery()`. The runtime does
-// NOT wrap `window.fetch`, so unrelated successful requests do not
-// The banner follows the connection the framework reports: it ships
-// hidden, the headless module shows it when the framework reports the
-// connection lost with a retry scheduled (the offline SystemBanner
-// contract), and a successful Retry pings the health endpoint and
-// hides it again. The failure-count and SSE-silence triggers retired
-// with the old runtime module.
-//
-// Place once near the top of the page chrome (above the main content,
-// inside the persistent shell so SPA navigation doesn't remove it).
-//
-// Manual API (window.__gofastr.networkStatus): reportFailure() shows
-// every mounted offline banner, reportRecovery() hides them — wire
-// them into app-level connection signals when a page has no SSE
-// stream to follow.
-
 // NetworkRetryBannerConfig configures the banner.
 type NetworkRetryBannerConfig struct {
-	// Ctx carries the per-request context the banner's default title,
-	// text and retry label are written in. When nil, English applies.
+	// Ctx resolves the default title, text and retry label; nil uses English.
 	Ctx context.Context
 
-	// HealthEndpoint is the URL the Retry button pings to test
-	// connectivity. Must return 2xx when the server is healthy.
-	// Required.
+	// HealthEndpoint is the required relative or http(s) URL Retry fetches; a 2xx means recovery.
 	HealthEndpoint string
 
-	// Title is the banner heading. Default "Connection lost".
+	// Title is the heading. Default "Connection lost".
 	Title string
 
-	// Description is the body text. Default explains the recovery
-	// action.
+	// Description is the body text. Default explains the recovery.
 	Description string
 
-	// RetryLabel is the retry button text. Default "Retry now".
+	// RetryLabel is the retry link's text. Default "Retry now".
 	RetryLabel string
 
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the banner's root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, role, aria-live, and hidden (the runtime
-	// un-hides the banner when connectivity degrades).
+	// ExtraAttrs forwards attributes to the root; class, id, data-cui-*, role, aria-live and hidden are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// NetworkRetryBanner renders the (initially hidden) banner.
+// NetworkRetryBanner renders the offline banner, hidden until the runtime
+// reports the connection lost. Mount it once, in the persistent shell.
 func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 	if cfg.HealthEndpoint == "" {
 		panic("ui: NetworkRetryBanner requires HealthEndpoint")
 	}
-	// The endpoint becomes the retry link's href, so it meets the same
-	// URL policy as every other kit anchor.
 	if urlsafe.CleanAnchor(cfg.HealthEndpoint) == "" {
 		panic(fmt.Sprintf("ui: NetworkRetryBanner HealthEndpoint %q is not a safe link: use a relative path or an http(s) URL", cfg.HealthEndpoint))
 	}
@@ -92,42 +59,27 @@ func NetworkRetryBanner(cfg NetworkRetryBannerConfig) render.HTML {
 		retryLabel = i18nui.NetworkRetryNowText.Text(cfg.Ctx)
 	}
 	noDismiss := false
-
-	// The offline SystemBanner owns the banner: it ships hidden, the
-	// headless module shows it when the framework reports the
-	// connection lost with a retry scheduled, and its ending is the
-	// reconnect. The retry control is a real link to the health
-	// endpoint — no script reloads through it, script re-fetches it.
-	parts := headless.Parts{}
-	if cfg.Class != "" {
-		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
-	}
 	retry := render.Tag("a", map[string]string{
 		"href":                   cfg.HealthEndpoint,
 		"class":                  buttonClassTokens(ButtonSecondary, ButtonSizeDefault) + " fui-network-retry-banner__retry",
 		"data-hui-network-retry": "",
 	}, render.Text(retryLabel))
-	_ = noDismiss
 	return networkRetryBannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
-		ID:    orDefaultStr(cfg.ID, "network-offline"),
-		Tone:  "warning",
-		Title: title,
-		Text:  desc,
-		// NetworkRetryBannerConfig carries no render.HTML field of its
-		// own: this link is always built here from HealthEndpoint and
-		// RetryLabel, never handed in by a caller.
+		ID:      orDefaultStr(cfg.ID, "network-offline"),
+		Tone:    "warning",
+		Title:   title,
+		Text:    desc,
 		Action:  headless.Own(retry),
 		Dismiss: &noDismiss,
 		Offline: true,
 		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "role", "aria-live", "hidden",
 			"data-fui-network-retry-health", "data-fui-network-retry-threshold"),
-		Parts:   parts,
+		Parts:   bannerRootParts(cfg.Class),
+		DOMID:   cfg.ID,
 		Strings: StringsFor(cfg.Ctx),
 	}, networkRetryClasses))
 }
 
-// networkRetryClasses dresses the offline SystemBanner in this
-// package's own vocabulary.
 var networkRetryClasses = headless.Classes{
 	headless.PartRoot:           "fui-network-retry-banner",
 	headless.PartVisuallyHidden: "fui-visually-hidden",
@@ -137,9 +89,6 @@ var networkRetryClasses = headless.Classes{
 }
 
 var networkRetryBannerStyle = registry.RegisterStyle("ui-network-retry-banner", func(_ style.Theme) string {
-	// Knobs: --ui-network-retry-banner-desc-opacity (0.9) dims the
-	// description; --ui-network-retry-banner-retry-checking-opacity
-	// (0.7) dims the retry link while a check is in flight.
 	return `[data-cui-comp="ui-network-retry-banner"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;

@@ -12,72 +12,42 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The notification family: one toast, the stack it lives in, and the
-// bell that announces an unread count. Each toast carries its own
-// live role so server and runtime arrivals announce alike; the stack
-// is a named, non-live region mounted once per layout. The SSR toast
-// is visible in it with no script at all. The module that binds the
-// data-hui-toast* hooks
-// (headless-feedback) owns the runtime path: toasts the response
-// header injects, the TTL, the pause while focused, and the focus
-// return after a dismissal.
-
 // Toast parts.
 const (
 	PartToastToneWord Part = "toast-tone-word"
-	// PartToastItem is the stack row that wraps one runtime-built
-	// toast: the element the stack lays out and animates, distinct
-	// from the toast root the tone colours. Only ToastTemplate draws
-	// it; a server-rendered Toast sits in the stack bare.
+	// PartToastItem is the stack row wrapping one runtime-built toast; only ToastTemplate draws it.
 	PartToastItem Part = "toast-item"
-	// PartToastAction is a runtime toast's one action button (Undo,
-	// View): only ToastTemplate draws it, and the module removes it
-	// from a row whose toast names no action.
+	// PartToastAction is a runtime toast's action button; only ToastTemplate draws it.
 	PartToastAction Part = "toast-action"
 )
 
 // ToastProps configures one toast.
 type ToastProps struct {
-	// Tone is one of info, success, warning, danger. The class map
-	// colours the row from it; the tone word carries it to a reader.
+	// Tone is info (the default), success, warning or danger; the tone word says it to a reader.
 	Tone string
-	// Icon is the decorative glyph, hidden from readers: the tone
-	// word is what tells them the kind of news. Empty renders no icon.
+	// Icon is a decorative glyph, hidden from readers.
 	Icon render.HTML
-	// Title is the headline; Body is the detail. One of them is
-	// required — a toast that says nothing is decoration.
+	// Title is the headline and Body the detail; one of them is required.
 	Title string
 	Body  string
-	// DismissHref makes the toast dismissable with a link that keeps
-	// a real href, and requires a complete Island: dismissing an
-	// in-page region is an in-page state change, never a route.
+	// DismissHref makes the toast dismissable through a link with a real href; it requires Island.
 	DismissHref  string
 	DismissLabel string
-	// TTLMS is how long the module keeps the toast before it goes, on
-	// the runtime path. Zero means it stays until dismissed. Negative
-	// is refused.
+	// TTLMS is the runtime lifetime in milliseconds; zero stays until dismissed.
 	TTLMS int
-	// Live is how the toast interrupts. The default is polite: a
-	// toast is an arrival, and arrivals wait their turn; assertive is
-	// for the failures a reader must hear before doing anything else.
+	// Live is polite by default; LiveAssertive renders role=alert.
 	Live Live
 
-	// Island is where the dismiss goes with script. Required when
-	// DismissHref is set; ignored otherwise.
+	// Island is where the dismiss goes with script.
 	Island Island
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the tone
-	// word and the dismiss control's name.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// toneWord resolves the tone's spoken word from Strings.
 func toneWord(tone string, w *Strings) string {
 	switch tone {
 	case "success":
@@ -110,14 +80,9 @@ func Toast(p ToastProps, s Classes) render.HTML {
 		panic("headless: Toast TTLMS " + strconv.Itoa(p.TTLMS) + " is negative — a lifetime before the toast exists is no lifetime")
 	}
 	if p.TTLMS > math.MaxInt32 {
-		// HTML's timer clamps a delay past 2^31-1 to zero: a toast
-		// meant to stay forever would leave on the next task. Zero is
-		// the forever.
 		panic("headless: Toast TTLMS " + strconv.Itoa(p.TTLMS) + " is past the timer's range — 0 is the lifetime without end")
 	}
 
-	// The title and body are request-shaped: control bytes are
-	// scrubbed, the way the table's carried query is.
 	title := scrubControlBytes(p.Title)
 	body := scrubControlBytes(p.Body)
 	w := p.Strings.Resolve()
@@ -125,8 +90,6 @@ func Toast(p ToastProps, s Classes) render.HTML {
 	own := Merge(Safe(p.ExtraAttrs, "role"), Attrs(map[string]string{"id": p.ID}))
 	Mark(own, "data-hui-toast")
 	if cls := s.Variant(PartRoot, p.Tone); cls != "" {
-		// The variant class only: El appends the part's own base class
-		// to whatever class the component sets here.
 		own["class"] = cls
 	}
 	own["role"] = "status"
@@ -139,8 +102,6 @@ func Toast(p ToastProps, s Classes) render.HTML {
 
 	kids := []render.HTML{}
 	if p.Tone != "" {
-		// Read, not shown: the adapter hides it visually and shows the
-		// icon instead, the way Alert and SystemBanner say their tone.
 		kids = append(kids, b.El("span", PartToastToneWord, Internal(nil),
 			render.Text(toneWord(p.Tone, w)+": ")))
 	}
@@ -164,71 +125,38 @@ func Toast(p ToastProps, s Classes) render.HTML {
 			label = w.fill(w.DismissTitled, "title", orDefault(title, body))
 		}
 		kids = append(kids, b.El("a", PartDismiss, Internal(Merge(html.Attrs{
-			"href":       p.DismissHref,
-			"aria-label": label,
-			// The module that owns the runtime dismissal reads the
-			// hook; the island contract beside the href is the
-			// in-page path.
+			"href":                   p.DismissHref,
+			"aria-label":             label,
 			"data-hui-toast-dismiss": "",
 		}, p.Island.attrs(p.DismissHref, "GET"))), render.Text("×")))
 	}
 	return b.El("div", PartRoot, own, kids...)
 }
 
-// ToastTemplateProps configures the inert <template> a stack carries
-// for the rows the headless-feedback module builds at runtime (the
-// kernel's X-Gofastr-Toast path, window.__gofastr.toast). The module
-// clones the row, fills its hooks and adds the tone's variant class
-// from the template's attributes; it names no class and says no word
-// of its own. A kit registers the rendered template under
-// preset.ToastTemplate (registry.RegisterTemplate) and preset's slot
-// renders it inside the stack.
+// ToastTemplateProps configures the inert <template> the headless-feedback
+// module clones for the toasts it builds at runtime.
 type ToastTemplateProps struct {
-	// Glyphs are the decorative icons per tone (info, success,
-	// warning, danger) and per Variants name. A tone or variant with
-	// no glyph renders no icon on its rows.
+	// Glyphs are the decorative icons per tone and per Variants name.
 	Glyphs map[string]string
-	// Variants are the variant names beyond the four tones a runtime
-	// toast may carry: a kit's neutral, an app's registered status
-	// variants. Each is listed on the template with its class (the
-	// class map's root--<name>) and its glyph (Glyphs[name]); a row of
-	// that variant wears both, is polite, and says no tone word, since
-	// the tone words name the four tones only. A name outside
-	// [a-z0-9-] or one of the four tones is refused.
+	// Variants are variant names beyond the four tones; each matches [a-z0-9-] and is not a tone.
 	Variants []string
-	// StyleName, when set, is the registered style (the name given to
-	// registry.RegisterStyle) the cloned row loads: rendered as the
-	// kernel's data-cui-comp marker on the row's root, the way the
-	// kit marks its own server-rendered Toast, so the row's sheet
-	// loads on insertion. A name outside the marker's charset is
-	// refused: it is a sheet name, not free text.
+	// StyleName is the registered style the cloned row loads, rendered as data-cui-comp.
 	StyleName string
 
-	Parts Parts
-	// Strings carry the dismiss label template and the tone words the
-	// module reads when the stack carries none of its own.
+	Parts   Parts
 	Strings *Strings
 }
 
-// toastVariant is one Variants entry as the module reads it.
 type toastVariant struct {
 	Class string `json:"class"`
 	Glyph string `json:"glyph"`
 }
 
-// toastVariantRe is the charset of a variant name, the one
-// framework/ui's registered status variants use.
 var toastVariantRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// styleNameRe is the charset of a registered style's name, the one
-// core-ui/registry's marker scan accepts.
 var styleNameRe = regexp.MustCompile(`^[a-zA-Z0-9_:.-]+$`)
 
-// ToastTemplate renders the row template. Every part the module may
-// fill is present and empty: the tone word, the icon, the title, the
-// body, the action, the dismiss. A part with nothing to say is removed at clone
-// time, so the rendered row matches what Toast renders for the same
-// content.
+// ToastTemplate renders the row template, every part the module fills present and empty.
 func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s)
@@ -244,21 +172,11 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		b.El("span", PartIcon, Mark(Internal(Attrs(map[string]string{"aria-hidden": "true"})), "data-hui-toast-icon")),
 		b.El("span", PartTitle, Mark(Internal(nil), "data-hui-toast-title")),
 		b.El("span", PartBody, Mark(Internal(nil), "data-hui-toast-body")),
-		// Hidden until the module fills it: the template's action has
-		// no label of its own.
 		b.El("button", PartToastAction, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-action", "hidden")),
 		b.El("button", PartDismiss, Mark(Internal(Attrs(map[string]string{"type": "button"})), "data-hui-toast-dismiss"),
 			render.Text("×")),
 	)
-	// The item is the template's one subtree and holds no caller
-	// content, so it carries the internal mark; the marks on the row's
-	// parts below it are what the cloned row carries once it stands
-	// in the stack on its own.
 	item := b.El("div", PartToastItem, Mark(Internal(nil), "data-hui-toast-item"), row)
-	// The template's own attributes are what the module reads besides
-	// the row: the glyph and variant class per tone, and the words a
-	// stack without Strings of its own falls back to. Each spelled in
-	// full so the hook gates see the names the module binds.
 	attrs := html.Attrs{
 		"data-hui-toast-template":        "",
 		"data-hui-toast-glyph-info":      p.Glyphs["info"],
@@ -276,9 +194,6 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 		"data-hui-toast-tone-danger":     w.ToneDanger,
 	}
 	if len(p.Variants) > 0 {
-		// One JSON map for the open set: the names are the kit's and
-		// the app's, so they cannot each be an attribute the hook gates
-		// know by name.
 		extra := map[string]toastVariant{}
 		for _, v := range p.Variants {
 			if !toastVariantRe.MatchString(v) {
@@ -299,33 +214,20 @@ func ToastTemplate(p ToastTemplateProps, s Classes) render.HTML {
 
 // ToastStackProps configures the one stack a layout mounts.
 type ToastStackProps struct {
-	// Label names the stack for assistive technology. Required: the
-	// stack is a landmark a reader can jump to, and an unnamed one is
-	// a hole.
+	// Label names the stack region. Required.
 	Label string
-	// Toasts are the rendered rows. The runtime path inserts into the
-	// stack; the server-rendered rows are already home.
+	// Toasts are the server-rendered rows.
 	Toasts []render.HTML
-	// Max is how many rows the module keeps before dropping the
-	// oldest. Default 4; zero takes the default; negative is refused.
+	// Max is how many rows the module keeps (default 4); negative is refused.
 	Max int
 
 	ID         string
 	ExtraAttrs html.Attrs
 	Parts      Parts
-	// Strings carry the dismiss label template a runtime-inserted
-	// toast names itself by ("%s" where the toast's title goes).
-	Strings *Strings
+	Strings    *Strings
 }
 
-// ToastStack renders the region the toasts live in.
-//
-// The stack carries the framework's data-cui-toast-stack name beside
-// its own: the kernel's response-header toast path and the runtime's
-// auto-mount look for the framework's name, and the module that owns
-// the component lifecycle looks for this package's. One region, two
-// contracts, because the kernel's half is infrastructure this package
-// does not own.
+// ToastStack renders the region the toasts live in, named for both the kernel and the module.
 func ToastStack(p ToastStackProps, s Classes) render.HTML {
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: ToastStack requires Label — the stack is a landmark, and an unnamed landmark is a hole")
@@ -344,13 +246,8 @@ func ToastStack(p ToastStackProps, s Classes) render.HTML {
 	if p.Max > 0 {
 		own["data-hui-toast-max"] = strconv.Itoa(p.Max)
 	}
-	// The dismiss label the feedback module writes onto a toast it
-	// builds travels here: the module says no sentence of its own.
 	w := p.Strings.Resolve()
 	own["data-hui-toast-dismiss-label"] = w.DismissTitled
-	// The tone words too: a toast the module builds from a response
-	// header says its kind to a reader the way a server-rendered one
-	// does, in the page's language.
 	own["data-hui-toast-tone-info"] = w.ToneInfo
 	own["data-hui-toast-tone-success"] = w.ToneSuccess
 	own["data-hui-toast-tone-warning"] = w.ToneWarning
@@ -359,46 +256,29 @@ func ToastStack(p ToastStackProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, kids...)
 }
 
-// ─── NotificationBell ───────────────────────────────────────────────
-
 // NotificationBellProps configures the unread-count trigger.
 type NotificationBellProps struct {
-	// Href is where the link goes: the notifications page,
-	// same-origin. Required — a bell that rings to nowhere is a dead
-	// link on the no-script page, and "#" is not a destination.
+	// Href is the notifications page the link goes to without script. Required.
 	Href string
 	// Label is the trigger's accessible name, followed by its unread count. Required.
 	Label string
-	// UnreadCount is the count the badge shows and the accessible
-	// name says. Negative is refused; zero hides the badge (nothing
-	// unread is no news) unless a Bind raises it.
+	// UnreadCount is the badge's count; negative is refused, and zero hides the
+	// badge unless UnreadBind is set.
 	UnreadCount int
-	// UnreadBind, when set, keeps the count following a client
-	// signal: the badge the server rendered at zero appears when the
-	// signal changes it.
+	// UnreadBind keeps the count following a client signal.
 	UnreadBind *Bind
-	// Opens, when set, is the widget name the anchor opens with
-	// script: the same element is the no-script link (Href) and the
-	// widget's trigger, rendered as the kernel's data-cui-open and a
-	// bottom-anchored popover. A name carrying control bytes or
-	// whitespace is refused — it is a widget key, not free text.
+	// Opens is the widget the anchor opens with script; whitespace and control bytes are refused.
 	Opens string
-	// Icon is the glyph. The default bell is the structure's own; a
-	// caller's SVG replaces it.
+	// Icon replaces the default bell glyph.
 	Icon render.HTML
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on the root, the icon, the badge and the
-	// count. Strings carry the spoken count.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// orDefaultHTML returns fallback when v is empty.
 func orDefaultHTML(v, fallback render.HTML) render.HTML {
 	if v == "" {
 		return fallback
@@ -406,13 +286,7 @@ func orDefaultHTML(v, fallback render.HTML) render.HTML {
 	return v
 }
 
-// NotificationBell renders the trigger.
-//
-// The trigger is an anchor with a real destination — the no-script
-// page goes to the notifications page, the script-enhanced one opens
-// the popover, and the same element is both. The count the anchor's
-// name says is the count the badge shows, so the news and the number
-// cannot disagree.
+// NotificationBell renders the trigger: an anchor whose name says the count its badge shows.
 func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	if strings.TrimSpace(p.Label) == "" {
 		panic("headless: NotificationBell requires Label — a bell glyph names nothing")
@@ -430,11 +304,9 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 	w := p.Strings.Resolve()
 	b := p.Parts.Box(s, PartText)
 	own := Merge(Safe(p.ExtraAttrs, "href", "aria-label"), Attrs(map[string]string{
-		"href":       urlsafe.CleanAnchor(p.Href),
-		"aria-label": p.Label + ": " + w.fill(w.NotificationCount, "n", p.UnreadCount),
-		"id":         p.ID,
-		// The sentence shape travels so the module can re-say the
-		// count when the signal changes it.
+		"href":                            urlsafe.CleanAnchor(p.Href),
+		"aria-label":                      p.Label + ": " + w.fill(w.NotificationCount, "n", p.UnreadCount),
+		"id":                              p.ID,
 		"data-hui-notification-count-fmt": w.NotificationCount,
 		"data-hui-notification-label":     p.Label,
 	}))
@@ -447,20 +319,6 @@ func NotificationBell(p NotificationBellProps, s Classes) render.HTML {
 		own["data-cui-popover-anchor"] = "bottom"
 	}
 
-	// The glyph span carries the badge INSIDE it: the marker is laid
-	// out on the GLYPH's top-end corner (the component CSS anchors it
-	// to the icon), never the button's — a 44px touch target centres a
-	// 20px glyph with 12px margins, and a badge pinned to the button
-	// covered about half the glyph. The count is decorative (the
-	// anchor's aria-label says it in words), so the glyph span's
-	// aria-hidden="true" is no loss.
-	//
-	// With a caller's Icon the glyph span is a slot ancestor, so the
-	// boundary moves to the marker (the count is always the
-	// component's own); with the default bell there is no slot in the
-	// glyph span at all, so the boundary sits on the span itself and
-	// the marker is left unmarked to avoid a repeat. An Icon marked
-	// with Own is the kit's glyph, not a slot, so it keeps the default.
 	iconOwn, markerOwn := Internal(nil), html.Attrs(nil)
 	if p.Icon != "" && !ownedSlot(p.Icon) {
 		iconOwn, markerOwn = nil, Internal(nil)

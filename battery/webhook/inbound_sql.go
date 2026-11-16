@@ -11,6 +11,7 @@ import (
 
 	"github.com/DonaldMurillo/gofastr/core/datexport"
 	"github.com/DonaldMurillo/gofastr/core/query"
+	"github.com/DonaldMurillo/gofastr/framework/db/sqlbusy"
 )
 
 // SQLInboundStore is a SQL-backed InboundStore. It mirrors SQLStore's
@@ -20,7 +21,7 @@ import (
 // Schema:
 //
 //	webhook_inbound(
-//	    id          TEXT PRIMARY KEY,
+//	    id          TEXT PRIMARY KEY NOT NULL,
 //	    source      TEXT NOT NULL,
 //	    dedupe_key  TEXT NOT NULL DEFAULT '',  -- '' means no dedupe
 //	    headers     TEXT NOT NULL DEFAULT '{}', -- JSON object, allowlisted subset
@@ -89,7 +90,7 @@ func (s *SQLInboundStore) ensureTable() error {
 	}
 	stmts := []string{
 		fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-			id          TEXT PRIMARY KEY,
+			id          TEXT PRIMARY KEY NOT NULL,
 			source      TEXT NOT NULL,
 			dedupe_key  TEXT NOT NULL DEFAULT '',
 			headers     TEXT NOT NULL DEFAULT '{}',
@@ -189,16 +190,20 @@ func (s *SQLInboundStore) UpdateEnvelope(ctx context.Context, e InboundEnvelope)
 		q += ` AND status <> ` + s.placeholder(7)
 		args = append(args, InboundStatusProcessed)
 	}
-	_, err = s.db.ExecContext(ctx, q, args...)
-	return err
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := s.db.ExecContext(ctx, q, args...)
+		return err
+	})
 }
 
 // RegisterDedupeKey sets the envelope's dedupe key and nothing else, at any
 // status (see dedupeKeyRegistrar). A missing id matches no row.
 func (s *SQLInboundStore) RegisterDedupeKey(ctx context.Context, id, key string) error {
 	q := fmt.Sprintf("UPDATE %s SET dedupe_key = %s WHERE id = %s", s.table, s.placeholder(1), s.placeholder(2))
-	_, err := s.db.ExecContext(ctx, q, key, id)
-	return err
+	return sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		_, err := s.db.ExecContext(ctx, q, key, id)
+		return err
+	})
 }
 
 // MarkEnvelopeProcessing transitions an envelope to "processing" and
@@ -221,11 +226,15 @@ func (s *SQLInboundStore) MarkEnvelopeProcessing(ctx context.Context, id string)
 	// retry lands here) match; a missing id matches nothing.
 	q += " AND status <> " + s.placeholder(4)
 	args = append(args, InboundStatusProcessed)
-	res, err := s.db.ExecContext(ctx, q, args...)
-	if err != nil {
-		return false, err
-	}
-	n, err := res.RowsAffected()
+	var n int64
+	err := sqlbusy.Retry(ctx, func(ctx context.Context) error {
+		res, err := s.db.ExecContext(ctx, q, args...)
+		if err != nil {
+			return err
+		}
+		n, err = res.RowsAffected()
+		return err
+	})
 	return n == 1, err
 }
 

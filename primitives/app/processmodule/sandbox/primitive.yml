@@ -1,0 +1,124 @@
+primitive: app.processmodule.sandbox
+summary: "How a child is launched: runner selection by trust tier, the per-OS sandbox backends and process-group hygiene."
+code:
+  - framework/processmodule_runner.go
+  - framework/processmodule_sandbox.go
+  - framework/processmodule_sandbox_darwin.go
+  - framework/processmodule_sandbox_linux.go
+  - framework/processmodule_sandbox_windows.go
+  - framework/processmodule_sandbox_other.go
+  - framework/processmodule_sysproc_*.go
+on_change:
+  - "A change to a darwin, windows or other-OS arm cannot be tested on the Linux CI host: run GOOS=darwin and GOOS=windows go vet ./framework, and the conformance probes on that OS when its arm changes what a child may reach."
+invariants:
+  - id: untrusted-never-downgrades
+    rule: SelectRunner gives a TrustUntrusted module only a SandboxRunner whose backend conformed; a nil or non-conforming sandbox returns ErrSandboxUnavailable and never the trusted runner.
+    enforced_by:
+      - test: framework.TestSelectRunner_UntrustedNoSandboxFails
+      - test: framework.TestSelectRunner_UntrustedNonConformingFails
+      - test: framework.TestApp_UntrustedModuleNilBackendFailsClosed
+  - id: sandbox-probed-at-construction
+    rule: NewSandboxRunner runs every conformance probe and returns a SandboxConformanceError carrying the report unless the backend is available and every probe passes, a probe panic included.
+    enforced_by:
+      - test: framework.TestApp_UntrustedModuleNonConformingPanicsWithReport
+      - test: framework.TestProbePanicRefusesSandbox
+      - test: framework.TestNewSandboxRunner_UnavailableBackendErrors
+  - id: wrap-failure-never-execs
+    rule: A sandbox backend whose Wrap returns an error or panics fails the spawn before exec, so an untrusted child never runs unconfined, and the runner removes the scratch dir it made.
+    enforced_by:
+      - test: framework.TestSweepPMRunWrapFailureNeverExecs
+  - id: verify-then-exec
+    rule: The runner refuses an artifact whose SHA-256 does not equal the descriptor pin with ExecutableSHAMismatchError before exec, under both runners.
+    enforced_by:
+      - test: framework.TestSweepPMRunDigestMismatchNeverExecs
+  - id: hashed-bytes-are-executed-bytes
+    rule: On Linux the runner execs the open fd it hashed through /dev/fd/3, and where it must exec by path it re-hashes right before exec, so an artifact swapped after the check never runs.
+    enforced_by:
+      - test: framework.TestRunnerRedSwappedArtifact
+  - id: env-is-allowlist-only
+    rule: A child's environment is the runner's allowlist plus InheritEnv plus ExtraEnv, never os.Environ, with an explicit entry winning on a name collision.
+    enforced_by:
+      - test: framework.TestSweepPMRunChildEnvIsAllowlistOnly
+      - test: framework.TestBuildChildEnv_dedupAndOverride
+  - id: child-group-dies-with-child
+    rule: On Unix each child runs in its own process group, and Wait kills what is left of the group right after the reap, however the child exited; on Windows only the child itself is killed.
+    enforced_by:
+      - test: framework.TestChildExitKillsItsGroup
+  - id: no-signal-after-reap
+    rule: Kill after Wait has reaped the child signals nothing, since the recorded group id may lead an unrelated group by then.
+    enforced_by:
+      - test: framework.TestSweepPMRunKillAfterReapSignalsNothing
+  - id: failed-spawn-leaks-nothing
+    rule: A spawn abandoned after prepare closes every pipe end and the artifact fd prepare opened and removes the scratch dir the runner made; a reaped child's runner-made scratch dir is removed too.
+    enforced_by:
+      - test: framework.TestReleasePrepFDsClosesArtifact
+      - test: framework.TestReleasePrepFDsClosesChildEnds
+      - test: framework.TestStartFailClosesParentPipes
+      - test: framework.TestSweepPMRunExecFailClosesArtifact
+      - test: framework.TestRunnerRemovesScratchDir
+  - id: bwrap-confines
+    rule: "The Linux backend runs the child under bwrap with its own user (uid 65534), pid and network namespaces, a read-only root with only scratch writable and no /etc or /tmp mounted, every capability dropped, and prlimit soft and hard caps on fds, processes and data."
+    enforced_by:
+      - test: framework.TestBwrapWrapCommandLine
+      - test: framework.TestBwrapWrapDefaultLimits
+  - id: root-host-runs-bwrap-as-nobody
+    rule: On a root host bwrap starts as host uid and gid 65534 and scratch is handed to that account, because the kernel never applies RLIMIT_NPROC to host root.
+    enforced_by:
+      - test: framework.TestBwrapWrapRootRunsAsSandboxAccount
+  - id: no-backend-fails-closed-off-linux
+    rule: The Windows backend is never Available and its Wrap always errors, and other non-Linux, non-macOS targets have no backend, so untrusted modules fail closed there.
+    judge: Does this change make a Windows or other-OS sandbox backend report Available, or let its Wrap return nil, without implementing the confinement every conformance probe checks?
+  - id: darwin-profile-lets-exec-start
+    rule: "The macOS profile names real paths (after EvalSymlinks), allows file-map-executable, file-read-metadata, reading the root directory's entries and sysctl-read so a child can exec, denies network and reads of $HOME, and leaves /var out of the write-deny list where the per-user temp dirs live."
+    judge: Does this change make the generated macOS sandbox-exec profile match symlinked rather than real paths, drop an allowance a child needs to exec, allow network or $HOME reads, or deny writes under /var?
+decisions:
+  - id: bwrap-wrapper-command
+    date: 2026-11-16
+    status: accepted
+    decision: The Linux backend wraps the child in the bwrap and prlimit commands rather than building namespaces and a seccomp filter natively.
+    rejected:
+      - option: Native landlock and seccomp through golang.org/x/sys.
+        why: x/sys has the syscalls but no BPF assembler, so a seccomp filter would be bespoke code; bwrap is the standard unprivileged sandbox CLI.
+    revisit_if: A maintained Go BPF assembler or a native namespace library becomes a dependency anyway.
+  - id: no-cpu-cap-on-linux
+    date: 2026-11-16
+    status: accepted
+    decision: The Linux backend caps fds, processes and data size but not CPU.
+    rejected:
+      - option: A cgroup v2 CPU limit.
+        why: It needs a delegated cgroup the host may not have, and no probe checks CPU.
+    revisit_if: The resource-limit probe starts checking CPU.
+  - id: macos-cannot-conform
+    date: 2026-11-16
+    status: accepted
+    decision: "The macOS backend is sandbox-exec with a generated deny-default profile, declares neither the distinct-principal nor the resource-limit probe, and so does not conform: untrusted modules fail closed on macOS."
+    rejected:
+      - option: App Sandbox.
+        why: It needs a signed .app, which a spawned CLI child is not.
+    revisit_if: A signed helper or a service account can give the child its own uid on macOS.
+  - id: windows-kills-only-the-child
+    date: 2026-11-16
+    status: accepted
+    decision: On Windows a process module's child gets its own process group for console signals, but nothing kills its grandchildren when it exits or is stopped.
+    rejected:
+      - option: Assign each child to a Job Object with JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.
+        why: Only trusted modules run on Windows, since the stub backend refuses every untrusted spawn, and no CI job runs the framework's process-module tests on Windows, so a Job Object could not be watched failing a test.
+    revisit_if: A CI job runs framework tests on Windows, or the Windows sandbox backend is built, which needs a Job Object anyway.
+    upholds: [child-group-dies-with-child]
+  - id: windows-stub
+    date: 2026-11-16
+    status: accepted
+    decision: The Windows backend is a stub that refuses every untrusted spawn.
+    rejected:
+      - option: A restricted or AppContainer token with a Job Object and WFP firewall rules.
+        why: Each is substantial Win32 work that syscall.SysProcAttr cannot reach.
+    revisit_if: A Windows backend is built; the probe bodies already exist to check it.
+    upholds: [no-backend-fails-closed-off-linux]
+  - id: macos-rehash-not-fd-exec
+    date: 2026-11-16
+    status: accepted
+    decision: Off Linux the runner execs by path and re-hashes the artifact right before exec, accepting the small window between that hash and execve.
+    rejected:
+      - option: Exec /dev/fd/N on macOS.
+        why: macOS devfs derives the mode of /dev/fd/N from the open flags, so execve answers EACCES even for an O_EXEC fd.
+    upholds: [hashed-bytes-are-executed-bytes]

@@ -103,7 +103,11 @@ go run ./evals/primitives/cmd/primitives-eval -runs 2
 It needs the Claude Code CLI (`-claude`, default `claude`) signed in, and
 a committed `-head`: cells are built with `git archive`, so uncommitted
 work is not in them. `-task` and `-condition` narrow the run; both
-repeat. `-cell-budget` caps one cell and `-budget` stops new cells once
+repeat. `-runs` is the trial count for every task, except that
+`node-block-entity` always gets at least six: one of its runs moves the
+blind-entry total by two, so its baseline is a six-run figure (20 of 24,
+`results/2026-11-16-replay-root-sweep.md`). `-task-runs <task>=<n>`
+sets one task's count outright and repeats. `-cell-budget` caps one cell and `-budget` stops new cells once
 the run has spent that much, both in USD.
 
 Artifacts land in `dist/primitives-eval/<timestamp>/`: `results.json`,

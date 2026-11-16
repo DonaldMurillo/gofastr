@@ -1,20 +1,21 @@
 package crud
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"net/http"
 
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// maskFieldsOf is ent's visible fields that declare a schema.Field Mask.
-func maskFieldsOf(ent *entity.Entity) []schema.Field {
-	if ent == nil {
-		return nil
-	}
+func maskFieldsOf(fields []schema.Field) []schema.Field {
 	var out []schema.Field
-	for _, f := range ent.GetFields() {
+	for _, f := range fields {
 		if f.Mask != nil && !f.Hidden {
 			out = append(out, f)
 		}
@@ -22,17 +23,16 @@ func maskFieldsOf(ent *entity.Entity) []schema.Field {
 	return out
 }
 
-// maskRows runs each Mask field of ent over rows, in place: the one place
-// crud applies a declared mask. Every read exit calls it before the app's
-// own After hooks (a get, a list page, a cursor page, a streamed row, an
-// included row, a write's response and an SSE event record), so a hook
-// sees the masked value too. keyOf names a field's key in rows, the wire
-// key of the level the rows came from. A NULL value stays null; Mask is
-// not called for it, nor for a related row an include put in its place.
-// Callers hand each row once: masking a masked value again is not
-// guaranteed to leave it as it was.
+// maskRows runs each Mask field of ent over rows in place; keyOf gives a
+// field's key in rows.
 func maskRows(ctx context.Context, ent *entity.Entity, keyOf func(string) string, rows []map[string]any) {
-	fields := maskFieldsOf(ent)
+	if ent != nil {
+		maskDeclared(ctx, ent, ent.GetFields(), keyOf, rows)
+	}
+}
+
+func maskDeclared(ctx context.Context, ent *entity.Entity, declared []schema.Field, keyOf func(string) string, rows []map[string]any) {
+	fields := maskFieldsOf(declared)
 	if len(fields) == 0 {
 		return
 	}
@@ -47,9 +47,6 @@ func maskRows(ctx context.Context, ent *entity.Entity, keyOf func(string) string
 			if !ok || v == nil {
 				continue
 			}
-			// An include of a self-named relation replaced the key's
-			// value with the related row, which its own entity masks. A
-			// map under any other field (a JSON object) is its own value.
 			if _, isMap := v.(map[string]any); isMap && related[f.Name] {
 				continue
 			}
@@ -58,8 +55,6 @@ func maskRows(ctx context.Context, ent *entity.Entity, keyOf func(string) string
 	}
 }
 
-// relationNames is the set of ent's relation names: the keys an include
-// writes a related row under.
 func relationNames(ent *entity.Entity) map[string]bool {
 	out := make(map[string]bool, len(ent.Config.Relations))
 	for _, rel := range ent.Config.Relations {
@@ -68,11 +63,6 @@ func relationNames(ent *entity.Entity) map[string]bool {
 	return out
 }
 
-// runMask is f's Mask over v. A Mask that panics reads as null, never as
-// the stored value, and the panic is logged: masks run on paths with no
-// per-request recover (an _events delivery loop), where a panic would end
-// the process. A mask runs as the caller, without a back office's CRUD
-// elevation, just as lifecycle hooks do.
 func runMask(ctx context.Context, ent *entity.Entity, f schema.Field, v any) (out any) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -83,14 +73,89 @@ func runMask(ctx context.Context, ent *entity.Entity, f schema.Field, v any) (ou
 	return f.Mask(WithoutElevation(ctx), v)
 }
 
-// maskOwn runs this handler's entity masks over rows keyed the way its
-// responses are. ctx reaches each Mask without the read-hook opt-in, as
-// a hook's does, so a Mask that reads through crud does not re-enter it.
 func (ch *CrudHandler) maskOwn(ctx context.Context, rows ...map[string]any) {
-	maskRows(hookCtx(ctx), ch.Entity, ch.convertKey, rows)
+	if ch.Entity != nil {
+		maskDeclared(hookCtx(ctx), ch.Entity, ch.snapshotFields(), ch.convertKey, rows)
+	}
 }
 
-// hasMasks reports whether the entity declares any Mask.
 func (ch *CrudHandler) hasMasks() bool {
-	return len(maskFieldsOf(ch.Entity)) > 0
+	return len(ch.maskFields()) > 0
+}
+
+// maskFields is the handler's visible Mask fields, read from the snapshot.
+func (ch *CrudHandler) maskFields() []schema.Field {
+	if ch.Entity == nil {
+		return nil
+	}
+	return maskFieldsOf(ch.snapshotFields())
+}
+
+func (ch *CrudHandler) carriesMasked(body map[string]any) bool {
+	for _, f := range ch.maskFields() {
+		if _, sent := body[f.Name]; sent {
+			return true
+		}
+	}
+	return false
+}
+
+// maskedEchoes names the Mask fields body sends back as the masked form
+// of stored's value. A stored NULL is never an echo.
+func (ch *CrudHandler) maskedEchoes(ctx context.Context, body, stored map[string]any) []string {
+	if stored == nil {
+		return nil
+	}
+	var out []string
+	for _, f := range ch.maskFields() {
+		given, sent := body[f.Name]
+		held := stored[ch.convertKey(f.Name)]
+		if !sent || held == nil {
+			continue
+		}
+		if sameWireValue(runMask(hookCtx(ctx), ch.Entity, f, held), given) {
+			out = append(out, f.Name)
+		}
+	}
+	return out
+}
+
+// dropMaskedEchoes removes row id's masked echoes from body, reading the
+// row under the write scope when the caller has no pre-image of it.
+func (ch *CrudHandler) dropMaskedEchoes(ctx context.Context, r *http.Request, id string, body, pre map[string]any) error {
+	if !ch.carriesMasked(body) {
+		return nil
+	}
+	if pre == nil {
+		var cols []string
+		for _, f := range ch.maskFields() {
+			if _, sent := body[f.Name]; sent {
+				cols = append(cols, f.Name)
+			}
+		}
+		stored, err := ch.selectStored(ctx, r, id, cols)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		pre = stored
+	}
+	for _, name := range ch.maskedEchoes(ctx, body, pre) {
+		delete(body, name)
+	}
+	return nil
+}
+
+// sameWireValue reports whether given is what a client read as masked:
+// equal as JSON, or its text when a form sent it.
+func sameWireValue(masked, given any) bool {
+	text, isText := given.(string)
+	if m, ok := stringOf(masked); ok {
+		return isText && m == text
+	}
+	a, errA := json.Marshal(masked)
+	b, errB := json.Marshal(given)
+	if errA != nil || errB != nil {
+		return false
+	}
+	return bytes.Equal(a, b) || (isText && masked != nil && string(a) == text)
 }

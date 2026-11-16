@@ -21,16 +21,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
-// pivotLink is one many_to_many link: the pivot table and its two key
-// columns, each passed through query.SafeIdent, and the coerced key
-// values.
+// pivotLink is one many_to_many link; newPivotLink is its only
+// constructor and gates each name through query.SafeIdent.
 type pivotLink struct {
 	through, localKey, fkTarget string
 	parent, child               any
 }
 
-// newPivotLink gates rel's pivot table and key columns as identifiers
-// and pairs them with the link's key values.
 func newPivotLink(rel entity.Relation, parent, child any) (pivotLink, error) {
 	through, err := query.SafeIdent(rel.Through)
 	if err != nil {
@@ -47,10 +44,8 @@ func newPivotLink(rel entity.Relation, parent, child any) (pivotLink, error) {
 	return pivotLink{through: through, localKey: localKey, fkTarget: fkTarget, parent: parent, child: child}, nil
 }
 
-// pivotLinked reports whether the link's pivot row exists as the caller
-// reads it: under a registered pivot's tenant, owner and soft-delete
-// scope. Read unscoped, another tenant's row stood in for the caller's
-// and the caller's insert was skipped.
+// pivotLinked reports whether the link's pivot row exists under a
+// registered pivot's tenant, owner and soft-delete scope.
 func (ch *CrudHandler) pivotLinked(ctx context.Context, r *http.Request, pivotHandler *CrudHandler, l pivotLink) (bool, error) {
 	cb := query.Count(l.through).
 		Where(query.QuoteKeyword(l.localKey)+" = $1", l.parent).
@@ -68,13 +63,9 @@ func (ch *CrudHandler) pivotLinked(ctx context.Context, r *http.Request, pivotHa
 	return n > 0, nil
 }
 
-// writePivotLink writes one link unless the caller already holds it. The
-// insert runs under a savepoint, so a refused one leaves a Postgres
-// transaction usable, and a unique violation is accepted only when the
-// recheck finds the link: a concurrent request wrote the same pair. Any
-// other violation (a constraint beyond the link's own key) is the
-// caller's conflict; it was swallowed, so SQLite committed the parent
-// and reported a link that did not exist.
+// writePivotLink writes one link unless the caller already holds it,
+// through the pivot's own create when it is registered. A unique violation
+// is accepted only when a recheck finds the link.
 func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel entity.Relation, pivot *entity.Entity, pivotHandler *CrudHandler, fieldPrefix string, l pivotLink) error {
 	linked, err := ch.pivotLinked(ctx, r, pivotHandler, l)
 	if err != nil {
@@ -101,16 +92,9 @@ func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel 
 			}
 			return fmt.Errorf("%s: %w", fieldPrefix, err)
 		}
-		// A registered pivot is written through its own
-		// create: its route's gates (Access.Create, held
-		// scopes, CRUD=false) refuse here as there, and
-		// its tenant and owner stamps land, so the link
-		// is visible under the pivot's own scoping.
 		if !pivotHandler.canCascadeWrite(ctx, r, opCreate, "") {
 			return fmt.Errorf("%w: permission denied to create %s", errNotFound, pivot.GetName())
 		}
-		// The body keys are the pivot's field names
-		// (linkWrite folds the relation's spelling).
 		res, err := pivotHandler.doCreate(ctx, r, maps.Clone(lw.body))
 		if err != nil {
 			var ve *ValidationError
@@ -142,7 +126,6 @@ func (ch *CrudHandler) writePivotLink(ctx context.Context, r *http.Request, rel 
 	return nil
 }
 
-// childHandlerFor builds a tx-bound CrudHandler for the relation target.
 func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	child := NewCrudHandler(target, ch.DB).WithJSONCase(ch.JSONCase)
 	child.Registry = ch.Registry
@@ -159,11 +142,8 @@ func (ch *CrudHandler) childHandlerFor(target *entity.Entity) *CrudHandler {
 	return child
 }
 
-// linkWrite reads the pivot row a ManyToMany cascade inserts: it writes
-// the two link columns, and every other column holds its DDL default, or
-// nothing known for an AutoIncrement one. A link column is keyed by the
-// pivot field it names: the INSERT's unquoted identifier reaches that
-// column in any case, so "POST_ID" over a field post_id is post_id.
+// linkWrite reads the pivot row a ManyToMany cascade inserts, keyed by
+// the pivot field each link column names, folded.
 func (ch *CrudHandler) linkWrite(cols map[string]any) fkWrite {
 	link := make(map[string]any, len(cols))
 	for c, v := range cols {
@@ -185,10 +165,8 @@ func (ch *CrudHandler) linkWrite(cols map[string]any) fkWrite {
 	}
 }
 
-// coerceLinkPK validates and coerces an ID for ManyToMany linking.
-// If the target entity's primary key is schema.Int, float64 / float-based json.Number values
-// that are at or beyond ±2^53 (or not exact integers) are rejected with a ValidationError,
-// preventing silent precision loss.
+// coerceLinkPK coerces a ManyToMany link id onto an Int key, refusing a
+// float that is not an exact integer.
 func coerceLinkPK(reg entity.Registry, target *entity.Entity, targetPK string, fieldPrefix string, val any) (any, error) {
 	if target == nil || val == nil {
 		return val, nil
@@ -239,8 +217,7 @@ func coerceLinkPK(reg entity.Registry, target *entity.Entity, targetPK string, f
 	return val, nil
 }
 
-// coercePKValue coerces a value into an integer type if the entity's primary key (or FK) is an integer schema type.
-// This prevents PostgreSQL strict type errors (e.g. integer = double precision or integer = text).
+// coercePKValue binds val as the type of ent's column colName.
 func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val any) any {
 	if ent == nil || val == nil {
 		return val
@@ -289,8 +266,8 @@ func coercePKValue(reg entity.Registry, ent *entity.Entity, colName string, val 
 	return val
 }
 
-// checkChildOwnership verifies that a child record exists, belongs to the parent, and is readable
-// under the caller's tenant, owner, and read scopes (and is not soft-deleted).
+// checkChildOwnership refuses, with errNotFound, a child that is missing,
+// belongs to another parent, or is hidden from the caller.
 func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK, fkCol string, childIDVal, parentID any) error {
 	if serverWrites(ctx) {
 		return nil
@@ -341,9 +318,6 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request,
 		}
 		return err
 	}
-	// A child the include would not attach is one the write neither
-	// touches nor confirms: the same not-found as a child that is not
-	// there.
 	if ch.childScopeHidesKey(ctx, r, target, rel, []any{coercedChildID}, fmt.Sprint(childIDVal)) {
 		return fmt.Errorf("%w: child %s/%v does not belong to parent %v",
 			errNotFound, target.GetName(), childIDVal, parentID)
@@ -351,8 +325,8 @@ func (ch *CrudHandler) checkChildOwnership(ctx context.Context, r *http.Request,
 	return nil
 }
 
-// findExistingHasOneChild searches for an existing HasOne child record under parentID,
-// enforcing tenant, owner, read scopes, and soft-delete exclusions.
+// findExistingHasOneChild returns the id of parentID's HasOne child the
+// caller can read, or nil.
 func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK, fkCol string, parentID any) (any, error) {
 	if target == nil {
 		return nil, nil
@@ -398,19 +372,14 @@ func (ch *CrudHandler) findExistingHasOneChild(ctx context.Context, r *http.Requ
 		}
 		return nil, err
 	}
-	// A child the caller's own read scope hides is one it does not have,
-	// as a ReadScope-hidden one is above.
 	if ch.childScopeHidesKey(ctx, r, target, rel, []any{existingID}, fmt.Sprint(existingID)) {
 		return nil, nil
 	}
 	return existingID, nil
 }
 
-// checkTargetRowScope verifies that a target entity row exists and is readable
-// under the caller's tenant and owner scopes before linking via ManyToMany.
-// A target the request may not reach through a relation at all (see
-// relationReachable) answers the same not-found as an unreadable row, so a
-// link attempt is not an existence oracle over it.
+// checkTargetRowScope refuses, with errNotFound, a ManyToMany target the
+// caller cannot read or reach through a relation.
 func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, targetPK string, idVal any) error {
 	if serverWrites(ctx) {
 		return nil
@@ -453,9 +422,6 @@ func (ch *CrudHandler) checkTargetRowScope(ctx context.Context, r *http.Request,
 		}
 		return fmt.Errorf("target %s/%v lookup: %w", target.GetName(), idVal, err)
 	}
-	// The target's own BeforeList scope, as ?include= over the relation
-	// applies it: a row it hides answers what a missing one does, or the
-	// link's status is an existence oracle over hidden rows.
 	if ch.childScopeHidesKey(ctx, r, target, rel, []any{coercedID}, fmt.Sprint(idVal)) {
 		return fmt.Errorf("%w: target %s/%v is not readable by this caller", errNotFound, target.GetName(), idVal)
 	}
@@ -486,16 +452,12 @@ func (ch *CrudHandler) findCascadeValue(body map[string]any, relation entity.Rel
 	if val, ok := body[wk]; ok && val != nil {
 		return val, true
 	}
-	// The key MarshalEntity derives from the wire key: _extras is served
-	// as Extras, which snakes to extras (bodyColumns does the same for a
-	// field).
 	if val, ok := body[casing.ToSnake(conv)]; ok && val != nil {
 		return val, true
 	}
 	return nil, false
 }
 
-// hasCascadeWrites reports whether body contains any cascade-write relation keys.
 func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 	if ch.Entity == nil || len(ch.Entity.Config.Relations) == 0 {
 		return false
@@ -509,10 +471,7 @@ func (ch *CrudHandler) hasCascadeWrites(body map[string]any) bool {
 }
 
 // cascadeSetKeys names the foreign keys the belongs_to cascades in body
-// will set. UpsertOne validates the parent before it knows which arm it
-// takes, and the cascade, which fills these keys, runs once it does, so
-// the first validation does not require them. The final validation, after
-// the cascade, checks them against the full parent schema.
+// will set.
 func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	if ch.Entity == nil {
 		return nil
@@ -529,11 +488,8 @@ func (ch *CrudHandler) cascadeSetKeys(body map[string]any) map[string]bool {
 	return keys
 }
 
-// refuseCascadeUpsertKey refuses, in UpsertOne, a belongs_to cascade
-// that sets a column of the entity's key. The upsert picks its arm, and
-// runs its preflight and hidden-row checks, on the key in the body before
-// any cascade runs, so a key the cascade filled would conflict with a row
-// none of those checks read.
+// refuseCascadeUpsertKey refuses an upsert's belongs_to cascade that
+// sets a column of the entity's key.
 func (ch *CrudHandler) refuseCascadeUpsertKey(body map[string]any) error {
 	if ch.Entity == nil {
 		return nil
@@ -560,9 +516,7 @@ func (ch *CrudHandler) refuseCascadeUpsertKey(body map[string]any) error {
 	return nil
 }
 
-// cascadeParentID is the key a dependent cascade links its children to:
-// the written row's key column, else the body's. A composite parent has
-// no single key, and processDependentCascadeWrites refuses it.
+// cascadeParentID is the written row's single key, else the body's.
 func (ch *CrudHandler) cascadeParentID(result, body map[string]any) any {
 	parentPK, err := ch.keyColumn()
 	if err != nil {
@@ -579,11 +533,7 @@ func (ch *CrudHandler) cascadeParentID(result, body map[string]any) any {
 }
 
 // refuseHiddenCascade refuses a nested write through a relation the
-// entity hides (entity.HidesRelation). The relation is not on the wire:
-// reads leave it out and ?include= refuses it, so a client that writes
-// through it would create rows it can never see, and the attached child
-// came back in the response. Server code writes through it under
-// WithServerWrites, as it writes Hidden fields.
+// entity hides, unless ctx carries WithServerWrites.
 func (ch *CrudHandler) refuseHiddenCascade(ctx context.Context, rel entity.Relation) error {
 	if serverWrites(ctx) || !ch.Entity.HidesRelation(rel) {
 		return nil
@@ -591,9 +541,8 @@ func (ch *CrudHandler) refuseHiddenCascade(ctx context.Context, rel entity.Relat
 	return &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{Reason: reasonCascadeHidden}}}}
 }
 
-// refuseHiddenDependents runs refuseHiddenCascade over the has-one,
-// has-many and many-to-many cascades in body. Those run after the parent
-// is written, so the refusal comes first, before any row is touched.
+// refuseHiddenDependents runs refuseHiddenCascade over the dependent
+// cascades in body, before any row is written.
 func (ch *CrudHandler) refuseHiddenDependents(ctx context.Context, body map[string]any) error {
 	for _, rel := range ch.Entity.Config.Relations {
 		if rel.Type == entity.RelManyToOne {
@@ -609,13 +558,8 @@ func (ch *CrudHandler) refuseHiddenDependents(ctx context.Context, body map[stri
 	return nil
 }
 
-// childColumns names a cascade child's keys the way its parent's body was
-// named. An in-process write runs bodyColumns, which also reads the key
-// MarshalEntity derives (line2 for line_2); the HTTP rule left that key
-// naming no column, so the child dropped the field. A request keeps the
-// wire rule, and two keys folding onto one column are refused, as a
-// batch item's are, rather than one winning by map order. field is the
-// child's path in the parent body; m is not modified.
+// childColumns keys a cascade child's body by column, by the rule its
+// parent's body used; m is not modified.
 func (ch *CrudHandler) childColumns(r *http.Request, field string, m map[string]any) (map[string]any, error) {
 	if inProcess(r) {
 		out := maps.Clone(m)
@@ -637,9 +581,8 @@ func (ch *CrudHandler) childColumns(r *http.Request, field string, m map[string]
 	return ch.unconvertMapKeys(m), nil
 }
 
-// processBelongsToCascadeWrites executes cascade writes for BelongsTo relations
-// BEFORE the parent record is inserted/updated, so the child's primary key
-// can be set as the parent's foreign key.
+// processBelongsToCascadeWrites writes BelongsTo children before the
+// parent and sets the parent's foreign keys to them.
 func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *http.Request, body map[string]any, isUpdate bool) (map[string]any, error) {
 	if ch.Entity == nil || len(ch.Entity.Config.Relations) == 0 {
 		return nil, nil
@@ -669,11 +612,6 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			return nil, fmt.Errorf("relation %q references unknown entity %q", rel.Name, rel.Entity)
 		}
 
-		// The cascade exists to point the parent at the child. A key the
-		// parent write does not take (ReadOnly, Hidden, the owner or
-		// tenant column) would leave the parent on its old reference while
-		// the child is written and handed back as attached, so the
-		// cascade is refused before any child is written.
 		if fk := oneFK(rel); !ch.declaresField(fk) || !ch.parentSetsKey(ctx, ch.fieldByName(fk), isUpdate) {
 			return nil, &ValidationError{fields: map[string][]schema.Violation{rel.Name: {{
 				Reason: reasonCascadeKeyFixed, Params: map[string]any{"column": fk},
@@ -728,8 +666,6 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 			childPKVal = childResult[childHandler.convertKey(targetPK)]
 		}
 		body[oneFK(rel)] = childPKVal
-		// A child the caller's read scope hides goes back as its id only,
-		// as on the dependent arms.
 		if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 			return nil, fmt.Errorf("%s: %w", rel.Name, err)
 		}
@@ -738,13 +674,10 @@ func (ch *CrudHandler) processBelongsToCascadeWrites(ctx context.Context, r *htt
 	return attached, nil
 }
 
-// declaresField reports whether the entity declares a field named name.
 func (ch *CrudHandler) declaresField(name string) bool {
 	return slices.ContainsFunc(ch.Entity.GetFields(), func(f schema.Field) bool { return f.Name == name })
 }
 
-// parentSetsKey reports whether the parent write takes f from the body:
-// doUpdate's SET rules on an update, doCreate's column rules on a create.
 func (ch *CrudHandler) parentSetsKey(ctx context.Context, f schema.Field, isUpdate bool) bool {
 	if isUpdate {
 		return ch.updateSets(ctx, f, true)
@@ -752,11 +685,8 @@ func (ch *CrudHandler) parentSetsKey(ctx context.Context, f schema.Field, isUpda
 	return ch.createWrite(ctx, nil).sets(f)
 }
 
-// refuseUnwrittenLink refuses a has_one or has_many cascade create whose
-// child would not store the link: the child's create skips a foreign key
-// it does not declare, or one that is ReadOnly, Hidden or its tenant
-// column, so the child would be stored with no parent while the response
-// showed it attached. ch is the child's handler.
+// refuseUnwrittenLink refuses a has_one or has_many child create that
+// would not store its link column; ch is the child's handler.
 func (ch *CrudHandler) refuseUnwrittenLink(ctx context.Context, rel entity.Relation) error {
 	fk := oneFK(rel)
 	if ch.declaresField(fk) && ch.createWrite(ctx, nil).sets(ch.fieldByName(fk)) {
@@ -767,17 +697,14 @@ func (ch *CrudHandler) refuseUnwrittenLink(ctx context.Context, rel entity.Relat
 	}}}}
 }
 
-// processDependentCascadeWrites handles nested mutations for dependent relations
-// (HasOne, HasMany, ManyToMany) after the parent entity has been created or updated.
+// processDependentCascadeWrites writes the HasOne, HasMany and
+// ManyToMany children after the parent.
 func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *http.Request, parentID any, body map[string]any, isUpdate bool) (map[string]any, error) {
 	if ch.Entity == nil {
 		return nil, nil
 	}
 	attached := make(map[string]any)
 	for _, rel := range ch.Entity.Config.Relations {
-		// Belongs-to cascades ran before the parent was written and
-		// need only the target's key; the parent's own key, which the
-		// dependent arms read below, may span several columns.
 		if rel.Type == entity.RelManyToOne {
 			continue
 		}
@@ -877,7 +804,6 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 				}
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
-			// A child the caller's read scope hides goes back as its id only.
 			if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 				return nil, fmt.Errorf("%s: %w", rel.Name, err)
 			}
@@ -935,7 +861,6 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 					}
 					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 				}
-				// A child the caller's read scope hides goes back as its id only.
 				if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 					return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 				}
@@ -985,7 +910,6 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}
 						if len(childMap) == 1 {
-							// Under the child's wire key, as the bare-id arms below.
 							childResult = map[string]any{childHandler.convertKey(targetPK): childID}
 						} else {
 							if !childHandler.canCascadeWrite(ctx, r, opUpdate, fmt.Sprint(childID)) {
@@ -1001,7 +925,6 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 							}
 							childHandler.emitCascade(ctx, event.EntityUpdated, childResult)
-							// The update may move the child out of the caller's read scope.
 							if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 								return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 							}
@@ -1024,7 +947,6 @@ func (ch *CrudHandler) processDependentCascadeWrites(ctx context.Context, r *htt
 						if childID == nil {
 							childID = childResult[childHandler.convertKey(targetPK)]
 						}
-						// A child the caller's read scope hides goes back as its id only.
 						if childResult, err = ch.cascadeReadBack(ctx, r, rel, childHandler, childResult); err != nil {
 							return nil, fmt.Errorf("%s.%d: %w", rel.Name, idx, err)
 						}

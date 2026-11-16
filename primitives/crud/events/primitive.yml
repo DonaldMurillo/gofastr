@@ -22,3 +22,145 @@ invariants:
       - test: framework/crud.TestEventStreamRechecksReadScope
       - test: framework/crud.TestEventStreamClosesOnTenantChange
       - test: framework/crud.TestEventStreamRunsResponseHook
+  - id: event-routes-to-the-rows-owner
+    rule: An event's owner and tenant stamps come from the record's own columns, then from the row as read before the write, then from the writer's context, and the owner is stamped and compared as a string.
+    enforced_by:
+      - test: framework/crud.TestCrossOwnerEventStampsRecordOwner
+      - test: framework/crud.TestEventStampsRecordTenantAndOwner
+      - test: framework/crud.TestDeleteEventStampsRowTenant
+      - test: framework/crud.TestHiddenOwnerEventStampsRowOwner
+      - test: framework/crud.TestHiddenOwnerStampMatchesStoredKey
+      - test: framework/crud.TestEventStampHolderNests
+      - test: framework/crud.TestEventStream_DeliversRemoteIntOwnerEvent
+  - id: parent-event-omits-cascade-children
+    rule: A parent's event payload leaves out its cascade-written children, which publish their own events under their own entity.
+    enforced_by:
+      - test: framework/crud.TestStageEventDropsCascadeChildren
+  - id: stream-gates-are-stricter-than-reads
+    rule: The event stream refuses an anonymous caller unless the entity is Public, even when a declared Access block leaves Read blank, refuses a multi-tenant caller with no tenant, and checks the Read permission before it writes anything.
+    enforced_by:
+      - test: framework/crud.TestEventStream_EntityWithoutOwnerFieldStillRejectsAnonymous
+      - test: framework/crud.TestSSEStricterThanBlankReadAccess
+      - test: framework/crud.TestEventStreamRequiresTenant
+      - test: framework/crud.TestPermissionGate_EventsDeniedNoPerm
+  - id: stream-honours-row-scope
+    rule: Each delivery is withheld when the subscriber's ReadScope or its own BeforeList or BeforeGet hooks hide the row, when such a hook errors or the record has no key, and for a hard delete when the hooks restrict the subscriber at all.
+    enforced_by:
+      - test: framework/crud.TestEventStreamRechecksReadScope
+      - test: framework/crud.TestEventStreamHonoursBeforeHookScope
+      - test: framework/crud.TestEventStreamSoftDeleteHonoursBeforeHookScope
+      - test: framework/crud.TestEventHookScopeFailsClosed
+  - id: redaction-is-per-subscriber
+    rule: Delivery masks and redacts a deep copy of the record inside a new envelope, skips only an EntityDeleted stub, sends no record when AfterGet errors, and tolerates a nil request.
+    enforced_by:
+      - test: framework/crud.TestRedactEventRecordIsolatesEachSubscriber
+      - test: framework/crud.TestRedactEventRecordLeavesTheEnvelope
+      - test: framework/crud.TestRedactEventRecordRedactsKeyOnlyUpdate
+      - test: framework/crud.TestRedactEventRecordAppliesMasks
+      - test: framework/crud.TestRedactEventRecordOmitsTheRecordOnHookError
+      - test: framework/crud.TestRedactEventRecordSurvivesANilRequest
+  - id: stream-subscribes-before-ack
+    rule: The stream installs its bus subscriptions before it writes its subscribed comment, and a full 32-event buffer drops its oldest event, not the newest.
+    enforced_by:
+      - test: framework/crud.TestEventStreamKeepsLatest
+  - id: stream-seats-bound-each-principal
+    rule: A principal holds at most EventStreamSeats streams (16 by default, unlimited when negative); one over is refused with 429 and Retry-After before any byte is written, or under EvictOldest closes the oldest and cuts only that stream's parked write, never after its handler returned; every exit releases the seat; anonymous callers share one bucket.
+    enforced_by:
+      - test: framework/crud.TestEventStreamPerUserIsBounded
+      - test: framework/crud.TestEventStreamSeatCapEvictOldest
+      - test: framework/crud.TestEvictedStreamLeavesBlockedWrite
+      - test: framework/crud.TestAdmitCutsOnlyTheEvictedSeat
+      - test: framework/crud.TestStreamSeatPrincipalBuckets
+  - id: reauth-interval-has-a-floor
+    rule: An EventStreamReauth under one second, set through the option or the field, falls back to 30 seconds.
+    enforced_by:
+      - test: framework/crud.TestEventStreamReauthInterval
+      - test: framework/crud.TestEventStreamReauthFloorOnField
+  - id: commit-is-confirmed-per-event-kind
+    rule: A caller-owned ambient write counts as landed when, on the base connection with $N placeholders, a create's row exists, a delete's row is gone or soft-deleted (gone for a purge), and an update's row holds every announced scalar column by its wire-key column, NULL matched with IS NULL.
+    enforced_by:
+      - test: framework/crud.TestAmbientDeleteFollowsCommit
+      - test: framework/crud.TestAmbientNullUpdateRollbackSilent
+      - test: framework/crud.TestAmbientNullUpdateCommitEmits
+      - test: framework/crud.TestAmbientTxRollbackWithholdsUpdateEvents
+      - test: framework/crud.TestComparableColumnsByWireKey
+      - test: framework/crud.TestMixedCaseAmbientTxEvent
+  - id: unconfirmable-events-are-dropped
+    rule: A live-bus event whose commit cannot be learned (a tx-bound handler or a keyless record with no commit queue on the context) is dropped, not published.
+    enforced_by:
+      - test: framework/crud.TestAmbientFallbackEmitsNothing
+      - test: framework/crud.TestTxBoundRollbackAnnouncesNothing
+  - id: probe-leaves-owner-tx-intact
+    rule: The commit probe's poll statement runs on context.Background(), so giving up on the wait never cancels or poisons the owner's transaction connection.
+    enforced_by:
+      - test: framework/crud.TestAmbientProbeLeavesOwnerTxIntact
+decisions:
+  - id: redact-at-delivery
+    date: 2026-11-15
+    status: accepted
+    decision: The SSE lane masks and runs AfterGet per subscriber at delivery; the outbox stores and delivers the raw row.
+    rejected:
+      - option: Redact when eventData builds the payload.
+        why: The hook would run inside the write's transaction, on a connection that cannot see the uncommitted row and that blocks a single-connection pool, and twice per write instead of once per delivery.
+      - option: Redact the outbox row too.
+        why: Durable consumers are trusted machinery that own their masking and need the stored values.
+    upholds: [redaction-is-per-subscriber]
+  - id: owner-stamp-is-a-string
+    date: 2026-11-15
+    status: accepted
+    decision: The owner id is stamped with fmt.Sprint and compared with fmt.Sprint on the subscriber side.
+    rejected:
+      - option: Stamp the typed owner value.
+        why: The fanout bridge's JSON round-trip turns a numeric owner into float64, which never equals the subscriber's int64, so every cross-replica event was dropped.
+    upholds: [event-routes-to-the-rows-owner]
+  - id: stamp-the-row-before-the-write
+    date: 2026-11-15
+    status: accepted
+    decision: An operation reads the row's owner and tenant columns before changing it and files the stamp under both the request id and the stored key.
+    rejected:
+      - option: Fall back straight to the writer's context.
+        why: A hidden owner column and a delete's key-only payload left the record without the owner, so a cross-owner write was routed to the writer instead of the row's owner, and the outbox row named the writer for erasure.
+    upholds: [event-routes-to-the-rows-owner]
+  - id: hook-scope-checked-at-delivery
+    date: 2026-11-15
+    status: accepted
+    decision: The Before-hook scope check runs on the stream's own goroutine at delivery, while the cheap entity, tenant, owner and ReadScope checks also run in the bus filter.
+    rejected:
+      - option: Run the hook-scope check in the bus filter.
+        why: The filter runs on the emitter's goroutine and the check reads the table, so every write would wait on every subscriber.
+    upholds: [stream-honours-row-scope]
+  - id: commit-queue-before-probe
+    date: 2026-11-15
+    status: accepted
+    decision: A framework-owned transaction carries a db.CommitQueue the owner drains after Commit; only a caller-owned transaction without one is probed, with a once-per-process warning.
+    rejected:
+      - option: Probe every ambient transaction.
+        why: A statement on the live *sql.Tx from another goroutine races the owner's statements on its one connection, and the interleaved protocol crossed their results (#353).
+    revisit_if: database/sql gains a commit callback, or db.WithTx stops accepting a transaction without a commit queue.
+    upholds: [events-follow-the-commit, probe-leaves-owner-tx-intact]
+  - id: drop-when-unconfirmed
+    date: 2026-11-15
+    status: accepted
+    decision: An emission whose commit cannot be confirmed, or is not confirmed within ambientTxProbeTimeout (2 minutes), is dropped and logged.
+    rejected:
+      - option: Publish it anyway.
+        why: It announced writes the caller went on to roll back; the live bus is lossy by design, and a missing event is better than a phantom one.
+      - option: Wait without a limit.
+        why: A transaction that never ends would pin the goroutine for the life of the process.
+    upholds: [unconfirmable-events-are-dropped]
+  - id: evict-cuts-the-parked-write
+    date: 2026-11-15
+    status: accepted
+    decision: An EvictOldest admission sets a past write deadline on the evicted stream's response, after releasing the registry lock, as well as closing its done channel.
+    rejected:
+      - option: Close done and rely on the server's WriteTimeout.
+        why: SSE servers usually set none, so a handler parked in a write to a client that stopped reading stayed resident and the per-principal cap stopped bounding handlers.
+    upholds: [stream-seats-bound-each-principal]
+  - id: one-seat-default-across-streams
+    date: 2026-11-15
+    status: accepted
+    decision: The per-principal stream cap defaults to 16, the default core/stream's broker and core/mcp's notification stream use, through the shared stream.AdmitSeat and stream.SpliceSeat.
+    rejected:
+      - option: No cap by default.
+        why: Each stream holds a goroutine, a 32-event buffer and three bus subscriptions, so one low-privilege principal could hold an unbounded amount.
+    upholds: [stream-seats-bound-each-principal]

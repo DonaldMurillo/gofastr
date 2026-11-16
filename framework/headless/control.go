@@ -1,11 +1,5 @@
 package headless
 
-// The text-entry family: the single-line input, the multiline
-// textarea, the native select, and the two affix-shell controls
-// (password with its reveal button, colour with its swatch).
-// Structure, labelling and the data-hui-* hooks a runtime module binds
-// to live here; heights, borders and class structure live in the class map.
-
 import (
 	"slices"
 	"strconv"
@@ -15,53 +9,30 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// Control parts. The single-line controls and the affix shells are
-// their own root; the input inside an affix shell is PartControl, and
-// the reveal button and swatch are named so a class map can style them
-// without the markup having to carry a class for them to be found by.
+// Control parts. The input inside an affix shell is PartControl.
 const (
 	PartOption      Part = "option"
 	PartAffixButton Part = "affix-button"
 	PartAffixSwatch Part = "affix-swatch"
 )
 
-// InputProps is the single-line control every Input flavour renders:
-// one void input, the same state attrs assembled the same way. The
-// flavours differ only in Type and the typed attributes they add
-// (min/max/step), which is why none of them can drift in structure
-// from a plain Input.
+// InputProps is the single-line control every Input flavour renders.
 type InputProps struct {
 	Type string
-	// DescribedBy is the aria-describedby a Field hands down. It is
-	// the whole reason a hint or an error reaches assistive tech: the
-	// text is on screen either way, but without this attribute a
-	// screen reader user hears the label and nothing else — no
-	// format hint, and no reason the control is red.
+	// DescribedBy is the aria-describedby a Field hands down.
 	DescribedBy string
 	Name        string
 	Value       string
 	Placeholder string
 	Required    bool
 	Disabled    bool
-	// Invalid states aria-invalid for assistive tech; the class map
-	// colours the border off the same attribute.
-	Invalid bool
-	// AriaLabel names the control where a visible label cannot go — a
-	// search box in a toolbar, a field inside a table's own controls.
-	// Everywhere else the label belongs to a Field, on screen where
-	// everyone can read it. A placeholder is not a label: it goes away
-	// on the first keystroke, its contrast is deliberately low, and
-	// not every screen reader treats it as a name.
+	Invalid     bool
+	// AriaLabel names the control where a visible label cannot go.
 	AriaLabel string
 
 	ID    string
 	Extra html.Attrs
-	// Owned are the type-specific attrs — min, max and step, and only
-	// those — applied after the common set and after Extra so a caller
-	// cannot widen a numeric input's bounds through extra attrs behind
-	// the config's back. Any other key is refused: this is a seam for
-	// bounds, not a second ExtraAttrs. Empty values are skipped,
-	// leaving Extra's say if it has one.
+	// Owned holds min, max and step only, set over Extra.
 	Owned html.Attrs
 }
 
@@ -70,9 +41,6 @@ func Input(p InputProps, s Classes) render.HTML {
 		panic("headless: Input requires Name — a control with no name submits nothing")
 	}
 	attrs := Safe(p.Extra)
-	// A text input is what an unset type means, and it should say so:
-	// type="" is what the browser guesses from, and what the goldens
-	// carried for fifteen fixtures before anyone read them.
 	attrs["type"] = orDefault(p.Type, "text")
 	attrs["name"] = p.Name
 	attrsSet(attrs, "value", p.Value)
@@ -96,9 +64,6 @@ func Input(p InputProps, s Classes) render.HTML {
 		if v == "" {
 			continue
 		}
-		// Two spellings of one key are one attribute to the browser
-		// and an order-dependent value here; refused rather than left
-		// to map iteration.
 		if seen[key] {
 			panic("headless: Input Owned repeats " + key + " under two spellings")
 		}
@@ -110,47 +75,24 @@ func Input(p InputProps, s Classes) render.HTML {
 
 // TextareaProps configures a multiline control.
 type TextareaProps struct {
-	Name string
-	// DescribedBy is the aria-describedby a Field hands down. It is
-	// the whole reason a hint or an error reaches assistive tech: the
-	// text is on screen either way, but without this attribute a
-	// screen reader user hears the label and nothing else — no
-	// format hint, and no reason the control is red.
+	Name        string
 	DescribedBy string
 	Value       string
-	// Placeholder is the prompt shown when empty.
 	Placeholder string
-	// Rows sets the rows attribute. Zero omits it and lets the
-	// stylesheet size the box, so an unspecified height stays the
-	// system's decision rather than the caller's guess.
-	Rows     int
-	Required bool
-	Disabled bool
-	Invalid  bool
-	// Autogrow opts the control into the core runtime's auto-resize
-	// (textarea.js: every input event resets the height to the
-	// scrollHeight, so the field always shows all its content). It is
-	// the one data-cui-* attribute a component here renders, and it
-	// is a prop rather than an extra because every seam a caller can
-	// reach — Safe, the part-attrs sanitiser — refuses the prefix
-	// precisely so decoration cannot become a request; autogrow is a
-	// behaviour of the control itself, not a decoration, and the
-	// styled layer's TextArea has no other way to say it.
+	Rows        int
+	Required    bool
+	Disabled    bool
+	Invalid     bool
+	// Autogrow renders data-cui-autogrow, the runtime's auto-resize.
 	Autogrow bool
-	// JSON is the sentence the control says when its text is not JSON
-	// ("Enter valid JSON"); set, it renders data-hui-json, and the
-	// headless-controls module checks the text as it is typed: an
-	// invalid value marks the control invalid and stops the form's
-	// submit with the sentence. Empty text is left to Required.
+	// JSON is the sentence said when the text is not JSON.
 	JSON string
 
 	ID    string
 	Extra html.Attrs
 }
 
-// Textarea renders the multiline control. The value is the content,
-// not an attribute: setting both is what makes some browsers show the
-// stale attribute after a reset.
+// Textarea renders the multiline control, with the value as its content.
 func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Textarea requires Name — a control with no name submits nothing")
@@ -172,11 +114,6 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 	if p.Invalid {
 		attrs["aria-invalid"] = "true"
 	}
-	// The HTML parser drops ONE newline straight after <textarea>, so a
-	// value that opens on a line break (a markdown body that starts
-	// with a blank line, a code block) lost it on every render and
-	// save. One extra newline is what the parser eats. CR and CRLF
-	// count: the tokenizer folds both to LF before the drop.
 	value := p.Value
 	if strings.HasPrefix(value, "\n") || strings.HasPrefix(value, "\r") {
 		value = "\n" + value
@@ -186,36 +123,20 @@ func Textarea(p TextareaProps, s Classes) render.HTML {
 
 // Option is one entry in a Select's list.
 type Option struct {
-	// Value is what the option submits; Label is what it shows. They
-	// are separate so the submitted key stays stable while the visible
-	// text is edited.
 	Value string
 	Label string
-	// ExtraAttrs adds option metadata such as lang or a short display label.
-	// Value and selected state remain owned by the control.
+	// ExtraAttrs is option metadata; it cannot set value, selected or disabled.
 	ExtraAttrs html.Attrs
 }
 
 // SelectProps configures a dropdown.
 type SelectProps struct {
-	Name string
-	// DescribedBy is the aria-describedby a Field hands down. It is
-	// the whole reason a hint or an error reaches assistive tech: the
-	// text is on screen either way, but without this attribute a
-	// screen reader user hears the label and nothing else — no
-	// format hint, and no reason the control is red.
+	Name        string
 	DescribedBy string
-	// Options is the list of choices.
-	Options []Option
-	// Selected marks the option whose Value it matches. Empty selects
-	// the placeholder; with no placeholder it selects the option whose
-	// Value is empty, or leaves the browser's first option when none is.
-	// A value no option lists is kept: it draws as its own chosen
-	// option, labelled with the value, so the form submits it unchanged.
+	Options     []Option
+	// Selected marks the matching option; an unlisted value draws its own.
 	Selected string
 	// Placeholder renders a disabled first option with an empty value.
-	// That empty value is also what makes Required enforceable: the
-	// browser reads it as unfilled.
 	Placeholder string
 	Required    bool
 	Disabled    bool
@@ -225,17 +146,13 @@ type SelectProps struct {
 	Extra html.Attrs
 }
 
-// Select renders the native dropdown. The chevron is the stylesheet's
-// (appearance: none plus a drawn arrow), so the markup stays a plain
-// select — no wrapper div to align against its neighbours.
+// Select renders the native dropdown.
 func Select(p SelectProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Select requires Name — a select with no name submits nothing")
 	}
 	kids := make([]render.HTML, 0, len(p.Options)+1)
 	if p.Placeholder != "" {
-		// Disabled so it cannot be re-chosen once left; selected only
-		// while nothing else is, so it is the prompt and not a value.
 		ph := html.Attrs{"value": "", "disabled": ""}
 		if p.Selected == "" {
 			ph["selected"] = ""
@@ -245,17 +162,11 @@ func Select(p SelectProps, s Classes) render.HTML {
 	for _, o := range p.Options {
 		a := Safe(o.ExtraAttrs, "value", "selected", "disabled")
 		a["value"] = o.Value
-		// An empty Selected is the placeholder's when there is one;
-		// otherwise it is the option whose value is empty.
 		if o.Value == p.Selected && (p.Selected != "" || p.Placeholder == "") {
 			a["selected"] = ""
 		}
 		kids = append(kids, El("option", s, PartOption, Internal(a), render.Text(o.Label)))
 	}
-	// A Selected no option lists (a stored value since dropped from the
-	// choices, a hand-edited URL) marked nothing, so the browser chose
-	// the first option and the form submitted a value nobody picked.
-	// It stays, drawn as its own chosen option labelled with itself.
 	if p.Selected != "" && !slices.ContainsFunc(p.Options, func(o Option) bool { return o.Value == p.Selected }) {
 		kids = append(kids, El("option", s, PartOption, Internal(html.Attrs{"value": p.Selected, "selected": ""}), render.Text(p.Selected)))
 	}
@@ -280,36 +191,17 @@ type PasswordProps struct {
 	Disabled    bool
 	Invalid     bool
 
-	// ID lands on the inner input, not the shell: the shell is
-	// styling, and a Field label's for= must point at the control.
-	ID string
-	// Extra attrs land on the inner input too (autocomplete,
-	// inputmode): they are attributes of the control, and putting them
-	// on the shell would swallow them.
+	// ID and Extra land on the inner input, not the shell.
+	ID          string
 	Extra       html.Attrs
 	DescribedBy string
 
-	// Parts: attrs and binds on the shell, the input and the
-	// reveal button. Strings carry the reveal button's name
-	// (ShowPassword) and its visible word (RevealShow).
 	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	// Strings are the words it says; nil means the English defaults.
 	Strings *Strings
 }
 
-// Password renders the affix shell: a div carrying the runtime's
-// data-hui-affix hook, with a borderless input and a reveal button
-// inside. The shell owns the one border, so nothing stacks a border
-// on a border.
-//
-// The reveal button is a toggle button (the APG pattern): type=button
-// so it never submits, one name that never changes ("Show password")
-// and one visible word ("Show"), with aria-pressed carrying the state.
-// The headless behaviour module binds data-hui-reveal: a click retypes
-// the input and flips aria-pressed, and nothing else. A name that
-// swapped to "Hide password" while pressed read as "Hide password,
-// pressed" — the state said twice, the second time backwards.
+// Password renders a password input and a reveal toggle in an affix shell.
 func Password(p PasswordProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
@@ -334,10 +226,6 @@ func Password(p PasswordProps, s Classes) render.HTML {
 		input["aria-invalid"] = "true"
 	}
 
-	// The name and the word are constant: aria-pressed is the state,
-	// and the visible word stays inside the name (WCAG 2.5.3), so a
-	// voice user who says what they see reaches the button pressed or
-	// not.
 	reveal := html.Attrs{
 		"type":            "button",
 		"data-hui-reveal": "",
@@ -348,8 +236,6 @@ func Password(p PasswordProps, s Classes) render.HTML {
 
 	shell := html.Attrs{"data-hui-affix": ""}
 	if p.Invalid {
-		// The class map colours the shell's border off data-invalid; the
-		// input inside has no border of its own to colour.
 		shell["data-invalid"] = ""
 	}
 
@@ -361,58 +247,32 @@ func Password(p PasswordProps, s Classes) render.HTML {
 
 // ColorProps configures a colour control.
 type ColorProps struct {
-	Name string
-	// Value is the colour as text, usually but not always #rrggbb.
+	Name     string
 	Value    string
 	Disabled bool
 	Invalid  bool
 
-	// ID and extra attrs land on the hex text input, the control that
-	// submits.
+	// ID and Extra land on the hex text input.
 	ID          string
 	Extra       html.Attrs
 	DescribedBy string
 
-	// Parts: attrs and binds on the shell, the hex input and the
-	// swatch. Strings carry the swatch's name.
 	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	// Strings are the words it says; nil means the English defaults.
 	Strings *Strings
 }
 
-// Color renders the colour control as an affix shell: the native
-// picker reduced to a swatch beside a readonly hex readout, so the
-// field reads as one control-height input instead of a bare OS
-// widget. The swatch carries no name and never submits; the hex text
-// is the value and the swatch is a picker bound to it, which is also
-// why the two never swap roles. The hex readout's tabindex stays 0
-// (it IS the control); the swatch is taken out of the tab order
-// (tabindex -1) so there is exactly one focus target and one
-// submitted value. There is no Required notion here because
-// type=color always has a value; a required field that cannot bite
-// would be a lie.
+// Color renders an unnamed swatch beside the hex text input that submits.
 func Color(p ColorProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	if p.Name == "" {
 		panic("headless: Color requires Name — the hex field is what submits, and without a name it sends nothing")
 	}
-	// The swatch needs #rrggbb; the text does not. A value the picker
-	// cannot show — a token reference, a CSS colour name — is kept
-	// verbatim in the text and the shell is marked, rather than being
-	// rewritten to black on the way in. Rejecting it outright would
-	// make the component unusable for exactly the config it exists to
-	// edit.
 	value, pickable := swatchValue(p.Value)
 	if !pickable {
 		value = "#000000"
 	}
 
-	// The TEXT input carries the name, not the swatch.
-	//
-	// A colour in this app's config is not always a colour the OS
-	// picker can show: "var(--color-primary)" is a legitimate value
-	// and type=color would silently rewrite it to #000000 on submit.
 	w := p.Strings.Resolve()
 	swatch := html.Attrs{
 		"data-hui-affix-swatch": "",
@@ -453,19 +313,12 @@ func Color(p ColorProps, s Classes) render.HTML {
 	)
 }
 
-// attrsSet sets key only when val is non-empty, the "zero value means
-// absent" rule for the string attributes a component owns.
 func attrsSet(a html.Attrs, key, val string) {
 	if val != "" {
 		a[key] = val
 	}
 }
 
-// swatchValue returns the #rrggbb the picker can show for s, and
-// whether s is a colour it can show at all. The short form is a colour:
-// the module that binds this component expands #abc the same way on
-// every keystroke, so refusing it here would open a legal value in the
-// error state and clear the error the moment its owner retyped it.
 func swatchValue(s string) (string, bool) {
 	if !isHexColor(s) {
 		return s, false
@@ -476,8 +329,6 @@ func swatchValue(s string) (string, bool) {
 	return s, true
 }
 
-// isHexColor reports whether s is #rgb or #rrggbb, the value forms
-// input type=color accepts.
 func isHexColor(s string) bool {
 	if len(s) != 7 && len(s) != 4 {
 		return false
@@ -502,11 +353,6 @@ func init() {
 		Anatomy: []Part{PartRoot},
 		Cases: func(k Kit) []Case {
 			s := k.Classes
-			// The hint and the error are rendered beside the control
-			// rather than left implied. A fixture whose
-			// aria-describedby points outside itself is a fixture that
-			// cannot prove the relationship works, and proving it is
-			// the whole reason the attribute is there.
 			return []Case{{
 				Name: "described",
 				Why:  "the description it is handed is written out: six of the eight text controls once accepted DescribedBy and dropped it, so the field wired a relationship to an attribute nobody rendered — here the control sits in a Field the way a page would use it, and the hint arrives through that relationship",

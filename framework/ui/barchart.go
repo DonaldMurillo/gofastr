@@ -14,103 +14,49 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── BarChart ───────────────────────────────────────────────────────
-//
-// Pure-SVG categorical bar chart. No JS, no hydration. Bars use the
-// theme primary by default; per-bar Color overrides apply.
-//
-// Legibility is built in, not opt-in: every bar carries its value above
-// the cap so magnitudes read at a glance, the y-scale rounds up to a
-// clean maximum so uniform / near-equal data keeps visible headroom (no
-// wall of full-height slabs), a hairline baseline grounds the bars, and
-// long category labels wrap onto multiple lines instead of truncating
-// mid-word. See framework/docs/content/ui-new-components.md.
-
 // BarChartBar is one bar.
 type BarChartBar struct {
-	// Label is the x-axis category label + AT <title>.
+	// Label is the category label and the bar's <title>.
 	Label string
-	// Value is the bar height (≥0).
+	// Value is the bar's height, at least 0.
 	Value float64
-	// Color overrides the default theme primary. Accepted forms:
-	//   - a palette token: "primary", "info", "success", "warning",
-	//     "danger" (rendered via a theme class, so it re-skins in dark
-	//     mode);
-	//   - a registered status variant name (ui.RegisterStatusVariant),
-	//     resolved to its accent color;
-	//   - a CSS color written as hex (#rgb/#rgba/#rrggbb/#rrggbbaa),
-	//     or a rgb()/rgba()/hsl()/hsla()/oklch()/color() function, or
-	//     var(--…), emitted verbatim as the SVG fill.
-	//
-	// CSS named colors ("tomato") must be written as hex or var(). An
-	// unrecognized value falls back to the theme primary instead of
-	// rendering an invalid (black) fill.
+	// Color is a palette token, a registered status variant, or a CSS
+	// color as hex, rgb(), hsl(), oklch(), color() or var(--…); anything
+	// else is the theme primary.
 	Color string
 }
 
 // BarChartConfig configures a BarChart.
 type BarChartConfig struct {
-	// Bars are the entries (≥1).
 	Bars []BarChartBar
-	// Width / Height in CSS pixels. Default 320×200.
+	// Width and Height in CSS pixels. Default 320×200.
 	Width  int
 	Height int
-	// ShowAxis renders a left value axis: hairline gridlines at clean
-	// tick values with numeric labels down the left gutter. Default off
-	// (the always-on value labels + baseline already make magnitudes
-	// legible; turn this on for a denser analytical read).
+	// ShowAxis draws gridlines and value labels down a left gutter.
 	ShowAxis bool
-	// ShowLabels renders the category labels under each bar. Long labels
-	// wrap onto up to two lines; a single over-long word is ellipsized
-	// with the full text preserved in the bar's <title>. Default off.
+	// ShowLabels draws the category labels, wrapped onto two lines.
 	ShowLabels bool
-	// Max fixes the top of the value scale: 100 for percentages, so
-	// the axis reads 0, 50, 100 whatever the tallest bar. Zero leaves
-	// the scale to round up from the data. A bar taller than Max grows
-	// the scale to hold it.
+	// Max fixes the top of the scale (100 for a percentage); zero rounds
+	// up from the data, and a taller bar grows it.
 	Max float64
-	// HideValues suppresses the per-bar value labels that ride above each
-	// cap. Values are shown by default. Set this to opt out (e.g. a dense
-	// sparkline-style strip where the numbers would crowd).
+	// HideValues drops the value label above each bar.
 	HideValues bool
-	// FitHeight sizes the SVG to hug the tallest bar instead of a
-	// fixed Height: the plot area is chosen so the tallest bar lands
-	// at 96px and the SVG height becomes the value/label gutters plus
-	// exactly that, so no empty band pads the space above the caps.
-	// The y-scale still rounds up to a clean maximum (the headroom
-	// rule), so bar RATIOS are identical to the fixed-height chart —
-	// only the blank pixels above the tallest bar are gone. Ignored
-	// when Height is set explicitly.
+	// FitHeight sizes the SVG so the tallest bar is 96px, unless Height is set.
 	FitHeight bool
-	// LabelledBy is the id of an element naming the chart for AT.
+	// LabelledBy names the chart; without it the chart is aria-hidden.
 	LabelledBy string
 	ID         string
 	Class      string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root <svg>. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// data-cui-*, width, height, viewBox, xmlns, role,
-	// aria-labelledby (use LabelledBy), and aria-hidden. With no Bars
-	// the extras land on the shared zero-data placeholder instead.
+	// ExtraAttrs go on the root <svg>, less the keys the chart derives.
 	ExtraAttrs html.Attrs
-	// Ctx carries the request: the chart's numbers and words follow the
-	// reader's locale. Nil writes English.
+	// Ctx sets the locale of numbers and words; nil is English.
 	Ctx context.Context
 }
 
-// axisLabelHalf is the room an axis label needs past its gridline:
-// half of its line at the larger size a phone draws it (see
-// axisPhoneScale), and a pixel of air.
-const axisLabelHalf = 10.0
-
-// axisPhoneScale is how much larger the axis labels are drawn on a
-// phone. The drawing scales to its box, and in a phone's card a 340px
-// chart is drawn about two thirds its size: 12px labels came out at
-// 8px. Drawn at the base text size in place of the extra-small one
-// (16px for 12px, this ratio) they land near 11px. The gutter is sized
-// for the larger text at every width, so the labels never leave it.
-const axisPhoneScale = 16.0 / 12.0
+const (
+	axisLabelHalf  = 10.0
+	axisPhoneScale = 16.0 / 12.0
+)
 
 // BarChart renders a categorical bar chart.
 func BarChart(cfg BarChartConfig) render.HTML {
@@ -128,8 +74,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	var dataMax float64
 	for _, b := range cfg.Bars {
-		// A NaN or Inf value is a reading that never arrived: its slot
-		// and label stay, with no bar and no value.
 		if !finite(b.Value) {
 			continue
 		}
@@ -140,17 +84,10 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			dataMax = b.Value
 		}
 	}
-	// Round the axis up to a clean maximum with ~15% headroom above the
-	// tallest bar. This is what stops uniform (8/8/8/8) and near-equal
-	// (6/5/5) datasets from rendering as identical full-height slabs. The
-	// tallest bar lands around 85% of the plot, not the ceiling.
 	valueMax := niceCeil(dataMax / 0.85)
 	if !finite(valueMax) || valueMax <= 0 {
 		valueMax = dataMax
 	}
-	// A scale with a known top (a percentage) keeps it: 96% drawn
-	// against 150 says nothing. A bar past Max is beyond what the
-	// caller said can be, and the scale grows to hold it.
 	if finite(cfg.Max) && cfg.Max > 0 {
 		valueMax = math.Max(cfg.Max, dataMax)
 	}
@@ -162,33 +99,21 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	n := len(cfg.Bars)
 
-	// Layout gutters.
-	axisGutter := 0.0 // left gutter for value-axis tick labels
+	axisGutter := 0.0
 	if cfg.ShowAxis {
-		// Wide enough for the longest tick label, set right-aligned 5px
-		// from the plot at about 7px a character of 12px text, times
-		// what a phone enlarges it by. A fixed 30px held three
-		// characters: "1,500" lost its "1,".
 		axisGutter = 30
 		for _, tv := range niceTicks(valueMax) {
 			need := float64(utf8.RuneCountInString(chartNumber(cfg.Ctx, tv)))*7*axisPhoneScale + 8
 			axisGutter = math.Max(axisGutter, math.Ceil(need))
 		}
 	}
-	topGutter := 0.0 // headroom for value labels above the caps
+	topGutter := 0.0
 	if showValues {
 		topGutter = 15
 	}
 
-	// Category-label band height depends on how many lines the labels wrap
-	// to at this width. Compute the wrapped lines up front so the gutter
-	// (and thus the plot height) accounts for them exactly.
 	provPlotW := float64(w) - axisGutter
 	provBarW, barGap := barSlots(provPlotW, n)
-	// A line gets its slot less 4px of air from its neighbour, at 7px a
-	// rune: 12px text runs 5-6.5px a rune, wider in capitals and accents
-	// (a translated or pseudo-localized label), and a label centred in
-	// the last slot that overruns it is cut off by the plot edge.
 	slotChars := int(math.Floor((provBarW + barGap - 4) / 7))
 	var wrapped [][]string
 	maxLines := 1
@@ -203,18 +128,12 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 	}
 	lineH := 12.0
-	// labelGap clears the first label line off the baseline: a 12px
-	// line box set 12px under it puts the cap height on the rule.
 	const labelGap = 6.0
 	bottomGutter := 0.0
 	if cfg.ShowLabels {
 		bottomGutter = float64(maxLines)*lineH + labelGap + 4
 	}
 
-	// An axis label is centred on its gridline, so the top and bottom
-	// ones reach half a line past the plot. With no value labels above
-	// and no category labels below there was no room for either half,
-	// and the drawing's edge cut them.
 	if cfg.ShowAxis {
 		topGutter = math.Max(topGutter, axisLabelHalf)
 		bottomGutter = math.Max(bottomGutter, axisLabelHalf)
@@ -222,10 +141,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	plotH := float64(h) - topGutter - bottomGutter
 	if cfg.FitHeight && cfg.Height == 0 {
-		// Hug the tallest bar (see FitHeight): the plot is sized so
-		// the tallest bar lands at 96px, then the SVG height follows
-		// from the gutters — the clean-maximum headroom lives in the
-		// scale, not as blank pixels above the caps.
 		const fitTallestBar = 96.0
 		if dataMax > 0 {
 			plotH = fitTallestBar * (valueMax / dataMax)
@@ -240,9 +155,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 	baseY := topGutter + plotH
 
 	barW := provBarW
-	// Cap the bar thickness so a 1–2 category chart doesn't render giant
-	// slabs; center the (capped) bars within their slots. The mark spec is
-	// "never fill the slot; let the leftover be air".
 	const maxBarW = 56.0
 	slotW := barW + barGap
 	drawW := barW
@@ -284,7 +196,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		"width", "height", "viewBox", "xmlns", "role", "aria-labelledby", "aria-hidden")))
 	sb.WriteString(`>`)
 
-	// Value axis: hairline gridlines at clean ticks + left labels.
 	if cfg.ShowAxis {
 		ticks := niceTicks(valueMax)
 		for _, tv := range ticks {
@@ -308,7 +219,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 		}
 	}
 
-	// Baseline: always drawn so the bars sit on solid ground.
 	sb.WriteString(`<line x1="`)
 	sb.WriteString(ftoa(axisGutter))
 	sb.WriteString(`" y1="`)
@@ -321,22 +231,15 @@ func BarChart(cfg BarChartConfig) render.HTML {
 
 	for i, b := range cfg.Bars {
 		slotX := axisGutter + float64(i)*slotW
-		x := slotX + (barW-drawW)/2 // center capped bar in its slot
+		x := slotX + (barW-drawW)/2
 		cx := x + drawW/2
 		barH := (b.Value / valueMax) * plotH
-		// Keep a visible nub for tiny non-zero values so they don't vanish.
 		if b.Value > 0 && barH < 2 {
 			barH = 2
 		}
 		y := baseY - barH
 
-		// A reading that never arrived draws no bar and no value; its
-		// category label below still holds the slot.
 		if finite(b.Value) {
-			// Palette tokens and an empty Color are class-based (theme-aware).
-			// A registered status variant or a plausible CSS color is a raw
-			// fill; anything else falls back to primary, so a typo like
-			// "draft" never renders an invalid (black) fill.
 			barCls := "fui-bar-chart__bar"
 			tone := seriesTone(b.Color, 0)
 			fill := tone.fill
@@ -368,7 +271,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 				sb.WriteString(`/>`)
 			}
 
-			// Value label above the cap.
 			if showValues {
 				sb.WriteString(`<text x="`)
 				sb.WriteString(ftoa(cx))
@@ -380,7 +282,6 @@ func BarChart(cfg BarChartConfig) render.HTML {
 			}
 		}
 
-		// Category label(s) under the bar, wrapped onto multiple lines.
 		if cfg.ShowLabels && b.Label != "" {
 			lines := wrapped[i]
 			ly := baseY + lineH + labelGap
@@ -411,11 +312,7 @@ func BarChart(cfg BarChartConfig) render.HTML {
 }
 
 // barSlots divides plotW among n bars: each bar's width and the gap
-// between two. Bars stand 8px apart while that leaves each at least
-// 3px; past that the gap narrows first, then bar and gap share the slot
-// three to one. A fixed 3px bar on a fixed 8px gap ran the bars off the
-// right edge (40 bars in the default 320px drew 29), and the tallest
-// bar, the one the scale is cut to, could be among the lost ones.
+// between two.
 func barSlots(plotW float64, n int) (barW, gap float64) {
 	const fullGap, minBar = 8.0, 3.0
 	gap = fullGap
@@ -433,12 +330,7 @@ func barSlots(plotW float64, n int) (barW, gap float64) {
 	return barW, gap
 }
 
-// niceCeil rounds v up to a clean "nice" number (1/1.5/2/2.5/3/4/5/6/8 ×
-// 10ⁿ) so axis maxima land on values a reader recognizes.
-// chartLog10 is math.Log10 that holds for subnormals too. On amd64
-// math.Log reads a subnormal as if it were normal (log10(1e-310) came
-// out -307.95), while math.Log2 splits the exponent out first; normal
-// values keep math.Log10's exact answer.
+// chartLog10 is math.Log10 that holds for subnormals too.
 func chartLog10(v float64) float64 {
 	if v > 0 && v < 0x1p-1022 {
 		return math.Log2(v) * math.Log10(2)
@@ -446,6 +338,7 @@ func chartLog10(v float64) float64 {
 	return math.Log10(v)
 }
 
+// niceCeil rounds v up to 1, 1.5, 2, 2.5, 3, 4, 5, 6 or 8 times a power of ten.
 func niceCeil(v float64) float64 {
 	if v <= 0 {
 		return 1
@@ -479,23 +372,17 @@ func niceCeil(v float64) float64 {
 	return nf * base
 }
 
-// niceTicks returns 0, max/2, max: three clean gridline values.
+// niceTicks returns 0, max/2 and max.
 func niceTicks(max float64) []float64 {
 	return []float64{0, max / 2, max}
 }
 
-// plausibleCSSColor reports whether s is shaped like a CSS color the
-// SVG fill attribute can use: #hex (3/4/6/8 digits), a rgb()/rgba()/
-// hsl()/hsla()/oklch()/color() function, or var(--…). Bare words
-// ("draft", "tomato") are NOT accepted. A bare word is either a
-// registered status variant (handled upstream) or a mistake. CSS named
-// colors must be written as hex or var(). Syntax-only: no parsing of
-// the function arguments, just a prefix + closing ')' shape check.
+// plausibleCSSColor reports whether s is shaped like a hex color, a color
+// function or var(--…); a bare word is not.
 func plausibleCSSColor(s string) bool {
 	if s == "" {
 		return false
 	}
-	// #hex: 3/4/6/8 hex digits (4 and 8 carry the alpha channel).
 	if s[0] == '#' {
 		hex := s[1:]
 		switch len(hex) {
@@ -529,11 +416,8 @@ func plausibleCSSColor(s string) bool {
 	return false
 }
 
-// wrapChartLabel greedily word-wraps label to at most two lines that each
-// fit within maxChars runes. A single word longer than a line is
-// ellipsized; the full text is preserved by the caller in <title>. A slot
-// too narrow for any rune still gets one, the ellipsis: a wider floor
-// spilled the label past its slot, and the last one past the plot edge.
+// wrapChartLabel word-wraps label to at most two lines of maxChars runes,
+// ellipsizing what does not fit.
 func wrapChartLabel(label string, maxChars int) []string {
 	if maxChars < 1 {
 		maxChars = 1
@@ -564,7 +448,6 @@ func wrapChartLabel(label string, maxChars int) []string {
 	if cur != "" {
 		lines = append(lines, cur)
 	}
-	// Hard-truncate any single over-long line (e.g. one huge word).
 	for i := range lines {
 		r := []rune(lines[i])
 		if len(r) > maxChars {
@@ -584,10 +467,6 @@ func wrapChartLabel(label string, maxChars int) []string {
 var barChartStyle = registry.RegisterStyle("ui-bar-chart", barChartCSS)
 
 func barChartCSS(_ style.Theme) string {
-	// Knobs: --ui-bar-chart-bar-hover-opacity (0.85) is the hover dim.
-	// The height follows the width when a narrow container shrinks the
-	// chart: at a fixed height the drawing scaled down inside a box that
-	// stayed tall, with a blank band above and below it.
 	return `[data-cui-comp="ui-bar-chart"] {
   display: block;
   max-inline-size: 100%;

@@ -478,9 +478,12 @@ func TestWorkerLoopHonorsPolicyErrors(t *testing.T) {
 	}
 	q.Start(ctx)
 	t.Cleanup(func() { q.Close() })
+	// One read per poll: separate reads of status and attempts can pass on
+	// a pending row before its claim and a claimed row after it, and then
+	// see scheduled_at before the retry is written.
 	waitFor(t, func() bool {
-		return stored(t, q, "perm").Status == "failed" && stored(t, q, "later").Status == "pending" &&
-			stored(t, q, "later").Attempts == 1
+		later := stored(t, q, "later")
+		return stored(t, q, "perm").Status == "failed" && later.Status == "pending" && later.Attempts == 1
 	}, 5*time.Second, "perm dead-lettered and later rescheduled")
 	if d := time.Until(stored(t, q, "later").ScheduledAt); d < 50*time.Minute {
 		t.Fatalf("later rescheduled %v out, want about an hour", d)

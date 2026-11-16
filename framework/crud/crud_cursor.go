@@ -19,11 +19,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/pagination"
 )
 
-// cursorFields returns the ordered list of columns the handler keysets on:
-// EntityConfig.CursorFields, else CursorField, then each primary-key
-// column neither names, so paging never skips rows tied on the sort
-// value; the primary key alone when neither is set. entity.Define checks
-// the same list.
+// cursorFields returns the keyset columns: CursorFields, else CursorField,
+// then every key column they do not name.
 func (ch *CrudHandler) cursorFields() []string {
 	var fields []string
 	switch p := ch.Entity.Config.Pagination; {
@@ -40,44 +37,18 @@ func (ch *CrudHandler) cursorFields() []string {
 	return fields
 }
 
-// serveCursorList handles a cursor-paginated List request. It uses keyset
-// pagination on the entity's cursor field(s) and emits a CursorPage envelope.
-// The total count is intentionally omitted, cursor pagination's appeal is
-// avoiding count's table scan.
-//
-// One column (the key):  WHERE id > $1 ORDER BY id.
-// Several (a sort field and the key tiebreak, or a composite):
-//
-//	WHERE (f1, f2, …) > ($1, $2, …) ORDER BY f1, f2, …
-//
-// `?sort=` is ignored in cursor mode: keyset pagination requires a strictly
-// ordered, unique-enough key, so the cursor field(s) control ORDER BY.
-// cols is the ?fields= projection. extraWhere is every clause the page
-// applies (search, ?where= and BeforeList); hookWhere is the BeforeList
-// part alone, the scope the anchor lookup keeps.
+// serveCursorList serves a keyset page ordered by cursorFields. extraWhere
+// is every clause the page applies; hookWhere is its BeforeList part.
 func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWriter, r *http.Request, q url.Values, cols []string, includes []*IncludeNode, filters []filter.ParsedFilter, nested []nestedFilter, extraWhere, hookWhere []hook.WhereClause) {
-	// Same no-store posture as List: the cursor page is the same per-caller
-	// rows through the keyset arm, and this handler is also reachable via
-	// decodeCursorAny paths that bypass List's stamp.
 	w.Header().Set("Cache-Control", "no-store")
 	cursor, direction := q.Get("cursor"), q.Get("direction")
 	_, limit := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
-	// An absent or empty direction means forward. Reject unknown values.
 	if !directionParamValid(q["direction"]) {
 		writeJSONError(w, r, http.StatusBadRequest, reasonBadDirection)
 		return
 	}
 	fields := ch.cursorFields()
-	// The cursor carries the last row's sort values and key when they fit
-	// the decoder's 16 KiB cap, and the key alone when they do not: a sort
-	// value can be any length (a Text column), and a cursor past the cap
-	// stopped paging partway. A key-only cursor reads the sort values back
-	// from that row (cursorAnchor). Carrying them when they fit keeps a
-	// row edited between pages (an updated_at feed) from moving the
-	// position past the rows after it.
 	keys := ch.keyCols()
-	// A cursor column the projection leaves out is still read, since the
-	// next cursor is built from it, and comes off the rows after.
 	var unprojected []string
 	for _, k := range fields {
 		if !slices.Contains(cols, k) {
@@ -102,28 +73,17 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		qb.Where(c.SQL, c.Args...)
 	}
 
-	// Decode cursor (if any) and apply tuple-comparison WHERE.
 	isDate := func(f string) bool { return ch.queryField(f).Type == schema.Date }
 	if cursor != "" {
 		decoded, err := decodeCursorFor(cursor, fields, keys)
 		if err != nil {
-			// Wrap, not a frame: the decoder's phrased refusal keeps the
-			// "invalid cursor:" prefix and still answers its own code.
 			writeErrJSON(w, r, http.StatusBadRequest, i18n.Wrap(reasonInvalidCursor, err), i18n.Phrase{})
 			return
 		}
-		// Build the keyset WHERE only. ORDER BY is owned by the single
-		// loop below so it is emitted exactly once per field; calling
-		// qb.Cursor here would append its OWN ORDER BY and duplicate the
-		// single-field clause (ORDER BY f ASC, f ASC).
 		op := ">"
 		if direction == "backward" {
 			op = "<"
 		}
-		// The cursor is client-borne: a tampered value of the wrong type
-		// for its column (?cursor= naming id "abc" on an int key) is a
-		// 400 here on both dialects. Bound raw, Postgres refused it as a
-		// 500 and SQLite compared it as text and answered a 200.
 		carried := make(map[string]any, len(fields))
 		for _, f := range fields {
 			raw, ok := decoded[f]
@@ -162,7 +122,6 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		}
 	}
 
-	// ORDER BY each cursor field in declared order.
 	for _, f := range fields {
 		if direction == "backward" {
 			qb.Order(f, "DESC")
@@ -176,8 +135,6 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	dataSQL, dataArgs := qb.Build()
 	rows, err := ch.conn(ctx).QueryContext(ctx, dataSQL, dataArgs...)
 	if err != nil {
-		// Redact: raw driver text must not reach the client. Mirrors the
-		// non-cursor List and streaming paths.
 		logf("crud: cursor query failed: %v", err)
 		writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 		return
@@ -191,12 +148,6 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		return
 	}
 
-	// Compute next cursor from the last row using all cursor field columns.
-	// buildCursorPage runs against the raw fetch order (DESC for backward),
-	// so it trims the extra sentinel row and derives the continue-cursor from
-	// the true last row of the keyset window. Only AFTER that do we flip a
-	// backward page back into ascending order so a "prev" page reads the same
-	// way a "next" page does.
 	page, err := buildCursorPage(results, fields, keys, ch.convertKey, isDate, textKeys, limit)
 	if errors.Is(err, errCursorKeyTooLong) {
 		logf("crud: cursor page for %s: %v", ch.Entity.GetTable(), err)
@@ -220,10 +171,6 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		}
 	}
 
-	// Includes run on the page after the cursor is taken: including a
-	// relation that is itself a cursor column (a composite key's
-	// team_id) replaces its stored value with the related row, and a
-	// cursor encoded from that object pages on garbage.
 	if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), page.Data, includes); err != nil {
 		writeIncludeError(w, r, "cursor", err)
 		return
@@ -234,19 +181,8 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 		}
 	}
 
-	// AfterList, on the same terms as the offset path. Without this, adding
-	// ?cursor= to any request skipped a redaction hook entirely and wrote the
-	// stored value straight to the wire, direct disclosure, not an oracle.
-	// It runs AFTER buildCursorPage on purpose: the continue-cursor has to be
-	// derived from the stored keyset values, so a hook that masks the keyset
-	// column must not be allowed to corrupt paging.
 	ch.maskOwn(ctx, page.Data...)
 	if ch.Hooks != nil {
-		// Carry extraWhere through so an AfterList hook sees the same payload
-		// shape on both paths. The offset path hands over the clauses
-		// BeforeList accumulated; constructing a bare payload here made a
-		// hook that inspects Where (audit logging the applied scope, say)
-		// behave differently the moment a client appended ?cursor=.
 		payload := &hook.ListPayload{Request: r, Where: extraWhere, Results: page.Data}
 		if err := ch.applyAfterList(ctx, payload); err != nil {
 			logf("crud: after-list hook failed (cursor): %v", err)
@@ -259,10 +195,8 @@ func (ch *CrudHandler) serveCursorList(ctx context.Context, w http.ResponseWrite
 	writeJSONStatus(w, r, http.StatusOK, page)
 }
 
-// decodeCursorFor decodes a cursor in either shape buildCursorPage
-// mints: every cursor field (the sort values and the key), or the key
-// columns alone. The two never collide: a key-only cursor names fewer
-// columns. A cursor that fits neither answers the full shape's refusal.
+// decodeCursorFor decodes a cursor naming every cursor field or the key
+// columns alone; one that fits neither answers the full shape's refusal.
 func decodeCursorFor(cursor string, fields, keys []string) (map[string]string, error) {
 	vals, err := decodeCursorAny(cursor, fields)
 	if err == nil || len(fields) == len(keys) {
@@ -274,27 +208,13 @@ func decodeCursorFor(cursor string, fields, keys []string) (map[string]string, e
 	return nil, err
 }
 
-// decodeCursorAny accepts either the single-field cursor or the
-// multi-field encoding and returns a map keyed by the DB column name.
-// For the single-field form the value lands under the first entry in
-// `fields`. Both encodings are first-class, single-field is the
-// compact shape for entities cursored by one column; multi-field is
-// for composite cursors.
-//
-// The decoded field names MUST exact-match the expected `fields` set
-// (same length, same names, no duplicates). A cursor with mis-cased,
-// whitespace-padded, or punctuation-altered names would otherwise feed
-// arbitrary column tokens into the keyset WHERE clause, either a
-// query error at best, or silent state confusion across cursor revisions.
+// decodeCursorAny decodes the single-field encoding when fields has one
+// entry and the multi-field one otherwise, keyed by column name.
 func decodeCursorAny(cursor string, fields []string) (map[string]string, error) {
 	out := map[string]string{}
 
-	// Try multi-cursor first; if it has fields, prefer it.
 	if mf, err := pagination.DecodeMultiCursor(cursor); err == nil && len(mf) > 0 {
 		if len(fields) <= 1 {
-			// Single-field consumer must use the single-field encoding;
-			// accepting a composite blob here would let a caller widen
-			// the WHERE clause beyond the declared key.
 			return nil, i18n.NewError(reasonCursorComposite, map[string]any{"count": len(mf)})
 		}
 		if len(mf) != len(fields) {
@@ -315,10 +235,6 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 		}
 		return out, nil
 	}
-	// Fall back to single-field cursor. The decoded name must
-	// exact-match the expected keyset column: the name selects which
-	// column the value keysets on, so a foreign name binds a foreign
-	// value under the expected column.
 	if name, val, err := pagination.DecodeCursor(cursor); err == nil && len(fields) > 0 {
 		if len(fields) > 1 {
 			return nil, i18n.NewError(reasonCursorNotComposite, map[string]any{"expected": len(fields)})
@@ -332,26 +248,11 @@ func decodeCursorAny(cursor string, fields []string) (map[string]string, error) 
 	return nil, i18n.NewError(reasonCursorFormat)
 }
 
-// errCursorAnchorGone is cursorAnchor's answer when the row a cursor
-// continues from is gone or out of the caller's reach.
 var errCursorAnchorGone = errors.New("cursor anchor row not found")
 
-// cursorAnchor returns the keyset values the next page starts after, one
-// per cursor field. carried holds the values the cursor itself held,
-// already typed: when it holds every field (the full shape, or an entity
-// cursored on its key) no lookup runs. Otherwise the cursor held the key
-// alone and the anchor row's values are read back by that key.
-//
-// The lookup applies the same tenant, owner, read-scope, soft-delete and
-// BeforeList predicates as the page, so a cursor naming a row the caller
-// cannot read is gone, the same answer as a deleted row, and never tells
-// where that row sorts. hookWhere holds the BeforeList clauses alone: the
-// client's ?q= and ?where= decide which rows the page shows, not whether
-// a readable row still marks a position, so an anchor edited out of the
-// search keeps paging the way a plain ?field= filter always did. A gone anchor is errCursorAnchorGone: the caller
-// restarts from the first page rather than reading a page from a position
-// nobody can name. textKeys is storedTimestampKeys: the Timestamp fields
-// it names are read and bound as the row stores them.
+// cursorAnchor returns the keyset values the next page starts after: the
+// carried ones, or for a key-only cursor the anchor row's, read under the
+// page's scopes and hookWhere.
 func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, q url.Values, fields, keys []string, carried map[string]any, hookWhere []hook.WhereClause, isDate func(string) bool, textKeys map[string]string) ([]any, error) {
 	args := make([]any, len(fields))
 	lookup := false
@@ -396,9 +297,6 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, q url.
 	if err != nil {
 		return nil, err
 	}
-	// Bound the way a value the cursor carried was: as its text, checked
-	// and typed for its column, so a Timestamp compares in the stored
-	// layout on SQLite.
 	for i, f := range fields {
 		v, err := filter.CoerceValue(f, ch.queryField(f).Type, pagination.KeysetString(vals[f]))
 		if _, stored := textKeys[f]; stored {
@@ -412,20 +310,7 @@ func (ch *CrudHandler) cursorAnchor(ctx context.Context, r *http.Request, q url.
 	return args, nil
 }
 
-// keysetValues reads fields from row (keyed by convertKey) for a cursor.
-//
-// A NULL keyset value is an error, never a cursor: no tuple comparison
-// against NULL is true, so the next page would come back empty (or,
-// spelled "null", compare as text on SQLite). Define refuses a nullable
-// cursor column, so reaching this means the stored data broke the
-// column's NOT NULL contract.
-//
-// isDate names the schema.Date fields. Both drivers read DATE as a
-// time.Time, which would carry a full timestamp that the Date check
-// refuses; the value is the date instead.
-//
-// textKeys maps a field to the row key of its stored text
-// (storedTimestampKeys), read in place of the scanned value.
+// keysetValues reads fields from row for a cursor; a NULL is an error.
 func keysetValues(row map[string]any, fields []string, convertKey func(string) string, isDate func(string) bool, textKeys map[string]string) (map[string]any, error) {
 	out := map[string]any{}
 	for _, f := range fields {
@@ -448,10 +333,8 @@ func keysetValues(row map[string]any, fields []string, convertKey func(string) s
 	return out, nil
 }
 
-// buildCursorPage assembles the CursorPage envelope. The cursor carries
-// the last row's cursor fields when that token fits the decoder's cap,
-// else its key columns alone (decodeCursorFor reads both). One column
-// uses the compact EncodeCursor shape, several the multi-field encoding.
+// buildCursorPage assembles the CursorPage envelope, its cursor naming
+// every cursor field when that fits the decoder's cap, else the key alone.
 func buildCursorPage(data []map[string]any, fields, keys []string, convertKey func(string) string, isDate func(string) bool, textKeys map[string]string, limit int) (pagination.CursorPage, error) {
 	hasMore := len(data) > limit
 	if hasMore {
@@ -478,19 +361,14 @@ func buildCursorPage(data []map[string]any, fields, keys []string, convertKey fu
 	if !pagination.CursorFits(page.Cursor) && len(keys) < len(fields) {
 		page.Cursor = encode(keys)
 	}
-	// A key past the decoder's cap would mint a token the next request
-	// refuses as too long; refuse it here, where the reason can say so.
 	if !pagination.CursorFits(page.Cursor) {
 		return page, fmt.Errorf("%w: %d bytes", errCursorKeyTooLong, len(page.Cursor))
 	}
 	return page, nil
 }
 
-// errCursorKeyTooLong is buildCursorPage's refusal of a key whose cursor
-// would not fit the decoder's size cap.
 var errCursorKeyTooLong = errors.New("the last row's key is too long for a cursor")
 
-// directionParamValid validates direction values after strict query decoding.
 func directionParamValid(values []string) bool {
 	for _, v := range values {
 		if v != "" && v != "forward" && v != "backward" {

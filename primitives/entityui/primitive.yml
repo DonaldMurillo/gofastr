@@ -1,0 +1,32 @@
+primitive: entityui
+summary: The entity list, record and create screens drawn from the schema, and the handlers their forms post to beside the CRUD routes.
+code:
+  - framework/entityui/
+docs:
+  - framework/docs/content/entityui.md
+invariants:
+  - id: scriptless-edit-is-opt-in
+    rule: Without WithScriptlessEdits the record edit form and the masked-field Replace forms natively post to the CRUD item route; with it they post to <write base>/<id>/_save with the record page as back, and the runtime still PUTs to the CRUD item route either way.
+    enforced_by:
+      - test: framework/entityui.TestEditFormActionUnchangedWithoutOptIn
+      - test: framework/entityui.TestScriptlessEditSavesAndRedirects
+  - id: save-handler-is-the-crud-update
+    rule: SaveHandler writes only through the CRUD handler's Update, run as a PUT of the posted body, and answers a success with a 303 to a same-origin back path; a missing or unsafe back writes nothing and answers 400, and a refused write answers the CRUD route's status.
+    enforced_by:
+      - test: framework/entityui.TestScriptlessEditSavesAndRedirects
+      - test: framework/entityui.TestScriptlessSaveRefusals
+    judge: Does this change give SaveHandler a write path, body parser or cross-site check of its own instead of running the CRUD Update?
+decisions:
+  - id: scriptless-edit-through-an-entityui-route
+    date: 2026-11-16
+    status: accepted
+    decision: A scriptless record edit posts to an entityui-owned _save route that the app opts into with WithScriptlessEdits and mounts itself, and the route forwards to the CRUD Update and redirects back (#715).
+    rejected:
+      - option: Accept POST with _method=PATCH on every entity's CRUD item route.
+        why: It adds a POST route on every entity's item path, a contract change in framework/crud for every app.
+      - option: Mount the _save route for every entity by default.
+        why: Most apps run the runtime; an extra write route per entity should be one the app asked for.
+      - option: Leave edits runtime-only and only document it.
+        why: The entity packages should give an app the building block for a scriptless edit, and the cost is one small handler.
+    revisit_if: Every app turns scriptless edits on, so the opt-in is noise and App.EntityUI should mount the route itself.
+    upholds: [scriptless-edit-is-opt-in, save-handler-is-the-crud-update]

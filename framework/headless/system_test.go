@@ -116,3 +116,8 @@ func TestSystemBannerRefusesAnUnknownTone(t *testing.T) {
 		SystemBanner(SystemBannerProps{ID: "sys", Title: "Connection lost", Tone: "urgent"}, nil)
 	})
 }
+
+func TestSystemBannerDOMIDIsTheRootID(t *testing.T) {
+	has(t, SystemBanner(SystemBannerProps{ID: "sys", Title: "T", DOMID: "maint"}, nil), ` id="maint"`, "DOMID is not the root's id")
+	hasNot(t, SystemBanner(SystemBannerProps{ID: "sys", Title: "T"}, nil), ` id=`, "a banner without DOMID rendered an id")
+}

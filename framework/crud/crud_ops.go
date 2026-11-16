@@ -19,21 +19,14 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// doCreate runs the BeforeCreate → INSERT → AfterCreate chain for a single
-// record. It is the per-item primitive shared by Create and BatchCreate.
-//
-// Pre-conditions: ch is a tx-bound copy (its DB is *sql.Tx) and ctx is the
-// tx-derived context. body is the snake_cased payload; this method mutates
-// it in-place when injecting tenant_id and auto-generated values.
+// doCreate writes one record on a tx-bound handler; body is keyed by
+// column and is modified in place.
 func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[string]any) (map[string]any, error) {
 	if ch.Entity != nil && ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
 		if err := ch.requireOwnerContext(ctx); err != nil {
 			return nil, err
 		}
 	}
-	// A storage key in a file field must be one this request uploaded
-	// (media_provenance.go). Checked on the caller's body, before hooks
-	// add their own values.
 	if err := ch.checkMediaProvenance(ctx, body, nil); err != nil {
 		return nil, err
 	}
@@ -46,8 +39,6 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	}
 
 	if ch.Hooks != nil {
-		// A typed hook decodes the body into its struct: a form's
-		// strings must be the values they spell first.
 		ch.coerceBeforeHooks(ch.entitySchema(), body, false)
 		if err := runHooks(ch.Hooks, ctx, hook.BeforeCreate, body); err != nil {
 			return nil, &beforeHookError{err: err}
@@ -62,10 +53,6 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if err := ch.validateMediaURLs(body); err != nil {
 		return nil, err
 	}
-	// Blank form values go first: a "" for a number must read as "not
-	// provided" before the integer coercion sees it. The hooks already
-	// saw the body through coerceBeforeHooks; this pass covers what they
-	// added.
 	dropEmptyFormValues(ch.entitySchema(), body, false)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
@@ -81,15 +68,9 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 		return nil, err
 	}
 
-	// The belongs_to FKs in this body must resolve for THIS caller: a
-	// relation onto an owner/tenant-scoped entity is a write-side trust
-	// boundary exactly as ?include= is a read-side one (issue: order_items
-	// targeting another customer's order).
 	if err := ch.checkBelongsToScope(ctx, r, ch.createWrite(ctx, body)); err != nil {
 		return nil, err
 	}
-	// The state field starts at an Initial value and no stamp is set
-	// (states.go). After the hooks, so a hook cannot set them either.
 	if err := ch.checkStateCreate(ctx, body); err != nil {
 		return nil, err
 	}
@@ -98,26 +79,13 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	var vals []any
 	for _, f := range ch.Entity.GetFields() {
 		if f.AutoGenerate == schema.AutoIncrement {
-			// Omit: the database assigns the value, the Postgres SERIAL
-			// sequence or the SQLite "INTEGER PRIMARY KEY" rowid alias.
-			// Sending the 0 placeholder would collide on every insert
-			// after the first. RETURNING (below) reads the assigned id back.
 			continue
 		}
 		if f.AutoGenerate != schema.AutoNone {
 			cols = append(cols, f.Name)
-			// A hook's time.Time lands in the stored layout, not the driver's.
 			vals = append(vals, ch.bindJSONValue(f.Name, body[f.Name]))
 			continue
 		}
-		// The owner column is framework-managed: InjectOwner stamps it
-		// above, so it is always persisted even when hidden from the
-		// UI/API surface. The tenant column is ALWAYS skipped here: it
-		// is appended separately below from the context-derived tenant
-		// id, so letting the field loop persist it from the body would
-		// double-add the column. Every OTHER ReadOnly/Hidden field is
-		// client-unsettable and skipped unless the caller opted in to
-		// server writes via WithServerWrites(ctx).
 		if ch.Entity.Config.Scope.MultiTenant && f.Name == ch.Entity.Config.TenantColumn() {
 			continue
 		}
@@ -145,10 +113,6 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(ctx)
 		if tenantID == "" {
-			// Refuse to write an orphan row. Without a tenant in the
-			// context, the new row's tenant_id would default to empty
-			// and become readable by anyone passing the matching empty
-			// X-Tenant-ID through the filter middleware.
 			return nil, &tenantMissingError{}
 		}
 		cols = append(cols, ch.Entity.Config.TenantColumn())
@@ -200,41 +164,35 @@ func (ch *CrudHandler) doCreate(ctx context.Context, r *http.Request, body map[s
 	return result, nil
 }
 
-// doUpdate runs the BeforeUpdate → UPDATE → AfterUpdate chain for a single
-// record by id. Same pre-conditions as doCreate.
+// doUpdate patches record id on a tx-bound handler.
 func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string, body map[string]any) (map[string]any, error) {
 	if ch.Entity != nil && ch.Entity.Config.Scope.OwnerField != "" && !serverWrites(ctx) {
 		if err := ch.requireOwnerContext(ctx); err != nil {
 			return nil, err
 		}
 	}
-	// A row the caller's BeforeGet hooks hide answers GET's 404, before
-	// anything else reads or writes it, and so does one outside the
-	// write's scope before a BeforeUpdate hook sees it (hook_scope.go).
 	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive, hook.BeforeUpdate); err != nil {
 		return nil, err
 	}
-	// A storage key in a file field must be one this request uploaded or
-	// one already on this row (media_provenance.go).
 	idKey, _ := ch.idVals(id)
 	if err := ch.checkMediaProvenance(ctx, body, ch.currentMediaKeys(ctx, r, id, idKey)); err != nil {
 		return nil, err
 	}
-	// Snapshot the pre-change row inside the same transaction so the audit
-	// hook can diff old vs new. Best-effort, a SELECT failure here must
-	// not block the update itself (the audit log already tolerates a
-	// missing pre-image and just emits {"old": null, "new": ...}).
-	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
+	pre, preErr := ch.selectPreImage(ctx, r, id)
+	if preErr != nil {
+		pre = nil
+	}
+	if pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
 	}
-	// A hook cannot move this record mid-write (RunTransition).
+	if err := ch.dropMaskedEchoes(ctx, r, id, body, pre); err != nil {
+		return nil, err
+	}
 	if ch.Entity != nil {
 		ctx = withRecordWrite(ctx, ch.Entity.GetName(), id)
 	}
 
 	if ch.Hooks != nil {
-		// As on create: the typed hook's decode sees a form's values, not
-		// its strings.
 		ch.coerceBeforeHooks(ch.entitySchema(), body, true)
 		if err := runHooks(ch.Hooks, ctx, hook.BeforeUpdate, body); err != nil {
 			return nil, &beforeHookError{err: err}
@@ -250,13 +208,6 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, err
 	}
 
-	// Partial validation, only check fields the caller actually sent.
-	// Missing fields aren't treated as "required" violations because the
-	// existing row already satisfies them; the UPDATE only touches the
-	// columns present in the body.
-	// Blank form values go first: a "" for a number must read as "not
-	// provided" before the integer coercion sees it. As on create, this
-	// pass covers what the hooks added.
 	dropEmptyFormValues(ch.entitySchema(), body, true)
 	if err := ch.coerceNumberColumnValues(body); err != nil {
 		return nil, err
@@ -269,16 +220,10 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		return nil, err
 	}
 
-	// The state field and stamps change only through a move: the stored
-	// value written back is dropped, any other is refused (states.go).
 	ctx, err = ch.checkStateUpdate(ctx, r, id, body)
 	if err != nil {
 		return nil, err
 	}
-	// Same write-side trust boundary as doCreate: a PATCH may retarget a
-	// belongs_to FK at a foreign row as freely as a POST could. It checks
-	// the reference the row will hold, after the SET below drops what it
-	// does not write.
 	w, err := ch.updateWrite(ctx, r, id, body)
 	if err != nil {
 		return nil, err
@@ -296,8 +241,6 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	if err := ch.stampRow(ctx, id); err != nil {
 		return nil, err
 	}
-	// A file the write replaces or clears is deleted once it commits
-	// (media_cleanup.go).
 	objs, err := ch.objectsBefore(ctx, r, id, idKey, body, false)
 	if err != nil {
 		return nil, err
@@ -334,11 +277,6 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 			return nil, errNotFound
 		}
 	} else {
-		// Restamp updated_at to now(). The field loop above skips every
-		// AutoGenerate field (so a client can't forge the timestamp), which
-		// would otherwise leave updated_at frozen at its creation value. Only
-		// stamp when a real update is happening (anySet) and the entity actually
-		// declares an auto-timestamp updated_at column.
 		if col := autoUpdatedAtColumn(ch.Entity); col != "" {
 			ub.Set(col, generateFieldValue(schema.AutoTimestamp))
 		}
@@ -355,12 +293,6 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 		}
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
-		// A soft-deleted row is logically gone: the read paths hide it
-		// (ApplySoftDeleteFilter on Get/List/cursor/pre-image) and so must the
-		// write path, otherwise an owner could mutate / resurrect a record the
-		// system considers deleted, which the upsert path already refuses
-		// (errSoftDeletedResurrection). Match-nothing ⇒ scanRow gets ErrNoRows
-		// ⇒ errNotFound, same 404 a deleted row gives on Get.
 		if ch.Entity.Config.Scope.SoftDelete {
 			ub.Where("deleted_at IS NULL")
 		}
@@ -404,9 +336,8 @@ func (ch *CrudHandler) doUpdate(ctx context.Context, r *http.Request, id string,
 	return result, nil
 }
 
-// checkBelongsToScope refuses a create or update whose BelongsTo foreign
-// key names a row the caller cannot read, with errNotFound. WithServerWrites
-// contexts are exempt, and an unscoped target is not looked up.
+// checkBelongsToScope refuses a write whose BelongsTo foreign key names
+// a row the caller cannot read, with errNotFound.
 func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request, w fkWrite) error {
 	if err := ch.checkForeignKeyTuples(w); err != nil {
 		return err
@@ -420,19 +351,13 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 	}
 	var registered map[string]*entity.Entity
 	for _, rel := range rels {
-		// A reference the write does not name does not move.
 		raws, named := w.tuple(ch, rel)
 		if !named {
 			continue
 		}
-		// A key with a null column names no row, as a join on it matches
-		// none. A blank string is a value: a row keyed on it is someone's
-		// row.
 		if slices.Contains(raws, nil) {
 			continue
 		}
-		// A reference the write leaves as stored crosses no boundary: the
-		// caller only re-sends what its own row holds.
 		if w.kept != nil && w.kept(rel, raws) {
 			continue
 		}
@@ -441,8 +366,6 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 			parts[i] = fmt.Sprint(v)
 		}
 		fk := entity.JoinKey(parts)
-		// An unknown name is skipped (see above); only a name the registry
-		// holds but cannot resolve (several versions) is refused.
 		if registered == nil {
 			registered = ch.Registry.All()
 		}
@@ -509,10 +432,7 @@ func (ch *CrudHandler) checkBelongsToScope(ctx context.Context, r *http.Request,
 }
 
 // belongsToHookScope refuses a reference onto a row the target's own
-// Before hooks hide from this caller (BeforeList, plus BeforeGet with the
-// row's id, as ?include= over a belongs_to applies them) with the
-// not-found a row outside its declared scopes answers. raws are the
-// reference's key values in the target's key order.
+// Before hooks hide from this caller.
 func (ch *CrudHandler) belongsToHookScope(ctx context.Context, r *http.Request, rel entity.Relation, target *entity.Entity, raws []any, fk string) error {
 	vals := make([]any, len(raws))
 	for i, c := range target.KeyColumns() {
@@ -526,11 +446,8 @@ func (ch *CrudHandler) belongsToHookScope(ctx context.Context, r *http.Request, 
 	return nil
 }
 
-// referenceRelations is every reference a write's scope check reads: the
-// belongs-to relations, and a Many relation field, whose column holds
-// one target id as a string. Define derives no relation for a Many
-// field (it emits no FK), so without this a write stored another owner's
-// id there unchecked (2026-10-27 D43).
+// referenceRelations is the belongs-to relations plus each Many relation
+// field, whose column holds one target id.
 func (ch *CrudHandler) referenceRelations() []entity.Relation {
 	var out []entity.Relation
 	for _, rel := range ch.Entity.Config.Relations {
@@ -547,14 +464,7 @@ func (ch *CrudHandler) referenceRelations() []entity.Relation {
 	return out
 }
 
-// updateSets reports whether an update writes f from the body. Key
-// columns and generated fields never change. ReadOnly and Hidden fields
-// are client-unsettable unless the caller opted in via
-// WithServerWrites(ctx), or, where overrides apply, a state override
-// releases them. The owner field is the framework's: the owner scope pins
-// the WHERE to the caller's id, but a SET would still let a legitimate
-// owner hand the row to another user ("transfer-by-tamper"). The tenant
-// column has the same hazard when MultiTenant is on.
+// updateSets reports whether an update writes f from the body.
 func (ch *CrudHandler) updateSets(ctx context.Context, f schema.Field, overrides bool) bool {
 	if ch.isKeyCol(f.Name) || f.AutoGenerate != schema.AutoNone {
 		return false
@@ -568,36 +478,24 @@ func (ch *CrudHandler) updateSets(ctx context.Context, f schema.Field, overrides
 	return !ch.Entity.Config.Scope.MultiTenant || f.Name != ch.Entity.Config.TenantColumn()
 }
 
-// fkWrite is one write as the foreign-key checks read it: the body, the
-// columns the write takes from it, and what a column it does not take
-// holds afterwards. The checks read each reference as the row will hold
-// it, never as the body spells it: a column the write drops from the
-// body keeps its stored value, its default, or the caller's tenant.
+// fkWrite is one write as the foreign-key checks read it: each reference
+// as the row will hold it, not as the body spells it.
 type fkWrite struct {
 	body map[string]any
-	// sets reports whether the write takes f from the body.
 	sets func(f schema.Field) bool
-	// holds returns the value column c holds after the write when the
-	// write does not take it from the body, or false when the write
-	// cannot know it: an upsert's two arms and a bulk update's rows can
-	// each leave a different value there.
+	// holds is what a column the write does not take holds afterwards,
+	// or false when the write cannot know.
 	holds func(c string) (any, bool)
-	// kept reports whether rel's tuple, as the row will hold it, is the
-	// one the row holds now. Only an update reads the stored row; every
-	// other write leaves it nil and checks each reference it names.
+	// kept reports whether rel's tuple is the one the row holds now; nil
+	// except on an update.
 	kept func(rel entity.Relation, raws []any) bool
 }
 
-// takes reports whether the write takes column c from the body and the
-// body names it.
 func (w fkWrite) takes(ch *CrudHandler, c string) bool {
 	_, ok := w.body[c]
 	return ok && w.sets(ch.fieldByName(c))
 }
 
-// tuple returns rel's foreign key as the row will hold it, and whether
-// the write names it at all. A column the write cannot know reads nil;
-// checkForeignKeyTuples refuses such a write before anything reads it.
 func (w fkWrite) tuple(ch *CrudHandler, rel entity.Relation) ([]any, bool) {
 	fks := rel.ForeignKey
 	if !slices.ContainsFunc(fks, func(c string) bool { return w.takes(ch, c) }) {
@@ -614,17 +512,10 @@ func (w fkWrite) tuple(ch *CrudHandler, rel entity.Relation) ([]any, bool) {
 	return vals, true
 }
 
-// unknownHeld is fkWrite.holds for a column whose stored value the write
-// has not read.
 func unknownHeld(string) (any, bool) { return nil, false }
 
-// scopedHeld is fkWrite.holds for the writes that cannot read one stored
-// row: the upsert's conflict update and the bulk update. Each row they
-// touch is scoped to the caller's tenant and owner and keeps both, so
-// those columns hold the caller's; every other column they keep is
-// unknown. A context with no tenant (a cross-tenant bulk update), or no
-// owner or a cross-owner grant (which lifts the bulk update's owner
-// filter), leaves that column unknown.
+// scopedHeld is fkWrite.holds for the upsert's conflict arm and the bulk
+// update: the caller's tenant and owner columns, else unknown.
 func (ch *CrudHandler) scopedHeld(ctx context.Context) func(string) (any, bool) {
 	return func(c string) (any, bool) {
 		if ch.Entity.Config.Scope.MultiTenant && c == ch.Entity.Config.TenantColumn() {
@@ -641,11 +532,7 @@ func (ch *CrudHandler) scopedHeld(ctx context.Context) func(string) (any, bool) 
 	}
 }
 
-// createWrite reads a create as the INSERT writes it. It takes a field
-// from the body under the rules of doCreate's column loop; a column it
-// skips holds its default, or the caller's tenant for the tenant column.
-// The database assigns an AutoIncrement column, so its value is unknown
-// until the row exists.
+// createWrite reads a create as doCreate's column loop writes it.
 func (ch *CrudHandler) createWrite(ctx context.Context, body map[string]any) fkWrite {
 	return fkWrite{
 		body: body,
@@ -675,12 +562,8 @@ func (ch *CrudHandler) createWrite(ctx context.Context, body map[string]any) fkW
 	}
 }
 
-// updateWrite reads a PATCH as its SET writes it. A column the SET does
-// not write (a key column, a ReadOnly one, the tenant) holds its stored
-// value. Every column of each reference the body names is read once,
-// under the scopes the UPDATE runs under, so a reference the PATCH leaves
-// as stored is kept without a check (2026-10-27 D42): the record form
-// re-sends a target the caller can no longer read.
+// updateWrite reads a PATCH as its SET writes it, with the stored values
+// of the references the body names, read under the UPDATE's scopes.
 func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id string, body map[string]any) (fkWrite, error) {
 	w := fkWrite{
 		body:  body,
@@ -709,13 +592,9 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 		return fkWrite{}, err
 	}
 	w.holds = func(c string) (any, bool) {
-		v, ok := stored[ch.convertKey(c)] // rows are keyed by wire name
+		v, ok := stored[ch.convertKey(c)]
 		return v, ok
 	}
-	// Values compare as the scope check keys them. A spelling that differs
-	// from the stored one ("01" for 1) is not kept, so it is checked. A
-	// stored null is never kept: it prints as "<nil>", a spelling a body
-	// can send.
 	w.kept = func(rel entity.Relation, raws []any) bool {
 		for i, c := range rel.ForeignKey {
 			v, _ := w.holds(c)
@@ -729,14 +608,7 @@ func (ch *CrudHandler) updateWrite(ctx context.Context, r *http.Request, id stri
 }
 
 // checkForeignKeyTuples refuses a write that sets part of a multi-column
-// foreign key. Among the columns the write takes from the body it names
-// some and not others, or sets some to null and others to a value: the
-// row would point at a reference nobody wrote, half old and half new. A
-// write that names the key while it cannot know what a column it does
-// not take holds is refused too (validation.kept_foreign_key): the upsert
-// and the bulk update cannot read one stored tuple to check. It runs for
-// every caller, server writes included, because the shape is wrong
-// whoever sends it.
+// foreign key, or names one while a column it does not take is unknown.
 func (ch *CrudHandler) checkForeignKeyTuples(w fkWrite) error {
 	var fields map[string][]schema.Violation
 	add := func(c string, v schema.Violation) {
@@ -797,19 +669,8 @@ func (ch *CrudHandler) checkForeignKeyTuples(w fkWrite) error {
 	return nil
 }
 
-// readScopeHidesRow reports whether the caller's read scope hides the row a
-// write just produced. A write's RETURNING is a read handed to the caller,
-// and the write gates (owner, tenant, Access) do not carry ReadScope, so a
-// caller allowed to write a row outside its scope would otherwise read every
-// column of a row GET answers 404 for. Callers answer with identityOnly when
-// this is true; the write itself stands.
-//
-// It asks the database rather than evaluating the predicates in Go, under
-// the same readScopeFilters every read path renders, so the answer is the
-// one GET would give for this row. Run it on the tx-bound handler so it sees
-// the uncommitted write. Unrestricted callers and entities without a
-// ReadScope cost nothing: no predicates, no query. A WithServerWrites
-// caller is trusted server Go and reads back the whole row.
+// readScopeHidesRow reports whether the caller's ReadScope hides the row
+// a write produced, asking the database on the tx-bound handler.
 func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any) (bool, error) {
 	if serverWrites(ctx) {
 		return false, nil
@@ -820,7 +681,7 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 	}
 	vals, ok := ch.rowKeyVals(row)
 	if !ok {
-		return true, nil // cannot name the row: fail closed
+		return true, nil
 	}
 	kc, ka := ch.keyCond(vals)
 	qb := query.Select(ch.keyCols()[0]).
@@ -838,19 +699,8 @@ func (ch *CrudHandler) readScopeHidesRow(ctx context.Context, row map[string]any
 	return false, nil
 }
 
-// getScopeHidesRow reports whether the BeforeGet chain GET runs would hide
-// a row an HTTP write just committed (2026-10-27 D4). readScopeHidesRow
-// covers the declared ReadScope; an app that scopes reads with a BeforeGet
-// hook and grants writes more widely handed a writer every column of a row
-// GET answers 404 for, a no-op PATCH being enough to read it. A write to a
-// row the hook already hides now answers 404 before it runs
-// (refuseHiddenTarget); this still covers a create, and a write that moves
-// its row out of the caller's sight.
-//
-// The write routes call it after commit, outside the transaction, where
-// GET would run the chain: a hook that reads the database would otherwise
-// wait on the write's own connection. A hook error, or a row it cannot
-// name, hides the row: the write stands, and the response names it by id.
+// getScopeHidesRow reports whether the BeforeGet chain would hide a row
+// an HTTP write committed; run after commit, outside the transaction.
 func (ch *CrudHandler) getScopeHidesRow(r *http.Request, row map[string]any) bool {
 	if ch.Hooks == nil || len(ch.Hooks.HooksFor(hook.BeforeGet)) == 0 {
 		return false
@@ -863,8 +713,6 @@ func (ch *CrudHandler) getScopeHidesRow(r *http.Request, row map[string]any) boo
 	return ch.hookScopeHidesKey(r.Context(), r, vals, id, false)
 }
 
-// scopedReadBack returns row, or only its id when the caller's read scope
-// hides it. See readScopeHidesRow.
 func (ch *CrudHandler) scopedReadBack(ctx context.Context, row map[string]any) (map[string]any, error) {
 	hidden, err := ch.readScopeHidesRow(ctx, row)
 	if err != nil {
@@ -876,9 +724,6 @@ func (ch *CrudHandler) scopedReadBack(ctx context.Context, row map[string]any) (
 	return row, nil
 }
 
-// autoUpdatedAtColumn returns the name of the entity's auto-timestamp
-// "updated_at" column, or "" when the entity has no such field. Used to
-// restamp updated_at on every UPDATE / bulk update.
 func autoUpdatedAtColumn(ent *entity.Entity) string {
 	for _, f := range ent.GetFields() {
 		if f.Name == "updated_at" && f.AutoGenerate == schema.AutoTimestamp {
@@ -888,18 +733,11 @@ func autoUpdatedAtColumn(ent *entity.Entity) string {
 	return ""
 }
 
-// doDelete runs the BeforeDelete → DELETE/UPDATE → AfterDelete chain for a
-// single record by id. Same pre-conditions as doCreate.
+// doDelete deletes, or soft-deletes, record id on a tx-bound handler.
 func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string) error {
-	// A row the caller's BeforeGet hooks hide answers GET's 404, and so
-	// does one outside the write's scope before a BeforeDelete hook sees
-	// it (hook_scope.go).
 	if err := ch.refuseHiddenTarget(ctx, r, id, targetLive, hook.BeforeDelete); err != nil {
 		return err
 	}
-	// Snapshot the row before deletion so the audit hook can record what
-	// went away. Without this the audit row only carries a record_id,
-	// useful for "who did it" but useless for "what was lost".
 	if pre, err := ch.selectPreImage(ctx, r, id); err == nil && pre != nil {
 		ctx = WithAuditPreImage(ctx, pre)
 	}
@@ -921,11 +759,6 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 			Where(kc, ka...)
 		ch.ApplyTenantScopeUpdate(ub, r)
 		ch.ApplyOwnerScopeUpdate(ub, r)
-		// Don't re-soft-delete an already-deleted row: without this the
-		// UPDATE matches the trashed row, bumps deleted_at, and reports
-		// success, making a re-delete of a logically-gone record look
-		// like a fresh delete. Filtering to live rows makes affected==0,
-		// which maps to errNotFound below.
 		ub.Where("deleted_at IS NULL")
 		n, err := ch.execOwn(ctx, id, ub.Matching, func(returning []string) (string, []any) {
 			return ub.Returning(returning...).Build()
@@ -935,8 +768,6 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 		}
 		affected = n
 	} else {
-		// The row's stored objects go with it once the delete commits
-		// (media_cleanup.go). A soft delete keeps them for a restore.
 		idKey, _ := ch.idVals(id)
 		objs, err := ch.objectsBefore(ctx, r, id, idKey, nil, false)
 		if err != nil {
@@ -974,11 +805,8 @@ func (ch *CrudHandler) doDelete(ctx context.Context, r *http.Request, id string)
 	return nil
 }
 
-// selectPreImage SELECTs the row matching `id` (with the same tenant /
-// owner / soft-delete scopes that the mutating statement will use) so
-// audit hooks can capture an old-state snapshot. Returns (nil, nil) when
-// the row doesn't exist or the SELECT fails, callers treat that as
-// "no snapshot available" rather than aborting the surrounding mutation.
+// selectPreImage reads row id for the audit pre-image; callers ignore a
+// failure.
 func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	cols := ch.visibleFields()
 	kc, ka := ch.keyWhere(id)
@@ -992,17 +820,14 @@ func (ch *CrudHandler) selectPreImage(ctx context.Context, r *http.Request, id s
 	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
-// selectWriteTarget reads the row an update without scalar fields cascades
-// into, under the WHERE the scalar UPDATE applies: tenant, the owner WRITE
-// scope (no CrossOwnerRead lift) and deleted_at IS NULL. The read-scoped
-// selectPreImage let a caller who may read another owner's row attach
-// children or pivot links to it.
+// selectWriteTarget reads the row a cascade-only update writes into,
+// under the scalar UPDATE's scope.
 func (ch *CrudHandler) selectWriteTarget(ctx context.Context, r *http.Request, id string) (map[string]any, error) {
 	return ch.selectStored(ctx, r, id, ch.visibleFields())
 }
 
-// selectStored reads cols of id's record under the caller's tenant and
-// owner scopes, skipping a soft-deleted row, as the update will find it.
+// selectStored reads cols of row id under the tenant and owner write
+// scope, live rows only.
 func (ch *CrudHandler) selectStored(ctx context.Context, r *http.Request, id string, cols []string) (map[string]any, error) {
 	kc, ka := ch.keyWhere(id)
 	qb := query.Select(ch.keyedCols(cols)...).
@@ -1017,24 +842,10 @@ func (ch *CrudHandler) selectStored(ctx context.Context, r *http.Request, id str
 	return ch.scanOwn(ctx, id, cols, sqlStr, args)
 }
 
-// dropEmptyFormValues treats an empty string as "not provided" for every
-// field whose type is not free text. An HTML form posts every control it
-// has, so a number, date, or relation the user left blank arrives as ""
-// (the framework's own resource-engine forms included); the validator
-// read that as "must be an integer" and the form failed on a field the
-// user never touched, with the default it declared going unused. On
-// create a blank optional field is removed from the body, so the
-// declared default applies; on update it becomes nil, so blanking the
-// control clears the column (dropping it kept the value while the save
-// reported success). A blank required field becomes nil either way, so
-// the error names the real problem ("is required"). String and Text keep
-// "" as a value: empty text is a thing a user says. A file input cannot
-// carry the stored value, so a blank Image or File on update means "no
-// new file" and leaves the column alone.
-//
-// It returns the fields it removed that the update reading would have set
-// to nil instead (the blank optional non-file fields of a create), so an
-// upsert that lands on an existing row can clear them as update does.
+// dropEmptyFormValues reads a blank form value of a non-text field as
+// not provided: removed on create, nil on update or when required, and
+// left alone for a file on update. It returns the create-removed fields an
+// update would have set to nil.
 func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) (cleared []string) {
 	for _, f := range s.Fields {
 		v, ok := body[f.Name]
@@ -1047,7 +858,6 @@ func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) (cle
 		}
 		switch f.Type {
 		case schema.String, schema.Text:
-			// Empty text is a value the user can mean.
 			continue
 		case schema.Image, schema.File:
 			if update {
@@ -1055,9 +865,6 @@ func dropEmptyFormValues(s schema.Schema, body map[string]any, update bool) (cle
 				continue
 			}
 		default:
-			// Int, Float, Decimal, Bool, Enum, UUID, Timestamp, Date,
-			// JSON, Relation: "" is not a value of the type, only a
-			// blank control.
 		}
 		if f.Required || update {
 			body[f.Name] = nil

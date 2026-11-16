@@ -1,0 +1,810 @@
+primitive: app
+summary: "The App a host builds with NewApp: its options and config, entity and route mounting, start and shutdown."
+code:
+  - framework/app.go
+  - framework/doc.go
+  - framework/flags.go
+  - framework/inprocess.go
+  - framework/unmounted.go
+  - framework/i18n.go
+docs:
+  - framework/docs/content/overview.md
+  - framework/docs/content/unmount.md
+  - framework/docs/content/feature-flags.md
+on_change:
+  - "A new or changed AppOption, App method or AppConfig field is exported API: document it in framework/docs/content and note a breaking change in upgrading.md."
+invariants:
+  - id: every-file-has-an-owner
+    rule: Every non-test Go file directly in framework/ and in framework/crud/ is in the code list of exactly one primitive chain.
+    enforced_by:
+      - test: internal/primitives.TestCoveredPackagesHaveNoUnownedFile
+      - test: internal/primitives.TestFileHasOneOwnerChain
+  - id: idempotency-mounts-innermost
+    rule: WithIdempotency mounts its middleware with router.UseInner, after every middleware the app adds with Use, so the replay key carries the user, tenant and scopes that middleware resolved.
+    enforced_by:
+      - test: framework.TestIdempotencyKeyCarriesTenant
+      - test: framework.TestIdemReplayKeyedOnHeldScopes
+  - id: idempotency-defaults-key-on-caller-tenant-and-scopes
+    rule: An IdempotencyConfig with no Principal, Tenant or Scope keys on the request's owner, its resolved tenant id, and its held scopes as a length-prefixed set, so a token resending a key a broader credential used runs its own request.
+    enforced_by:
+      - test: framework.TestWithIdempotency_RepliesCachedResponse
+      - test: framework.TestIdempotencyKeyCarriesTenant
+      - test: framework.TestIdemReplayKeyedOnHeldScopes
+      - test: framework.TestSweepApp2HeldScopeKeyIsASet
+  - id: idempotency-namespace-per-credential
+    rule: With no resolved owner the default Principal keys on a hash of every value of the Authorization, X-API-Key, embed grant and Cookie headers, and uses the shared "anon" namespace only for a request that carries none.
+    enforced_by:
+      - test: framework.TestCredentialFingerprintReadsEveryCookieField
+      - test: framework.TestIdempotencyNamespaceSeparatesOrdinaryCallers
+      - test: framework.TestIdempotencyNamespaceSeparatesEmbedSubjects
+      - test: framework.TestOwnerPrincipalKeysPerUser
+  - id: memory-idempotency-store-warns-behind-fanout
+    rule: NewApp warns when the default in-memory idempotency store, which is per process, runs behind a fanout.
+    enforced_by:
+      - test: framework.TestIdempotencyMemoryStoreWarnsWithFanout
+  - id: default-chain-options-refuse-without-defaults
+    rule: NewApp panics when WithI18n, WithMetrics or WithTracing is paired with WithoutDefaultMiddleware, and WithLocaleResolver panics unless WithI18n came before it.
+    enforced_by:
+      - test: framework.TestApp_WithI18nPanicsWithWithoutDefaultMiddleware
+      - test: framework.TestWithMetrics_PanicsWithoutDefaults
+      - test: framework.TestWithTracing_PanicsWithoutDefaults
+      - test: framework.TestApp_WithLocaleResolverWithoutI18nPanics
+  - id: default-chain-order
+    rule: In DefaultMiddleware locale negotiation runs outside every middleware that can refuse a request and has its own recovery inside it, the locale-prefix rewriter runs inside Compress, and Compress runs outside the request timeout.
+    enforced_by:
+      - test: framework.TestSweepApp2TimeoutAnswersInLocale
+      - test: framework.TestApp_PanicAnswersInLocale
+      - test: framework.TestCompressedPageRewritten
+    judge: Does this change move Compress inside the request timeout, where it no longer sees the timeout's flushes?
+  - id: chain-independent-middleware
+    rule: The trusted-proxy context, Web Bot Auth verification and the retired-markup check are installed whether or not the default chain is.
+    enforced_by:
+      - test: framework.TestSweepApp2TrustedProxiesOnContextWithoutDefaults
+      - test: framework.TestSweepApp2WebBotAuthVerifiesWithoutDefaults
+      - test: framework.TestHarnessReportsRetiredMarkup
+  - id: app-logger-is-app-local
+    rule: NewApp seeds a logger of its own, never slog.Default, and WithLogger and SetLogger refuse nil.
+    enforced_by:
+      - test: framework.TestSweepApp2SeededLoggerIgnoresSlogDefault
+      - test: framework.TestWithLoggerNilPanics
+      - test: framework.TestSetLoggerNilPanics
+  - id: mount-refuses-entity-crud-path
+    rule: Mount panics with the collision diagnostic when a route the Mountable declares through RoutePatterns is the CRUD path of an entity already registered.
+    enforced_by:
+      - test: framework.TestEntityScreenCollisionMsgWhenScreenMountsSecond
+  - id: mount-hands-session-keys
+    rule: Mount derives a session host's current key from the app secret and its verify-only keys from every previous secret, panics when the app has a fanout and no secret, and asks a host with no session seam nothing.
+    enforced_by:
+      - test: framework.TestSweepApp2MountHandsPreviousSessionKeys
+      - test: framework.TestMountFanoutWithoutSecretPanics
+      - test: framework.TestSweepApp2MountSkipsSecretsForHostWithoutSessions
+  - id: mount-hands-embed-keys
+    rule: Mount gives an embed host keys derived from the app secret and verify-only keys from every previous secret, and panics when the app has no secret.
+    enforced_by:
+      - test: framework.TestMountPanicsOnAnEmbedHostWithoutASecret
+      - test: framework.TestMountDerivesEmbedKeysFromTheAppSecret
+      - test: framework.TestSweepApp2MountHandsPreviousEmbedKeys
+  - id: mount-wires-fanout-and-locales
+    rule: Mount hands a host with SetFanout the app's fanout, detached on Shutdown, and a host with SetPathLocales the app's locale set when WithLocalePrefixes is on.
+    enforced_by:
+      - test: framework.TestWithFanout_WiresMountedHost
+      - test: framework.TestHreflangPerLocale
+      - test: framework.TestSitemapEveryLocale
+  - id: embed-reservation-conflict-stops-boot
+    rule: A declared embed surface that reaches a prefix a mounted EmbedReserving battery, plugin or Mountable reports panics the boot.
+    enforced_by:
+      - test: framework.TestInitPluginsRefusesASurfaceOverAMountedBatteryPrefix
+  - id: mountables-returns-a-copy
+    rule: Mountables returns a copy, so a caller writing to it does not change the App.
+    enforced_by:
+      - test: framework.TestSweepApp2MountablesReturnsCopy
+  - id: group-entity-preflight-before-register
+    rule: GroupEntity runs every check that can refuse the declaration before the registry, router or MCP server changes, so a refusal leaves nothing registered and keeps the endpoint queue.
+    enforced_by:
+      - test: framework.TestGroupEntityPreflightBeforeRegister
+      - test: framework.TestGroupRefusalKeepsEndpointQueue
+      - test: framework.TestUIEndpointRefusalIsAtomic
+  - id: group-entity-carries-group-identity
+    rule: A grouped entity is versioned by the group's prefix, its MCP tools take the group's namespace and dispatch to the prefixed routes under the group's middleware, and its OpenAPI operations take the group's tag.
+    enforced_by:
+      - test: framework.TestMultiVersionSameNameNoPanic
+      - test: framework.TestMultiVersionMCPNamespacing
+      - test: framework.TestGroupEntityMCPToolsReachGroupedRoutes
+      - test: framework.TestNestedGroupEntityMCPToolsReachRoutes
+      - test: framework.TestGroupedEntityMCPToolsAreLeftToTheRoute
+      - test: framework.TestSweepApp2GroupEntityOperationsCarryGroupTag
+  - id: try-entity-is-atomic
+    rule: TryEntity returns a panic from validation as an error and validates before it registers anything, so a rejected declaration keeps its queued endpoints and a corrected retry succeeds.
+    enforced_by:
+      - test: framework.TestTryEntity_ReturnsErrorOnBadConfig
+      - test: framework.TestEntityEndpointsCollisionKeepsQueue
+      - test: framework.TestFailedEntityRetryable
+      - test: framework.TestEntity_PanicsWhenSeedFSWithoutSeedPath
+  - id: queued-endpoints-are-claimed
+    rule: EntityEndpoints panics for a name already registered, and Start fails while endpoints are queued for a name nothing registered.
+    enforced_by:
+      - test: framework.TestEntityEndpointsAfterRegistrationPanics
+      - test: framework.TestStartRefusesUnclaimedEndpoints
+  - id: wrap-server-before-bind
+    rule: WrapServer panics once Start has built the server or after Shutdown, since the wrapper could not take effect.
+    enforced_by:
+      - test: framework.TestWrapServerAfterStartPanics
+      - test: framework.TestWrapServerAfterShutdownPanics
+  - id: dotenv-loads-before-options
+    rule: NewApp loads DefaultDotEnvPaths, the APP_ENV overlay included, before it applies the options, and loads nothing when GOFASTR_DOTENV is off.
+    enforced_by:
+      - test: framework.TestSweepApp2OptionsSeeDotEnv
+      - test: framework.TestNewApp_GofastrDotEnvOffSkipsLoad
+      - test: framework.TestNewApp_AppEnvSelectsOverlay
+  - id: explicit-option-beats-env
+    rule: WithSecret and WithSecretRotation win over GOFASTR_SECRET and GOFASTR_SECRET_PREVIOUS, WithRole wins over GOFASTR_ROLE, and an invalid role from either panics.
+    enforced_by:
+      - test: framework.TestSecretEnvFallback
+      - test: framework.TestSecretRotationExplicitOptionWinsOverEnv
+      - test: framework.TestExplicitSecretOptionIgnoresEnvPrevious
+      - test: framework.TestRole_WithRoleBeatsEnv
+      - test: framework.TestRole_BadEnvPanics
+      - test: framework.TestRole_BadOptionPanics
+  - id: new-app-wires-after-options
+    rule: NewApp reads every option's result before it wires what depends on it, so the trusted proxies, MCP gate, outbox and the WithConfig discard warning reflect the final configuration whatever the option order.
+    enforced_by:
+      - test: framework.TestSweepApp2TrustedProxiesOnContextWithoutDefaults
+      - test: framework.TestMCPGateSurvivesWithMCPServer
+      - test: framework.TestWithConfigSilentWhenLaterOptionRestoresField
+      - test: framework.TestOutboxConsumer_WithoutOutboxPanics
+      - test: framework.TestSweepApp2OutboxWithoutDBPanicsByName
+  - id: registry-hands-out-the-app-handler
+    rule: The App's Registry hands out the CRUD handler the App wires, so code holding only app.Registry runs the app's hooks, events and storage.
+    enforced_by:
+      - test: framework/factory.TestFactoryFromAppRegistryRunsTheAppPipeline
+  - id: event-bus-crosses-replicas-at-construction
+    rule: NewApp bridges the event bus to the fanout at construction, so an app driven through Router without Start still delivers across replicas.
+    enforced_by:
+      - test: framework.TestWithFanout_CrossAppDelivery
+  - id: replaced-dev-tool-loses-exemption
+    rule: A tool registered under a dev-implied entity tool's name loses that tool's collision exemption.
+    enforced_by:
+      - test: framework.TestReplacedDevToolCollisionFails
+  - id: dev-mcp-pins-loopback-host
+    rule: The dev-implied MCP surface answers 403 to a request whose Host is not loopback unless the dev expose opt-in is set for a non-loopback bind.
+    enforced_by:
+      - test: framework.TestDevMCPExposeAcceptsRemoteHost
+  - id: debug-authorize-needs-admin-scope
+    rule: With WithDebugAuthorize set, a scope-restricted caller also needs role:admin before the predicate runs.
+    enforced_by:
+      - test: framework.TestDebugAuthorizeNarrowsByScope
+  - id: in-process-refuses-credentials
+    rule: InProcessHandler answers 403 to a request carrying any credential header in any letter case, URL userinfo or a TLS peer certificate.
+    enforced_by:
+      - test: framework.TestInProcessHandlerRefusesCredentials
+  - id: flags-follow-the-request-app
+    rule: The flag context middleware puts this App's evaluator on every request, and SetFlagStore panics once the evaluator has been used.
+    enforced_by:
+      - test: framework.TestFlagsFollowTheRequestsApp
+      - test: framework.TestCovSetFlagStoreAfterUse
+  - id: serve-locale-survives-resolver-panic
+    rule: The locale Start negotiates outside the router leaves the request without a locale, rather than failing it, when the host's locale resolver panics.
+    enforced_by:
+      - test: framework.TestServeLocaleResolverPanicRecovers
+  - id: with-config-replaces-and-warns-on-discards
+    rule: WithConfig replaces AppConfig wholesale, and NewApp warns naming each field an earlier option set that the replacement returned to zero, never for the JSONCase seed NewApp applies before the options run.
+    enforced_by:
+      - test: framework.TestWithConfigReplacesWholeStruct
+      - test: framework.TestWithConfigWarnsNamingDiscardedFields
+      - test: framework.TestWithConfigAloneStaysSilent
+  - id: idempotency-claim-outlives-request-budget
+    rule: Start refuses an idempotency store whose in-flight TTL is not longer than the enforced request budget (RequestTimeout, or 30s when unset), and the store NewApp builds for WithIdempotency passes that check.
+    enforced_by:
+      - test: framework.TestAppChecksIdempotencyTTLEdgeCases
+      - test: framework.TestSweepApp1DefaultBudgetChecksIdempotencyClaim
+      - test: framework.TestSweepApp1DefaultIdempotencyStorePassesItsOwnCheck
+      - test: framework.TestAppSizesDefaultIdempotencyInFlightTTL
+  - id: write-deadline-outlives-request-budget
+    rule: An unset HTTPServerTimeouts.WriteTimeout no longer than the request budget is raised past the budget, and an explicit one no longer than the budget, the 30s default budget included, makes Start return an error.
+    enforced_by:
+      - test: framework.TestSweepApp1RaisedWriteTimeoutOutlivesBudget
+      - test: framework.TestSweepApp1WriteTimeoutEqualToBudgetRefused
+      - test: framework.TestRequestTimeoutPastExplicitWriteTimeoutRefused
+  - id: disable-request-timeout-zeroes-unset-deadlines
+    rule: DisableRequestTimeout zeroes the server's read and write deadlines only where HTTPServerTimeouts leaves them unset.
+    enforced_by:
+      - test: framework.TestDisableTimeoutRelaxesServer
+  - id: crud-routes-need-a-db
+    rule: An entity has CRUD routes only when the App has a DB and Exposure.CRUD is unset or true, and EntityCRUDMounted answers the same.
+    enforced_by:
+      - test: framework.TestEntityCRUDMountedTracksTheMount
+    judge: Does this change decide whether an entity has CRUD routes (for routes, the startup banner, openapi.json or llm.md) without going through entityCRUDEnabled or entityCrudMount?
+  - id: view-mount-reports-read-only
+    rule: An entity mounted by a columned App.View reports a read-only mount, so the llm.md index and openapi.json list only its read routes.
+    enforced_by:
+      - test: framework.TestViewMountReportsReadOnly
+  - id: llm-index-links-the-recorded-mount
+    rule: The /api/llm.md index links each entity at the path its routes were recorded as mounted, API and group prefixes included, and a CRUD-off entity under the API prefix.
+    enforced_by:
+      - test: framework.TestLLMIndexLinksUnderAPIPrefix
+      - test: framework.TestSweepApp1LLMIndexLinksGroupMount
+  - id: outbox-misconfiguration-panics-at-new-app
+    rule: NewApp panics when WithOutbox is given without WithDB or WithOutboxConsumer without WithOutbox, instead of dropping the consumer.
+    enforced_by:
+      - test: framework.TestSweepApp1OutboxWithoutDBNamesWithDB
+      - test: framework.TestOutboxConsumer_WithoutOutboxPanics
+  - id: mcp-gate-survives-server-swap
+    rule: WithMCPGate's gate is installed on whichever MCP server the options leave in App.MCP, so a later WithMCPServer does not drop it.
+    enforced_by:
+      - test: framework.TestMCPGateSurvivesWithMCPServer
+  - id: explicit-secret-option-ignores-env-previous
+    rule: Once WithSecret or WithSecretRotation has run, GOFASTR_SECRET_PREVIOUS is ignored, even when the option set no previous secrets.
+    enforced_by:
+      - test: framework.TestExplicitSecretOptionIgnoresEnvPrevious
+      - test: framework.TestSecretRotationExplicitOptionWinsOverEnv
+  - id: without-auto-migrate-still-runs-seeds
+    rule: WithoutAutoMigrate skips the entity DDL but not the entity seeds, so a seeded entity whose table is missing fails Start.
+    enforced_by:
+      - test: framework.TestSweepApp1WithoutAutoMigrateSeededEntityFailsStart
+  - id: nil-image-override-opts-field-out
+    rule: A nil WithImagePipelineFor deriver is kept as an entry and opts that field out of the app-wide pipeline instead of falling back to it.
+    enforced_by:
+      - test: framework.TestWithImagePipeline_AppWideAndPerFieldOverride
+      - test: framework/crud.TestDerive_PerFieldNilOptsOut
+  - id: openapi-gated-by-default
+    rule: Without PublicOpenAPI, /openapi.json and /api/docs/ answer 401 to an anonymous caller.
+    enforced_by:
+      - test: framework.TestOpenAPI_GatedByDefault
+      - test: framework.TestDocsPageGatedByDefault
+  - id: nil-option-argument-panics-at-call-site
+    rule: WithMCPTools(nil) and WithFanout(nil) panic when called, not later inside NewApp or InitPlugins.
+    enforced_by:
+      - test: framework.TestWithMCPToolsNilPanics
+      - test: framework.TestWithFanout_NilPanics
+  - id: init-plugins-runs-once
+    rule: InitPlugins runs plugin, battery and MCP registrar initialization once per App, so the call inside Start after a manual one is a no-op.
+    enforced_by:
+      - test: framework.TestSweepApp1InitPluginsRunsRegistrarsOnce
+      - test: framework.TestInitPluginsIsIdempotent
+  - id: crud-handler-outbox-nil-without-with-outbox
+    rule: A CRUD handler the App wires carries a nil Outbox when the App has none, never a typed-nil pointer, so its events publish on the bus.
+    enforced_by:
+      - test: framework.TestSweepApp3EntityWithoutOutboxEmitsOnBus
+  - id: crud-handler-json-case-follows-app
+    rule: Every CRUD handler the App wires answers in the App's JSON casing.
+    enforced_by:
+      - test: framework.TestAppJSONCaseSnakeReachesEntityRoutes
+  - id: crud-handler-for-entity-needs-registered-instance
+    rule: CrudHandlerForEntity errors for an entity that is not the instance the registry holds at its name and version, a lookalike with the same name included.
+    enforced_by:
+      - test: framework.TestSweepApp3CrudHandlerForEntityRefusesLookalike
+      - test: framework.TestMultiVersionCrudHandlerForEntity
+  - id: crud-handler-base-path-is-mount
+    rule: A handler from CrudHandlerForEntity or App.View has the BasePath its routes are mounted under, the version for a versioned entity and the API prefix otherwise.
+    enforced_by:
+      - test: framework.TestMultiVersionCrudHandlerForEntity
+      - test: framework.TestSweepApp3CrudHandlerForEntityTakesAPIPrefix
+      - test: framework.TestLLMIndexLinksUnderAPIPrefix
+  - id: view-needs-record-key
+    rule: App.View panics on a view whose columns cannot name a row by key, since its read routes address rows by id.
+    enforced_by:
+      - test: framework.TestView_RawTypeKeyPanics
+  - id: register-entities-in-name-order
+    rule: RegisterEntities registers its map in name order, so routes, MCP tools and the OpenAPI document come out the same on every boot.
+    enforced_by:
+      - test: framework.TestRegisterEntities_SortsByName
+  - id: entity-route-collision-before-commit
+    rule: An entity whose generated CRUD routes would collide with a registered route is refused before its registry entry or any route is published, whether the clash is an equal shape with any wildcard names, a route registered without a method, or a pattern ServeMux refuses as an overlap.
+    enforced_by:
+      - test: framework.TestEntityCollidesWithExistingScreenRoute
+      - test: framework.TestEntityOverlapsWildcardRoute
+      - test: framework.TestSweepApp3MethodlessRouteBlocksEntity
+  - id: catch-all-wildcard-is-its-own-shape
+    rule: A trailing {x...} wildcard is a different route shape from a one-segment wildcard, so a catch-all route beside an entity's {id} routes is no collision.
+    enforced_by:
+      - test: framework.TestSweepApp3CatchAllRouteBesideEntityRegisters
+  - id: entity-registration-validated-before-commit
+    rule: Every check that can refuse an entity declaration, endpoint route collisions and MCP tool name clashes on the server or within the entity included, runs before the commit phase publishes anything.
+    enforced_by:
+      - test: framework.TestEndpointRouteConflictIsAtomic
+      - test: framework.TestEndpointOverlapIsAtomic
+      - test: framework.TestEndpointCollidesWithOwnCrudRoute
+      - test: framework.TestUIEndpointRefusalIsAtomic
+      - test: framework.TestSweepApp3EntityToolNameTakenIsAtomic
+      - test: framework.TestSweepApp3DuplicateEndpointToolIsAtomic
+    judge: Does this change add a refusal to registerEntityEndpoints or the entity commit phase that validateEntityRegistration does not also make?
+  - id: endpoint-tool-name-from-spec-path
+    rule: An endpoint's generated MCP tool name comes from its prefix-relative path, so WithAPIPrefix moves the route but not the tool name or the OpenAPI operationId.
+    enforced_by:
+      - test: framework.TestSweepApp3EndpointToolNameIgnoresAPIPrefix
+  - id: endpoint-route-named-by-table
+    rule: An entity endpoint's HTTP route is registered under the entity's table, the scope its MCP twin checks, so RequireAPIScopes asks for the same scope on both.
+    enforced_by:
+      - test: framework.TestEndpointsNameTheirTable
+  - id: endpoint-route-gates
+    rule: An entity endpoint's HTTP route answers 403 to a forgeable cross-site write and, unless the endpoint is Public, 401 with Cache-Control no-store to an anonymous caller, whatever the app's middleware holds.
+    enforced_by:
+      - test: framework.TestEndpointRouteGates
+  - id: endpoint-mcp-twin-gated
+    rule: An endpoint's MCP twin requires a signed-in caller unless the endpoint is Public or sets MCPGate, and a scope-restricted caller must hold table:read for GET and HEAD and table:write otherwise, under Public and MCPGate too.
+    enforced_by:
+      - test: framework.TestEndpointMCPTwinRequiresUserByDefault
+      - test: framework.TestEndpointMCPPublicOptsOut
+      - test: framework.TestEndpointMCPGateOverridesDefault
+      - test: framework.TestEndpointMCPTwinRequiresTokenScope
+  - id: lookup-hook-registry-never-creates
+    rule: lookupHookRegistry returns nil for an entity with no hook registry and never creates one, so the request path cannot grow the hooks map.
+    enforced_by:
+      - test: framework.TestSweepApp3LookupHookRegistryNeverCreates
+  - id: endpoint-mcp-twin-keeps-route-pattern
+    rule: An endpoint's MCP twin sanitizes its path parameters with its HTTP route's catch-all flags, and an mcp.Gated MCPHandler's gates stay outside the twin, so the server runs them before argument validation.
+    enforced_by:
+      - test: framework.TestEndpointMCPTwinFollowsCatchAllRoute
+      - test: framework.TestGroupEndpointMCPTwinFollowsCatchAll
+      - test: framework.TestEndpointTwinKeepsGatedGate
+  - id: no-registration-after-init-plugins
+    rule: RegisterPlugin and RegisterBattery panic once InitPlugins has run, rather than registering a module whose Init never fires.
+    enforced_by:
+      - test: framework.TestRegisterPluginAfterInitPanics
+      - test: framework.TestCovRegisterBatteryAfterInitPanics
+  - id: init-plugins-retries-after-failure
+    rule: An InitPlugins call that fails leaves the App uninitialized, so a later call retries it.
+    enforced_by:
+      - test: framework.TestInitPluginsRetrySkipsSucceeded
+  - id: host-mcp-tools-before-introspection
+    rule: WithMCPTools registrars run before the introspection tools, and a dev-implied introspection tool that collides with a host tool is skipped with a warning, while an explicit WithMCPIntrospection collision fails InitPlugins.
+    enforced_by:
+      - test: framework.TestWithMCPToolsRunsBeforeDevIntrospection
+      - test: framework.TestCovIntrospectionRegisterError
+  - id: contract-tools-follow-introspection
+    rule: The read-only contract catalog tools register with introspection, and contracts_verify and contracts_fix register only in the dev loop.
+    enforced_by:
+      - test: framework.TestContractToolsRegisterWithIntrospection
+      - test: framework.TestContractDevToolsAreAbsentOutsideDevLoop
+      - test: framework.TestContractToolsFollowDevMode
+  - id: control-tools-need-their-own-opt-in
+    rule: Introspection alone registers no mutating control tool.
+    enforced_by:
+      - test: framework.TestIntrospectionAloneRegistersNoControlTools
+  - id: hook-registry-labelled-by-entity
+    rule: A hook registry HookRegistry creates is labelled with its entity's name, so a firing is attributed in the semantic-coverage manifest.
+    enforced_by:
+      - test: framework.TestSweepApp3LookupHookRegistryNeverCreates
+  - id: batteries-start-before-start-hooks
+    rule: Battery OnStart runs before any OnStart hook, and the process-module loops start only when no stop arrived during battery start.
+    enforced_by:
+      - test: framework.TestRunServicesHostLocalInstallation
+      - test: framework.TestStopDuringBatteryStartSkipsProcessModuleLoops
+  - id: no-start-hook-after-stop
+    rule: Once Shutdown has begun no further OnStart hook starts, and the run treats the stop as graceful.
+    enforced_by:
+      - test: framework.TestShutdownDuringBootWaitsForThePhase
+      - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
+  - id: hook-panics-become-errors
+    rule: A panic in an OnStart or OnReady hook aborts the run with an error instead of unwinding through it.
+    enforced_by:
+      - test: framework.TestOnStartHookPanicContained
+      - test: framework.TestOnReadyHookPanicContained
+  - id: stop-hooks-reverse-order
+    rule: OnStop hooks run in reverse registration order, and OnStopFirst hooks run after every OnStop hook whatever the registration order.
+    enforced_by:
+      - test: framework.TestLifecycle_HooksRunInOrder
+      - test: framework.TestCovOnStopFirstRunsLast
+  - id: workers-are-worker-scoped
+    rule: Under RoleServe, AddCron and AddQueue register neither a start hook nor a drainer.
+    enforced_by:
+      - test: framework.TestSweepApp3WorkersAreWorkerScoped
+      - test: framework.TestServeRole_QueueDoesNotStart
+      - test: framework.TestAgentRole_QueueDoesNotStart
+  - id: worker-drains-honor-deadline
+    rule: The cron and queue drainers return at the Shutdown deadline even when a job ignores its cancelled context.
+    enforced_by:
+      - test: framework.TestSweepApp3CronDrainHonorsShutdownDeadline
+      - test: framework.TestAddQueueDrainHonorsShutdownDeadline
+  - id: module-workers-gated-by-module
+    rule: A scheduler or queue added during a module's Init is gated on that module, so its jobs skip while the module is disabled.
+    enforced_by:
+      - test: framework.TestSweepApp3ModuleCronSkipsWhileDisabled
+      - test: framework.TestModuleQueueGateFromInit
+  - id: shutdown-closes-never-used-conns
+    rule: Shutdown closes connections that were accepted but never sent a request.
+    enforced_by:
+      - test: framework.TestShutdownClosesConnsThatNeverSentARequest
+      - test: framework.TestShutdownClosesNewConnAcceptedDuringStreamEnd
+  - id: shutdown-teardown-runs-once
+    rule: The Shutdown teardown runs once, a later or concurrent call waits for it, and a call from inside the teardown returns at its own ctx's deadline.
+    enforced_by:
+      - test: framework.TestShutdownRunsOnce
+      - test: framework.TestRunShutdownIsIdempotent
+      - test: framework.TestShutdownFromStopHookIsBounded
+  - id: readyz-503-from-stop-request
+    rule: /readyz answers 503 from the moment Shutdown is called, also while a stop handed to a running boot phase waits for that phase.
+    enforced_by:
+      - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
+      - test: framework.TestStartInteractiveSetupStopWinsDeferredStart
+  - id: stop-during-boot-hands-off
+    rule: A Shutdown during a boot phase or the deferred start cancels the run and waits for it to tear down once the phase returns, instead of tearing down under it.
+    enforced_by:
+      - test: framework.TestShutdownDuringBootWaitsForThePhase
+      - test: framework.TestShutdownDuringDeferredStartWaitsForTheHooks
+      - test: framework.TestRunShutdownRaceInvariants
+  - id: shutdown-stops-in-order
+    rule: "The teardown cancels the lifecycle context, ends A2A runs, stops the host, drains process modules, stops batteries in reverse dependency order and then runs OnStop hooks and drainers, in that order."
+    enforced_by:
+      - test: framework.TestSweepApp3A2ARunsEndBeforeStopHooks
+      - test: framework.TestShutdownRunsOnce
+      - test: framework.TestShutdownReportsHostStopFailure
+      - test: framework.TestDrainClearsTheSlotBeforeBatteriesStop
+      - test: framework.TestRunServicesHostLocalInstallation
+      - test: framework.TestLifecycle_StartContextCancelledByStop
+  - id: seeds-run-without-auto-migrate
+    rule: Entity seeds run on boot under WithoutAutoMigrate too.
+    enforced_by:
+      - test: framework.TestSweepApp3SeedsRunWithoutAutoMigrate
+  - id: seed-hooks-fail-closed-on-unknown-dialect
+    rule: A dialect probe failure aborts the WithSeed hooks instead of running them without the advisory lock.
+    enforced_by:
+      - test: framework.TestSeedHooksAbortWhenDialectUnknown
+  - id: seed-hooks-warn-on-single-conn-postgres
+    rule: On a Postgres pool with MaxOpenConns(1) the WithSeed hooks run unlocked and log a warning.
+    enforced_by:
+      - test: framework.TestSeedHooksWarnOnSingleConnPostgres
+  - id: relation-warning-resolves-like-requests
+    rule: The boot warning for an unresolvable relation resolves targets with entity.ResolveTarget, as ?include= does, so a relation on a versioned entity does not warn.
+    enforced_by:
+      - test: framework.TestRelationWarnQuietForVersions
+  - id: serve-closes-listener-once
+    rule: Serve closes the caller's listener exactly once on every return, a refused or aborted start included.
+    enforced_by:
+      - test: framework.TestSweepApp3ServeClosesListenerWhenRefused
+      - test: framework.TestServeClosesTheListenerOnce
+  - id: only-in-process-listeners-skip-readiness-drain
+    rule: Only a "memory" or "pipe" listener skips the readiness drain; a unix socket or an unknown network keeps it.
+    enforced_by:
+      - test: framework.TestServeInProcessSkipsReadinessDrain
+      - test: framework.TestServeUnixPathIsNotLoopback
+  - id: banner-urls-only-for-tcp
+    rule: The startup banner prints http URLs only for a TCP listener and bare paths otherwise.
+    enforced_by:
+      - test: framework.TestBannerOnAUnixSocketPath
+  - id: isolation-remap-warning-only-when-active
+    rule: Start warns about a remapped listen address only when worktree isolation is active, not for the bare-port spelling change Addr makes with isolation off.
+    enforced_by:
+      - test: framework.TestStartDoesNotWarnWithoutIsolation
+  - id: incomplete-setup-refuses-worker-and-listenerless-host
+    rule: Incomplete first-run setup fails a RoleWorker run, and fails a run whose host binds no listener when setup cannot run headless.
+    enforced_by:
+      - test: framework.TestSetup_WorkerRoleIncompleteFails
+      - test: framework.TestRunRefusesInteractiveSetupWithoutListener
+  - id: api-documents-only-with-entities
+    rule: The OpenAPI, API docs, llm.md and API catalog routes mount only when the registry holds an entity.
+    enforced_by:
+      - test: framework.TestAPICatalog_NotMountedWithoutAPI
+  - id: public-openapi-opens-llm-index
+    rule: With PublicOpenAPI the /api/llm.md index is served without the auth gate.
+    enforced_by:
+      - test: framework.TestLLMMD_PublicWhenPublicOpenAPI
+  - id: metrics-carry-framework-collectors
+    rule: /metrics serves the framework's own collectors, the DB pool and outbox included, without any battery taking the metrics handle.
+    enforced_by:
+      - test: framework.TestMetricsEndpointCarriesFrameworkCollectorsWithNoBattery
+  - id: unreachable-mcp-surfaces-warn
+    rule: Boot warns when an MCP App or an entity with Exposure.MCP is registered and nothing serves /mcp.
+    enforced_by:
+      - test: framework.TestSweepApp3MCPAppWithoutMountWarns
+      - test: framework.TestStartWarnsWhenEntityMCPToolsUnreachable
+  - id: dev-mcp-mount-yields
+    rule: A dev-implied /mcp mount yields to a /mcp route the host already registered.
+    enforced_by:
+      - test: framework.TestDevImpliedMountYieldsToManualMCPRoute
+  - id: boot-validators-run-before-bind
+    rule: Every mounted BootValidator runs after all routes are registered and before the listener binds.
+    enforced_by:
+      - test: framework.TestStrictLinksRefuseBootOnGenuinelyMissingRoute
+  - id: banner-advertises-only-reachable-urls
+    rule: The startup banner lists only entities with CRUD routes, at their mounted and versioned paths, marks auth-gated ones, says once when nothing signs callers in, names /mcp with its tool count, and for a worker lists only health URLs.
+    enforced_by:
+      - test: framework.TestBannerSkipsDisabledCRUDEntities
+      - test: framework.TestBannerMarksAuthGatedRoutes
+      - test: framework.TestBannerHintsWhenNoAuthIsMounted
+      - test: framework.TestStartupBannerVersionedEntityPathAndLabel
+      - test: framework.TestSweepApp3BannerNamesMCPEndpoint
+      - test: framework.TestSweepApp3WorkerBannerAdvertisesOnlyHealth
+  - id: debug-endpoints-need-admin
+    rule: "/.debug/* mounts only with DebugEndpoints and answers 401 without a user and 403 to an embed grant, a Decider deny, a scope-restricted caller without role:admin, or a caller the WithDebugAuthorize predicate or, by default, the admin role check refuses, always with Cache-Control no-store."
+    enforced_by:
+      - test: framework.TestSweepApp3DebugEndpointsOnlyWhenEnabled
+      - test: framework.TestDebugEndpointsNeedAdminRole
+      - test: framework.TestDebugAuthorizeNarrowsByScope
+      - test: framework.TestMCPGatesHonorDeciderDeny
+      - test: framework.TestSweepApp3DebugRefusesEmbedGrantUnderCustomAuthorize
+      - test: framework.TestDebugStatsEndpoint_SetsNoStore
+  - id: goroutineleak-serves-leak-report
+    rule: /.debug/goroutineleak writes the goroutineleak profile at debug level 1, the leak report, never level 2, which dumps every goroutine's stack.
+    enforced_by:
+      - test: framework.TestLeakEndpointServesProfile
+decisions:
+  - id: access-logging-outside-default-chain
+    date: 2026-11-16
+    status: accepted
+    decision: DefaultMiddleware does no access logging; battery/log or middleware.LoggingFn adds it.
+    rejected:
+      - option: An access-log line in the default chain.
+        why: With battery/log registered both fire, giving duplicate entries with mismatched fields.
+  - id: anonymous-idempotency-namespace
+    date: 2026-11-16
+    status: accepted
+    decision: A request with no owner and no credential shares the "anon" idempotency namespace.
+    rejected:
+      - option: Caching nothing for anonymous traffic.
+        why: It drops retry protection where duplicate submits are most common, and an anonymous response carries no per-user data.
+    upholds: [idempotency-namespace-per-credential]
+  - id: idempotency-keys-on-credential-without-owner
+    date: 2026-11-16
+    status: accepted
+    decision: An unresolved caller is keyed on a hash of its credential headers, so a retry that straddles a login or token refresh runs as a fresh request.
+    rejected:
+      - option: One "anon" namespace for every caller the app's auth did not resolve.
+        why: Two callers sending the same Idempotency-Key would receive each other's stored response.
+      - option: Hashing only the first value of each header.
+        why: A proxy can prepend its own Cookie field, so two users sharing the first field would share a namespace.
+    upholds: [idempotency-namespace-per-credential]
+  - id: idempotency-mounted-innermost
+    date: 2026-11-16
+    status: accepted
+    decision: The idempotency middleware is mounted innermost, outside the default chain.
+    rejected:
+      - option: An entry in the default chain.
+        why: It ran before the app's auth and tenant middleware, keying every caller as anonymous and in no tenant.
+    upholds: [idempotency-mounts-innermost]
+  - id: metrics-endpoint-unauthenticated
+    date: 2026-11-16
+    status: accepted
+    decision: The /metrics endpoint WithMetrics mounts takes no authentication; it is scraped from inside the network.
+    rejected:
+      - option: Authenticating the scrape.
+        why: Scrapers carry no app session, and the endpoint is meant to be scraped from inside the network or behind the ingress, which decides who reaches it.
+  - id: embed-reservation-reported-by-battery
+    date: 2026-11-16
+    status: accepted
+    decision: A battery reports the prefix it actually mounted through EmbedReserving, and the reservation moves with it.
+    rejected:
+      - option: Only the list of default prefixes framework/embed ships.
+        why: An app that moves a battery to another prefix keeps the protection on the prefix it no longer serves and loses it on the one it does.
+    upholds: [embed-reservation-conflict-stops-boot]
+  - id: validate-then-commit-registration
+    date: 2026-11-16
+    status: accepted
+    decision: Entity registration runs every check before it touches the registry, router or MCP server.
+    rejected:
+      - option: Registering first and rolling back on failure.
+        why: The registry has no unregister and the router has no unmount.
+    upholds: [try-entity-is-atomic, group-entity-preflight-before-register]
+  - id: session-key-per-boot-only-without-fanout
+    date: 2026-11-16
+    status: accepted
+    decision: A session host on an app with no secret and no fanout mints a per-boot key; with a fanout a missing secret fails the boot, and an embed host never gets a per-boot key.
+    rejected:
+      - option: Requiring a secret for every session host.
+        why: A single-replica app would lose its zero-configuration start.
+      - option: A per-boot key behind a fanout.
+        why: Half of all session checks would answer 401, since other replicas cannot verify the token.
+      - option: A per-boot key for an embed host.
+        why: Every outstanding single-use nonce, already rendered on another site, would die on a restart.
+    upholds: [mount-hands-session-keys, mount-hands-embed-keys]
+  - id: dev-mcp-host-pin-over-origin
+    date: 2026-11-16
+    status: accepted
+    decision: The dev-implied MCP surface, which carries unauthenticated write and control tools, is pinned to a loopback Host header.
+    rejected:
+      - option: An Origin check alone.
+        why: After a DNS rebind the attacker's page is same-origin, so only the Host check breaks the chain.
+    upholds: [dev-mcp-pins-loopback-host]
+  - id: flag-store-fixed-on-first-use
+    date: 2026-11-16
+    status: accepted
+    decision: The flag evaluator is created lazily and SetFlagStore is refused once it has been used.
+    rejected:
+      - option: Letting SetFlagStore replace a used evaluator.
+        why: Handler closures would keep the previous evaluator and read stale flags.
+    upholds: [flags-follow-the-request-app]
+  - id: dotenv-before-options
+    date: 2026-11-16
+    status: accepted
+    decision: NewApp loads the dotenv files before it applies options, so options that read the environment see the merged values.
+    rejected:
+      - option: Loading after the options.
+        why: WithDB("env://DATABASE_URL") and similar options would miss values set only in a dotenv file.
+    upholds: [dotenv-loads-before-options]
+  - id: with-config-replaces-not-merges
+    date: 2026-11-16
+    status: accepted
+    decision: WithConfig keeps replace semantics and makes the discard loud with a NewApp warning.
+    rejected:
+      - option: Merge only the non-zero fields of the passed AppConfig.
+        why: A merge cannot tell an explicit zero from an unset field, and existing callers rely on WithConfig being authoritative.
+      - option: Replace silently.
+        why: A granular option pasted above WithConfig, as the old init scaffold invited, was lost without a word.
+    upholds: [with-config-replaces-and-warns-on-discards]
+  - id: server-timeouts-are-pointers
+    date: 2026-11-16
+    status: accepted
+    decision: HTTPServerTimeoutsConfig fields are *time.Duration, so nil keeps the framework default and a pointer to 0 disables the deadline.
+    rejected:
+      - option: Plain time.Duration fields.
+        why: A zero value could not tell an unset field from an explicit 0, which net/http reads as no timeout.
+  - id: disable-request-timeout-is-its-own-flag
+    date: 2026-11-16
+    status: accepted
+    decision: The timeout middleware is removed with the DisableRequestTimeout flag, not with a special RequestTimeout value.
+    rejected:
+      - option: A negative RequestTimeout disables the middleware.
+        why: A sign overload is easy to trip by accident, for example by subtracting two timestamps.
+    upholds: [disable-request-timeout-zeroes-unset-deadlines]
+  - id: compression-off-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: The Compress middleware joins the default chain only when AppConfig.Compression is set.
+    rejected:
+      - option: Compress by default.
+        why: A reverse proxy or CDN in front of the app usually compresses already.
+    revisit_if: Most deployments serve clients directly instead of behind a compressing proxy.
+  - id: default-shutdown-timeout-15s
+    date: 2026-11-16
+    status: accepted
+    decision: The signal handler's drain defaults to 15s, well inside the 30s Kubernetes gives a pod between SIGTERM and SIGKILL.
+    rejected:
+      - option: Use the whole 30s grace period.
+        why: It leaves no room for the pre-stop hook and the container runtime's own overhead.
+    revisit_if: The platforms the framework targets change their default termination grace period.
+  - id: serving-handler-in-atomic-pointer
+    date: 2026-11-16
+    status: accepted
+    decision: The serving handler sits in an atomic.Pointer to a wrapper struct, so the interactive setup wizard swaps to the real router without a restart.
+    rejected:
+      - option: atomic.Value holding the http.Handler.
+        why: atomic.Value panics when the concrete type changes between Stores, as from http.HandlerFunc to *router.Router.
+  - id: outbox-relay-feeds-only-consumers
+    date: 2026-11-16
+    status: accepted
+    decision: The outbox relay delivers committed rows only to the declared durable consumers; EmitEvent alone feeds the live bus.
+    rejected:
+      - option: The relay also publishes each committed row to the live event bus.
+        why: The real-time lane already carries the event, so SSE and On subscribers would see it twice.
+  - id: mcp-gate-installed-after-options
+    date: 2026-11-16
+    status: accepted
+    decision: WithMCPGate stores its gate on the App and NewApp installs it on the final MCP server once every option has run.
+    rejected:
+      - option: Set the gate on the server when the option runs.
+        why: A later WithMCPServer swapped in an ungated server.
+    upholds: [mcp-gate-survives-server-swap]
+  - id: a2a-mounted-at-start
+    date: 2026-11-16
+    status: accepted
+    decision: WithA2A holds its config until Start mounts the exchange.
+    rejected:
+      - option: Mount the exchange when the option runs.
+        why: The derived entity skills read the MCP tool registry, which is complete only once entities, plugins and batteries have initialized.
+  - id: router-is-a-method
+    date: 2026-11-16
+    status: accepted
+    decision: The router is reached through App.Router(), not an exported field.
+    rejected:
+      - option: An exported Router field.
+        why: Plugins and batteries swap or wrap the router during Init, and callers must not depend on assigning the field.
+  - id: mcp-tools-take-a-registrar
+    date: 2026-11-16
+    status: accepted
+    decision: WithMCPTools takes a registrar function, so the docs tools in framework/docs/mcptools register without framework importing them.
+    rejected:
+      - option: framework registers the docs tools itself.
+        why: framework would import the markdown corpus, and every docs edit would rebuild and retest every package that imports framework.
+  - id: close-never-used-conns-at-shutdown
+    date: 2026-11-16
+    status: accepted
+    decision: Shutdown closes accepted connections that never sent a request (net/http's StateNew) itself, tracked by the ConnState hook.
+    rejected:
+      - option: Leave them to http.Server.Shutdown.
+        why: Server.Shutdown spares such a connection for five seconds, which turns a bounded drain into a five-second stall.
+    revisit_if: net/http's Server.Shutdown closes never-used connections promptly.
+  - id: route-collisions-replayed-on-a-scratch-mux
+    date: 2026-11-16
+    status: accepted
+    decision: entityRouteCollision asks crud for every pattern it will claim and replays the router's recorded routes plus those patterns into a scratch ServeMux, so it refuses exactly what the real mux would.
+    rejected:
+      - option: Check only the bare mount path and its /llm.md route.
+        why: A detail page at /posts/{id} is the framework's own idiom, and a screen there panicked in the commit phase after the registry entry and the first routes were published.
+      - option: Compare patterns as strings, or by normalized shape alone.
+        why: ServeMux also refuses overlaps where neither pattern is more specific, which no shape comparison sees.
+    upholds: [entity-route-collision-before-commit]
+  - id: entity-validation-split-from-commit
+    date: 2026-11-16
+    status: accepted
+    decision: validateEntityRegistration runs every refusal before the commit phase touches the registry, router or MCP server.
+    rejected:
+      - option: Recover the commit phase's panic into an error.
+        why: The registry entry and routes already published cannot be taken back, so the app is left half registered.
+    upholds: [entity-registration-validated-before-commit]
+  - id: endpoint-mcp-twin-defaults-to-signed-in
+    date: 2026-11-16
+    status: accepted
+    decision: An endpoint's MCP twin requires a signed-in caller by default, and an anonymous endpoint opts out with Public.
+    rejected:
+      - option: Register MCPHandler with no gate of its own.
+        why: The MCP server sees none of the HTTP route's gates, so the twin of a gated route would serve anyone.
+    upholds: [endpoint-mcp-twin-gated]
+  - id: queue-interface-owned-by-framework
+    date: 2026-11-16
+    status: accepted
+    decision: AddQueue takes the small schedulerStartStop interface declared in framework, so framework never imports battery/queue.
+    rejected:
+      - option: Take battery/queue's concrete queue type.
+        why: The framework package would depend on a battery.
+  - id: queue-close-abandoned-at-deadline
+    date: 2026-11-16
+    status: accepted
+    decision: The queue drainer stops waiting for Close at the drain deadline and reports it, leaving Close running, because schedulerStartStop has no context-aware Close.
+    rejected:
+      - option: Wait for Close however long it takes.
+        why: A job handler that ignores its cancelled context would hang SIGTERM forever.
+    revisit_if: schedulerStartStop gains a Close that takes a context.
+  - id: on-stop-hooks-ignore-context
+    date: 2026-11-16
+    status: accepted
+    decision: OnStop takes a func() error and is adapted to a lifecycle.Drainer that ignores the drain context.
+    rejected:
+      - option: Change OnStop to take a context.
+        why: OnStop predates the context-aware drain API and changing its signature breaks every host; hooks that need the deadline use Lifecycle().RegisterDrainer.
+  - id: on-stop-first-for-log-sinks
+    date: 2026-11-16
+    status: accepted
+    decision: OnStopFirst exists so a hook such as battery/log's close runs after every OnStop hook whatever the registration order.
+    rejected:
+      - option: Rely on reverse registration order alone.
+        why: A host that registers OnStop before the log plugin would have log close first and its own hook write into closed sinks.
+  - id: seed-hooks-unlocked-on-single-conn-postgres
+    date: 2026-11-16
+    status: accepted
+    decision: WithSeed hooks run without the seed advisory lock, and log a warning, on a Postgres pool with MaxOpenConns(1), and always on SQLite or without a DB.
+    rejected:
+      - option: Take the lock on a one-connection pool.
+        why: The held lock pins the only connection and the hooks' own queries deadlock.
+    revisit_if: The seed lock can be held on a connection outside the app's pool.
+  - id: unresolvable-relation-is-a-warning
+    date: 2026-11-16
+    status: accepted
+    decision: A relation whose target is not a registered entity is a boot warning, not a boot failure, because ?include= already refuses it at the request and an app that never includes it is correct.
+    rejected:
+      - option: Refuse to boot.
+        why: It would fail apps that never include the relation.
+  - id: public-openapi-serves-full-llm-index
+    date: 2026-11-16
+    status: accepted
+    decision: With PublicOpenAPI the /api/llm.md index is served ungated as the construction-time document, the same exposure as the public /openapi.json, while the default route stays session-gated and filtered per request.
+    rejected:
+      - option: Keep /api/llm.md gated under PublicOpenAPI.
+        why: The operator already published the complete spec, which discloses more than the index.
+  - id: dev-mcp-mount-yields-to-host-route
+    date: 2026-11-16
+    status: accepted
+    decision: A dev-implied /mcp mount is skipped with a warning when the host already mounts /mcp, while an explicit WithMCP keeps the route-conflict panic.
+    rejected:
+      - option: Mount /mcp in dev regardless.
+        why: Older scaffolds mount POST /mcp themselves, and dev would turn a working app into a route-conflict panic.
+  - id: unreachable-mcp-tools-warn
+    date: 2026-11-16
+    status: accepted
+    decision: An MCP App or an entity with Exposure.MCP and nothing serving /mcp boots with a warning rather than failing.
+    rejected:
+      - option: Refuse to boot.
+        why: Dev auto-mounts /mcp, so the failure would appear only in production builds.
+  - id: contract-source-tools-ride-the-dev-loop
+    date: 2026-11-16
+    status: accepted
+    decision: contracts_verify and contracts_fix, which read and write the source tree, register only in the dev loop, while the read-only contract catalog rides along with introspection.
+    rejected:
+      - option: Register them with introspection.
+        why: An explicit WithMCPIntrospection in production would hand an MCP client a file-writing tool.
+  - id: dev-introspection-collisions-warn
+    date: 2026-11-16
+    status: accepted
+    decision: Host tool registrars run before introspection, and a dev-implied introspection or control tool that collides with a host tool is skipped with a warning, while an explicit opt-in fails Init.
+    rejected:
+      - option: Fail Init on every collision.
+        why: Dev must never fail an app that boots fine in production.

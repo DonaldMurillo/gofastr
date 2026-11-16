@@ -1,0 +1,332 @@
+primitive: uihost.navigation
+summary: Client-side navigation on the server - partial pages, deferred parts, the route script the router reads, and the not-found, error and method-not-allowed pages on every arm.
+code:
+  - framework/uihost/partial.go
+  - framework/uihost/routescript.go
+  - framework/uihost/errorpages.go
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: part-answers-no-store
+    rule: Every answer to a deferred part request carries Cache-Control no-store.
+    enforced_by:
+      - test: framework/uihost.TestPartResetReloadsOnceHTTP
+  - id: part-request-never-mints-a-session
+    rule: A part request never sets a session cookie or X-Gofastr-Session, and a part with a dead session answers 409 with X-Gofastr-Part-Reset session.
+    enforced_by:
+      - test: framework/uihost.TestParallelPartsMintOneSession
+      - test: framework/uihost.TestPartResetReloadsOnceHTTP
+  - id: part-whole-page-outcome-resets
+    rule: A part request whose route does not resolve, whose address is not a deferred outlet of it, or whose page the policy refuses answers 409 with X-Gofastr-Part-Reset 1 and no fill.
+    enforced_by:
+      - test: framework/uihost.TestPartResetReloadsOnceHTTP
+  - id: part-refuses-stale-markup
+    rule: A part request from a runtime that reads another markup generation answers the opaque 409 reset with an empty body.
+    enforced_by:
+      - test: framework/uihost.TestPartsRefuseStaleMarkup
+  - id: part-seed-omits-route-family
+    rule: A part's seed island leaves out the route.* values, which the page answer beside it already sent.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavPartSeedOmitsRouteFamily
+  - id: partial-no-store-on-every-exit
+    rule: Every partial-navigation answer carries Cache-Control no-store, the prefetch 204 and the policy-redirect answers included.
+    enforced_by:
+      - test: framework/uihost.TestPartialEarlyExitsCarryNoStore
+  - id: prefetch-with-dead-session-is-204
+    rule: A prefetch whose session is dead answers 204 and mints nothing.
+    enforced_by:
+      - test: framework/uihost.TestPrefetchWithDeadSessionGets204
+      - test: framework/uihost.TestPartialEarlyExitsCarryNoStore
+  - id: partial-remints-dead-session
+    rule: A partial navigation with a dead session mints a new one, the signed token in Set-Cookie only and the bare id in X-Gofastr-Session.
+    enforced_by:
+      - test: framework/uihost.TestPartialNavRemintsInvalidSession
+      - test: framework/uihost.TestErrorPartialArmsRunSessionRollover
+  - id: prefetch-carries-session-expiry
+    rule: A prefetch with a live session carries X-Gofastr-Session-Expires-In, the whole seconds the session has left counted after the render, and a navigation partial carries none.
+    enforced_by:
+      - test: framework/uihost.TestPrefetchCarriesSessionExpiry
+      - test: framework/uihost.TestPrefetchExpiryCountsAfterRender
+  - id: partial-declarative-redirect-keeps-query
+    rule: A declared redirect on the partial path answers 200 with X-Gofastr-Location carrying the request's query, percent-encoded to ASCII.
+    enforced_by:
+      - test: framework/uihost.TestRedirectKeepsQuery
+      - test: framework/uihost.TestPartialLocationIsASCII
+  - id: partial-screen-sees-request
+    rule: A screen rendered on the partial path reads the live request, its query included, from its context.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavPartialScreenReadsQuery
+  - id: partial-notes-route-for-tracing
+    rule: A partial navigation names the matched screen route to the tracing middleware, so its span carries the route and not unmatched.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavPartialNotesRouteForTracing
+  - id: overlay-only-when-server-agrees
+    rule: A partial answers X-Gofastr-Overlay only when the router finds that the target screen declared the X-Gofastr-From origin.
+    enforced_by:
+      - test: framework/uihost.TestRouteGraphCarriesAlsoFrom
+  - id: deferred-page-request-sends-loading
+    rule: A page request carrying X-Gofastr-Defer 1 skips the deferred outlets' loaders and carries their loading content in place of their fills.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavDeferredPageCarriesLoading
+  - id: partial-resolver-error-is-error-page
+    rule: A resolver failure on a navigation answers the not-found or error page in the live shell with its status, never the error text.
+    enforced_by:
+      - test: framework/uihost.TestErrorPartialArmsRunSessionRollover
+      - test: framework/uihost.TestNotFoundEffectiveTitles
+  - id: partial-policy-redirect-is-200-location
+    rule: A policy redirect on the partial path answers 200 with X-Gofastr-Location only for a safe relative target, X-Gofastr-Document for an absolute http(s) URL, and a 303 for anything else.
+    enforced_by:
+      - test: framework/uihost.TestPartialRedirect_Returns200WithLocationHeader
+      - test: framework/uihost.TestPartialRedirect_RejectsUnsafeURLs
+      - test: framework/uihost.TestPartialEarlyExitsCarryNoStore
+  - id: partial-status-is-ranked
+    rule: A partial answers the status the page ranking decides, a component's SetStatus included, written before any body byte.
+    enforced_by:
+      - test: framework/uihost.TestComponentStatusBeatsDefault200
+      - test: framework/uihost.TestSetStatusReachesPageAndPartial
+  - id: partial-refuses-stale-markup
+    rule: A partial for a runtime that reads another markup generation answers the reload body instead of the page.
+    enforced_by:
+      - test: framework/uihost.TestStaleMarkupClientGetsReloadBody
+  - id: partial-title-header
+    rule: X-Gofastr-Title is the loaded screen's title, else the registered one, with invisible characters stripped, suffixed with the app name once, the app name alone for an untitled screen, and percent-encoded.
+    enforced_by:
+      - test: framework/uihost.TestPartialTitleLoadedForDynamic
+      - test: framework/uihost.TestTitleTransportsStripInvisibles
+      - test: framework/uihost.TestPartialUntitledScreenSendsAppName
+      - test: framework/uihost.TestPartialNavUntitledScreenTitledByAppName
+      - test: framework/uihost.TestHostTitleSuffix
+      - test: framework/uihost.TestPartialTitleHeaderIsEncoded
+  - id: fills-less-client-gets-reload-swap
+    rule: A partial whose result has kept-layer fills answers the swap key !reload to a client that did not send X-Gofastr-Fills 2.
+    enforced_by:
+      - test: framework/uihost.TestOldClientGetsReloadSwapWhenKeptLayerHasOutlets
+  - id: swap-header-is-escaped
+    rule: X-Gofastr-Swap carries the layer key escaped to ASCII with no control bytes.
+    enforced_by:
+      - test: framework/uihost.TestSwapEscapesControlBytes
+      - test: framework/uihost.TestSwapHeaderIsASCII
+  - id: transition-header-carries-pick
+    rule: A partial whose render picked a keyed transition carries it in X-Gofastr-Transition.
+    enforced_by:
+      - test: framework/uihost.TestTransitionHeaderOnTheWire
+  - id: partial-ends-with-head-carrier
+    rule: A partial body ends with the page-head template carrying the page's inert metadata, language, direction and skip-link label.
+    enforced_by:
+      - test: framework/uihost.TestPartialCarriesInertPageMetadata
+      - test: framework/uihost.TestPartialCarriesHostHeadDescription
+      - test: framework/uihost.TestPartialCarriesSiteDescription
+  - id: partial-carries-runtime-strings
+    rule: A partial for a reader whose runtime words differ from English carries them in data-cui-strings on the head carrier.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavPartialCarriesRuntimeStrings
+  - id: envelope-seed-scans-every-fill
+    rule: The fills envelope's seed island covers the values the primary payload and every fill seeded.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavEnvelopeSeedScansFills
+  - id: fill-address-is-html-escaped
+    rule: A data-cui-fill address is HTML-attribute escaped, never Go-quoted.
+    enforced_by:
+      - test: framework/uihost.TestFillAttrHTMLEscapesParamKey
+  - id: manifest-leaves-out-nospa-routes
+    rule: The route manifest has no entry for a NoSPA route, and no empty entry in its place.
+    enforced_by:
+      - test: framework/uihost.TestNoSPARouteLeavesNoEmptyManifestEntry
+  - id: manifest-doc-scripts
+    rule: Each manifest entry lists the document scripts whose scope matches its route pattern, sorted.
+    enforced_by:
+      - test: framework/uihost.TestDocumentScriptManifestSorted
+      - test: framework/uihost.TestDocumentScriptInRouteManifest
+      - test: framework/uihost.TestDocumentScriptScopeSeesRoutePattern
+  - id: manifest-loading-in-reader-locale
+    rule: A route's loading content in the manifest renders in the reader's locale.
+    enforced_by:
+      - test: framework/uihost.TestLocaleCachesBoundedByCatalog
+      - test: framework/uihost.TestManifestServesBodyByHash
+  - id: manifest-intercept-as-is-a-name
+    rule: The manifest names an intercept's presentation by its string (drawer or sheet), never the enum's number.
+    enforced_by:
+      - test: framework/uihost.TestRouteGraphCarriesAlsoFrom
+  - id: route-script-marshalled-once
+    rule: The route script is marshalled once per catalog locale and served from the cache after.
+    enforced_by:
+      - test: framework/uihost.TestRouteScriptMarshaledOnce
+      - test: framework/uihost.TestLocaleCachesBoundedByCatalog
+  - id: overlay-css-only-with-intercept
+    rule: app.css carries the intercept overlay CSS only when a registered screen intercepts.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavOverlayCSSOnlyWithIntercept
+  - id: problem-documents-echo-nothing
+    rule: The 404, 500 and 405 problem documents carry neither the request path nor the method nor any error text, and the 405 one carries no-store.
+    enforced_by:
+      - test: framework/uihost.TestNotFound_JSONProblem
+      - test: framework/uihost.TestPanicProblemJSONArm
+      - test: framework/uihost.TestSweepNavMethodNotAllowedProblemShape
+  - id: markdown-not-found-is-opt-in-and-pathless
+    rule: The markdown 404 answers only with markdown negotiation on, and never carries the request path.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavMarkdownNotFoundNeedsNegotiation
+      - test: framework/uihost.TestNotFound_MarkdownNoReflectionGuard
+  - id: error-answers-vary-on-accept
+    rule: Every arm of the 404 and 500 answers carries Vary Accept.
+    enforced_by:
+      - test: framework/uihost.TestNotFound_HTMLArmCarriesVary
+      - test: framework/uihost.TestNotFound_MarkdownRecovery
+      - test: framework/uihost.TestPanicProblemJSONArm
+      - test: framework/uihost.TestSweepNavErrorPageVariesOnAccept
+  - id: navigation-miss-is-partial-error
+    rule: A navigation fetch carrying X-Gofastr-From that misses every route or fails to render gets the partial shape at the shared layer with status 404 or 500.
+    enforced_by:
+      - test: framework/uihost.TestErrorPartialArmsRunSessionRollover
+      - test: framework/uihost.TestNotFoundEffectiveTitles
+      - test: framework/uihost.TestNotFoundTitleUsesRequestContextAndPath
+  - id: error-documents-run-the-page-tail
+    rule: The not-found and error documents through the root layout finish through finishPageDocument and mint the session like any page.
+    enforced_by:
+      - test: framework/uihost.TestErrorDocumentMintsSession
+  - id: not-found-screen-panic-is-contained
+    rule: A configured 404 screen that panics in its render or its title falls back to the built-in body or the default title.
+    enforced_by:
+      - test: framework/uihost.TestNotFoundScreenRendersCtx
+      - test: framework/uihost.TestNotFoundTitleWithoutLayout
+  - id: bare-error-page-escapes
+    rule: The bare error document escapes its lang, title and request path, strips invisible characters from the path, and suffixes a configured screen's title with the app name.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavBareNotFoundEscapesPath
+      - test: framework/uihost.TestSweepNavMinimalPageEscapesLangAndTitle
+      - test: framework/uihost.TestShellLangIsAttributeEscaped
+      - test: framework/uihost.TestNotFoundTitleWithoutLayout
+  - id: outlet-404-body-is-pathless
+    rule: The built-in 404 body rendered with no request path, an outlet fallback or a static 404.html, names no path.
+    enforced_by:
+      - test: framework/uihost.TestOutlet404DefaultBodyIsPathless
+  - id: resolver-failure-status-and-log
+    rule: A resolver failure marked not-found answers the not-found page and any other the error page, each logged once with the scrubbed path and the error, which no body carries.
+    enforced_by:
+      - test: framework/uihost.TestLLMMDSwallowedResolver404
+      - test: framework/uihost.TestSweepNavResolverFailureLoggedNotRendered
+  - id: screen-panic-answers-500
+    rule: A contained screen panic answers 500 and logs one Error line with the scrubbed path and panic.
+    enforced_by:
+      - test: framework/uihost.TestScreenRenderPanicPageWithLayoutIs500
+      - test: framework/uihost.TestScreenRenderPanicPartialNavigationIs500
+      - test: framework/uihost.TestPanicLogScrubbed
+      - test: framework/uihost.TestSweepNavPanicLogScrubsPath
+  - id: load-error-on-route-is-logged-404
+    rule: A render error that is not a panic answers 404, with one Warn line when a route owns the path and no log line when none does.
+    enforced_by:
+      - test: framework/uihost.TestScreenLoadErrorStays404LoggedWarn
+      - test: framework/uihost.TestUnknownPathStays404Silent
+  - id: safe-method-falls-through-to-screen
+    rule: A GET or HEAD the router answered 405 renders the screen or static file that resolves at the path.
+    enforced_by:
+      - test: framework/uihost.TestGetScreenSurvivesPostOnlyRoute
+      - test: framework/uihost.TestRegisteredRouteOnScreenPathWins
+  - id: unsafe-method-on-screen-runs-nothing
+    rule: Any method but GET or HEAD on a screen path answers 405 with Allow GET, HEAD, OPTIONS 204 with the same Allow, and runs no policy or Load and mints no session.
+    enforced_by:
+      - test: framework/uihost.TestScreenRefusesUnsafeMethods
+      - test: framework/uihost.TestScreenOptionsAnswers204
+      - test: framework/uihost.TestScreenUnsafeMethodProblemJSON
+      - test: framework/uihost.TestRegisteredRouteOnScreenPathWins
+  - id: method-not-allowed-page-in-layout
+    rule: The 405 page renders through the root layout and names the allowed methods.
+    enforced_by:
+      - test: framework/uihost.TestSweepNavMethodNotAllowedPageInLayout
+  - id: default-error-pages-style-home-link
+    rule: The default error pages' home link carries the fui-button fui-button--primary classes.
+    enforced_by:
+      - test: framework/uihost.TestDefaultErrorPagesStyleHomeLink
+decisions:
+  - id: part-request-never-mints
+    date: 2026-11-16
+    status: accepted
+    decision: A deferred part request with a dead session answers the session reset and the runtime re-requests the part once after the page request beside it commits its re-minted cookie.
+    rejected:
+      - option: Mint a session on the part request.
+        why: The page request of the same navigation mints too, and two Set-Cookies would race onto one navigation.
+      - option: Answer the opaque reset and reload the document.
+        why: The page request has already repaired the session, so a reload throws away a navigation that can still land.
+    upholds: [part-request-never-mints-a-session]
+  - id: prefetch-never-mints
+    date: 2026-11-16
+    status: accepted
+    decision: A prefetch with a dead session answers 204 and mints nothing, so the real click runs the rollover.
+    rejected:
+      - option: Serve the prefetch and mint on it.
+        why: The click would paint from the prefetched entry with the stale token still in place, and islands, SSE and action scripts would answer 401.
+    upholds: [prefetch-with-dead-session-is-204]
+  - id: partial-redirect-is-a-header
+    date: 2026-11-16
+    status: accepted
+    decision: A redirect on the partial path answers 200 with X-Gofastr-Location for a safe relative target, X-Gofastr-Document for an absolute http(s) URL, and a 303 only for anything else.
+    rejected:
+      - option: Answer a 303 for every redirect.
+        why: The runtime fetches with redirect follow, so a 303 is chased silently and the router never sees the target.
+      - option: Send any target in X-Gofastr-Location.
+        why: The runtime fetches that header with credentials, so an off-origin target would turn it into a credential leak.
+    upholds: [partial-policy-redirect-is-200-location]
+  - id: from-header-is-a-hint
+    date: 2026-11-16
+    status: accepted
+    decision: X-Gofastr-From and X-Gofastr-Intercept are re-resolved against the route table, so a forged value changes only how much shared chrome renders or the wrapper element, never policy, params, Load or content.
+    rejected:
+      - option: Trust the header as the client's instruction.
+        why: The header is attacker-controlled.
+    upholds: [overlay-only-when-server-agrees]
+  - id: fills-less-client-reloads
+    date: 2026-11-16
+    status: accepted
+    decision: A client that does not send X-Gofastr-Fills 2 gets the swap key !reload when the result has kept-layer fills, so its missing-slot repair loads the whole page.
+    rejected:
+      - option: Send the bare primary body.
+        why: An older runtime would keep stale outlets with no repair.
+    upholds: [fills-less-client-gets-reload-swap]
+  - id: manifest-carries-only-what-the-runtime-reads
+    date: 2026-11-16
+    status: accepted
+    decision: The route manifest carries paths, preload, layouts, deferred addresses, document scripts, route loading, redirects and intercepts, and no titles or descriptions, because every visitor downloads it.
+    rejected:
+      - option: Titles and descriptions in the manifest.
+        why: A navigation takes its title from the response, so they would be bytes every page pays for nothing.
+      - option: Per-outlet loading templates in the manifest.
+        why: Every page pays for manifest bytes, so per-outlet loading rides beside its cell instead.
+  - id: route-script-cached-per-locale
+    date: 2026-11-16
+    status: accepted
+    decision: The route script is marshalled once per catalog locale and cached, since the route table is fixed once screens mount and only the loading content differs by locale.
+    rejected:
+      - option: Rebuild and marshal the manifest on every request.
+        why: The table does not change after mount, so the work is waste on every page.
+    upholds: [route-script-marshalled-once]
+  - id: unsafe-method-on-screen-is-405
+    date: 2026-11-16
+    status: accepted
+    decision: A method other than GET or HEAD on a screen path no route takes answers 405, or 204 with Allow for OPTIONS, without running the screen.
+    rejected:
+      - option: Render the screen for any method.
+        why: It ran the screen's policy and Load and minted a session for a request that never asked to read the page.
+    upholds: [unsafe-method-on-screen-runs-nothing]
+  - id: render-panic-is-500
+    date: 2026-11-16
+    status: accepted
+    decision: A contained screen panic answers 500 with one Error log line, a Load error answers 404 with one Warn line, and a path no route owns answers an unlogged 404.
+    rejected:
+      - option: Answer every render error with a silent 404.
+        why: A panic is a server bug, and a silent 404 hid it from whoever was debugging.
+    upholds: [screen-panic-answers-500, load-error-on-route-is-logged-404]
+  - id: back-home-link-spells-button-classes
+    date: 2026-11-16
+    status: accepted
+    decision: The default error pages spell framework/ui's fui-button classes on their home link instead of importing framework/ui.
+    rejected:
+      - option: Build the link with framework/ui's button.
+        why: uihost sits below the component layer and the layering test forbids the import.
+    revisit_if: The button classes move to a package uihost may import.
+  - id: static-export-skips-non-200-routes
+    date: 2026-11-16
+    status: accepted
+    decision: A static render of a route whose answer is not 200 (a FallbackNotFound outlet, a set status or a policy redirect or block) returns an error type the builder logs and skips.
+    rejected:
+      - option: Bake the rendered page into the export at the route's URL.
+        why: The static host would serve it with 200 to every visitor while the live server answers otherwise.

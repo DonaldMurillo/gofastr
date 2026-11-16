@@ -12,18 +12,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// signalToggleStyle registers the scoped CSS for fui-toggle. The runtime
-// keeps aria-checked in sync via signal→attr mode, and the CSS reflects
-// that attribute onto the track/thumb so the switch animates on click.
 var signalToggleStyle = registry.RegisterStyle("fui-toggle", signalToggleCSS)
-
-// Knobs: --ui-toggle-track-width (2.5rem), --ui-toggle-thumb-size
-// (1.125rem), --ui-toggle-thumb-inset (2px), --ui-toggle-thumb-bg
-// (#fff, the unchecked thumb in both schemes) and
-// --ui-toggle-thumb-shadow (0 1px 2px rgba(0,0,0,.2)). The track's
-// height and the checked travel are calc() over the width, size and
-// inset knobs, so a resized thumb still centres and still lands
-// inset from the end side (the left, right to left).
 
 func signalToggleCSS(_ style.Theme) string {
 	return `[data-cui-comp="fui-toggle"]{display:inline-flex;align-items:center;gap:var(--spacing-md, .5rem);background:none;border:none;cursor:pointer;padding:0;color:var(--fui-foreground, var(--color-text, #09090B));font:inherit}` +
@@ -35,48 +24,28 @@ func signalToggleCSS(_ style.Theme) string {
 		`[data-cui-comp="fui-toggle"]:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px);border-radius:var(--radii-sm, 6px)}`
 }
 
-// ─── SignalToggle ────────────────────────────────────────────────────
-
-// SignalToggleConfig configures a boolean toggle/switch that flips a
-// signal entirely client-side. Unlike the form-based Switch (which
-// wraps a native <input type="checkbox">), SignalToggle uses the
-// runtime's signal system. No form submission, pure JS reactivity.
-//
-// Clicking the button toggles the named signal; the signal drives both
-// the aria-checked attribute and a visible label.
+// SignalToggleConfig configures a switch that flips a client signal.
 type SignalToggleConfig struct {
-	SignalName string             // required unless Slice is set
-	Slice      *store.Slice[bool] // optional; supplies the signal name + initial value, takes precedence
-	Label      string             // optional:  aria-label (falls back to the signal name)
-	Class      string             // optional:  extra CSS classes
-	// Ctx is the render context. With a Slice, the toggle's first
-	// paint (aria-checked and the label) is the slice's value for this
-	// request: what a producer Seeded on Ctx, else its default. With
-	// no Ctx the declared default is stamped.
+	// SignalName is the signal flipped. Required unless Slice is set.
+	SignalName string
+	// Slice supplies the signal name and first-paint value; it wins over SignalName.
+	Slice *store.Slice[bool]
+	// Label is the aria-label. Default: the signal name.
+	Label string
+	// Class adds classes.
+	Class string
+	// Ctx is the render context a Slice's first paint is read from.
 	Ctx context.Context
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the toggle's root
-	// <button>. Keys the component owns are dropped: class (use
-	// Class), data-cui-*, role, aria-checked, and aria-label — the
-	// switch contract and signal wiring the runtime drives.
+	// ExtraAttrs land on the button; class, data-cui-*, role, aria-checked and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// SignalToggle renders a <button role="switch"> that toggles a boolean
-// signal on click. The signal binding is fully client-side:
-//
-//   - data-cui-signal-toggle flips the signal on click
-//   - data-cui-signal + attr mode keeps aria-checked in sync
-//   - a nested label span shows the signal value via data-cui-signal
-//
-// The button carries data-cui-comp="fui-toggle" for scoped CSS auto-loading.
+// SignalToggle renders a <button role="switch"> bound to a boolean signal.
 func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	name := cfg.SignalName
 	initial := false
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		// The request's value (a producer's Seed on Ctx), the same one
-		// the page's seed hands the runtime.
 		initial = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
@@ -92,30 +61,19 @@ func SignalToggle(cfg SignalToggleConfig) render.HTML {
 	}
 	initStr := strconv.FormatBool(initial)
 
-	// Attribute-escape every config-derived string interpolated below:
-	// this component builds its markup with Sprintf, so escaping is on
-	// us, not render.Tag.
 	escName := render.Escape(name)
 	escLabel := render.Escape(label)
 	escCls := render.Escape(cls)
 
-	// Caller extras land after the owned attributes. render.Attr
-	// validates the key and escapes the value, matching render.Tag.
 	extraAttrs := serializeExtraAttrs(html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"role", "aria-checked", "aria-label"))
 
-	// Build inner children as a single HTML string, static structure.
-	// SignalToggleConfig carries no render.HTML field, so the track
-	// and the label both hold none of a caller's markup.
 	inner := fmt.Sprintf(
 		`<span class="fui-toggle__track" data-cui-internal=""><span class="fui-toggle__thumb"></span></span>`+
 			`<span class="fui-toggle__label" data-cui-internal="" data-cui-signal="%s">%s</span>`,
 		escName, initStr,
 	)
 
-	// Construct the full button element.
-	// data-cui-signal-toggle: click handler flips the signal
-	// data-cui-signal + data-cui-signal-mode="attr": binds signal value to aria-checked
 	//gofastr:allow(GOFASTR1403) every operand is render.Escape output, render.Attr output or the fixed inner markup
 	return render.HTML(fmt.Sprintf(
 		`<button class="%s" data-cui-comp="fui-toggle"`+

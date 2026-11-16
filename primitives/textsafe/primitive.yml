@@ -1,0 +1,39 @@
+primitive: textsafe
+summary: The shared predicates and scrubs for characters that forge, reorder or hide text in headers, logs, keys and terminals.
+code:
+  - core/textsafe/
+docs:
+  - framework/docs/content/core-packages.md
+invariants:
+  - id: one-terminal-scrub
+    rule: Text that did not come from this process reaches an operator's terminal through one scrub, ScrubTerminal, which drops every IsUnsafe rune except newline and tab and every byte that is not valid UTF-8.
+    enforced_by:
+      - test: core/textsafe.TestScrubTerminal
+      - test: battery/service.TestToolOutputAndLogsAreScrubbedForTheTerminal
+      - test: codegen.TestCommandExtensionStderrIsScrubbed
+      - test: framework.TestProbeDetailScrubsControlBytes
+      - test: cmd/gofastr/internal/cli.TestNoRawRepoTextReachesTheTerminal
+      - test: cmd/gofastr/internal/cli.TestScrubbingPrintsAreInert
+      - test: cmd/gofastr.TestVerifyReportScrubBidiAndC1
+      - test: framework/contracts.TestReportTextFreeOfControlBytes
+      - test: framework/experimental/harness/client/tui.TestTranscriptScrubC1AndBidi
+    judge: Does this change strip control characters from text bound for a terminal with a loop, strings.Map or predicate of its own instead of calling textsafe.ScrubTerminal?
+    applies:
+      - battery/service/manager.go
+      - battery/service/logs.go
+      - codegen/extension_command.go
+      - framework/processmodule_probe.go
+      - framework/contracts/format_text.go
+      - cmd/gofastr/
+      - framework/experimental/harness/client/tui/
+decisions:
+  - id: terminal-scrub-lives-in-textsafe
+    date: 2026-11-16
+    status: accepted
+    decision: textsafe.ScrubTerminal is the one terminal scrub; cli.ScrubTerminalOutput, the scrubTerminalBytes of codegen and of the module probe, contracts' sanitizeText, the TUI's sanitizeAgentText and battery/service's scrubControl are removed and their callers call it.
+    rejected:
+      - option: Keep a scrub per sink, each with the set its author knew.
+        why: The copies had drifted, with codegen's and the module probe's stopping at C0 and DEL so a C1 CSI or a bidi override reached the terminal, and battery/service's keeping the invisible set and line separators.
+      - option: Fold the header, SSE and log scrubs into the same function.
+        why: Each protocol frames differently, since SSE keeps LF, a header value keeps neither CR nor LF and a terminal keeps LF and loses CR, so those stay separate functions over the shared predicate.
+    upholds: [one-terminal-scrub]

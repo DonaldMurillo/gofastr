@@ -16,17 +16,38 @@ invariants:
     enforced_by:
       - analyzer: hookedread
   - id: hooks-never-see-the-opt-in
-    rule: A hook never receives the read-hook opt-in, on its context or on its request, so a hook that reads its own entity cannot recurse.
+    rule: A hook or a Mask never receives the read-hook opt-in, on its context or on its request, child hooks' synthetic request included, so a hook that reads its own entity cannot recurse.
     enforced_by:
       - test: framework/crud.TestHookRequestStripsTheOptIn
       - test: framework/crud.TestReadHookReadingOwnEntityDoesNotRecurse
+      - test: framework/crud.TestRequestFromStripsTheOptIn
+      - test: framework/crud.TestRelationsSweepMaskRunsWithoutOptIn
+  - id: read-hooks-see-the-real-request
+    rule: A read hook run for a request being served receives that request, and only an in-process read hands it a synthetic GET.
+    enforced_by:
+      - test: framework/crud.TestReadHooksRestrictSeesRealRequest
+  - id: read-hooks-restrict-fails-closed
+    rule: ReadHooksRestrict reports true when the caller's BeforeList or BeforeGet hooks append a clause or return an error.
+    enforced_by:
+      - test: framework/crud.TestRelationsSweepReadHooksRestrictFailsClosed
   - id: included-rows-run-child-hooks
-    rule: Rows reached through ?include= or ?rel.field= run the child entity's own read hooks, recursively, and a child hook error fails the request.
+    rule: Rows reached through ?include=, ?rel.field= or a cascade write's response run the child entity's own masks and read hooks, AfterList always and AfterGet too for a to-one relation, on rows keyed by their parent hop's wire map, recursively, and a child hook error fails the request.
     enforced_by:
       - test: framework/crud.TestIncludeRunsChildBeforeList
       - test: framework/crud.TestIncludeToOneRunsBeforeGet
       - test: framework/crud.TestIncludeChildBeforeHookErrorFails
       - test: framework/crud.TestApplyChildReadHooksRecursesIntoGrandchildren
+      - test: framework/crud.TestApplyChildReadHooksRunsAfterGetOnToOne
+      - test: framework/crud.TestApplyChildReadHooksDedupesSharedRow
+      - test: framework/crud.TestNestedIncludeRunsHooksUnderWireName
+      - test: framework/crud.TestCascadeResponseRunsGrandchildHooks
+  - id: included-rows-run-child-before-hooks
+    rule: An include scopes the target's rows by its own BeforeList, plus BeforeGet for a to-one relation only, and a many_to_many's link rows by its registered pivot's BeforeList, and a panic in the ChildHooks lookup fails the read.
+    enforced_by:
+      - test: framework/crud.TestRelationsSweepToManyIncludeSkipsBeforeGet
+      - test: framework/crud.TestIncludeM2MRunsPivotBeforeList
+      - test: framework/crud.TestM2MTargetAndPivotHooksCompose
+      - test: framework/crud.TestChildHooksPanicFailsClosed
   - id: child-hook-results-match-by-primary-key
     rule: A child hook's results are folded back into the rows already attached to their parents by primary key, and a changed row count, a duplicate, an unknown row or a row without its id is refused before anything is mutated.
     enforced_by:
@@ -38,11 +59,34 @@ invariants:
       - test: framework/crud.TestReattachRefusesProjectionWithoutID
       - test: framework/crud.TestReattachRefusesProjectionWithoutIDWhenValuesMatch
       - test: framework/crud.TestReattachDoesNotMutateBeforeARefusal
+      - test: framework/crud.TestRelationsSweepReplacedChildRowsReachTheParents
   - id: failed-response-hook-answers-identity
     rule: When a write's response hook fails, the response carries the primary key only; it never echoes the row and never answers 500.
     enforced_by:
       - test: framework/crud.TestWriteResponseHookErrorHidesRow
       - test: framework/crud.TestIdentityOnlyKeepsOnlyThePrimaryKey
+  - id: mask-contract
+    rule: A declared Mask runs before the After hooks on every read exit, as the caller without CRUD elevation, is never handed a NULL or a related row an include put under its field's name, and reads as null when it panics.
+    enforced_by:
+      - test: framework/crud.TestReadHookParityCrud
+      - test: framework/crud.TestMaskKeepsStoredValue
+      - test: framework/crud.TestMaskSkipsOnlyIncludedRow
+      - test: framework/crud.TestMaskPanicReadsAsNull
+  - id: response-hooks-leave-the-record
+    rule: Masking and hooking a write's response never writes the caller's record, at any depth of nesting.
+    enforced_by:
+      - test: framework/crud.TestRelationsSweepResponseHookCopiesNestedMaps
+  - id: masked-echo-is-not-written
+    rule: An update of a stored row, on REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany and UpsertOne's conflict arm, leaves out each Mask field whose sent value equals Mask of the stored value, read in the write's transaction under its tenant and owner scope; an upsert whose BeforeCreate hook changes the key checks against the row the new key names, a stored NULL is never an echo and a create drops nothing.
+    enforced_by:
+      - test: framework/crud.TestMaskedValueRoundTripKeepsStoredValue
+      - test: framework/crud.TestMaskedFieldTakesANewValue
+      - test: framework/crud.TestMaskedRequiredFieldEchoIsAccepted
+      - test: framework/crud.TestMaskedStoredNullIsNeverAnEcho
+      - test: framework/crud.TestMaskedEchoReadsUnderOwnerScope
+      - test: framework/crud.TestMaskedCreateStoresWhatItIsSent
+      - test: framework/crud.TestPGMaskedRoundTripKeepsStoredValue
+      - test: framework/crud.TestMaskedUpsertEchoFollowsAHookChangedKey
 decisions:
   - id: match-by-primary-key
     status: accepted
@@ -70,3 +114,85 @@ decisions:
       - option: Answer 500.
         why: It says a committed write did not happen, so clients retry and create duplicates.
     upholds: [failed-response-hook-answers-identity]
+  - id: child-hooks-see-wire-keys
+    date: 2026-11-15
+    status: accepted
+    decision: Child read hooks and masks run after key conversion, on the maps attached to the parents, each nested level keyed by its parent hop's wire map.
+    rejected:
+      - option: Run them on the loader's raw rows.
+        why: A hook written against what GET /children returns (cardNumber) misses card_number, so it no-ops or leaves both keys and map order picks the winner.
+    upholds: [included-rows-run-child-hooks]
+  - id: to-one-runs-both-after-chains
+    date: 2026-11-15
+    status: accepted
+    decision: A to-one included row runs the child's AfterList and its AfterGet, so a mask may live in either, and a hook registered on both runs twice, which the documented masks tolerate.
+    rejected:
+      - option: Run AfterGet only, the chain of GET /child/{id}.
+        why: A mask kept in AfterList only then leaks through the include.
+      - option: Run AfterList only.
+        why: An app masking in AfterGet only, consistent with its own routes, served the stored value through ?include=author.
+    upholds: [included-rows-run-child-hooks]
+  - id: child-hooks-get-the-real-request
+    date: 2026-11-15
+    status: accepted
+    decision: Child read hooks receive the request being served, and an in-process read hands them a synthetic GET carrying hookCtx.
+    rejected:
+      - option: Always hand them a synthetic request.
+        why: A redactor branching on a header or cookie behaved differently on ?include=card than on GET /cards.
+    upholds: [read-hooks-see-the-real-request]
+  - id: response-hooks-on-a-deep-copy
+    date: 2026-11-15
+    status: accepted
+    decision: A write's response is masked, and its cascade children's and its own AfterGet hooks run, on a deep copy, after commit.
+    rejected:
+      - option: Run them on the row in place.
+        why: The row is already with EmitEvent's goroutines, so a hook writing it is a concurrent map write the bus cannot recover from.
+      - option: Run them on a shallow copy.
+        why: Nested maps stay shared, so masking row["profile"]["ssn"] wrote through into the event.
+      - option: Run cascade children's read hooks inside the write.
+        why: AfterCreate, AfterUpdate, the outbox and the event then saw the redacted child.
+    upholds: [response-hooks-leave-the-record]
+  - id: writes-answer-through-afterget
+    date: 2026-11-15
+    status: accepted
+    decision: A create or update response runs the entity's masks and AfterGet hooks, since it returns every visible column.
+    rejected:
+      - option: Run only AfterCreate and AfterUpdate.
+        why: Those are write hooks, so a partial PUT echoed stored values for fields GET masks.
+  - id: mask-panic-reads-null
+    date: 2026-11-15
+    status: accepted
+    decision: A Mask that panics reads as null and the panic is logged, and a Mask runs as the caller, without CRUD elevation and without the read-hook opt-in.
+    rejected:
+      - option: Let the panic propagate.
+        why: Masks also run on paths with no per-request recover, such as an _events delivery loop, where a panic ends the process.
+    upholds: [mask-contract]
+  - id: m2m-rows-claim-distinct-slots
+    date: 2026-11-15
+    status: accepted
+    decision: A primary key maps to every attached row carrying it, and each replacement row claims the first unclaimed one.
+    rejected:
+      - option: Index one row per primary key.
+        why: A many_to_many child shared by two parents arrives as two maps with one key, so the second replacement tripped the duplicate refusal and a documented hook shape answered 500.
+    upholds: [child-hook-results-match-by-primary-key]
+  - id: hook-clauses-as-key-subquery
+    date: 2026-11-15
+    status: accepted
+    decision: A target's or pivot's Before-hook clauses render as "key IN (SELECT key FROM table WHERE ...)", the shape GET /<target> evaluates them in, numbered from $1 and placed first.
+    rejected:
+      - option: Splice the clauses into the loader's JOIN.
+        why: Their bare column names become ambiguous or bind to the other table.
+    upholds: [included-rows-run-child-before-hooks]
+  - id: drop-the-masked-echo
+    date: 2026-11-16
+    status: accepted
+    decision: A write whose value for a Mask field equals Mask of the stored value is treated as if the field were absent, through maskedEchoes on doUpdate's audit pre-image and on UpsertOne's existing-row read, and UpsertOne binds the held value into its VALUES so a NOT NULL column passes.
+    rejected:
+      - option: Refuse the write with a field error.
+        why: A generic load, edit, save client would fail on its first save of any entity with a mask.
+      - option: Document it and keep storing what is sent.
+        why: The write answers 200 and every later read looks the same, so the stored value is lost with nothing to show it (issue 697).
+      - option: Cover TypedQuery.UpdateAll too.
+        why: It sets one value on many rows it never reads, and the echo differs per row, so it would need a read of every matching row; it writes the value as given and the docs say so.
+    revisit_if: A legitimate value collides with a mask's output often enough that callers need a way to force the write, or a hook-masked column needs the same drop.
+    upholds: [masked-echo-is-not-written]

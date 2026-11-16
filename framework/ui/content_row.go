@@ -12,136 +12,50 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── ContentRow ────────────────────────────────────────────────────
-//
-// The page's content row: a start column (a ui.Sidebar), the main
-// column, and an optional end column (a context aside) side by side,
-// stacked below a breakpoint. This is the one thing a layout recipe
-// cannot compose from existing pieces: no other component places three
-// columns in a row and owns the frame chrome between them (the nav
-// column's surface and rule, the aside's width and rule, the app
-// padding around main). Workbench and ListDetail are pane splits
-// inside a column; this is the column arrangement itself.
-//
-// The row owns only the frame. The start column is the nav landmark
-// around the sidebar: headless.Sidebar's own <nav> names the links
-// region alone, so its title, prepend and footer sit outside it — the
-// column landmark is what keeps every part of the sidebar inside a
-// landmark (axe region; the retired page shell wrapped the column the
-// same way). The aside is an <aside> labelled by AsideLabel. Nothing
-// inside main is styled from here: screens bring their own
-// ui.PageHeader, Stack gaps and sections. Compose it inside an
-// app.NewLayout build around l.Primary():
-//
-//	nav, _ := component.SafeRenderCtx(ctx, ui.Sidebar(cfg))
-//	return ui.ContentRow(ui.ContentRowConfig{Sidebar: nav}, l.Primary())
-
 // ContentRowConfig configures a ContentRow.
 type ContentRowConfig struct {
-	// Ctx carries the per-request context the default column labels are
-	// written in. When nil, English applies.
+	// Ctx carries the request context the default labels are written in; nil is English.
 	Ctx context.Context
 
-	// Sidebar is the start column. Give it a ui.Sidebar; the column
-	// takes its width from the sidebar's content, sits on the surface
-	// color and draws the inline-end rule. Below the breakpoint the
-	// sidebar's own drawer serves navigation and the column stacks
-	// above main with a block-end rule instead.
+	// Sidebar is the start column, usually a ui.Sidebar; it stacks above main below the breakpoint.
 	Sidebar render.HTML
-	// NavLabel labels the start column's navigation landmark — the
-	// landmark that wraps the sidebar's title, links and footer (the
-	// sidebar's own inner nav names only the links list). Defaults to
-	// "Sidebar".
+	// NavLabel labels the start column's nav landmark. Defaults to "Sidebar".
 	NavLabel string
-	// Toolbar is an optional row above main, beside the sidebar —
-	// the workspace the shell's Toolbar slot renders. Compose a
-	// ui.Toolbar (or any row) here; the row owns only its placement
-	// and its block-end rule.
+	// Toolbar is an optional row above main, beside the sidebar.
 	Toolbar render.HTML
-	// ToolbarLabel names the toolbar row's region landmark. The row
-	// sits outside main and the nav column, so it is a labelled
-	// <section> of its own and controls placed there stay inside a
-	// landmark. Defaults to "Toolbar".
+	// ToolbarLabel names the toolbar row's section landmark. Defaults to "Toolbar".
 	ToolbarLabel string
-	// Aside is the optional end column after main: a context aside.
-	// It stacks below main under the breakpoint, and it releases its
-	// width when it holds only an empty outlet, so an unfilled
-	// context column takes no space.
+	// Aside is the optional end column. It stacks below main, and takes no width
+	// while it holds only an empty outlet.
 	Aside render.HTML
 	// AsideLabel labels the aside landmark. Defaults to "Context".
 	AsideLabel string
-	// Breakpoint picks the viewport width below which the row stacks:
-	// below md (48rem, the default) or below lg (64rem). Match it to
-	// SidebarConfig.DrawerBreakpoint so the sidebar becomes a drawer
-	// at the same width the row collapses.
+	// Breakpoint is the width below which the row stacks: md (48rem, the default)
+	// or lg (64rem). Match it to SidebarConfig.DrawerBreakpoint.
 	Breakpoint StackBreakpoint
-	// Viewport confines desktop scrolling to main, the nav column and
-	// the aside: at and above the breakpoint the row fills the rest of
-	// the viewport below the page header and each column scrolls on
-	// its own; below it the page scrolls normally. The row cannot
-	// style its parent, so it reads the header's height from the
-	// --size-header-height token (56px default) — the same token
-	// the app-shell header band fixes its own height with — and
-	// assumes the page column above it is at least one screen tall.
-	// A recipe arranges both: ui.Stack{Screen: true} above, a header
-	// carrying the fixed band. The row assumes no footer band below it
-	// in this mode; give viewport pages their footer inside main.
+	// Viewport fills the viewport below a --size-header-height header at and above
+	// the breakpoint, each column scrolling on its own. Put the footer inside main.
 	Viewport bool
-	// Sticky keeps the frame in place while the window scrolls the
-	// page: at and above the breakpoint the nav column sticks to the
-	// top, one viewport tall, and scrolls its own overflow; the Toolbar
-	// row sticks to the top of the workspace at every width, on the
-	// page background and above the content. The window stays the
-	// scroller, so the client router's scroll restore and fragment
-	// jumps keep working. The frame sticks at --ui-sticky-top: the
-	// window's top with no header, or under the header when the page
-	// stack sets StickyHeader, the column then the rest of the viewport
-	// tall. For a header band with columns that scroll on their own,
-	// use Viewport. Setting both panics. The toolbar is one control row
-	// tall and the workspace under it publishes --ui-sticky-top grown
-	// by that height, so a sticky panel inside it (a FormFrame's
-	// SidePanel) stops under the toolbar rather than behind it.
+	// Sticky keeps the window as the scroller and sticks the nav column and the
+	// Toolbar at --ui-sticky-top. It panics beside Viewport.
 	Sticky bool
-	// PhoneNavFlush drops the stacked nav column's block-end rule
-	// below the breakpoint. Set it when the sidebar's phone navigation
-	// lives outside the column (an interactive.SectionMenu, whose pill
-	// floats over the page, or a NativeMobile sidebar whose drawer
-	// trigger the page header hosts): the stacked column renders empty
-	// on phones and an empty band must not draw a line.
+	// PhoneNavFlush drops the stacked nav column's rule on phones, for a sidebar
+	// whose phone navigation lives outside the column.
 	PhoneNavFlush bool
-	// PhoneAsideFlush drops the stacked aside's block-start rule and
-	// padding below the breakpoint. Set it when the aside's phone form
-	// lives outside it (a ui.TableOfContents with PhoneSheet, whose
-	// pill floats over the page): the stacked aside renders empty on
-	// phones and an empty band must not draw a line. An aside holding
-	// a contents list with PhoneSheetTop needs no flag: on phones it
-	// moves above the main column and sticks there, flush, as the bar.
+	// PhoneAsideFlush drops the stacked aside's rule and padding on phones, for an
+	// aside whose phone form floats outside it (a TableOfContents PhoneSheet).
 	PhoneAsideFlush bool
-	// Dense gives the page the compact density on a fine pointer (a
-	// mouse or trackpad): controls, toolbar fields and table rows take
-	// the 36px control height and the tighter gap that the theme's
-	// compact density sets, and the --spacing-touch-target token drops
-	// to the same 36px, so every control sized from it (search fields,
-	// checkboxes, menus) follows. The values sit on the document root,
-	// so drawers, dialogs and menus mounted outside the row follow too.
-	// A touch screen keeps the theme's values,
-	// so a phone holds its 44px targets. Set it on an operator console
-	// (the admin's frame); a site's content row leaves it off.
+	// Dense gives the page the compact control density on a fine pointer; a touch
+	// screen keeps the theme's values. For operator consoles.
 	Dense bool
 	// Class appends to the row root's class list.
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the row root. Keys the
-	// component owns are dropped: class (use Class), and data-cui-*.
+	// ExtraAttrs is forwarded to the root without the keys the component owns.
 	ExtraAttrs html.Attrs
 }
 
-// ContentRow renders the content row around the main region. With no
-// Sidebar it still owns the row (the flex row, main's growth) — the
-// leanest page shape. The row is as tall as its content; place it in
-// ui.Stack{Screen: true, Gap: ui.GapNone} between the header and the
-// footer and it grows to fill the page, so a short page keeps its
-// footer at the viewport bottom with no dead scroll.
+// ContentRow renders the content row around main. Placed in ui.Stack{Screen: true,
+// Gap: ui.GapNone} between the header and the footer, it fills the page.
 func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 	checkStackBreakpoint(cfg.Breakpoint)
 	if cfg.Sticky && cfg.Viewport {
@@ -179,9 +93,6 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 		if label == "" {
 			label = i18nui.ContentRowSidebar.Text(cfg.Ctx)
 		}
-		// The nav landmark around the sidebar: headless.Sidebar's own
-		// nav names only the links list, so the column landmark is what
-		// keeps the sidebar's title and footer inside a landmark too.
 		body = append(body, html.Nav(html.NavConfig{Label: label, Class: "fui-content-row__nav"}, cfg.Sidebar))
 	}
 	if cfg.Toolbar != "" {
@@ -211,11 +122,7 @@ func ContentRow(cfg ContentRowConfig, main ...render.HTML) render.HTML {
 
 var contentRowStyle = registry.RegisterStyle("ui-content-row", contentRowCSS)
 
-// rowBreakpointCSS is the responsive half of the sheet, generated per
-// posture so the md default and the lg option share one spelling: scope
-// selects the rows (":not(.fui-content-row--stack-below-lg)" for the md
-// default, ".fui-content-row--stack-below-lg" for lg) and maxw/minw are
-// the paired media widths around the breakpoint.
+// rowBreakpointCSS is one posture of the sheet's responsive half, md or lg.
 type rowBreakpointCSS struct {
 	scope string
 	maxw  string
@@ -225,10 +132,6 @@ type rowBreakpointCSS struct {
 func contentRowCSS(_ style.Theme) string {
 	md := rowBreakpointCSS{scope: ":not(.fui-content-row--stack-below-lg)", maxw: "47.99rem", minw: "48rem"}
 	lg := rowBreakpointCSS{scope: ".fui-content-row--stack-below-lg", maxw: "63.99rem", minw: "64rem"}
-	// The row claims no viewport height of its own: a bare 100vh minimum
-	// under a header scrolls a short page by the header's height. It
-	// grows instead, so inside ui.Stack{Screen: true} it takes whatever
-	// the header and footer leave and the nav column reaches the footer.
 	return `.fui-content-row { display: flex; align-items: stretch; flex: 1 0 auto; }
 .fui-content-row > main, .fui-content-row > .layout-content { flex: 1 1 auto; min-width: 0; }
 .fui-content-row__nav { flex: 0 0 auto; background-color: var(--color-surface, #fff); border-inline-end: var(--stroke-thin, 1px) solid var(--color-border, #e4e4e7); }
@@ -302,12 +205,6 @@ func contentRowCSS(_ style.Theme) string {
 ` + md.viewportCSS() + md.stickyCSS() + md.stackCSS() + lg.viewportCSS() + lg.stickyCSS() + lg.stackCSS()
 }
 
-// stickyCSS is the desktop half of Sticky mode: the nav column sticks
-// at --ui-sticky-top (under a StickyHeader page's header), the rest of the
-// viewport tall, and scrolls its own overflow
-// while the window scrolls the page. align-self keeps the row's
-// stretch from making the column as tall as the page, which would
-// leave it nothing to stick within.
 func (b rowBreakpointCSS) stickyCSS() string {
 	css := fmt.Sprintf(`@media (min-width: %s) {
   .fui-content-row--sticky:SCOPE: .fui-content-row__nav { position: sticky; inset-block-start: var(--fui-content-row-top); align-self: flex-start; block-size: calc(100dvh - var(--fui-content-row-top)); overflow-y: auto; overscroll-behavior: contain; --ui-sticky-top: 0px; }
@@ -316,12 +213,6 @@ func (b rowBreakpointCSS) stickyCSS() string {
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)
 }
 
-// viewportCSS is the desktop half of Viewport mode: the row fills the
-// rest of the viewport below the header and each column scrolls on its
-// own. Below the breakpoint the stackCSS half returns the page to
-// normal document flow. The :SCOPE: token stands where the posture's
-// scoping selector goes (":not(…)" for the md default, the lg class
-// for the option); scoped this way the two postures never both apply.
 func (b rowBreakpointCSS) viewportCSS() string {
 	css := fmt.Sprintf(`@media (min-width: %s) {
   :where(.fui-content-row--viewport):SCOPE: { block-size: calc(100dvh - var(--size-header-height, 56px)); min-block-size: 0; flex: 1 1 auto; overflow: hidden; }
@@ -342,10 +233,6 @@ func (b rowBreakpointCSS) viewportCSS() string {
 	return strings.ReplaceAll(css, ":SCOPE:", b.scope)
 }
 
-// stackCSS is the below-breakpoint half: the columns stack, the nav
-// column trades its inline-end rule for a block-end one, the aside
-// draws its block-start rule, and a viewport row's main takes the
-// tighter phone padding.
 func (b rowBreakpointCSS) stackCSS() string {
 	css := fmt.Sprintf(`@media (max-width: %s) {
   :where(.fui-content-row):SCOPE: { display: block; }

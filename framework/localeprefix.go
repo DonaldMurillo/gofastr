@@ -11,34 +11,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 )
 
-// WithLocalePrefixes names the reader's language in the URL. The
-// translator's fallback locale keeps the plain paths; every other
-// catalog locale serves the same routes under /<tag>/, so "/es/pricing"
-// is the pricing page in Spanish. The router reads the prefix off the
-// path before matching (route patterns and screens never see it), the
-// locale it names wins over every other source, and a request with no
-// prefix is the default locale. "/en/pricing", for an English default,
-// answers 308 to "/pricing".
-//
-// Responses keep the reader's locale: root-relative links, form
-// actions, island and poll URLs and redirects in a "/es/" response gain
-// the prefix on the way out (core-ui/urlprefix), and the UI host adds
-// an hreflang alternate per locale to each page and to the sitemap.
-// Link to another language with [i18n.LocalePath] on an anchor carrying
-// hreflang.
-//
-// Panics without WithI18n, together with WithLocaleResolver (the URL
-// must decide the language, or an hreflang="en" page could answer in
-// French), when the catalog has a locale that cannot be a path segment,
-// and at Start when a route's first segment names a locale.
+// WithLocalePrefixes serves every catalog locale but the fallback under
+// /<tag>/, so "/es/pricing" is the pricing page in Spanish; the prefix
+// wins over every other locale source, and links in a prefixed response
+// keep it. NewApp panics without WithI18n, with WithLocaleResolver, or
+// when a locale cannot be a path segment; Start panics on a route whose
+// first segment names a locale.
 func WithLocalePrefixes() AppOption {
 	return func(a *App) {
 		a.localePrefixes = true
 	}
 }
 
-// installLocalePrefixes reads the locale set and installs the router's
-// prefix split. NewApp calls it after every option has run.
 func (a *App) installLocalePrefixes() {
 	if a.translator == nil {
 		panic("framework: WithLocalePrefixes requires WithI18n: the locales come from the translator's catalog")
@@ -55,18 +39,10 @@ func (a *App) installLocalePrefixes() {
 	a.router.PreRoute(routeLocale(set))
 }
 
-// routeLocale returns the router's pre-route hook for set: it strips a
-// locale prefix off the request path and records the locale on the
-// context, and redirects a default-locale prefix to the plain path.
 func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, string) {
 	return func(r *http.Request) (*http.Request, string) {
 		tag, rest := set.Split(r.URL.Path)
 		if tag == set.Default {
-			// The target is the escaped path past its first segment, the
-			// tag however it was spelled (/%65n/ is /en/ too; splitting
-			// the escaped path missed it and answered with the request
-			// itself), since a decoded %3F would start a query. Only a
-			// same-site one: /en//evil.com must not answer //evil.com.
 			target := escapedRest(r.URL)
 			if !handler.IsSafeRelativePath(target) {
 				return nil, "/"
@@ -86,8 +62,6 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 					r2.Header.Set("X-Gofastr-From", fromRest)
 				}
 			default:
-				// The page the reader came from is in another language:
-				// nothing it kept on screen is chrome this page can reuse.
 				r2.Header.Del("X-Gofastr-From")
 			}
 		}
@@ -96,8 +70,6 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 		}
 		u := *r.URL
 		u.Path = rest
-		// Cut the escaped path at the same segment, however the tag was
-		// spelled: /%65s/files/a%2Fb keeps its %2F as /es/... does.
 		if u.RawPath != "" {
 			u.RawPath = escapedRest(r.URL)
 		}
@@ -106,8 +78,6 @@ func routeLocale(set i18n.PathLocales) func(*http.Request) (*http.Request, strin
 	}
 }
 
-// escapedRest returns u's escaped path past its first segment, "/" when
-// nothing follows it.
 func escapedRest(u *url.URL) string {
 	if esc := u.EscapedPath(); len(esc) > 1 {
 		if i := strings.IndexByte(esc[1:], '/'); i >= 0 {
@@ -117,9 +87,6 @@ func escapedRest(u *url.URL) string {
 	return "/"
 }
 
-// pathLocaleFor returns r with the locale its path names on the
-// context, without changing the URL: serveLocale's read of the split
-// the router makes, for the server wrappers that run before it.
 func (a *App) pathLocaleFor(r *http.Request) *http.Request {
 	if !a.localePrefixes {
 		return r
@@ -128,9 +95,6 @@ func (a *App) pathLocaleFor(r *http.Request) *http.Request {
 	return r.WithContext(i18n.WithPathLocale(r.Context(), a.pathLocales, cmp.Or(tag, a.pathLocales.Default)))
 }
 
-// checkLocaleRoutes refuses a route whose first segment names a locale:
-// the router strips that segment before matching, so the route could
-// never be reached. Start runs it once the route table is complete.
 func (a *App) checkLocaleRoutes() {
 	if !a.localePrefixes {
 		return

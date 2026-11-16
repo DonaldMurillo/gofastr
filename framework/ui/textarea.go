@@ -13,65 +13,34 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── TextArea ───────────────────────────────────────────────────────
-//
-// Labelled multi-line text input, rendered through headless.Field +
-// headless.Textarea the way Select is: the field owns the label, the
-// hint, the error and the wiring that ties them to the control, and
-// the textarea carries this component's own marker so its sheet loads
-// wherever a TextArea renders, inside a Form or alone.
-//
-// Autogrow is ui-only surface with its own runtime module
-// (textarea.js, bound on data-cui-autogrow), so it reaches the
-// control through headless.Textarea's typed Autogrow prop — the one
-// seam that survives the data-cui-* refusal every caller-reachable
-// extra goes through.
-
 // TextAreaConfig configures a TextArea.
 type TextAreaConfig struct {
-	// Name is the form-field name (required).
+	// Name is the form-field name. Required.
 	Name string
-	// Label is the accessible label (required).
-	Label string
-	// Value is the initial value.
-	Value string
-	// Placeholder renders the native placeholder.
+	// Label is the accessible label. Required.
+	Label       string
+	Value       string
 	Placeholder string
-	// Rows is the initial visible row count. Defaults to 3.
+	// Rows is the initial row count; zero is 3.
 	Rows int
-	// Autogrow opts into runtime auto-resize: every input event
-	// resets the height to scrollHeight so the field always shows all
-	// content without an internal scrollbar.
+	// Autogrow grows the height with the content as it is typed.
 	Autogrow bool
-	// Monospace draws the text in the mono font token, for JSON and
-	// code.
+	// Monospace draws the text in the mono font token.
 	Monospace bool
-	// JSON checks the text as JSON in the browser as it is typed: an
-	// invalid value marks the field invalid and stops the form's submit
-	// with "Enter valid JSON". The server still validates.
+	// JSON checks the text as JSON in the browser; the server still validates.
 	JSON bool
-	// Ctx resolves the JSON check's sentence through the request's
-	// translator; nil reads English.
-	Ctx context.Context
-	// Required marks the field required.
-	Required bool
-	// Disabled disables interaction.
-	Disabled bool
-	// Help renders supporting text under the field.
-	Help string
-	// Error overrides Help with an error message + aria-invalid.
-	Error string
-	// MinLength and MaxLength apply the native minlength and
-	// maxlength attributes.
+	// Ctx resolves the JSON check's sentence; nil reads English.
+	Ctx       context.Context
+	Required  bool
+	Disabled  bool
+	Help      string
+	Error     string
 	MinLength int
 	MaxLength int
-	ID        string
-	Class     string
-	// ExtraAttrs forwards additional attributes to the <textarea>
-	// element. Keys the component owns are dropped: class and id (use
-	// Class / ID), data-cui-* (incl. the autogrow wiring), name, rows,
-	// placeholder, disabled, required, minlength, maxlength,
-	// aria-invalid, and aria-describedby.
+	// ID is the control's id; empty is Name.
+	ID    string
+	Class string
+	// ExtraAttrs lands on the <textarea>; keys the component owns are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -105,9 +74,6 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	}
 
 	control := func(c headless.FieldControl) render.HTML {
-		// This component's own control from TextArea's own caller's
-		// view — Field sees it only as its build closure's caller-
-		// content return.
 		return headless.Own(textAreaStyle.WrapHTML(headless.Textarea(headless.TextareaProps{
 			Name:        cfg.Name,
 			DescribedBy: c.DescribedBy,
@@ -137,7 +103,6 @@ func TextArea(cfg TextAreaConfig) render.HTML {
 	}, fieldClasses, control))
 }
 
-// jsonSentence is the JSON check's sentence, "" when the check is off.
 func jsonSentence(on bool, ctx context.Context) string {
 	if !on {
 		return ""

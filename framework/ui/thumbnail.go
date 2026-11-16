@@ -8,12 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Thumbnail ──────────────────────────────────────────────────────
-//
-// A small fixed-size image preview: a table cell's photo, a record's
-// image field. The image covers a square box with rounded corners, so
-// mixed aspect ratios line up in a column.
-
 // ThumbnailSize sets the box's edge.
 type ThumbnailSize string
 
@@ -25,8 +19,7 @@ const (
 
 // ThumbnailConfig configures a thumbnail.
 type ThumbnailConfig struct {
-	// Src is the image URL. A value urlsafe's image policy refuses (a
-	// script scheme, an SVG or HTML data URI) draws nothing.
+	// Src is the image URL; one the image policy refuses draws nothing.
 	Src string
 	// Alt is the image's accessible name; empty marks it decorative.
 	Alt  string
@@ -35,16 +28,14 @@ type ThumbnailConfig struct {
 	ID    string
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// ARIA overrides) to the root <span>. Keys the component owns are
-	// dropped: class and id (use Class / ID) and data-cui-*.
+	// ExtraAttrs lands on the root <span>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
 var thumbnailStyle = registry.RegisterStyle("ui-thumbnail", thumbnailCSS)
 
-// Thumbnail renders a lazily loaded image in a square box. It returns ""
-// when Src is empty or refused, so a caller draws its own empty mark.
+// Thumbnail renders a lazily loaded image covering a square box. It
+// returns "" when Src is empty or refused.
 func Thumbnail(cfg ThumbnailConfig) render.HTML {
 	src := urlsafe.Clean(cfg.Src, urlsafe.ImageSource)
 	if src == "" {
@@ -65,8 +56,6 @@ func Thumbnail(cfg ThumbnailConfig) render.HTML {
 }
 
 func thumbnailCSS(_ style.Theme) string {
-	// Knobs: --ui-thumbnail-size (4rem) and its -sm (2rem) and -lg (8rem)
-	// variants.
 	return `[data-cui-comp="ui-thumbnail"] {
   display: inline-block;
   flex-shrink: 0;

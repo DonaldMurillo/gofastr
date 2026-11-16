@@ -10,26 +10,13 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// singleValueQueryKeys classifies the control keys read as one value. Keep
-// sorted so a query with several repeated keys always refuses the same one.
+// singleValueQueryKeys are the control keys read as one value, sorted.
 var singleValueQueryKeys = [...]string{
 	"cursor", "direction", "fields", "include", "limit", "offset",
 	"page", "per_page", "q", "stream", "trashed", "where",
 }
 
-// readQuery is the entry gate for every CRUD HTTP read (list offset, cursor
-// and stream pages, a direct ServeStreamingList call, read-one). Helpers
-// consume its values and never inspect the wire query again;
-// TestReadQueryGuard holds that.
-//
-// Strictly: URL.Query drops a pair that does not decode (%ZZ, a bare %, a
-// ';'), so ?cursor=%ZZ restarted a walk at page 1, ?status=paid%ZZ read as
-// no filter and ?trashed=true%ZZ hid the row asked for. Once: each helper
-// used to re-parse the request leniently, and the cursor page parsed it up
-// to eight times, so a gate on one parse said nothing about the others.
-// A single-value key sent twice is refused because every reader takes the
-// first value: ?fields=title&fields=bogus answered 200 where ?fields=bogus
-// answered 400. sort reads every value and may repeat.
+// readQuery parses the wire query once for every CRUD HTTP read.
 func (ch *CrudHandler) readQuery(r *http.Request) (url.Values, error) {
 	q, err := filter.ParseQueryStrict(r.URL.RawQuery)
 	if err != nil {
@@ -47,11 +34,7 @@ func (ch *CrudHandler) readQuery(r *http.Request) (url.Values, error) {
 }
 
 // hostOwnsQParam reports whether ?q= belongs to the host: q is in
-// AllowedFilterParams, the entity declares no SearchFields, and no column
-// the client can filter is named q. A BeforeList hook reads every value
-// itself, so a repeat is the host's to judge. A column named q is the
-// framework's filter and is refused at the gate like any control, on
-// read-one too, where no filter parser would see it.
+// AllowedFilterParams, there are no SearchFields, and no filterable column is named q.
 func (ch *CrudHandler) hostOwnsQParam() bool {
 	if len(ch.Entity.Config.SearchFields) > 0 || !slices.Contains(ch.Entity.Config.AllowedFilterParams, "q") {
 		return false
@@ -75,8 +58,7 @@ func refuseRepeatedKey(q url.Values, key string) error {
 	return nil
 }
 
-// softDeleteQuery serves exported helpers used by hosts and write paths.
-// They cannot return a parse error, so invalid input grants no visibility.
+// softDeleteQuery is readQuery for helpers that cannot return an error: invalid input yields nil.
 func softDeleteQuery(r *http.Request) url.Values {
 	q, err := filter.ParseQueryStrict(r.URL.RawQuery)
 	if err != nil || refuseRepeatedKey(q, "trashed") != nil {

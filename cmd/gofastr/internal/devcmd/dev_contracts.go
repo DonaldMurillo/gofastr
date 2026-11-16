@@ -171,7 +171,7 @@ func (w *devContractWatch) Summarise(r *contracts.Report) string {
 				len(r.Diagnostics)-shown)
 			break
 		}
-		fmt.Fprintf(&b, "    %s  %s  %s\n", d.RuleID, cli.ScrubTerminalOutput(d.Location()), cli.ScrubTerminalOutput(d.Message))
+		fmt.Fprintf(&b, "    %s  %s  %s\n", d.RuleID, textsafe.ScrubTerminal(d.Location()), textsafe.ScrubTerminal(d.Message))
 		shown++
 	}
 	fmt.Fprintf(&b, "    %s", "explain any of these: gofastr verify --explain <rule>")

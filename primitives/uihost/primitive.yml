@@ -19,3 +19,92 @@ invariants:
     rule: Every page the host renders opens its head with one <meta name="color-scheme" content="light dark"> ahead of the color-scheme bootstrap, which updates that meta instead of adding one.
     enforced_by:
       - test: framework/uihost.TestColorSchemeMetaIsStatic
+  - id: new-wires-app-not-found-body
+    rule: New gives an app with no NotFound body the host's path-less not-found body, so a 404 outlet renders the screen WithNotFoundScreen configured.
+    enforced_by:
+      - test: framework/uihost.TestOutlet404BeatsComponentStatus
+  - id: app-icon-reconciled-after-options
+    rule: New reconciles WithAppIcon with WithPWA after every option has run, so the generated icons reach a PWA manifest that names none of its own.
+    enforced_by:
+      - test: framework/uihost.TestWithAppIconFeedsPWAManifest
+      - test: framework/uihost.TestWithAppIconDoesNotOverrideExplicitPWAIcons
+  - id: dev-scripts-follow-dev-env
+    rule: New adds the livereload script to every page exactly when dev.LiveReloadEnabled reports true.
+    enforced_by:
+      - test: framework/uihost.TestUIHostAutoInjectsLiveReloadScriptWhenDev
+      - test: framework/uihost.TestUIHostOmitsLiveReloadScriptByDefault
+  - id: partial-dark-palette-warns
+    rule: New logs one warning naming every color token the active theme's dark palette lacks.
+    enforced_by:
+      - test: framework/uihost.TestBootWarnsOnPartialDarkPalette
+      - test: framework/uihost.TestBootNoWarnOnCompleteDarkPalette
+  - id: host-shell-lang-precedence
+    rule: A host-built shell takes its language from WithLangFunc, then the app's LangFunc, then the request's negotiated locale, then WithLang, then the app's Lang, then "en".
+    enforced_by:
+      - test: framework/uihost.TestEffectiveLangResolvesConfig
+      - test: framework/uihost.TestLangForPrecedence
+  - id: extra-scripts-same-origin
+    rule: WithExtraScripts drops, with a warning, every src that fails RegisterExternalScript's same-origin grammar.
+    enforced_by:
+      - test: framework/uihost.TestWithExtraScriptsHoldsTheRailGrammar
+  - id: head-urls-allow-listed
+    rule: WithFavicon, WithOpenGraph, WithTwitterCard, WithCanonicalURL and WithPreconnect drop each URL that fails isSafeHeadURL and keep the option's other tags.
+    enforced_by:
+      - test: framework/uihost.TestHeadURLOnFaviconAndPreconnect
+      - test: framework/uihost.TestSweepCoreSocialHeadURLsAllowListed
+  - id: host-screens-refuse-retired-methods
+    rule: WithNotFoundScreen and WithErrorScreen panic on a component that still implements a retired screen method.
+    enforced_by:
+      - test: framework/uihost.TestHostScreensRefuseRetiredScreenMethods
+  - id: trusted-proxies-reach-stream-cap
+    rule: New hands the WithTrustedProxies list to the island manager, so the stream cap counts an anonymous visitor under the X-Forwarded-For address a listed proxy sent.
+    enforced_by:
+      - test: framework/uihost.TestTrustedProxiesReachTheStreamCap
+  - id: no-live-channel-omits-sse-meta
+    rule: A page carries the gofastr-sse meta unless the host was built WithNoLiveChannel.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreNoLiveChannelOmitsTheSSEMeta
+  - id: page-loading-renders-into-every-page
+    rule: WithPageLoading renders its component into every full page inside the data-fui-page-loading container.
+    enforced_by:
+      - test: framework/uihost.TestSweepCorePageLoadingRendersIntoThePage
+  - id: page-llm-md-off-by-default
+    rule: Without WithPublicLLMMD the host serves neither /llm-pages.md nor any screen's llm.md, exact or dynamic.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_PageLLMIndexDisabledByDefault
+      - test: framework/uihost.TestUIHost_PageLLMScreenDocDisabledByDefault
+      - test: framework/uihost.TestDynamicLLMMDGatedByDefault
+  - id: builder-pool-bounded
+    rule: GetBuilder returns an empty builder and PutBuilder keeps no builder whose capacity exceeds 64 KiB.
+    enforced_by:
+      - test: framework/uihost.TestSweepCoreGetBuilderIsEmpty
+      - test: framework/uihost.TestSweepCorePutBuilderDropsLargeBuilders
+  - id: phrase-around-cuts-before-filling
+    rule: phraseAround splits a template at the node's placeholder before it fills params, so a param value holding that placeholder never moves the node.
+    enforced_by:
+      - test: framework/uihost.TestSweepCorePhraseAroundValueCannotPoseAsPlaceholder
+decisions:
+  - id: page-llm-md-opt-in
+    date: 2026-11-16
+    status: accepted
+    decision: Page-level llm.md routes are mounted only with WithPublicLLMMD.
+    rejected:
+      - option: Serve them by default.
+        why: The documents list every screen and the data shape behind it, which is schema disclosure outside a trusted environment.
+    upholds: [page-llm-md-off-by-default]
+  - id: page-loading-is-pure-css
+    date: 2026-11-16
+    status: accepted
+    decision: WithPageLoading shows its component from html[aria-busy] in pure CSS and drops the default progress strip's rules from app.css.
+    rejected:
+      - option: An After and Min anti-flash pair on the page-wide loader.
+        why: Pure CSS cannot express it, and holding the flag would hold aria-busy past the real navigation; the per-outlet Loading declaration owns anti-flash.
+    upholds: [page-loading-renders-into-every-page]
+  - id: no-live-channel-is-opt-out
+    date: 2026-11-16
+    status: accepted
+    decision: Every page opens the island EventSource unless the host opts out with WithNoLiveChannel.
+    rejected:
+      - option: No way to drop the EventSource.
+        why: A long-lived EventSource is an in-flight request forever, so a host with no live islands could never reach a networkidle wait in end-to-end tests.
+    upholds: [no-live-channel-omits-sse-meta]

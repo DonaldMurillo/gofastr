@@ -10,24 +10,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// registerLLMMDRoutes registers the /{path}/llm.md documentation endpoint for
-// a single entity. Called automatically by RegisterCrudRoutes.
-//
-// It mounts the SCOPE-AWARE handler: the docs describe exactly the entity the
-// sibling List route serves, so they answer to the same gate. Mounting the
-// bare LLMMDHandler here checked only for a session, which let an
-// authenticated caller with no read permission fetch the schema of an entity
-// whose rows they get a 403 on.
-//
-// readOnly is the mount's own CrudRouteOptions.ReadOnly: the doc must
-// describe the routes this registration actually mounts, so a read-only
-// mount's llm.md omits the write and batch endpoints entirely (#358).
 func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string, readOnly bool) {
 	path = NormalizePath(path)
 	opts := LLMMDOptions{ReadOnly: readOnly}
-	// BasePath is where the app mounted this handler (API prefix, group
-	// prefix or version), so mcpBase is the path the page must name; path
-	// alone is relative to r, which may be a group's sub-router (#503).
 	if ch.BasePath != "" {
 		opts.Path = ch.mcpBase()
 	}
@@ -36,23 +21,18 @@ func registerLLMMDRoutes(r *router.Router, ch *CrudHandler, path string, readOnl
 
 // CrudRouteOptions controls which routes are registered by RegisterCrudRoutes.
 type CrudRouteOptions struct {
-	NoLLMMD  bool // disable auto-generated /path/llm.md
-	ReadOnly bool // register only the read routes (List/Get/events), for views and other read-only objects
-	// States is the entity's states config, read by CrudRoutePatterns:
-	// POST /path/{id}/transitions/{key} is mounted when it holds a
-	// non-system move. RegisterCrudRoutes reads the handler's entity
-	// instead, so it needs no value here.
+	// NoLLMMD skips the /path/llm.md route.
+	NoLLMMD bool
+	// ReadOnly registers only List, Get and _events.
+	ReadOnly bool
+	// States is read by CrudRoutePatterns only: a non-system move adds the transition route.
 	States *entity.StatesConfig
-	// Key is the entity's primary-key columns, read by CrudRoutePatterns
-	// to spell the record routes (KeyPath); nil means "id".
-	// RegisterCrudRoutes reads the handler's key instead.
+	// Key is read by CrudRoutePatterns only, to spell the record routes; nil means "id".
 	Key []string
 }
 
-// KeyPath is the route tail naming one record of an entity keyed on
-// cols: "/{id}" for one column, and one segment per column for a
-// composite key, each wildcard named after its column, so
-// "/{student_id}/{course_id}" serves /enrollments/s1/c9.
+// KeyPath is the route tail naming one record keyed on cols: "/{id}" for
+// one column, else one wildcard per column ("/{student_id}/{course_id}").
 func KeyPath(cols []string) string {
 	if len(cols) <= 1 {
 		return "/{id}"
@@ -64,15 +44,12 @@ func KeyPath(cols []string) string {
 	return b.String()
 }
 
-// TransitionPath is the route tail of a move on one record of an entity
-// keyed on cols: KeyPath, then /transitions/{key}, the move's wildcard
-// renamed when a key column holds the name "key".
+// TransitionPath is KeyPath(cols) then /transitions/{key}, the wildcard
+// renamed when a key column is named "key".
 func TransitionPath(cols []string) string {
 	return KeyPath(cols) + "/transitions/{" + transitionParam(cols) + "}"
 }
 
-// transitionParam is the wildcard naming the move in
-// <record>/transitions/{key}: "key", unless a key column holds that name.
 func transitionParam(cols []string) string {
 	p := "key"
 	for len(cols) > 1 && slices.Contains(cols, p) {
@@ -82,12 +59,8 @@ func transitionParam(cols []string) string {
 }
 
 // PathRecordID is the record id a request routed through KeyPath(cols)
-// names, as entity.JoinKey renders it, for a handler mounted beside the
-// CRUD routes (an admin restore, say). It is "" when a key segment is,
-// and when a segment is not text a database can store (invalid UTF-8 or
-// a NUL, which arrive percent-decoded): Postgres refuses either in a
-// text bind with 22021, so GET /items/%FF answered 500 there while
-// SQLite answered 404. Every handler answers a missing id with 400.
+// names, as entity.JoinKey renders it. It is "" when a key segment is
+// empty or not storable text (invalid UTF-8 or a NUL).
 func PathRecordID(r *http.Request, cols []string) string {
 	if len(cols) <= 1 {
 		id := r.PathValue("id")
@@ -107,24 +80,12 @@ func PathRecordID(r *http.Request, cols []string) string {
 	return entity.JoinKey(parts)
 }
 
-// pathID is PathRecordID under the handler's key.
 func (ch *CrudHandler) pathID(r *http.Request) string {
 	return PathRecordID(r, ch.keyCols())
 }
 
 // CrudRoutePatterns returns the "METHOD /pattern" set RegisterCrudRoutes
 // mounts for path, without mounting anything.
-//
-// It exists so a caller can pre-flight a collision BEFORE the first route
-// is registered. App.TryEntity needs that: it mounts CRUD routes and then
-// custom endpoints, so an endpoint shadowing one of these (a "_batch"
-// endpoint on an entity at /posts) would panic mid-commit, after the
-// registry entry and the CRUD routes are already published and with no
-// way to un-publish them.
-//
-// TestCrudRoutePatternsMatchRegistration pins this list against what
-// RegisterCrudRoutes actually registers, a route added to one and not
-// the other fails that test rather than silently reopening the gap.
 func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 	path = NormalizePath(path)
 
@@ -159,26 +120,11 @@ func CrudRoutePatterns(path string, opts ...CrudRouteOptions) []string {
 	return patterns
 }
 
-// RegisterCrudRoutes registers the standard CRUD routes plus batch endpoints
-// on the given router.
-//
-//	GET    /path             → List
-//	GET    /path/{id}        → Get
-//	POST   /path             → Create
-//	PUT    /path/{id}        → Update
-//	PATCH  /path/{id}        → Update (sparse)
-//	DELETE /path/{id}        → Delete
-//	POST   /path/_batch      → BatchCreate (atomic; all-or-nothing)
-//	PATCH  /path/_batch      → BatchUpdate (atomic; all-or-nothing)
-//	DELETE /path/_batch      → BatchDelete (atomic; all-or-nothing)
-//	POST   /path/{id}/transitions/{key} → RunTransition (entities whose
-//	                           States hold a non-system move)
-//
-// A composite key spells {id} one segment per key column (KeyPath).
-//
-// The batch routes use a "_batch" segment, which Go 1.22's ServeMux ranks
-// above the wildcard /{id} so they take precedence over Get/Update/Delete
-// on the same prefix.
+// RegisterCrudRoutes registers on r, at path: GET List, GET Get, POST
+// Create, PUT and PATCH Update, DELETE Delete, the atomic _batch POST,
+// PATCH and DELETE, POST <record>/transitions/{key} when the entity has a
+// non-system move, GET _events and GET llm.md. The record routes take one
+// segment per key column (KeyPath).
 func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opts ...CrudRouteOptions) {
 	path = NormalizePath(path)
 	r = EntityRouter(r, handler.Entity)
@@ -208,20 +154,13 @@ func RegisterCrudRoutes(r *router.Router, handler *CrudHandler, path string, opt
 
 	r.Get(path+"/_events", handler.EventStream())
 
-	// LLM-friendly documentation endpoint
 	if !opt.NoLLMMD {
 		registerLLMMDRoutes(r, handler, path, opt.ReadOnly)
 	}
 }
 
-// EntityRouter returns the router an entity's routes register on: r's
-// prefix and middleware, with every route named by the entity's table
-// (router.ResourceGroup), the resource auth.RequireAPIScopes scopes it
-// to and the "<table>:<verb>" an Endpoint's MCP twin checks. The CRUD
-// routes, the Endpoints, and the routes beside them (EntityUI's _bulk,
-// _export.csv, _pick; the admin's write API) all register through it,
-// so each answers to its table wherever it is mounted, never to a guess
-// from the path: an orders handler mounted at /api/orders/v1 is orders.
+// EntityRouter returns r with every route named by the entity's table
+// (router.ResourceGroup), the resource auth.RequireAPIScopes scopes it to.
 func EntityRouter(r *router.Router, ent *entity.Entity) *router.Router {
 	return r.ResourceGroup(ent.GetTable())
 }
@@ -234,8 +173,7 @@ func NormalizePath(path string) string {
 	return path
 }
 
-// RegisterCrudRoutesFunc is a convenience that creates a CrudHandler and
-// registers routes in one call.
+// RegisterCrudRoutesFunc creates a CrudHandler and registers its routes.
 func RegisterCrudRoutesFunc(r *router.Router, ent *entity.Entity, db DBExecutor, path string, opts ...CrudRouteOptions) *CrudHandler {
 	handler := NewCrudHandler(ent, db)
 	RegisterCrudRoutes(r, handler, path, opts...)

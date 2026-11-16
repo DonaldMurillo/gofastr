@@ -564,6 +564,95 @@ Pair with `auth.RequireSession()` (or
 `auth.RequireSession(auth.WithRedirectOnFail("/login"))` for browser
 flows) on any route that needs a logged-in user.
 
+### A link from another site into a guarded page
+
+The session cookie is `SameSite=Strict`, so a browser leaves it off a
+page load that starts on another site: a link in mail, chat or an issue
+tracker. The gate would read a signed-in user as signed out and send
+them to the login page. `SessionMiddleware` answers that one case
+instead. When all of these hold:
+
+- the request is a `GET` or `HEAD` that `handler.IsCrossSiteRequest`
+  calls cross-site (`Sec-Fetch-Site: cross-site`, or `same-site` from a
+  sibling subdomain that sends no matching `Origin`), with
+  `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document`,
+- it carries no session cookie at all,
+- and the app is about to answer `401`, or a gate is about to redirect
+  it for want of a session,
+
+the browser gets `200` with `Cache-Control: no-store`, a
+`Refresh: 0;url=<the same path and query>` header and a "Continue" link
+(phrases `auth.session_hop_title` and `auth.oauth_hop_continue`, drawn
+by `AuthConfig.Pages.Hop` when set). The reload starts on this site, so
+it carries the cookie and the page loads signed in. The reload is
+same-origin, so it is never answered with the page again: a visitor who
+is really signed out gets the gate's own redirect or `401` on it, one
+page load later than before.
+
+With `framework.WithLocalePrefixes`, a visitor who arrived on
+`/es/orders` is reloaded on `/es/orders`: the `Refresh` header and the
+link keep the locale prefix, like every other URL in a `/es/` response
+([i18n](i18n.md)). This holds for each hop page in this document, and
+for one drawn by your own `auth.Pages`: write `d.Target` as given.
+
+Nothing else changes. A public page, and a redirect that is no refusal,
+reach a cross-site visitor directly. A fetch, a form RPC, an island or
+`data-cui-poll` request, an event stream, a frame, a `POST`, a request
+with no Fetch Metadata (curl, a script) and any request that sent a
+session cookie, live or dead, get the gate's own answer.
+
+Every `401` counts as a refusal. A redirect counts only when the gate
+says so, because a redirect can follow work a reload must not repeat (a
+logout link, a callback). These gates say so already:
+`RequireSession(WithRedirectOnFail(...))`, `SessionPolicy` and
+`RolePolicy` when they redirect, and `battery/admin`. The UI host does
+not: a screen policy that sends `/` to `/en` is no refusal, and a
+cross-site visitor gets its plain `303`. A middleware or screen policy
+you write yourself that redirects to a login page calls
+`handler.NoteSessionRefusal` first, with the request's context or the
+context the policy was given:
+
+<!-- gofastr:compile
+import "net/http"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "github.com/DonaldMurillo/gofastr/core/handler"
+-->
+```go
+func guard(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        if auth.GetCurrentUser(r.Context()) == nil {
+            handler.NoteSessionRefusal(r.Context())
+            http.Redirect(w, r, "/login", http.StatusSeeOther)
+            return
+        }
+        next.ServeHTTP(w, r)
+    })
+}
+```
+
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+import "github.com/DonaldMurillo/gofastr/core/handler"
+-->
+```go
+// Attach with screen.WithPolicy(app.PolicyFunc(membersOnly)).
+func membersOnly(ctx context.Context) app.Decision {
+    if _, ok := auth.SessionFrom(ctx); ok {
+        return decide.Allow()
+    }
+    handler.NoteSessionRefusal(ctx)
+    return decide.Redirect("/login")
+}
+```
+
+The call does nothing on any other request. A guard or policy that
+answers `401` needs no call.
+
+### Marked calls and what the gates accept
+
 On a marked call, `RequireSession()` accepts a non-nil server-set context
 user without re-reading a session or requiring 2FA assurance. It still
 rejects an API-token-authenticated context. It is not a replacement for

@@ -98,16 +98,20 @@ primitives:
 # Affected packages, except that a change under internal/analyzers or
 # cmd/vettool vets everything: a new rule can flag code nobody touched.
 # The host OS first, then windows and darwin (as CI does), so the
-# _windows.go / _darwin.go files are vetted too. affected runs as a built
+# _windows.go / _darwin.go files are vetted too. Those two passes vet only
+# the packages whose Go files are not the ones the first pass read
+# (-files-differ-from, cmd/affected): ANALYZE_HOST is the first pass's
+# environment as go reports it, cgo included. affected runs as a built
 # binary so its go list reads each GOOS's own files; `go run` would build
 # it for the target OS. The pre-commit hook runs the host OS only.
 ANALYZE_AFFECTED = -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/
+ANALYZE_HOST = GOOS=$(shell go env GOOS) GOARCH=$(shell go env GOARCH) CGO_ENABLED=$(shell go env CGO_ENABLED)
 analyze: $(DIST_DIR)
-	go build -o $(DIST_DIR)/vettool ./cmd/vettool
+	go build -buildvcs=false -o $(DIST_DIR)/vettool ./cmd/vettool
 	go build -o $(DIST_DIR)/affected ./cmd/affected
 	$(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
-	CGO_ENABLED=0 GOOS=windows $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
-	CGO_ENABLED=0 GOOS=darwin $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
+	CGO_ENABLED=0 GOOS=windows $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -files-differ-from "$(ANALYZE_HOST)" -- go vet -vettool=$(DIST_DIR)/vettool
+	CGO_ENABLED=0 GOOS=darwin $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -files-differ-from "$(ANALYZE_HOST)" -- go vet -vettool=$(DIST_DIR)/vettool
 
 # Run framework tests against Postgres via TEST_POSTGRES_DSN. Set the DSN to
 # point at a local PG you don't mind us creating per-test schemas in.

@@ -10,11 +10,8 @@ import (
 var collectionsJS string
 
 // CollectionsBehaviorName is the runtime module that binds the tag
-// input's and the repeater's data-hui-* hooks. It replaces the retired
-// core-ui/runtime taginput and formrepeater modules.
+// input's and the repeater's hooks.
 const CollectionsBehaviorName = "headless-collections"
 
-// The markers: the tag field's root and the repeater's root, one each,
-// because the module finds every other hook from there.
 var _ = uiregistry.RegisterBehavior(CollectionsBehaviorName, collectionsJS,
 	uiregistry.Markers("[data-hui-tag-input]", "[data-hui-repeater]"))

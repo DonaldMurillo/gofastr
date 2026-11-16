@@ -65,13 +65,13 @@ func FormatText(r *Report, opts TextOptions) string {
 		fmt.Fprintf(&b, "  %s\n", c.dim(string(head.Capability)+" · "+head.Slug))
 
 		for _, d := range ds {
-			fmt.Fprintf(&b, "\n  %s\n", c.bold(sanitizeText(d.Location())))
-			fmt.Fprintf(&b, "    %s\n", sanitizeText(d.Message))
+			fmt.Fprintf(&b, "\n  %s\n", c.bold(textsafe.ScrubTerminal(d.Location())))
+			fmt.Fprintf(&b, "    %s\n", textsafe.ScrubTerminal(d.Message))
 			if d.Snippet != "" {
-				fmt.Fprintf(&b, "    %s %s\n", c.dim("│"), c.dim(sanitizeText(truncate(d.Snippet, 110))))
+				fmt.Fprintf(&b, "    %s %s\n", c.dim("│"), c.dim(textsafe.ScrubTerminal(truncate(d.Snippet, 110))))
 			}
 			if d.Suggestion != "" && (opts.Verbose || d.Suggestion != fix) {
-				fmt.Fprintf(&b, "    %s %s\n", c.cyan("fix:"), sanitizeText(d.Suggestion))
+				fmt.Fprintf(&b, "    %s %s\n", c.cyan("fix:"), textsafe.ScrubTerminal(d.Suggestion))
 			}
 			if d.Fix != nil {
 				fmt.Fprintf(&b, "    %s %s\n", c.green("autofix:"), d.Fix.Description)
@@ -305,25 +305,6 @@ func FormatExplain(r Rule, color bool) string {
 	return b.String()
 }
 
-// sanitizeText strips the raw control bytes repo content can carry (a
-// rule reference, a source snippet, a file name) out of report text: the
-// C0/DEL range plus the 8-bit C1 block (U+009B drives CSI with no ESC
-// prefix) and the invisible/bidi set (RLO, isolators, zero-width, BOM),
-// per core/textsafe (2026-09-05 red-probe round). An ESC or override
-// reaching the terminal is escape-injection or display reordering into
-// the operator running `gofastr verify` on a hostile PR; NUL and VT
-// corrupt framing the same way. Newline and tab stay: they are ordinary
-// formatting. Applied at the FormatText print boundary so repo-derived
-// strings cannot reach the terminal raw.
-func sanitizeText(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r != '\n' && r != '\t' && textsafe.IsUnsafe(r) {
-			return -1
-		}
-		return r
-	}, s)
-}
-
 func sanitizeTextLine(value string) string {
-	return sanitizeText(strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(value))
+	return textsafe.ScrubTerminal(strings.NewReplacer("\r", `\r`, "\n", `\n`).Replace(value))
 }

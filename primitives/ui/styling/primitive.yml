@@ -37,6 +37,54 @@ invariants:
     enforced_by:
       - test: core-ui/style.TestSubtreeSchemeBlocksRebind
       - test: framework/ui.TestColorSchemeSubtreeOverride
+  - id: default-theme-is-adaptive
+    rule: theme.Default gives every theme it builds style.DefaultDarkColors as its dark palette, so a ThemeToggle always has a complete dark scheme to switch to.
+    enforced_by:
+      - test: framework/ui/theme.TestDefaultShipsAdaptiveDarkPalette
+  - id: default-theme-carries-every-option
+    rule: Every theme theme.Default builds carries a value for every component option in Components.
+    enforced_by:
+      - test: framework/ui/theme.TestDefaultCarriesCompleteOptions
+  - id: one-table-per-colour-field
+    rule: Every colour field of Overrides is one colorFields row, and that one table drives the light setters, the Dark compile into DarkColors and the light-only warning.
+    enforced_by:
+      - test: framework/ui/theme.TestEveryOverridesFieldIsColourOrRefused
+      - test: framework/ui/theme.TestEveryColourFieldReachesItsToken
+      - test: framework/ui/theme.TestDarkOverrideLandsInBothDarkBlocks
+  - id: dark-override-is-colour-only
+    rule: A Dark override that sets Components, a font, a radius or a nested Dark panics when the theme is built.
+    enforced_by:
+      - test: framework/ui/theme.TestDarkRejectsNonColourFields
+      - test: framework/ui/theme.TestEveryOverridesFieldIsColourOrRefused
+  - id: light-only-override-warns
+    rule: A light colour override with no Dark logs one warning for each field whose token has a dark value, and any non-nil Dark, even an empty one, silences it.
+    enforced_by:
+      - test: framework/ui/theme.TestLightOnlyOverrideWarns
+      - test: framework/ui/theme.TestLightOnlyQuietWithoutDarkValue
+  - id: explicit-option-resets-earlier-override
+    rule: Merging overrides, an unset component option keeps the earlier value and a set one, the default included, replaces it; Flattened omits unset options.
+    enforced_by:
+      - test: framework/ui/theme.TestComponentOptionsOverrideAndReset
+  - id: complete-fills-every-unset-option
+    rule: ComponentOptions.Complete replaces every unset option with its DefaultOptions value.
+    enforced_by:
+      - test: framework/ui/theme.TestCompleteFillsUnset
+      - test: framework/ui/theme.TestCompleteFillsFieldOptions
+  - id: flattened-options-refuse-unknowns
+    rule: OptionsFromFlattened errors on an unknown key or on a value outside its option's enum.
+    enforced_by:
+      - test: framework/ui/theme.TestOptionsFromFlattenedRejectsUnknowns
+      - test: framework/ui/theme.TestOptionParsersRefuseUnknown
+  - id: option-catalogue-follows-the-enums
+    rule: Options lists every flattened key in declaration order with members derived from the enum's String walk, and that walk panics on an enum whose String never returns empty.
+    enforced_by:
+      - test: framework/ui/theme.TestOptionsCatalogueCoversTheFlattenedVocabulary
+      - test: framework/ui/theme.TestOptionEnumsHaveNoHoles
+      - test: framework/ui/theme.TestOptionMembersRefusesAnUnterminatedEnum
+  - id: brutal-shadows-follow-the-border
+    rule: Brutal's radii are zero and its shadows are hard offsets drawn in var(--color-border), so they flip with the colour scheme.
+    enforced_by:
+      - test: framework/ui/theme.TestBrutalReskinsTheTokens
 decisions:
   - id: generator-ships-no-css
     status: accepted
@@ -58,3 +106,48 @@ decisions:
         why: CSS alone does the job, so it works with JS off and the runtime has nothing to read.
     revisit_if: Every supported browser has @scope, so a ui.Themed scope can follow the nearest scheme wrapper instead of any dark ancestor.
     upholds: [subtree-scheme-override]
+  - id: framework-theme-is-adaptive
+    date: 2026-11-16
+    status: accepted
+    decision: theme.Default ships a complete dark palette while core-ui's lower-level style.DefaultTheme stays light-only.
+    rejected:
+      - option: Make style.DefaultTheme adaptive.
+        why: The lower-level core-ui theme stays light-only for compatibility; host apps and generated projects use theme.Default.
+    upholds: [default-theme-is-adaptive]
+  - id: dark-is-not-copied-from-light
+    date: 2026-11-16
+    status: accepted
+    decision: A light colour override is not copied into the dark palette; the host sets its Dark twin or gets a warning.
+    rejected:
+      - option: Copy each light override into dark mode.
+        why: A contrast-safe dark value is usually a different colour.
+    upholds: [light-only-override-warns]
+  - id: colour-fields-in-one-typed-table
+    date: 2026-11-16
+    status: accepted
+    decision: Dark colours are typed Overrides fields compiled through the colorFields table.
+    rejected:
+      - option: A string-keyed DarkColors map the host fills.
+        why: A typo in a token name (surfce-soft) compiled and did nothing.
+    upholds: [one-table-per-colour-field, dark-override-is-colour-only]
+  - id: code-tokens-are-their-own-pair
+    date: 2026-11-16
+    status: accepted
+    decision: Code blocks draw from CodeSurface, CodeText and CodeBorder, not from the page's Text and Background.
+    rejected:
+      - option: Reuse the page Text and Background tokens.
+        why: Dark mode could not reskin code blocks apart from the page.
+  - id: single-tier-semantic-tokens
+    date: 2026-11-16
+    status: accepted
+    decision: Theme tokens are one tier of semantic names (primary, danger, surface-soft) with no raw palette tier beneath them.
+    rejected:
+      - option: A raw palette tier such as indigo-500 under the semantic names.
+        why: Most apps never need it, and an app that does can build it on top.
+  - id: brutal-names-archivo-without-shipping-it
+    date: 2026-11-16
+    status: accepted
+    decision: Brutal names Archivo first in its font stacks and ships no font file; without it the stack falls back to the system sans.
+    rejected:
+      - option: Load Archivo from a font CDN.
+        why: The strict CSP blocks font CDNs, so an app that wants the face self-hosts it.

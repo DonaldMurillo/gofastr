@@ -22,7 +22,7 @@ func TestQueueCapabilityDocsMatchBackends(t *testing.T) {
 		}
 		for _, specification := range group.Specs {
 			typeSpec, ok := specification.(*ast.TypeSpec)
-			if !ok || (typeSpec.Name.Name != "Browsable" && typeSpec.Name.Name != "Replayable") {
+			if !ok || (typeSpec.Name.Name != "Browsable" && typeSpec.Name.Name != "Replayable" && typeSpec.Name.Name != "ReplayReporter") {
 				continue
 			}
 			for _, backend := range []string{"DBQueue", "MemoryQueue", "RedisQueue"} {

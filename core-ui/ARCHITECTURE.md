@@ -1553,10 +1553,16 @@ rules:
   the `page` the action endpoint receives is the unprefixed path.
 
 The server side of the same contract rewrites root-relative URLs in a
-prefixed HTML response (`core-ui/urlprefix`: `href`, form actions and
-the URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`)
-and the `Location`, `X-Gofastr-Location`, `X-Gofastr-Push-State` and
-`X-Gofastr-Document` headers. Markup never spells a
+prefixed HTML response (`core-ui/urlprefix`: `href`, form actions, the
+URL-valued `data-cui-*` attributes listed in `urlprefix.URLAttrs`, and
+the URL of a `<meta http-equiv="refresh">`) and the `Location`,
+`Content-Location`, `Refresh`, `X-Gofastr-Location`,
+`X-Gofastr-Push-State` and `X-Gofastr-Document` headers. `Refresh` is
+read the way a browser reads it (`0;url=/x`, `0; URL='/x'`, `0,/x`);
+the runtime never reads that header, the browser's own document load
+does. The `Link` header is left alone like the `<link>` element it
+stands for: its targets are assets, or a canonical or alternate URL
+whose writer names the locale. Markup never spells a
 prefix itself. A new URL-valued `data-cui-*` attribute joins
 `urlprefix.URLAttrs`, or `TestURLAttrsAllCovered` fails.
 

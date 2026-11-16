@@ -1,0 +1,337 @@
+primitive: ui.navigation
+summary: Navigation components - sidebar, menu, breadcrumbs, tab nav, tabs, table of contents, pagination, segmented links, step rail, back to top, language menu, sign out, dropdown and drawer bar.
+code:
+  - framework/ui/sidebar.go
+  - framework/ui/sidebar_brand.go
+  - framework/ui/menu.go
+  - framework/ui/breadcrumbs.go
+  - framework/ui/tabnav.go
+  - framework/ui/tabs.go
+  - framework/ui/toc.go
+  - framework/ui/pagination.go
+  - framework/ui/segmentedlinks.go
+  - framework/ui/step_rail.go
+  - framework/ui/backtotop.go
+  - framework/ui/languagemenu.go
+  - framework/ui/sign_out.go
+  - framework/ui/dropdown.go
+  - framework/ui/drawerbar.go
+twins:
+  - job: Decide whether a navigation link is current under a MatchPath prefix, on a segment boundary with trailing slashes ignored and "/" matching only the root.
+    why: One rule runs in Go for the first paint and one in the browser after each client navigation; no test feeds both the same cases.
+    sites:
+      - path: framework/ui/sidebar.go
+        note: pathMatches, the server's first-paint answer.
+      - path: core-ui/runtime/src/activelink.js
+        note: The data-cui-match-prefix sweep after a client navigation.
+invariants:
+  - id: sidebar-match-path-segment-boundary
+    rule: A MatchPath lights the current path when it equals the prefix or lies under it on a segment boundary, both compared without a trailing slash, and a "/" prefix lights only the root page.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationSidebarMatchPathSegmentBoundary
+      - test: framework/ui.TestLayoutSidebarRootMatchPathNotEverywhere
+      - test: framework/ui.TestLayoutSidebarTrailingSlashMatchPathLightsRoot
+  - id: sidebar-active-order
+    rule: A leaf is current when Active is set, else when its MatchPath matches CurrentPath if it has one, else when its Href equals CurrentPath; a group renders open when Open is set, it is current, or any descendant is.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationSidebarActivePrecedence
+      - test: framework/ui.TestSidebarNestedItemsUseDisclosure
+      - test: framework/ui.TestSidebarGroupOpenByDefault
+  - id: sidebar-match-prefix-reaches-runtime
+    rule: A leaf with a MatchPath carries it as data-cui-match-prefix, so the runtime keeps it current on sub-paths after a client navigation, and a leaf without one carries none.
+    enforced_by:
+      - test: framework/ui.TestSidebarEmitsMatchPrefixForActiveLink
+  - id: closed-enums-panic
+    rule: A SidebarVariant, SidebarCollapse, SidebarGroupMarkup or StackBreakpoint outside its built-in set panics at render on every path that takes it (Sidebar, SidebarBody, SidebarDrawerTrigger, the drawer body, TableOfContents), the empty value being the default.
+    enforced_by:
+      - test: framework/ui.TestSidebarBadVariantPanics
+      - test: framework/ui.TestSidebarBadCollapseAndGroupMarkupPanic
+      - test: framework/ui.TestSweepNavigationSidebarBadBreakpointPanics
+      - test: framework/ui.TestTOCPhoneSheetRefusesUnknownBreakpoint
+  - id: sidebar-roles-filter
+    rule: With a roles extractor installed an item with Roles renders only for a user holding one of them and a group left with no children and no Href is dropped; with none installed every item renders.
+    enforced_by:
+      - test: framework/ui.TestSidebarEveryItemGatedAwayRendersNothing
+      - test: framework/ui.TestSidebarGroupWithEveryChildGatedAwayIsDropped
+      - test: framework/ui.TestSidebarVisibleEntriesStillRenderForTheRightRole
+  - id: sidebar-empty-renders-nothing
+    rule: The inline sidebar, SidebarBody and the drawer body render nothing when they have no items or none survive the role filter, never an empty navigation landmark, while config mistakes still panic.
+    enforced_by:
+      - test: framework/ui.TestSidebarNoItemsRendersEmpty
+      - test: framework/ui.TestSidebarEveryItemGatedAwayRendersNothing
+  - id: sidebar-collapse-owner
+    rule: "Only the collapsible variant carries collapse state: SidebarCollapseAuto ships the runtime hook with a storage key defaulting to gofastr.sidebar.<DrawerName>.collapsed, and Collapsed or Expanded ship data-collapsed with no storage key."
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationSidebarCollapseOnlyOnCollapsible
+      - test: framework/ui.TestSidebarCollapsibleAutoMatchesLegacyBytes
+      - test: framework/ui.TestSidebarServerCollapsedRendersRailState
+      - test: framework/ui.TestSidebarServerExpandedRendersColumnState
+      - test: framework/ui.TestSidebarOffCanvasEmitsDrawerOnlyVariant
+  - id: sidebar-collapse-names-in-markup
+    rule: The collapse button carries both its collapse and expand names, the caller's label else the i18nui phrase, because the runtime module holds no wording of its own for a client-side toggle.
+    enforced_by:
+      - test: framework/ui.TestSidebarCollapseLabelsConfigurableBothStates
+      - test: framework/ui.TestSidebarCollapseLabelsUseI18n
+  - id: sidebar-body-paths-marked
+    rule: Every sidebar body outside the inline root (SidebarBody, the drawer body and header, the NativeMobile disclosure) carries its own ui-sidebar marker, so the sheet is linked and its scoped rules reach it.
+    enforced_by:
+      - test: framework/ui.TestSidebarNativeMobileWrapsMarkerOnce
+      - test: framework/ui.TestSidebarBodySingleScopedRoot
+      - test: framework/ui.TestSweepNavigationSidebarDrawerHeaderCarriesMarker
+  - id: sidebar-group-ids-per-body
+    rule: Button-dialect group ids carry a per-body prefix (<DrawerName>-inline, -drawer, -mobile, -body), so the inline column and the drawer on one page never share an aria-controls target.
+    enforced_by:
+      - test: framework/ui.TestSidebarDrawerSlotGroupIdsUseDrawerPrefix
+      - test: framework/ui.TestSidebarGroupButtonDialectIdsDisambiguated
+      - test: framework/ui.TestSweepNavigationSidebarNativeMobileGroupIDs
+  - id: sidebar-drawer-named
+    rule: The MountSidebar drawer is labelled by a hidden <DrawerName>-label span its header renders with or without a brand, and the header's close button carries data-cui-action="close".
+    enforced_by:
+      - test: framework/ui.TestSidebarDrawerHasAccessibleName
+      - test: framework/ui.TestSidebarDrawerHeaderRenders
+  - id: sidebar-drawer-per-request
+    rule: MountSidebarFunc panics on a nil build and rebuilds the drawer's config for each chrome request, keeping the DrawerName and Variant of its mount-time build.
+    enforced_by:
+      - test: framework/ui.TestDrawerFooterResolvesPerRequest
+      - test: framework/ui.TestSweepNavigationMountSidebarFuncKeepsMountIdentity
+  - id: sidebar-prepend-every-body
+    rule: Prepend renders on the inline sidebar, SidebarBody and the drawer body, through the request context where the path has one.
+    enforced_by:
+      - test: framework/ui.TestSidebarPrependSitsBetweenTitleAndNav
+      - test: framework/ui.TestSidebarPrependRendersWithRequestCtx
+  - id: sidebar-drawer-breakpoint-everywhere
+    rule: DrawerBreakpoint StackBelowLG reaches the inline column, the shell's hamburger, the standalone SidebarDrawerTrigger and the NativeMobile wrapper alike.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationSidebarDrawerBreakpointReachesEverySite
+  - id: sidebar-standalone-trigger-matches-shell
+    rule: SidebarDrawerTrigger renders the hamburger the shell renders, its classes on the button itself and data-cui-open naming the MountSidebar drawer.
+    enforced_by:
+      - test: framework/ui.TestSidebarDrawerTriggerMatchesShellTrigger
+  - id: sidebar-sheet-prewarmed
+    rule: The ui-sidebar sheet loads with LoadPrewarm.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationSidebarSheetIsPrewarmed
+  - id: sidebar-compact-trigger-names-nav
+    rule: A Compact sidebar's hamburger, inline or standalone, is named by NavLabel and carries the labelled class.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationCompactTriggerShowsNavLabel
+  - id: own-markup-marked-internal
+    rule: Markup a navigation component builds from its own typed fields (the step rail's list, the sign-out button, the drawer bar's controls, the tab nav inside its End row) is marked data-cui-internal, and caller content beside it is not.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: back-to-top-target-is-an-id
+    rule: BackToTop's ScrollTarget is an element id; a leading "#" is stripped before it reaches the headless primitive, which refuses a selector.
+    enforced_by:
+      - test: framework/ui.TestBackToTopTargetDocs
+  - id: back-to-top-defaults
+    rule: BackToTop defaults to the bottom-right corner class, which carries the offsets, a 400px threshold and smooth scrolling.
+    enforced_by:
+      - test: framework/ui.TestBackToTopDefaultsToBottomRight
+      - test: framework/ui.TestSweepNavigationBackToTopDefaults
+  - id: drawer-bar-history-hooks
+    rule: DrawerBar's close control carries data-cui-intercept-close, its open-as-page link data-cui-intercept-page and its step links data-cui-intercept-swap, a missing neighbour drawing its step disabled.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationDrawerBarHistoryHooks
+      - test: framework/ui.TestDrawerBarSteps
+  - id: drawer-bar-actions-stay-callers
+    rule: DrawerBar's Actions trail its own controls and are not marked internal.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationDrawerBarHistoryHooks
+  - id: drawer-bar-copy-target-per-path
+    rule: DrawerBar panics without a Path, and its copy target's id is a hash of the Path.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationDrawerBarCopyTargetPerPath
+  - id: dropdown-refuses-bad-config
+    rule: Dropdown panics on an empty Label or Content, an Align other than start or end, an unregistered Icon, and an Avatar beside Icon or Count.
+    enforced_by:
+      - test: framework/ui.TestDropdownRefusals
+      - test: framework/ui.TestDropdownAvatarTrigger
+  - id: dropdown-is-a-dismissable-details
+    rule: A Dropdown is a native details disclosure with Dismiss set, so it opens without script and closes on an outside click, Escape and a client navigation.
+    enforced_by:
+      - test: framework/ui.TestDropdownIsADismissablePopup
+  - id: language-menu-links-this-page
+    rule: "Each LanguageMenu row is a rel=alternate hreflang link to the current page in that locale: the locale prefix stripped, the path kept escaped, the query kept, and the language named in itself."
+    enforced_by:
+      - test: framework/ui.TestLanguageMenuLinksThisPage
+      - test: framework/ui.TestLanguageMenuKeepsEscapedPath
+      - test: framework/ui.TestLanguageMenuStripsUnroutedPrefix
+      - test: framework/ui.TestLanguageMenuTriggerNamesBoth
+  - id: language-menu-needs-path-locales
+    rule: LanguageMenu renders nothing when Ctx is nil or carries no path locales.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationLanguageMenuNilCtxRendersNothing
+  - id: menu-trigger-options-exclusive
+    rule: Menu panics on an Icon beside TriggerHTML, TriggerElement, IconOnly or Avatar, on an unregistered Icon, and on an Avatar beside TriggerHTML, TriggerElement or IconOnly.
+    enforced_by:
+      - test: framework/ui.TestMenuIconRefusals
+      - test: framework/ui.TestSweepNavigationMenuAvatarRefusesOtherTriggers
+  - id: menu-children-reach-headless
+    rule: Menu maps each item's Children onto the headless submenu.
+    enforced_by:
+      - test: framework/ui.TestMenuSubmenuMarkup
+      - test: framework/ui.TestMenuDisabledParentRendersInertChildrenPresent
+  - id: segmented-links-unsafe-href-disabled
+    rule: A segment whose Href urlsafe.CleanAnchor refuses renders as an aria-disabled span with no href.
+    enforced_by:
+      - test: framework/ui.TestCallerLinksRefuseUnsafeURLs
+  - id: segmented-links-named-group
+    rule: SegmentedLinks is a role=group named by Label, and an icon-only segment keeps its text as its aria-label.
+    enforced_by:
+      - test: framework/ui.TestSegmentedLinks
+  - id: sign-out-posts
+    rule: SignOut is a POST form whose action passes urlsafe.CleanAnchor and falls back to /auth/logout, and whose Next is escaped.
+    enforced_by:
+      - test: framework/ui.TestSignOutRendersFormAndButton
+      - test: framework/ui.TestSweepNavigationSignOutRefusesScriptAction
+      - test: framework/ui.TestSignOutNextFieldEscapesBreakout
+  - id: step-rail-active-index-in-range
+    rule: StepRail panics on an ActiveIndex outside -1 to len(Items)-1.
+    enforced_by:
+      - test: framework/ui.TestStepRailPanicsOnOutOfRangeActiveIndex
+  - id: step-rail-number-is-text
+    rule: A step's Number reaches the marker escaped, as text.
+    enforced_by:
+      - test: framework/ui.TestStepRailEscapesTheMarkerNumber
+  - id: step-rail-title-not-a-heading
+    rule: StepRail's Title names the complementary landmark and draws as a plain label, adding no heading to the page outline.
+    enforced_by:
+      - test: framework/ui.TestSweepNavigationStepRailTitleIsNotAHeading
+  - id: tab-nav-refuses-bad-config
+    rule: TabNav panics on an empty Label, no items, an item without Text or Href, and more than one Current item.
+    enforced_by:
+      - test: framework/ui.TestTabNavRefusesBrokenConfiguration
+  - id: tab-nav-badge-hidden
+    rule: A TabNav badge sits inside its link and is aria-hidden, so the link's name stays the label.
+    enforced_by:
+      - test: framework/ui.TestTabNavBadgeIsInsideTheLinkAndHiddenFromAT
+  - id: tab-nav-end-beside-nav
+    rule: TabNav's End renders beside the nav in a wrapping row, never inside the navigation landmark.
+    enforced_by:
+      - test: framework/ui.TestTabNavEndSitsBesideTheNav
+  - id: tabs-server-picks-slice-value
+    rule: With a Slice, the tab Tabs renders selected is the slice's value on Ctx, the index the page seed hands the runtime.
+    enforced_by:
+      - test: framework/ui.TestTabsSliceSelectsTheRequestSeed
+  - id: tabs-css-lights-own-strip
+    rule: The active-tab rules reach tabs and panels through child combinators, so a strip's index never lights a strip nested in one of its panels.
+    enforced_by:
+      - test: framework/ui.TestTabsActiveHighlightFollowsSignal
+  - id: tabs-css-covers-max-panels
+    rule: The tabs sheet writes active rules for every index below headless.TabsMaxPanels.
+    enforced_by:
+      - test: framework/ui.TestTabsPanelRuleCoversManyTabs
+  - id: tabs-data-active-owned
+    rule: Tabs drops data-active from ExtraAttrs, the runtime's mirror of the signal.
+    enforced_by:
+      - test: framework/ui.TestOwnedAttrsWinOverExtraAttrsFold
+  - id: toc-phone-sheet
+    rule: With PhoneSheet the contents fold into an interactive.PhoneSheet with the id ID plus "-sheet" (fui-toc-sheet without an ID), swapping at Breakpoint and titled by Label or the i18n contents label.
+    enforced_by:
+      - test: framework/ui.TestTOCPhoneSheetWrapsNav
+  - id: pagination-class-on-list
+    rule: A Pagination Class lands on the .pagination list, not the nav landmark, and the landmark's default name resolves through i18nui.
+    enforced_by:
+      - test: framework/ui.TestPaginationClassAppendsToTheList
+      - test: framework/ui.TestPaginationLabelsResolveThroughI18n
+decisions:
+  - id: sidebar-sheet-prewarm
+    date: 2026-11-16
+    status: accepted
+    decision: The sidebar sheet loads with LoadPrewarm, linked by the SSR scan on a page that renders a sidebar and fetched at idle elsewhere so a client navigation that swaps one in finds it cached.
+    rejected:
+      - option: LoadAlways.
+        why: A page with no sidebar (a marketing page, an article) would pay 2.6 KB of render-blocking CSS for it.
+    upholds: [sidebar-sheet-prewarmed]
+  - id: sidebar-collapse-owner
+    date: 2026-11-16
+    status: accepted
+    decision: SidebarCollapse picks who owns the collapsed rail, the runtime from localStorage (Auto, the zero value) or the server from the request (Collapsed, Expanded), mirroring CurrentPath's split.
+    rejected:
+      - option: Let the runtime restore localStorage over a server-rendered state.
+        why: A stale local value would overwrite a signed-in user's stored preference on first paint and after a toggle.
+    upholds: [sidebar-collapse-owner]
+  - id: sidebar-group-button-dialect
+    date: 2026-11-16
+    status: accepted
+    decision: Groups render as details/summary by default, with SidebarGroupButton (a button with aria-expanded and aria-controls over a hidden list) for hosts whose contract pins that shape.
+    rejected:
+      - option: The button dialect as the default.
+        why: It needs the runtime module to open at all and its open state resets on every swap, where details opens natively and persists through data-hui-disclosure-persist.
+  - id: sidebar-prepend-is-a-component
+    date: 2026-11-16
+    status: accepted
+    decision: SidebarConfig.Prepend is a component.Component, not render.HTML.
+    rejected:
+      - option: render.HTML.
+        why: MountSidebar runs once at boot while the drawer renders per request, so markup could not see the request (current section, signed-in user) on the drawer path.
+    upholds: [sidebar-prepend-every-body]
+  - id: widget-mounter-interface
+    date: 2026-11-16
+    status: accepted
+    decision: MountSidebar takes a WidgetMounter interface, which an app satisfies with a three-line shim over its router.
+    rejected:
+      - option: Take *router.Router.
+        why: framework/ui stays router-agnostic and imports no router.
+  - id: drawer-bar-copy-id-from-path
+    date: 2026-11-16
+    status: accepted
+    decision: The copy target's id is a hash of the layer's Path, since a drawer stack never holds two layers on one path.
+    rejected:
+      - option: One fixed id.
+        why: With layers stacked the copy button would read a lower layer's address.
+    upholds: [drawer-bar-copy-target-per-path]
+  - id: sign-out-is-a-post
+    date: 2026-11-16
+    status: accepted
+    decision: SignOut is a form that POSTs to the logout endpoint, and a refused action falls back to /auth/logout.
+    rejected:
+      - option: A logout link (GET).
+        why: A stray img tag or a prefetch could sign the reader out.
+      - option: Fall back to "#".
+        why: The form would submit back to the page it is on.
+    upholds: [sign-out-posts]
+  - id: tab-nav-and-tabs-stay-apart
+    date: 2026-11-16
+    status: accepted
+    decision: TabNav is a strip of links whose current tab the destination page settles, and Tabs switches panels in place through a client signal under one URL.
+    rejected:
+      - option: One tabs component with a URL mode.
+        why: The two keep their state in different homes, the URL against a client signal, and a screen whose tabs narrow one list wants a shareable URL while one whose tabs reveal regions of a record does not.
+  - id: toc-items-server-rendered
+    date: 2026-11-16
+    status: accepted
+    decision: TableOfContents requires explicit Items rendered on the server; the headless-toc module only marks the entry in view.
+    rejected:
+      - option: Let the runtime discover headings and fill the list at hydration.
+        why: A reader without script would get an empty landmark, and the server cannot see headings that exist only in a later DOM.
+  - id: pagination-typed-props
+    date: 2026-11-16
+    status: accepted
+    decision: Pagination takes Path, Query and PageParam and builds every href through net/url with the page parameter replaced, keeping the core-ui pattern's class names (pagination, pagination-gap) so host sheets keep matching.
+    rejected:
+      - option: A "%d" href pattern string.
+        why: A request-derived pattern carries the injection and duplicate-parameter defects typed props cannot express.
+    upholds: [pagination-class-on-list]
+  - id: step-rail-title-is-a-label
+    date: 2026-11-16
+    status: accepted
+    decision: StepRail's Title is a plain label naming the complementary landmark.
+    rejected:
+      - option: An h6 heading.
+        why: It would inject a stray, out-of-order heading into the page outline.
+    upholds: [step-rail-title-not-a-heading]
+  - id: drawer-bar-sticks-at-layer-edge
+    date: 2026-11-16
+    status: accepted
+    decision: The bar's sticky offset and negative margins are the layer's --cui-intercept-pad taken back, so it sticks at the layer's top edge and sits flush outside a layer, where the variable is unset.
+    rejected:
+      - option: A sticky offset of zero.
+        why: A sticky box stops at the scroller's padding edge, leaving the bar a padding's height below the layer's top.
+  - id: menu-trigger-element
+    date: 2026-11-16
+    status: accepted
+    decision: MenuConfig.TriggerElement renders a summary-less disclosure with the caller's own button beside the panel, which the runtime wires as the controller at hydration.
+    rejected:
+      - option: Pass a host-styled button through TriggerHTML.
+        why: It nests an interactive control inside the summary, which axe reports as nested-interactive.

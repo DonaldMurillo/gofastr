@@ -1,27 +1,15 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// ─── Tooltip ────────────────────────────────────────────────────────
-//
-// A CSS-only hover/focus tooltip. The visible pop element is always
-// present in the DOM and toggled by `:hover` / `:focus-visible` /
-// `:focus-within` rules on the wrapper, no JavaScript required, no
-// runtime callouts, no flash-on-mount.
-//
-// The wrapper carries data-cui-comp="ui-tooltip" so the stylesheet
-// loads lazily on first appearance. The popped element is wired via
-// aria-describedby so screen readers announce the tooltip alongside
-// the trigger.
-
-// TooltipPlacement selects the side the tooltip appears on. Left and
-// Right are the reading direction's start and end: on a dir="rtl" page
-// TooltipLeft opens to the right of its trigger.
+// TooltipPlacement selects the side the tooltip appears on; Left and
+// Right are the reading direction's start and end.
 type TooltipPlacement string
 
 const (
@@ -39,34 +27,31 @@ type TooltipConfig struct {
 	// Placement selects the side. Default top.
 	Placement TooltipPlacement
 
-	// ID is the tooltip's id; the trigger's aria-describedby points
-	// to it. When empty, a stable id is derived from the trigger's
-	// content position.
+	// ID is the pop's id, named by the trigger's aria-describedby; empty derives it from Text.
 	ID string
 
 	Class string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the tooltip's root
-	// wrapper <span>. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-cui-*.
+	// ExtraAttrs forwards attributes to the wrapper span; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
+
+	// Ctx is the page's render context; without an id scope a derived id takes a counter suffix.
+	Ctx context.Context
 }
 
-// Tooltip wraps the given trigger HTML and appends a hidden tooltip
-// pop. The trigger is unwrapped. Tooltip only adds a containing
-// span + the pop element, so inline buttons and links stay inline.
-//
-// Use on icon-only buttons, truncated labels, or anywhere extra
-// context is useful without occupying layout space.
+// Tooltip wraps trigger with a role=tooltip pop that CSS shows on hover
+// and focus, and points the trigger at it with aria-describedby.
 func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	if cfg.Text == "" {
 		panic("ui: Tooltip requires Text")
 	}
 	id := cfg.ID
 	if id == "" {
-		// Derive a content-stable id so SSR and runtime agree.
 		id = "tip-" + slug(cfg.Text)
+		if id == "tip-" {
+			id += textHash(cfg.Text)
+		}
+		id = scopedID(cfg.Ctx, id)
 	}
 
 	cls := "fui-tooltip"
@@ -78,14 +63,8 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		cls += " " + cfg.Class
 	}
 
-	// The trigger receives aria-describedby: the caller's element is
-	// pre-built markup, so the attribute is spliced into its first
-	// open tag. This is Tooltip's own local splice — FormField's old
-	// injectAttrs was deleted with its composition hack; a tooltip
-	// trigger has no builder seam to hand wiring to (yet).
 	triggerWithDescribedBy := injectTriggerDescribedBy(trigger, id)
 
-	// Built entirely from cfg.Text, a string: this component's own.
 	pop := html.Span(html.TextConfig{
 		Class:      "fui-tooltip__pop",
 		ID:         id,
@@ -98,22 +77,8 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	}, triggerWithDescribedBy, pop))
 }
 
-// injectTriggerDescribedBy splices ` aria-describedby="<id>"` into the
-// first open tag of the caller's trigger element. Idempotent: a trigger
-// whose FIRST OPEN TAG already carries the attribute is returned
-// unchanged — the check is scoped to that tag, because the trigger is a
-// subtree (a button wrapping an icon, an input wrapping nothing) and a
-// DESCENDANT carrying aria-describedby is its own description, not
-// evidence the trigger root is wired. Local to Tooltip: its trigger is
-// caller-built markup with no builder seam, so the relationship is
-// spliced rather than handed down (see FormField for the seam-based
-// alternative).
 func injectTriggerDescribedBy(trigger render.HTML, id string) render.HTML {
 	s := string(trigger)
-	// Find the real open tag, skipping leading whitespace and HTML
-	// comments. The splice target is the `>` that closes that tag,
-	// respecting attribute quotes (so `>` inside `title="a > b"` doesn't
-	// terminate the tag prematurely).
 	start := skipToFirstTag(s)
 	if start < 0 {
 		return trigger
@@ -136,9 +101,6 @@ func injectTriggerDescribedBy(trigger render.HTML, id string) render.HTML {
 	return render.HTML(s[:insertAt] + attr + s[insertAt:])
 }
 
-// skipToFirstTag returns the index of the first byte of the outermost
-// real open tag, skipping whitespace and HTML comments (a comment's
-// `-->` is not a tag close). Returns -1 when no open tag is found.
 func skipToFirstTag(s string) int {
 	i := 0
 	for i < len(s) {
@@ -166,8 +128,6 @@ func skipToFirstTag(s string) int {
 	return i
 }
 
-// findFirstTagClose returns the index of the first `>` that closes the
-// open tag starting at offset 0 of s, respecting attribute quotes.
 func findFirstTagClose(s string) int {
 	var quote byte
 	for i := range len(s) {

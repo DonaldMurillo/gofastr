@@ -14,8 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// crudOp identifies which CRUD operation a request is performing, so the
-// permission gate can pick the right EntityConfig.Access permission.
 type crudOp int
 
 const (
@@ -25,14 +23,10 @@ const (
 	opDelete
 )
 
-// permRefused is what permissionForOp answers for a write a declared
-// Access block leaves blank. accessAllows refuses it to every caller but
-// elevated server code: no role grants it, a wildcard included.
+// permRefused is the permission of a write a declared Access block leaves blank.
 const permRefused = "(none)"
 
-// permissionForOp returns the declared RBAC permission for op, "" when the
-// operation is not RBAC-gated (no Access block, a blank Read, or
-// entity.Anyone), and permRefused for a blank write in a declared block.
+// permissionForOp returns "" when op is not RBAC-gated.
 func (ch *CrudHandler) permissionForOp(op crudOp) string {
 	a := ch.Entity.Config.Exposure.Access
 	var perm string
@@ -55,18 +49,9 @@ func (ch *CrudHandler) permissionForOp(op crudOp) string {
 	return perm
 }
 
-// CanRead reports whether ctx carries the permission EntityConfig.Access
-// requires to read this entity. It answers true when the entity declares no
-// read permission.
-//
-// This answers RBAC ONLY. It is not the whole read posture and is almost never
-// what a new caller wants: a default-posture entity (no OwnerField, no Access,
-// no Public) declares no read permission, so this returns true for an anonymous
-// caller while GET /api/<entity> answers 401.
-//
-// Prefer CanReadScoped, or CanReadRecordScoped for a single record. Those are
-// what framework/entityui gates its screens on. Reach for CanRead directly
-// only when you specifically want the RBAC question in isolation.
+// CanRead reports whether ctx holds the Access permission to read this
+// entity, true when none is declared. It answers RBAC only, not the read
+// posture the routes enforce: gate a screen on CanReadScoped instead.
 func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	perm := ch.permissionForOp(opRead)
 	if perm == "" {
@@ -75,74 +60,27 @@ func (ch *CrudHandler) CanRead(ctx context.Context) bool {
 	return ch.accessAllows(ctx, perm, "")
 }
 
-// CanReadScoped reports whether ctx may read this entity's rows: the baseline
-// session requirement, owner scoping, tenant scoping, and RBAC, as a boolean
-// with no HTTP response written.
-//
-// It is the same decision the read route makes (scopeGate), so the two
-// cannot differ. In particular it does not honour owner.AllowCrossOwner, which
-// the in-process requireOwnerContext does and the HTTP route's RequireOwner
-// does not: that marker is exported, so a host could apply it to a request
-// context, and a rendering surface trusting the looser answer would show rows
-// the REST route refuses.
-//
-// It is COLLECTION-level: the RBAC check asks about the entity, not a specific
-// record id, so a resource-aware Decider that denies one row is not consulted.
-// Use it to decide whether a caller may see a listing. For a single record,
-// the record's own read must still go through the CRUD route or an equivalent
-// per-id check.
-//
-// CanRead alone answers only the RBAC question, which is not the whole read
-// posture. Auto-CRUD is secure by default: an entity declaring no OwnerField,
-// no Access, and no Public requires a session for every operation, and that
-// rule lives in requireAuthenticated rather than in Access. A surface that
-// gated on CanRead alone therefore served every row of a default-posture
-// entity to anonymous callers while GET /api/<entity> answered 401, which is
-// exactly what generated list screens did.
-//
-// Use this from any surface that renders the same rows outside the CRUD routes
-// (a server-rendered table, a report, a dashboard aggregate). See
-// framework/entityui.
+// CanReadScoped reports whether ctx may read this entity's rows, the answer
+// the list route gives: owner, tenant, the baseline session and RBAC. It is
+// collection-level; for one record use CanReadRecordScoped.
 func (ch *CrudHandler) CanReadScoped(ctx context.Context) bool {
 	return ch.canScopedRecord(ctx, opRead, "")
 }
 
-// CanReadRecordScoped is CanReadScoped for ONE record.
-//
-// The difference matters only when a resource-aware Decider is installed
-// (access.WithDecider): the decider is asked about access.Ref{Type, ID}, so it
-// can allow the listing and deny an individual row, "member may read project
-// 42" is the whole point of that seam. The HTTP read-one route already passes
-// the record id from its path into the check; a screen rendering the same
-// record with the collection-level predicate would show a row the API
-// refuses by id.
-//
-// Pass the record id for a detail or edit view. With no decider installed this
-// answers exactly what CanReadScoped answers.
+// CanReadRecordScoped is CanReadScoped for record id, which a Decider is
+// asked about.
 func (ch *CrudHandler) CanReadRecordScoped(ctx context.Context, id string) bool {
 	return ch.canScopedRecord(ctx, opRead, id)
 }
 
-// CanReadRelatedScoped is CanReadScoped for an entity reached through
-// another one's relation: a label, a facet or a picker that reads this
-// entity's rows from a screen of the entity that points at it. It also
-// refuses an entity whose CRUD routes are off and a scope-restricted request
-// without "<table>:read", the gate ?include= applies (relationReachable). A
-// picker on posts.author_id listed every user's name and id to any posts
-// writer while users had CRUD off and an include of the same rows was refused.
+// CanReadRelatedScoped is CanReadScoped for this entity reached through
+// another entity's relation (a label, facet or picker). It also refuses what
+// ?include= refuses: CRUD off, or a scoped request without "<table>:read".
 func (ch *CrudHandler) CanReadRelatedScoped(ctx context.Context) bool {
 	return ch.relationReachable(ctx, "read") && ch.CanReadScoped(ctx)
 }
 
-// canCascadeWrite reports whether a cascade write from a parent may create or
-// update this entity's record. It is the context-only twin of requireScope,
-// for a write that reaches this entity without passing its own route: owner,
-// tenant, the baseline session gate, then RBAC. WithServerWrites skips all of
-// them. The session gate and relationReachable are skipped for the in-process
-// API (r built by syntheticRequest), which never applies them to a parent
-// either; every route, MCP included, arrives with a real request. Checking
-// RBAC alone let an anonymous write to a Public parent create rows in a child
-// whose own route answers 401.
+// canCascadeWrite is requireScope for a cascade write reaching this entity.
 func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op crudOp, id string) bool {
 	if serverWrites(ctx) {
 		return true
@@ -165,24 +103,8 @@ func (ch *CrudHandler) canCascadeWrite(ctx context.Context, r *http.Request, op 
 	return ch.accessAllows(ctx, perm, id)
 }
 
-// relationReachable answers the rule that binds a route reaching THIS entity
-// from another entity's route (?include=, ?rel.field= filters, cascade writes)
-// and that the entity's own posture checks cannot see, because it is about how
-// the request arrived rather than who made it.
-//
-// Exposure.CRUD=false means no generated surface reaches the rows. The
-// entity's own routes are never mounted, and a relation from a mounted entity
-// must not become the generated surface it opted out of. auth.UserEntityConfig
-// is the case that matters: users with CRUD off were still readable through
-// any ?include=author and filterable through ?author.email_like=.
-//
-// A scope-restricted request (an API token or an embed grant, see
-// access.WithHeldScopes) must also hold "<table>:<verb>" for this entity.
-// auth.RequireAPIScopes checks only the entity in the path, so a
-// ["customers:read"] token read every invoice through
-// /api/customers?include=invoices and wrote them through a cascade. The
-// resource is the table name, the same segment RequireAPIScopes derives from
-// the route. Unscoped requests (sessions, JWT, server code) are unaffected.
+// relationReachable reports whether another entity's route may reach this
+// entity's rows through a relation (?include=, ?rel.field=, a cascade write).
 func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool {
 	if crud := ch.Entity.Config.Exposure.CRUD; crud != nil && !*crud {
 		return false
@@ -190,59 +112,23 @@ func (ch *CrudHandler) relationReachable(ctx context.Context, verb string) bool 
 	return access.ScopeAllows(ctx, access.Permission(ch.Entity.GetTable()+":"+verb))
 }
 
-// canReadEntityGate answers the part of the read posture that is a GATE rather
-// than a row filter: the baseline session requirement and RBAC.
-//
-// Owner and tenant are deliberately excluded. They scope WHICH rows a caller
-// sees, and the eager loaders already apply them per node
-// (applyRelatedScope), so a missing owner or
-// tenant yields zero rows rather than a refusal, the framework's existing,
-// tested fail-closed behavior. Folding them in here would convert that
-// filtering into a 403 and change the answer for callers who are legitimately
-// scoped to nothing.
-//
-// Use this ONLY where the row scoping is provably applied separately. Today
-// that is two callers: the include gate (checkIncludeReadable), whose eager
-// loaders call applyRelatedScope per node, and the pivot gate
-// (checkPivotReadable), whose rows applyPivotScope scopes. Nested filters
-// once used this gate while their EXISTS subquery carried no owner or tenant
-// predicate, which left a count oracle over rows the target's own route
-// refuses; they now ask CanReadScoped and scope the subquery as well. If you
-// are reaching for this
-// predicate, first find the code that applies owner and tenant for your path;
-// if you cannot point at it, you want CanReadScoped.
+// canReadEntityGate is the read posture without owner and tenant: the
+// baseline session and RBAC.
 func (ch *CrudHandler) canReadEntityGate(ctx context.Context) bool {
 	return ch.sessionGate(ctx) == nil && ch.CanRead(ctx)
 }
 
-// requirePermission enforces EntityConfig.Access for op. When the entity
-// declares a permission for the operation and the request context does not
-// carry it, it writes 403 and returns false. No-op when the operation is not
-// gated.
-//
-// The check goes through access.CanResource so a resource-aware Decider
-// installed in ctx (via access.WithDecider / access.DeciderMiddleware) is
-// consulted before the role policy, the issue #80 seam for per-resource
-// authority ("member may edit project 42"). recordID is the path id for
-// item-scoped ops (read-one/update/delete) and "" for collection-level ops
-// (list/create/batch/the SSE feed); batch update and delete re-ask per item
-// through itemPermitted. With no decider configured, CanResource
-// answers exactly what access.Can answered, so behaviour is byte-identical.
 func (ch *CrudHandler) requirePermission(w http.ResponseWriter, r *http.Request, op crudOp, recordID string) bool {
 	return ch.permissionGate(r.Context(), op, recordID).pass(w, r)
 }
 
-// gateRefusal is why an access gate refuses: the status and phrase the
-// route answers with. A nil *gateRefusal is the gate letting the caller
-// through.
+// gateRefusal is the answer a refusing gate writes; nil lets the caller through.
 type gateRefusal struct {
 	status int
 	reason i18n.Phrase
 	params map[string]any
 }
 
-// pass reports whether the gate let the caller through, and writes the
-// refusal when it did not.
 func (g *gateRefusal) pass(w http.ResponseWriter, r *http.Request) bool {
 	switch {
 	case g == nil:
@@ -255,12 +141,7 @@ func (g *gateRefusal) pass(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// scopeGate is the one answer to "may this caller run op on this entity",
-// asked about record id ("" for the collection). The routes write its
-// refusal (requireScope, RequireRead) and the Can*Scoped predicates
-// report whether there is one, so a screen and the route it mirrors
-// cannot disagree. The gates run in the order the routes have always
-// answered in: owner, tenant, the baseline session, then the permission.
+// scopeGate is the refusal, if any, for ctx running op on record id.
 func (ch *CrudHandler) scopeGate(ctx context.Context, op crudOp, id string) *gateRefusal {
 	if g := ch.ownerGate(ctx); g != nil {
 		return g
@@ -274,9 +155,6 @@ func (ch *CrudHandler) scopeGate(ctx context.Context, op crudOp, id string) *gat
 	return ch.permissionGate(ctx, op, id)
 }
 
-// ownerGate refuses an OwnerField entity when ctx carries no owner. It
-// does not honour owner.AllowCrossOwner: a host could apply that
-// exported marker to a request context.
 func (ch *CrudHandler) ownerGate(ctx context.Context) *gateRefusal {
 	if ch.Entity.Config.Scope.OwnerField == "" {
 		return nil
@@ -287,8 +165,6 @@ func (ch *CrudHandler) ownerGate(ctx context.Context) *gateRefusal {
 	return nil
 }
 
-// tenantGate refuses a MultiTenant entity when ctx carries no tenant and
-// no cross-tenant grant.
 func (ch *CrudHandler) tenantGate(ctx context.Context) *gateRefusal {
 	if ch.requireTenantContext(ctx) != nil {
 		return &gateRefusal{status: http.StatusUnauthorized, reason: reasonTenantRequired}
@@ -296,8 +172,6 @@ func (ch *CrudHandler) tenantGate(ctx context.Context) *gateRefusal {
 	return nil
 }
 
-// sessionGate refuses an entity on the default posture (no OwnerField,
-// no Access block, not Public) when ctx carries no user.
 func (ch *CrudHandler) sessionGate(ctx context.Context) *gateRefusal {
 	if !ch.sessionGated() {
 		return nil
@@ -308,8 +182,6 @@ func (ch *CrudHandler) sessionGate(ctx context.Context) *gateRefusal {
 	return nil
 }
 
-// permissionGate refuses when the entity declares a permission for op
-// and ctx does not hold it for record id.
 func (ch *CrudHandler) permissionGate(ctx context.Context, op crudOp, id string) *gateRefusal {
 	perm := ch.permissionForOp(op)
 	if perm == "" || ch.accessAllows(ctx, perm, id) {
@@ -321,12 +193,6 @@ func (ch *CrudHandler) permissionGate(ctx context.Context, op crudOp, id string)
 	return &gateRefusal{status: http.StatusForbidden, reason: handler.ReasonMissingPermission, params: map[string]any{"permission": string(perm)}}
 }
 
-// itemPermitted re-asks op's permission about one record: the per-item twin
-// of requirePermission for routes whose path carries no id. The _batch
-// update and delete routes pass requireScope with Ref{ID: ""} and then write
-// caller-named ids, so a Decider that denies one record by id was never asked
-// about it. Each item is asked here, inside the batch transaction, and a
-// refusal rolls the whole batch back.
 func (ch *CrudHandler) itemPermitted(ctx context.Context, op crudOp, id string) bool {
 	perm := ch.permissionForOp(op)
 	if perm == "" {
@@ -335,61 +201,29 @@ func (ch *CrudHandler) itemPermitted(ctx context.Context, op crudOp, id string) 
 	return ch.accessAllows(ctx, perm, id)
 }
 
-// tenantIDFromCtx is a thin wrapper so owner.go doesn't drag the
-// framework/tenant package across every helper signature.
 func tenantIDFromCtx(ctx context.Context) string {
 	return tenant.GetTenantID(ctx)
 }
 
-// errOwnerRequired signals a write attempt against an OwnerField entity
-// without an authenticated caller in the context. In-process APIs
-// (UpsertOne) bubble this up so callers can map to 401.
 var errOwnerRequired = errors.New("owner context required for owner-scoped entity")
 
-// errTenantRequired signals an in-process CRUD call against a
-// MultiTenant entity with no tenant id in the context. Fails closed,
-// the HTTP layer normally refuses these requests at middleware, but
-// in-process callers (typed repos, jobs, scripts) bypass that path.
 var errTenantRequired = errors.New("tenant context required for multi-tenant entity")
 
-// brokeredCallKey marks a context as a process-module broker re-dispatch.
-// A module never brokers data in a cross-owner frame (design #37 §5), so a
-// brokered call must never exercise CrossOwnerRead, even when the
-// re-resolved caller legitimately holds it in their own session. The
-// unexported key type means no HTTP-derived context can carry it: it is set
-// ONLY by the broker (framework/processmodule_broker.go resolveCaller) via
-// WithBrokeredCall, exactly mirroring owner.crossOwnerKey / AllowCrossOwner.
 type brokeredCallKey struct{}
 
-// WithBrokeredCall stamps ctx as originating from the process-module
-// broker's CRUD re-dispatch. crossOwnerReadGranted returns false
-// unconditionally when it is present, so owner scoping holds by
-// construction for every brokered call regardless of the re-resolved
-// caller's permissions. SECURITY: set ONLY from the broker's resolveCaller.
+// WithBrokeredCall marks ctx as a process-module broker re-dispatch, which
+// never exercises Scope.CrossOwnerRead. SECURITY: set it only from the
+// broker's resolveCaller.
 func WithBrokeredCall(ctx context.Context) context.Context {
 	return context.WithValue(ctx, brokeredCallKey{}, true)
 }
 
-// IsBrokeredCall reports whether ctx was stamped by the process-module
-// broker. Exported so the broker test surface can pin the root-cause marker.
+// IsBrokeredCall reports whether ctx carries WithBrokeredCall.
 func IsBrokeredCall(ctx context.Context) bool {
 	v, _ := ctx.Value(brokeredCallKey{}).(bool)
 	return v
 }
 
-// crossOwnerReadGranted reports whether the request context holds the
-// entity's declared CrossOwnerRead permission. Returns false when the
-// entity does not opt in (empty permission), when access.Can denies
-// (including the fail-closed "no policy in context" case), when a
-// resource-aware Decider denies (the check routes through access.CanResource,
-// so the per-resource authority surface is consulted, not just the role
-// policy — the same seam requirePermission uses), and, the F3 root-cause
-// fix, unconditionally when the call was brokered through a process
-// module, so a delegated caller who holds CrossOwnerRead cannot exercise
-// it through a module. READ-ONLY by construction: only ApplyOwnerScope /
-// ApplyOwnerScopeCount consult it. The Ref carries ID "" because the lift
-// is collection-shaped: it answers "may this caller read across owners at
-// all", never "may they read this one row" — the per-row gates own that.
 func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 	if IsBrokeredCall(ctx) {
 		return false
@@ -399,12 +233,9 @@ func (ch *CrudHandler) crossOwnerReadGranted(ctx context.Context) bool {
 		access.Ref{Type: ch.Entity.GetName(), ID: ""})
 }
 
-// ApplyOwnerScope adds an `<owner_field> = ?` predicate to a SELECT query
-// when the entity declares OwnerField and the request context carries an
-// owner id (registered via framework/owner.SetExtractor, typically by
-// battery/auth's init()). No-op when either condition is missing.
-//
-// Uses PostgreSQL-style $N placeholders, matching ApplyTenantScope.
+// ApplyOwnerScope adds `<owner_field> = $1` to a SELECT when the entity
+// declares OwnerField and the request carries an owner id; otherwise, or when
+// the caller holds Scope.CrossOwnerRead, it adds nothing.
 func (ch *CrudHandler) ApplyOwnerScope(qb *query.QueryBuilder, r *http.Request) {
 	applyOwnerScope(ch, qb, r, true)
 }
@@ -414,26 +245,18 @@ func (ch *CrudHandler) ApplyOwnerScopeCount(cb *query.CountBuilder, r *http.Requ
 	applyOwnerScope(ch, cb, r, true)
 }
 
-// ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries. Unlike
-// the read pair it never consults CrossOwnerRead: writes stay owner-scoped
-// even for callers whose cross-owner read was granted.
+// ApplyOwnerScopeUpdate mirrors ApplyOwnerScope for UPDATE queries, without
+// the CrossOwnerRead lift.
 func (ch *CrudHandler) ApplyOwnerScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
 	applyOwnerScope(ch, ub, r, false)
 }
 
-// ApplyOwnerScopeDelete mirrors ApplyOwnerScope for DELETE queries. Like
-// the update pair it never consults CrossOwnerRead.
+// ApplyOwnerScopeDelete mirrors ApplyOwnerScopeUpdate for DELETE queries.
 func (ch *CrudHandler) ApplyOwnerScopeDelete(db *query.DeleteBuilder, r *http.Request) {
 	applyOwnerScope(ch, db, r, false)
 }
 
-// applyOwnerScope is the single body behind ApplyOwnerScope,
-// ApplyOwnerScopeCount, ApplyOwnerScopeUpdate, and ApplyOwnerScopeDelete,
-// which were verbatim copies of each other in two pairs (read and write)
-// differing only in the builder type they drove; B is any of the
-// *query builders whose Where returns the builder itself. read selects
-// the read pair's extra escape: a caller holding the entity's
-// CrossOwnerRead permission lifts the filter on reads only.
+// applyOwnerScope backs ApplyOwnerScope*; read allows the CrossOwnerRead lift.
 func applyOwnerScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b B, r *http.Request, read bool) {
 	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" || owner.IsCrossOwner(r.Context()) {
@@ -447,11 +270,8 @@ func applyOwnerScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b 
 	}
 }
 
-// requireOwnerContext is the in-process mirror of RequireOwner: it
-// returns errOwnerRequired when the entity declares OwnerField and the
-// context carries no extractable owner id. Used by in-process APIs
-// (UpsertOne, in-process Create variants) where there's no
-// http.ResponseWriter to write a 401 to.
+// requireOwnerContext is the in-process RequireOwner. Unlike ownerGate it
+// honours owner.AllowCrossOwner.
 func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
 	if ch.Entity.Config.Scope.OwnerField == "" {
 		return nil
@@ -465,10 +285,6 @@ func (ch *CrudHandler) requireOwnerContext(ctx context.Context) error {
 	return nil
 }
 
-// requireTenantContext returns errTenantRequired when the entity is
-// configured for multi-tenancy and the context carries no tenant id.
-// Wired into every in-process CRUD method that touches DB state, so a
-// MultiTenant entity can never be queried unscoped through this API.
 func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
 	if !ch.Entity.Config.Scope.MultiTenant {
 		return nil
@@ -479,8 +295,7 @@ func (ch *CrudHandler) requireTenantContext(ctx context.Context) error {
 	return nil
 }
 
-// InjectOwner stamps the owner id into a Create payload when the entity
-// declares OwnerField. Mirrors InjectTenant's shape.
+// InjectOwner sets the OwnerField of a create payload to ctx's owner id.
 func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
 	field := ch.Entity.Config.Scope.OwnerField
 	if field == "" {
@@ -491,18 +306,10 @@ func (ch *CrudHandler) InjectOwner(data map[string]any, ctx context.Context) {
 	}
 }
 
-// RequireOwner returns the current owner id when the entity declares
-// OwnerField. ok=true means: either no owner is required (entity has no
-// OwnerField), or an owner was extracted. ok=false means: the entity
-// requires an owner but none is available, the caller MUST refuse the
-// request. Writes 401 to w and returns ok=false in that case so handlers
-// can `if _, ok := ch.RequireOwner(w, r); !ok { return }`.
-//
-// This is the secure-by-default seam: without it, ApplyOwnerScope would
-// silently no-op for anonymous requests on OwnerField entities, returning
-// every row in the table. With OwnerField set the framework refuses
-// requests that can't produce an owner id, regardless of whether the
-// caller mounted auth middleware in front of the route.
+// RequireOwner returns the request's owner id. On an OwnerField entity with
+// no owner in the request it writes 401 and returns ok=false, which the
+// caller must answer by refusing; an entity with no OwnerField returns
+// nil, true.
 func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id any, ok bool) {
 	if !ch.ownerGate(r.Context()).pass(w, r) {
 		return nil, false
@@ -514,71 +321,28 @@ func (ch *CrudHandler) RequireOwner(w http.ResponseWriter, r *http.Request) (id 
 	return id, true
 }
 
-// requireAuthenticated is the secure-by-default gate that closes the
-// anonymous-CRUD hole tracked in issue #65: RequireOwner only fires for
-// OwnerField entities and requirePermission only fires when the entity
-// opts into an Access block, an entity declaring NEITHER got zero
-// enforcement, so a plain app spec entity's List/Get/Create/Update/Delete
-// were all reachable by an anonymous caller (POST returning 201 and
-// persisting the row). Unless an explicit mechanism already governs the
-// entity (OwnerField or a declared Access block, either "takes over as
-// today") or the entity opts all the way out (Config.Public, a
-// deliberate "yes, this is a public form/feed" declaration, e.g. a public
-// contact form or a blog's comments), an authenticated session is
-// required for every operation.
-//
-// Mirrors the "baseline auth check" EventStream has carried since the SSE
-// fix (see EventStream in crud_events.go), same core/handler.GetUser
-// signal, generalized to every CRUD entrypoint instead of just the SSE
-// feed.
 func (ch *CrudHandler) requireAuthenticated(w http.ResponseWriter, r *http.Request, op crudOp) bool {
 	return ch.sessionGate(r.Context()).pass(w, r)
 }
 
-// sessionGated reports whether the entity falls back to the baseline session
-// requirement: it declares no owner field, no Access block, and is not Public.
 func (ch *CrudHandler) sessionGated() bool {
 	cfg := ch.Entity.Config
 	return cfg.Scope.OwnerField == "" && !cfg.Exposure.Access.Declared() && !cfg.Exposure.Public
 }
 
-// RequireRead runs the collection read gates the entity's list route runs
-// (owner, tenant, the baseline session, RBAC asked about no one record)
-// and, when one refuses, writes the answer that route writes: the same
-// status and the same envelope, a missing permission named. ok=true means
-// the caller may read; it answers what CanReadScoped answers. A surface
-// that serves the entity's rows outside its CRUD routes (entityui's CSV
-// export, bulk bar, trash and saved views) gates on it so one refusal
-// reads the same on every sibling.
+// RequireRead runs the gates the entity's list route runs and, when one
+// refuses, writes the refusal that route writes and returns false. It answers
+// what CanReadScoped answers.
 func (ch *CrudHandler) RequireRead(w http.ResponseWriter, r *http.Request) bool {
 	return ch.scopeGate(r.Context(), opRead, "").pass(w, r)
 }
 
-// requireScope runs every secure-by-default access gate for an HTTP request in
-// one place: owner (OwnerField entities), tenant (MultiTenant entities), the
-// baseline session requirement (requireAuthenticated), and RBAC
-// (requirePermission). It returns false after writing the appropriate
-// 401/403 when any gate fails, so handlers can guard with
-// `if !ch.requireScope(w, r, op) { return }`. Keeping every gate behind a
-// single chokepoint guarantees a new handler can't accidentally enforce one
-// scope but forget another.
 func (ch *CrudHandler) requireScope(w http.ResponseWriter, r *http.Request, op crudOp) bool {
 	return ch.scopeGate(r.Context(), op, ch.pathID(r)).pass(w, r)
 }
 
-// RequireTenant is the HTTP mirror of RequireOwner for multi-tenant entities.
-// ok=true means: either the entity is not MultiTenant, or a tenant id is
-// present in the request context. ok=false means the entity is MultiTenant but
-// the request carries no tenant id, the caller MUST refuse the request. Writes
-// 401 to w and returns ok=false in that case so handlers can
-// `if !ch.RequireTenant(w, r) { return }`.
-//
-// This is the secure-by-default seam matching requireTenantContext (the
-// in-process mirror). Without it, ApplyTenantScope* silently no-op when no
-// tenant is in context, leaking every tenant's rows on read and permitting
-// cross-tenant update/delete-by-id. Hosts that genuinely need cross-tenant
-// access (admin tooling) must set a tenant id deliberately rather than rely on
-// an empty context.
+// RequireTenant is RequireOwner for a MultiTenant entity: with no tenant and
+// no cross-tenant grant in the request it writes 401 and returns false.
 func (ch *CrudHandler) RequireTenant(w http.ResponseWriter, r *http.Request) (ok bool) {
 	return ch.tenantGate(r.Context()).pass(w, r)
 }

@@ -18,8 +18,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
-// keyCols returns the handler's primary-key columns in declared order. A
-// handler built by hand with no PrimaryKey reads its entity's key.
 func (ch *CrudHandler) keyCols() []string {
 	if len(ch.PrimaryKey) == 0 {
 		return ch.Entity.KeyColumns()
@@ -27,12 +25,7 @@ func (ch *CrudHandler) keyCols() []string {
 	return ch.PrimaryKey
 }
 
-// refuseBlankKeyParts refuses a write that would store "" in a key
-// column: the row could never be named again by get, update or delete.
-// On a key spanning several columns entity.SplitKey refuses an empty
-// part; on a one-column key the record routes answer 400 for an empty
-// {id}. A generated column holds its generated value by now, so only a
-// caller-chosen key (or a hook) can reach here with "".
+// refuseBlankKeyParts refuses "" in a key column: no route could name the row.
 func (ch *CrudHandler) refuseBlankKeyParts(body map[string]any) error {
 	cols := ch.keyCols()
 	var fields map[string][]schema.Violation
@@ -50,17 +43,8 @@ func (ch *CrudHandler) refuseBlankKeyParts(body map[string]any) error {
 	return nil
 }
 
-// refuseNullKey refuses a written row whose key reads back NULL. row is
-// the INSERT's RETURNING row, read inside the write's transaction, so the
-// refusal rolls the row back. Postgres refuses a NULL key at the write, a
-// 400 naming the field (the NOT NULL mapping in conflict_fields.go);
-// SQLite stores NULL in any key column but a one-column INTEGER PRIMARY
-// KEY, so a caller-chosen key the body left out or sent as null stored a
-// row no route could name. The row is read rather than the INSERT's
-// values: a database DEFAULT, SQLite's rowid and a key the insert omits
-// for its declared default all fill the key there. Every key column is
-// in the row: each is a cursor column, and entity.Define refuses a cursor
-// column that is Hidden or undeclared.
+// refuseNullKey refuses an inserted row whose key reads back NULL, inside the
+// write's transaction. SQLite stores NULL in most key columns.
 func (ch *CrudHandler) refuseNullKey(row map[string]any) error {
 	var fields map[string][]schema.Violation
 	for _, c := range ch.keyCols() {
@@ -82,20 +66,12 @@ func (ch *CrudHandler) refuseNullKey(row map[string]any) error {
 	return nil
 }
 
-// withKeyTiebreak returns sorts followed by every key column it does not
-// already sort on, ascending. An offset page is only well defined over a
-// total order: sorted on a non-unique column (or not sorted at all) the
-// database may hand back tied rows in a different order for each page, and
-// Postgres does, so a walk with ?sort=status&page=N skipped some rows and
-// repeated others. The key makes the order total on every dialect.
-//
-// With no sort at all, an entity with a framework-written created_at
-// lists oldest first: ids are random UUIDs, so key order alone would
-// shuffle what used to read as insertion order.
+// withKeyTiebreak appends every key column not already sorted on, so an
+// offset page is over a total order; with no sort, a managed created_at leads.
 func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.ParsedSort {
 	out := slices.Clone(sorts)
 	if len(sorts) == 0 && ch.Entity != nil {
-		for _, f := range ch.Entity.GetFields() {
+		for _, f := range ch.snapshotFields() {
 			if f.Name == "created_at" && f.Type == schema.Timestamp && f.AutoGenerate != schema.AutoNone {
 				out = append(out, filter.ParsedSort{Field: f.Name})
 				break
@@ -110,9 +86,74 @@ func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.Parse
 	return out
 }
 
-// keyColumn is the handler's one key column, the column a relation from
-// its entity joins on. A handler keyed on several columns has none; see
-// entity.Entity.KeyColumn.
+// sortTerms is withKeyTiebreak with PinNulls set where pinsNulls says, so
+// every list path orders nulls as Postgres does.
+func (ch *CrudHandler) sortTerms(ctx context.Context, sorts []filter.ParsedSort) []filter.ParsedSort {
+	out := ch.withKeyTiebreak(sorts)
+	for i := range out {
+		out[i].PinNulls = ch.pinsNulls(ctx, out[i].Field)
+	}
+	return out
+}
+
+// pinsNulls reports whether an ORDER BY on column must spell the null
+// position: the column can hold NULL and the database is SQLite.
+func (ch *CrudHandler) pinsNulls(ctx context.Context, column string) bool {
+	if ch.Entity == nil {
+		return false
+	}
+	keys := ch.keyCols()
+	for _, f := range ch.Entity.GetFields() {
+		if f.Name == column && !entity.CanHoldNull(f, keys) {
+			return false
+		}
+	}
+	return !ch.onPostgres(ctx)
+}
+
+// dialectMemo holds one handler's dialect, for a DB that is a wrapper
+// or a transaction and so has no *sql.DB to remember it under.
+type dialectMemo struct {
+	mu    sync.Mutex
+	known bool
+	pg    bool
+}
+
+// onPostgres is the one way a handler learns its dialect: asked once per
+// *sql.DB when there is one, else once per handler, in its memo.
+func (ch *CrudHandler) onPostgres(ctx context.Context) bool {
+	if handle := ch.dialectHandle(); handle != nil {
+		return isPostgres(ctx, handle, ch.conn(ctx))
+	}
+	if ch.dialect == nil {
+		panic("crud: a CrudHandler whose DB is not a *sql.DB has no place to remember its dialect; build it with NewCrudHandler")
+	}
+	ch.dialect.mu.Lock()
+	defer ch.dialect.mu.Unlock()
+	if !ch.dialect.known {
+		ch.dialect.pg, ch.dialect.known = probeDialect(ctx, ch.conn(ctx))
+	}
+	return ch.dialect.pg
+}
+
+// forEntity is a handler for another entity on this handler's database,
+// sharing what it knows of the dialect; for posture and gate probes.
+func (ch *CrudHandler) forEntity(ent *entity.Entity) *CrudHandler {
+	return &CrudHandler{Entity: ent, DB: ch.DB, Registry: ch.Registry, root: ch.root, dialect: ch.dialect}
+}
+
+// probeDialect asks q for SELECT version(); certain is false for an
+// error other than SQLite's "no such function".
+func probeDialect(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (pg, certain bool) {
+	var v string
+	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
+		return false, strings.Contains(strings.ToLower(err.Error()), "no such function")
+	}
+	return strings.Contains(strings.ToLower(v), "postgresql"), true
+}
+
 func (ch *CrudHandler) keyColumn() (string, error) {
 	cols := ch.keyCols()
 	if len(cols) != 1 {
@@ -125,7 +166,6 @@ func (ch *CrudHandler) keyColumn() (string, error) {
 	return cols[0], nil
 }
 
-// isKeyCol reports whether col is one of the primary-key columns.
 func (ch *CrudHandler) isKeyCol(col string) bool {
 	for _, c := range ch.keyCols() {
 		if c == col {
@@ -135,11 +175,8 @@ func (ch *CrudHandler) isKeyCol(col string) bool {
 	return false
 }
 
-// keyCond builds the WHERE condition naming one record from its key
-// values, one per key column: "a = $1 AND b = $2". The builders renumber
-// each condition's placeholders, so it composes with any other Where.
-// Values that do not match the key column for column (none, say) name
-// no record, and the condition matches nothing.
+// keyCond is "a = $1 AND b = $2" over the key columns; values that do not
+// match the columns match nothing.
 func (ch *CrudHandler) keyCond(vals []any) (string, []any) {
 	cols := ch.keyCols()
 	if len(cols) == 0 || len(vals) != len(cols) {
@@ -152,24 +189,10 @@ func (ch *CrudHandler) keyCond(vals []any) (string, []any) {
 	return strings.Join(conds, " AND "), vals
 }
 
-// keyWhere is the WHERE condition matching the record id names by
-// equality on each key column: keyCond over the values entity.KeyValues
-// reads from id. An id that does not split into the key columns names no
-// record: the condition matches nothing, so every caller reaches its own
-// not-found answer.
-//
-// A record id names a row only when it is the row's own id, the one
-// entity.RowKey renders from the row. On a managed entity equality says
-// that already: its key columns are types the framework created (TEXT,
-// INTEGER), and KeyValues binds an integer only in canonical form. On an
-// Unmanaged entity the database chose the types (a view's SELECT, a
-// Postgres UUID, CITEXT or CHAR(n), a case-folding collation), and
-// equality can match a second spelling: a request for the uppercase id
-// would reach the row a Decider, asked about the id string, knows by its
-// lowercase one. There each statement reads the key columns back
-// (keyedCols) and keeps a row only when ownRow finds its own id is id.
-// The check reads the row the statement itself reached, so no write
-// between a check and the operation can swap in another.
+// keyWhere matches id's record by key equality; an id that does not split
+// into the key columns matches nothing. On an Unmanaged entity equality may
+// match another spelling, so statements read the key back (keyedCols) and
+// keep only the row whose own id is id (ownRow).
 func (ch *CrudHandler) keyWhere(id string) (string, []any) {
 	vals, ok := ch.idVals(id)
 	if !ok {
@@ -178,15 +201,10 @@ func (ch *CrudHandler) keyWhere(id string) (string, []any) {
 	return ch.keyCond(vals)
 }
 
-// keyHasSpellings reports whether the key columns' equality may match a
-// value under more than one spelling: the database, not the framework,
-// typed an Unmanaged entity's columns.
 func (ch *CrudHandler) keyHasSpellings() bool {
 	return ch.Entity != nil && ch.Entity.Config.Unmanaged
 }
 
-// keyedCols is cols plus the key columns it lacks, when keyHasSpellings:
-// the columns a statement reads so ownRow can see the row's own id.
 func (ch *CrudHandler) keyedCols(cols []string) []string {
 	if !ch.keyHasSpellings() {
 		return cols
@@ -200,9 +218,7 @@ func (ch *CrudHandler) keyedCols(cols []string) []string {
 	return out
 }
 
-// ownRow reports whether row, read with keyedCols(cols), is the record id
-// names (see keyWhere), and removes the key columns keyedCols added, so a
-// key column cols left out never reaches the caller.
+// ownRow reports whether row is id's own, and drops the key columns keyedCols added.
 func (ch *CrudHandler) ownRow(id string, row map[string]any, cols []string) bool {
 	if !ch.keyHasSpellings() {
 		return true
@@ -216,9 +232,6 @@ func (ch *CrudHandler) ownRow(id string, row map[string]any, cols []string) bool
 	return ok && own == id
 }
 
-// queryKeyed runs a statement reading keyedCols(cols) and scans every row
-// it returns: equality may match more than one spelling, and a SQLite
-// key may be declared under a stricter collation than its column.
 func (ch *CrudHandler) queryKeyed(ctx context.Context, cols []string, sqlStr string, args []any) ([]map[string]any, error) {
 	rows, err := ch.conn(ctx).QueryContext(ctx, sqlStr, args...)
 	if err != nil {
@@ -228,8 +241,6 @@ func (ch *CrudHandler) queryKeyed(ctx context.Context, cols []string, sqlStr str
 	return ch.scanMany(rows, ch.keyedCols(cols))
 }
 
-// scanOwn runs a SELECT of keyedCols(cols) naming id's record and returns
-// the row whose own id is id, or sql.ErrNoRows.
 func (ch *CrudHandler) scanOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
 	if !ch.keyHasSpellings() {
 		return ch.scanOne(ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...), cols)
@@ -246,12 +257,8 @@ func (ch *CrudHandler) scanOwn(ctx context.Context, id string, cols []string, sq
 	return nil, sql.ErrNoRows
 }
 
-// writeOwn runs an UPDATE naming id's record, RETURNING keyedCols(cols),
-// and returns the row it changed, or sql.ErrNoRows when it changed none.
-// Every changed row must be id's own: a statement that also changed
-// another fails with errNotFound, which rolls it back (inTx), so a key
-// equality matches under two spellings is refused rather than half
-// written.
+// writeOwn fails with errNotFound, rolling the write back, when the UPDATE
+// changed a row that is not id's own.
 func (ch *CrudHandler) writeOwn(ctx context.Context, id string, cols []string, sqlStr string, args []any) (map[string]any, error) {
 	if !ch.keyHasSpellings() {
 		return ch.scanOne(ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...), cols)
@@ -271,16 +278,9 @@ func (ch *CrudHandler) writeOwn(ctx context.Context, id string, cols []string, s
 	return changed[0], nil
 }
 
-// execOwn runs a write naming id's record, built by build, and returns
-// how many rows it changed. When keyHasSpellings every row the write
-// reaches must be id's own, or it fails with errNotFound, which rolls it
-// back (inTx). Postgres reads them back: build gets the key columns for a
-// RETURNING clause, since a READ COMMITTED transaction sees rows other
-// writes commit between two statements. SQLite cannot return rows from a
-// virtual table (an FTS5 index), so there it reads the rows matching
-// selects first, under the write's own WHERE (owner, tenant, live or
-// trashed), which holds through the write: a SQLite transaction is
-// serializable.
+// execOwn refuses, with errNotFound, a write that reaches a row not id's own.
+// Postgres reads the rows back with RETURNING; SQLite, which cannot RETURN
+// from a virtual table, selects them first inside its serializable transaction.
 func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(cols ...string) (string, []any), build func(returning []string) (string, []any)) (int64, error) {
 	if !ch.keyHasSpellings() {
 		sqlStr, args := build(nil)
@@ -290,7 +290,7 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 		}
 		return res.RowsAffected()
 	}
-	if isPostgres(ctx, ch.dialectHandle(), ch.DB) {
+	if ch.onPostgres(ctx) {
 		sqlStr, args := build(ch.keyCols())
 		changed, err := ch.queryKeyed(ctx, ch.keyCols(), sqlStr, args)
 		if err != nil {
@@ -321,22 +321,10 @@ func (ch *CrudHandler) execOwn(ctx context.Context, id string, matching func(col
 	return res.RowsAffected()
 }
 
-// knownDialect remembers, per database handle, whether it is Postgres.
-// A handle's engine never changes, and the probe below fails on SQLite
-// by design: unremembered, every request that reached one of its
-// callers ran a query that errors, which a trace of the request then
-// showed as a failed step.
-//
-// The key is a weak pointer: the map does not keep a closed database
-// alive, and the entry goes when the database is collected. A process
-// that opens a database per test or per tenant would otherwise hold
-// every one of them for good.
+// knownDialect caches isPostgres per *sql.DB, under a weak pointer.
 var knownDialect sync.Map // weak.Pointer[sql.DB] -> bool
 
-// dialectHandle is the database the handler's dialect is remembered
-// under: its DB, or the database its transaction was begun on. Writes
-// run inside a transaction, and they are the callers of the probe: with
-// the transaction as the handle nothing was ever remembered for them.
+// dialectHandle is DB, or the database a transaction copy was begun on.
 func (ch *CrudHandler) dialectHandle() *sql.DB {
 	if db, ok := ch.DB.(*sql.DB); ok {
 		return db
@@ -351,20 +339,11 @@ func rememberDialect(db *sql.DB, pg bool) {
 	}
 }
 
-// isPostgres reports whether db answers SELECT version() with a
-// PostgreSQL banner, query.IsPostgres over an executor: the probe runs
-// on q, which inside a transaction is that transaction. SQLite has no
-// version(), and a failed statement leaves its transaction usable. The
-// answer is remembered for db once it is certain: a banner, or the
-// engine saying it has no such function. Any other failure (a dropped
-// connection, a cancelled context) reads as "not Postgres" for this
-// call only and is asked again. handle is the handler's DB: nothing is
-// remembered unless it is a *sql.DB.
+// isPostgres asks q for SELECT version(). It caches the answer for a
+// *sql.DB handle only when certain: a banner, or "no such function".
 func isPostgres(ctx context.Context, handle any, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) bool {
-	// Only a *sql.DB is a stable identity: a test double or a wrapper
-	// is asked every time.
 	db, stable := handle.(*sql.DB)
 	stable = stable && db != nil
 	if stable {
@@ -372,25 +351,14 @@ func isPostgres(ctx context.Context, handle any, q interface {
 			return known.(bool)
 		}
 	}
-	var v string
-	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
-		if stable && strings.Contains(strings.ToLower(err.Error()), "no such function") {
-			rememberDialect(db, false)
-		}
-		return false
-	}
-	pg := strings.Contains(strings.ToLower(v), "postgresql")
-	if stable {
+	pg, certain := probeDialect(ctx, q)
+	if stable && certain {
 		rememberDialect(db, pg)
 	}
 	return pg
 }
 
-// idVals splits a record id into its key values, one per key column,
-// through entity.KeyValues: an integer key column takes its value only
-// in canonical decimal and binds it as an integer, so no second spelling
-// reaches a record that a Decider, asked about the id string, knows by
-// the first.
+// idVals splits id into bound key values (entity.KeyValues).
 func (ch *CrudHandler) idVals(id string) ([]any, bool) {
 	var fields []schema.Field
 	if ch.Entity != nil {
@@ -400,9 +368,6 @@ func (ch *CrudHandler) idVals(id string) ([]any, bool) {
 	return vals, err == nil
 }
 
-// rowKeyVals reads the key values out of a row, under either the wire
-// key or the column name. It reports false when any is missing or nil,
-// and for a keyless table, whose rows have no name.
 func (ch *CrudHandler) rowKeyVals(row map[string]any) ([]any, bool) {
 	cols := ch.keyCols()
 	if len(cols) == 0 {
@@ -422,9 +387,6 @@ func (ch *CrudHandler) rowKeyVals(row map[string]any) ([]any, bool) {
 	return vals, true
 }
 
-// colKeyVals reads the key values out of a column-keyed body (a write
-// after wire keys became columns). It returns nil when any is absent or
-// nil, the way a body that names no row yet reads.
 func (ch *CrudHandler) colKeyVals(body map[string]any) []any {
 	cols := ch.keyCols()
 	vals := make([]any, len(cols))
@@ -438,13 +400,10 @@ func (ch *CrudHandler) colKeyVals(body map[string]any) []any {
 	return vals
 }
 
-// rowID is a row's record id as JoinKey renders it.
 func (ch *CrudHandler) rowID(row map[string]any) (string, bool) {
 	return entity.RowKey(row, ch.keyCols(), ch.convertKey)
 }
 
-// keyPayload is the event payload naming a record by its id: each key
-// column under its wire key.
 func (ch *CrudHandler) keyPayload(id string) map[string]any {
 	cols := ch.keyCols()
 	parts, err := entity.SplitKey(id, len(cols))
@@ -458,9 +417,7 @@ func (ch *CrudHandler) keyPayload(id string) map[string]any {
 	return out
 }
 
-// afterRow runs the typ hooks on a written row with the row's record id
-// on ctx (AuditRecordIDFor). It always sets the value, so a write a hook
-// starts never answers with the id of the write that started it.
+// afterRow runs the typ hooks with the row's own id on ctx (AuditRecordIDFor).
 func (ch *CrudHandler) afterRow(ctx context.Context, typ hook.HookType, row map[string]any) error {
 	if ch.Entity != nil {
 		id, _ := ch.rowID(row)

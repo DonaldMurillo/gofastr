@@ -13,34 +13,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Gallery ────────────────────────────────────────────────────────
-//
-// Standalone thumbnail surface. Three visual variants share the same
-// Item shape:
-//
-//   - GalleryGrid:     CSS Grid, `Columns` × `Gap`. The default.
-//   - GalleryStrip:    horizontal scroll-snap row.
-//   - GalleryMasonry:  CSS `columns: <n>` so tiles flow at natural
-//                      aspect (Pinterest-style).
-//
-// Click behaviour (pick ONE; otherwise the anchor opens Src in a new
-// tab as the no-JS fallback):
-//
-//   - Lightbox:  name of a paired framework/ui.Lightbox. Each item
-//                emits data-cui-open + data-cui-deeplink so clicking
-//                opens the overlay with the matching image.
-//   - HrefFn:    a function returning a per-item URL the anchor
-//                navigates to. Use for "click photo → detail page".
-//
-// Caption rendering is controlled by CaptionMode.
-//
-// The structure renders through headless.Gallery with the fui-gallery
-// class map: a captioned item is li > figure > (a > img, figcaption) —
-// the caption sits beside the link, so the link's accessible name is
-// the image's alt alone and the caption text is not a click target —
-// and a captionless item is a plain li > a > img.
-
-// GalleryVariant picks the surface layout.
+// GalleryVariant picks the surface layout: a grid, a scroll-snap strip
+// or masonry columns.
 type GalleryVariant string
 
 const (
@@ -64,61 +38,45 @@ type GalleryItem struct {
 	Src string
 	// Thumb is the thumbnail URL. Defaults to Src.
 	Thumb string
-	// Alt is the accessible image description (required: empty Alt
-	// is rejected at render time to surface omissions).
+	// Alt is the accessible image description (required).
 	Alt string
-	// Caption is optional descriptive text shown per CaptionMode.
+	// Caption is optional text shown per CaptionMode.
 	Caption string
-	// Width / Height for the thumbnail (CLS-safe). Default 200×150.
+	// Width / Height size the thumbnail. Default 200×150.
 	Width  int
 	Height int
 }
 
 // GalleryConfig configures a Gallery.
 type GalleryConfig struct {
-	// Ctx carries the per-request context the default gallery label is
-	// written in. When nil, English applies.
+	// Ctx is the request context the default label is said in.
 	Ctx context.Context
 
-	// Variant picks the surface layout.
 	Variant GalleryVariant
 	// Items are the entries (≥1).
 	Items []GalleryItem
-	// Label is the accessible label for the gallery list. Defaults
-	// to "Image gallery".
+	// Label names the gallery list. Default "Image gallery".
 	Label string
-	// Columns (Grid mode): the MAXIMUM number of columns. Default 3.
-	// The grid is responsive: tracks never shrink below --ui-gallery-min
-	// (default 9.5rem, overridable per instance via a Class), so narrow
-	// viewports automatically get fewer columns without media queries.
-	// Masonry mode: uses this as the maximum column count too.
+	// Columns is the most columns a grid or masonry shows (1 to 12,
+	// default 3); grid tracks never shrink below --ui-gallery-min.
 	Columns int
 	// Gap between thumbs. Default GapMD.
 	Gap Gap
-	// Lightbox, when non-empty, is the Name of a paired
-	// framework/ui.Lightbox. Each item becomes a trigger for that
-	// lightbox via data-cui-open + data-cui-deeplink.
+	// Lightbox is the Name of a paired Lightbox each item opens.
 	Lightbox string
-	// HrefFn, when set, returns a per-item destination URL. Ignored
-	// when Lightbox is set.
+	// HrefFn returns each item's destination; ignored when Lightbox is set.
 	HrefFn func(i int, it GalleryItem) string
 	// CaptionMode controls caption rendering. Default Below.
 	CaptionMode GalleryCaptionMode
-	// ID / Class are passed through to the wrapper.
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the gallery's root <ul>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and aria-label (use Label).
+	ID          string
+	Class       string
+	// ExtraAttrs lands on the root <ul>; class, id, data-cui-* and aria-label are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// Gallery renders the thumbnail surface through headless.Gallery with
-// the fui-gallery class map (the sheet name "ui-gallery" and marker
-// stay). The thumb loads lazily through the parts seam; the default
-// and lightbox anchors open the full image in a new tab through the
-// per-item attrs, so the no-script path keeps the old behaviour.
+// Gallery renders the thumbnail surface. Without Lightbox or HrefFn an
+// item's anchor opens Src in a new tab. It panics without items, on an
+// item without Alt, or on an unknown Variant, CaptionMode or Gap.
 func Gallery(cfg GalleryConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		panic("ui: Gallery requires ≥1 Item")
@@ -157,10 +115,6 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	if gap != "" {
 		rootCls += " fui-gallery--gap-" + string(gap)
 	}
-	// Columns maps to a precomputed .fui-gallery--cols-<n> class that
-	// sets --ui-gallery-cols, no inline style needed (CSP). Grid and
-	// masonry cap at 12 for the precomputed class set; very wide grids
-	// fall back to 12.
 	if cfg.Variant != GalleryStrip {
 		rootCls += " fui-gallery--cols-" + strconv.Itoa(min(max(cols, 1), 12))
 	}
@@ -189,10 +143,6 @@ func Gallery(cfg GalleryConfig) render.HTML {
 		}
 	}
 
-	// The default and lightbox anchors open the full image in a new
-	// tab; an HrefFn anchor goes where the caller said. A Src the
-	// anchor policy refuses renders as href="#", which gets no target:
-	// a new tab opened on "#" is a blank page.
 	var perItem map[int]html.Attrs
 	if cfg.HrefFn == nil {
 		perItem = make(map[int]html.Attrs, len(items))
@@ -221,12 +171,10 @@ func Gallery(cfg GalleryConfig) render.HTML {
 	}
 
 	out := headless.Gallery(headless.GalleryProps{
-		Items:    items,
-		Label:    label,
-		HrefFn:   hrefFn,
-		Lightbox: lightbox,
-		// The thumb is below the fold as often as not: lazy loading is
-		// presentation, so it rides the parts seam rather than a prop.
+		Items:             items,
+		Label:             label,
+		HrefFn:            hrefFn,
+		Lightbox:          lightbox,
 		ExtraAttrsPerItem: perItem,
 		ID:                cfg.ID,
 		ExtraAttrs:        headless.Safe(cfg.ExtraAttrs, "aria-label"),

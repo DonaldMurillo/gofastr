@@ -12,78 +12,35 @@ import (
 
 // ButtonProps is a button, or an anchor that looks like one.
 type ButtonProps struct {
-	// Label is the visible text. An icon-only button leaves it empty
-	// and sets AriaLabel; a button with neither has no accessible name
-	// and is refused.
+	// Label is the visible text; an icon-only button leaves it empty and sets AriaLabel.
 	Label     string
 	AriaLabel string
 	Icon      render.HTML
-	// Suffix renders after the label — a keyboard hint, a count. It is
-	// the caller's markup, so whether it is announced is the caller's
-	// decision: a keyboard hint hides its glyphs and supplies words, a
-	// badge announces itself.
-	Suffix render.HTML
-	// Variant and Size are class-map vocabulary, passed through so the class map
-	// can look up "<part>--<variant>". The structure does not care.
+	// Suffix is caller markup after the label, such as a keyboard hint or a count.
+	Suffix  render.HTML
 	Variant string
 	Size    string
-	// Disabled is a real state here. A disabled anchor is not a thing
-	// in HTML, so Href + Disabled drops the href and says so with
-	// aria-disabled rather than leaving a live link that looks dead.
+	// Disabled with Href drops the href and renders aria-disabled instead.
 	Disabled bool
 	Type     string
 	Href     string
-	// External, with Href, opens the link in a new tab with
-	// rel="noopener noreferrer" and owns target and rel: a caller's
-	// spelling of either — folded or not — cannot clobber the noopener
-	// contract.
+	// External, with Href, opens a new tab with rel="noopener noreferrer" and owns target and rel.
 	External bool
-	// PopoverTarget names a popover this button opens. It is also what
-	// gives that popover its invoker, which is how the runtime places
-	// the panel beside this button.
+	// PopoverTarget names the popover this button opens.
 	PopoverTarget string
 	// HasPopup, when set, is the aria-haspopup value ("menu", "dialog").
 	HasPopup string
 
-	// Action is what the button DOES when the host framework's runtime
-	// is on the page: the data-cui-rpc attributes of one of its
-	// actions, as its Attrs() returns them, one of its local signal
-	// mutations (set, increment, toggle), or one of the wiring keys a
-	// page can put on any clickable — opening a widget or pane, firing
-	// a toast, writing the URL, deep-linking an open, prefetching a
-	// runtime module. It is a seam of its own rather than a use of
-	// ExtraAttrs, because ExtraAttrs is for what a page knows and a
-	// component cannot — a test id, a title — and Safe drops every
-	// data-cui-* key from it so a decoration can never become a
-	// request. An action is not decoration. Naming it makes it
-	// reviewable: a button that fires a request says so in its props,
-	// in one place, and the type refuses anything that is not a
-	// request or a wiring key.
-	//
-	// The request family (data-cui-rpc*, data-cui-confirm, the signal
-	// mutations) needs a button: an anchor carrying one is refused at
-	// render, because a link navigates and a button acts. The wiring
-	// keys may ride either tag.
+	// Action is the request or wiring attributes a click performs (data-cui-rpc*,
+	// signal mutations, open, toast, pane keys); an anchor takes only the wiring keys.
 	Action html.Attrs
 
 	ID         string
 	ExtraAttrs html.Attrs
-	// Parts is the caller's reach into this component's named parts:
-	// attributes on the root (a class appends, never replaces) and on
-	// the icon. The root is not fillable; the icon is caller markup
-	// already.
+	// Parts sets attrs on the root (a class appends) and on the icon.
 	Parts Parts
 }
 
-// linkLegal reports whether an Action key may ride an anchor: exactly
-// the wiring keys that say where a click goes — opening a widget,
-// deep-linking its data, writing the URL, prefetching a module,
-// leaving an intercept stack for the page, swapping the target into
-// the top intercept layer, opening a record as a layer over the target
-// page, declining the client router (data-cui-nav="off"). The
-// rest of the vocabulary needs a button, because a link navigates and
-// a button acts: a request, a pane, a toast or a local mutation on an
-// anchor is a click the href and the runtime would both answer.
 func linkLegal(key string) bool {
 	switch key {
 	case "data-cui-open", "data-cui-push-state", "data-cui-deeplink", "data-cui-prefetch",
@@ -94,26 +51,9 @@ func linkLegal(key string) bool {
 	return false
 }
 
-// actionAttrs returns the action's attributes, refusing any that are
-// not an action's. The framework's runtime reads many data-cui-*
-// families; what belongs here is what a click DOES — a request, a
-// local signal mutation, or one of the wiring keys core-ui/interactive
-// can splice onto a clickable (open, pane open/close, pane key, toast,
-// push state, deeplink, prefetch) — so a caller cannot use this seam
-// to hand a button a signal binding or an optimistic lifecycle it does
-// not render the markup for. Every key is checked for what it
-// deserves: endpoints and the URLs the history API touches must be
-// same-origin, values that name things must be non-empty, the toast
-// payload must parse as JSON, and module names must keep the shape the
-// runtime's loader checks anyway.
 func actionAttrs(a html.Attrs) html.Attrs {
 	out := html.Attrs{}
 	for k, v := range a {
-		// Attribute names are case-insensitive in HTML; fold first so
-		// a caller's spelling cannot dodge a check by its case, and
-		// store folded so the runtime reads one canonical name. One
-		// key under two spellings is refused for the same reason Safe
-		// refuses it.
 		k = strings.ToLower(k)
 		if _, twice := out[k]; twice {
 			panic("headless: Action repeats " + k + " under two spellings")
@@ -148,22 +88,13 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			out[k] = v
 		case "data-cui-rpc-open", "data-cui-rpc-after-text", "data-cui-rpc-scroll-to",
 			"data-cui-rpc-refresh", "data-cui-confirm":
-			// refresh names the widget the runtime re-polls once the
-			// request succeeds (rpc.js); the rest of the family names
-			// or says something, and empty names nothing.
 			if v == "" {
 				panic("headless: Action carries an empty " + k + " — it names or says something, and empty names nothing")
 			}
 			out[k] = v
 		case "data-cui-rpc-error-toast":
-			// The title of the toast a refused request shows (rpc.js,
-			// read as textContent). Empty is allowed: the runtime
-			// titles it with the status instead.
 			out[k] = v
 		case "data-cui-rpc-success-toast":
-			// The title of the toast a 2xx shows, before any navigate
-			// on the same button. Empty is allowed: the runtime titles
-			// it "Done".
 			out[k] = v
 		case "data-cui-rpc-success-action":
 			checkToastAction("Action", v)
@@ -171,32 +102,18 @@ func actionAttrs(a html.Attrs) html.Attrs {
 		case "data-cui-rpc-close", "data-cui-rpc-reset", "data-cui-rpc-after-disable",
 			"data-cui-intercept-close", "data-cui-intercept-page", "data-cui-intercept-swap",
 			"data-cui-intercept-panel":
-			// Presence is the value. intercept-close closes the
-			// enclosing intercept overlay — the runtime's own family
-			// (fragments.go owns it), carried the same way a page
-			// carries pane-close.
 			out[k] = v
 		case "data-cui-nav":
-			// A link the client router must not take: the destination
-			// gets a full document load (nav.js). "off" is the only
-			// value the runtime reads.
 			if v != "off" {
 				panic("headless: Action carries data-cui-nav " + strconv.Quote(v) + ", and off is the only value the runtime reads")
 			}
 			out[k] = v
 		case "data-cui-action":
-			// The enclosing widget's own close, read by its scoped
-			// click handler (widgets.js): the one wiring key that
-			// fires no request and opens nothing, which is why a
-			// modal's Cancel needs it. "close" is the only value the
-			// runtime reads; anything else is a button that does
-			// nothing, so it is refused here instead.
 			if v != "close" {
 				panic("headless: Action carries data-cui-action " + strconv.Quote(v) + ", and close is the only action the widget runtime reads")
 			}
 			out[k] = v
 		case "data-cui-signal-set", "data-cui-signal-inc", "data-cui-signal-toggle":
-			// The value is "signal" or "signal:argument".
 			checkSignalName(strings.SplitN(v, ":", 2)[0])
 			out[k] = v
 		case "data-cui-push-state":
@@ -219,22 +136,16 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			}
 			out[k] = v
 		case "data-hui-pane-key":
-			// The record identity a keyed pane deep-links into the
-			// URL (interactive.PaneKey; the runtime reads it on pane
-			// triggers). Names something; empty names nothing.
 			if v == "" {
 				panic("headless: Action carries an empty data-hui-pane-key — it names the record a keyed pane deep-links, and empty names nothing")
 			}
 			out[k] = v
 		case "data-hui-pane-close":
-			// An empty value closes the topmost pane.
 			if v != "" && v != "secondary" && v != "tertiary" {
 				panic("headless: Action carries data-hui-pane-close " + strconv.Quote(v) + ", which is not a pane a PaneHost renders")
 			}
 			out[k] = v
 		case "data-hui-pane-host-target":
-			// The id of the host an OUTSIDE trigger drives. Names an
-			// element; empty names nothing.
 			if v == "" {
 				panic("headless: Action carries an empty data-hui-pane-host-target — it names the host the trigger drives, and empty names nothing")
 			}
@@ -244,9 +155,6 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			checkConfirmWording("Action", a, k, v)
 			out[k] = v
 		case "data-cui-confirm-part":
-			// The part of the kit's confirm dialog this button is: the
-			// confirm module (confirm.js) finds the answer buttons by
-			// it. Only the dialog's own buttons carry one.
 			if v != "accept" && v != "accept-danger" && v != "cancel" {
 				panic("headless: Action carries data-cui-confirm-part " + strconv.Quote(v) + ", and a confirm dialog's buttons are accept, accept-danger and cancel")
 			}
@@ -266,10 +174,6 @@ func actionAttrs(a html.Attrs) html.Attrs {
 			panic("headless: Action carries " + k + ", which is not a request or wiring attribute")
 		}
 	}
-	// The widget close is request-free by definition: the runtime's
-	// click handler dispatches a data-cui-rpc first and returns, so a
-	// button carrying both would fire the request and never close. A
-	// close that follows a request is data-cui-rpc-close.
 	if _, close := out["data-cui-action"]; close {
 		if _, rpc := out["data-cui-rpc"]; rpc {
 			panic("headless: Action carries data-cui-action=\"close\" beside data-cui-rpc — the runtime fires the request and never reaches the close; a close after a request is data-cui-rpc-close")
@@ -309,10 +213,6 @@ func Button(p ButtonProps, s Classes) render.HTML {
 	}
 	own = Merge(Safe(p.ExtraAttrs, owned...), own)
 	own = Merge(own, action)
-	// A control that opens something says so, and says whether it is
-	// open right now. The runtime keeps it true from then on; this is
-	// the starting value, and without it the first state a screen
-	// reader reads is no state at all.
 	if p.PopoverTarget != "" && p.HasPopup != "" {
 		own["aria-expanded"] = "false"
 	}
@@ -342,18 +242,8 @@ func Button(p ButtonProps, s Classes) render.HTML {
 	}
 
 	if p.Href != "" {
-		// The href goes through the framework's one anchor policy:
-		// http(s), relative, fragment, mailto and tel pass; javascript:
-		// and data: do not, and neither does a protocol-relative or
-		// backslash spelling. A rejected href renders the same posture
-		// as a disabled link — named, visible, out of the tab order —
-		// rather than a link that runs something.
 		href := urlsafe.CleanAnchor(p.Href)
 		if p.Disabled || href == "" {
-			// The Action's wiring goes with the href: the runtime's
-			// delegates (data-cui-open and the rest) read no
-			// aria-disabled, so a dead-looking link kept opening its
-			// widget on click.
 			for k := range action {
 				delete(own, k)
 			}
@@ -381,7 +271,6 @@ func orDefault(s, fallback string) string {
 	return s
 }
 
-// hasFold reports whether a carries key under any spelling of its case.
 func hasFold(a html.Attrs, key string) bool {
 	for k := range a {
 		if strings.EqualFold(k, key) {
@@ -391,14 +280,6 @@ func hasFold(a html.Attrs, key string) bool {
 	return false
 }
 
-// checkConfirmWording checks what a confirm dialog says
-// (interactive.Confirm): a title or an accept label must say
-// something, danger is the one tone the dialog draws, and every one
-// of them rides only beside the data-cui-confirm it words.
-// checkToastAction checks a data-cui-rpc-success-action: the success
-// toast's one button, {"label", "attrs"}, whose attrs are RPC wiring only
-// (the runtime copies nothing else onto the button) and are checked as a
-// Button's own would be, so its navigate stays same-origin too.
 func checkToastAction(seam, v string) {
 	var a struct {
 		Label string            `json:"label"`
@@ -415,8 +296,6 @@ func checkToastAction(seam, v string) {
 	actionAttrs(html.Attrs(a.Attrs))
 }
 
-// checkToastActionRides refuses a success toast action with no success
-// toast: the runtime shows the action only on that toast.
 func checkToastActionRides(seam string, out html.Attrs) {
 	if _, act := out["data-cui-rpc-success-action"]; act {
 		if _, toast := out["data-cui-rpc-success-toast"]; !toast {

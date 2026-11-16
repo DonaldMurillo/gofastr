@@ -24,13 +24,158 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+- **An embed nonce that expires during its exchange answers `ErrExpired`.**
+  `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
+  never used whose retention deadline passed between verification and
+  the burn. Nothing to change.
+- **A `Tooltip` with no id scope on `Ctx` gets a unique id.** Without a
+  scope (no `Ctx`, or `context.Background()`), the derived id now takes a
+  counter suffix (`tip-need-help-3`), so two same-text tooltips never
+  share one. Pass the page's ctx for an id that is the same on every
+  render.
+- **The docs now say that `Accept-Language: fr` never matches a catalog
+  that has only `fr-CA`** ([i18n](framework/docs/content/i18n.md#locale-negotiation)).
+  Ship a bare `fr` catalog, or point `fr` at the `fr-CA` messages.
+- **A dismissed Banner stays dismissed when its `DismissID` holds a space,
+  a slash, `(`, or a letter outside ASCII.** The runtime writes the cookie
+  under `encodeURIComponent(id)` and `Banner` looked it up raw, so it
+  rendered again on the next request. `Banner` now reads the encoded
+  name. Nothing to change.
+- **`BannerConfig.ID` and `NetworkRetryBannerConfig.ID` render as the
+  root's `id`.** They were documented as passed through and were dropped.
+  `headless.SystemBannerProps` gains `DOMID` for this.
+- **Two `Tooltip`s with the same `Text` no longer share an `id`.** Pass the
+  new `TooltipConfig.Ctx` and the derived id is unique on the page
+  (`tip-need-help`, then `tip-need-help-2`). Text with no letters or digits,
+  such as an emoji, gets a hash of the text instead of a bare `tip-`.
+- **`ui.Notification` with an `ID` keeps its classes.** Setting `ID`
+  dropped the `Class`, floating `Position` and registered-variant
+  classes from the root; they now render with it.
+- **`ui.OptimizedImage` no longer rewrites the caller's `Sources`.** It
+  filtered refused sources in place, so the slice the caller passed in
+  came back changed; it now filters into a new slice.
+- **`ui.ConfirmAction` refuses `__proto__`, `constructor` and
+  `prototype` as `SuccessSignal`.** The runtime never writes those
+  names, so the control could not work; it now panics at render like
+  any other invalid signal name.
+- **A `BaseURL` of `/` no longer pins the agent-ready origin.** An
+  `AgentReadyConfig.BaseURL` or `SitemapConfig.BaseURL` made only of
+  slashes used to count as pinned and yield an empty origin; it now
+  counts as unset, so discovery URLs come from the request and card
+  signing refuses to start without a real origin.
+- **A failing audit `Redact` no longer stores the unredacted row.** When
+  `AuditConfig.Redact` panics or returns a map that cannot be marshalled,
+  the audit row keeps its keys and stores `"[redaction failed]"` for
+  every value, where before it stored the row as it was before `Redact`
+  ran. A delete whose `Redact` panics keeps the original `record_id`.
+  See `audit-log.md`.
+- **A typed hook on a struct that cannot be marshalled keeps in-place
+  changes.** `OnBeforeCreate` and its siblings snapshot `*T` to tell what
+  the callback changed; a `T` with a `chan` or `func` field, or a
+  `MarshalJSON` that errors, fell back to a shallow copy, so a change made
+  inside a map, slice or pointer field was dropped. The fallback is now a
+  deep copy.
+- **A dynamic screen registered with a trailing slash no longer panics at
+  mount.** `/items/{slug}/` made `uihost.Mount` panic with a nil pointer
+  in `ValidateIntercepts`, and the same screen was left out of the route
+  manifest, the sitemap, the static export and llm.md. The router now
+  drops the trailing slash from a dynamic pattern at registration, so
+  `Screen.Path`, `ScreenByPattern`, `Paths` and intercept origins all
+  spell it `/items/:slug`. Nothing to change.
+- **A late rtc join mirror no longer kicks a peer that moved replicas.**
+  A replica compared the mirror's publish time, not the old seat's join
+  time, against the local socket, so a replica slow to publish a join
+  could close the peer's live socket on the replica it moved to, and the
+  room heard a second leave for it. The seat's `order` now decides; the
+  lane still carries `t` so older replicas keep working mid-upgrade.
+- **Escape pressed right after a modal opens closes it.** A modal or
+  popover with `CloseOnEscape` ignored an Escape that arrived before the
+  runtime's demand-loaded focus module (`widgetfocus`) had loaded, so
+  the first open of a page could stay up. The widgets module now hands
+  that Escape to the focus module once it loads.
+- **A closed confirm dialog leaves the page at once.** The confirm
+  module waited for the dialog's `close` event, which Chromium fires
+  with the next animation frame, so under load the closed dialog stayed
+  in the DOM and the gated action's answer came 300 to 900 ms late. It
+  now tears down when the dialog's `open` attribute goes. Nothing to
+  change; see the [runtime contract](framework/docs/content/runtime-contract.md).
+- **Cursor pages over seeded SQLite timestamps no longer repeat.** A
+  managed entity paged on `created_at` whose rows a seed script or
+  migration inserted as `2026-01-02T03:04:05Z` served its first page
+  again on every request. On SQLite the cursor now carries the stored
+  text for every entity, not only `Unmanaged` ones. Nothing to change;
+  see [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **No data race when a host rewrites field declarations mid-serve.**
+  A list request read the live declarations in two places (the default
+  `created_at` sort and field masks) instead of the handler's snapshot.
+  Both now read the snapshot. A `Mask` changed after `NewCrudHandler`
+  applies once `VisibleFields()` is called, like a changed `Hidden`;
+  `VisibleFields()` now rebuilds the snapshot on every call.
+- **Two quick clicks during a page transition land on the second.** A
+  click made while a view transition ran was held until the transition
+  finished, and a later click could run first; the held one then
+  overrode it and the first link's page was shown. Held clicks are now
+  delivered in the order they were made. Nothing to change.
+- **Erasure counts a row once when two entities spell its table
+  differently.** With one entity on `Notes` and another on `notes`,
+  `EraseUserData` treated them as two tables and reported each erased
+  row twice. Table names now fold the way export and the SQL already
+  did, so `EraseTableResult.Table` is the lower-case name.
+
 ### Changed
+- **CI runs side by side.** The `build · vet · test` job ran every gate
+  in series for 21 minutes. The repo analyzers, cross builds and Linux
+  desktop steps now run in `analyzers · cross-compile · desktop`, the race
+  detector in `race detector`, core-ui/runtime in three shards
+  (`scripts/go-test-shard.sh`) and the axe gate in two. The vettool is
+  built with `-buildvcs=false`, so `go vet` reuses its cached results
+  instead of re-vetting every package on every commit (3.7 minutes a run
+  in CI, about 80 s a local commit). Branch protection on main needs the
+  new check names.
+- **A browser e2e row a pull request does not reach costs seconds.** One
+  `browser e2e scope` job lists the affected packages once; each row
+  checks its pattern against that list before it restores the Go cache or
+  installs anything. Rows used to spend 1 to 1.6 minutes each finding out
+  they had nothing to run.
+- **CI installs one pinned Chromium snapshot.** `latest` moved every few
+  hours, and its new directory on `PATH` made Go's test cache re-run every
+  package whose tests look up a binary: 175 of 403 on a main run that
+  changed three files. `TestChromeIsPinned` keeps every `setup-chrome` step
+  on one fixed version; bump them together.
+- **CI saves only the Go cache entries a run used.** Go drops a cache
+  entry after five days without use, so the `go-test-` entry kept every
+  object built in that time: 5.1 GB where a fresh one is 1.0 GB, 164 s to
+  restore in each of the 18 jobs that read it, and enough to push the
+  lint and race entries out of the repo's 10 GB. On main,
+  `scripts/go-cache-prune.sh` now ages the restored entries and removes
+  the ones no step touched before the save.
+  `TestGoCacheIsPrunedBeforeSave` holds the two steps in each saving job.
+- **The analyzer vet reads each file once.** CI vetted every affected
+  package three times, as linux, windows and darwin. The windows and
+  darwin passes now vet only the packages whose Go files differ from the
+  ones the linux pass read: 41 and 15 of 457
+  (`cmd/affected -files-differ-from`). On the whole tree from a cold
+  cache the three passes took 246 s here, down from 469 s. A finding that
+  depends on another package's OS-specific types, in a package whose own
+  files are the same on every OS, is no longer looked for on windows and
+  darwin.
+- **The Linux desktop steps run when a change reaches them.** Both go
+  through `cmd/affected`: a pull request runs the `battery/desktop`
+  packages its change reaches, main runs them all. They ran in full on
+  every pull request, 2.7 to 4.6 minutes.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
   reason to send the session back.
 
 ### Added
+- **Scriptless record edits, as an opt-in** ([entityui](framework/docs/content/entityui.md)).
+  `UI.WithScriptlessEdits()` points the edit form and the masked-field
+  Replace forms at `POST <write base>/<id>/_save`, served by the new
+  `UI.SaveHandler(entity)`. It runs the CRUD update and answers 303 back
+  to the record. Mount the handler beside the entity's write routes.
+  Without the opt-in, nothing changes, and an edit still needs the runtime.
 - **A registry of the framework's parts, for contributors**
   ([primitives](primitives/README.md), [plan](primitives/PLAN.md)).
   `primitives/` holds one file per part of the framework with its
@@ -372,6 +517,56 @@ few lines, and link the PR or the docs page for the rest.
   code that serves a requested path; `static.Refuses(path)` no longer
   refuses short names, since a tree walk yields only real names, so a
   static export now publishes a `~digit` file.
+- **BREAKING: a `crud.CrudHandler` literal over a wrapped database
+  panics.** A handler over a `DB` that is not a `*sql.DB` (a wrapper, a
+  transaction) asked the database for its dialect on every sort, decimal
+  write and keyed write. One built with `crud.NewCrudHandler` now asks
+  once. One built as `&crud.CrudHandler{...}` over such a `DB` has
+  nowhere to keep the answer and panics at the first operation that
+  needs it: build it with `crud.NewCrudHandler`.
+- **BREAKING (SQLite): a sort puts rows with no value where Postgres
+  does** ([#698](https://github.com/DonaldMurillo/gofastr/issues/698)).
+  `?sort=` on a column that can hold NULL listed the null rows first
+  ascending on SQLite and last on Postgres, so an app built on SQLite
+  paged a different list in production. Both now put them last ascending
+  and first descending: the list, `?stream=true`, `ListAll`,
+  `TypedQuery.Order`, the DSL's `order()` and `GroupCountAll`. Postgres
+  is unchanged. An existing SQLite app sees its null rows move to the
+  other end of a sorted list. See
+  [entity declarations](framework/docs/content/entity-declarations.md),
+  "sort".
+- **BREAKING: `queue_dead_letter_total` is now the gauge
+  `queue_dead_letter_jobs`** ([observability](framework/docs/content/observability.md)).
+  It was declared a counter but held the current count of failed jobs,
+  so it fell on a replay or an erasure and `rate()` read each fall as a
+  reset. There is no alias: point dashboards and alerts at the new name
+  and drop `rate()` or `increase()` around it. `queue_depth` now reports
+  the real backlog on the memory and Redis queues; it read 0 there.
+- **BREAKING: `outbox_dead_letter_total` is now the gauge
+  `outbox_dead_letter_deliveries`** ([observability](framework/docs/content/observability.md)).
+  It was declared a counter but is the number of dead-lettered
+  deliveries the outbox holds now, so it fell on a `Replay`, a purge or
+  an erasure. There is no alias: point dashboards and alerts at the new
+  name and drop `rate()` or `increase()` around it.
+- **BREAKING: `RedisQueue` counts only with `LLEN`**
+  ([queue](framework/docs/content/queue.md#optional-listlengther)).
+  `Stats` read the whole dead-letter list, every payload included, on
+  each `/metrics` scrape and each admin Jobs page load. It now asks the
+  client for the length (`queue.ListLengther`). Over a client without
+  `LLen`, `Stats` returns an error, the collector emits neither
+  `queue_depth` nor `queue_dead_letter_jobs`, and the admin shows the
+  failed jobs with no counts, no pager and no "Replay N failed" button:
+  add the one-line `LLen` method to the adapter. `Replay` now reads the
+  dead-letter list a page at a time instead of whole.
+- **BREAKING: the in-memory scheduler's `Register` refuses a schedule
+  with no job type** ([queue](framework/docs/content/queue.md)). It
+  returned nil and registered nothing, so the schedule never fired; the
+  durable scheduler already refused it.
+- **BREAKING: an embed origin whose last label is a number must be a
+  dotted quad** ([embed](framework/docs/content/embed.md)).
+  `https://0x7f000001` and `https://example.123` booted and then never
+  matched, since a browser rewrites or refuses such a host. They are now
+  refused at boot.
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left
@@ -379,6 +574,25 @@ few lines, and link the PR or the docs page for the rest.
   rowid fills, including the integer part of a composite key) answers
   `400` with the key `required`, as Postgres does, and is rolled back.
   SQLite stored such a row, and no route could read, update or delete it.
+- **BREAKING (SQLite): a new table's primary key is `NOT NULL`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). SQLite
+  takes `NULL` in a primary-key column unless it says `NOT NULL`, and only
+  a composite key said so. `CREATE TABLE` on SQLite (boot, `migrate
+  generate`, the table rebuild) now writes `NOT NULL` on a one-column key
+  too, for entities and `migrate.Table`, except a lone `INTEGER PRIMARY
+  KEY`, which SQLite numbers itself. A raw SQL insert that leaves out a
+  text key, or sends `NULL`, is refused as on Postgres. An existing table
+  is not rebuilt and no migration is proposed for it; a later rebuild of
+  one fails on a row whose key is `NULL`, so give those rows a key first.
+  The tables the framework, the batteries and core create for themselves
+  (audit log, modules, outbox, bulk jobs, queue and its schedules,
+  webhooks, saved views, the auth stores, idempotency keys, feature
+  flags, A2A tasks, embed nonces, the harness session store) and the
+  migration `gofastr init` writes say `NOT NULL` on their keys too, under
+  the same terms: new tables only. `gofastr verify` has a new error,
+  `GOFASTR1418`, for a hand-written `CREATE TABLE` whose primary-key
+  column has no `NOT NULL`: add it, or mark the line
+  `//gofastr:allow(GOFASTR1418) <why>`.
 - **BREAKING: generated read shapes carry optional scalars as
   pointers** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   In the generated entities model struct and the generated Go client's read
@@ -542,6 +756,13 @@ few lines, and link the PR or the docs page for the rest.
   under `locale_prefixes`.
 
 ### Security
+- **One terminal scrub** ([core packages](framework/docs/content/core-packages.md)).
+  Six places stripped control characters from text bound for an
+  operator's terminal, each with its own set: codegen extension stderr
+  and module probe detail kept C1 controls and bidi overrides, and
+  `service logs` kept bidi and zero-width characters. All of them, with
+  the CLI, the contracts report and the harness TUI, now print through
+  `textsafe.ScrubTerminal`.
 - **BREAKING: Go 1.27.4 is the floor.** `go.mod` declares `go 1.27.4`,
   up from `go 1.27.3`. Go 1.27.3's net/http carries GO-2026-6859, an
   HTTP/1 server crash through a `MaxBytesReader` header race, and every
@@ -867,6 +1088,62 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **A hop page under a locale prefix reloads the prefixed path**
+  ([i18n](framework/docs/content/i18n.md),
+  [auth](framework/docs/content/auth.md)). With
+  `framework.WithLocalePrefixes`, the same-site hop page answered on
+  `/es/orders` sent `Refresh: 0;url=/orders`, so the reload left the
+  reader's language. The response rewrite now covers the `Refresh`
+  header, a `<meta http-equiv="refresh">` and `Content-Location`, for
+  every handler, as it covers `Location`. A URL that already carries a
+  locale, another site's URL and a `//host` URL stay as written.
+- **A signed-in user who follows an outside link into a guarded page
+  lands on the page** ([auth](framework/docs/content/auth.md),
+  [admin](framework/docs/content/admin.md)). The browser withholds the
+  `SameSite=Strict` session cookie from a page load that starts on
+  another site, so the admin and every guarded page sent them to login.
+  `auth.SessionMiddleware` now answers a cross-site top-level `GET` with
+  no session cookie that is about to get a `401` or a gate's login
+  redirect with the same-site hop page, which reloads the URL with the
+  cookie. A signed-out visitor from another site gets the login redirect
+  one page load later. A guard of your own that redirects to login calls
+  the new `handler.NoteSessionRefusal(ctx)` first; `RequireSession`,
+  `SessionPolicy`, `RolePolicy` and `battery/admin` already do.
+- **Hunt round 12: 37 fixes across queue, migrate, webhook, service,
+  admin, semantic, embed, a2a, mcp, middleware, stream and rtc.** The
+  ones a host can see:
+  - On Postgres, erasing a user while the durable scheduler committed a
+    tick left that user's job behind. The in-memory scheduler fired an
+    interval that was not a multiple of its wake cadence late every
+    cycle (`Every(90s)` ran every 120s).
+  - On Postgres, a generated migration that retypes a column now drops
+    and recreates the declared views that depend on the table. A column
+    named `primary` or `foreign` no longer generates a migration on
+    every run. A view named with a keyword is quoted.
+  - A paused webhook subscriber read back from the SQL store and
+    subscribed again stays paused. A credential a receiver echoes across
+    `ResponseBodyLimit` is redacted before the body is cut.
+  - `battery/admin` mounts no write routes for a read-only view, and a
+    replay of a job that is not failed queues and audits nothing.
+  - `POST /semantic/query` answers 400 (`semantic.InvalidQueryError`)
+    for a caller fault where it answered 500, and a filter number such
+    as `1e999999` no longer costs CPU per stored chunk.
+  - An MCP prompt or resource handler that returns a typed 4xx
+    `*handler.Error` or a wrapped `*mcp.RPCError` answers as a tool
+    does; `WithResourceTemplateGate(nil)` panics as the other gates do.
+  - The memory idempotency store drops expired entries; the SQL one
+    compares expiry in UTC. A rate-limit bucket that sat full no longer
+    allows two `Capacity` bursts back to back.
+  - A `service` localhost tab is sent to `[::1]` for an IPv6 bind.
+- **Reading a record and writing it back stored the mask.** A `Mask`
+  field reads as `****1111`; a client that sent that back had it stored
+  over the card number. A write whose value for a masked field is the
+  masked form of the stored value now leaves that column alone, on REST
+  `PATCH`/`PUT`, `_batch`, cascade children, the MCP update tool,
+  `UpdateOne`, `BatchUpdateMany` and `UpsertOne`. You cannot set a masked
+  field to its own masked form. `TypedQuery.UpdateAll` writes what it is
+  given. See [entity declarations](framework/docs/content/entity-declarations.md),
+  "Writing a masked field back".
 - **A `ui.DataTable` caption wrapped in a narrow box on a phone.** In
   the card and row phone layouts the caption stayed a table caption
   inside a table that no longer was one, and shrank to its longest word.

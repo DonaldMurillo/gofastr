@@ -23,86 +23,61 @@ import (
 )
 
 // StrictLevel is the posture of one strict check. The zero value is
-// StrictEnforce, so a zero-value [StrictConfig], and a bare
-// WithStrict(), is the strictest configuration, and relaxing anything
-// is always an explicit, visible-in-review choice.
+// StrictEnforce.
 type StrictLevel int
 
 const (
-	// StrictEnforce fails boot on findings (the default everywhere).
+	// StrictEnforce fails boot on findings.
 	StrictEnforce StrictLevel = iota
 	// StrictWarn logs each finding via slog.Warn and serves.
 	StrictWarn
-	// StrictOff skips the check entirely.
+	// StrictOff skips the check.
 	StrictOff
 )
 
 // StrictAbsencePosture is the posture of the missing-axe-manifest
-// reminder, a check whose DEFAULT is warn (unlike everything else):
-// absence is a state every fresh checkout passes through, drift is not.
+// reminder. Its zero value warns.
 type StrictAbsencePosture int
 
 const (
-	// StrictAbsenceWarn (the zero value) logs and serves.
+	// StrictAbsenceWarn logs and serves.
 	StrictAbsenceWarn StrictAbsencePosture = iota
 	// StrictAbsenceEnforce fails boot until the axe suite has run.
 	StrictAbsenceEnforce
-	// StrictAbsenceOff silences the reminder entirely.
+	// StrictAbsenceOff silences the reminder.
 	StrictAbsenceOff
 )
 
-// StrictConfig tunes every strict check individually. The zero value
-// enforces everything: each field is only ever written to relax.
+// StrictConfig sets the level of each strict check. The zero value
+// enforces everything.
 type StrictConfig struct {
 	// ScreenTitles: every page screen declares a title.
 	ScreenTitles StrictLevel
 	// ScreenDescriptions: every page screen declares a description or
-	// implements [ScreenSEO] (a zero-value return is the documented
-	// per-page opt-out).
+	// implements [ScreenSEO].
 	ScreenDescriptions StrictLevel
-	// SiteDescription: a site description with text in it, from
-	// [WithDescription] or a description tag in [WithHeadHTML].
+	// SiteDescription: [WithDescription] or a description tag in [WithHeadHTML].
 	SiteDescription StrictLevel
 	// SiteIcon: [WithAppIcon] or [WithFavicon] configured.
 	SiteIcon StrictLevel
-	// Sitemap: [WithSitemap] configured.
+	// Sitemap: [WithSitemap] configured with a valid BaseURL.
 	Sitemap StrictLevel
 	// Robots: [WithRobots] configured.
 	Robots StrictLevel
-	// InternalLinks: every internal link in the site chrome (each
-	// layout's header, sidebar, footer) points at a path the app
-	// actually serves: a registered screen (dynamic routes included),
-	// a static file, or any GET route on the framework router, once
-	// the route table is complete at boot (App.Start → ValidateBoot).
-	// A catch-all GET route (/{path...}) satisfies the check for every
-	// path it claims, so links under one are accepted, not verified.
-	// External URLs, anchors, query-only refs, and template
-	// placeholders are out of scope. ExemptScreens entries also exempt
-	// links whose target falls under them.
+	// InternalLinks: every internal link in the layouts' chrome points at a
+	// path the app serves. Checked by [UIHost.ValidateBoot].
 	InternalLinks StrictLevel
-	// AxeCoverage: every page route has a recorded axe scan in the
-	// .gofastr/axe-coverage.json manifest. Only evaluated under
-	// `gofastr dev` regardless of level: the manifest is a local test
-	// artifact that never ships, so production boots can't depend on it.
+	// AxeCoverage: every page route has a recorded axe scan in
+	// .gofastr/axe-coverage.json. Evaluated only under `gofastr dev`.
 	AxeCoverage StrictLevel
-	// AxeManifestMissing is the posture when the manifest doesn't exist
-	// at all (fresh clone / fresh generate, the axe suite has never
-	// run). Its zero value is StrictAbsenceWarn, NOT enforce: first
-	// boot should never be walled off behind a Chrome run. Set
-	// StrictAbsenceEnforce for environments where an unproven checkout
-	// must not serve, or StrictAbsenceOff to silence the reminder.
+	// AxeManifestMissing is the posture when that manifest does not exist.
 	AxeManifestMissing StrictAbsencePosture
 
-	// ExemptScreens lists route patterns the per-screen checks
-	// (ScreenTitles, ScreenDescriptions, AxeCoverage) skip. An entry is
-	// an exact route pattern ("/machine/feed") or a prefix wildcard
-	// ("/internal/*"). Use for routes that are deliberately outside the
-	// SEO/a11y bar; site-level checks are unaffected.
+	// ExemptScreens lists route patterns, exact or "/prefix/*", that the
+	// per-screen checks and the link check skip.
 	ExemptScreens []string
 }
 
-// strict check identifiers: used to route findings through their
-// configured level and to label warn logs.
 const (
 	strictCheckScreenTitles       = "screen-titles"
 	strictCheckScreenDescriptions = "screen-descriptions"
@@ -115,7 +90,6 @@ const (
 	strictCheckAxeManifest        = "axe-manifest"
 )
 
-// level resolves the configured posture for one check id.
 func (c StrictConfig) level(check string) StrictLevel {
 	switch check {
 	case strictCheckScreenTitles:
@@ -147,8 +121,6 @@ func (c StrictConfig) level(check string) StrictLevel {
 	return StrictEnforce
 }
 
-// exempt reports whether a route pattern is excluded from per-screen
-// checks. Entries match exactly, or by prefix when they end in "/*".
 func (c StrictConfig) exempt(route string) bool {
 	for _, e := range c.ExemptScreens {
 		if prefix, ok := strings.CutSuffix(e, "/*"); ok {
@@ -164,39 +136,11 @@ func (c StrictConfig) exempt(route string) bool {
 	return false
 }
 
-// WithStrict turns missing launch hygiene into boot failures. The host
-// validates the app's declared surface and panics with every enforced
-// finding at once (each with a fix hint) instead of serving. Most
-// checks run at Mount; the internal-link check runs later, at boot
-// (see [UIHost.ValidateBoot]), because it needs the complete route
-// table, which batteries, plugins, and App.Start itself finish
-// registering only after Mount. The checks:
-//
-//   - every page screen declares a title, and a description unless it
-//     implements [ScreenSEO] (the documented zero-value opt-out: a
-//     deliberate "this page is naked" beats a forgotten one);
-//   - the site declares a description ([WithDescription]), an icon
-//     ([WithFavicon] or [WithAppIcon]), a sitemap ([WithSitemap]), and
-//     robots directives ([WithRobots]);
-//   - every internal link in the site chrome (each layout's header,
-//     sidebar, footer) points at a path the app serves: a registered
-//     screen (dynamic routes included), a static file, or any GET
-//     route on the framework router once the table is complete. A
-//     catch-all GET route (/{path...}) satisfies the check for every
-//     path it claims, so links under one are accepted, not verified;
-//   - under `gofastr dev` only: every page route is covered by the
-//     axe-coverage manifest (.gofastr/axe-coverage.json) that
-//     framework/testkit/axetest scans record, i.e. every screen has an
-//     accessibility test. A manifest that exists but misses a route is
-//     drift; a manifest that doesn't exist yet (fresh clone or fresh
-//     generate) warns by default so first boot is never walled off
-//     behind a Chrome run. Production boots skip axe checks entirely.
-//
-// WithStrict() with no arguments enforces everything. Pass a
-// [StrictConfig] to tune each check to enforce, warn, or off, exempt
-// specific routes, or harden the missing-manifest posture. The zero
-// value of every field is the strictest setting, so configuration only
-// ever relaxes, visibly.
+// WithStrict makes the host refuse to boot while the app misses launch
+// hygiene: screen titles and descriptions, a site description, an icon, a
+// sitemap, robots directives, working chrome links and, under `gofastr dev`,
+// axe coverage. Every enforced finding panics together, each with its fix.
+// Pass at most one [StrictConfig] to relax checks; a later WithStrict wins.
 func WithStrict(cfg ...StrictConfig) Option {
 	if len(cfg) > 1 {
 		panic("uihost.WithStrict: pass at most one StrictConfig")
@@ -207,32 +151,15 @@ func WithStrict(cfg ...StrictConfig) Option {
 	}
 	return func(ds *UIHost) {
 		ds.strict = true
-		// Always assign, so a later bare WithStrict() restores the
-		// documented all-enforced posture (last option wins) instead of
-		// silently keeping an earlier relaxed config.
 		ds.strictConfig = conf
 	}
 }
 
-// strictFinding is one violation, tagged with the check that produced
-// it so enforceStrict can route it through the configured level.
 type strictFinding struct {
 	check string
 	msg   string
 }
 
-// enforceStrict runs the Mount-time strict checks — everything that
-// judges only the host's own configuration and the screens registered
-// before Mount — and panics with every enforced finding at once. Boot
-// time, before any traffic, so a strict app can never serve a surface
-// that fails its enforced checks. Panic (not error) is the framework's
-// contract for configuration it cannot honor, same as route conflicts
-// and fanout-without-secret.
-//
-// The internal-link check is NOT here: it resolves chrome hrefs against
-// the route table, which is still partial at Mount (batteries and
-// plugins register during App.Start, and Start itself registers more
-// after them). It runs in ValidateBoot instead, on the complete table.
 func (ds *UIHost) enforceStrict() {
 	if !ds.strict {
 		return
@@ -247,34 +174,15 @@ func (ds *UIHost) enforceStrict() {
 	ds.enforceFindings(findings)
 }
 
-// ValidateBoot runs the strict checks that need the app's COMPLETE route
-// table: the internal-link check, which resolves every chrome href
-// against everything the app will serve. At Mount that table is partial
-// — batteries and plugins register routes during App.Start's InitPlugins
-// phase, App.Start registers more after them (OpenAPI, /mcp, health,
-// well-knowns), and UIHost's own conditional endpoints register at the
-// tail of Mount — so a link check there flags working links (a sidebar
-// "Back office" → /admin panic-boots an app that serves it).
-//
-// App.Start calls this through framework.BootValidator after the last
-// route registration and before the listener binds: the latest point at
-// which a finding can still refuse to serve. A host mounted outside a
-// framework.App never reaches this point and never gets the link check;
-// nothing owns the "route table is complete" moment for such a host.
-// Panic contract matches every other strict check.
+// ValidateBoot runs the boot checks that need the complete route and screen
+// tables: it compiles late screens' actions, refuses server actions on
+// embeddable screens, builds the behaviour registry and, under [WithStrict],
+// checks chrome links. framework.App.Start calls it after the last route
+// registration; it panics on a finding.
 func (ds *UIHost) ValidateBoot() {
-	// Strict or not: the toast region is a boot guarantee, not a check.
 	ds.ensureToastStack()
-	// A screen a plugin's Init registered after Mount has had no compile
-	// pass, so its data-action clicks answered 404. Scan again here, where
-	// the screen table is complete: screens compiled at Mount keep their
-	// registry, and the id-collision and embed refusals see the late ones.
 	ds.AutoCompileActions()
 	ds.enforceNoServerActionsOnEmbeds()
-	// Every package's init has run by now, so the behaviour registry is
-	// complete: build its block here and a refused requirement graph (a
-	// cycle, an unknown module, a shadowed name) stops the boot instead
-	// of waiting for the first page request to answer 500.
 	runtime.BehaviorsJSON()
 	if !ds.strict || ds.strictConfig.level(strictCheckInternalLinks) == StrictOff {
 		return
@@ -282,18 +190,12 @@ func (ds *UIHost) ValidateBoot() {
 	ds.enforceFindings(ds.strictChromeLinkFindings(ds.strictConfig))
 }
 
-// enforceFindings routes findings through their configured levels:
-// off-level findings are dropped, warn-level findings are logged, and
-// the enforced remainder panics together, each with its remedy. Shared
-// by the Mount-time checks and ValidateBoot so both have identical
-// warn/enforce semantics.
 func (ds *UIHost) enforceFindings(findings []strictFinding) {
 	cfg := ds.strictConfig
 	var enforced []string
 	for _, f := range findings {
 		switch cfg.level(f.check) {
 		case StrictOff:
-			// skipped entirely
 		case StrictWarn:
 			slog.Warn("uihost strict: "+f.msg, "check", f.check)
 		default:
@@ -312,15 +214,9 @@ func (ds *UIHost) enforceFindings(findings []strictFinding) {
 	panic(b.String())
 }
 
-// strictScreenFindings checks per-screen SEO completeness for every
-// page-type screen. Drawers, sheets, and dialogs are skipped. They
-// render inside a page and have no head of their own.
 func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 	var out []strictFinding
 	for _, path := range ds.App.Router.Paths() {
-		// ScreenByPattern, not Resolve: Paths() yields patterns, and a
-		// constrained pattern's own text ("/notes/:id:int") fails its
-		// constraint, which skipped the screen.
 		screen, ok := ds.App.Router.ScreenByPattern(path)
 		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
 			continue
@@ -337,8 +233,6 @@ func (ds *UIHost) strictScreenFindings(cfg StrictConfig) []strictFinding {
 	return out
 }
 
-// strictSiteFindings checks the site-level surface a public app should
-// never ship without.
 func (ds *UIHost) strictSiteFindings() []strictFinding {
 	var out []strictFinding
 	if ds.siteDescriptionText() == "" {
@@ -362,41 +256,10 @@ func (ds *UIHost) strictSiteFindings() []strictFinding {
 	return out
 }
 
-// strictChromeLinkFindings renders the site chrome — every layout's
-// header, sidebar, and footer — and reports internal links that point
-// at a path nothing serves. The chrome is where a route reference is
-// still declarative at boot (nav, footer, and sidebar config), and it
-// needs no request: layouts render their components with a background
-// is the same computation the first request performs.
-//
-// Scope, deliberately narrow on the input side so the output side can
-// be strict:
-//
-//   - <a href> only. Form actions and data-cui-rpc attributes target
-//     handlers, not pages; flagging them would misfire on every CRUD
-//     form and API post in the chrome.
-//   - A chrome component whose render fails is skipped with a warning,
-//     not flagged: a context-aware header that needs a signed-in user
-//     is legitimate, and strict must not demand a request at boot.
-//     Coverage, not enforcement, is the honest limit there.
-//   - Only layouts reachable through the exported router surface are
-//     checked (the default layout plus each screen's own). The OUTER
-//     shells of nested ScreenGroups with distinct layouts at two
-//     levels are resolved through unexported state and are not
-//     enumerated; the generator emits no such shape.
-//
-// appgen.LintNavHrefs only warns: unlike this complete boot table, owned routes and static inputs are not fully known to validate.
 func (ds *UIHost) strictChromeLinkFindings(cfg StrictConfig) []strictFinding {
 	probe := newGETProbe(ds.coreRouter)
-	// href → "layout %q chrome" origin of the first chrome that carried
-	// it. One finding per href, however many layouts repeat it: the fix
-	// is one registration (or one edit) either way.
 	broken := map[string]string{}
 	for _, l := range ds.strictLayouts() {
-		// A layout's chrome is its build's static markup (plus outlet
-		// defaults), rendered whole: the build function is the only
-		// place a header, sidebar, or footer lives since the
-		// fixed-template slots were removed.
 		html := string(l.WrapCtx(context.Background(), ""))
 		for _, href := range extractChromeHrefs(html) {
 			path, internal := internalRoutePath(href)
@@ -422,11 +285,6 @@ func (ds *UIHost) strictChromeLinkFindings(cfg StrictConfig) []strictFinding {
 	return out
 }
 
-// strictLayouts enumerates the layouts the exported router surface can
-// reach: the router's default layout plus the layout of every page
-// screen, deduplicated and ordered by name for deterministic findings.
-// ScreenByPattern (not Resolve) because Paths() yields patterns and a
-// constrained pattern's own text fails its constraint at resolve time.
 func (ds *UIHost) strictLayouts() []*app.Layout {
 	var layouts []*app.Layout
 	seen := map[*app.Layout]bool{}
@@ -448,15 +306,8 @@ func (ds *UIHost) strictLayouts() []*app.Layout {
 	return layouts
 }
 
-// chromeHrefRe finds href attribute values in chrome markup. The
-// leading [\s<] excludes namespaced and data- attributes (xlink:href,
-// data-href): only a plain href on an element counts as a navigation
-// reference. Both quote styles are accepted; design-system output is
-// double-quoted, hand-rolled chrome may not be.
 var chromeHrefRe = regexp.MustCompile(`[\s<]href\s*=\s*(?:"([^"]*)"|'([^']*)')`)
 
-// extractChromeHrefs returns every href value in a chrome fragment,
-// HTML-unescaped and deduplicated, in first-appearance order.
 func extractChromeHrefs(html string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -474,36 +325,8 @@ func extractChromeHrefs(html string) []string {
 	return out
 }
 
-// internalRoutePath reduces a chrome href to the internal path it
-// references, reporting false for everything the check must not judge:
-//
-//   - fragments and query-only references ("" or "?…" or "#…"): they
-//     target the current page;
-//   - anything not starting with "/" as written: absolute URLs
-//     (https://…), scheme references (mailto:, tel:), and relative
-//     references (about, ./x), which resolve against a page the check
-//     has no knowledge of at boot. Percent-decoding does not make
-//     "%2Fdocs" absolute — the browser resolves it as a relative
-//     reference — so the "/" prefix is judged on the raw text;
-//   - protocol-relative references (//host/…) and any backslash
-//     (urlsafe rejects both; sanitized chrome never carries them, and
-//     unsanitized chrome is a security finding, not a link-integrity
-//     one);
-//   - template placeholders: a segment starting with ":" (":id",
-//     ":path*") or any "{" / "<" — patterns to be filled in, not
-//     concrete references.
-//
-// Percent-escapes are decoded before matching: net/http routes on the
-// decoded path, so a href to "/docs/caf%C3%A9" must resolve against the
-// screen registered at "/docs/café" exactly as the request would. A
-// malformed escape ("%zz", a trailing "%") is left raw: no route can
-// serve it (the server answers 400 to the browser's verbatim request),
-// so it fails resolution and surfaces as a finding instead of crashing
-// the check.
 func internalRoutePath(href string) (string, bool) {
 	h := href
-	// Fragment and query split on the RAW text: those are the bytes the
-	// browser splits on, and "%3F" is path data, not a query separator.
 	if i := strings.IndexByte(h, '#'); i >= 0 {
 		h = h[:i]
 	}
@@ -527,21 +350,7 @@ func internalRoutePath(href string) (string, bool) {
 	return h, true
 }
 
-// chromeLinkResolves reports whether anything answers for path: a
-// registered screen (dynamic routes and trailing-slash canonicals
-// included, via the host's own resolution predicate), a static file,
-// the favicon shortcut, or any GET route on the framework router —
-// including UIHost's own endpoints and the battery/plugin/Start-time
-// routes, because ValidateBoot runs on the complete table. A link to a
-// served JSON or infra endpoint is not this check's business.
-//
-// One honest gap: a catch-all GET route (/{path...}) answers for every
-// path under it, so the check is vacuously satisfied there — a link it
-// covers is accepted without being verified. A catch-all MAY serve the
-// path, and probing the handler to find out would mean executing the
-// app at boot; guessing is worse than the gap.
 func (ds *UIHost) chromeLinkResolves(path string, probe *getProbe) bool {
-	// The router serves /es/pricing as /pricing (SetPathLocales).
 	if ds.pathLocales != nil {
 		if tag, rest := ds.pathLocales.Split(path); tag != "" {
 			path = rest
@@ -553,11 +362,6 @@ func (ds *UIHost) chromeLinkResolves(path string, probe *getProbe) bool {
 	return probe.serves(path)
 }
 
-// getProbe answers "does any registered route serve GET path" for the
-// framework router, the same way core/router's own 404/405 detection
-// does: a throwaway ServeMux loaded with the registered patterns.
-// Built from Routes() because the live mux dispatches handlers; asking
-// it would mean executing the app at boot.
 type getProbe struct{ mux *http.ServeMux }
 
 func newGETProbe(r *router.Router) *getProbe {
@@ -567,8 +371,6 @@ func newGETProbe(r *router.Router) *getProbe {
 	}
 	noop := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	for _, rt := range r.Routes() {
-		// A pattern that conflicts with an earlier one panics on Handle;
-		// skip it rather than abort the checks, mirroring router.probe.
 		func() {
 			defer func() { _ = recover() }()
 			p.mux.Handle(rt.Pattern, noop)
@@ -583,10 +385,8 @@ func (p *getProbe) serves(path string) bool {
 }
 
 // InvalidSitemapBaseURL reports why base cannot serve as the sitemap's
-// canonical origin ("" when it can). The sitemap protocol requires
-// absolute <loc> URLs, so strict mode refuses a configured-but-broken
-// sitemap the same way it refuses a missing one. A path prefix is
-// refused; userinfo, query, and fragment are too.
+// origin, or "" when it can. A valid base is a bare http or https origin:
+// no userinfo, query, fragment or path.
 func InvalidSitemapBaseURL(base string) string {
 	u, err := url.Parse(base)
 	switch {
@@ -608,8 +408,6 @@ func InvalidSitemapBaseURL(base string) string {
 	return ""
 }
 
-// isDynamicRoute reports whether a route pattern contains a parameter
-// or wildcard segment (":id", "{path...}").
 func isDynamicRoute(pattern string) bool {
 	for seg := range strings.SplitSeq(pattern, "/") {
 		if strings.HasPrefix(seg, ":") || strings.HasPrefix(seg, "{") {
@@ -619,34 +417,17 @@ func isDynamicRoute(pattern string) bool {
 	return false
 }
 
-// strictAxeCoverageFindings diffs the app's page routes against the
-// axe-coverage manifest the test suite recorded. A manifest entry covers
-// a route when the concrete scanned path resolves to it, so one scanned
-// "/docs/install" covers the "/docs/:slug" pattern.
-//
-// The demand surface mirrors the sitemap's discovery surface: a dynamic
-// route whose screen does not implement [app.StaticPathsProvider] is
-// invisible to the sitemap, hence unreachable by a sitemap-driven axe
-// gate, hence structurally uncoverable. Strict skips it and screams
-// instead of demanding the impossible.
 func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 	if cfg.level(strictCheckAxeCoverage) == StrictOff {
 		return nil
 	}
 	var pageRoutes, invisible []string
 	for _, path := range ds.App.Router.Paths() {
-		// ScreenByPattern, not Resolve: Paths() yields patterns, and a
-		// constrained pattern's own text ("/notes/:id:int") fails its
-		// constraint, which skipped the screen.
 		screen, ok := ds.App.Router.ScreenByPattern(path)
 		if !ok || screen.Type != app.ScreenPage || cfg.exempt(screen.Path) {
 			continue
 		}
 		if isDynamicRoute(screen.Path) {
-			// Demand follows DISCOVERY, not the interface: a StaticPaths
-			// that returns no instances leaves the route just as
-			// invisible to the sitemap-driven gate as no StaticPaths at
-			// all.
 			provider, declares := screen.Component.(app.StaticPathsProvider)
 			if !declares || len(provider.StaticPaths(context.Background())) == 0 {
 				invisible = append(invisible, screen.Path)
@@ -660,9 +441,6 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 		slog.Warn("uihost strict: dynamic screens whose StaticPaths returns no instances (or is not implemented) are invisible to the sitemap and the axe gate: return concrete instances to bring them under coverage",
 			"routes", strings.Join(invisible, ", "))
 	}
-	// No page screens → nothing an axe test could scan; requiring a
-	// manifest would fail every screen-less (API-only) app for a file
-	// it has no way to produce.
 	if len(pageRoutes) == 0 {
 		return nil
 	}
@@ -672,10 +450,6 @@ func (ds *UIHost) strictAxeCoverageFindings(cfg StrictConfig) []strictFinding {
 			return []strictFinding{{strictCheckAxeManifest, fmt.Sprintf(
 				"axe coverage unverified: no manifest at %s; run the axe suite (go test) so every screen's scan is recorded (%v)", axecov.FileName, err)}}
 		}
-		// A manifest that exists but cannot be read is NOT absence:
-		// treating corruption as absence would relax enforcement exactly
-		// when the coverage record is untrustworthy. Routed through the
-		// AxeCoverage level (enforced by default).
 		return []strictFinding{{strictCheckAxeCoverage, fmt.Sprintf(
 			"axe coverage manifest unreadable (%v): delete %s and re-run the axe suite", err, axecov.FileName)}}
 	}

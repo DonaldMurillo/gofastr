@@ -11,38 +11,13 @@ import (
 	"sync"
 )
 
-// Battery is the interface for heavyweight, lifecycle-aware modules that
-// extend a GoFastr application (auth, search, cache, queue, etc.).
-//
-// A Battery is a Plugin (Init(*App) error is the same shape) plus two
-// things a plain Plugin doesn't have:
-//
-//  1. Dependency declarations. Pass dependency names at RegisterBattery
-//     time and the framework topologically sorts the Init order so
-//     dependents see their dependencies wired first.
-//  2. Structured start/stop. Implement BatteryLifecycle to get
-//     per-battery OnStart(ctx) / OnStop(ctx) hooks, distinct from the
-//     App-wide app.OnStart / app.OnStop. The framework runs them in
-//     dependency order on Start and reverse-dependency order on Stop.
-//
-// If neither of those applies, prefer Plugin. There is less ceremony
-// and the Plugin/Battery distinction stays meaningful only for the
-// modules that genuinely need it.
-//
-// From Init the battery does everything by calling into the App:
-// register routes via app.Router, middleware via app.Use, swap the
-// logger via app.SetLogger, MCP tools via app.MCP, hooks via
-// app.HookRegistry(name).RegisterHook(...), and so on. There are no
-// optional interfaces for routes / middleware / hooks / tools. Init
-// owns it all.
+// Battery is a Plugin that declares dependencies at registration, and
+// can implement BatteryLifecycle for start and stop hooks of its own.
+// Batteries init in dependency order.
 type Battery interface {
-	// Name returns the unique battery identifier. Used for dependency
-	// resolution and logging.
+	// Name returns the unique battery identifier.
 	Name() string
-
-	// Init wires the battery into the App. Called once during App.Start,
-	// before lifecycle hooks fire and after any batteries this one
-	// depends on have themselves initialized.
+	// Init wires the battery into the App, once, after its dependencies'.
 	Init(app *App) error
 }
 
@@ -51,45 +26,31 @@ type Battery interface {
 type BatteryLifecycle interface {
 	Battery
 
-	// OnStart is called after all batteries are initialized and before the
-	// HTTP server begins accepting connections. The context is cancelled
-	// when the app shuts down, so long-running workers should respect it.
-	// The first error aborts startup.
+	// OnStart runs after every Init, before the server accepts
+	// connections; ctx is cancelled at shutdown. An error aborts startup.
 	OnStart(ctx context.Context) error
-
-	// OnStop is called during graceful shutdown, after the HTTP server has
-	// stopped. Batteries stop in reverse dependency order (dependents
-	// first, then their dependencies).
+	// OnStop runs at shutdown after the server stops, dependents first.
 	OnStop(ctx context.Context) error
 }
 
-// BatteryConfig holds metadata about a registered battery.
 type batteryEntry struct {
 	battery     Battery
-	deps        []string // names of batteries this one depends on
-	config      any      // optional battery-specific config
-	initOrder   int      // set during topological sort
-	initialized bool     // true after Init successfully ran
+	deps        []string
+	config      any
+	initOrder   int
+	initialized bool
 }
 
 // BatteryManager manages registered batteries, resolves dependencies, and
 // orchestrates initialization and lifecycle.
 type BatteryManager struct {
 	entries map[string]*batteryEntry
-	order   []string // registration order
-	sorted  []string // dependency-resolved order (computed), guarded by mu
-
-	// mu guards sorted: App.Start resolves the order on its goroutine while
-	// a concurrent App.Shutdown walks it in StopAll (the race the seed
-	// wiring test drives on purpose). Every reader takes a snapshot.
-	mu sync.RWMutex
-
-	// logger is the owning App's Logger, where a recovered start or stop
-	// panic logs its stack; nil outside an App.
-	logger func() *slog.Logger
+	order   []string
+	sorted  []string
+	mu      sync.RWMutex
+	logger  func() *slog.Logger
 }
 
-// log is the owning App's logger, or nil (slog.Default) outside one.
 func (bm *BatteryManager) log() *slog.Logger {
 	if bm.logger == nil {
 		return nil
@@ -104,9 +65,9 @@ func NewBatteryManager() *BatteryManager {
 	}
 }
 
-// Register adds a battery with optional dependency declarations.
-// Deps lists battery names that must be initialized before this one.
-// Returns an error on duplicate name or unknown dependency.
+// Register adds a battery and the names of the batteries it depends on.
+// It errors on a nil battery, an invalid name or a duplicate one; an
+// unknown dependency fails InitAll.
 func (bm *BatteryManager) Register(b Battery, deps ...string) error {
 	if b == nil {
 		return fmt.Errorf("battery: cannot register nil battery")
@@ -143,10 +104,6 @@ func GetAs[T any](bm *BatteryManager, name string) (T, error) {
 	return getTyped[T]("battery", name, b, err)
 }
 
-// getTyped type-asserts a manager lookup result to T, attributing a
-// mismatch to the module kind ("battery"/"plugin"). It carries the shared
-// body of the former duplicated lookup-and-assert loops in GetAs and
-// PluginGetAs.
 func getTyped[T any](kind, name string, v any, err error) (T, error) {
 	var zero T
 	if err != nil {
@@ -159,10 +116,7 @@ func getTyped[T any](kind, name string, v any, err error) (T, error) {
 	return typed, nil
 }
 
-// resolveOrder performs a topological sort of batteries based on dependencies.
-// Returns an error on missing dependencies or circular references.
 func (bm *BatteryManager) resolveOrder() error {
-	// Verify all deps reference registered batteries
 	for name, entry := range bm.entries {
 		for _, dep := range entry.deps {
 			if _, ok := bm.entries[dep]; !ok {
@@ -171,9 +125,8 @@ func (bm *BatteryManager) resolveOrder() error {
 		}
 	}
 
-	// Kahn's algorithm for topological sort
 	inDegree := make(map[string]int)
-	adj := make(map[string][]string) // dep → dependents
+	adj := make(map[string][]string)
 
 	for name := range bm.entries {
 		inDegree[name] = 0
@@ -191,7 +144,6 @@ func (bm *BatteryManager) resolveOrder() error {
 			queue = append(queue, name)
 		}
 	}
-	// Sort the initial queue for deterministic ordering among equal-priority
 	sort.Strings(queue)
 
 	var sorted []string
@@ -212,7 +164,6 @@ func (bm *BatteryManager) resolveOrder() error {
 	}
 
 	if len(sorted) != len(bm.entries) {
-		// Circular dependency: find which batteries are unresolved
 		var unresolved []string
 		for name, deg := range inDegree {
 			if deg > 0 {
@@ -228,17 +179,15 @@ func (bm *BatteryManager) resolveOrder() error {
 	return nil
 }
 
-// resolved returns the dependency-resolved order under the read lock.
-// resolveOrder replaces the slice wholesale, so a snapshot of the header
-// is safe to iterate without the lock.
 func (bm *BatteryManager) resolved() []string {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
 	return bm.sorted
 }
 
-// InitAll initializes all batteries in dependency order. Called during
-// App.Start before the HTTP server binds.
+// InitAll initializes, in dependency order, every battery not yet
+// initialized. It errors on an unknown or circular dependency, and on a
+// failing or panicking Init, naming the battery.
 func (bm *BatteryManager) InitAll(app *App) error {
 	if err := bm.resolveOrder(); err != nil {
 		return err
@@ -249,11 +198,6 @@ func (bm *BatteryManager) InitAll(app *App) error {
 		if entry.initialized {
 			continue
 		}
-		// If this battery is a Module, mark it as the current module so
-		// the registration hooks (router, MCP) attribute routes and tools
-		// to it. Non-module batteries clear the marker. Boot is
-		// single-threaded through this loop. Nil-safe for tests that
-		// construct a BatteryManager without NewApp.
 		if app.modules != nil {
 			if _, isMod := entry.battery.(Module); isMod {
 				app.modules.setCurrent(name)
@@ -272,14 +216,6 @@ func (bm *BatteryManager) InitAll(app *App) error {
 	return nil
 }
 
-// callModuleSafe invokes a third-party module callback (battery or plugin
-// Init, battery OnStart/OnStop) and converts both failures and panics into
-// errors attributed to the module kind, name, and phase. Third-party Init
-// and lifecycle code is the framework's biggest panic surface (a duplicate
-// route registration panics deep in ServeMux, a buggy battery can panic
-// anywhere), so every drive site funnels through this one guard instead of
-// each manager carrying its own copy. It replaces the former
-// initBatterySafe, initPluginSafe, startBatterySafe, and stopBatterySafe.
 func callModuleSafe(log *slog.Logger, kind, name, phase string, call func() error) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
@@ -292,23 +228,8 @@ func callModuleSafe(log *slog.Logger, kind, name, phase string, call func() erro
 	return nil
 }
 
-// recoveredPanic turns a recovered panic into an error and logs the
-// panicking goroutine's stack to log, the App's logger (slog.Default
-// when there is none). Call it from the deferred function that
-// recovered, while the stack still holds the panicking frames:
-// GOTRACEBACK prints nothing for a panic that was recovered, so the
-// logged stack is the only record of where it happened. The caller
-// passes the value's type name (%T), never the value, so a
-// panic(config) leaks no secret and panicked-on bytes forge no log line.
-//
-// The error names where the stack went when the logger's handler says
-// (a LogLocation method, which battery/log's fan-out handler answers
-// with its default file's path): that file under the OS state dir holds
-// the full stack, while a terminal shows at most the console sink's
-// escaped one-line copy, so a bare "its stack is logged" sent a
-// developer whose boot died looking at stderr for a readable record.
-// The location is %q-quoted: a state path or a custom handler can carry
-// terminal controls, and the boot error reaches the operator's terminal.
+// recoveredPanic logs the stack and returns the error; call it from the
+// deferred recover, passing the panic value's type name, never the value.
 func recoveredPanic(log *slog.Logger, what, panicType string) error {
 	if log == nil {
 		log = slog.Default()
@@ -322,10 +243,8 @@ func recoveredPanic(log *slog.Logger, what, panicType string) error {
 	return fmt.Errorf("%s panicked (panic type %s); its stack is logged", what, panicType)
 }
 
-// StartAll calls OnStart on batteries that implement BatteryLifecycle,
-// in dependency order (dependencies first). Each call runs under the
-// callModuleSafe recover isolation, so a panicking start hook aborts
-// App.Start with an attributed error instead of unwinding through it.
+// StartAll calls OnStart in dependency order and returns the first
+// error or recovered panic, naming the battery.
 func (bm *BatteryManager) StartAll(ctx context.Context) error {
 	for _, name := range bm.resolved() {
 		if lc, ok := bm.entries[name].battery.(BatteryLifecycle); ok {
@@ -337,12 +256,8 @@ func (bm *BatteryManager) StartAll(ctx context.Context) error {
 	return nil
 }
 
-// StopAll calls OnStop on batteries that implement BatteryLifecycle,
-// in reverse dependency order (dependents first, then dependencies).
-// A battery whose stop hook returns an error OR panics does not stop the
-// drain: the remaining batteries are still stopped and every failure is
-// joined into the returned error — a SIGTERM shutdown must not crash on
-// one battery's bug.
+// StopAll calls OnStop in reverse dependency order, stopping every
+// battery even after one fails or panics, and returns the joined errors.
 func (bm *BatteryManager) StopAll(ctx context.Context) error {
 	var errs []error
 	for _, name := range slices.Backward(bm.resolved()) {
@@ -365,9 +280,7 @@ func (bm *BatteryManager) All() []Battery {
 	return result
 }
 
-// registered returns every registered battery in registration order;
-// unlike All it needs no InitAll first, so App.ExportStatic, which runs
-// without Start, sees them.
+// registered is every battery in registration order; it needs no InitAll.
 func (bm *BatteryManager) registered() []Battery {
 	out := make([]Battery, 0, len(bm.order))
 	for _, name := range bm.order {

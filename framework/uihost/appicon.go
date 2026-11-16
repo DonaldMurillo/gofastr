@@ -12,34 +12,15 @@ import (
 	fwimage "github.com/DonaldMurillo/gofastr/framework/image"
 )
 
-// appIconSizes are the square pixel sizes derived from a WithAppIcon
-// source: 32 (classic favicon), 180 (apple-touch-icon), 192 and 512
-// (Android / PWA manifest).
 var appIconSizes = []int{32, 180, 192, 512}
 
-// appIconPath returns the serving path for a generated icon size.
 func appIconPath(size int) string {
 	return fmt.Sprintf("/__gofastr/icons/icon-%d.png", size)
 }
 
-// WithAppIcon derives the app's entire icon surface from ONE source
-// image (PNG/JPEG/WebP…, ideally ≥512px; non-square sources are
-// center-cropped). The host generates 32/180/192/512px PNGs at startup,
-// serves them under /__gofastr/icons/, answers /favicon.ico with the
-// 32px icon, and emits the matching <link rel="icon"> and
-// <link rel="apple-touch-icon"> head tags. When WithPWA is enabled and
-// PWAConfig.Icons is empty, the 192/512 icons also populate the
-// manifest (explicitly declared icons always win).
-//
-// Pair it with go:embed for a zero-file-management setup:
-//
-//	//go:embed logo.png
-//	var logo []byte
-//	uihost.New(app, uihost.WithAppIcon(logo))
-//
-// An undecodable source logs a warning and leaves the host without
-// icons (the /favicon.ico 204 fallback still applies). Icons are
-// decoration, not something worth failing startup over.
+// WithAppIcon derives 32, 180, 192 and 512 px PNG icons, the favicon and
+// their head links from one source image; an undecodable source logs a
+// warning and leaves the host without icons.
 func WithAppIcon(source []byte) Option {
 	return func(ds *UIHost) {
 		src, err := fwimage.DecodeBytes(source)
@@ -47,9 +28,6 @@ func WithAppIcon(source []byte) Option {
 			slog.Default().Warn("uihost: WithAppIcon source is not a decodable image; skipping icon generation", "err", err)
 			return
 		}
-		// Apply EXIF orientation before the crop: the PNG renditions
-		// carry no orientation tag, so a phone photo would otherwise ship
-		// sideways, and a portrait source must be cropped as displayed.
 		sq := squareCrop(src.AutoOrient())
 		icons := make(map[string][]byte, len(appIconSizes))
 		for _, size := range appIconSizes {
@@ -69,8 +47,6 @@ func WithAppIcon(source []byte) Option {
 	}
 }
 
-// squareCrop returns img center-cropped to a square. Square sources are
-// returned unchanged.
 func squareCrop(img *fwimage.Image) *fwimage.Image {
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
@@ -85,10 +61,8 @@ func squareCrop(img *fwimage.Image) *fwimage.Image {
 	return fwimage.FromImage(dst, img.Format())
 }
 
-// AppIconAssets returns the generated icon files (URL path → PNG bytes)
-// plus the /favicon.ico alias. Empty when WithAppIcon was not configured
-// (or its source failed to decode). The static exporter dumps these so
-// a serverless deploy ships the same icon surface as the live server.
+// AppIconAssets maps each generated icon path, and /favicon.ico, to its
+// PNG bytes; nil without WithAppIcon.
 func (ds *UIHost) AppIconAssets() map[string][]byte {
 	if len(ds.appIcons) == 0 {
 		return nil
@@ -99,10 +73,6 @@ func (ds *UIHost) AppIconAssets() map[string][]byte {
 	return out
 }
 
-// reconcileAppIcons runs once after all options are applied (option
-// order must not matter): when the host has generated icons AND a PWA
-// config with no explicitly declared icons, the generated 192/512
-// icons populate the manifest.
 func (ds *UIHost) reconcileAppIcons() {
 	if len(ds.appIcons) == 0 || ds.pwaConfig == nil || len(ds.pwaConfig.Icons) > 0 {
 		return
@@ -113,10 +83,6 @@ func (ds *UIHost) reconcileAppIcons() {
 	}
 }
 
-// mountAppIcons registers the generated icon routes, including the
-// /favicon.ico alias (PNG bytes; every current browser resolves the
-// icon by Content-Type, not extension). No-op without WithAppIcon;
-// /favicon.ico then keeps its 204 no-favicon fallback in serveOrRender.
 func (ds *UIHost) mountAppIcons(register func(path string, h http.HandlerFunc)) {
 	if len(ds.appIcons) == 0 {
 		return

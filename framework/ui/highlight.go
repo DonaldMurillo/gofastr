@@ -1,52 +1,22 @@
 package ui
 
-// Lightweight syntax highlighter for code blocks. It is deliberately
-// small, a single-pass scanner, not a full grammar, but correct on the
-// common cases (it understands string/comment boundaries, so a `//`
-// inside a string is not treated as a comment). It emits per-line
-// []render.HTML where each token is an HTML-escaped <span class="tk-*">,
-// the kit's token classes: ui.CodeBlock's stylesheet colors them from
-// the theme's Code slots (.tk-kw/.tk-fn/.tk-str/.tk-num/.tk-com/.tk-type/
-// .tk-pn → var(--tk-*)).
-//
-// Language families:
-//
-//   - go: keywords, builtins, predeclared types, call sites, and named
-//     types in type position (after `type`, a composite literal `Pong{`,
-//     behind `*`/`[]`, package-qualified or not).
-//   - js/ts: keywords, a few built-in types, call sites, object keys.
-//   - sql: case-insensitive keywords and column types, `--` comments.
-//   - shell (sh/bash/console): keywords, the command word of each line
-//     or pipeline stage, `#` comments.
-//   - yaml / json: mapping keys, true/false/null.
-//   - anything else non-empty: a generic pass (comments + strings +
-//     numbers), which covers the visually dominant tokens.
-//   - "" / text / plain: escaped, untokenized text.
-//
-// Every family still renders through ui.CodeBlock, so all of them keep
-// the chrome and the copy button.
-
 import (
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// hlToken is one classified run of source text. Class is "" for plain text.
+// hlToken is one classified run of raw source text; class is "" for plain text.
 type hlToken struct {
-	class string // tk-kw, tk-str, … or "" for plain
-	text  string // raw (un-escaped) source slice
+	class string
+	text  string
 }
 
-// HighlightLines tokenizes code for the given language and returns one
-// []render.HTML per source line (newline-split AFTER tokenizing, so multi-line
-// strings/comments keep their class across the break). Each entry is the line's
-// concatenated token spans, ready to pass as ui.CodeBlockConfig.Lines. Pass the
-// result as CodeBlockConfig.Lines with ShowCopy/LineNumbers/Scroll as desired.
+// HighlightLines tokenizes code for lang and returns one escaped line of
+// <span class="tk-*"> tokens per source line, for CodeBlockConfig.Lines.
 func HighlightLines(code, lang string) []render.HTML {
 	tokens := tokenize(code, normalizeLang(lang))
 
-	// Split tokens on newlines into logical lines.
 	var lines []render.HTML
 	var b strings.Builder
 	flush := func() {
@@ -66,7 +36,6 @@ func HighlightLines(code, lang string) []render.HTML {
 		b.WriteString(`</span>`)
 	}
 	for _, t := range tokens {
-		// A token may itself contain newlines (raw strings, block comments).
 		parts := strings.Split(t.text, "\n")
 		for i, p := range parts {
 			if i > 0 {
@@ -77,17 +46,13 @@ func HighlightLines(code, lang string) []render.HTML {
 			}
 		}
 	}
-	flush() // trailing line (also handles single-line input)
-	// A trailing newline in the source yields a final empty line; drop it so
-	// the block doesn't render a blank last row.
+	flush()
 	if n := len(lines); n > 0 && lines[n-1] == "" {
 		lines = lines[:n-1]
 	}
 	return lines
 }
 
-// Language families the scanner knows. Each family picks its comment
-// syntax, its keyword set, and whether mapping keys are classed.
 const (
 	langPlain   = "plain"
 	langGo      = "go"
@@ -153,8 +118,6 @@ var jsTypes = newSet(
 	"Promise", "Record", "Array",
 )
 
-// sqlKeywords and sqlTypes match case-insensitively: the scanner
-// lowercases the (ASCII-only) identifier before the lookup.
 var sqlKeywords = newSet(
 	"select", "from", "where", "and", "or", "not", "insert", "into", "values",
 	"update", "set", "delete", "create", "table", "index", "unique", "on",
@@ -212,7 +175,6 @@ func tokenize(src, lang string) []hlToken {
 	for i < n {
 		c := src[i]
 		switch {
-		// Line comments: // (C-like families), # (hash families), -- (SQL).
 		case c == '/' && i+1 < n && src[i+1] == '/' && slashComments(lang):
 			j := lineEnd(src, i)
 			add("tk-com", src[i:j])
@@ -225,34 +187,30 @@ func tokenize(src, lang string) []hlToken {
 			j := lineEnd(src, i)
 			add("tk-com", src[i:j])
 			i = j
-		// Block comment: /* ... */
 		case c == '/' && i+1 < n && src[i+1] == '*' && (slashComments(lang) || lang == langSQL):
 			j := i + 2
 			for j < n && !(src[j] == '*' && j+1 < n && src[j+1] == '/') {
 				j++
 			}
 			if j < n {
-				j += 2 // consume the closing */
+				j += 2
 			} else {
 				j = n
 			}
 			add("tk-com", src[i:j])
 			i = j
-		// Strings: "double" and 'rune/char/single'.
 		case c == '"' || (c == '\'' && quoteOpensString(src, i, lang)):
 			j := scanQuoted(src, i, c, true)
 			class := "tk-str"
 			if isMappingKey(src, i, j, lang) {
-				class = "tk-fn" // a JSON / YAML / JS object key
+				class = "tk-fn"
 			}
 			add(class, src[i:j])
 			i = j
-		// Raw strings / template literals / shell command substitution.
 		case c == '`' && (lang == langGo || lang == langJS || lang == langShell || lang == langGeneric):
-			j := scanQuoted(src, i, c, false) // no escapes in raw strings
+			j := scanQuoted(src, i, c, false)
 			add("tk-str", src[i:j])
 			i = j
-		// Numbers (incl. hex/float/exponent, loose but fine for display).
 		case c >= '0' && c <= '9':
 			j := i + 1
 			for j < n && isNumChar(src[j]) {
@@ -260,8 +218,6 @@ func tokenize(src, lang string) []hlToken {
 			}
 			add("tk-num", src[i:j])
 			i = j
-		// Identifiers / keywords. YAML keys and shell flags may carry
-		// inner hyphens (max-age, --dry-run's dry-run).
 		case isIdentStart(c):
 			j := i + 1
 			for j < n && (isIdentPart(src[j]) || (src[j] == '-' && hyphenIdents(lang) && j+1 < n && isIdentPart(src[j+1]))) {
@@ -271,8 +227,6 @@ func tokenize(src, lang string) []hlToken {
 			add(classifyWord(src, i, j, word, lang, toks), word)
 			i = j
 		default:
-			// Run of non-token bytes (whitespace, punctuation). Coalesce so we
-			// don't emit a span per character.
 			j := i + 1
 			for j < n && isPlainRun(src[j], lang) {
 				j++
@@ -287,7 +241,6 @@ func tokenize(src, lang string) []hlToken {
 func hyphenIdents(lang string) bool { return lang == langYAML || lang == langShell }
 
 // classifyWord returns the token class for the identifier src[i:j].
-// prev is the token list so far (its last entry precedes the word).
 func classifyWord(src string, i, j int, word, lang string, prev []hlToken) string {
 	callSite := j < len(src) && src[j] == '('
 	switch lang {
@@ -316,7 +269,7 @@ func classifyWord(src string, i, j int, word, lang string, prev []hlToken) strin
 			return "tk-type"
 		}
 	case langSQL:
-		lw := strings.ToLower(word) // word is ASCII: isIdentStart/Part are ASCII-only
+		lw := strings.ToLower(word)
 		switch {
 		case sqlKeywords[lw]:
 			return "tk-kw"
@@ -330,7 +283,7 @@ func classifyWord(src string, i, j int, word, lang string, prev []hlToken) strin
 		case shellKeywords[word]:
 			return "tk-kw"
 		case atCommandStart(src, i):
-			return "tk-fn" // the command being run
+			return "tk-fn"
 		}
 	case langYAML:
 		switch {
@@ -347,10 +300,8 @@ func classifyWord(src string, i, j int, word, lang string, prev []hlToken) strin
 	return ""
 }
 
-// goTypePosition reports whether a Go identifier sits where a named type
-// does: right after the `type` keyword, as an exported name opening a
-// composite literal (`Pong{`), or behind a pointer / slice marker,
-// optionally package-qualified (`*http.Request`, `[]schema.Field`).
+// goTypePosition reports whether a Go identifier follows `type`, opens
+// an exported composite literal, or follows * or ], qualified or not.
 func goTypePosition(src string, i, j int, word string, prev []hlToken) bool {
 	if prevWord(prev) == "type" {
 		return true
@@ -361,7 +312,6 @@ func goTypePosition(src string, i, j int, word string, prev []hlToken) bool {
 	if j < len(src) && src[j] == '{' {
 		return true
 	}
-	// Step back over a package qualifier: `pkg.`.
 	k := i
 	if k > 0 && src[k-1] == '.' {
 		k--
@@ -372,8 +322,7 @@ func goTypePosition(src string, i, j int, word string, prev []hlToken) bool {
 	return k > 0 && (src[k-1] == '*' || src[k-1] == ']')
 }
 
-// prevWord returns the text of the token before the current position when
-// only same-line blanks separate them, so `type Pong` yields "type".
+// prevWord returns the previous token's text when only same-line blanks separate it.
 func prevWord(prev []hlToken) string {
 	if len(prev) < 2 {
 		return ""
@@ -385,11 +334,9 @@ func prevWord(prev []hlToken) string {
 	return prev[len(prev)-2].text
 }
 
-// isMappingKey reports whether the token src[i:j] is a mapping key: it is
-// followed by a colon, and (YAML) starts its line after indentation and an
-// optional "- " list marker, or (JS) follows `{`, `,` or a line start, so
-// a ternary's `a ? b : c` branch is not a key. Every JSON string followed
-// by a colon is a key.
+// isMappingKey reports whether src[i:j] is followed by a colon and
+// starts a YAML line (after an optional "- "), follows {, , or a line
+// start in JS, or is any JSON token.
 func isMappingKey(src string, i, j int, lang string) bool {
 	if lang != langJSON && lang != langYAML && lang != langJS {
 		return false
@@ -414,8 +361,7 @@ func isMappingKey(src string, i, j int, lang string) bool {
 	return b < 0 || src[b] == '\n' || src[b] == '{' || src[b] == ','
 }
 
-// skipBlanksBack returns the index of the last non-space, non-tab byte at
-// or before b, or -1.
+// skipBlanksBack returns the last non-blank index at or before b, or -1.
 func skipBlanksBack(src string, b int) int {
 	for b >= 0 && (src[b] == ' ' || src[b] == '\t') {
 		b--
@@ -423,9 +369,7 @@ func skipBlanksBack(src string, b int) int {
 	return b
 }
 
-// quoteOpensString reports whether a single quote starts a string. In
-// YAML and the generic family an apostrophe inside prose (don't) is not
-// a string, so there the quote must not follow a word character.
+// quoteOpensString reports whether a single quote starts a string.
 func quoteOpensString(src string, i int, lang string) bool {
 	switch lang {
 	case langGo, langJS, langSQL, langShell, langJSON:
@@ -434,8 +378,7 @@ func quoteOpensString(src string, i int, lang string) bool {
 	return i == 0 || !isIdentPart(src[i-1])
 }
 
-// hashStartsComment reports whether # opens a comment: in shell and YAML
-// only at a word boundary (`a#b` and `${#x}` are not comments).
+// hashStartsComment reports whether # opens a comment.
 func hashStartsComment(src string, i int, lang string) bool {
 	if lang == langGeneric || i == 0 {
 		return true
@@ -444,9 +387,7 @@ func hashStartsComment(src string, i int, lang string) bool {
 	return p == ' ' || p == '\t' || p == '\n'
 }
 
-// atCommandStart reports whether a shell word is the first word of its
-// line (after indentation and an optional `$ ` prompt) or follows a
-// pipe / && / || / ;, i.e. it names the command being run.
+// atCommandStart reports whether a shell word names the command being run.
 func atCommandStart(src string, i int) bool {
 	b := skipBlanksBack(src, i-1)
 	if b >= 0 && src[b] == '$' {
@@ -465,8 +406,7 @@ func lineEnd(src string, i int) int {
 
 func isUpperASCII(c byte) bool { return c >= 'A' && c <= 'Z' }
 
-// scanQuoted returns the index just past a quote run starting at i with the
-// given delimiter. When allowEsc, a backslash escapes the next byte.
+// scanQuoted returns the index just past the quote run starting at i.
 func scanQuoted(src string, i int, delim byte, allowEsc bool) int {
 	n := len(src)
 	j := i + 1
@@ -478,8 +418,6 @@ func scanQuoted(src string, i int, delim byte, allowEsc bool) int {
 		if src[j] == delim {
 			return j + 1
 		}
-		// Interpreted strings/runes don't span raw newlines; bail to avoid
-		// swallowing the rest of the file on an unterminated quote.
 		if allowEsc && src[j] == '\n' {
 			return j
 		}
@@ -497,10 +435,7 @@ func isNumChar(c byte) bool {
 		(c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
 }
 
-// isPlainRun reports whether c continues a plain (untokenized) run, i.e. it
-// could NOT start a token the scanner recognizes. A byte that turns out not
-// to start a token after all (an apostrophe in prose, a lone /) still ends
-// the run; the scanner's default arm then consumes it as plain text.
+// isPlainRun reports whether c cannot start a token, so it continues a plain run.
 func isPlainRun(c byte, lang string) bool {
 	if isIdentStart(c) || (c >= '0' && c <= '9') {
 		return false

@@ -1737,7 +1737,12 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// (TestOpenDuringNavigationSurvivesCommit) and stay under its
 		// lines; 46 of it is the pass answering when its mounts and
 		// deep-link opens settle, so the event means the widgets are in.
-		"widgets": 3762,
+		// 3867 measured + 2 (2026-11-16): an Escape pressed while a layer
+		// is open and widgetfocus is still loading is handed to that
+		// module once it registers, if the same layers are still open
+		// (TestEscapeBeforeFocusModuleLoadsClosesModal,
+		// TestHeldEscapeSkipsALaterLayer).
+		"widgets": 3869,
 		// intercept 3104 measured (2026-10-07, the drawer's open-as-page
 		// link): a data-cui-intercept-page link in the top pane closes
 		// the stack and hands its target to the router over the top
@@ -1904,7 +1909,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// to the entry the last _pushURL write left: a URL-only write
 		// (replaceURL) followed by Back animated the Back as an
 		// undecided forward (TestNavGuardHistoryReplaceURL).
-		"transition": 1456,
+		// 1491 measured (1489 + 2) after held clicks keep their order: a
+		// click held behind a running transition was delivered after a
+		// later click and overrode it
+		// (TestHeldClickNeverLandsAfterALaterClick).
+		"transition": 1491,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's

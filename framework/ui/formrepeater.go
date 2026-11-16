@@ -10,62 +10,30 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── DynamicFormRepeater ────────────────────────────────────────────
-//
-// Add/remove repeating field groups, over headless.Repeater.
-// Server-driven: the "Add" and "Remove" buttons are named submit
-// controls (name="<Name>_add" / name="<Name>_remove") riding the
-// surrounding form, so the no-script page works and the server
-// re-renders with the updated Items list.
-
 // FormRepeaterConfig configures a dynamic repeating field group.
 type FormRepeaterConfig struct {
-	// ID is caller-owned; otherwise Name derives an ID within Ctx's scope.
+	// ID is the caller's; empty derives one from Name within Ctx's scope.
 	ID string
-	// Name is the repeater group name (used as prefix for field
-	// indexing). Required.
+	// Name prefixes the add and remove submit names. Required.
 	Name string
 
-	// Items is the current list of rendered item groups.
-	// Each item is a slice of render.HTML representing one row's fields.
+	// Items holds each row's rendered fields.
 	Items [][]render.HTML
 
-	// MinItems prevents removal below this count. Default 0.
+	// MinItems is the row count below which Remove is disabled.
 	MinItems int
 
-	// MaxItems prevents addition above this count. Default 0 = unlimited.
-	MaxItems int
-
-	// AddLabel is the "Add" button text. Default "Add item".
-	AddLabel string
-
-	// RemoveLabel is the "Remove" button text. Default "Remove".
+	// MaxItems is the row count at which Add is disabled; zero is unlimited.
+	MaxItems    int
+	AddLabel    string
 	RemoveLabel string
+	Class       string
+	ExtraAttrs  html.Attrs
 
-	Class string
-
-	// ExtraAttrs forwards additional attributes to the repeater's
-	// root div. Keys the component owns are dropped: class and id
-	// (use Class), data-cui-*, aria-label, and aria-live.
-	ExtraAttrs html.Attrs
-
-	// Ctx carries the per-request context used to resolve i18n labels
-	// (Add / Remove). When nil, English fallbacks apply.
+	// Ctx resolves the default labels; nil reads English.
 	Ctx context.Context
 }
 
-// formRepeaterClasses dresses headless.Repeater's parts in this
-// package's own vocabulary — the names the registered
-// ui-form-repeater sheet matches.
-//
-// The row's remove and the add control are kit buttons: they wear the
-// button classes (buttonClassTokens, the LoadAlways ui-button sheet)
-// under this component's marker, the way Repeater, ToggleAction and
-// OptimisticAction do — a danger remove on each row (it deletes the
-// row), a secondary add under the list. The ui-form-repeater sheet
-// draws no button of its own. PartDefaultAction is deliberately
-// absent: the hidden default submit must take no class, since the
-// button sheet's display would beat the UA's [hidden] rule.
 var formRepeaterClasses = headless.Classes{
 	headless.PartRoot:           "fui-form-repeater",
 	headless.PartLabel:          "fui-visually-hidden",
@@ -78,12 +46,8 @@ var formRepeaterClasses = headless.Classes{
 	headless.PartStatus:         "fui-visually-hidden",
 }
 
-// FormRepeater renders a dynamic list of repeating field groups with
-// add/remove controls.
-//
-// Server-driven: clicking "Add" submits name="<Name>_add" value="1",
-// and clicking "Remove" submits name="<Name>_remove" value="<index>".
-// The server processes these and re-renders with the updated Items.
+// FormRepeater renders repeating field groups whose Add submits
+// <Name>_add=1 and whose Remove submits <Name>_remove=<index>.
 func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 	if cfg.Name == "" {
 		panic("ui: FormRepeater requires Name")
@@ -92,7 +56,6 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// D-2: Reject impossible constraint: MinItems > MaxItems.
 	if cfg.MaxItems > 0 && cfg.MinItems > cfg.MaxItems {
 		panic("ui: FormRepeater MinItems (" + strconv.Itoa(cfg.MinItems) +
 			") must not exceed MaxItems (" + strconv.Itoa(cfg.MaxItems) + ")")
@@ -115,21 +78,17 @@ func FormRepeater(cfg FormRepeaterConfig) render.HTML {
 		MaxItems:    cfg.MaxItems,
 		AddLabel:    cfg.AddLabel,
 		RemoveLabel: cfg.RemoveLabel,
-		// The submit names the surrounding form carries: the server
-		// reads these to know which action was clicked.
-		AddName:    cfg.Name + "_add",
-		AddValue:   "1",
-		RemoveName: cfg.Name + "_remove",
-		ID:         scopedControlID(cfg.Ctx, cfg.ID, cfg.Name, "-items"),
-		ExtraAttrs: headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-live"),
-		Parts:      parts,
-		Strings:    StringsFor(ctx),
+		AddName:     cfg.Name + "_add",
+		AddValue:    "1",
+		RemoveName:  cfg.Name + "_remove",
+		ID:          scopedControlID(cfg.Ctx, cfg.ID, cfg.Name, "-items"),
+		ExtraAttrs:  headless.Safe(cfg.ExtraAttrs, "class", "id", "role", "aria-label", "aria-live"),
+		Parts:       parts,
+		Strings:     StringsFor(ctx),
 	}, formRepeaterClasses))
 }
 
 func formRepeaterCSS(_ style.Theme) string {
-	// Layout only: the remove and add controls are kit buttons (see
-	// formRepeaterClasses), drawn by the ui-button sheet.
 	return `[data-cui-comp="ui-form-repeater"] {
   display: grid;
   gap: var(--spacing-md);

@@ -122,9 +122,8 @@ key. A `CursorFields` list that names one column twice fails `Define`.
 
 **A cursor column must never hold NULL.** The keyset comparison
 `(created_at, id) > ($1, $2)` is never true for a row whose
-`created_at` is NULL, so those rows would be skipped, and SQLite sorts
-NULLs first where Postgres sorts them last. `entity.Define` panics on a
-cursor column that is not a key column, not `Required`, and not
+`created_at` is NULL, so those rows would be skipped. `entity.Define`
+panics on a cursor column that is not a key column, not `Required`, and not
 framework-generated (`AutoGenerate`, which covers the injected
 `created_at` and an auto id); the app spec refuses the same column at
 decode time. If a row's keyset value is NULL anyway (a raw INSERT that
@@ -149,13 +148,17 @@ fractional digits kept (`2026-10-27T07:05:07.500000Z`), so on SQLite,
 which compares `DATETIME` columns as text, the keyset compares against
 the stored string byte for byte. crud writes every Timestamp in that
 layout, a client's `2026-10-27T09:05:07+02:00` included (same instant,
-stored as `2026-10-27T07:05:07.000000Z`). On an `Unmanaged` entity
-over SQLite (a legacy table, or one another writer fills) the stored
-text may be in another layout (`2026-03-03 09:00:00`,
-`2026-01-02T12:00:00Z`), so there a Timestamp cursor column carries and
-binds the anchor row's stored text instead: the keyset compares the
+stored as `2026-10-27T07:05:07.000000Z`). A SQLite table can also hold
+text crud did not write: rows a seed script or a migration inserted, or
+an `Unmanaged` entity's table that another writer fills
+(`2026-03-03 09:00:00`, `2026-01-02T12:00:00Z`). So on SQLite a
+Timestamp cursor column carries and binds the anchor row's stored text,
+whether crud manages the entity or not: the keyset compares the
 same text `ORDER BY` sorts, and the walk serves the rows in the sorted
-list's order, each once. The carried text must still read as a
+list's order, each once. That order is the text's, which is time order
+only while every row is in one layout: `…05.5Z` sorts before `…05Z`.
+Rewrite seeded rows in the layout above to get time order. The carried
+text must still read as a
 timestamp (RFC 3339 or a form SQLite's date functions read), or the
 cursor is a 400. Postgres compares a timestamp column as an instant and
 binds the canonical value either way. A Date value is the date
@@ -210,7 +213,9 @@ first-read intermediary parsed differently.
   timestamps, and in key order when it has none. Without the key, rows
   tied on the sort column can come back in a different order for each
   page on Postgres, so a walk would serve some rows twice and others
-  never.
+  never. Rows with no value in a sort column come last ascending and
+  first descending on both databases
+  ([entity declarations](entity-declarations.md), "sort").
 
 ## When to use which mode
 

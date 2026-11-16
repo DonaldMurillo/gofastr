@@ -5,18 +5,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The rail: a sticky in-page navigation whose entries are real
-// fragment links. Every entry is an anchor to an id on the page, so
-// the whole contract works with no script — the module's contribution
-// is only the active state, aria-current and a class on the link
-// whose target is in view. The observer is owned by this package's
-// headless-rail module and shared with the table of contents (one
-// observer, not two drifting implementations).
-
-// Rail parts. The label is a plain label, not a heading: the rail is
-// a complementary landmark already named by its aria-label, and a
-// heading here would inject a stray, out-of-order entry into the page
-// outline.
 const (
 	PartRailList    Part = "rail-list"
 	PartRailItem    Part = "rail-item"
@@ -27,41 +15,30 @@ const (
 
 // RailItem is one entry in the rail.
 type RailItem struct {
-	// Anchor is the fragment id of the section this entry links to,
-	// without the leading #. Required: an entry that links nowhere is
-	// not an entry.
+	// Anchor is the fragment id the entry links to, without the #. Required.
 	Anchor string
 	// Text is the visible link label. Required.
 	Text string
-	// Eyebrow is the leading chip beside the label (a number, a
-	// glyph); empty hides it.
+	// Eyebrow is the optional leading chip beside the label.
 	Eyebrow string
-	// Count is the trailing chip (a document count); empty hides it.
+	// Count is the optional trailing chip.
 	Count string
 }
 
 // RailProps configures a rail.
 type RailProps struct {
-	// Label names the landmark and heads the list. Required: a
-	// complementary landmark with no name is a region a screen reader
-	// cannot jump to by name.
+	// Label names the landmark and heads the list. Required.
 	Label string
-	// Items are the entries, in display order. Required and non-empty.
+	// Items are the entries, in display order. Required.
 	Items []RailItem
-	// ObserveSelector is the CSS selector of the region whose sections
-	// the module watches to mark the active entry. Empty renders a
-	// purely static rail: the links work, nothing is marked.
+	// ObserveSelector is the region whose sections mark the active entry; empty renders a static rail.
 	ObserveSelector string
-	// TargetSelector narrows which elements inside the observed region
-	// count as sections. Empty takes the module's default (the
-	// h2/h3/h4 elements that carry an id).
+	// TargetSelector narrows the sections; empty is the module's default, h2 to h4 with an id.
 	TargetSelector string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root and the entries. No part is fillable:
-	// every element the rail draws carries its own guarantee.
 	Parts Parts
 }
 
@@ -93,9 +70,6 @@ func Rail(p RailProps, s Classes) render.HTML {
 		"id":         p.ID,
 	}))
 	if p.ObserveSelector != "" {
-		// The hook is the module's trigger, so it rides only on a rail
-		// the module can do something with: a static rail keeps its
-		// links and loads nothing.
 		Mark(own, "data-hui-rail")
 		own["data-hui-rail-observe"] = p.ObserveSelector
 		if p.TargetSelector != "" {

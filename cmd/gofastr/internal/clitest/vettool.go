@@ -30,7 +30,7 @@ func RepoVettool() (string, error) {
 			return
 		}
 		bin := TestExecutablePath(filepath.Join(dir, "vettool"))
-		build := exec.Command("go", "build", "-o", bin, "github.com/DonaldMurillo/gofastr/cmd/vettool")
+		build := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "github.com/DonaldMurillo/gofastr/cmd/vettool")
 		build.Dir = moduleRoot
 		if out, err := build.CombinedOutput(); err != nil {
 			sharedVettool.err = fmt.Errorf("go build ./cmd/vettool: %w\n%s", err, out)

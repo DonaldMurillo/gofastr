@@ -118,3 +118,41 @@ func TestAgentsMDNamesRealRules(t *testing.T) {
 		t.Fatal("AGENTS.md names no registry invariant: the hard rules lost their pointers")
 	}
 }
+
+// ownedPackages are the package directories PLAN.md step 4 has covered:
+// every non-test Go file directly in one has an owner (app/every-file-has-an-owner).
+var ownedPackages = []string{
+	"framework", "framework/crud",
+	"framework/headless",
+	"framework/uihost", "framework/uihost/uinoderender", "framework/uihost/internal/sessiontoken",
+	"framework/ui", "framework/ui/theme", "framework/ui/icons", "framework/ui/icons/internal/generate", "framework/ui/internal/treegate",
+}
+
+//gofastr:test-reads primitives/ *.go
+func TestCoveredPackagesHaveNoUnownedFile(t *testing.T) {
+	c, _, err := Load("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	for _, dir := range ownedPackages {
+		files, err := filepath.Glob(filepath.Join("..", "..", filepath.FromSlash(dir), "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked := 0
+		for _, f := range files {
+			name := filepath.Base(f)
+			if strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			checked++
+			if rel := dir + "/" + name; len(c.Chain(rel)) == 0 {
+				t.Errorf("%s has no owner: add it to the code list of the primitive whose job it does, or add a primitive", rel)
+			}
+		}
+		if checked == 0 {
+			t.Errorf("%s holds no Go file: the check would pass on an empty directory", dir)
+		}
+	}
+}

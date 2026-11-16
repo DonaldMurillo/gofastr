@@ -1,12 +1,5 @@
 package ui
 
-// DetailList: a label/value description list for record detail screens
-// ("Name: Ada Lovelace", "Status: <badge>"). headless.DetailList
-// renders the <dl>/<dt>/<dd> contract — a term and the value after it
-// are one pair to assistive technology — dressed with this package's
-// fui-detail-list class map. The framework owns the layout so detail
-// screens don't hand-roll key/value CSS.
-
 import (
 	"strings"
 
@@ -27,30 +20,19 @@ type DetailItem struct {
 type DetailListConfig struct {
 	Items []DetailItem
 	Class string
-	// Inline keeps short label/value pairs on one line in narrow panes.
-	// Long values wrap within their column instead of moving below the label.
+	// Inline keeps short pairs on one line in a narrow pane.
 	Inline bool
-	// Stacked draws each pair the way a form field sits: the label
-	// above, the value in a box with a control's height, padding and
-	// radius on the soft surface, so a read-only value in a form lines
-	// up with the inputs around it and reads as locked. It drops the
-	// row rules and the measure cap. Stacked and Inline are exclusive.
+	// Stacked draws each value boxed under its label like a locked
+	// form field.
 	Stacked bool
-	// Spread draws compact facts for a side column: the label at the
-	// row's start, the value at its end, no row rules, one line each.
-	// A value that does not fit truncates its first element (an id in
-	// <code>) while the elements after it (a copy button) keep their
-	// size. Spread excludes Inline and Stacked.
+	// Spread draws side-column facts: label at the start, value at the
+	// end, one line. Inline, Stacked and Spread are exclusive.
 	Spread bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the root <dl>. Keys the
-	// component owns are dropped: class (use Class), id, style and
-	// data-cui-*.
+	// ExtraAttrs land on the <dl>; class, id, style and data-cui-* are
+	// the component's.
 	ExtraAttrs html.Attrs
 }
 
-// detailListClasses dresses headless.DetailList's parts.
 var detailListClasses = headless.Classes{
 	headless.PartRoot:        "fui-detail-list",
 	headless.PartDetailRow:   "fui-detail-list__row",
@@ -58,11 +40,8 @@ var detailListClasses = headless.Classes{
 	headless.PartDetailValue: "fui-detail-list__value",
 }
 
-// DetailList renders a label/value description list on
-// headless.DetailList. An item with no Value renders the empty-value
-// dash, so an absence reads as deliberate. A list with no items
-// renders nothing: the primitive refuses an empty <dl>, and a record
-// with no fields is data, not a developer's mistake.
+// DetailList renders a label/value <dl> on headless.DetailList. An item
+// with no Value draws the empty-value mark; no items renders nothing.
 func DetailList(cfg DetailListConfig) render.HTML {
 	if len(cfg.Items) == 0 {
 		return render.HTML("")
@@ -108,8 +87,6 @@ func DetailList(cfg DetailListConfig) render.HTML {
 var detailListStyle = registry.RegisterStyle("ui-detail-list", detailListCSS)
 
 func detailListCSS(_ style.Theme) string {
-	// Knobs: --ui-detail-list-max-width (44rem) caps the list's
-	// measure (the label-column knob sits on the row rule below).
 	return `[data-cui-comp="ui-detail-list"] {
   display: flex;
   flex-direction: column;

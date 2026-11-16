@@ -12,3 +12,364 @@ code:
   - framework/crud/pool.go
   - framework/crud/logscrub.go
   - framework/crud/reasons.go
+twins:
+  - job: Scan a result set into wire-keyed row maps, typing bool columns.
+    why: The pooled scanner serves only List's hook-free, include-free page, whose rows return to the pool after encoding; every other read keeps its rows past the response.
+    sites:
+      - path: framework/crud/pool.go
+        note: scanRowsPooledWithKeysForEntity, List's pooled page.
+      - path: framework/crud/crud.go
+        note: scanRowsWithKeysForEntity, every other read.
+invariants:
+  - id: snapshot-is-a-copy
+    rule: The field snapshot holds its own copy of the field declarations, so a host writing the live declarations changes nothing the request path reads until VisibleFields republishes.
+    enforced_by:
+      - test: framework/crud.TestSnapshotFieldsAreACopy
+      - test: framework/crud.TestVisibleFieldsReturnsCopy
+  - id: request-path-reads-fields-from-the-snapshot
+    rule: A list or get request reads the entity's own field declarations, its masks and its default created_at sort included, only through the snapshot, so a host rewriting a declaration while requests are served is no data race.
+    enforced_by:
+      - test: framework/crud.TestFieldMutationDuringServeIsRaceFree
+  - id: visible-fields-republishes-the-snapshot
+    rule: Every VisibleFields call rebuilds the snapshot from the live declarations, so a field's name, WireName, Hidden, Type or Mask changed after NewCrudHandler applies from that call on.
+    enforced_by:
+      - test: framework/crud.TestVisibleFieldsSeesWireNameAndTypeChanges
+      - test: framework/crud.TestMaskChangedAfterConstructionAppliesOnRepublish
+      - test: framework/crud.TestMaskPanicReadsAsNull
+  - id: snapshot-follows-json-case
+    rule: A JSONCase assigned directly after NewCrudHandler takes effect on the next request.
+    enforced_by:
+      - test: framework/crud.TestJSONCaseAssignedAfterConstruction
+  - id: shared-camel-form-names-no-column
+    rule: When two columns share a camelCase form, an in-process body key in that form writes neither column.
+    enforced_by:
+      - test: framework/crud.TestBodyKeyTwoColumnsShareNamesNeither
+  - id: wire-keys-cover-hidden-fields
+    rule: The wire-key maps cover every field, Hidden ones included, so a write can name a write-only field by its WireName.
+    enforced_by:
+      - test: framework/crud.TestUpsertNormalizesCascadeKeys
+  - id: full-width-list-serves-wire-names
+    rule: A list with no ?fields= keys each column by its WireName, as convertKey does.
+    enforced_by:
+      - test: framework/crud.TestListServesWireNames
+  - id: relation-to-integer-key-filters-as-int
+    rule: A Relation column referencing an integer key is typed schema.Int for filter, where-tree and cursor parsing, so a non-integer value is a 400.
+    enforced_by:
+      - test: framework.TestRelationFieldToIntegerKey
+  - id: batch-item-fold-refusal-is-deterministic
+    rule: Two keys of one batch item that fold onto one column are refused, naming both in sorted order.
+    enforced_by:
+      - test: framework/crud.TestBatchFoldRefusalIsDeterministic
+  - id: scanners-agree
+    rule: The pooled and buffered scanners return the same rows for the same result set.
+    enforced_by:
+      - test: framework/crud.TestPooledAndBufferedScannersAgree
+  - id: pooled-rows-are-copied-out
+    rule: A pooled scan copies each value out of the scratch slice, so no row aliases another.
+    enforced_by:
+      - test: framework/crud.TestScanRowsPooled_NoAliasingAcrossRows
+  - id: scan-error-is-not-a-short-page
+    rule: A scan whose rows end in an error answers the error, not the rows read so far, on every scanner.
+    enforced_by:
+      - test: framework/crud.TestList_ScanErr
+      - test: framework/crud.TestListAll_ScanErr
+      - test: framework/crud.TestCursor_ScanErr
+  - id: empty-page-is-an-array
+    rule: An empty list encodes "data" as [], never null.
+    enforced_by:
+      - test: framework/crud.TestHookedEmptyListIsArrayNotNull
+  - id: bool-columns-read-as-booleans
+    rule: A column whose database type or declared field type is boolean reads back as a bool; numeric non-zero is true, text only "true" or "1" trimmed in any case.
+    enforced_by:
+      - test: framework/crud.TestDatabaseBoolColumnsMatchesBoolDbType
+      - test: framework/crud.TestScanOneNormalizesBooleanForModernc
+      - test: framework/crud.TestConvertDatabaseValueBooleanTrue
+  - id: log-lines-scrub-control-bytes
+    rule: Every crud log line goes through logf, which percent-encodes control bytes, so a driver quoting the request's value cannot forge a log line.
+    enforced_by:
+      - test: framework/crud.TestLogfScrubsControlBytes
+      - test: framework/crud.TestCrudLogsOnlyThroughLogf
+  - id: sqlite-decimal-stored-as-sent
+    rule: On SQLite a Decimal value the column would not store exactly as sent is refused with a 400 field error.
+    enforced_by:
+      - test: framework/crud.TestDecimalSQLiteRefusesDigitsItWouldDrop
+      - test: framework/crud.TestDecimalSQLiteStorageBoundaries
+  - id: sqlite-timestamp-keyset-binds-stored-text
+    rule: On SQLite a cursor over a Timestamp column binds the anchor row's stored text, checked as a timestamp spelling, on a managed entity as on an Unmanaged one, so a walk serves the sorted list once whatever layout the rows hold.
+    enforced_by:
+      - test: framework/crud.TestCursorOverSeededTimestamps
+      - test: framework/crud.TestLegacyTimestampLayouts
+      - test: framework/crud.TestLegacyTimestampCursorRefusesNonTimestamp
+  - id: legacy-timestamp-comparison-refused
+    rule: A filter, where-tree or typed-query comparison on a Timestamp column holding text outside schema.TimestampLayout answers 500 timestamp_layout instead of comparing it.
+    enforced_by:
+      - test: framework/crud.TestLegacyTimestampLayouts
+      - test: framework/crud.TestTypedQueryRefusesLegacyTimestamps
+  - id: blank-or-null-key-refused
+    rule: A write that would store "" or NULL in a key column is refused inside its transaction.
+    enforced_by:
+      - test: framework/crud.TestCreateRefusesBlankSingleColumnKey
+      - test: framework/crud.TestCreateRefusesNullKey
+      - test: framework/crud.TestNullKeyReadsTheWrittenRow
+  - id: offset-page-has-total-order
+    rule: An offset list sorts on every key column after the client's sort, and with no sort a managed created_at leads, oldest first.
+    enforced_by:
+      - test: framework/crud.TestKeyTiebreakFollowsTheSort
+      - test: framework.TestNoSortListsOldestFirst
+  - id: key-reaches-only-its-own-row
+    rule: On an Unmanaged entity a read keeps only the row whose own id is the requested id, and a write that reaches any other row is refused whole.
+    enforced_by:
+      - test: framework/crud.TestKeyCheckReadsReachedRow
+      - test: framework/crud.TestKeyStricterThanColumn
+      - test: framework/crud.TestMediaCheckReadsOwnID
+  - id: dialect-probed-once-per-database
+    rule: isPostgres asks a *sql.DB once, through a transaction copy too, caches only a certain answer, and does not keep the database alive.
+    enforced_by:
+      - test: framework/crud.TestDialectProbeRunsOncePerDatabase
+      - test: framework/crud.TestDialectIsRememberedThroughATransaction
+      - test: framework/crud.TestDialectMemoDoesNotKeepADatabaseAlive
+  - id: handler-learns-dialect-once
+    rule: Every dialect check in crud goes through CrudHandler.onPostgres, which asks once per *sql.DB, or once per handler (shared with its transaction copies and forEntity siblings) when the DB has no *sql.DB behind it; a handler built as a literal over such a DB panics instead of asking each time.
+    enforced_by:
+      - test: framework/crud.TestWrappedDBHandlerProbesDialectOnce
+      - test: framework/crud.TestLiteralHandlerOnWrappedDBRefusesDialectCheck
+      - test: framework/crud.TestHandlerLearnsDialectOnlyThroughOnPostgres
+  - id: hook-sees-its-own-record-id
+    rule: A write's After hooks see that write's own record id on ctx, even when another write's hook started it.
+    enforced_by:
+      - test: framework/crud.TestAfterRowSetsItsOwnID
+  - id: record-routes-are-no-store
+    rule: Every record route answers Cache-Control no-store, its refusals before the scope check included.
+    enforced_by:
+      - test: framework/crud.TestEveryRecordRouteIsNoStore
+      - test: framework/crud.TestCrudRedScopedRowsNoStore
+  - id: failed-write-leaves-no-upload
+    rule: A create or update that fails after its multipart parse saved files deletes them.
+    enforced_by:
+      - test: framework/crud.TestFailedCreateLeavesNoOrphanUpload
+  - id: write-answer-hides-what-get-hides
+    rule: A committed write answers only the row's id when the caller's read scope or a BeforeGet scope hides the row, or when the AfterGet hooks fail; the write is not reported as failed.
+    enforced_by:
+      - test: framework/crud.TestCreateHidesReadScopedRow
+      - test: framework/crud.TestUpdateHidesReadScopedRowAnon
+      - test: framework/crud.TestCreateDegradesToIDWhenTheHookFails
+  - id: hook-panic-is-a-generic-500
+    rule: A hook that panicked answers the generic 500 on every surface, and IsHookRefusal does not report it as a refusal.
+    enforced_by:
+      - test: framework/crud.TestBeforeHookPanicIsAServerError
+      - test: framework/crud.TestReadHookPanicIsAServerError
+      - test: framework/crud.TestHookPanicIsNotARefusal
+  - id: unknown-error-text-stays-in-the-log
+    rule: An error crudRefusal does not recognise answers the generic 500 with none of its text.
+    enforced_by:
+      - test: framework/crud.TestOps_WriteCRUDErrorDoesntLeakInternal
+      - test: framework/crud.TestUpdate_InternalErrorNotLeaked
+  - id: crud-errors-map-to-statuses
+    rule: A unique violation is 409, a foreign-key violation 409, a reentrant move 409, a NOT NULL on a declared field a 400 naming it, and a missing tenant 400 tenant_required.
+    enforced_by:
+      - test: framework/crud.TestUniqueViolation_Returns409
+      - test: framework/crud.TestForeignKeyViolation_Returns409
+      - test: framework/crud.TestReentrantMoveRouteIs409
+      - test: framework/crud.TestNotNullNamesField
+      - test: framework/crud.TestTenantMissingIsA400
+  - id: unencodable-body-is-a-500
+    rule: A response body that cannot be marshalled answers the generic 500, not the intended status with an empty body.
+    enforced_by:
+      - test: framework/crud.TestHTTPListsAnswerEncodeFailure
+  - id: page-size-is-capped
+    rule: ?limit, or its alias ?per_page, is clamped to listLimitCap, which never exceeds streamListThreshold on any list path.
+    enforced_by:
+      - test: framework/crud.TestPagination_MaxListLimitEnforced
+      - test: framework/crud.TestParsePagination_PerPageAlias
+      - test: framework/crud.TestStreamCapHonorsThreshold
+  - id: skip-is-bounded-exactly
+    rule: A list skip, ?offset= or page-derived, past maxListOffset is a 400, reckoned exactly at any size, and an honoured ?offset= sets the envelope's page.
+    enforced_by:
+      - test: framework/crud.TestListRefusesOverflowingPage
+      - test: framework/crud.TestExplicitOffsetBeyondCapRejected
+      - test: framework/crud.TestListEnvelopePageFollowsOffset
+  - id: trashed-needs-a-user
+    rule: ?trashed=true shows soft-deleted rows only to an authenticated request.
+    enforced_by:
+      - test: framework/crud.TestSoftDelete_PublicListDoesNotExposeDeletedRecords
+      - test: framework/crud.TestSoftDelete_PublicGetWithTrashedReturnsNotFound
+  - id: search-without-fields-refused
+    rule: A non-blank ?q= on an entity with no SearchFields is a 400, unless a queryable column or AllowedFilterParams entry is named q; on an entity with SearchFields, ?q=value is the search and ?q[eq]= still filters the column.
+    enforced_by:
+      - test: framework/crud.TestSearchWithoutFieldsRefused
+      - test: framework/crud.TestSearch_QColumnEdge
+  - id: get-reads-the-query-strictly
+    rule: Get parses its query as List does, so an undecodable or repeated control key is a 400.
+    enforced_by:
+      - test: framework/crud.TestGetRefusesUndecodableQuery
+      - test: framework/crud.TestReadQueryParity
+  - id: cursor-mode-refuses-a-bad-sort
+    rule: A cursor list refuses a ?sort= that an offset list refuses.
+    enforced_by:
+      - test: framework/crud.TestCursorModeStillRefusesBadSort
+  - id: explicit-stream-refuses-what-it-cannot-honour
+    rule: An explicit ?stream=true with an include or an AfterList hook is a 400; a huge limit without it falls back to the buffered list.
+    enforced_by:
+      - test: framework/crud.TestExplicitStreamWithResolvableIncludeRefused
+      - test: framework/crud.TestStreamWithAfterListRejected
+  - id: nested-filter-target-posture-applies
+    rule: A nested filter across a relation applies the target entity's read gate and BeforeList scope.
+    enforced_by:
+      - test: framework/crud.TestNestedFilterRunsChildBeforeList
+      - test: framework/crud.TestPivotReadGateRBAC
+  - id: get-outside-read-scope-is-404
+    rule: Get of a row outside the caller's read scope answers 404.
+    enforced_by:
+      - test: framework/crud.TestReadScope_GetFilteredRowIs404
+  - id: timestamps-bind-canonical
+    rule: A Timestamp column binds a time.Time or RFC 3339 text in schema.TimestampLayout, and an auto timestamp is fixed-width microseconds.
+    enforced_by:
+      - test: framework/crud.TestTimestampFilterMatchesStored
+      - test: framework/crud.TestUpsertBindsStoredTimestamp
+      - test: framework/crud.TestAutoTimestampLexicographicOrder
+  - id: json-field-round-trips
+    rule: A JSON field reads back what was written; a string write is the document's text, a one-string document reads back as its JSON text, numbers keep their digits, and stored text that is not one JSON value reads back as text.
+    enforced_by:
+      - test: framework/crud.TestJSONStringRoundTrips
+      - test: framework/crud.TestJSONStringInputStaysJSONText
+      - test: framework/crud.TestJSONFieldKeepsHugeInts
+      - test: framework/crud.TestStoredTextWithTrailingValueReadsAsText
+  - id: decimal-and-date-read-as-text
+    rule: A Decimal column reads as its text and a Date column as YYYY-MM-DD, on direct reads and through includes.
+    enforced_by:
+      - test: framework/crud.TestDecimalReadsAsString
+      - test: framework/crud.TestDateReadsBackAsDate
+      - test: framework/crud.TestIncludedDecimalReadsAsString
+      - test: framework/crud.TestIncludedAndGroupedDateIsDate
+  - id: int-column-never-stores-a-rounded-number
+    rule: An Int column takes a float or JSON number only when it is an integer strictly inside ±2^53 or an integer literal; any other integral value is refused as beyond_precision.
+    enforced_by:
+      - test: framework/crud.TestIntJSONRoundTripsOrRefuses
+      - test: framework/crud.TestCoerceRefusesExponentIntPastExactRange
+      - test: framework/crud.TestIntRefusesInexactFraction
+  - id: body-is-one-unambiguous-json-object
+    rule: A JSON body with a repeated key at any depth, or anything after its object, is a 400.
+    enforced_by:
+      - test: framework/crud.TestBodyRefusesNestedDuplicateKey
+      - test: framework/crud.TestBodyRefusesTrailingJSON
+  - id: write-values-bind-as-their-column-type
+    rule: A write binds an Int column's decimal text as int64, a Float column's canonical decimal text as float64, a Bool spelling (a declared default too) as the boolean, a datetime-local value as UTC, and a reference to an integer key in canonical decimal.
+    enforced_by:
+      - test: framework/crud.TestCoerceBindsIntTextAndBoolSpelling
+      - test: framework/crud.TestFloatTakesNumericText
+      - test: framework/crud.TestBoolTextDefaultIsBoolean
+      - test: framework/crud.TestZonelessTimestampWrites
+      - test: framework/crud.TestMCPToolsAcceptTheIntegerReferenceTheyReturn
+  - id: pre-hook-coercion-refuses-nothing
+    rule: The coercion before the Before hooks leaves a value it cannot read as sent and still converts every other column.
+    enforced_by:
+      - test: framework/crud.TestCoerceBeforeHooksConvertsPastAnUnreadableValue
+decisions:
+  - id: copy-on-write-field-snapshot
+    status: accepted
+    decision: Derived field maps live in an immutable snapshot swapped under a lock, and the request path never re-reads the live declarations.
+    rejected:
+      - option: Rebuild the cached maps in place when the declarations' signature changes.
+        why: Two concurrent requests that both saw a stale cache wrote the same maps and crashed the process with concurrent map writes.
+      - option: Re-read the entity's declarations on every request.
+        why: It races a host writing them; a mutation reaches requests only at the next single-threaded VisibleFields or a new handler.
+    upholds: [snapshot-is-a-copy, visible-fields-republishes-the-snapshot, request-path-reads-fields-from-the-snapshot]
+  - id: refuse-legacy-timestamp-comparisons
+    status: accepted
+    decision: A comparison on a Timestamp column holding text in another layout is refused with 500 timestamp_layout; the fix is rewriting the rows or reading through a view that writes the canonical layout.
+    rejected:
+      - option: Bind the comparison value in schema.TimestampLayout as for canonical rows.
+        why: SQLite compares text, so "2026-03-03 10:00:00" read as earlier than a canonical bind of 09:00 and at_gt dropped the row.
+    revisit_if: Comparisons parse the stored text as an instant on SQLite.
+    upholds: [legacy-timestamp-comparison-refused]
+  - id: keyset-binds-stored-text-on-managed-entities
+    status: accepted
+    decision: On SQLite the keyset reads and binds a Timestamp cursor column's stored text for every entity, managed ones included, at the cost of one extra selected expression per page.
+    rejected:
+      - option: Bind the canonical layout on a managed entity, since crud writes every row in it.
+        why: A seed script or migration writes "2026-01-02T03:04:05Z" into a managed table; the canonical bind "…05.000000Z" sorts before it as text, so the next page began with the cursor's own row and a walk never left the first page.
+      - option: Refuse the page with 500 timestamp_layout, as a filter on an Unmanaged entity does.
+        why: The check reads the whole column on every page, and the walk needs no instant comparison, only the text ORDER BY already sorts.
+      - option: Compare through strftime or julianday so the keyset is chronological.
+        why: SQLite's date functions keep milliseconds, so two rows a few microseconds apart would tie, and the expression cannot use the column's index.
+    revisit_if: Filters on a managed entity start checking the stored layout, or SQLite timestamps move to a non-text storage class.
+    upholds: [sqlite-timestamp-keyset-binds-stored-text]
+  - id: refuse-inexact-sqlite-decimals
+    status: accepted
+    decision: On SQLite a Decimal the column would round (past schema.SQLiteDecimalDigits or below schema.SQLiteDecimalMinMagnitude) is refused, since SQLite has no exact decimal type.
+    rejected:
+      - option: Store it and read back the rounded value.
+        why: The write answered success while DECIMAL(19,4) read 999999999999999.1234 back as 999999999999999.1 and stored 1e-400 as 0.
+    revisit_if: SQLite gains an exact decimal storage class, or Decimal columns are stored as TEXT there.
+    upholds: [sqlite-decimal-stored-as-sent]
+  - id: refuse-floats-past-two-to-the-53
+    status: accepted
+    decision: Bodies decode with UseNumber, and an integral float at or past ±2^53 bound for an Int column is refused.
+    rejected:
+      - option: Store the float64 as an int64.
+        why: 2^53+1 decodes to exactly 2^53, so the row silently stored another number than the caller sent.
+    upholds: [int-column-never-stores-a-rounded-number]
+  - id: json-string-is-the-document
+    status: accepted
+    decision: A string written to a JSON field is the document's text and is stored verbatim.
+    rejected:
+      - option: Encode every value, strings included, with json.Marshal.
+        why: The admin battery's textarea and the image-variants writer send the document as a string, and encoding it again stored it double-quoted.
+    upholds: [json-field-round-trips]
+  - id: sniff-driver-constraint-messages
+    status: accepted
+    decision: Unique and foreign-key violations are recognised by their drivers' message text.
+    rejected:
+      - option: Match typed driver errors.
+        why: The supported drivers share no typed error, and crud does not import a driver.
+    revisit_if: database/sql or the supported drivers expose a shared constraint-violation error.
+    upholds: [crud-errors-map-to-statuses]
+  - id: text-booleans-are-strict
+    status: accepted
+    decision: A boolean column's text reads true only for "true" or "1", while a numeric value is true when non-zero.
+    rejected:
+      - option: Read any text other than "0" or "false" as true.
+        why: A driver widening a bool sends a number, never text like "2", so reading such text as true would invent a value the column never held.
+    upholds: [bool-columns-read-as-booleans]
+  - id: fixed-width-microsecond-timestamps
+    status: accepted
+    decision: Auto timestamps are written with fixed-width microseconds (schema.FormatTimestamp).
+    rejected:
+      - option: Whole seconds.
+        why: Two rows written in one second tied on created_at and stalled single-field cursor pagination.
+      - option: RFC 3339 with trailing zeros stripped.
+        why: SQLite compares the text, and "…07.5Z" sorts after "…07.5001Z".
+    upholds: [timestamps-bind-canonical]
+  - id: explicit-stream-refuses
+    status: accepted
+    decision: Explicit ?stream=true with an include or AfterList hook is refused, and an auto-stream (huge limit) falls back to the buffered list.
+    rejected:
+      - option: Stream anyway without the include or hook.
+        why: Includes would vanish, and an AfterList redactor would be bypassed and leak the fields it hides.
+    upholds: [explicit-stream-refuses-what-it-cannot-honour]
+  - id: originals-stored-verbatim
+    status: accepted
+    decision: StripUploadMetadata is off by default, so uploads are stored as sent unless the app opts in (maintainer decision, 2026-09-04).
+    rejected:
+      - option: Strip EXIF, XMP and text segments from every upload by default.
+        why: The maintainer chose to store originals verbatim; the comment that recorded this gave no further reason.
+  - id: weak-keyed-dialect-cache
+    status: accepted
+    decision: The isPostgres answer is cached per *sql.DB under a weak pointer.
+    rejected:
+      - option: Probe on every call.
+        why: The probe fails on SQLite by design, so every request showed a failed step in its trace.
+      - option: Key the cache on the *sql.DB itself.
+        why: The map kept every closed database alive, one per test or per tenant.
+    upholds: [dialect-probed-once-per-database]
+  - id: republish-without-comparing
+    date: 2026-11-16
+    status: accepted
+    decision: VisibleFields rebuilds the snapshot on every call instead of comparing a signature of the declarations first.
+    rejected:
+      - option: Republish only when a hash of each field's name, WireName, Hidden, Type and Mask changed.
+        why: A Mask is a function, and two closures of one function share a code pointer, so swapping a permissive mask for a redacting one was not seen and the value stayed exposed.
+      - option: Read masks from the live declarations on every request.
+        why: It is a data race with a host rewriting a declaration, which TestFieldMutationDuringServeIsRaceFree forbids.
+    revisit_if: VisibleFields is called on a hot path, where one snapshot build per call would cost.
+    upholds: [visible-fields-republishes-the-snapshot]

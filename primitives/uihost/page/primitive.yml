@@ -1,0 +1,485 @@
+primitive: uihost.page
+summary: The full-page render - ServeHTTP and handlePage, the document shell, chrome and head injection, the inline head data, first-paint CSS inlining, script registration and stale-markup reloads.
+code:
+  - framework/uihost/page.go
+  - framework/uihost/headdata.go
+  - framework/uihost/firstpaint.go
+  - framework/uihost/firstpaint_prune.go
+  - framework/uihost/markupskew.go
+  - framework/uihost/register_script.go
+  - framework/uihost/docredirect.go
+  - framework/uihost/renderscreen.go
+  - framework/uihost/toaststack.go
+docs:
+  - core-ui/ARCHITECTURE.md
+invariants:
+  - id: location-scrubs-control-bytes
+    rule: Every Location and X-Gofastr-Document value the page render writes from a request-derived path has each C0 control byte, tab included, and DEL percent-encoded.
+    enforced_by:
+      - test: framework/uihost.TestScrubCtlEncodesTab
+  - id: title-carries-no-invisibles
+    rule: The <title> text of every finished page has the textsafe invisible and bidi codepoints stripped, and the rest of the document is unchanged.
+    enforced_by:
+      - test: framework/uihost.TestTitleTransportsStripInvisibles
+  - id: standalone-router-matches-the-app
+    rule: ServeHTTP's private router installs the security headers and the retired-markup scan before Mount, as framework.App's router does.
+    enforced_by:
+      - test: framework/uihost.TestUIHost_PageResponsesCarrySecurityHeaders
+      - test: framework/uihost.TestSweepPageStandaloneScansRetiredMarkup
+  - id: part-request-answered-first
+    rule: handlePage answers a request carrying X-Gofastr-Part through the part handler before the navigation, redirect and full-render arms.
+    enforced_by:
+      - test: framework/uihost.TestParallelPartsMintOneSession
+      - test: framework/uihost.TestPartResetReloadsOnceHTTP
+  - id: declarative-redirect-308
+    rule: A declarative redirect answers 308 to its target with the request's query carried over, and only when the target is a same-origin relative path.
+    enforced_by:
+      - test: framework/uihost.TestRedirectHardGET308
+      - test: framework/uihost.TestRedirectPatternHardGET308
+      - test: framework/uihost.TestRedirectKeepsQuery
+    judge: Does this change drop the handler.IsSafeRelativePath check in front of the declarative redirect's http.Redirect, which core-ui/app's own refusal currently hides from every test?
+  - id: negotiable-page-varies-on-accept
+    rule: Both the markdown and the HTML answer of a page under markdown negotiation carry Vary Accept.
+    enforced_by:
+      - test: framework/uihost.TestNegotiatedPagesCarryVaryAccept
+  - id: page-span-names-the-route
+    rule: A page render notes its screen's route pattern to the tracing middleware, so the request span is named for the route.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageNamesTheTraceSpan
+  - id: seed-bag-installed-before-render
+    rule: handlePage installs the request's signal value bag before rendering, so a value a Load seeds reaches the page's seed block.
+    enforced_by:
+      - test: framework/uihost.TestSeed_ResolvedValueInBlockAndConsumer
+  - id: off-origin-redirect-for-a-fetch
+    rule: A policy redirect answers a script fetch to an absolute http(s) URL with 200 and the URL, non-ASCII bytes percent-encoded, in X-Gofastr-Document, and every other request or target with 303.
+    enforced_by:
+      - test: framework/uihost.TestFullPageFetchExternalRedirect
+      - test: framework/uihost.TestPartialRedirect_RejectsUnsafeURLs
+  - id: head-meta-belongs-to-the-rendered-screen
+    rule: A screen's description, SEO fields and HeadHTML reach the head only when the rendered component is of the screen's type and no RenderAlt replaced it, and HeadHTML is read from the rendered instance.
+    enforced_by:
+      - test: framework/uihost.TestRenderAltHidesGuardedMeta
+      - test: framework/uihost.TestRenderScreenHidesRouteMeta
+      - test: framework/uihost.TestHeadHTMLReadsLoadedComponent
+  - id: page-status-ranking
+    rule: A page answers 404 for a not-found outlet, else its component's ScreenStatusCode, else the status its render set, and ignores a code outside 100-999.
+    enforced_by:
+      - test: framework/uihost.TestOutlet404BeatsComponentStatus
+      - test: framework/uihost.TestScreenStatusCodeBeatsSetStatus
+      - test: framework/uihost.TestSetStatusReachesPageAndPartial
+      - test: framework/uihost.TestPageStatusIgnoresOutOfRangeScreenCode
+  - id: page-document-is-private
+    rule: Every document finishPageDocument writes, error and 405 pages and RenderScreen's full arm included, carries Cache-Control no-store and Vary Cookie.
+    enforced_by:
+      - test: framework/uihost.TestErrorDocumentMintsSession
+      - test: framework/uihost.TestPageLiveSessionNoStore
+      - test: framework/uihost.TestRenderScreenStatusAndCache
+  - id: page-document-has-a-live-session
+    rule: A page document reuses a session cookie that verifies and replaces one that does not with a fresh session whose id the chrome carries, except under withoutMint, which never mints.
+    enforced_by:
+      - test: framework/uihost.TestStaleSessionCookieReminted
+      - test: framework/uihost.TestErrorDocumentMintsSession
+      - test: framework/uihost.TestScreenRefusesUnsafeMethods
+  - id: every-page-carries-the-confirm-dialog
+    rule: Every page document carries the kit's confirm dialog template once inside its body, and its head links the dialog's sheet.
+    enforced_by:
+      - test: framework/uihost.TestPageCarriesConfirmDialog
+  - id: widget-ssr-inline-set
+    rule: A page inlines, rendered with the request context, every non-hidden widget available on its path and any widget whose deep link the URL matches, never a hidden widget without that match, and never one whose session gate refuses the request.
+    enforced_by:
+      - test: framework/uihost.TestInjectWidgetSSR_HiddenDeepLinkInlinedOnMatch
+      - test: framework/uihost.TestRequireAuthenticatedWidgetRefusesAnonSession
+      - test: framework/uihost.TestSweepPageWidgetChromeSeesTheRequest
+  - id: toast-stack-sheets-ride-the-head
+    rule: The head carries every component sheet an inlined toast stack names, its row template's included.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageHeadCarriesToastStackSheets
+  - id: missing-chrome-marker-warns
+    rule: replaceChromeMarker logs a warning and returns the page unchanged when the marker is absent.
+    enforced_by:
+      - test: framework/uihost.TestReplaceChromeMarker_MissingWarns
+  - id: one-description-per-page
+    rule: A page carries one meta description, the screen's typed one, else the first in its HeadHTML, else the site's, and the site's rides the page metadata, never the fixed head.
+    enforced_by:
+      - test: framework/uihost.TestOneDescriptionPerPage
+      - test: framework/uihost.TestSweepPageTypedDescriptionBeatsHeadHTML
+  - id: screen-head-urls-are-safe
+    rule: A canonical or hreflang URL reaches the head only when it is an http(s) or relative reference.
+    enforced_by:
+      - test: framework/uihost.TestSEO_BundleURLsRejectUnsafeSchemes
+      - test: framework/uihost.TestSweepPageHreflangRejectsUnsafeURL
+  - id: caller-head-sources-are-scrubbed
+    rule: WithHeadHTML and SEOScreen.HeadHTML pass through stripInlineScripts before the head, while the framework-built JSON-LD of seo.Render and WithOrganization does not.
+    enforced_by:
+      - test: framework/uihost.TestWithHeadHTML_StripsInlineScriptTags
+      - test: framework/uihost.TestSEOScreen_HeadHTMLStripsInlineScriptTags
+      - test: framework/uihost.TestOrganizationJSONLD_InPageHead
+  - id: declared-topics-only-on-success
+    rule: A page signs the presence topics its screen declares into the SSE URL only when it answers 2xx, and query-escapes the page's own ?presence= value.
+    enforced_by:
+      - test: framework/uihost.TestNotFoundPageDeclaresNothing
+      - test: framework/uihost.TestInjectChromePresenceMetaTag
+  - id: per-page-head-first
+    rule: Per-screen head tags come before WithHeadHTML, the PWA manifest link and the site-wide typed tags.
+    enforced_by:
+      - test: framework/uihost.TestPerPageOGBeatsGlobal
+  - id: screen-head-marked-page-meta
+    rule: Every meta and link tag of the per-screen head carries data-cui-page-meta, the set a client navigation swaps.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageMarksScreenHeadAsPageMeta
+  - id: live-page-data-rides-manifest-js
+    rule: A live page carries no inline route graph and loads manifest.js before runtime.js, while an export head inlines the catalog and module manifest and links the bare color-scheme script and app.css paths.
+    enforced_by:
+      - test: framework/uihost.TestUIHostRouteGraph
+      - test: framework/uihost.TestComponentCSS_PageReferencesManifestJS
+      - test: framework/uihost.TestSweepPageExportHeadIsSelfContained
+  - id: registered-data-blocks-inline
+    rule: Every registered data block is inlined once in the head of a live page and of an export.
+    enforced_by:
+      - test: framework/uihost.TestDataBlockOncePerPageLiveAndExport
+  - id: app-css-closes-the-cascade
+    rule: app.css follows the component CSS, carries id cui-app-css whether linked or inlined, and is linked with ?v= on a live page.
+    enforced_by:
+      - test: framework/uihost.TestCSSLoadOrder_AppCSSWinsOverComponentCSS
+      - test: framework/uihost.TestUIHostCustomCSS
+      - test: framework/uihost.TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget
+  - id: export-skips-rpc-preload
+    rule: A static export never preloads the rpc runtime module, which its runtime does not load.
+    enforced_by:
+      - test: framework/static.TestExportDoesNotPreloadRPC
+  - id: action-scripts-follow-rendered-components
+    rule: A live page loads the action script of exactly the compiled components its markup carries.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageLoadsOnlyRenderedActionScripts
+  - id: document-script-follows-route-scope
+    rule: A document script ships, marked data-cui-doc, only on pages whose route pattern, or own path when no screen matches, its scope accepts.
+    enforced_by:
+      - test: framework/uihost.TestDocumentScriptScopedEmission
+      - test: framework/uihost.TestDocumentScriptScopeSeesRoutePattern
+  - id: color-scheme-runs-first
+    rule: The color-scheme bootstrap is the first script of every head, preceded only by the static color-scheme meta, and carries no defer.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageColorSchemeOpensTheHead
+      - test: framework/uihost.TestSweepPageExportHeadIsSelfContained
+  - id: host-scripts-close-the-head
+    rule: manifest.js, runtime.js, the action scripts and the script rail are written, deferred and in that order, just before </head>.
+    enforced_by:
+      - test: framework/uihost.TestHostScriptsCloseHead
+  - id: first-render-closes-the-rail
+    rule: The first full-shell render, live or export, latches the script rail so a later registration is refused.
+    enforced_by:
+      - test: framework/uihost.TestRegisterScriptRefusedAfterServing
+      - test: framework/uihost.TestSweepPageExportHeadIsSelfContained
+  - id: page-loading-rides-the-body
+    rule: A WithPageLoading component is rendered as the first child of <body>, outside every swappable shell, in a data-fui-page-loading wrapper.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageLoadingRidesTheBody
+  - id: fallback-shell-escapes-title
+    rule: documentShell escapes the title it writes and inserts the body as given.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageShellEscapesTitle
+  - id: inline-first-paint-is-opt-out
+    rule: A live page inlines its head only when WithNoInlineFirstPaint is unset and the response's policy takes every inlined block's hash.
+    enforced_by:
+      - test: framework/uihost.TestFirstPaintOptOutLinks
+      - test: framework/uihost.TestFirstPaintRefusedPolicyLinks
+      - test: framework/uihost.TestFirstPaintCSPAllowsInlined
+  - id: catalog-marshaled-once
+    rule: The default-theme catalog script is marshaled once per host and reused on every page, and a theme variant's catalog puts ?t= and the variant key on every stylePath.
+    enforced_by:
+      - test: framework/uihost.TestCatalogScriptMarshaledOnce
+      - test: framework/uihost.TestEmbedComponentCSSFollowsTheCustomerTheme
+  - id: catalog-freezes-the-registry
+    rule: Building the component catalog freezes the style registry, so a style registered afterwards panics instead of never reaching a page.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageCatalogFreezesTheRegistry
+  - id: inline-json-cannot-close-its-script
+    rule: No JSON block the host inlines into a script element holds the two bytes "</".
+    judge: Does this change write JSON into a script element without escapeJSONForScript, relying on an encoder that may not escape the less-than sign?
+  - id: page-seed-names-its-page-keys
+    rule: A full page's #gofastr-signals-page block lists, sorted, exactly the seed keys that are not app-global.
+    enforced_by:
+      - test: framework/uihost.TestSeedNamesPageScopedKeys
+  - id: head-data-blocks
+    rule: "injectHeadData puts, just before </head>, the request's signal seed, its page-scoped key list and, for a reader whose runtime strings differ from English, the translated #gofastr-strings block, each left out when empty."
+    enforced_by:
+      - test: framework/uihost.TestSeed_ResolvedValueInBlockAndConsumer
+      - test: framework/uihost.TestSweepPageHeadCarriesRuntimeStrings
+  - id: streamed-seed-sends-changes-only
+    rule: partialSeedIslandDelta drops each name whose value an earlier unit of the same response already sent, and omits the island when nothing is left.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageStreamedSeedDropsRepeats
+  - id: module-preloads-are-low-priority-classic
+    rule: Each runtime-module hint is a link rel=preload as=script fetchpriority=low to the module's content-addressed URL.
+    enforced_by:
+      - test: framework/uihost.TestModulePreloadsAreLowPriority
+      - test: framework/uihost.TestModuleHintIsClassicPreload
+  - id: caller-head-html-is-scrubbed
+    rule: "stripInlineScripts removes script, active-content and void resource tags, meta refresh, on* handlers and autofocus (with a / as well as a space before them), and preload-family or unsafe-URL links from caller head HTML, repeats until nothing changes, and returns nothing for HTML still changing after eight passes."
+    enforced_by:
+      - test: framework/uihost.TestWithHeadHTML_StripsDangerousTags
+      - test: framework/uihost.TestHeadHTML_NeutralisesAutofocusXSS
+      - test: framework/uihost.TestHeadLinkRelSpellingBypass
+      - test: framework/uihost.TestSweepPageHeadLinkNeedsSafeHref
+      - test: framework/uihost.TestHeadScrubDoesNotReassembleTags
+      - test: framework/uihost.TestHeadScrubFailsClosedAtPassCap
+  - id: inline-block-cannot-escape-its-element
+    rule: An inline head block whose body holds NUL, a case-insensitive </style or </script, or <!-- is refused, and CR LF and lone CR are turned into LF before the block is hashed.
+    enforced_by:
+      - test: framework/uihost.TestInlineBlockRefusesCloser
+      - test: framework/uihost.TestInlineBlockMatchesTheParsedText
+  - id: relative-css-keeps-its-link
+    rule: A stylesheet that names a relative URL in url(), an @import string or anywhere it uses image-set() is never inlined.
+    enforced_by:
+      - test: framework/uihost.TestFirstPaintRelativeURLLinks
+      - test: framework/uihost.TestCSSHasRelativeRef
+  - id: first-paint-over-budget-links
+    rule: A page inlines its head only when the gzipped blocks fit 16 KiB, inlining a subset when the whole bundle does not fit and linking app.css when only app.css takes the subset over.
+    enforced_by:
+      - test: framework/uihost.TestFirstPaintOverBudgetLinks
+      - test: framework/uihost.TestFirstPaintSubsetInlinesWhatThePageUses
+      - test: framework/uihost.TestFirstPaintSubsetLinksAppWhenCombinedHeadExceedsBudget
+  - id: inline-bundle-cache-is-bounded
+    rule: A host holds at most 256 cached inline bundles, and builds any further component set's block per request.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageBundleCacheIsBounded
+  - id: inlined-blocks-are-hash-allowed
+    rule: "cspAllowInline adds the hashes to the -src-elem, else -src, else a new -src copied from default-src, of every comma-separated policy, leaves a list with 'unsafe-inline' and no nonce or hash alone, and refuses a policy whose list is 'none'; a refused enforced policy makes the page link, a report-only one is patched where it can be."
+    enforced_by:
+      - test: framework/uihost.TestCSPAllowInline
+      - test: framework/uihost.TestFirstPaintRefusedPolicyLinks
+      - test: framework/uihost.TestFirstPaintReportOnlyGetsHashes
+  - id: subset-drops-only-absent-design-classes
+    rule: "A first-paint subset drops a style rule only when every selector requires, outside brackets and parentheses, a fui- class absent from the page, the response's widget markup and every registered behaviour's source; an escape or non-ASCII name keeps the rule, an emptied @layer block stays, and unbalanced CSS gives no subset."
+    enforced_by:
+      - test: framework/uihost.TestPruneCSS
+      - test: framework/uihost.TestFirstPaintSubsetKeepsLateClasses
+      - test: framework/uihost.TestFirstPaintSubsetSeesWidgetChrome
+      - test: framework/uihost.TestSweepPagePruneKeepsNonASCIISelectors
+      - test: framework/uihost.TestSweepPagePruneSkipsURLInPrelude
+  - id: subset-page-loads-the-full-bundle
+    rule: A page carrying data-cui-bundle-href loads the fullbundle behaviour, which links the full bundle after the subset.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageSubsetLoadsFullBundle
+  - id: stale-markup-client-reloads
+    rule: "A navigation fetch whose Sec-Fetch-Mode is cors, same-origin or no-cors and whose markup header is not this build's gets a 409 partial with the escaped swap key, a meta refresh and a link to the locale-prefixed, route-escaped destination, and only the alert text when the destination is not a same-origin path."
+    enforced_by:
+      - test: framework/uihost.TestStaleMarkupClientGetsReloadBody
+      - test: framework/uihost.TestRenderScreenPartialHonoursMarkupSkew
+      - test: framework/uihost.TestStaleMarkupReloadKeepsPrefix
+      - test: framework/uihost.TestStaleMarkupNoticeInLocale
+      - test: framework/uihost.TestSweepPageStaleReloadEscapesItsTargets
+  - id: script-rail-grammar
+    rule: "A rail script src is a same-origin absolute path, optionally with a query, with no scheme, host, fragment, backslash or control byte (raw or percent-decoded) and no . or .. segment."
+    enforced_by:
+      - test: framework/uihost.TestRegisterExternalScriptRejectsUnsafe
+      - test: framework/uihost.TestRegisterExternalScriptAcceptsValid
+  - id: script-rail-registration
+    rule: A repeated every-page src is a no-op that keeps first-registration order, any other src already on the rail, a nil scope and every registration after the first page render are errors.
+    enforced_by:
+      - test: framework/uihost.TestRegisterExternalScriptDedupesInOrder
+      - test: framework/uihost.TestDocumentScriptRegistrationRefusals
+      - test: framework/uihost.TestRegisterScriptRefusedAfterServing
+  - id: extra-script-srcs-follow-scope
+    rule: ExtraScriptSrcs returns, deduplicated and sorted, every every-page src and each document src whose scope accepts one of the routes.
+    enforced_by:
+      - test: framework/uihost.TestSweepPageExtraScriptSrcsFollowsScope
+  - id: carry-query-target-wins
+    rule: carryQuery appends the request's query pairs to a redirect target in request order, skipping each whose decoded key the target sets, and keeps the target's fragment last.
+    enforced_by:
+      - test: framework/uihost.TestRedirectKeepsQuery
+      - test: framework/uihost.TestCarryQueryKeepsFragmentLast
+      - test: framework/uihost.TestSweepPageCarryQueryMatchesDecodedKeys
+  - id: swap-key-percent-encoded
+    rule: escapeLayerKey percent-encodes every C0 byte, DEL, byte at or above 0x80 and % itself, and leaves any other key unchanged.
+    enforced_by:
+      - test: framework/uihost.TestSwapEscapesControlBytes
+      - test: framework/uihost.TestSwapHeaderIsASCII
+  - id: render-screen-status
+    rule: "RenderScreen's status is resp.Status, else the component's ScreenStatusCode, else a status its render set, else 200, and a code outside 100-999 is sent as 500."
+    enforced_by:
+      - test: framework/uihost.TestRenderScreenScreenStatusCodeFallback
+      - test: framework/uihost.TestRenderScreenSetStatus
+      - test: framework/uihost.TestRenderScreenInvalidStatusClamped
+  - id: render-screen-document
+    rule: RenderScreen refuses a component with retired screen methods, answers a nil component with the plain status error, titles a document "<page> — <app>", and renders a document load inside the default layout.
+    enforced_by:
+      - test: framework/uihost.TestRenderScreenRefusesRetiredTitle
+      - test: framework/uihost.TestRenderScreenNilComponent
+      - test: framework/uihost.TestRenderScreenTitleFromTitler
+      - test: framework/uihost.TestSweepPageRenderScreenWrapsTheDefaultLayout
+  - id: render-screen-partial
+    rule: "RenderScreen answers a client navigation with the bare body marked X-Gofastr-Partial, its invisible-free title, page head and signal seed, under the caller's cache policy (private, no-store by default), mints no session, and sends a stale runtime the reload body."
+    enforced_by:
+      - test: framework/uihost.TestRenderScreenPartialCarriesTitleAndHead
+      - test: framework/uihost.TestRenderScreenPartialCarriesSignalSeed
+      - test: framework/uihost.TestRenderScreenPartialKeepsStatusAndCache
+      - test: framework/uihost.TestRenderScreenFullArmMintsPartialDoesNot
+      - test: framework/uihost.TestRenderScreenPartialHonoursMarkupSkew
+      - test: framework/uihost.TestSweepPageRenderScreenPartialTitleHasNoInvisibles
+  - id: default-toast-stack-mounts-once
+    rule: ensureToastStack mounts gofastr-toasts only when no preset-built toast stack is registered, and serves a registered stack's endpoints this router is missing.
+    enforced_by:
+      - test: framework/uihost.TestBootMountsTheDefaultToastStack
+      - test: framework/uihost.TestBootMountsToastBesideOtherWidgets
+      - test: framework/uihost.TestBootKeepsTheAppsOwnToastStack
+      - test: framework/uihost.TestToastStylesUnderOtherPrefix
+decisions:
+  - id: first-paint-budget
+    date: 2026-11-16
+    status: accepted
+    decision: A live page inlines the color-scheme bootstrap, component bundle and app.css when together they fit 16 KiB gzipped, about one round trip on a slow mobile link.
+    rejected:
+      - option: Always inline the head resources.
+        why: A return visit downloads inlined sheets again inside every document, where linked ones come from the HTTP cache.
+      - option: Never inline.
+        why: A linked head costs a second round trip after the document, most of the time to first paint on a slow link.
+    revisit_if: The slow-link round trip the budget models, 400 kbps at 300 ms, stops being the target device.
+    upholds: [first-paint-over-budget-links]
+  - id: inline-allowed-by-hash
+    date: 2026-11-16
+    status: accepted
+    decision: Every inlined head block is allowed by its sha256 in the response's own Content-Security-Policy, and a page whose policy cannot take a hash keeps its links.
+    rejected:
+      - option: Allow inline content with 'unsafe-inline'.
+        why: It would allow any injected inline script or style along with the framework's own.
+      - option: Inline under a static export too.
+        why: Exported files are served by hosts whose policy the framework does not write.
+    upholds: [inlined-blocks-are-hash-allowed]
+  - id: first-paint-subset
+    date: 2026-11-16
+    status: accepted
+    decision: A bundle over budget inlines only the rules the document can match and marks the block with the full bundle's URL, which the fullbundle behaviour links at boot.
+    rejected:
+      - option: Link the whole bundle once it misses the budget.
+        why: It pays the round trip the budget exists to save on pages that use a few of a sheet's classes.
+      - option: Make the full-bundle link a kernel table row.
+        why: Every page would carry it, and the core runtime would grow past its first window, where only subset pages need it.
+    upholds: [subset-drops-only-absent-design-classes]
+  - id: link-app-css-beside-subset
+    date: 2026-11-16
+    status: accepted
+    decision: When only app.css takes an inlined subset over budget, app.css stays linked and the subset still inlines.
+    rejected:
+      - option: Drop the subset and link everything.
+        why: The full component bundle is much larger than app.css and holds the rules first paint needs.
+    upholds: [first-paint-over-budget-links]
+  - id: inline-caches-are-bounded
+    date: 2026-11-16
+    status: accepted
+    decision: A host caches at most 256 inlined bundles and 256 subsets, and builds a block per request past that.
+    rejected:
+      - option: An unbounded cache.
+        why: The key set is every distinct component set the app's pages render, which no host controls.
+    upholds: [inline-bundle-cache-is-bounded]
+  - id: preload-as-classic-script
+    date: 2026-11-16
+    status: accepted
+    decision: A runtime-module preload hint is rel=preload as=script with fetchpriority=low.
+    rejected:
+      - option: rel=modulepreload.
+        why: The loader injects classic scripts, so a modulepreload response is fetched with module credentials and is never reused; every hinted module was fetched twice.
+      - option: The default fetch priority.
+        why: A script preload then fetches at high priority and competes with the document and its stylesheets, while modules only hydrate after paint.
+    upholds: [module-preloads-are-low-priority-classic]
+  - id: page-data-in-manifest-js
+    date: 2026-11-16
+    status: accepted
+    decision: A live page reads the component catalog, module manifest and route graph from one content-addressed manifest.js declared before runtime.js, and a static export inlines them as JSON blocks.
+    rejected:
+      - option: Inline the JSON blocks in every live document.
+        why: Several kilobytes per document, growing with the app, that nothing reads before the runtime boots.
+    upholds: [live-page-data-rides-manifest-js]
+  - id: per-screen-action-scripts
+    date: 2026-11-16
+    status: accepted
+    decision: A live page loads only the action scripts of the components it renders, each served private, no-cache; a static export keeps the one actions.js file.
+    rejected:
+      - option: One whole-app actions.js on every live page.
+        why: It re-shipped every screen's actions on every page.
+    upholds: [action-scripts-follow-rendered-components]
+  - id: export-app-css-query-free
+    date: 2026-11-16
+    status: accepted
+    decision: A live page links app.css with ?v= and its fingerprint, and a static export or PWA offline shell links it by its bare path.
+    rejected:
+      - option: The fingerprint query in export mode too.
+        why: Exported files land on disk under bare paths, and naive static hosts and mirrors resolve by path.
+    upholds: [app-css-closes-the-cascade]
+  - id: app-css-after-component-css
+    date: 2026-11-16
+    status: accepted
+    decision: app.css follows the component CSS in the head and anchors every lazily loaded sheet before it.
+    rejected:
+      - option: app.css before the component sheets.
+        why: Host overrides of a kit selector would lose cascade ties to the kit's defaults.
+    upholds: [app-css-closes-the-cascade]
+  - id: color-scheme-blocks
+    date: 2026-11-16
+    status: accepted
+    decision: The color-scheme bootstrap is the one synchronous script, first in the head after the static color-scheme meta, and every other host script is deferred and closes the head.
+    rejected:
+      - option: Defer the bootstrap with the rest.
+        why: Dark tokens would apply after first paint, a flash of the light theme.
+    upholds: [color-scheme-runs-first]
+  - id: per-page-head-first
+    date: 2026-11-16
+    status: accepted
+    decision: Per-screen head tags come before WithHeadHTML and the site-wide typed tags.
+    rejected:
+      - option: Site-wide tags first.
+        why: Social-preview crawlers take the first og and twitter tag they meet, so the site default would beat the page's own.
+    upholds: [per-page-head-first]
+  - id: head-scrub-to-fixpoint
+    date: 2026-11-16
+    status: accepted
+    decision: stripInlineScripts reruns its rules until the output stops changing, at most eight passes, and drops head HTML still changing at the cap.
+    rejected:
+      - option: One pass of the rules.
+        why: Removing an inner match splices its neighbours, so a nested script or refresh tag reassembles itself.
+    upholds: [caller-head-html-is-scrubbed]
+  - id: script-regexp-in-fragments
+    date: 2026-11-16
+    status: accepted
+    decision: scriptTagRe is assembled from string fragments so the no-inline-scripts check in core-ui/check does not read headdata.go as emitting an inline script tag.
+    revisit_if: The no-inline-scripts check learns to skip regular-expression literals.
+  - id: default-toast-stack
+    date: 2026-11-16
+    status: accepted
+    decision: The host mounts a toast stack named gofastr-toasts at boot when the app mounted none, and an app's own stack under any name keeps it.
+    rejected:
+      - option: Let the headless feedback module mount its own region.
+        why: A module that invents a region invents its classes too.
+    upholds: [default-toast-stack-mounts-once]
+  - id: toast-sheets-in-head
+    date: 2026-11-16
+    status: accepted
+    decision: The head carries the inlined toast stack's component sheets, while every other widget's sheets load on demand.
+    rejected:
+      - option: Load the toast stack's sheets on demand like other widgets.
+        why: The toast that reports a lost connection is raised exactly when no sheet can load, and it drew as bare text.
+    upholds: [toast-stack-sheets-ride-the-head]
+  - id: document-script-route-identity
+    date: 2026-11-16
+    status: accepted
+    decision: A document script's scope is asked about the route pattern when a page renders and when the route manifest is built.
+    rejected:
+      - option: Ask the scope about the concrete request path.
+        why: A predicate could answer differently for /session/:id and /session/42, and the disagreement is a partial swap that keeps a capability the destination never emitted.
+    upholds: [document-script-follows-route-scope]
+  - id: document-redirect-header
+    date: 2026-11-16
+    status: accepted
+    decision: A script fetch whose policy redirects to an absolute http(s) URL gets 200 with the URL in X-Gofastr-Document, which the runtime loads as a page.
+    rejected:
+      - option: A 303 as for a document load.
+        why: fetch follows a 303 inside the request, and a site that refuses CORS, such as an identity provider's login, failed the navigation.
+    upholds: [off-origin-redirect-for-a-fetch]
+  - id: stale-markup-meta-refresh
+    date: 2026-11-16
+    status: accepted
+    decision: A navigation from a runtime of another markup generation gets a 409 partial whose swap key is the live layer, carrying a meta refresh to the destination and a link as fallback.
+    rejected:
+      - option: A reload signal the runtime reads.
+        why: Runtimes from before the deploy do not know it, while every generation applies an HTML partial the same way.
+    upholds: [stale-markup-client-reloads]

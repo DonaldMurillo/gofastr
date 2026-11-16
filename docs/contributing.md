@@ -83,9 +83,14 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
 - **Repo analyzers (type-aware invariants as vet checks)**: `make
   analyze` builds `cmd/vettool` and runs it over the tree; it also runs
   in the pre-commit hook and CI's vet step. `make analyze` and CI vet
-  each affected package three times, under linux, windows and darwin,
-  so `_windows.go` and `_darwin.go` files are checked; the pre-commit
-  hook covers the host OS only. The registered set is
+  each affected package on the host OS, then on windows and darwin the
+  packages whose Go files differ from the ones that first pass read
+  (`cmd/affected -files-differ-from`), so `_windows.go` and `_darwin.go`
+  files are checked without reading the rest three times; the pre-commit
+  hook covers the host OS only. Every build of `cmd/vettool` passes
+  `-buildvcs=false` (repolint's `vettool-buildvcs` rule): go vet caches
+  each result under the vettool binary's hash, and a commit stamped into
+  the binary makes every commit re-vet everything. The registered set is
   `internal/analyzers/suite/suite.go`. Each analyzer's own package doc
   carries the bug shape it catches, the fix spelling it accepts and the
   postures it deliberately stays silent on: read it when a finding
@@ -175,6 +180,15 @@ These are the guide's Hard rules 10 to 12 in full.
     handle them as they come. Never end with "want me to watch the PR?":
     the answer is always yes. Resolve a merge conflict with main as soon
     as it shows up (merge main in, no force-push).
+
+**Stacked PRs.** A series of PRs that build on each other lands as one
+GitHub stack, merged all or nothing. Base each PR on the one below it,
+then `./scripts/stack.sh create <bottom> ... <top>`, and when every
+layer is green and triaged, `./scripts/stack.sh merge <top>`.
+`scripts/stack.sh view <N>` shows a PR's stack. `gh stack` does the same
+where GraphQL is reachable; Claude Code cloud sessions cannot reach it,
+so there the script, and the REST fallback in `pr-review-findings.sh`,
+are the way.
 
 ## Styling and the design system
 

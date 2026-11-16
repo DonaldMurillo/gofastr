@@ -1,0 +1,146 @@
+primitive: queue
+summary: Background jobs on the memory, Redis and SQL queues, the in-memory and durable schedulers that feed them, and their metrics.
+code:
+  - battery/queue/
+docs:
+  - framework/docs/content/queue.md
+  - framework/docs/content/cron.md
+  - framework/docs/content/observability.md
+twins:
+  - job: Count, list and replay a queue's jobs (Stats, ListJobs, the queue_depth count and ReplayJob).
+    why: The three backends keep jobs in different stores (a heap in process, Redis lists and hashes, one SQL table), so each needs its own reads and its own atomic replay.
+    sites:
+      - path: battery/queue/memory.go
+        note: MemoryQueue.Stats, ListJobs, pendingDepth and ReplayJob.
+      - path: battery/queue/redis.go
+        note: RedisQueue.Stats, ListJobs, pendingDepth and ReplayJob.
+      - path: battery/queue/db.go
+        note: DBQueue.Stats, ListJobs and ReplayJob; its depth is Stats' pending count.
+  - job: Register a schedule, and erase a user's schedules together with any job a racing tick wrote for them.
+    why: Scheduler keeps its schedules in process memory and fires from its own goroutine, while DurableScheduler keeps rows that every replica ticks in a SQL transaction, so registration and the erase sweep run against different state.
+    sites:
+      - path: battery/queue/scheduler.go
+        note: Scheduler's Register and its store eraser, which sweeps the DBQueues it feeds.
+      - path: battery/queue/durable_scheduler.go
+        note: DurableScheduler's Register and the second jobs eraser, queue_scheduler_swept_jobs.
+invariants:
+  - id: replay-reports-whether-it-queued
+    rule: ReplayJob on DBQueue, MemoryQueue and RedisQueue answers true only when it queued a failed job again, and false with a nil error for an unknown id, a job that is not failed and a second replay.
+    enforced_by:
+      - test: battery/queue.TestReplayJobReportsWhetherItQueued
+    judge: Does this change give a backend's Replay a body of its own instead of calling its ReplayJob and dropping the report?
+  - id: stats-count-what-list-jobs-lists
+    rule: On the memory, Redis and SQL queues every Stats key counts exactly the jobs ListJobs lists under that status and the keys sum to what ListJobs lists in all, so on MemoryQueue and RedisQueue, which list dead-letter jobs only, a waiting or delayed job appears under no key.
+    enforced_by:
+      - test: battery/queue.TestStatsKeysAreListableOnEveryBackend
+  - id: queue-depth-is-the-backlog
+    rule: The queue_depth gauge reads the jobs waiting on the memory, Redis and SQL queues, a delayed job included.
+    enforced_by:
+      - test: battery/queue.TestQueueDepthMetricOnEveryBackend
+  - id: redis-counts-need-llen
+    rule: A RedisQueue takes every count (Stats' failed count and the queue_depth backlog) with LLEN through ListLengther and reads no list to count it; over a client without LLEN, Stats returns an error and no count, and MetricsCollector emits no sample.
+    enforced_by:
+      - test: battery/queue.TestRedisQueueCountsNeedLLEN
+      - test: battery/admin.TestRedisQueueJobsPageCountsOnlyWithLLEN
+  - id: redis-request-reads-are-paged
+    rule: RedisQueue's Stats, MetricsCollector scrape, ListJobs and ReplayJob never read a list to its end in one LRANGE, and ReplayJob reads the dead-letter list in pages of at most maxSkipDrain entries, starting over when an entry between two pages moved and returning an error when it keeps moving.
+    enforced_by:
+      - test: battery/queue.TestRedisQueueRequestPathsReadBoundedPages
+      - test: battery/queue.TestRedisReplayRestartsWhenTheDeadListShifts
+  - id: dead-letter-metric-is-a-gauge
+    rule: The dead-letter count is emitted as the gauge queue_dead_letter_jobs, falls on a Replay, and no metric named _total carries it.
+    enforced_by:
+      - test: battery/queue.TestDeadLetterMetricIsAGauge
+  - id: list-jobs-carries-user-id
+    rule: ListJobs returns a job's UserID on the memory, Redis and SQL queues.
+    enforced_by:
+      - test: battery/queue.TestListJobsCarriesUserIDOnEveryBackend
+  - id: schedule-needs-a-job-type
+    rule: Register on the in-memory and the durable scheduler, for Every and Cron alike, returns an error for a schedule with no job type and registers nothing.
+    enforced_by:
+      - test: battery/queue.TestRegisterRefusesAScheduleWithNoJobType
+  - id: erased-user-leaves-no-scheduled-job
+    rule: An erasure of a user removes their schedules and then sweeps their jobs again, on the in-memory scheduler's fed DBQueues and on the durable scheduler's jobs table, so a tick that commits during the erasure leaves no job of theirs.
+    enforced_by:
+      - test: battery/queue.TestSchedulerEraseSweepsFedDBQueue
+      - test: battery/queue.TestDurableSchedulerEraserOrder
+      - test: battery/queue.TestDurableSchedulerEraseRacingATick
+  - id: interval-schedule-fires-on-its-grid
+    rule: The in-memory scheduler sleeps until the earliest next run, between a millisecond and a minute, and advances an interval schedule on the grid its NextRun set, skipping runs missed while it slept.
+    enforced_by:
+      - test: battery/queue.TestSchedulerFiresEveryIntervalOnTime
+      - test: battery/queue.TestNextIntervalRunSkipsMissedRuns
+      - test: battery/queue.TestSchedulerNextWakeBounds
+      - test: battery/queue.TestSchedulerFiresJobsRegisteredAfterStart
+decisions:
+  - id: stress-soak-scales-under-race
+    date: 2026-11-16
+    status: accepted
+    decision: The SQLite and Postgres drain soaks enqueue 200 jobs in a -race build and 600 otherwise, through the stressJobs constant in race_on_test.go and race_off_test.go, and keep the 60 second drain deadline.
+    rejected:
+      - option: Scale stressDeadline under -race instead.
+        why: The deadline must stay well below the two-minute claim lease, so lease recovery cannot finish a drain; a longer deadline eats that margin.
+      - option: Skip the soak under -race.
+        why: The race build is where a settle racing a claim shows up.
+    revisit_if: A race-built soak with 200 jobs passes without ever nacking or contending for the write lock.
+  - id: replay-is-replay-job
+    date: 2026-11-16
+    status: accepted
+    decision: Each backend's Replay calls its ReplayJob and drops the report, and ReplayReporter is the optional capability a caller asserts to learn whether a replay queued anything; the Replay bodies that could not say are removed.
+    rejected:
+      - option: Have the caller check the job is failed and then call Replay.
+        why: The check is a second read that races the replay, and finding one id means scanning the failed list, which is wrong past the page the caller reads.
+      - option: Read a nil from Replay as a replay that happened.
+        why: Replay is by contract a nil no-op for an id that names no failed job.
+    upholds: [replay-reports-whether-it-queued]
+  - id: dead-letter-gauge-has-no-alias
+    date: 2026-11-16
+    status: accepted
+    decision: queue_dead_letter_total is renamed to the gauge queue_dead_letter_jobs with no alias under the old name.
+    rejected:
+      - option: Keep the name and change only the declared type.
+        why: A value that falls must not be named _total, and rate() over it reads every fall as a counter reset.
+      - option: Emit the old name beside the new one for a release.
+        why: The old series would still be a counter that falls, so every dashboard left on it stays wrong without an error to show it.
+    upholds: [dead-letter-metric-is-a-gauge]
+  - id: stats-count-only-the-listable
+    date: 2026-11-16
+    status: accepted
+    decision: Stats counts only the jobs ListJobs can list, and a backend whose pending jobs are not listable reports its backlog to the metric through pendingDepth instead of a pending key.
+    rejected:
+      - option: Add a pending key to MemoryQueue's and RedisQueue's Stats.
+        why: A pager sums the keys and pages ListJobs by them, so a count ListJobs cannot list gives pages with no rows.
+    upholds: [stats-count-what-list-jobs-lists, queue-depth-is-the-backlog]
+  - id: redis-counts-never-read-a-list
+    date: 2026-11-16
+    status: accepted
+    decision: RedisQueue counts only with the optional ListLengther (LLEN), and over a client without it Stats is an error, so the scrape emits nothing and the admin Jobs page shows no counts, no pager and no Replay N failed.
+    rejected:
+      - option: Count with LRANGE 0 -1 when the client has no LLEN.
+        why: It pulls every job's payload on every scrape and every admin page load to take a length.
+      - option: Count with LRANGE 0 N-1 and report N as N or more.
+        why: JobStats is a map of plain counts with no way to mark one as cut off, so the admin and the gauge would show the cap as an exact total, and each scrape would still transfer up to N payloads.
+      - option: Keep emitting queue_dead_letter_jobs without LLEN, as before this decision.
+        why: That sample came from the whole-list read.
+    revisit_if: RedisClient gains a required length read, or JobStats gains a way to mark a count as a lower bound.
+    upholds: [redis-counts-need-llen]
+  - id: redis-replay-pages-the-dead-list
+    date: 2026-11-16
+    status: accepted
+    decision: ReplayJob finds its job by reading the dead-letter list newest first in pages that double from 32 to maxSkipDrain entries, each page overlapping the last by one entry to detect a shift; the erase script, promoteDue and Reclaim keep their whole reads.
+    rejected:
+      - option: Read the dead-letter list whole on each replay.
+        why: Replay all calls ReplayJob up to 10,000 times in one request, each transferring every dead job's payload.
+      - option: Page without the overlap entry.
+        why: A replay or an erasure between two pages shifts the list, the scan steps over an entry, and ReplayJob answers false for a job that is still failed.
+      - option: Page the erase script's LRANGE 0 -1, promoteDue or Reclaim's HGETALL the same way.
+        why: The script runs inside Redis and returns one integer, and its single step is what proves the user's jobs gone; promoteDue already pages by maxSkipDrain on the worker path; the pop and processing hashes hold only jobs in flight.
+    upholds: [redis-request-reads-are-paged]
+  - id: durable-erase-sweeps-jobs-twice
+    date: 2026-11-16
+    status: accepted
+    decision: The durable scheduler registers a second eraser on the jobs table that sorts after the schedules eraser, so the jobs are deleted again once the schedules are gone.
+    rejected:
+      - option: Rely on the one jobs delete that runs before the schedules delete.
+        why: On Postgres a tick that commits while the erasure waits on the schedule row writes its job after that delete.
+    upholds: [erased-user-leaves-no-scheduled-job]

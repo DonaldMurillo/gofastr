@@ -1,0 +1,181 @@
+primitive: ui.pickers
+summary: Value pickers - sliders, ratings, color, date and time pickers, combobox, multi-select, tag input, picker, file upload, drop zone, inline edit and segmented control.
+code:
+  - framework/ui/rangeslider.go
+  - framework/ui/slider.go
+  - framework/ui/rating.go
+  - framework/ui/rating_display.go
+  - framework/ui/colorfield.go
+  - framework/ui/colorpicker.go
+  - framework/ui/datepicker.go
+  - framework/ui/timepicker.go
+  - framework/ui/combobox.go
+  - framework/ui/multiselect.go
+  - framework/ui/taginput.go
+  - framework/ui/picker.go
+  - framework/ui/fileupload.go
+  - framework/ui/dropzone.go
+  - framework/ui/inlineedit.go
+  - framework/ui/segmented.go
+twins:
+  - job: Render a file input under a label with the data-hui-drop root, input, sentence, list and status hooks the headless drop module binds.
+    why: FileDropzone adds a heading, an icon, a named region and a preview strip that headless.FileUpload has no part for, so it builds the drop root by hand.
+    sites:
+      - path: framework/ui/dropzone.go
+        note: FileDropzone builds the hooks itself.
+      - path: framework/headless/upload.go
+        note: FileUpload, which ui.FileUpload dresses.
+invariants:
+  - id: color-field-text-input-is-named
+    rule: ColorField gives its text input aria-label TextLabel, else SwatchLabel, unless TextAttrs already sets aria-label or aria-labelledby.
+    enforced_by:
+      - test: framework/ui.TestColorFieldNamesBothInputs
+      - test: framework/ui.TestColorFieldDoesNotOverrideACallerSuppliedName
+  - id: color-field-wiring-lands-on-the-text
+    rule: A ColorField's Field id, described-by chain and invalid state land on the text input, and Field.ID wins over TextID.
+    enforced_by:
+      - test: framework/ui.TestColorFieldCarriesTheFieldsWiring
+  - id: color-picker-swatch-before-label
+    rule: ColorPicker renders its colour input before its label, the reading order Checkbox uses.
+    enforced_by:
+      - test: framework/ui.TestColorPickerSwatchPrecedesLabel
+  - id: combobox-sheet-rides-a-wrapper
+    rule: Combobox and Picker put the ui-combobox marker and the fui-combobox class on one wrapper div around headless.Combobox, and the sheet's root rule is compound on that wrapper.
+    enforced_by:
+      - test: framework/ui.TestComboboxRendersStyledFieldWithHiddenStatus
+      - test: framework/ui.TestSweepPickersComboboxSheetRidesTheWrapper
+  - id: combobox-status-is-visually-hidden
+    rule: The combobox and picker status region wears fui-visually-hidden, and the ui-combobox sheet carries its own clipped copy of that recipe.
+    enforced_by:
+      - test: framework/ui.TestComboboxRendersStyledFieldWithHiddenStatus
+      - test: framework/ui.TestComboboxCSSStylesFieldHidesStatusAndHonoursHidden
+      - test: framework/ui.TestSweepPickersComboboxSheetRidesTheWrapper
+  - id: datepicker-signal-per-picker
+    rule: A DatePicker's calendar signal is <ID>-calendar, so two pickers on one page never answer each other's months.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersDatePickerSignalIsPerPicker
+      - test: framework/ui.TestDatePickerSingleIsAField
+  - id: datepicker-states-from-attributes
+    rule: The ui-datepicker sheet styles day states only through the attributes the headless layer writes (aria-selected, aria-current, aria-disabled, data-hui-datepicker-range), never through an is-* class.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersDatePickerSheetKeysStatesOnAttributes
+  - id: runtime-chips-keyed-on-hooks
+    rule: The ui-multiselect and ui-tag-input sheets style chips through their data-hui-* chip and remove hooks, because the modules build chips with no class.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersRuntimeChipsKeyOnHooks
+  - id: drop-hooks-cannot-be-forged
+    rule: FileDropzone and FileUpload drop every data-hui-* key from ExtraAttrs, so a caller cannot retarget the drop, rewrite its sentences or arm a second drop root.
+    enforced_by:
+      - test: framework/ui.TestFileDropzoneRefusesForgedRuntimeHooks
+      - test: framework/ui.TestSweepPickersDropzoneDropsEveryHuiKey
+      - test: framework/ui.TestFileUploadWrapperRefusesForgedDropHook
+  - id: drop-roots-share-the-hooks
+    rule: FileDropzone renders the same data-hui-drop hooks with the same values as headless.FileUpload, under a label for the file input.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersDropRootsShareTheHooks
+  - id: dropzone-preview-owns-no-drop
+    rule: The dropzone preview marker rides the file input only, and the zone keeps exactly one drop list hook and one status hook.
+    enforced_by:
+      - test: framework/ui.TestFileDropzonePreviewDoesNotStealDropOwnership
+  - id: dropzone-zone-is-a-named-region
+    rule: The dropzone surface is a role=region named by Label, apart from the file input it holds.
+    enforced_by:
+      - test: framework/ui.TestFileDropzoneAriaLabelOnRegion
+  - id: inline-edit-paths-are-same-origin
+    rule: InlineEdit panics unless Action and Return are same-origin paths.
+    enforced_by:
+      - test: framework/ui.TestInlineEdit
+      - test: framework/ui.TestSweepPickersInlineEditSavesAndRefusesForeignPaths
+  - id: inline-edit-saves-then-navigates
+    rule: InlineEdit's form sends PUT, or PATCH when Method says so, to Action and, on success, toasts Saved and navigates to Return.
+    enforced_by:
+      - test: framework/ui.TestInlineEdit
+      - test: framework/ui.TestSweepPickersInlineEditSavesAndRefusesForeignPaths
+  - id: range-slider-posts-min-and-max
+    rule: RangeSlider submits two fields, <Name>-min and <Name>-max.
+    enforced_by:
+      - test: framework/ui.TestRangeSliderEmitsTwoInputs
+  - id: rating-size-keeps-the-tap-target
+    rule: RatingInput's Size modifiers change only the glyph size, and every choice keeps the touch-target block size.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersRatingSizeKeepsTheTapTarget
+  - id: rating-display-shares-shape-modifier
+    rule: Rating renders RatingInput's fui-rating--<shape> modifier, so one --ui-rating-color override recolours both.
+    enforced_by:
+      - test: framework/ui.TestRatingLabelAndMax
+  - id: segmented-unlisted-selected-checks-none
+    rule: An empty Selected checks the first segment and a Selected no option lists checks none.
+    enforced_by:
+      - test: framework/ui.TestSegmentedUnlistedChecksNothing
+  - id: segmented-indicator-fits-any-count
+    rule: The segmented sheet places its indicator by anchor positioning, with no rule per option count or position.
+    enforced_by:
+      - test: framework/ui.TestSegmentedCSSHasNoPerCountRules
+  - id: segmented-label-reserves-bold-width
+    rule: Each segment label carries its text as data-label, which the sheet's hidden bold copy reads to reserve the checked weight's width.
+    enforced_by:
+      - test: framework/ui.TestSweepPickersSegmentedLabelReservesBoldWidth
+decisions:
+  - id: color-picker-no-preset-swatches
+    date: 2026-11-16
+    status: accepted
+    decision: ColorPicker ships no strip of preset swatches.
+    rejected:
+      - option: Paint arbitrary preset colours with inline style attributes.
+        why: Components ship no inline style; CSS lives on the one styling surface.
+    revisit_if: A runtime module paints swatches through custom properties, or a fixed palette is baked into the sheet.
+  - id: combobox-sheet-on-a-wrapper
+    date: 2026-11-16
+    status: accepted
+    decision: The ui-combobox style marker rides a wrapper div this package renders around headless.Combobox.
+    rejected:
+      - option: Put the marker on the primitive's own root.
+        why: Its outermost tag changes shape with the no-script form, so a descendant root selector would match nothing.
+    upholds: [combobox-sheet-rides-a-wrapper]
+  - id: dropzone-preview-is-a-ui-module
+    date: 2026-11-16
+    status: accepted
+    decision: The dropzone's thumbnail strip is this package's filedropzone module on data-fui-dropzone-preview, while the names list, drop forwarding and announcement stay the headless drop module's.
+    rejected:
+      - option: Add previews to the headless drop module.
+        why: Thumbnails are styling, and headless has no counterpart part to carry them.
+    upholds: [dropzone-preview-owns-no-drop]
+  - id: inline-edit-redraws-from-server
+    date: 2026-11-16
+    status: accepted
+    decision: A saved InlineEdit navigates to Return so the server redraws the page with the stored value.
+    rejected:
+      - option: Patch the shown value in place on the client.
+        why: The page would show what the reader typed, not what the server stored.
+    upholds: [inline-edit-saves-then-navigates]
+  - id: range-slider-two-fields
+    date: 2026-11-16
+    status: accepted
+    decision: RangeSlider posts its bounds as two fields, <Name>-min and <Name>-max.
+    rejected:
+      - option: One field holding a composite "lo-hi" string.
+        why: Every handler would parse a string to get two numbers.
+    upholds: [range-slider-posts-min-and-max]
+  - id: range-thumbs-share-a-class
+    date: 2026-11-16
+    status: accepted
+    decision: Both RangeSlider thumbs wear one class, fui-range-slider__input.
+    rejected:
+      - option: A modifier class per thumb.
+        why: The thumbs look the same and nothing styles a modifier; a selector keys on the data-hui-range-slider-low and -high hooks or the field names.
+  - id: segmented-no-fallback-for-unlisted
+    date: 2026-11-16
+    status: accepted
+    decision: A Selected that no option lists checks no segment.
+    rejected:
+      - option: Fall back to the first segment.
+        why: The group would submit a value nobody chose.
+    upholds: [segmented-unlisted-selected-checks-none]
+  - id: segmented-indicator-is-anchored
+    date: 2026-11-16
+    status: accepted
+    decision: The sliding pill is anchored to the checked segment with CSS anchor positioning, and a browser without it draws the pill on the checked segment without the slide.
+    rejected:
+      - option: Rules per option count and position that translate the pill.
+        why: Every count needs its own rules, and a count nobody wrote breaks.
+    upholds: [segmented-indicator-fits-any-count]

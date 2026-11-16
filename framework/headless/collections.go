@@ -8,14 +8,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The collections: a tag input whose values are chips the reader can
-// see and remove, and a repeater whose rows are ordinary form fields
-// with named submit controls. Both own a live status the server's
-// words land in — the module that binds their hooks (headless-
-// collections) announces chip operations through sentences that
-// travel as attributes, never its own prose, and after an island swap
-// it puts focus back where the operation happened.
-
 // TagInput parts.
 const (
 	PartTagInputList  Part = "tag-input-list"
@@ -27,59 +19,31 @@ const (
 
 // TagInputProps configures a free-form tag field.
 type TagInputProps struct {
-	// Name is the form-field name. Required: every committed value
-	// submits under it, as the standard repeated-key pattern.
+	// Name is the form-field name every value submits under. Required.
 	Name string
 	// Label is the visible label. Required.
 	Label string
-	// Values are the committed tags, rendered as chips and as hidden
-	// inputs — the list on screen and the values in the form are the
-	// same set, which is the whole point of rendering the chips at
-	// all: what a reader sees remove is what a submit stops carrying.
-	Values []string
-	// Placeholder is the draft input's placeholder. A placeholder is
-	// not a name; the label is.
+	// Values are the committed tags, each a chip holding its hidden input.
+	Values      []string
 	Placeholder string
-	// MaxLength caps one tag's length, in characters. Zero is no cap;
-	// negative is refused. The cap applies to the rendered values
-	// too, so a server value longer than the cap cannot submit
-	// unchanged while a typed one is refused.
+	// MaxLength caps one tag's length in characters, rendered values included. Zero is no cap.
 	MaxLength int
 	// Help is the rule the values obey.
 	Help string
-	// Disabled takes the chips' remove controls, the draft input and
-	// the add control out.
+	// Disabled disables the remove controls, the draft input and the add control.
 	Disabled bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the add
-	// control's name, the remove controls' names, and the two
-	// sentences the status says after a chip operation.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context. With no ID the draft field's id is
-	// the Name, handed out through Ctx's id scope (render.UniqueID), so
-	// a second tag input with the same Name on the page gets a -2
-	// suffix. With no Ctx the Name is used as is.
+	// Ctx scopes the draft field's id derived from Name when ID is empty.
 	Ctx context.Context
 }
 
 // TagInput renders the chips, the draft input and the add control.
-//
-// The chip list is a real list (role="list" of items) rather than a
-// strip of hidden inputs the runtime converts on arrival: the values
-// are visible on the first paint, each with its own named remove
-// control, and the hidden inputs beside them are what the form
-// submits. Enter and comma commit the draft; Backspace on an empty
-// draft removes the last chip; the add control commits it for a
-// reader whose keyboard has no handy Enter (a tablet's on-screen
-// one) — all bound by the module, none of it required for the values
-// already committed to be real.
 func TagInput(p TagInputProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: TagInput requires Name — a control with no name submits nothing")
@@ -90,11 +54,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 	if p.MaxLength < 0 {
 		panic("headless: TagInput MaxLength " + strconv.Itoa(p.MaxLength) + " is negative — a cap below zero caps nothing")
 	}
-	// The draft field's id, which the label's for= names. The root
-	// carries an explicit ID, so the field takes ID-field: the two once
-	// shared it, and for= resolved to the root div (not labelable), so
-	// clicking the label focused nothing. With no ID the field's id is
-	// the Name, through the id scope.
 	var fieldID string
 	if p.ID != "" {
 		render.ReserveID(p.Ctx, p.ID, "-field", "-field-hint")
@@ -111,8 +70,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 
 	chips := make([]render.HTML, 0, len(p.Values))
 	for _, v := range p.Values {
-		// The values are request-shaped: a CR or LF in a posted tag is
-		// scrubbed the way the table's carried query is, not refused.
 		v = scrubControlBytes(v)
 		if p.MaxLength > 0 {
 			if r := []rune(v); len(r) > p.MaxLength {
@@ -124,15 +81,10 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 			"aria-label":                w.fill(w.RemoveLabelled, "label", v),
 		},
 			render.Text(v),
-			// The remove control keeps its type=button: it edits the
-			// set, it does not submit the form.
 			b.El("button", PartDismiss, html.Attrs{
 				"type":       "button",
 				"aria-label": w.fill(w.RemoveLabelled, "label", v),
 			}, render.Text("×")),
-			// The value rides inside its chip, the shape the module
-			// builds too: removing the list item removes the value
-			// from the form, whoever rendered the chip.
 			b.El("input", PartControl, html.Attrs{
 				"type":  "hidden",
 				"name":  p.Name,
@@ -149,8 +101,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 		"autocomplete":             "off",
 	}
 	attrsSet(field, "placeholder", p.Placeholder)
-	// The rule the values obey is the field's description, not only
-	// a line a sighted reader sees.
 	attrsSet(field, "aria-describedby", hintID)
 	Flag(field, "disabled", p.Disabled)
 	if p.MaxLength > 0 {
@@ -164,9 +114,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 	}
 	Flag(add, "disabled", p.Disabled)
 
-	// The chips, the committed values and the draft draw one bordered
-	// zone in the sheet: the field reads as one control with its
-	// values in it, which is what a reader sees it as.
 	zone := []render.HTML{b.El("ul", PartTagInputList, html.Attrs{
 		"role":                    "list",
 		"data-hui-tag-input-list": "",
@@ -177,16 +124,9 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 
 	kids := []render.HTML{
 		b.El("label", PartLabel, Internal(Attrs(map[string]string{"for": fieldID})), render.Text(p.Label)),
-		// The values are data, not caller markup, so the whole zone —
-		// the chip list, the draft field and the add control — is the
-		// component's own; the mark sits on the zone, not its children.
 		b.El("div", PartTagInputZone, Internal(nil), zone...),
 	}
 	kids = append(kids,
-		// The status is empty and wired: the sentences travel as
-		// attributes from Strings, the module writes one after a chip
-		// operation, and a translated page announces in its own
-		// language.
 		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                       "status",
 			"data-hui-tag-input-status":  "",
@@ -199,14 +139,10 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 	}
 
 	own := Merge(Safe(p.ExtraAttrs, "role", "aria-label"), Attrs(map[string]string{
-		"role":               "group",
-		"aria-label":         p.Label,
-		"id":                 p.ID,
-		"data-hui-tag-input": p.Name,
-		// The remove-label template travels so a chip the module
-		// builds carries the same accessible name the server gave the
-		// chips it rendered; the cap travels so a runtime commit
-		// cannot be longer than a typed one.
+		"role":                            "group",
+		"aria-label":                      p.Label,
+		"id":                              p.ID,
+		"data-hui-tag-input":              p.Name,
 		"data-hui-tag-input-remove-label": w.RemoveLabelled,
 	}))
 	if p.MaxLength > 0 {
@@ -214,8 +150,6 @@ func TagInput(p TagInputProps, s Classes) render.HTML {
 	}
 	return b.El("div", PartRoot, own, kids...)
 }
-
-// ─── Repeater ───────────────────────────────────────────────────────
 
 // Repeater parts.
 const (
@@ -225,75 +159,43 @@ const (
 	PartRepeaterAdd    Part = "repeater-add"
 )
 
-// RepeaterItem is one repeated row: the fields are the caller's, the
-// remove control is the component's.
+// RepeaterItem is one repeated row of caller fields.
 type RepeaterItem struct {
 	Fields []render.HTML
 }
 
 // RepeaterProps configures a repeated field group.
 type RepeaterProps struct {
-	// Name is the group's name. Required; the submit controls' names
-	// derive from it when the caller does not give their own.
+	// Name is the group's name and the default controls' names. Required.
 	Name string
-	// Label names the group for assistive technology and names the
-	// items region. Optional: a repeater beside its own heading may
-	// not need one, though two unnamed repeaters on a page are two
-	// identical entries in a landmarks list.
+	// Label names the group and the items list. Optional.
 	Label string
-	// Items are the rendered rows, in order.
 	Items []RepeaterItem
-	// MinItems is the floor below which removal is refused (the
-	// remove controls render disabled). MaxItems is the ceiling above
-	// which addition is refused. Zero MaxItems is unlimited.
+	// MinItems disables removal at the floor; MaxItems disables addition at the ceiling (zero is unlimited).
 	MinItems int
 	MaxItems int
-	// AddLabel and RemoveLabel override the add control's visible
-	// text and the remove controls'; the remove control's accessible
-	// name always carries its 1-based position.
+	// AddLabel and RemoveLabel override the controls' visible text.
 	AddLabel    string
 	RemoveLabel string
-	// AddName and AddValue name the add control as a submit control
-	// (a FormRepeater's "<Name>_add=1"); RemoveName names the remove
-	// controls, whose value is the row's 0-based index. Empty names
-	// default to Name+"_add" and Name+"_remove"; AddValue defaults to "1".
+	// AddName (default Name_add), AddValue (default 1) and RemoveName (default Name_remove, value the 0-based row index) name the submit controls.
 	AddName    string
 	AddValue   string
 	RemoveName string
-	// Action is the same-origin URL the add and remove operations go
-	// to when the result swaps in place; it is required together with
-	// Island and useless without it — a plain form repeater needs no
-	// Action, because the surrounding form's own action is the
-	// no-script destination and the submit controls ride it.
+	// Action is the same-origin endpoint add and remove go to in place; it requires Island.
 	Action string
-	// Island is where an add or remove result lands. Required when
-	// Action is set, refused half-wired like every Island.
+	// Island is where an add or remove result lands.
 	Island Island
-	// Status is the sentence the live region carries — the server's
-	// own words about the operation that just happened, re-rendered
-	// with the region after an island swap.
+	// Status is the server's sentence in the live region.
 	Status string
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the add
-	// control's text and the remove controls' names.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
+	Parts   Parts
 	Strings *Strings
 }
 
-// Repeater renders the repeated rows with their add and remove controls.
-//
-// The rows are ordinary form fields and the controls are named submit
-// buttons, so the no-script page is not a degraded page: add and
-// remove submit the surrounding form with the operation in the
-// request, and the server re-renders. With an Island the same buttons
-// carry the framework's RPC contract beside their submit semantics,
-// the region swaps in place, and the module restores focus to the
-// row's first control (a removal) or the add control (an addition).
+// Repeater renders the rows with their named add and remove submit controls.
 func Repeater(p RepeaterProps, s Classes) render.HTML {
 	if p.Name == "" {
 		panic("headless: Repeater requires Name — the group's identity and its controls' names derive from it")
@@ -325,11 +227,6 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	id := orDefault(p.ID, p.Name)
 
-	// The operations ride the island's query, the same pairs the
-	// plain submit carries: op for the operation, index for the row.
-	// They travel as a bare query because Island.attrs merges the
-	// href's pairs onto the endpoint's own — building the full URL
-	// here would duplicate every pair the endpoint already had.
 	opQuery := func(op string, index int) string {
 		q := "?op=" + op
 		if index >= 0 {
@@ -337,16 +234,8 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 		}
 		return q
 	}
-	// ops is where the add and remove requests go: the Action, with
-	// the Island's signal for the answer to land in. The Action was
-	// checked and then dropped for the Island's Endpoint, so an
-	// operations URL apart from the region's renderer was never
-	// fetched. Every caller that gave both the same path renders the
-	// same markup it did.
 	ops := Island{Endpoint: p.Action, Signal: p.Island.Signal}
 
-	// anyFields says whether any row carries the caller's fields: with
-	// none, the whole list is the component's own.
 	anyFields := false
 	for _, item := range p.Items {
 		if len(item.Fields) > 0 {
@@ -405,15 +294,6 @@ func Repeater(p RepeaterProps, s Classes) render.HTML {
 	Flag(add, "disabled", atCeiling)
 
 	kids := []render.HTML{
-		// The default button, ahead of every row: the repeater lives in
-		// the host's form, and implicit submission (Enter in a row's
-		// field) clicks the form's first submit control in tree order,
-		// which was row 0's Remove — Enter deleted the first row. This
-		// hidden, nameless submit is the first instead: with no script
-		// Enter submits the host form carrying no operation, and the
-		// module forwards the click to the host form's own default (its
-		// first submit control outside every repeater), so Enter
-		// submits as if the repeater's controls were not there.
 		b.El("button", PartDefaultAction, Internal(html.Attrs{
 			"type":                      "submit",
 			"hidden":                    "",

@@ -177,7 +177,7 @@ func (s *PgVectorStore) EnsureSchema(ctx context.Context) error {
 	// it is a validated positive int. The table name is validated + quoted.
 	//gofastr:allow(GOFASTR1415) a chunk table is an embedding index derived from documents the host stores and exports itself, and a restore re-embeds them; NewPgVector registers erasure by Document.Owner
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id           TEXT PRIMARY KEY,
+		id           TEXT PRIMARY KEY NOT NULL,
 		doc_id       TEXT NOT NULL,
 		source       TEXT NOT NULL DEFAULT '',
 		kind         TEXT NOT NULL DEFAULT '',

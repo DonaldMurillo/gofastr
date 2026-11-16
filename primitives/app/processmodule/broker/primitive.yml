@@ -1,0 +1,118 @@
+primitive: app.processmodule.broker
+summary: The capability broker that answers a child's host.* reverse requests, and its interface.
+code:
+  - framework/processmodule_broker.go
+  - framework/processmodule_broker_iface.go
+invariants:
+  - id: grant-derived-from-host-resource
+    rule: A reverse call needs a module grant matching the permission the broker derives from the method and the host-resolved resource (<entity>:<verb>, search:query, <topic>:emit), never from a capability string the child sends.
+    enforced_by:
+      - test: framework.TestBrokerGrantScopeMatchDenies
+      - test: framework.TestBrokerEntityOutsideGrantDenies
+      - test: framework.TestBrokerIgnoresChildCapability
+      - test: framework.TestBrokerSearchOutsideGrantDenies
+      - test: framework.TestBrokerTopicOutsideGrantDenies
+  - id: non-grantable-view-denies
+    rule: A grant view that holds a non-grantable scope denies every entity, search and event call before it reaches the host, whatever its other grants allow.
+    enforced_by:
+      - test: framework.TestSweepPMHostNonGrantableViewDenies
+  - id: missing-host-surface-denies
+    rule: An entity the host registry does not know, a registry lookup that panics, and a missing router, search endpoint or event bus each answer CodeCapabilityDenied, never an empty success.
+    enforced_by:
+      - test: framework.TestSweepPMHostRegistryPanicDenies
+      - test: framework.TestDispatchEntity_nilRouterDenies
+      - test: framework.TestSweepPMHostUnconfiguredSurfacesDeny
+  - id: cross-owner-read-never-brokered
+    rule: A reverse call on an entity with Scope.CrossOwnerRead is denied when the caller holds that permission or when no policy is available to evaluate it, and every re-dispatch context is stamped crud.WithBrokeredCall.
+    enforced_by:
+      - test: framework.TestBrokerNeverLiftsOwnerScope
+      - test: framework.TestBrokerStripsCrossOwnerRead
+  - id: delegation-handle-resolution
+    rule: A delegation handle that is unknown, released, expired, or minted for another module denies the reverse call, and a non-positive WithBrokerHandleTTL keeps the 5 minute default.
+    enforced_by:
+      - test: framework.TestBrokerUnknownHandleDenies
+      - test: framework.TestBrokerReleasedHandleDenies
+      - test: framework.TestBrokerExpiredHandleDenies
+      - test: framework.TestBrokerHandleBoundToModule
+      - test: framework.TestBrokerNonPositiveHandleTTLKeepsDefault
+  - id: delegation-carries-credentials-only
+    rule: A delegation snapshot holds every field of the four credential headers in delegationCredentialHeaders and nothing else from the minting request, and that list matches credentialFingerprint and the crud re-dispatch list.
+    enforced_by:
+      - test: framework.TestBrokerDelegationPreservesEveryCookieField
+      - test: framework.TestBrokerDelegationSnapshotCarriesEveryMintedCredentialField
+      - test: framework.TestSweepPMHostSnapshotStashesOnlyCredentials
+      - test: framework.TestBrokerDelegationReattachesAPIKeyCredential
+      - test: framework.TestBrokerDelegationReattachesEmbedGrant
+      - test: framework.TestCredentialCanonsAgree
+  - id: snapshot-cloned-per-call
+    rule: snapshotRequest hands each re-dispatch its own copy of the stashed headers, so a middleware that edits one call's request cannot erase the credentials of a later call on the same handle.
+    judge: Does this change let two re-dispatches on one delegation handle share, or mutate, the same stashed header map?
+  - id: tool-delegation-carries-no-authority
+    rule: A delegation minted for a module tool call carries no credential header and re-dispatches without the agent's roles or policy, so the child's reverse calls run with no identity.
+    enforced_by:
+      - test: framework.TestSweepPMHostToolDelegationCarriesNoAuthority
+    applies:
+      - framework/processmodule_tools.go
+  - id: query-filter-allow-listed
+    rule: A host.entity.query filter reaches the CRUD list only with keys naming a declared, non-Hidden, non-NoQuery field, bare, with a filter suffix or in bracket form.
+    enforced_by:
+      - test: framework.TestBrokerFilterCannotSetControlKeys
+      - test: framework.TestSweepPMHostQueryFilterSanitizedOnDispatch
+  - id: caller-refusal-is-capability-denial
+    rule: A 401 or 403 from the CRUD re-dispatch reaches the child as CodeCapabilityDenied; any other failure is CodeInternalError.
+    enforced_by:
+      - test: framework.TestBrokerCallerAuthorityDenies
+      - test: framework.TestMapRedispatchErr_classifies401asDenial
+      - test: framework.TestMapRedispatchErr_classifies403asDenial
+      - test: framework.TestMapRedispatchErr_otherIsInternal
+decisions:
+  - id: replica-local-opaque-handles
+    date: 2026-11-16
+    status: accepted
+    decision: A delegation handle is a random 128-bit key into an in-memory table on the replica that minted it, released when the parent call returns.
+    rejected:
+      - option: A signed or HMAC token carrying the caller.
+        why: It needs key management, and a stolen token would still verify on another replica; a table key means nothing anywhere else.
+    upholds: [delegation-handle-resolution]
+  - id: snapshot-re-presents-credentials
+    date: 2026-11-16
+    status: accepted
+    decision: The snapshot re-presents the caller's credential headers verbatim and lets the re-dispatch's middleware decide the identity again.
+    rejected:
+      - option: Pin the identity class (grant, session, API key) the original request resolved to.
+        why: The broker would interpret credentials, which is the auth surfaces' job; embed.Host.Middleware already strips the losing credentials before the mint.
+    upholds: [delegation-carries-credentials-only]
+  - id: unbound-handle-accepted
+    date: 2026-11-16
+    status: accepted
+    decision: A handle minted without withDelegationModule stays unbound and resolves under any module.
+    revisit_if: Every MintDelegation caller stamps withDelegationModule, as serveProxy and dispatchToolCall do today, so an unbound handle can be refused.
+    upholds: [delegation-handle-resolution]
+  - id: tool-calls-delegate-no-authority
+    date: 2026-11-16
+    status: accepted
+    decision: A module tool call's reverse requests re-dispatch with no identity, so owner-scoped reads are refused.
+    rejected:
+      - option: Re-attach the calling agent's roles and policy to the re-dispatch.
+        why: It would let a tool-sourced reverse call read across owners.
+    upholds: [tool-delegation-carries-no-authority]
+  - id: write-verb-covers-create-and-update
+    date: 2026-11-16
+    status: accepted
+    decision: host.entity.create and host.entity.update both need <entity>:write; delete needs <entity>:delete and query <entity>:read.
+    rejected:
+      - option: Separate create and update grant verbs, as the CRUD Access block has.
+        why: The module grant vocabulary keeps one write scope, and the CRUD re-dispatch still applies the caller's own create or update permission.
+  - id: search-and-events-module-grant-only
+    date: 2026-11-16
+    status: accepted
+    decision: host.search.query and host.event.emit check only the module grant; no caller authority is modelled for them.
+    revisit_if: Search results or events become owner- or tenant-scoped.
+  - id: cross-owner-read-two-checks
+    date: 2026-11-16
+    status: accepted
+    decision: The gate denies a CrossOwnerRead entity explicitly, and the brokeredCall stamp makes the CRUD owner gate refuse to lift owner scope for any brokered call.
+    rejected:
+      - option: Rely on the brokeredCall stamp alone.
+        why: A visible deny in the gate fails closed even if a CRUD path stops honouring the stamp.
+    upholds: [cross-owner-read-never-brokered]

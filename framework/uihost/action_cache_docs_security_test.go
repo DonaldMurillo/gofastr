@@ -4,14 +4,26 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestActionCacheCommentsMatchPolicy(t *testing.T) {
-	source, err := os.ReadFile("uihost.go")
+	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
+	}
+	var source []byte
+	for _, f := range files {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source = append(source, b...)
 	}
 	for _, stale := range []string{"addressed and served immutable", "served private+immutable"} {
 		if strings.Contains(string(source), stale) {

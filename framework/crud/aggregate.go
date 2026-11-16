@@ -13,10 +13,8 @@ import (
 )
 
 // ErrAggregateMasked refuses an aggregate read under WithReadHooks on an
-// entity with AfterList hooks, or over a field with a Mask. Hooks and
-// masks rewrite rows after the query; a total or group the database
-// computes never passes through them, so it could count or name what
-// they hide. Read the rows through ListAll instead.
+// entity with AfterList hooks, or over a field with a Mask. Read the rows
+// through ListAll instead.
 var ErrAggregateMasked = errors.New("crud: an aggregate cannot pass through AfterList hooks or a field Mask")
 
 // GroupCount is one group GroupCountAll returns: a stored value of the
@@ -46,7 +44,7 @@ func (ch *CrudHandler) SumAll(ctx context.Context, field string, opts ListOption
 		return "", err
 	}
 	inner, args := qb.Build()
-	if f.Type == schema.Decimal && !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx)) {
+	if f.Type == schema.Decimal && !ch.onPostgres(ctx) {
 		return ch.sumDecimalRows(ctx, inner, args)
 	}
 	var total any
@@ -124,7 +122,7 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 	}
 	inner, args := qb.Build()
 	q := query.QuoteFolded(col)
-	stmt := "SELECT " + q + ", COUNT(*) FROM (" + inner + ") AS agg_src GROUP BY " + q + " ORDER BY " + q
+	stmt := "SELECT " + q + ", COUNT(*) FROM (" + inner + ") AS agg_src GROUP BY " + q + " ORDER BY " + query.OrderTerm(q, "", ch.pinsNulls(ctx, col))
 	if limit > 0 {
 		stmt += " LIMIT " + strconv.Itoa(limit)
 	}
@@ -139,8 +137,6 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 		if err := rows.Scan(&g.Value, &g.Count); err != nil {
 			return nil, err
 		}
-		// The value a list read would carry: a bool column reads true or
-		// false, not SQLite's 1 or 0, and a decimal column its text.
 		g.Value = convertDatabaseValue(g.Value, f.Type == schema.Bool)
 		if f.Type == schema.Decimal {
 			g.Value = decimalText(g.Value)
@@ -153,9 +149,8 @@ func (ch *CrudHandler) GroupCountAll(ctx context.Context, field string, opts Lis
 	return out, rows.Err()
 }
 
-// aggregateField resolves field (its column or wire name) to a visible
-// field whose type ok accepts. It refuses the ListOptions an aggregate
-// cannot honor, and an aggregate AfterList hooks would mask.
+// aggregateField resolves field, by column or wire name, to a visible
+// field whose type ok accepts.
 func (ch *CrudHandler) aggregateField(ctx context.Context, op, field string, opts ListOptions, ok func(schema.FieldType) bool) (schema.Field, error) {
 	if len(opts.Fields) > 0 || len(opts.Sorts) > 0 || opts.Limit != 0 || opts.Offset != 0 || len(opts.Includes) > 0 {
 		return schema.Field{}, fmt.Errorf("%s: Fields, Sorts, Limit, Offset and Includes do not apply to an aggregate", op)

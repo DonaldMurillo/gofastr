@@ -175,9 +175,6 @@ func writeGenerated(data []byte) error {
 	return root.Rename(temp, "icons_gen.go")
 }
 
-// Reserve declarations from every handwritten package file, including files
-// selected only on another platform. A generated constant must build with all
-// of them. Do not parse the old generated file or test-only declarations.
 func handwrittenIdentifiers() (map[string]string, error) {
 	result := map[string]string{}
 	files, err := filepath.Glob("*.go")
@@ -224,8 +221,6 @@ func identifier(name string) string {
 	return out.String()
 }
 
-// validate admits drawing geometry only. Source SVGs cannot contribute scripts,
-// styles, links, accessibility labels, or attributes that alter the shared pen.
 func validate(source []byte) (string, error) {
 	d := xml.NewDecoder(bytes.NewReader(source))
 	var body bytes.Buffer
@@ -254,8 +249,6 @@ func validate(source []byte) (string, error) {
 					}
 					delete(want, attr.Name.Local)
 				}
-				// Standalone upstream SVGs include 24px dimensions; the
-				// shared renderer replaces these with IconConfig.Size.
 				delete(want, "width")
 				delete(want, "height")
 				if len(want) != 0 {

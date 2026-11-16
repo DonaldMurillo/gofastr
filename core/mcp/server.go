@@ -773,20 +773,8 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 				Message: fmt.Sprintf("tool %q not found", name),
 			}
 		}
-		if rpcErr, ok := errors.AsType[*RPCError](err); ok {
+		if rpcErr, ok := callerFacingError(ctx, err); ok {
 			return nil, rpcErr
-		}
-		if refusal, ok := errors.AsType[*handler.Error](err); ok && refusal.Code >= 400 && refusal.Code < 500 {
-			message := refusal.Message
-			data := map[string]any{"code": refusal.Code}
-			if !refusal.Reason.IsZero() {
-				message = refusal.Reason.Text(ctx, refusal.Params)
-				data["reason"] = refusal.Reason.Code()
-			}
-			if fields, reasons := handler.ViolationBodies(ctx, refusal.Violations); len(fields) > 0 {
-				data["fields"], data["field_reasons"] = fields, reasons
-			}
-			return nil, &RPCError{Code: ErrInvalidParams, Message: message, Data: data}
 		}
 		// A plain error is internal detail (filesystem paths, driver
 		// and DSN text, internal hostnames) and must not cross the
@@ -803,6 +791,28 @@ func (s *Server) callTool(ctx context.Context, name string, params map[string]an
 		}
 	}
 	return result, nil
+}
+
+// callerFacingError is the one rule for which tool, prompt and resource
+// callback errors cross the transport: an *RPCError, or a typed 4xx *handler.Error.
+func callerFacingError(ctx context.Context, err error) (*RPCError, bool) {
+	if rpcErr, ok := errors.AsType[*RPCError](err); ok {
+		return rpcErr, true
+	}
+	refusal, ok := errors.AsType[*handler.Error](err)
+	if !ok || refusal.Code < 400 || refusal.Code >= 500 {
+		return nil, false
+	}
+	message := refusal.Message
+	data := map[string]any{"code": refusal.Code}
+	if !refusal.Reason.IsZero() {
+		message = refusal.Reason.Text(ctx, refusal.Params)
+		data["reason"] = refusal.Reason.Code()
+	}
+	if fields, reasons := handler.ViolationBodies(ctx, refusal.Violations); len(fields) > 0 {
+		data["fields"], data["field_reasons"] = fields, reasons
+	}
+	return &RPCError{Code: ErrInvalidParams, Message: message, Data: data}, true
 }
 
 // invokeHandler runs a tool handler with a recover() guard so a panic

@@ -18,23 +18,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/jsonexact"
 )
 
-// Typed hooks
-//
-// The framework's HookRegistry stores hooks as func(ctx, any) error to keep
-// the declarative path (entity declarations from JSON) untyped. Generated
-// typed repositories want hook callbacks that receive *T directly. The
-// helpers below register an untyped wrapper that marshals the hook payload
-// through *T and back, so existing untyped hooks and new typed ones can
-// coexist on the same entity.
-//
-// Casing: hook payloads inside the framework are snake_cased map[string]any
-// (because unconvertMapKeys runs before hooks fire). Generated structs use
-// JSON tags in camelCase. The wrappers translate via casing.MapToCamel /
-// casing.MapToSnake so json.Marshal/Unmarshal round-trips correctly.
-
 // OnBeforeCreate registers a typed BeforeCreate hook on the entity named
-// `name`. Mutations the callback makes to *T are reflected back into the
-// pending body so the subsequent INSERT picks them up.
+// name. The fields fn changes on *T are written back into the body to insert.
 func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.BeforeCreate, func(ctx context.Context, data any) error {
 		var v T
@@ -52,13 +37,9 @@ func OnBeforeCreate[T any](app *App, name string, fn func(ctx context.Context, v
 	})
 }
 
-// OnAfterCreate registers a typed AfterCreate hook. The callback receives
-// the just-inserted row (already includes server-generated fields like id).
-// Mutations are reflected back into the response body: the hook payload is
-// the live result map the crud layer serialises into the HTTP response, so
-// clearing a field here (e.g. redacting a secret) changes what the caller
-// reads. These mutations do not change the stored row. The callback runs
-// inside the write transaction, before commit; an error rolls back the write.
+// OnAfterCreate registers a typed AfterCreate hook on the inserted row. The
+// fields fn changes reach the response, not the stored row. It runs
+// before commit; an error rolls back the write.
 func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterCreate, func(ctx context.Context, data any) error {
 		var v T
@@ -76,8 +57,8 @@ func OnAfterCreate[T any](app *App, name string, fn func(ctx context.Context, va
 	})
 }
 
-// OnBeforeUpdate registers a typed BeforeUpdate hook. *T is sparse, it
-// holds whatever the caller sent, not the full row.
+// OnBeforeUpdate registers a typed BeforeUpdate hook. *T holds only what
+// the caller sent; the fields fn changes are written back into the update.
 func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.BeforeUpdate, func(ctx context.Context, data any) error {
 		var v T
@@ -95,11 +76,8 @@ func OnBeforeUpdate[T any](app *App, name string, fn func(ctx context.Context, v
 	})
 }
 
-// OnAfterUpdate registers a typed AfterUpdate hook receiving the post-update
-// row. Mutations are reflected back into the response body, exactly like
-// OnAfterCreate: the hook payload is the live result map the crud layer
-// serialises into the HTTP response, so clearing a field here redacts it from
-// what the caller reads. The stored row is unaffected.
+// OnAfterUpdate registers a typed AfterUpdate hook on the updated row. The
+// fields fn changes reach the response, not the stored row.
 func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, value *T) error) {
 	app.HookRegistry(name).RegisterHook(hook.AfterUpdate, func(ctx context.Context, data any) error {
 		var v T
@@ -117,52 +95,39 @@ func OnAfterUpdate[T any](app *App, name string, fn func(ctx context.Context, va
 	})
 }
 
-// OnBeforeDelete registers a typed BeforeDelete hook. The payload is the
-// record id; no generic parameter needed.
+// OnBeforeDelete registers a typed BeforeDelete hook on the record id.
 func OnBeforeDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
 	registerIDHook(app, name, hook.BeforeDelete, "BeforeDelete", fn)
 }
 
-// OnAfterDelete registers a typed AfterDelete hook. Same shape as
-// OnBeforeDelete.
+// OnAfterDelete registers a typed AfterDelete hook on the record id.
 func OnAfterDelete(app *App, name string, fn func(ctx context.Context, id string) error) {
 	registerIDHook(app, name, hook.AfterDelete, "AfterDelete", fn)
 }
 
-// OnBeforeList registers a typed BeforeList hook. The callback receives
-// the framework's *hook.ListPayload directly so callers can append WHERE
-// clauses (p.AddWhere) without type-asserting from any. Symmetric with
-// OnBeforeCreate/OnBeforeUpdate.
+// OnBeforeList registers a typed BeforeList hook on the *hook.ListPayload.
 func OnBeforeList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
 	registerPayloadHook(app, name, hook.BeforeList, "BeforeList", fn)
 }
 
-// OnAfterList registers a typed AfterList hook. The callback receives
-// the *hook.ListPayload with Results populated, mutate the slice in
-// place to redact / drop rows.
+// OnAfterList registers a typed AfterList hook on the *hook.ListPayload,
+// Results filled in; changing them changes the response.
 func OnAfterList(app *App, name string, fn func(ctx context.Context, p *hook.ListPayload) error) {
 	registerPayloadHook(app, name, hook.AfterList, "AfterList", fn)
 }
 
-// OnBeforeGet registers a typed BeforeGet hook. The callback receives
-// *hook.GetPayload; ID is the request's path-value and AddWhere lets
-// the host scope the lookup (mismatch → 404).
+// OnBeforeGet registers a typed BeforeGet hook on the *hook.GetPayload; a
+// row its AddWhere excludes answers 404.
 func OnBeforeGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
 	registerPayloadHook(app, name, hook.BeforeGet, "BeforeGet", fn)
 }
 
-// OnAfterGet registers a typed AfterGet hook. The callback receives
-// *hook.GetPayload with Result populated, mutate the map in place to
-// redact fields before the response is serialised.
+// OnAfterGet registers a typed AfterGet hook on the *hook.GetPayload,
+// Result filled in; changing it changes the response.
 func OnAfterGet(app *App, name string, fn func(ctx context.Context, p *hook.GetPayload) error) {
 	registerPayloadHook(app, name, hook.AfterGet, "AfterGet", fn)
 }
 
-// registerPayloadHook registers a typed hook whose payload is a framework
-// pointer type (*hook.ListPayload, *hook.GetPayload): the wrapper asserts
-// the concrete payload and forwards it, refusing nil or foreign types
-// with an error naming the drift. It replaces the four former per-hook
-// copies inside OnBeforeList / OnAfterList / OnBeforeGet / OnAfterGet.
 func registerPayloadHook[P any](app *App, name string, ht hook.HookType, label string, fn func(ctx context.Context, p *P) error) {
 	app.HookRegistry(name).RegisterHook(ht, func(ctx context.Context, data any) error {
 		p, ok := data.(*P)
@@ -173,9 +138,6 @@ func registerPayloadHook[P any](app *App, name string, ht hook.HookType, label s
 	})
 }
 
-// registerIDHook registers a typed hook whose payload is the record id
-// (BeforeDelete / AfterDelete). It replaces the two former per-hook
-// copies inside OnBeforeDelete / OnAfterDelete.
 func registerIDHook(app *App, name string, ht hook.HookType, label string, fn func(ctx context.Context, id string) error) {
 	app.HookRegistry(name).RegisterHook(ht, func(ctx context.Context, data any) error {
 		id, ok := data.(string)
@@ -186,15 +148,8 @@ func registerIDHook(app *App, name string, ht hook.HookType, label string, fn fu
 	})
 }
 
-// hookBodyPhrase is what a client reads when a typed Before hook cannot
-// decode the write body into its struct.
 var hookBodyPhrase = i18n.Define("framework.hook_body_type", "a value in the request body does not match its field's type")
 
-// hookBodyError is a typed Before hook's failure to decode the body. The
-// crud layer answers a Before hook's error with a 400 carrying its text,
-// and encoding/json's text names the hook's Go struct and field types.
-// The response carries the phrase; Error and Unwrap keep the detail for
-// logs and errors.As.
 type hookBodyError struct{ err error }
 
 func (e *hookBodyError) Error() string { return e.err.Error() }
@@ -203,10 +158,6 @@ func (e *hookBodyError) Unwrap() error { return e.err }
 // Phrased implements i18n.Phrased.
 func (e *hookBodyError) Phrased() (i18n.Phrase, map[string]any) { return hookBodyPhrase, nil }
 
-// unmarshalHookPayload converts the framework's hook payload (snake-cased
-// map[string]any for create/update, string for delete) into a typed value.
-// Maps are pre-converted to camelCase so json tags on generated structs line
-// up.
 func unmarshalHookPayload(data any, dest any) error {
 	if m, ok := data.(map[string]any); ok {
 		b, err := json.Marshal(hookDecodeKeys(m))
@@ -215,8 +166,6 @@ func unmarshalHookPayload(data any, dest any) error {
 		}
 		return decodeHookJSON(b, dest)
 	}
-	// Non-map payload (e.g. delete passes a string id), round-trip through
-	// JSON so callers can use *string or even custom typed wrappers.
 	b, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -224,16 +173,6 @@ func unmarshalHookPayload(data any, dest any) error {
 	return jsonexact.Unmarshal(b, dest)
 }
 
-// hookDecodeKeys is the payload a typed hook's T decodes from: every key
-// under its own spelling, its camelCase spelling and its snake_case one.
-// The payload is snake_cased for a Before hook and keyed by wire names
-// (camelCase by default) for an After hook, and T may tag its fields in
-// either case. Offering only the camelCase spelling left a field tagged
-// `json:"is_admin"` zero: the hook read false for a body that said true,
-// and its `IsAdmin = false` override compared equal to the zero it
-// started from, so the merge skipped it and the client's true was
-// written. An alias never replaces a key the payload holds itself.
-// mergeFields writes a change back under the payload's own key.
 func hookDecodeKeys(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m)*2)
 	maps.Copy(out, m)
@@ -247,45 +186,108 @@ func hookDecodeKeys(m map[string]any) map[string]any {
 	return out
 }
 
-// snapshotDeepCopy returns a deep copy of v via a JSON round-trip, so the
-// map, slice, and pointer fields of the snapshot stop aliasing v's. A
-// shallow struct copy (`before := v`) shares those backing stores, so an
-// in-place mutation by the hook callback (delete v.Meta[k], v.Tags[0]=…,
-// v.Profile.Secret="") leaves before and v DeepEqual at merge time and the
-// changed field is skipped: the client's original nested value survives
-// into the persisted row / response while the host believes its hook
-// redacted it. Round-tripping through JSON is the same translation
-// unmarshalHookPayload already performs, so any *T this wrapper can
-// unmarshal can also be snapshotted. On any marshal failure it degrades to
-// the shallow copy (the previous behaviour) rather than refusing the hook.
 func snapshotDeepCopy[T any](v T) T {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return v
+	if b, err := json.Marshal(v); err == nil {
+		var out T
+		if err := decodeHookJSON(b, &out); err == nil {
+			return out
+		}
 	}
-	var out T
-	if err := decodeHookJSON(b, &out); err != nil {
-		return v
-	}
-	return out
+	src := reflect.ValueOf(&v).Elem()
+	out := reflect.New(src.Type()).Elem()
+	out.Set(deepCopyValue(src, map[copyKey]reflect.Value{}))
+	return out.Interface().(T)
 }
 
-// decodeHookJSON decodes b into dest with every JSON number exact: where
-// dest holds an interface value (a map[string]any field, an []any), an
-// integer literal lands as int64 and any other as float64, the types the
-// untyped hook body carries. json.Unmarshal read each as a float64, so a
-// hook that edited a JSON field wrote 9007199254740993 back as
-// 9007199254740992.
+// copyKey identifies a reference already copied: a *T and a *int at one
+// address, or a slice and its prefix, are different references.
+type copyKey struct {
+	addr uintptr
+	typ  reflect.Type
+	n    int
+}
+
+func deepCopyValue(v reflect.Value, seen map[copyKey]reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), 0}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.New(v.Type().Elem())
+		seen[key] = cp
+		cp.Elem().Set(deepCopyValue(v.Elem(), seen))
+		return cp
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), 0}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.MakeMapWithSize(v.Type(), v.Len())
+		seen[key] = cp
+		iter := v.MapRange()
+		for iter.Next() {
+			cp.SetMapIndex(iter.Key(), deepCopyValue(iter.Value(), seen))
+		}
+		return cp
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		key := copyKey{v.Pointer(), v.Type(), v.Len()}
+		if cp, ok := seen[key]; ok {
+			return cp
+		}
+		cp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		seen[key] = cp
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Array:
+		cp := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Struct:
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(v)
+		copyStructFields(cp, v, seen)
+		return cp
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(deepCopyValue(v.Elem(), seen))
+		return cp
+	}
+	return v
+}
+
+// copyStructFields deep-copies every settable field, and descends into
+// an unexported embedded struct, whose exported fields stay settable.
+func copyStructFields(cp, v reflect.Value, seen map[copyKey]reflect.Value) {
+	for i := range v.NumField() {
+		if f := cp.Field(i); f.CanSet() {
+			f.Set(deepCopyValue(v.Field(i), seen))
+		} else if f.Kind() == reflect.Struct {
+			copyStructFields(f, v.Field(i), seen)
+		}
+	}
+}
+
 func decodeHookJSON(b []byte, dest any) error {
 	return jsonexact.Decode(b, dest, exactHookNumber)
 }
 
-// exactHookNumber is n as int64 when it is an integer literal in range,
-// else as float64. An integer float64 would round (past int64, or spelled
-// with an exponent) stays the json.Number, as the crud body decode keeps
-// it, so a hook that edits a neighbouring key does not rewrite its digits.
-// A literal out of float64's range (1e400) is an error, as json.Unmarshal
-// reports it.
 func exactHookNumber(n json.Number) (any, error) {
 	if i, err := n.Int64(); err == nil {
 		return i, nil
@@ -300,62 +302,30 @@ func exactHookNumber(n json.Number) (any, error) {
 	return f, nil
 }
 
-// mergeStructIntoMap reflects struct mutations from the typed Before-hook
-// callback back into the snake-cased payload map. It diffs the pre-hook
-// struct (`before`) against the post-hook struct (`after`) and writes back
-// ONLY the fields the hook actually changed, including changes TO a zero
-// value (false, 0, "").
-//
-// Why not just marshal `after`: generated structs tag every field
-// `,omitempty` (cmd/gofastr/internal/appgen/generate.go), so json.Marshal silently drops a
-// field a defensive hook forced to its zero value. Relying on that
-// marshalling makes a hook that does `value.IsAdmin = false` (to override
-// attacker-supplied is_admin=true) a no-op, the client's value survives
-// into the SET clause. The diff is computed via reflection on the struct
-// fields so a forced-zero override lands in dest, while untouched fields on
-// a sparse BeforeUpdate body are left alone (we don't add fields the hook
-// never touched). Only top-level fields are merged.
 func mergeStructIntoMap(before, after any, dest map[string]any) error {
 	bv := reflect.Indirect(reflect.ValueOf(before))
 	av := reflect.Indirect(reflect.ValueOf(after))
 	if !bv.IsValid() || !av.IsValid() || av.Kind() != reflect.Struct || bv.Type() != av.Type() {
-		// Fall back to the additive marshal merge for non-struct payloads.
 		return marshalMergeIntoMap(after, dest)
 	}
 	return mergeFields(bv, av, slices.Sorted(maps.Keys(dest)), dest)
 }
 
-// mergeFields writes each field JSON would encode that differs between
-// bv and av into dest. The field set is encoding/json's: fields promoted
-// from an embedded struct whose tag gives no name count, whether or not
-// its type is exported, and a name held by several fields goes to the
-// shallowest, then to the one tagged with it, else to none. So a hook
-// writing an embedded field an outer one shadows changes nothing, as it
-// would change nothing in the JSON. A field under a nil embedded pointer
-// reads as its zero value, so a hook that drops one clears the fields it
-// promoted.
 func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error {
 	var wireB, wireA map[string]json.RawMessage
 	for _, f := range jsonFields(av.Type()) {
 		var b []byte
-		// A nil pointer on one side gives a readable zero value while the
-		// other side still holds the unexported field, so both must read.
 		if ov, nv := fieldOrZero(bv, f.index), fieldOrZero(av, f.index); ov.CanInterface() && nv.CanInterface() {
 			oldVal := ov.Interface()
 			newVal := nv.Interface()
 			if reflect.DeepEqual(oldVal, newVal) {
-				continue // hook left this field untouched, don't widen the body
+				continue
 			}
-			// Round-trip the new value through JSON so it matches the shape
-			// the untyped path expects (integers as int64, other numbers as
-			// float64, time as RFC3339, etc.).
 			var err error
 			if b, err = json.Marshal(newVal); err != nil {
 				return err
 			}
 		} else {
-			// An unexported embedded struct named by its tag: reflection
-			// cannot read it out, so read its key from the encoded struct.
 			if wireA == nil {
 				var err error
 				if wireB, err = encodeWire(bv); err != nil {
@@ -376,10 +346,6 @@ func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error
 		if err := decodeHookJSON(b, &decoded); err != nil {
 			return err
 		}
-		// The payload's own key wins: an After payload is the response map,
-		// keyed by wire (camelCase) names, and a digit-segment column
-		// (line_2) does not survive ToCamel then ToSnake. A field the payload
-		// lacks gets the snake_case column name.
 		wrote := false
 		for _, k := range keys {
 			if casing.ToCamel(k) == casing.ToCamel(f.name) {
@@ -394,7 +360,6 @@ func mergeFields(bv, av reflect.Value, keys []string, dest map[string]any) error
 	return nil
 }
 
-// encodeWire is v encoded as JSON, keyed by field name.
 func encodeWire(v reflect.Value) (map[string]json.RawMessage, error) {
 	b, err := json.Marshal(v.Interface())
 	if err != nil {
@@ -407,25 +372,22 @@ func encodeWire(v reflect.Value) (map[string]json.RawMessage, error) {
 	return m, nil
 }
 
-// jsonField is one field of a struct as encoding/json sees it.
 type jsonField struct {
 	name   string
 	index  []int
 	tagged bool
 }
 
-// jsonFields lists the fields encoding/json encodes for t, in field order,
-// each under the name it encodes as.
+// jsonFields mirrors encoding/json's typeFields.
 func jsonFields(t reflect.Type) []jsonField {
 	var all []jsonField
 	depthOf := map[string]int{}
 	var walk func(t reflect.Type, index []int, seen []reflect.Type)
 	walk = func(t reflect.Type, index []int, seen []reflect.Type) {
 		if slices.Contains(seen, t) {
-			return // a type that embeds itself through a pointer
+			return
 		}
 		seen = append(seen, t)
-		// The steps and their order are encoding/json's typeFields.
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 			at := append(slices.Clone(index), i)
@@ -433,8 +395,6 @@ func jsonFields(t reflect.Type) []jsonField {
 			if ft.Name() == "" && ft.Kind() == reflect.Pointer {
 				ft = ft.Elem()
 			}
-			// An unexported embedded struct still counts: its exported
-			// fields promote, or it is a named field under its tag.
 			if !f.IsExported() && (!f.Anonymous || ft.Kind() != reflect.Struct) {
 				continue
 			}
@@ -477,8 +437,6 @@ func jsonFields(t reflect.Type) []jsonField {
 	return out
 }
 
-// fieldOrZero is v's field at index, reading through embedded pointers;
-// a nil one on the way gives the field's zero value.
 func fieldOrZero(v reflect.Value, index []int) reflect.Value {
 	for _, i := range index {
 		if v.Kind() == reflect.Pointer {
@@ -493,7 +451,6 @@ func fieldOrZero(v reflect.Value, index []int) reflect.Value {
 	return v
 }
 
-// fieldType is the type of the field at index under struct type t.
 func fieldType(t reflect.Type, index []int) reflect.Type {
 	for _, i := range index {
 		if t.Kind() == reflect.Pointer {
@@ -504,9 +461,6 @@ func fieldType(t reflect.Type, index []int) reflect.Type {
 	return t
 }
 
-// jsonTagName returns the name a field's json tag gives it, "" when the
-// tag gives none or one encoding/json rejects, and whether the field is
-// JSON-skipped (`json:"-"`). Options like omitempty are ignored.
 func jsonTagName(f reflect.StructField) (name string, skip bool) {
 	tag := f.Tag.Get("json")
 	if tag == "-" {
@@ -519,8 +473,7 @@ func jsonTagName(f reflect.StructField) (name string, skip bool) {
 	return name, false
 }
 
-// validJSONTagName is encoding/json's isValidTag: letters, digits and a
-// set of punctuation, which excludes quotes and backslashes.
+// validJSONTagName is encoding/json's isValidTag.
 func validJSONTagName(s string) bool {
 	if s == "" {
 		return false
@@ -535,9 +488,6 @@ func validJSONTagName(s string) bool {
 	return true
 }
 
-// marshalMergeIntoMap is the additive fallback used when the diff path can't
-// apply (non-struct payloads). It mirrors the original behaviour, with
-// numbers decoded exact the way the struct path decodes them.
 func marshalMergeIntoMap(src any, dest map[string]any) error {
 	b, err := json.Marshal(src)
 	if err != nil {

@@ -9,20 +9,10 @@ import (
 //go:embed feedback.js
 var feedbackJS string
 
-// FeedbackBehaviorName is the runtime module that binds the feedback
-// family's data-hui-* hooks and owns the toast stack runtime the
-// kernel's response-header path dispatches into. With headless-copy
-// (CopyBehaviorName) it replaces the retired core-ui/runtime copy,
-// toasts and networkretrybanner modules;
-// the kernel's loadModule('headless-feedback') retarget is what keeps
-// NS.toast, _initToasts and the X-Gofastr-Toast dispatch working.
+// FeedbackBehaviorName is the runtime module that binds the feedback hooks and
+// owns the toast runtime the kernel's response-header path dispatches into.
 const FeedbackBehaviorName = "headless-feedback"
 
-// The markers: the copy wrapper (headless-copy binds it; it stays here
-// so a copy that toasts finds the toast runtime already loaded), the
-// stack (both names — the kernel's data-cui-toast-stack is what a
-// runtime-only stack or a ToastSlot carries, data-hui-toast-stack what
-// the component renders) and the retry link.
 var _ = uiregistry.RegisterBehavior(FeedbackBehaviorName, feedbackJS,
 	uiregistry.Markers("[data-hui-copy]", "[data-hui-toast-stack]",
 		"[data-cui-toast-stack]", "[data-hui-network-retry]"))

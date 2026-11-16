@@ -1,0 +1,136 @@
+primitive: app.audit
+summary: "The audit log helper: who did what to which record, written with the change."
+code:
+  - framework/audit.go
+docs:
+  - framework/docs/content/audit-log.md
+invariants:
+  - id: audit-row-in-the-write-transaction
+    rule: The audit hooks and AppendAuditEvent write through the transaction on the context when there is one, so a write that rolls back leaves no audit row.
+    enforced_by:
+      - test: framework.TestSweepAuditRowRollsBackWithTheWrite
+      - test: framework.TestSweepAuditAppendJoinsContextTransaction
+  - id: drifted-payload-refused
+    rule: An After hook handed a payload of the wrong type returns an error and writes no audit row.
+    enforced_by:
+      - test: framework.TestSweepAuditHookRefusesDriftedPayload
+  - id: default-scrub
+    rule: With no Redact, every field whose name, in any case or separator style, ends in a known secret suffix is dropped from the diff, and a key column with such a name is stored as its sha256 digest.
+    enforced_by:
+      - test: framework.TestAudit_DefaultCreateRedactsSensitiveFields
+      - test: framework.TestAudit_DefaultUpdateRedactsSensitiveFields
+      - test: framework.TestAuditDropsCamelCaseToken
+      - test: framework.TestAuditScrubsEverySpelling
+      - test: framework.TestAuditKeyID
+      - test: framework.TestAudit_SecretKeyStaysOutOfRecordID
+  - id: redact-cannot-erase-evidence
+    rule: A Redact that panics or returns an unmarshallable map leaves the row's keys in the diff with every value replaced by "[redaction failed]", nil counts as an empty map, and a delete Redact that panics or drops the "id" key keeps the original record_id.
+    enforced_by:
+      - test: framework.TestSweepAuditRedactPanicMasksValues
+      - test: framework.TestSweepAuditUnmarshalableRedactMasksValues
+      - test: framework.TestSweepAuditDeleteRedactPanicKeepsRecordID
+      - test: framework.TestCovBuildCreateDiffFallback
+      - test: framework.TestCovBuildUpdateDiffFallback
+      - test: framework.TestAudit_RedactNilProducesEmptyMapNotNull
+      - test: framework.TestAudit_DeleteRedactOmittedIDKeepsOriginalRecordID
+  - id: redact-gets-a-copy
+    rule: Redact receives a copy of the row, so what it changes never reaches the response.
+    enforced_by:
+      - test: framework.TestAudit_RedactMutationDoesNotLeakIntoResponse
+  - id: callbacks-cannot-abort-the-write
+    rule: A panic in Actor or Redact is recovered, and the write it audits still succeeds.
+    enforced_by:
+      - test: framework.TestAudit_ActorPanicOnCreateDoesNotAbortRequest
+      - test: framework.TestAudit_ActorPanicOnUpdateDoesNotAbortRequest
+      - test: framework.TestAudit_ActorPanicOnDeleteDoesNotAbortRequest
+      - test: framework.TestAudit_RedactPanicOnCreateDoesNotAbortRequest
+  - id: text-columns-hold-no-control-bytes
+    rule: Every text value an audit row stores, hooks and AppendAuditEvent alike, is valid UTF-8 with control bytes and DEL removed.
+    enforced_by:
+      - test: framework.TestAudit_ActorStripsNewlines
+      - test: framework.TestAudit_ActorStripsNUL
+      - test: framework.TestAudit_DeleteRedactStripsNewlinesFromRecordID
+      - test: framework.TestAppendAuditEvent_SanitisesTextColumns
+      - test: framework.TestAuditFieldsReplaceInvalidUTF8
+  - id: diff-shape
+    rule: An update diff with no captured pre-image has no "old" key, a delete with neither pre-image nor request meta stores a NULL diff, and AppendAuditEvent stores an empty diff as NULL.
+    enforced_by:
+      - test: framework.TestSweepAuditUpdateDiffOmitsMissingOld
+      - test: framework.TestAppendAuditEvent_NilDiffWritesNULL
+  - id: client-ip-without-port
+    rule: The client_ip an audit row records is the request's remote address with its port removed.
+    enforced_by:
+      - test: framework.TestSweepAuditClientIPDropsPort
+  - id: op-override-is-per-record
+    rule: A crud operation override (restore, purge, transition, state override) names only its own entity and record, so a nested write of another row keeps its plain op.
+    enforced_by:
+      - test: framework.TestAudit_RestoreAndPurgeOps
+      - test: framework.TestAudit_RestoreNestedWriteKeepsOwnOp
+      - test: framework.TestAuditTransitionOp
+      - test: framework.TestAuditStateOverrideOpAndReason
+  - id: old-tables-are-widened
+    rule: EnsureAuditTable adds the tenant_id and reason columns an older table lacks, and a replica that loses the race to add one does not fail; a row is written naming reason only when it has one.
+    enforced_by:
+      - test: framework.TestEnsureAuditTableAddsReasonAndTenant
+      - test: framework.TestAuditColumnsStaleCatalog
+      - test: framework.TestAuditWriteNeverNamesReason
+  - id: record-id-follows-the-version
+    rule: The record_id of a hook's row is the id crud read from its key columns, else the key read under the wire names of the entity version whose fields the row matches best.
+    enforced_by:
+      - test: framework.TestAuditSwappedWireNames
+      - test: framework.TestAuditKeyEveryVersion
+  - id: every-version-is-audited
+    rule: WithAuditLog marks every registered version of an audited entity, so a state override on any version has a trail.
+    enforced_by:
+      - test: framework.TestWithAuditLogMarksAudited
+      - test: framework.TestWithAuditLogMarksEveryVersion
+  - id: module-toggle-trail-survives-cancel
+    rule: The audit row of a module enable or disable is written after the change commits, even when the request's context is cancelled.
+    enforced_by:
+      - test: framework.TestModuleAuditSurvivesCancellation
+  - id: audit-table-is-exported
+    rule: EnsureAuditTable registers the audit table with ExportData under its configured name, so a dump and restore keeps the trail.
+    enforced_by:
+      - test: framework.TestExportCarriesAuditLog
+decisions:
+  - id: evidence-over-redaction-on-failure
+    date: 2026-11-16
+    status: superseded
+    superseded_by: masked-row-on-redaction-failure
+    decision: When Redact panics or returns what cannot be marshalled, the audit row stores the row as it was before Redact ran.
+    rejected:
+      - option: Store an empty diff.
+        why: A misbehaving callback would erase audit evidence.
+      - option: Fail the write.
+        why: A bug in an audit callback would take the app's writes down.
+    upholds: [redact-cannot-erase-evidence, callbacks-cannot-abort-the-write]
+  - id: masked-row-on-redaction-failure
+    date: 2026-11-16
+    status: accepted
+    decision: When Redact panics or returns what cannot be marshalled, the audit row keeps the event and the row's keys and stores "[redaction failed]" for every value.
+    rejected:
+      - option: Store the row as it was before Redact ran.
+        why: A host sets Redact because some values must never reach the audit table, and a bug in it then wrote exactly those values there.
+      - option: Store an empty diff.
+        why: It erases which fields the change touched along with the values.
+      - option: Fail the write.
+        why: A bug in an audit callback would take the app's writes down.
+    revisit_if: Hosts need the values of a failed redaction for forensics, which would call for a separate, access-controlled store rather than the audit table.
+    upholds: [redact-cannot-erase-evidence, callbacks-cannot-abort-the-write]
+  - id: random-audit-ids
+    date: 2026-11-16
+    status: accepted
+    decision: Audit row ids are "aud_" and 16 bytes of crypto/rand, and a rand failure refuses the row.
+    rejected:
+      - option: A wall-clock prefix.
+        why: It makes the audit namespace guessable by time.
+      - option: A weaker id when rand fails.
+        why: A guessable id is worse than a refused row.
+  - id: event-writes-outside-crud-are-not-transactional
+    date: 2026-11-16
+    status: accepted
+    decision: AppendAuditEvent writes through the pool unless the caller put a transaction on the context.
+    rejected:
+      - option: Always open a transaction.
+        why: Security events such as a login are not part of an entity write, so the caller owns atomicity.
+    upholds: [audit-row-in-the-write-transaction]

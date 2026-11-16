@@ -12,82 +12,33 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The table: named columns of sortable cells, the structure every
-// list screen and every embedded result region renders. Sorting is
-// typed props — the active sort, the query the screen carries, the
-// parameter names — and every href is built through net/url, never by
-// substituting into a caller's pattern string: a column key or a
-// carried value that could eat a parameter it was never meant to is
-// a defect class this component cannot express, not a guard it runs.
-
-// Table parts. PartCaption, PartHeader and PartBody are the shared
-// names. PartRoot is the wrapper div, PartScroll the focusable
-// region the table horizontally scrolls inside, and PartTable the
-// table itself.
+// Table parts. PartRoot is the wrapper, PartScroll the focusable scroll region, PartTable the table.
 const (
-	PartTable  Part = "table"
-	PartScroll Part = "scroll"
-	PartHead   Part = "head"
-	PartRow    Part = "row"
-	PartSort   Part = "sort"
-	PartCell   Part = "cell"
-	PartEmpty  Part = "empty"
-	// PartTableSelect is the label around a select-all header's
-	// checkbox (PartControl).
-	PartTableSelect Part = "table-select"
+	PartTable       Part = "table"
+	PartScroll      Part = "scroll"
+	PartHead        Part = "head"
+	PartRow         Part = "row"
+	PartSort        Part = "sort"
+	PartCell        Part = "cell"
+	PartEmpty       Part = "empty"
+	PartTableSelect Part = "table-select" // the label around a select-all checkbox
 )
 
 // Column describes one table column.
 type Column struct {
-	// Key identifies the column: the value under SortParam in the
-	// sort href, and the key a Row's Cells are matched by. Required.
-	// Anything a query can encode is a legal Key — that is the point
-	// of building the href through net/url.
-	Key string
-	// Header is the visible column header text. May be empty: an
-	// actions or icon column. A header-less column that cannot be
-	// sorted is hidden from assistive tech; one that can is named
-	// from Strings.TableSortBy, because an anchor with no text is a
-	// control with no name.
-	Header string
-	// Sortable makes the header a sort control: an anchor that
-	// re-submits the screen's query with this column's Key and the
-	// next direction.
-	Sortable bool
-	// HeaderAttrs and CellAttrs add attributes to this column's <th>
-	// and to every <td> under it, through the same sanitiser as
-	// ExtraAttrs (Safe): data-cui-* keys, style, id and class are
-	// dropped, names are stored folded, and one attribute under two
-	// spellings is refused.
-	HeaderAttrs html.Attrs
-	CellAttrs   html.Attrs
-
-	// SelectAll makes the header a checkbox that governs the row
-	// checkboxes named SelectAll inside this table: checking it checks
-	// them, and their states show it checked, clear or mixed. The
-	// headless module binds it; it is named by Header, or by
-	// Strings.TableSelectAll when Header is empty, and never submitted.
-	// A select-all column cannot sort.
-	SelectAll string
-
-	// Variant is class-map vocabulary for the whole column: looked
-	// up as "<part>--<variant>" on this column's <th> (PartHeader)
-	// and each of its <td> (PartCell), so a class map can align a
-	// column's text or shade its column without the structure
-	// caring. Empty means none.
-	Variant string
+	Key         string     // required: the sort value and the key Row.Cells match by
+	Header      string     // may be empty: an actions or icon column
+	Sortable    bool       // the header becomes a sort anchor
+	HeaderAttrs html.Attrs // through Safe, on this column's <th>
+	CellAttrs   html.Attrs // through Safe, on every <td> under it
+	SelectAll   string     // the header becomes a checkbox governing the row checkboxes of this name
+	Variant     string     // class-map vocabulary for the <th> and every <td>
 }
 
-// Row is one table row. The shape is ui.DataTable's, so a caller
-// moves between the two without repacking.
+// Row is one table row, in ui.DataTable's shape.
 type Row struct {
-	// ID lands on the <tr> as id=, for a keyed swap: successive
-	// renders of a live table differ only on the rows that changed.
-	ID string
-	// Cells maps a column Key to the rendered cell HTML. A column
-	// with no entry renders an empty cell; a key naming no column is
-	// refused at render, because a silent drop hides a typo.
-	Cells map[string]render.HTML
+	ID    string                 // the <tr> id, for a keyed swap
+	Cells map[string]render.HTML // by column Key; a key naming no column panics
 }
 
 // SortDir is the direction of a sort.
@@ -100,95 +51,33 @@ const (
 
 // TableProps configures a table.
 type TableProps struct {
-	// Columns is the column definitions. Required.
-	Columns []Column
-	// Rows is the rendered rows.
-	Rows []Row
-	// Caption is the table's caption: text, escaped. A table is named
-	// by its caption and by nothing else — there is no AriaLabel —
-	// and a caller who wants the table named gives one.
-	Caption string
+	Columns []Column // required
+	Rows    []Row
+	Caption string // the table's only name, escaped text
 
-	// SortBy is the active sort column's Key. Empty means no column
-	// is sorted.
-	SortBy string
-	// SortDir is the active sort's direction. Empty means ascending,
-	// the direction an inactive column's anchor sorts by.
-	SortDir SortDir
+	SortBy  string  // the active sort column's Key; empty sorts nothing
+	SortDir SortDir // empty means ascending
 
-	// Path is the screen's own path: each sort href is it plus the
-	// carried query, the sort parameters replaced. Empty means the
-	// current document — a relative "?query" href. When set it must
-	// be same-origin: a sort anchor pointing off-origin is a mistake
-	// refused at render.
-	Path string
-	// Query is the query the screen's URL already carries — the
-	// search, the filters, the page — and survives a sort beside the
-	// sort keys.
-	Query url.Values
-	// SortParam and DirParam name the sort key and direction
-	// parameters. They default to "sort" and "dir".
-	SortParam string
-	DirParam  string
+	Path      string     // same-origin path the sort hrefs point at; empty is the current document
+	Query     url.Values // the query the screen carries, kept across a sort
+	SortParam string     // "sort" by default
+	DirParam  string     // "dir" by default
 
-	// Island is where a sort goes when the table is embedded in a
-	// region rather than being the page: the sort anchors then carry
-	// the RPC contract beside their hrefs — the page without script,
-	// the region update with it, the URL written after the swap.
-	// Optional, the Form posture: the URL is the truth for a list,
-	// and a list screen's sort anchors are plain navigations the
-	// client router intercepts when script is present. An Island
-	// that looks wired and is not is refused, whichever shape the
-	// table renders.
-	Island Island
+	Island Island // set when the table is embedded in a region: sort anchors carry the RPC contract
 
-	// Empty renders in the body's one row when there are no rows, in
-	// a cell spanning every column. Nil renders an empty <tbody>;
-	// the head stays either way — an empty result still has named
-	// columns, and the sort controls stay usable.
-	Empty render.HTML
-	// Summary is a sentence about the result window the caller owns,
-	// e.g. "Showing 8 of 10". Appended to the sort sentence the
-	// announcement carries, with a space, when given: the primitive
-	// knows the sort, and only the caller knows the window.
-	Summary string
-	// Footer renders after the scroll region, as its sibling inside
-	// the root, never inside the table, so a pager's nav landmark
-	// never nests in a table. Nil renders nothing — the scroll region
-	// is the root's only child.
-	Footer render.HTML
+	Empty   render.HTML // the one body cell spanning every column when there are no rows
+	Summary string      // the caller's sentence about the result window, appended to the announcement
+	Footer  render.HTML // rendered after the scroll region, never inside the table
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on every part. Nothing here is fillable — the
-	// cells are the caller's own content, and a slot that replaced a
-	// header would drop the sort control inside it.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
-	Strings *Strings
+	Parts   Parts    // nothing is fillable
+	Strings *Strings // nil means the English defaults
 }
 
-// Table renders the list: one wrapper div (PartRoot) holding a
-// focusable scroll region (PartScroll) around the table, and the
-// footer, when there is one, as the region's sibling. The scroll
-// region is the element a class map makes the horizontal scroll
-// surface — the one a wide table on a narrow screen scrolls inside —
-// and it is markup, not styling, because a scroll region that cannot
-// take focus cannot be scrolled by keyboard.
-//
-// The explicit ARIA roles stay on every element. They look redundant
-// on a displayed <table> and are not: a cards collapse sets
-// display:block on the table's elements, and a table element
-// displayed as a block loses its implicit table semantics in Chromium
-// and WebKit. The roles are what keep a collapsed table a table for
-// assistive technology.
-//
-// aria-sort is the only sort indicator rendered — ascending and
-// descending on the active column, none on every other sortable one —
-// and the stylesheet draws from the attribute, so state and
-// appearance cannot disagree.
+// Table renders a wrapper (PartRoot) holding a focusable scroll region around the
+// table, the footer, and a status the behaviour announces through.
 func Table(p TableProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	w := p.Strings.Resolve()
@@ -213,8 +102,6 @@ func Table(p TableProps, s Classes) render.HTML {
 	}
 	cols := make(map[string]bool, len(p.Columns))
 	for _, col := range p.Columns {
-		// Two columns under one Key would render the same cell twice
-		// and sort to the same href: one answer claimed by two headers.
 		if cols[col.Key] {
 			panic("headless: Table has two columns with the Key " + strconv.Quote(col.Key) + " — Row.Cells are matched by Key, so a repeated one is two columns claiming one cell")
 		}
@@ -234,12 +121,6 @@ func Table(p TableProps, s Classes) render.HTML {
 
 	capID := ""
 	if p.Caption != "" {
-		// The caption is the scroll region's name as well as the
-		// table's: the id is what aria-labelledby on the region
-		// points at, derived the way Section derives its title's —
-		// from the ID when there is one, else a slug of the caption
-		// (two tables with the same caption on one page collide,
-		// which is the reason ID exists).
 		capID = p.ID
 		if capID == "" {
 			capID = slugID("table", p.Caption)
@@ -253,32 +134,11 @@ func Table(p TableProps, s Classes) render.HTML {
 	}
 	kids = append(kids, tableHead(b, p, w, sortParam, dirParam), tableBody(b, p))
 
-	// The scroll region is a markup fact, not a styling one: a wide
-	// table on a narrow screen scrolls somewhere, and a region that
-	// can only be scrolled with a mouse fails WCAG 2.1.1 (axe's
-	// scrollable-region-focusable). tabindex is 0 whether or not the
-	// table overflows today, because the server cannot know the
-	// viewport and a region that becomes scrollable at a narrow
-	// width must already be reachable. This is Adrian Roselli's
-	// responsive-table pattern: role=region, named by the caption,
-	// keyboard-focusable. No caption, no name: the region renders
-	// without aria-labelledby rather than pointing at nothing.
 	scroll := Attrs(map[string]string{"tabindex": "0", "role": "region"})
 	if capID != "" {
 		scroll["aria-labelledby"] = capID
 	}
-	// The scroll region is the focus fallback for an island sort whose
-	// column the answer dropped: focus stays inside the table the
-	// reader is reading.
 	Mark(scroll, "data-hui-table-scroll")
-	// emptyHasCallerContent says whether the one cell spanning every
-	// column carries Empty, the caller's own render.HTML. It is the
-	// only caller content the region can ever hold: Row.Cells is a
-	// map, not a render.HTML/[]render.HTML field, so a cell's value —
-	// like a column's Header — is not caller content under this rule.
-	// When Empty is what's showing, the region stays reachable down to
-	// that cell; otherwise the whole region, headers, sort controls
-	// and cell values alike, is the component's own.
 	emptyHasCallerContent := len(p.Rows) == 0 && p.Empty != ""
 	if !emptyHasCallerContent {
 		scroll = Internal(scroll)
@@ -286,25 +146,13 @@ func Table(p TableProps, s Classes) render.HTML {
 	scrollRegion := b.El("div", PartScroll, scroll,
 		b.El("table", PartTable, Attrs(map[string]string{"role": "table"}), kids...))
 
-	// The footer is the scroll region's sibling, never inside the
-	// table, so a pager's nav landmark never nests in one.
 	rootKids := []render.HTML{scrollRegion}
 	if p.Footer != "" {
 		rootKids = append(rootKids, p.Footer)
 	}
-	// The status is the root's last child on every table, island or
-	// plain, because a plain table's next page announces too. Empty on
-	// the server: the sentence is the answer's, rendered into the
-	// announcement attribute, and the module copies it in after a
-	// swap — clear then frame, so a repeated identical sentence is
-	// said again. role=status already means polite; stating aria-live
-	// too can announce twice.
 	rootKids = append(rootKids,
 		b.El("span", PartStatus, Internal(Mark(Attrs(map[string]string{"role": "status"}), "data-hui-table-status"))))
 	own := Merge(Safe(p.ExtraAttrs), Attrs(map[string]string{"id": p.ID}))
-	// The module marker, the signal it records the clicked sort
-	// against, and the sentence it copies: everything the behaviour
-	// needs travels on the root the component rendered.
 	Mark(own, "data-hui-table")
 	if !p.Island.zero() {
 		own["data-hui-table-signal"] = p.Island.Signal
@@ -315,14 +163,7 @@ func Table(p TableProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, own, rootKids...)
 }
 
-// tableAnnouncement composes the sentence a reader is told after the
-// region changed: the sort the answer carries, in the reader's words,
-// and the caller's Summary of the window when there is one. The
-// column is named by its Header, or its Key when the header is empty
-// — the anchor's own naming rule, so the sentence and the control the
-// reader clicked agree on what the column is called. No sort and no
-// Summary is no announcement: an attribute nothing says is noise the
-// module would copy into the status for nothing.
+// tableAnnouncement is the sort sentence plus the caller's Summary; no sort and no Summary is none.
 func tableAnnouncement(p TableProps, w *Strings) string {
 	if p.SortBy == "" {
 		return p.Summary
@@ -336,8 +177,6 @@ func tableAnnouncement(p TableProps, w *Strings) string {
 			break
 		}
 	}
-	// An empty SortDir means ascending, the same reading the sort
-	// anchors give it.
 	dir := w.SortAscending
 	if p.SortDir == SortDesc {
 		dir = w.SortDescending
@@ -349,28 +188,15 @@ func tableAnnouncement(p TableProps, w *Strings) string {
 	return sentence
 }
 
-// tableHead renders the head: one row of column headers.
 func tableHead(b Box, p TableProps, w *Strings, sortParam, dirParam string) render.HTML {
 	cells := make([]render.HTML, len(p.Columns))
 	for i, col := range p.Columns {
 		cells[i] = tableHeaderCell(b, p, w, col, sortParam, dirParam)
 	}
-	// The explicit rowgroup and row roles are load-bearing, not
-	// redundant: a cards collapse sets display:block on these
-	// elements, and a table element displayed as a block loses its
-	// implicit table semantics in Chromium and WebKit. The roles are
-	// what keep a collapsed table a table for assistive tech.
 	return b.El("thead", PartHead, Attrs(map[string]string{"role": "rowgroup"}),
 		b.El("tr", PartRow, Attrs(map[string]string{"role": "row"}), cells...))
 }
 
-// tableHeaderCell renders one <th>.
-//
-// A sortable column's header is an anchor; a non-sortable one is
-// text. A non-sortable column with no Header — an actions column — is
-// hidden from assistive tech: its cells are self-evidently labelled
-// (View, Edit, Delete) and an empty column header announces nothing,
-// the axe empty-table-header rule included.
 func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dirParam string) render.HTML {
 	if col.SelectAll != "" {
 		if col.Sortable {
@@ -403,8 +229,6 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 			render.Text(col.Header))
 	}
 
-	// The active column's anchor flips the direction; every other
-	// sortable column's sorts ascending.
 	dir := p.SortDir
 	if dir == "" {
 		dir = SortAsc
@@ -421,21 +245,10 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 
 	a := Attrs(map[string]string{"href": href})
 	if col.Header == "" {
-		// The anchor's text is empty, so its name comes from Strings
-		// with the column's Key in it: a nameless control cannot be
-		// told from the one beside it.
 		a["aria-label"] = w.fill(w.TableSortBy, "column", col.Key)
 	}
 	if !p.Island.zero() {
-		// The sort key the module records on click and looks for in
-		// the swapped-in table. Island anchors only: a plain table's
-		// sort is a navigation the router already focuses, and a hook
-		// nothing reads on it is markup carried for no one.
 		a["data-hui-table-sort"] = col.Key
-		// The same element is both destinations: the href is the page
-		// without script, the island contract is the region update
-		// with it, and the query is shared so the two answer one
-		// question.
 		a = Merge(a, p.Island.attrs(href, "GET"))
 	}
 	th := Attrs(map[string]string{"scope": "col", "role": "columnheader", "aria-sort": ariaSort})
@@ -447,17 +260,9 @@ func tableHeaderCell(b Box, p TableProps, w *Strings, col Column, sortParam, dir
 		b.El("a", PartSort, a, render.Text(col.Header)))
 }
 
-// tableSortHref builds one sort anchor's href: the carried query with
-// the sort key and direction replaced, on p.Path. Built through
-// net/url and never by substitution. An empty Path is the current
-// document, a relative "?query" href.
+// tableSortHref builds a sort href through net/url: the carried query with sort and dir set.
 func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam string) string {
-	// The carried query is scrubbed, not refused, because it is
-	// request state; see scrubbedQuery.
 	q := scrubbedQuery(p.Query)
-	// Set replaces, and that is the contract: the query a screen
-	// carries may still hold the last sort, and sort=old&sort=name is
-	// two answers to one question. Add would append; Set does not.
 	q.Set(sortParam, key)
 	q.Set(dirParam, string(dir))
 
@@ -470,30 +275,13 @@ func tableSortHref(p TableProps, key string, dir SortDir, sortParam, dirParam st
 		u.RawQuery = q.Encode()
 		href = u.String()
 	}
-	// Every href this package writes goes through the anchor policy.
-	// Same-origin, the parse and the query refusal have already
-	// refused the scheme, the control bytes and the fragment; this
-	// catches what can still hide in a path — a percent-encoded
-	// newline being the one left.
 	if urlsafe.CleanAnchor(href) == "" {
 		panic("headless: Table Path " + strconv.Quote(p.Path) + " is not a URL the anchor policy allows")
 	}
 	return href
 }
 
-// scrubbedQuery copies q with every C0 control byte and DEL removed
-// from its keys and values, dropping a pair that scrubs to nothing.
-// The query a component carries is request state, unlike Path: a
-// value with a control byte in it — a crafted ?q= with CR LF —
-// percent-encodes to %0D%0A, which the anchor policy refuses for
-// every URL this framework writes, and a refusal here would be a 500
-// from a link. So the bytes are stripped rather than refused: a
-// control byte is never a search a user meant, and a key or value
-// that scrubs to nothing is dropped rather than carried as an empty
-// filter. A value that was empty to begin with is carried unchanged:
-// an explicit empty param (?saved=S&filter=, a reader clearing a saved
-// view's filter) means something its absence does not. Path stays a
-// refusal, because Path is configuration.
+// scrubbedQuery copies q without C0 control bytes and DEL, dropping a key or value that scrubs to empty.
 func scrubbedQuery(q url.Values) url.Values {
 	out := url.Values{}
 	for k, vs := range q {
@@ -545,16 +333,8 @@ func tableBody(b Box, p TableProps) render.HTML {
 		for j, col := range p.Columns {
 			td := Attrs(map[string]string{"role": "cell"})
 			if col.Header != "" {
-				// The header text a cards-collapse stylesheet shows
-				// beside the value. Always rendered, never behind a
-				// responsive flag: it is content, and a class map
-				// that does not collapse simply does not read it.
 				td["data-label"] = col.Header
 			}
-			// The column's variant, when the class map has one for
-			// it: the one channel a class map has for styling a whole
-			// column, so alignment and shading are the map's to
-			// choose without the structure caring.
 			if cls := b.Classes.Variant(PartCell, col.Variant); cls != "" {
 				td["class"] = cls
 			}

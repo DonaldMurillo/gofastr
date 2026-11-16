@@ -10,16 +10,8 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/dev"
 )
 
-// devMCPExposeEnv is the explicit opt-in for serving the dev MCP surface
-// on a non-loopback listener.
 const devMCPExposeEnv = "GOFASTR_DEV_MCP_EXPOSE"
 
-// bindIsLocal reports whether nothing but this process or this machine
-// reaches a listener on network at addr. An in-process listener (a
-// mobile shell's "memory" or "pipe") is local; a TCP one is judged by
-// its host; any other network is not, because its address is not a
-// host:port: a unix socket's is its path, which a proxy can front, and
-// a path like "127.0.0.1:8080" would otherwise read as loopback.
 func bindIsLocal(addr, network string) bool {
 	if inProcessNetwork(network) {
 		return true
@@ -27,35 +19,22 @@ func bindIsLocal(addr, network string) bool {
 	return tcpNetwork(network) && bindIsLoopback(addr)
 }
 
-// bindIsLoopback reports whether a listen address will only accept
-// connections from this machine.
-//
-// The empty host (":8080", "8080", and "" itself) is NOT loopback: Go binds every
-// interface for it, which is precisely the exposed case. A hostname that
-// is not a loopback literal is treated as exposed without resolving it;
-// a name that happens to resolve to 127.0.0.1 today can resolve
-// elsewhere tomorrow, and this decides whether to publish an
-// unauthenticated control plane.
 func bindIsLoopback(addr string) bool {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
-		// Start("") binds ":http", every interface on port 80 (see
-		// listenAddrFor). An empty address is the widest bind there is,
-		// not a choice left for later.
 		return false
 	}
 	host := addr
 	if h, _, err := net.SplitHostPort(addr); err == nil {
 		host = h
 	} else if !strings.Contains(addr, ":") {
-		// A bare port ("8080"). Go expands this to every interface.
 		if _, convErr := strconv.Atoi(addr); convErr == nil {
 			return false
 		}
 	}
 	host = strings.Trim(host, "[]")
 	if host == "" {
-		return false // ":8080": all interfaces
+		return false
 	}
 	if host == "localhost" {
 		return true
@@ -66,10 +45,6 @@ func bindIsLoopback(addr string) bool {
 	return false
 }
 
-// listenAddrFor is the address Start actually binds for addr: net/http's
-// default for an empty Addr is ":http", and net.Listen needs it spelled
-// out. The dev MCP guard judges this value, the bind itself, so the guard
-// and the listener cannot disagree about what an empty address means.
 func listenAddrFor(addr string) string {
 	if addr == "" {
 		return ":http"
@@ -77,13 +52,8 @@ func listenAddrFor(addr string) string {
 	return addr
 }
 
-// devMCPExposeAllowed reports whether the operator explicitly accepted
-// serving the dev MCP surface off-loopback. The strict env-bool read
-// lives in core/config.EnvBool, shared with the dev gates.
 func devMCPExposeAllowed() bool { return config.EnvBool(devMCPExposeEnv) }
 
-// devMCPExposureWarning is the banner printed when dev mode declines to
-// register its control tools because the listener is reachable.
 func devMCPExposureWarning(addr string) string {
 	return fmt.Sprintf(
 		"gofastr dev: refusing to expose the MCP control surface on %s: it is not a loopback bind, "+
@@ -93,27 +63,11 @@ func devMCPExposureWarning(addr string) string {
 		addr, devMCPExposeEnv)
 }
 
-// guardDevMCPBind withdraws the DEV-IMPLIED MCP surfaces when the listener
-// is not loopback. Called from Start once the real bind address is known.
-// NewApp cannot know it.
-//
-// Only the DEV-IMPLIED opt-ins are withdrawn. A host that asked for the
-// control tools itself (WithMCPControl) keeps them: that is a deliberate
-// production choice with its own gating, not the dev loop's convenience
-// default. The dev-implied ENTITY write tools, the battery/log dev-implied
-// mutation and disclosing reads, and the contract dev tool that writes to
-// disk are registered WithDevImplied across InitPlugins and entity
-// registration; they are withdrawn as ONE set here, not per feature — the
-// per-feature spelling is exactly how notes_create/_update/_delete and
-// log_set_level stayed live on an exposed bind while the control tools
-// were dropped.
 func (a *App) guardDevMCPBind(addr, network string) {
 	if bindIsLocal(addr, network) {
 		return
 	}
 	if devMCPExposeAllowed() {
-		// The explicit network opt-in must accept the real remote Host too.
-		// Local binds retain their DNS-rebinding pin even with the opt-in set.
 		if a.MCP != nil {
 			a.MCP.SetRequireLoopbackHost(false)
 		}
@@ -122,13 +76,6 @@ func (a *App) guardDevMCPBind(addr, network string) {
 	withdrew := false
 	if a.mcpControlDevImplied && a.mcpControl {
 		a.mcpControl = false
-		// Clearing the flag is only half the withdrawal. InitPlugins is
-		// where the control tools actually register, and a host may call
-		// it ITSELF before Start (the documented pre-Start hook order) —
-		// at which point they are already in the MCP registry, already
-		// named by tools/list, and already reachable by tools/call. The
-		// flag then guards a registration that has been and gone. Remove
-		// the tools too.
 		if a.MCP != nil {
 			for _, name := range a.controlToolNames() {
 				a.MCP.UnregisterTool(name)
@@ -136,13 +83,6 @@ func (a *App) guardDevMCPBind(addr, network string) {
 		}
 		withdrew = true
 	}
-	// The rest of the dev-implied mutating set. This runs even when the
-	// control tools themselves were an explicit opt-in: dev still implied
-	// the entity write tools, so an exposed bind must not keep them. For
-	// an app that never ran the dev implication nothing is marked and
-	// this is a no-op map walk. The sweep also arms core/mcp's bar: Start
-	// inits plugins AFTER this guard, and battery-registered dev-implied
-	// tools must not reintroduce the surface post-guard.
 	if a.MCP != nil && len(a.MCP.UnregisterDevImpliedTools()) > 0 {
 		withdrew = true
 	}
@@ -152,12 +92,6 @@ func (a *App) guardDevMCPBind(addr, network string) {
 	a.Logger().Warn(devMCPExposureWarning(addr), "addr", addr)
 }
 
-// guardDevLiveReloadBind withdraws the livereload stream when the
-// listener is not loopback, unless GOFASTR_DEV_LIVERELOAD_EXPOSE is set.
-// The stream parks a goroutine per EventSource with no seat and no cap;
-// that is fine for the one developer at the terminal, not for every peer
-// that can reach an exposed bind. Called from Start beside
-// guardDevMCPBind, with the same bind address.
 func (a *App) guardDevLiveReloadBind(addr, network string) {
 	if bindIsLocal(addr, network) || config.EnvBool(dev.LiveReloadExposeEnv) {
 		return

@@ -20,44 +20,17 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/internal/casing"
 )
 
-// In-process typed CRUD API
-//
-// The methods below let same-process callers (typed repositories, jobs, seed
-// scripts) drive the framework's full CRUD pipeline, transaction wrapping,
-// hook chain, event emission, without round-tripping through HTTP. They
-// share the underlying do{Create,Update,Delete} primitives with the HTTP
-// handlers so semantics never drift between the two paths.
-//
-// Internally each method synthesises a minimal *http.Request to feed the
-// existing apply*Scope helpers (which read tenant ID from ctx and trashed
-// flag from the URL). Tenant is honoured because GetTenantID(ctx) reads
-// from context regardless of how the request was constructed.
-
-// syntheticRequest builds a placeholder *http.Request whose Context is ctx.
-// Used when an in-process caller needs to feed code paths that take
-// *http.Request but only consult ctx + URL query.
+// syntheticRequest is the placeholder request an in-process call feeds
+// the request-taking scope helpers, marked as in-process.
 func syntheticRequest(ctx context.Context, method, path string) *http.Request {
 	r := httptest.NewRequest(method, path, nil)
 	return r.WithContext(context.WithValue(ctx, inProcessKey{}, true))
 }
 
-// bodyColumns renames, in place, each key of an in-process write body that
-// names no column: a wire key (a WireName, or the column in the handler's
-// case) is its column, as on the HTTP body path, and so is the snake key
-// MarshalEntity derives from a json tag, matched by its camel form.
-// casing.ToSnake("line2") is "line2", not the column line_2, so a typed
-// repo's Create dropped the field. A key the camel form does not reach is
-// matched by its snake form: the wire key Title of a Title column snakes
-// to title, HTTPCode to h_t_t_p_code, Note (for _note) to note, and the
-// value was dropped the same way. Two keys naming one column are refused,
-// as the HTTP body refuses them, rather than racing in map order.
-//
-// A Date column's value that is a Go time at midnight, a time.Time or the
-// RFC 3339 text MarshalEntity spells one in, becomes its YYYY-MM-DD. A
-// typed read gives a Date held in a time.Time as that midnight, so without
-// this the typed read, MarshalEntity, UpdateOne round trip failed Date
-// validation on every row. The HTTP body never passes here and still takes
-// YYYY-MM-DD only.
+// bodyColumns renames, in place, each key of an in-process body to the
+// column it names: a wire key, or a key MarshalEntity derived, by its
+// camel then its snake form. Two keys naming one column are refused. A
+// Date column's Go midnight becomes its YYYY-MM-DD.
 func (ch *CrudHandler) bodyColumns(body map[string]any) error {
 	snap := ch.snapshot()
 	named := make(map[string]string, len(body))
@@ -87,10 +60,7 @@ func (ch *CrudHandler) bodyColumns(body map[string]any) error {
 	return nil
 }
 
-// goDate is v as the YYYY-MM-DD a Date column stores when v is a Go time at
-// midnight, the date it names in its own zone as dateText reads it. Any
-// other value is returned unchanged for Date validation to judge, so a time
-// of day is still refused.
+// goDate is v as YYYY-MM-DD when v is a Go time at midnight, else v.
 func goDate(v any) any {
 	var t time.Time
 	switch x := v.(type) {
@@ -111,8 +81,6 @@ func goDate(v any) any {
 	return t.Format(time.DateOnly)
 }
 
-// inProcessKey marks a syntheticRequest: the caller is Go code using the
-// in-process API, not a client that came through a route.
 type inProcessKey struct{}
 
 // inProcess reports whether r was built by syntheticRequest.
@@ -121,16 +89,11 @@ func inProcess(r *http.Request) bool {
 	return v
 }
 
-// CreateOne runs the full Create pipeline (BeforeCreate hooks → INSERT →
-// AfterCreate hooks) inside a single transaction and emits entity.created on
-// commit. Returns the created row keyed by wire key (camelCase by default);
-// convert to a typed struct in your caller.
-//
-// By default ReadOnly and Hidden fields in body are silently skipped
-// (matching the HTTP Create path). To persist them from trusted server
-// code, wrap ctx with WithServerWrites, the owner and tenant columns
-// remain context-stamped regardless. Hidden fields stay absent from the
-// returned map (visibleFields shapes the projection, not the write set).
+// CreateOne creates a record through the full Create pipeline in one
+// transaction and emits entity.created on commit. It returns the row keyed
+// by wire key, or its id only when the caller's ReadScope hides it.
+// ReadOnly and Hidden fields in body are skipped unless ctx carries
+// WithServerWrites.
 func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[string]any, error) {
 	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -150,8 +113,6 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 			return err
 		}
 		result = res
-		// A row the caller's ReadScope hides comes back as its id only,
-		// the same answer as the HTTP route. See readScopeHidesRow.
 		out, err = ch.scopedReadBack(ctx, res)
 		return err
 	})
@@ -162,12 +123,9 @@ func (ch *CrudHandler) CreateOne(ctx context.Context, body map[string]any) (map[
 	return out, nil
 }
 
-// UpdateOne updates a record by id with the partial body. Hooks + tx +
-// event emission all fire as in the HTTP path.
-//
-// By default ReadOnly and Hidden fields in body are silently skipped.
-// Wrap ctx with WithServerWrites to persist them from trusted server
-// code; the owner and tenant columns are never writable from the body.
+// UpdateOne patches record id as the HTTP Update does and returns the row
+// as CreateOne does. The owner and tenant columns are never written from
+// body.
 func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string]any) (map[string]any, error) {
 	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -187,8 +145,6 @@ func (ch *CrudHandler) UpdateOne(ctx context.Context, id string, body map[string
 			return err
 		}
 		result = res
-		// A row the caller's ReadScope hides comes back as its id only,
-		// the same answer as the HTTP route. See readScopeHidesRow.
 		out, err = ch.scopedReadBack(ctx, res)
 		return err
 	})
@@ -219,9 +175,9 @@ func (ch *CrudHandler) DeleteOne(ctx context.Context, id string) error {
 	return nil
 }
 
-// GetOne fetches a single record by id, optionally eager-loading the named
-// includes. Returns sql.ErrNoRows when the record doesn't exist (or is
-// soft-deleted, unless options ask otherwise).
+// GetOne fetches record id under every read scope, with the named
+// includes and the AfterGet hooks. A missing or hidden record answers
+// errNotFound.
 func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string) (map[string]any, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, err
@@ -266,72 +222,39 @@ func (ch *CrudHandler) GetOne(ctx context.Context, id string, includes []string)
 		}
 	}
 
-	// AfterGet, in the same position the HTTP handler runs it (after
-	// includes are attached). Without this a redaction hook applied only to
-	// `GET /x/{id}` while every in-process reader, including the generated
-	// app spec detail screen and edit form, saw the stored value.
 	return ch.runAfterGet(ctx, req, id, result)
 }
 
 // ListOptions controls ListAll.
 type ListOptions struct {
-	// Filters are flat field/op/value conditions ANDed into the query,
-	// the in-process equivalent of ?field_<op>=. Hand-built entries pass
-	// the same rule the URL parser applies: each field must name a real,
-	// non-Hidden, non-NoQuery column (under its column name or WireName)
-	// and its operator must suit that column's type, so a `like` on an
-	// Int column is refused here exactly as ?amount_like= is there.
+	// Filters are ANDed conditions, checked as ?field_<op>= is: a real,
+	// non-Hidden, non-NoQuery column and an operator and value its type
+	// takes.
 	Filters []filter.ParsedFilter
-	// NestedFilters express relation-scoped predicates (the in-process
-	// equivalent of HTTP ?author.name=alice). Applied as EXISTS subqueries
-	// to both ListAll and CountAll, mirroring the HTTP List handler.
+	// NestedFilters are relation predicates, as ?author.name=alice.
 	NestedFilters []NestedFilter
 	Sorts         []filter.ParsedSort
-	// Where is a boolean predicate tree (filter.Predicate) ANDed with
-	// everything else ListAll and CountAll apply: the flat Filters,
-	// nested filters, search, and the owner, tenant, soft-delete and
-	// read scopes. It is compiled as ONE parenthesized clause, so an OR
-	// inside it can never widen past a scope. The tree is re-validated
-	// with filter.ValidatePredicate before use — a caller may have built
-	// it by hand — and the SQL is built from the resolved copy that
-	// check returns, so a tree shared across goroutines (a parsed
-	// Display view) is never written to. A refusal names the offending
-	// leaf.
-	//
-	// Build one with dsl.ParsePredicate (text such as
-	// `status = "open" and amount >= 10000`) or filter.ParseWhere (the
-	// ?where= JSON shape); both return a validated tree.
+	// Where is a predicate tree ANDed, as one clause, with everything
+	// else; it is validated before use and never written to. Build one
+	// with dsl.ParsePredicate or filter.ParseWhere.
 	Where *filter.Predicate
-	// Fields limits the columns read to the named subset plus the primary
-	// key (always included). Unknown and Hidden names are refused with an
-	// error, never silently dropped. NoQuery columns may be read: NoQuery
-	// keeps a field out of filters and sorts, not out of the row. Masking still
-	// applies: AfterList/AfterGet hooks run on whatever columns the read
-	// returned. Empty means every visible column.
+	// Fields limits the columns read to these plus the key, as ?fields=
+	// does; an unknown or Hidden name is refused. Empty reads every
+	// visible column.
 	Fields   []string
 	Limit    int
 	Offset   int
 	Includes []string
-	// Search carries a free-text ?q= term for in-process parity with the
-	// HTTP List handler. When non-empty AND the entity declares
-	// SearchFields, it produces AND-composed LOWER(col) LIKE conditions.
-	// Returns an error when set on an entity without SearchFields (fail
-	// loud, matching unknown-sort policy).
+	// Search is a ?q= term; set on an entity without SearchFields it is
+	// an error.
 	Search string
-	// Deleted lists only soft-deleted rows, the trash view a list draws
-	// beside its live one: it inverts the soft-delete filter (the read
-	// answers deleted_at IS NOT NULL) while every other scope — owner,
-	// tenant, read scope, Where, Filters, Search — applies unchanged, so
-	// the trashed rows a caller sees are the trashed rows they own. An
-	// entity without Scope.SoftDelete answers ErrNoSoftDelete, the same
-	// sentinel RestoreOne and PurgeOne use, before any SQL runs. Applies
-	// to ListAll and CountAll alike.
+	// Deleted lists only soft-deleted rows, every other scope unchanged;
+	// on an entity without Scope.SoftDelete it answers ErrNoSoftDelete.
 	Deleted bool
 }
 
-// ListAll runs a list query with optional filters/sort/limit/offset/includes
-// and returns the matching rows. Caller is responsible for paging if the
-// result set is large.
+// ListAll returns the rows opts selects under every read scope, with the
+// AfterList hooks run over them.
 func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[string]any, error) {
 	cols := ch.visibleFields()
 	if len(opts.Fields) > 0 {
@@ -345,7 +268,7 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	filter.ApplySortToQuery(qb, ch.withKeyTiebreak(opts.Sorts))
+	filter.ApplySortToQuery(qb, ch.sortTerms(ctx, opts.Sorts))
 	if opts.Limit > 0 {
 		qb.Limit(opts.Limit)
 	}
@@ -374,17 +297,11 @@ func (ch *CrudHandler) ListAll(ctx context.Context, opts ListOptions) ([]map[str
 		}
 	}
 
-	// AfterList, matching the HTTP handler. A generated app spec list screen
-	// reads through here, so skipping it meant the app's own grid printed
-	// what the API masked.
 	return ch.runAfterList(ctx, req, results)
 }
 
-// scopedSelect builds SELECT cols FROM the entity's table under every
-// scope a list read runs: opts' Where, Filters, nested filters and
-// Search, then the tenant, owner, read and soft-delete scopes and the
-// BeforeList clauses. ListAll adds sort and paging; the aggregates wrap
-// it. op names the caller in refusals.
+// scopedSelect builds SELECT cols under every scope and filter a list
+// read runs; op names the caller in refusals.
 func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOptions, cols []string) (*query.QueryBuilder, *http.Request, error) {
 	if err := ch.requireOwnerContext(ctx); err != nil {
 		return nil, nil, err
@@ -392,8 +309,6 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	if err := ch.requireTenantContext(ctx); err != nil {
 		return nil, nil, err
 	}
-	// The trash view is refused on an entity that never declared it,
-	// before any SQL could name a deleted_at column the table lacks.
 	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
 		return nil, nil, ErrNoSoftDelete
 	}
@@ -404,15 +319,9 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
 		return nil, nil, err
 	}
-	// Search: fail loud when Search is set on an entity without SearchFields.
 	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
 		return nil, nil, fmt.Errorf("%s: Search set on entity %q without SearchFields", op, ch.Entity.GetName())
 	}
-	// Where: a hand-built tree is re-validated before it reaches SQL, and
-	// the SQL is built from the resolved copy the check returns — the
-	// caller's tree is never written to (it may be shared across
-	// goroutines: a parsed Display view). Filters get the same
-	// operator/type rule ParseFilters applies to ?field_<op>=.
 	where, err := ch.validateWherePredicate(opts.Where)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%s: %w", op, err)
@@ -430,9 +339,6 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	}
 	qb := query.Select(cols...).From(ch.Entity.GetTable())
 	filter.ApplyToQuery(qb, filters)
-	// Where joins the caller filters as one parenthesized clause; the
-	// scopes below each wrap in their own parens, so an OR inside Where
-	// cannot widen past them.
 	if c := filter.BuildPredicate(where); c.SQL != "" {
 		qb.Where(c.SQL, c.Args...)
 	}
@@ -440,8 +346,6 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	ch.ApplyTenantScope(qb, req)
 	ch.ApplyOwnerScope(qb, req)
 	ch.ApplyReadScope(qb, req)
-	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
-	// the trash view's inversion — only soft-deleted rows.
 	if opts.Deleted {
 		qb.Where("deleted_at IS NOT NULL")
 	} else {
@@ -464,11 +368,8 @@ func (ch *CrudHandler) scopedSelect(ctx context.Context, op string, opts ListOpt
 	return qb, req, nil
 }
 
-// BatchCreateMany runs CreateOne for each body in a single transaction.
-// Events are emitted after commit, per item in input order; subscribers
-// run asynchronously, so they can arrive in any order. Any per-item error
-// rolls back the whole batch, same semantics as the HTTP _batch endpoint.
-// Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
+// BatchCreateMany creates each body as CreateOne does, all in one
+// transaction: any error rolls back the batch. Events go out after commit.
 func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]any) ([]map[string]any, error) {
 	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -507,8 +408,8 @@ func (ch *CrudHandler) BatchCreateMany(ctx context.Context, bodies []map[string]
 	return out, nil
 }
 
-// BatchUpdateMany runs UpdateOne for each (id, body) pair atomically.
-// Wrap ctx with WithServerWrites to persist ReadOnly/Hidden fields.
+// BatchUpdateMany patches each (id, body) pair as UpdateOne does, in one
+// transaction.
 func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies []map[string]any) ([]map[string]any, error) {
 	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -550,8 +451,8 @@ func (ch *CrudHandler) BatchUpdateMany(ctx context.Context, ids []string, bodies
 	return out, nil
 }
 
-// BatchDeleteMany deletes (or soft-deletes) each id atomically. Returns the
-// ids that were successfully removed.
+// BatchDeleteMany deletes, or soft-deletes, each id in one transaction
+// and returns the ids.
 func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]string, error) {
 	ctx = withEventStamps(ctx)
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -578,116 +479,33 @@ func (ch *CrudHandler) BatchDeleteMany(ctx context.Context, ids []string) ([]str
 	return ids, nil
 }
 
-// CountAll returns COUNT(*) for the given filters (no pagination). Cheap
-// helper for typed repos that want a totals figure without hitting List.
+// CountAll counts the rows ListAll would return for opts, ignoring
+// Limit and Offset, and refuses what ListAll refuses.
 func (ch *CrudHandler) CountAll(ctx context.Context, opts ListOptions) (int, error) {
-	if err := ch.requireOwnerContext(ctx); err != nil {
-		return 0, err
-	}
-	if err := ch.requireTenantContext(ctx); err != nil {
-		return 0, err
-	}
-	// The trash view is refused on an entity that never declared it,
-	// before any SQL could name a deleted_at column the table lacks.
-	if opts.Deleted && !ch.Entity.Config.Scope.SoftDelete {
-		return 0, ErrNoSoftDelete
-	}
-	nested, err := resolveNestedFilters(ch.Entity, ch.Registry, opts.NestedFilters)
-	if err != nil {
-		return 0, err
-	}
-	if err := ch.scopeNestedFiltersInProcess(ctx, nested); err != nil {
-		return 0, err
-	}
-	// Search: fail loud when Search is set on an entity without SearchFields.
-	if opts.Search != "" && len(ch.Entity.Config.SearchFields) == 0 {
-		return 0, fmt.Errorf("CountAll: Search set on entity %q without SearchFields", ch.Entity.GetName())
-	}
-	// Where and Filters are validated exactly as ListAll validates them,
-	// so a page count can never accept a list call's refusal (or silently
-	// ignore a filter or projection the list would reject). Fields shapes
-	// no columns here — COUNT(*) reads none — the check is for parity of
-	// refusals.
-	where, err := ch.validateWherePredicate(opts.Where)
-	if err != nil {
-		return 0, fmt.Errorf("CountAll: %w", err)
-	}
-	filters, err := ch.validateFilters(opts.Filters)
-	if err != nil {
-		return 0, fmt.Errorf("CountAll: %w", err)
-	}
-	if err := ch.refuseLegacyTimestampComparisons(ctx, filters, where); err != nil {
-		return 0, fmt.Errorf("CountAll: %w", err)
-	}
 	if len(opts.Fields) > 0 {
 		if _, err := ch.projectListFields(opts.Fields); err != nil {
 			return 0, fmt.Errorf("CountAll: %w", err)
 		}
 	}
-	searchConds, err := filter.SearchConditions(ch.Entity.Config.SearchFields, opts.Search)
-	if err != nil {
-		return 0, fmt.Errorf("CountAll: %w", err)
-	}
-	cb := query.Count(ch.Entity.GetTable())
-	filter.ApplyToCountQuery(cb, filters)
-	if c := filter.BuildPredicate(where); c.SQL != "" {
-		cb.Where(c.SQL, c.Args...)
-	}
-	req := syntheticRequest(ctx, http.MethodGet, "/")
-	ch.ApplyTenantScopeCount(cb, req)
-	ch.ApplyOwnerScopeCount(cb, req)
-	ch.ApplyReadScopeCount(cb, req)
-	// The soft-delete term: the ordinary deleted_at IS NULL filter, or
-	// the trash view's inversion — only soft-deleted rows.
-	if opts.Deleted {
-		cb.Where("deleted_at IS NOT NULL")
-	} else {
-		ch.ApplySoftDeleteFilterCount(cb, req)
-	}
-	applyNestedFilters(
-		func(sql string, args ...any) { cb.Where(sql, args...) },
-		ch.Entity.GetTable(), ch.keyCols(), nested,
-	)
-	for _, c := range searchConds {
-		cb.Where(c.SQL, c.Args...)
-	}
-	hookWheres, err := ch.runBeforeList(ctx, req)
+	qb, _, err := ch.scopedSelect(ctx, "CountAll", opts, ch.keyCols()[:1])
 	if err != nil {
 		return 0, err
 	}
-	for _, c := range hookWheres {
-		cb.Where(c.SQL, c.Args...)
-	}
-	sqlStr, args := cb.Build()
+	inner, args := qb.Build()
 	var total int
-	if err := ch.conn(ctx).QueryRowContext(ctx, sqlStr, args...).Scan(&total); err != nil {
+	if err := ch.conn(ctx).QueryRowContext(ctx, "SELECT COUNT(*) FROM ("+inner+") AS count_src", args...).Scan(&total); err != nil {
 		return 0, err
 	}
 	return total, nil
 }
 
-// validateWherePredicate runs filter.ValidatePredicate over a ListOptions
-// Where tree against the handler's field snapshot and returns the
-// RESOLVED copy it produced. ListOptions.Where is documented as taking a
-// validated tree, but a caller may have built one by hand, and field
-// names in a predicate are spliced into SQL by BuildPredicate, so the
-// same checks ParseWhere applies to URL input run here too, before any
-// SQL exists. The caller's tree is never written to — it may be shared
-// across goroutines — so the SQL is built from the returned copy, where
-// wire aliases are resolved to columns and Bool leaves carry their
-// coercion marker.
+// validateWherePredicate returns a validated, resolved copy of p.
 func (ch *CrudHandler) validateWherePredicate(p *filter.Predicate) (*filter.Predicate, error) {
 	return filter.ValidatePredicate(p, ch.queryFields())
 }
 
-// validateFilters runs the operator/type rule over hand-built
-// ListOptions.Filters: each filter's field must name a real, non-Hidden,
-// non-NoQuery column (under its column name or its WireName, the two
-// spellings ParseFilters accepts) and its operator must suit that
-// column's type — the same CheckOpType every URL filter surface applies,
-// so a `like` on an Int is refused here exactly as ?field_like= is there.
-// It returns a copy with each WireName resolved to its column, since the
-// SQL names the column; the caller's slice is never written to.
+// validateFilters checks hand-built filters as ParseFilters checks URL
+// ones and returns a copy keyed by column.
 func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.ParsedFilter, error) {
 	if len(filters) == 0 {
 		return nil, nil
@@ -712,9 +530,6 @@ func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.
 		if err := filter.CheckOpType(pf.Field, pf.Op, f.Type); err != nil {
 			return nil, fmt.Errorf("filter: %w", err)
 		}
-		// The value must be of the column's type too, the check the HTTP
-		// parser runs, so a mistyped value is the same error on both
-		// dialects rather than a Postgres bind failure.
 		typed, err := pf.Typed(f.Type)
 		if err != nil {
 			return nil, fmt.Errorf("filter: %w", err)
@@ -725,29 +540,23 @@ func (ch *CrudHandler) validateFilters(filters []filter.ParsedFilter) ([]filter.
 	return out, nil
 }
 
-// projectListFields resolves a ListOptions.Fields projection to the
-// columns ListAll reads through projectFromRequestQ, the ?fields= parser:
-// the unknown/Hidden refusal, the JSON-cased name mapping and the
-// always-included primary key are that parser's, so the in-process list
-// and the HTTP list project the same way.
+// projectListFields resolves ListOptions.Fields through the ?fields=
+// parser.
 func (ch *CrudHandler) projectListFields(names []string) ([]string, error) {
 	q := url.Values{"fields": {joinNonEmpty(names, ",")}}
 	return ch.projectFromRequestQ(q)
 }
 
-// buildIncludeNodesFromNames takes a flat list of include names (possibly
-// dotted) and runs them through the same parser HTTP requests use. Lets
-// in-process callers use ?include= semantics without constructing a URL.
+// buildIncludeNodesFromNames parses include names through the ?include=
+// parser.
 func buildIncludeNodesFromNames(ent *entity.Entity, registry entity.Registry, names []string) ([]*IncludeNode, error) {
 	if len(names) == 0 {
 		return nil, nil
 	}
-	// The query value as parsed, not a URL: a space, + or # in a filter
-	// must reach the parser as written.
 	return parseIncludeTreeQ(url.Values{"include": {joinNonEmpty(names, ",")}}, ent, registry)
 }
 
-// joinNonEmpty is strings.Join but trims and drops empties.
+// joinNonEmpty is strings.Join dropping empty parts.
 func joinNonEmpty(parts []string, sep string) string {
 	out := ""
 	for _, p := range parts {

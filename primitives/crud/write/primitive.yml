@@ -21,6 +21,7 @@ invariants:
     enforced_by:
       - test: framework/crud.TestRelWriteForeignBelongsToRefused
       - test: framework/crud.TestUpsertChecksBelongsToScope
+      - test: framework/crud.TestBelongsToSoftDeletedTargetIsRefused
   - id: foreign-key-ignores-relation-reachable
     rule: A BelongsTo foreign-key write is not subject to relationReachable, so it succeeds onto a target with CRUD off and from a scope-restricted token that lacks the target's table read scope; the target row must still be readable under its owner, tenant and read scopes, and a hidden row answers the same as a missing one.
     enforced_by:
@@ -36,6 +37,85 @@ invariants:
     rule: PurgeOne removes only rows that are already soft-deleted.
     enforced_by:
       - test: framework/crud.TestPurgeOneRefusesLiveRow
+  - id: foreign-key-null-or-unregistered-unchecked
+    rule: A BelongsTo foreign key with a null column, or onto an entity the registry does not hold, is written without a target lookup.
+    enforced_by:
+      - test: framework/crud.TestBelongsToNullKeyIsNotLookedUp
+      - test: framework/crud.TestBelongsToUnregisteredTargetIsSkipped
+  - id: update-never-moves-owner-or-tenant
+    rule: An update never writes the owner or tenant column from the body, even under WithServerWrites.
+    enforced_by:
+      - test: framework/crud.TestUpdateKeepsTenantColumn
+      - test: framework/crud.TestBelongsToCascadeOwnerKeyOnUpdate
+  - id: create-without-tenant-refused
+    rule: doCreate refuses a row on a multi-tenant entity when the context names no tenant, whichever path reached it.
+    enforced_by:
+      - test: framework/crud.TestCreateWithoutTenantIsRefused
+  - id: before-hooks-see-coerced-values
+    rule: BeforeCreate and BeforeUpdate hooks see a form's number as a number, not its text.
+    enforced_by:
+      - test: framework/crud.TestBeforeHooksSeeCoercedNumbers
+  - id: provenance-checks-caller-body
+    rule: Storage-key provenance is checked on the caller's body before the Before hooks run, so a key a hook sets is not refused.
+    enforced_by:
+      - test: framework/crud.TestHookSetStorageKeySkipsProvenance
+      - test: framework/crud.TestInProcessCreateRefusesKey
+  - id: write-scope-finds-the-target
+    rule: Restore, purge, a move and a cascade-only update find their row under the owner write scope, so a CrossOwnerRead grant reads another owner's row but cannot write to it.
+    enforced_by:
+      - test: framework/crud.TestCrossOwnerReadCannotRestoreForeign
+      - test: framework/crud.TestCrossOwnerReadCannotCascadeIntoForeignRow
+      - test: framework/crud.TestCrossOwnerReadCannotMoveForeignRow
+  - id: conditional-write-pinned
+    rule: The UPDATE of a restore matches only a still-trashed row, and that of a move only a live row whose value is in From, so a row changed between the read and the write answers a refusal, not a success.
+    enforced_by:
+      - test: framework/crud.TestRestoreUpdatePinnedToTrashedRow
+      - test: framework/crud.TestRunTransitionUpdateSkipsRowDeletedMidMove
+      - test: framework/crud.TestRunTransitionRaceConflict
+  - id: restore-is-an-update
+    rule: RestoreOne runs the update permission, which WithServerWrites skips, and the BeforeUpdate hooks, which can veto it.
+    enforced_by:
+      - test: framework/crud.TestRestoreBeforeUpdateHookVetoes
+      - test: framework/crud.TestServerWritesRestoreAndPurgeSkipPermission
+      - test: framework/crud.TestRestoreDenialWrapsErrForbidden
+  - id: audit-operation-names-one-write
+    rule: An audit operation override (restore, purge, state_override, transition) answers only for its own entity and record, and a write a hook starts from it records its own operation, even on the same record.
+    enforced_by:
+      - test: framework/crud.TestAuditOperationNamesOnlyItsRecord
+      - test: framework/crud.TestHookWriteDuringRestoreRecordsItsOwnOperation
+      - test: framework/crud.TestStateOverrideUpdateAuditsItsOperation
+  - id: constraint-refusal-names-sent-fields
+    rule: A UNIQUE, FOREIGN KEY or NOT NULL refusal names only this entity's declared fields, and only ones the caller sent for UNIQUE and FOREIGN KEY; a Hidden or NoQuery field keeps the refusal bare, and driver text never reaches the response.
+    enforced_by:
+      - test: framework/crud.TestCompositeConflictNamesSentField
+      - test: framework/crud.TestConflictOnSensitiveFieldIsBare
+      - test: framework/crud.TestNotNullNamesField
+      - test: framework/crud.TestNotNullColumnOtherRelationIsNotOurs
+  - id: transition-route-hides-unreadable-row
+    rule: The transition route answers the id only when the move leaves the row outside the caller's read scope.
+    enforced_by:
+      - test: framework/crud.TestTransitionRouteHidesRowLeavingReadScope
+  - id: upsert-checks-media-urls
+    rule: UpsertOne refuses a media URL outside the http, https and relative allow-list, as create and update do, even under WithServerWrites.
+    enforced_by:
+      - test: framework/crud.TestUpsertRefusesScriptMediaURL
+  - id: upsert-blank-filled-by-hook-is-a-value
+    rule: A blank form value a BeforeCreate hook fills is written by the upsert's conflict arm, not cleared.
+    enforced_by:
+      - test: framework/crud.TestUpsertHookFilledBlankIsKept
+  - id: upsert-that-writes-nothing-is-silent
+    rule: An upsert that lands on an existing row and writes no column runs no After hook and emits no event.
+    enforced_by:
+      - test: framework/crud.TestUpsertThatWritesNothingIsSilent
+  - id: count-refuses-what-list-refuses
+    rule: ListAll and CountAll refuse a hand-built filter on a Hidden or NoQuery field or with a value its column's type does not take, a Search on an entity without SearchFields and a legacy-layout timestamp comparison, each the same as the other.
+    enforced_by:
+      - test: framework/crud.TestCountAllRefusesWhatListAllRefuses
+  - id: link-target-reachable
+    rule: A many-to-many link onto a target the request cannot reach through a relation, or with an Int key given as an inexact float, is refused, the former with the not-found an unreadable row answers.
+    enforced_by:
+      - test: framework/crud.TestCascadeLinkOntoUnreachableTargetIsNotFound
+      - test: framework/crud.TestCascadeLinkRefusesInexactIntID
 decisions:
   - id: foreign-key-skips-relation-reachable
     status: accepted
@@ -44,3 +124,84 @@ decisions:
       - option: Apply relationReachable to foreign-key writes too.
         why: It refuses ordinary references onto entities with CRUD off, such as posts.author_id onto users, and an items-only token filing an item under its own order; a foreign key is a column of the caller's own row and the write never returns the target's fields.
     upholds: [foreign-key-target-readable, foreign-key-ignores-relation-reachable]
+  - id: writes-join-outer-tx-under-savepoint
+    date: 2026-11-15
+    status: accepted
+    decision: A write inside a transaction it did not open (one on ctx, or a handler bound to a *sql.Tx) runs under a savepoint and never commits or rolls back the outer transaction.
+    rejected:
+      - option: Run the write straight on the outer transaction.
+        why: A batch whose third item failed left the first two written for a caller that handled the error and committed, and on Postgres the failed statement aborted the outer transaction.
+      - option: Begin a nested transaction.
+        why: database/sql has none; the outer owner must decide commit or rollback.
+  - id: cascade-events-wait-for-the-operation
+    date: 2026-11-15
+    status: accepted
+    decision: A cascade child's event goes on the commit queue when ctx has one, else is held until the operation succeeds and then sent on the pool handler, which confirms the row exists.
+    rejected:
+      - option: Emit each child event when the child is written.
+        why: A cascade that failed on a later item had already announced the first child.
+  - id: sqlite-write-lock-before-move-read
+    date: 2026-11-15
+    status: accepted
+    decision: doTransition runs an UPDATE that matches no row before it reads the target, to take SQLite's write lock.
+    rejected:
+      - option: Read first under SQLite's deferred transaction.
+        why: The later UPDATE failed with SQLITE_BUSY after the BeforeUpdate hooks ran when another connection committed in between.
+    revisit_if: The framework opens SQLite transactions with BEGIN IMMEDIATE, or drops SQLite.
+  - id: upsert-guard-in-statement
+    date: 2026-11-15
+    status: accepted
+    decision: UpsertOne both preflights the existing row (unscoped, after the BeforeCreate hooks) and carries the owner, tenant and soft-delete guard in its DO UPDATE WHERE.
+    rejected:
+      - option: Preflight alone.
+        why: It is a separate read; under READ COMMITTED a row another session commits after it is still the row ON CONFLICT resolves against.
+      - option: Guard alone.
+        why: A refused conflict returns no row, so the caller could not be told whether the row was another owner's, another tenant's or soft-deleted.
+  - id: upsert-refuses-before-update-hooks
+    date: 2026-11-15
+    status: accepted
+    decision: UpsertOne refuses an entity with BeforeUpdate hooks before any hook or SQL.
+    rejected:
+      - option: Run BeforeUpdate when the pre-read finds the key.
+        why: The pre-read cannot tell atomically which arm the statement takes, so the hook could run for an insert or miss an update.
+    revisit_if: Every supported dialect reports the arm an upsert took in its RETURNING.
+  - id: batch-response-hooks-after-commit
+    date: 2026-11-15
+    status: accepted
+    decision: The batch routes run the AfterGet response hooks over each item after the transaction commits and the raw record has gone to the bus.
+    rejected:
+      - option: Run them inside the transaction closure.
+        why: A hook that reads the database deadlocked a single-connection pool, a hook error rolled the batch back, and the bus received the redacted copy instead of the stored row.
+  - id: batch-envelope-strict
+    date: 2026-11-15
+    status: accepted
+    decision: The _batch envelope refuses a duplicated, case-folded or unknown top-level key before anything binds.
+    rejected:
+      - option: Let encoding/json decode it.
+        why: A duplicate key is last-one-wins and matching is case-insensitive, so an upstream check of the first "items" saw a different payload than the handler ran.
+    upholds: [batch-envelope-exact-keys]
+  - id: blank-form-value-is-not-provided
+    date: 2026-11-15
+    status: accepted
+    decision: A blank form value of a non-text field is not provided; removed on create so the Default applies, nil on update so blanking a control clears it, and on a file update left alone.
+    rejected:
+      - option: Validate "" as a value.
+        why: A number left blank failed as "must be an integer" on a field the user never touched.
+      - option: Drop the blank on update too.
+        why: The stored value stayed while the save reported success.
+  - id: state-override-needs-audit
+    date: 2026-11-15
+    status: accepted
+    decision: WithStateOverride releases the state field only with a reason and an audit log on the entity; WithServerWrites never releases it.
+    rejected:
+      - option: Let WithServerWrites write the state field.
+        why: The override's only trail is the audit row, and server writes leave none of their own.
+    upholds: [audit-operation-names-one-write]
+  - id: count-reuses-list-scope
+    date: 2026-11-15
+    status: accepted
+    decision: CountAll counts the scopedSelect ListAll and the aggregates run, wrapped in SELECT COUNT(*).
+    rejected:
+      - option: Build the count on query.CountBuilder with its own copy of the scopes and checks.
+        why: Two copies of the same checks could drift unseen; no test covered CountAll's own refusals.
+    upholds: [count-refuses-what-list-refuses]
