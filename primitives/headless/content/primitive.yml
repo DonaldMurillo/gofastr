@@ -18,3 +18,521 @@ code:
   - framework/headless/lightbox.go
   - framework/headless/stepwizard.go
   - framework/headless/wizard_behavior.go
+invariants:
+  - id: kit-marks-own-subtrees
+    rule: Each content component puts data-cui-internal on the topmost element of every subtree that holds none of the caller's content, and on no element that holds or encloses a slot.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+  - id: section-landmark-only-when-named
+    rule: Section renders a <section> named by its heading through aria-labelledby, or by Label through aria-label when there is no Title, and a plain div when it has neither.
+    enforced_by:
+      - test: framework/headless.TestSectionIsALandmarkOnlyWhenItIsNamed
+      - test: framework/headless.TestSectionNameResolvesToItsHeading
+      - test: framework/headless.TestSectionLabelledByNameKeepsItsEyebrow
+  - id: eyebrows-are-hidden
+    rule: The eyebrow of a Section, in the titled and the Label-only render, and of a PageHeader renders aria-hidden.
+    enforced_by:
+      - test: framework/headless.TestSweepContentEyebrowsAreHidden
+  - id: heading-levels-fall-back
+    rule: A Level outside 1 to 6 renders the component's default heading, h2 for Section, h1 for PageHeader and h3 for EmptyState.
+    enforced_by:
+      - test: framework/headless.TestSectionHeadingLevelIsHonoured
+      - test: framework/headless.TestSweepContentPageSurfacesDefaultTheirHeadingLevel
+  - id: slug-ids-keep-every-script
+    rule: slugID keeps letters and digits of every script, lowercased, so two titles in different non-Latin words derive different ids.
+    enforced_by:
+      - test: framework/headless.TestFieldsetAndSectionSlugIDsDifferForNonLatinTitles
+      - test: framework/headless.TestTableCaptionIDsDifferForDifferentNonLatinCaptions
+  - id: derived-ids-unique-explicit-kept
+    rule: A Section's or Carousel's derived id goes through render.UniqueID so a repeat on the page is suffixed, and an explicit ID or slide ID is reserved and never changed.
+    enforced_by:
+      - test: framework/headless.TestSweepContentDerivedIDsAreUnique
+      - test: framework/headless.TestCarouselReservesSlideIDs
+  - id: divider-says-what-it-means
+    rule: Divider renders an <hr> with no role, a div with role=separator and hidden rules when labelled, and an aria-hidden div when Decorative.
+    enforced_by:
+      - test: framework/headless.TestDividerSaysWhetherItMeansAnything
+      - test: framework/headless.TestLabelledDividerKeepsItsRoleAndHidesItsRules
+  - id: layout-modifiers-independent
+    rule: Each layout modifier is its own class-map lookup under the key "<axis>-<value>", never a combined key.
+    enforced_by:
+      - test: framework/headless.TestLayoutModifiersAreIndependent
+  - id: spacer-is-an-empty-hidden-span
+    rule: Spacer renders an empty aria-hidden <span> carrying data-hui-grow, and panics on a Grow outside 1 to 4 or on Leader with Rule.
+    enforced_by:
+      - test: framework/headless.TestSpacerIsHiddenAndEmpty
+      - test: framework/headless.TestSpacerRefusesAGrowNoRuleCarries
+      - test: framework/headless.TestSpacerRefusesALeaderAndARuleAtOnce
+  - id: page-header-claims-no-role
+    rule: PageHeader renders a plain <header> with no role, an ExtraAttrs role included.
+    enforced_by:
+      - test: framework/headless.TestPageHeaderClaimsNoBannerRole
+  - id: page-surfaces-refuse-nameless
+    rule: PageHeader and EmptyState panic without Title, StatCard without Label or Value, and DetailList without a row or with a row missing Label or Value.
+    enforced_by:
+      - test: framework/headless.TestPageHeaderRefusesATitlelessHeader
+      - test: framework/headless.TestEmptyStateRefusesATitlelessRegion
+      - test: framework/headless.TestStatCardRefusesAnUnlabelledValue
+      - test: framework/headless.TestDetailListRefusesAnEmptyRecord
+  - id: empty-state-is-a-named-region
+    rule: EmptyState is a role=region labelled by its heading "<ID>-title" when it has an ID, and by an aria-label equal to Title with no heading id when it has none.
+    enforced_by:
+      - test: framework/headless.TestEmptyStateIsARegionNamedByItsHeading
+  - id: stat-card-reads-label-first
+    rule: StatCard renders its label before its value and its value before its trend.
+    enforced_by:
+      - test: framework/headless.TestStatCardReadsLabelFirst
+  - id: stat-card-direction
+    rule: StatCard panics on a Direction other than up, down or flat, and with a Trend renders it as data-direction and as the trend part's variant.
+    enforced_by:
+      - test: framework/headless.TestStatCardDirectionLandsOnTheTrend
+  - id: stat-card-action-outside-link
+    rule: StatCard draws its Action after the label's link, never inside it, and its Icon in an aria-hidden span.
+    enforced_by:
+      - test: framework/headless.TestSweepContentStatCardActionSitsOutsideTheLink
+  - id: configured-hrefs-panic
+    rule: A Card Href, a StatCard Href or a StepWizard Action that the anchor policy refuses panics at render, and so does a Card with both Href and Action.
+    enforced_by:
+      - test: framework/headless.TestSweepContentConfiguredHrefsAreRefused
+  - id: detail-list-is-a-dl
+    rule: DetailList renders a <dl> whose rows each hold one <dt> and the <dd> after it.
+    enforced_by:
+      - test: framework/headless.TestDetailListRendersADescriptionList
+  - id: card-title-tag-is-a-heading
+    rule: Card panics on a TitleTag that is not h1 to h6.
+    enforced_by:
+      - test: framework/headless.TestCardRefusesAnUnknownTitleTag
+  - id: linked-card-is-one-anchor
+    rule: A Card with Href renders its root as one <a> wrapping a single inner part.
+    enforced_by:
+      - test: framework/headless.TestCardHrefMakesTheSurfaceTheLink
+  - id: card-header-is-the-one-slot
+    rule: PartCardHeader is the Card's only fillable part, and a Card with no title, description, action or filled header draws no header.
+    enforced_by:
+      - test: framework/headless.TestEveryFillablePartTakesATextBind
+      - test: framework/headless.TestSpecGolden
+  - id: table-sort-href-replaces
+    rule: A sort href is built through net/url on Path with the carried query, its sort and direction parameters set rather than appended.
+    enforced_by:
+      - test: framework/headless.TestTableSortReplacesTheSortAndCarriesTheQuery
+  - id: table-sort-is-three-state
+    rule: aria-sort is ascending or descending on the active column and none on every other sortable one, the active anchor flips the direction and every other sorts ascending.
+    enforced_by:
+      - test: framework/headless.TestTableSortIsThreeStateAndCycles
+  - id: table-path-is-configuration
+    rule: Table panics on a Path that is not same-origin, that carries a query or fragment, or whose sort href the anchor policy refuses.
+    enforced_by:
+      - test: framework/headless.TestTableRefusesWhatItCannotRender
+      - test: framework/headless.TestTableRefusesAPathWithItsOwnQuery
+      - test: framework/headless.TestSweepContentTableSortHrefMeetsTheAnchorPolicy
+  - id: table-query-is-scrubbed
+    rule: The carried query loses its control bytes rather than being refused, a key or value that scrubs to empty is dropped, and a value that was empty to begin with is carried.
+    enforced_by:
+      - test: framework/headless.TestTableScrubsControlBytesFromTheCarriedQuery
+      - test: framework/headless.TestSweepContentTableCarriesAnExplicitEmptyFilter
+  - id: table-explicit-roles
+    rule: Every table element carries its explicit role (table, rowgroup, row, columnheader, cell).
+    enforced_by:
+      - test: framework/headless.TestTableIsATableWithScopedColumnHeaders
+  - id: table-scroll-region
+    rule: The table sits in a role=region with tabindex 0, labelled by the caption's id when there is a caption and carrying no aria-labelledby when there is none.
+    enforced_by:
+      - test: framework/headless.TestTableScrollRegionIsNamedByTheCaption
+      - test: framework/headless.TestTableRootIsOneShapeWithAScrollRegion
+  - id: table-footer-and-status-outside
+    rule: The Footer renders after the scroll region, outside the table, and the root's last child is an empty role=status span with no aria-live.
+    enforced_by:
+      - test: framework/headless.TestTableRootIsOneShapeWithAScrollRegion
+      - test: framework/headless.TestTableBehaviourHooks
+  - id: table-announcement-on-the-server
+    rule: data-hui-table-announcement is the sort sentence from Strings plus the Summary after a space, the Summary alone without a sort, and absent with neither.
+    enforced_by:
+      - test: framework/headless.TestTableAnnouncementIsComposedOnTheServer
+  - id: table-headerless-columns
+    rule: A column with no Header is hidden from assistive tech when it cannot sort, and its sort anchor is named from Strings.TableSortBy when it can.
+    enforced_by:
+      - test: framework/headless.TestTableHeaderlessColumns
+  - id: table-cells-carry-data-label
+    rule: Every cell of a column with a Header carries data-label equal to that Header, and no other cell does.
+    enforced_by:
+      - test: framework/headless.TestTableCellsCarryTheHeaderTheyShowCollapsed
+  - id: table-refusals
+    rule: Table panics on no columns, a column without Key, two columns with one Key, a row cell naming no column, and a column both SelectAll and Sortable.
+    enforced_by:
+      - test: framework/headless.TestTableRefusesWhatItCannotRender
+      - test: framework/headless.TestTableRefusesASortingSelectAll
+  - id: table-sort-hooks-island-only
+    rule: data-hui-table-signal and data-hui-table-sort render only on an island table.
+    enforced_by:
+      - test: framework/headless.TestTableBehaviourHooks
+  - id: table-empty-keeps-head
+    rule: A table with no rows keeps its head and renders Empty in one cell spanning every column, or an empty tbody without it.
+    enforced_by:
+      - test: framework/headless.TestTableEmptyBodyKeepsTheHead
+  - id: table-column-variant
+    rule: A column's Variant class lands on its own <th> and every <td> under it, joined to the part's class.
+    enforced_by:
+      - test: framework/headless.TestTableColumnVariantLandsOnHeaderAndCells
+  - id: table-select-all-never-submits
+    rule: A select-all header checkbox is named by its column's Header or Strings.TableSelectAll and carries no name attribute.
+    enforced_by:
+      - test: framework/headless.TestSweepContentSelectAllHeaderIsNamedAndNeverSubmitted
+  - id: tree-refusals
+    rule: Tree panics without ID, Label or Nodes, without LazySignalPrefix when a node is lazy, and on a blank, non-bare or repeated node ID or a blank node Label.
+    enforced_by:
+      - test: framework/headless.TestTreeRefusesBrokenConfiguration
+  - id: tree-is-one-tab-stop
+    rule: Only the first root row has tabindex 0, every other row, row link and toggle has tabindex -1, and the toggle is aria-hidden.
+    enforced_by:
+      - test: framework/headless.TestTreeRendersTheRovingTabindexAndSetMath
+      - test: framework/headless.TestSweepContentTreeIsOneTabStop
+  - id: tree-lazy-branch
+    rule: A lazy branch renders collapsed whatever Expanded says, with a POST data-cui-rpc toggle to a same-origin LazyPath and a hidden group bound to "<prefix>-<id>"; a node with Children ignores LazyPath.
+    enforced_by:
+      - test: framework/headless.TestTreeLazyExpandedStartsCollapsed
+      - test: framework/headless.TestTreeLazyBranchKeepsThePatternContract
+      - test: framework/headless.TestSweepContentRPCSinksAreSameOrigin
+  - id: tree-unsafe-href-is-a-label
+    rule: A node Href the anchor policy refuses renders a plain span label, and every label is scrubbed of control bytes.
+    enforced_by:
+      - test: framework/headless.TestTreeDropsDangerousHrefs
+      - test: framework/headless.TestTreeScrubsCarriedLabels
+  - id: behaviours-markers-and-requires
+    rule: The tree, sortable list, carousel and wizard behaviours each register their root's data-hui marker, and only the tree requires the rpc module.
+    enforced_by:
+      - test: framework/headless.TestSweepContentBehaviorsRegisterTheirMarkersAndRequires
+  - id: json-tree-deterministic
+    rule: JSONTree renders object keys in sorted order, so two renders of one value are byte-identical.
+    enforced_by:
+      - test: framework/headless.TestSweepContentJSONTreeSortsKeys
+  - id: json-tree-keeps-digits
+    rule: JSONTree renders an integer past 2^53 with its own digits rather than a rounded float.
+    enforced_by:
+      - test: framework/headless.TestJSONTreeKeepsBigIntegers
+  - id: json-tree-truncates-runes
+    rule: MaxStringLen counts runes, so a truncated string never ends inside a character.
+    enforced_by:
+      - test: framework/headless.TestJSONTreeTruncatesOnRuneBoundary
+  - id: json-tree-refuses-non-json
+    rule: JSONTree panics on a Value that does not marshal to JSON.
+    enforced_by:
+      - test: framework/headless.TestJSONTreeRefusesUnmarshalableValues
+  - id: json-tree-open-depth
+    rule: A collection at depth up to OpenDepth renders open, every collection does at -1, and an empty one renders as its word rather than a details.
+    enforced_by:
+      - test: framework/headless.TestJSONTreeOpenDepthAndTruncation
+      - test: framework/headless.TestJSONTreeRendersNativeDetailsAndWords
+  - id: sortable-key-is-data
+    rule: A SortableItem Key renders escaped with its control bytes scrubbed, and only an empty Key panics.
+    enforced_by:
+      - test: framework/headless.TestSortableListKeysAreData
+  - id: sortable-sinks-same-origin
+    rule: SortableList panics on an RPCPath or ConflictRPC that is not same-origin.
+    enforced_by:
+      - test: framework/headless.TestSweepContentRPCSinksAreSameOrigin
+  - id: sortable-announcements-from-strings
+    rule: Every sortable announcement travels as a data-hui-sortable-s-* attribute taken from Strings.
+    enforced_by:
+      - test: framework/headless.TestSortableListAnnouncementsComeFromStrings
+  - id: sortable-row-is-the-control
+    rule: Each row is a role=option <li> with draggable="true" and tabindex 0 that holds no button, its grip an aria-hidden span.
+    enforced_by:
+      - test: framework/headless.TestSortableListRendersTheRowsAndContract
+      - test: framework/headless.TestSweepContentSortableRowIsTheOnlyControl
+      - test: framework/headless.TestNoEnumeratedAttributeRendersEmpty
+  - id: sortable-wiring-as-given
+    rule: An empty SortableList still renders its <ol> and wiring, SortableItems renders the rows without it, and Group, Container, Version and ConflictRPC render only when set.
+    enforced_by:
+      - test: framework/headless.TestSortableListEmptyColumnStaysADropTarget
+      - test: framework/headless.TestSortableItemsRendersTheRowsWithoutTheWrapper
+      - test: framework/headless.TestSortableListOmitsTheWiringItWasNotGiven
+  - id: sortable-version-renewal
+    rule: RenewSortableVersion sets X-Gofastr-Sortable-Version to the path-escaped version, and sets nothing for an empty one.
+    enforced_by:
+      - test: framework/headless.TestSweepContentRenewSortableVersionEscapesAndSkipsEmpty
+  - id: selection-bar
+    rule: Selection panics on a blank Bar or Body, draws the bar before the rows unless Floating, and a floating bar after them with the count, a reset button for Form, and the copy hooks only when Copy and CopyURL are both set.
+    enforced_by:
+      - test: framework/headless.TestSweepContentSelectionDrawsItsBar
+  - id: carousel-refusals
+    rule: Carousel panics on a blank Label, no slides, a negative AutoRotateMS or VisiblePerView, and repeated slide ids, and accepts a VisiblePerView above 8.
+    enforced_by:
+      - test: framework/headless.TestCarouselRefusesBrokenConfiguration
+      - test: framework/headless.TestCarouselVisiblePerViewClampsAtEight
+  - id: carousel-leaves-caller-slides
+    rule: Carousel derives slide ids on a copy, never writing into the caller's slice.
+    enforced_by:
+      - test: framework/headless.TestCarouselSharedSlidesKeepOwnIDs
+  - id: carousel-live-region
+    rule: The carousel's live region is polite, and aria-live="off" when AutoRotateMS is set.
+    enforced_by:
+      - test: framework/headless.TestCarouselHasALiveStatus
+  - id: carousel-works-without-script
+    rule: Every dot is an anchor to its slide's id, and the track carries the status sentence and its format with the slide count.
+    enforced_by:
+      - test: framework/headless.TestCarouselRendersTrackControlsAndDots
+  - id: gallery-refusals
+    rule: Gallery panics without items or Label, on an item without Src or with an Alt that scrubs to empty, and on control bytes in the lightbox Name or Group.
+    enforced_by:
+      - test: framework/headless.TestGalleryRefusesBrokenConfiguration
+  - id: gallery-unsafe-urls-degrade
+    rule: An href the anchor policy refuses renders "#", and a thumbnail or viewer src the image policy refuses renders /__gofastr/blank.png.
+    enforced_by:
+      - test: framework/headless.TestGalleryUnsafeHrefDegrades
+      - test: framework/headless.TestGalleryHostileThumbAndAttrsDegrade
+      - test: framework/headless.TestGalleryDeeplinkSrcIsCleaned
+      - test: framework/headless.TestSweepContentGalleryUnsafeSrcDegrades
+  - id: gallery-item-attrs-are-safe
+    rule: ExtraAttrsPerItem passes through Safe with href owned, so event handlers, style and data-hui-*/data-cui-* keys never reach an item's anchor.
+    enforced_by:
+      - test: framework/headless.TestGalleryHostileThumbAndAttrsDegrade
+  - id: gallery-deeplink-round-trips
+    rule: Each deeplink key and value is query-escaped with a space as %20, and the group defaults to "<Name>-gallery".
+    enforced_by:
+      - test: framework/headless.TestGalleryDeeplinkSurvivesAmpersands
+      - test: framework/headless.TestGalleryLightboxWiring
+  - id: lightbox-one-vocabulary
+    rule: LightboxViewer renders the data-hui-lightbox* hooks exactly when Wiring.Viewer is empty and the data-fui-lightbox* family exactly when it is set.
+    enforced_by:
+      - test: framework/headless.TestLightboxViewerWiringSuppressesTheHostHooks
+  - id: lightbox-nav-needs-viewer
+    rule: LightboxViewer panics on Wiring.Nav without Wiring.Viewer.
+    enforced_by:
+      - test: framework/headless.TestLightboxViewerWiringNavNeedsAViewer
+  - id: lightbox-widget-signals
+    rule: The viewer binds the alt, src and caption signals of the lightbox widget contract, none in html mode, and its title span's id is "<Name>-title".
+    enforced_by:
+      - test: framework/headless.TestLightboxViewerBindsTheWidgetContractSignals
+      - test: framework/headless.TestLightboxViewerTitleIsTheLabelledByTarget
+  - id: wizard-refusals
+    rule: StepWizard panics on no steps, a heading that trims to empty, Current outside the steps, a missing Action, a Method other than GET or POST, Errors without ID, and a half-wired Island.
+    enforced_by:
+      - test: framework/headless.TestStepWizardRefusesBrokenFlows
+  - id: wizard-enter-means-next
+    rule: The wizard's first submit control in tree order is a hidden, untabbable twin of Next, ahead of Back and Next in their visible order.
+    enforced_by:
+      - test: framework/headless.TestStepWizardDefaultButtonIsNext
+  - id: wizard-posts-its-step
+    rule: The wizard is a POST form by default whose controls submit wizard_action, whose current dot carries aria-current="step", whose failed submit carries data-hui-form-errors, and whose Island adds the RPC contract beside the action.
+    enforced_by:
+      - test: framework/headless.TestStepWizardPostsItsActions
+      - test: framework/headless.TestStepWizardRailNamesItsSteps
+      - test: framework/headless.TestStepWizardErrorsRideTheExistingFocusHook
+      - test: framework/headless.TestStepWizardIslandCarriesTheRPCContract
+  - id: wizard-heading-takes-focus
+    rule: The current step's heading carries tabindex -1, so the behaviour can focus it after a swap.
+    enforced_by:
+      - test: framework/headless.TestSweepContentStepWizardHeadingTakesScriptFocus
+decisions:
+  - id: layout-sizes-are-named-steps
+    date: 2026-11-16
+    status: accepted
+    decision: Gap, Min, Max and Size take a step name from the scale that the class map resolves, never a length.
+    rejected:
+      - option: A free-form length, as framework/ui's Grid took for Min.
+        why: That Grid wrote a data attribute no stylesheet read, so every value did nothing; a named step either has a rule or shows as a typo.
+    upholds: [layout-modifiers-independent]
+  - id: modifiers-keyed-per-axis
+    date: 2026-11-16
+    status: accepted
+    decision: mods looks up one class per modifier, keyed "<axis>-<value>".
+    rejected:
+      - option: One combined key such as "root--md--center".
+        why: The class map would have to enumerate every gap crossed with every alignment, and the first pair nobody listed renders unstyled.
+      - option: Keys without the axis.
+        why: A gap and an alignment both named "center" would collide.
+    upholds: [layout-modifiers-independent]
+  - id: decorative-divider-is-a-div
+    date: 2026-11-16
+    status: accepted
+    decision: A decorative Divider is an aria-hidden div and a labelled one a div with role=separator.
+    rejected:
+      - option: An <hr> with aria-hidden for the decorative line.
+        why: It makes a semantic element deny what it means.
+      - option: An <hr> holding the label.
+        why: An <hr> has no content model.
+    upholds: [divider-says-what-it-means]
+  - id: spacer-is-a-span-with-a-grow-hook
+    date: 2026-11-16
+    status: accepted
+    decision: Spacer is a <span> whose grow factor travels as data-hui-grow.
+    rejected:
+      - option: A div.
+        why: A contents list is one paragraph, and a div inside a <p> makes the parser close the paragraph and split the list.
+      - option: An inline style for the factor.
+        why: The CSP drops inline styles.
+      - option: One class per factor.
+        why: The class map would have to enumerate classes from a number it cannot see.
+    upholds: [spacer-is-an-empty-hidden-span]
+  - id: slug-prefix-is-the-component
+    date: 2026-11-16
+    status: accepted
+    decision: A derived id is prefixed with the component's own name ("section", "table").
+    rejected:
+      - option: The class map's namespace.
+        why: It would tie the structure's ids to one class map's naming.
+  - id: page-header-leaves-banner-to-the-page
+    date: 2026-11-16
+    status: accepted
+    decision: PageHeader claims no role and leaves the browser's header semantics standing.
+    rejected:
+      - option: role="banner".
+        why: Banner belongs to the one top-level page header, and only the page knows whether this header is it.
+    upholds: [page-header-claims-no-role]
+  - id: empty-state-named-by-label-without-id
+    date: 2026-11-16
+    status: accepted
+    decision: An EmptyState without an ID is named by an aria-label of its Title, and its heading carries no id.
+    rejected:
+      - option: An id derived from the Title.
+        why: Two empty panels with one title on a page would share it.
+    upholds: [empty-state-is-a-named-region]
+  - id: card-slot-only-where-it-composes
+    date: 2026-11-16
+    status: accepted
+    decision: The Card's header is its one fillable part, because it is the only part built from props that no prop can extend with a control.
+    rejected:
+      - option: Slots on the body and footer too.
+        why: They already take caller content, so a slot there is a second way to do one thing.
+    upholds: [card-header-is-the-one-slot]
+  - id: configured-hrefs-refuse
+    date: 2026-11-16
+    status: accepted
+    decision: An href that is configuration (Card Href, StatCard Href, StepWizard Action, Table Path) panics when refused, while one carried from data (Tree, Gallery) degrades.
+    rejected:
+      - option: Render the configured link dead.
+        why: A rejected configured href is the developer's mistake, and a dead link hides it.
+    upholds: [configured-hrefs-panic, table-path-is-configuration, tree-unsafe-href-is-a-label, gallery-unsafe-urls-degrade]
+  - id: table-hrefs-through-net-url
+    date: 2026-11-16
+    status: accepted
+    decision: Sort hrefs are built through net/url from typed props (SortBy, Query, the parameter names), never by substituting into a caller's pattern.
+    rejected:
+      - option: A caller's href pattern with the key substituted in.
+        why: A column key or carried value could then eat a parameter it was never meant to.
+    upholds: [table-sort-href-replaces]
+  - id: table-query-scrubbed-path-refused
+    date: 2026-11-16
+    status: accepted
+    decision: The carried Query is scrubbed of control bytes while Path is refused, because the query is request state and the path is configuration.
+    rejected:
+      - option: Refuse a query with control bytes.
+        why: A crafted ?q= with CR LF would turn a link into a 500.
+    upholds: [table-query-is-scrubbed, table-path-is-configuration]
+  - id: table-roles-stay-explicit
+    date: 2026-11-16
+    status: accepted
+    decision: Every table element states its ARIA role even while displayed as a table.
+    rejected:
+      - option: Rely on the implicit roles.
+        why: A cards collapse sets display:block, and Chromium and WebKit drop a block-displayed table element's implicit semantics.
+    upholds: [table-explicit-roles]
+  - id: table-region-always-focusable
+    date: 2026-11-16
+    status: accepted
+    decision: The scroll region has tabindex 0 whether or not the table overflows (Adrian Roselli's responsive-table pattern).
+    rejected:
+      - option: Focusable only when the table overflows.
+        why: The server cannot know the viewport, and a region that scrolls only with a mouse fails WCAG 2.1.1.
+    upholds: [table-scroll-region]
+  - id: table-status-has-no-aria-live
+    date: 2026-11-16
+    status: accepted
+    decision: The table's status is role=status alone, empty on the server, and the behaviour copies the announcement into it after a swap, clearing first.
+    rejected:
+      - option: Add aria-live="polite" too.
+        why: role=status already means polite, and stating both can announce twice.
+    upholds: [table-footer-and-status-outside]
+  - id: table-sort-hook-island-only
+    date: 2026-11-16
+    status: accepted
+    decision: Only island sort anchors carry data-hui-table-sort.
+    rejected:
+      - option: Carry it on every sort anchor.
+        why: A plain table's sort is a navigation the router already focuses, so nothing reads the hook.
+    upholds: [table-sort-hooks-island-only]
+  - id: tree-ids-config-sortable-keys-data
+    date: 2026-11-16
+    status: accepted
+    decision: A TreeNode ID is a bare id that panics on anything else, while a SortableItem Key is data rendered escaped.
+    rejected:
+      - option: Treat both alike.
+        why: A tree id pairs with href="#id" fragments and signal names, while a sortable key is whatever the database stored.
+    upholds: [tree-refusals, sortable-key-is-data]
+  - id: tree-follows-the-apg-tree-view
+    date: 2026-11-16
+    status: accepted
+    decision: The tree follows the APG tree view, the treeitem holds the roving tabindex and the behaviour follows a row's link on Enter.
+    rejected:
+      - option: A tabbable link in every row.
+        why: Tab walked the rows instead of leaving the tree.
+    upholds: [tree-is-one-tab-stop]
+  - id: tree-keyboard-clicks-the-toggle
+    date: 2026-11-16
+    status: accepted
+    decision: The tree behaviour's keyboard path clicks the same toggle a pointer does, so it requires the rpc module that lazy toggles fire.
+    upholds: [behaviours-markers-and-requires, tree-lazy-branch]
+  - id: sortable-commits-through-its-own-fetch
+    date: 2026-11-16
+    status: accepted
+    decision: The sortable behaviour commits through its own CSRF-headered form POST and does not require the rpc module.
+    upholds: [behaviours-markers-and-requires]
+  - id: sortable-row-is-the-focusable-element
+    date: 2026-11-16
+    status: accepted
+    decision: The <li> is the focusable, draggable control and the grip is a decorative span.
+    rejected:
+      - option: A grip button inside the row.
+        why: A focusable <li> holding a <button> fails axe's nested-interactive rule.
+    upholds: [sortable-row-is-the-control]
+  - id: carousel-slides-are-divs
+    date: 2026-11-16
+    status: accepted
+    decision: The track and slides are divs with role=group slides.
+    rejected:
+      - option: A ul of li slides.
+        why: A ul whose children carry role=group fails axe's list and allowed-role rules.
+  - id: carousel-stage-wraps-the-track
+    date: 2026-11-16
+    status: accepted
+    decision: A stage element wraps exactly the track, so overlaid prev and next centre on the slides.
+    rejected:
+      - option: Controls positioned against the whole root.
+        why: They grew over the dot row, a WCAG 2.2 target-size failure.
+  - id: carousel-rotation-is-quiet
+    date: 2026-11-16
+    status: accepted
+    decision: A rotating carousel renders its live region off and the behaviour makes it polite while the rotation is paused (the APG carousel).
+    upholds: [carousel-live-region]
+  - id: gallery-lightbox-is-a-typed-prop
+    date: 2026-11-16
+    status: accepted
+    decision: A gallery opens a lightbox through the typed GalleryLightbox prop.
+    rejected:
+      - option: Per-item extra attrs.
+        why: Its data-cui-* keys are the widget runtime's open contract, which Safe refuses on every extra-attrs surface.
+    upholds: [gallery-item-attrs-are-safe]
+  - id: deeplink-query-escape
+    date: 2026-11-16
+    status: accepted
+    decision: deeplinkEscape uses url.QueryEscape with "+" respelled %20.
+    rejected:
+      - option: url.PathEscape.
+        why: It leaves & and = bare, so "Tom & Jerry" or a two-parameter Src cut the deeplink short.
+    upholds: [gallery-deeplink-round-trips]
+  - id: lightbox-two-vocabularies
+    date: 2026-11-16
+    status: accepted
+    decision: The viewer renders either its data-hui-* hooks or framework/ui's data-fui-lightbox* family, never both.
+    rejected:
+      - option: Render both families.
+        why: A host module would double-bind the gallery the framework module steps and fight its pinch-zoom.
+    upholds: [lightbox-one-vocabulary]
+  - id: wizard-hidden-default-next
+    date: 2026-11-16
+    status: accepted
+    decision: A hidden twin of Next is the form's first submit control.
+    rejected:
+      - option: Back and Next in visible order alone.
+        why: Implicit submission clicks the first submit control, so Enter in a field went Back.
+    upholds: [wizard-enter-means-next]

@@ -9,16 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The step wizard: a multi-step form whose every transition is a
-// plain form POST the server answers with the next step. The rail is
-// a list of states (not controls), the current step is named, and the
-// validation summary of a failed submit moves focus on arrival
-// through the existing headless module's data-hui-form-errors hook.
-// The module that binds this package's wizard hooks (headless-wizard)
-// owns only the island path: it records which control submitted,
-// focuses the summary or the new heading after the swap, and says the
-// step-of sentence the server rendered.
-
 // StepWizard parts.
 const (
 	PartSteps Part = "steps"
@@ -26,48 +16,27 @@ const (
 
 // WizardStep is one step of the flow.
 type WizardStep struct {
-	// Heading is the step's name. Required: the rail's dots and the
-	// step's own heading say it, and a step with no name is a
-	// nameless place in a flow.
-	Heading string
-	// Description is the supporting line under the heading.
+	Heading     string // required: the rail and the step's heading say it
 	Description string
-	// Fields are the step's form fields.
-	Fields []render.HTML
+	Fields      []render.HTML
 }
 
 // StepWizardProps configures the wizard.
 type StepWizardProps struct {
-	// Steps is the flow. At least one.
-	Steps []WizardStep
-	// Current is the 0-based step in progress. Outside the list is
-	// refused.
-	Current int
-	// Action and Method are the form's own. Method defaults to POST;
-	// anything but GET or POST is refused.
-	Action string
-	Method string
-	// HiddenFields carry state between steps.
-	HiddenFields []render.HTML
-	// Errors is the rendered validation summary for a failed submit.
-	// When set, ID is required and the form asks the runtime to move
-	// focus to the summary on arrival.
-	Errors render.HTML
+	Steps        []WizardStep  // at least one
+	Current      int           // the 0-based step in progress; outside Steps panics
+	Action       string        // required: the form's action
+	Method       string        // GET or POST, POST by default
+	HiddenFields []render.HTML // state carried between steps
+	Errors       render.HTML   // the failed submit's validation summary; requires ID
 
-	// Island, when set, makes the submit a region update: the same
-	// form, the same controls, the answer swapped into the signal.
-	// Partial is refused like every Island.
-	Island Island
+	Island Island // makes the submit a region update
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs and binds on every part. Strings carry the three
-	// controls, the rail's name and each dot's.
-	Parts Parts
-	// Strings are the strings this component says. Nil means the English
-	// defaults; a layer above sets them from the request's language.
-	Strings *Strings
+	Parts   Parts
+	Strings *Strings // nil means the English defaults
 }
 
 // StepWizard renders the form, its rail and its controls.
@@ -76,8 +45,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		panic("headless: StepWizard requires Steps — a flow with no steps is not a flow")
 	}
 	for i, st := range p.Steps {
-		// Trimmed: a heading of spaces names nothing, exactly like no
-		// heading.
 		if strings.TrimSpace(st.Heading) == "" {
 			panic("headless: StepWizard step " + strconv.Itoa(i+1) + " requires Heading — a nameless step is a nameless place in the flow")
 		}
@@ -106,10 +73,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 	b := p.Parts.Box(s)
 	total := len(p.Steps)
 
-	// The rail: a list of states. Each dot's row is named ("Step 2:
-	// Billing") and the list carries the step-of sentence the status
-	// repeats, so the rail can be re-announced after a swap from the
-	// server's own words.
 	dots := make([]render.HTML, 0, total)
 	for i, st := range p.Steps {
 		state, current := "todo", false
@@ -143,15 +106,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		nextWord = w.StepSubmit
 	}
 	kids := []render.HTML{
-		// The form's default button, first in tree order: implicit
-		// submission (Enter in a step's field) clicks the form's first
-		// submit control, which on every step past the first was Back,
-		// so Enter walked the flow backwards. This one is Next's twin
-		// (the same name, value and hook, so the plain POST and the
-		// module's submit record both read "next"), hidden so it is
-		// neither seen nor reached by Tab, and first so it also wins
-		// over any submit control a step's Fields carry. The visible
-		// order (Back, then Next) is unchanged.
 		b.El("button", PartDefaultAction, Internal(html.Attrs{
 			"type":                        "submit",
 			"name":                        "wizard_action",
@@ -160,9 +114,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 			"hidden":                      "",
 			"tabindex":                    "-1",
 		}), render.Text(nextWord)),
-		// The rail is built entirely from step Headings (strings) plus
-		// generated markers and dots: nothing of the caller's, so the
-		// whole list is the component's own.
 		b.El("ol", PartSteps, Internal(html.Attrs{
 			"aria-label": w.fill(w.StepOf, "step", p.Current+1, "total", total),
 		}), dots...),
@@ -171,9 +122,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		kids = append(kids, p.Errors)
 	}
 	if step.Heading != "" {
-		// Focusable by script only: after an island swap the module
-		// lands focus here, the same posture a summary's title keeps.
-		// The heading text is a string field: the component's own.
 		kids = append(kids, b.El("h2", PartTitle,
 			Internal(html.Attrs{"tabindex": "-1"}), render.Text(step.Heading)))
 	}
@@ -201,12 +149,7 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		"data-hui-step-wizard-action": "next",
 	}, render.Text(nextWord))
 	kids = append(kids,
-		// Back and Next are both fully generated controls, so the
-		// whole actions wrapper is the component's own.
 		b.El("div", PartActions, Internal(nil), back, next),
-		// The step-of sentence: the server's words, repeated into the
-		// live region after a swap by the module, clear then frame,
-		// the way a table's announcement is.
 		b.El("span", PartStatus, Internal(html.Attrs{
 			"role":                        "status",
 			"data-hui-step-wizard-status": "",
@@ -224,8 +167,6 @@ func StepWizard(p StepWizardProps, s Classes) render.HTML {
 		Mark(own, "data-hui-form-errors")
 	}
 	if !p.Island.zero() {
-		// The method and action stay for no script; the contract
-		// beside them makes the submit a region update.
 		own = Merge(own, p.Island.attrs("", method))
 	}
 	return b.El("form", PartRoot, own, kids...)

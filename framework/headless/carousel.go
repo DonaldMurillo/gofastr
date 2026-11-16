@@ -9,14 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// The carousel: a labelled region whose track is a real scrollable
-// list of slides. Without script the track scrolls (native
-// scroll-snap) and the controls are fragment anchors to the slide
-// ids; with script the module owns the active slide (aria-current +
-// a class), the prev/next stepping, the dot anchors, the slide status
-// through the server's sentence, the auto-rotation (paused on hover,
-// focus, hidden tab and reduced motion), and the reduced-motion gate.
-
 // Carousel parts.
 const (
 	PartCarouselStage Part = "carousel-stage"
@@ -29,47 +21,28 @@ const (
 
 // CarouselSlide is one entry.
 type CarouselSlide struct {
-	// Content is the slide body. Required.
-	Content render.HTML
-	// Label is the slide's accessible label. Defaults to
-	// Strings.CarouselSlide ("Slide <n> of <total>") at render.
-	Label string
-	// ID is the slide's stable id. Empty takes "<trackID>-slide-<n>".
-	ID string
+	Content render.HTML // required: the slide body
+	Label   string      // the slide's accessible name; Strings.CarouselSlide by default
+	ID      string      // empty takes "<trackID>-slide-<n>"
 }
 
 // CarouselProps configures the carousel.
 type CarouselProps struct {
-	// Label names the region. Required.
-	Label string
-	// Slides, in order. Required, at least one.
-	Slides []CarouselSlide
-	// Loop makes Next on the last wrap to the first (and vice versa).
-	// Default: the ends disable.
-	Loop bool
-	// AutoRotateMS, when > 0, advances every N ms. Negative refused.
-	AutoRotateMS int
-	// VisiblePerView shows N slides side-by-side (default 1; 0 or
-	// negative refused — a viewport of nothing is not a viewport).
-	VisiblePerView int
-	// NoDots hides the dot anchors.
-	NoDots bool
-	// NoArrows hides the prev/next controls.
-	NoArrows bool
+	Label          string          // required: names the region
+	Slides         []CarouselSlide // required, at least one
+	Loop           bool            // Next on the last slide wraps to the first; otherwise the ends disable
+	AutoRotateMS   int             // advances every N ms when positive; negative panics
+	VisiblePerView int             // negative panics; the headless render draws nothing from it
+	NoDots         bool
+	NoArrows       bool
 
 	ID         string
 	ExtraAttrs html.Attrs
 
-	// Parts: attrs on the root, the track, the slides and the
-	// controls.
 	Parts   Parts
 	Strings *Strings
 
-	// Ctx is the render context. An id this component derives (no ID
-	// given) is handed out through its id scope (render.UniqueID), so a
-	// repeat on the page gets a -2 suffix; an explicit ID is never
-	// changed. With no Ctx the derived id is used as is.
-	Ctx context.Context
+	Ctx context.Context // a derived id goes through its id scope; an explicit ID is never changed
 }
 
 // Carousel renders the slider.
@@ -88,16 +61,11 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		p.VisiblePerView = 1
 	}
 	if p.VisiblePerView > 8 {
-		// Carried data clamps, never refuses (the generated CSS covers
-		// eight columns): a wider count renders the ceiling.
 		p.VisiblePerView = 8
 	}
 	w := p.Strings.Resolve()
 
 	b := p.Parts.Box(s)
-	// The family: the track and every slide without its own id. A slide
-	// with its own id is an explicit id like any other: reserved, so a
-	// derived id elsewhere on the page that would repeat it moves.
 	family := []string{"-track"}
 	for i, sl := range p.Slides {
 		if sl.ID == "" {
@@ -114,12 +82,6 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	}
 	trackID := id + "-track"
 
-	// Slides: stable ids, labels through the Strings sentence. The
-	// track and slides are DIVs, not ul/li: slides are not list items,
-	// and a ul whose children carry role=group trips axe's list rule
-	// besides the allowed-role one the coordinator's site sweep caught.
-	// The derived ids go on a copy: the caller's slice may feed
-	// another carousel with a different ID.
 	p.Slides = slices.Clone(p.Slides)
 	ids := make([]string, 0, len(p.Slides))
 	for i := range p.Slides {
@@ -168,22 +130,9 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 		"tabindex": "0",
 	})
 	Mark(trackAttrs, "data-hui-carousel-track")
-	// The status format travels beside the initial sentence: the module
-	// re-says the sentence through the format after every step, so the
-	// words stay the server's while the number stays live.
 	status := w.fill(w.CarouselSlide, "n", 1, "total", len(p.Slides))
 	trackAttrs["data-hui-carousel-status"] = status
 	trackAttrs["data-hui-carousel-status-fmt"] = w.CarouselSlide + "|" + strconv.Itoa(len(p.Slides))
-	// The stage is the positioning context the overlaid controls
-	// hang from: it wraps exactly the track, so an absolutely
-	// positioned prev/next centres on the slides and can never grow
-	// down over the dot row (a WCAG 2.2 target-size failure the flat
-	// structure brought with it).
-	// hasContent says whether any slide carries content. When none do,
-	// the stage is marked as a whole below and the prev/next controls
-	// — already fully generated, never the caller's — sit under that
-	// mark instead of carrying their own; marking both would be
-	// marking inside an already-marked subtree.
 	hasContent := carouselSlidesHaveContent(p.Slides)
 	arrowOwn := func(a html.Attrs) html.Attrs {
 		if hasContent {
@@ -209,18 +158,9 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	}
 	stageOwn := html.Attrs(nil)
 	if !hasContent {
-		// No slide carries content — a degenerate carousel, but a
-		// legal one — so the stage (the track's slides plus the
-		// prev/next controls) is entirely the component's own.
 		stageOwn = Internal(nil)
 	}
 	children := []render.HTML{b.El("div", PartCarouselStage, stageOwn, stage...),
-		// The live region the slide status is said through: the module
-		// writes the sentence here after each step. A rotating carousel
-		// renders it quiet (aria-live="off", the APG carousel pattern),
-		// so an automatic step is not an interruption; the module turns
-		// it polite while the rotation is paused (hover, focus, reduced
-		// motion), which is when a step is the reader's own.
 		b.El("span", PartVisuallyHidden, Internal(html.Attrs{
 			"aria-live":              carouselLive(p.AutoRotateMS),
 			"aria-atomic":            "true",
@@ -248,9 +188,7 @@ func Carousel(p CarouselProps, s Classes) render.HTML {
 	return b.El("div", PartRoot, rootAttrs, children...)
 }
 
-// carouselLive is the live region's politeness at render: quiet for a
-// carousel that rotates on its own, polite for one that moves only
-// when the reader moves it.
+// carouselLive is the live region's politeness at render: off while rotating, else polite.
 func carouselLive(rotateMS int) string {
 	if rotateMS > 0 {
 		return "off"
@@ -258,8 +196,7 @@ func carouselLive(rotateMS int) string {
 	return "polite"
 }
 
-// carouselSlidesHaveContent reports whether any slide carries content —
-// the only caller content the stage can hold.
+// carouselSlidesHaveContent reports whether any slide carries the caller's content.
 func carouselSlidesHaveContent(slides []CarouselSlide) bool {
 	for _, sl := range slides {
 		if sl.Content != "" {
