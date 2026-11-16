@@ -71,6 +71,9 @@ a rate.
 `queue_depth` counts waiting jobs on every backend, delayed ones included:
 `DBQueue` reads its `pending` status count, and `MemoryQueue` and `RedisQueue`
 count their own waiting jobs, which their `Stats` does not report.
+On `RedisQueue` the count is two `LLEN` calls, so the client adapter must
+implement `queue.ListLengther`; without it no `queue_depth` is emitted for
+that queue (see [queue](queue.md#optional-listlengther)).
 
 The DB-pool and outbox metrics are zero-config: any code path that takes the
 app's metrics handle (a battery's `Init`, or an explicit `app.Metrics()`

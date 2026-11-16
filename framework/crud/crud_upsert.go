@@ -84,8 +84,15 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			}
 		}
 		var previous map[string]any
-		kept := map[string]any{}
+		kept, echoed := map[string]any{}, map[string]any{}
 		readKey := ""
+		// keepEchoes moves body's echoes of previous's masked values to kept.
+		keepEchoes := func() {
+			for _, name := range ch.maskedEchoes(ctx, body, previous) {
+				kept[name], echoed[name] = previous[ch.convertKey(name)], body[name]
+				delete(body, name)
+			}
+		}
 		if ch.carriesMasked(body) {
 			if err := ch.upsertPreflight(ctx, body); err != nil {
 				return err
@@ -98,10 +105,7 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 				return errUpsertForeignRow
 			}
 			readKey = fmt.Sprint(ch.colKeyVals(body))
-			for _, name := range ch.maskedEchoes(ctx, body, previous) {
-				kept[name] = previous[ch.convertKey(name)]
-				delete(body, name)
-			}
+			keepEchoes()
 		}
 		isKept := func(name string) bool { _, ok := kept[name]; return ok }
 		s := ch.entitySchema()
@@ -146,6 +150,17 @@ func (ch *CrudHandler) UpsertOne(ctx context.Context, body map[string]any) (map[
 			var err error
 			if previous, err = ch.upsertExistingRow(ctx, body); err != nil {
 				return err
+			}
+			// A hook moved the key: judge the echoes against the row it names now.
+			for name, sent := range echoed {
+				if _, set := body[name]; !set {
+					body[name] = sent
+				}
+			}
+			clear(kept)
+			clear(echoed)
+			if previous != nil && !ch.upsertTargetHidden(ctx, req, body) {
+				keepEchoes()
 			}
 		}
 		existed := previous != nil

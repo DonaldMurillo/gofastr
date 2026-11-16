@@ -391,5 +391,24 @@ notes:
     guidance: "An app generated earlier keeps its app.go (gofastr generate --add preserves it). Before adding a view with no where:, regenerate into a scratch directory and copy view_stubs.go plus view_stubs_<entity>_init.go for each entity with such a view into the app (the per-entity files register the stubs; view_stubs.go alone registers none), then change the EntityUI call in app.go to fwApp.EntityUI(withViewStubs(fwApp, appExtensions))."
     nodetect: "the call lives in an owned app.go the generator does not rewrite; whether it is needed depends on the spec's views"
   - change: "auth.SessionMiddleware answers a cross-site top-level GET or HEAD that carries no session cookie and is about to get a 401, or a gate's login redirect, with a 200 same-site hop page (Refresh to the same path and query) so the reload carries the SameSite=Strict cookie"
-    guidance: "Nothing to change for RequireSession, screen policies or battery/admin. A guard of your own that redirects a signed-out visitor to a login page calls handler.NoteSessionRefusal(r.Context()) before the redirect to get the same answer; one that answers 401 needs nothing. A test that sends Sec-Fetch-Site: cross-site with navigate and document and no cookie now sees the 200 hop page first."
+    guidance: "Nothing to change for RequireSession, SessionPolicy, RolePolicy or battery/admin. A middleware or screen policy of your own that redirects a signed-out visitor to a login page calls handler.NoteSessionRefusal(ctx) before the redirect to get the same answer; one that answers 401 needs nothing. A test that sends Sec-Fetch-Site: cross-site with navigate and document and no cookie now sees the 200 hop page first."
     nodetect: "the difference depends on a request's Fetch Metadata and cookies at runtime; no host source spelling distinguishes it"
+  - change: "BREAKING - the Prometheus metric queue_dead_letter_total (declared a counter) is now the gauge queue_dead_letter_jobs, with no alias; queue_depth reports the real backlog on MemoryQueue and RedisQueue, where it read 0"
+    breaking: true
+    guidance: "Point dashboards and alerts at queue_dead_letter_jobs and remove rate() or increase() around it: it is the current count of failed jobs and falls on a replay or an erasure."
+    nodetect: "the metric name lives in dashboards and alert rules outside the app's source"
+  - change: "BREAKING - the in-memory queue Scheduler's Register and RegisterAt return an error for a schedule with no job type; they used to return nil and register nothing"
+    breaking: true
+    guidance: "Give the schedule a job with .Job(type, payload) before Register. A schedule built without one never fired."
+    nodetect: "a missing .Job call in a builder chain has no single source spelling; the error at boot names it"
+  - change: "BREAKING - framework/embed refuses at boot an allowed origin whose last host label is a number (decimal or 0x hex) and that is not a dotted-quad IPv4, such as https://0x7f000001 or https://example.123"
+    breaking: true
+    guidance: "Write the origin as the browser serializes it (https://127.0.0.1). Such an entry never matched a real browser origin."
+    nodetect: "origins are usually read from configuration; the boot error names the entry"
+  - change: "an MCP prompt handler or resource contents func that returns a typed 4xx *handler.Error answers -32602 with its message, and a wrapped *mcp.RPCError keeps its code, as a tool handler's does; both used to answer a generic internal error"
+    guidance: "Nothing to change. A client that matched on the internal-error code for these cases sees the specific code."
+    nodetect: "depends on the error a handler returns at runtime"
+  - change: "POST /semantic/query answers 400 query_invalid (semantic.InvalidQueryError from Index.Query) for an mmr_lambda out of range, rerank with no Reranker, unstorable text or filter text, or a filter.meta_match number outside the write path's bound; these answered 500"
+    guidance: "Nothing to change. A Go caller can tell a caller fault apart with errors.As on *semantic.InvalidQueryError."
+    nodetect: "depends on the query sent at runtime"
+

@@ -138,7 +138,7 @@ func SessionMiddleware(mgr *AuthManager, opts ...SessionMiddlewareOption) middle
 			if target, ok := sameOriginTarget(r); ok && withheldCookieArrival(r, cfg.SessionCookie) {
 				refusalCtx, refused := handler.TrackSessionRefusal(ctx)
 				r = r.WithContext(refusalCtx)
-				w = &arrivalHopWriter{ResponseWriter: w, r: r, pages: cfg.Pages, target: handler.SameSiteHopTarget(r, target), refused: refused}
+				w = &arrivalHopWriter{ResponseWriter: w, r: r, pages: cfg.Pages, target: target, refused: refused}
 			}
 			anon(w, r, next)
 		})

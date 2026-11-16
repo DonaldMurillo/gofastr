@@ -933,6 +933,13 @@ func (q *MemoryQueue) pendingDepth(context.Context) (int, error) {
 // again. Idempotent and safe: replaying an unknown or non-failed id matches no
 // retained job and is a no-op (nil), never a double-enqueue.
 func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
+	_, err := q.ReplayJob(ctx, jobID)
+	return err
+}
+
+// ReplayJob implements [ReplayReporter]: Replay, reporting whether a
+// retained dead job was queued again.
+func (q *MemoryQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
 	q.moveMu.RLock()
 	defer q.moveMu.RUnlock()
 	q.deadMu.Lock()
@@ -945,7 +952,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	}
 	if idx == -1 {
 		q.deadMu.Unlock()
-		return nil // unknown / non-failed id, no-op
+		return false, nil // unknown / non-failed id, no-op
 	}
 	job, gen := q.dead[idx].job, q.dead[idx].gen
 	q.deadMu.Unlock()
@@ -962,7 +969,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 	job.Attempts = 0
 	job.ScheduledAt = q.now()
 	if err := q.Enqueue(ctx, job); err != nil {
-		return err
+		return false, err
 	}
 	if q.replayEnqueued != nil {
 		q.replayEnqueued()
@@ -984,7 +991,7 @@ func (q *MemoryQueue) Replay(ctx context.Context, jobID string) error {
 		}
 	}
 	q.deadMu.Unlock()
-	return nil
+	return true, nil
 }
 
 // Compile-time interface assertions for MemoryQueue.
@@ -992,6 +999,8 @@ var (
 	_ Queue      = (*MemoryQueue)(nil)
 	_ Browsable  = (*MemoryQueue)(nil)
 	_ Replayable = (*MemoryQueue)(nil)
+
+	_ ReplayReporter = (*MemoryQueue)(nil)
 )
 
 // Close drains pending jobs and waits for all workers to finish. It signals

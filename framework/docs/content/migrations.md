@@ -733,13 +733,15 @@ The schema snapshot file records the declarative state migrations have been gene
   "views": {
     "published_posts": {
       "up": "CREATE VIEW published_posts AS SELECT ...",
-      "down": "DROP VIEW IF EXISTS published_posts"
+      "down": "DROP VIEW IF EXISTS published_posts",
+      "depends_on": ["posts"]
     }
   },
   "routines": {
     "refresh_post_stats": {
       "up": "CREATE PROCEDURE refresh_post_stats() ...",
-      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats"
+      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats",
+      "order": 1
     }
   }
 }
@@ -750,8 +752,8 @@ The schema snapshot file records the declarative state migrations have been gene
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
 - `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
 - `unique_columns`: Map of table names to their field-level `Unique` columns, an empty list for a table with none. The diff compares these to see `Unique` set or cleared on a column that already exists.
-- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
-- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
+- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings, and `depends_on`, the view's declared `DependsOn`), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly. Views removed together drop in the order `depends_on` gives.
+- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings, and `order`, the routine's place in the plan counted from 1), tracking stored routines across migration lifecycles. Routines removed together drop in reverse `order`.
 
 Flags: `--from=<gofastr.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default
@@ -1055,13 +1057,17 @@ with every declared view that reads it, since its old body may read a
 column the same migration drops. On Postgres that means a changed view is
 not replaced in place: grants on it go with the drop, and a view that
 reads it but is not declared in the plan makes the drop fail, so declare
-it with `DependsOn`. The `Down` runs the changes backwards. Removed
-views and removed routines drop in reverse name order, since the snapshot
-records neither `DependsOn` nor the plan's order. `RoutinesFS` creates
-routines in name order, so `stamp_audit_trg` is dropped before the
-`stamp_audit` it calls, and the `Down` recreates `stamp_audit` first. When
-a removed view reads another removed view whose name sorts after its own,
-remove them in separate migrations.
+it with `DependsOn`. The `Down` runs the changes backwards. Objects
+removed together drop dependents first. The snapshot records each view's
+`DependsOn`, so a removed view drops before the removed views it lists
+there, whatever their names. It records each routine's place in the plan,
+so removed routines drop last created first: `stamp_audit_trg` before the
+`stamp_audit` it calls. The `Down` recreates them the other way round. A
+snapshot written before these were recorded has neither, until the next
+generated migration rewrites it: its removed views drop in name order and
+its removed routines in reverse name order. If that order is wrong for a
+pair, remove them in separate migrations. A view that reads another without
+listing it in `DependsOn` is ordered by name too.
 
 ### Worked Postgres example
 

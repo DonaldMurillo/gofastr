@@ -218,6 +218,16 @@ type Replayable interface {
 	Replay(ctx context.Context, jobID string) error
 }
 
+// ReplayReporter is the optional capability beside Replayable that says
+// whether a replay queued anything, implemented by DBQueue, MemoryQueue and
+// RedisQueue. Admin tooling type-asserts for it so a replay of a job that
+// is not failed is neither reported nor audited as one.
+type ReplayReporter interface {
+	// ReplayJob is Replay that reports whether it queued the job again:
+	// false, with a nil error, for an id that names no failed job.
+	ReplayJob(ctx context.Context, jobID string) (replayed bool, err error)
+}
+
 // Sentinel errors.
 var (
 	ErrQueueClosed = errors.New("queue is closed")

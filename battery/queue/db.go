@@ -1221,12 +1221,23 @@ func (q *DBQueue) settleFailure(ctx context.Context, job Job, reason error) (dea
 // A failed job whose UniqueKey a newer live job now holds stays failed, and
 // Replay returns ErrDuplicateJob.
 func (q *DBQueue) Replay(ctx context.Context, jobID string) error {
-	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
-	_, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
-	if isUniqueViolation(err) {
-		return fmt.Errorf("%w: replay %s", ErrDuplicateJob, jobID)
-	}
+	_, err := q.ReplayJob(ctx, jobID)
 	return err
+}
+
+// ReplayJob implements [ReplayReporter]: Replay, reporting whether the
+// update matched a failed row.
+func (q *DBQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
+	stmt := fmt.Sprintf("UPDATE %s SET status='pending', attempts=0, scheduled_at=$1, updated_at=$1 WHERE id=$2 AND status='failed'", q.qt())
+	res, err := q.db.ExecContext(ctx, stmt, q.now().UTC(), jobID)
+	if isUniqueViolation(err) {
+		return false, fmt.Errorf("%w: replay %s", ErrDuplicateJob, jobID)
+	}
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // ListJobs implements [Browsable]. Returns up to limit jobs in the
@@ -1313,6 +1324,8 @@ var (
 	_ Queue      = (*DBQueue)(nil)
 	_ Browsable  = (*DBQueue)(nil)
 	_ Replayable = (*DBQueue)(nil)
+
+	_ ReplayReporter = (*DBQueue)(nil)
 )
 
 // Close stops worker goroutines started by Start. Idempotent.

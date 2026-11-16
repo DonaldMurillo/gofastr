@@ -108,7 +108,41 @@ func (ch *CrudHandler) pinsNulls(ctx context.Context, column string) bool {
 			return false
 		}
 	}
-	return !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx))
+	return !ch.onPostgres(ctx)
+}
+
+// dialectMemo holds one handler's dialect, for a DB that is a wrapper
+// or a transaction and so has no *sql.DB to remember it under.
+type dialectMemo struct {
+	mu    sync.Mutex
+	known bool
+	pg    bool
+}
+
+// onPostgres is isPostgres asked at most once per handler: per *sql.DB
+// when there is one, else in the handler's memo, shared by its tx copies.
+func (ch *CrudHandler) onPostgres(ctx context.Context) bool {
+	if ch.dialectHandle() != nil || ch.dialect == nil {
+		return isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx))
+	}
+	ch.dialect.mu.Lock()
+	defer ch.dialect.mu.Unlock()
+	if !ch.dialect.known {
+		ch.dialect.pg, ch.dialect.known = probeDialect(ctx, ch.conn(ctx))
+	}
+	return ch.dialect.pg
+}
+
+// probeDialect asks q for SELECT version(); certain is false for an
+// error other than SQLite's "no such function".
+func probeDialect(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) (pg, certain bool) {
+	var v string
+	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
+		return false, strings.Contains(strings.ToLower(err.Error()), "no such function")
+	}
+	return strings.Contains(strings.ToLower(v), "postgresql"), true
 }
 
 func (ch *CrudHandler) keyColumn() (string, error) {
@@ -308,15 +342,8 @@ func isPostgres(ctx context.Context, handle any, q interface {
 			return known.(bool)
 		}
 	}
-	var v string
-	if err := q.QueryRowContext(ctx, "SELECT version()").Scan(&v); err != nil {
-		if stable && strings.Contains(strings.ToLower(err.Error()), "no such function") {
-			rememberDialect(db, false)
-		}
-		return false
-	}
-	pg := strings.Contains(strings.ToLower(v), "postgresql")
-	if stable {
+	pg, certain := probeDialect(ctx, q)
+	if stable && certain {
 		rememberDialect(db, pg)
 	}
 	return pg

@@ -379,7 +379,11 @@ header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
 naming the actor. Replaying a job that is no longer failed (already
 replayed in another tab, or an id the queue does not hold) answers 409
-with a notice, queues nothing and writes no audit row. A failed job whose `UniqueKey` a newer live job holds
+with a notice, queues nothing and writes no audit row; "Replay N
+failed" skips such a job without a row. The queue says which it was
+through `queue.ReplayReporter`, which `DBQueue`, `MemoryQueue` and
+`RedisQueue` implement; a custom queue with `Replay` alone cannot say,
+so each of its replays is reported and audited. A failed job whose `UniqueKey` a newer live job holds
 is not replayed: one replay answers 409 with a notice, and "Replay N
 failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
 logs the driver error; the page never prints it. The Jobs page shows

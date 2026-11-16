@@ -1661,8 +1661,6 @@ func (ds *UIHost) handlePage(w http.ResponseWriter, r *http.Request) {
 		if scriptFetch(r) && writeDocumentRedirect(w, res.URL) {
 			return
 		}
-		// A policy's redirect is a refusal battery/auth may answer with its hop.
-		handler.NoteSessionRefusal(ctx)
 		http.Redirect(w, r, scrubCtl(res.URL), http.StatusSeeOther)
 		return
 	case app.DecisionBlock:

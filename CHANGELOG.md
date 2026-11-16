@@ -397,6 +397,22 @@ few lines, and link the PR or the docs page for the rest.
   other end of a sorted list. See
   [entity declarations](framework/docs/content/entity-declarations.md),
   "sort".
+- **BREAKING: `queue_dead_letter_total` is now the gauge
+  `queue_dead_letter_jobs`** ([observability](framework/docs/content/observability.md)).
+  It was declared a counter but held the current count of failed jobs,
+  so it fell on a replay or an erasure and `rate()` read each fall as a
+  reset. There is no alias: point dashboards and alerts at the new name
+  and drop `rate()` or `increase()` around it. `queue_depth` now reports
+  the real backlog on the memory and Redis queues; it read 0 there.
+- **BREAKING: the in-memory scheduler's `Register` refuses a schedule
+  with no job type** ([queue](framework/docs/content/queue.md)). It
+  returned nil and registered nothing, so the schedule never fired; the
+  durable scheduler already refused it.
+- **BREAKING: an embed origin whose last label is a number must be a
+  dotted quad** ([embed](framework/docs/content/embed.md)).
+  `https://0x7f000001` and `https://example.123` booted and then never
+  matched, since a browser rewrites or refuses such a host. They are now
+  refused at boot.
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left
@@ -903,7 +919,33 @@ few lines, and link the PR or the docs page for the rest.
   cookie. A signed-out visitor from another site gets the login redirect
   one page load later. A guard of your own that redirects to login calls
   the new `handler.NoteSessionRefusal(ctx)` first; `RequireSession`,
-  screen policies and `battery/admin` already do.
+  `SessionPolicy`, `RolePolicy` and `battery/admin` already do.
+- **Hunt round 12: 37 fixes across queue, migrate, webhook, service,
+  admin, semantic, embed, a2a, mcp, middleware, stream and rtc.** The
+  ones a host can see:
+  - On Postgres, erasing a user while the durable scheduler committed a
+    tick left that user's job behind. The in-memory scheduler fired an
+    interval that was not a multiple of its wake cadence late every
+    cycle (`Every(90s)` ran every 120s).
+  - On Postgres, a generated migration that retypes a column now drops
+    and recreates the declared views that depend on the table. A column
+    named `primary` or `foreign` no longer generates a migration on
+    every run. A view named with a keyword is quoted.
+  - A paused webhook subscriber read back from the SQL store and
+    subscribed again stays paused. A credential a receiver echoes across
+    `ResponseBodyLimit` is redacted before the body is cut.
+  - `battery/admin` mounts no write routes for a read-only view, and a
+    replay of a job that is not failed queues and audits nothing.
+  - `POST /semantic/query` answers 400 (`semantic.InvalidQueryError`)
+    for a caller fault where it answered 500, and a filter number such
+    as `1e999999` no longer costs CPU per stored chunk.
+  - An MCP prompt or resource handler that returns a typed 4xx
+    `*handler.Error` or a wrapped `*mcp.RPCError` answers as a tool
+    does; `WithResourceTemplateGate(nil)` panics as the other gates do.
+  - The memory idempotency store drops expired entries; the SQL one
+    compares expiry in UTC. A rate-limit bucket that sat full no longer
+    allows two `Capacity` bursts back to back.
+  - A `service` localhost tab is sent to `[::1]` for an IPv6 bind.
 - **Reading a record and writing it back stored the mask.** A `Mask`
   field reads as `****1111`; a client that sent that back had it stored
   over the card number. A write whose value for a masked field is the

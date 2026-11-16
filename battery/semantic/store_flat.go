@@ -229,10 +229,6 @@ func (s *FlatStore) AllChunks() []Chunk {
 	return out
 }
 
-func chunkMatches(c *Chunk, f Filter) bool {
-	return newFilterMatcher(f).matches(c)
-}
-
 // filterMatcher is a Filter with its MetaMatch values read as JSON once,
 // so matching a chunk never re-encodes or re-parses the filter side.
 type filterMatcher struct {

@@ -160,3 +160,7 @@ func TestWatcherSkipsDirectoryDeletedMidWalk(t *testing.T) {
 		t.Fatal("a missing root must still fail the scan")
 	}
 }
+
+func chunkMatches(c *Chunk, f Filter) bool {
+	return newFilterMatcher(f).matches(c)
+}

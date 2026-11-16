@@ -121,6 +121,10 @@ invariants:
       - test: framework/crud.TestDialectProbeRunsOncePerDatabase
       - test: framework/crud.TestDialectIsRememberedThroughATransaction
       - test: framework/crud.TestDialectMemoDoesNotKeepADatabaseAlive
+  - id: sort-probes-dialect-once-per-handler
+    rule: A sort's dialect check on a handler whose DB has no *sql.DB behind it (a wrapper, a bare transaction) asks the database once per handler built by NewCrudHandler, so a sorted read runs no statement an unsorted one does not.
+    enforced_by:
+      - test: framework/crud.TestSortedReadOnWrappedDBProbesDialectOnce
   - id: hook-sees-its-own-record-id
     rule: A write's After hooks see that write's own record id on ctx, even when another write's hook started it.
     enforced_by:

@@ -146,6 +146,21 @@ type PopRecorder interface {
 	RPopHSet(ctx context.Context, list, hash, field string) (string, error)
 }
 
+// ListLengther is the optional capability a RedisClient implements when it
+// can report a list's length (LLEN) without reading the list. RedisQueue
+// uses it for the queue_depth metric ([MetricsCollector]): counting with
+// LRANGE would pull every waiting job's payload on every scrape. go-redis:
+//
+//	func (c adapter) LLen(ctx context.Context, key string) (int64, error) {
+//		return c.rdb.LLen(ctx, key).Result()
+//	}
+//
+// A missing list is length 0. A client that does not implement it still
+// runs the queue, but MetricsCollector emits no queue_depth for it.
+type ListLengther interface {
+	LLen(ctx context.Context, key string) (int64, error)
+}
+
 // ScriptRunner is the capability RedisQueue needs to erase a user's jobs
 // (App.EraseUserData reaches the queue through its store eraser): run a Lua
 // script with EVAL and return its reply. The queue owns the script; the
@@ -1272,9 +1287,16 @@ func (q *RedisQueue) reclaimPops(ctx context.Context) (int, error) {
 // dead list (recoverable) rather than dropping it. A crash in that window can
 // leave one copy on each list; the next Replay/Dequeue tolerates the duplicate.
 func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
+	_, err := q.ReplayJob(ctx, jobID)
+	return err
+}
+
+// ReplayJob implements [ReplayReporter]: Replay, reporting whether a
+// dead-lettered job moved back onto the main queue.
+func (q *RedisQueue) ReplayJob(ctx context.Context, jobID string) (bool, error) {
 	entries, err := q.client.LRange(ctx, q.deadLetterQueue, 0, -1)
 	if err != nil {
-		return fmt.Errorf("replay: read dead-letter queue: %w", err)
+		return false, fmt.Errorf("replay: read dead-letter queue: %w", err)
 	}
 
 	for _, raw := range entries {
@@ -1295,31 +1317,32 @@ func (q *RedisQueue) Replay(ctx context.Context, jobID string) error {
 		job.ClaimToken = ""
 		requeued, err := json.Marshal(job)
 		if err != nil {
-			return fmt.Errorf("replay: marshal job: %w", err)
+			return false, fmt.Errorf("replay: marshal job: %w", err)
 		}
 
 		// With a script the move is one step, and only while the dead list
 		// still holds the entry: an erasure that removed it after the read
 		// above leaves nothing to replay.
 		if runner, ok := q.client.(ScriptRunner); ok {
-			if _, err := q.scriptMove(ctx, runner, q.deadLetterQueue, false, q.queueName, false, moveEntry{"", raw, "", string(requeued)}); err != nil {
-				return fmt.Errorf("replay: move job: %w", err)
+			moved, err := q.scriptMove(ctx, runner, q.deadLetterQueue, false, q.queueName, false, moveEntry{"", raw, "", string(requeued)})
+			if err != nil {
+				return false, fmt.Errorf("replay: move job: %w", err)
 			}
-			return nil
+			return moved > 0, nil
 		}
 		// Enqueue first so a failure here leaves the original on the dead list
 		// (no loss); only then remove the original dead-list entry.
 		if err := q.client.LPush(ctx, q.queueName, requeued); err != nil {
-			return fmt.Errorf("replay: re-enqueue job: %w", err)
+			return false, fmt.Errorf("replay: re-enqueue job: %w", err)
 		}
 		if _, err := q.client.LRem(ctx, q.deadLetterQueue, 1, raw); err != nil {
-			return fmt.Errorf("replay: remove from dead-letter queue: %w", err)
+			return false, fmt.Errorf("replay: remove from dead-letter queue: %w", err)
 		}
-		return nil
+		return true, nil
 	}
 
 	// No matching dead-lettered job, idempotent no-op.
-	return nil
+	return false, nil
 }
 
 // ListJobs implements [Browsable] for the Redis backend. The only durable
@@ -1374,18 +1397,26 @@ func (q *RedisQueue) Stats(ctx context.Context) (JobStats, error) {
 }
 
 // pendingDepth is the queue_depth gauge's number: the jobs on the main and
-// delayed lists. In-flight jobs are not counted.
+// delayed lists, by LLEN. In-flight jobs are not counted. A client that is
+// not a [ListLengther] gets errNoListLength: a scrape must not LRANGE a
+// backlog to count it.
 func (q *RedisQueue) pendingDepth(ctx context.Context) (int, error) {
-	total := 0
-	for _, key := range []string{q.queueName, q.delayedQueue} {
-		n, err := q.listLen(ctx, key)
-		if err != nil {
-			return 0, fmt.Errorf("depth: read %s: %w", key, err)
-		}
-		total += n
+	lengther, ok := q.client.(ListLengther)
+	if !ok {
+		return 0, errNoListLength
 	}
-	return total, nil
+	total := int64(0)
+	for _, key := range []string{q.queueName, q.delayedQueue} {
+		n, err := lengther.LLen(ctx, key)
+		if err != nil && !errors.Is(err, ErrRedisEmpty) {
+			return 0, fmt.Errorf("depth: length of %s: %w", key, err)
+		}
+		total += max(n, 0)
+	}
+	return int(total), nil
 }
+
+var errNoListLength = errors.New("redis queue: the client has no LLEN (queue.ListLengther)")
 
 // listLen reads a list whole to count it; a missing list counts zero.
 func (q *RedisQueue) listLen(ctx context.Context, key string) (int, error) {
@@ -1434,6 +1465,8 @@ var (
 	_ Queue      = (*RedisQueue)(nil)
 	_ Browsable  = (*RedisQueue)(nil)
 	_ Replayable = (*RedisQueue)(nil)
+
+	_ ReplayReporter = (*RedisQueue)(nil)
 )
 
 // Close removes the queue from App.EraseUserData's reach. The caller

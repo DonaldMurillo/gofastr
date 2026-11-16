@@ -23,6 +23,7 @@ replay, and pairs with a `Scheduler` for recurring jobs.
 | Retry schedule and jitter | No (retries at once) | Yes | No |
 | `Browsable` | Yes (dead-letter only) | Yes | Yes (dead-letter only) |
 | `Replayable` | Yes | Yes | Yes |
+| `ReplayReporter` | Yes | Yes | Yes |
 | Scheduler integration | Yes | Yes | Yes |
 
 Pick `MemoryQueue` for tests and single-process prototypes. Use `DBQueue`
@@ -500,7 +501,11 @@ if r, ok := q.(queue.Replayable); ok {
 ```
 
 `Replay` is idempotent: replaying an unknown ID or a non-failed job is a
-no-op (returns nil, no side effect). Replaying a job whose `UniqueKey` a
+no-op (returns nil, no side effect). To tell a replay from that no-op,
+type-assert `queue.ReplayReporter` (all three backends implement it):
+`ReplayJob(ctx, jobID)` is `Replay` that also returns whether it queued
+the job again, `false` with a nil error for an ID that names no failed
+job. The admin's Jobs page uses it. Replaying a job whose `UniqueKey` a
 newer live job holds returns `ErrDuplicateJob` and leaves it failed.
 
 ## Inspecting jobs (Browsable)
@@ -530,8 +535,9 @@ MemoryQueue and RedisQueue can only list their dead-letter store,
 so only `"failed"`, `"all"` or `""` returns results. `Stats` counts the
 jobs `ListJobs` can list, so theirs holds `"failed"` alone and a pager
 can sum its keys. Their waiting jobs are counted for the `queue_depth`
-metric only (see [Observability](observability.md)). `RedisClient` has
-no `LLEN`, so RedisQueue reads a list whole to count it.
+metric only (see [Observability](observability.md)); on RedisQueue that
+needs a client with `LLEN` ([`ListLengther`](#optional-listlengther)).
+RedisQueue's `Stats` reads the dead-letter list whole to count it.
 DBQueue can enumerate any
 status: `"pending"`, `"claimed"` (running), `"failed"`, and `"done"`
 with `WithDoneRetention`, and `"all"` or `""` lists every status.
@@ -1059,6 +1065,28 @@ Two cases deliver a job twice, which the at-least-once contract allows:
 a record whose delete failed, once its job has finished and left the
 processing hash, and a record that a `Dequeue` slower than the visibility
 timeout still holds.
+
+### Optional: `ListLengther`
+
+```go
+type ListLengther interface {
+    LLen(ctx, key string) (int64, error)
+}
+```
+
+`queue.MetricsCollector` reports `queue_depth` for a `RedisQueue` as the
+length of its main and delayed lists, read with `LLEN`. With go-redis:
+
+```go
+func (c adapter) LLen(ctx context.Context, key string) (int64, error) {
+    return c.rdb.LLen(ctx, key).Result()
+}
+```
+
+A missing list has length 0. An adapter that does not implement it still
+runs the queue, but the collector emits no `queue_depth` for it: counting
+with `LRANGE` would read every waiting job's payload on every scrape.
+`queue_dead_letter_jobs` is reported either way.
 
 ### Optional: `ScriptRunner`
 

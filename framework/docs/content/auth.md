@@ -538,9 +538,13 @@ session cookie, live or dead, get the gate's own answer.
 Every `401` counts as a refusal. A redirect counts only when the gate
 says so, because a redirect can follow work a reload must not repeat (a
 logout link, a callback). These gates say so already:
-`RequireSession(WithRedirectOnFail(...))`, a screen policy that returns
-a redirect, and `battery/admin`. A guard you write yourself that
-redirects to a login page calls `handler.NoteSessionRefusal` first:
+`RequireSession(WithRedirectOnFail(...))`, `SessionPolicy` and
+`RolePolicy` when they redirect, and `battery/admin`. The UI host does
+not: a screen policy that sends `/` to `/en` is no refusal, and a
+cross-site visitor gets its plain `303`. A middleware or screen policy
+you write yourself that redirects to a login page calls
+`handler.NoteSessionRefusal` first, with the request's context or the
+context the policy was given:
 
 <!-- gofastr:compile
 import "net/http"
@@ -560,8 +564,26 @@ func guard(next http.Handler) http.Handler {
 }
 ```
 
-The call does nothing on any other request. A guard that answers `401`
-needs no call.
+<!-- gofastr:compile
+import "context"
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "github.com/DonaldMurillo/gofastr/core-ui/app"
+import "github.com/DonaldMurillo/gofastr/core-ui/app/decide"
+import "github.com/DonaldMurillo/gofastr/core/handler"
+-->
+```go
+// Attach with screen.WithPolicy(app.PolicyFunc(membersOnly)).
+func membersOnly(ctx context.Context) app.Decision {
+    if _, ok := auth.SessionFrom(ctx); ok {
+        return decide.Allow()
+    }
+    handler.NoteSessionRefusal(ctx)
+    return decide.Redirect("/login")
+}
+```
+
+The call does nothing on any other request. A guard or policy that
+answers `401` needs no call.
 
 ### Marked calls and what the gates accept
 

@@ -37,6 +37,78 @@ func TestQueueDepthMetricOnEveryBackend(t *testing.T) {
 	}
 }
 
+// bareRedis is a client with the required RedisClient methods only.
+type bareRedis struct{ RedisClient }
+
+// countingLRange fails a test path that reads a list whole.
+type countingLRange struct {
+	RedisClient
+	ranges int
+}
+
+func (c *countingLRange) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	c.ranges++
+	return c.RedisClient.LRange(ctx, key, start, stop)
+}
+
+// lengthRedis is the mock, LLEN included, counting its LRANGEs.
+type lengthRedis struct {
+	*mockRedis
+	ranges int
+}
+
+func (c *lengthRedis) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	c.ranges++
+	return c.mockRedis.LRange(ctx, key, start, stop)
+}
+
+// RedisQueue counted its waiting jobs with LRANGE 0 -1 on every scrape,
+// pulling every payload to take a length. With LLEN the depth is two
+// length reads; without it there is no queue_depth sample and no LRANGE of
+// the main or delayed list, and the dead-letter gauge still reports.
+func TestRedisQueueDepthNeedsLLEN(t *testing.T) {
+	ctx := context.Background()
+	seed := func(t *testing.T, client RedisClient) *RedisQueue {
+		q := NewRedisQueue(client, "depth-llen")
+		t.Cleanup(func() { _ = q.Close() })
+		for _, job := range []Job{{Type: "a"}, {Type: "a"}, {Type: "a", ScheduledAt: time.Now().Add(time.Hour)}} {
+			if err := q.Enqueue(ctx, job); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return q
+	}
+	t.Run("client with LLEN", func(t *testing.T) {
+		counting := &lengthRedis{mockRedis: newMockRedis()}
+		q := seed(t, counting)
+		var buf bytes.Buffer
+		MetricsCollector(q, "r")(&buf)
+		if want := `queue_depth{lane="r"} 3`; !strings.Contains(buf.String(), want) {
+			t.Fatalf("metrics output missing %q\ngot:\n%s", want, buf.String())
+		}
+		if counting.ranges != 1 {
+			t.Fatalf("a scrape ran %d LRANGEs, want 1 (the dead-letter list)", counting.ranges)
+		}
+	})
+	t.Run("client without LLEN", func(t *testing.T) {
+		counting := &countingLRange{RedisClient: bareRedis{newMockRedis()}}
+		q := seed(t, counting)
+		var buf bytes.Buffer
+		MetricsCollector(q, "r")(&buf)
+		out := buf.String()
+		if strings.Contains(out, "queue_depth") {
+			t.Fatalf("queue_depth emitted with no LLEN:\n%s", out)
+		}
+		if !strings.Contains(out, `queue_dead_letter_jobs{lane="r"} 0`) {
+			t.Fatalf("the dead-letter gauge should still report:\n%s", out)
+		}
+		// Stats reads the dead-letter list once; the depth reads nothing.
+		if counting.ranges != 1 {
+			t.Fatalf("a scrape ran %d LRANGEs, want 1 (the dead-letter list)", counting.ranges)
+		}
+	})
+}
+
 // Stats counts the jobs ListJobs can list: a pager sums its keys and pages
 // by them. MemoryQueue and RedisQueue list dead-letter jobs only, so a
 // waiting job must not show up under any key.

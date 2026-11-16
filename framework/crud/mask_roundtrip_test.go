@@ -8,12 +8,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/router"
 	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/entity"
+	"github.com/DonaldMurillo/gofastr/framework/hook"
 )
 
 const (
@@ -358,5 +360,51 @@ func TestPGMaskedRoundTripKeepsStoredValue(t *testing.T) {
 	}
 	if label != "upserted" || pan != storedPAN {
 		t.Errorf("stored (label, pan) = (%q, %q), want (upserted, %s)", label, pan, storedPAN)
+	}
+}
+
+// A BeforeCreate hook that moves the key moves the echo check with it: the
+// held value of the row first named never reaches the row written.
+func TestMaskedUpsertEchoFollowsAHookChangedKey(t *testing.T) {
+	for _, c := range []struct {
+		name, seedLower, sent, want string
+	}{
+		{"new key has no row", "", maskedPAN, maskedPAN},
+		{"new key holds another value", "5500000000002222", maskedPAN, maskedPAN},
+		{"new key's own echo", "5500000000002222", "****2222", "5500000000002222"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newMaskedCards(t, CaseSnake, schema.Field{Required: true})
+			m.cards.Hooks = hook.NewHookRegistry()
+			m.cards.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
+				body := data.(map[string]any)
+				body["id"] = strings.ToLower(body["id"].(string))
+				return nil
+			})
+			if _, err := m.db.Exec(`INSERT INTO cards (id, label, pan) VALUES ('ABC', 'upper', ?)`, storedPAN); err != nil {
+				t.Fatal(err)
+			}
+			if c.seedLower != "" {
+				if _, err := m.db.Exec(`INSERT INTO cards (id, label, pan) VALUES ('abc', 'lower', ?)`, c.seedLower); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := m.cards.UpsertOne(ctxWithUser("u1"), map[string]any{"id": "ABC", "label": "new", "pan": c.sent}); err != nil {
+				t.Fatalf("UpsertOne: %v", err)
+			}
+			var lower, upper string
+			if err := m.db.QueryRow(`SELECT pan FROM cards WHERE id = 'abc'`).Scan(&lower); err != nil {
+				t.Fatal(err)
+			}
+			if err := m.db.QueryRow(`SELECT pan FROM cards WHERE id = 'ABC'`).Scan(&upper); err != nil {
+				t.Fatal(err)
+			}
+			if lower != c.want {
+				t.Errorf("row abc pan = %q, want %q", lower, c.want)
+			}
+			if upper != storedPAN {
+				t.Errorf("row ABC pan = %q, want it untouched", upper)
+			}
+		})
 	}
 }

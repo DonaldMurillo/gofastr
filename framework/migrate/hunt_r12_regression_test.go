@@ -81,40 +81,84 @@ func TestConstraintLineIsNoColumn(t *testing.T) {
 	}
 }
 
-// A trigger and the function it calls, removed together: the trigger goes
-// first, and the Down recreates the function first (r12 migrate-03).
-func TestRemovedRoutinesDropInReverseOrder(t *testing.T) {
+// Objects removed together drop dependents first, and the Down recreates
+// what they read first: views by their recorded DependsOn, routines in the
+// reverse of the plan order they were created in (r12 migrate-03).
+func TestRemovedObjectsDropDependentsFirst(t *testing.T) {
 	reg := fkReg{ixEntity(noteField(false, nil))}
-	routines := []migrate.Routine{
-		{Name: "stamp_audit", Dialect: migrate.DialectPostgres,
-			Up:   "CREATE OR REPLACE FUNCTION stamp_audit() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql",
-			Down: "DROP FUNCTION IF EXISTS stamp_audit()"},
-		{Name: "stamp_audit_trg", Dialect: migrate.DialectPostgres,
-			Up:   "CREATE OR REPLACE TRIGGER stamp_audit_trg BEFORE UPDATE ON ixt FOR EACH ROW EXECUTE FUNCTION stamp_audit()",
-			Down: "DROP TRIGGER IF EXISTS stamp_audit_trg ON ixt"},
+	fn := func(name string) migrate.Routine {
+		return migrate.Routine{Name: name, Dialect: migrate.DialectPostgres,
+			Up:   "CREATE OR REPLACE FUNCTION " + name + "() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql",
+			Down: "DROP FUNCTION IF EXISTS " + name + "()"}
 	}
-	_, _, snap, err := migrate.GeneratePlan(migrate.Plan{Registry: reg, Routines: routines}, migrate.SchemaSnapshot{}, migrate.DialectPostgres)
+	trg := func(name, calls string) migrate.Routine {
+		return migrate.Routine{Name: name, Dialect: migrate.DialectPostgres,
+			Up:   "CREATE OR REPLACE TRIGGER " + name + " BEFORE UPDATE ON ixt FOR EACH ROW EXECUTE FUNCTION " + calls + "()",
+			Down: "DROP TRIGGER IF EXISTS " + name + " ON ixt"}
+	}
+	cases := []struct {
+		name  string
+		plan  migrate.Plan
+		first string // dropped first: the dependent
+		probe string // works only while both objects exist
+	}{
+		{"view whose name sorts before its source", migrate.Plan{Registry: reg, Views: []migrate.View{
+			{Name: "orders_enriched", Select: "SELECT id, note FROM ixt"},
+			{Name: "active_orders", Select: "SELECT id FROM orders_enriched", DependsOn: []string{"orders_enriched"}},
+		}}, "DROP VIEW IF EXISTS active_orders", "SELECT id FROM active_orders"},
+		{"view whose name sorts after its source", migrate.Plan{Registry: reg, Views: []migrate.View{
+			{Name: "a_base", Select: "SELECT id, note FROM ixt"},
+			{Name: "b_report", Select: "SELECT id FROM a_base", DependsOn: []string{"a_base"}},
+		}}, "DROP VIEW IF EXISTS b_report", "SELECT id FROM b_report"},
+		{"trigger named after its function", migrate.Plan{Registry: reg, Routines: []migrate.Routine{
+			fn("stamp_audit"), trg("stamp_audit_trg", "stamp_audit"),
+		}}, "DROP TRIGGER", "DROP TRIGGER stamp_audit_trg ON ixt"},
+		{"trigger named before its function, plan order", migrate.Plan{Registry: reg, Routines: []migrate.Routine{
+			fn("zz_stamp"), trg("aa_stamp_trg", "zz_stamp"),
+		}}, "DROP TRIGGER", "DROP TRIGGER aa_stamp_trg ON ixt"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, snap, err := migrate.GeneratePlan(tc.plan, migrate.SchemaSnapshot{}, migrate.DialectPostgres)
+			if err != nil {
+				t.Fatal(err)
+			}
+			up, _, _, err := migrate.GeneratePlan(migrate.Plan{Registry: reg}, snap, migrate.DialectPostgres)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(up, tc.first) {
+				t.Errorf("want %q first:\n%s", tc.first, up)
+			}
+			testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+				if d != migrate.DialectPostgres {
+					t.Skip("Postgres refuses a drop out of dependency order")
+				}
+				migs := genChain(t, db, d, tc.plan, migrate.Plan{Registry: reg})
+				genDown(t, db, d, migs)
+				fkExec(t, db, tc.probe)
+			})
+		})
+	}
+}
+
+// A snapshot written before it recorded DependsOn or the plan order keeps
+// the orders it had: views by name, routines by name reversed.
+func TestRemovalOrderWithoutRecordedOrder(t *testing.T) {
+	def := func(name string) migrate.RoutineDef {
+		return migrate.RoutineDef{Up: "CREATE " + name, Down: "DROP " + name}
+	}
+	prev := migrate.SchemaSnapshot{
+		Views:    map[string]migrate.RoutineDef{"a": def("a"), "b": def("b")},
+		Routines: map[string]migrate.RoutineDef{"f": def("f"), "f_trg": def("f_trg")},
+	}
+	up, _, _, err := migrate.GeneratePlan(migrate.Plan{}, prev, migrate.DialectPostgres)
 	if err != nil {
 		t.Fatal(err)
 	}
-	up, down, _, err := migrate.GeneratePlan(migrate.Plan{Registry: reg}, snap, migrate.DialectPostgres)
-	if err != nil {
-		t.Fatal(err)
+	if want := "DROP f_trg;\nDROP f;\nDROP a;\nDROP b;"; up != want {
+		t.Errorf("got %q, want %q", up, want)
 	}
-	if strings.Index(up, "DROP TRIGGER") > strings.Index(up, "DROP FUNCTION") {
-		t.Errorf("the function is dropped before its trigger:\n%s", up)
-	}
-	if strings.Index(down, "CREATE OR REPLACE FUNCTION") > strings.Index(down, "CREATE OR REPLACE TRIGGER") {
-		t.Errorf("the Down recreates the trigger before its function:\n%s", down)
-	}
-	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
-		if d != migrate.DialectPostgres {
-			t.Skip("a Postgres function and trigger")
-		}
-		migs := genChain(t, db, d, migrate.Plan{Registry: reg, Routines: routines}, migrate.Plan{Registry: reg})
-		genDown(t, db, d, migs)
-		fkExec(t, db, "DROP TRIGGER stamp_audit_trg ON ixt")
-	})
 }
 
 // A view may be named with a keyword, as a table may (r12 migrate-04).

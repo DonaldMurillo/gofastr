@@ -129,6 +129,26 @@ func TestDeliveryRedactsCredentialCutByBodyLimit(t *testing.T) {
 	}
 }
 
+// A second echo that the read cut short must not slide into the kept
+// window when the first one shrinks to the placeholder.
+func TestDeliveryRedactsRepeatedCredentialEcho(t *testing.T) {
+	token := "tok-" + strings.Repeat("S3CR3T", 11) // not-a-secret: test fixture credential
+	for gap := 0; gap <= 70; gap++ {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(token + strings.Repeat("x", gap) + token + "tail"))
+		}))
+		d := deliverOnce(t, Subscriber{URL: srv.URL, Auth: Auth{Kind: AuthBearer, Token: token}}, Options{ResponseBodyLimit: 64})
+		srv.Close()
+		if strings.Contains(d.ResponseBody, "S3CR3T") {
+			t.Fatalf("gap %d: stored body holds part of the credential: %q", gap, d.ResponseBody)
+		}
+		if len(d.ResponseBody) > 64 {
+			t.Fatalf("gap %d: stored body is %d bytes; the limit is 64", gap, len(d.ResponseBody))
+		}
+	}
+}
+
 type failingClaimStore struct{ *MemoryStore }
 
 func (failingClaimStore) DueDeliveries(context.Context, time.Time, int) ([]Delivery, error) {

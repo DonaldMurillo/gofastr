@@ -116,6 +116,37 @@ func (a Auth) secrets() []string {
 	return out
 }
 
+// redactHead is redact over the first keep bytes of text, matching
+// credentials that begin there and run past them into the rest.
+func (a Auth) redactHead(text string, keep int) string {
+	if keep >= len(text) {
+		return a.redact(text)
+	}
+	covered := make([]bool, len(text))
+	for _, s := range a.secrets() {
+		for from := 0; ; {
+			i := strings.Index(text[from:], s)
+			if i < 0 {
+				break
+			}
+			for j := from + i; j < from+i+len(s); j++ {
+				covered[j] = true
+			}
+			from += i + 1
+		}
+	}
+	var b strings.Builder
+	for i := 0; i < keep; i++ {
+		switch {
+		case !covered[i]:
+			b.WriteByte(text[i])
+		case i == 0 || !covered[i-1]:
+			b.WriteString(redactedCredential)
+		}
+	}
+	return b.String()
+}
+
 // longestSecret is the byte length of the longest string redact blanks.
 func (a Auth) longestSecret() int {
 	n := 0

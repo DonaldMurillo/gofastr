@@ -1029,9 +1029,8 @@ func (m *Manager) readResponse(body io.Reader, auth Auth) string {
 	var kept string
 	if keep > 0 {
 		buf, _ := io.ReadAll(io.LimitReader(body, keep+int64(auth.longestSecret())))
-		over := int64(len(buf)) > keep
-		kept = auth.redact(string(buf))
-		if over && int64(len(kept)) > keep {
+		kept = auth.redactHead(string(buf), int(keep))
+		if int64(len(buf)) > keep && int64(len(kept)) > keep {
 			kept = kept[:keep]
 		}
 		kept = textsafe.ScrubControlBytes(strings.ToValidUTF8(kept, "\uFFFD"))

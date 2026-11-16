@@ -303,25 +303,18 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
-	// Replay answers nil for a job that is not failed, so the page asks
-	// first: a no-op is neither audited nor reported as a replay.
-	failed, err := b.jobFailed(r.Context(), id)
+	replayed, err := replayJob(r.Context(), rq, id)
 	if err != nil {
-		b.logger().Error("admin: list failed jobs", "error", err)
-		b.refuse(w, r, page, http.StatusInternalServerError, "queue-load-failed")
-		return
-	}
-	if !failed {
-		b.refuse(w, r, page, http.StatusConflict, "replay-nothing")
-		return
-	}
-	if err := rq.Replay(r.Context(), id); err != nil {
 		if errors.Is(err, queue.ErrDuplicateJob) {
 			b.refuse(w, r, page, http.StatusConflict, "replay-duplicate")
 			return
 		}
 		b.logger().Error("admin: replay job", "job", textsafe.ScrubControlBytes(id), "error", textsafe.ScrubControlBytes(err.Error()))
 		b.refuse(w, r, page, http.StatusInternalServerError, "failed")
+		return
+	}
+	if !replayed {
+		b.refuse(w, r, page, http.StatusConflict, "replay-nothing")
 		return
 	}
 	b.appendAudit(r.Context(), "queue", "replay", id, adminActorID(r.Context()), nil)
@@ -353,7 +346,8 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 	actor := adminActorID(r.Context())
 	skipped := false
 	for _, id := range ids {
-		if err := rq.Replay(r.Context(), id); err != nil {
+		replayed, err := replayJob(r.Context(), rq, id)
+		if err != nil {
 			if errors.Is(err, queue.ErrDuplicateJob) {
 				skipped = true
 				continue
@@ -362,7 +356,10 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 			b.refuse(w, r, page, http.StatusInternalServerError, "failed")
 			return
 		}
-		b.appendAudit(r.Context(), "queue", "replay", id, actor, nil)
+		// A job someone else replayed since the list was read is not this run's.
+		if replayed {
+			b.appendAudit(r.Context(), "queue", "replay", id, actor, nil)
+		}
 	}
 	if skipped {
 		b.done(w, r, page, "replayed-some")
@@ -375,17 +372,6 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 // time, newest first, up to maxReplayAll. A page that adds no new id
 // ends the read, so a backend that repeats a page cannot keep it going.
 func (b *Battery) failedJobIDs(ctx context.Context) ([]string, error) {
-	return b.failedJobIDsUntil(ctx, "")
-}
-
-// jobFailed reports whether id is among the failed jobs failedJobIDs reads.
-func (b *Battery) jobFailed(ctx context.Context, id string) (bool, error) {
-	ids, err := b.failedJobIDsUntil(ctx, id)
-	return err == nil && len(ids) > 0 && ids[len(ids)-1] == id, err
-}
-
-// failedJobIDsUntil is failedJobIDs that stops once it has read stop.
-func (b *Battery) failedJobIDsUntil(ctx context.Context, stop string) ([]string, error) {
 	limit := b.cfg.QueueListLimit
 	seen := map[string]bool{}
 	var ids []string
@@ -400,9 +386,6 @@ func (b *Battery) failedJobIDsUntil(ctx context.Context, stop string) ([]string,
 				seen[j.ID] = true
 				ids = append(ids, j.ID)
 				fresh++
-				if stop != "" && j.ID == stop {
-					return ids, nil
-				}
 			}
 		}
 		if len(jobs) < limit || fresh == 0 {
@@ -410,6 +393,15 @@ func (b *Battery) failedJobIDsUntil(ctx context.Context, stop string) ([]string,
 		}
 	}
 	return ids, nil
+}
+
+// replayJob replays id and reports whether the queue queued it again. A
+// queue without queue.ReplayReporter cannot say: its nil reads as replayed.
+func replayJob(ctx context.Context, rq queue.Replayable, id string) (bool, error) {
+	if rr, ok := rq.(queue.ReplayReporter); ok {
+		return rr.ReplayJob(ctx, id)
+	}
+	return true, rq.Replay(ctx, id)
 }
 
 // opSpec is one ops action drawn as a form: a form RPC with the runtime
