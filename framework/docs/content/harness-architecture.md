@@ -1917,7 +1917,7 @@ operations on resume:
 
 ```sql
 CREATE TABLE tool_call_intents (
-  call_id     TEXT PRIMARY KEY,        -- call_01H…
+  call_id     TEXT PRIMARY KEY NOT NULL, -- call_01H…
   log_id      TEXT NOT NULL,
   tool_name   TEXT NOT NULL,
   args_hash   TEXT NOT NULL,
@@ -1926,7 +1926,7 @@ CREATE TABLE tool_call_intents (
 );
 
 CREATE TABLE tool_call_outcomes (
-  call_id      TEXT PRIMARY KEY REFERENCES tool_call_intents(call_id),
+  call_id      TEXT PRIMARY KEY NOT NULL REFERENCES tool_call_intents(call_id),
   outcome      TEXT NOT NULL,          -- "ok" | "error" | "cancelled" | "timeout"
   completed_at TEXT NOT NULL,
   result_ref   TEXT                    -- pointer into events table

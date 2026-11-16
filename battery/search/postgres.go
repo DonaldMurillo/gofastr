@@ -190,7 +190,7 @@ func (p *PostgresSearch) EnsureSchema(ctx context.Context) error {
 	}
 	//gofastr:allow(GOFASTR1415) a search index is derived from records the entity graph already exports, and a restore re-indexes them; registerOwnerEraser covers erasure by Document.Owner
 	createTable := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id     TEXT PRIMARY KEY,
+		id     TEXT PRIMARY KEY NOT NULL,
 		type   TEXT NOT NULL,
 		text   TEXT NOT NULL,
 		fields JSONB,

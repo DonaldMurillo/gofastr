@@ -291,6 +291,25 @@ func TestCloseCutsStalledPumpWriteWhenWriteTimeoutDisabled(t *testing.T) {
 	}
 }
 
+// The drain's writes clear the deadline Close set, so with WriteTimeout
+// disabled the Close frame went out with none and Close never returned.
+func TestCloseFrameIsBoundedAfterDrainWhenWriteTimeoutDisabled(t *testing.T) {
+	sc := &stallConn{entered: make(chan struct{})}
+	c := &WebSocketConn{conn: sc, sendBuffer: make(chan wsMessage, 4), closed: make(chan struct{}), peerClosed: make(chan struct{}),
+		config: WSConfig{WriteTimeout: -1, CloseTimeout: time.Millisecond}}
+	// No pump: Close drains the queued message itself, then writes its frame.
+	if err := c.WriteString("queued"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { c.Close(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close stayed blocked writing its Close frame with no deadline")
+	}
+}
+
 // A Close the peer started replies with its Close frame at once: the
 // peer discards data after its own Close, so draining the queue only
 // delayed the handshake.

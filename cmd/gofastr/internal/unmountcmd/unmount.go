@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/DonaldMurillo/gofastr/core/textsafe"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -191,7 +192,7 @@ func runGoList(ctx context.Context, dir string, args ...string) ([]byte, error) 
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go %s: %v\n%s", strings.Join(args[:2], " "), err, cli.ScrubTerminalOutput(strings.TrimSpace(stderr.String())))
+		return nil, fmt.Errorf("go %s: %v\n%s", strings.Join(args[:2], " "), err, textsafe.ScrubTerminal(strings.TrimSpace(stderr.String())))
 	}
 	return out, nil
 }

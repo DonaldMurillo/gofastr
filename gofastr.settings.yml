@@ -102,6 +102,10 @@ contracts:
     GOFASTR1417: # security/status-update-skips-stamps
       exempt:
         - framework/contracts/**
+    # And the key rule: its bad example quotes a key with no NOT NULL.
+    GOFASTR1418: # security/nullable-primary-key
+      exempt:
+        - framework/contracts/**
 
     # The semantic-coverage rules read .gofastr/semantic-coverage.json,
     # which records WHICH TESTS RAN — and that differs by environment.

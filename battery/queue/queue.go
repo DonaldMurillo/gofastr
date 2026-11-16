@@ -186,7 +186,8 @@ type Queue interface {
 
 // JobStats is a snapshot of job counts grouped by status. The keys
 // are status names (DBQueue: "pending", "claimed", "failed", and
-// "done" under WithDoneRetention).
+// "done" under WithDoneRetention; MemoryQueue and RedisQueue: "failed").
+// A backend counts only the jobs its ListJobs can list.
 type JobStats map[string]int
 
 // Browsable is the optional read-only inspection interface, implemented
@@ -215,6 +216,16 @@ type Replayable interface {
 	// touch terminal ('failed') rows and be idempotent: replaying an unknown,
 	// pending, or running job is a no-op, not an error or a double-run.
 	Replay(ctx context.Context, jobID string) error
+}
+
+// ReplayReporter is the optional capability beside Replayable that says
+// whether a replay queued anything, implemented by DBQueue, MemoryQueue and
+// RedisQueue. Admin tooling type-asserts for it so a replay of a job that
+// is not failed is neither reported nor audited as one.
+type ReplayReporter interface {
+	// ReplayJob is Replay that reports whether it queued the job again:
+	// false, with a nil error, for an id that names no failed job.
+	ReplayJob(ctx context.Context, jobID string) (replayed bool, err error)
 }
 
 // Sentinel errors.

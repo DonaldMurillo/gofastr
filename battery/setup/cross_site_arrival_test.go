@@ -204,3 +204,21 @@ func TestCrossSiteSubresourceDoesNotSpendToken(t *testing.T) {
 	}
 	tokenStillGood(t, h, "/setup?token="+r.token, "a cross-site arrival on an unsafe path")
 }
+
+// The wizard answers ahead of the router, so it reads the path as the
+// browser sent it: under a locale prefix the hop reloads that same
+// path, the prefix on it once, with nothing left for a rewriter to add.
+func TestHopUnderLocalePrefixReloadsSamePath(t *testing.T) {
+	done := false
+	r := buildTestRunner(t, false, &done)
+	h := r.Handler(func() {}, nil, nil)
+	link := "/es/setup?token=" + r.token
+
+	w := crossSiteGet(h, link)
+	if got := w.Header().Get("Refresh"); w.Code != http.StatusOK || got != "0;url="+link {
+		t.Fatalf("got %d Refresh %q, want the hop page reloading %s", w.Code, got, link)
+	}
+	if !strings.Contains(w.Body.String(), `href="`+link+`"`) || strings.Contains(w.Body.String(), "/es/es/") {
+		t.Fatalf("the hop page does not link the same path:\n%s", w.Body.String())
+	}
+}

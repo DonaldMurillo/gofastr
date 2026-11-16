@@ -198,7 +198,7 @@ reconnecting tab reclaims its seat.
 ```go
 sig.Peers(room)          // merged local + live-remote roster, sorted by Order then ID
 sig.Rooms()              // rooms with at least one local member
-sig.Kick(room, peerID)   // close one local socket (a nudge, not a ban: see below); reports whether found on this replica
+sig.Kick(room, peerID)   // close one local socket (a nudge, not a ban: see below); reports whether found on this replica; returns before the close handshake ends
 sig.Close()              // stop everything; safe to call twice
 sig.SetFanout(f)         // wired for you by Init (or App.Mount) under WithFanout
 rtc.TURN.Credentials(peerID, now) // the per-peer ICEServer entry, exported for non-browser peers

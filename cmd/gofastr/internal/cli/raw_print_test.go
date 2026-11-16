@@ -24,12 +24,12 @@ import (
 // file's contents, a key name, a spec value, a subprocess's output, an
 // error that names any of those) goes through a status helper
 // (Info/Warn/Fail/Success) or Printf/Print/Println/Fprintf/Fprintln,
-// which scrub every argument, or through ScrubTerminalOutput.
+// which scrub every argument, or through textsafe.ScrubTerminal.
 var scrubbingFormatters = map[string]string{
-	"contracts.FormatText":     "framework/contracts sanitizeText scrubs every location, message, snippet and suggestion before it adds colour",
+	"contracts.FormatText":     "framework/contracts scrubs (textsafe.ScrubTerminal) every location, message, snippet and suggestion before it adds colour",
 	"contracts.FormatExplain":  "the rule comes from the contracts catalog compiled into the binary; the colour is the formatter's",
-	"docscmd.highlight":        "it scrubs the excerpt (ScrubTerminalOutput) before it bolds the matches",
-	"testcmd.colorizeTestLine": "it scrubs the go test output line (ScrubTerminalOutput) before it colours it",
+	"docscmd.highlight":        "it scrubs the excerpt (textsafe.ScrubTerminal) before it bolds the matches",
+	"testcmd.colorizeTestLine": "it scrubs the go test output line (textsafe.ScrubTerminal) before it colours it",
 }
 
 // TestNoRawRepoTextReachesTheTerminal walks the CLI's source for a fmt
@@ -242,7 +242,7 @@ func (in inertness) inert(e ast.Expr) bool {
 				return true
 			case f.Name == "len" || f.Name == "cap":
 				return true
-			case in.inCLI && (f.Name == "ScrubTerminalOutput" || f.Name == "scrubbedf"):
+			case in.inCLI && f.Name == "scrubbedf":
 				return true
 			case in.inCLI && styleFuncs[f.Name]:
 				return in.all(v.Args)
@@ -253,7 +253,7 @@ func (in inertness) inert(e ast.Expr) bool {
 				return false
 			}
 			switch {
-			case x.Name == "cli" && f.Sel.Name == "ScrubTerminalOutput":
+			case x.Name == "textsafe" && f.Sel.Name == "ScrubTerminal":
 				return true
 			case x.Name == "cli" && styleFuncs[f.Sel.Name]:
 				return in.all(v.Args)
