@@ -14,45 +14,21 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── DrawerBar ──────────────────────────────────────────────────────
-//
-// The bar across the top of an intercepted drawer (app.InterceptFrom):
-// a close control, the layer's path in mono, and trailing actions. It
-// sticks to the top of the layer while the layer scrolls and bleeds to
-// the layer's edges. A screen draws it only when
-// app.OverlayFromContext reports an overlay; the canonical full page
-// has breadcrumbs instead.
-//
-// Close carries data-cui-intercept-close, so it is the same history
-// move as Escape and the backdrop, and a form with unsaved edits asks
-// first. Prev and Next carry data-cui-intercept-swap: the neighbour
-// renders in the same layer, one history entry per step.
-
-// DrawerBarConfig configures the bar.
+// DrawerBarConfig configures the bar atop an intercepted drawer (app.OverlayFromContext).
 type DrawerBarConfig struct {
-	// Path is the layer's own URL path, shown in mono and truncated
-	// from the end when it does not fit. Required.
+	// Path is the layer's URL path, shown in mono. Required.
 	Path string
-	// Prev and Next, when either is set, add up and down icon links
-	// after the path that step to the neighbouring layer in place: a
-	// record drawer's previous and next record in the list under it.
-	// Root-relative paths. At an end of the list the empty one draws
-	// disabled, so the bar keeps its shape.
+	// Prev and Next step to the neighbouring record; with one set, the other draws disabled.
 	Prev, Next string
-	// CopyURL, when set, adds an icon button that copies it: the
-	// layer's absolute address, so a reader can share the record.
+	// CopyURL adds a button that copies this absolute address.
 	CopyURL string
-	// PageURL, when set, adds an icon link that opens it as the full
-	// page (data-cui-intercept-page): the drawer stack closes and the
-	// router loads the URL in the content cell. A root-relative path,
-	// usually the layer's own.
+	// PageURL adds a link that opens it as the full page.
 	PageURL string
-	// Actions trail the bar after the copy button.
+	// Actions trail the bar's own controls.
 	Actions []render.HTML
-	// Ctx resolves the close and copy labels. Nil means English.
+	// Ctx is the labels' language; nil is English.
 	Ctx context.Context
-	// ExtraAttrs lands on the bar's root; class, id and data-cui-*
-	// are dropped.
+	// ExtraAttrs land on the root; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
@@ -83,9 +59,6 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 			drawerStep(ctx, cfg.Next, "chevron-down", i18nui.DrawerNext))
 	}
 	if cfg.CopyURL != "" {
-		// One id per path: a stack never holds two layers on one path
-		// (a link to the top layer's own path re-renders it), so the
-		// copy never reads a lower layer's address.
 		h := fnv.New32a()
 		h.Write([]byte(cfg.Path))
 		id := "fui-drawer-url-" + strconv.FormatUint(uint64(h.Sum32()), 36)
@@ -114,13 +87,10 @@ func DrawerBar(cfg DrawerBarConfig) render.HTML {
 			ExtraAttrs: html.Attrs{"data-cui-intercept-page": ""},
 		}))
 	}
-	// The bar's own controls are internal; Actions stay the caller's.
 	kids = append([]render.HTML{headless.Own(render.Join(kids...))}, cfg.Actions...)
 	return drawerBarStyle.WrapHTML(html.Div(html.DivConfig{Class: "fui-drawer-bar", ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs)}, kids...))
 }
 
-// drawerStep is one step control: a link that swaps href into the
-// layer, or with no href the same control disabled.
 func drawerStep(ctx context.Context, href, icon string, key i18n.Phrase) render.HTML {
 	label := key.Text(ctx)
 	if href == "" {
@@ -140,11 +110,6 @@ func drawerStep(ctx context.Context, href, icon string, key i18n.Phrase) render.
 var drawerBarStyle = registry.RegisterStyle("ui-drawer-bar", drawerBarCSS)
 
 func drawerBarCSS(_ style.Theme) string {
-	// --cui-intercept-pad is the layer's inset, set by
-	// app.InterceptOverlayCSS on every layer; outside a layer it is
-	// unset and the bar sits flush where it is placed. A sticky box
-	// stops at the scroller's padding edge, so the bar's offset is the
-	// inset taken back: it sticks at the layer's top edge.
 	return `[data-cui-comp="ui-drawer-bar"] {
   position: sticky;
   inset-block-start: calc(-1 * var(--cui-intercept-pad, 0px));

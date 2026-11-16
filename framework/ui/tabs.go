@@ -26,59 +26,28 @@ type TabsConfig struct {
 	Tabs       []TabItem         // required, at least 1
 	Class      string            // optional extra CSS class
 
-	// StateAttrs adds data-state="active"/"inactive" to every tab,
-	// the attribute contract Radix-style ports pin their test
-	// locators to. The headless-tabs module keeps data-state in step
-	// with the selection after client-side switches. Zero value: no
-	// data-state anywhere.
+	// StateAttrs adds data-state="active"/"inactive" to every tab.
 	StateAttrs bool
-
-	// ID overrides the id prefix the tab strip would derive from the
-	// signal name: each tab gets id "<ID>-tab-<i>" plus aria-controls
-	// "<ID>-panel-<i>", each panel gets id "<ID>-panel-<i>".
+	// ID is the tab and panel id prefix; empty derives it from the signal.
 	ID string
-
-	// VacateHidden ships hidden panels EMPTY, their server-rendered
-	// content parked in an adjacent JSON stash, so page-scoped test
-	// locators cannot match text inside hidden panels. The
-	// headless-tabs module restores a panel's content on first show
-	// and moves the live nodes out and back afterwards. See the
-	// headless.TabsProps doc for the timing trade-offs.
+	// VacateHidden ships hidden panels empty, their content in a JSON stash.
 	VacateHidden bool
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the tab strip's root
-	// wrapper. Keys the component owns are dropped: class, id, the
-	// data-hui-* wiring, and data-active (the signal mirror).
+	// ExtraAttrs land on the root; class, id, data-hui-* and data-active are dropped.
 	ExtraAttrs html.Attrs
-
-	// Ctx is the render context. With no ID, the id prefix the strip
-	// derives from its signal name goes through the page's id scope
-	// (render.UniqueID), so a second strip on the same signal gets
-	// "<name>-2" ids. With no Ctx the name is used as is.
+	// Ctx scopes a derived id prefix to the page and reads a Slice's value.
 	Ctx context.Context
 }
 
 var tabsStyle = registry.RegisterStyle("fui-tabs", tabsCSS)
 
-// tabsMaxPanels bounds how many tab indices the generated CSS covers.
-// tabsMaxPanels mirrors the primitive ceiling; the generated CSS below covers exactly this many indices.
 var tabsMaxPanels = headless.TabsMaxPanels()
 
-// Tabs renders a signal-driven tab strip through headless.Tabs:
-// anchors carrying the kernel's signal contract (click sets the
-// signal; the runtime mirrors it to data-active and CSS lights both
-// the tab and the panel), roving tabindex with the full keyboard
-// contract bound by the headless-tabs module, fragment hrefs as the
-// no-script path.
+// Tabs renders a signal-driven tab strip through headless.Tabs.
 func Tabs(cfg TabsConfig) render.HTML {
 	name := cfg.SignalName
 	active := 0
 	if cfg.Slice != nil {
 		name = cfg.Slice.Name()
-		// The request's value (a producer's Seed on Ctx), the same index
-		// the page's seed hands the runtime, so the server's selected tab
-		// is the one the client shows.
 		active = cfg.Slice.Value(cfg.Ctx)
 	}
 	if name == "" {
@@ -117,17 +86,12 @@ func Tabs(cfg TabsConfig) render.HTML {
 func tabsCSS(_ style.Theme) string {
 	var b strings.Builder
 	b.WriteString(`:where([data-cui-comp="fui-tabs"]).fui-tabs{margin:0}`)
-	// The strip is a muted track with raised segments, the same shape as
-	// SegmentedControl and the FilterToolbar pills, so every "pick one of
-	// these" control on a page reads as one family.
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-nav{display:inline-flex;flex-wrap:wrap;gap:0;padding:var(--spacing-sm, 4px);background:var(--fui-muted-bg, var(--color-surface-soft, #F4F4F5));border-radius:var(--radii-lg, 10px);margin-bottom:0}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab{display:inline-flex;align-items:center;justify-content:center;min-block-size:calc(var(--spacing-touch-target, 44px) - 2 * var(--spacing-sm, 4px));padding:0 calc(var(--spacing-sm, 4px) * 3);background:transparent;border:var(--stroke-thin, 1px) solid transparent;border-radius:var(--radii-md, 8px);cursor:pointer;font-size:var(--text-sm, .875rem);font-weight:var(--font-weight-medium);color:var(--fui-muted, var(--color-text-muted, #52525B));transition:color var(--duration-fast, 150ms),background-color var(--duration-fast, 150ms),box-shadow var(--duration-fast, 150ms);text-decoration:none;white-space:nowrap}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:hover{color:var(--fui-foreground, var(--color-text, #09090B))}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab:focus-visible{outline:var(--stroke-focus, 2px) solid var(--color-text-subtle);outline-offset:var(--stroke-focus-offset, 2px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tabs-content{padding-top:var(--spacing-lg, 16px)}`)
 	b.WriteString(`[data-cui-comp="fui-tabs"] .fui-tab-panel{display:none}`)
-	// Child combinators: a strip's index picks only its own tabs and
-	// panels, never those of a Tabs nested inside one of its panels.
 	for i := range tabsMaxPanels {
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-nav>.fui-tab[data-cui-tab-index="%d"]{color:var(--fui-foreground, var(--color-text, #09090B));background:var(--fui-surface, var(--color-surface, #FFFFFF));box-shadow:var(--shadow-xs)}`, i, i))
 		b.WriteString(fmt.Sprintf(`[data-cui-comp="fui-tabs"][data-active="%d"]>.fui-tabs-content>.fui-tab-panel[data-cui-tab-index="%d"]{display:block}`, i, i))
