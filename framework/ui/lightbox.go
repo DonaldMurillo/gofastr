@@ -14,35 +14,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Lightbox ───────────────────────────────────────────────────────
-//
-// Standalone zoom overlay. Composes preset.Modal: ESC, click-outside,
-// focus-trap, return-focus all come free. Lightbox does NOT render any
-// trigger surface itself; any element on the page can open it via
-// `data-cui-open="<lightbox-name>" data-cui-deeplink="src=…&alt=…&caption=…&group=<id>"`.
-//
-// Pairs cleanly with framework/ui.Gallery (set its Lightbox field to
-// this Lightbox's Name and each gallery item becomes a trigger) but
-// works equally well standalone: markdown-content authors, inline
-// figures, custom photo feeds, etc. can all trigger the same overlay.
-//
-// Optional features:
-//   - NavArrows:      Prev/Next buttons + ArrowLeft/Right keyboard nav
-//                     across siblings sharing `data-fui-lightbox-group`.
-//   - ShowCaption:    `<figcaption>` slot bound to a "caption" signal.
-//   - AllowDownload:  visible Download button bound to current src.
-//
-// The markup is headless.LightboxViewer dressed with the fui-lightbox
-// class map; the behaviour — gallery stepping, adjacent-image
-// preloading, pinch-to-zoom — is the lightbox module this file
-// registers below, which auto-loads when the viewer's
-// [data-fui-lightbox] marker is in the DOM. The module needs the
-// widgets runtime (it re-opens the widget to re-fire the deeplink
-// signals), which its registration declares as Requires; its prev/next
-// clicks and arrow keys are retained through the module's cold-cache
-// fetch by the kernel's interaction bridge, from the interactions the
-// registration declares — the kernel itself names no lightbox.
-
 //go:embed lightbox.js
 var lightboxJS string
 
@@ -64,38 +35,26 @@ var _ = registry.RegisterBehavior("lightbox", lightboxJS,
 
 // LightboxConfig configures a Lightbox.
 type LightboxConfig struct {
-	// Name is the unique widget name (required) used as the
-	// preset.Modal name. Page-unique. Any element with
-	// data-cui-open="<this Name>" opens the overlay.
+	// Name is the page-unique modal name (required) that data-cui-open names.
 	Name string
-	// Label is the accessible name for the open modal. Defaults to
-	// "Image viewer" (i18nui.LightboxLabel through the strings
-	// bridge).
+	// Label names the open modal. Default "Image viewer".
 	Label string
-	// NavArrows renders Prev/Next buttons inside the modal AND wires
-	// ArrowLeft/Right keyboard nav over siblings sharing the same
-	// data-fui-lightbox-group attribute.
+	// NavArrows adds Prev/Next buttons and arrow keys over triggers
+	// sharing one data-fui-lightbox-group.
 	NavArrows bool
-	// ShowCaption adds a <figcaption> bound to the "caption" signal.
-	// Triggers pass caption=<text> in their data-cui-deeplink.
+	// ShowCaption adds a <figcaption> bound to the deeplink's caption.
 	ShowCaption bool
-	// AllowDownload renders a visible "Download" anchor inside the
-	// modal whose href is bound to the current src signal.
+	// AllowDownload adds a Download anchor bound to the current src.
 	AllowDownload bool
 	// Pages, when non-empty, scopes the modal mount to those routes.
 	Pages []string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) onto the lightbox's own root
-	// (the fui-lightbox viewer panel; the modal chrome is widget
-	// machinery, and triggers are caller-owned elements). Keys the
-	// component owns are dropped: class, id, data-cui-* (the viewer and
-	// nav wiring) and data-hui-* (the headless anatomy's hooks).
+	// ExtraAttrs lands on the viewer panel; class, id, data-cui-* and data-hui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// Lightbox returns a *widget.Builder for the zoom-overlay modal.
-// Mount once at app startup; trigger from anywhere via data-cui-open.
+// Lightbox returns the zoom-overlay modal, opened by any element with
+// data-cui-open="<Name>" and a data-cui-deeplink of src, alt, caption
+// and group. It panics without Name.
 func Lightbox(cfg LightboxConfig) *widget.Builder {
 	if cfg.Name == "" {
 		panic("ui: Lightbox requires Name")
@@ -128,7 +87,6 @@ func Lightbox(cfg LightboxConfig) *widget.Builder {
 	return mb
 }
 
-// lightboxSlot renders the open-modal contents.
 type lightboxSlot struct {
 	name          string
 	label         string
@@ -138,9 +96,6 @@ type lightboxSlot struct {
 	extraAttrs    html.Attrs
 }
 
-// lightboxClasses dresses headless.LightboxViewer's parts in this
-// package's own vocabulary. The pinch-zoom module and the stylesheet
-// key off the data-fui-lightbox* attributes, never off these classes.
 var lightboxClasses = headless.Classes{
 	headless.PartRoot:           "fui-lightbox cui-slot-bare",
 	headless.PartVisuallyHidden: "fui-visually-hidden",
@@ -156,9 +111,7 @@ var lightboxClasses = headless.Classes{
 // Render is RenderCtx with no reader: the English viewer.
 func (s *lightboxSlot) Render() render.HTML { return s.RenderCtx(context.Background()) }
 
-// RenderCtx draws the viewer with its words (the Prev/Next and Download
-// labels) in the request's locale. The modal is mounted once, so the
-// locale comes from each render, never from the mount.
+// RenderCtx draws the viewer with its words in the request's locale.
 func (s *lightboxSlot) RenderCtx(ctx context.Context) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
@@ -183,7 +136,6 @@ var _ component.ContextComponent = (*lightboxSlot)(nil)
 var lightboxStyle = registry.RegisterStyle("ui-lightbox", lightboxCSS)
 
 func lightboxCSS(_ style.Theme) string {
-	// Knobs: --ui-lightbox-max-width (1200px) caps the viewer column.
 	return `[data-cui-comp="ui-lightbox"] {
   display: grid;
   gap: var(--spacing-md, 8px);

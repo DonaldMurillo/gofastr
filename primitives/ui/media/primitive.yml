@@ -21,3 +21,328 @@ code:
   - framework/ui/themetoggle.go
 docs:
   - framework/docs/content/image.md
+imports:
+  - deny: framework/image
+    from: [framework/ui]
+    why: framework/image links every image decoder and the WebP encoder, and framework/ui is in every app's dependency graph.
+    instead: Take the variant facts as ui.HeaderInfo or ui.PipelineSource, and let the caller adapt framework/image's types.
+invariants:
+  - id: kit-marks-own-subtrees
+    rule: Each media component puts data-cui-internal on the topmost element of every subtree that holds none of the caller's content, collapsing a nested component's own marks with headless.Own, and on no element that holds a slot.
+    enforced_by:
+      - test: framework/ui.TestKitMarksInternalSubtrees
+      - test: framework/ui.TestSweepMediaCommentThreadMarksAnEmptyCommentAboveHeldReplies
+  - id: extra-attrs-keep-owned-keys
+    rule: A component's ExtraAttrs land on its root and never override a key it owns, ThemePicker's data-hui-theme-* hooks included.
+    enforced_by:
+      - test: framework/ui.TestMarkdownExtraAttrsCannotOverrideOwned
+      - test: framework/ui.TestThemePickerRendersOneOptionPerTheme
+  - id: required-names-panic
+    rule: AvatarGroup without avatars, Carousel or CommentThread or TerminalBlock without Label, Collapsible without Summary, CodeTabs or Lightbox without Name and Markdown without Source panic at render.
+    enforced_by:
+      - test: framework/ui.TestAvatarGroupPanicsOnEmpty
+      - test: framework/ui.TestCarouselRequiresLabel
+      - test: framework/ui.TestCommentThreadRequiresLabel
+      - test: framework/ui.TestTerminalBlockRequiresLabel
+      - test: framework/ui.TestCollapsibleMissingSummary
+      - test: framework/ui.TestCodeTabsPanics
+      - test: framework/ui.TestLightboxRequiresName
+      - test: framework/ui.TestMarkdownRequiresSource
+  - id: avatar-group-overflow-is-named-image
+    rule: AvatarGroup's "+N" pill is role=img with an aria-label naming the hidden count, its visible text aria-hidden.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaAvatarGroupOverflowIsANamedImage
+      - test: framework/ui.TestAvatarGroupOverflow
+  - id: avatar-group-size-propagates
+    rule: AvatarGroup's Size applies to every child Avatar that leaves its own Size at the default, and a child's own Size wins.
+    enforced_by:
+      - test: framework/ui.TestAvatarGroupSizePropagates
+      - test: framework/ui.TestAvatarGroupChildSizeOverrides
+  - id: avatar-group-overlaps-a-quarter
+    rule: Each avatar after the first tucks a quarter of its size under the one before at every Size, and the first sits on top.
+    enforced_by:
+      - test: framework/ui.TestAvatarGroupOverlapsAQuarter
+  - id: carousel-narrow-drops-slides
+    rule: A carousel narrower than 40rem shows at most two slides and one narrower than 26rem shows one, whatever VisiblePerView says.
+    enforced_by:
+      - test: framework/ui.TestCarouselDropsSlidesWhenNarrow
+  - id: carousel-cols-clamped
+    rule: Carousel clamps VisiblePerView into 1 to 8, so the emitted fui-carousel--cols-N class always has a rule in its sheet.
+    enforced_by:
+      - test: framework/ui.TestCarouselVisiblePerViewClampedAndApplied
+  - id: carousel-ids-distinct-without-scope
+    rule: A Carousel with no ID rendered outside an id scope takes a process-unique id, so two identical carousels never share one.
+    enforced_by:
+      - test: framework/ui.TestCarouselConcurrentRenderUniqueIDs
+  - id: gallery-anchor-precedence
+    rule: A Gallery item opens its paired Lightbox when Lightbox is set, else goes where HrefFn says, else opens Src in a new tab, and an item whose Src the anchor policy refuses gets no target.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaGalleryLightboxWinsOverHrefFn
+      - test: framework/ui.TestGalleryHrefFnOverridesDefault
+      - test: framework/ui.TestGalleryDefaultAnchorIsExternal
+      - test: framework/ui.TestGalleryRefusedSrcGetsNoNewTab
+  - id: gallery-columns-clamped
+    rule: Gallery clamps Columns into 1 to 12 for the grid and masonry column class, and the strip gets none.
+    enforced_by:
+      - test: framework/ui.TestGalleryColumnsClassClampedTo12
+  - id: gallery-thumbs-lazy
+    rule: Every Gallery thumbnail renders loading="lazy".
+    enforced_by:
+      - test: framework/ui.TestSweepMediaGalleryThumbsLoadLazily
+  - id: highlight-strings-hide-comment-markers
+    rule: A comment marker inside a string literal stays part of the string token.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaHighlightStringHidesCommentMarkers
+  - id: highlight-unterminated-quote-stops-at-line-end
+    rule: An unterminated escaped string ends at its line's newline, so it never swallows the lines after it.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaHighlightUnterminatedQuoteStopsAtLineEnd
+  - id: highlight-hash-comment-at-word-boundary
+    rule: In shell and YAML a # opens a comment only at the start of a line or after a blank, so a#b and ${#x} are not comments.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaHighlightHashCommentNeedsWordBoundary
+  - id: highlight-prose-apostrophe
+    rule: In YAML and the generic family a single quote right after a word character opens no string.
+    enforced_by:
+      - test: framework/ui.TestHighlightJSONAndYAMLKeys
+  - id: highlight-language-families
+    rule: HighlightLines tokenizes go, js/ts, sql, shell, yaml and json by their own rules, gives any other non-empty language a generic pass of comments, strings and numbers, and leaves "", text and plain untokenized.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaHighlightLanguageFamilies
+      - test: framework/ui.TestHighlightGoClassifiesTokens
+      - test: framework/ui.TestHighlightJSONAndYAMLKeys
+      - test: framework/ui.TestHighlightShellSQLAndJS
+  - id: highlight-lines-split-after-tokens
+    rule: HighlightLines escapes every token and splits into lines after tokenizing, so a multi-line token keeps its class on each line, and a trailing newline adds no empty last line.
+    enforced_by:
+      - test: framework/ui.TestHighlightPlainAndEscaping
+      - test: framework/ui.TestSweepMediaHighlightDropsTrailingBlankLine
+  - id: code-tabs-css-covers-every-panel
+    rule: The code-tabs sheet holds an active-tab and a visible-panel rule for every index up to headless.TabsMaxPanels.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaCodeTabsCSSCoversEveryPanelIndex
+      - test: framework/ui.TestCodeTabsCSSHidesInactivePanelsAndUnderlinesTheActiveTab
+  - id: image-urls-pass-the-image-policy
+    rule: OptimizedImage and PipelineImage replace a Src or Fallback the image policy refuses with /__gofastr/blank.png, drop a refused source, and keep an inline raster data URI.
+    enforced_by:
+      - test: framework/ui.TestPipelineImageSanitizesFallback
+      - test: framework/ui.TestPipelineImageSanitizesSources
+      - test: framework/ui.TestImageSrcAcceptsRasterDataURL
+      - test: framework/ui.TestImageSrcRejectsNonRasterDataURL
+  - id: image-leaves-caller-sources-alone
+    rule: Filtering refused sources never writes into the caller's Sources slice.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaOptimizedImageLeavesCallerSourcesAlone
+  - id: image-decorative-is-opt-in
+    rule: OptimizedImage and PipelineImage panic on an empty Alt unless Class carries fui-image--decorative.
+    enforced_by:
+      - test: framework/ui.TestOptimizedImageRequiresAlt
+      - test: framework/ui.TestOptimizedImageDecorativeAllowsEmptyAlt
+      - test: framework/ui.TestPipelineImageRequiresAlt
+  - id: optimized-image-requires-dimensions
+    rule: OptimizedImage panics unless Width and Height are both positive.
+    enforced_by:
+      - test: framework/ui.TestOptimizedImageRequiresWidthAndHeight
+  - id: pipeline-image-tolerates-missing-dimensions
+    rule: PipelineImage renders with a zero Width or Height, omitting that attribute instead of panicking.
+    enforced_by:
+      - test: framework/ui.TestPipelineImageZeroDimensionsRendersGracefully
+      - test: framework/ui.TestPipelineImageOnlyWidthMissing
+      - test: framework/ui.TestPipelineImageOnlyHeightMissing
+  - id: srcset-escapes-separators
+    rule: A srcset candidate URL has its commas and ASCII whitespace percent-escaped, except the first comma of a data URI.
+    enforced_by:
+      - test: framework/ui.TestOptimizedImageEscapesSrcsetCommas
+      - test: framework/ui.TestPipelineImageEncodesSrcsetURLCommas
+      - test: framework/ui.TestSrcsetKeepsDataURIDelimiter
+      - test: framework/ui.TestSrcsetEscapesDataPayloadCommas
+  - id: pipeline-sources-grouped-by-type
+    rule: PipelineImage emits one <source> per MIME type in the order each type first appears, widths ascending, dropping duplicate and incomplete sources.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaPipelineImageOneSourcePerType
+      - test: framework/ui.TestPipelineImageEmitsOneSourcePerType
+      - test: framework/ui.TestPipelineImageSortsByWidthWithinType
+      - test: framework/ui.TestPipelineImageDedupesIdenticalSources
+      - test: framework/ui.TestPipelineImageSkipsInvalidSources
+  - id: sources-from-headers-skip-incomplete
+    rule: PipelineSourcesFromHeaders skips a header with no width, no MIME type or no URL.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaSourcesFromHeadersSkipIncomplete
+  - id: placeholder-inline-raster-only
+    rule: A Placeholder renders only when it is an inline raster data URI, and any other value, a raw BlurHash or a remote URL included, renders no placeholder and no panic.
+    enforced_by:
+      - test: framework/ui.TestBadPlaceholderDegradesSilently
+      - test: framework/ui.TestPipelineImageRefusesRawBlurHash
+  - id: placeholder-paints-first
+    rule: The placeholder is an aria-hidden <img> with decoding="sync" and no lazy loading, placed before the real image in tree order.
+    enforced_by:
+      - test: framework/ui.TestPlaceholderIsNotLazyOrAsync
+      - test: framework/ui.TestPipelineImagePlaceholderPaints
+  - id: lightbox-registration
+    rule: The lightbox module registers on the [data-fui-lightbox] marker, requires the widgets runtime, and declares its prev/next clicks and arrow keys as interactions for the kernel's bridge.
+    enforced_by:
+      - test: framework/ui.TestLightboxBehaviorRegistration
+  - id: lightbox-module-binds-by-attribute
+    rule: The lightbox module finds the viewer's parts by data-fui-lightbox* attributes, never by class or data-cui-comp.
+    enforced_by:
+      - test: framework/ui.TestLightboxZoomTargetAgreesBetweenMarkupAndModule
+  - id: lightbox-words-per-render
+    rule: The mounted-once lightbox says its Prev, Next and Download words in each render's request locale.
+    enforced_by:
+      - test: framework/ui.TestLightboxSlotUsesRequestCtx
+      - test: framework/ui.TestLightboxCtxLocalePrev
+  - id: markdown-tables-scroll
+    rule: Markdown wraps each table in a tabindex=0 fui-markdown__table box that scrolls sideways.
+    enforced_by:
+      - test: framework/ui.TestMarkdownTableScrollsInItsOwnBox
+  - id: markdown-fences-are-code-blocks
+    rule: Markdown renders each fenced block as a highlighted CodeBlock with a copy button, keeping the raw info string in data-meta, and only the diff option, not the diff language, marks diff lines.
+    enforced_by:
+      - test: framework/ui.TestMarkdownFenceOptionsReachTheCodeBlock
+      - test: framework/ui.TestMarkdownUnknownMetaKeptInDataMeta
+      - test: framework/ui.TestMarkdownFenceDiffForwards
+  - id: fence-meta-is-lenient
+    rule: An unknown fence option is ignored, and an invalid highlight or words value is dropped while a valid earlier value stays.
+    enforced_by:
+      - test: framework/ui.TestParseFenceMeta
+      - test: framework/ui.TestSweepMediaFenceMetaKeepsEarlierValidValue
+  - id: pricing-heading-level-falls-back
+    rule: A PricingCard HeadingLevel outside 1 to 6 renders the plan name as an h3.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaPricingHeadingLevelFallsBack
+  - id: pricing-rows-shared-in-plan-grid
+    rule: PricingCards placed directly in a ui.Grid that holds only plans share their row tracks, so their prices and buttons start level when one description wraps longer.
+    enforced_by:
+      - test: framework/ui.TestPricingRowsAlignAcrossCards
+  - id: step-wizard-classes-are-styled
+    rule: Every fui-step-wizard class StepWizard emits is selected by its sheet, so the unstyled step row carries no class.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaStepWizardClassesAreStyled
+  - id: step-wizard-errors-need-id
+    rule: StepWizard with Errors or Summary renders a ValidationSummary with id <ID>-errors and panics when ID is empty.
+    enforced_by:
+      - test: framework/ui.TestStepWizardErrorsRequireID
+      - test: framework/ui.TestStepWizardRendersValidationSummaryForErrors
+  - id: theme-toggle-carries-loader-marker
+    rule: Every ThemeToggle variant puts data-hui-theme-toggle on its root, the marker that loads the headless-navigation module.
+    enforced_by:
+      - test: framework/ui.TestSweepMediaThemeToggleButtonsCarryLoaderMarker
+  - id: theme-radios-first-visit
+    rule: ThemePicker ships Default and the pill ships Auto as the one checked option and the one Tab stop.
+    enforced_by:
+      - test: framework/ui.TestThemeRadiosSSRCheckFirstVisit
+  - id: comment-thread-list-roles
+    rule: CommentThread nests each comment's replies as a list inside its item, and the root and every reply list carry role=list, a caller's root role replacing it.
+    enforced_by:
+      - test: framework/ui.TestCommentThreadKeepsListRole
+      - test: framework/ui.TestCommentThreadNestsReplies
+  - id: collapsible-token-chain
+    rule: The collapsible sheet reads each colour as var(--fui-*, var(--color-*, literal)).
+    enforced_by:
+      - test: framework/ui.TestCollapsibleUsesCanonicalThemeTokens
+  - id: thumbnail-refused-src-draws-nothing
+    rule: Thumbnail returns "" for an empty Src or one the image policy refuses.
+    enforced_by:
+      - test: framework/ui.TestThumbnailRefusesUnsafeSrc
+decisions:
+  - id: placeholder-is-an-img
+    date: 2026-11-16
+    status: accepted
+    decision: The placeholder is an <img> carrying the data URI, stacked behind the real image by static rules.
+    rejected:
+      - option: A CSS background set per instance.
+        why: Inline style is blocked by the default CSP and the noinlinestyles linter, a data URI cannot be enumerated into a class, and attr() works only in content.
+      - option: Script that paints the placeholder.
+        why: It would paint after the image it stands in for.
+    upholds: [placeholder-paints-first]
+  - id: bad-placeholder-degrades
+    date: 2026-11-16
+    status: accepted
+    decision: An unusable Placeholder renders the image without one.
+    rejected:
+      - option: Panic as on a missing Src or Alt.
+        why: A placeholder is stored data an older upload or another client wrote, and stored data must not take a page down.
+      - option: Accept a remote URL.
+        why: A placeholder exists to paint before the network settles, and a remote one needs its own request.
+    upholds: [placeholder-inline-raster-only]
+  - id: pipeline-image-degrades-on-missing-dimensions
+    date: 2026-11-16
+    status: accepted
+    decision: PipelineImage omits a zero width or height and accepts the layout shift.
+    rejected:
+      - option: Panic as OptimizedImage does.
+        why: Pipeline images come from user data whose old rows and broken uploads lack dimensions, and a panic there is a 500.
+    upholds: [pipeline-image-tolerates-missing-dimensions]
+  - id: header-info-mirrors-variant-header
+    date: 2026-11-16
+    status: accepted
+    decision: HeaderInfo copies the Name, Width, Height and MIME of framework/image.VariantHeader, and callers adapt their headers to it.
+    rejected:
+      - option: Take []image.VariantHeader directly.
+        why: framework/ui would import framework/image.
+      - option: Also carry VariantHeader's Format.
+        why: MIME is what <source type> needs, and a string Format would drift from the image.Format enum.
+  - id: image-src-uses-image-policy
+    date: 2026-11-16
+    status: accepted
+    decision: Image URLs pass safeImageURL, which admits inline raster data URIs.
+    rejected:
+      - option: The stricter subresource policy.
+        why: It swapped legitimate data URI images for the blank stub, so they looked broken rather than blocked.
+    upholds: [image-urls-pass-the-image-policy]
+  - id: avatar-overflow-role-img
+    date: 2026-11-16
+    status: accepted
+    decision: The "+N" pill takes role=img so its aria-label is allowed, read as "image, N more".
+    rejected:
+      - option: A bare aria-label on the span.
+        why: axe rejects aria-label on an element whose implicit role does not take it.
+      - option: No accessible name.
+        why: The hidden count would not be announced.
+    upholds: [avatar-group-overflow-is-named-image]
+  - id: comment-thread-explicit-list-role
+    date: 2026-11-16
+    status: accepted
+    decision: The thread's lists carry role=list explicitly.
+    rejected:
+      - option: Rely on the <ul> implicit role.
+        why: list-style none drops list semantics in WebKit and VoiceOver, losing the depth a reader hears.
+    upholds: [comment-thread-list-roles]
+  - id: carousel-autoid-outside-scope
+    date: 2026-11-16
+    status: accepted
+    decision: Outside an id scope a Carousel without ID takes autoID's process-wide counter; inside one headless derives the id from the content hash through render.UniqueID.
+    rejected:
+      - option: The content hash alone everywhere.
+        why: Two identical carousels outside a scope would share an id.
+    upholds: [carousel-ids-distinct-without-scope]
+  - id: pricing-card-borrows-grid-rows
+    date: 2026-11-16
+    status: accepted
+    decision: A PricingCard lays its four parts on four rows that it takes from a plan-only ui.Grid through subgrid, and on its own rows anywhere else.
+    rejected:
+      - option: Always lay out on its own rows.
+        why: A description that wraps moved only its own card's price down, so prices and buttons stepped across the row.
+    upholds: [pricing-rows-shared-in-plan-grid]
+  - id: highlight-single-pass-scanner
+    date: 2026-11-16
+    status: accepted
+    decision: The highlighter is one small byte scanner that knows string and comment boundaries per language family.
+    rejected:
+      - option: A full grammar per language.
+        why: Code blocks need the visually dominant tokens right, not a parser's weight in every app.
+  - id: fence-meta-ignores-unknown
+    date: 2026-11-16
+    status: accepted
+    decision: A fence option the renderer does not know, or a value it cannot parse, is ignored.
+    rejected:
+      - option: Fail the render.
+        why: A fence carrying another tool's options must still render.
+    upholds: [fence-meta-is-lenient]
+  - id: markdown-hierarchical-rhythm
+    date: 2026-11-16
+    status: accepted
+    decision: Markdown spacing is em-based and hierarchical, headings with a large gap above and a small one below, at a 1.7 leading for the dark-first site theme.
+    rejected:
+      - option: One flat gap between every element.
+        why: Headings would not bind to the text they introduce.

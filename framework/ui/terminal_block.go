@@ -1,14 +1,5 @@
 package ui
 
-// TerminalBlock: a presentational CLI/terminal mock: a labelled header with
-// a status dot over a mono, pre-wrapped body. For docs and marketing pages
-// that show commands and their output ("$ go install …" → "→ installed").
-//
-// It is NOT an interactive terminal. There is no input, no execution. Pair
-// the body lines with the tone helpers TerminalOut (dim output) and
-// TerminalOK (success) or TerminalErr (failure); plain command text
-// goes in as render.Text.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -22,15 +13,13 @@ type TerminalBlockConfig struct {
 	Class string
 	ID    string
 
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the block's root
-	// wrapper <div>. Keys the component owns are dropped: class
-	// and id (use Class / ID), data-cui-*.
+	// ExtraAttrs lands on the root <div>; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// TerminalBlock renders a CLI mock. Body lines are rendered verbatim in a
-// pre-wrapped mono body. Embed "\n" to break lines.
+// TerminalBlock renders a presentational CLI mock: a labelled head over a
+// pre-wrapped mono body of lines, verbatim, toned with TerminalOut,
+// TerminalOK and TerminalErr. It panics without Label.
 func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: TerminalBlock requires Label")
@@ -39,7 +28,6 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	// Label is a string, so the head is always this component's own.
 	head := html.Div(html.DivConfig{Class: "fui-terminal-block__head", ExtraAttrs: html.Attrs{"data-cui-internal": ""}},
 		html.Span(html.TextConfig{
 			Class:      "fui-terminal-block__dot",
@@ -47,9 +35,6 @@ func TerminalBlock(cfg TerminalBlockConfig, lines ...render.HTML) render.HTML {
 		}),
 		render.Text(cfg.Label),
 	)
-	// The body holds lines, the caller's slot; empty renders a body
-	// with none of a caller's markup in it, so that body is this
-	// component's own.
 	var bodyOwn html.Attrs
 	if len(lines) == 0 {
 		bodyOwn = html.Attrs{"data-cui-internal": ""}
@@ -78,8 +63,6 @@ func TerminalOK(s string) render.HTML {
 var terminalBlockStyle = registry.RegisterStyle("ui-terminal-block", terminalBlockCSS)
 
 func terminalBlockCSS(_ style.Theme) string {
-	// Knobs: --ui-terminal-block-dot-size (7px) is the head's status
-	// dot (beside the head-border and ok-color knobs below).
 	return `[data-cui-comp="ui-terminal-block"] {
   border: var(--stroke-thin, 1px) solid var(--color-border, #E4E4E7);
   border-radius: var(--radii-md, 8px);
