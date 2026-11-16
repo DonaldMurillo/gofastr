@@ -9,22 +9,10 @@ import (
 //go:embed controls.js
 var controlsJS string
 
-// ControlsBehaviorName is the runtime module that binds the stateful
-// form controls' data-hui-* hooks. The host serves it at
-// /__gofastr/runtime/headless-controls.js and the kernel loads it when
-// one of its markers is on the page; it replaces the retired
-// core-ui/runtime numberinput, slider, rangeslider and animatedcounter
-// modules.
+// ControlsBehaviorName is the runtime module that binds the counter,
+// number input, slider and range slider hooks.
 const ControlsBehaviorName = "headless-controls"
 
-// The markers are spelled as literals on the call because the runtime's
-// hard-rule-5 gate reads every registry.Markers call in the tree. One
-// per behaviour: a stepping counter's seed (the signals kernel is the
-// whole increment path, but it steps the store, so the counter's own
-// value has to reach it) and the animated counter's root, the
-// stepper's root, the slider's output (a bare slider carries no
-// mirror and no module), and the range pair's root (its cross-clamp
-// matters even without an output).
 var _ = uiregistry.RegisterBehavior(ControlsBehaviorName, controlsJS,
 	uiregistry.Markers("[data-hui-counter-value]", "[data-hui-counter-animate]", "[data-hui-number-input-decrement]",
 		"[data-hui-slider-output]", "[data-hui-range-slider]", "[data-hui-json]"))
