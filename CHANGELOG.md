@@ -74,6 +74,12 @@ few lines, and link the PR or the docs page for the rest.
   reason to send the session back.
 
 ### Added
+- **Sign in with Apple (`auth.NewAppleProvider`).** Signs a fresh ES256
+  client secret per exchange and takes Apple's form-POST callback
+  (`POST /auth/oauth/{provider}/callback`, for `OAuth2FormPostProvider`s
+  only). `WithBFFPosture` lets that POST through; a host mounting
+  `auth.CSRF()` itself exempts the path. See
+  [Sign in with Apple](framework/docs/content/auth.md#sign-in-with-apple).
 - **Emailed sign-in codes (`auth.EmailCodePlugin`).** Passwordless
   sign-in with an eight-digit code mailed to the address and typed into
   the browser that asked for it (`POST /auth/email-code/{send,verify}`).

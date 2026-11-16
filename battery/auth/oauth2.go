@@ -320,6 +320,41 @@ func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Get(basePath+"/oauth/{provider}", p.redirectHandler())
 	r.Get(basePath+"/oauth/{provider}/link", p.linkHandler())
 	r.Get(basePath+"/oauth/{provider}/callback", p.callbackHandler())
+	r.Post(basePath+"/oauth/{provider}/callback", p.formPostCallbackHandler())
+}
+
+// formPostCallbackHandler takes the callback an OAuth2FormPostProvider
+// posts (Apple's, when the email scope is asked for) and answers a page
+// from this origin that loads the GET callback with the same code and
+// state. It checks and consumes nothing itself: the POST is cross-site,
+// so it carries no SameSite=Lax state cookie, and the GET it leads to
+// runs every callback check with the cookie the page's navigation
+// sends. Anyone could already load that GET URL, so the page grants
+// nothing a link would not.
+func (p *OAuth2Plugin) formPostCallbackHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fp, ok := p.providers[router.Param(r, "provider")].(OAuth2FormPostProvider)
+		if !ok || !fp.CallbackIsFormPost() {
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
+		if !parseAuthFormOrRefuse(w, r) {
+			return
+		}
+		q := url.Values{}
+		for _, k := range []string{"code", "state", "error"} {
+			if v := r.PostFormValue(k); v != "" {
+				q.Set(k, v)
+			}
+		}
+		target, ok := sameOriginTarget(&http.Request{URL: &url.URL{Path: r.URL.Path, RawPath: r.URL.RawPath, RawQuery: q.Encode()}})
+		if !ok {
+			writeAuthError(w, r, http.StatusBadRequest, reasonUnknownOauthProvider)
+			return
+		}
+		writeSameSiteHop(w, r, p.mgr.config.Pages, handler.SameSiteHopTarget(r, target), oauthSignInTitle)
+	}
 }
 
 // ─── Redirect handler ──────────────────────────────────────────────────────

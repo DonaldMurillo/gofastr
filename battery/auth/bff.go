@@ -47,6 +47,12 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 	// Exempting exactly that route keeps the static ui.SignOut form usable
 	// without accidentally exempting a future /logout-all sibling.
 	csrfOpts = append(csrfOpts, withCSRFSkipExactPath(mgr.Config().BasePath+"/logout"))
+	// A form-post OAuth callback (Sign in with Apple) is the IdP's own
+	// cross-site POST and carries no token; the route only answers a page
+	// that loads the GET callback (OAuth2FormPostProvider).
+	csrfOpts = append(csrfOpts, withCSRFSkip(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && isFormPostCallback(mgr.Config().BasePath, r.URL.Path)
+	}))
 	csrfOpts = append(csrfOpts, WithCSRFCookieSecure(true))
 
 	return func(app *framework.App) {
@@ -68,7 +74,7 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 				// in either option order. There is one API prefix, owned by
 				// framework.AppConfig, rather than a duplicated security knob.
 				return normalizeBFFPrefix(app.Config.APIPrefix)
-			}, origins, cfg.TokenPrefix),
+			}, origins, cfg.TokenPrefix, mgr.Config().BasePath),
 			CSRF(csrfOpts...),
 			SessionMiddleware(mgr),
 		)
@@ -76,13 +82,16 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 }
 
 func withCSRFSkipExactPath(path string) CSRFOption {
+	return withCSRFSkip(func(r *http.Request) bool { return r.URL.Path == path })
+}
+
+func withCSRFSkip(skip func(*http.Request) bool) CSRFOption {
 	return func(cfg *middleware.CSRFConfig) {
-		exact := func(r *http.Request) bool { return r.URL.Path == path }
 		if cfg.Skip == nil {
-			cfg.Skip = exact
+			cfg.Skip = skip
 			return
 		}
-		cfg.Skip = middleware.SkipAny(cfg.Skip, exact)
+		cfg.Skip = middleware.SkipAny(cfg.Skip, skip)
 	}
 }
 
@@ -111,9 +120,14 @@ func normalizeBFFPrefix(prefix string) string {
 	return "/" + strings.Trim(prefix, "/")
 }
 
-func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPrefix string) func(http.Handler) http.Handler {
+func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPrefix, authBase string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// The IdP's form-post callback carries the IdP's Origin.
+			if r.Method == http.MethodPost && isFormPostCallback(authBase, r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
 			apiPrefix := prefix()
 			// "/" (no APIPrefix configured) guards every path.
 			if apiPrefix != "/" &&

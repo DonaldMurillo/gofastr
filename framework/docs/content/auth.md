@@ -175,7 +175,7 @@ with the ordinary invalid-credentials 401 and leaves no session.
 | `CorePlugin` | `POST /auth/{login,register,logout,password}`, `GET /auth/me` | The base. Always register first. Mints a `PendingTwoFactor` session if any registered plugin reports the user has 2FA enabled. Next to a 2FA plugin, `Init` requires `NewCorePlugin().WithTwoFactorURL(path)`: an HTML form login of a 2FA account redirects there instead of to its `next` page, which would refuse the pending session (a JSON login answers `two_factor_required`). `POST /auth/password` is a signed-in user's own password change (see [Changing the password](#changing-the-password)). |
 | `MagicLinkPlugin` | `POST /auth/magic-link/send`, `GET /auth/magic-link/verify` | Passwordless email-link sign-in. Auto-creates users on first verify and marks them verified. On an existing account whose address is unverified it claims the account first (see [Proving the mailbox claims an unverified account](#proving-the-mailbox-claims-an-unverified-account)). Needs `EmailVerifiedChecker` on the store for existing accounts. Refuses to operate without `EmailSender` unless `DevMode` is explicitly set. Next to a 2FA plugin, `Init` requires `TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `OnSuccessURL` (see [Following a magic link does not sign you in; confirming does](#following-a-magic-link-does-not-sign-you-in-confirming-does)). `TokenLength` is deprecated and does nothing: the stores mint 32 random bytes. |
 | `EmailCodePlugin` | `POST /auth/email-code/{send,verify}` | Passwordless sign-in with an eight-digit code mailed to the address, typed into the browser that asked for it. Same account rules as `MagicLinkPlugin` (auto-create, claim an unverified account, 2FA stays pending). Needs `EmailSender` unless `DevMode`, and `TwoFactorURL` next to a 2FA plugin. See [Emailed sign-in codes](#emailed-sign-in-codes). |
-| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback` | OAuth 2.0 (Google + GitHub built in). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
+| `OAuth2Plugin` | `GET /auth/oauth/{provider}`, `GET /auth/oauth/{provider}/callback`, `POST /auth/oauth/{provider}/callback` (form-post providers only) | OAuth 2.0 (Google, GitHub and Apple built in, any OIDC provider through `OIDCProvider`). **Requires** a `UserStore` that implements `OAuthLinker` (EntityUserStore does); it fails Init closed otherwise. Binds identity by `(provider, providerID)` and never trusts an unverified email. Next to a 2FA plugin, `Init` requires `OAuth2Config.TwoFactorURL`: a 2FA account's sign-in is pending and goes there instead of `/`. See [OAuth identity linking](#oauth-identity-linking). |
 | `TwoFAPlugin` | `POST /auth/2fa/{enroll,verify,challenge,disable,backup-codes}` | TOTP + backup codes. TOTP codes are six digits; backup codes are eight mixed-case letters and digits; `TwoFAConfig.Period` (default 30 s) sets the time step, and the enrolment URL carries it to the authenticator app. Provides `RequireTwoFA` middleware; CorePlugin checks `HasTwoFactorEnabled` at login to set `Session.PendingTwoFactor`. |
 | `AccountsPlugin` | `GET /auth/accounts`, `DELETE /auth/unlink/{provider}` | List and unlink linked OAuth identities. Refuses to unlink the user's last login method (checks `HasPassword` + remaining linked accounts). |
 | `EmailVerificationPlugin` | `POST /auth/send-verification`, `GET /auth/verify-email` | Issues a token, redeems it, calls `MarkEmailVerified` on the store. The link only verifies when opened in a browser holding a full session of the account that requested it: 401 without one (the token stays live), 403 for another account's session. A link clicked in webmail arrives cross-site, where the browser withholds the `SameSite=Strict` session cookie; that click gets a page from this origin that opens the same link again, and the reopened link carries the cookie. A click with no Fetch Metadata (a browser sends none to a plain-HTTP LAN address) gets the page too, and its reload carries `gofastr_hop=1`. The page redeems nothing. Whoever registered an address can mail the link to its owner, and the owner's click or a mail scanner's prefetch must not verify the registrant's account. |
@@ -2552,6 +2552,62 @@ HS256-only JWT verifier in `token.go`. Application-issued session JWTs
 stay HS256-only by design; only third-party id_tokens are validated here,
 against the IdP's published asymmetric keys. The two never share a code
 path.
+
+## Sign in with Apple
+
+`AppleProvider` is the OIDC provider set up for Apple. Register it under
+the key `apple`; the callback is `/auth/oauth/apple/callback`, the
+Return URL you give the Services ID.
+
+<!-- gofastr:compile
+stmt: _ = err
+import "github.com/DonaldMurillo/gofastr/battery/auth"
+import "os"
+stmt: _ = oauth
+-->
+```go
+provider, err := auth.NewAppleProvider(auth.AppleConfig{
+    ClientID:    "com.example.web", // the Services ID
+    TeamID:      "ABCDE12345",
+    KeyID:       "FGHIJ67890",      // the Sign in with Apple key
+    PrivateKey:  []byte(os.Getenv("APPLE_PRIVATE_KEY")), // the .p8 file
+    RedirectURL: "https://app.example.com/auth/oauth/apple/callback",
+})
+
+oauth := auth.NewOAuth2Plugin(auth.OAuth2Config{
+    Providers:   map[string]auth.OAuth2Provider{"apple": provider},
+    StateSecret: os.Getenv("OAUTH_STATE_SECRET"),
+})
+```
+
+What it does differently from a plain `OIDCProvider`:
+
+- **The client secret is signed, not stored.** Each code exchange sends
+  a fresh ES256 JWT signed with the `.p8` key (`iss` the team, `sub` the
+  Services ID, `aud` `https://appleid.apple.com`, valid five minutes).
+  The key must be the P-256 PKCS #8 key Apple issues; anything else
+  fails `NewAppleProvider`.
+- **The callback is a form POST.** Apple sends the code as a cross-site
+  `POST` whenever the `email` scope is asked for, which it is. That POST
+  carries no `SameSite=Lax` state cookie, so the plugin answers it with
+  a page from this origin that loads the usual GET callback with the
+  same `code` and `state`, and the GET runs every check with the cookie.
+  The POST itself signs in nobody. Any provider can opt in by
+  implementing `OAuth2FormPostProvider`.
+- **Scopes are `openid email`.** Apple sends the user's name only once,
+  in the first callback's `user` field, which the plugin drops; the
+  account's name stays empty.
+- **`email_verified` arrives as the string `"true"`,** which counts.
+  A "Hide My Email" relay address (`…@privaterelay.appleid.com`) is a
+  verified address like any other.
+
+`WithBFFPosture` lets Apple's POST through its CSRF check and origin
+guard on `{BasePath}/oauth/{provider}/callback` only. A host that mounts
+`auth.CSRF()` itself must exempt that path:
+`auth.CSRF(auth.WithCSRFSkipPaths("/auth/oauth/apple/callback"))`.
+
+PKCE is sent as with every provider. If Apple ever refuses it, set
+`DisablePKCE`. `Issuer` and `HTTPClient` exist for tests.
 
 ## Threat model assumptions
 
