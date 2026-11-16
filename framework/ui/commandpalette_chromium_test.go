@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
+	cdpruntime "github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/chromedp/kb"
 
@@ -144,6 +145,9 @@ func openPalette(t *testing.T, ctx context.Context, url string, vw, vh int64) {
 		chromedp.KeyEvent(kb.ArrowDown),
 		chromedp.WaitVisible(`#command-palette-input-listbox`, chromedp.ByID),
 		chromedp.Sleep(250*time.Millisecond),
+		// The overlay opens with a spring easing that overshoots; measure the settled layout.
+		chromedp.Evaluate(`Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished)).then(() => true)`, nil,
+			func(p *cdpruntime.EvaluateParams) *cdpruntime.EvaluateParams { return p.WithAwaitPromise(true) }),
 	); err != nil {
 		t.Fatalf("open listbox: %v", err)
 	}
