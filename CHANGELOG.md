@@ -36,6 +36,11 @@ few lines, and link the PR or the docs page for the rest.
   finished, and a later click could run first; the held one then
   overrode it and the first link's page was shown. Held clicks are now
   delivered in the order they were made. Nothing to change.
+- **Erasure counts a row once when two entities spell its table
+  differently.** With one entity on `Notes` and another on `notes`,
+  `EraseUserData` treated them as two tables and reported each erased
+  row twice. Table names now fold the way export and the SQL already
+  did, so `EraseTableResult.Table` is the lower-case name.
 
 ### Changed
 - **CI runs side by side.** The `build · vet · test` job ran every gate
