@@ -99,3 +99,19 @@ func TestStoreEraserNeedsExactlyOneEraseFunc(t *testing.T) {
 	_, un := RegisterStoreEraser(StoreEraser{Name: "s", Source: "a", EraseResolved: resolved})
 	un()
 }
+
+// Identity reports a kind as resolved only when it carries a value: an
+// erasure records nothing for a kind it could not resolve, and an empty
+// value would match nothing a store keys on.
+func TestErasedUserIdentity(t *testing.T) {
+	u := ErasedUser{ID: "u1", Identities: map[IdentityKind]string{IdentityEmail: "a@example.com"}}
+	if v, ok := u.Identity(IdentityEmail); !ok || v != "a@example.com" {
+		t.Errorf("resolved email = %q, %v", v, ok)
+	}
+	if _, ok := (ErasedUser{ID: "u1"}).Identity(IdentityEmail); ok {
+		t.Error("an unresolved kind reads as resolved")
+	}
+	if _, ok := (ErasedUser{Identities: map[IdentityKind]string{IdentityEmail: ""}}).Identity(IdentityEmail); ok {
+		t.Error("an empty value reads as resolved")
+	}
+}
