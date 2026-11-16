@@ -544,6 +544,52 @@ null and `Mask` is not called for it. It runs before the entity's
 placeholder for a value it cannot read: a `Mask` that panics reads as
 null, and the panic is logged.
 
+#### Writing a masked field back
+
+A client that reads a record, changes one key and sends the whole object
+back sends `"****1111"` for the card number. CRUD drops that field from
+the write: when the value sent for a masked field equals `Mask` of the
+stored value, the write goes on as if the field were not in the body.
+The stored value stays and the other fields are written.
+
+```
+GET   /cards/c1                                   → {"label":"old","number":"****1111"}
+PATCH /cards/c1  {"label":"new","number":"****1111"}  → 200, number still 4111111111111111
+PATCH /cards/c1  {"number":"4222222222222222"}        → 200, number replaced
+```
+
+This holds on every write that updates a stored row: `PATCH` and `PUT`
+(both write only the fields sent), `PATCH /<entity>/_batch`, a cascade
+child that names an existing row, the MCP update tool, `UpdateOne`,
+`BatchUpdateMany`, and `UpsertOne` when the key already exists. The
+stored row is read inside the write's transaction, under the caller's
+tenant and owner scope, and only when the body carries a masked field.
+
+The edges:
+
+- **A body with nothing else.** `{"number":"****1111"}` alone leaves no
+  field to write and answers 400 `no fields to update`, as an empty
+  body does. `UpsertOne` returns the row unchanged.
+- **A required masked field.** The dropped field is not reported
+  missing. `UpsertOne`, which checks the whole row, treats it as held.
+- **A stored NULL.** `Mask` never runs on a NULL, so nothing sent for it
+  is an echo: the value is written.
+- **A stored empty string.** It is masked like any value, and its masked
+  form sent back is dropped.
+- **A new value that equals the masked form.** CRUD cannot tell the two
+  apart, so the write is dropped. You cannot set a card number to the
+  literal `****1111` while the stored number ends in 1111. Pick a mask
+  whose output is not a value anyone would store.
+- **A mask that depends on the caller.** The comparison runs `Mask` as
+  the caller who writes, so it matches what that caller read.
+- **A create.** There is no stored row. A create stores what it is sent.
+- **`TypedQuery.UpdateAll`.** It sets one value on every matching row
+  and reads none of them, so it writes the value as given.
+
+The comparison is against the declared `Mask` only. A value an
+`AfterGet` hook rewrites is not recognised: leave such a field out of a
+write that does not change it.
+
 A masked field is `no_query` too; `entity.Define` sets it. Left
 queryable, the stored value is still a live column, and a caller
 recovers it a character at a time from which rows come back:
@@ -594,6 +640,8 @@ treats any column the two reads disagree on as write-only: rendered
 empty (or with an explicit "— unchanged —" option on a checkbox, enum,
 or relation picker), left alone unless you supply a value. A mask that
 hands one caller the stored value leaves the column editable for them.
+It never sends the masked value, so it does not depend on the drop
+above, and it covers hook-masked columns the drop cannot see.
 It compares the reads rather than looking at `Mask` or `no_query`, so a
 hook that *transforms* rather than masks, normalising a phone number or
 rounding a currency, also makes its columns write-only in the admin. Do
@@ -1423,6 +1471,16 @@ occurrence), its operator must suit the field's type, and `?f_in=` beside
 go comma-separated (`sort=status,-created_at`) or as repeated `sort`
 keys, at most 16 in all; an unknown field is a 400.
 
+Rows with no value in the sorted column come last ascending and first
+descending, on SQLite and Postgres alike. That is Postgres's own order,
+so its plain indexes still serve the sort; on SQLite the framework writes
+`NULLS LAST` or `NULLS FIRST` for a column that can hold NULL (one that
+is not a key column, not `Required` and not framework-generated). The
+list, `?stream=true`, `ListAll`, a `TypedQuery`'s `Order`, the DSL's
+`order()` and `GroupCountAll`'s groups all follow it. A `Required`
+column that holds NULL anyway (rows written before it was added, or a
+raw INSERT) keeps each database's own order.
+
 `_ne` follows `=`'s NULL semantics rather than SQL three-valued intuition:
 a row whose column is NULL matches neither `=` nor `!=`, and no
 `OR column IS NULL` arm is added. Combine with `_in` (or a `?where=`
@@ -1751,7 +1809,8 @@ and adds their decimal text exactly, avoiding binary-float accumulation.
 This uses constant working memory but reads every matching decimal row.
 Trailing zeroes may differ between dialects. It takes a
 visible int, float or decimal field. `GroupCountAll` returns each stored
-value with its count, ordered by value, a bool as `true`/`false`; a
+value with its count, ordered by value with the no-value group last, a
+bool as `true`/`false`; a
 positive limit caps the groups, so ask for one more than you draw to
 tell a capped result from a whole one. Both refuse `Fields`, `Sorts`,
 `Limit`, `Offset` and `Includes`, and a Hidden field. Under

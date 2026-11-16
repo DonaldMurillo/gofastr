@@ -10,6 +10,9 @@ notes:
   - change: "Field masks no longer inherit back office CRUD elevation on any read or write response"
     guidance: "A permission-sensitive mask checks the caller's own permissions. Grant the intended read permission explicitly if an admin should see the stored value."
     nodetect: "the mask's runtime permission checks determine the output; no host source spelling distinguishes an affected mask"
+  - change: "an update (REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany, UpsertOne on an existing key) whose value for a field with a Mask equals Mask of the stored value leaves that column alone; it used to store the masked text over the stored value"
+    guidance: "Nothing to change for a client that reads a record and writes it back. A masked field can no longer be set to its own masked form, and a body that carries only that value answers 400 no fields to update. TypedQuery.UpdateAll still writes the value as given."
+    nodetect: "the difference depends on the sent value matching the mask of the stored row at runtime; no host source spelling distinguishes it"
   - change: "BREAKING - battery/cache.CacheMiddlewareWithLimit panics when maxBodyBytes is negative; a negative cap used to read as 0 and buffer every response whole"
     breaking: true
     nodetect: "the condition is a negative value, usually read from configuration, which no spelling shows; every ordinary call passes a cap or 0"
@@ -18,6 +21,10 @@ notes:
     breaking: true
     nodetect: "a fact of the request and the database: a key declared without AutoGenerate is ordinary, and only a write that sends no key value changes answer"
     guidance: "Send the key, or declare it generated (AutoGenerate: schema.AutoUUID). Rows already stored under a NULL key cannot be read, updated or deleted through the CRUD routes: find them with SELECT ... WHERE <key> IS NULL and give them a key or delete them."
+  - change: "BREAKING on SQLite - a sort on a column that can hold NULL (?sort=, ?stream=true, ListAll, TypedQuery.Order, the DSL's order(), GroupCountAll's groups) puts the rows with no value last ascending and first descending, the order Postgres gives; SQLite used to put them first ascending and last descending"
+    breaking: true
+    nodetect: "a fact of the stored rows: a sort on a nullable column is ordinary, and only rows holding NULL in it change place"
+    guidance: "Nothing to change in code. A SQLite app's sorted lists show their null rows at the other end; a first page under ?limit= may hold different rows. A column that should never be empty can be declared required. dsl.BuildDSLQuery now writes NULLS LAST or NULLS FIRST after a nullable order() column on both databases; on Postgres that is the default order and plain indexes still serve it."
   - change: "the generated seedEntity (stubs.go) gains Count, Weights and Authored beside Rows; Rows still holds every row, the Authored leading rows first, so seeding itself does not change"
     guidance: "Regenerate to pick the fields up (gofastr generate app gofastr.yml --force; an app that hand-maintains its root copies the seedEntity type and seedData from a scratch regeneration's stubs.go, at the app root, not entities/). Nothing must change: the new fields are additive and seeding reads Rows only. gofastr pack now reads the seed recipe back instead of flattening a count:/weights: entry to explicit rows, and a generated row that was hand-edited packs as explicit rows with the recipe dropped."
     nodetect: "additive fields on a generated struct; no source spelling differs"
@@ -383,3 +390,6 @@ notes:
   - change: "generated apps wrap their entity UI extensions as fwApp.EntityUI(withViewStubs(fwApp, appExtensions)) in app.go, so a display.views entry with no where: boots and answers an error naming extensions.go until its filter is registered there"
     guidance: "An app generated earlier keeps its app.go (gofastr generate --add preserves it). Before adding a view with no where:, regenerate into a scratch directory and copy view_stubs.go plus view_stubs_<entity>_init.go for each entity with such a view into the app (the per-entity files register the stubs; view_stubs.go alone registers none), then change the EntityUI call in app.go to fwApp.EntityUI(withViewStubs(fwApp, appExtensions))."
     nodetect: "the call lives in an owned app.go the generator does not rewrite; whether it is needed depends on the spec's views"
+  - change: "auth.SessionMiddleware answers a cross-site top-level GET or HEAD that carries no session cookie and is about to get a 401, or a gate's login redirect, with a 200 same-site hop page (Refresh to the same path and query) so the reload carries the SameSite=Strict cookie"
+    guidance: "Nothing to change for RequireSession, screen policies or battery/admin. A guard of your own that redirects a signed-out visitor to a login page calls handler.NoteSessionRefusal(r.Context()) before the redirect to get the same answer; one that answers 401 needs nothing. A test that sends Sec-Fetch-Site: cross-site with navigate and document and no cookie now sees the 200 hop page first."
+    nodetect: "the difference depends on a request's Fetch Metadata and cookies at runtime; no host source spelling distinguishes it"

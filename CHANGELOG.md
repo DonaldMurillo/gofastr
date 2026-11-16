@@ -386,6 +386,17 @@ few lines, and link the PR or the docs page for the rest.
   code that serves a requested path; `static.Refuses(path)` no longer
   refuses short names, since a tree walk yields only real names, so a
   static export now publishes a `~digit` file.
+- **BREAKING (SQLite): a sort puts rows with no value where Postgres
+  does** ([#698](https://github.com/DonaldMurillo/gofastr/issues/698)).
+  `?sort=` on a column that can hold NULL listed the null rows first
+  ascending on SQLite and last on Postgres, so an app built on SQLite
+  paged a different list in production. Both now put them last ascending
+  and first descending: the list, `?stream=true`, `ListAll`,
+  `TypedQuery.Order`, the DSL's `order()` and `GroupCountAll`. Postgres
+  is unchanged. An existing SQLite app sees its null rows move to the
+  other end of a sorted list. See
+  [entity declarations](framework/docs/content/entity-declarations.md),
+  "sort".
 - **BREAKING (SQLite): an insert with no key value is refused**
   ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). A create,
   batch create or upsert whose row would hold a NULL key part (a key left
@@ -881,6 +892,27 @@ few lines, and link the PR or the docs page for the rest.
   without the permission had hidden.
 
 ### Fixed
+- **A signed-in user who follows an outside link into a guarded page
+  lands on the page** ([auth](framework/docs/content/auth.md),
+  [admin](framework/docs/content/admin.md)). The browser withholds the
+  `SameSite=Strict` session cookie from a page load that starts on
+  another site, so the admin and every guarded page sent them to login.
+  `auth.SessionMiddleware` now answers a cross-site top-level `GET` with
+  no session cookie that is about to get a `401` or a gate's login
+  redirect with the same-site hop page, which reloads the URL with the
+  cookie. A signed-out visitor from another site gets the login redirect
+  one page load later. A guard of your own that redirects to login calls
+  the new `handler.NoteSessionRefusal(ctx)` first; `RequireSession`,
+  screen policies and `battery/admin` already do.
+- **Reading a record and writing it back stored the mask.** A `Mask`
+  field reads as `****1111`; a client that sent that back had it stored
+  over the card number. A write whose value for a masked field is the
+  masked form of the stored value now leaves that column alone, on REST
+  `PATCH`/`PUT`, `_batch`, cascade children, the MCP update tool,
+  `UpdateOne`, `BatchUpdateMany` and `UpsertOne`. You cannot set a masked
+  field to its own masked form. `TypedQuery.UpdateAll` writes what it is
+  given. See [entity declarations](framework/docs/content/entity-declarations.md),
+  "Writing a masked field back".
 - **A `ui.DataTable` caption wrapped in a narrow box on a phone.** In
   the card and row phone layouts the caption stayed a table caption
   inside a table that no longer was one, and shrank to its longest word.
