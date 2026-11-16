@@ -1,0 +1,55 @@
+primitive: auth
+summary: The auth battery, covering sessions and their middleware, policies, login flows and tokens.
+code:
+  - battery/auth/
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: cross-site-arrival-reloads-same-site
+    rule: SessionMiddleware answers a cookieless document navigation (GET or HEAD) that handler.IsCrossSiteRequest calls cross-site and that is about to be refused with the same-site hop page for the request's own path and query, in place of the refusal; a public page, a request that sent a session cookie, a request that is no such navigation and the hop's own reload get the app's answer.
+    enforced_by:
+      - test: battery/auth.TestCrossSiteArrivalAtGuardedPageHops
+      - test: battery/auth.TestCrossSiteArrivalHopDoesNotLoop
+      - test: battery/auth.TestCrossSiteArrivalAtPublicPageIsServedDirectly
+      - test: battery/auth.TestOnlyCookielessCrossSiteNavigationsHop
+      - test: battery/auth.TestCrossSiteArrivalHopIsNoOpenRedirect
+      - test: battery/auth.TestCrossSiteArrivalHopReplacesTheRefusal
+  - id: hop-only-on-a-401-or-a-marked-redirect
+    rule: The hop replaces a 401, or a redirect whose gate called handler.NoteSessionRefusal; RequireSession, SessionPolicy, RolePolicy and the admin gate mark their login redirects, the UI host marks none, and an unmarked redirect reaches a cross-site visitor as it is.
+    enforced_by:
+      - test: battery/auth.TestCrossSiteArrivalHopsOnlyOnSessionPolicyRedirects
+      - test: battery/admin.TestCrossSiteArrivalIsNotSentToLogin
+      - test: battery/admin.TestCrossSiteArrivalReloadSignedOutGetsLogin
+    judge: Does this change add a gate that redirects to a login page for want of a session without calling handler.NoteSessionRefusal, or call it before a redirect that is no session refusal?
+    applies:
+      - core/handler/fetchmeta.go
+      - battery/admin/admin.go
+      - battery/admin/shell.go
+  - id: hop-keeps-the-locale-prefix
+    rule: Under a locale prefix (framework.WithLocalePrefixes) every URL a hop page carries, in the Refresh header, a meta refresh and its link, names the path the browser asked for with the prefix on once. The hop writes its target as the router sees it and core-ui/urlprefix adds the prefix to the Refresh header and a meta refresh as it does to Location, for any handler's Refresh; an external, protocol-relative or already prefixed URL stays as written. The setup wizard answers ahead of the router and reloads the path as it came.
+    enforced_by:
+      - test: battery/auth.TestHopKeepsLocalePrefix
+      - test: battery/auth.TestPrefixedHopIsNoOpenRedirect
+      - test: core-ui/urlprefix.TestRefreshRule
+      - test: core-ui/urlprefix.TestRefreshRuleIdempotent
+      - test: core-ui/urlprefix.TestRefreshHeaderGainsPrefix
+      - test: core-ui/urlprefix.TestMetaRefreshGainsPrefix
+      - test: battery/setup.TestHopUnderLocalePrefixReloadsSamePath
+    judge: Does this change write a same-origin URL into a response header or attribute that core-ui/urlprefix does not rewrite, or prepend the locale prefix to a hop target by hand?
+    applies:
+      - core-ui/urlprefix/
+      - battery/setup/render.go
+decisions:
+  - id: hop-on-refusal-not-on-arrival
+    date: 2026-11-16
+    status: accepted
+    decision: A cross-site arrival is hopped only when the app is about to refuse it, on a 401 or on a redirect the gate itself marked as a session refusal, and uihost does not mark policy redirects (issue 696).
+    rejected:
+      - option: Hop every cookieless cross-site navigation before the app runs.
+        why: A public page would cost every visitor from another site a second page load.
+      - option: Hop on any redirect.
+        why: A redirect can follow work a reload must not repeat, such as a logout link or a callback.
+      - option: Have uihost mark every screen policy redirect.
+        why: A policy that sends / to /en is no refusal, and its cross-site visitors got the hop page in place of the plain 303.
+    revisit_if: A gate outside the framework needs the hop and cannot reach handler.NoteSessionRefusal, or browsers stop sending Fetch Metadata on navigations.
+    upholds: [cross-site-arrival-reloads-same-site, hop-only-on-a-401-or-a-marked-redirect]

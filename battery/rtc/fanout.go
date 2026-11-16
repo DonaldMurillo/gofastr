@@ -363,17 +363,15 @@ func (s *Signaler) onFanoutMessage(raw []byte) {
 	// performs a closing handshake that can wait out CloseTimeout,
 	// and this subscriber goroutine must keep draining the lane (a
 	// stall here would expire live remote entries on other replicas).
-	for _, conn := range kick {
-		go conn.Close()
-	}
+	closeDetached(kick...)
 	for _, conn := range full {
 		s.logger.Warn("rtc: peer closed", "reason", "room_full")
 		go func() { _ = conn.CloseWithStatus(4000+http.StatusConflict, "room full") }()
 	}
-	for _, conn := range lost {
+	for range lost {
 		s.logger.Warn("rtc: peer closed", "reason", "signal_lost")
-		go conn.Close()
 	}
+	closeDetached(lost...)
 }
 
 // mirrorLocked publishes one event mirror (join/leave/status) to the
@@ -464,7 +462,7 @@ func (s *Signaler) remoteJoinLocked(origin string, msg *fanoutMsg, kick *[]*stre
 				s.markEmptyLocked(rm)
 			}
 			s.broadcastRosterLocked(msg.Room)
-			*kick = append(*kick, old.conn)
+			*kick = append(*kick, s.detachLocked(rm, old))
 			// The room just heard a leave, so the join below is owed
 			// whatever the remote view held for the id.
 			delete(prev, msg.Peer.ID)

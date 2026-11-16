@@ -110,7 +110,11 @@ func TestAuditFilterIgnoresBadValues(t *testing.T) {
 		t.Fatalf("invalid filters narrowed the list: %d rows shown, want all 3", auditRowsShown(body))
 	}
 	for _, param := range []string{"entity", "op", "from", "to", "actor"} {
-		if !strings.Contains(body, param) {
+		ignored := false
+		for _, quote := range []string{`"`, "&#34;", "&quot;"} {
+			ignored = ignored || strings.Contains(body, quote+param+quote+" was ignored")
+		}
+		if !ignored {
 			t.Errorf("no warning names the ignored %q param", param)
 		}
 	}

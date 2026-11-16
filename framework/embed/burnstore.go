@@ -241,7 +241,7 @@ func NewSQLBurnStore(database *sql.DB, opts ...SQLBurnStoreOption) (*SQLBurnStor
 	stmt := fmt.Sprintf(
 		//gofastr:allow(GOFASTR1415) the eraser below blanks the grant by subject; export leaves these rows out on purpose, since a restored row is a live grant
 		`CREATE TABLE IF NOT EXISTS %s (`+
-			`nonce_id TEXT PRIMARY KEY, grant_token TEXT NOT NULL, expires_at %s NOT NULL, `+
+			`nonce_id TEXT PRIMARY KEY NOT NULL, grant_token TEXT NOT NULL, expires_at %s NOT NULL, `+
 			`subject TEXT NOT NULL DEFAULT '')`,
 		query.QuoteFolded(s.table), tsType,
 	)

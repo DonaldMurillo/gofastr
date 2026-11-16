@@ -34,7 +34,7 @@ func (ch *CrudHandler) refuseInexactDecimals(ctx context.Context, body map[strin
 			continue
 		}
 		if fields == nil {
-			if isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx)) {
+			if ch.onPostgres(ctx) {
 				return nil
 			}
 			fields = map[string][]schema.Violation{}

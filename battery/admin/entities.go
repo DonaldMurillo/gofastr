@@ -69,6 +69,12 @@ func (b *Battery) exposed(e *entity.Entity) bool {
 	return slices.ContainsFunc(b.ents, func(x *entity.Entity) bool { return x.GetName() == e.GetName() })
 }
 
+// writable reports whether the admin serves e's writes: it exposes e
+// and the app did not mount e read-only (a columned App.View).
+func (b *Battery) writable(e *entity.Entity) bool {
+	return b.exposed(e) && !b.app.EntityReadOnlyMounted(e)
+}
+
 // exposedNamed returns the exposed entity with this name.
 func (b *Battery) exposedNamed(name string) (*entity.Entity, bool) {
 	for _, e := range b.ents {
@@ -285,8 +291,12 @@ func (b *Battery) entityTitle(s *appui.Screen, e *entity.Entity, title func(ctx 
 
 // mountEntityAPI mounts an entity's write routes: the app's own CRUD
 // handler (hooks, audit, scope, the write checks) behind the gate, with
-// the elevation that lifts only the entity's Exposure.Access check.
+// the elevation that lifts only the entity's Exposure.Access check. An
+// entity the app mounted read-only gets none.
 func (b *Battery) mountEntityAPI(r *router.Router, e *entity.Entity) {
+	if !b.writable(e) {
+		return
+	}
 	ch, err := b.app.CrudHandlerForEntity(e)
 	if err != nil {
 		// Init resolved e from the registry, so this is a programming

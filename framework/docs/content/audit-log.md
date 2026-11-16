@@ -30,7 +30,7 @@ audit hooks bind to no entities.
 
 ```sql
 CREATE TABLE audit_log (
-    id          TEXT       PRIMARY KEY,
+    id          TEXT       PRIMARY KEY NOT NULL,
     entity      TEXT       NOT NULL,
     op          TEXT       NOT NULL,   -- 'create' | 'update' | 'delete' | 'restore' | 'purge'
                                         -- | 'state_override' | 'transition:<key>'

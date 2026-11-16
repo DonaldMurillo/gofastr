@@ -419,6 +419,13 @@ func (m *mockRedis) HDel(_ context.Context, key string, fields ...string) error 
 	return nil
 }
 
+// LLen implements [ListLengther].
+func (m *mockRedis) LLen(_ context.Context, key string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return int64(len(m.lists[key])), nil
+}
+
 // HDelIfEqual implements [CompareAndDeleter]: the mock holds the whole hash
 // under one mutex, so read-compare-delete here is genuinely atomic — the same
 // guarantee a Lua script gives on a real server.

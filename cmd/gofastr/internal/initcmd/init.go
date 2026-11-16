@@ -1229,7 +1229,7 @@ func RegisterMigrations(m *migrate.Migrator) {
 		Version: 1,
 		Name:    "create_posts",
 		Up: ` + "`" + `CREATE TABLE IF NOT EXISTS posts (
-			id TEXT PRIMARY KEY,
+			id TEXT PRIMARY KEY NOT NULL,
 			title TEXT NOT NULL,
 			body TEXT DEFAULT '',
 			published BOOLEAN DEFAULT FALSE,

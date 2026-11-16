@@ -16,6 +16,7 @@ var (
 	oauthHopTitle    = i18n.Define("auth.oauth_hop_title", "Finishing the link")
 	oauthSignInTitle = i18n.Define("auth.oauth_signin_hop_title", "Signing you in")
 	verifyHopTitle   = i18n.Define("auth.verify_hop_title", "Verifying your email")
+	sessionHopTitle  = i18n.Define("auth.session_hop_title", "Opening the page")
 	oauthHopContinue = i18n.Define("auth.oauth_hop_continue", "Continue")
 )
 

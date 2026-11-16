@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -70,6 +71,7 @@ type gate struct {
 	hosts   []string
 	cookie  string
 	port    string
+	browser string
 	pending map[[32]byte]time.Time
 }
 
@@ -97,6 +99,12 @@ func newGate(openCmd, secret string, ttl time.Duration, allowGET bool) (*gate, e
 // daemon and a dev run of the same app never overwrite each other's
 // session.
 func (g *gate) pin(port int, extra []string) {
+	g.pinAt(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), port, extra)
+}
+
+// pinAt is pin with the address `open` signs the browser in at, which
+// is where canonicalURL sends a localhost tab.
+func (g *gate) pinAt(browser string, port int, extra []string) {
 	p := strconv.Itoa(port)
 	hosts := []string{"127.0.0.1:" + p, "localhost:" + p}
 	hosts = append(hosts, extra...)
@@ -104,12 +112,14 @@ func (g *gate) pin(port int, extra []string) {
 	g.hosts = hosts
 	g.cookie = "gofastr_service_" + p
 	g.port = p
+	g.browser = browser
 	g.mu.Unlock()
 }
 
 // canonicalURL is where a safe request that named the app as
-// localhost:<port> is sent: the same path on 127.0.0.1:<port>. Cookies
-// are per host name, and `open` signs the browser in on 127.0.0.1, so
+// localhost:<port> is sent: the same path on the address `open` uses
+// (127.0.0.1:<port>, or [::1]:<port> for an IPv6 bind). Cookies
+// are per host name, and `open` signs the browser in on that address, so
 // a localhost tab (the address `gofastr dev` prints) would otherwise
 // stay signed out. "" when r is not such a request.
 func (g *gate) canonicalURL(r *http.Request) string {
@@ -117,12 +127,12 @@ func (g *gate) canonicalURL(r *http.Request) string {
 		return ""
 	}
 	g.mu.Lock()
-	port := g.port
+	port, browser := g.port, g.browser
 	g.mu.Unlock()
 	if port == "" || !strings.EqualFold(r.Host, "localhost:"+port) {
 		return ""
 	}
-	return "http://127.0.0.1:" + port + r.URL.RequestURI()
+	return "http://" + browser + r.URL.RequestURI()
 }
 
 func (g *gate) cookieName() string {

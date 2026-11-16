@@ -82,7 +82,7 @@ running this conversion.
 -- +migrate Name create_posts
 -- +migrate Up
 CREATE TABLE posts (
-    id    TEXT PRIMARY KEY,
+    id    TEXT PRIMARY KEY NOT NULL,
     title TEXT NOT NULL,
     body  TEXT
 );
@@ -312,9 +312,9 @@ with `Up` plus a `Down` section when a safe inverse exists:
 -- +migrate Version 2
 -- +migrate Name add_published
 -- +migrate Up
-ALTER TABLE "posts" ADD COLUMN "published" BOOLEAN;
+ALTER TABLE posts ADD COLUMN published BOOLEAN;
 -- +migrate Down
-ALTER TABLE "posts" DROP COLUMN "published";
+ALTER TABLE posts DROP COLUMN published;
 ```
 
 Within an entity the file drops changed indexes first, then changes
@@ -430,7 +430,11 @@ after it, since Postgres cannot cast the old one. When a generated rollback
 uses that conversion, it restores the original default recorded in the schema
 snapshot, including on a column renamed in the same migration. Other
 changes may still need a data-specific `USING` clause, so review and
-hand-tighten. A `String` whose `Max` changed is a type change on
+hand-tighten. Postgres refuses to retype a column a view reads, so the
+file drops each view that lists the table in `DependsOn` (and the views
+that read it) before the retype and creates it again after; the `Down`
+does the same around the reverse retype. A view that reads the table
+without listing it in `DependsOn` still fails the migration. A `String` whose `Max` changed is a type change on
 Postgres, which enforces the `VARCHAR` width: `ALTER COLUMN … TYPE
 VARCHAR(200)` widens it, and a narrower width fails on a row that no
 longer fits rather than cutting it. SQLite ignores the width, so the
@@ -558,7 +562,7 @@ foreign key you added by hand may depend on a unique index and the drop
 would fail. The snapshot keeps recording the old index while the new
 one is declared, so removing or changing the index later drops both.
 
-The migrator writes table, column and index names bare, so Postgres
+The migrator writes table, column, index and view names bare, so Postgres
 folds them to lowercase, the spelling CRUD's quoted SQL names. A name
 that is a keyword on either engine cannot go bare (`CREATE TABLE posts
 (order TEXT)` is a syntax error), so it is written quoted and folded:
@@ -729,13 +733,15 @@ The schema snapshot file records the declarative state migrations have been gene
   "views": {
     "published_posts": {
       "up": "CREATE VIEW published_posts AS SELECT ...",
-      "down": "DROP VIEW IF EXISTS published_posts"
+      "down": "DROP VIEW IF EXISTS published_posts",
+      "depends_on": ["posts"]
     }
   },
   "routines": {
     "refresh_post_stats": {
       "up": "CREATE PROCEDURE refresh_post_stats() ...",
-      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats"
+      "down": "DROP PROCEDURE IF EXISTS refresh_post_stats",
+      "order": 1
     }
   }
 }
@@ -746,8 +752,8 @@ The schema snapshot file records the declarative state migrations have been gene
 - `indices`: Map of table names to arrays of index DDL statements (`CREATE [UNIQUE] INDEX ...`). The diff engine compares these to detect new, modified, or dropped indices without relying on live database index introspection.
 - `primary_keys`: Map of table names to their primary-key columns in key order. The diff compares these to detect a [primary-key change](#primary-key-changes).
 - `unique_columns`: Map of table names to their field-level `Unique` columns, an empty list for a table with none. The diff compares these to see `Unique` set or cleared on a column that already exists.
-- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly.
-- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings), tracking stored routines across migration lifecycles.
+- `views`: Map of view names to `RoutineDef` objects (`up` and `down` DDL strings, and `depends_on`, the view's declared `DependsOn`), tracking view definitions so modified or dropped views can be migrated and rolled back cleanly. Views removed together drop in the order `depends_on` gives.
+- `routines`: Map of routine/stored procedure names to `RoutineDef` objects (`up` and `down` DDL strings, and `order`, the routine's place in the plan counted from 1), tracking stored routines across migration lifecycles. Routines removed together drop in reverse `order`.
 
 Flags: `--from=<gofastr.yml>` (required), `--migrations=<dir>`
 (default `migrations`), `--snapshot=<path>` (default
@@ -869,7 +875,26 @@ another raw table): `Columns` names one local column per key column, in
 key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
 `{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
 composite one. Mark several columns `PrimaryKey: true` for a composite key;
-the key takes them in column order.
+the key takes them in column order. A key column refuses
+`NULL` on both engines. SQLite takes `NULL` in a primary-key column unless
+the column says `NOT NULL`, so on SQLite `CREATE TABLE` (boot, `migrate
+generate`, and the table rebuild) writes `NOT NULL` on every key column
+except a lone `INTEGER PRIMARY KEY`, which SQLite numbers itself. Entities
+and raw tables both get it. A raw SQL insert that leaves the key out of a
+table with a text key now fails on SQLite: send the key. A table an older
+build created keeps its column as it was: boot does not rebuild it, and
+neither `DiffSchema` nor `migrate generate` proposes a change for it. If
+such a table is later rebuilt for another change, a row with a `NULL` key
+fails the copy and the migration rolls back: give those rows a key first
+(`SELECT … WHERE <key> IS NULL`).
+The tables the framework and its batteries create for themselves (audit
+log, outbox, queue, webhooks, idempotency keys, feature flags, the auth
+stores and the rest) follow the same rule: a new one refuses a `NULL` key
+on SQLite, and one that already exists is left as it was. For a `CREATE
+TABLE` you write by hand, `gofastr verify` reports a primary-key column
+with no `NOT NULL` (`GOFASTR1418`): write `id TEXT PRIMARY KEY NOT NULL`,
+and `NOT NULL` on each column a `PRIMARY KEY (a, b)` names. The rule reads
+SQL written in Go strings; a `.sql` migration file is yours to check.
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's
@@ -1049,9 +1074,17 @@ with every declared view that reads it, since its old body may read a
 column the same migration drops. On Postgres that means a changed view is
 not replaced in place: grants on it go with the drop, and a view that
 reads it but is not declared in the plan makes the drop fail, so declare
-it with `DependsOn`. The `Down` runs the changes backwards. Removed
-views drop in name order, since the snapshot records no `DependsOn`: when
-one removed view reads another, remove them in separate migrations.
+it with `DependsOn`. The `Down` runs the changes backwards. Objects
+removed together drop dependents first. The snapshot records each view's
+`DependsOn`, so a removed view drops before the removed views it lists
+there, whatever their names. It records each routine's place in the plan,
+so removed routines drop last created first: `stamp_audit_trg` before the
+`stamp_audit` it calls. The `Down` recreates them the other way round. A
+snapshot written before these were recorded has neither, until the next
+generated migration rewrites it: its removed views drop in name order and
+its removed routines in reverse name order. If that order is wrong for a
+pair, remove them in separate migrations. A view that reads another without
+listing it in `DependsOn` is ordered by name too.
 
 ### Worked Postgres example
 

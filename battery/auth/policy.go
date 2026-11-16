@@ -241,6 +241,7 @@ func failureDecision(ctx context.Context, o policyOpts) app.Decision {
 				dest = dest + sep + "next=" + url.QueryEscape(path)
 			}
 		}
+		handler.NoteSessionRefusal(ctx)
 		return decide.Redirect(dest)
 	}
 	status := o.block
