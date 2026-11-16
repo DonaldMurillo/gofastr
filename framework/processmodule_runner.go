@@ -21,143 +21,68 @@ import (
 	"github.com/DonaldMurillo/gofastr/internal/asciicase"
 )
 
-// Runner is the seam a process module's spawn path plugs into (design §6,
-// decision C). Wave 2a ships exactly one implementation,
-// [TrustedProcessRunner]; the next wave slots [SandboxRunner] in behind the
-// same interface.
-//
-// The Runner is RESPONSIBLE FOR and ONLY FOR:
-//
-//   - verifying the executable SHA-256 equals the descriptor pin BEFORE exec
-//     (verify-then-exec, design §4.6, mirrors
-//     framework/experimental/harness/mcpclient/client.go:83-91);
-//   - applying baseline hygiene (empty-by-default env allowlist, no fds
-//     beyond stdio, cwd = per-module scratch dir, own process group);
-//   - wiring the child's stdin/stdout to a [moduleproto.Codec];
-//   - draining the child's stderr to a bounded [moduleproto.RingSink].
-//
-// It does NOT perform the handshake, poll ready, or apply capability policy.
-// Those live in the supervisor above. The returned [RunningChild] is at
-// "process started, codec wired, peer NOT yet started": the supervisor
-// installs the reverse broker handlers and then calls Peer.Start.
+// Runner spawns a process module's child. It verifies the artifact digest before
+// exec and wires stdio; the supervisor does the handshake.
 type Runner interface {
-	// Start spawns the child per spec and returns the live handle.
-	// Canceling ctx cancels the spawn (kills a half-spawned child); it does
-	// NOT cancel the child's lifetime, the supervisor owns teardown via
-	// [RunningChild.CloseStdin] / [RunningChild.Kill] / [RunningChild.Wait].
+	// Start spawns the child. ctx bounds the spawn, not the child's lifetime.
 	Start(ctx context.Context, spec ChildSpec) (RunningChild, error)
 }
 
-// ChildSpec is the supervisor's spawn request. Every field is host-derived
-// (operator-approved descriptor + the store's read generation + the
-// per-spawn instance_id). The child never supplies these.
+// ChildSpec is the supervisor's spawn request; every field is host-derived.
 type ChildSpec struct {
-	// Descriptor is the operator-approved descriptor. The runner reads
-	// ArtifactPath / ArtifactSHA256 / TrustTier / Limits from it.
-	Descriptor ProcessModuleDescriptor
-
-	// InstanceID is the random per-spawn liveness nonce (design §4.7
-	// step 1). The runner does not interpret it; the supervisor passes it
-	// through to the handshake via its own state.
-	InstanceID string
-
-	// EffectiveGrants is the post-approval grant set for this spawn.
-	// Stored on the spec so the supervisor (which calls Start) keeps a
-	// single source of truth; the runner does not interpret it.
+	Descriptor      ProcessModuleDescriptor
+	InstanceID      string
 	EffectiveGrants []access.Permission
+	Generation      uint64
 
-	// Generation is the store's desired_generation read at spawn. Stored
-	// on the spec for the same reason as EffectiveGrants.
-	Generation uint64
-
-	// Stderr is the bounded sink the child's stderr is drained into. If
-	// nil the runner constructs a default-capacity [moduleproto.RingSink]
-	// tagged for the module (so the supervisor can Tail recent output).
+	// Stderr receives the child's stderr; nil makes a default-size sink.
 	Stderr *moduleproto.RingSink
 
-	// ExtraEnv is a list of "KEY=VALUE" entries added on top of the
-	// default scrubbed allowlist (mirrors mcpclient.SpawnConfig.Env).
-	// These win over the allowlist on collision. Use only for values the
-	// caller knows; never as a back-channel for host secrets.
+	// ExtraEnv holds KEY=VALUE entries added to the allowlisted env; they win on collision.
 	ExtraEnv []string
 
-	// InheritEnv is a list of host env var names to copy through beyond
-	// the default allowlist (mirrors mcpclient.SpawnConfig.InheritEnv).
-	// Every name is a deliberate allow decision.
+	// InheritEnv names host variables copied beyond the allowlist.
 	InheritEnv []string
 
-	// ScratchDir is the per-module working directory. If empty the runner
-	// creates one under os.TempDir named "gofastr-module-<name>-<instance>".
-	// The supervisor usually supplies t.TempDir() in tests.
+	// ScratchDir is the child's working dir; empty makes one the runner removes on reap.
 	ScratchDir string
 }
 
-// RunningChild is the supervisor's handle to a spawned child process. The
-// lifetime contract is design §4.6's lift list: CloseStdin → wait deadline
-// → Kill → Wait.
+// RunningChild is a spawned child. Teardown is CloseStdin, a deadline, Kill, Wait.
 type RunningChild interface {
-	// Codec is the protocol pipe (child's stdout read side + stdin write
-	// side wrapped in a moduleproto.Codec). The supervisor builds its
-	// [moduleproto.Peer] over this.
 	Codec() *moduleproto.Codec
-
-	// Stderr is the bounded sink draining the child's stderr. Use Tail()
-	// to read recent log output for diagnostics / Failed-state reports.
 	Stderr() *moduleproto.RingSink
 
-	// Pid returns the child's process id, or -1 if the process has exited
-	// and been reaped.
+	// Pid returns the child's pid, or -1 before it started.
 	Pid() int
 
-	// ProcessGroup returns the child's Unix process group id (equal to
-	// the child's pid under Setpgid:true), or 0 on Windows / pre-spawn.
+	// ProcessGroup returns the child's Unix process group id, or 0.
 	ProcessGroup() int
 
-	// CloseStdin closes the write side of the child's stdin so the child
-	// observes EOF. Idempotent. This is step 1 of the §4.6 teardown.
+	// CloseStdin closes the child's stdin. It is idempotent.
 	CloseStdin() error
 
-	// Kill sends SIGKILL to the child (and its process group on Unix).
-	// Idempotent. This is step 3 of the §4.6 teardown, used after the
-	// drain deadline expires. It does NOT block; call Wait to reap.
+	// Kill sends SIGKILL to the child's process group, or the child. It does not wait.
 	Kill() error
 
-	// Wait blocks until the child exits and returns the wait error
-	// (nil for a clean exit). It is the reap step, and on Unix it also
-	// SIGKILLs what is left of the child's process group, so a helper
-	// the module started dies with it however it exited. Calling Wait
-	// before Kill/CloseStdin is legal, it just blocks until natural exit.
+	// Wait reaps the child and kills what is left of its process group. It is safe
+	// to call concurrently.
 	Wait() error
 }
 
-// TrustedProcessRunner is the wave-2a Runner: crash isolation only (design
-// §6 decision C, "TrustedProcessRunner for dev"). It applies baseline
-// hygiene (empty-by-default env allowlist, own process group, cwd =
-// per-module scratch dir, SHA-256 pin verified before exec, stderr →
-// RingSink) via the shared [prepareChildForSpawn]/[startPreparedChild]
-// helpers, the SAME helpers [SandboxRunner] uses, so the two runners
-// cannot drift on baseline hygiene (design §6: "applied by BOTH runners").
-// It is NOT a security sandbox, an unconfined child can still
-// open/connect/dial. Untrusted modules must use [SandboxRunner], which
-// layers OS-enforced denials on top of the same baseline.
+// TrustedProcessRunner launches trusted modules: digest pin, allowlisted env, own
+// process group and scratch dir, but no confinement.
 type TrustedProcessRunner struct {
-	// EnvAllowlist is the base env-var names the child receives (PATH,
-	// HOME, …). If nil, [DefaultChildEnvAllowlist] is used. Names not in
-	// the union of this list + spec.InheritEnv are dropped.
+	// EnvAllowlist names the host variables the child gets; nil uses
+	// [DefaultChildEnvAllowlist].
 	EnvAllowlist []string
 
-	// NewCodec constructs a Codec over the supplied reader/writer. If nil,
-	// [moduleproto.NewCodec] is used with the spec's negotiated frame
-	// bytes (clamped to DefaultMaxFrameBytes). Tests inject a fake to
-	// avoid touching real stdio.
+	// NewCodec builds the protocol codec; nil uses [moduleproto.NewCodec].
 	NewCodec func(r io.Reader, w io.Writer, maxFrameBytes int) (*moduleproto.Codec, error)
 }
 
-// DefaultChildEnvAllowlist is the minimal set of host env-var names a child
-// needs to exec and run ordinary tools, with no secrets. Grows only when a
-// real child genuinely cannot run without a name. Mirrors
-// framework/experimental/harness/mcpclient.defaultEnvAllowlist so the two spawners share
-// the same baseline.
+// DefaultChildEnvAllowlist returns a fresh copy of the host variables a child gets
+// by default, none of them secrets.
 func DefaultChildEnvAllowlist() []string {
 	allow := append([]string(nil), defaultChildEnvAllowlist...)
 	if runtime.GOOS == "windows" {
@@ -166,11 +91,7 @@ func DefaultChildEnvAllowlist() []string {
 	return allow
 }
 
-// Start implements [Runner.Start]. It is the trusted-tier spawn: verify
-// the SHA pin, build the exec.Cmd with baseline hygiene, wire stdio, exec.
-// It is a thin composition of [prepareChildForSpawn] (verify + cmd + pipes)
-// and [startPreparedChild] (exec + codec + stderr drain); [SandboxRunner]
-// reuses both with a backend.Wrap step in between.
+// Start implements [Runner].
 func (r *TrustedProcessRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
 	prep, err := prepareChildForSpawn(spec, r.allowlist())
 	if err != nil {
@@ -179,90 +100,28 @@ func (r *TrustedProcessRunner) Start(ctx context.Context, spec ChildSpec) (Runni
 	return startPreparedChild(ctx, prep, r.NewCodec)
 }
 
-// childPrep is the result of preparing a child for exec: the exec.Cmd with
-// baseline hygiene applied (scrubbed env, own process group, cwd=scratch),
-// the wired stdio pipes, and the resolved scratch dir + stderr sink. It is
-// the shared handshake between [TrustedProcessRunner] (which exec's
-// directly) and [SandboxRunner] (which calls backend.Wrap on prep.Cmd
-// between prepare and start).
 type childPrep struct {
 	Cmd        *exec.Cmd
 	Stdin      io.WriteCloser
 	Stdout     io.ReadCloser
 	StderrPipe io.ReadCloser
 	Scratch    string
-	// OwnScratch: the runner made Scratch (ChildSpec.ScratchDir was
-	// empty), so it removes it when the child is reaped or the spawn
-	// fails. A caller-supplied dir is the caller's to clean up.
 	OwnScratch bool
 	Stderr     *moduleproto.RingSink
 	Spec       ChildSpec
-	// Artifact is the open artifact fd when the platform execs BY FD
-	// (fdExecSupported): the exact bytes prepare hashed are the bytes
-	// startPreparedChild exec's, so no rename/rewrite of the artifact
-	// path between the two halves can substitute the program (the
-	// digest travels with the fd, §4.6 / #37 trust anchor). Nil on
-	// platforms without fd exec, where startPreparedChild instead
-	// RE-VERIFIES the digest right before exec (best-effort, see its
-	// doc).
-	Artifact *os.File
-	// ChildEnds are the child-side stdio pipe ends exec.Cmd holds until
-	// cmd.Start hands them to the child (and closes the parent's copy).
-	// A spawn abandoned before Start closes them through
-	// [releasePrepFDs]; once Start ran they are already closed and the
-	// second Close is a harmless os.ErrClosed.
-	ChildEnds []*os.File
+	Artifact   *os.File
+	ChildEnds  []*os.File
 }
 
-// fdExecSupported reports whether exec'ing through the child-side
-// /dev/fd/N name of an ExtraFiles fd pins the program to the already-hashed
-// inode. Linux: /dev/fd → /proc/self/fd, the kernel resolves the fd itself
-// (this is how fexecve(3) is implemented). macOS: devfs synthesizes the
-// mode of /dev/fd/N from the open flags, so execve answers EACCES even for
-// an O_EXEC fd (verified on darwin/arm64, macOS 25.5) — exec-by-fd is not
-// available there. Windows has no /dev/fd at all.
 const fdExecSupported = runtime.GOOS == "linux"
 
-// artifactChildFd is the child-side fd number an ExtraFiles[0] *os.File
-// lands on (0/1/2 are stdio; the first extra file is 3). Kept adjacent to
-// the only use.
 const artifactChildFd = 3
 
-// prepareChildForSpawn is the baseline-hygiene half of the §6 spawn
-// contract, shared by BOTH runners (design §6: "applied by BOTH runners"):
-//
-//   - verify-then-exec: the artifact is opened ONCE and the SHA-256 pin is
-//     checked against the OPEN fd BEFORE exec (mirrors
-//     mcpclient.SpawnWithConfig, framework/experimental/harness/mcpclient/client.go:82-128;
-//     the #37 trust anchor, design §3 decision B). On fd-exec platforms the
-//     same fd is what startPreparedChild exec's, so the hashed bytes and
-//     the exec'd bytes cannot diverge;
-//   - per-module scratch dir as cwd (0o700; concurrent children never
-//     collide);
-//   - empty-default env allowlist: cmd.Env is the explicit union of the
-//     runner's allowlist + spec.InheritEnv + spec.ExtraEnv. NEVER the
-//     full os.Environ() (this is the §6 finding that mcpclient.Spawn
-//     leaked every host secret; baseline hygiene is the P2 enforcement);
-//   - own process group (Setpgid on Unix, CREATE_NEW_PROCESS_GROUP on
-//     Windows, the sysproc_unix.go/_other.go split);
-//   - stdio pipes wired: stdin/stdout = protocol, stderr = bounded
-//     RingSink (design §4.2; stdout=protocol only, stderr=bounded log).
-//
-// It does NOT call cmd.Start, the caller may apply sandbox wrapping
-// (SandboxRunner) or exec directly (TrustedProcessRunner). Beyond stdio,
-// exactly ONE fd is inherited on fd-exec platforms: the artifact itself
-// (cmd.ExtraFiles carries it so the child can exec /dev/fd/3; the P3
-// "no stray fds" enforcement is unchanged everywhere else).
 func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error) {
 	d := spec.Descriptor
 	if d.ArtifactPath == "" || d.ArtifactSHA256 == "" {
 		return nil, errors.New("processmodule: runner: descriptor artifact path/sha256 required")
 	}
-	// Verify-then-exec on ONE open file: hash the fd, keep it open, and
-	// (where the platform allows) exec that same fd. Hashing the path
-	// and later exec'ing the path left a rename/rewrite window between
-	// the two resolutions in which a swapped binary ran under an
-	// already-verified digest (§4.6 lift + #37 trust anchor).
 	artifact, err := os.Open(d.ArtifactPath)
 	if err != nil {
 		return nil, fmt.Errorf("processmodule: open %s: %w", d.ArtifactPath, err)
@@ -279,7 +138,6 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		}
 	}
 
-	// Scratch dir = cwd. Per-module so concurrent children never collide.
 	scratch := spec.ScratchDir
 	if scratch == "" {
 		scratch = filepath.Join(os.TempDir(),
@@ -305,12 +163,6 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 	var cmd *exec.Cmd
 	var execFD *os.File
 	if fdExecSupported {
-		// Exec the pinned fd: Path names the child-side fd (resolved
-		// by the kernel against the dup'd ExtraFiles fd, never against
-		// the artifact path again), while Args[0] keeps the
-		// human-readable artifact path so process listings and error
-		// messages stay meaningful. Built as a bare &exec.Cmd so
-		// exec.Command's LookPath never stats the parent's fd 3.
 		execFD = artifact
 		cmd = &exec.Cmd{
 			Path: fmt.Sprintf("/dev/fd/%d", artifactChildFd),
@@ -318,19 +170,11 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 		}
 		cmd.ExtraFiles = []*os.File{artifact}
 	} else {
-		// No fd exec on this platform: nothing pins the open fd, so
-		// release it and exec by path. startPreparedChild re-verifies
-		// the digest immediately before exec instead (best-effort: the
-		// window between that re-hash and execve is not zero, but it is
-		// the only mechanism the platform offers).
 		_ = artifact.Close()
 		cmd = exec.Command(d.ArtifactPath)
 	}
 	cmd.Dir = scratch
 	cmd.Env = buildChildEnv(allowlist, spec.ExtraEnv, spec.InheritEnv)
-	// Own process group (Unix: Setpgid; Windows: CREATE_NEW_PROCESS_GROUP).
-	// SandboxRunner's backend may ADD fields (Cloneflags, UidMappings) on
-	// top without clearing Setpgid, they compose.
 	setChildProcessGroup(cmd)
 
 	stdin, err := cmd.StdinPipe()
@@ -374,22 +218,6 @@ func prepareChildForSpawn(spec ChildSpec, allowlist []string) (*childPrep, error
 	}, nil
 }
 
-// startPreparedChild is the exec half of the §6 spawn contract: it calls
-// cmd.Start, honors ctx cancellation up to Start (kill a half-spawned
-// child if the spawn deadline fired mid-spawn), wires the moduleproto
-// Codec over stdin/stdout, and starts the stderr drain goroutine. Once it
-// returns, the supervisor owns teardown (ctx no longer bounds lifetime).
-// The returned [RunningChild] is the shared spawnedChild concrete handle.
-//
-// Digest continuity, by platform: where fdExecSupported, prepare pinned the
-// hashed artifact fd into cmd.ExtraFiles and Start exec's exactly those
-// bytes (no re-verification needed or possible to race). Everywhere else
-// (macOS, Windows) the exec resolves the PATH, so this half re-verifies
-// the SHA-256 pin right before Start — after any backend.Wrap step a
-// SandboxRunner applied to prep.Cmd between the two halves. That re-verify
-// is BEST-EFFORT only: the window between the re-hash and the child's
-// execve is small but not zero, which is the strongest guarantee a
-// path-based exec offers on platforms without exec-by-fd.
 func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io.Reader, w io.Writer, maxFrameBytes int) (*moduleproto.Codec, error)) (RunningChild, error) {
 	cmd := prep.Cmd
 	started := false
@@ -399,10 +227,6 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		}
 	}()
 	if prep.Artifact == nil && !fdExecSupported {
-		// Path-exec platform: re-verify the digest immediately before
-		// exec so a swap between prepare and here (concurrent deploy,
-		// a same-host process, a wrap step) refuses instead of running
-		// unverified bytes.
 		d := prep.Spec.Descriptor
 		got, err := sha256OfFile(d.ArtifactPath)
 		if err != nil {
@@ -421,12 +245,8 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		return nil, fmt.Errorf("processmodule: exec %s: %w", execName(cmd), err)
 	}
 	if prep.Artifact != nil {
-		// The child holds its own dup of the fd; the parent's copy has
-		// done its job (the exec already resolved it).
 		_ = prep.Artifact.Close()
 	}
-	// From here a failure kills and reaps the child, then closes the
-	// parent-side pipe ends prepare opened: no spawnedChild owns them.
 	if ctx.Err() != nil {
 		_ = cmd.Process.Kill()
 		_, _ = cmd.Process.Wait()
@@ -434,7 +254,6 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		return nil, ctx.Err()
 	}
 
-	// Wire the protocol codec over stdin/stdout.
 	frameBytes := prep.Spec.Descriptor.Limits.FrameBytes
 	if frameBytes <= 0 {
 		frameBytes = moduleproto.DefaultMaxFrameBytes
@@ -450,7 +269,6 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 		return nil, fmt.Errorf("processmodule: codec: %w", err)
 	}
 
-	// Drain stderr in the background; RingSink.Write never blocks.
 	go func() {
 		_ = prep.Stderr.Drain(prep.StderrPipe)
 	}()
@@ -469,17 +287,12 @@ func startPreparedChild(ctx context.Context, prep *childPrep, newCodec func(r io
 	return rc, nil
 }
 
-// removeOwnedScratch deletes the scratch dir when the runner made it, on
-// a spawn that failed before a [spawnedChild] took ownership of it.
 func (p *childPrep) removeOwnedScratch() {
 	if p != nil && p.OwnScratch {
 		_ = os.RemoveAll(p.Scratch)
 	}
 }
 
-// execName is the human-readable program name for exec error messages:
-// Args[0] (the artifact path on fd-exec platforms, where cmd.Path is the
-// /dev/fd/N indirection) falling back to cmd.Path.
 func execName(cmd *exec.Cmd) string {
 	if len(cmd.Args) > 0 {
 		return cmd.Args[0]
@@ -487,8 +300,6 @@ func execName(cmd *exec.Cmd) string {
 	return cmd.Path
 }
 
-// allowlist returns the runner's env allowlist, defaulting to
-// DefaultChildEnvAllowlist.
 func (r *TrustedProcessRunner) allowlist() []string {
 	if r == nil || len(r.EnvAllowlist) == 0 {
 		return DefaultChildEnvAllowlist()
@@ -496,38 +307,17 @@ func (r *TrustedProcessRunner) allowlist() []string {
 	return r.EnvAllowlist
 }
 
-// spawnedChild is the concrete [RunningChild] returned by BOTH
-// [TrustedProcessRunner.Start] and [SandboxRunner.Start] (they share the
-// [prepareChildForSpawn]/[startPreparedChild] spawn path; only the
-// backend.Wrap step in between differs). The handle's lifetime contract
-// (CloseStdin → Wait → Kill) is identical for trusted and sandboxed
-// children, so one concrete type serves both, a sandboxed child whose
-// backend set its own process group / kill-tree just feeds a different
-// pgid into the same Kill path.
 type spawnedChild struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	codec  *moduleproto.Codec
-	stderr *moduleproto.RingSink
-
-	pgid int
-
-	// mu guards stdin / Kill against concurrent CloseStdin from a drain
-	// path. waitOnce serializes [os/exec.Cmd.Wait], exec.Cmd.Wait is NOT
-	// safe for concurrent calls, but the supervisor has two legitimate
-	// callers (the spawn's exit-watcher and a lease-expired / shutdown
-	// drain), so the first caller reaps and the rest observe the same
-	// error.
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	codec    *moduleproto.Codec
+	stderr   *moduleproto.RingSink
+	pgid     int
 	mu       sync.Mutex
 	waitOnce sync.Once
 	waitErr  error
-	// reaped is set once Wait has reaped the child and signalled its
-	// group. From then on the pgid number is not this child's to signal.
-	reaped atomic.Bool
+	reaped   atomic.Bool
 
-	// scratch is the runner-made working dir Wait removes once the child
-	// is reaped, so a crash-looping module does not leave one directory
-	// per restart under the temp root. Empty for a caller-supplied dir.
 	scratch string
 }
 
@@ -553,20 +343,12 @@ func (c *spawnedChild) CloseStdin() error {
 }
 
 func (c *spawnedChild) Kill() error {
-	// No lock: [os.Process].Kill is safe for concurrent calls and we read
-	// c.cmd.Process only to decide whether to skip a nil process. The
-	// pointer is set once at Start and never mutated afterwards.
 	if c.cmd.Process == nil {
 		return nil
 	}
-	// After the reap, Wait has already killed the group, and the pgid
-	// number may lead an unrelated group by now: signal nothing.
 	if c.reaped.Load() {
 		return nil
 	}
-	// Group kill first (cleans up grandchildren the module may have
-	// forked); per-process kill as a fallback if the group signal fails
-	// (e.g. Windows where signalProcessGroup is a no-op).
 	if c.pgid > 0 {
 		if err := signalProcessGroup(c.pgid, syscall.SIGKILL); err == nil {
 			return nil
@@ -575,20 +357,6 @@ func (c *spawnedChild) Kill() error {
 	return c.cmd.Process.Kill()
 }
 
-// Wait reaps the child process. Safe for concurrent calls: the first
-// caller performs the actual [os/exec.Cmd.Wait]; later callers observe
-// the cached error. This matters because the supervisor legitimately has
-// two Wait sites (the spawn's exit-watcher + a lease-expired or shutdown
-// drain) that may both be live when the child exits.
-//
-// The reap also kills what is left of the child's process group. A module
-// that exits on its own (a crash, or a drain that ends inside its deadline)
-// never reaches Kill, which was the only place the group was signalled, so
-// a helper it started in its group outlived it beside the replacement. The
-// signal goes right after the reap, never later: while any member of the
-// group lives the kernel will not hand its number out as a new pid, and an
-// emptied group has nothing to kill and would need the pid space to wrap
-// within those few instructions to name someone else's.
 func (c *spawnedChild) Wait() error {
 	c.waitOnce.Do(func() {
 		c.waitErr = c.cmd.Wait()
@@ -603,10 +371,8 @@ func (c *spawnedChild) Wait() error {
 	return c.waitErr
 }
 
-// ExecutableSHAMismatchError is returned when the executable's measured
-// SHA-256 does not equal the descriptor pin. Terminal per design §3/§6: a
-// swapped binary never reaches exec, and the supervisor transitions the
-// module to Failed rather than retry.
+// ExecutableSHAMismatchError is the refusal of an artifact whose SHA-256 differs
+// from the descriptor pin; the supervisor treats it as a terminal fault.
 type ExecutableSHAMismatchError struct {
 	Path     string
 	Expected string
@@ -618,10 +384,6 @@ func (e *ExecutableSHAMismatchError) Error() string {
 		e.Path, e.Expected, e.Actual)
 }
 
-// sha256OfFile hashes the file at path (verbatim lift of
-// framework/experimental/harness/mcpclient.sha256OfBinary, kept local so this runner does
-// not import the harness subpackage, the framework root may not import
-// framework/experimental/harness per ARCHITECTURE.md layering).
 func sha256OfFile(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -631,9 +393,6 @@ func sha256OfFile(path string) (string, error) {
 	return sha256OfReader(f)
 }
 
-// sha256OfReader hashes the bytes readable from r (shape lifted with
-// sha256OfFile). prepareChildForSpawn calls it on the OPEN artifact fd so
-// the digest describes exactly the bytes a subsequent fd exec will run.
 func sha256OfReader(r io.Reader) (string, error) {
 	h := sha256.New()
 	if _, err := io.Copy(h, r); err != nil {
@@ -642,13 +401,6 @@ func sha256OfReader(r io.Reader) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// buildChildEnv assembles the child environment from the runner's allowlist
-// plus extras (host vars copied by name) plus explicit KEY=VALUE entries
-// (which override on collision). Names are de-duplicated; explicit entries
-// win and emit first; host vars that are unset are silently skipped. The
-// result is never nil so the child never inherits the full os.Environ()
-// (design §6 baseline hygiene: the §6-finding that mcpclient.Spawn leaked
-// every host secret).
 func buildChildEnv(allowlist, extras, inherit []string) []string {
 	want := append([]string(nil), allowlist...)
 	want = append(want, inherit...)
@@ -678,22 +430,16 @@ func lookupChildEnv(name string) (string, bool) {
 	if v, ok := os.LookupEnv(name); ok {
 		return v, true
 	}
-	// Windows conventionally exposes USERPROFILE rather than HOME. Keep the
-	// documented HOME allowlist stable for cross-platform child processes.
 	if runtime.GOOS == "windows" && name == "HOME" {
 		return os.LookupEnv("USERPROFILE")
 	}
 	return "", false
 }
 
-// defaultChildEnvAllowlist is the same minimal set mcpclient uses, kept in
-// sync so a future consolidation puts the two on one helper.
 var defaultChildEnvAllowlist = []string{
 	"LANG", "LC_ALL", "LC_CTYPE", "PATH", "HOME", "TMPDIR", "USER", "LOGNAME",
 }
 
-// safeDirName sanitizes a module name for use as a scratch-dir component.
-// Falls back to "module" if the result would be empty.
 func safeDirName(name string) string {
 	var b strings.Builder
 	for _, r := range name {
@@ -709,7 +455,6 @@ func safeDirName(name string) string {
 	return b.String()
 }
 
-// shortID reduces an instance_id to its first 12 chars for path names.
 func shortID(id string) string {
 	if len(id) <= 12 {
 		return id
@@ -717,9 +462,6 @@ func shortID(id string) string {
 	return id[:12]
 }
 
-// childPgid returns the child's process group id (Unix only; 0 on Windows).
-// Under Setpgid:true with no Pgid, the kernel assigns the child's own pid
-// as the group id.
 func childPgid(cmd *exec.Cmd) int {
 	if cmd.Process == nil {
 		return 0
