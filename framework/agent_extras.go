@@ -1,20 +1,5 @@
 package framework
 
-// agent_extras.go: the remaining isitagentready.com production-scanner
-// checks that ARE framework-buildable as served routes (each opt-in; the
-// host provides the real data, the framework serves the discovery doc):
-//
-//   - /.well-known/http-message-signatures-directory  (Web Bot Auth, the
-//     site PUBLISHES a JWKS so it can sign its outbound bot/agent requests)
-//   - /.well-known/ucp                                 (Universal Commerce Protocol)
-//   - /.well-known/acp.json                            (Agentic Commerce Protocol)
-//
-// NOT buildable as served routes (documented in agent-ready.md): dnsAid
-// (DNS SVCB/HTTPS + DNSSEC), x402 (payment middleware returning HTTP 402),
-// mpp (payment execution + an x-payment-info OpenAPI extension that needs a
-// payment backend), webMcp (client-side browser API), ap2 (server-only,
-// no public probe).
-
 import (
 	"context"
 	"net/http"
@@ -24,49 +9,25 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ratelimit"
 )
 
-// ── Web Bot Auth (publish a JWKS for outbound request signing) ─────
-
-// WebBotAuthConfig configures Web Bot Auth in both directions.
-//
-// Publishing (Keys, unchanged since the option existed): the site
-// serves its signing keys as a JWK Set at
-// /.well-known/http-message-signatures-directory so receivers can
-// verify the requests it sends as a bot/agent.
-//
-// Verification (Verify, experimental): inbound RFC 9421 signature
-// verification under the profile of
-// draft-meunier-webbotauth-httpsig-protocol-02 (18 August 2026). The
-// draft is moving and this half of the option tracks it; the publishing
-// half is stable. Leaving Verify nil keeps the publishing behaviour
-// byte-identical and adds no middleware.
+// WebBotAuthConfig configures Web Bot Auth: the published signing keys and,
+// when Verify is set, experimental verification of inbound signatures.
 type WebBotAuthConfig struct {
 	// Keys is the JWK Set "keys" array, the site's public signing keys.
 	Keys []map[string]any
 
-	// Verify turns on inbound verification of Web Bot Auth signatures.
-	// Nil (the default) verifies nothing: requests pass through
-	// untouched and only /.well-known/http-message-signatures-directory
-	// is served. See WebBotAuthVerifyConfig for the modes.
+	// Verify turns on inbound verification; nil verifies nothing and adds no
+	// middleware.
 	Verify *WebBotAuthVerifyConfig
 }
 
 // WebBotAuthVerifyConfig selects the inbound verification posture.
 type WebBotAuthVerifyConfig struct {
-	// Require blocks traffic that is not verified (403 with an
-	// Accept-Signature response). The default, false, is observe mode:
-	// verified requests carry the agent identity in their context
-	// (see VerifiedAgent) and verification failures are logged, but
-	// nothing is ever blocked. Observe is the default on purpose: a
-	// bug in draft-tracking verification middleware must not be able
-	// to take an app's traffic down.
+	// Require answers unverified traffic 403; false, the default, only
+	// annotates verified requests and logs failures.
 	Require bool
 
-	// MaxValidity caps the expires - created window a signature may
-	// carry; a longer one is invalid. Zero means
-	// webbotauth.DefaultMaxValidity (5 minutes): a captured signature
-	// replays until its expires, so the cap bounds that whatever window
-	// the signer chose. A negative value panics when the app wires the
-	// verifier.
+	// MaxValidity caps a signature's expires minus created; zero means
+	// webbotauth.DefaultMaxValidity, and a negative value panics.
 	MaxValidity time.Duration
 }
 
@@ -89,40 +50,20 @@ func (a *App) handleWebBotAuthDirectory(w http.ResponseWriter, r *http.Request) 
 	a.writeWellKnownJSON(w, r, map[string]any{"keys": keys})
 }
 
-// VerifiedAgent returns the identity established by a verified Web Bot
-// Auth signature on the current request: the agent's resolved key
-// directory URL (the protocol's identifier) and the key thumbprint
-// that verified it. It returns nil for unverified traffic, which is
-// the common case: browsers send no signature. Use it for annotation,
-// differentiated rate limits, and policy, and treat nil as "learned
-// nothing about the sender", never as evidence of hostility.
+// VerifiedAgent returns the agent a verified Web Bot Auth signature on the
+// request identified, or nil for unverified traffic.
 func VerifiedAgent(ctx context.Context) *webbotauth.Agent {
 	return webbotauth.AgentFromContext(ctx)
 }
 
-// AgentRateLimitKey returns a key function for ratelimit.MiddlewareByKey
-// that gives every verified Web Bot Auth agent its own budget and keys
-// everything else by client IP, honouring X-Forwarded-For only when
-// trustXFF is set (the same rule as ratelimit.ClientIP). Add the limiter
-// with app.Router().Use after WithWebBotAuth so the verifier runs first,
-// behind an IP-keyed ceiling: a signer chooses its identity URL, so one
-// sender can mint a fresh agent budget per request, and only the IP cap
-// bounds it:
-//
-//	perIP := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 3000, Window: time.Minute})
-//	perAgent := ratelimit.NewLimiter(ratelimit.Config{MaxAttempts: 600, Window: time.Minute})
-//	app.Router().Use(perIP.MiddlewareByKey(nil))
-//	app.Router().Use(perAgent.MiddlewareByKey(framework.AgentRateLimitKey(false)))
-//
-// See webbotauth.RateLimitKey for why identity, not IP, is the honest
-// budget for agent traffic behind a shared egress.
+// AgentRateLimitKey returns a ratelimit.MiddlewareByKey key function: a
+// verified agent's identity, else the client IP (X-Forwarded-For only when
+// trustXFF). Install it after WithWebBotAuth, behind an IP-keyed limiter.
 func AgentRateLimitKey(trustXFF bool) func(*http.Request) string {
 	return webbotauth.RateLimitKey(func(r *http.Request) string {
 		return ratelimit.IPKey(ratelimit.ClientIP(r, trustXFF))
 	})
 }
-
-// ── Universal Commerce Protocol (/.well-known/ucp) ─────────────────
 
 // UCPConfig configures /.well-known/ucp (ucp.dev).
 type UCPConfig struct {
@@ -130,8 +71,7 @@ type UCPConfig struct {
 	Services        []map[string]any
 	Capabilities    []map[string]any
 	Endpoints       []map[string]any
-	// SpecURLs are advertised spec/schema URLs (the scanner expects them reachable).
-	SpecURLs []string
+	SpecURLs        []string
 }
 
 // WithUCP serves /.well-known/ucp with the site's UCP discovery metadata.
@@ -162,8 +102,6 @@ func (a *App) handleUCP(w http.ResponseWriter, r *http.Request) {
 	}
 	a.writeWellKnownJSON(w, r, doc)
 }
-
-// ── Agentic Commerce Protocol (/.well-known/acp.json) ──────────────
 
 // ACPConfig configures /.well-known/acp.json (agenticcommerce.dev).
 type ACPConfig struct {
