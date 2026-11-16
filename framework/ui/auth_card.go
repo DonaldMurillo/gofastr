@@ -1,10 +1,5 @@
 package ui
 
-// AuthCard is a centered, narrow card for auth surfaces (sign in, create
-// account, reset password). It owns the centering, the constrained measure,
-// the surface/border/shadow, and the title + footer-link slots, so auth
-// screens compose a ui.Form into Body without shipping any layout CSS.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -14,37 +9,22 @@ import (
 
 // AuthCardConfig configures an AuthCard.
 type AuthCardConfig struct {
-	// Title is the card heading (e.g. "Sign in to Acme").
+	// Title is the card's h1.
 	Title string
-	// Alert is an optional message shown above the body, typically a
-	// failed-login notice. Empty renders nothing.
+	// Alert is an error above the body, rendered role=alert.
 	Alert render.HTML
-	// Notice is an optional non-error message shown above the body, such
-	// as "Account created. Sign in to continue." It renders as a polite
-	// status in the success tone, never in the danger-styled Alert slot.
-	// Empty renders nothing.
+	// Notice is a non-error message above the body, rendered role=status.
 	Notice render.HTML
-	// Body is the card contents, typically a ui.Form.
+	// Body is the card's content, typically a Form.
 	Body render.HTML
-	// Footer is an optional row below the body, e.g. a "Create an
-	// account" link.
-	Footer render.HTML
-	Class  string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the card's root element.
-	// Keys the component owns are dropped: class (use Class), id, and
-	// data-cui-*.
+	// Footer is a row below the body.
+	Footer     render.HTML
+	Class      string
 	ExtraAttrs html.Attrs
 }
 
-// AuthCard renders a centered, constrained auth card.
+// AuthCard renders the centered, narrow card of a sign-in or sign-up screen.
 func AuthCard(cfg AuthCardConfig) render.HTML {
-	// The panel holds only the title when Alert, Notice, Body and Footer are
-	// all empty — the whole panel is then the component's own — and
-	// holds a slot the moment any of them arrives, so the boundary
-	// moves down to the title alone and the panel is left for an owner
-	// to reach.
 	hasSlot := cfg.Alert != "" || cfg.Notice != "" || cfg.Body != "" || cfg.Footer != ""
 	var titleAttrs html.Attrs
 	if hasSlot {
@@ -83,7 +63,6 @@ func AuthCard(cfg AuthCardConfig) render.HTML {
 var authCardStyle = registry.RegisterStyle("ui-auth-card", authCardCSS)
 
 func authCardCSS(_ style.Theme) string {
-	// Knobs: --ui-auth-card-panel-max-width (24rem) caps the card.
 	return `[data-cui-comp="ui-auth-card"] {
   display: flex;
   justify-content: center;

@@ -8,57 +8,28 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── ConditionalField ───────────────────────────────────────────────
-//
-// A region shown or hidden by another field's value, rendered through
-// headless.ConditionalField. The region renders VISIBLE and the
-// headless behaviour module hides it when the watched field does not
-// match: a field only a script can reveal is a field a reader without
-// script never reaches, so the no-script page shows every dependent
-// field and script takes them away, never the other way round. The
-// module also disables the controls inside a hidden region (telling
-// them apart from controls the page disabled itself) so nothing
-// hidden submits.
-
 // ConditionalFieldConfig configures a field conditionally shown based
 // on another field's value.
 type ConditionalFieldConfig struct {
 	// WhenName is the form field name to watch. Required.
 	WhenName string
 
-	// WhenValue is the value that triggers showing the children.
-	// For checkboxes/radios, this matches the value attribute.
-	// Mutually exclusive with WhenValues. Required unless WhenValues
-	// is set.
+	// WhenValue is the value that shows the children; set it or WhenValues.
 	WhenValue string
 
-	// WhenValues shows the children while the watched field's value is
-	// ANY of the listed values — the "field in [v1, v2]" condition.
-	// Mutually exclusive with WhenValue; per-value rules match
-	// WhenValue's (no empty strings). Select, radio-group and checkbox
-	// controllers work the same as they do for WhenValue.
+	// WhenValues shows the children while the field holds any of them.
 	WhenValues []string
 
-	// Children is the content to show when the condition is met.
 	Children []render.HTML
+	Class    string
 
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the region's root
-	// element. Keys the component owns are dropped: class (use
-	// Class), id, data-cui-*, data-hui-* (the region's hooks are the
-	// runtime's contract, not a caller's to forge), hidden and
-	// aria-hidden (the module owns the region's visibility).
+	// ExtraAttrs lands on the region; hidden, aria-hidden and the
+	// component's own keys are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// ConditionalField renders a container that is visible on first paint
-// and hidden by the headless runtime module until the watched field
-// matches WhenValue, or any value in WhenValues. The watched field is
-// resolved the way the form
-// would submit it: the checked radio's value, a checkbox's value when
-// checked, any other control's value.
+// ConditionalField renders a region that is visible on first paint and
+// that the headless module hides until the watched field matches.
 func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	if cfg.WhenName == "" {
 		panic("ui: ConditionalField requires WhenName")
@@ -71,12 +42,9 @@ func ConditionalField(cfg ConditionalFieldConfig) render.HTML {
 	}
 	return conditionalFieldStyle.WrapHTML(headless.ConditionalField(
 		headless.ConditionalFieldProps{
-			When:   cfg.WhenName,
-			Value:  cfg.WhenValue,
-			Values: cfg.WhenValues,
-			// hidden and aria-hidden are owned by the runtime module,
-			// which sets and clears them as the watched field changes;
-			// a caller-set value would fight it.
+			When:       cfg.WhenName,
+			Value:      cfg.WhenValue,
+			Values:     cfg.WhenValues,
 			ExtraAttrs: html.SafeExtraAttrs(cfg.ExtraAttrs, "hidden", "aria-hidden"),
 		},
 		withRootClass(whenClasses, cfg.Class),
