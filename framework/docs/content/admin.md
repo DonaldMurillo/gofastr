@@ -48,7 +48,10 @@ entities, or set `AllEntities: true` for every registered entity whose
 CRUD is on. CRUD-off entities (`battery/auth`'s `users` and `sessions`)
 stay hidden, so `AllEntities` never exposes credential tables. Naming an
 entity in `Entities` exposes it even with CRUD off. A name the app does
-not register fails boot.
+not register fails boot. An entity the app mounts read-only (an
+`App.View` with `Columns`) is exposed read-only: the admin lists and
+shows its rows, mounts none of the `/admin/api/<name>` routes below for
+it, and draws no New, edit, delete or bulk control.
 
 ## Pages and routes
 
@@ -365,14 +368,18 @@ app.RegisterBattery(admin.New(admin.Config{
 | `POST /admin/queue/_replay_all` | Re-queue every failed job, up to 10,000 a click |
 
 The Jobs page filters by All, Pending, Running, Failed and Done, each
-a link with its count (a `ui.SegmentedLinks` strip, nothing to apply),
+a link with its count (a `ui.SegmentedLinks` strip, nothing to apply);
+a `?status=` that names none of them lists All under the "Filter not
+applied" warning,
 and lists each job's id, type, status, attempts, when
 it last changed and its last error (one line, cut with an ellipsis).
 Done jobs show when the queue keeps them (`queue.WithDoneRetention`).
 Replay is offered on each failed row, and "Replay N failed" in the
 header whenever a job has failed, when the queue supports it (`DBQueue`
 does). Each replay writes an audit row (entity `queue`, op `replay`)
-naming the actor. A failed job whose `UniqueKey` a newer live job holds
+naming the actor. Replaying a job that is no longer failed (already
+replayed in another tab, or an id the queue does not hold) answers 409
+with a notice, queues nothing and writes no audit row. A failed job whose `UniqueKey` a newer live job holds
 is not replayed: one replay answers 409 with a notice, and "Replay N
 failed" leaves it failed, replays the rest, and says some were skipped. A failed list or stats read shows a generic notice and
 logs the driver error; the page never prints it. The Jobs page shows
@@ -458,7 +465,8 @@ to midnight UTC, whatever the server's zone). The operation select
 offers the fixed set the audit log writes — `create`, `update`,
 `delete`, `restore`, `purge`, `state_override` and entityui's `bulk`
 summary, then the operations pages' `replay`, `grant`, `revoke`,
-`assign-roles` and `module_enable`/`disable`/`bump`/`revoke` — plus
+`assign-roles`, the account page's `set-name` and
+`module_enable`/`disable`/`bump`/`revoke` — plus
 "any". A state transition (`transition:<key>`) is found by entity, and a
 refused operation in the unfiltered log. The entity select offers the
 exposed entities.

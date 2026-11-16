@@ -173,9 +173,14 @@ func (b *Battery) entityStat(ctx context.Context, e *entity.Entity) render.HTML 
 	})
 }
 
+// canCreateEntity reports whether a New link for e leads to a form: the
+// caller in ctx may read e and create one, and the admin serves the write.
 func (b *Battery) canCreateEntity(ctx context.Context, e *entity.Entity) bool {
+	if !b.writable(e) {
+		return false
+	}
 	handler, err := b.app.CrudHandlerForEntity(e)
-	return err == nil && handler.CanCreateScoped(ctx)
+	return err == nil && handler.CanReadScoped(ctx) && handler.CanCreateScoped(ctx)
 }
 
 // failedJobs is Needs attention's failed jobs: the count, a link to
@@ -257,7 +262,7 @@ func opIcon(op string) string {
 		return "trash"
 	case "restore":
 		return "rotate-ccw"
-	case "transition", "override", "replay":
+	case "transition", "override", "replay", "bump":
 		return "repeat"
 	case "grant", "revoke":
 		return "shield"

@@ -34,18 +34,19 @@ var queueStatuses = []struct {
 	{"done", i18nui.AdminQueueDone, ui.StatusSuccess},
 }
 
-// queueStatus reads ?status= as one of queueStatuses, or "".
-func queueStatus(r *http.Request) string {
+// queueStatus reads ?status= as one of queueStatuses, or "". unknown
+// reports a value that names none, which the page lists as All and warns of.
+func queueStatus(r *http.Request) (status string, unknown bool) {
 	if r == nil {
-		return ""
+		return "", false
 	}
 	s := r.URL.Query().Get("status")
 	for _, st := range queueStatuses {
 		if st.value == s {
-			return s
+			return s, false
 		}
 	}
-	return ""
+	return "", s != ""
 }
 
 // replayable returns the queue's replay capability, if it has one.
@@ -53,6 +54,9 @@ func (b *Battery) replayable() (queue.Replayable, bool) {
 	rq, ok := b.cfg.Queue.(queue.Replayable)
 	return rq, ok
 }
+
+// replayNothing tells a Replay click that the job was not failed any more.
+var replayNothing = i18n.Define("admin.replay_nothing", "That job is no longer failed. Nothing was queued.")
 
 // queuePageParam is the Jobs page's page number in its query.
 const queuePageParam = "p"
@@ -66,7 +70,7 @@ const maxReplayAll = 10_000
 // failed view of a replayable queue replays one job or every failed job.
 func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.HTML {
 	r := appui.RequestFromContext(ctx)
-	status := queueStatus(r)
+	status, unknownStatus := queueStatus(r)
 	limit := b.cfg.QueueListLimit
 	pageNo := 1
 	carry := url.Values{}
@@ -145,7 +149,7 @@ func (b *Battery) renderQueue(ctx context.Context, _ map[string]string) render.H
 		}
 	}
 	var dropped render.HTML
-	if droppedNarrowing(r, "status") {
+	if unknownStatus || droppedNarrowing(r, "status") {
 		dropped = filterNotApplied(ctx)
 	}
 	return ui.Stack(ui.StackConfig{Gap: ui.GapLG},
@@ -299,6 +303,18 @@ func (b *Battery) handleReplay(w http.ResponseWriter, r *http.Request) {
 		b.refuse(w, r, page, http.StatusBadRequest, "bad-input")
 		return
 	}
+	// Replay answers nil for a job that is not failed, so the page asks
+	// first: a no-op is neither audited nor reported as a replay.
+	failed, err := b.jobFailed(r.Context(), id)
+	if err != nil {
+		b.logger().Error("admin: list failed jobs", "error", err)
+		b.refuse(w, r, page, http.StatusInternalServerError, "queue-load-failed")
+		return
+	}
+	if !failed {
+		b.refuse(w, r, page, http.StatusConflict, "replay-nothing")
+		return
+	}
 	if err := rq.Replay(r.Context(), id); err != nil {
 		if errors.Is(err, queue.ErrDuplicateJob) {
 			b.refuse(w, r, page, http.StatusConflict, "replay-duplicate")
@@ -359,6 +375,17 @@ func (b *Battery) handleReplayAll(w http.ResponseWriter, r *http.Request) {
 // time, newest first, up to maxReplayAll. A page that adds no new id
 // ends the read, so a backend that repeats a page cannot keep it going.
 func (b *Battery) failedJobIDs(ctx context.Context) ([]string, error) {
+	return b.failedJobIDsUntil(ctx, "")
+}
+
+// jobFailed reports whether id is among the failed jobs failedJobIDs reads.
+func (b *Battery) jobFailed(ctx context.Context, id string) (bool, error) {
+	ids, err := b.failedJobIDsUntil(ctx, id)
+	return err == nil && len(ids) > 0 && ids[len(ids)-1] == id, err
+}
+
+// failedJobIDsUntil is failedJobIDs that stops once it has read stop.
+func (b *Battery) failedJobIDsUntil(ctx context.Context, stop string) ([]string, error) {
 	limit := b.cfg.QueueListLimit
 	seen := map[string]bool{}
 	var ids []string
@@ -373,6 +400,9 @@ func (b *Battery) failedJobIDs(ctx context.Context) ([]string, error) {
 				seen[j.ID] = true
 				ids = append(ids, j.ID)
 				fresh++
+				if stop != "" && j.ID == stop {
+					return ids, nil
+				}
 			}
 		}
 		if len(jobs) < limit || fresh == 0 {

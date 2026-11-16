@@ -189,7 +189,7 @@ func TestQueueColumnsAndFilters(t *testing.T) {
 }
 
 func TestQueueReplayAuditsTheActor(t *testing.T) {
-	q := &fakeQueue{}
+	q := &fakeQueue{jobs: failedJobs("job-911")}
 	x := queueEnv(t, q)
 	if got := resultOf(t, post(x.as(theAdmin), "/admin/queue/_replay/job-911", nil)); got != "replayed" {
 		t.Fatalf("result = %q, want replayed", got)
@@ -207,7 +207,7 @@ func TestQueueReplayAuditsTheActor(t *testing.T) {
 }
 
 func TestQueueReplayRPCAnswersAToast(t *testing.T) {
-	q := &fakeQueue{}
+	q := &fakeQueue{jobs: failedJobs("j1")}
 	x := queueEnv(t, q)
 	rr := rpc(x.as(theAdmin), "/admin/queue/_replay/j1", map[string]any{})
 	if rr.Code != http.StatusNoContent || !strings.Contains(rr.Header().Get("X-Gofastr-Toast"), `"success"`) {
@@ -252,7 +252,7 @@ func TestReplayAllSkipsHeldKey(t *testing.T) {
 }
 
 func TestReplayHeldKeyIsConflict(t *testing.T) {
-	q := &fakeQueue{held: map[string]bool{"j1": true}}
+	q := &fakeQueue{jobs: failedJobs("j1"), held: map[string]bool{"j1": true}}
 	x := queueEnv(t, q)
 	rr := post(x.as(theAdmin), "/admin/queue/_replay/j1", nil)
 	if got := resultOf(t, rr); got != "replay-duplicate" {

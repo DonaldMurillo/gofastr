@@ -301,7 +301,7 @@ func (b *Battery) Init(app *framework.App) error {
 			return fmt.Errorf("admin: exposing %s needs Config.UI (app.EntityUI(ext)): the admin draws entity screens with it", entityNames(b.ents))
 		}
 		b.ui = b.cfg.UI.WithAPIPath(func(e *entity.Entity) (string, bool) {
-			if b.exposed(e) {
+			if b.writable(e) {
 				return b.apiBase(e), true
 			}
 			return "", false
@@ -350,8 +350,11 @@ func (b *Battery) Init(app *framework.App) error {
 func (b *Battery) jobsUI() *entityui.UI {
 	app := b.cfg.UI
 	return app.WithAPIPath(func(e *entity.Entity) (string, bool) {
-		if b.exposed(e) {
+		if b.writable(e) {
 			return b.apiBase(e), true
+		}
+		if b.exposed(e) {
+			return "", false
 		}
 		return app.WritePath(e)
 	})
@@ -750,6 +753,7 @@ var results = map[string]result{
 	"queue-load-failed":      {i18nui.AdminQueueLoadFailed, false},
 	"replay-unsupported":     {i18nui.AdminFailed, false},
 	"replay-duplicate":       {i18nui.AdminReplayDuplicate, false},
+	"replay-nothing":         {replayNothing, false},
 }
 
 // done answers a successful ops post. A form RPC gets 204 and a toast;
