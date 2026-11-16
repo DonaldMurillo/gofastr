@@ -2,3 +2,136 @@ primitive: app.processmodule.supervisor
 summary: The supervisor that spawns, watches, restarts and stops each process module.
 code:
   - framework/processmodule_supervisor.go
+on_change:
+  - "Every write into a moduleSlot after a spawn starts checks spawnSeq under sl.mu in the same critical section as the write; a new write site that skips the check lets a superseded spawn run beside its replacement."
+invariants:
+  - id: integrity-fault-is-terminal
+    rule: An artifact digest mismatch, a handshake digest or identity mismatch, a failed protocol negotiation, an unknown critical feature or a tool surface that differs from the descriptor moves the module to Failed without charging the restart circuit.
+    enforced_by:
+      - test: framework.TestIsIntegrityFault_classifies
+      - test: framework/processmoduletest.TestSupervisor_HandshakeMismatchFailed
+      - test: framework.TestVerifyToolSurface_ExtraToolRejected
+      - test: framework.TestVerifyToolSurface_DigestMismatch
+      - test: framework.TestSweepPMRunToolSurfaceMissingOrDuplicate
+  - id: transport-failure-is-a-crash
+    rule: A child that dies or stops answering while the handshake is in flight is a crash that restarts under backoff, not an integrity fault.
+    enforced_by:
+      - test: framework.TestIsIntegrityFault_HandshakeTransportFailureIsACrash
+      - test: framework.TestPeerGoneMidHandshakeIsCrash
+  - id: generation-bump-is-the-recovery-lever
+    rule: Only a generation bump re-arms a Failed module or resets an open restart circuit; the re-armed spawn verifies the artifact and handshake again.
+    enforced_by:
+      - test: framework.TestGenerationBumpRearmsFailed
+      - test: framework.TestSweepPMRunFailedWaitsForGenerationBump
+      - test: framework/processmoduletest.TestSupervisor_CircuitOpensAndGenResets
+  - id: circuit-opens-on-crash-rate
+    rule: CircuitThreshold crashes within CircuitWindow open the circuit, which holds the module in Crashed instead of restarting it.
+    enforced_by:
+      - test: framework/processmoduletest.TestSupervisor_CircuitOpensAndGenResets
+  - id: backoff-is-bounded
+    rule: The restart delay doubles from BackoffMin with each crash in the window, is capped at BackoffMax, and adds under 50% jitter.
+    enforced_by:
+      - test: framework.TestSweepPMRunBackoffBounded
+  - id: lease-fails-closed
+    rule: A store that has never answered, or has not answered for LeaseTTL, drains the module's child and holds it not-Ready, inverting the in-process remote toggle's fail-open.
+    enforced_by:
+      - test: framework.TestSupervisor_StoreUnreachableDrains
+      - test: framework.TestSweepPMRunNeverReadLeaseIsExpired
+  - id: lease-recovers
+    rule: The first successful store read after a lease drain clears leaseFailing and respawns the module, and the drained child's exit charges no crash.
+    enforced_by:
+      - test: framework.TestLeaseRedRecoversAfterOutage
+      - test: framework.TestLeaseDrainChargesNoCrash
+  - id: upgrade-respawns-from-the-store
+    rule: After an upgrade drain the new child is built from the store's current desired state, and a store that cannot be read leaves the module InstalledDisabled rather than respawning it with the old grants.
+    enforced_by:
+      - test: framework.TestSweepPMRunUpgradeDrainFailsClosedOnStoreError
+    judge: Does this change let finishDrain or another respawn path start a child from the descriptor's RequestedGrants, or from a desired state it did not just read from the store?
+  - id: revoke-closes-reverse-calls
+    rule: A disable drain, and an upgrade drain whose new grants no longer cover the running child's, close that child's host.* reverse calls at once, including a revoke or disable stored while the drain runs.
+    enforced_by:
+      - test: framework.TestDrainRefusesRevokedReverseCalls
+      - test: framework.TestDrainClosesOnMidDrainRevoke
+  - id: superseded-spawn-installs-nothing
+    rule: A spawn superseded by a drain or a newer spawn installs no child, writes no state and records no failure into the slot.
+    enforced_by:
+      - test: framework.TestSupersededSpawnNeverInstalls
+      - test: framework.TestStaleSpawnFailKeepsReady
+  - id: late-exit-spares-replacement
+    rule: The exit watcher and the fault watcher act only on the child whose instance ID the slot still holds, so a late exit or fault never touches a replacement.
+    enforced_by:
+      - test: framework.TestLateExitKeepsReplacement
+      - test: framework.TestFaultWatcherSparesReplacement
+  - id: peer-fault-kills-child
+    rule: A terminal protocol fault on a child's peer kills the child, which then restarts as a crash.
+    enforced_by:
+      - test: framework.TestPeerFaultKillsChild
+      - test: framework.TestSupervisorRestartsFaultedModule
+  - id: no-spawn-while-migrations-pending
+    rule: A module with a migration group whose migrations are not stamped applied is held InstalledDisabled and a running child of it is drained.
+    enforced_by:
+      - test: framework.TestPendingMigrationsDrainReadyChild
+      - test: framework.TestUpgradeDrainWaitsForMigrations
+  - id: hold-on-other-artifact
+    rule: A replica whose descriptor names a different artifact than the store row, compared case-insensitively, drains and holds its module until it registers the row's artifact.
+    enforced_by:
+      - test: framework.TestOtherArtifactDrainsReadyChild
+      - test: framework.TestUpgradeDrainRefusesOtherArtifact
+  - id: one-register-per-name
+    rule: A second Register of a name on one supervisor returns ErrModuleInstalled and leaves the store row alone, and a Register whose store write fails releases the name.
+    enforced_by:
+      - test: framework.TestDuplicateRegisterLeavesRow
+      - test: framework.TestRegisterRetriesAfterStoreError
+  - id: toggle-gates-before-return
+    rule: Enable and Disable update the cached flag the route gate and module-tool gate read before they return, and Register seeds it from the stored row.
+    enforced_by:
+      - test: framework.TestModuleControlToolsDriveProcess
+      - test: framework.TestProcessModuleRebootKeepsState
+  - id: drain-is-bounded
+    rule: A drain kills a child that has not exited when its budget, counted from the drain call, runs out, whether it stalls on module.drain or ignores EOF.
+    enforced_by:
+      - test: framework.TestShutdownDrainKillsStalledChild
+      - test: framework.TestShutdownDrainKillsChildIgnoringEOF
+      - test: framework.TestDisableDrainKillsStalledChild
+  - id: shutdown-settles-before-batteries
+    rule: Drain closes the supervisor first and clears every slot's child before it returns, and a spawn finishing after Close kills its own child.
+    enforced_by:
+      - test: framework.TestDrainClearsTheSlotBeforeBatteriesStop
+      - test: framework.TestCloseRefusesALateChild
+  - id: no-spawn-before-start
+    rule: Enable before StartLoops records the desired state and spawns nothing; after StartLoops each slot runs exactly one supervise loop.
+    enforced_by:
+      - test: framework.TestEnableBeforeStartLoopsWaits
+      - test: framework.TestEnableAfterStartLoopsSpawns
+  - id: swappable-code-panics-are-errors
+    rule: A panic in the runner, broker, tool registrar or store on a supervisor goroutine comes back as that call's error and never escapes the goroutine.
+    enforced_by:
+      - test: framework.TestSweepPMRunPanicsBecomeErrors
+  - id: child-stderr-is-scrubbed
+    rule: A failing child's stderr tail is scrubbed of control bytes before it reaches the host log.
+    enforced_by:
+      - test: framework.TestModuleFailuresLogScrubbedStderr
+decisions:
+  - id: lease-fails-closed
+    date: 2026-11-16
+    status: accepted
+    decision: An unreadable desired-state store drains process modules, the opposite of the in-process remote toggle, which fails open.
+    rejected:
+      - option: Keep serving on the last read state, as the in-process toggle does.
+        why: A third-party child would keep a disabled or revoked capability for as long as the store is down.
+    upholds: [lease-fails-closed]
+  - id: drain-budget-from-the-call
+    date: 2026-11-16
+    status: accepted
+    decision: The drain budget runs from the module.drain call, which gets at most half of it, rather than from closing stdin.
+    rejected:
+      - option: Start the budget at CloseStdin.
+        why: The module.drain frame write cannot be abandoned and blocks on a full pipe when the child stopped reading, and only a kill releases it.
+    upholds: [drain-is-bounded]
+  - id: shutdown-drains-concurrently
+    date: 2026-11-16
+    status: accepted
+    decision: Drain drains every child at once, each with min(DrainPerModule, the remaining shutdown budget).
+    rejected:
+      - option: Drain children one after another.
+        why: The app has one shutdown budget, which N serial drains would overrun.
