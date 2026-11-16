@@ -484,7 +484,10 @@ then read from the right: the key is the first hop not in
 `TrustedProxies`, so client-supplied entries an appending proxy keeps on
 the left never pick the bucket). Tune
 `Capacity`/`RefillEvery`/`RefillBy` per route by composing two `RateLimit`
-middlewares in different `middleware.Chain` calls.
+middlewares in different `middleware.Chain` calls. A full bucket earns
+nothing while it waits: its refill clock restarts at the first request
+that spends from it, so a quiet client gets one `Capacity` burst, not
+two back to back.
 
 The in-memory bucket store caps its resident entry count at `MaxKeys`
 (default 100_000, the `framework/ratelimit` convention): an IPv6 peer
