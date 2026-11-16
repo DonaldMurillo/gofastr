@@ -63,6 +63,11 @@ few lines, and link the PR or the docs page for the rest.
   checks its pattern against that list before it restores the Go cache or
   installs anything. Rows used to spend 1 to 1.6 minutes each finding out
   they had nothing to run.
+- **CI installs one pinned Chromium snapshot.** `latest` moved every few
+  hours, and its new directory on `PATH` made Go's test cache re-run every
+  package whose tests look up a binary: 175 of 403 on a main run that
+  changed three files. `TestChromeIsPinned` keeps every `setup-chrome` step
+  on one fixed version; bump them together.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
