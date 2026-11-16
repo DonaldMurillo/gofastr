@@ -739,3 +739,36 @@ func TestDeletedPackageSelectsItsImporters(t *testing.T) {
 		})
 	}
 }
+
+// TestFilesDifferFromKeepsOSSpecificPackages lists a module as windows
+// without cgo and narrows it to the packages whose Go files are not the
+// ones linux with cgo builds: an added _windows.go file, a windows-only
+// test file, a package with nothing but windows files, and a !cgo file
+// the cgo build leaves out. A package with one file list in both stays
+// out, selected by the change or not. The cgo case is why the flag names
+// a whole environment: against linux without cgo, nocgo would look the
+// same and its !cgo file would be read by neither pass.
+func TestFilesDifferFromKeepsOSSpecificPackages(t *testing.T) {
+	root := newRepo(t)
+	writeFiles(t, root, map[string]string{
+		"g/g.go":              "package g\n\nfunc G() int { return 7 }\n",
+		"g/g_windows.go":      "package g\n\nfunc W() int { return 8 }\n",
+		"h/h.go":              "package h\n\nfunc H() int { return 9 }\n",
+		"h/h_windows_test.go": "package h\n\nimport \"testing\"\n\nfunc TestH(t *testing.T) { _ = H() }\n",
+		"w/w_windows.go":      "package w\n\nfunc W() int { return 10 }\n",
+		"nocgo/with.go":       "//go:build cgo\n\npackage nocgo\n\nfunc N() int { return 11 }\n",
+		"nocgo/without.go":    "//go:build !cgo\n\npackage nocgo\n\nfunc N() int { return 12 }\n",
+	})
+	t.Setenv("GOOS", "windows")
+	t.Setenv("GOARCH", "amd64")
+	t.Setenv("CGO_ENABLED", "0")
+	linuxCgo := []string{"GOOS=linux", "CGO_ENABLED=1"}
+
+	want(t, run(t, options{root: root, all: true, differFrom: linuxCgo}), "g", "h", "nocgo", "w")
+	want(t, run(t, options{root: root, all: true, differFrom: []string{"GOOS=linux"}}), "g", "h", "w")
+	want(t, run(t, options{root: root, all: true, differFrom: []string{"GOOS=windows"}}))
+
+	want(t, run(t, options{root: root, files: []string{"c/c.go"}}), "c", "d")
+	want(t, run(t, options{root: root, files: []string{"c/c.go"}, differFrom: linuxCgo}))
+	want(t, run(t, options{root: root, files: []string{"g/g.go", "c/c.go"}, differFrom: linuxCgo}), "g")
+}

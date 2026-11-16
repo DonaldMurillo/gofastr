@@ -78,6 +78,7 @@
 //	go run ./cmd/affected -exclude 'examples/site$' -- go test -p 2
 //	go run ./cmd/affected -match '/framework(/|$)' -- go test
 //	go run ./cmd/affected -coverage-dir           # where wrapped commands keep coverage manifests
+//	GOOS=windows affected -files-differ-from 'GOOS=linux CGO_ENABLED=1' -- go vet
 //
 // With a command after `--`, an empty set skips the command and exits 0
 // with a note on stderr: `go test` with no packages would test the
@@ -86,6 +87,15 @@
 // set came from: GOFASTR_AFFECTED_FILES holds the change set, one
 // repo-relative path per line, or, when the set is every package,
 // GOFASTR_TEST_ALL=1 is set instead (see changeEnv).
+//
+// -files-differ-from narrows a second pass under another GOOS, GOARCH or
+// CGO_ENABLED to the packages that pass can say something new about: the
+// ones whose Go files here are not the files the named environment
+// builds. CI vets every affected package on linux, then on windows and
+// darwin only these (41 and 15 of 457 packages, 2026-11); the rest hold
+// the same source the linux pass read. A finding that needs another
+// package's OS-specific types, in a package whose own files are the same,
+// is not looked for.
 //
 // The affected set is the first half of what nx affected does; Go's test
 // cache is the second. A package in the set whose binary and recorded
@@ -145,6 +155,8 @@ type options struct {
 	all          bool     // skip the graph, list everything
 	files        []string // change set override (repo-relative); nil = ask git
 	allIfChanged []string // extra prefixes that widen to everything
+	differFrom   []string // KEY=VALUE environment; keep packages whose Go files differ under it
+	differing    map[string]bool
 	exclude      *regexp.Regexp
 	match        *regexp.Regexp
 	format       string // "import" or "dir"
@@ -165,6 +177,8 @@ type pkg struct {
 	XTestImports       []string
 	TestGoFiles        []string
 	XTestGoFiles       []string
+	GoFiles            []string
+	CgoFiles           []string
 
 	reads testReadSet // from //gofastr:test-reads in the test files
 }
@@ -192,6 +206,7 @@ func main() {
 		match    = flag.String("match", "", "keep only import paths matching this regexp")
 		format   = flag.String("format", "import", "output form: import (import paths) or dir (./relative dirs)")
 		covDir   = flag.Bool("coverage-dir", false, "print the coverage-manifest directory a wrapped command gets, then exit")
+		differ   = flag.String("files-differ-from", "", "keep only packages whose Go files differ from those built under this space-separated KEY=VALUE environment, e.g. 'GOOS=linux CGO_ENABLED=1'")
 		allIf    stringList
 	)
 	flag.Var(&allIf, "all-if-changed", "repo-relative file or dir/ prefix whose change widens to every package (repeatable)")
@@ -236,6 +251,12 @@ func main() {
 	}
 	if opts.format != "import" && opts.format != "dir" {
 		fatal(fmt.Errorf("-format must be import or dir, got %q", opts.format))
+	}
+	opts.differFrom = strings.Fields(*differ)
+	for _, kv := range opts.differFrom {
+		if k, _, ok := strings.Cut(kv, "="); !ok || k == "" {
+			fatal(fmt.Errorf("-files-differ-from wants KEY=VALUE pairs, got %q", kv))
+		}
 	}
 
 	root, err := gitOutput("", "rev-parse", "--show-toplevel")
@@ -382,6 +403,11 @@ func compute(o options) ([]string, []string, error) {
 	all, err := listPackages(o.root, o.tags)
 	if err != nil {
 		return nil, nil, err
+	}
+	if len(o.differFrom) > 0 {
+		if o.differing, err = filesDiffer(o, all); err != nil {
+			return nil, nil, err
+		}
 	}
 	if o.all {
 		return format(o, all, nil), nil, nil
@@ -568,6 +594,9 @@ func format(o options, all []pkg, set map[string]bool) []string {
 		if o.match != nil && !o.match.MatchString(p.ImportPath) {
 			continue
 		}
+		if o.differing != nil && !o.differing[p.ImportPath] {
+			continue
+		}
 		if o.format == "dir" {
 			rel, err := filepath.Rel(o.root, p.Dir)
 			if err != nil || rel == "." {
@@ -583,8 +612,57 @@ func format(o options, all []pkg, set map[string]bool) []string {
 	return out
 }
 
+// goFiles is the source a vet or build of p reads, as one comparable
+// string: the same names in another list are another string.
+func goFiles(p pkg) string {
+	lists := [][]string{p.GoFiles, p.CgoFiles, p.TestGoFiles, p.XTestGoFiles}
+	parts := make([]string, len(lists))
+	for i, l := range lists {
+		parts[i] = strings.Join(l, "\x00")
+	}
+	return strings.Join(parts, "\x01")
+}
+
+// filesDiffer lists the packages again under o.differFrom laid over this
+// process's environment and returns those whose Go files are not the ones
+// listed here. A package the other environment does not list at all
+// differs.
+func filesDiffer(o options, here []pkg) (map[string]bool, error) {
+	args := []string{"list", "-e", "-json=ImportPath,GoFiles,CgoFiles,TestGoFiles,XTestGoFiles"}
+	if o.tags != "" {
+		args = append(args, "-tags", o.tags)
+	}
+	cmd := exec.Command("go", append(args, "./...")...)
+	cmd.Dir = o.root
+	cmd.Env = append(os.Environ(), o.differFrom...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("go list under %s: %w\n%s", strings.Join(o.differFrom, " "), err, stderr.String())
+	}
+	there := map[string]string{}
+	dec := json.NewDecoder(bytes.NewReader(out))
+	for {
+		var p pkg
+		if err := dec.Decode(&p); err == io.EOF {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("go list output: %w", err)
+		}
+		there[p.ImportPath] = goFiles(p)
+	}
+	differing := map[string]bool{}
+	for _, p := range here {
+		if files, ok := there[p.ImportPath]; !ok || files != goFiles(p) {
+			differing[p.ImportPath] = true
+		}
+	}
+	return differing, nil
+}
+
 func listPackages(root, tags string) ([]pkg, error) {
-	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,EmbedPatterns,TestEmbedPatterns,XTestEmbedPatterns,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles"}
+	args := []string{"list", "-e", "-json=ImportPath,Name,Dir,Imports,IgnoredGoFiles,EmbedPatterns,TestEmbedPatterns,XTestEmbedPatterns,Deps,TestImports,XTestImports,TestGoFiles,XTestGoFiles,GoFiles,CgoFiles"}
 	if tags != "" {
 		args = append(args, "-tags", tags)
 	}

@@ -83,8 +83,10 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
 - **Repo analyzers (type-aware invariants as vet checks)**: `make
   analyze` builds `cmd/vettool` and runs it over the tree; it also runs
   in the pre-commit hook and CI's vet step. `make analyze` and CI vet
-  each affected package three times, under linux, windows and darwin,
-  so `_windows.go` and `_darwin.go` files are checked; the pre-commit
+  each affected package on the host OS, then on windows and darwin the
+  packages whose Go files differ from the ones that first pass read
+  (`cmd/affected -files-differ-from`), so `_windows.go` and `_darwin.go`
+  files are checked without reading the rest three times; the pre-commit
   hook covers the host OS only. Every build of `cmd/vettool` passes
   `-buildvcs=false` (repolint's `vettool-buildvcs` rule): go vet caches
   each result under the vettool binary's hash, and a commit stamped into

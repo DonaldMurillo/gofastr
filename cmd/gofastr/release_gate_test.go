@@ -664,6 +664,94 @@ func TestGoCacheIsPrunedBeforeSave(t *testing.T) {
 	}
 }
 
+// CI's lint job and `make analyze` vet every affected package once, as
+// the machine's own OS, and then only the packages whose Go files differ
+// on windows and darwin (cmd/affected -files-differ-from). What a narrowed
+// pass skips is what the full pass read, so the full pass comes first and
+// unfiltered, and the narrowed ones compare against its environment as go
+// reports it, cgo included: against a hand-written one, a file the full
+// pass did not build (a `!cgo` file, say) could count as read and be
+// vetted by no pass.
+//
+//gofastr:test-reads /Makefile
+func TestNarrowedVetPassesCompareWithTheFullPass(t *testing.T) {
+	// passes checks one script's vet lines against the reference its
+	// narrowed passes must name, and returns the full pass's line.
+	passes := func(where string, lines []string, ref string) int {
+		t.Helper()
+		full, narrowed := -1, 0
+		for i, line := range lines {
+			line = strings.TrimSpace(line)
+			switch {
+			case !strings.Contains(line, "go vet -vettool="):
+			case strings.Contains(line, "-files-differ-from"):
+				narrowed++
+				if full < 0 || !strings.Contains(line, `-files-differ-from "`+ref+`"`) {
+					t.Errorf("%s: a narrowed vet pass must follow the full pass and compare with %s:\n%s", where, ref, line)
+				}
+			case strings.Contains(line, "GOOS="):
+				t.Errorf("%s: an unfiltered vet pass under another GOOS; narrow it with -files-differ-from \"%s\":\n%s", where, ref, line)
+			default:
+				if full >= 0 {
+					t.Errorf("%s: a second full vet pass:\n%s", where, line)
+				}
+				full = i
+			}
+		}
+		if full < 0 {
+			t.Errorf("%s: no full vet pass; a narrowed pass skips what the full one read", where)
+		}
+		if narrowed == 0 {
+			t.Errorf("%s: no vet pass uses -files-differ-from; windows and darwin files are vetted by no pass, or by a full one each", where)
+		}
+		return full
+	}
+	const env = `GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) CGO_ENABLED=$(go env CGO_ENABLED)`
+
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	var script []string
+	for _, step := range wf.Jobs["lint"].Steps {
+		if step.Name == "Vet (repo analyzers)" {
+			script = strings.Split(step.Run, "\n")
+		}
+	}
+	if script == nil {
+		t.Fatal("the lint job has no \"Vet (repo analyzers)\" step; the parser or ci.yml changed shape")
+	}
+	full := passes("ci.yml", script, "$first")
+	firstAt := slices.IndexFunc(script, func(l string) bool { return strings.TrimSpace(l) == `first="`+env+`"` })
+	if firstAt < full || full < 0 {
+		t.Errorf("ci.yml: want the line first=\"%s\" after the full vet pass (line %d), found it at %d", env, full, firstAt)
+	}
+
+	mk, err := os.ReadFile(filepath.Join("..", "..", "Makefile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, recipe, ok := strings.Cut(string(mk), "\nanalyze:")
+	if !ok {
+		t.Fatal("the Makefile has no analyze target")
+	}
+	recipe, _, _ = strings.Cut(recipe, "\n\n")
+	passes("make analyze", strings.Split(recipe, "\n"), "$(ANALYZE_HOST)")
+	// $(shell ...) runs in make's own environment, the one the full pass
+	// gets, not under a recipe line's GOOS.
+	host := "\nANALYZE_HOST = " + strings.NewReplacer("$(go env ", "$(shell go env ").Replace(env) + "\n"
+	if !strings.Contains(string(mk), host) {
+		t.Errorf("the Makefile does not define the full pass's environment from go env; want the line%s", host)
+	}
+}
+
 // Each browser-e2e row decides whether its suite runs by matching its
 // matrix.pkg with grep -E against the import paths e2e-scope lists, where
 // cmd/affected -match used Go's regexp. The two read literals, `.`, `|`,
