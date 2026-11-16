@@ -9,44 +9,20 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/ui/icons"
 )
 
-// ─── Icon ───────────────────────────────────────────────────────────
-//
-// Inline SVG renderer for the vendored framework/ui/icons catalog, with
-// exact-name application overrides through RegisterIcon.
-//
-// Icons render as a single <svg> with:
-//   - viewBox="0 0 24 24" (fixed grid; resize with the Size config)
-//   - fill="none" stroke="currentColor" stroke-width="2"
-//   - stroke-linecap="round" stroke-linejoin="round"
-//
-// Registered icon bodies should be the inner SVG markup (paths, lines,
-// circles…), not the <svg> wrapper. The wrapper is emitted by Icon().
-
 // IconConfig configures an icon render.
 type IconConfig struct {
-	// Size sets the rendered width/height. Accepts any CSS length
-	// (e.g. "20", "1.25rem"). Default: "20".
-	Size string
-
-	// AriaLabel makes the icon meaningful to assistive tech. When set,
-	// the SVG renders with role="img" and aria-label="<AriaLabel>";
-	// without it, the icon is aria-hidden="true" (decorative).
+	Size string // width and height as any CSS length; default "20"
+	// AriaLabel names the icon as role="img"; without it the icon is aria-hidden.
 	AriaLabel string
-
-	ID    string
-	Class string
-
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the icon's root <svg>
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-cui-*, and the drawing / accessibility
-	// keys the component derives (xmlns, width, height, viewBox,
-	// fill, stroke*, role, aria-label, aria-hidden).
+	ID        string
+	Class     string
+	// ExtraAttrs reach the <svg>; class, id, data-cui-* and the drawing and
+	// accessibility attributes are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// Icon renders the registered icon with the given name. Returns empty
-// markup for unknown names. Callers can guard with IconRegistered().
+// Icon renders the named icon as an inline <svg> on the 24 by 24 grid,
+// or empty markup for an unknown name.
 func Icon(name string, cfg IconConfig) render.HTML {
 	body, ok := lookupIcon(name)
 	if !ok {
@@ -92,8 +68,7 @@ func Icon(name string, cfg IconConfig) render.HTML {
 	return render.Tag("svg", attrs, render.HTML(body))
 }
 
-// IconRegistered reports whether an icon with the given name is in
-// the registry.
+// IconRegistered reports whether Icon draws the name.
 func IconRegistered(name string) bool {
 	_, ok := lookupIcon(name)
 	return ok
@@ -109,12 +84,8 @@ func lookupIcon(name string) (string, bool) {
 	return icons.Lookup(name)
 }
 
-// RegisterIcon adds a named icon to the registry. The body should be
-// inner SVG markup (paths, lines, circles, etc.) without the outer
-// <svg> wrapper. Re-registering the same name replaces the existing
-// body. Safe for concurrent use.
-// Body is trusted application markup, not sanitized user input. Overrides are
-// exact-name: overriding "check" does not change the built-in "success" alias.
+// RegisterIcon registers trusted inner SVG markup under an exact name,
+// replacing any earlier body; it is safe for concurrent use.
 func RegisterIcon(name, body string) {
 	iconRegistryMu.Lock()
 	defer iconRegistryMu.Unlock()

@@ -1,27 +1,18 @@
 package ui
 
-// ─── InlineCode ─────────────────────────────────────────────────────
-//
-// A short piece of code inside running text or a reference row: an
-// operator, a field name, an example expression. It is a <code> on the
-// soft surface in the mono font, sized to the text around it, and it
-// wraps rather than widening its container. Blocks of code use
-// CodeBlock.
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 	"github.com/DonaldMurillo/gofastr/core/render"
 )
 
-// InlineCode renders text as an inline <code>. The text is escaped.
+// InlineCode renders escaped text as an inline <code>; blocks use CodeBlock.
 func InlineCode(text string) render.HTML {
 	return inlineCodeStyle.WrapHTML(render.Tag("code",
 		map[string]string{"class": "fui-code"}, render.Text(text)))
 }
 
-// InlineCodeDanger is InlineCode in the danger tone: an error message a
-// program returned, such as a job's last error.
+// InlineCodeDanger is InlineCode in the danger tone, for an error message.
 func InlineCodeDanger(text string) render.HTML {
 	return inlineCodeStyle.WrapHTML(render.Tag("code",
 		map[string]string{"class": "fui-code fui-code--danger"}, render.Text(text)))

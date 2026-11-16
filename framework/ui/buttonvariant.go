@@ -1,14 +1,7 @@
 package ui
 
-// ParseButtonVariant maps a variant spelling to its ButtonVariant,
-// reporting whether the spelling is a built-in variant or one an app
-// registered through RegisterButtonVariant.
-// It is the single mapping behind the three host-side renderers that
-// turn a caller-supplied variant string into a button (kiln's node
-// renderer, the resource screens, and uihost's trusted node renderer);
-// each of those keeps its own default for an unrecognised spelling, so
-// ok=false carries no variant. The comparison is case-sensitive, like
-// every variant lookup in this package.
+// ParseButtonVariant maps a case-sensitive spelling to a built-in or
+// registered ButtonVariant; ok is false, with no variant, for any other.
 func ParseButtonVariant(s string) (ButtonVariant, bool) {
 	switch s {
 	case "primary":

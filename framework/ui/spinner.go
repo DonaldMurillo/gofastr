@@ -9,13 +9,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── Spinner ────────────────────────────────────────────────────────
-//
-// headless.Spinner carries the contract: role=status, a hidden visual
-// and a label that says what is being waited for. This adapter adds
-// this package's visual vocabulary — the three shapes, the sizes, the
-// inline posture — through the class map.
-
 // SpinnerSize selects a named size.
 type SpinnerSize string
 
@@ -31,42 +24,23 @@ type SpinnerVariant string
 const (
 	SpinnerRing SpinnerVariant = "" // default: bordered ring
 	SpinnerDots SpinnerVariant = "dots"
-	// SpinnerGrid renders a 3×3 grid of small squares animated in a
-	// staggered ripple. Distinct enough from ring/dots to be the
-	// "loading…heavy" indicator on long-running operations.
-	SpinnerGrid SpinnerVariant = "grid"
+	SpinnerGrid SpinnerVariant = "grid" // a 3 by 3 rippling grid, for long operations
 )
 
 // SpinnerConfig configures a spinner.
 type SpinnerConfig struct {
-	// Label is the assistive-text announced by screen readers.
-	// Defaults to "Loading…" when empty.
-	Label string
-
-	// Size selects a named size (sm | md (default) | lg).
-	Size SpinnerSize
-
-	// Variant selects the visual treatment.
+	Label   string // the announced text; defaults to "Loading…" in Ctx's language
+	Size    SpinnerSize
 	Variant SpinnerVariant
-
-	// Inline true renders inline-flex (sits next to text); false
-	// renders block (centered in its own row).
-	Inline bool
-
-	ID    string
-	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers) to the spinner's root element. Keys the
-	// component owns are dropped: class and id (use Class / ID),
-	// style, data-cui-* and role — the live-region contract is the
-	// primitive's.
+	Inline  bool // sits next to text instead of centering in its own row
+	ID      string
+	Class   string
+	// ExtraAttrs reach the root; class, id, style, role and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the loading label.
-	// When nil, English fallbacks apply.
+	// Ctx is the request context the default label is said in.
 	Ctx context.Context
 }
 
-// spinnerClasses dresses headless.Spinner's parts.
 var spinnerClasses = headless.Classes{
 	headless.PartRoot:              "fui-spinner",
 	headless.PartSpinnerRing:       "fui-spinner__ring",
@@ -79,13 +53,7 @@ var spinnerClasses = headless.Classes{
 	headless.Part("root--size-lg"): "fui-spinner--lg",
 }
 
-// Spinner renders a loading indicator on headless.Spinner.
-//
-// Pair with data-cui-rpc lifecycle to surface pending state on
-// island-side updates: the runtime adds `aria-busy="true"` to the
-// containing form / button while the RPC is in flight, so a CSS
-// rule can switch a sibling Spinner from `visibility:hidden` to
-// visible without any per-component wiring.
+// Spinner renders a loading indicator that announces its label as a status.
 func Spinner(cfg SpinnerConfig) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {

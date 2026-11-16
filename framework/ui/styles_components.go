@@ -5,19 +5,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/core-ui/style"
 )
 
-// Per-component CSS handles. Each function returns a self-contained
-// stylesheet whose top-level selectors are already scoped to
-// [data-cui-comp="<name>"]. The framework registers each handle at
-// package init; rendering through Style.WrapHTML emits the marker on
-// the outermost tag, and the runtime auto-loads the sheet on first
-// appearance.
-//
-// LoadAuto is the default: load when the marker first hits the DOM.
-// Button uses LoadAlways (below). PageHeader and Sidebar use
-// LoadPrewarm: a page that renders one links its sheet through the SSR
-// scan, and the idle prefetch covers a client navigation that swaps one
-// in. Anything else that is likely soon should prewarm the same way.
-
 var (
 	sectionStyle      = registry.RegisterStyle("ui-section", sectionCSS)
 	formFieldStyle    = registry.RegisterStyle("ui-form-field", formFieldCSS)
@@ -41,21 +28,6 @@ var (
 	formRepeaterStyle = registry.RegisterStyle("ui-form-repeater", formRepeaterCSS)
 )
 
-// buttonCSS is the Button/LinkButton stylesheet, on class selectors:
-// the buttonClasses map names the classes, this sheet matches them,
-// and the data-cui-comp="ui-button" marker (Style.WrapHTML) is only
-// what fetches the sheet — ToggleAction and OptimisticAction wear the
-// same classes under their own markers, so every rule here is a plain
-// class rule that matches under any marker. It is LoadAlways because
-// buttons are everywhere; paying the eager link avoids the "looks
-// like a native browser button on first paint" failure mode.
-//
-// Option variables (--fui-density-*, --fui-button-*) are declared at
-// theme boundaries by the component-options compiler and only consumed
-// here: redeclaring one on .fui-button would block the inheritance
-// that makes ui.Themed nesting work. The base rule carries no colours
-// — they live in the variant rules, primary and danger through the
-// per-variant treatment trio, secondary and ghost drawn directly.
 func buttonCSS(t style.Theme) string {
 	return `.fui-button {
   display: inline-flex;
@@ -222,23 +194,10 @@ func buttonCSS(t style.Theme) string {
   padding: calc(var(--spacing-sm, 4px) * 1.5);
 }
 ` +
-		// Registered custom variants and sizes, as plain class rules.
 		buttonModsCSS(t)
 }
 
 func codeBlockCSS(_ style.Theme) string {
-	// Uses the dedicated code-surface tokens (style.ColorSet.CodeSurface/
-	// CodeText/CodeBorder) and the syntax slots (style.Theme.Code, dark
-	// values in Theme.DarkCode), so a theme re-skins or dark-adapts code
-	// independently of the page Text/Background pair. The stock values
-	// keep the classic "dark inkwell" in both schemes.
-	//
-	// Knobs: --ui-code-block-status-size (7px) sizes the head's status
-	// dot; --ui-code-block-gutter-width (28px) sizes the numbered line
-	// gutter, and the body's numbered padding, the band margins and the
-	// ::before anchor are calc()s over it; --ui-code-block-tab-size (4)
-	// sets how wide a tab indent renders (Go source is tab-indented, and
-	// the browser default of 8 pushes nested code off the panel).
 	return `[data-cui-comp="ui-code-block"] {
   display: block;
   overflow-x: auto;
@@ -519,35 +478,6 @@ func sectionCSS(_ style.Theme) string {
 }`
 }
 
-// formFieldCSS is the field stylesheet, on class selectors: the
-// fieldClasses map names the classes, this sheet matches them, and
-// the data-cui-comp="ui-form-field" marker is only what fetches the
-// sheet.
-//
-// FieldOptions (--fui-field-columns, --fui-field-message-column,
-// --fui-field-radius) are declared at theme boundaries by the
-// component-options compiler and only consumed here: redeclaring one
-// on .fui-field would block the inheritance that makes nesting work.
-//
-// The layout rules, which are the sheet's half of FieldOptions:
-//
-//   - Inline is a preference, not a promise. The row is a grid whose
-//     label track sits beside the control track only above the stated
-//     width; below it the row stacks. The width is a viewport floor
-//     (the repo's sheets carry no container queries); in a narrow
-//     container at a wide viewport the two-track layout holds, and
-//     the minmax(0, 1fr) control track plus the wrapping label keep
-//     the row from overflowing.
-//   - The control track is minmax(0, 1fr), never auto: an auto track
-//     sizes to the control's intrinsic ~20ch, so a long value forces
-//     overflow instead of filling the field.
-//   - A long label wraps (overflow-wrap) rather than widening its
-//     track.
-//   - Choice rows (checkbox, radio, switch and their groups) keep
-//     their own wrapping-label structure — the label wraps the
-//     control — and deliberately ignore the columns variables: a
-//     choice row is one inline run, not a label track above a control
-//     track.
 func formFieldCSS(_ style.Theme) string {
 	return `.fui-field {
   display: grid;
@@ -698,10 +628,6 @@ func formSectionCSS(_ style.Theme) string {
 }
 
 func statusBadgeCSS(t style.Theme) string {
-	// Knobs: --ui-badge-line-height (1rem) pins the pill's line box so
-	// xs padding keeps it a pill at any body leading; --ui-badge-case
-	// (none) sets its letter case; --ui-badge-dot-size (0.375rem) sizes
-	// a Dot badge's circle.
 	return `[data-cui-comp="ui-badge"] {
   display: inline-flex;
   /* A chip keeps its own width in a flex column too (a Card header,
@@ -803,15 +729,6 @@ func emptyStateCSS(_ style.Theme) string {
 }
 
 func calloutCSS(t style.Theme) string {
-	// Variant signaling uses a tinted surface + a leading icon glyph
-	// (via ::before) instead of the colored side-stripe. Side-stripe
-	// admonitions are a recognizable AI-template tell; the framework
-	// avoids them. The full border stays neutral; the surface tint
-	// carries the variant cue at adequate contrast.
-	//
-	// Knob: --ui-callout-icon-size (18px) squares the ::before glyph
-	// disc; --ui-callout-icon / --ui-callout-accent below carry its
-	// content and colour.
 	return `[data-cui-comp="ui-callout"] {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -992,14 +909,6 @@ func statCardCSS(_ style.Theme) string {
 }
 
 func avatarCSS(_ style.Theme) string {
-	// The root is position:relative (not overflow:hidden) so the presence
-	// dot can sit in the corner without being clipped; the circular clip
-	// moves onto the image itself via border-radius.
-	//
-	// Knobs: --ui-avatar-size (2.5rem) and its -sm (1.5rem), -lg (3rem),
-	// -xl (4rem) variants square the circle; --ui-avatar-status-min-size
-	// (6px) / --ui-avatar-status-max-size (12px) clamp the presence dot;
-	// --ui-avatar-bg / --ui-avatar-fg recolor the initials disc.
 	return `[data-cui-comp="ui-avatar"] {
   position: relative;
   display: inline-flex;
@@ -1051,8 +960,6 @@ func avatarCSS(_ style.Theme) string {
 }
 
 func formCSS(_ style.Theme) string {
-	// Knob: --ui-form-max caps the form at a readable measure (a 60rem
-	// pane does not stretch every input across it); set none to fill.
 	return `.fui-form { display: grid; gap: var(--spacing-xl, 24px); grid-template-columns: 1fr; max-inline-size: var(--ui-form-max, 42rem); }
 .fui-form--wide { max-inline-size: none; }
 /* Fields sit a step further apart than a field's own label and control,
@@ -1074,11 +981,6 @@ func formCSS(_ style.Theme) string {
 }
 
 func notificationCSS(t style.Theme) string {
-	// Knobs: --ui-notification-max-width (28rem) caps the card,
-	// --ui-notification-icon-size (1.25rem) squares the tone icon,
-	// --ui-notification-dismiss-size (1.75rem) the drawn dismiss button,
-	// --ui-notification-tone carries the variant accent; the floating
-	// corners sit --spacing-lg from the viewport edge.
 	return `[data-cui-comp="ui-notification"] .fui-visually-hidden {
   position: absolute;
   inline-size: 1px;
@@ -1232,11 +1134,6 @@ func notificationCSS(t style.Theme) string {
 }` + customStatusCSS("ui-notification", "fui-notification", t)
 }
 
-// toastStackCSS styles the vertical stack of toast items rendered by
-// preset.ToastStack. The stack itself is `display: grid` so successive
-// items reflow with a height transition; each item slides + fades in.
-// All animation values come from theme tokens so a single theme tweak
-// retunes every toast at once.
 func toastStackCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-toast-stack"] .fui-visually-hidden {
   position: absolute;
@@ -1798,15 +1695,6 @@ func dataTableCSS(_ style.Theme) string {
 }`
 }
 
-// paginationCSS is the pager's stylesheet, the core-ui pattern's sheet
-// redrawn for the headless anatomy: the list is a div rather than an
-// ol, the ends are anchors that say aria-disabled rather than spans
-// inside an .is-disabled item, and an island pager's controls are
-// anchors that keep their hrefs rather than buttons — so the selectors
-// match anchors and spans by tag and state attributes, and the gap by
-// the one class the pattern's sheet read on it. Tokens:
-// --color-text, --color-primary, --color-border, --color-text-muted,
-// --radii-md, --spacing-xs, --spacing-sm, --spacing-touch-target.
 func paginationCSS(_ style.Theme) string {
 	return `[data-cui-comp="ui-pagination"] .pagination {
   display: flex;
@@ -1894,9 +1782,6 @@ func skipLinkCSS(_ style.Theme) string {
 }
 
 func themeToggleCSS(_ style.Theme) string {
-	// Knobs: --ui-theme-toggle-icon-size (18px) squares the sun/moon
-	// glyph; --ui-theme-toggle-option-min-height (36px) is the pill
-	// option's compact floor.
 	return `[data-cui-comp="ui-theme-toggle"] {
   display: inline-flex;
 }
@@ -2016,10 +1901,6 @@ html[data-color-scheme="dark"] [data-cui-comp="ui-theme-toggle"] .fui-theme-togg
 }
 
 func backToTopCSS(_ style.Theme) string {
-	// Knobs: --ui-back-to-top-size (2.75rem) and its -sm (2rem) / -lg
-	// (3.5rem) variants square the button; --ui-back-to-top-icon-size-sm
-	// (14px) / -lg (24px) size their arrows. The offsets below are the
-	// --btt-offset presets over the spacing scale.
 	return `[data-cui-comp="ui-back-to-top"] {
   position: fixed;
   z-index: var(--z-sticky, 200);

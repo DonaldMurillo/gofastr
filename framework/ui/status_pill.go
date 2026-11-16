@@ -1,16 +1,5 @@
 package ui
 
-// StatusPill is a small, non-interactive status kicker: an optional leading
-// dot plus a short mono label in a rounded pill ("● Get started · v0.0.4").
-//
-// Distinct from the two neighbours it sits between:
-//   - StatusBadge:   status-coded label, no dot, sentence case.
-//   - Tag / Chip:    interactive (dismissible / filter link).
-//
-// StatusPill is purely presentational: a hero kicker, a "pre-alpha" marker,
-// a live-state caption. Two tones: neutral and accent (brand primary, with
-// a softly glowing dot).
-
 import (
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -22,28 +11,23 @@ import (
 type StatusPillTone string
 
 const (
-	// StatusPillNeutral is the muted default: subtle text on the surface.
-	StatusPillNeutral StatusPillTone = ""
-	// StatusPillAccent uses the brand primary colour with a glowing dot.
-	StatusPillAccent StatusPillTone = "accent"
+	StatusPillNeutral StatusPillTone = ""       // muted text on the surface
+	StatusPillAccent  StatusPillTone = "accent" // full-strength text and a primary dot
 )
 
 // StatusPillConfig configures a StatusPill.
 type StatusPillConfig struct {
 	Label string         // required visible text
 	Tone  StatusPillTone // default StatusPillNeutral
-	// Dot adds a leading status dot. Opt-in.
-	Dot   bool
+	Dot   bool           // a leading status dot
 	Class string
 	ID    string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the pill's root element.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID) and data-cui-*.
+	// ExtraAttrs reach the root; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 }
 
-// StatusPill renders a presentational status kicker.
+// StatusPill renders a presentational status kicker ("● v0.0.4"): an
+// optional dot and a short label in a rounded pill.
 func StatusPill(cfg StatusPillConfig) render.HTML {
 	if cfg.Label == "" {
 		panic("ui: StatusPill requires Label")
@@ -76,9 +60,6 @@ func StatusPill(cfg StatusPillConfig) render.HTML {
 var statusPillStyle = registry.RegisterStyle("ui-status-pill", statusPillCSS)
 
 func statusPillCSS(_ style.Theme) string {
-	// Knobs: --ui-status-pill-dot-size (6px) sizes the status dot and
-	// --ui-status-pill-case (none) sets the label's letter case (beside
-	// the frame knobs below).
 	return `[data-cui-comp="ui-status-pill"] {
   display: inline-flex;
   align-items: center;
