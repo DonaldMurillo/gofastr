@@ -76,6 +76,16 @@ invariants:
     rule: Masking and hooking a write's response never writes the caller's record, at any depth of nesting.
     enforced_by:
       - test: framework/crud.TestRelationsSweepResponseHookCopiesNestedMaps
+  - id: masked-echo-is-not-written
+    rule: An update of a stored row, on REST PATCH and PUT, _batch, a cascade child, the MCP update tool, UpdateOne, BatchUpdateMany and UpsertOne's conflict arm, leaves out each Mask field whose sent value equals Mask of the stored value, read in the write's transaction under its tenant and owner scope; a stored NULL is never an echo and a create drops nothing.
+    enforced_by:
+      - test: framework/crud.TestMaskedValueRoundTripKeepsStoredValue
+      - test: framework/crud.TestMaskedFieldTakesANewValue
+      - test: framework/crud.TestMaskedRequiredFieldEchoIsAccepted
+      - test: framework/crud.TestMaskedStoredNullIsNeverAnEcho
+      - test: framework/crud.TestMaskedEchoReadsUnderOwnerScope
+      - test: framework/crud.TestMaskedCreateStoresWhatItIsSent
+      - test: framework/crud.TestPGMaskedRoundTripKeepsStoredValue
 decisions:
   - id: match-by-primary-key
     status: accepted
@@ -172,3 +182,16 @@ decisions:
       - option: Splice the clauses into the loader's JOIN.
         why: Their bare column names become ambiguous or bind to the other table.
     upholds: [included-rows-run-child-before-hooks]
+  - id: drop-the-masked-echo
+    date: 2026-11-16
+    status: accepted
+    decision: A write whose value for a Mask field equals Mask of the stored value is treated as if the field were absent, through maskedEchoes on doUpdate's audit pre-image and on UpsertOne's existing-row read, and UpsertOne binds the held value into its VALUES so a NOT NULL column passes.
+    rejected:
+      - option: Refuse the write with a field error.
+        why: A generic load, edit, save client would fail on its first save of any entity with a mask.
+      - option: Document it and keep storing what is sent.
+        why: The write answers 200 and every later read looks the same, so the stored value is lost with nothing to show it (issue 697).
+      - option: Cover TypedQuery.UpdateAll too.
+        why: It sets one value on many rows it never reads, and the echo differs per row, so it would need a read of every matching row; it writes the value as given and the docs say so.
+    revisit_if: A legitimate value collides with a mask's output often enough that callers need a way to force the write, or a hook-masked column needs the same drop.
+    upholds: [masked-echo-is-not-written]
