@@ -24,6 +24,14 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+- **Cursor pages over seeded SQLite timestamps no longer repeat.** A
+  managed entity paged on `created_at` whose rows a seed script or
+  migration inserted as `2026-01-02T03:04:05Z` served its first page
+  again on every request. On SQLite the cursor now carries the stored
+  text for every entity, not only `Unmanaged` ones. Nothing to change;
+  see [cursor pagination](framework/docs/content/cursor-pagination.md).
+
 ### Changed
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`

@@ -2206,7 +2206,9 @@ return wrong rows until it expired. The refusal's fix is the data:
 rewrite the column in `schema.TimestampLayout`, or point the entity at
 a view that does. Rewriting removes the refusal but not the read. An
 entity crud manages (not `Unmanaged`) skips the check, because every
-row crud writes is in the layout. `like` is not checked, and Postgres, which
+row crud writes is in the layout. Rows a seed script or migration put
+in a managed table in another layout are compared as text, unchecked,
+so rewrite them in the layout before filtering on the column. `like` is not checked, and Postgres, which
 compares a timestamp as an instant, is not checked either. Cursor
 pages on such a column keep working: see
 [cursor pagination](cursor-pagination.md).
