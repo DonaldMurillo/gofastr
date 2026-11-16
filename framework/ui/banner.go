@@ -3,7 +3,9 @@ package ui
 import (
 	"context"
 	"hash/fnv"
+	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/app"
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -71,20 +73,14 @@ func Banner(cfg BannerConfig) render.HTML {
 		ctx = context.Background()
 	}
 	if cfg.DismissID != "" {
-		if r := app.RequestFromContext(ctx); r != nil {
-			if c, err := r.Cookie(bannerDismissCookiePrefix + cfg.DismissID); err == nil && c.Value == "1" {
-				return render.HTML("")
-			}
+		if r := app.RequestFromContext(ctx); r != nil && bannerDismissed(r, cfg.DismissID) {
+			return render.HTML("")
 		}
 	}
 
 	dismiss := cfg.Dismissible
 	if cfg.Strip {
 		cfg.Class += " fui-banner--strip"
-	}
-	parts := headless.Parts{}
-	if cfg.Class != "" {
-		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return bannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
 		ID:           orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), bannerIdentity(cfg)),
@@ -97,9 +93,48 @@ func Banner(cfg BannerConfig) render.HTML {
 		DismissLabel: i18nui.BannerDismiss.Text(ctx),
 		Shown:        true,
 		ExtraAttrs:   headless.Safe(cfg.ExtraAttrs, "role", "aria-live"),
-		Parts:        parts,
+		Parts:        bannerRootParts(cfg.Class),
+		DOMID:        cfg.ID,
 		Strings:      StringsFor(ctx),
 	}, bannerClasses))
+}
+
+func bannerRootParts(class string) headless.Parts {
+	if class == "" {
+		return headless.Parts{}
+	}
+	return headless.Parts{Attrs: headless.PartAttrs{headless.PartRoot: {"class": class}}}
+}
+
+// bannerDismissed reads the raw Cookie header: the module's
+// encodeURIComponent name may hold ( or ), which net/http drops as an
+// invalid cookie name.
+func bannerDismissed(r *http.Request, id string) bool {
+	name := bannerDismissCookiePrefix + encodeURIComponent(id)
+	for _, line := range r.Header.Values("Cookie") {
+		for pair := range strings.SplitSeq(line, ";") {
+			if k, v, ok := strings.Cut(strings.TrimSpace(pair), "="); ok && k == name && v == "1" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func encodeURIComponent(s string) string {
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || strings.IndexByte("-_.!~*'()", c) >= 0 {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&15])
+	}
+	return b.String()
 }
 
 func orDefaultStr(s, fallback string) string {
@@ -255,11 +290,16 @@ func bannerCSS(_ style.Theme) string {
 }
 
 func bannerIdentity(cfg BannerConfig) string {
+	return "banner-" + textHash(string(cfg.Variant), cfg.Title, cfg.Body)
+}
+
+// textHash is a short, stable name for a list of strings.
+func textHash(parts ...string) string {
 	h := fnv.New64a()
-	for _, s := range []string{string(cfg.Variant), cfg.Title, cfg.Body} {
+	for _, s := range parts {
 		h.Write([]byte(strconv.Itoa(len(s))))
 		h.Write([]byte{':'})
 		h.Write([]byte(s))
 	}
-	return "banner-" + strconv.FormatUint(h.Sum64(), 36)
+	return strconv.FormatUint(h.Sum64(), 36)
 }

@@ -77,7 +77,7 @@ func AvatarGroup(cfg AvatarGroupConfig) render.HTML {
 		}
 		av := Avatar(a)
 		if cfg.ShowNames {
-			av = Tooltip(TooltipConfig{Text: a.Name}, av)
+			av = Tooltip(TooltipConfig{Text: a.Name, Ctx: cfg.Ctx}, av)
 		}
 		items = append(items, headless.Own(av))
 	}

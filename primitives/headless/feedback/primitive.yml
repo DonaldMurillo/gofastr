@@ -230,6 +230,10 @@ invariants:
     enforced_by:
       - test: framework/headless.TestSystemBannerShipsHiddenUntilShown
       - test: framework/headless.TestSystemBannerIsQuietUnlessOffline
+  - id: system-banner-dom-id
+    rule: A SystemBanner's root carries DOMID as its id, and no id when DOMID is empty; ID stays the message identity only.
+    enforced_by:
+      - test: framework/headless.TestSystemBannerDOMIDIsTheRootID
   - id: system-banner-dismiss-by-default
     rule: A SystemBanner renders its dismiss button unless Dismiss points at false.
     enforced_by:

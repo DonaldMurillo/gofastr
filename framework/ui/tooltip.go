@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
@@ -33,6 +34,9 @@ type TooltipConfig struct {
 
 	// ExtraAttrs forwards attributes to the wrapper span; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
+
+	// Ctx is the page's render context; with it, a derived id is unique on the page.
+	Ctx context.Context
 }
 
 // Tooltip wraps trigger with a role=tooltip pop that CSS shows on hover
@@ -44,6 +48,12 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 	id := cfg.ID
 	if id == "" {
 		id = "tip-" + slug(cfg.Text)
+		if id == "tip-" {
+			id += textHash(cfg.Text)
+		}
+		if cfg.Ctx != nil {
+			id = render.UniqueID(cfg.Ctx, id)
+		}
 	}
 
 	cls := "fui-tooltip"

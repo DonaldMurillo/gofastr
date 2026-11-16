@@ -33,6 +33,8 @@ type SystemBannerProps struct {
 	// Offline marks the built-in connection message, which the runtime shows and
 	// hides; it always ships hidden.
 	Offline bool
+	// DOMID is the root element's id; empty renders none.
+	DOMID string
 
 	ExtraAttrs html.Attrs
 
@@ -76,6 +78,9 @@ func SystemBanner(p SystemBannerProps, s Classes) render.HTML {
 	}
 	if cls := s.Variant(PartRoot, tone); cls != "" {
 		own["class"] = cls
+	}
+	if p.DOMID != "" {
+		own["id"] = p.DOMID
 	}
 
 	title := []render.HTML{
