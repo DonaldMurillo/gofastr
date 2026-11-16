@@ -125,8 +125,8 @@ logged after the toggle commits; it does not undo the toggle.
   Queue jobs are released back to pending (without consuming a retry
   attempt) and run when the module re-enables.
 - **Disabled → MCP tools refuse.** A `tools/call` for a disabled
-  module's tool returns a generic `"tool unavailable"` JSON-RPC error
-  (no module name or disabled state is leaked). The tool is also
+  module's tool returns the same `-32601` `tool "<name>" not found`
+  error an unregistered tool does (no module name or disabled state is leaked). The tool is also
   excluded from `tools/list` so it is not advertised while disabled.
 - **Fail-closed dependency rules.** `Disable` refuses if any
   **enabled** module lists it in `DependsOn`: no cascade, no orphaning.

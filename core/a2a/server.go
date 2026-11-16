@@ -1181,13 +1181,7 @@ func (s *Server) prepareNewTask(r *http.Request, owner string, p *SendMessageReq
 	}
 	if err := s.store.CreateTask(r.Context(), rec); err != nil {
 		s.log.Error("a2a: create task", "taskId", taskID, "err", err)
-		if cfg := pushConfigOf(p); cfg != nil {
-			if derr := s.store.DeletePushConfig(r.Context(), owner, taskID, cfg.ID); derr != nil {
-				// The config row is inert without its task, so this is
-				// a log line, not a second error to report.
-				s.log.Error("a2a: delete push config after failed task create", "taskId", taskID, "err", derr)
-			}
-		}
+		s.dropSendPushConfig(r, owner, taskID, p)
 		if rn != nil {
 			s.releaseRun(rn)
 		}
@@ -1257,6 +1251,7 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 	}
 	t := newTaskRun(s, rec, msg, r, owner)
 	if err := t.resumeWorking(msg); err != nil {
+		s.dropSendPushConfig(r, owner, taskID, p)
 		s.releaseRun(rn)
 		if errors.Is(err, errConcurrentChange) {
 			return nil, nil, nil, Errorf(CodeUnsupportedOperation, "task %s changed concurrently, retry", taskID)
@@ -1276,6 +1271,20 @@ func (s *Server) prepareResume(r *http.Request, owner string, p *SendMessageRequ
 		return t, nil, nil, nil
 	}
 	return t, rn, sk.Handler, nil
+}
+
+// dropSendPushConfig deletes the push config a refused send stored, so
+// the request leaves nothing behind and its retry can register it again.
+func (s *Server) dropSendPushConfig(r *http.Request, owner, taskID string, p *SendMessageRequest) {
+	cfg := pushConfigOf(p)
+	if cfg == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), storeOpTimeout)
+	defer cancel()
+	if err := s.store.DeletePushConfig(ctx, owner, taskID, cfg.ID); err != nil {
+		s.log.Error("a2a: delete push config after refused send", "taskId", taskID, "err", err)
+	}
 }
 
 func (s *Server) storePushConfig(ctx context.Context, owner string, cfg *PushNotificationConfig) *Error {
