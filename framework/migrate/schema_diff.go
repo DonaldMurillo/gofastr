@@ -1354,7 +1354,8 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 		if err != nil {
 			return nil, fmt.Errorf("invalid column name %q: %w", f.Name, err)
 		}
-		col := fmt.Sprintf("%s %s", ddlIdent(safeCol), columnSQLType(ent, f, all, dialect))
+		colType := columnSQLType(ent, f, all, dialect)
+		col := fmt.Sprintf("%s %s", ddlIdent(safeCol), colType)
 		inKey := slices.Contains(keys, f.Name)
 		if inKey && len(keys) == 1 {
 			col += " PRIMARY KEY"
@@ -1373,7 +1374,7 @@ func columnDefs(ent *entity.Entity, all map[string]*entity.Entity, dialect Diale
 			}
 			col += " UNIQUE"
 		}
-		c := declaredConstraint(f, keys, dialect)
+		c := declaredConstraint(f, keys, dialect, colType)
 		if c.notNull {
 			col += " NOT NULL"
 		}

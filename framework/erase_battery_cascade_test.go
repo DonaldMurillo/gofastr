@@ -104,11 +104,14 @@ func TestEraseBatteryDeleteSeedsCascade(t *testing.T) {
 	})
 }
 
-// SQLite lets a TEXT key hold NULL, and no foreign key can name such a row.
-// The seed leaves it to the eraser's own delete, so it is erased and counted
-// once instead of being staged where the staged delete cannot match it.
+// SQLite lets a TEXT key hold NULL in a table made without NOT NULL on it
+// (a hand-made one, or one an older build created), and no foreign key can
+// name such a row. The seed leaves it to the eraser's own delete, so it is
+// erased and counted once instead of being staged where the staged delete
+// cannot match it.
 func TestEraseSeedLeavesNullKeyToEraser(t *testing.T) {
 	db := openTestDB(t, migrate.DialectSQLite)
+	cascadeExec(t, db, `CREATE TABLE users (id TEXT PRIMARY KEY, login TEXT, avatar TEXT)`)
 	app := usersWithProfiles(t, db, &recordingDeleteStore{present: map[string]bool{}})
 	cascadeExec(t, db, `INSERT INTO users (id, login) VALUES ('i1','u1'), (NULL,'u1'), ('i2','u2')`)
 

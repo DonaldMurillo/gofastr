@@ -31,12 +31,15 @@ type colConstraint struct {
 }
 
 // declaredConstraint is f's NOT NULL and DEFAULT as columnDefs writes
-// them, given the entity's key columns.
-func declaredConstraint(f schema.Field, keys []string, dialect Dialect) colConstraint {
+// them, given the entity's key columns and the column's SQL type. SQLite
+// lets NULL into any key column but an INTEGER PRIMARY KEY (the rowid).
+func declaredConstraint(f schema.Field, keys []string, dialect Dialect, colType string) colConstraint {
 	inKey := slices.Contains(keys, f.Name)
+	rowid := len(keys) == 1 && strings.EqualFold(strings.TrimSpace(colType), "INTEGER")
 	return colConstraint{
-		notNull: (f.Required && f.AutoGenerate == schema.AutoNone) || (inKey && len(keys) > 1),
-		dflt:    ColumnDefaultClause(f, dialect),
+		notNull: (f.Required && f.AutoGenerate == schema.AutoNone) || (inKey && len(keys) > 1) ||
+			(inKey && dialect == DialectSQLite && !rowid),
+		dflt: ColumnDefaultClause(f, dialect),
 	}
 }
 
@@ -135,7 +138,7 @@ func constraintChanges(ent *entity.Entity, dialect Dialect, qtable, prevDDL stri
 		if !ok {
 			continue
 		}
-		now := declaredConstraint(f, keys, dialect)
+		now := declaredConstraint(f, keys, dialect, "") // key columns were skipped above
 		nullFlip := now.notNull != was.notNull
 		dfltFlip := now.dflt != was.dflt && !defaultOwned[strings.ToLower(f.Name)]
 		if !nullFlip && !dfltFlip {

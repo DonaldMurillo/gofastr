@@ -875,9 +875,18 @@ another raw table): `Columns` names one local column per key column, in
 key order: `{Columns: []string{"user_id"}, RefTable: "users"}`, or
 `{Columns: []string{"order_store", "order_no"}, RefTable: "orders"}` for a
 composite one. Mark several columns `PrimaryKey: true` for a composite key;
-the key takes them in column order. On SQLite a one-column primary key that
-is not `NotNull` takes `NULL` (SQLite's rule for any key but an `INTEGER
-PRIMARY KEY`), where Postgres refuses it: set `NotNull` on the key column.
+the key takes them in column order. A key column refuses
+`NULL` on both engines. SQLite takes `NULL` in a primary-key column unless
+the column says `NOT NULL`, so on SQLite `CREATE TABLE` (boot, `migrate
+generate`, and the table rebuild) writes `NOT NULL` on every key column
+except a lone `INTEGER PRIMARY KEY`, which SQLite numbers itself. Entities
+and raw tables both get it. A raw SQL insert that leaves the key out of a
+table with a text key now fails on SQLite: send the key. A table an older
+build created keeps its column as it was: boot does not rebuild it, and
+neither `DiffSchema` nor `migrate generate` proposes a change for it. If
+such a table is later rebuilt for another change, a row with a `NULL` key
+fails the copy and the migration rolls back: give those rows a key first
+(`SELECT … WHERE <key> IS NULL`).
 A table with no primary key is allowed but cannot be referenced. `RawType` on a column overrides
 the portable type with an exact SQL type (`NUMERIC(10,2)`, `INET`, …) and works
 on entity fields too. A raw table has no CRUD routes, and the admin's

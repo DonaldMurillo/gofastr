@@ -425,6 +425,16 @@ few lines, and link the PR or the docs page for the rest.
   rowid fills, including the integer part of a composite key) answers
   `400` with the key `required`, as Postgres does, and is rolled back.
   SQLite stored such a row, and no route could read, update or delete it.
+- **BREAKING (SQLite): a new table's primary key is `NOT NULL`**
+  ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)). SQLite
+  takes `NULL` in a primary-key column unless it says `NOT NULL`, and only
+  a composite key said so. `CREATE TABLE` on SQLite (boot, `migrate
+  generate`, the table rebuild) now writes `NOT NULL` on a one-column key
+  too, for entities and `migrate.Table`, except a lone `INTEGER PRIMARY
+  KEY`, which SQLite numbers itself. A raw SQL insert that leaves out a
+  text key, or sends `NULL`, is refused as on Postgres. An existing table
+  is not rebuilt and no migration is proposed for it; a later rebuild of
+  one fails on a row whose key is `NULL`, so give those rows a key first.
 - **BREAKING: generated read shapes carry optional scalars as
   pointers** ([#669](https://github.com/DonaldMurillo/gofastr/issues/669)).
   In the generated entities model struct and the generated Go client's read

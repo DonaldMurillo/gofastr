@@ -183,3 +183,71 @@ func TestKeywordViewName(t *testing.T) {
 		fkExec(t, db, `SELECT id FROM "user"`)
 	})
 }
+
+// A one-column key refuses NULL on both engines; SQLite's rowid key still
+// numbers itself (r12 migrate-05).
+func TestSingleColumnKeyRefusesNull(t *testing.T) {
+	codes := migrate.Table{Name: "hp_codes", Columns: []migrate.Column{
+		{Name: "code", Type: schema.String, PrimaryKey: true}, {Name: "label", Type: schema.String}}}.ToEntity()
+	seq := migrate.Table{Name: "hp_seq", Columns: []migrate.Column{
+		{Name: "n", Type: schema.Int, PrimaryKey: true, AutoGenerate: schema.AutoIncrement}, {Name: "label", Type: schema.String}}}.ToEntity()
+	plain := entity.Define("hp_plain", entity.EntityConfig{Table: "hp_plain", Fields: []schema.Field{{Name: "label", Type: schema.String}}}.WithTimestamps(false))
+	testdb.ForEachDialect(t, func(t *testing.T, db *sql.DB, d migrate.Dialect) {
+		if err := migrate.AutoMigrateContext(t.Context(), db, fkReg{codes, seq, plain}); err != nil {
+			t.Fatal(err)
+		}
+		for _, ins := range []string{
+			"INSERT INTO hp_codes (code, label) VALUES (NULL, 'x')",
+			"INSERT INTO hp_plain (id, label) VALUES (NULL, 'x')",
+		} {
+			if _, err := db.Exec(ins); err == nil {
+				t.Errorf("%s: a NULL primary key was accepted", ins)
+			}
+		}
+		fkExec(t, db, "INSERT INTO hp_seq (label) VALUES ('a')", "INSERT INTO hp_seq (label) VALUES ('b')")
+	})
+
+	// A snapshot written before the NOT NULL generates nothing.
+	_, _, snap, err := migrate.GeneratePlan(migrate.Plan{Registry: fkReg{codes}}, migrate.SchemaSnapshot{}, migrate.DialectSQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := strings.Replace(snap.TableDDL["hp_codes"], "code TEXT PRIMARY KEY NOT NULL", "code TEXT PRIMARY KEY", 1)
+	if old == snap.TableDDL["hp_codes"] {
+		t.Fatalf("the key is not NOT NULL in:\n%s", old)
+	}
+	snap.TableDDL["hp_codes"] = old
+	if up, _, _, err := migrate.GeneratePlan(migrate.Plan{Registry: fkReg{codes}}, snap, migrate.DialectSQLite); err != nil || up != "" {
+		t.Errorf("an older snapshot generated %q, %v", up, err)
+	}
+}
+
+// A SQLite table an older build created, its key without NOT NULL, boots
+// unchanged: no rebuild, its NULL-key row kept, and the live diff empty.
+func TestOlderSQLiteKeyTableBootsUnchanged(t *testing.T) {
+	db := testdb.Open(t, migrate.DialectSQLite)
+	const ddl = "CREATE TABLE hp_codes (\n\tcode TEXT PRIMARY KEY,\n\tlabel TEXT\n)"
+	fkExec(t, db, ddl, "INSERT INTO hp_codes (code, label) VALUES (NULL, 'old')")
+	codes := migrate.Table{Name: "hp_codes", Columns: []migrate.Column{
+		{Name: "code", Type: schema.String, PrimaryKey: true}, {Name: "label", Type: schema.String}, {Name: "note", Type: schema.String}}}.ToEntity()
+	for range 2 {
+		if err := migrate.AutoMigrateContext(t.Context(), db, fkReg{codes}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var stored string
+	var rows int
+	if err := db.QueryRow("SELECT sql FROM sqlite_master WHERE name = 'hp_codes'").Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow("SELECT count(*) FROM hp_codes WHERE code IS NULL AND label = 'old'").Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(stored, "CREATE TABLE hp_codes (\n\tcode TEXT PRIMARY KEY,") || !strings.Contains(stored, "note") || rows != 1 {
+		t.Errorf("the table was rebuilt or lost its row (rows %d):\n%s", rows, stored)
+	}
+	changes, err := migrate.DiffSchema(t.Context(), db, fkReg{codes})
+	if err != nil || len(changes) != 0 {
+		t.Errorf("live diff: %+v, %v", changes, err)
+	}
+}
