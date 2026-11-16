@@ -1218,22 +1218,14 @@ func WithGrantStore(gs *access.GrantStore) AppOption {
 	}
 }
 
-// WithoutDefaultMiddleware disables the default middleware chain
-// (recovery, request-id, security headers, timeout; access logging is
-// NOT in the default chain — battery/log or middleware.LoggingFn add
-// it). Use this when you want full control over middleware composition
-// via Use().
+// WithoutDefaultMiddleware skips DefaultMiddleware, leaving the chain to Use.
 func WithoutDefaultMiddleware() AppOption {
 	return func(a *App) {
 		a.noDefaults = true
 	}
 }
 
-// WithLogger sets the App's *slog.Logger. Same effect as calling
-// App.SetLogger after NewApp; available as an option for symmetry.
-// Panics if l is nil: the App's logger is always non-nil; pass a
-// discard logger (slog.New(slog.DiscardHandler)) if you want to
-// silence output.
+// WithLogger sets the App's logger, as SetLogger does. Panics if l is nil.
 func WithLogger(l *slog.Logger) AppOption {
 	if l == nil {
 		panic("framework: WithLogger(nil): use slog.DiscardHandler to silence logging")
@@ -1243,33 +1235,8 @@ func WithLogger(l *slog.Logger) AppOption {
 	}
 }
 
-// WithIdempotency adds an Idempotency-Key middleware. Pass
-// middleware.IdempotencyConfig{} to take all defaults; the option is
-// otherwise idiomatic-Go composition over the existing
-// middleware.Idempotency primitive.
-//
-// The middleware is mounted with router.UseInner: it runs after every
-// middleware the app adds with Use (auth, tenant resolution) and next to
-// the handler, so a replay is keyed on the user and tenant those
-// resolved. It is independent of the default chain and works with
-// WithoutDefaultMiddleware too.
-//
-// Defaults Principal to the request's owner (the framework's owner
-// extractor, i.e. the authenticated user), falling back to a hash of the
-// request's credential headers. The middleware caches nothing without a
-// Principal. One shared key namespace would replay one caller's response
-// body to another, and the framework layer is where "who is this" is
-// knowable, so IdempotencyConfig{} still means "all defaults" here. Set
-// Principal explicitly to key on something else (an API-token id).
-//
-// Defaults Tenant to the resolved tenant id (tenant.GetTenantID), so a
-// credential that switches tenants and resends the same key runs the
-// write in the new tenant.
-//
-// Defaults Scope to the scopes a scope-restricted API token or embed grant
-// holds (access.HeldScopes), so a narrow token resending a key its user's
-// session or a broader token used runs its own request instead of being
-// served a response its scopes would not allow.
+// WithIdempotency adds the Idempotency-Key middleware innermost; unset Principal,
+// Tenant and Scope default to the caller, its tenant and its held scopes.
 func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	if cfg.Principal == nil {
 		cfg.Principal = ownerPrincipal
@@ -1286,16 +1253,10 @@ func WithIdempotency(cfg middleware.IdempotencyConfig) AppOption {
 	}
 }
 
-// requestTenantID is WithIdempotency's default Tenant: the tenant id the
-// app's tenant middleware resolved, "" when there is none.
 func requestTenantID(r *http.Request) string {
 	return handler.GetTenantID(r.Context())
 }
 
-// heldScopeKey is WithIdempotency's default Scope: "" for a request no
-// scope narrows (a session, a JWT), otherwise "scoped:" and the held
-// scopes sorted, deduplicated and length-prefixed, so a token holding no
-// scopes, one scope, or two in any order each get one stable namespace.
 func heldScopeKey(r *http.Request) string {
 	held, scoped := access.HeldScopes(r.Context())
 	if !scoped {
@@ -1317,52 +1278,20 @@ func heldScopeKey(r *http.Request) string {
 	return b.String()
 }
 
-// ownerPrincipal keys idempotency entries by the request's owner. An
-// unauthenticated request yields "anon", which shares a namespace among
-// anonymous callers, acceptable because an anonymous response carries
-// no per-user data by construction, and the alternative (no caching at
-// all for anonymous traffic) drops the retry protection exactly where
-// duplicate submits are most common.
 func ownerPrincipal(r *http.Request) string {
 	if id, ok := owner.Get(r.Context()); ok && id != nil {
 		return fmt.Sprintf("%v", id)
 	}
-	// No resolved owner: the app has no auth middleware, or this route's
-	// caller did not authenticate through it.
-	//
-	// WithIdempotency mounts the middleware innermost (router.UseInner), so
-	// on that wiring the branch above sees the user the app's auth resolved.
-	// A Principal used elsewhere, or a credential the app's auth does not
-	// read, still lands here. Keying every such caller on one "anon"
-	// namespace would let two callers sending the same Idempotency-Key,
-	// "order-1" is enough, receive each other's stored response.
-	//
-	// The credential itself is still visible, so key on it. Different
-	// credentials can never share a namespace; the cost is that
-	// re-authenticating starts a new one, so a retry that straddles a login or
-	// a token refresh is treated as a fresh request rather than a replay. That
-	// is the right trade against serving one caller's response to another.
 	if k := credentialFingerprint(r); k != "" {
 		return k
 	}
 	return "anon"
 }
 
-// credentialFingerprint derives a stable, opaque namespace from whatever
-// credential the request carries, without interpreting any of them. It is used
-// only to keep distinct callers in distinct namespaces, never to authenticate.
 func credentialFingerprint(r *http.Request) string {
 	h := sha256.New()
 	wrote := false
 	for _, name := range []string{"Authorization", "X-API-Key", fembed.GrantHeader, "Cookie"} {
-		// Values, not Get. Get returns only the FIRST field, and Cookie is
-		// routinely sent as several: a proxy prepends its own
-		// "Cookie: edge=blue" and forwards the browser's "Cookie: session_id=…"
-		// as a second field. Session auth scans every cookie, so it can
-		// authenticate two different users from a field this hash never saw,
-		// and both of them landed in one namespace keyed on the shared first
-		// field, one caller's stored response served to another, which is the
-		// exact failure this function exists to prevent.
 		for _, v := range r.Header.Values(name) {
 			if v == "" {
 				continue
@@ -1380,40 +1309,23 @@ func credentialFingerprint(r *http.Request) string {
 	return "cred:" + hex.EncodeToString(h.Sum(nil)[:8])
 }
 
-// WithMetrics enables HTTP request metrics (per-route counts, status classes,
-// latency histograms) in the default middleware chain and mounts a
-// Prometheus-format /metrics endpoint. The endpoint is unauthenticated by
-// design (scrape it from inside your network / behind your ingress). Panics
-// when paired with WithoutDefaultMiddleware. Mount middleware.MetricsMiddleware
-// and middleware.MetricsHandler yourself in that case.
+// WithMetrics adds request metrics to the default chain and mounts an
+// unauthenticated /metrics endpoint. Incompatible with WithoutDefaultMiddleware.
 func WithMetrics() AppOption {
 	return func(a *App) {
 		a.metrics = middleware.NewMetrics()
 	}
 }
 
-// WithDebugAuthorize decides who may read /.debug/stats and
-// /.debug/goroutineleak (AppConfig.DebugEndpoints). It runs after the
-// authenticated-user check, which still answers 401 for no user, and
-// returns true to allow; false is a 403. Without it the caller must hold
-// the "admin" role, read from the user's GetRoles() []string or from the
-// roles access middleware put on the context. A request carrying an embed
-// grant is refused either way, and so is a caller an access Decider denies
-// on access.RoleGateCapability. A scope-restricted caller (an API token)
-// must also hold access.RoleScope("admin") ("role:admin", "role:*" or
-// "*:*") before fn runs: a token carries its owner's identity, and one
-// minted for another surface must not read process internals because fn
-// admits its owner.
+// WithDebugAuthorize decides which authenticated caller may read the debug
+// endpoints, false answering 403; the default requires the "admin" role.
 func WithDebugAuthorize(fn func(ctx context.Context) bool) AppOption {
 	return func(a *App) {
 		a.debugAuthorize = fn
 	}
 }
 
-// WithTracing enables the OpenTelemetry tracing middleware in the default
-// chain. Each request runs in a span with method/route/status attributes.
-// Spans no-op until you install a TracerProvider via otel.SetTracerProvider
-// (e.g. an OTLP exporter), so this is safe to leave on. Panics when paired
+// WithTracing adds OpenTelemetry tracing to the default chain. Incompatible
 // with WithoutDefaultMiddleware.
 func WithTracing() AppOption {
 	return func(a *App) {
@@ -1421,14 +1333,8 @@ func WithTracing() AppOption {
 	}
 }
 
-// WithI18n installs a Translator and wires its locale-negotiation
-// middleware into the default chain. Handlers downstream can call
-// App.T(ctx, key, ...) for translated strings driven by the caller's
-// Accept-Language. Also installed as i18n.Default() so the package-
-// level i18n.T helper works from anywhere.
-//
-// Panics when paired with WithoutDefaultMiddleware. Register the
-// middleware explicitly in your custom chain in that case.
+// WithI18n installs tr, also as i18n.Default, and adds locale negotiation to
+// the default chain. Incompatible with WithoutDefaultMiddleware.
 func WithI18n(tr *i18n.Translator) AppOption {
 	return func(a *App) {
 		a.translator = tr
@@ -1436,23 +1342,8 @@ func WithI18n(tr *i18n.Translator) AppOption {
 	}
 }
 
-// WithLocaleResolver installs a custom locale resolver consulted BEFORE
-// the X-Locale / Accept-Language headers during locale negotiation. Use
-// it to make a stored per-user locale (e.g. a cookie set by a "change
-// language" handler) win over the browser's Accept-Language.
-//
-// Pair with [i18n.CookieLocale] for the common cookie case:
-//
-//	a := framework.NewApp(
-//	    framework.WithI18n(tr),
-//	    framework.WithLocaleResolver(i18n.CookieLocale("locale")),
-//	)
-//
-// A resolver of your own names the request headers it reads in its
-// Vary ([i18n.LocaleResolver]), so a shared cache keys on them.
-//
-// Panics if used without WithI18n. Locale resolution is meaningless
-// without a translator/catalog to resolve against.
+// WithLocaleResolver installs a resolver consulted before the locale headers,
+// such as [i18n.CookieLocale]. Panics unless an earlier option is WithI18n.
 func WithLocaleResolver(r i18n.LocaleResolver) AppOption {
 	return func(a *App) {
 		if a.translator == nil {
@@ -1462,24 +1353,12 @@ func WithLocaleResolver(r i18n.LocaleResolver) AppOption {
 	}
 }
 
-// Logger returns the App-local *slog.Logger. Middleware and plugins
-// should call this, not slog.Default(), so that a logging plugin can
-// replace the destination without rewiring globals.
-//
-// Always non-nil. NewApp seeds the App with a JSON-to-stderr logger
-// that is independent of slog.Default; an unrelated slog.SetDefault
-// elsewhere in the process does not redirect this App's logs.
+// Logger returns the App's logger, never nil and independent of slog.Default.
 func (a *App) Logger() *slog.Logger {
 	return a.logger.Load()
 }
 
-// SetLogger replaces the App's logger. Atomic; safe to call
-// concurrently with in-flight requests, atomic.Pointer.Store is
-// race-free, and middleware reading via App.Logger() sees the new
-// value on the next request.
-//
-// Panics if l is nil: the App's logger is always non-nil; pass a
-// discard logger (slog.New(slog.DiscardHandler)) to silence output.
+// SetLogger replaces the App's logger while requests run. Panics if l is nil.
 func (a *App) SetLogger(l *slog.Logger) {
 	if l == nil {
 		panic("framework: App.SetLogger(nil): use slog.DiscardHandler to silence logging")
@@ -1487,28 +1366,8 @@ func (a *App) SetLogger(l *slog.Logger) {
 	a.logger.Store(l)
 }
 
-// DefaultMiddleware is the framework's standard safety chain in
-// canonical order:
-//
-//	recovery → request-id → [i18n] → [compress] → [locale prefix] →
-//	[db] → [tracing] → [metrics] → security headers → timeout
-//
-// The optional entries are present when the App was configured with
-// WithI18n / WithLocalePrefixes / WithTracing / WithMetrics; the timeout
-// entry is omitted when AppConfig.DisableRequestTimeout is true.
-// WithIdempotency is not part of this chain: it mounts innermost, after
-// the app's own middleware (see WithIdempotency).
-//
-// Access logging is deliberately NOT in this list. battery/log owns
-// structured access logging when registered, and ad-hoc apps that just
-// want a basic line can add middleware.LoggingFn(app.Logger) themselves.
-// Having both fire produces duplicate entries with mismatched fields
-// (`request` from the framework, `http.access` from the plugin).
-//
-// Takes the App so the recovery middleware can route panics through
-// app.Logger (late-binding) and the timeout reflects
-// AppConfig.RequestTimeout. Pass nil only in tests; the recovery falls
-// back to slog.Default and the timeout to 30s.
+// DefaultMiddleware returns the chain NewApp installs, recovery outermost and
+// the request timeout innermost. a may be nil in tests.
 func DefaultMiddleware(a *App) []router.Middleware {
 	var getLogger func() *slog.Logger
 	timeout := defaultRequestTimeout
@@ -1526,38 +1385,22 @@ func DefaultMiddleware(a *App) []router.Middleware {
 		middleware.RecoveryFn(getLogger),
 		middleware.RequestID(),
 	}
-	// Locale and translator go on the context ahead of every middleware
-	// that can refuse a request, so an idempotency or metrics refusal
-	// answers in the caller's language too (idempotency is innermost, so
-	// it is inside this regardless).
 	if translator != nil {
 		var negOpts []i18n.NegotiateOption
 		if localeResolver.Resolve != nil {
 			negOpts = append(negOpts, i18n.WithLocaleResolver(localeResolver))
 		}
-		// A second recovery inside it answers a handler's panic in the
-		// caller's locale; the outer one still catches a panicking
-		// locale resolver.
 		chain = append(chain, i18n.Middleware(translator, negOpts...), middleware.RecoveryFn(getLogger))
 	}
-	// Compress sits outside the timeout and every handler-facing
-	// middleware, so it sees the final bytes and the timeout's flushes.
 	if a != nil && a.Config.Compression {
 		chain = append(chain, middleware.Compress())
 	}
-	// The locale-prefix rewriter sits inside Compress, so it reads the
-	// handler's plain bytes and Compress encodes what it wrote.
 	if a != nil && a.localePrefixes {
 		chain = append(chain, urlprefix.Middleware())
 	}
-	// Stamp the App's *sql.DB onto each request context so screens and
-	// handlers can reach it via DBFromContext without a package-level
-	// global. No-op when the App has no DB.
 	if a != nil && a.DB != nil {
 		chain = append(chain, a.DBContextMiddleware())
 	}
-	// The App's flag evaluator, so featureflag.Bool on a request context
-	// reads this App's flags and not the process default.
 	if a != nil {
 		chain = append(chain, a.FlagContextMiddleware())
 	}
@@ -1578,28 +1421,9 @@ func DefaultMiddleware(a *App) []router.Middleware {
 	return chain
 }
 
-// Mount attaches a Mountable and registers its routes on the app's router
-// immediately. The default middleware chain is already in place (committed
-// during NewApp), so any handler the Mountable registers is wrapped with
-// it. Returns the app for fluent chaining.
-//
-// Mountables typically register a NotFound catch-all (e.g. a UI host that
-// renders pages for any unrouted path), so call Mount AFTER any explicit
-// routes you want to take precedence (entity CRUD, custom endpoints).
-//
-// IMPORTANT. Ordering with plugins/batteries: plugin.Init runs at
-// App.Start (or InitPlugins), AFTER Mount has already registered the
-// Mountable's routes. If a plugin's Init registers a more-specific
-// route that overlaps with a Mountable's NotFound catch-all, the
-// plugin's route still wins (ServeMux dispatches by specificity, not
-// by registration order). But if a plugin registers a Mountable-style
-// catch-all itself, it shadows any user routes added after Mount but
-// before InitPlugins. Mount last unless you know what you're doing.
+// Mount registers m's routes now and hands it the app's fanout and keys.
+// Panics on a route that is an entity's CRUD path or keys it cannot derive.
 func (a *App) Mount(m Mountable) *App {
-	// UI hosts can expose their concrete screen paths before mounting. Check
-	// those paths against already-registered entity CRUD so registration
-	// order never determines whether callers get the actionable collision
-	// diagnostic or an opaque ServeMux panic.
 	if provider, ok := m.(interface{ RoutePatterns() []string }); ok {
 		for _, ent := range a.Registry.AllSorted() {
 			if !a.entityCRUDEnabled(ent) {
@@ -1614,19 +1438,12 @@ func (a *App) Mount(m Mountable) *App {
 		}
 	}
 	a.mountables = append(a.mountables, m)
-	// A host that renders pages learns the locale set before it serves
-	// one (WithLocalePrefixes): hreflang, sitemap and the runtime's
-	// locale manifest come from it. Duck-typed, like SetFanout below.
 	if a.localePrefixes {
 		if pl, ok := m.(interface{ SetPathLocales(i18n.PathLocales) }); ok {
 			pl.SetPathLocales(a.pathLocales)
 		}
 	}
 	m.Mount(a.router)
-	// Wire the mountable into the cross-replica fanout (WithFanout) when it
-	// supports it, a mounted UI host forwards to its island manager so
-	// island push reaches sessions connected to other replicas. Duck-typed:
-	// the framework doesn't import uihost.
 	if a.fanout != nil {
 		if fm, ok := m.(interface {
 			SetFanout(fanout.Fanout) (func(), error)
@@ -1641,22 +1458,6 @@ func (a *App) Mount(m Mountable) *App {
 			})
 		}
 	}
-	// Hand the mounted host its session-signing key(s). Sessions are
-	// stateless HMAC tokens: with a shared secret every replica verifies
-	// every replica's tokens; with no secret and no fanout the host
-	// self-mints a per-boot key (the single-replica zero-config path); no
-	// secret WITH a fanout is a broken deployment: half of session checks
-	// would 401, so it fails at boot, not in production traffic. A
-	// GOFASTR_SECRET rotation drains gracefully: previous keys are handed
-	// over as verify-only alongside the current one (mirroring the CSRF
-	// AdditionalKeys idiom), so rotation does not log every user out at
-	// once. Hosts implementing SetSessionKeys get both; older hosts fall
-	// back to SetSessionKey with the current key only.
-	// Resolve the session keys only when the host actually carries a
-	// session-signing seam (preserves the original contract: a host with
-	// no session key, e.g. a fanout-only host, is never asked about
-	// secrets, so the fanout-without-secret boot panic only fires for
-	// hosts that actually hold sessions).
 	switch s := m.(type) {
 	case interface {
 		SetSessionKeys(current []byte, previous ...[]byte)
@@ -1677,9 +1478,6 @@ func (a *App) Mount(m Mountable) *App {
 			s.SetSessionKey(currentKey)
 		}
 	}
-	// Same seam for embeddable surfaces, with a stricter rule: an embed host
-	// gets no per-boot fallback, so a host configured without an app secret
-	// fails at boot. See embedKeysForMount.
 	if eh, ok := m.(interface{ EmbedHost() *fembed.Host }); ok {
 		if host := eh.EmbedHost(); host != nil {
 			nonceKey, grantKey, err := embedKeysForMount(a.secret)
@@ -1696,41 +1494,18 @@ func (a *App) Mount(m Mountable) *App {
 	return a
 }
 
-// EmbedReserving is implemented by anything that mounts routes an embed grant
-// must never reach, under a prefix the app can change.
-//
-// framework/embed ships a list of reserved prefixes, but it can only name
-// DEFAULTS: an app that sets admin.Config.PathPrefix = "/back-office" keeps the
-// protection on "/admin", which it no longer serves, and loses it on the prefix
-// it does. A battery that implements this reports the prefix it ACTUALLY
-// mounted, and the protection moves with it.
+// EmbedReserving is implemented by a Mountable, plugin or battery whose routes
+// an embed grant must never reach; it reports the prefixes it actually mounted.
 type EmbedReserving interface {
 	ReservedEmbedPrefixes() []string
 }
 
-// BootValidator is a Mountable whose validation can only complete once
-// the app's route table is complete: plugins, batteries (during
-// InitPlugins), and Start itself all register routes after Mount, so a
-// check that needs "everything this app will serve" cannot run there.
-//
-// App.Start calls ValidateBoot after the last route registration and
-// before the listener binds — the latest point that can still refuse to
-// serve. A panic inside ValidateBoot aborts the boot, the same contract
-// as every other configuration panic.
+// BootValidator is a Mountable whose ValidateBoot Start calls once every route
+// is registered, before the listener binds; a panic aborts the boot.
 type BootValidator interface {
-	// ValidateBoot runs the mountable's deferred checks against the
-	// complete route table. It may be called more than once across
-	// restarts; it must not mutate the route table.
 	ValidateBoot()
 }
 
-// reserveEmbedPrefixes registers every mounted battery's actual privileged
-// prefix with the embed host and re-validates the declared surfaces.
-//
-// Surfaces are declared before anything is mounted, so a Path or Reach that
-// only becomes reserved once a battery is present has to be caught here or not
-// at all. A conflict is a wiring mistake with a security consequence, so it
-// stops the boot rather than logging.
 func (a *App) reserveEmbedPrefixes() {
 	if a.embedHost == nil {
 		return
@@ -1759,53 +1534,28 @@ func (a *App) reserveEmbedPrefixes() {
 	}
 }
 
-// Mountables returns the Mountables registered via Mount, in registration
-// order. Batteries use it to discover a mounted UI host (type-asserting to
-// *uihost.UIHost) so they can register screens on the host's render pipeline
-// rather than spinning up a second host. Returns a copy. Callers must not
-// mutate the App's internal slice.
+// Mountables returns a copy of the Mountables registered via Mount, in order.
 func (a *App) Mountables() []Mountable {
 	out := make([]Mountable, len(a.mountables))
 	copy(out, a.mountables)
 	return out
 }
 
-// Group creates a route group with the given prefix and optional configuration.
-// The group supports its own middleware stack, access policy, OpenAPI tags,
-// and MCP namespacing. Nested groups compose prefixes and middleware.
-//
-//	api := app.Group("/api")
-//	api.Use(authMiddleware)
-//	api.Get("/health", healthHandler)
-//
-//	admin := app.Group("/admin", routegroup.WithAccess(access.RequirePermission("admin:access")))
-//	admin.Entity("settings", settingsConfig)
+// Group creates a route group under prefix.
 func (a *App) Group(prefix string, opts ...routegroup.GroupOption) *routegroup.RouteGroup {
 	return routegroup.New(a.router, prefix, opts...)
 }
 
-// GroupEntity registers an entity with the given configuration inside a
-// RouteGroup. CRUD routes mount at <group-prefix>/<entity-table>, MCP
-// tools are namespaced under the group's MCPNamespace, and the OpenAPI
-// tag reflects the group's OpenAPITag if set.
-//
-// This is the group-scoped equivalent of App.Entity.
+// GroupEntity is App.Entity under g's prefix, MCP namespace and OpenAPI tag.
+// Panics on any misconfiguration.
 func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.EntityConfig) *App {
 	if queued := a.pendingEndpoints[name]; len(queued) > 0 {
 		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
 	}
 	e := entity.Define(name, config)
-	// The registry keys on (name, version) so the same entity name can be
-	// registered into multiple groups. The version is the group's full
-	// prefix (e.g. "/api/v1"); an entity is unique per (name, prefix).
 	e.Version = g.Prefix()
-	// Carry the group's OpenAPI tag so the generated spec can group this
-	// entity's operations under the version's tag instead of the bare name.
 	e.OpenAPITag = g.OpenAPITag()
 
-	// Read e.Config, not the raw parameter: Define normalized the grouped
-	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
-	// grouped values are authoritative.
 	crudEnabled := a.entityCRUDEnabled(e)
 	if a.DB != nil {
 		if err := ValidateExposure(name, e.Config); err != nil {
@@ -1814,14 +1564,9 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	}
 	mcpTools := (e.Config.Exposure.MCP || (crudEnabled && dev.DevMCPEnabled())) && a.DB != nil
 
-	// Every check that can refuse the declaration runs before the registry,
-	// router or MCP server changes: App.Entity's preflight, at the group's
-	// prefixed paths and MCP namespace. A refusal after Register left the
-	// entity registered with half its routes.
 	crudMount := ""
 	if crudEnabled {
 		crudMount = g.Prefix() + "/" + e.GetTable()
-		// Routes() records full (prefix-applied) patterns.
 		if msg := a.entityRouteCollision(e, crudMount); msg != "" {
 			panic("framework: " + msg)
 		}
@@ -1840,33 +1585,14 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
 		crudHandler = a.wireCrudHandler(e)
-		// The MCP tools re-dispatch through the router: that is what makes
-		// them inherit auth, owner and tenant scoping rather than
-		// re-implementing it, so they must address the path the routes are
-		// actually mounted at. A group's sub-router shares the parent mux and
-		// registers PREFIXED patterns, so dispatching to the bare "/table"
-		// 404s. App.Entity sets this from the API prefix; the grouped path
-		// left it empty.
 		crudHandler.BasePath = g.Prefix()
-		// Propagate the group's MCP namespace so tools registered for a
-		// namespaced entity are disambiguated from other versions
-		// (e.g. "admin.posts.list" vs "public.posts.list"). An empty
-		// namespace keeps the historical flat "posts_list" tool names.
 		crudHandler.MCPNamespace = g.MCPNamespace()
 
-		// Register CRUD routes on the group's sub-router.
-		// The group's prefix is already baked into the sub-router,
-		// so we just mount at /<entity-table>.
 		crud.RegisterCrudRoutes(g.Router(), crudHandler, "/"+e.GetTable(), crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 		a.recordCrudMount(e, g.Router(), "/"+e.GetTable(), crudMount)
 	}
 
-	// MCP tools, namespaced if the group has a namespace. Explicit
-	// MCP=true, or dev-implied for CRUD-enabled entities (the dev loop
-	// gives the local agent the data tools without per-entity opt-in).
 	if mcpTools {
-		// The group's middleware runs only on the redispatch, so the /mcp
-		// context cannot show the policy the route applies.
 		crudHandler.MCPRouteScoped = true
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, g.Router()); err != nil {
 			panic(fmt.Sprintf("framework: failed to register MCP tools for entity %q in group %q: %v", name, g.Prefix(), err))
@@ -1874,7 +1600,6 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 		a.rememberDevEntityMCPTools(e, groupMount(g, e))
 	}
 
-	// Custom endpoints
 	if len(config.Endpoints) > 0 {
 		if err := a.registerGroupEndpoints(g, e, config.Endpoints); err != nil {
 			panic(fmt.Sprintf("framework: failed to register endpoints for entity %q in group %q: %v", name, g.Prefix(), err))
@@ -1885,7 +1610,6 @@ func (a *App) GroupEntity(g *routegroup.RouteGroup, name string, config entity.E
 	return a
 }
 
-// registerGroupEndpoints is the group-scoped equivalent of registerEntityEndpoints.
 func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entity, endpoints []entity.Endpoint) error {
 	for _, endpoint := range endpoints {
 		method := strings.ToUpper(strings.TrimSpace(endpoint.Method))
@@ -1894,8 +1618,6 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 		}
 		path := groupEndpointPath(ent, endpoint)
 		if endpoint.Handler != nil {
-			// On the group's router, so the group's middleware still
-			// wraps it, named by the entity's table like its CRUD routes.
 			crud.EntityRouter(g.Router(), ent).Handle(method, path, endpointRoute(endpoint))
 		}
 		if endpoint.MCP {
@@ -1921,9 +1643,6 @@ func (a *App) registerGroupEndpoints(g *routegroup.RouteGroup, ent *entity.Entit
 	return nil
 }
 
-// groupEndpointPath is where a grouped entity's endpoint mounts, relative
-// to the group: EntityEndpointPath includes the version prefix for spec
-// use, and the group's sub-router already carries it.
 func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
 	path := "/" + strings.Trim(ent.GetTable(), "/")
 	if !strings.HasPrefix(strings.TrimSpace(endpoint.Path), "/") {
@@ -1934,16 +1653,9 @@ func groupEndpointPath(ent *entity.Entity, endpoint entity.Endpoint) string {
 	return crud.NormalizePath(convertGroupEndpointPath(path))
 }
 
-// registrationMount is where validateEntityRegistration checks an entity's
-// routes and tools: App.Entity's API prefix with flat tool names, or a
-// group's prefix and MCP namespace.
 type registrationMount struct {
-	// endpointPaths returns the full route an endpoint mounts at and the
-	// path its default MCP tool name derives from.
 	endpointPaths func(entity.Endpoint) (route, toolPath string)
-	// mcpNamespace prefixes every tool name, as crud and
-	// registerGroupEndpoints spell it; "" keeps the flat names.
-	mcpNamespace string
+	mcpNamespace  string
 }
 
 func (a *App) plainMount(ent *entity.Entity) registrationMount {
@@ -1962,7 +1674,6 @@ func groupMount(g *routegroup.RouteGroup, ent *entity.Entity) registrationMount 
 	}
 }
 
-// entityTool is the name crud gives the entity's action tool.
 func (m registrationMount) entityTool(ent, action string) string {
 	if m.mcpNamespace == "" {
 		return ent + "_" + action
@@ -1970,7 +1681,6 @@ func (m registrationMount) entityTool(ent, action string) string {
 	return m.mcpNamespace + "." + ent + "." + action
 }
 
-// endpointTool is the name an endpoint's MCP tool registers under.
 func (m registrationMount) endpointTool(name string) string {
 	if m.mcpNamespace == "" {
 		return name
@@ -1978,9 +1688,6 @@ func (m registrationMount) endpointTool(name string) string {
 	return m.mcpNamespace + "." + name
 }
 
-// convertGroupEndpointPath converts ":id"-style params to "{id}" for the
-// group sub-router, mirroring openapi.convertColonParams without importing
-// the unexported helper. The group sub-router already carries the prefix.
 func convertGroupEndpointPath(path string) string {
 	parts := strings.Split(path, "/")
 	for i, part := range parts {
@@ -1991,15 +1698,8 @@ func convertGroupEndpointPath(path string) string {
 	return strings.Join(parts, "/")
 }
 
-// WrapServer adds a wrapper around the whole handler Start serves.
-// Router middleware (Use) runs only for requests the router answers;
-// a wrapper also covers what Start serves in the router's place: the
-// interactive setup wizard, and the worker and agent roles' reduced
-// muxes. It is for gates that must hold for every byte the listener
-// serves, such as a Host allowlist. The first wrapper registered is
-// the outermost. Call it before Start binds (a battery's Init is in
-// time); a call once Start has built the server panics, since it could
-// not take effect, and so does one after Shutdown.
+// WrapServer wraps everything Start serves, not only the router; the first
+// wrapper is outermost. Panics once Start has built the server.
 func (a *App) WrapServer(wrap func(http.Handler) http.Handler) *App {
 	if wrap == nil {
 		return a
@@ -2013,11 +1713,7 @@ func (a *App) WrapServer(wrap func(http.Handler) http.Handler) *App {
 	return a
 }
 
-// Use appends middleware to the app's router chain. The default chain
-// (installed by NewApp unless WithoutDefaultMiddleware is set) stays in
-// place. Use adds to it, never silently replaces it. Plugins call Use
-// from their Init to contribute middleware; router late-binding means
-// these additions also wrap routes registered before the plugin loaded.
+// Use appends middleware to the router chain, wrapping earlier routes too.
 func (a *App) Use(mw ...router.Middleware) *App {
 	if len(mw) == 0 {
 		return a
@@ -2026,20 +1722,8 @@ func (a *App) Use(mw ...router.Middleware) *App {
 	return a
 }
 
-// defaultDotEnvPaths returns the file list NewApp probes at boot, in
-// precedence order (earlier wins). APP_ENV-specific file is included
-// only when APP_ENV is set in the environment. Paths are relative to
-// the process CWD; callers running gofastr from a non-project dir
-// should set GOFASTR_DOTENV=off and call dotenv.LoadAndApply with
-// explicit absolute paths.
-// DefaultDotEnvPaths returns the dotenv files App.NewApp loads, in precedence
-// order: .env.local, then .env.<APP_ENV> when APP_ENV is set, then .env.
-//
-// Exported so code that must read an environment variable BEFORE NewApp, a
-// scaffolded main.go opening its database, for instance, can load exactly the
-// same set in the same order. dotenv.Apply never overwrites an existing
-// variable, so loading a shorter list first silently pins the lower-precedence
-// file's value and NewApp's later load cannot correct it.
+// DefaultDotEnvPaths returns the dotenv files NewApp loads, earliest winning:
+// .env.local, .env.<APP_ENV> when APP_ENV is set, then .env.
 func DefaultDotEnvPaths() []string { return defaultDotEnvPaths() }
 
 func defaultDotEnvPaths() []string {
@@ -2050,29 +1734,14 @@ func defaultDotEnvPaths() []string {
 	return append(paths, ".env")
 }
 
-// NewApp creates a new App with the given options.
-// It initializes default Registry, Router, and MCP Server if not provided.
+// NewApp creates an App, first loading DefaultDotEnvPaths unless
+// GOFASTR_DOTENV=off. Panics on an invalid combination of options.
 func NewApp(opts ...AppOption) *App {
-	// Auto-load .env files BEFORE option processing so options that
-	// peek at os.Environ (WithDB("env://DATABASE_URL"), WithConfig
-	// reading APP_ENV, etc.) see the merged values. Existing env
-	// always wins. Operator-set vars are not clobbered by dotfiles.
-	//
-	// File precedence (earlier wins on conflict): .env.local,
-	// .env.<APP_ENV>, .env. Missing files are silent.
-	//
-	// Set GOFASTR_DOTENV=off in the real process env to suppress.
-	// Callers that need custom paths should call dotenv.LoadAndApply
-	// themselves before NewApp and set the off flag.
 	if os.Getenv("GOFASTR_DOTENV") != "off" {
 		_ = dotenv.LoadAndApply(defaultDotEnvPaths()...)
 	}
 
 	a := &App{
-		// Allocated here, never lazily: Start registers readiness checks
-		// while a concurrent Shutdown reads the drain setting, and a nil
-		// pointer filled in on first use raced them (the lazy-allocation
-		// branches below stay only for an App built without NewApp).
 		health:        &healthState{},
 		Registry:      NewRegistry(),
 		router:        router.New(),
@@ -2085,35 +1754,21 @@ func NewApp(opts ...AppOption) *App {
 		lc:            lifecycle.New(),
 		startupOutput: os.Stdout,
 	}
-	// The registry hands out the handler this App wires (hooks, events,
-	// JSON case, storage), so code holding only app.Registry, the
-	// documented factory.New(app.Registry, …), runs the app's pipeline.
 	a.Registry.handlerFor = a.CrudHandlerForEntity
-	// A recovered battery start or stop panic logs where the App logs.
 	a.Batteries.logger = a.Logger
 
 	for _, opt := range opts {
 		opt(a)
 	}
-	// Parsed after the options ran: a config set by any option is in
-	// place (the well-known documents read this on every request).
 	a.trustedProxies = clientip.ParseProxies(a.Config.TrustedProxies)
-	// The gate goes on whichever server the options left in a.MCP.
 	if a.mcpGate != nil && a.MCP != nil {
 		a.MCP.SetGate(a.mcpGate)
 	}
-	// GOFASTR_SECRET is the zero-code path to an app secret (composes
-	// with the dotenv load above). An explicit WithSecret wins.
 	if a.secret == nil {
 		if env := os.Getenv("GOFASTR_SECRET"); env != "" {
 			a.secret = []byte(validateSecret(env))
 		}
 	}
-	// GOFASTR_SECRET_PREVIOUS is the zero-code path to verify-only
-	// previous secrets for graceful rotation (comma-separated; each
-	// ≥32 chars), mirroring GOFASTR_SECRET. An explicit
-	// WithSecretRotation option wins over the env. Each entry is
-	// validated against the same length floor as the current secret.
 	if !a.secretOptionSet {
 		if env := os.Getenv("GOFASTR_SECRET_PREVIOUS"); env != "" {
 			for _, p := range splitSecretList(env) {
@@ -2121,27 +1776,16 @@ func NewApp(opts ...AppOption) *App {
 			}
 		}
 	}
-	// Resolve the process role once: WithRole wins, then GOFASTR_ROLE,
-	// then RoleAll. An invalid value fails loudly. A typo'd role must
-	// never silently run the wrong workload (a serve process that
-	// quietly starts queue workers, or vice versa).
 	role, err := resolveRole(a.roleOpt, a.roleSet)
 	if err != nil {
 		panic(err.Error())
 	}
 	a.role = role
 
-	// Seed the App-local logger if no option supplied one. JSON to
-	// stderr, independent of slog.Default so external slog rewiring
-	// doesn't redirect this App's framework logs. battery/log replaces
-	// it during Init via app.SetLogger.
 	if a.logger.Load() == nil {
 		a.logger.Store(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
 
-	// Surface options WithConfig silently threw away. Filtered against the
-	// FINAL config: a later granular option restoring the field means
-	// nothing was ultimately lost, so it doesn't warn.
 	if len(a.configDiscards) > 0 {
 		final := reflect.ValueOf(a.Config)
 		seen := make(map[string]bool, len(a.configDiscards))
@@ -2162,11 +1806,7 @@ func NewApp(opts ...AppOption) *App {
 		a.configDiscards = nil
 	}
 
-	// Construct the transactional outbox after all options have applied,
-	// so option order between WithDB and WithOutbox doesn't matter.
 	if len(a.outboxConsumers) > 0 && !a.outboxEnabled {
-		// A declared consumer with no outbox would be silently dropped:
-		// no durable delivery, no error. Fail loudly at construction.
 		panic("framework: WithOutboxConsumer requires WithOutbox: enable the outbox for durable delivery")
 	}
 	if a.outboxEnabled {
@@ -2177,22 +1817,13 @@ func NewApp(opts ...AppOption) *App {
 		if err != nil {
 			panic("framework: WithOutbox: " + err.Error())
 		}
-		// Register declared durable consumers before the relay can start.
-		// Consume panics on a duplicate (eventType, name) or nil handler,
-		// surfacing the misconfiguration at construction rather than as a
-		// silent no-op consumer.
 		for _, c := range a.outboxConsumers {
 			ob.Consume(c.name, c.eventType, c.handler)
 		}
 		a.outbox = ob
-		a.outboxConsumers = nil // released; the registry owns them now
+		a.outboxConsumers = nil
 	}
 
-	// Bridge the event bus to the fanout (WithFanout) at construction so
-	// the real-time lane crosses replicas even for apps driven through
-	// Router() without Start. AttachFanout can only fail on a double
-	// attach (impossible here, one bridge per app) or a subscribe error
-	// from the backend; both are construction-time misconfigurations.
 	if a.fanout != nil {
 		stopBridge, err := event.AttachFanout(a.events, a.fanout)
 		if err != nil {
@@ -2204,11 +1835,6 @@ func NewApp(opts ...AppOption) *App {
 		})
 	}
 
-	// Create the module manager (SQL store when DB is set, in-memory
-	// otherwise) and wire the attribution hooks. The router register
-	// hook stamps pattern→module during Init; the route gate returns 404
-	// for disabled-module routes before the middleware chain runs. The
-	// MCP register hook and call gate do the same for tools.
 	a.modules = NewModuleManager(a.DB, a.fanout)
 	a.router.SetRegisterHook(func(method, pattern string) {
 		a.modules.recordRoute(method, pattern)
@@ -2217,8 +1843,6 @@ func NewApp(opts ...AppOption) *App {
 		return a.modules.routeAllowed(key)
 	})
 	a.MCP.SetRegisterHook(func(toolName string) {
-		// A host may replace a dev tool before init. Its explicit replacement
-		// must not inherit the old registration's collision exemption.
 		a.devEntityMCPTools.Delete(toolName)
 		a.modules.recordTool(toolName)
 	})
@@ -2241,17 +1865,10 @@ func NewApp(opts ...AppOption) *App {
 		})
 	}
 
-	// The default store keeps keys in this process: behind a fanout (more
-	// than one replica) a retry that reaches another replica runs again.
 	if a.idempotency != nil && a.idempotency.Store == nil && a.fanout != nil {
 		a.Logger().Warn("framework: WithIdempotency keeps its keys in this process's memory, but WithFanout runs the app on several replicas: " +
 			"a retry that reaches another replica runs the handler again; set IdempotencyConfig.Store to a shared store (middleware.NewSQLIdempotencyStore)")
 	}
-	// The default store is built here, where the request budget is
-	// known, so its in-flight claim outlives the budget: a claim that
-	// expires first lets a retry execute a handler the deadline has not
-	// killed yet. The budget is the enforced one, so an unset
-	// RequestTimeout (the 30s default) still sizes the claim.
 	if a.idempotency != nil && a.idempotency.Store == nil {
 		opts := []middleware.MemoryIdempotencyOption{
 			middleware.WithMemoryStoreMaxEntries(a.idempotency.MaxStoreEntries),
@@ -2283,18 +1900,9 @@ func NewApp(opts ...AppOption) *App {
 			"mount middleware.Tracing() in your custom chain instead")
 	}
 
-	// Install the default middleware preset unless opted out. The router
-	// resolves its middleware chain per request, so plugins can append
-	// more via app.Use from their Init and still wrap routes that were
-	// registered earlier (e.g. by Mount).
 	if !a.noDefaults {
 		a.router.Use(DefaultMiddleware(a)...)
 	}
-	// The trusted-proxy list rides on every request context, defaults or
-	// not, so a package mounted on this router without the App
-	// (framework/pluginhost's framed assets build their CSP origin from
-	// X-Forwarded-Proto, framework/entityui its record copy links) applies the same AppConfig.TrustedProxies rule as
-	// the well-known documents. Nothing is installed when the list is empty.
 	if proxies := a.trustedProxies; !proxies.Empty() {
 		a.router.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2302,60 +1910,28 @@ func NewApp(opts ...AppOption) *App {
 			})
 		})
 	}
-	// Idempotency runs innermost, after the app's auth and tenant
-	// middleware, so the replay key carries the user and tenant they
-	// resolved: a credential that switches tenants and resends the same
-	// key, path and body runs the write in the new tenant.
 	if a.idempotency != nil {
 		a.router.UseInner(middleware.Idempotency(*a.idempotency))
 	}
 
-	// Inbound Web Bot Auth verification (experimental, draft-tracked):
-	// installed whenever the option's Verify field is set, independent
-	// of the default chain. The middleware runs after the defaults but
-	// the router resolves the chain per request, so ordering here does
-	// not weaken coverage.
 	if a.webBotAuth != nil && a.webBotAuth.Verify != nil {
 		a.webBotAuthVerifier = webbotauth.New(a.webBotAuth.Verify.Require, a.Logger(), webbotauth.WithMaxValidity(a.webBotAuth.Verify.MaxValidity))
 		a.router.Use(a.webBotAuthVerifier.Middleware)
 	}
 
-	// Retired-markup check: in test binaries and `gofastr dev`, every
-	// response whose body is markup (pages, island RPC answers, widget
-	// chrome, JSON signal values) is scanned for names the upgrade
-	// registry retired (internal/retired's table generated from it).
-	// Installed independent of the default chain so WithoutDefaultMiddleware
-	// apps are covered; in production it hands the handler its writer
-	// untouched and never loads the table.
 	a.router.Use(retired.Middleware(dev.Enabled))
 
-	// Propagate DB to registry and its entities
 	if a.DB != nil {
 		a.Registry.SetDB(a.DB)
 	}
 
-	// Auto-wire dev-only livereload routes. No-op unless GOFASTR_DEV=1 is
-	// set (typically by `gofastr dev`) and the host isn't in production.
-	// See framework/dev/livereload.go for the env-gate rules.
 	dev.MaybeRegisterLiveReload(a.router)
 	dev.MaybeRegisterLayoutLayer(a.router)
 
-	// Auto-enable the agent-facing MCP surface in the dev loop: /mcp
-	// mount, read-only introspection, and runtime control, the dev
-	// analogue of livereload, for agents instead of browsers. Same env
-	// gate (GOFASTR_DEV, production GOFASTR_ENV wins), opt-out via
-	// GOFASTR_DEV_MCP=0. Dev-implied flags are remembered so a host that
-	// hand-mounted /mcp or registered same-named tools degrades to a
-	// warning instead of the panic reserved for explicit double opt-in.
 	if dev.DevMCPEnabled() {
 		if !a.mcpAutoMount {
 			a.mcpAutoMount, a.mcpMountDevImplied = true, true
 		}
-		// Dev implies the MUTATING control tools plus every entity's
-		// write tools, with no auth in front of them. Pin the transport
-		// to loopback so a DNS-rebound page can't reach the dispatcher:
-		// after a rebind the attacker's page is same-origin, so Origin
-		// alone proves nothing. Only the Host check breaks the chain.
 		if a.MCP != nil {
 			a.MCP.SetRequireLoopbackHost(true)
 		}
@@ -2370,24 +1946,12 @@ func NewApp(opts ...AppOption) *App {
 	return a
 }
 
-// NewUIHostApp builds an App and mounts the given host on it in one call:
-// the near-universal shape for SSR/UIHost apps, which otherwise repeat
-//
-//	app := framework.NewApp(opts...)
-//	app.Mount(host)
-//
-// host is any Mountable (typically a *uihost.UIHost). Returns the App for
-// fluent chaining.
+// NewUIHostApp is NewApp(opts...).Mount(host).
 func NewUIHostApp(host Mountable, opts ...AppOption) *App {
 	return NewApp(opts...).Mount(host)
 }
 
-// Entity registers an entity with the given name and configuration.
-// Returns the App for fluent chaining. Panics on any misconfiguration,
-// convenient for static, hand-written declarations where a bad config is a
-// programming error you want to fail fast on. For generated or untrusted
-// configs (e.g. an AI-authored field, a dynamic schema) where one bad entity
-// should not crash the process, use TryEntity, which returns the error.
+// Entity is TryEntity that panics on the error.
 func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	if err := a.TryEntity(name, config); err != nil {
 		panic("framework: " + err.Error())
@@ -2395,8 +1959,6 @@ func (a *App) Entity(name string, config entity.EntityConfig) *App {
 	return a
 }
 
-// checkQueuedEndpointsClaimed refuses to start while EntityEndpoints
-// holds endpoints for a name no entity registration claimed.
 func (a *App) checkQueuedEndpointsClaimed() error {
 	var unclaimed []string
 	for _, name := range slices.Sorted(maps.Keys(a.pendingEndpoints)) {
@@ -2410,8 +1972,6 @@ func (a *App) checkQueuedEndpointsClaimed() error {
 	return nil
 }
 
-// claimQueuedEndpoints records that a committed registration merged
-// name's queue.
 func (a *App) claimQueuedEndpoints(name string) {
 	if len(a.pendingEndpoints[name]) == 0 {
 		return
@@ -2422,14 +1982,8 @@ func (a *App) claimQueuedEndpoints(name string) {
 	a.claimedEndpoints[name] = true
 }
 
-// EntityEndpoints queues endpoints for the entity that a later App.Entity,
-// TryEntity, or GroupEntity call registers under name. Every such call
-// merges them into its config's Endpoints (an entity registered into a
-// v1 and a v2 group gets them in both), so they pass the same route and MCP checks as
-// endpoints written in the config. It is how a generated
-// entities/endpoints.gen.go attaches endpoints to entity files it does not
-// own. Calling it for an entity already registered panics, and Start, Serve and Run fail
-// while endpoints are still queued for a name nothing registered.
+// EntityEndpoints queues endpoints for later registrations of name. Panics once
+// name is registered; Start fails while a queued name is never registered.
 func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
 	if _, err := a.Registry.Get(name); err == nil || a.claimedEndpoints[name] {
 		panic(fmt.Sprintf("framework: EntityEndpoints(%q) after the entity was registered; queue endpoints before App.Entity, TryEntity, or GroupEntity", name))
@@ -2441,20 +1995,8 @@ func (a *App) EntityEndpoints(name string, endpoints ...entity.Endpoint) *App {
 	return a
 }
 
-// TryEntity is the error-returning variant of Entity: it registers an entity
-// and returns an error on any misconfiguration instead of panicking. It also
-// recovers panics from deeper validation (e.g. an invalid TenantField) and
-// converts them to errors, so a single bad config can never take down the
-// process, the property an agent-driven authoring loop needs.
-//
-// Registration is atomic with respect to configuration errors: every check
-// that can reject the declaration, entity validation, the MCP/CRUD
-// contract, route collisions, endpoint shape, runs BEFORE the registry,
-// router, or MCP server is touched. A rejected declaration therefore
-// leaves no registry entry, no route, and no tool, and a corrected retry
-// under the same name succeeds. (The registry has no unregister and the
-// router has no unmount, so validate-then-commit is the only ordering
-// that can keep this promise.)
+// TryEntity registers an entity, returning any misconfiguration as an error;
+// a rejected declaration leaves nothing registered.
 func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -2462,18 +2004,10 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		}
 	}()
 
-	// ---- Validation phase: nothing below may mutate shared state. ----
-
-	// SeedFS without SeedPath is a misconfiguration that would otherwise
-	// silently mark the entity as seeded with empty data on first run.
 	if config.SeedFS != nil && config.SeedPath == "" {
 		return fmt.Errorf("entity %q has SeedFS set but SeedPath empty: point SeedPath at a file within the FS or unset SeedFS", name)
 	}
 
-	// Endpoints queued by EntityEndpoints join the config here, before
-	// Define, so every check below sees them. They leave the queue only
-	// once registration commits: a rejected declaration keeps them for
-	// the corrected retry.
 	queued := a.pendingEndpoints[name]
 	if len(queued) > 0 {
 		config.Endpoints = append(slices.Clip(config.Endpoints), queued...)
@@ -2485,14 +2019,6 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		e.SetDB(a.DB)
 	}
 
-	// CRUD/MCP contract.
-	// Default (CRUD==nil): auto-register when DB is set.
-	// Set CRUD to &true to always register, &false to opt out.
-	// MCP=true implies CRUD must be mounted: MCP tools dispatch through the
-	// router so they share its middleware chain (auth, recovery, etc.).
-	// Read e.Config, not the raw parameter: Define normalized the grouped
-	// Scope/Pagination/Exposure sub-configs into the flat fields, and the
-	// grouped values are authoritative.
 	crudEnabled := a.entityCRUDEnabled(e)
 	if a.DB != nil {
 		if err := ValidateExposure(name, e.Config); err != nil {
@@ -2503,10 +2029,6 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	var mountPath string
 	if crudEnabled {
 		mountPath = a.entityMountPath(e.GetTable())
-		// Pre-flight collision check: if a screen/route already owns this
-		// entity's URL space, surface an actionable diagnostic that names
-		// the entity, the path, and the fix. BEFORE the mux panics on the
-		// opaque "/foods/llm.md conflicts with pattern" duplicate.
 		if msg := a.entityRouteCollision(e, mountPath); msg != "" {
 			return fmt.Errorf("%s", msg)
 		}
@@ -2517,10 +2039,6 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 		return fmt.Errorf("entity %q: %w", name, verr)
 	}
 
-	// ---- Commit phase: validation passed; failures past this point are
-	// framework invariant bugs, not user configuration errors. ----
-
-	// Attribute the entity to the module whose Init is running (if any).
 	if a.modules != nil {
 		a.modules.recordEntity(name)
 	}
@@ -2532,17 +2050,11 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	var crudHandler *crud.CrudHandler
 	if crudEnabled {
 		crudHandler = a.wireCrudHandler(e)
-		// MCP tools dispatch in-process against a.router, where these routes are
-		// mounted under the API prefix, tell the handler so its tool paths match.
 		crudHandler.BasePath = a.apiPrefix()
 		crud.RegisterCrudRoutes(a.router, crudHandler, mountPath, crud.CrudRouteOptions{NoLLMMD: a.Config.NoLLMMD})
 		a.recordCrudMount(e, a.router, mountPath, mountPath)
 	}
 
-	// Explicit MCP=true, or dev-implied: in the dev loop every
-	// CRUD-enabled entity serves its MCP data tools so the local agent
-	// can read AND write app data without per-entity opt-in. Production
-	// keeps the explicit flag as the only path.
 	if mcpToolsEnabled {
 		if err := crud.RegisterEntityMCPTools(a.MCP, crudHandler, a.router); err != nil {
 			return fmt.Errorf("failed to register MCP tools for entity %q: %w", name, err)
@@ -2560,12 +2072,8 @@ func (a *App) TryEntity(name string, config entity.EntityConfig) (err error) {
 	return nil
 }
 
-// CrudHandler returns a fully-wired in-process CRUD handler for a registered
-// entity, the same handler shape the HTTP routes use (hooks, events, storage,
-// JSON casing, registry). Use it to call CreateOne/UpdateOne/DeleteOne/ListAll
-// directly, e.g. to compose several writes inside App.InTx (pass the InTx ctx
-// so they join the same transaction). Returns an error if no entity is
-// registered under name or the app has no DB.
+// CrudHandler returns the in-process CRUD handler for entity name. Errors when
+// name is not registered or the app has no DB.
 func (a *App) CrudHandler(name string) (*crud.CrudHandler, error) {
 	if a.DB == nil {
 		return nil, fmt.Errorf("app.CrudHandler: no DB configured")
