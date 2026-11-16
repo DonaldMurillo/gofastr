@@ -1,6 +1,13 @@
 version: v0.97.0
 title: Pending release
 notes:
+  - change: "BREAKING - the admin account form's password change has no confirm field, and the i18nui.AdminConfirmPassword phrase is gone"
+    breaking: true
+    hits: edit
+    guidance: "Delete references to i18nui.AdminConfirmPassword and any catalog entry for ui.admin.confirmPassword. The form now asks for the new password once, with a show toggle; POST /auth/password still accepts confirm_password from other clients."
+    find:
+      uses:
+        - gofastr/framework/i18nui.AdminConfirmPassword
   - change: "Gated tool handlers run their gates before input-schema validation, including for missing or malformed arguments"
     guidance: "A refused call now returns the same code and message as an unknown tool even when its arguments are invalid. ShowRefusal still exposes a deliberate refusal before argument validation; allowed calls retain schema validation. Keep Gated outermost when composing handler decorators, wrap a supplied handler with mcp.Decorate, or attach WithToolGate at registration. Prefer WithToolGate when the tool must also be hidden from listings."
     nodetect: "the difference depends on a gate refusing a malformed runtime call; no host source spelling distinguishes it"
