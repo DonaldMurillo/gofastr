@@ -30,7 +30,7 @@ cell's grading failed on a git error in the harness, not the agent.
   `cmd/primitives`, `internal/primitives`, `primitives/README.md` and
   the graders. Between `d4a3828f` and `3f8b2752` those differ in one
   test file's package list, so both columns ran the same environment.
-  Over 24 runs at four commits the task scores 2/4 in 6 of them.
+  Over 24 runs at four commits the task scores 2/4 in 7 of them.
 - **Nothing else moved.** Every other number matches step 1 and the
   root sweep exactly.
 - **This suite cannot see the sweeps**, as `PLAN.md` notes for step 1:
