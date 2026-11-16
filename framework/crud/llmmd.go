@@ -16,45 +16,18 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// LLMMDOptions controls what EntityLLMMD documents. The zero value keeps
-// the historical full-CRUD document; ReadOnly narrows it to the routes a
-// CrudRouteOptions{ReadOnly: true} mount actually serves.
+// LLMMDOptions controls what EntityLLMMD documents.
 type LLMMDOptions struct {
-	// ReadOnly omits every write endpoint (POST, PUT, PATCH, DELETE and
-	// the _batch family) plus the per-field Create/Update columns: on a
-	// read-only mount those routes answer 404/405, and the doc must not
-	// advertise routes the server does not serve (#358, the #266 class
-	// one layer down: the answer lives in the mount options, not the
-	// entity declaration).
+	// ReadOnly documents only the routes a CrudRouteOptions{ReadOnly: true} mount serves.
 	ReadOnly bool
-	// Path is the full path the routes are mounted at, API and group
-	// prefixes included ("/api/posts"). Empty means "/<table>", behind the
-	// entity's Version when it has one.
+	// Path is the full mount path; empty means "/<table>" behind the entity's Version.
 	Path string
-	// JSONCase selects response and write-body keys; explicit field WireName
-	// values take precedence. The zero value uses camelCase.
+	// JSONCase selects the wire keys; a field's WireName takes precedence.
 	JSONCase JSONCase
 }
 
-// EntityLLMMD generates an LLM-friendly markdown document describing all
-// CRUD endpoints for a single entity. The output is designed to be
-// immediately useful as context for an LLM agent, concise, structured,
-// and example-rich.
-//
-// The document covers:
-//   - Resource overview (entity name, table, primary key)
-//   - List endpoint with filter operators, pagination (offset + cursor), includes
-//   - Get by ID with includes
-//   - Create with required/writable fields
-//   - Update with writable fields
-//   - Delete
-//   - Batch create / update / delete
-//   - SSE event stream
-//   - Custom endpoints declared on the entity
-//
-// Pass LLMMDOptions{ReadOnly: true} for an entity mounted with
-// CrudRouteOptions{ReadOnly: true} (App.View does): the write, batch and
-// Create/Update-column sections are omitted so the doc matches the mount.
+// EntityLLMMD renders the markdown page describing ent's CRUD routes,
+// fields, filters, includes, events and custom endpoints.
 func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	var opt LLMMDOptions
 	if len(opts) > 0 {
@@ -88,10 +61,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("This resource is served read-only: only the list, get-by-ID and `_events` endpoints are mounted. There are no create, update, delete or batch routes.\n\n")
 	}
 
-	// --- Field reference ---
-	// Read-only mounts have no create/update endpoints, so the per-field
-	// Create/Update columns (which describe those endpoints' request
-	// bodies) are omitted rather than frozen at "—".
 	b.WriteString("## Fields\n\n")
 	if opt.ReadOnly {
 		b.WriteString("| Field | Type | Notes |\n")
@@ -118,8 +87,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 			if notes != "" {
 				notes += ", "
 			}
-			// Each value is escaped, and the separator is \|, because a
-			// raw pipe splits the markdown cell (#669).
 			escaped := make([]string, len(f.Values))
 			for i, v := range f.Values {
 				escaped[i] = strings.ReplaceAll(v, "|", `\|`)
@@ -154,10 +121,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	}
 	b.WriteString("\n")
 
-	// --- Relations / Includes ---
-	// A relation behind a Hidden field, or a belongs_to over a NoQuery
-	// key, is no include (entity.HidesRelation): crud answers it as
-	// unknown, and its row would name the hidden column.
 	includable := make([]entity.Relation, 0, len(ent.Config.Relations))
 	for _, rel := range ent.Config.Relations {
 		if !ent.HidesRelation(rel) {
@@ -178,7 +141,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		if len(includable) > 1 {
 			fmt.Fprintf(&b, "- `?include=%s,%s`\n", includable[0].Name, includable[1].Name)
 		}
-		// Show scoped filter example if HasMany/ManyToMany
 		for _, rel := range includable {
 			if rel.Type == entity.RelHasMany || rel.Type == entity.RelManyToMany {
 				fmt.Fprintf(&b, "- `?include=%s(status=published)`: scoped eager-load\n", rel.Name)
@@ -188,21 +150,14 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("\n")
 	}
 
-	// --- Endpoints ---
 	b.WriteString("## Endpoints\n\n")
 
-	// GET /{table}: List
 	fmt.Fprintf(&b, "### GET %s\n\n", resourcePath)
 	b.WriteString("List records with optional filtering, sorting, and pagination.\n\n")
 	b.WriteString("**Query parameters:**\n\n")
 	b.WriteString("| Parameter | Type | Description |\n")
 	b.WriteString("|-----------|------|-------------|\n")
 	b.WriteString("| `page` | integer | Page number (offset mode, default 1) |\n")
-	// The cap is per entity, and hardcoding 100 here told every agent the
-	// wrong number for any entity that set Pagination.MaxListLimit — the
-	// same reality-drift as advertising unmounted routes, one column over.
-	// listLimitCap is the function the request path actually clamps with, so
-	// the doc and the clamp cannot disagree.
 	defLimit, maxLimit := ListLimits(ent.Config.Pagination.MaxListLimit)
 	fmt.Fprintf(&b, "| `limit` | integer | Items per page (default %d, max %d) |\n", defLimit, maxLimit)
 	fmt.Fprintf(&b, "| `per_page` | integer | Alias for `limit`; `limit` wins when both are sent (same default %d, max %d) |\n", defLimit, maxLimit)
@@ -213,9 +168,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("| `include` | string | Comma-separated relations to eager-load |\n")
 	b.WriteString("\n")
 
-	// Filter operators. NoQuery fields are excluded along with Hidden ones:
-	// this section tells an agent what it can filter on, and a NoQuery field
-	// answers every filter with a 400.
 	visibleFields := make([]schema.Field, 0, len(fields))
 	for _, f := range fields {
 		if !f.Hidden && !f.NoQuery {
@@ -226,16 +178,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("**Filter operators** (append one to a filterable field; the parser refuses it on a type it does not suit, with a 400):\n\n")
 		b.WriteString("| Suffix | Operator | Applies to | Example |\n")
 		b.WriteString("|--------|----------|------------|----------|\n")
-		// Every row comes from filter.FilterSuffixes and every "applies
-		// to" cell from filter.OpSuitsType — the same predicate the
-		// parser applies — so the table cannot document an operator the
-		// parser refuses, nor hide one it accepts, nor name a type
-		// wrongly. The example names the first visible field whose type
-		// suits the operator, so it is always a filter a caller can
-		// actually send against THIS entity; with no such field the
-		// placeholder names none.
-		// Examples are spelled the way the parser reads them: the bracket
-		// form only where the bare key reads two ways.
 		spell := filter.SpellerFor(fields)
 		writeLLMOpRow(&b, "", filter.OpEq, "equals", "active", visibleFields, spell)
 		for _, s := range filter.FilterSuffixes {
@@ -263,11 +205,7 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("  \"cursor\": \"opaque-string-for-next-page\",\n")
 	b.WriteString("  \"hasMore\": true\n")
 	b.WriteString("}\n```\n\n")
-	// No total: the cursor route deliberately skips the COUNT
-	// (serveCursorList), so documenting one sent agents after a field
-	// that never arrives.
 
-	// GET /{table}/{id}
 	fmt.Fprintf(&b, "### GET %s\n\n", recordPath)
 	b.WriteString("Retrieve a single record by ID.\n\n")
 	b.WriteString("| Parameter | Location | Description |\n")
@@ -284,12 +222,8 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 	b.WriteString("**Error:** `404` if not found.\n\n")
 
-	// Write endpoints. Guarded by the mount: a CrudRouteOptions{ReadOnly:
-	// true} mount (App.View) never registers these routes, so documenting
-	// them would hand an agent seven 404/405s (#358).
 	if !opt.ReadOnly {
 
-		// POST /{table}
 		fmt.Fprintf(&b, "### POST %s\n\n", resourcePath)
 		b.WriteString("Create a new record.\n\n")
 		b.WriteString("**Request body:** JSON object with writable fields.\n```json\n")
@@ -310,21 +244,18 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("**Response:** `201` with `{\"data\": { ... }}`.\n")
 		b.WriteString("**Error:** `400` with validation errors.\n\n")
 
-		// PUT /{table}/{id}
 		fmt.Fprintf(&b, "### PUT %s\n\n", recordPath)
 		b.WriteString("Update an existing record.\n\n")
 		b.WriteString("**Request body:** JSON object with fields to update.\n")
 		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
-		// PATCH /{table}/{id}
 		fmt.Fprintf(&b, "### PATCH %s\n\n", recordPath)
 		b.WriteString("Sparsely update an existing record. Only fields present in the JSON body are validated and changed.\n\n")
 		b.WriteString("**Request body:** JSON object with one or more fields to update.\n")
 		b.WriteString("**Response:** `200` with `{\"data\": { ... }}`.\n")
 		b.WriteString("**Error:** `400` validation errors, `404` not found.\n\n")
 
-		// DELETE /{table}/{id}
 		fmt.Fprintf(&b, "### DELETE %s\n\n", recordPath)
 		b.WriteString("Delete a record.\n\n")
 		if ent.Config.Scope.SoftDelete {
@@ -333,7 +264,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("**Response:** `204` No Content.\n")
 		b.WriteString("**Error:** `404` not found.\n\n")
 
-		// Batch endpoints
 		fmt.Fprintf(&b, "### POST %s/_batch\n\n", resourcePath)
 		b.WriteString("Batch create (atomic, all-or-nothing).\n\n")
 		b.WriteString("```json\n{\n  \"items\": [ { ... }, { ... } ]\n}\n```\n")
@@ -360,10 +290,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		b.WriteString("  ]\n")
 		b.WriteString("}\n```\n\n")
 
-		// States: the moves are write routes this mount registers (the
-		// transition route mounts with the write set), so the section
-		// lives inside the !ReadOnly guard with them. System moves have
-		// no route and stay unlisted.
 		if st := ent.Config.States; st != nil && len(RoutableTransitions(st)) > 0 {
 			b.WriteString("## States\n\n")
 			fmt.Fprintf(&b, "`%s` starts at one of: %s.\n\n", wireKey(st.Field), quoteValues(st.InitialValues(fields)))
@@ -388,12 +314,10 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		}
 	}
 
-	// SSE
 	fmt.Fprintf(&b, "### GET %s/_events\n\n", resourcePath)
 	b.WriteString("Server-Sent Events stream for real-time entity changes.\n\n")
 	b.WriteString("**Event types:** `entity.created`, `entity.updated`, `entity.deleted`\n\n")
 
-	// Custom endpoints
 	if len(ent.Config.Endpoints) > 0 {
 		b.WriteString("## Custom Endpoints\n\n")
 		for _, ep := range ent.Config.Endpoints {
@@ -405,7 +329,6 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 		}
 	}
 
-	// Multi-tenant note
 	if ent.Config.Scope.MultiTenant {
 		b.WriteString("## Multi-tenancy\n\n")
 		fmt.Fprintf(&b, "All endpoints are scoped by `%s`. The tenant context is derived from the request (middleware-injected).\n\n", wireKey(ent.Config.TenantColumn()))
@@ -414,50 +337,25 @@ func EntityLLMMD(ent *entity.Entity, opts ...LLMMDOptions) string {
 	return b.String()
 }
 
-// MountInfo reports how an entity's auto-CRUD routes are mounted. The llm.md
-// index asks the app that performed the mounts, not the entity declaration:
-// Exposure cannot express that App.View mounts an entity read-only (#358),
-// just as it could not express DB-less (#266). The index must describe
-// routes that exist.
+// MountInfo reports how the app mounted an entity's auto-CRUD routes.
 type MountInfo struct {
-	// Mounted reports whether the standard auto-CRUD routes are registered
-	// for this entity at all (the app's route predicate: DB attached AND
-	// Exposure.CRUD unset-or-true).
+	// Mounted reports whether the auto-CRUD routes are registered at all.
 	Mounted bool
-	// ReadOnly reports a CrudRouteOptions{ReadOnly: true} mount: only the
-	// List, Get-by-ID and _events routes exist; write and batch routes
-	// were never registered.
+	// ReadOnly reports a CrudRouteOptions{ReadOnly: true} mount.
 	ReadOnly bool
-	// Path is the full path the CRUD routes are mounted at, API prefix and
-	// group prefix included (/api/tickets). Empty means the index derives
-	// it from the table name and Version.
+	// Path is the full mount path; empty derives it from the table and Version.
 	Path string
 }
 
-// RegistryLLMMD generates a top-level LLM-friendly markdown index that
-// lists every registered entity with a link to its detailed llm.md page.
-// crudMount reports how the entity's auto-CRUD routes were actually
-// registered (the app passes its mount predicate: DB attached AND
-// Exposure.CRUD, plus ReadOnly for App.View mounts); nil documents standard
-// CRUD for every entity, the pre-#266 behavior. Entities without CRUD
-// routes list only their declared custom endpoints, entities with no routes
-// at all are omitted, and read-only mounts are counted and labelled as the
-// three routes they serve — the index must describe routes that exist. It
-// lists every (routed) entity; callers that serve this to a request (the
-// /api/llm.md index) MUST filter per request via [registryLLMMD] so the
-// index does not disclose entities the caller cannot read. pagesIndex is
-// the path the app serves its page index at (a UI host with
-// WithPublicLLMMD serves /llm-pages.md); empty omits the Pages section,
-// since a link there would 404.
+// RegistryLLMMD renders the markdown index of every registered entity
+// with routes, unfiltered: a handler serving it filters per caller through
+// registryLLMMD. crudMount reports each entity's mount, nil meaning
+// standard CRUD; an empty pagesIndex omits the Pages section.
 func RegistryLLMMD(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo, pagesIndex string) string {
 	return registryLLMMD(registry, appName, nil, crudMount, pagesIndex)
 }
 
-// registryLLMMD renders the index, keeping only entities for which keep
-// returns true (a nil keep keeps all). The /api/llm.md handler passes a
-// per-request keep that mirrors List's read-scope predicate (owner, tenant,
-// RBAC) so an authenticated caller with no grant for an entity gets 403 on
-// its rows AND never sees its name, base path or flags in the index.
+// registryLLMMD renders the index of the entities keep accepts (nil keeps all).
 func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.Entity) bool, crudMount func(*entity.Entity) MountInfo, pagesIndex string) string {
 	var b strings.Builder
 	title := appName
@@ -480,11 +378,6 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 		if keep != nil && !keep(ent) {
 			continue
 		}
-		// crudMount mirrors route registration: nil (direct callers)
-		// documents standard CRUD as before; unmounted lists only declared
-		// custom endpoints; an entity with no routes at all is omitted.
-		// A read-only mount (App.View) counts and labels the three routes
-		// it serves (#358): counting 8 would advertise five that 404/405.
 		mount := MountInfo{Mounted: true}
 		if crudMount != nil {
 			mount = crudMount(ent)
@@ -492,9 +385,9 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 		numEndpoints := len(ent.Config.Endpoints)
 		switch {
 		case mount.Mounted && mount.ReadOnly:
-			numEndpoints += 3 // List, Get-by-ID, _events — the ReadOnly mount
+			numEndpoints += 3
 		case mount.Mounted:
-			numEndpoints += 8 // standard CRUD + batch + events
+			numEndpoints += 8
 		}
 		if numEndpoints == 0 {
 			continue
@@ -527,27 +420,19 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 			desc += "multi-tenant"
 		}
 		if mount.Mounted {
-			// Read-only mounts serve their llm.md too (RegisterCrudRoutes
-			// registers the doc route in both modes), so the link stays.
 			fmt.Fprintf(&b, "| [%s](%s) | `%s` | %d | %s |\n", ent.GetName(), llmLink, basePath, numEndpoints, desc)
 		} else {
-			// The per-entity llm.md route rides the CRUD mount; without
-			// it the link would 404, so list the name unlinked.
 			fmt.Fprintf(&b, "| %s | `%s` | %d | %s |\n", ent.GetName(), basePath, numEndpoints, desc)
 		}
 	}
 	b.WriteString("\n")
 
-	// The page index is served only by a UI host that opted into page
-	// docs; the app passes its path, and without one the section would
-	// be a dead link, the same rule the unmounted entity rows follow.
 	if pagesIndex != "" {
 		b.WriteString("## Pages\n\n")
 		fmt.Fprintf(&b, "This site also has UI pages with their own documentation. "+
 			"See [%s](%s) for a full index of all screens and pages.\n\n", pagesIndex, pagesIndex)
 	}
 
-	// Quick reference: common patterns
 	b.WriteString("## Quick Reference\n\n")
 	b.WriteString("### Filtering\n")
 	b.WriteString("Append field operators as query parameters: `?status=active&created_at_gt=2024-01-01`\n\n")
@@ -567,10 +452,8 @@ func registryLLMMD(registry entity.Registry, appName string, keep func(*entity.E
 	return b.String()
 }
 
-// LLMMDHandler returns an http.Handler that serves the LLM-friendly markdown
-// for a single entity. The schema-disclosure surface is broad (every field,
-// validator, relation), so the handler requires an authenticated context:
-// the framework's auth chain must have set a user before this fires.
+// LLMMDHandler serves ent's llm.md page to an authenticated caller; any
+// other gets 401.
 func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
 	md := EntityLLMMD(ent, opts...)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -585,16 +468,8 @@ func LLMMDHandler(ent *entity.Entity, opts ...LLMMDOptions) http.Handler {
 	})
 }
 
-// LLMMDHandlerFor is [LLMMDHandler] with the entity's own access gate
-// applied, the form the CRUD routes register.
-//
-// LLMMDHandler checks only for a session, while List runs the full scope
-// chain, so an authenticated caller with no `orders:read` grant got 403 on the
-// rows and 200 on the schema: every field name, type and enum of an entity
-// they cannot read. The schema is the disclosure, not the row.
-//
-// It reuses requireScope, so owner, tenant, baseline-session and RBAC all move
-// together with the read path instead of being restated here.
+// LLMMDHandlerFor is [LLMMDHandler] behind the read gate of ch's List
+// route, the form the CRUD routes register.
 func LLMMDHandlerFor(ch *CrudHandler, opts ...LLMMDOptions) http.Handler {
 	var options LLMMDOptions
 	if len(opts) > 0 {
@@ -611,16 +486,8 @@ func LLMMDHandlerFor(ch *CrudHandler, opts ...LLMMDOptions) http.Handler {
 	})
 }
 
-// RegistryLLMMDHandler returns an http.Handler that serves the top-level
-// LLM-friendly markdown index for all registered entities. Auth-required
-// for the same reason as [LLMMDHandler].
-//
-// The index is rendered per request, filtered to the entities THIS caller
-// can list, the same read-scope predicate each entity's List route runs
-// (see canListEntity). Serving a construction-time-precomputed document
-// instead disclosed every entity's name, base path, endpoint count and
-// soft-delete/multi-tenant flags to an authenticated caller who would get
-// 403 on the rows. The index is the disclosure, not the row.
+// RegistryLLMMDHandler serves the llm.md index to an authenticated caller,
+// listing only the entities that caller can list.
 func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount func(*entity.Entity) MountInfo, pagesIndex string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -638,17 +505,8 @@ func RegistryLLMMDHandler(registry entity.Registry, appName string, crudMount fu
 	})
 }
 
-// canListEntity reports whether ctx passes every read-scope gate that the
-// entity's List route runs, as a boolean (no HTTP response). It reuses the
-// SAME in-process predicates List's requireScope delegates to,
-// requireOwnerContext, requireTenantContext and CanRead, so the index
-// filter cannot drift from the read path. A caller who would receive 401/403
-// on an entity's rows is hidden from its index entry too. The baseline
-// session gate (requireAuthenticated) is enforced once at the handler entry,
-// so it is not re-checked here. A scoped token also needs "<table>:read",
-// which auth.RequireAPIScopes demands on the List route itself: a token
-// holding llm.md:read and customers:read was shown every entity that
-// declares no read permission.
+// canListEntity reports whether ctx passes the read gates of ent's List
+// route other than the session check.
 func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 	ch := &CrudHandler{Entity: ent}
 	if err := ch.requireOwnerContext(ctx); err != nil {
@@ -660,14 +518,11 @@ func canListEntity(ctx context.Context, ent *entity.Entity) bool {
 	return access.ScopeAllows(ctx, access.Permission(ent.GetTable()+":read")) && ch.CanRead(ctx)
 }
 
-// sanitizeDefault renders a safe summary of a field's default value.
-// Complex types (maps, structs, slices) show only the type name.
-// Long strings are truncated.
+// sanitizeDefault renders a default value: a scalar as itself, a string cut
+// to 50 runes, anything else as its type name.
 func sanitizeDefault(v any) string {
 	switch val := v.(type) {
 	case string:
-		// Truncate on a rune boundary: a byte cut splits a multi-byte
-		// character and puts invalid UTF-8 into the document (#669).
 		if runes := []rune(val); len(runes) > 50 {
 			return string(runes[:50]) + "…"
 		}
@@ -681,7 +536,6 @@ func sanitizeDefault(v any) string {
 	}
 }
 
-// quoteValues renders each value in backticks for the markdown tables.
 func quoteValues(values []string) string {
 	quoted := make([]string, len(values))
 	for i, v := range values {
@@ -690,7 +544,6 @@ func quoteValues(values []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-// relationTypeLabel returns a human-readable label for a relation type.
 func relationTypeLabel(t entity.RelationType) string {
 	switch t {
 	case entity.RelHasOne:
@@ -706,14 +559,7 @@ func relationTypeLabel(t entity.RelationType) string {
 	}
 }
 
-// llmOpLabelSample pairs one operator with the label and the sample
-// value its example row shows when the example names a text field, or no
-// field at all (llmFilterSample picks the value for the other types).
-// The _like sample is a PLAIN SUBSTRING:
-// the server escapes LIKE wildcards (filter.EscapeLikePattern) and adds
-// the surrounding % itself, so `%` in the value matches a literal
-// percent sign — an example shaped `%search%` is a filter for the
-// literal text "%search%".
+// llmOpLabelSample is an operator's label and its text sample value.
 func llmOpLabelSample(op filter.FilterOp) (label, sample string) {
 	switch op {
 	case filter.OpNe:
@@ -734,16 +580,7 @@ func llmOpLabelSample(op filter.FilterOp) (label, sample string) {
 	return "equals", "active"
 }
 
-// llmFilterSample is the value an operator's example shows for a field of
-// type t: one the route's parser (filter.CoerceValue) reads as that type,
-// so the example is a request the route answers 200. The operator's own
-// sample is text ("active", "a,b,c"), which an Int, Bool or Timestamp
-// column answers with a 400.
-//
-// A Relation gets digits: its column holds an integer when its target's
-// key is one (entity.ValueFields) and text otherwise, and this document
-// is written without the registry that says which. Digits are a value of
-// both.
+// llmFilterSample is a sample value of type t that filter.CoerceValue accepts.
 func llmFilterSample(t schema.FieldType, op filter.FilterOp, text string) string {
 	var one, many string
 	switch t {
@@ -764,20 +601,14 @@ func llmFilterSample(t schema.FieldType, op filter.FilterOp, text string) string
 	return one
 }
 
-// llmAllFieldTypes is every schema.FieldType, for deriving an
-// operator's "applies to" cell from filter.OpSuitsType instead of
-// hand-writing a type list that can drift from the predicate.
 var llmAllFieldTypes = []schema.FieldType{
 	schema.String, schema.Text, schema.Int, schema.Float, schema.Decimal,
 	schema.Bool, schema.Enum, schema.UUID, schema.Timestamp, schema.Date,
 	schema.JSON, schema.Relation, schema.Image, schema.File,
 }
 
-// writeLLMOpRow emits one operator row of llm.md's filter table. The
-// example names the first visible field whose type suits the operator,
-// with a value of that field's type (a filter a caller can send against
-// this entity); with none, the <field> placeholder names no column of it
-// and keeps the operator's text sample.
+// writeLLMOpRow writes op's filter-table row, its example naming the first
+// visible field op suits.
 func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label, sample string, visible []schema.Field, spell filter.KeySpeller) {
 	var applies []string
 	for _, t := range llmAllFieldTypes {
@@ -797,17 +628,13 @@ func writeLLMOpRow(b *strings.Builder, suffix string, op filter.FilterOp, label,
 		suffix, label, strings.Join(applies, ", "), key, sample)
 }
 
-// writeLLMAmbiguousKeys names each bare key of this entity that reads two
-// ways (a field's name, and another field's name plus a suffix): the
-// route answers it 400, so the doc gives the bracket spellings that pick
-// one. Nothing is written when no key collides.
+// writeLLMAmbiguousKeys gives the bracket spellings of each bare key that
+// reads two ways.
 func writeLLMAmbiguousKeys(b *strings.Builder, fields []schema.Field, spell filter.KeySpeller) {
 	for _, f := range fields {
 		if f.Hidden {
 			continue
 		}
-		// A field's keys: its column name, and its wire name when that is
-		// another spelling. A WireName that repeats the name is one key.
 		names := []string{f.Name}
 		if f.WireName != "" && f.WireName != f.Name {
 			names = append(names, f.WireName)

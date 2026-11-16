@@ -5,10 +5,6 @@ package crud
 // routable move under its own key. A namespace on the handler
 // (MCPNamespace) names them "<ns>.<entity>.<action>" instead of the flat
 // "<entity>_<action>". nil answers nil.
-//
-// Screens that show an agent (or a developer) how to reach an entity from
-// code build their labels from this, so what they advertise is exactly
-// what the server registers.
 func MCPToolNames(ch *CrudHandler) []string {
 	if ch == nil || ch.Entity == nil {
 		return nil

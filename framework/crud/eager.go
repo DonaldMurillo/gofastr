@@ -12,48 +12,16 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// EagerLoad fetches related data for a set of parent IDs in batched queries,
-// avoiding N+1 problems. Returns a map keyed by parent ID to relation name to related data.
+// EagerLoad loads relations for the parent record ids in batched queries
+// and returns, by parent id, each relation's row or rows.
 //
-// SECURITY: when an optional entity.Registry is supplied, each relation's
-// target entity is resolved and the SAME row-scoping the live include path
-// applies (eager_filtered.go + include.go) is applied here. Four scrubs run,
-// each keyed off the resolved target's EntityConfig:
-//
-//  1. Soft-delete exclusion: a soft-deletable target gets
-//     `deleted_at IS NULL` on its SELECT so trashed rows never resurface.
-//  2. Column allow-list: a loaded row keeps only the target's declared,
-//     non-Hidden fields plus its primary key, the columns its own read
-//     route serves. Hidden fields (e.g. password_hash) and columns the
-//     target does not declare (another API version's, a removed field's)
-//     are dropped.
-//  3. Owner scope: an owner-scoped target (OwnerField set) gets
-//     `owner_field = <ctx owner>` ANDed in, from the builder the include
-//     path uses. With no user in context the predicate becomes
-//     `owner_field = ""`, matching no real row (fail-closed).
-//  4. Tenant scope: a MultiTenant target gets `tenant_id = <ctx tenant>`
-//     ANDed in, from the same builder. With no tenant in context it
-//     likewise matches nothing.
-//
-// Owner and tenant scopes are ANDed for every caller except one holding an
-// explicit cross-scope grant (owner.AllowCrossOwner, the target's
-// CrossOwnerRead, tenant.AllowCrossTenant). Each grant lifts only its own
-// scope.
-// For everyone else the cross-table predicate is the IDOR back-door control
-// and is unconditional: lifting it would let an ?include= or an EagerLoad
-// caller reach across tenants and owners.
-//
-// With a registry a loaded row also carries the values the target's own
-// read returns, as ?include= does: each column under its declared name, a
-// Date as YYYY-MM-DD, a JSON column as its decoded document, a Decimal as
-// its text.
-//
-// Resolution is version-aware (entity.ResolveTarget against the source
-// entity) and fails closed: a target that cannot be resolved is an ERROR,
-// not a load with the scrubs turned off. Without a registry the target
-// schema is unknown, so none of the four per-target scrubs can be applied;
-// callers that load relations whose targets are soft-deletable, carry
-// Hidden fields, are owner-scoped, or are multi-tenant MUST pass the registry.
+// With a registry each relation's target is resolved against ent's version
+// and its loaded rows get the target's own read scrubs: soft-deleted rows
+// excluded, only declared non-Hidden columns served, owner, tenant and read
+// scope applied, and values decoded as the target's own read returns them.
+// It errors when a target cannot be resolved. Without a registry rows are
+// served raw, so a caller loading a scoped, soft-deleting or Hidden-field
+// target must pass one.
 func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations []entity.Relation, ids []string, reg ...entity.Registry) (map[string]map[string]any, error) {
 	if len(ids) == 0 || len(relations) == 0 {
 		return make(map[string]map[string]any), nil
@@ -64,13 +32,6 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 		registry = reg[0]
 	}
 
-	// The ids are record ids, as entity.JoinKey spells them. A has_one or
-	// has_many relation matches them against the child's foreign key, one
-	// column per key column; a many_to_many joins on the parent's one key
-	// column; a belongs_to reads the parent's foreign key by its whole key.
-	//
-	// Identifiers go into the SQL validated but unquoted, the way the DDL
-	// wrote them, so a mixed-case name folds the same on Postgres.
 	var err error
 	keyCols := ent.KeyColumns()
 
@@ -80,18 +41,11 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 	}
 
 	tableName := ent.GetTable()
-	// Validate the parent table name once upfront.
 	if _, err := query.SafeIdent(tableName); err != nil {
 		return nil, fmt.Errorf("eager load: invalid parent table %q: %w", tableName, err)
 	}
 
 	for _, rel := range relations {
-		// Validate the FK identifier up front. The target TABLE is
-		// resolved after the registry lookup below, so its identifier
-		// check happens there against the real table, which may differ
-		// from rel.Entity when a host declares Name != Table. A
-		// many_to_many has no ForeignKey: its two link columns are
-		// LocalKey and ForeignKeyTarget, checked in eagerLoadManyToMany.
 		var safeFKs []string
 		if rel.Type != entity.RelManyToMany {
 			if safeFKs, err = relationFKs(rel); err != nil {
@@ -99,20 +53,6 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			}
 		}
 
-		// Resolve the relation's target entity (when a registry is given) so
-		// we can scrub soft-deleted rows + undeclared columns, exactly like the
-		// live include path.
-		//
-		// Resolution goes through entity.ResolveTarget against the SOURCE
-		// entity, not registry.Get: Get prefers the unversioned declaration
-		// and errors on ambiguity, so a v1 relation either adopted an
-		// unrelated version's Hidden set or resolved to nothing at all.
-		//
-		// And it fails CLOSED. Swallowing the error left target nil, which
-		// makes servedColumns(nil) keep every column and drops the soft-delete predicate,
-		// both scrubs silently off, which is the disclosure this block
-		// exists to prevent. An unresolvable target means we do not know the
-		// schema, so we refuse rather than serve the raw row.
 		var target *entity.Entity
 		if registry != nil {
 			t, err := entity.ResolveTarget(registry, ent, rel.Entity)
@@ -124,12 +64,6 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			}
 			target = t
 		}
-		// The SELECT targets the entity's TABLE, not Relation.Entity,
-		// that field is the registry key (the entity NAME), and the two
-		// differ whenever a host declares Name != Table. Mirror the live
-		// include path (loadIncludeNode → node.Target.GetTable()). With no
-		// registry the target schema is unknown, so fall back to rel.Entity
-		// (the historical no-registry contract).
 		relTable := rel.Entity
 		if target != nil && target.GetTable() != "" {
 			relTable = target.GetTable()
@@ -143,19 +77,8 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			softDeleteFilter = " AND deleted_at IS NULL"
 		}
 		served := servedColumns(target)
-		// Row-scope predicates for the target (owner + tenant).
-		// Empty when the target is neither owner-scoped nor multi-tenant, so
-		// an unscoped relation is untouched.
 		scopeFilters := eagerScopeFilters(ctx, target)
-		// The target's ReadScope predicates ride the same path: without them
-		// an ?include=/EagerLoad of a read-scoped target serves the drafts
-		// the target's own route hides: the cross-table leak read scoping
-		// exists to close. Rendered SEPARATELY from scopeFilters (never
-		// merged into a caller-visible filter list) via renderReadScope.
 		readPreds := readScopeFilters(ctx, target)
-		// The foreign key names one column per column of the key it
-		// references. Without a registry the target is assumed keyed on
-		// "id".
 		if err := entity.CheckRelationKeys(ent, rel, target); err != nil {
 			return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 		}
@@ -177,8 +100,6 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 			targetPK := targetKey[0]
 			mtmSoftDelete := softDeleteFilter
 			if mtmSoftDelete != "" {
-				// The ManyToMany SELECT JOINs target + pivot, so a bare
-				// `deleted_at` would be ambiguous, qualify it with the target.
 				mtmSoftDelete = " AND " + query.QuoteKeyword(safeRelEntity) + ".deleted_at IS NULL"
 			}
 			pivot, err := entity.PivotEntity(registry, ent, rel.Through)
@@ -189,16 +110,12 @@ func EagerLoad(ctx context.Context, db DBExecutor, ent *entity.Entity, relations
 				return nil, fmt.Errorf("eager load %s: %w", rel.Name, err)
 			}
 		}
-		// The values a direct read of the target returns: a Date as
-		// YYYY-MM-DD, a JSON column as its document, a Decimal as text.
 		decodeEntityReadColumns(target, gatherLoadedRows(result, rel.Name))
 	}
 
 	return result, nil
 }
 
-// eagerLoadHasMany handles HasOne and HasMany: the target table holds a
-// foreign key, safeFKs, pointing back at the parent's key.
 func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity string, safeFKs []string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	where, args, ok, err := keyInClause(safeFKs, ids, 1)
 	if err != nil || !ok {
@@ -247,11 +164,8 @@ func eagerLoadHasMany(ctx context.Context, db DBExecutor, safeEntity string, saf
 	return rows.Err()
 }
 
-// attachChildRow links one scanned child row into the per-parent result
-// map of an eager load under its parent's record id: HasOne replaces the
-// slot, HasMany appends to it. It is the single body behind the
-// byte-identical tails of the rows.Next loops in eagerLoadHasMany
-// (eager.go) and loadHasManyFiltered (eager_filtered.go).
+// attachChildRow puts a child row under its parent: HasOne replaces the
+// slot, HasMany appends.
 func attachChildRow(rel entity.Relation, parentID string, row map[string]any, result map[string]map[string]any) {
 	if existing, ok := result[parentID]; ok {
 		if rel.Type == entity.RelHasOne {
@@ -267,10 +181,6 @@ func attachChildRow(rel entity.Relation, parentID string, row map[string]any, re
 	}
 }
 
-// eagerLoadBelongsTo handles BelongsTo (ManyToOne): we hold a FK,
-// safeFKs, pointing at the target's key, targetKey. The parent may have
-// any key: its rows are read by record id, keyCols naming the key
-// columns.
 func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCols, targetKey []string, safeEntity string, safeFKs []string, rel entity.Relation, ids []string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	sourceToFK, uniqueFKs, err := belongsToFKs(ctx, db, table, keyCols, safeFKs, ids)
 	if err != nil || len(uniqueFKs) == 0 {
@@ -281,7 +191,6 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCol
 		return err
 	}
 
-	// Owner/tenant scope applies to the TARGET rows, not the source SELECT.
 	scopeClause, scopeArgs := filterClause(scopeFilters, len(fkArgs)+1)
 	readClause, readArgs := renderReadScope(readPreds, "", len(fkArgs)+len(scopeArgs)+1)
 	if readClause != "" {
@@ -337,7 +246,6 @@ func eagerLoadBelongsTo(ctx context.Context, db DBExecutor, table string, keyCol
 	return nil
 }
 
-// eagerLoadManyToMany handles ManyToMany through a pivot table.
 func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, rel entity.Relation, ids []string, targetPK string, result map[string]map[string]any, softDeleteFilter string, scopeFilters, readPreds []filter.ParsedFilter, pivot *entity.Entity, pivotPreds []filter.ParsedFilter, served servedCols, target *entity.Entity) error {
 	safeThrough, err := query.SafeIdent(rel.Through)
 	if err != nil {
@@ -359,10 +267,6 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 		args = append(args, id)
 	}
 
-	// The M2M SELECT JOINs target + pivot, so scope columns MUST be
-	// qualified with the target table (filterClauseQualified), bare owner
-	// /tenant columns would be ambiguous, exactly like the soft-delete
-	// qualification below. The read-scope fragment qualifies the same way.
 	scopeClause, scopeArgs := filterClauseQualified(scopeFilters, safeEntity, len(ids)+1)
 	readClause, readArgs := renderReadScope(readPreds, safeEntity, len(ids)+len(scopeArgs)+1)
 	if readClause != "" {
@@ -431,19 +335,7 @@ func eagerLoadManyToMany(ctx context.Context, db DBExecutor, safeEntity string, 
 	return rows.Err()
 }
 
-// eagerScopeFilters is the one builder of the owner and tenant predicates
-// for a relation's target. Every path that reads a target's rows through a
-// relation renders its output: ?include=, EagerLoad, nested filters, pivot
-// rows and the foreign-key and cascade write checks.
-//
-// An owner-scoped target gets owner_field = <ctx owner>, and a multi-tenant
-// one tenant column = <ctx tenant>. With no owner or tenant in ctx the value
-// is empty, which matches no row. A caller holding an explicit cross-scope
-// grant (owner.AllowCrossOwner, the target's CrossOwnerRead permission,
-// tenant.AllowCrossTenant) gets no predicate for that scope. Each grant
-// lifts only its own scope. The foreign-key and cascade write checks use
-// this builder on purpose: a caller who may read a target row may
-// reference it. A nil target yields no filters.
+// eagerScopeFilters builds a relation target's owner and tenant predicates.
 func eagerScopeFilters(ctx context.Context, target *entity.Entity) []filter.ParsedFilter {
 	if target == nil {
 		return nil

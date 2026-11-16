@@ -13,24 +13,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// A write a UNIQUE or FOREIGN KEY constraint refuses answers 409 with
-// the refusal on the fields the caller sent, in the validation shape
-// ({error, fields}), so a form shows it beside the control that caused
-// it instead of a bare "conflict". The constraint the driver reports is
-// matched against the entity's own declaration (a Unique field, a
-// unique column index, a relation field), and only declared field names
-// reach the response: the driver's constraint, table and value text
-// never do. Columns the caller did not send (the owner or tenant column
-// of a per-account index, hidden or not) are not theirs to fix and are
-// not named. A Hidden or NoQuery field the caller sent is sensitive: a
-// conflict on it stays bare, so a probe cannot learn which value exists.
-//
-// A NOT NULL refusal on a declared field (a column the database holds
-// NOT NULL that the entity does not mark Required) answers 400 with
-// "is required" on it, sent or not: it says nothing about stored rows.
-// On a Hidden column the server fills, it is the server's own bug and
-// stays a 500.
-
 const (
 	sqliteUniqueLead  = "UNIQUE constraint failed: "
 	sqliteNotNullLead = "NOT NULL constraint failed: "
@@ -40,8 +22,6 @@ const (
 	mysqlForeignChild = "Cannot add or update a child row"
 )
 
-// constraintFieldsError carries the fields a constraint refusal is about
-// to writeCRUDError, which keeps its order of arms.
 type constraintFieldsError struct {
 	err    error
 	fields map[string][]schema.Violation
@@ -50,10 +30,8 @@ type constraintFieldsError struct {
 func (e *constraintFieldsError) Error() string { return e.err.Error() }
 func (e *constraintFieldsError) Unwrap() error { return e.err }
 
-// withConstraintFields wraps a constraint refusal with the sent fields it
-// names; any other error, or one it can name no field for, passes
-// through unchanged. sent holds the request body's keys (columns, or
-// wire keys), taken before the write ran.
+// withConstraintFields wraps a constraint refusal with the declared
+// fields it names; sent holds the body's keys from before the write.
 func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) error {
 	msg := schema.ReasonUniqueTaken
 	switch {
@@ -91,8 +69,6 @@ func (ch *CrudHandler) withConstraintFields(err error, sent map[string]bool) err
 	return &constraintFieldsError{err: err, fields: fields}
 }
 
-// conflictRefusal is a constraint refusal: 409 with the generic message,
-// plus the named fields when the error carries them.
 func conflictRefusal(ctx context.Context, err error, reason i18n.Phrase) refusal {
 	cf, ok := errors.AsType[*constraintFieldsError](err)
 	if !ok {
@@ -101,7 +77,6 @@ func conflictRefusal(ctx context.Context, err error, reason i18n.Phrase) refusal
 	return fieldsRefusal(ctx, http.StatusConflict, schema.Violation{Reason: reason}, cf.fields, nil)
 }
 
-// sentKeys snapshots a request body's keys before the write runs.
 func sentKeys(body map[string]any) map[string]bool {
 	out := make(map[string]bool, len(body))
 	for k := range body {
@@ -110,10 +85,7 @@ func sentKeys(body map[string]any) map[string]bool {
 	return out
 }
 
-// fieldNamed finds the field a driver named. Postgres names a column of
-// AutoMigrate's unquoted DDL folded, so the match ignores ASCII case; no
-// two fields can differ by case alone, since neither engine tells such
-// columns apart.
+// fieldNamed finds the field a driver named, folded or not.
 func fieldNamed(e *entity.Entity, col string) (schema.Field, bool) {
 	for _, f := range e.Config.Fields {
 		if f.Name == col || f.Name == foldIdent(col) || foldIdent(f.Name) == col {
@@ -123,31 +95,16 @@ func fieldNamed(e *entity.Entity, col string) (schema.Field, bool) {
 	return schema.Field{}, false
 }
 
-// constraintGroup is one declared constraint: the columns it covers and
-// the names a driver may report it by. keys are names only MySQL reports
-// (a unique field's key is its column): Postgres reading them would take
-// an index the folded column name happens to name for the field.
+// constraintGroup is one declared constraint; keys are names only MySQL
+// reports it by.
 type constraintGroup struct {
 	cols  []string
 	names []string
 	keys  []string
 }
 
-// uniqueGroups lists the entity's unique constraints: each Unique field
-// alone (entity.UniqueKeyName, <table>_<col>_key with a hash past 63
-// bytes; MySQL by the column), then each unique column index under its
-// name or the idx_<table>_<cols> name AutoMigrate gives it. <table> is
-// tableBase: a constraint name never carries the schema. An expression
-// index names no columns and is skipped. Each name is also listed folded:
-// AutoMigrate's DDL is unquoted, so Postgres reports a mixed-case name in
-// lower case.
-//
-// A table a build before v0.96.0 created holds a long column's constraint
-// under the name Postgres chose (entity.LegacyUniqueKeyName), which maps
-// too, unless another Unique field trims to the same name: Postgres
-// numbered one of the two, by the order they were created in, so the
-// name says nothing about which column it covers and the refusal stays
-// bare.
+// uniqueGroups lists the entity's Unique fields and unique column
+// indices under every name a driver may report them by.
 func uniqueGroups(e *entity.Entity) []constraintGroup {
 	table := tableBase(e.Config.Table)
 	legacy := map[string]int{}
@@ -180,17 +137,12 @@ func uniqueGroups(e *entity.Entity) []constraintGroup {
 	return gs
 }
 
-// mysqlKeyIs reports whether a MySQL duplicate-entry refusal names key n,
-// bare or table-qualified.
 func mysqlKeyIs(msg, table, n string) bool {
 	return strings.HasSuffix(msg, "for key '"+n+"'") || strings.HasSuffix(msg, "for key '"+table+"."+n+"'")
 }
 
 // conflictColumns returns the columns of the declared constraint a
-// driver's refusal names, or nil when it names none the entity declares.
-// SQLite lists a unique constraint's columns; Postgres and MySQL name
-// the constraint or key, and name a foreign key by its column. SQLite's
-// foreign-key refusal names nothing, so it stays bare.
+// driver's refusal names, or nil.
 func conflictColumns(e *entity.Entity, msg string) []string {
 	table := tableBase(e.Config.Table)
 	if i := strings.Index(msg, sqliteUniqueLead); i >= 0 {
@@ -229,9 +181,6 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 	if !pg && !my {
 		return nil
 	}
-	// Postgres names a foreign key itself, trimmed past 63 bytes, and
-	// numbers a second one trimmed to the same name; such a name maps to
-	// neither column.
 	fkeys := map[string]int{}
 	for _, f := range e.Config.Fields {
 		if f.Type == schema.Relation && !f.Many {
@@ -254,16 +203,11 @@ func conflictColumns(e *entity.Entity, msg string) []string {
 	return nil
 }
 
-// tableBase is a table's own name, without the schema a qualified one
-// carries: app.inv is inv. The drivers name a table's constraints and
-// relation by it (Postgres's inv_email_key, SQLite's inv.email), never
-// by the qualified spelling.
+// tableBase drops the schema: app.inv is inv.
 func tableBase(table string) string {
 	return table[strings.LastIndex(table, ".")+1:]
 }
 
-// isNotNullViolation reports whether err is a NOT NULL refusal: SQLite
-// (extended code 1299), Postgres SQLSTATE 23502, MySQL error 1048.
 func isNotNullViolation(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, sqliteNotNullLead) || strings.Contains(msg, "violates not-null constraint") ||
@@ -271,8 +215,7 @@ func isNotNullViolation(err error) bool {
 }
 
 // notNullColumn returns the column a NOT NULL refusal on table names, or
-// "" when it names another table's or none. SQLite writes table.col,
-// Postgres the column and (since 12) its relation, MySQL the column.
+// "" when it names another table's or none.
 func notNullColumn(table, msg string) string {
 	if i := strings.Index(msg, sqliteNotNullLead); i >= 0 {
 		rest := msg[i+len(sqliteNotNullLead):]
@@ -316,7 +259,6 @@ type errString string
 
 func (e errString) Error() string { return string(e) }
 
-// withFolded lists names, then each one's folded spelling when it differs.
 func withFolded(names ...string) []string {
 	out := names
 	for _, n := range names {

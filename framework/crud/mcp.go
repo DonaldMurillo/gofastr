@@ -25,13 +25,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-// RegisterEntityMCPTools exposes a CRUD handler through MCP tools.
-//
-// router is the http.Handler that owns the entity's CRUD routes, typically
-// app.Router. MCP tool calls are dispatched through router.ServeHTTP so they
-// share the exact same middleware chain (auth, recovery, logging, security
-// headers, etc.) as live HTTP traffic. Passing the bare CRUD handler would
-// silently bypass that middleware.
+// RegisterEntityMCPTools registers crud's list, get, create, update and
+// delete tools, and one per routable move, on server. Each call is served
+// through router, which must own the entity's routes, so the app's
+// middleware runs on it.
 func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.Handler) error {
 	if server == nil {
 		return fmt.Errorf("entity mcp: server is nil")
@@ -43,27 +40,12 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		return fmt.Errorf("entity mcp: router is nil: MCP CRUD tools must dispatch through the app router so middleware applies")
 	}
 	ent := crud.Entity.GetName()
-	// Tool name shape:
-	//   no namespace      → "<entity>_<action>"   (historical flat names, public agent surface)
-	//   namespace set     → "<ns>.<entity>.<action>" (per routegroup.WithMCPNamespace docs)
-	// The flat form MUST stay stable for unversioned/no-namespace entities;
-	// the namespaced dot form disambiguates two versions of the same entity.
 	toolName := func(action string) string {
 		if crud.MCPNamespace == "" {
 			return ent + "_" + action
 		}
 		return crud.MCPNamespace + "." + ent + "." + action
 	}
-	// devImplied: the entity did not opt into MCP exposure itself
-	// (Exposure.MCP unset), so this registration exists only because the
-	// dev loop implied it (the app registers tools under
-	// Exposure.MCP || (CRUD && dev.DevMCPEnabled())). The WRITE tools of
-	// a dev-implied entity register UNGATED, which is only safe on a
-	// loopback listener — mark them WithDevImplied so the framework's
-	// bind guard withdraws exactly those on an exposed bind. An explicit
-	// Exposure.MCP is a production choice and is never marked or
-	// withdrawn. list/get stay: they are reads behind the same
-	// row-scoping the HTTP routes apply.
 	devImplied := crud.Entity.Config.Exposure == nil || !crud.Entity.Config.Exposure.MCP
 	type toolDef struct {
 		name        string
@@ -71,12 +53,11 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		schema      map[string]any
 		handler     mcp.ToolHandler
 		op          crudOp
-		item        bool // the route judges one record: Ref{Type, ID}
-		write       bool // dev-implied entities mark their write tools
+		item        bool
+		write       bool
 		permission  access.Permission
 	}
 	keyArgs := crud.toolKeyArgs()
-	// reg types a reference field by the key it points at (toolFieldsOf).
 	reg := crud.Registry
 	defs := []toolDef{
 		{toolName("list"), "List " + ent + " records", listToolSchema(crud.Entity, reg), crud.listTool(router), opRead, false, false, ""},
@@ -85,19 +66,10 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 		{toolName("update"), "Update a " + ent + " record", updateToolSchema(crud.Entity, reg, keyArgs), crud.updateTool(router), opUpdate, true, true, ""},
 		{toolName("delete"), "Delete a " + ent + " record by id", idToolSchema(crud.Entity, reg, keyArgs), crud.deleteTool(router), opDelete, true, true, ""},
 	}
-	// One tool per non-system move, named by its key (the boot check
-	// keeps keys off the names above and the other reserved ones),
-	// posting to the move's route.
-	// It is a write: the update permission gates it like update.
 	for _, t := range RoutableTransitions(crud.Entity.Config.States) {
 		defs = append(defs, toolDef{toolName(t.Key), transitionToolDescription(ent, crud.Entity.Config.States.Field, t), idToolSchema(crud.Entity, reg, keyArgs), crud.transitionTool(router, t.Key), opUpdate, true, true, access.Permission(t.Permission)})
 	}
 	for _, def := range defs {
-		// Every tool carries the Access permission its route enforces
-		// for this operation. The call was already refused through the
-		// router; the gate also drops the tool from tools/list, so a
-		// caller without posts:delete does not see posts_delete or its
-		// input schema.
 		opts := []mcp.ToolOption{mcp.WithToolGate(crud.mcpToolGate(def.op, def.item, def.permission))}
 		if devImplied && def.write {
 			opts = append(opts, mcp.WithDevImplied())
@@ -109,41 +81,16 @@ func RegisterEntityMCPTools(server *mcp.Server, crud *CrudHandler, router http.H
 	return nil
 }
 
-// errMCPToolForbidden is the gate's refusal. It names no permission: the
-// listing already hides the tool, and a caller probing by name learns only
-// that it may not call it.
 var errMCPToolForbidden = fmt.Errorf("entity mcp: not permitted")
 
-// mcpToolGate returns the per-caller precondition for one entity tool:
-// the entity's Access permission for op, the check requirePermission runs
-// on the route, at the same Ref{Type} the route uses for list and create.
-// get, update and delete (item) are judged on the route at Ref{Type, ID},
-// and a Decider may answer per record, so with a Decider on the context
-// an item tool is left to the route; a role policy is record-blind and
-// still judges it.
-//
-// It judges only what the MCP request's own context can show. With no
-// user on it, the credentials may still be resolved on the redispatch (the
-// API key and cookies are copied onto the in-process request and the
-// router's auth middleware runs there). That holds only when the request
-// carries one of redispatchCredentialHeaders: a caller with none can only
-// run the call anonymous, so the gate judges it as it stands, and a gated
-// tool's schema is not listed to the caller with the least authority. With no role policy and no
-// Decider on it, the policy may be mounted on a route group, which only
-// the redispatch passes through. Either way the gate cannot know the
-// answer, so it leaves the tool listed and the route refuses the call as
-// it always did. Owner and tenant scoping are left to the route too: they
-// narrow rows rather than refuse the entity, and their context may only
-// exist after the router's middleware. An entity mounted on a route group
-// (MCPRouteScoped) is left to the route entirely: the group's own
-// middleware may replace the policy the /mcp context carries.
+// mcpToolGate refuses a tool to a caller the route would refuse for op,
+// where the MCP request's own context can tell; otherwise it lists the tool
+// and leaves the call to the route.
 func (ch *CrudHandler) mcpToolGate(op crudOp, item bool, permission access.Permission) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if ch.MCPRouteScoped {
 			return nil
 		}
-		// A blank write in a declared Access block is refused to every
-		// caller; that needs no user, policy or route to decide.
 		if ch.permissionForOp(op) == permRefused && !ch.accessAllows(ctx, permRefused, "") {
 			return errMCPToolForbidden
 		}
@@ -168,10 +115,7 @@ func (ch *CrudHandler) mcpToolGate(op crudOp, item bool, permission access.Permi
 	}
 }
 
-// mcpBase is the URL path the entity's HTTP routes are mounted at. BasePath
-// (e.g. "/api/v1", set by the app from WithAPIPrefix) is prepended so the
-// in-process MCP tool dispatch reaches the same path the REST routes live at;
-// empty BasePath yields the historical bare "/table".
+// mcpBase is the path the entity's HTTP routes are mounted at, BasePath included.
 func (ch *CrudHandler) mcpBase() string {
 	return ch.BasePath + "/" + ch.Entity.GetTable()
 }
@@ -179,49 +123,17 @@ func (ch *CrudHandler) mcpBase() string {
 func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		values := make(url.Values)
-		// per_page and offset ride with page/limit/sort: the route accepts
-		// both spellings, and listToolSchema advertises them (#669).
 		for _, key := range []string{"page", "limit", "per_page", "offset", "sort"} {
 			if v, ok := params[key]; ok {
 				values[key] = toolParamValues(v)
 			}
 		}
 		fields := ch.snapshotFields()
-		// Each param is named by the query key it forwards as: the suffix
-		// spelling, or the bracket spelling where the bare key reads two
-		// ways (a stage field beside stage_in), which the route refuses.
 		spell := filter.SpellerFor(fields)
 		for _, field := range fields {
-			// Never build a filter predicate on a Hidden field. Its value
-			// is omitted from output, but a filter turns row presence /
-			// absence into a value-disclosure oracle over a secret column.
-			// Mirrors listToolSchema, which also skips Hidden fields.
-			// NoQuery fields are skipped for the same reason: the value is
-			// returned in a transformed form, so filtering on the stored
-			// one rebuilds the oracle.
-			//
-			// Skipping means the key is never forwarded, so the request
-			// runs UNFILTERED rather than returning the 400 the HTTP
-			// surface would give. That is deliberate and pinned by
-			// TestMCP_ListToolOmitsHiddenFieldFilters. Neither field kind is
-			// advertised in listToolSchema, so a well-formed tool call never
-			// sends one; a malformed one gets a wider result set, not a
-			// narrower one, and never an oracle bit.
 			if field.Hidden || field.NoQuery {
 				continue
 			}
-			// Plain equality first (the suffix table carries no ""
-			// entry), then one key per operator from
-			// filter.FilterSuffixes ∩ OpSuitsType — the same predicate
-			// the HTTP list handler applies — so the tool forwards
-			// exactly the params listToolSchema advertises and the route
-			// accepts. An operator the field's type refuses (a _gt on a
-			// Bool) is dropped, not forwarded: the same
-			// wider-not-narrower posture as the Hidden/NoQuery skip
-			// above, and it was never advertised, so a well-formed call
-			// never sends one. The plain key on a JSON field is refused
-			// instead: older schemas advertised it, so a client may
-			// still send it and must learn it no longer filters.
 			eqKey := spell.Key(mcpFieldKey(field), filter.OpEq)
 			if v, ok := params[eqKey]; ok {
 				if !filter.OpSuitsType(filter.OpEq, field.Type) {
@@ -247,8 +159,6 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 				}
 			}
 		}
-		// ?q= free-text search: forwarded to the list URL when the entity
-		// declares SearchFields (the schema below advertises it only then).
 		if len(ch.Entity.Config.SearchFields) > 0 {
 			if v, ok := params["q"]; ok {
 				values["q"] = toolParamValues(v)
@@ -262,18 +172,8 @@ func (ch *CrudHandler) listTool(router http.Handler) mcp.ToolHandler {
 	}
 }
 
-// toolParamValues renders one tool-call parameter for the re-dispatch query.
-// A JSON array (the natural spelling an MCP client sends for a multi-value
-// _in filter) becomes one query entry per element: fmt.Sprint stringifies
-// []any{"draft","archived"} into "[draft archived]", a single literal that
-// matches nothing, so the agent gets a silent empty page where the HTTP
-// surface returns the union.
-//
-// Numbers render as their exact decimal: an integral float64 prints via
-// FormatFloat('f', -1) — fmt.Sprint's %g gives "1e+06" for 1000000, which
-// the filter surface cannot address on Postgres — and a json.Number (a
-// transport that decoded with UseNumber) prints verbatim so a literal
-// above 2^53 keeps every digit on its way into the query string.
+// toolParamValues renders a tool parameter as query values, one per
+// element of a JSON array.
 func toolParamValues(v any) []string {
 	if arr, ok := v.([]any); ok {
 		out := make([]string, 0, len(arr))
@@ -285,16 +185,8 @@ func toolParamValues(v any) []string {
 	return []string{toolParamString(v)}
 }
 
-// toolFilterValues renders one filter parameter of the list tool for the
-// re-dispatch query, in the shape the list route reads it.
-//
-// An _in key's array is the list. An empty one is refused: in no values
-// matches no row, and leaving the key out would list every row. An
-// element holding a comma is refused too, because the route splits _in
-// values on commas and would read "Doe, Jane" as two values. Any other
-// key takes one value, and a list or an object for it is refused rather
-// than cut to its first element. A JSON field never gets here: it takes
-// no filter (filter.OpSuitsType).
+// toolFilterValues renders one list-tool filter parameter as query values:
+// an _in key takes a non-empty array of comma-free values, any other key one scalar.
 func toolFilterValues(key string, in bool, v any) ([]string, error) {
 	one := func(e any) (string, error) {
 		switch e.(type) {
@@ -328,8 +220,7 @@ func toolFilterValues(key string, in bool, v any) ([]string, error) {
 	return out, nil
 }
 
-// toolParamString renders one scalar tool parameter for a query-string
-// filter value.
+// toolParamString renders a scalar, an integral number as its exact decimal.
 func toolParamString(v any) string {
 	switch x := v.(type) {
 	case json.Number:
@@ -374,8 +265,6 @@ func (ch *CrudHandler) updateTool(router http.Handler) mcp.ToolHandler {
 	}
 }
 
-// transitionTool runs one move through its route,
-// POST <base>/<id>/transitions/<key>.
 func (ch *CrudHandler) transitionTool(router http.Handler, key string) mcp.ToolHandler {
 	return func(ctx context.Context, params map[string]any) (any, error) {
 		path, _, err := ch.toolRecordPath(params)
@@ -387,9 +276,6 @@ func (ch *CrudHandler) transitionTool(router http.Handler, key string) mcp.ToolH
 	}
 }
 
-// transitionToolDescription names what the move does in the words an
-// agent needs to pick it: the field, the values it starts from, the value
-// it writes and the stamp it sets.
 func transitionToolDescription(ent, field string, t entity.Transition) string {
 	label := t.Label
 	if label == "" {
@@ -434,13 +320,8 @@ func (ch *CrudHandler) deleteTool(router http.Handler) mcp.ToolHandler {
 	}
 }
 
-// redispatchCredentialHeaders are the credential headers runToolRequest
-// copies from the caller's request onto the redispatch. The list must
-// match credentialFingerprint and the broker's (TestCredentialCanonsAgree).
 var redispatchCredentialHeaders = []string{"Cookie", "Authorization", "X-API-Key", fembed.GrantHeader}
 
-// carriesRedispatchCredential reports whether the MCP request on ctx carries
-// a credential the redispatch could resolve into a user.
 func carriesRedispatchCredential(ctx context.Context) bool {
 	orig, ok := mcp.RequestFromContext(ctx)
 	if !ok || orig == nil {
@@ -471,46 +352,9 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	// The internal request is re-dispatched through the full middleware
-	// chain (auth, recovery, etc.). Session/JWT middleware re-resolves the
-	// caller from transport headers, NOT from ctx, so without copying the
-	// original request's auth the caller is demoted to anonymous and
-	// owner-scoped CRUD returns 401. Copy every credential header the
-	// framework recognizes from the original inbound request (stashed by
-	// the MCP transport) so the same identity re-resolves. See
-	// TestMCPAuthenticatedListReturnsOwnerRows.
-	//
-	// Every FIELD, never Get()+Set(): Get returns only the FIRST field, and
-	// Cookie routinely arrives as several (a proxy prepends its own before
-	// the browser's), so Set(Get()) collapses them to the shared first
-	// field and loses the session — the same collapse Broker.MintDelegation
-	// had (issue #360).
-	//
-	// X-API-Key belongs in the list because battery/auth's apitoken resolves
-	// it like a session; without it an API-key caller was anonymous on every
-	// re-dispatch (issue #360's second layer). The embed grant stays because
-	// embed.Host.Middleware short-circuits on a missing header — dropping it
-	// would authenticate the subject without ever evaluating the reach
-	// allow-list or the grant's expiry for the path being re-dispatched to.
-	//
-	// The caller's peer address rides along too, with the two proxy
-	// headers a trusted-proxy client-IP lookup reads: the placeholder
-	// address httptest stamps put every MCP caller in one per-IP
-	// rate-limit bucket. The headers count only where the original's did,
-	// because the lookup trusts them only when RemoteAddr is a trusted
-	// proxy, and RemoteAddr is the original's.
-	// Nothing beyond these and the verified CSRF token below rides along:
-	// the re-dispatch re-presents the caller's credentials and address,
-	// never other headers the original carried.
 	if orig, ok := mcp.RequestFromContext(ctx); ok && orig != nil {
 		req.RemoteAddr = orig.RemoteAddr
-		// The host the caller reached, not httptest's example.com: host
-		// middleware (a site or tenant picked from the host, a host
-		// allowlist) must see the request the caller made.
 		req.Host = orig.Host
-		// Two lists: the credential headers must match credentialFingerprint
-		// and the broker's (TestCredentialCanonsAgree); the proxy headers
-		// are address, not credential.
 		for _, name := range append(slices.Clone(redispatchCredentialHeaders), []string{"X-Forwarded-For", "X-Real-IP"}...) {
 			for _, v := range orig.Header.Values(name) {
 				if v == "" {
@@ -519,11 +363,6 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 				req.Header.Add(name, v)
 			}
 		}
-		// The CSRF token the caller's request passed the check with,
-		// under the header that check reads: the write carries the CSRF
-		// cookie in Cookie above and would get a 403 without it. It is
-		// presented, not exempted; the check compares it with the cookie
-		// again. A request no check passed has none.
 		if name, token, ok := middleware.VerifiedCSRFSubmission(orig.Context()); ok {
 			req.Header.Set(name, token)
 		}
@@ -533,12 +372,6 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 
 	status := rec.Code
 	if status >= 400 {
-		// An *RPCError, not a plain error: the re-dispatched handler's
-		// refusals (401 anonymous, 403 scope, 404 miss) are
-		// caller-actionable and must stay visible through the MCP
-		// boundary; a plain error is internal detail the server redacts
-		// to "internal tool error", which would tell an agent the tool
-		// is broken when the truth is the CALL lacks authority.
 		return nil, &mcp.RPCError{
 			Code:    mcp.ErrInternalError,
 			Message: fmt.Sprintf("entity mcp request failed: status %d: %s", status, strings.TrimSpace(rec.Body.String())),
@@ -547,9 +380,6 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	if status == http.StatusNoContent || rec.Body.Len() == 0 {
 		return nil, nil
 	}
-	// UseNumber keeps every number as the literal the route wrote: a
-	// float64 decode rounded integers above 2^53 before the result was
-	// marshalled again for the client.
 	var out any
 	dec := json.NewDecoder(bytes.NewReader(rec.Body.Bytes()))
 	dec.UseNumber()
@@ -559,10 +389,6 @@ func runToolRequest(ctx context.Context, router http.Handler, method, path strin
 	return out, nil
 }
 
-// toolArgError is a refusal of the tool call's own arguments. It is an
-// invalid-params *RPCError, for the reason runToolRequest wraps a
-// route's 4xx: a plain error is redacted to "internal tool error" and
-// logged at Error as a server fault, when the fix is the agent's call.
 func toolArgError(format string, args ...any) error {
 	return &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: fmt.Sprintf(format, args...)}
 }
@@ -572,8 +398,6 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	if !ok {
 		return "", toolArgError("missing required param %q", key)
 	}
-	// toolParamString, not fmt.Sprint: an integer key arrives as float64
-	// and fmt.Sprint spells 1234567 as 1.234567e+06 (#669).
 	s := toolParamString(value)
 	if s == "" {
 		return "", toolArgError("param %q must not be empty", key)
@@ -581,9 +405,7 @@ func requireToolString(params map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// toolKeyArgs names the tool arguments that name one record: "id" for a
-// one-column key, and for a composite one each key column under the name
-// the write tools give its field (mcpFieldKey).
+// toolKeyArgs names a record's key arguments: "id", or each composite key column's mcpFieldKey.
 func (ch *CrudHandler) toolKeyArgs() []string {
 	cols := ch.keyCols()
 	if len(cols) <= 1 {
@@ -600,8 +422,6 @@ func (ch *CrudHandler) toolKeyArgs() []string {
 	return args
 }
 
-// toolRecordPath reads the record a tool call names and returns its route,
-// one path-escaped segment per key argument, and the key arguments it read.
 func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string]string, error) {
 	keys := ch.toolKeyArgs()
 	args := make(map[string]string, len(keys))
@@ -617,10 +437,6 @@ func (ch *CrudHandler) toolRecordPath(params map[string]any) (string, map[string
 	return path, args, nil
 }
 
-// idToolSchema is the input of a tool that takes nothing but the record's
-// key arguments (toolKeyArgs). Each argument is typed from the key column
-// it names: an integer key offers an integer prop, so a client sends a
-// number and not a quoted string (#669).
 func idToolSchema(ent *entity.Entity, reg entity.Registry, args []string) map[string]any {
 	tf := toolFieldsOf(reg, ent)
 	props := make(map[string]any, len(args))
@@ -634,11 +450,8 @@ func idToolSchema(ent *entity.Entity, reg entity.Registry, args []string) map[st
 	}
 }
 
-// keyArgSchema types one record-key argument by the field its key column
-// declares. The single-column key's argument is "id" (toolKeyArgs), which
-// names the key column whatever it is called — and must resolve to THAT
-// column, never to an unrelated field that happens to be named "id"; a
-// name that matches no field stays a plain string.
+// keyArgSchema types a key argument by its key column's field; "id" names
+// the single key column whatever it is called.
 func keyArgSchema(ent *entity.Entity, tf toolFields, arg string) map[string]any {
 	if arg == "id" && len(ent.KeyColumns()) == 1 {
 		col := ent.KeyColumns()[0]
@@ -669,40 +482,24 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 	if len(ent.Config.SearchFields) > 0 {
 		props["q"] = map[string]any{"type": "string", "description": "Free-text search across: " + strings.Join(ent.Config.SearchFields, ", ")}
 	}
-	// Prop names are the query keys the tool forwards (listTool): the
-	// bracket spelling only where the bare key reads two ways.
 	spell := filter.SpellerFor(ent.GetFields())
 	tf := toolFieldsOf(reg, ent)
 	for _, field := range tf.fields {
-		// These props are the list tool's FILTER arguments, so NoQuery
-		// fields are omitted alongside Hidden ones, an agent offered a
-		// filter the parser rejects just burns a call on a 400.
 		if field.Hidden || field.NoQuery {
 			continue
 		}
 		if filter.OpSuitsType(filter.OpEq, field.Type) {
 			props[spell.Key(mcpFieldKey(field), filter.OpEq)] = tf.schema(field)
 		}
-		// One prop per operator the field's type accepts, from the same
-		// filter.FilterSuffixes ∩ OpSuitsType derivation the forwarding
-		// loop uses: the schema advertises exactly the field/operator
-		// params the HTTP list handler accepts — an operator the parser
-		// refuses is never offered, one it accepts never hidden.
 		for _, s := range filter.FilterSuffixes {
 			if !filter.OpSuitsType(s.Op, field.Type) {
 				continue
 			}
 			ps := tf.schema(field)
 			if s.Op == filter.OpLike {
-				// A substring, never a whole value: an Enum's value list
-				// would make a client refuse "pai" for "paid".
 				ps = map[string]any{"type": "string"}
 			}
 			if s.Op == filter.OpIn {
-				// A JSON array is the natural spelling an MCP client
-				// sends, and toolFilterValues expands it into the
-				// repeated query entries the route parses. An empty
-				// one is refused there, so the schema says so too.
 				ps = map[string]any{"type": "array", "items": tf.schema(field), "minItems": 1}
 			}
 			ps["description"] = fmt.Sprintf("Filter by %s: %s.", field.Name, mcpOperatorLabel(s.Op))
@@ -712,8 +509,6 @@ func listToolSchema(ent *entity.Entity, reg entity.Registry) map[string]any {
 	return map[string]any{"type": "object", "properties": props}
 }
 
-// mcpOperatorLabel names one filter operator in a tool-schema
-// description.
 func mcpOperatorLabel(op filter.FilterOp) string {
 	switch op {
 	case filter.OpEq:
@@ -751,12 +546,8 @@ func updateToolSchema(ent *entity.Entity, reg entity.Registry, args []string) ma
 	return out
 }
 
-// bodyToolSchema is the write-tool body the create and update schemas
-// share: every writable field, with enforced states applied. A create
-// (update=false) keeps the state field but narrows its enum to the values
-// a create may set; an update drops the state field and the stamps —
-// they change only through the move tools. Without enforced states
-// (nil or Advisory) both are the plain writable-field walk.
+// bodyToolSchema is the create (update=false) or update tool body: every
+// field a client may write, under enforced states.
 func bodyToolSchema(ent *entity.Entity, reg entity.Registry, update bool) map[string]any {
 	st := ent.Config.States
 	guarded := st != nil && !st.Advisory
@@ -774,8 +565,6 @@ func bodyToolSchema(ent *entity.Entity, reg entity.Registry, update bool) map[st
 			}
 		}
 	}
-	// The owner and tenant columns are stamped by the server on create,
-	// so a caller never has to send them.
 	serverStamped := map[string]bool{}
 	if f := ent.Config.Scope.OwnerField; f != "" {
 		serverStamped[f] = true
@@ -804,9 +593,6 @@ func bodyToolSchema(ent *entity.Entity, reg entity.Registry, update bool) map[st
 		if field.Required && field.Default == nil && !serverStamped[field.Name] {
 			required = append(required, key)
 		} else if !field.Required && key != stateKey {
-			// The route takes null for an optional field. The state field
-			// reaches here only on a create, which must start it at an
-			// initial value.
 			nullableToolProp(fs)
 		}
 		props[key] = fs
@@ -818,9 +604,7 @@ func bodyToolSchema(ent *entity.Entity, reg entity.Registry, update bool) map[st
 	return out
 }
 
-// mcpFieldKey returns the parameter name a field is exposed under in MCP
-// tool schemas: WireName when set (the version-specific alias), else the
-// raw DB column Name. The CRUD filter parser accepts both forms.
+// mcpFieldKey is a field's tool parameter name: WireName, else Name.
 func mcpFieldKey(field schema.Field) string {
 	if field.WireName != "" {
 		return field.WireName
@@ -828,22 +612,12 @@ func mcpFieldKey(field schema.Field) string {
 	return field.Name
 }
 
-// toolFields is an entity's fields as its tool schemas type them.
 type toolFields struct {
-	// fields are typed by the values their columns hold
-	// (entity.ValueFields): a reference to an integer key is schema.Int,
-	// the JSON number every read answers and the route checks for.
 	fields []schema.Field
-	// pending names the reference fields whose target the registry did
-	// not hold when the schemas were built.
+	// pending names reference fields whose target was not registered yet.
 	pending map[string]bool
 }
 
-// toolFieldsOf types ent's fields for its tool schemas. The schemas are
-// built once, when the tools are registered, and an entity may be
-// registered before the one it references: such a reference is pending,
-// its key type unknown until the target arrives. Without reg every field
-// is typed as declared, which is how the route checks it then.
 func toolFieldsOf(reg entity.Registry, ent *entity.Entity) toolFields {
 	tf := toolFields{fields: entity.ValueFields(reg, ent)}
 	if reg == nil {
@@ -868,10 +642,7 @@ func toolFieldsOf(reg entity.Registry, ent *entity.Entity) toolFields {
 	return tf
 }
 
-// schema is one field's tool-argument schema. A pending reference takes
-// an integer or a string: the route types it once its target is
-// registered and refuses the wrong one, where a schema that guessed
-// string would refuse the integer key a read of the same record answers.
+// schema types a field's tool argument; a pending reference takes an integer or a string.
 func (tf toolFields) schema(field schema.Field) map[string]any {
 	if tf.pending[field.Name] {
 		return map[string]any{"type": []any{"integer", "string"}}
@@ -879,9 +650,6 @@ func (tf toolFields) schema(field schema.Field) map[string]any {
 	return mcpFieldSchema(field)
 }
 
-// nullableToolProp lets an optional argument be null. coreoa.Nullable
-// widens a one-type prop and an enum; a pending reference already holds
-// a type list, which takes "null" as one more entry.
 func nullableToolProp(prop map[string]any) {
 	if types, ok := prop["type"].([]any); ok {
 		prop["type"] = append(slices.Clone(types), "null")
@@ -895,15 +663,10 @@ func mcpFieldSchema(field schema.Field) map[string]any {
 	case schema.Int:
 		return map[string]any{"type": "integer"}
 	case schema.Float:
-		// Not Decimal: the route stores a decimal as the text it was
-		// sent and refuses a JSON number for one, so it takes the string
-		// default below.
 		return map[string]any{"type": "number"}
 	case schema.Bool:
 		return map[string]any{"type": "boolean"}
 	case schema.JSON:
-		// Any JSON value: the route stores arrays, strings and numbers
-		// in a json field as well as objects.
 		return map[string]any{}
 	case schema.Enum:
 		return map[string]any{"type": "string", "enum": field.Values}

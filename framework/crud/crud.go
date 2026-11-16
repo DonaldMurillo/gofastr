@@ -33,16 +33,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/tenant"
 )
 
-// getHandlerUser is a thin alias for core/handler.GetUser kept in this
-// package so the soft-delete filter doesn't reach across packages
-// directly inside an inline closure. The bool is true iff the request
-// is authenticated.
 func getHandlerUser(ctx context.Context) (any, bool) {
 	return handler.GetUser(ctx)
 }
 
-// beforeHookError flags a BeforeCreate/BeforeUpdate/BeforeDelete hook
-// rejection so the caller can map it to 400 instead of 500.
+// beforeHookError is a Before hook's rejection, answered 400.
 type beforeHookError struct{ err error }
 
 func (e *beforeHookError) Error() string { return e.err.Error() }
@@ -50,24 +45,17 @@ func (e *beforeHookError) Unwrap() error { return e.err }
 
 // IsHookRefusal reports whether err is a BeforeCreate, BeforeUpdate or
 // BeforeDelete hook's rejection, the error the HTTP handlers answer 400.
-// An in-process caller that serves its own HTTP answer uses it to tell a
-// refusal from a failure.
+// A hook that panicked is not a refusal.
 func IsHookRefusal(err error) bool {
 	_, ok := errors.AsType[*beforeHookError](err)
 	return ok && !isHookPanic(err)
 }
 
-// isHookPanic reports whether err carries a hook that panicked. A panic
-// is the hook faulting, not refusing: it answers 500, and its value,
-// whatever the hook held at the time, never reaches the client.
 func isHookPanic(err error) bool {
 	_, ok := errors.AsType[*hook.PanicError](err)
 	return ok
 }
 
-// tenantMissingError signals a Create attempt against a MultiTenant
-// entity with no tenant in the request context. Surfaces as 400 in
-// the HTTP handler so an orphan row can never be written.
 type tenantMissingError struct{}
 
 func (e *tenantMissingError) Error() string { return reasonTenantRequired.English() }
@@ -77,96 +65,55 @@ func (e *tenantMissingError) Phrased() (i18n.Phrase, map[string]any) {
 	return reasonTenantRequired, nil
 }
 
-// DBExecutor is an alias for db.Executor, retained so existing callers keep
-// using framework.DBExecutor. New code should reference framework/db directly.
+// DBExecutor is db.Executor.
 type DBExecutor = db.Executor
 
 // CrudHandler provides auto-generated CRUD HTTP handlers for an Entity.
 type CrudHandler struct {
-	Entity *entity.Entity
-	DB     DBExecutor
-	// root is the database a transaction-bound copy of the handler was
-	// made from (inTx sets DB to the transaction): what is known about
-	// the database is remembered under it.
+	Entity     *entity.Entity
+	DB         DBExecutor
 	root       *sql.DB
 	PrimaryKey []string           // key columns in order; nil means "id"
 	JSONCase   JSONCase           // casing strategy for JSON keys
 	Hooks      *hook.HookRegistry // optional lifecycle hooks
 	Storage    upload.Storage     // optional; enables multipart uploads for Image/File fields
-	// ImageDeriver, when set, runs over every schema.Image upload to
-	// produce stored renditions plus a BlurHash/LQIP. Derived values land
-	// in sibling columns the entity declares. See applyDerivedColumns.
-	// framework/imagefield provides the implementation.
+	// ImageDeriver, when set, derives renditions and a BlurHash/LQIP from
+	// every schema.Image upload into the sibling columns the entity declares.
 	ImageDeriver file.ImageDeriver
-	// FieldImageDerivers overrides ImageDeriver for specific image fields,
-	// keyed by field name. An avatar wants portrait components and animated
-	// sources rejected; a hero cover wants wide renditions, one app-wide
-	// config cannot express both.
+	// FieldImageDerivers overrides ImageDeriver per image field, by name.
 	FieldImageDerivers map[string]file.ImageDeriver
-	// StripUploadMetadata opts every multipart upload on this handler into
-	// file.StripMetadata: EXIF, XMP and text segments are removed from the
-	// stored original (JPEG, PNG, WebP; other bytes pass through). Off by
-	// default: originals are stored verbatim (maintainer decision,
-	// 2026-09-04). Set app-wide with framework.WithStripUploadMetadata.
+	// StripUploadMetadata strips EXIF, XMP and text segments from stored
+	// uploads (JPEG, PNG, WebP). Off by default: originals are stored verbatim.
 	StripUploadMetadata bool
 	Events              *event.EventBus // optional; receives entity.created/updated/deleted on commit
-	Outbox              EventOutbox     // optional; when set, lifecycle events are staged in-tx (transactional outbox) and delivered to declared consumers by the relay. EmitEvent still notifies Events (real-time lane); the relay does not, so there is no double delivery.
-	Registry            entity.Registry // optional; required for nested ?include=author.profile resolution
-	// ChildHooks resolves ANOTHER entity's hook registry by name, so rows
-	// eager-loaded through ?include= run the read hooks of the entity they
-	// belong to rather than this one's. Without it a redaction on the child
-	// applies to GET /children but not to the same row one relation hop away.
-	// Must not create registries, it is called on the request path.
-	// framework.App wires it; nil leaves includes unhooked.
+	Outbox              EventOutbox     // optional; stages lifecycle events in the write's transaction for the relay
+	Registry            entity.Registry // optional; required for nested ?include=
+	// ChildHooks resolves another entity's hook registry by name, so included
+	// rows run their own entity's read hooks. It runs on the request path and
+	// must not create registries; nil leaves includes unhooked.
 	ChildHooks   func(entityName string) *hook.HookRegistry
-	BasePath     string // optional; URL prefix where this entity's routes are mounted (e.g. "/api/v1"). Used by MCP tools to dispatch against the same path the HTTP routes live at; empty = bare "/table".
-	MCPNamespace string // optional; when set (e.g. "admin"), MCP tools are named "<ns>.<entity>.<action>" instead of the flat "<entity>_<action>". Empty preserves the historical flat tool names.
-	// MCPRouteScoped marks an entity whose routes sit behind middleware the
-	// /mcp request does not pass through: a route group's WithAccess or Use,
-	// which may install a different policy, roles or Decider. The MCP tool
-	// gate cannot see what the route will apply, so it leaves these tools
-	// listed and the route decides. framework.App sets it for GroupEntity.
+	BasePath     string // optional; URL prefix the entity's routes are mounted under, for MCP dispatch
+	MCPNamespace string // optional; names MCP tools "<ns>.<entity>.<action>"
+	// MCPRouteScoped marks an entity whose routes sit behind middleware /mcp
+	// does not pass through; its MCP tools stay listed and the route decides.
 	MCPRouteScoped bool
-	// MaxOffset caps the row skip a list request may ask for, via ?offset=
-	// or a deep ?page=. Zero (the default) resolves to the page cap × 1000
-	// — 100,000 at the default Pagination.MaxListLimit, scaling with the
-	// entity's page cap — so a client cannot force a per-request
-	// full-table skip scan. See requireBoundedOffset.
+	// MaxOffset caps the row skip of ?offset= or a deep ?page=. Zero means
+	// the page cap × 1000.
 	MaxOffset int
-	// EventStreamReauth is how often an established SSE feed re-runs its
-	// read-permission gate when idle (the gate also runs on every
-	// delivery). Zero resolves to the default, 30s. The re-check cannot
-	// be switched off: a stream must not outlive the authority that
-	// opened it. See EventStream / WithEventStreamReauth.
+	// EventStreamReauth is how often an idle SSE feed re-runs its read gate.
+	// Zero means 30s; the re-check cannot be switched off.
 	EventStreamReauth time.Duration
-	// EventStreamSeats caps how many concurrent EventStream connections
-	// ONE principal holds on this entity's feed. Each stream pins a
-	// goroutine, a 32-entry buffer, and three bus subscriptions until it
-	// disconnects, so without a cap a single authenticated caller can
-	// exhaust the process's goroutines/FDs/memory for everyone else.
-	// 0 = 16 (the same default core/stream and core/mcp use); negative
-	// lifts the cap. See WithEventStreamSeats.
+	// EventStreamSeats caps one principal's concurrent EventStream
+	// connections. Zero means 16; negative lifts the cap.
 	EventStreamSeats int
-	// EventStreamSeatOverflow selects what a principal at EventStreamSeats
-	// does with its next stream: stream.SeatOverflowRefuse (the default)
-	// answers 429 with Retry-After at connect,
-	// stream.SeatOverflowEvictOldest closes that principal's oldest
-	// stream and seats the new one. See WithEventStreamSeatOverflow.
+	// EventStreamSeatOverflow is what a principal at the cap gets:
+	// stream.SeatOverflowRefuse (429, the default) or SeatOverflowEvictOldest.
 	EventStreamSeatOverflow stream.SeatOverflowPolicy
-	// seats is the live per-principal EventStream seat registry. A
-	// pointer so the tx-bound copies inTx makes share it; see
-	// eventstream_seats.go for the concurrency contract.
-	seats *streamSeatRegistry
-	// fcache holds the derived field caches (visible projection, wire-key
-	// maps, JSON-column sets) behind an immutable copy-on-write snapshot.
-	// A pointer so the tx-bound copies inTx makes share it; see
-	// fieldcache.go for the concurrency contract.
-	fcache *fieldCache
+	seats                   *streamSeatRegistry
+	fcache                  *fieldCache
 }
 
-// NewCrudHandler creates a new CrudHandler for the given entity and database.
-// The derived field caches are built here, single-threaded, so the request
-// path never has to fill them (see fieldcache.go).
+// NewCrudHandler creates a CrudHandler for the entity and database.
 func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
 	ch := &CrudHandler{Entity: ent, DB: db, PrimaryKey: ent.KeyColumns(), JSONCase: CaseCamel, Hooks: nil}
 	ch.fcache = newFieldCache(ch)
@@ -174,9 +121,7 @@ func NewCrudHandler(ent *entity.Entity, db DBExecutor) *CrudHandler {
 	return ch
 }
 
-// WithMaxOffset raises or lowers the list-offset ceiling. Zero keeps the
-// default: the page cap × 1000 (100,000 at the default page cap). Values
-// below 1 are ignored, the ceiling cannot be removed, only moved.
+// WithMaxOffset sets MaxOffset; n below 1 is ignored.
 func (ch *CrudHandler) WithMaxOffset(n int) *CrudHandler {
 	if n > 0 {
 		ch.MaxOffset = n
@@ -184,9 +129,7 @@ func (ch *CrudHandler) WithMaxOffset(n int) *CrudHandler {
 	return ch
 }
 
-// WithEventStreamReauth sets how often an established SSE feed re-runs its
-// read-permission gate when idle. Values below one second are ignored (the
-// default is 30s); the re-check itself cannot be disabled, only rescheduled.
+// WithEventStreamReauth sets EventStreamReauth; d below one second is ignored.
 func (ch *CrudHandler) WithEventStreamReauth(d time.Duration) *CrudHandler {
 	if d >= time.Second {
 		ch.EventStreamReauth = d
@@ -196,9 +139,6 @@ func (ch *CrudHandler) WithEventStreamReauth(d time.Duration) *CrudHandler {
 
 func (ch *CrudHandler) WithJSONCase(c JSONCase) *CrudHandler {
 	ch.JSONCase = c
-	// Host-side, single-threaded: republish the derived caches under the
-	// new case. The old code rebuilt lazily from the request path, which
-	// was the unguarded-map-write race.
 	if ch.fcache != nil {
 		ch.fcache.publish(buildFieldSnapshot(ch))
 	}
@@ -214,42 +154,31 @@ type ListResponse struct {
 	TotalPages int              `json:"totalPages"`
 }
 
-// singleResponse is the standard JSON envelope for single-record CRUD
-// endpoints (create, get, update, and patch).
 type singleResponse struct {
 	Data map[string]any `json:"data"`
 }
 
-// ApplyTenantScope adds a tenant_id filter to the query when the entity
-// is configured for multi-tenancy and a tenant ID is present in the context.
-// Note: uses PostgreSQL-style $1 placeholders.
+// ApplyTenantScope adds the tenant filter (a $1 placeholder) when the entity
+// is multi-tenant and the request carries a tenant.
 func (ch *CrudHandler) ApplyTenantScope(qb *query.QueryBuilder, r *http.Request) {
 	applyTenantScope(ch, qb, r)
 }
 
-// ApplyTenantScopeCount adds a tenant_id filter to a count query builder.
-// Note: uses PostgreSQL-style $1 placeholders.
+// ApplyTenantScopeCount is ApplyTenantScope for a count query.
 func (ch *CrudHandler) ApplyTenantScopeCount(cb *query.CountBuilder, r *http.Request) {
 	applyTenantScope(ch, cb, r)
 }
 
-// ApplyTenantScopeUpdate adds a tenant_id filter to an update query builder.
-// Note: uses PostgreSQL-style $1 placeholders.
+// ApplyTenantScopeUpdate is ApplyTenantScope for an update.
 func (ch *CrudHandler) ApplyTenantScopeUpdate(ub *query.UpdateBuilder, r *http.Request) {
 	applyTenantScope(ch, ub, r)
 }
 
-// ApplyTenantScopeDelete adds a tenant_id filter to a delete query builder.
-// Note: uses PostgreSQL-style $1 placeholders.
+// ApplyTenantScopeDelete is ApplyTenantScope for a delete.
 func (ch *CrudHandler) ApplyTenantScopeDelete(db *query.DeleteBuilder, r *http.Request) {
 	applyTenantScope(ch, db, r)
 }
 
-// applyTenantScope is the single body behind ApplyTenantScope,
-// ApplyTenantScopeCount, ApplyTenantScopeUpdate, and ApplyTenantScopeDelete,
-// which were verbatim copies of each other differing only in the builder
-// type they drove; B is any of the four *query builders whose Where returns
-// the builder itself (the same shape as filter.applyFilters, from round 1).
 func applyTenantScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b B, r *http.Request) {
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(r.Context())
@@ -259,9 +188,8 @@ func applyTenantScope[B interface{ Where(string, ...any) B }](ch *CrudHandler, b
 	}
 }
 
-// InjectTenant injects the tenant_id into a data map when multi-tenancy is
-// enabled. It reads the tenant ID from ctx so it works whether the caller is
-// outside or inside an in-tx context derived from the request.
+// InjectTenant sets the tenant column in data from ctx's tenant when the
+// entity is multi-tenant.
 func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 	if ch.Entity.Config.Scope.MultiTenant {
 		tenantID := tenant.GetTenantID(ctx)
@@ -271,41 +199,30 @@ func (ch *CrudHandler) InjectTenant(data map[string]any, ctx context.Context) {
 	}
 }
 
-// ApplySoftDeleteFilter adds a deleted_at IS NULL filter unless the caller
-// requests trashed records via ?trashed=true AND the request is
-// authenticated. An anonymous caller passing ?trashed=true on a public
-// list endpoint must not be allowed to enumerate soft-deleted rows,
-// that's an information-disclosure path. The query param is honoured
-// only when a user is present in the request context. The query is parsed
-// strictly: an undecodable pair or repeated trashed key keeps deleted_at IS NULL.
+// ApplySoftDeleteFilter adds deleted_at IS NULL unless the request is
+// authenticated and sends ?trashed=true. An undecodable or repeated
+// trashed key keeps the filter.
 func (ch *CrudHandler) ApplySoftDeleteFilter(qb *query.QueryBuilder, r *http.Request) {
 	ch.applySoftDeleteFilterQ(qb, softDeleteQuery(r), r.Context())
 }
 
-// ApplySoftDeleteFilterCount adds a deleted_at IS NULL filter to a count query.
-// Same authentication gate and strict, fail-closed query parsing as
-// ApplySoftDeleteFilter: an undecodable pair or repeated trashed key keeps
-// deleted_at IS NULL.
+// ApplySoftDeleteFilterCount is ApplySoftDeleteFilter for a count query.
 func (ch *CrudHandler) ApplySoftDeleteFilterCount(cb *query.CountBuilder, r *http.Request) {
 	ch.applySoftDeleteFilterCountQ(cb, softDeleteQuery(r), r.Context())
 }
 
-// applySoftDeleteFilterQ applies the soft-delete gate to already parsed values.
 func (ch *CrudHandler) applySoftDeleteFilterQ(qb *query.QueryBuilder, q url.Values, ctx context.Context) {
 	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
 		qb.Where("deleted_at IS NULL")
 	}
 }
 
-// applySoftDeleteFilterCountQ mirrors applySoftDeleteFilterQ for count queries.
 func (ch *CrudHandler) applySoftDeleteFilterCountQ(cb *query.CountBuilder, q url.Values, ctx context.Context) {
 	if ch.Entity.Config.Scope.SoftDelete && !ch.trashedAllowedQ(q, ctx) {
 		cb.Where("deleted_at IS NULL")
 	}
 }
 
-// trashedAllowedQ requires ?trashed=true and an authenticated request user.
-// Read handlers reuse their single parsed values for both count and data.
 func (ch *CrudHandler) trashedAllowedQ(q url.Values, ctx context.Context) bool {
 	if q.Get("trashed") != "true" {
 		return false
@@ -316,7 +233,6 @@ func (ch *CrudHandler) trashedAllowedQ(q url.Values, ctx context.Context) bool {
 	return true
 }
 
-// entityFields returns all field names for queries (SELECT, RETURNING).
 func (ch *CrudHandler) entityFields() []string {
 	fields := ch.Entity.GetFields()
 	names := make([]string, 0, len(fields))
@@ -326,13 +242,8 @@ func (ch *CrudHandler) entityFields() []string {
 	return names
 }
 
-// VisibleFields returns field names that are not Hidden.
-//
-// This is the single-threaded schema-read surface: it re-checks the
-// entity's live declarations and republishes the snapshot when they
-// changed, which is how a host's mid-flight field mutation reaches the
-// request path (see fieldcache.go for why the request path itself does
-// not re-read them).
+// VisibleFields returns the non-Hidden field names. It re-reads the
+// entity's declarations and republishes the field snapshot when they changed.
 func (ch *CrudHandler) VisibleFields() []string {
 	ch.refreshFieldCacheIfStale()
 	return append([]string(nil), ch.snapshot().visible...)
@@ -342,8 +253,6 @@ func (ch *CrudHandler) visibleFields() []string {
 	return ch.snapshot().visible
 }
 
-// wireKeyOfField returns the JSON wire key for a single field: WireName
-// verbatim when set, else the case-converted DB column name.
 func (ch *CrudHandler) wireKeyOfField(f schema.Field) string {
 	if f.WireName != "" {
 		return f.WireName
@@ -386,8 +295,6 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 			h ^= uint64(f.Name[i])
 			h *= prime64
 		}
-		// WireName is part of the signature: two versions of the same entity
-		// that rename a field differently must not share a cached key set.
 		for i := range f.WireName {
 			h ^= uint64(f.WireName[i])
 			h *= prime64
@@ -398,19 +305,13 @@ func (ch *CrudHandler) fieldCacheSignature() uint64 {
 			h ^= 2
 		}
 		h *= prime64
-		// The type is part of the signature because the JSON encode/decode
-		// caches key on it: a field that becomes (or stops being)
-		// schema.JSON must invalidate them.
 		h ^= uint64(f.Type)
 		h *= prime64
 	}
 	return h
 }
 
-// convertKey returns the JSON wire key for a DB column name. When the
-// column has a WireName override (ch.wireKeyOf), it is returned verbatim;
-// otherwise the configured JSONCase is applied. Callers that only want the
-// raw case conversion with no WireName lookup should use convertKeyRaw.
+// convertKey is a column's wire key: its WireName, else the column in the JSONCase.
 func (ch *CrudHandler) convertKey(col string) string {
 	if wk, ok := ch.snapshot().wireKeyOf[col]; ok {
 		return wk
@@ -447,10 +348,6 @@ func (ch *CrudHandler) WireKey(col string) string {
 	return ch.convertKey(col)
 }
 
-// convertKeyRaw applies the configured JSON casing to a DB column name,
-// ignoring any WireName override. Used to seed the wire-key map itself
-// (WireName-empty fields) and by callers that explicitly want the derived
-// form.
 func (ch *CrudHandler) convertKeyRaw(col string) string {
 	switch ch.JSONCase {
 	case CaseSnake:
@@ -460,8 +357,6 @@ func (ch *CrudHandler) convertKeyRaw(col string) string {
 	}
 }
 
-// convertMapKeys applies the configured JSON casing to all keys in a map,
-// honouring WireName overrides.
 func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 	s := ch.snapshot()
 	out := make(map[string]any, len(m))
@@ -475,19 +370,8 @@ func (ch *CrudHandler) convertMapKeys(m map[string]any) map[string]any {
 	return out
 }
 
-// itemKeyFoldsUnambiguous reports whether every distinct wire key in a
-// batch item resolves to a distinct column under the handler's fold.
-// The envelope decode refuses duplicate top-level keys, but items are
-// free-form maps: two DISTINCT keys ("bodyText" and "body_text") can
-// still fold onto one column, and unconvertMapKeys would then resolve
-// the collision by map iteration order. Batch items never pass through
-// CheckTopLevelKeys (it walks raw bytes), so the fold check runs on the
-// decoded map instead — exact duplicates cannot survive a decode, the
-// fold collision is the detectable shape.
-//
-// The keys are walked in sorted order and the refusal names both
-// spellings, so one request body always answers the same bytes; ranging
-// the map named whichever spelling the iteration reached second.
+// itemKeyFoldsUnambiguous refuses two keys of a batch item that fold onto
+// one column, naming both in sorted order.
 func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
 	seen := make(map[string]string, len(item))
 	for _, k := range slices.Sorted(maps.Keys(item)) {
@@ -500,12 +384,7 @@ func (ch *CrudHandler) itemKeyFoldsUnambiguous(item map[string]any) error {
 	return nil
 }
 
-// wireKeyColumn folds one JSON wire key onto the DB column the request
-// decode will land it on: the wire-key map first (WireName overrides and
-// standard case-derived keys), then the raw case conversion fallback. It
-// is the per-key form of unconvertMapKeys, and the fold handed to
-// handler.CheckTopLevelKeys so two distinct wire keys that resolve to one
-// column are refused before the decode instead of racing in map order.
+// wireKeyColumn is the column a wire key lands on.
 func (ch *CrudHandler) wireKeyColumn(key string) string {
 	if col, ok := ch.snapshot().columnOfWire[key]; ok {
 		return col
@@ -513,11 +392,6 @@ func (ch *CrudHandler) wireKeyColumn(key string) string {
 	return ch.unconvertKeyRaw(key)
 }
 
-// unconvertMapKeys reverses JSON wire keys back to DB column names. Each
-// input key is matched against the wire-key map first (so WireName overrides
-// and the standard case-derived keys both resolve); keys that don't match
-// any known wire key fall back to the raw case conversion for backward
-// compatibility with callers that send arbitrary keys.
 func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
 	out := make(map[string]any, len(m))
 	for k, v := range m {
@@ -526,8 +400,6 @@ func (ch *CrudHandler) unconvertMapKeys(m map[string]any) map[string]any {
 	return out
 }
 
-// unconvertKeyRaw reverses the JSON casing back to snake_case, ignoring
-// WireName overrides.
 func (ch *CrudHandler) unconvertKeyRaw(key string) string {
 	switch ch.JSONCase {
 	case CaseSnake:
@@ -537,34 +409,20 @@ func (ch *CrudHandler) unconvertKeyRaw(key string) string {
 	}
 }
 
-// entitySchema returns the schema for validation. It hands out the
-// snapshot's stable field copy, not the live declarations, so validation
-// never races a host mutating Entity.Config.Fields mid-traffic.
 func (ch *CrudHandler) entitySchema() schema.Schema {
 	return schema.Schema{Fields: ch.snapshot().fields}
 }
 
-// List returns an http.HandlerFunc that lists entity records with filtering,
-// sorting, pagination, and optional ?include= eager-loaded relations.
-//
-// Hook chain: BeforeList → SELECT → AfterList. The BeforeList hook can
-// append WHERE predicates via the *hook.ListPayload.AddWhere helper;
-// appended clauses apply to both the data query and the count query.
-// AfterList may transform fetched rows but must preserve their count.
+// List returns the handler that lists records with filters, sort,
+// pagination and ?include=. BeforeList may add Where clauses, applied to the
+// count and the data; AfterList may change rows but not their count.
 func (ch *CrudHandler) List() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Per-caller data (owner/tenant/read-scope rows, or the row a write
-		// just accepted) must never be stored by a shared cache or the
-		// bfcache: RFC 9111's storage restriction covers Authorization
-		// headers, not this framework's default cookie sessions. Stamped
-		// BEFORE the scope checks so 401/403 arms carry it too (the admin
-		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {
 			return
 		}
 		ctx := r.Context()
-		// Strictly parse and validate controls once for every read path.
 		q, err := ch.readQuery(r)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
@@ -572,10 +430,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		page, perPage := parsePaginationValues(q, ch.Entity.Config.Pagination.MaxListLimit)
 
-		// The skip side of pagination is bounded like the limit side: an
-		// explicit ?offset= beyond maxListOffset is a per-request
-		// deep-skip scan, refused here before any filter or count work
-		// runs.
 		if !ch.requireBoundedOffset(w, r, q, page, perPage) {
 			return
 		}
@@ -599,49 +453,24 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// q-column edge case: when the entity has SearchFields and ?q= is
-		// present, a plain ?q=value would be parsed as an OpEq filter on a
-		// column named "q". Drop it, plain ?q= means search. Suffixed ops
-		// (?q_like=, ?q_gt=, …) still filter the column.
 		filters = stripQColumnEqFilter(filters, len(ch.Entity.Config.SearchFields) > 0, q.Has("q"))
 
-		// Nested filters like ?author.name=alice. Parsed once and applied to
-		// both the count + data queries below.
 		nested, err := parseNestedFiltersValues(q, ch.Entity, ch.Registry)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
-		// Filtering across a relation reads that relation's rows, so its
-		// entity's posture applies, without this the row count is an oracle
-		// for values in a column the related entity refuses to serve. This
-		// call both refuses the targets the caller may not read and narrows
-		// the ones they may to their own rows. The `nested` slice is mutated
-		// in place, and every downstream sink (count, data, cursor, stream)
-		// reads the same slice.
-		// The real request rides along so a target's BeforeList hook,
-		// which scopes the EXISTS subquery, sees the request it would
-		// see on its own route.
 		if err := ch.scopeNestedFiltersForCaller(withRealRequest(r.Context(), r), nested); err != nil {
 			writeIncludeError(w, r, "list", err)
 			return
 		}
 
-		// ?q= free-text search: when the entity declares SearchFields and
-		// the request carries a non-blank ?q=, build filter.SearchConditions
-		// and append them as Where clauses. They feed the count, data,
-		// cursor, and stream sinks uniformly because listPayload.Where is
-		// applied to each. Zero signature changes.
 		searchWheres, err := ch.searchWhereClausesQ(q)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidFilters)
 			return
 		}
 
-		// ?where=<json> nested predicate tree (OR-groups / nested AND-OR).
-		// Compiles to ONE parenthesized WHERE clause that AND-composes with
-		// the owner/tenant/soft-delete scopes exactly like the search
-		// clauses above, a user OR-group can never widen past a scope.
 		treeWheres, where, err := ch.whereTreeClausesQ(q)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidWhere)
@@ -660,9 +489,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 		searchWheres = append(searchWheres, treeWheres...)
 
-		// BeforeList hook, collect any extra WHERE clauses the host wants
-		// to scope the query by. Runs before cursor / streaming branches so
-		// both paths inherit the same scope.
 		listPayload := &hook.ListPayload{Request: r}
 		if ch.Hooks != nil {
 			if err := runHooks(ch.Hooks, ctx, hook.BeforeList, listPayload); err != nil {
@@ -671,28 +497,14 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			}
 		}
 
-		// Merge ?q= search conditions with hook-appended Where clauses so
-		// both feed the count, data, cursor, and stream sinks. The hook's
-		// own clauses are kept apart for the cursor anchor lookup, which
-		// applies scopes but never the client's search.
 		hookWheres := listPayload.Where
 		listPayload.Where = append(searchWheres, listPayload.Where...)
 
-		// Cursor pagination is opt-in: presence of the ?cursor key (even
-		// empty for first-page) switches to keyset mode and emits the
-		// CursorPage envelope.
 		if q.Has("cursor") {
-			// Keyset mode ignores ?sort=, the cursor fields control ORDER BY,
-			// but it must still REFUSE a sort it would refuse anywhere else.
-			// Returning early before this check made ?cursor=&sort=<NoQuery>
-			// answer 200 where ?sort=<NoQuery> answers 400, so "every query
-			// surface refuses it" had an exception reachable by appending one
-			// empty parameter.
 			if _, err := filter.ParseSortValues(q, ch.snapshotFields()); err != nil {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 				return
 			}
-			// ?fields= likewise: refused and honoured as on an offset page.
 			cols, err := ch.projectFromRequestQ(q)
 			if err != nil {
 				writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
@@ -713,19 +525,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
 			return
 		}
-		// Streaming-list opt-in: explicit ?stream=true, or auto-on when the
-		// requested limit is huge. Streaming skips include resolution to keep
-		// memory bounded, so it CANNOT honour ?include= or per-row AfterList
-		// transforms (AfterList runs once over the full slice the stream
-		// never materialises). Silently streaming anyway is wrong: includes
-		// would vanish, and an AfterList redactor would be BYPASSED, leaking
-		// the very fields it exists to hide.
-		//
-		// Explicit ?stream=true → refuse with 400 so the caller knows their
-		// include / hook contract can't be met. Auto-streaming (a huge limit,
-		// not an explicit opt-in) → fall through to the buffered path, which
-		// resolves includes and runs AfterList correctly. Correctness wins
-		// over the streaming memory optimisation when the two conflict.
 		explicitStream := q.Get("stream") == "true"
 		hasAfterList := ch.Hooks != nil && len(ch.Hooks.HooksFor(hook.AfterList)) > 0
 		if explicitStream || perPage >= streamListThreshold {
@@ -743,12 +542,9 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 				ch.serveStreamingList(ctx, w, r, q, cols, filters, nested, sorts, page, perPage, listPayload.Where)
 				return
 			}
-			// Fall through to the buffered path (auto-stream with includes or
-			// AfterList), it honours both correctly.
 		}
 
 		var total int
-		// Count total matching rows
 		countQb := query.Count(ch.Entity.GetTable())
 		filter.ApplyToCountQuery(countQb, filters)
 		ch.ApplyTenantScopeCount(countQb, r)
@@ -769,7 +565,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			return
 		}
 
-		// Build data query, select only projected (or all visible by default).
 		qb := query.Select(cols...)
 		qb.From(ch.Entity.GetTable())
 		filter.ApplyToQuery(qb, filters)
@@ -787,13 +582,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
 
 		offset := pagination.OffsetForPage(page, perPage)
-		// An explicit ?offset= overrides the page-derived offset. The
-		// process-module broker paginates by raw offset (it sets ?offset=
-		// without ?page=), and it is a documented control param, honoring it
-		// here is what makes those requests return the intended window
-		// instead of silently serving page 1.
-		// The envelope's page then follows the skip: the page the first
-		// returned row sits on, not the ?page= the offset replaced.
 		if o, ok := explicitOffsetValues(q); ok {
 			offset = o
 			page = o/perPage + 1
@@ -830,8 +618,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 			writeJSONError(w, r, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 			return
 		}
-		// This path scans through the keyed/pooled scanners rather than
-		// ch.scanMany, so it decodes its own JSON columns.
 		ch.decodeReadRows(results)
 
 		if err := ch.applyIncludeTree(withRealRequest(WithReadHooks(ctx), r), results, includes); err != nil {
@@ -840,7 +626,6 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		}
 
 		ch.maskOwn(ctx, results...)
-		// AfterList may redact or transform rows; visibility belongs in BeforeList.
 		if ch.Hooks != nil {
 			listPayload.Results = results
 			if err := ch.applyAfterList(ctx, listPayload); err != nil {
@@ -871,18 +656,10 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 	}
 }
 
-// searchWhereClausesQ builds hook.WhereClause entries from ?q= when the
-// entity declares SearchFields. Returns nil when ?q= is blank. On an
-// entity with no SearchFields a non-blank ?q= is refused (400
-// search_not_configured), the way ListAll refuses Search there:
-// dropping it answered every row to a client that believed it was
-// searching. The exception is an entity whose own column (or allowed
-// filter param) is named q, where ?q= is that filter. The conditions AND-compose safely with owner/tenant/
-// soft-delete scopes because the query builder wraps each Where clause
-// in parens.
+// searchWhereClausesQ is ?q= as Where clauses. A non-blank ?q= on an entity
+// with no SearchFields is refused, unless ?q= is the entity's own filter.
 func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, error) {
 	if len(ch.Entity.Config.SearchFields) == 0 && ch.ownsQParam() {
-		// ?q= is the entity's own filter, which the filter parser reads.
 		return nil, nil
 	}
 	qVal := q.Get("q")
@@ -903,11 +680,8 @@ func (ch *CrudHandler) searchWhereClausesQ(q url.Values) ([]hook.WhereClause, er
 	return wheres, nil
 }
 
-// ownsQParam reports whether ?q= names one of the entity's own filters:
-// a queryable column whose name or WireName is q, or q in
-// AllowedFilterParams. It reads names the way the filter parser does: a
-// Hidden column is no filter (a Hidden q left ?q= answering every row),
-// and a NoQuery one is refused, never filtered.
+// ownsQParam reports whether ?q= names a queryable (not Hidden, not NoQuery)
+// column or an AllowedFilterParams entry.
 func (ch *CrudHandler) ownsQParam() bool {
 	for _, f := range ch.queryFields() {
 		if f.Hidden || f.NoQuery {
@@ -920,13 +694,6 @@ func (ch *CrudHandler) ownsQParam() bool {
 	return slices.Contains(ch.Entity.Config.AllowedFilterParams, "q")
 }
 
-// whereTreeClausesQ parses a ?where=<json> nested predicate tree, validates
-// every field against the entity's (non-Hidden) schema and every operator
-// against the supported set, and compiles it to one hook.WhereClause. It
-// returns no clauses or tree when ?where= is absent/blank. An
-// invalid tree returns an error the caller maps to 400. The single clause
-// AND-composes with owner/tenant/soft-delete scopes because the query
-// builder wraps each Where in parens.
 func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *filter.Predicate, error) {
 	raw := q.Get("where")
 	if strings.TrimSpace(raw) == "" {
@@ -946,12 +713,8 @@ func (ch *CrudHandler) whereTreeClausesQ(q url.Values) ([]hook.WhereClause, *fil
 	return []hook.WhereClause{{SQL: c.SQL, Args: c.Args}}, p, nil
 }
 
-// stripQColumnEqFilter removes a plain OpEq filter on a column named "q"
-// when the entity has SearchFields AND ?q= is present. This resolves the
-// edge case: an entity WITH SearchFields that also has a physical column
-// named "q", plain ?q= means search (not filter on the column). Suffixed
-// ops (?q_like=, ?q_gt=, …) and the explicit ?q[eq]= still filter the
-// column.
+// stripQColumnEqFilter drops ?q=value as a filter on a q column when ?q= is
+// a search; ?q_like= and ?q[eq]= still filter the column.
 func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPresent bool) []filter.ParsedFilter {
 	if !hasSearchFields || !qPresent || len(filters) == 0 {
 		return filters
@@ -966,21 +729,10 @@ func stripQColumnEqFilter(filters []filter.ParsedFilter, hasSearchFields, qPrese
 	return out
 }
 
-// Get returns an http.HandlerFunc that fetches a single entity by ID.
-// Honours ?include= eager-loaded relations.
-//
-// Hook chain: BeforeGet → SELECT → AfterGet. The BeforeGet hook can
-// append WHERE predicates via *hook.GetPayload.AddWhere to scope the
-// lookup (mismatches return 404). AfterGet may mutate the result map
-// (redact, transform).
+// Get returns the handler that reads one record by id, with ?include=.
+// BeforeGet may add Where clauses (a miss is 404); AfterGet may change the row.
 func (ch *CrudHandler) Get() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Per-caller data (owner/tenant/read-scope rows, or the row a write
-		// just accepted) must never be stored by a shared cache or the
-		// bfcache: RFC 9111's storage restriction covers Authorization
-		// headers, not this framework's default cookie sessions. Stamped
-		// BEFORE the scope checks so 401/403 arms carry it too (the admin
-		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opRead) {
 			return
@@ -992,9 +744,6 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 			return
 		}
 
-		// Strictly, as List() reads it: URL.Query drops a pair that does
-		// not decode, so ?fields=name%ZZ answered the full row and
-		// ?trashed=true%ZZ hid the trashed row asked for (404).
 		q, err := ch.readQuery(r)
 		if err != nil {
 			writeErrJSON(w, r, http.StatusBadRequest, err, reasonInvalidQuery)
@@ -1025,9 +774,6 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 		qb.Where(kc, ka...)
 		ch.ApplyTenantScope(qb, r)
 		ch.ApplyOwnerScope(qb, r)
-		// A row outside the read scope must 404, not 403: the filter lives
-		// in the WHERE clause, so the row is simply not found: the caller
-		// must not learn it exists. Same shape as the owner-scope path.
 		ch.ApplyReadScope(qb, r)
 		ch.applySoftDeleteFilterQ(qb, q, r.Context())
 		for _, c := range getPayload.Where {
@@ -1066,23 +812,12 @@ func (ch *CrudHandler) Get() http.HandlerFunc {
 	}
 }
 
-// Create returns an http.HandlerFunc that creates a new entity record.
-// Auto-generated fields are populated server-side and excluded from the
-// request body. The hook chain (BeforeCreate → INSERT → AfterCreate) runs
-// inside a single transaction; if any step errors the write is rolled back.
-//
-// Accepts application/json or multipart/form-data. When the request is
-// multipart, parts whose name matches an Image/File field are streamed
-// through the handler's Storage backend and persisted as a URL string.
+// Create returns the handler that creates a record from a JSON or multipart
+// body, running BeforeCreate, INSERT and AfterCreate in one transaction.
+// Multipart parts for Image/File fields are stored through Storage.
 func (ch *CrudHandler) Create() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller data (owner/tenant/read-scope rows, or the row a write
-		// just accepted) must never be stored by a shared cache or the
-		// bfcache: RFC 9111's storage restriction covers Authorization
-		// headers, not this framework's default cookie sessions. Stamped
-		// BEFORE the scope checks so 401/403 arms carry it too (the admin
-		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeContentTypeError(w, r, err)
@@ -1094,11 +829,6 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		limitRequestBody(w, r)
 		body, savedFiles, err := ch.readRequestBody(r)
 		if err != nil {
-			// A multipart parse saves file parts BEFORE any later
-			// step runs; a parse that fails partway (a second file
-			// part rejected, a duplicate form key) has already
-			// written the earlier ones. No row will ever reference
-			// them, so compensate now rather than orphan them.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
 			writeBodyError(w, r, err)
 			return
@@ -1107,8 +837,6 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 		var result map[string]any
 		var hidden bool
 		sent := sentKeys(body)
-		// The keys this request's multipart parse saved are the only
-		// storage keys it may write (media_provenance.go).
 		err = ch.inTx(WithUploadedKeys(WithAuditRequest(r.Context(), r), savedFiles...), func(ctx context.Context, ch *CrudHandler) error {
 			res, err := ch.doCreate(ctx, r, body)
 			if err != nil {
@@ -1119,12 +847,6 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 			return err
 		})
 		if err != nil {
-			// Validation, a hook rejection, or the INSERT itself
-			// failed: the transaction rolled back, no row references
-			// the files the multipart parse saved, delete them or
-			// they are orphaned storage (an unbounded disk-fill for
-			// a caller who can repeat the failure). A successful
-			// write keeps every key.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
 			writeCRUDError(w, r, ch.withConstraintFields(err, sent), ch.convertKey)
 			return
@@ -1132,20 +854,6 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 
 		ch.EmitEvent(r.Context(), event.EntityCreated, result)
 
-		// AfterGet over the response body. RETURNING gives back every visible
-		// column, including ones the caller never sent, so without this a
-		// create echoes stored values that GET masks. AfterCreate has already
-		// run above; this is the read-shaped view of the same row.
-		//
-		// A hook error degrades the body to the new row's id rather than
-		// answering 500: the row is committed and the event has shipped, so a
-		// 500 would be a lie the caller acts on by retrying, creating it
-		// twice. See identityOnly.
-		//
-		// A row the caller's ReadScope hides comes back as its id only, as
-		// on Update: RETURNING carries server-stamped values (defaults,
-		// hook writes) a GET of the row would answer 404 for. The same holds
-		// for a BeforeGet hook's scope (getScopeHidesRow).
 		var resp map[string]any
 		if hidden || ch.getScopeHidesRow(r, result) {
 			resp = ch.identityOnly(result)
@@ -1162,18 +870,11 @@ func (ch *CrudHandler) Create() http.HandlerFunc {
 	}
 }
 
-// Update returns an http.HandlerFunc that updates an entity by ID. The hook
-// chain (BeforeUpdate → UPDATE → AfterUpdate) runs inside a transaction.
-// Accepts application/json or multipart/form-data (same rules as Create).
+// Update returns the handler that updates a record by id, running
+// BeforeUpdate, UPDATE and AfterUpdate in one transaction. Bodies as Create.
 func (ch *CrudHandler) Update() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller data (owner/tenant/read-scope rows, or the row a write
-		// just accepted) must never be stored by a shared cache or the
-		// bfcache: RFC 9111's storage restriction covers Authorization
-		// headers, not this framework's default cookie sessions. Stamped
-		// BEFORE the scope checks so 401/403 arms carry it too (the admin
-		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONContentType(r); err != nil {
 			writeContentTypeError(w, r, err)
@@ -1209,11 +910,6 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 			return err
 		})
 		if err != nil {
-			// The same compensation as Create, plus the 404 shape
-			// Update owns: the body was parsed (and its file parts
-			// saved) BEFORE the row lookup, so an update targeting a
-			// missing id strands the files unless they are deleted
-			// here.
 			ch.deleteSavedUploads(r.Context(), savedFiles)
 			writeCRUDError(w, r, ch.withConstraintFields(err, sent), ch.convertKey)
 			return
@@ -1224,13 +920,8 @@ func (ch *CrudHandler) Update() http.HandlerFunc {
 	}
 }
 
-// writeUpdated writes a committed update's response: the row through the
-// AfterGet hooks (see the note on Create; a partial PUT/PATCH otherwise
-// returns stored values for every field the caller did not send). A hook
-// error degrades to the id, not a 500, the update is already committed.
-// See identityOnly. A row the caller's ReadScope hides (GET answers 404)
-// comes back as its id only: the write stands, the read-back does not
-// leak it.
+// writeUpdated answers a committed update's row through the AfterGet hooks,
+// or its id alone when the caller may not read it or a hook fails.
 func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, result map[string]any, hidden bool) {
 	var resp map[string]any
 	if hidden || ch.getScopeHidesRow(r, result) {
@@ -1247,18 +938,12 @@ func (ch *CrudHandler) writeUpdated(w http.ResponseWriter, r *http.Request, resu
 	writeJSONStatus(w, r, http.StatusOK, singleResponse{Data: resp})
 }
 
-// Delete returns an http.HandlerFunc that deletes an entity by ID. If the
-// entity has SoftDelete=true, it sets deleted_at instead. The hook chain
-// (BeforeDelete → DELETE/UPDATE → AfterDelete) runs inside a transaction.
+// Delete returns the handler that deletes a record by id (sets deleted_at
+// under SoftDelete), running BeforeDelete, the write and AfterDelete in one
+// transaction.
 func (ch *CrudHandler) Delete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller data (owner/tenant/read-scope rows, or the row a write
-		// just accepted) must never be stored by a shared cache or the
-		// bfcache: RFC 9111's storage restriction covers Authorization
-		// headers, not this framework's default cookie sessions. Stamped
-		// BEFORE the scope checks so 401/403 arms carry it too (the admin
-		// battery's gate posture; llmmd.go's handlers pin the same shape).
 		w.Header().Set("Cache-Control", "no-store")
 		if !ch.requireScope(w, r, opDelete) {
 			return
@@ -1283,34 +968,18 @@ func (ch *CrudHandler) Delete() http.HandlerFunc {
 	}
 }
 
-// ValidationError carries field-level validation errors from inside inTx
-// out to the response writer. It is the error type returned by Create /
-// Update / Upsert when schema validation rejects the body. Callers branch
-// on it with errors.As:
-//
-//	var ve *crud.ValidationError
-//	if errors.As(err, &ve) { ... ve.Fields() ... }
-//
-// The fields map is exposed read-only via Fields; mutating it has no
-// effect on the handler or the wire response. The response renders each
-// violation in the caller's locale under "fields" and its code under
-// "field_reasons".
+// ValidationError is the field-level refusal Create, Update and Upsert
+// return when validation rejects the body. Branch on it with errors.As.
 type ValidationError struct{ fields map[string][]schema.Violation }
 
-// Error implements the error interface. The string is deliberately
-// generic ("validation failed"); per-field detail lives in Fields().
+// Error is the generic "validation failed"; Fields has the detail.
 func (e *ValidationError) Error() string { return handler.ReasonValidationFailed.English() }
 
-// Fields returns the per-field violations keyed by column name.
-// The returned map is the handler's internal copy; callers MUST treat it
-// as read-only.
+// Fields returns the violations by column. Treat it as read-only.
 func (e *ValidationError) Fields() map[string][]schema.Violation { return e.fields }
 
-// NewValidationError constructs a ValidationError from a field→violations
-// map. Intended for tests and host code that needs to synthesize a
-// validation failure (e.g. from a custom BeforeCreate hook): define the
-// message once with i18n.Define("validation.<code>", "<English>") and
-// the response translates it like the built-in ones.
+// NewValidationError builds a ValidationError from field violations, for
+// hooks and tests. Define each message with i18n.Define("validation.<code>", …).
 func NewValidationError(fields map[string][]schema.Violation) *ValidationError {
 	return &ValidationError{fields: fields}
 }
@@ -1324,16 +993,11 @@ var (
 	errNoFieldsToUpdate = errors.New("no fields to update")
 )
 
-// refusal is one write's error response: its status and what
-// writeErrorBody sends. writeCRUDError writes it, and a batch item
-// reports its message, reason and field errors (classifyDoErr), so the
-// two never disagree about an error.
+// refusal is one error response; HTTP routes and batch items share it.
 type refusal struct {
-	code   int
-	text   string // "error"
-	reason string // "reason", sent when set
-	// fieldsShape is the validation shape: "fields" and "field_reasons"
-	// are sent even when empty.
+	code                 int
+	text                 string // "error"
+	reason               string // "reason", sent when set
 	fieldsShape          bool
 	fields, fieldReasons map[string][]string
 	extra                map[string]any
@@ -1357,18 +1021,11 @@ func phraseRefusal(ctx context.Context, code int, reason i18n.Phrase, params ...
 	return refusal{code: code, text: reason.Text(ctx, params...), reason: reason.Code()}
 }
 
-// errRefusal is err as a refusal: a phrased error in its chain
-// translates; any other error renders inside frame as its {{detail}},
-// or as written (an app hook's own wording) when frame is zero. See
-// i18n.ErrorText.
 func errRefusal(ctx context.Context, code int, err error, frame i18n.Phrase) refusal {
 	text, reason := i18n.ErrorText(ctx, err, frame)
 	return refusal{code: code, text: text, reason: reason}
 }
 
-// fieldsRefusal is the validation shape: head as "error", the field
-// violations translated under "fields" with their codes under
-// "field_reasons", and any extra keys.
 func fieldsRefusal(ctx context.Context, code int, head schema.Violation, fields map[string][]schema.Violation, extra map[string]any) refusal {
 	messages, codes := handler.ViolationBodies(ctx, fields)
 	return refusal{
@@ -1377,16 +1034,13 @@ func fieldsRefusal(ctx context.Context, code int, head schema.Violation, fields 
 	}
 }
 
-// writeCRUDError maps a CRUD-flow error to the appropriate HTTP response
-// (crudRefusal).
 func writeCRUDError(w http.ResponseWriter, r *http.Request, err error, wireKeys ...func(string) string) {
 	f := crudRefusal(r.Context(), err, wireKeys...)
 	writeErrorBody(w, r, f.code, f.body())
 }
 
-// crudRefusal maps a CRUD-flow error to its refusal. Sentinel and typed
-// errors are translated to specific status codes; anything else becomes
-// a 500.
+// crudRefusal maps a CRUD-flow error to its status; an unknown one is a
+// generic 500 whose text stays in the log.
 func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string) refusal {
 	fieldKey := func(column string) string {
 		if len(wireKeys) > 0 {
@@ -1394,19 +1048,14 @@ func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string
 		}
 		return column
 	}
-	// Ahead of the hook arm: a hook that hands back a reentrant move or
-	// stale image-source refusal fails its write with a conflict, not a 400.
 	if errors.Is(err, ErrReentrantMove) || errors.Is(err, errImageSourceChanged) {
 		return phraseRefusal(ctx, http.StatusConflict, i18n.StatusPhrase(http.StatusConflict))
 	}
 	if isHookPanic(err) {
-		// Ahead of the hook arm and of every message sniff below: the
-		// panic text is not the caller's to read, whatever it says.
 		logf("crud: internal error: %v", err)
 		return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 	}
 	if bhe, ok := errors.AsType[*beforeHookError](err); ok {
-		// The hook's own wording, or its phrase when it returned one.
 		return errRefusal(ctx, http.StatusBadRequest, bhe, i18n.Phrase{})
 	}
 	if ve, ok := errors.AsType[*ValidationError](err); ok {
@@ -1417,9 +1066,6 @@ func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string
 		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, fields, nil)
 	}
 	if se, ok := errors.AsType[*StateError](err); ok {
-		// 422: the body is well-formed, but the state field changes only
-		// through a move. Field errors in the validation shape, so a form
-		// shows the message in place, plus the moves the caller can run.
 		p, params := se.Phrased()
 		v := schema.Violation{Reason: p, Params: params}
 		return fieldsRefusal(ctx, http.StatusUnprocessableEntity, v,
@@ -1447,48 +1093,24 @@ func crudRefusal(ctx context.Context, err error, wireKeys ...func(string) string
 		return phraseRefusal(ctx, http.StatusBadRequest, reasonNoFieldsToUpdate)
 	}
 	if isUniqueViolation(err) {
-		// Map UNIQUE-constraint failures to 409 Conflict so callers can
-		// distinguish duplicate-key errors from a real server fault.
-		// The driver's text never reaches the body; the declared fields
-		// the caller sent do (conflict_fields.go).
 		return conflictRefusal(ctx, err, i18n.StatusPhrase(http.StatusConflict))
 	}
 	if isForeignKeyViolation(err) {
-		// A dangling reference on create/update, or a delete of a row
-		// other rows still point at, is a state conflict the caller can
-		// resolve, not a server fault. Same no-leak posture as above:
-		// the constraint and table names stay in the server log.
 		return conflictRefusal(ctx, err, reasonReferenced)
 	}
 	if cf, ok := errors.AsType[*constraintFieldsError](err); ok && isNotNullViolation(err) {
-		// A NOT NULL refusal on a declared field is the caller's to
-		// fix: the validation shape, naming it (conflict_fields.go).
 		return fieldsRefusal(ctx, http.StatusBadRequest, validationFailed, cf.fields, nil)
 	}
-	// Unrecognised error → 500 with a generic message. Returning
-	// err.Error() here leaks driver-specific details (`pq: relation
-	// "users" does not exist`, `dial tcp 10.0.0.1:5432: ...`,
-	// `UNIQUE constraint failed: users.email`) that fingerprint the
-	// schema and backend. The full message is logged on the server
-	// side; the client sees a generic "internal server error" with
-	// the original error remaining matchable via errors.Is in tests.
 	logf("crud: internal error: %v", err)
 	return phraseRefusal(ctx, http.StatusInternalServerError, i18n.StatusPhrase(http.StatusInternalServerError))
 }
 
-// writeBatchItemError refuses one batch item: its own message, framed
-// with its index.
 func writeBatchItemError(w http.ResponseWriter, r *http.Request, index int, err error) {
 	detail, _ := i18n.ErrorText(r.Context(), err, i18n.Phrase{})
 	writeJSONError(w, r, http.StatusBadRequest, reasonBatchItem, map[string]any{"index": index, "detail": detail})
 }
 
-// isUniqueViolation reports whether err looks like a UNIQUE-constraint
-// violation from any of the supported drivers. We sniff the message
-// string because the drivers don't share a typed error and the CRUD
-// layer is otherwise driver-agnostic. False positives are rare,
-// "UNIQUE constraint failed" (sqlite), "duplicate key value" (pq),
-// "Error 1062" (mysql) are all distinctive.
+// isUniqueViolation sniffs the drivers' UNIQUE-violation messages.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false
@@ -1506,11 +1128,7 @@ func isUniqueViolation(err error) bool {
 	return false
 }
 
-// isForeignKeyViolation reports whether err looks like a FOREIGN KEY
-// violation: SQLite (modernc and mattn) "FOREIGN KEY constraint failed"
-// (extended code 787), Postgres SQLSTATE 23503 "violates foreign key
-// constraint" (pgx and lib/pq), MySQL errors 1451/1452. Message sniffing
-// for the same reason as isUniqueViolation.
+// isForeignKeyViolation sniffs the drivers' FOREIGN KEY-violation messages.
 func isForeignKeyViolation(err error) bool {
 	if err == nil {
 		return false
@@ -1530,15 +1148,8 @@ func isForeignKeyViolation(err error) bool {
 	return false
 }
 
-// parsePaginationValues extracts the page number (?page) and page size (?limit,
-// or its ?per_page alias) from query params. Defaults: page=1, perPage=20.
-//
-// The per_page cap is 100 by default. Entities can raise this via
-// EntityConfig.MaxListLimit. ?stream=true on its own does NOT raise
-// the cap, that path is opt-in per entity (MaxListLimit > 100) so
-// public endpoints can't be coerced into 10× larger responses by
-// adding a query param. When the entity has explicitly raised the
-// limit, the streaming-list path uses min(MaxListLimit, streamListThreshold).
+// parsePaginationValues reads ?page and ?limit (alias ?per_page, ?limit wins),
+// defaulting to 1 and 20 and clamping the size to listLimitCap.
 func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 	page = 1
 	perPage = 20
@@ -1551,9 +1162,6 @@ func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 
 	maxPerPage := listLimitCap(entityMax)
 
-	// ?limit is the canonical page-size param; ?per_page is accepted as an
-	// alias (a common REST convention) so a client using it gets the size it
-	// asked for rather than a silent default. ?limit wins when both are sent.
 	sizeParam := q.Get("limit")
 	if sizeParam == "" {
 		sizeParam = q.Get("per_page")
@@ -1563,20 +1171,13 @@ func parsePaginationValues(q url.Values, entityMax int) (page, perPage int) {
 			perPage = n
 		}
 	}
-	// Clamp BOTH the requested and the default page size: an oversized
-	// ?limit must cap (not silently fall back to the default, which
-	// itself exceeds MaxListLimit whenever the cap is below 20).
 	if perPage > maxPerPage {
 		perPage = maxPerPage
 	}
 	return
 }
 
-// explicitOffsetValues reads a raw ?offset= row skip. Returns (n, true) only for a
-// well-formed non-negative integer; a missing, malformed, or negative value
-// yields (0, false) so the caller keeps the page-derived offset. LIMIT still
-// caps the row count, and requireBoundedOffset refuses the skip side beyond
-// maxListOffset, so an oversized offset never reaches the query.
+// explicitOffsetValues reads a non-negative ?offset=.
 func explicitOffsetValues(q url.Values) (int, bool) {
 	v := q.Get("offset")
 	if v == "" {
@@ -1589,11 +1190,7 @@ func explicitOffsetValues(q url.Values) (int, bool) {
 	return n, true
 }
 
-// maxListOffset is the effective offset ceiling for this handler:
-// MaxOffset when set, otherwise the page cap × 1000. The limit side of
-// pagination is clamped to listLimitCap; the skip side gets 1000× that
-// headroom so every legitimate deep page fits while a single request
-// cannot force a full-table skip scan on a populated table.
+// maxListOffset is MaxOffset, or the page cap × 1000.
 func (ch *CrudHandler) maxListOffset() int {
 	if ch.MaxOffset > 0 {
 		return ch.MaxOffset
@@ -1601,17 +1198,8 @@ func (ch *CrudHandler) maxListOffset() int {
 	return listLimitCap(ch.Entity.Config.Pagination.MaxListLimit) * 1000
 }
 
-// requireBoundedOffset refuses a list request whose skip, explicit
-// (?offset=) or page-derived (?page= × ?limit=), exceeds maxListOffset:
-// both spellings reach the same OFFSET clause and the same deep skip
-// scan, so both are refused with 400 rather than served as an empty
-// window at full cost. A page within the cap past the last row still
-// returns 200 with no data.
-//
-// The skip is reckoned exactly, past int: pagination.OffsetForPage answers
-// 0 when (page-1)*limit overflows, and a ?page= or ?offset= too long for
-// strconv.Atoi parses as no value at all, so ?page=9223372036854775807
-// passed the bound and List served page 1's rows labelled as that page.
+// requireBoundedOffset refuses with 400 a skip, explicit or page-derived,
+// past maxListOffset, reckoned exactly at any size.
 func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Request, q url.Values, page, perPage int) bool {
 	offset := requestedOffset(q, perPage)
 	if offset.Cmp(big.NewInt(int64(ch.maxListOffset()))) <= 0 {
@@ -1625,10 +1213,6 @@ func (ch *CrudHandler) requireBoundedOffset(w http.ResponseWriter, r *http.Reque
 	return false
 }
 
-// requestedOffset is the row skip q names, exactly: an explicit ?offset=
-// when it is a non-negative integer (explicitOffsetValues' rule, at any
-// size), else (page-1) × perPage for a positive ?page= (parsePaginationValues'
-// rule, at any size), else 0.
 func requestedOffset(q url.Values, perPage int) *big.Int {
 	whole := func(v string) (*big.Int, bool) {
 		n, ok := new(big.Int).SetString(v, 10)
@@ -1648,10 +1232,8 @@ func requestedOffset(q url.Values, perPage int) *big.Int {
 	return new(big.Int)
 }
 
-// listLimitCap is the effective per-request row cap for an entity:
-// the global default (100) unless EntityConfig.MaxListLimit raises or
-// lowers it, never above streamListThreshold. Shared by the offset,
-// streaming, and cursor list paths so no path can exceed the cap.
+// listLimitCap is the per-request row cap of every list path: 100, or
+// MaxListLimit up to streamListThreshold.
 func listLimitCap(entityMax int) int {
 	limitCap := 100
 	if entityMax > 0 {
@@ -1660,18 +1242,13 @@ func listLimitCap(entityMax int) int {
 	return limitCap
 }
 
-// ListLimits reports the page size a list answers with when ?limit is
-// absent, and the most rows a ?limit can get (a larger one is clamped),
-// for an entity whose Pagination.MaxListLimit is entityMax: the numbers
-// parsePagination applies. The OpenAPI document and llm.md describe a
-// list's limit parameter with them.
+// ListLimits returns a list's default page size and the ?limit cap for an
+// entity whose Pagination.MaxListLimit is entityMax.
 func ListLimits(entityMax int) (def, max int) {
 	max = listLimitCap(entityMax)
 	return min(20, max), max
 }
 
-// scanRows scans all rows into a slice of maps, applying keyFunc to column names.
-// scanRowsPooled is the pool-backed version in pool.go.
 func scanRows(rows *sql.Rows, cols []string, keyFunc func(string) string) ([]map[string]any, error) {
 	return scanRowsForEntity(rows, cols, keyFunc, nil)
 }
@@ -1686,7 +1263,6 @@ func scanRowsForEntity(rows *sql.Rows, cols []string, keyFunc func(string) strin
 
 func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields []schema.Field) ([]map[string]any, error) {
 	boolCols := databaseBoolColumnsForEntity(rows, len(cols), fields, cols)
-	// Empty, not nil: an empty page must encode as "data":[], never null.
 	results := []map[string]any{}
 	for rows.Next() {
 		values := make([]any, len(cols))
@@ -1703,17 +1279,12 @@ func scanRowsWithKeysForEntity(rows *sql.Rows, cols, keys []string, fields []sch
 		}
 		results = append(results, row)
 	}
-	// rows.Next() returning false can mean EOF OR a mid-iteration error (a
-	// dropped connection, a read fault). Without this check the read path
-	// would silently return partial/empty results as success, the eager
-	// loaders already guard this; the primary scanner must too.
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return results, nil
 }
 
-// scanRow scans a single row into a map, applying keyFunc to column names.
 func scanRow(row *sql.Row, cols []string, keyFunc func(string) string) (map[string]any, error) {
 	return scanRowWithBoolColumns(row, cols, keyFunc, nil)
 }
@@ -1743,7 +1314,6 @@ func (ch *CrudHandler) boolColumns(cols []string) []bool {
 	return entityBoolColumns(ch.snapshotFields(), cols)
 }
 
-// convertValue normalizes database driver values into JSON-friendly types.
 func convertValue(v any) any {
 	switch val := v.(type) {
 	case []byte:
@@ -1753,10 +1323,8 @@ func convertValue(v any) any {
 	}
 }
 
-// databaseBoolColumns records which result columns have a boolean database
-// type. database/sql exposes SQLite booleans as int64(0|1) with modernc.org/
-// sqlite, while other drivers return bool. Keep the row shape driver-neutral
-// without turning ordinary integer columns containing 0 or 1 into booleans.
+// databaseBoolColumns marks the columns whose database type is boolean, so
+// an integer column holding 0 or 1 stays an integer.
 func databaseBoolColumns(rows *sql.Rows, n int) []bool {
 	out := make([]bool, n)
 	types, err := rows.ColumnTypes()
@@ -1770,9 +1338,6 @@ func databaseBoolColumns(rows *sql.Rows, n int) []bool {
 	return out
 }
 
-// entityFieldsOf is the nil-tolerant GetFields for call sites that may
-// hold a nil *entity.Entity (the eager loaders do); a nil entity has no
-// fields, which entityBoolColumns already treats as "no bool columns".
 func entityFieldsOf(ent *entity.Entity) []schema.Field {
 	if ent == nil {
 		return nil
@@ -1829,32 +1394,17 @@ func convertDatabaseValue(v any, boolean bool) any {
 	}
 }
 
-// textIsTrue decodes a textual boolean. Drivers disagree on whether a TEXT
-// column arrives as string or []byte, so both routes share this to keep the
-// same bytes from decoding two different ways.
-//
-// Note the deliberate asymmetry with the numeric branches above, which treat
-// any non-zero as true: text accepts only "true" and "1", so "2" is false.
-// Numeric 2 comes from a real driver widening a bool; textual "2" does not,
-// and guessing at it would invent a value the column never held.
+// textIsTrue accepts only "true" and "1", trimmed and in any case.
 func textIsTrue(s string) bool {
 	s = strings.TrimSpace(s)
 	return strings.EqualFold(s, "true") || s == "1"
 }
 
-// writeJSONError writes a structured JSON error response: reason
-// translated into r's locale as "error", its code as "reason".
 func writeJSONError(w http.ResponseWriter, r *http.Request, code int, reason i18n.Phrase, params ...map[string]any) {
 	writeErrorBody(w, r, code, phraseRefusal(r.Context(), code, reason, params...).body())
 }
 
-// writeErrJSON writes err as a JSON error response (errRefusal). A hook
-// that panicked has faulted, whatever status the call site gives its
-// refusals: it answers the generic 500, and the panic value (logged with
-// its stack where the hook ran, scrubbed here) never reaches the client.
-// Every surface that hands a hook's error to the client comes through
-// here, so a List or Get answering a BeforeList/BeforeGet refusal, and an
-// include answering a child's, all hold that line.
+// writeErrJSON answers err; a hook panic answers the generic 500.
 func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, frame i18n.Phrase) {
 	if isHookPanic(err) {
 		logf("crud: internal error: %v", err)
@@ -1864,23 +1414,15 @@ func writeErrJSON(w http.ResponseWriter, r *http.Request, code int, err error, f
 	writeErrorBody(w, r, code, errRefusal(r.Context(), code, err, frame).body())
 }
 
-// writeErrorBody adds the envelope every crud error shares to body and
-// writes it.
 func writeErrorBody(w http.ResponseWriter, r *http.Request, code int, body map[string]any) {
-	// Every crud JSON error shares this choke point; the error arms of
-	// scoped data surfaces are no-store exactly like their 2xx arms
-	// (the handler-top stamp covers them when reached through a handler;
-	// this covers direct callers).
 	w.Header().Set("Cache-Control", "no-store")
 	body["success"] = false
 	body["code"] = code
 	writeJSONStatus(w, r, code, body)
 }
 
-// writeJSONStatus answers body as JSON with status. The value is
-// marshalled before a byte is written, so a body that cannot encode (a
-// NaN in a row, say) answers the generic 500 instead of the intended
-// status with an empty body.
+// writeJSONStatus marshals body before writing, so a body that cannot
+// encode answers 500.
 func writeJSONStatus(w http.ResponseWriter, r *http.Request, status int, body any) {
 	b, err := json.Marshal(body)
 	if err != nil {
@@ -1894,34 +1436,21 @@ func writeJSONStatus(w http.ResponseWriter, r *http.Request, status int, body an
 	w.Write([]byte("\n"))
 }
 
-// generateFieldValue creates a value based on the auto-generation strategy.
 func generateFieldValue(strategy schema.AutoGenerate) any {
 	switch strategy {
 	case schema.AutoUUID:
 		return generateUUID()
 	case schema.AutoTimestamp:
-		// Microsecond precision, FIXED WIDTH (.000000 keeps trailing
-		// zeros). Whole-second resolution made two rows written in the
-		// same second share an identical created_at, which stalls
-		// single-field cursor pagination on ties, the documented
-		// tiebreak. Microseconds match PostgreSQL TIMESTAMPTZ storage
-		// (its max), so the value round-trips losslessly on Postgres;
-		// SQLite TEXT keeps the exact string. Fixed width is load-
-		// bearing: SQLite compares these as strings, and a zero-stripped
-		// "…07.5Z" sorts AFTER "…07.5001Z" while being chronologically
-		// earlier, mis-ordering both the cursor keyset and ORDER BY.
 		return schema.FormatTimestamp(time.Now())
 	case schema.AutoIncrement:
-		return 0 // placeholder, real increment handled by DB
+		return 0
 	default:
 		return nil
 	}
 }
 
-// generateUUID creates a new random UUID v4 string.
 func generateUUID() string {
 	return uuid.NewV4().String()
 }
 
-// compile-time check
 var _ fmt.Stringer = (*entity.Entity)(nil)

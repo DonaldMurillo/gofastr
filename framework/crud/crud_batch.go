@@ -19,21 +19,10 @@ import (
 )
 
 // MaxBatchSize caps how many items a single _batch request may contain.
-// The cap exists to bound transaction duration and protect against
-// pathological payloads.
 const MaxBatchSize = 100
 
-// decodeBatchEnvelope decodes a _batch request body into v, but only after
-// checking that the top-level object carries exactly the keys the envelope
-// declares — each at most once, spelled exactly.
-//
-// encoding/json alone accepts all three smuggling shapes. A duplicated key is
-// last-one-wins, so a validator or proxy that inspects the FIRST "items"
-// array sees a different payload than the one this handler executes. Field
-// matching is case-insensitive, so "Items" binds to Items and slips past any
-// upstream check keyed on the exact name. And an unrecognised key is silently
-// dropped rather than refused. The envelope is a fixed, one-field shape; there
-// is nothing to gain by being lenient about it.
+// decodeBatchEnvelope decodes a _batch body into v once its top-level
+// object carries exactly the allowed keys, each once, spelled exactly.
 func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -48,19 +37,12 @@ func decodeBatchEnvelope(r *http.Request, v any, allowed ...string) error {
 	if err := checkEnvelopeKeys(raw, allowed); err != nil {
 		return err
 	}
-	// handler.UnmarshalStrict keeps the same refusal posture on the decode
-	// itself (exact-tag match, duplicates and unknown keys refused), so
-	// the vetted body needs no analyzer marker. UseNumber keeps every item
-	// number as its text: a float64 decode rounded an integer past 2^53 and
-	// refused a JSON field's 1e400, which a single write stores.
 	if err := handler.UnmarshalStrict(raw, v, handler.UseNumber()); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
 	return nil
 }
 
-// checkEnvelopeKeys walks the top-level object's keys without decoding its
-// values, so a hostile payload is rejected before anything binds.
 func checkEnvelopeKeys(raw []byte, allowed []string) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	tok, err := dec.Token()
@@ -99,23 +81,13 @@ func checkEnvelopeKeys(raw []byte, allowed []string) error {
 	return nil
 }
 
-// envelopeError is checkEnvelopeKeys' refusal: invalid_body, its detail
-// the phrase naming what is wrong with the envelope, so the message
-// translates and the reason code a client branches on stays invalid_body.
 func envelopeError(detail i18n.Phrase, params map[string]any) error {
 	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": i18n.NewError(detail, params)}}
 }
 
-// errBatchAborted is the sentinel returned from inside inTx when a batch
-// operation hit a per-item error and needs the whole tx to roll back. The
-// real failure detail lives on the per-item result.
 var errBatchAborted = errors.New("batch aborted")
 
-// batchResult is one entry in a _batch response. Exactly one of Data, Error,
-// or Skipped will be populated for any given index. When the tx rolled back
-// because a later item failed, earlier successes are still recorded with
-// their constructed Data, but the top-level Committed=false signals that
-// nothing was persisted.
+// batchResult is one entry in a _batch response: Data, Error or Skipped.
 type batchResult struct {
 	Index        int                 `json:"index"`
 	Data         map[string]any      `json:"data,omitempty"`
@@ -132,21 +104,12 @@ type BatchResponse struct {
 	Results   []batchResult `json:"results"`
 }
 
-// classifyDoErr reports one item's error as the single write refuses
-// it (crudRefusal): the same message in ctx's locale, reason code and
-// field errors. Validation, hook, state, transition and constraint
-// refusals are the caller's to act on and carry no driver text; anything
-// else is the generic "internal server error", with the error itself
-// only logged, so the per-item Error field cannot leak schema or
-// connection details.
+// classifyDoErr reports one item's error as the single write refuses it.
 func classifyDoErr(ctx context.Context, index int, err error, wireKeys ...func(string) string) batchResult {
 	f := crudRefusal(ctx, err, wireKeys...)
 	return batchResult{Index: index, Error: f.text, Reason: f.reason, Fields: f.fields, FieldReasons: f.fieldReasons}
 }
 
-// initSkipped pre-fills a results slice with skipped entries. Each entry is
-// later replaced with data or error as the loop progresses; anything left
-// skipped means the batch aborted before reaching that index.
 func initSkipped(n int) []batchResult {
 	out := make([]batchResult, n)
 	for i := range out {
@@ -155,11 +118,8 @@ func initSkipped(n int) []batchResult {
 	return out
 }
 
-// writeBatchResponse marshals the envelope and selects 200 vs 400 based on
-// whether the tx committed. When the batch was rolled back, per-item
-// success Data is scrubbed: a caller that reads it without checking
-// Committed=false would otherwise treat the constructed-but-not-
-// persisted shape as authoritative.
+// writeBatchResponse answers 200 when the batch committed, else 400 with
+// no item Data.
 func writeBatchResponse(w http.ResponseWriter, r *http.Request, resp BatchResponse) {
 	status := http.StatusOK
 	if !resp.Committed {
@@ -169,33 +129,43 @@ func writeBatchResponse(w http.ResponseWriter, r *http.Request, resp BatchRespon
 	writeJSONStatus(w, r, status, resp)
 }
 
-// scrubRolledBackData clears the Data field on per-item results whose
-// only error is "the surrounding tx rolled back". The contract: when
-// Committed=false, no per-item Data appears in the response. Errors and
-// Fields stay, they're the actionable parts.
 func scrubRolledBackData(results []batchResult) {
 	for i := range results {
 		results[i].Data = nil
 	}
 }
 
-// ============================================================================
-// Batch Create
-// ============================================================================
+// shapeBatchResults runs each committed item's body through the response
+// hooks after commit, as the single-row routes do; a hidden row or a hook
+// error answers the id only.
+func (ch *CrudHandler) shapeBatchResults(r *http.Request, results []batchResult, hidden []bool) {
+	for i, res := range results {
+		if res.Data == nil {
+			continue
+		}
+		if hidden[i] || ch.getScopeHidesRow(r, res.Data) {
+			results[i].Data = ch.identityOnly(res.Data)
+			continue
+		}
+		body, hookErr := ch.runResponseHooks(r, res.Data)
+		if hookErr != nil {
+			logf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
+			body = ch.identityOnly(res.Data)
+		}
+		results[i].Data = body
+	}
+}
 
 type batchCreateRequest struct {
 	Items []map[string]any `json:"items"`
 }
 
-// BatchCreate returns an http.HandlerFunc accepting POST /{table}/_batch with
-// {items:[...]}. All items run in one transaction; the first per-item error
-// rolls everything back. The response always includes a results array in
+// BatchCreate handles POST /{table}/_batch with {items:[...]}: every item
+// in one transaction, the first error rolling all back, and results in
 // input order.
 func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller rows, as on the single-row routes: never stored by a
-		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONOnly(r); err != nil {
 			writeContentTypeError(w, r, err)
@@ -223,10 +193,6 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": len(req.Items), "max": MaxBatchSize})
 			return
 		}
-		// The same fold refusal the single-record path applies pre-decode:
-		// two distinct item keys folding onto one column must be rejected
-		// deterministically, not resolved by map iteration order in
-		// unconvertMapKeys.
 		for i, item := range req.Items {
 			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
 				writeBatchItemError(w, r, i, err)
@@ -235,8 +201,6 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
-		// hidden marks items whose created row the caller's ReadScope hides;
-		// they answer with the id only, as the single Create route does.
 		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
@@ -267,56 +231,22 @@ func (ch *CrudHandler) BatchCreate() http.HandlerFunc {
 			}
 		}
 
-		// AfterGet over each item body, after the transaction has committed
-		// and the RAW record has gone to the bus, exactly as the single-record
-		// routes do it. Running it inside the closure (as the first version of
-		// this did) put a read hook in the write transaction: a hook that
-		// touches the DB deadlocks against a single-connection pool, a hook
-		// error rolls the whole batch back, and the bus received the redacted
-		// clone instead of the stored row.
-		// Skipped entirely when the transaction rolled back: writeBatchResponse
-		// scrubs every item's Data in that case, so hooking it is wasted work
-		// whose error path replaced a per-item failure report with an opaque
-		// 500.
 		if txErr == nil {
-			for i, res := range results {
-				if res.Data == nil {
-					continue
-				}
-				if hidden[i] || ch.getScopeHidesRow(r, res.Data) {
-					results[i].Data = ch.identityOnly(res.Data)
-					continue
-				}
-				body, hookErr := ch.runResponseHooks(r, res.Data)
-				if hookErr != nil {
-					// Degrade this item to its id, the batch is committed, and
-					// a 500 would lose the ids of rows already in the table.
-					logf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
-					body = ch.identityOnly(res.Data)
-				}
-				results[i].Data = body
-			}
+			ch.shapeBatchResults(r, results, hidden)
 		}
 		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
-// ============================================================================
-// Batch Update
-// ============================================================================
-
 type batchUpdateRequest struct {
 	Items []map[string]any `json:"items"`
 }
 
-// BatchUpdate returns an http.HandlerFunc accepting PATCH /{table}/_batch.
-// Each item must contain an "id" field naming the record to patch; remaining
-// fields are the partial update. All items share one transaction.
+// BatchUpdate handles PATCH /{table}/_batch with {items:[...]}, each item
+// naming its record by key, as BatchCreate.
 func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller rows, as on the single-row routes: never stored by a
-		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONOnly(r); err != nil {
 			writeContentTypeError(w, r, err)
@@ -344,8 +274,6 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			writeJSONError(w, r, http.StatusBadRequest, reasonBatchTooLarge, map[string]any{"size": len(req.Items), "max": MaxBatchSize})
 			return
 		}
-		// Fold refusal, same as BatchCreate: two distinct item keys folding
-		// onto one column are rejected before the transaction opens.
 		for i, item := range req.Items {
 			if err := ch.itemKeyFoldsUnambiguous(item); err != nil {
 				writeBatchItemError(w, r, i, err)
@@ -354,15 +282,12 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 		}
 
 		results := initSkipped(len(req.Items))
-		// hidden marks items whose written row the caller's ReadScope hides;
-		// they answer with the id only, as the single Update route does.
 		hidden := make([]bool, len(req.Items))
 		txErr := ch.inTx(WithAuditRequest(r.Context(), r), func(ctx context.Context, ch *CrudHandler) error {
 			for i, item := range req.Items {
 				body := ch.unconvertMapKeys(item)
 				id, ok := entity.RowKey(body, ch.keyCols(), nil)
 				if !ok {
-					// The item names its record under the key's wire names.
 					keys := make([]string, len(ch.keyCols()))
 					for k, c := range ch.keyCols() {
 						keys[k] = ch.convertKey(c)
@@ -404,55 +329,22 @@ func (ch *CrudHandler) BatchUpdate() http.HandlerFunc {
 			}
 		}
 
-		// AfterGet over each item body, after the transaction has committed
-		// and the RAW record has gone to the bus, exactly as the single-record
-		// routes do it. Running it inside the closure (as the first version of
-		// this did) put a read hook in the write transaction: a hook that
-		// touches the DB deadlocks against a single-connection pool, a hook
-		// error rolls the whole batch back, and the bus received the redacted
-		// clone instead of the stored row.
-		// Skipped entirely when the transaction rolled back: writeBatchResponse
-		// scrubs every item's Data in that case, so hooking it is wasted work
-		// whose error path replaced a per-item failure report with an opaque
-		// 500.
 		if txErr == nil {
-			for i, res := range results {
-				if res.Data == nil {
-					continue
-				}
-				if hidden[i] || ch.getScopeHidesRow(r, res.Data) {
-					results[i].Data = ch.identityOnly(res.Data)
-					continue
-				}
-				body, hookErr := ch.runResponseHooks(r, res.Data)
-				if hookErr != nil {
-					// Degrade this item to its id, the batch is committed, and
-					// a 500 would lose the ids of rows already in the table.
-					logf("crud: after-get hook failed on batch response, returning id only: %v", hookErr)
-					body = ch.identityOnly(res.Data)
-				}
-				results[i].Data = body
-			}
+			ch.shapeBatchResults(r, results, hidden)
 		}
 		writeBatchResponse(w, r, BatchResponse{Committed: txErr == nil, Results: results})
 	}
 }
 
-// ============================================================================
-// Batch Delete
-// ============================================================================
-
 type batchDeleteRequest struct {
 	IDs []string `json:"ids"`
 }
 
-// BatchDelete returns an http.HandlerFunc accepting DELETE /{table}/_batch
-// with {ids:[...]}. All deletes share one transaction.
+// BatchDelete handles DELETE /{table}/_batch with {ids:[...]}, as
+// BatchCreate.
 func (ch *CrudHandler) BatchDelete() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(withEventStamps(r.Context()))
-		// Per-caller rows, as on the single-row routes: never stored by a
-		// shared cache, on every arm (Delete in crud.go says why).
 		w.Header().Set("Cache-Control", "no-store")
 		if err := enforceJSONOnly(r); err != nil {
 			writeContentTypeError(w, r, err)

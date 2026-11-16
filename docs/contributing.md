@@ -176,6 +176,15 @@ These are the guide's Hard rules 10 to 12 in full.
     the answer is always yes. Resolve a merge conflict with main as soon
     as it shows up (merge main in, no force-push).
 
+**Stacked PRs.** A series of PRs that build on each other lands as one
+GitHub stack, merged all or nothing. Base each PR on the one below it,
+then `./scripts/stack.sh create <bottom> ... <top>`, and when every
+layer is green and triaged, `./scripts/stack.sh merge <top>`.
+`scripts/stack.sh view <N>` shows a PR's stack. `gh stack` does the same
+where GraphQL is reachable; Claude Code cloud sessions cannot reach it,
+so there the script, and the REST fallback in `pr-review-findings.sh`,
+are the way.
+
 ## Styling and the design system
 
 The full text of Hard rules 7 to 9. Each is also a registry entry

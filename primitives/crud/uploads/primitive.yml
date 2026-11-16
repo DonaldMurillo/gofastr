@@ -19,10 +19,86 @@ invariants:
       - test: framework/crud.TestEnforceJSONContentType
       - test: framework/crud.TestCreate_RejectsMissingContentType
       - test: framework/crud.TestCrossSiteMultipartCreateRefused
+      - test: framework/crud.TestBatchRefusesMultipartLabel
+      - test: framework/crud.TestTransitionRefusesMultipart
   - id: failed-write-leaves-no-upload
     rule: A file saved while parsing a multipart body is deleted on every failure path where its storage delete succeeds; a failed delete is logged.
     enforced_by:
       - test: framework/crud.TestFailedCreateLeavesNoOrphanUpload
+      - test: framework/crud.TestSavedUploadDeleteOutlivesCancel
+      - test: framework/crud.TestSavedKeyLedgerKeepsFailedDelete
+  - id: body-caps-by-media-type
+    rule: A multipart body, its media type matched case-insensitively, is capped at MaxMultipartBodyBytes and any other body at MaxJSONBodyBytes, and a body over its cap answers 413.
+    enforced_by:
+      - test: framework/crud.TestMultipartMixedCaseTypeLargeFile
+      - test: framework/crud.TestMultipartCreateAcceptsLargeFile
+      - test: framework/crud.TestMultipartCreateOverWireCapIs413
+      - test: framework/crud.TestDecodeJSONBodyReadErrors
+  - id: json-body-checks
+    rule: A JSON write body that is not UTF-8, or holds two keys folding to one column, is refused 400, and a decode error's detail is phrased, never the decoder's text.
+    enforced_by:
+      - test: framework/crud.TestJSONBodyRefusesBadUTF8
+      - test: framework/crud.TestMapBodyRejectsCaseFoldedKeys
+      - test: framework/crud.TestJSONDecodeErrorsArePhrasedOverHTTP
+  - id: multipart-form-shape
+    rule: A multipart key repeated on a scalar field is refused (the first in sorted order named), repeats on a JSON field collect into a list, a bool's hidden "false" plus its checkbox is one value, and two file parts under one key are refused.
+    enforced_by:
+      - test: framework/crud.TestMultipartDuplicateKeysRefused
+      - test: framework/crud.TestMultipartRefusalIsDeterministic
+      - test: framework/crud.TestMultipartBrowserFormShape
+      - test: framework/crud.TestMultipartTwoFilePartsOneKeyRefused
+  - id: multipart-form-coercion
+    rule: A multipart Decimal stays the exact string, a Float converts only in the JSON path's canonical spelling, and a blank Bool is not false.
+    enforced_by:
+      - test: framework/crud.TestMultipartDecimalStaysAString
+      - test: framework/crud.TestMultipartFloatTakesCanonicalSpellingOnly
+      - test: framework/crud.TestMultipartBlankBoolIsNotFalse
+  - id: file-part-goes-to-a-written-column
+    rule: A file part is stored only for an Image/File column the write sets, so a read-only or hidden column takes none except under WithServerWrites.
+    enforced_by:
+      - test: framework/crud.TestUnwritableFilePartIsNotStored
+      - test: framework/crud.TestServerWritesTakeReadOnlyFilePart
+  - id: image-pipeline-scope
+    rule: Only an Image field runs the image pipeline and accepts only image types, a nil FieldImageDerivers entry opts its field out, and the column stores the storage key, not the URL.
+    enforced_by:
+      - test: framework/crud.TestDerive_NotRunForFileFields
+      - test: framework/crud.TestMultipartImageFieldRefusesOtherTypes
+      - test: framework/crud.TestDerive_PerFieldNilOptsOut
+      - test: framework/crud.TestUploadColumnHoldsStorageKey
+  - id: safe-media-values
+    rule: An Image/File value or a storage_ref in its variants column is accepted only when urlsafe.Resource admits it and it holds no "..".
+    enforced_by:
+      - test: framework/crud.TestIsSafeMediaURL
+      - test: framework/crud.TestValidateMediaURLs_Direct
+      - test: framework/crud.TestVariantsRefuseUnsafeScheme
+  - id: storage-failure-is-fixed-500
+    rule: A storage backend failing a Save during the parse answers a fixed 500 whose body carries none of the backend's text.
+    enforced_by:
+      - test: framework/crud.TestUploadSaveErrorIsFixed500
+  - id: key-provenance
+    rule: A write may set a relative storage key, in a file field or a variants storage_ref, only when this write saved it (the parse or WithUploadedKeys, which accumulates), the row already holds it read under the caller's owner and tenant scope and own id, or the write is WithServerWrites; an http(s) URL is always allowed.
+    enforced_by:
+      - test: framework/crud.TestJSONCreateRefusesForeignKey
+      - test: framework/crud.TestJSONCreateRefusesForeignVariant
+      - test: framework/crud.TestMultipartRefusesForeignVariant
+      - test: framework/crud.TestInProcessCreateRefusesKey
+      - test: framework/crud.TestUpsertCurrentKeyIsCallerScoped
+      - test: framework/crud.TestCurrentMediaKeysAreTenantScoped
+      - test: framework/crud.TestMediaCheckReadsOwnID
+      - test: framework/crud.TestWithUploadedKeysAccumulates
+      - test: framework/crud.TestDoUpdate_ValidatesMediaURL
+  - id: released-objects-deleted-after-commit
+    rule: A write deletes the stored objects, renditions included, its row let go only after its transaction commits and only when no row of the table still names them; an external URL is never deleted, a write with no commit queue deletes nothing, and the delete outlives the request.
+    enforced_by:
+      - test: framework/crud.TestDeleteRemovesStoredFile
+      - test: framework/crud.TestBulkCleanupKeepsReferencedFiles
+      - test: framework/crud.TestBulkCleanupWaitsForCommit
+      - test: framework/crud.TestRolledBackDeleteKeepsFile
+      - test: framework/crud.TestDeleteLeavesExternalURL
+      - test: framework/crud.TestPurgeRemovesStoredFile
+      - test: framework/crud.TestTxBoundDeleteKeepsStoredFile
+      - test: framework/crud.TestReleasedObjectDeleteOutlivesCancel
+      - test: framework/crud.TestReleasedObjectDeleteRecoversPanic
 decisions:
   - id: image-pipeline-behind-an-interface
     status: accepted
@@ -30,3 +106,11 @@ decisions:
     rejected:
       - option: Import framework/image from crud or file.
         why: Every binary would link every image codec, whether or not the app touches images.
+  - id: body-too-large-by-text
+    status: accepted
+    decision: A body over its cap is recognised as *http.MaxBytesError and, failing that, by the error text "request body too large".
+    rejected:
+      - option: Match the typed error only.
+        why: Some read paths report the limit as a plain error carrying only that text.
+    revisit_if: Every path that reads a capped body returns an error wrapping *http.MaxBytesError.
+    upholds: [body-caps-by-media-type]

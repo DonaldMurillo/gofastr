@@ -26,66 +26,32 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/file"
 )
 
-// MaxMultipartMemory is the in-memory portion of a multipart upload before
-// spilling to disk. Files larger than this still upload, they just stream
-// through a temp file.
+// MaxMultipartMemory is how much of a multipart body is held in memory
+// before the rest spills to a temp file.
 const MaxMultipartMemory = 32 << 20 // 32 MiB
 
-// MaxMultipartBodyBytes caps the total wire size of a multipart request
-// accepted by the CRUD write handlers. MaxMultipartMemory above is the
-// in-RAM spill threshold, not a body cap, without a wire cap a hostile
-// client can stream an unbounded body into parser temp files (and, via
-// non-file form values, straight into memory). 64 MiB leaves headroom
-// over the 32 MiB per-file ProcessFileField cap for framing and form
-// fields. Requests over the cap are rejected 413.
+// MaxMultipartBodyBytes caps the wire size of a multipart write; a larger
+// body answers 413.
 const MaxMultipartBodyBytes int64 = 64 << 20 // 64 MiB
 
-// MaxJSONBodyBytes caps the size of a JSON request body the CRUD handlers
-// will read. 1 MiB is large enough for any realistic single record or
-// batch envelope, while bounding the memory an unauthenticated caller can
-// pin per request.
+// MaxJSONBodyBytes caps the size of a JSON write body; a larger body answers 413.
 const MaxJSONBodyBytes int64 = 1 << 20 // 1 MiB
 
-// errStorageNotConfigured is returned when a request includes file parts but
-// the handler has no storage backend.
 var errStorageNotConfigured = errors.New("server has no file storage configured")
 
-// errUnsupportedMediaType is returned by enforceJSONContentType when the
-// caller sends a JSON-only endpoint a body without a JSON Content-Type.
 var errUnsupportedMediaType = errors.New("unsupported media type")
 
-// errBodyTooLarge is returned by the JSON decoder when the body exceeds
-// MaxJSONBodyBytes. Callers map it to 413 Request Entity Too Large.
 var errBodyTooLarge = errors.New("request body too large")
 
-// isMultipart reports whether the request carries a multipart/form-data body.
-// Parsed with mime.ParseMediaType, media types are case-insensitive
-// (RFC 9110 §8.3.1) and lowercased by the parser, so this agrees with
-// enforceJSONContentType for a header like `Multipart/Form-Data; …`. A
-// case-sensitive prefix check here let such a request through the gate
-// but not the multipart branch, so the JSON 1 MiB body cap applied and
-// >1 MiB uploads failed with a bogus 400.
 func isMultipart(r *http.Request) bool {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	return err == nil && mediaType == "multipart/form-data"
 }
 
-// errCrossSiteForm is returned by enforceJSONContentType for a multipart
-// write another site sent. Callers map it to 403 Forbidden.
 var errCrossSiteForm = errors.New("cross-site form write")
 
-// enforceJSONContentType refuses requests whose Content-Type isn't either
-// application/json or multipart/form-data. Returns errUnsupportedMediaType
-// for text/plain, application/x-www-form-urlencoded, missing, or any other
-// type, these are the "simple-request" content types a browser can send
-// cross-origin without a CORS preflight, so accepting them on JSON-only
-// write endpoints opens a CSRF vector.
-//
-// multipart/form-data is one of those types too: a page on another site,
-// a sibling subdomain included, can POST it with the victim's cookies and
-// no preflight. The record routes take it for file uploads, so a
-// multipart write must also pass the shared cross-site guard
-// (handler.IsCrossSiteRequest), or it gets errCrossSiteForm.
+// enforceJSONContentType admits application/json, and multipart/form-data
+// that passes the cross-site guard.
 func enforceJSONContentType(r *http.Request) error {
 	mediaType, err := writeMediaType(r)
 	if err != nil {
@@ -103,9 +69,7 @@ func enforceJSONContentType(r *http.Request) error {
 	return errUnsupportedMediaType
 }
 
-// enforceJSONOnly is enforceJSONContentType for the routes that never
-// take a form: _batch and transitions. A browser cannot send
-// application/json cross-site without a preflight.
+// enforceJSONOnly admits application/json only, for _batch and transitions.
 func enforceJSONOnly(r *http.Request) error {
 	mediaType, err := writeMediaType(r)
 	if err != nil || mediaType != "application/json" {
@@ -126,7 +90,6 @@ func writeMediaType(r *http.Request) (string, error) {
 	return mediaType, nil
 }
 
-// writeContentTypeError answers a refused write content type.
 func writeContentTypeError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusUnsupportedMediaType
 	if errors.Is(err, errCrossSiteForm) {
@@ -135,14 +98,6 @@ func writeContentTypeError(w http.ResponseWriter, r *http.Request, err error) {
 	writeJSONError(w, r, status, i18n.StatusPhrase(status))
 }
 
-// limitRequestBody wraps r.Body with the http.MaxBytesReader matching the
-// request's Content-Type: JSON bodies cap at MaxJSONBodyBytes, multipart
-// bodies at MaxMultipartBodyBytes. One cap for both would break whichever
-// side it doesn't fit, a JSON-sized cap rejects every multipart upload
-// above 1 MiB (multipart framing plus file parts dwarf a JSON record), and
-// a multipart-sized cap would let unauthenticated callers pin ~64 MiB of
-// parser memory with a JSON body. Callers map the resulting
-// errBodyTooLarge to 413.
 func limitRequestBody(w http.ResponseWriter, r *http.Request) {
 	if isMultipart(r) {
 		r.Body = http.MaxBytesReader(w, r.Body, MaxMultipartBodyBytes)
@@ -151,16 +106,11 @@ func limitRequestBody(w http.ResponseWriter, r *http.Request) {
 	limitJSONBody(w, r)
 }
 
-// limitJSONBody wraps r.Body with http.MaxBytesReader so JSON decoding
-// caps at MaxJSONBodyBytes. The wrapped body is installed back onto the
-// request so other readers see the same limit.
 func limitJSONBody(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, MaxJSONBodyBytes)
 }
 
-// readBodyBytes drains r.Body (already wrapped by limitRequestBody) into
-// memory, mapping the body-limit error to errBodyTooLarge. Strict key
-// validation needs the raw bytes; the 1 MiB JSON cap bounds the buffer.
+// readBodyBytes reads a capped r.Body; it refuses a body that is not UTF-8.
 func readBodyBytes(r *http.Request) ([]byte, error) {
 	//gofastr:allow(unboundedbody) every production caller caps the body first (limitRequestBody); decodeJSONBody is test-only
 	data, err := io.ReadAll(r.Body)
@@ -168,45 +118,27 @@ func readBodyBytes(r *http.Request) ([]byte, error) {
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			return nil, errBodyTooLarge
 		}
-		// http.MaxBytesReader may also report a generic
-		// "http: request body too large" error string on some Go
-		// versions / paths, match by substring as a fallback.
 		if strings.Contains(err.Error(), "request body too large") {
 			return nil, errBodyTooLarge
 		}
 		return nil, bodyReadError(err)
 	}
-	// Every JSON body read through readBodyBytes: refuse one that is not
-	// UTF-8 before a decode turns its bad bytes into U+FFFD. The batch
-	// envelope reads its own body (decodeBatchEnvelope) and relies on
-	// handler.UnmarshalStrict's check.
 	if err := handler.CheckUTF8(data); err != nil {
 		return nil, err
 	}
 	return data, nil
 }
 
-// bodyDecodeError is a tokenise failure on a body crud walks by hand,
-// under the invalid_body frame. The detail is the phrased
-// handler.JSONErrorDetail, never the decoder's text: that names Go types
-// ("Go value of type map[string]interface {}") and reads as English in
-// every locale. err stays reachable for logs; it is not Phrased, so the
-// body's reason remains invalid_body.
+// bodyDecodeError is an invalid_body error with a phrased detail.
 func bodyDecodeError(err error) error {
 	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": handler.JSONErrorDetail(err)}, Err: err}
 }
 
-// bodyReadError is bodyDecodeError for a read that failed before any
-// decode ran (handler.BodyReadDetail).
 func bodyReadError(err error) error {
 	return &i18n.Error{Reason: reasonInvalidBody, Params: map[string]any{"detail": handler.BodyReadDetail(err)}, Err: err}
 }
 
-// decodeJSONBody decodes r.Body into v with the request's body already
-// wrapped by limitJSONBody, through handler.UnmarshalStrict so duplicate
-// and case-folded top-level keys are refused instead of silently resolved.
-// Returns errBodyTooLarge if the limit fired, or a 400 *handler.Error
-// otherwise. The caller must have applied limitJSONBody first.
+// decodeJSONBody decodes a capped r.Body into v with handler.UnmarshalStrict.
 func decodeJSONBody(r *http.Request, v any) error {
 	data, err := readBodyBytes(r)
 	if err != nil {
@@ -215,29 +147,9 @@ func decodeJSONBody(r *http.Request, v any) error {
 	return handler.UnmarshalStrict(data, v)
 }
 
-// readRequestBody decodes the incoming request into a snake_cased body map.
-// Multipart requests run through parseMultipartBody; both multipart and JSON
-// requests resolve wire keys and column names back to the schema's fields.
-//
-// The second return value lists the storage keys a multipart parse already
-// saved (nil for JSON bodies). The write handlers pass them to
-// deleteSavedUploads on every failure path after the parse, so a request
-// whose row never lands leaves no orphaned file in storage; a successful
-// write keeps every key.
-//
-// JSON bodies are checked with crud's own key fold BEFORE the decode: two
-// distinct wire keys that resolve to one column (CaseCamel's "bodyText" and
-// "body_text", or a case-folded pair) are refused with 400 rather than
-// resolved by map iteration order, which made the stored value
-// nondeterministic per request. Unknown keys that collide with nothing still
-// pass through; that contract is pinned by TestWireName_RoundTripsBothCasings.
-//
-// Numbers are decoded with UseNumber and normalized to exact int64/float64:
-// a float64 decode silently rounds integer literals above 2^53 before any
-// layer sees them (see numberexact.go).
-//
-// Pre-condition: the caller has already validated Content-Type via
-// enforceJSONContentType and wrapped r.Body with limitRequestBody.
+// readRequestBody decodes a JSON or multipart write body into a map keyed by
+// column, and returns the storage keys a multipart parse saved, which the
+// caller deletes (deleteSavedUploads) if the write then fails.
 func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, []string, error) {
 	if isMultipart(r) {
 		return ch.parseMultipartBody(r)
@@ -256,30 +168,10 @@ func (ch *CrudHandler) readRequestBody(r *http.Request) (map[string]any, []strin
 	return ch.unconvertMapKeys(body), nil, nil
 }
 
-// parseMultipartBody reads a multipart request and returns a body map suitable
-// for the do* CRUD primitives, plus the storage keys it saved along the way.
-// File parts whose name matches an Image/File field on the entity are saved
-// through the handler's Storage and replaced with the resulting URL string.
-// All other form values are mapped onto fields by name with type coercion
-// driven by the schema (Int/Float/Bool).
-//
-// The saves happen at parse time, BEFORE validation, hooks, or the INSERT
-// run — a write that fails any later step must compensate-delete them or the
-// objects are orphaned in storage with no row referencing them (an
-// unbounded disk-fill for an authenticated caller who can repeat the
-// failure). The second return value is the ledger of everything written;
-// the caller passes it to deleteSavedUploads on every failure path. A parse
-// that itself fails mid-way returns the keys saved so far for the same
-// compensation.
-//
-// The handler must have Storage set; otherwise the function errors. Callers
-// should validate Content-Type with isMultipart first and wrap r.Body with
-// limitRequestBody so the multipart wire cap applies.
+// parseMultipartBody is readRequestBody for a multipart body. On error it
+// still returns the keys saved so far.
 func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []string, error) {
 	if err := r.ParseMultipartForm(MaxMultipartMemory); err != nil {
-		// An over-cap body is a size problem, not a malformed request:
-		// map it to errBodyTooLarge so callers answer 413 (matching the
-		// JSON path) instead of a 400 the client would retry verbatim.
 		var mbe *http.MaxBytesError
 		if errors.As(err, &mbe) || strings.Contains(err.Error(), "request body too large") {
 			return nil, nil, errBodyTooLarge
@@ -289,9 +181,6 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 
 	body := make(map[string]any)
 
-	// Only a column the write will set takes a file: the write skips a
-	// read-only or hidden one (bar server writes), and a file stored for
-	// it would be an object no row references.
 	fileFieldNames := make(map[string]schema.FieldType, len(ch.snapshotFields()))
 	for _, f := range ch.snapshotFields() {
 		if (f.ReadOnly || f.Hidden) && !serverWrites(r.Context()) {
@@ -301,14 +190,9 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		case schema.Image, schema.File:
 			fileFieldNames[f.Name] = f.Type
 		default:
-			// Not a file-bearing field: nothing to collect.
 		}
 	}
 
-	// rec watches every write the parse makes (the primary object per file
-	// part plus any renditions a deriver produces). It wraps ch.Storage
-	// only for the duration of the parse; a successful write keeps every
-	// key, so the ledger is simply dropped on the success path.
 	var rec *savedKeyLedger
 	if r.MultipartForm != nil {
 		keys := make(map[string]any, len(r.MultipartForm.Value)+len(r.MultipartForm.File))
@@ -321,30 +205,12 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 		if err := ch.itemKeyFoldsUnambiguous(keys); err != nil {
 			return nil, nil, err
 		}
-		// Plain form values first. A repeated form key is either a
-		// multi-select (HTML submits one part per selected value) or a
-		// smuggling attempt: the JSON body path REFUSES duplicate keys
-		// outright (pinned by TestMapBodyRejectsDuplicateKeys), because
-		// a duplicate lets a proxy or WAF see a different payload than
-		// the server executes. One logical write surface must not have a
-		// weaker duplicate-key posture just because the Content-Type
-		// differs. The carve-out: a schema.JSON column is the list-valued
-		// shape (an entity's tags/multi-select), so repeats COLLECT into
-		// one array, mirroring ?field_in= multi-value semantics. Every
-		// scalar field keeps the strict refusal: silently keeping
-		// vals[0] dropped the rest of what a legitimate client sent.
-		//
-		// Keys go in sorted order, so a body with two refusable keys
-		// names the same one on every request.
 		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.Value)) {
 			vals := r.MultipartForm.Value[key]
 			column := ch.wireKeyColumn(key)
 			if len(vals) == 0 {
 				continue
 			}
-			// The HTML checkbox idiom: a bool field's hidden "false"
-			// followed by its checked box. Exactly that pair is one
-			// value, the box's, as the runtime folds it on the JSON path.
 			if len(vals) == 2 && vals[0] == "false" && ch.isBoolColumn(column) {
 				body[column] = coerceFormValue(ch.Entity, column, vals[1])
 				continue
@@ -364,10 +230,6 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 			return nil, rec.saved(), i18n.NewError(reasonDupFormKey, map[string]any{"key": strconv.Quote(key)})
 		}
 
-		// File parts override values when the same key is present. Two
-		// file parts under one key are the file-side smuggling shape:
-		// the column holds ONE URL, so keep-first silently drops the
-		// second part a proxy may have inspected. Refuse.
 		for _, key := range slices.Sorted(maps.Keys(r.MultipartForm.File)) {
 			headers := r.MultipartForm.File[key]
 			column := ch.wireKeyColumn(key)
@@ -396,7 +258,6 @@ func (ch *CrudHandler) parseMultipartBody(r *http.Request) (map[string]any, []st
 	return body, rec.saved(), nil
 }
 
-// isBoolColumn reports whether name is a Bool field of the entity.
 func (ch *CrudHandler) isBoolColumn(name string) bool {
 	for _, f := range ch.snapshotFields() {
 		if f.Name == name {
@@ -406,11 +267,7 @@ func (ch *CrudHandler) isBoolColumn(name string) bool {
 	return false
 }
 
-// saveFilePart opens one multipart file header, runs ProcessFileField, and
-// stores the resulting storage key on body[key]. For a schema.Image field with an
-// ImageDeriver configured, renditions and placeholder metadata are derived
-// too and spread across whichever sibling columns the entity declares.
-// store is the (possibly recording) storage view the parse writes through.
+// saveFilePart saves one file part and sets body[key] to its storage key.
 func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, key string, fieldType schema.FieldType, fh *multipart.FileHeader, body map[string]any) error {
 	f, err := fh.Open()
 	if err != nil {
@@ -422,10 +279,7 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	if ch.StripUploadMetadata {
 		opts = append(opts, file.StripMetadata())
 	}
-	// Only Image fields get the pipeline. A File field is any binary, a
-	// PDF, a CSV, and decoding it as an image would fail every upload.
 	if fieldType == schema.Image {
-		// An image field takes a raster image, sniffed from its bytes.
 		opts = append(opts, file.AllowTypes(file.ImageTypes...))
 		if d := ch.deriverFor(key); d != nil {
 			opts = append(opts, file.WithImageDeriver(d))
@@ -436,9 +290,6 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	if err != nil {
 		return fmt.Errorf("upload %q: %w", key, err)
 	}
-	// The column holds the storage key: provenance, erasure and the
-	// screens' link builder (which escapes it) all read it as one. ff.URL
-	// is the escaped URL form and differs for a name with '#' or '%'.
 	body[key] = ff.StorageRef
 	if ff.Image != nil {
 		applyDerivedColumns(ch.Entity, key, ff.Image, body)
@@ -446,10 +297,8 @@ func saveFilePart(ctx context.Context, ch *CrudHandler, store upload.Storage, ke
 	return nil
 }
 
-// deriverFor resolves the deriver for one image field: a per-field override
-// when present, otherwise the handler-wide default. A per-field entry of nil
-// is honoured as "no pipeline for this field", so a single noisy field can be
-// opted out without unpicking the app-wide config.
+// deriverFor is field's FieldImageDerivers entry, nil included, else
+// ImageDeriver.
 func (ch *CrudHandler) deriverFor(field string) file.ImageDeriver {
 	if ch.FieldImageDerivers != nil {
 		if d, ok := ch.FieldImageDerivers[field]; ok {
@@ -459,13 +308,8 @@ func (ch *CrudHandler) deriverFor(field string) file.ImageDeriver {
 	return ch.ImageDeriver
 }
 
-// derivedColumnSuffixes maps each derived artifact to the sibling column
-// that receives it. An Image field named "cover" populates
-// "cover_blurhash", "cover_placeholder", and "cover_variants", but only
-// those the entity actually declares, so adopting one is a matter of adding
-// the column and nothing else. Columns that do not exist are skipped
-// silently; that is what makes this additive rather than a schema
-// requirement.
+// derivedColumnSuffixes names the sibling columns an Image field's derived
+// values go to, when the entity declares them.
 var derivedColumnSuffixes = struct {
 	blurHash    string
 	placeholder string
@@ -476,8 +320,6 @@ var derivedColumnSuffixes = struct {
 	variants:    "_variants",
 }
 
-// applyDerivedColumns writes derived values onto body for the sibling
-// columns the entity declares.
 func applyDerivedColumns(ent *entity.Entity, field string, d *file.ImageDerivatives, body map[string]any) {
 	declared := make(map[string]schema.FieldType, len(ent.GetFields()))
 	for _, f := range ent.GetFields() {
@@ -497,18 +339,12 @@ func applyDerivedColumns(ent *entity.Entity, field string, d *file.ImageDerivati
 		set(derivedColumnSuffixes.placeholder, d.Placeholder)
 	}
 	if len(d.Variants) > 0 {
-		// Marshalled here rather than handed over as a slice: the column is
-		// declared schema.JSON, and the write path expects a value the
-		// driver can bind directly.
 		if raw, err := json.Marshal(d.Variants); err == nil {
 			set(derivedColumnSuffixes.variants, string(raw))
 		}
 	}
 }
 
-// coerceFormValue attempts a minimal type coercion based on the schema field
-// type so an int or bool field doesn't end up as a string. Unknown fields and
-// String/Text/Enum stay as strings.
 func coerceFormValue(ent *entity.Entity, name, raw string) any {
 	for _, f := range ent.GetFields() {
 		if f.Name != name {
@@ -520,21 +356,12 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 				return n
 			}
 		case schema.Decimal:
-			// A decimal is the exact string the JSON path takes; a float
-			// would round it, and the decimal validator refuses one.
 			return raw
 		case schema.Float:
-			// The JSON path's canonical spelling: no NaN/Inf, hex or
-			// underscores. Anything else stays a string, which schema
-			// validation refuses.
 			if n, ok := floatText(raw); ok {
 				return n
 			}
 		case schema.Bool:
-			// A blank stays "", which dropEmptyFormValues reads as "not
-			// provided", as on the JSON path: a stored NULL drawn as a
-			// select with its empty choice selected saved as false
-			// (2026-10-27 D19).
 			switch strings.ToLower(raw) {
 			case "true", "1", "yes", "on":
 				return true
@@ -542,27 +369,13 @@ func coerceFormValue(ent *entity.Entity, name, raw string) any {
 				return false
 			}
 		default:
-			// Everything else stays the raw form string. A new type that
-			// needs coercion belongs above; landing here silently means
-			// the value reaches the driver as text.
 		}
 		return raw
 	}
 	return raw
 }
 
-// validateMediaURLs scans body for fields whose schema declares Image or
-// File and refuses unsafe URL shapes. The multipart upload path runs
-// uploaded files through a sniffer; the JSON path stores whatever
-// string the caller supplied, which becomes an `<img src>` / `<a href>`
-// later. A `javascript:`/`data:`/`file:` value there is stored XSS;
-// path-traversal (`../etc/passwd`) bypasses the storage's path scope.
-// Only http(s) URLs, relative paths within the upload tree, and bare
-// filenames survive.
 func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
-	// bodyMediaRefs covers the field itself and every storage_ref in its
-	// `<field>_variants` column: the renditions render into the same
-	// <img srcset> and reach the same storage delete as the original.
 	for _, m := range ch.bodyMediaRefs(body) {
 		if !isSafeMediaURL(m.ref) {
 			return &ValidationError{fields: map[string][]schema.Violation{m.field: {{Reason: reasonUnsafeURL}}}}
@@ -571,16 +384,8 @@ func (ch *CrudHandler) validateMediaURLs(body map[string]any) error {
 	return nil
 }
 
-// isSafeMediaURL is true for URLs / paths that may be persisted into an
-// Image or File field. Allow-list (rather than block-list) because the
-// stored value flows into HTML attributes and HTTP redirects later,
-// any scheme not on this list becomes a phishing / XSS / SSRF vector
-// when rendered.
-//
-// The scheme allow-list is core-ui/urlsafe's Resource policy (http(s) plus
-// relative references), not a local copy of it. The traversal check on top is
-// storage-specific: a stored key must not climb out of the storage root, and
-// urlsafe deliberately allows "../" because a relative href legitimately may.
+// isSafeMediaURL admits what urlsafe.Resource admits, minus any value
+// containing "..".
 func isSafeMediaURL(s string) bool {
 	if strings.Contains(s, "..") {
 		return false
@@ -588,37 +393,19 @@ func isSafeMediaURL(s string) bool {
 	return urlsafe.OK(s, urlsafe.Resource)
 }
 
-// savedKeyLedger is an upload.Storage view that records every key written
-// through it, so a request whose row never lands can compensate-delete the
-// files its multipart parse already saved. It is the request-parse twin of
-// file/filefield.go's recordingStore: ProcessFileField saves the primary
-// object (and any renditions a deriver produces) at parse time, before
-// validation, hooks, or the INSERT run — keys the caller never chose and
-// cannot name afterwards. Watching the writes is the only seam that works
-// for every deriver, third-party ones included.
-//
-// Delete unrecords only a delete that actually removed the object (nil, or
-// os.ErrNotExist, meaning it was never there): a failed delete leaves the
-// bytes in storage, and dropping the key anyway would hide exactly the
-// object whose compensation failed.
 type savedKeyLedger struct {
 	upload.Storage
 	mu   sync.Mutex
 	keys []string
 }
 
-// storageSaveError is the storage backend failing a Save during the
-// multipart parse. It is the server's failure, not the request's, and its
-// text is the backend's (a path, a bucket, a host), so the handler answers
-// it with a fixed 500 and logs the detail; see writeBodyError.
 type storageSaveError struct{ err error }
 
 func (e *storageSaveError) Error() string { return "storage save: " + e.err.Error() }
 func (e *storageSaveError) Unwrap() error { return e.err }
 
-// writeBodyError answers a readRequestBody failure: 413 for an oversized
-// body, a fixed 500 for a storage backend failure, and 400 with the
-// detail for anything the request itself got wrong.
+// writeBodyError answers a readRequestBody failure: 413, a fixed 500 for a
+// storage failure, or 400.
 func writeBodyError(w http.ResponseWriter, r *http.Request, err error) {
 	if errors.Is(err, errBodyTooLarge) {
 		writeJSONError(w, r, http.StatusRequestEntityTooLarge, i18n.StatusPhrase(http.StatusRequestEntityTooLarge))
@@ -653,8 +440,6 @@ func (l *savedKeyLedger) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-// saved returns a snapshot of the keys written through the ledger and not
-// since deleted.
 func (l *savedKeyLedger) saved() []string {
 	if l == nil {
 		return nil
@@ -666,7 +451,6 @@ func (l *savedKeyLedger) saved() []string {
 	return out
 }
 
-// deleteKey removes the first occurrence of key from keys.
 func deleteKey(keys []string, key string) []string {
 	for i, k := range keys {
 		if k == key {
@@ -676,20 +460,11 @@ func deleteKey(keys []string, key string) []string {
 	return keys
 }
 
-// deleteSavedUploads compensates for files saved while parsing a multipart
-// write whose row never landed: validation failure, a hook rejection, a
-// missing id on update, a rolled-back insert. Best-effort by design — the
-// caller is already returning the real error, and a failed cleanup must not
-// replace it. A nil ledger or a failed Save mid-parse leaves the keys that
-// WERE saved; only a successful write keeps them all.
+// deleteSavedUploads deletes the keys a failed write's parse saved.
 func (ch *CrudHandler) deleteSavedUploads(ctx context.Context, keys []string) {
 	if len(keys) == 0 || ch.Storage == nil {
 		return
 	}
-	// The rollback outlives the request: a client that disconnected
-	// mid-write canceled ctx, and a storage backend refuses a canceled
-	// Delete, which left exactly the orphans this cleans up. Bounded so
-	// a dead backend cannot pin the handler.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	for _, key := range keys {
