@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -316,5 +317,15 @@ func TestSweepModulesTypedHookIntegersStayInt64(t *testing.T) {
 	meta, _ := dest["meta"].(map[string]any)
 	if got, ok := meta["n"].(int64); !ok || got != 3 {
 		t.Fatalf("meta.n = %#v (%T), want int64(3)", meta["n"], meta["n"])
+	}
+
+	after = rec{Meta: map[string]any{"n": uint64(18446744073709551615)}}
+	dest = map[string]any{}
+	if err := mergeStructIntoMap(&before, &after, dest); err != nil {
+		t.Fatal(err)
+	}
+	meta, _ = dest["meta"].(map[string]any)
+	if got, ok := meta["n"].(json.Number); !ok || got != "18446744073709551615" {
+		t.Fatalf("meta.n = %#v (%T), want the json.Number with its digits", meta["n"], meta["n"])
 	}
 }
