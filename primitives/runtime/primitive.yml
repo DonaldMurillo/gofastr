@@ -47,6 +47,11 @@ invariants:
     enforced_by:
       - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
       - test: examples/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
+  - id: escape-waits-for-widgetfocus
+    rule: An Escape pressed while a modal or popover is open and the demand-loaded widgetfocus module has not registered yet is handed to that module once it loads, so it closes the top layer instead of being lost.
+    enforced_by:
+      - test: core-ui/runtime.TestEscapeBeforeFocusModuleLoadsClosesModal
+      - test: kiln/integration.TestBrowser_EscClosesModals
 decisions:
   - id: poll-before-push
     status: accepted
@@ -64,3 +69,13 @@ decisions:
         why: It would land after the later click and override it, which is the order inversion held-clicks-keep-their-order forbids.
     revisit_if: A held click must reach a control whose effect does not depend on order, such as a toggle.
     upholds: [held-clicks-keep-their-order]
+  - id: escape-forwarded-not-inlined
+    date: 2026-11-16
+    status: accepted
+    decision: The widgets module keeps one document keydown listener that, while widgetfocus has not registered and a layer is open, loads it and hands it the Escape; the Escape logic itself stays in widgetfocus.
+    rejected:
+      - option: Move the Escape handler into the widgets module.
+        why: It moves the whole handler and its foreign-dialog check into a module already past its gzip goal, where the forwarder adds one line.
+      - option: Hold the modal hidden until widgetfocus has loaded.
+        why: Every first open would wait an extra request before it shows.
+    upholds: [escape-waits-for-widgetfocus]
