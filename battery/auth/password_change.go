@@ -301,14 +301,7 @@ func (m *AuthManager) revokeUserSessions(ctx context.Context, userID, reason, re
 	return nil
 }
 
-// dropMagicLinks spends every outstanding magic link and emailed sign-in
-// code mailed to the user. One mailed before a password change or reset,
-// the one an attacker with mailbox access may hold, otherwise still signs
-// in afterwards. Both stores key on the canonical address the send
-// handler wrote, so the stored address is canonicalized first: a raw
-// "Mixed@Example.com" matched no row. A token store without
-// MagicLinkTokenPurger keeps them, and that gap is logged; the error is
-// a purge that failed.
+// dropMagicLinks purges the user's outstanding magic links and emailed codes.
 func (m *AuthManager) dropMagicLinks(ctx context.Context, userID, reason, remote string) error {
 	type mailed struct {
 		store   MagicLinkTokenStore

@@ -157,12 +157,6 @@ type resolvedEraser struct {
 	tenant string
 }
 
-// resolveErasedUser resolves, once and before anything is deleted, every
-// identity an eraser declares, and every registered one when a store
-// eraser takes resolved identities (EraseResolved): the user row it is
-// read from is gone by the time store erasers run. A kind an eraser
-// declares with no resolver registered fails the erasure, which would
-// otherwise be incomplete.
 func (a *App) resolveErasedUser(ctx context.Context, dialect migrate.Dialect, userID string, erasers []datexport.DataEraser) (datexport.ErasedUser, error) {
 	user := datexport.ErasedUser{ID: userID, Identities: map[datexport.IdentityKind]string{}}
 	kinds := map[datexport.IdentityKind]string{}
@@ -197,9 +191,6 @@ func (a *App) resolveErasedUser(ctx context.Context, dialect migrate.Dialect, us
 	return user, nil
 }
 
-// resolveEraserIdentities binds each eraser's value from the resolved
-// identities. An eraser whose identity did not resolve is skipped with a
-// note: there is nothing left to match.
 func resolveEraserIdentities(user datexport.ErasedUser, erasers []datexport.DataEraser) (resolved []resolvedEraser, skipped []string) {
 	for _, e := range erasers {
 		if e.Identity == datexport.IdentityUserID {

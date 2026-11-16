@@ -122,8 +122,7 @@ type OIDCProvider struct {
 	// re-fetch. Bounded (cap 1024); evicts oldest by insert order.
 	claims *orderedCache
 
-	// clientSecret, when set, mints the client secret for each exchange
-	// in place of cfg.ClientSecret: Apple's is a short-lived signed JWT.
+	// clientSecret, when set, mints the client secret for each exchange.
 	clientSecret func() (string, error)
 }
 

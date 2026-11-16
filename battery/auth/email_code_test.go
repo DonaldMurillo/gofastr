@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -473,5 +475,89 @@ func TestEmailCode_TokensDoNotCrossFlows(t *testing.T) {
 		if w := f.verify(t, f.plugin.codeFor(link), &http.Cookie{Name: f.plugin.cookieName(), Value: link}); w.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d with a magic-link token: %d", i+2, w.Code)
 		}
+	}
+}
+
+// DevMode logs hashes of the address and code, never the code: the code
+// is a credential, and anyone reading the log could sign in with it.
+func TestEmailCode_DevModeLogsNoCode(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	mgr := New(AuthConfig{JWTSecret: "s", UserStore: newMemoryUserStore(), AllowInMemoryStores: true})
+	p := NewEmailCodePlugin(EmailCodeConfig{DevMode: true})
+	mgr.Use(p)
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+	req := httptest.NewRequest(http.MethodPost, "/auth/email-code/send", strings.NewReader(`{"email":"dev@example.com"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("send: %d", w.Code)
+	}
+	c := cookieNamed(w.Result().Cookies(), p.cookieName())
+	code := p.codeFor(c.Value)
+	if strings.Contains(buf.String(), code) || strings.Contains(buf.String(), "dev@example.com") {
+		t.Fatalf("the dev log carries the code or the address: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), hashedIdentifier(code)) {
+		t.Fatalf("the dev log should carry the code's hash: %s", buf.String())
+	}
+}
+
+// failingLimitStore is a guess-budget store that is down.
+type failingLimitStore struct{}
+
+func (failingLimitStore) Allow(context.Context, string, RateLimiterConfig) (bool, time.Duration, error) {
+	return false, time.Second, errors.New("limiter store unreachable")
+}
+
+// A guess-budget store error refuses the guess with 503 and leaves the
+// challenge alone: an outage is neither a spent budget nor an unmetered one.
+func TestEmailCode_GuessBudgetStoreErrorRefuses(t *testing.T) {
+	f := newEmailCodeFixture(t, emailCodeOpts{})
+	c, code := f.send(t, "eve@example.com")
+	f.plugin.address = newScopedRateLimiter(RateLimiterConfig{MaxAttempts: 10, Window: time.Hour, BlockDuration: time.Hour, Store: failingLimitStore{}}, "emailcode_address")
+	if w := f.verify(t, code, c); w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("verify with the budget store down: %d, want 503", w.Code)
+	}
+	if _, err := f.plugin.peeker.PeekToken(context.Background(), c.Value); err != nil {
+		t.Fatal("a store error must not drop the challenge")
+	}
+}
+
+// noCheckerUsers is a user store that cannot say whether an address was
+// proven.
+type noCheckerUsers struct{ UserStore }
+
+// A mailbox sign-in to an existing account on a store that cannot say
+// whether the address was proven is refused, not guessed at: "verified"
+// would sign the owner into a squatter's account, "unverified" would wipe
+// a real owner's password on every sign-in.
+func TestMailboxSignInRefusesStoreWithoutVerifiedChecker(t *testing.T) {
+	users := newMemoryUserStore()
+	seedUser(t, users, "ida@example.com", "pw-irrelevant-3")
+	mgr := New(AuthConfig{JWTSecret: "s", SessionCookie: "session_id", UserStore: noCheckerUsers{users}, AllowInMemoryStores: true})
+	sender := &codeSender{}
+	p := NewEmailCodePlugin(EmailCodeConfig{EmailSender: sender})
+	mgr.Use(p)
+	if err := mgr.Init(nil); err != nil {
+		t.Fatal(err)
+	}
+	r := router.New()
+	mgr.RegisterRoutes(r)
+	f := &emailCodeFixture{mgr: mgr, plugin: p, sender: sender, r: r}
+	c, code := f.send(t, "ida@example.com")
+	w := f.verify(t, code, c)
+	if w.Code != http.StatusInternalServerError || !strings.Contains(w.Body.String(), reasonStoreNoVerifiedChecker.Code()) {
+		t.Fatalf("verify on a store without EmailVerifiedChecker: %d %s", w.Code, w.Body)
+	}
+	if cookieNamed(w.Result().Cookies(), "session_id") != nil {
+		t.Fatal("no session for a sign-in the store cannot judge")
 	}
 }

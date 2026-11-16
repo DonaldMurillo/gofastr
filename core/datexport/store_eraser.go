@@ -33,11 +33,8 @@ import (
 // back: EraseUserData returns an error naming the store, and the caller
 // erases again once the store is reachable.
 //
-// EraseResolved, when set, runs in place of Erase for a store keyed by an
-// identity other than the user id (battery/auth's in-memory token store
-// keys sign-in links by email). The user row is gone by the time a store
-// eraser runs, so the erasure resolves every registered identity before
-// its SQL part and passes them here. Set one of Erase and EraseResolved.
+// EraseResolved runs in place of Erase and also gets the identities the
+// erasure resolved before its SQL part. Set exactly one of the two.
 type StoreEraser struct {
 	Name          string
 	Source        string
@@ -46,9 +43,8 @@ type StoreEraser struct {
 	Producer      bool
 }
 
-// ErasedUser is the user an erasure removes: the id, and each registered
-// identity the erasure resolved for it before any row was deleted. A kind
-// that did not resolve (no row, no table) is absent.
+// ErasedUser is the user an erasure removes: the id and each identity
+// that resolved for it.
 type ErasedUser struct {
 	ID         string
 	Identities map[IdentityKind]string

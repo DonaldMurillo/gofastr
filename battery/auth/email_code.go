@@ -19,7 +19,6 @@ import (
 )
 
 // EmailCodeSender mails a one-time sign-in code to an address.
-// Implementations handle templating, delivery, and retries.
 type EmailCodeSender interface {
 	SendSignInCode(ctx context.Context, email, code string) error
 }
@@ -29,43 +28,34 @@ type EmailCodeConfig struct {
 	// CodeTTL is how long a code stays valid (default: 10 minutes).
 	CodeTTL time.Duration
 
-	// EmailSender mails the code. Without it, send answers 503 unless
-	// DevMode is set.
+	// EmailSender mails the code. Required unless DevMode is set.
 	EmailSender EmailCodeSender
 
-	// TokenStore persists pending challenges. It is the store the link
-	// plugins use, and it must implement MagicLinkTokenPeeker (both
-	// built-in stores do). Defaults to an in-memory store, which
-	// production mode refuses unless AuthConfig.AllowInMemoryStores is
-	// set: a challenge minted on one replica is unknown on another.
+	// TokenStore persists pending challenges and must implement
+	// MagicLinkTokenPeeker. Defaults to an in-memory store.
 	TokenStore MagicLinkTokenStore
 
 	// OnSuccessURL is where a form sign-in is redirected, and the
 	// "redirect" a JSON one is told (default: "/").
 	OnSuccessURL string
 
-	// TwoFactorURL is where a sign-in goes when the account still owes
-	// its second factor. Same-origin paths only. Init requires it when a
-	// 2FA plugin is registered.
+	// TwoFactorURL is where a sign-in of a 2FA account goes, a
+	// same-origin path. Required next to a 2FA plugin.
 	TwoFactorURL string
 
 	// RateLimit is the per-IP limit on /email-code/send (default: 10 a
-	// minute, 15-minute block). The per-address mail cooldown is
-	// AuthConfig.MailAddressRateLimit, shared with the link plugins.
+	// minute, 15-minute block).
 	RateLimit *RateLimiterConfig
 
 	// VerifyRateLimit is the per-IP limit on /email-code/verify
 	// (default: 30 a minute, 5-minute block).
 	VerifyRateLimit *RateLimiterConfig
 
-	// AddressGuessLimit caps code guesses per address, across every
-	// challenge for it (default: 10 an hour, 1-hour block). With five
-	// guesses per challenge and one mail per address per cooldown, it is
-	// what bounds a slow guesser with many IPs.
+	// AddressGuessLimit caps code guesses per address across all its
+	// challenges (default: 10 an hour, 1-hour block).
 	AddressGuessLimit *RateLimiterConfig
 
-	// DevMode lets send run without an EmailSender: it logs hashes of
-	// the address and code, never the code itself.
+	// DevMode lets send run without an EmailSender, logging hashes only.
 	DevMode bool
 }
 
@@ -87,25 +77,18 @@ func (c *EmailCodeConfig) defaults() {
 	}
 }
 
-// emailCodeDigits is the code's length. Eight digits, not six: a code
-// is typed, so it can be guessed, and the address budget allows about
-// 240 guesses a day.
-const emailCodeDigits = 8
+const (
+	emailCodeDigits           = 8
+	emailCodeChallengeGuesses = 5
+)
 
-// emailCodeChallengeGuesses is how many codes one challenge accepts
-// before it is dropped.
-const emailCodeChallengeGuesses = 5
-
-// The challenge cookie. __Host- in production, as the OAuth state
-// cookie; a __Host- cookie without Secure is refused, so dev drops it.
 const (
 	emailCodeCookie    = "__Host-gofastr_email_code"
 	emailCodeCookieDev = "gofastr_email_code"
 )
 
 // EmailCodePlugin signs a user in with a one-time code mailed to their
-// address. The code is bound to the browser that asked for it: send
-// sets a challenge cookie, and verify takes the code only alongside it.
+// address and typed into the browser that asked for it.
 type EmailCodePlugin struct {
 	config      EmailCodeConfig
 	mgr         *AuthManager
@@ -140,8 +123,7 @@ func NewEmailCodePlugin(config EmailCodeConfig) *EmailCodePlugin {
 // Name returns the plugin identifier.
 func (p *EmailCodePlugin) Name() string { return "email-code" }
 
-// Init checks the store and the two-factor page, and derives the code
-// key from JWTSecret, which every replica shares.
+// Init checks the store and the two-factor page and derives the code key.
 func (p *EmailCodePlugin) Init(mgr *AuthManager) error {
 	peeker, ok := p.tokenStore.(MagicLinkTokenPeeker)
 	if !ok {
@@ -181,9 +163,6 @@ func (p *EmailCodePlugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/email-code/verify", http.HandlerFunc(p.verifyHandler))
 }
 
-// codeFor is the code a challenge token stands for. It is derived, not
-// stored, so the stored payload is the bare address and a password
-// reset's purge by address reaches every outstanding challenge.
 func (p *EmailCodePlugin) codeFor(token string) string {
 	mac := hmac.New(sha256.New, p.codeKey)
 	mac.Write([]byte(token))
@@ -215,7 +194,6 @@ func (p *EmailCodePlugin) setChallengeCookie(w http.ResponseWriter, token string
 	http.SetCookie(w, c)
 }
 
-// readField reads one field from a JSON or form body.
 func readField(w http.ResponseWriter, r *http.Request, name string) (string, bool) {
 	if isFormRequest(r) {
 		r.Body = http.MaxBytesReader(w, r.Body, maxAuthBodyBytes)
@@ -237,8 +215,6 @@ func readField(w http.ResponseWriter, r *http.Request, name string) (string, boo
 	return body.Email, true
 }
 
-// refuse answers in the request's shape: a form post is sent back to
-// its page with ?error=, a JSON caller gets the envelope.
 func (p *EmailCodePlugin) refuse(w http.ResponseWriter, r *http.Request, status int, reason i18n.Phrase) {
 	if isFormRequest(r) {
 		writeFormAuthError(w, r, status, reason)
@@ -247,14 +223,10 @@ func (p *EmailCodePlugin) refuse(w http.ResponseWriter, r *http.Request, status 
 	writeAuthError(w, r, status, reason)
 }
 
-// sendHandler handles POST {basePath}/email-code/send with an "email"
-// field. Every address gets the same answer, mailed or not.
 func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if !guardAuthLimit(p.sendLimit, w, r) {
 		return
 	}
-	// A cross-site page must not plant its own challenge in this
-	// browser: the code it then gets the user to type would be its own.
 	if rejectCrossSiteForm(w, r) {
 		return
 	}
@@ -285,13 +257,6 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	if !p.mgr.allowMailAddress(r.Context(), email) {
 		requested.Meta = map[string]string{"throttled": "address"}
 		p.mgr.emitSecurity(r.Context(), requested)
-		// A resend inside the cooldown keeps this browser's live
-		// challenge for the same address: the code already mailed is
-		// the one the user will type. Anyone else gets a stored
-		// challenge whose code is mailed to no one. It answers send and
-		// verify exactly as a mailed one does (cookie, kept on resend,
-		// guess budget, lock), so nothing a client can try tells a
-		// cooldown from a mail.
 		live, err := p.holdsLiveChallenge(r, email)
 		if err != nil {
 			slog.Warn("auth: email-code challenge lookup failed: keeping the browser's challenge", "err", err)
@@ -326,8 +291,6 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		// The code is a credential: the log carries hashes only, as the
-		// magic link's dev line does.
 		slog.Info("email-code dev",
 			"plugin", "email-code",
 			"email_hash", hashedIdentifier(email),
@@ -338,9 +301,6 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	p.writeSent(w, r)
 }
 
-// holdsLiveChallenge reports whether r carries an unexpired challenge
-// cookie for email. A store error is returned, not read as "none": the
-// caller would replace a live challenge whose code is already mailed.
 func (p *EmailCodePlugin) holdsLiveChallenge(r *http.Request, email string) (bool, error) {
 	c, err := r.Cookie(p.cookieName())
 	if err != nil || c.Value == "" || len(c.Value) > 128 {
@@ -376,8 +336,6 @@ func (p *EmailCodePlugin) writeSent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// normalizeCode drops the spaces and hyphens people type or paste
-// between groups of digits.
 func normalizeCode(s string) string {
 	return strings.Map(func(c rune) rune {
 		if c == ' ' || c == '-' {
@@ -387,14 +345,10 @@ func normalizeCode(s string) string {
 	}, s)
 }
 
-// verifyHandler handles POST {basePath}/email-code/verify with a "code"
-// field, alongside the challenge cookie send set.
 func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 	if !guardAuthLimit(p.verifyLimit, w, r) {
 		return
 	}
-	// The attacker knows the code to their own address, so a cross-site
-	// form could otherwise sign this browser into their account.
 	if rejectCrossSiteForm(w, r) {
 		return
 	}
@@ -414,8 +368,6 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	}
 	token := cookie.Value
 
-	// Peek, never redeem, until the code matches: a wrong guess must not
-	// cost the user their challenge before its budget is spent.
 	stored, err := p.peeker.PeekToken(r.Context(), token)
 	if err != nil {
 		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
@@ -427,9 +379,6 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Both budgets are spent before the code is compared. A store
-	// error refuses the attempt: an outage is not a spent budget, and
-	// it must not be an unmetered one either.
 	if !p.spendGuess(w, r, p.challenge, "challenge:"+sha256hex(token), token, email) {
 		return
 	}
@@ -444,7 +393,6 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Consume. A concurrent verify of the same code loses here.
 	if _, err := redeemPurposeToken(r.Context(), p.tokenStore, purposeEmailCode, token); err != nil {
 		p.refuse(w, r, http.StatusUnauthorized, reasonInvalidCode)
 		return
@@ -479,9 +427,6 @@ func (p *EmailCodePlugin) verifyHandler(w http.ResponseWriter, r *http.Request) 
 	writeAuthJSON(w, r, http.StatusOK, out)
 }
 
-// spendGuess spends one guess from rl under key and reports whether the
-// caller may go on. A spent challenge budget drops the challenge (token
-// set); a spent address budget only refuses.
 func (p *EmailCodePlugin) spendGuess(w http.ResponseWriter, r *http.Request, rl *RateLimiter, key, token, email string) bool {
 	allowed, retry, err := rl.Admit(r.Context(), key)
 	if err != nil {

@@ -187,11 +187,8 @@ type Equals struct {
 // means the identity cannot be resolved: erasers declaring it are SKIPPED with
 // a note rather than failed (nothing left to match).
 //
-// Canonicalize, when set, rewrites the resolved value before it is bound:
-// a table holding values the store wrote in canonical form (battery/auth's
-// tokens hold the lowercased address) still matches a user row stored
-// before canonicalization ("Mixed@Example.com"). It returns "" when the
-// value has no canonical form, and the raw value is bound instead.
+// Canonicalize, when set, rewrites the resolved value before it is bound;
+// an empty result binds the raw value.
 type DataIdentityResolver struct {
 	Table        string
 	IDColumn     string

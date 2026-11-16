@@ -108,10 +108,6 @@ func registerCanonicalErasers() {
 	// an erasure and re-created the account. The token table is created
 	// lazily by NewSQLMagicLinkTokenStore; a host on the in-memory store has
 	// no such table, so this eraser is a no-op (skipped at erase time).
-	//
-	// Canonicalize binds the address the way the send handlers wrote it:
-	// a user row stored before canonicalization ("Mixed@Example.com")
-	// still reaches its tokens ("magiclink:mixed@example.com").
 	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
 		Canonicalize: canonicalEmailOrEmpty(nil),
@@ -143,10 +139,6 @@ func resolveEraseTables(mgr *AuthManager) {
 			Column: "user_id", Mode: datexport.EraseDelete,
 		})
 	}
-	// The battery's own resolver carries the manager's canonicalizer,
-	// which may be the host's (AuthConfig.CanonicalizeEmail). A resolver
-	// the host registered for its own user store keeps its table; it only
-	// gains the canonicalizer when it has none.
 	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
 		datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
 			Table: us.table, IDColumn: us.fieldMap.ID, ValueColumn: us.fieldMap.Email,
@@ -242,9 +234,7 @@ func resolveEraseTables(mgr *AuthManager) {
 	}
 }
 
-// canonicalEmailOrEmpty is a resolver's Canonicalize over canonicalize
-// (nil for the battery's default): "" when the stored address has no
-// canonical form, and the raw value is bound instead.
+// canonicalEmailOrEmpty is a resolver's Canonicalize over canonicalize.
 func canonicalEmailOrEmpty(canonicalize func(string) (string, error)) func(string) string {
 	return func(email string) string {
 		c, err := canonicalizeEmailWith(canonicalize, email)
@@ -258,8 +248,8 @@ func canonicalEmailOrEmpty(canonicalize func(string) (string, error)) func(strin
 // registerTokenEraser registers the eraser for one flow's tokens in table.
 // The payload column holds "<purpose>:<value>", so the purpose tag is the
 // ValuePrefix. Magic-link and email-code payloads carry the email
-// (IdentityEmail); reset,
-// verification and passkey-registration payloads carry the user id. The
+// (IdentityEmail); reset, verification and passkey-registration payloads
+// carry the user id. The
 // magic-link eraser keeps the "magic_link_tokens" name it was first
 // registered under.
 func registerTokenEraser(table string, p tokenPurpose) {

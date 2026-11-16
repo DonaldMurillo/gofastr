@@ -323,14 +323,6 @@ func (p *OAuth2Plugin) RegisterRoutes(r *router.Router, basePath string) {
 	r.Post(basePath+"/oauth/{provider}/callback", p.formPostCallbackHandler())
 }
 
-// formPostCallbackHandler takes the callback an OAuth2FormPostProvider
-// posts (Apple's, when the email scope is asked for) and answers a page
-// from this origin that loads the GET callback with the same code and
-// state. It checks and consumes nothing itself: the POST is cross-site,
-// so it carries no SameSite=Lax state cookie, and the GET it leads to
-// runs every callback check with the cookie the page's navigation
-// sends. Anyone could already load that GET URL, so the page grants
-// nothing a link would not.
 func (p *OAuth2Plugin) formPostCallbackHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fp, ok := p.providers[router.Param(r, "provider")].(OAuth2FormPostProvider)

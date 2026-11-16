@@ -47,9 +47,6 @@ func WithBFFPosture(mgr *AuthManager, cfg BFFPostureConfig) framework.AppOption 
 	// Exempting exactly that route keeps the static ui.SignOut form usable
 	// without accidentally exempting a future /logout-all sibling.
 	csrfOpts = append(csrfOpts, withCSRFSkipExactPath(mgr.Config().BasePath+"/logout"))
-	// A form-post OAuth callback (Sign in with Apple) is the IdP's own
-	// cross-site POST and carries no token; the route only answers a page
-	// that loads the GET callback (OAuth2FormPostProvider).
 	csrfOpts = append(csrfOpts, withCSRFSkip(func(r *http.Request) bool {
 		return r.Method == http.MethodPost && isFormPostCallback(mgr.Config().BasePath, r.URL.Path)
 	}))
@@ -123,7 +120,6 @@ func normalizeBFFPrefix(prefix string) string {
 func bffOriginGuard(prefix func() string, allowed map[string]struct{}, tokenPrefix, authBase string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// The IdP's form-post callback carries the IdP's Origin.
 			if r.Method == http.MethodPost && isFormPostCallback(authBase, r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return

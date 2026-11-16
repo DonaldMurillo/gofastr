@@ -39,6 +39,40 @@ invariants:
     applies:
       - core-ui/urlprefix/
       - battery/setup/render.go
+  - id: mailbox-proof-signs-in-one-way
+    rule: Magic links and emailed codes sign in through AuthManager.signInMailboxOwner, which creates an unknown address's account as verified and without a password (taking the existing account when a concurrent sign-in created it first), refuses to create one on a lookup error, claims an unverified account, refuses a store without EmailVerifiedChecker, mints through MintSession so a 2FA account stays pending, and drops the session when the credential moved meanwhile.
+    enforced_by:
+      - test: battery/auth.TestMagicLink_Verify_CreatesUserIfNotExists
+      - test: battery/auth.TestNewMagicLinkUserIsVerified
+      - test: battery/auth.TestMagicLinkClaimKillsSquatter
+      - test: battery/auth.TestMagicLinkVerify_DBErrorDoesNotAutoCreate
+      - test: battery/auth.TestMagicLinkLosesRaceToReset
+      - test: battery/auth.TestMagicLinkCreateRaceSignsIn
+      - test: battery/auth.TestMagicLinkPendingSignInGoesToTwoFactorURL
+      - test: battery/auth.TestEntityUserStore_HasPasswordDistinguishesNoPasswordCreate
+      - test: battery/auth.TestMailboxSignInRefusesStoreWithoutVerifiedChecker
+      - test: battery/auth.TestEmailCode_SendThenVerify_SignsInNewVerifiedAccount
+  - id: credential-change-drops-mailed-sign-ins
+    rule: A password reset or change purges the account's outstanding magic links and emailed-code challenges by canonical address.
+    enforced_by:
+      - test: battery/auth.TestResetDropsMagicLinks
+      - test: battery/auth.TestEmailCode_PasswordResetDropsOutstandingCodes
+  - id: erasure-reaches-email-keyed-tokens
+    rule: Erasure removes the erased user's magic-link and emailed-code tokens from the SQL and in-memory token stores, by the canonical form of a user row stored in any case, and leaves other addresses' tokens.
+    enforced_by:
+      - test: battery/auth.TestEraseReachesEmailKeyedTokensFromLegacyRow
+      - test: battery/auth.TestMemoryTokenStoreErasedByResolvedEmail
+      - test: battery/auth.TestMemoryEmailCodeStoreErased
+      - test: battery/auth.TestMemoryStoresReachedByErasure
+  - id: memory-eraser-email-once-and-loud
+    rule: The in-memory eraser uses the resolved email as given, reads it from the user store only when none resolved and the store is not the battery's SQL one, canonicalizes only that value, and fails on a lookup error other than ErrUserNotFound.
+    enforced_by:
+      - test: battery/auth.TestMemoryEraserCanonicalizesOnce
+      - test: battery/auth.TestMemoryEraserReportsUserLookupFailure
+  - id: init-keeps-host-email-resolver
+    rule: Init registers its own IdentityEmail resolver only for an EntityUserStore, and otherwise keeps the registered resolver, adding the manager's canonicalizer only to the battery's auth_users default or a resolver with none.
+    enforced_by:
+      - test: battery/auth.TestInitKeepsHostEmailResolver
 decisions:
   - id: hop-on-refusal-not-on-arrival
     date: 2026-11-16
