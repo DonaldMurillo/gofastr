@@ -599,6 +599,71 @@ func TestGoCachePathsMatch(t *testing.T) {
 	}
 }
 
+// A job that saves a go-<family>- entry ages the cache right after
+// restoring it and prunes it right before the save, under the save's own
+// condition (scripts/go-cache-prune.sh). Without the pair the entry keeps
+// every object of the last five days: go-test- reached 5.1 GB against a
+// fresh 1.0 GB, and pushed the lint and race entries out of the 10 GB.
+// Aging is the first step after the restore: an entry a go command read
+// before it would be aged afterwards and pruned though the run used it.
+func TestGoCacheIsPrunedBeforeSave(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				If   string            `yaml:"if"`
+				Uses string            `yaml:"uses"`
+				Run  string            `yaml:"run"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	const script = "scripts/go-cache-prune.sh"
+	saving := 0
+	for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
+		steps := wf.Jobs[job].Steps
+		restore, save := -1, -1
+		for i, step := range steps {
+			if !strings.HasPrefix(step.With["key"], "go-") {
+				continue
+			}
+			switch {
+			case strings.Contains(step.Uses, "actions/cache/restore@"):
+				restore = i
+			case strings.Contains(step.Uses, "actions/cache/save@"):
+				save = i
+			}
+		}
+		if save < 0 {
+			continue
+		}
+		saving++
+		if restore < 0 || restore+1 >= len(steps) || save == 0 {
+			t.Errorf("%s saves a Go cache it does not restore in a step of its own", job)
+			continue
+		}
+		age, prune := steps[restore+1], steps[save-1]
+		if strings.TrimSpace(age.Run) != script+" age" {
+			t.Errorf("%s: the step after the cache restore runs %q, want %q", job, age.Run, script+" age")
+		}
+		if !strings.Contains(age.If, "github.ref == 'refs/heads/main'") {
+			t.Errorf("%s: the age step runs outside main, where nothing is saved", job)
+		}
+		if strings.TrimSpace(prune.Run) != script+" prune" {
+			t.Errorf("%s: the step before the cache save runs %q, want %q", job, prune.Run, script+" prune")
+		}
+		if prune.If != steps[save].If {
+			t.Errorf("%s: the prune step runs if %q, the save if %q; they must match", job, prune.If, steps[save].If)
+		}
+	}
+	if saving != 3 {
+		t.Errorf("found %d jobs saving a Go cache, want 3 (test, lint, race); the parser or ci.yml changed shape", saving)
+	}
+}
+
 // Each browser-e2e row decides whether its suite runs by matching its
 // matrix.pkg with grep -E against the import paths e2e-scope lists, where
 // cmd/affected -match used Go's regexp. The two read literals, `.`, `|`,
