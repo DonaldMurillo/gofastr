@@ -13,35 +13,12 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
 
-// Erasure deletes only the stored objects it can attribute to the erased
-// user. A key qualifies when the erased user's rows named it and, once
-// those rows are gone, no surviving row in any entity names it: not
-// another user's row, and not a row of an entity erasure never touches.
-//
-// Why a reference check rather than an upload ledger or an owner prefix in
-// the key: the CRUD write path now refuses a storage key the caller did not
-// upload (crud/media_provenance.go), so new rows cannot name another user's
-// object. What remains is rows written before that check, and keys host code
-// wrote under WithServerWrites. Both are covered by asking the database who
-// else names the key, which needs no new table, no change to the key format,
-// and still erases every key written before this check existed. A ledger or
-// a prefix would leave every existing key unattributed, so erasure would
-// stop deleting files it deletes correctly today.
-//
-// An absolute http(s) URL is an external link, not a storage key, and is
-// never deleted.
-
-// fileRefColumns is one physical table's file columns and variants columns,
-// across every registered entity, owner-scoped or not.
 type fileRefColumns struct {
 	table    string
 	files    []string
 	variants []string
 }
 
-// collectFileRefColumns lists, per physical table, every schema.Image /
-// schema.File column and every declared "<field>_variants" column that
-// exists in the live table.
 func (a *App) collectFileRefColumns(ctx context.Context, dialect migrate.Dialect) ([]fileRefColumns, error) {
 	if a.Registry == nil {
 		return nil, nil
@@ -122,9 +99,6 @@ func appendUnique(s []string, v string) []string {
 	return append(s, v)
 }
 
-// unsharedObjectKeys returns the keys erasure may delete: keys that are not
-// external URLs and that no row left in the database names. It runs after
-// the erasure commits, so the erased user's own rows no longer count.
 func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, keys []string) ([]string, error) {
 	var candidates []string
 	for _, k := range keys {
@@ -171,8 +145,6 @@ func (a *App) unsharedObjectKeys(ctx context.Context, dialect migrate.Dialect, k
 	return out, nil
 }
 
-// markNamedInColumn sets named[k] for every candidate key some row's column
-// holds verbatim.
 func (a *App) markNamedInColumn(ctx context.Context, qt, qc string, keys []string, named map[string]bool) error {
 	const chunk = 200
 	for start := 0; start < len(keys); start += chunk {
@@ -207,14 +179,6 @@ func (a *App) markNamedInColumn(ctx context.Context, qt, qc string, keys []strin
 	return nil
 }
 
-// markNamedInVariants sets named[k] for every candidate key some row's
-// variants column lists as a storage_ref. One query per chunk of keys: a
-// LIKE on a literal run of each key narrows the rows (it may over-match:
-// case folding, other keys sharing the run), and each row is then parsed
-// with file.VariantStorageRefs, the same parser the erase read and the CRUD
-// write path use, so JSON spacing cannot hide a reference. A \u escape can
-// spell the run's characters, so every row holding a \u is parsed too. A
-// chunk holding a key with no usable literal run scans every non-null row.
 func (a *App) markNamedInVariants(ctx context.Context, qt, qc string, keys []string, named map[string]bool) error {
 	const chunk = 100
 	for start := 0; start < len(keys); start += chunk {
@@ -237,8 +201,6 @@ func (a *App) markNamedInVariants(ctx context.Context, qt, qc string, keys []str
 		if scanAll {
 			args = nil
 		} else {
-			// A \u escape can spell any character of the run, so a row
-			// holding one is parsed whatever its literal text says.
 			args = append(args, `%\\u%`)
 			likes = append(likes, fmt.Sprintf(`CAST(%s AS TEXT) LIKE $%d ESCAPE '\'`, qc, len(args)))
 			stmt += " AND (" + strings.Join(likes, " OR ") + ")"
@@ -271,9 +233,6 @@ func (a *App) scanVariantRefs(ctx context.Context, stmt string, args []any, want
 	return rows.Err()
 }
 
-// likeRun returns the longest run of the key's characters that JSON writes
-// verbatim in every encoder (letters, digits, '.', '-', '_'), LIKE-escaped.
-// The run sits between path separators, which some encoders escape as "\/".
 func likeRun(key string) string {
 	best, cur := "", strings.Builder{}
 	flush := func() {
