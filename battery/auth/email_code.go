@@ -285,16 +285,20 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !p.mgr.allowMailAddress(r.Context(), email) {
-		// Same answer as a mailed code, cookie included, so the cooldown
-		// says nothing about the address. The decoy is stored nowhere.
-		decoy := make([]byte, 32)
-		if _, err := rand.Read(decoy); err != nil {
-			writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
-			return
-		}
 		requested.Meta = map[string]string{"throttled": "address"}
 		p.mgr.emitSecurity(r.Context(), requested)
-		p.setChallengeCookie(w, hex.EncodeToString(decoy))
+		// A resend inside the cooldown keeps this browser's live
+		// challenge for the same address: the code already mailed is
+		// the one the user will type. Anyone else gets a decoy cookie,
+		// stored nowhere, so the cooldown says nothing about the address.
+		if !p.holdsLiveChallenge(r, email) {
+			decoy := make([]byte, 32)
+			if _, err := rand.Read(decoy); err != nil {
+				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
+				return
+			}
+			p.setChallengeCookie(w, hex.EncodeToString(decoy))
+		}
 		p.writeSent(w, r)
 		return
 	}
@@ -325,6 +329,21 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 	p.mgr.emitSecurity(r.Context(), requested)
 	p.setChallengeCookie(w, token)
 	p.writeSent(w, r)
+}
+
+// holdsLiveChallenge reports whether r carries an unexpired challenge
+// cookie for email.
+func (p *EmailCodePlugin) holdsLiveChallenge(r *http.Request, email string) bool {
+	c, err := r.Cookie(p.cookieName())
+	if err != nil || c.Value == "" || len(c.Value) > 128 {
+		return false
+	}
+	raw, err := p.peeker.PeekToken(r.Context(), c.Value)
+	if err != nil {
+		return false
+	}
+	addr, ok := peekPurposePayload(raw, purposeEmailCode)
+	return ok && addr == email
 }
 
 func (p *EmailCodePlugin) writeSent(w http.ResponseWriter, r *http.Request) {

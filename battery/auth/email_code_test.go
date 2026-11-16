@@ -260,6 +260,34 @@ func TestEmailCode_AddressCooldownLooksLikeASend(t *testing.T) {
 	}
 }
 
+// A resend inside the cooldown from the browser holding the live
+// challenge keeps it: the code already mailed still signs in.
+func TestEmailCode_ResendInCooldownKeepsLiveChallenge(t *testing.T) {
+	f := newEmailCodeFixture(t, emailCodeOpts{mail: &RateLimiterConfig{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour}})
+	c, code := f.send(t, "ed@example.com")
+	w := f.post(t, "/auth/email-code/send", map[string]string{"email": "ed@example.com"}, c)
+	if w.Code != http.StatusOK || f.sender.sent != 1 {
+		t.Fatalf("resend: %d, sent %d", w.Code, f.sender.sent)
+	}
+	if got := cookieNamed(w.Result().Cookies(), f.plugin.cookieName()); got != nil {
+		t.Fatal("the resend must not replace the live challenge cookie")
+	}
+	if w := f.verify(t, code, c); w.Code != http.StatusOK {
+		t.Fatalf("the first code after a resend: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestEmailCode_ResendInCooldownForAnotherAddressGetsDecoy(t *testing.T) {
+	f := newEmailCodeFixture(t, emailCodeOpts{mail: &RateLimiterConfig{MaxAttempts: 1, Window: time.Hour, BlockDuration: time.Hour}})
+	c, _ := f.send(t, "fran@example.com")
+	f.send(t, "gus@example.com") // spends gus's cooldown from another browser
+	w := f.post(t, "/auth/email-code/send", map[string]string{"email": "gus@example.com"}, c)
+	got := cookieNamed(w.Result().Cookies(), f.plugin.cookieName())
+	if got == nil || got.Value == c.Value {
+		t.Fatal("a cooldown send for another address must answer with a decoy cookie")
+	}
+}
+
 func TestEmailCode_CrossSiteFormsRefused(t *testing.T) {
 	f := newEmailCodeFixture(t, emailCodeOpts{})
 	c, code := f.send(t, "erin@example.com")
@@ -397,5 +425,12 @@ func TestEmailCode_TokensDoNotCrossFlows(t *testing.T) {
 	}
 	if _, err := f.plugin.peeker.PeekToken(context.Background(), link); err != nil {
 		t.Fatal("the refused attempt must not burn the magic link")
+	}
+	// Refused before any guess is spent: past a challenge's budget it
+	// still reads as an unknown challenge, never as a locked one.
+	for i := 0; i < emailCodeChallengeGuesses; i++ {
+		if w := f.verify(t, f.plugin.codeFor(link), &http.Cookie{Name: f.plugin.cookieName(), Value: link}); w.Code != http.StatusUnauthorized {
+			t.Fatalf("attempt %d with a magic-link token: %d", i+2, w.Code)
+		}
 	}
 }

@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -141,6 +143,10 @@ func TestApple_ConfigRefusals(t *testing.T) {
 	f := newFakeApple(t)
 	rsaDER, _ := x509.MarshalPKCS8PrivateKey(mustRSAKey(t, 2048))
 	rsaPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: rsaDER})
+	p384, _ := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	p384DER, _ := x509.MarshalPKCS8PrivateKey(p384)
+	p384PEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: p384DER})
+	junkPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte("not pkcs8")})
 	good := AppleConfig{ClientID: "c", TeamID: "t", KeyID: "k", PrivateKey: f.pem, RedirectURL: "https://x/cb"}
 	for name, mut := range map[string]func(*AppleConfig){
 		"no client":   func(c *AppleConfig) { c.ClientID = "" },
@@ -149,6 +155,7 @@ func TestApple_ConfigRefusals(t *testing.T) {
 		"no redirect": func(c *AppleConfig) { c.RedirectURL = "" },
 		"not pem":     func(c *AppleConfig) { c.PrivateKey = []byte("hello") },
 		"rsa key":     func(c *AppleConfig) { c.PrivateKey = rsaPEM },
+		"p-384 key":   func(c *AppleConfig) { c.PrivateKey = p384PEM },
 	} {
 		c := good
 		mut(&c)
@@ -158,6 +165,11 @@ func TestApple_ConfigRefusals(t *testing.T) {
 	}
 	if _, err := NewAppleProvider(good); err != nil {
 		t.Fatalf("good config: %v", err)
+	}
+	junk := good
+	junk.PrivateKey = junkPEM
+	if _, err := NewAppleProvider(junk); err == nil || !strings.Contains(err.Error(), "PKCS #8") {
+		t.Fatalf("PEM around bytes that are not PKCS #8: %v", err)
 	}
 }
 
