@@ -24,6 +24,13 @@ few lines, and link the PR or the docs page for the rest.
 
 ## [Unreleased]
 
+### Fixed
+- **Two quick clicks during a page transition land on the second.** A
+  click made while a view transition ran was held until the transition
+  finished, and a later click could run first; the held one then
+  overrode it and the first link's page was shown. Held clicks are now
+  delivered in the order they were made. Nothing to change.
+
 ### Changed
 - **CI runs side by side.** The `build · vet · test` job ran every gate
   in series for 21 minutes. The repo analyzers, cross builds and Linux
