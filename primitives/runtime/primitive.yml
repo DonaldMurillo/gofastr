@@ -42,6 +42,11 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: held-clicks-keep-their-order
+    rule: A click the transition module holds because it landed on <html> during a view transition is delivered before any later click is handled, so the page the user clicked last is the page shown.
+    enforced_by:
+      - test: core-ui/runtime.TestHeldClickNeverLandsAfterALaterClick
+      - test: examples/tracker.TestTrackerSupersedingPointerClicksKeepRingOff
 decisions:
   - id: poll-before-push
     status: accepted

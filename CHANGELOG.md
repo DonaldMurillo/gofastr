@@ -31,6 +31,11 @@ few lines, and link the PR or the docs page for the rest.
   again on every request. On SQLite the cursor now carries the stored
   text for every entity, not only `Unmanaged` ones. Nothing to change;
   see [cursor pagination](framework/docs/content/cursor-pagination.md).
+- **Two quick clicks during a page transition land on the second.** A
+  click made while a view transition ran was held until the transition
+  finished, and a later click could run first; the held one then
+  overrode it and the first link's page was shown. Held clicks are now
+  delivered in the order they were made. Nothing to change.
 
 ### Changed
 - **CI runs side by side.** The `build · vet · test` job ran every gate
