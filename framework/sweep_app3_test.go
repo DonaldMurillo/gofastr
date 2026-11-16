@@ -1,7 +1,9 @@
 package framework
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -200,5 +202,33 @@ func TestSweepApp3EndpointToolNameIgnoresAPIPrefix(t *testing.T) {
 	}
 	if a, b := names[""][0].Name, names["/api"][0].Name; a != b {
 		t.Fatalf("endpoint tool name %q without a prefix, %q under /api", a, b)
+	}
+}
+
+// An MCP App with nothing serving /mcp is unreachable, and boot says so;
+// WithMCP silences the warning.
+func TestSweepApp3MCPAppWithoutMountWarns(t *testing.T) {
+	for _, mounted := range []bool{false, true} {
+		var buf bytes.Buffer
+		opts := []AppOption{
+			WithoutDefaultMiddleware(),
+			WithLogger(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn}))),
+			WithMCPApp(mcp.AppConfig{Name: "studio", Description: "studio", InputSchema: map[string]any{"type": "object"},
+				Handler: sweepApp3Tool, ResourceURI: "ui://demo/studio.html", HTML: "<h1>studio</h1>"}),
+		}
+		if mounted {
+			opts = append(opts, WithMCP())
+		}
+		app := NewApp(opts...)
+		if err := app.InitPlugins(); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := app.finalizeRoutes(); err != nil {
+			t.Fatal(err)
+		}
+		warned := strings.Contains(buf.String(), "WithMCPApp registered but /mcp is not mounted")
+		if warned == mounted {
+			t.Errorf("WithMCP=%v: warned=%v; log=%q", mounted, warned, buf.String())
+		}
 	}
 }
