@@ -103,7 +103,7 @@ primitives:
 # it for the target OS. The pre-commit hook runs the host OS only.
 ANALYZE_AFFECTED = -all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/
 analyze: $(DIST_DIR)
-	go build -o $(DIST_DIR)/vettool ./cmd/vettool
+	go build -buildvcs=false -o $(DIST_DIR)/vettool ./cmd/vettool
 	go build -o $(DIST_DIR)/affected ./cmd/affected
 	$(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool
 	CGO_ENABLED=0 GOOS=windows $(DIST_DIR)/affected $(ANALYZE_AFFECTED) -- go vet -vettool=$(DIST_DIR)/vettool

@@ -517,12 +517,14 @@ func TestWorkflowsHaveNoEmptyExpressions(t *testing.T) {
 
 // The Go cache's path list is part of its cache version, so a restore step
 // whose list drifts from the saving step's never hits, and nothing fails:
-// the job just runs cold. Every step on the go-test key lists the same
-// paths, and every restore runs before Set up Go: setup-go's `go env`
-// downloads the go.mod toolchain into the module cache as read-only files,
-// and a snapshot restored on top of them fails tar. Only main saves, since
-// pull request entries evict main's from the repo's 10 GB cache. The
-// coverage manifests share the entry, so the two are saved together.
+// the job just runs cold. Every step on a go-<family>- key (go-test-, and
+// the lint and race jobs' own entries) lists the same paths, and every
+// restore runs before Set up Go: setup-go's `go env` downloads the go.mod
+// toolchain into the module cache as read-only files, and a snapshot
+// restored on top of them fails tar. Each family is restored and saved
+// exactly once, by main only, since pull request entries evict main's from
+// the repo's 10 GB cache. The coverage manifests share the entry, so the
+// two are saved together.
 func TestGoCachePathsMatch(t *testing.T) {
 	var wf struct {
 		Jobs map[string]struct {
@@ -537,28 +539,37 @@ func TestGoCachePathsMatch(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
 		t.Fatal(err)
 	}
+	family := regexp.MustCompile(`^go-([a-z]+)-\$\{\{ runner\.os \}\}-`)
 	var want, wantAt string
-	saves, restores := 0, 0
+	saves, restores := map[string]int{}, map[string]int{}
 	for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
 		setupGo := false
 		for _, step := range wf.Jobs[job].Steps {
 			if strings.Contains(step.Uses, "actions/setup-go@") {
 				setupGo = true
 			}
-			if !strings.HasPrefix(step.With["key"], "go-test-") {
+			m := family.FindStringSubmatch(step.With["key"])
+			if m == nil {
 				continue
 			}
+			fam := m[1]
 			at := job + ": " + step.Name
+			// Each family restores from its own entries only.
+			for _, rk := range strings.Split(step.With["restore-keys"], "\n") {
+				if rk = strings.TrimSpace(rk); rk != "" && !strings.HasPrefix(rk, "go-"+fam+"-") {
+					t.Errorf("%s restores %s from %q, another family's entry", at, fam, rk)
+				}
+			}
 			// actions/cache (no suffix) restores, and saves in its post step.
 			plain := strings.Contains(step.Uses, "actions/cache@")
 			if plain || strings.Contains(step.Uses, "actions/cache/save@") {
-				saves++
+				saves[fam]++
 				if !strings.Contains(step.If, "github.ref == 'refs/heads/main'") {
 					t.Errorf("%s saves outside main; pull request entries evict main's from the 10 GB cache", at)
 				}
 			}
 			if plain || strings.Contains(step.Uses, "actions/cache/restore@") {
-				restores++
+				restores[fam]++
 				if setupGo {
 					t.Errorf("%s restores after Set up Go; tar fails on the toolchain setup-go already downloaded", at)
 				}
@@ -576,7 +587,14 @@ func TestGoCachePathsMatch(t *testing.T) {
 			}
 		}
 	}
-	if restores == 0 || saves != 1 {
-		t.Fatalf("want go-test cache restores and exactly one save, found %d restores and %d saves", restores, saves)
+	for _, fam := range []string{"test", "lint", "race"} {
+		if restores[fam] == 0 || saves[fam] != 1 {
+			t.Errorf("want go-%s- cache restores and exactly one save, found %d restores and %d saves", fam, restores[fam], saves[fam])
+		}
+	}
+	for fam := range saves {
+		if restores[fam] == 0 {
+			t.Errorf("go-%s- is saved but never restored", fam)
+		}
 	}
 }

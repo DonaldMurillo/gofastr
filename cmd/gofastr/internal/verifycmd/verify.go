@@ -517,7 +517,7 @@ func buildRepoVettool(root string) (bin, dir string, err error) {
 		return "", "", err
 	}
 	bin = filepath.Join(dir, "vettool")
-	build := exec.Command("go", "build", "-o", bin, "./cmd/vettool")
+	build := exec.Command("go", "build", "-buildvcs=false", "-o", bin, "./cmd/vettool")
 	build.Dir = root
 	if output, err := build.CombinedOutput(); err != nil {
 		return "", dir, fmt.Errorf("build repo vettool: %w\n%s", err, output)
