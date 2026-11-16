@@ -38,10 +38,9 @@ invariants:
       - test: framework.TestIdempotencyNamespaceSeparatesOrdinaryCallers
       - test: framework.TestIdempotencyNamespaceSeparatesEmbedSubjects
       - test: framework.TestOwnerPrincipalKeysPerUser
-  - id: idempotency-claim-outlives-request-budget
-    rule: The default in-memory idempotency store's in-flight claim lasts longer than the enforced request budget, and NewApp warns when that per-process store runs behind a fanout.
+  - id: memory-idempotency-store-warns-behind-fanout
+    rule: NewApp warns when the default in-memory idempotency store, which is per process, runs behind a fanout.
     enforced_by:
-      - test: framework.TestAppSizesDefaultIdempotencyInFlightTTL
       - test: framework.TestIdempotencyMemoryStoreWarnsWithFanout
   - id: default-chain-options-refuse-without-defaults
     rule: NewApp panics when WithI18n, WithMetrics or WithTracing is paired with WithoutDefaultMiddleware, and WithLocaleResolver panics unless WithI18n came before it.
@@ -187,6 +186,81 @@ invariants:
     rule: The locale Start negotiates outside the router leaves the request without a locale, rather than failing it, when the host's locale resolver panics.
     enforced_by:
       - test: framework.TestServeLocaleResolverPanicRecovers
+  - id: with-config-replaces-and-warns-on-discards
+    rule: WithConfig replaces AppConfig wholesale, and NewApp warns naming each field an earlier option set that the replacement returned to zero, never for the JSONCase seed NewApp applies before the options run.
+    enforced_by:
+      - test: framework.TestWithConfigReplacesWholeStruct
+      - test: framework.TestWithConfigWarnsNamingDiscardedFields
+      - test: framework.TestWithConfigAloneStaysSilent
+  - id: idempotency-claim-outlives-request-budget
+    rule: Start refuses an idempotency store whose in-flight TTL is not longer than the enforced request budget (RequestTimeout, or 30s when unset), and the store NewApp builds for WithIdempotency passes that check.
+    enforced_by:
+      - test: framework.TestAppChecksIdempotencyTTLEdgeCases
+      - test: framework.TestSweepApp1DefaultBudgetChecksIdempotencyClaim
+      - test: framework.TestSweepApp1DefaultIdempotencyStorePassesItsOwnCheck
+      - test: framework.TestAppSizesDefaultIdempotencyInFlightTTL
+  - id: write-deadline-outlives-request-budget
+    rule: An unset HTTPServerTimeouts.WriteTimeout no longer than the request budget is raised past the budget, and an explicit one no longer than the budget, the 30s default budget included, makes Start return an error.
+    enforced_by:
+      - test: framework.TestSweepApp1RaisedWriteTimeoutOutlivesBudget
+      - test: framework.TestSweepApp1WriteTimeoutEqualToBudgetRefused
+      - test: framework.TestRequestTimeoutPastExplicitWriteTimeoutRefused
+  - id: disable-request-timeout-zeroes-unset-deadlines
+    rule: DisableRequestTimeout zeroes the server's read and write deadlines only where HTTPServerTimeouts leaves them unset.
+    enforced_by:
+      - test: framework.TestDisableTimeoutRelaxesServer
+  - id: crud-routes-need-a-db
+    rule: An entity has CRUD routes only when the App has a DB and Exposure.CRUD is unset or true, and EntityCRUDMounted answers the same.
+    enforced_by:
+      - test: framework.TestEntityCRUDMountedTracksTheMount
+    judge: Does this change decide whether an entity has CRUD routes (for routes, the startup banner, openapi.json or llm.md) without going through entityCRUDEnabled or entityCrudMount?
+  - id: view-mount-reports-read-only
+    rule: An entity mounted by a columned App.View reports a read-only mount, so the llm.md index and openapi.json list only its read routes.
+    enforced_by:
+      - test: framework.TestViewMountReportsReadOnly
+  - id: llm-index-links-the-recorded-mount
+    rule: The /api/llm.md index links each entity at the path its routes were recorded as mounted, API and group prefixes included, and a CRUD-off entity under the API prefix.
+    enforced_by:
+      - test: framework.TestLLMIndexLinksUnderAPIPrefix
+      - test: framework.TestSweepApp1LLMIndexLinksGroupMount
+  - id: outbox-misconfiguration-panics-at-new-app
+    rule: NewApp panics when WithOutbox is given without WithDB or WithOutboxConsumer without WithOutbox, instead of dropping the consumer.
+    enforced_by:
+      - test: framework.TestSweepApp1OutboxWithoutDBNamesWithDB
+      - test: framework.TestOutboxConsumer_WithoutOutboxPanics
+  - id: mcp-gate-survives-server-swap
+    rule: WithMCPGate's gate is installed on whichever MCP server the options leave in App.MCP, so a later WithMCPServer does not drop it.
+    enforced_by:
+      - test: framework.TestMCPGateSurvivesWithMCPServer
+  - id: explicit-secret-option-ignores-env-previous
+    rule: Once WithSecret or WithSecretRotation has run, GOFASTR_SECRET_PREVIOUS is ignored, even when the option set no previous secrets.
+    enforced_by:
+      - test: framework.TestExplicitSecretOptionIgnoresEnvPrevious
+      - test: framework.TestSecretRotationExplicitOptionWinsOverEnv
+  - id: without-auto-migrate-still-runs-seeds
+    rule: WithoutAutoMigrate skips the entity DDL but not the entity seeds, so a seeded entity whose table is missing fails Start.
+    enforced_by:
+      - test: framework.TestSweepApp1WithoutAutoMigrateSeededEntityFailsStart
+  - id: nil-image-override-opts-field-out
+    rule: A nil WithImagePipelineFor deriver is kept as an entry and opts that field out of the app-wide pipeline instead of falling back to it.
+    enforced_by:
+      - test: framework.TestWithImagePipeline_AppWideAndPerFieldOverride
+      - test: framework/crud.TestDerive_PerFieldNilOptsOut
+  - id: openapi-gated-by-default
+    rule: Without PublicOpenAPI, /openapi.json and /api/docs/ answer 401 to an anonymous caller.
+    enforced_by:
+      - test: framework.TestOpenAPI_GatedByDefault
+      - test: framework.TestDocsPageGatedByDefault
+  - id: nil-option-argument-panics-at-call-site
+    rule: WithMCPTools(nil) and WithFanout(nil) panic when called, not later inside NewApp or InitPlugins.
+    enforced_by:
+      - test: framework.TestWithMCPToolsNilPanics
+      - test: framework.TestWithFanout_NilPanics
+  - id: init-plugins-runs-once
+    rule: InitPlugins runs plugin, battery and MCP registrar initialization once per App, so the call inside Start after a manual one is a no-op.
+    enforced_by:
+      - test: framework.TestSweepApp1InitPluginsRunsRegistrarsOnce
+      - test: framework.TestInitPluginsIsIdempotent
 decisions:
   - id: access-logging-outside-default-chain
     date: 2026-11-16
@@ -280,3 +354,95 @@ decisions:
       - option: Loading after the options.
         why: WithDB("env://DATABASE_URL") and similar options would miss values set only in a dotenv file.
     upholds: [dotenv-loads-before-options]
+  - id: with-config-replaces-not-merges
+    date: 2026-11-16
+    status: accepted
+    decision: WithConfig keeps replace semantics and makes the discard loud with a NewApp warning.
+    rejected:
+      - option: Merge only the non-zero fields of the passed AppConfig.
+        why: A merge cannot tell an explicit zero from an unset field, and existing callers rely on WithConfig being authoritative.
+      - option: Replace silently.
+        why: A granular option pasted above WithConfig, as the old init scaffold invited, was lost without a word.
+    upholds: [with-config-replaces-and-warns-on-discards]
+  - id: server-timeouts-are-pointers
+    date: 2026-11-16
+    status: accepted
+    decision: HTTPServerTimeoutsConfig fields are *time.Duration, so nil keeps the framework default and a pointer to 0 disables the deadline.
+    rejected:
+      - option: Plain time.Duration fields.
+        why: A zero value could not tell an unset field from an explicit 0, which net/http reads as no timeout.
+  - id: disable-request-timeout-is-its-own-flag
+    date: 2026-11-16
+    status: accepted
+    decision: The timeout middleware is removed with the DisableRequestTimeout flag, not with a special RequestTimeout value.
+    rejected:
+      - option: A negative RequestTimeout disables the middleware.
+        why: A sign overload is easy to trip by accident, for example by subtracting two timestamps.
+    upholds: [disable-request-timeout-zeroes-unset-deadlines]
+  - id: compression-off-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: The Compress middleware joins the default chain only when AppConfig.Compression is set.
+    rejected:
+      - option: Compress by default.
+        why: A reverse proxy or CDN in front of the app usually compresses already.
+    revisit_if: Most deployments serve clients directly instead of behind a compressing proxy.
+  - id: default-shutdown-timeout-15s
+    date: 2026-11-16
+    status: accepted
+    decision: The signal handler's drain defaults to 15s, well inside the 30s Kubernetes gives a pod between SIGTERM and SIGKILL.
+    rejected:
+      - option: Use the whole 30s grace period.
+        why: It leaves no room for the pre-stop hook and the container runtime's own overhead.
+    revisit_if: The platforms the framework targets change their default termination grace period.
+  - id: serving-handler-in-atomic-pointer
+    date: 2026-11-16
+    status: accepted
+    decision: The serving handler sits in an atomic.Pointer to a wrapper struct, so the interactive setup wizard swaps to the real router without a restart.
+    rejected:
+      - option: atomic.Value holding the http.Handler.
+        why: atomic.Value panics when the concrete type changes between Stores, as from http.HandlerFunc to *router.Router.
+  - id: outbox-relay-feeds-only-consumers
+    date: 2026-11-16
+    status: accepted
+    decision: The outbox relay delivers committed rows only to the declared durable consumers; EmitEvent alone feeds the live bus.
+    rejected:
+      - option: The relay also publishes each committed row to the live event bus.
+        why: The real-time lane already carries the event, so SSE and On subscribers would see it twice.
+  - id: mcp-gate-installed-after-options
+    date: 2026-11-16
+    status: accepted
+    decision: WithMCPGate stores its gate on the App and NewApp installs it on the final MCP server once every option has run.
+    rejected:
+      - option: Set the gate on the server when the option runs.
+        why: A later WithMCPServer swapped in an ungated server.
+    upholds: [mcp-gate-survives-server-swap]
+  - id: a2a-mounted-at-start
+    date: 2026-11-16
+    status: accepted
+    decision: WithA2A holds its config until Start mounts the exchange.
+    rejected:
+      - option: Mount the exchange when the option runs.
+        why: The derived entity skills read the MCP tool registry, which is complete only once entities, plugins and batteries have initialized.
+  - id: router-is-a-method
+    date: 2026-11-16
+    status: accepted
+    decision: The router is reached through App.Router(), not an exported field.
+    rejected:
+      - option: An exported Router field.
+        why: Plugins and batteries swap or wrap the router during Init, and callers must not depend on assigning the field.
+  - id: mcp-tools-take-a-registrar
+    date: 2026-11-16
+    status: accepted
+    decision: WithMCPTools takes a registrar function, so the docs tools in framework/docs/mcptools register without framework importing them.
+    rejected:
+      - option: framework registers the docs tools itself.
+        why: framework would import the markdown corpus, and every docs edit would rebuild and retest every package that imports framework.
+  - id: close-never-used-conns-at-shutdown
+    date: 2026-11-16
+    status: accepted
+    decision: Shutdown closes accepted connections that never sent a request (net/http's StateNew) itself, tracked by the ConnState hook.
+    rejected:
+      - option: Leave them to http.Server.Shutdown.
+        why: Server.Shutdown spares such a connection for five seconds, which turns a bounded drain into a five-second stall.
+    revisit_if: net/http's Server.Shutdown closes never-used connections promptly.
