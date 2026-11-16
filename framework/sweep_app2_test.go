@@ -3,10 +3,12 @@ package framework
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
@@ -92,19 +94,6 @@ func TestSweepApp2MountHandsPreviousEmbedKeys(t *testing.T) {
 	}
 }
 
-// WithI18n lives in the default chain, so NewApp refuses it alongside
-// WithoutDefaultMiddleware.
-func TestSweepApp2I18nWithoutDefaultsPanics(t *testing.T) {
-	defer func() {
-		r := recover()
-		msg, _ := r.(string)
-		if !strings.Contains(msg, "WithI18n is incompatible with WithoutDefaultMiddleware") {
-			t.Fatalf("panic = %v, want the WithI18n incompatibility", r)
-		}
-	}()
-	NewApp(WithI18n(i18n.NewTranslator(i18n.NewMapCatalog(), "en")), WithoutDefaultMiddleware())
-}
-
 // Mountables returns a copy; writing to it does not change the App.
 func TestSweepApp2MountablesReturnsCopy(t *testing.T) {
 	app := NewApp()
@@ -143,5 +132,63 @@ func TestSweepApp2GroupEntityOperationsCarryGroupTag(t *testing.T) {
 	tags, _ := op["tags"].([]string)
 	if len(tags) != 1 || tags[0] != "v1" {
 		t.Fatalf("GET /api/v1/posts tags = %v, want [v1]", op["tags"])
+	}
+}
+
+// NewApp's own logger does not write through the slog.Default installed
+// when it ran.
+func TestSweepApp2SeededLoggerIgnoresSlogDefault(t *testing.T) {
+	prev := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	var global bytes.Buffer
+	slog.SetDefault(slog.New(slog.NewTextHandler(&global, nil)))
+	NewApp().Logger().Info("sweep-app2-probe")
+	if strings.Contains(global.String(), "sweep-app2-probe") {
+		t.Fatalf("the App's seeded logger wrote through slog.Default: %q", global.String())
+	}
+}
+
+// Web Bot Auth verification is installed without the default chain too.
+func TestSweepApp2WebBotAuthVerifiesWithoutDefaults(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware(), WithWebBotAuth(WebBotAuthConfig{
+		Keys:   []map[string]any{{"kty": "OKP"}},
+		Verify: &WebBotAuthVerifyConfig{Require: true},
+	}))
+	app.Router().Get("/probe", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/probe", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("unsigned request without the default chain: status %d, want 403", rec.Code)
+	}
+}
+
+// WithOutbox without WithDB is refused by name.
+func TestSweepApp2OutboxWithoutDBPanicsByName(t *testing.T) {
+	defer func() {
+		msg, _ := recover().(string)
+		if !strings.Contains(msg, "WithOutbox requires WithDB") {
+			t.Fatalf("panic = %q, want the WithOutbox requires WithDB refusal", msg)
+		}
+	}()
+	NewApp(WithOutbox())
+}
+
+// The request timeout answers in the caller's locale: negotiation runs
+// outside it.
+func TestSweepApp2TimeoutAnswersInLocale(t *testing.T) {
+	cat := i18n.NewMapCatalog()
+	cat.Set("fr", "error.gateway_timeout", i18n.Message{Text: "délai dépassé"})
+	a := NewApp(WithI18n(i18n.NewTranslator(cat, "en")), WithConfig(AppConfig{RequestTimeout: 10 * time.Millisecond}))
+	a.Router().Get("/slow", http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/slow", nil)
+	req.Header.Set("Accept-Language", "fr")
+	rr := httptest.NewRecorder()
+	a.Router().ServeHTTP(rr, req)
+	if rr.Code != http.StatusGatewayTimeout || strings.TrimSpace(rr.Body.String()) != "délai dépassé" {
+		t.Fatalf("got %d %q, want 504 in French", rr.Code, rr.Body.String())
 	}
 }
