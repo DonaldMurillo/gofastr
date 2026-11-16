@@ -15,6 +15,14 @@ invariants:
       - battery/
       - examples/
       - cmd/gofastr/
+  - id: secret-input-is-never-spellchecked
+    rule: A ui.PasswordInput's input carries spellcheck=false and autocapitalize=off, so a revealed password is never sent to a spell checker or capitalised.
+    enforced_by:
+      - test: framework/ui.TestPasswordInputSignInHints
+  - id: one-time-code-is-fillable
+    rule: A ui.OneTimeCode is a text input with autocomplete=one-time-code, inputmode=numeric and a digits-only pattern of its length.
+    enforced_by:
+      - test: framework/ui.TestOneTimeCodeIsAFillableCodeField
   - id: component-options-root-floor
     rule: framework/ui registers its component-options compiler at init with the complete theme.DefaultOptions set as the root floor, so an optionless or partial theme still declares every --fui-* option variable at :root and in every scope.
     enforced_by:
@@ -231,3 +239,12 @@ decisions:
     rejected:
       - option: Reuse the ui.toast.* keys.
         why: Those keys name a surface a host may have translated with toast wording.
+  - id: ask-a-new-password-once
+    date: 2026-11-16
+    status: accepted
+    decision: Forms that set a password ask for it once in a ui.PasswordInput, whose show toggle is how the reader checks it; the admin account form sends no confirm_password.
+    rejected:
+      - option: Keep a confirm-password field beside the new one.
+        why: Typing it twice blind catches fewer mistakes than one look at the revealed value, and password managers fill one new-password field.
+    revisit_if: The show toggle is removed or made optional on ui.PasswordInput.
+    upholds: [secret-input-is-never-spellchecked]

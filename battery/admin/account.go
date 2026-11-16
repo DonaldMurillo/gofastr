@@ -158,7 +158,8 @@ func (b *Battery) appearanceCard(ctx context.Context) render.HTML {
 // passwordCard changes the caller's password through the auth battery's
 // POST <base>/password. The form posts JSON through the runtime, which
 // carries the CSRF token as a header, so the form holds only the route's
-// own fields (the route refuses unknown keys). A refusal comes back as
+// own fields (the route refuses unknown keys). The new password is asked
+// once: its show toggle is how the reader checks what they typed. A refusal comes back as
 // per-field errors drawn beside each input. An account with no password
 // (OAuth or magic-link only) is told how to set one instead.
 func (b *Battery) passwordCard(ctx context.Context) render.HTML {
@@ -198,7 +199,6 @@ func (b *Battery) passwordCard(ctx context.Context) render.HTML {
 		field("password", i18nui.AdminNewPassword.Text(ctx),
 			i18nui.AdminNewPasswordHelp.Text(ctx, map[string]any{"min": auth.RecommendedMinPasswordBytes}),
 			"new-password"),
-		field("confirm_password", i18nui.AdminConfirmPassword.Text(ctx), "", "new-password"),
 	))
 }
 

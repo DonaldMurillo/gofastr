@@ -170,8 +170,8 @@ func TestThemeChoiceSetsSchemeAndMeta(t *testing.T) {
 	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
 		t.Fatal("the theme toggle never loaded headless-navigation")
 	}
-	if got := evalString(ctx, schemeState); got != "light|light" {
-		t.Fatalf("on a light OS the page booted as %q, want \"light|light\"", got)
+	if got := evalString(ctx, schemeState); got != "light|light dark" {
+		t.Fatalf("on a light OS the page booted as %q, want \"light|light dark\"", got)
 	}
 	click := func(opt string) {
 		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.querySelector('[data-hui-theme-option="`+opt+`"]').click()`, nil)); err != nil {
@@ -183,8 +183,8 @@ func TestThemeChoiceSetsSchemeAndMeta(t *testing.T) {
 		t.Errorf("after choosing dark: data-color-scheme|meta = %q, want \"dark|dark\"", got)
 	}
 	click("auto")
-	if got := evalString(ctx, schemeState); got != "light|light" {
-		t.Errorf("after choosing auto on a light OS: data-color-scheme|meta = %q, want \"light|light\"", got)
+	if got := evalString(ctx, schemeState); got != "light|light dark" {
+		t.Errorf("after choosing auto on a light OS: data-color-scheme|meta = %q, want \"light|light dark\"", got)
 	}
 }
 
@@ -214,8 +214,8 @@ func TestThemeCycleFirstClickChangesScheme(t *testing.T) {
 	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
 		t.Fatal("the theme toggle never loaded headless-navigation")
 	}
-	if got := evalString(ctx, schemeState); got != "dark|dark" {
-		t.Fatalf("on a dark OS the page booted as %q, want \"dark|dark\"", got)
+	if got := evalString(ctx, schemeState); got != "dark|light dark" {
+		t.Fatalf("on a dark OS the page booted as %q, want \"dark|light dark\"", got)
 	}
 	seen := []string{}
 	for range 3 {
@@ -225,12 +225,37 @@ func TestThemeCycleFirstClickChangesScheme(t *testing.T) {
 		seen = append(seen, evalString(ctx, schemeState))
 	}
 	// Every click changes what the page shows.
-	prev := "dark|dark"
+	prev := "dark|light dark"
 	for i, s := range seen {
 		if s == prev {
 			t.Fatalf("click %d left the page at %q (states after each click: %v)", i+1, s, seen)
 		}
 		prev = s
+	}
+}
+
+// A cycle step that lands on the scheme the OS already shows stores no
+// choice: on a light OS, dark then light leaves storage empty and the
+// meta following the OS, so a later OS switch still moves the page.
+func TestThemeCycleStoresNoChoiceTheOSShows(t *testing.T) {
+	ctx := moduleTestCtx(t, colorSchemeScript(t)+string(ui.ThemeToggle(ui.ThemeToggleConfig{ID: "tt", Variant: ui.ThemeToggleIcon})),
+		prefersScheme("light"))
+	if !pollJS(ctx, moduleLoaded("headless-navigation")) {
+		t.Fatal("the theme toggle never loaded headless-navigation")
+	}
+	stored := `String(localStorage.getItem('gofastr.colorScheme'))`
+	click := func() {
+		if err := chromedp.Run(ctx, chromedp.Evaluate(`document.getElementById('tt').click()`, nil)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	click()
+	if got := evalString(ctx, schemeState) + "|" + evalString(ctx, stored); got != "dark|dark|dark" {
+		t.Fatalf("first click on a light OS: scheme|meta|stored = %q, want \"dark|dark|dark\"", got)
+	}
+	click()
+	if got := evalString(ctx, schemeState) + "|" + evalString(ctx, stored); got != "light|light dark|null" {
+		t.Errorf("second click back to the OS scheme: scheme|meta|stored = %q, want \"light|light dark|null\": light was stored although the OS already shows it", got)
 	}
 }
 

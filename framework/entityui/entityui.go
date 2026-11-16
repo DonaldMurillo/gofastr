@@ -96,6 +96,8 @@ type UI struct {
 	// screens backs the missing-record-screen warning, nil when the host
 	// cannot see the app's screen routes.
 	screens *recordScreens
+	// scriptlessEdits points edit forms' native action at SaveHandler.
+	scriptlessEdits bool
 }
 
 // New checks ext against the app's entities and returns the app's UI.

@@ -1,0 +1,21 @@
+primitive: i18n
+summary: Translation catalogs, the Translator and locale negotiation from the URL, resolvers and request headers.
+code:
+  - core/i18n/
+docs:
+  - framework/docs/content/i18n.md
+invariants:
+  - id: bare-tag-never-widens
+    rule: Negotiate shortens a requested tag along its fallback chain and never lengthens one, so a bare tag such as fr never matches a regional catalog such as fr-CA.
+    enforced_by:
+      - test: core/i18n.TestNegotiateBareTagNeverWidens
+decisions:
+  - id: negotiate-is-rfc4647-lookup
+    date: 2026-11-16
+    status: accepted
+    decision: Negotiate keeps RFC 4647 Lookup, and an app that wants fr readers to get its fr-CA text ships a bare fr catalog or points fr at the fr-CA messages (#716).
+    rejected:
+      - option: After Lookup finds nothing, match a bare tag to the first regional catalog of the same language.
+        why: It changes which catalog every app serves for every bare tag, and which region wins would depend on declaration order.
+    revisit_if: Apps routinely ship regional-only catalogs and the alias step keeps being missed.
+    upholds: [bare-tag-never-widens]

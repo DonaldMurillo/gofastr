@@ -9,6 +9,10 @@ invariants:
     rule: NormalizeOrigin refuses an origin whose host's last label is decimal digits or 0x followed by hex digits unless the host is already a dotted quad.
     enforced_by:
       - test: framework/embed.TestNormalizeOriginRefusesNumberEndingHosts
+  - id: nonce-dead-during-burn-is-expired
+    rule: Exchange answers ErrExpired, never ErrSpent, when the burn store refuses a first claim because the retention deadline passed between verification and the burn, over the memory and SQL burn stores alike.
+    enforced_by:
+      - test: framework/embed.TestFreshNonceExpiringDuringBurnIsExpired
 decisions:
   - id: refuse-hosts-a-browser-rewrites
     date: 2026-11-16

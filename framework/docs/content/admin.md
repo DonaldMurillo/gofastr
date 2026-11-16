@@ -306,8 +306,8 @@ never elevated.
   initials use that name, falling back to the email.
 - **Appearance**: the theme choice, `ui.ThemeToggle`'s pill, stored in
   the browser like the toolbar's toggle.
-- **Password** (only with `Config.Auth`): current, new and confirm
-  fields posting to the auth battery's `POST <BasePath>/password`. The
+- **Password** (only with `Config.Auth`): current and new password
+  fields, each with a show toggle and no confirm field, posting to the auth battery's `POST <BasePath>/password`. The
   route checks every field and answers a refusal per field, and the
   form draws it beside the input. A change signs the user out of their
   other sessions. An account with no password (a store implementing

@@ -1,4 +1,4 @@
-//gofastr:generated generator=app kind=scaffold version=dev sum=252c13b073067f8f
+//gofastr:generated generator=app kind=scaffold version=dev sum=5b0da1731e956197
 
 package main
 
@@ -33,9 +33,9 @@ func (s *LoginScreen) ScreenType() app.ScreenType               { return app.Scr
 func (s *LoginScreen) RenderCtx(ctx context.Context) render.HTML {
 	return ui.Stack(ui.StackConfig{Gap: ui.GapXL},
 		ui.AuthCard(ui.AuthCardConfig{Title: loginScreenTextSignIn.Text(ctx), Alert: authError(ctx), Body: ui.Form(ui.FormConfig{Ctx: ctx, Action: "/auth/login", Method: "POST", SubmitLabel: loginScreenTextSignIn.Text(ctx), SubmitFullWidth: true}, html.Input(html.InputConfig{Type: "hidden", Name: "next", Value: "/"}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthEmail.Text(ctx), For: "auth-email", Required: true, Input: func(c headless.FieldControl) render.HTML {
-			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "email"})
+			return ui.Control(ui.ControlConfig{Field: c, Type: "email", Name: "email", AutoComplete: "username", EnterKeyHint: "next", NoSpellCheck: true})
 		}}), ui.FormField(ui.FormFieldConfig{Label: i18nui.AuthPassword.Text(ctx), For: "auth-password", Required: true, Input: func(c headless.FieldControl) render.HTML {
-			return ui.Control(ui.ControlConfig{Field: c, Type: "password", Name: "password", AutoComplete: "current-password"})
+			return ui.PasswordInput(ui.PasswordInputConfig{Ctx: ctx, Field: c, Name: "password", Autocomplete: "current-password", EnterKeyHint: "go"})
 		}}))}),
 	)
 }

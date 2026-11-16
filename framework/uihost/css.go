@@ -364,6 +364,9 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
 }
 
+// colorSchemeMeta opens every page head: uihost/color-scheme-meta-is-static.
+const colorSchemeMeta = `<meta name="color-scheme" content="light dark">`
+
 var (
 	colorSchemeHashOnce sync.Once
 	colorSchemeHashVal  string

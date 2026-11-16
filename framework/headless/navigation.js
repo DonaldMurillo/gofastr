@@ -253,6 +253,9 @@
         next = order[i];
         if (resolveScheme(next) !== shown) break;
       }
+      // A forced mode the OS already shows is stored as no choice, so
+      // the page keeps following the OS when it changes.
+      if (next !== 'auto' && resolveScheme('auto') === next) next = 'auto';
       applyScheme(next);
     }
   });

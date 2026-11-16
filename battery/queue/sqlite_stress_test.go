@@ -65,7 +65,7 @@ func assertStressDrainsClean(t *testing.T, db *sql.DB) {
 	ctx, cancel := context.WithTimeout(context.Background(), stressDeadline+5*time.Second)
 	defer cancel()
 
-	const jobs = 600
+	const jobs = stressJobs
 	var nacked atomic.Int64
 	settles := &settleFailureLog{}
 	mk := func() *DBQueue {

@@ -219,6 +219,7 @@ func ThemeOverrideCSS(hash string, t Theme) string {
 	// the wrapper.
 	b.WriteString("  color: var(--color-text);\n")
 	b.WriteString("  background: var(--color-background);\n")
+	b.WriteString("  color-scheme: light;\n")
 	b.WriteString("}")
 	if len(t.DarkColors) == 0 && len(t.DarkCode) == 0 {
 		return b.String()
@@ -250,6 +251,9 @@ func darkScopeLines(t Theme) []string {
 		lines = append(lines, fmt.Sprintf("--tk-%s: %s;", name, t.DarkCode[name]))
 	}
 	lines = append(lines, componentOptionDecls(withDefaultOptions(t.Components))...)
+	if len(t.DarkColors) > 0 {
+		lines = append(lines, "color-scheme: dark;")
+	}
 	return lines
 }
 

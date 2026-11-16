@@ -687,6 +687,7 @@ screens:
           action: /account/login
           next: /app
           register_href: /signup
+          forgot_href: /forgot-password
   - name: signup
     route: /signup
     layout: marketing

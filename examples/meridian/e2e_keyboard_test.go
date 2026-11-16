@@ -154,6 +154,17 @@ const kbgateSetupJS = `(() => {
     return '';
   };
 
+  // _indicatorOf is _hasIndicator for the focused element, or for the
+  // affix shell around it: an affix input (ui.PasswordInput) is
+  // borderless by design and its shell draws the one ring.
+  NS._indicatorOf = function(el, focused, blurred) {
+    const reason = NS._hasIndicator(focused, blurred);
+    if (reason || !el.hasAttribute('data-hui-affix-input')) return reason;
+    const shell = el.closest('[data-hui-affix]');
+    const ring = shell ? NS._hasIndicator(NS._snap(shell), null) : '';
+    return ring ? 'affix shell ' + ring : '';
+  };
+
   NS._sig = function(el) {
     const parts = []; let cur = el, depth = 0;
     while (cur && cur.nodeType === 1 && depth < 6) {
@@ -237,7 +248,7 @@ const kbgateSetupJS = `(() => {
     out.cls = (el.getAttribute('class') || '').slice(0, 90); out.sig = NS._sig(el);
     const focused = NS._snap(el);
     const blurred = (!out.newEl && NS.tabbables[idx]) ? NS.tabbables[idx].blurred : null;
-    const reason = NS._hasIndicator(focused, blurred);
+    const reason = NS._indicatorOf(el, focused, blurred);
     out.hasIndicator = reason !== ''; out.indicatorReason = reason;
     const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
     out.w = Math.round(r.width); out.h = Math.round(r.height);
@@ -287,7 +298,7 @@ const kbgateSetupJS = `(() => {
     NS._modalVisits.push(idx);
     const focused = NS._snap(el);
     const blurred = NS._modalItems[idx] ? NS._modalItems[idx].blurred : null;
-    const reason = NS._hasIndicator(focused, blurred);
+    const reason = NS._indicatorOf(el, focused, blurred);
     out.hasIndicator = reason !== ''; out.indicatorReason = reason;
     const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
     out.visible = cs.display !== 'none' && !HIDDEN_VIS[cs.visibility] && r.width > 0 && r.height > 0 &&

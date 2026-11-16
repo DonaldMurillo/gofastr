@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/DonaldMurillo/gofastr/core-ui/html"
 	"github.com/DonaldMurillo/gofastr/core-ui/registry"
@@ -20,6 +21,9 @@ type PasswordInputConfig struct {
 	Required    bool
 	// Autocomplete lands on the inner input.
 	Autocomplete string
+	// MinLength and EnterKeyHint land on the inner input.
+	MinLength    int
+	EnterKeyHint string
 	Class        string
 	// ExtraAttrs lands on the shell; keys the component owns are dropped.
 	ExtraAttrs map[string]string
@@ -49,6 +53,12 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 	if cfg.Autocomplete != "" {
 		inputExtra["autocomplete"] = cfg.Autocomplete
 	}
+	if cfg.MinLength > 0 {
+		inputExtra["minlength"] = strconv.Itoa(cfg.MinLength)
+	}
+	if cfg.EnterKeyHint != "" {
+		inputExtra["enterkeyhint"] = cfg.EnterKeyHint
+	}
 	ctx := cfg.Ctx
 	if ctx == nil {
 		ctx = context.Background()
@@ -65,6 +75,7 @@ func PasswordInput(cfg PasswordInputConfig) render.HTML {
 		Parts: headless.Parts{Attrs: headless.PartAttrs{
 			headless.PartRoot: html.SafeExtraAttrs(cfg.ExtraAttrs,
 				"type", "name", "placeholder", "required", "autocomplete",
+				"minlength", "enterkeyhint", "spellcheck", "autocapitalize",
 				"aria-invalid", "aria-describedby"),
 		}},
 		Strings: StringsFor(ctx),

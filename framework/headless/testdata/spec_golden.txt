@@ -480,7 +480,7 @@ a side pane with no label of its own is named by the Strings default (Secondary,
 
 === Password / revealable ===
 the reveal button is a toggle button: one name (Show password) and one word that never change, with aria-pressed saying whether the password is shown — a name that flipped to Hide password read as Hide password, pressed
-<div data-hui-field=""><label data-cui-internal="" for="password-token">Registry token</label><div data-hui-affix=""><input data-cui-internal="" data-hui-affix-input="" id="password-token" name="token" type="password"><button aria-label="Show password" aria-pressed="false" data-cui-internal="" data-hui-reveal="" type="button">Show</button></div></div>
+<div data-hui-field=""><label data-cui-internal="" for="password-token">Registry token</label><div data-hui-affix=""><input autocapitalize="off" data-cui-internal="" data-hui-affix-input="" id="password-token" name="token" spellcheck="false" type="password"><button aria-label="Show password" aria-pressed="false" data-cui-internal="" data-hui-reveal="" type="button">Show</button></div></div>
 
 === Progress / a determinate bar ===
 the native element carries the value and the maximum; the component's whole job is the name and the clamp that keeps the fraction honest

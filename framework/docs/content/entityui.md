@@ -281,7 +281,29 @@ keeps the UI unchanged; without a callback the default stays
   `enctype="multipart/form-data"`: the CRUD route reads JSON or
   multipart and refuses urlencoded, so a browser without the runtime
   still submits a body the route reads (behind its cross-site guard),
-  and the runtime sends the same form as FormData. A stored key draws at `Extensions.FilesURL` + key (each segment
+  and the runtime sends the same form as FormData. That covers a
+  create. An edit needs the runtime by default: the runtime sends it
+  as a `PUT`, and a browser without it posts the form natively to
+  `<write base>/<id>`, which answers 405. To let an edit save
+  without the runtime, build the UI with `appUI.WithScriptlessEdits()`
+  and mount `appUI.SaveHandler(entity)` at
+  `POST <write base>/<id>/_save`, on the router that holds the entity's
+  write routes so their middleware guards it too. The edit form and
+  each masked field's Replace form then post natively to
+  `<write base>/<id>/_save?back=<record page>`, while the runtime still
+  PUTs to the CRUD route. The handler runs the CRUD handler's `Update`
+  on the same multipart body as a `PUT`, so it has the same gates (the
+  content-type and cross-site checks, permission, scope, hooks,
+  uploads). A save answers 303 to `back`, which must be a same-origin
+  relative path, or the handler answers 400 and writes nothing. A
+  refused write answers what the CRUD route answers:
+
+  ```go
+  appUI = appUI.WithScriptlessEdits()
+  app.Router().Post("/api/invoices/{id}/_save", appUI.SaveHandler("invoices"))
+  ```
+
+  A stored key draws at `Extensions.FilesURL` + key (each segment
   escaped; a key with `..` or a scheme other than http(s) draws
   nothing).
 - **A create screen** (`appUI.Create("invoices")`): the same form,

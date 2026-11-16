@@ -624,8 +624,34 @@ func (p *TwoFAPlugin) verifyHandler(w http.ResponseWriter, r *http.Request) {
 // Verifies a TOTP code (or backup code) during login. Called after the
 // core login flow if the user has 2FA enabled.
 func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
-	if p.challengeLimit != nil && !p.challengeLimit.guard(w, r) {
+	if rejectCrossSiteForm(w, r) {
 		return
+	}
+	if !guardAuthLimit(p.challengeLimit, w, r) {
+		return
+	}
+	// An HTML form (ui.OneTimeCode posting "code") gets each failure as
+	// the 303 back to its page with ?error=, and success as the 303 to
+	// its next; a JSON client gets the JSON answers.
+	isForm := isFormRequest(r)
+	fail := func(status int, reason i18n.Phrase) {
+		if isForm {
+			writeFormAuthError(w, r, status, reason)
+			return
+		}
+		writeAuthError(w, r, status, reason)
+	}
+	verified := func(backupCode bool) {
+		if isForm {
+			http.Redirect(w, r, successRedirect(w, r, "/"), http.StatusSeeOther)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if backupCode {
+			json.NewEncoder(w).Encode(map[string]any{"verified": true, "backup_code": true})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"verified": true})
 	}
 	// challengeHandler is the ONLY endpoint a PendingTwoFactor session may
 	// reach, it is how the session completes step-up. Hence it uses the raw
@@ -633,7 +659,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	// requireStepUpSession.
 	sess, err := p.mgr.requestSession(r, true)
 	if err != nil {
-		writeAuthError(w, r, http.StatusUnauthorized, reasonNotAuthenticated)
+		fail(http.StatusUnauthorized, reasonNotAuthenticated)
 		return
 	}
 	userID := sess.UserID
@@ -641,17 +667,23 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Code string `json:"code"`
 	}
-	if !decodeJSONLimited(w, r, &body) {
+	if isForm {
+		v, ok := decodeFormFields(w, r, "code")
+		if !ok {
+			return
+		}
+		body.Code = v["code"]
+	} else if !decodeJSONLimited(w, r, &body) {
 		return
 	}
 	if body.Code == "" {
-		writeAuthError(w, r, http.StatusBadRequest, reasonCodeRequired)
+		fail(http.StatusBadRequest, reasonCodeRequired)
 		return
 	}
 
 	state, err := p.store.GetTwoFA(r.Context(), userID)
 	if err != nil || state == nil || !state.Enabled {
-		writeAuthError(w, r, http.StatusBadRequest, reason2faNotEnabled)
+		fail(http.StatusBadRequest, reason2faNotEnabled)
 		return
 	}
 
@@ -666,12 +698,12 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			slog.Default().Warn("auth: 2fa session budget store error: failing closed", "err", err)
 			w.Header().Set("Retry-After", ratelimit.RetryAfterSeconds(retry))
-			writeAuthError(w, r, http.StatusServiceUnavailable, reasonTryAgainShortly)
+			fail(http.StatusServiceUnavailable, reasonTryAgainShortly)
 			return
 		}
 		if !allowed {
 			if err := p.mgr.SessionStore().Delete(r.Context(), sess.Token); err != nil {
-				writeAuthError(w, r, http.StatusInternalServerError, reasonCouldNotEndTheSignIn)
+				fail(http.StatusInternalServerError, reasonCouldNotEndTheSignIn)
 				return
 			}
 			p.mgr.emitSecurity(r.Context(), SecurityEvent{
@@ -679,7 +711,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 				UserID: userID,
 				Remote: remoteHost(r),
 			})
-			writeAuthError(w, r, http.StatusUnauthorized, reasonTooManyAttempts)
+			fail(http.StatusUnauthorized, reasonTooManyAttempts)
 			return
 		}
 	}
@@ -708,15 +740,14 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"method": "totp"},
 		})
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"verified": true})
+		verified(false)
 		return
 	}
 
 	// Fallback to backup code.
 	consumed, err := p.store.ConsumeBackupCode(r.Context(), userID, body.Code)
 	if err != nil {
-		writeAuthError(w, r, http.StatusInternalServerError, reasonBackupCodeCheckFailed)
+		fail(http.StatusInternalServerError, reasonBackupCodeCheckFailed)
 		return
 	}
 	if consumed {
@@ -729,8 +760,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 			Remote: remoteHost(r),
 			Meta:   map[string]string{"method": "backup_code"},
 		})
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"verified": true, "backup_code": true})
+		verified(true)
 		return
 	}
 
@@ -739,7 +769,7 @@ func (p *TwoFAPlugin) challengeHandler(w http.ResponseWriter, r *http.Request) {
 		UserID: userID,
 		Remote: remoteHost(r),
 	})
-	writeAuthError(w, r, http.StatusUnauthorized, reasonInvalidCode)
+	fail(http.StatusUnauthorized, reasonInvalidCode)
 }
 
 // HasTwoFactorEnabled implements TwoFactorChecker. Returns true when the

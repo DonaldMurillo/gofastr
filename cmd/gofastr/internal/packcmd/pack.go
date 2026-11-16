@@ -3030,10 +3030,14 @@ func reversePricing(call *ast.CallExpr) appspec.AppSpecBlock {
 func reverseAuthCard(call *ast.CallExpr) appspec.AppSpecBlock {
 	c := cfgOf(call, 0)
 	// Body: ui.Form(ui.FormConfig{Action: …}, hidden-next, fields…).
-	action, next := "", ""
+	action, next, forgot := "", "", ""
 	if form, ok := c["Body"].(*ast.CallExpr); ok && callSel(form) == "ui.Form" {
 		action = appspec.AstString(cfgOf(form, 0)["Action"])
 		for _, arg := range form.Args[1:] {
+			// The forgot-password link: a ui.Link among the form's fields.
+			if link, ok := arg.(*ast.CallExpr); ok && callSel(link) == "ui.Link" {
+				forgot = appspec.AstString(cfgOf(link, 0)["Href"])
+			}
 			// The hidden next input: the generator emits it as
 			// html.Input(html.InputConfig{Type: "hidden", Name: "next", …}).
 			if in, ok := arg.(*ast.CallExpr); ok && callSel(in) == "html.Input" {
@@ -3060,6 +3064,7 @@ func reverseAuthCard(call *ast.CallExpr) appspec.AppSpecBlock {
 	putStr(p, "action", action)
 	putStr(p, "next", next)
 	putStr(p, hrefKey, footerHref)
+	putStr(p, "forgot_href", forgot)
 	return appspec.AppSpecBlock{Kind: kind, Text: appspec.AstString(c["Title"]), Props: p}
 }
 

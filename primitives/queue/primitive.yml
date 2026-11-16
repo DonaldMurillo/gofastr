@@ -73,6 +73,16 @@ invariants:
       - test: battery/queue.TestSchedulerNextWakeBounds
       - test: battery/queue.TestSchedulerFiresJobsRegisteredAfterStart
 decisions:
+  - id: stress-soak-scales-under-race
+    date: 2026-11-16
+    status: accepted
+    decision: The SQLite and Postgres drain soaks enqueue 200 jobs in a -race build and 600 otherwise, through the stressJobs constant in race_on_test.go and race_off_test.go, and keep the 60 second drain deadline.
+    rejected:
+      - option: Scale stressDeadline under -race instead.
+        why: The deadline must stay well below the two-minute claim lease, so lease recovery cannot finish a drain; a longer deadline eats that margin.
+      - option: Skip the soak under -race.
+        why: The race build is where a settle racing a claim shows up.
+    revisit_if: A race-built soak with 200 jobs passes without ever nacking or contending for the write lock.
   - id: replay-is-replay-job
     date: 2026-11-16
     status: accepted

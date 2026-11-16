@@ -21,7 +21,11 @@ type ControlConfig struct {
 	Disabled                         bool
 	Min, Max, Step                   string
 	MinLength, MaxLength             int
-	Class                            string
+	// EnterKeyHint and InputMode set enterkeyhint and inputmode.
+	EnterKeyHint, InputMode string
+	// NoSpellCheck sets spellcheck="false" and autocapitalize="off".
+	NoSpellCheck bool
+	Class        string
 	// ExtraAttrs lands on the input; keys the control owns are dropped.
 	ExtraAttrs html.Attrs
 }
@@ -47,7 +51,8 @@ func Control(cfg ControlConfig) render.HTML {
 	}
 	extra := html.SafeExtraAttrs(cfg.ExtraAttrs,
 		"type", "name", "value", "placeholder", "autocomplete", "minlength", "maxlength",
-		"min", "max", "step", "required", "disabled", "aria-invalid", "aria-describedby")
+		"min", "max", "step", "enterkeyhint", "inputmode", "spellcheck", "autocapitalize",
+		"required", "disabled", "aria-invalid", "aria-describedby")
 	if extra == nil {
 		extra = html.Attrs{}
 	}
@@ -59,6 +64,16 @@ func Control(cfg ControlConfig) render.HTML {
 	}
 	if cfg.MaxLength > 0 {
 		extra["maxlength"] = strconv.Itoa(cfg.MaxLength)
+	}
+	if cfg.EnterKeyHint != "" {
+		extra["enterkeyhint"] = cfg.EnterKeyHint
+	}
+	if cfg.InputMode != "" {
+		extra["inputmode"] = cfg.InputMode
+	}
+	if cfg.NoSpellCheck {
+		extra["spellcheck"] = "false"
+		extra["autocapitalize"] = "off"
 	}
 	return inputHTML(headless.InputProps{
 		Type:        cfg.Type,

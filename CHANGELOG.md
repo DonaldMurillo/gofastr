@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **An embed nonce that expires during its exchange answers `ErrExpired`.**
+  `Host.Exchange` reported `ErrSpent` ("nonce already used") for a nonce
+  never used whose retention deadline passed between verification and
+  the burn. Nothing to change.
+- **A `Tooltip` with no id scope on `Ctx` gets a unique id.** Without a
+  scope (no `Ctx`, or `context.Background()`), the derived id now takes a
+  counter suffix (`tip-need-help-3`), so two same-text tooltips never
+  share one. Pass the page's ctx for an id that is the same on every
+  render.
+- **The docs now say that `Accept-Language: fr` never matches a catalog
+  that has only `fr-CA`** ([i18n](framework/docs/content/i18n.md#locale-negotiation)).
+  Ship a bare `fr` catalog, or point `fr` at the `fr-CA` messages.
 - **A dismissed Banner stays dismissed when its `DismissID` holds a space,
   a slash, `(`, or a letter outside ASCII.** The runtime writes the cookie
   under `encodeURIComponent(id)` and `Banner` looked it up raw, so it
@@ -158,6 +170,12 @@ few lines, and link the PR or the docs page for the rest.
   reason to send the session back.
 
 ### Added
+- **Scriptless record edits, as an opt-in** ([entityui](framework/docs/content/entityui.md)).
+  `UI.WithScriptlessEdits()` points the edit form and the masked-field
+  Replace forms at `POST <write base>/<id>/_save`, served by the new
+  `UI.SaveHandler(entity)`. It runs the CRUD update and answers 303 back
+  to the record. Mount the handler beside the entity's write routes.
+  Without the opt-in, nothing changes, and an edit still needs the runtime.
 - **Erasure reaches email-keyed tokens in two more cases.**
   `datexport.DataIdentityResolver.Canonicalize` rewrites a resolved value
   before it is bound, and `battery/auth` sets it to its email
