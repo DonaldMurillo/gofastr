@@ -213,12 +213,12 @@ func TestSweepModulesVersionsAgreeOnPrimaryKey(t *testing.T) {
 func TestSweepModulesColumnNamesFoldCase(t *testing.T) {
 	reg := NewRegistry()
 	if err := sweepRegister(reg, "posts", "/v1", entity.EntityConfig{
-		Table: "posts", Fields: []schema.Field{{Name: "Title", Type: schema.String}},
+		Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.String}},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	err := sweepRegister(reg, "posts", "/v2", entity.EntityConfig{
-		Table: "posts", Fields: []schema.Field{{Name: "title", Type: schema.Int}},
+		Table: "posts", Fields: []schema.Field{{Name: "Title", Type: schema.Int}},
 	})
 	if err == nil || !strings.Contains(err.Error(), "incompatible schema") {
 		t.Fatalf("case-differing column = %v, want an incompatible-schema refusal", err)
@@ -298,5 +298,23 @@ func TestSweepModulesStartSkipsFreshUnenqueuedJob(t *testing.T) {
 	}
 	if len(runner.got) != 0 {
 		t.Fatalf("start enqueued %v, want nothing inside the grace period", runner.got)
+	}
+}
+
+// A typed hook's written-back integer lands as int64, the type the untyped
+// body carries, not float64.
+func TestSweepModulesTypedHookIntegersStayInt64(t *testing.T) {
+	type rec struct {
+		Meta map[string]any `json:"meta"`
+	}
+	before := rec{}
+	after := rec{Meta: map[string]any{"n": 3}}
+	dest := map[string]any{}
+	if err := mergeStructIntoMap(&before, &after, dest); err != nil {
+		t.Fatal(err)
+	}
+	meta, _ := dest["meta"].(map[string]any)
+	if got, ok := meta["n"].(int64); !ok || got != 3 {
+		t.Fatalf("meta.n = %#v (%T), want int64(3)", meta["n"], meta["n"])
 	}
 }
