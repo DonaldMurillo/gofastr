@@ -2,8 +2,7 @@ package framework
 
 import "github.com/DonaldMurillo/gofastr/framework/event"
 
-// Root spellings of framework/event. framework.X is the public API; the
-// extraction moved the implementation, not the name callers write.
+// Root spellings of framework/event.
 
 type (
 	Event        = event.Event
@@ -17,5 +16,4 @@ const (
 	EntityDeleted = event.EntityDeleted
 )
 
-// NewEventBus wraps event.NewEventBus.
 func NewEventBus() *event.EventBus { return event.NewEventBus() }

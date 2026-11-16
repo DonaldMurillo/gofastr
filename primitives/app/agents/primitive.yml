@@ -1,0 +1,182 @@
+primitive: app.agents
+summary: "The agent-facing discovery surface: A2A task exchange, the well-known documents, auth.md and OAuth protected-resource metadata."
+code:
+  - framework/a2a.go
+  - framework/agents.go
+  - framework/agent_extras.go
+  - framework/wellknown.go
+  - framework/authmd.go
+  - framework/oauth_resource.go
+docs:
+  - framework/docs/content/agent-ready.md
+  - framework/docs/content/a2a.md
+invariants:
+  - id: a2a-anonymous-refused
+    rule: An A2A request whose owner extractor resolves no owner answers 401 before any method runs, and is never put in a shared anonymous owner.
+    enforced_by:
+      - test: framework.TestA2A_MountsExchange
+  - id: a2a-task-keeps-tenant-and-scopes
+    rule: An A2A task records the tenant it ran in and the scopes the caller's credential held, so another tenant or a narrower credential of the same user cannot read it.
+    enforced_by:
+      - test: framework.TestA2ATaskStaysInItsTenant
+      - test: framework.TestA2ANarrowTokenCannotListSessionTasks
+  - id: a2a-entity-skill-runs-gated
+    rule: An entity skill calls its tool through CallToolFor with the original request on the context, so the server-wide MCP gate, the tool's own gate and owner scoping apply as they do on /mcp.
+    enforced_by:
+      - test: framework.TestA2ASkillHonorsMCPGate
+      - test: framework.TestA2A_GatedToolRefused
+      - test: framework.TestA2A_EntitySkillOwnerScopedRoundTrip
+  - id: a2a-card-shows-anonymous-view
+    rule: The entity skills A2ASkills returns for the public agent card are those an anonymous tools/list shows; hand-written skills always appear.
+    enforced_by:
+      - test: framework.TestA2ACardHidesGatedEntitySkills
+  - id: a2a-one-skill-list
+    rule: The exchange and the agent card take their skills from one builder, a2aSkillsFrom, and DisableEntitySkills removes the derived entity skills from both.
+    enforced_by:
+      - test: framework.TestA2A_SkillsForCard
+      - test: framework.TestSweepAgentsA2ADisableEntitySkills
+  - id: a2a-entity-skill-needs-entity
+    rule: A tool counts toward an entity skill only when its name has an entity action suffix and its entity half names a registered entity.
+    enforced_by:
+      - test: framework.TestA2A_EntitySkillGroupingIgnoresCustomTools
+  - id: a2a-invocation-parsing
+    rule: entityInvocation skips a data part with no "operation" key and refuses a present non-string operation or non-object arguments.
+    enforced_by:
+      - test: framework.TestEntityInvocationMissingOperationFallsThrough
+      - test: framework.TestEntityInvocationPresentNonStringRejected
+      - test: framework.TestEntityInvocationRefusals
+  - id: a2a-private-push-is-opt-in
+    rule: A push-notification URL naming a private or loopback host is refused unless A2AConfig.AllowPrivatePush is set.
+    enforced_by:
+      - test: framework.TestSweepAgentsA2APushRefusesPrivateHostByDefault
+  - id: a2a-origins-pass-through
+    rule: A2AConfig.AllowedOrigins reaches the exchange, which otherwise refuses a browser Origin that is not the request's own host.
+    enforced_by:
+      - test: framework.TestA2AAllowedOriginsPassthrough
+  - id: wellknown-origin-not-spoofable
+    rule: The origin in a well-known document is AppConfig.BaseURL when set, else the request Host with a scheme from TLS or from a trusted proxy's X-Forwarded-Proto of exactly http or https; X-Forwarded-Host is never read.
+    enforced_by:
+      - test: framework.TestWellKnownBaseNotSpoofable
+      - test: framework.TestSweepAgentsWellKnownIgnoresForwardedHost
+      - test: framework.TestSweepAgentsForwardedProtoMustBeExactScheme
+  - id: wellknown-varies-on-inputs
+    rule: A well-known document built from the request carries Vary on Host and X-Forwarded-Proto, and none when AppConfig.BaseURL pins the origin.
+    enforced_by:
+      - test: framework.TestWellKnownCardVariesOnInputs
+      - test: framework.TestSweepAgentsWellKnownDocsVaryUnlessBaseURL
+  - id: wellknown-encode-failure-is-500
+    rule: A well-known document that cannot be encoded as JSON answers 500, never an empty 200.
+    enforced_by:
+      - test: framework.TestSweepAgentsWellKnownEncodeFailureIs500
+  - id: handler-never-writes-config
+    rule: A well-known handler applies its defaults to a per-request copy and never writes into the configuration an option installed.
+    enforced_by:
+      - test: framework.TestAgentSkillsIndexNoConfigMutation
+  - id: oauth-resource-urls-validated
+    rule: Start refuses an OAuth protected-resource Resource that is not an absolute https URL without userinfo or fragment, and an authorization server URL that also carries a query.
+    enforced_by:
+      - test: framework.TestOAuthMetadataRefusesInvalidURLs
+      - test: framework.TestOAuthMetadataAllowsResourceQuery
+  - id: oauth-resource-path-route
+    rule: The protected-resource document is also served at the well-known prefix followed by the Resource's path, only when that path is literal unreserved characters with no empty, dot or dot-dot segment.
+    enforced_by:
+      - test: framework.TestOAuthProtectedResourceServesThePathInsertedURL
+      - test: framework.TestOAuthResourceMetadataPathsRefuseNonLiteralPaths
+  - id: agent-auth-rides-the-as-document
+    rule: WithAuthMD's AgentAuth block is emitted only inside /.well-known/oauth-authorization-server, with its skill URL defaulting to the resolved origin plus /auth.md.
+    enforced_by:
+      - test: framework.TestAuthMD_AgentAuthMergedIntoAS
+  - id: webbotauth-verify-opt-in
+    rule: The published key directory is byte-identical whether or not WebBotAuthConfig.Verify is set, a request is never blocked unless Verify.Require is set, and Require blocks unverified traffic.
+    enforced_by:
+      - test: framework.TestWebBotAuth_VerifyNilAddsNothing
+      - test: framework.TestWebBotAuth_PublishingBytesPinnedWhenVerifyUnset
+      - test: framework.TestWebBotAuth_ObserveModePassesThrough
+      - test: framework.TestWebBotAuth_RequireModeBlocksUnsigned
+  - id: webbotauth-validity-capped
+    rule: A Web Bot Auth signature whose expires minus created exceeds MaxValidity, five minutes by default, is invalid, and a negative MaxValidity panics.
+    enforced_by:
+      - test: framework.TestWebBotAuth_MaxValidityWired
+      - test: core/webbotauth.TestSignatureValidityWindowCapped
+      - test: core/webbotauth.TestWithMaxValidityRefusesNegative
+  - id: agent-rate-key-trusts-xff-only-when-asked
+    rule: AgentRateLimitKey keys a verified agent by its identity and everyone else by client IP, reading X-Forwarded-For only when trustXFF is set.
+    enforced_by:
+      - test: framework.TestAgentRateLimitKeySplitsAgentFromIP
+decisions:
+  - id: a2a-through-app-router
+    date: 2026-11-16
+    status: accepted
+    decision: The exchange is mounted on the app router, so session and bearer auth, owner context, recovery and request logging run on every exchange request.
+    rejected:
+      - option: Mount it beside the router.
+        why: The exchange would see no owner, and every task would answer 401 or lose its scoping.
+    upholds: [a2a-anonymous-refused]
+  - id: a2a-owner-without-fingerprint
+    date: 2026-11-16
+    status: accepted
+    decision: The A2A owner is the framework owner extractor's id alone, without the credential-fingerprint fallback idempotency uses.
+    rejected:
+      - option: Idempotency's fallback that keys anonymous traffic by its credential.
+        why: Every task row is per-user data, and a shared anonymous namespace would let one caller read and resume another's tasks.
+    upholds: [a2a-anonymous-refused]
+  - id: entity-skills-from-tool-registry
+    date: 2026-11-16
+    status: accepted
+    decision: Entity skills are derived from the MCP tool registry, the walk OpenAPI, the CLI, the SDK and tools/list share.
+    rejected:
+      - option: A fresh walk of the entity schemas.
+        why: The skill descriptions could drift from the tools they invoke.
+    upholds: [a2a-entity-skill-needs-entity]
+  - id: disable-entity-skills-flag
+    date: 2026-11-16
+    status: accepted
+    decision: Entity skills are on by default and turned off with the DisableEntitySkills boolean.
+    rejected:
+      - option: A *bool EntitySkills field.
+        why: The repo's other default-on flags read as Disable* booleans (Config.NoLLMMD, DisableSignalHandling).
+  - id: webbotauth-observe-by-default
+    date: 2026-11-16
+    status: accepted
+    decision: Web Bot Auth verification defaults to observe mode, which annotates and logs but never blocks.
+    rejected:
+      - option: Require mode by default.
+        why: A bug in middleware that tracks a moving draft must not be able to take an app's traffic down.
+    revisit_if: The Web Bot Auth protocol is published as a stable RFC and the verifier stops tracking a draft.
+    upholds: [webbotauth-verify-opt-in]
+  - id: agent-budget-behind-ip-ceiling
+    date: 2026-11-16
+    status: accepted
+    decision: AgentRateLimitKey gives each verified agent its own budget and is meant to run behind an IP-keyed limiter.
+    rejected:
+      - option: Key verified agents by identity alone.
+        why: A signer chooses its identity URL, so one sender could mint a fresh agent budget per request.
+  - id: forwarded-host-ignored
+    date: 2026-11-16
+    status: accepted
+    decision: Without a BaseURL the well-known origin uses r.Host and never X-Forwarded-Host.
+    rejected:
+      - option: Honour X-Forwarded-Host.
+        why: Any client sets it, and reflecting it into the Link rel=service header and document URLs poisons shared caches with an attacker's server.
+    upholds: [wellknown-origin-not-spoofable]
+  - id: server-card-at-two-paths
+    date: 2026-11-16
+    status: accepted
+    decision: The MCP server card is served at /mcp/server-card, the spec path, and at /.well-known/mcp/server-card.json, the path scanners probe.
+    rejected:
+      - option: Serve only the spec path.
+        why: The isitagentready scanner probes the well-known path.
+  - id: mcp-manifest-carries-both-shapes
+    date: 2026-11-16
+    status: accepted
+    decision: /.well-known/mcp.json carries both the flat name, endpoint and transport fields and the nested mcpServers map.
+    rejected:
+      - option: One shape only.
+        why: Clients parse one convention or the other, and one document can serve both.
+  - id: resource-metadata-header-left-to-host
+    date: 2026-11-16
+    status: accepted
+    decision: The framework serves the RFC 9728 document but leaves the WWW-Authenticate resource_metadata header on 401s to the host's auth middleware.
+    rejected:
+      - option: Emit the header on every 401.
+        why: Only the host knows which routes are protected by OAuth tokens.

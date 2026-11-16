@@ -1904,7 +1904,11 @@ func TestRuntimeModuleSizeBudgets(t *testing.T) {
 		// to the entry the last _pushURL write left: a URL-only write
 		// (replaceURL) followed by Back animated the Back as an
 		// undecided forward (TestNavGuardHistoryReplaceURL).
-		"transition": 1456,
+		// 1491 measured (1489 + 2) after held clicks keep their order: a
+		// click held behind a running transition was delivered after a
+		// later click and overrode it
+		// (TestHeldClickNeverLandsAfterALaterClick).
+		"transition": 1491,
 		// rpc 3195 measured (3193 + 2 clearance) after the 2xx success
 		// toast (admin rebuild W2, 2026-10-06): data-cui-rpc-success-
 		// toast dispatches through _toastOrFallback BEFORE the trigger's

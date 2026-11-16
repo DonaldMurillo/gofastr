@@ -26,10 +26,16 @@ invariants:
     enforced_by:
       - test: framework/crud.TestSnapshotFieldsAreACopy
       - test: framework/crud.TestVisibleFieldsReturnsCopy
-  - id: snapshot-signature-covers-wire-name-and-type
-    rule: VisibleFields republishes the snapshot when a field's name, WireName, Hidden or Type changed.
+  - id: request-path-reads-fields-from-the-snapshot
+    rule: A list or get request reads the entity's own field declarations, its masks and its default created_at sort included, only through the snapshot, so a host rewriting a declaration while requests are served is no data race.
+    enforced_by:
+      - test: framework/crud.TestFieldMutationDuringServeIsRaceFree
+  - id: visible-fields-republishes-the-snapshot
+    rule: Every VisibleFields call rebuilds the snapshot from the live declarations, so a field's name, WireName, Hidden, Type or Mask changed after NewCrudHandler applies from that call on.
     enforced_by:
       - test: framework/crud.TestVisibleFieldsSeesWireNameAndTypeChanges
+      - test: framework/crud.TestMaskChangedAfterConstructionAppliesOnRepublish
+      - test: framework/crud.TestMaskPanicReadsAsNull
   - id: snapshot-follows-json-case
     rule: A JSONCase assigned directly after NewCrudHandler takes effect on the next request.
     enforced_by:
@@ -88,9 +94,10 @@ invariants:
     enforced_by:
       - test: framework/crud.TestDecimalSQLiteRefusesDigitsItWouldDrop
       - test: framework/crud.TestDecimalSQLiteStorageBoundaries
-  - id: legacy-timestamp-keyset-binds-stored-text
-    rule: On an Unmanaged SQLite entity a cursor over a Timestamp column binds the anchor row's stored text, checked as a timestamp spelling, so a walk serves the sorted list once whatever layout the rows hold.
+  - id: sqlite-timestamp-keyset-binds-stored-text
+    rule: On SQLite a cursor over a Timestamp column binds the anchor row's stored text, checked as a timestamp spelling, on a managed entity as on an Unmanaged one, so a walk serves the sorted list once whatever layout the rows hold.
     enforced_by:
+      - test: framework/crud.TestCursorOverSeededTimestamps
       - test: framework/crud.TestLegacyTimestampLayouts
       - test: framework/crud.TestLegacyTimestampCursorRefusesNonTimestamp
   - id: legacy-timestamp-comparison-refused
@@ -266,7 +273,7 @@ decisions:
         why: Two concurrent requests that both saw a stale cache wrote the same maps and crashed the process with concurrent map writes.
       - option: Re-read the entity's declarations on every request.
         why: It races a host writing them; a mutation reaches requests only at the next single-threaded VisibleFields or a new handler.
-    upholds: [snapshot-is-a-copy, snapshot-signature-covers-wire-name-and-type]
+    upholds: [snapshot-is-a-copy, visible-fields-republishes-the-snapshot, request-path-reads-fields-from-the-snapshot]
   - id: refuse-legacy-timestamp-comparisons
     status: accepted
     decision: A comparison on a Timestamp column holding text in another layout is refused with 500 timestamp_layout; the fix is rewriting the rows or reading through a view that writes the canonical layout.
@@ -275,6 +282,18 @@ decisions:
         why: SQLite compares text, so "2026-03-03 10:00:00" read as earlier than a canonical bind of 09:00 and at_gt dropped the row.
     revisit_if: Comparisons parse the stored text as an instant on SQLite.
     upholds: [legacy-timestamp-comparison-refused]
+  - id: keyset-binds-stored-text-on-managed-entities
+    status: accepted
+    decision: On SQLite the keyset reads and binds a Timestamp cursor column's stored text for every entity, managed ones included, at the cost of one extra selected expression per page.
+    rejected:
+      - option: Bind the canonical layout on a managed entity, since crud writes every row in it.
+        why: A seed script or migration writes "2026-01-02T03:04:05Z" into a managed table; the canonical bind "…05.000000Z" sorts before it as text, so the next page began with the cursor's own row and a walk never left the first page.
+      - option: Refuse the page with 500 timestamp_layout, as a filter on an Unmanaged entity does.
+        why: The check reads the whole column on every page, and the walk needs no instant comparison, only the text ORDER BY already sorts.
+      - option: Compare through strftime or julianday so the keyset is chronological.
+        why: SQLite's date functions keep milliseconds, so two rows a few microseconds apart would tie, and the expression cannot use the column's index.
+    revisit_if: Filters on a managed entity start checking the stored layout, or SQLite timestamps move to a non-text storage class.
+    upholds: [sqlite-timestamp-keyset-binds-stored-text]
   - id: refuse-inexact-sqlite-decimals
     status: accepted
     decision: On SQLite a Decimal the column would round (past schema.SQLiteDecimalDigits or below schema.SQLiteDecimalMinMagnitude) is refused, since SQLite has no exact decimal type.
@@ -343,3 +362,14 @@ decisions:
       - option: Key the cache on the *sql.DB itself.
         why: The map kept every closed database alive, one per test or per tenant.
     upholds: [dialect-probed-once-per-database]
+  - id: republish-without-comparing
+    date: 2026-11-16
+    status: accepted
+    decision: VisibleFields rebuilds the snapshot on every call instead of comparing a signature of the declarations first.
+    rejected:
+      - option: Republish only when a hash of each field's name, WireName, Hidden, Type and Mask changed.
+        why: A Mask is a function, and two closures of one function share a code pointer, so swapping a permissive mask for a redacting one was not seen and the value stayed exposed.
+      - option: Read masks from the live declarations on every request.
+        why: It is a data race with a host rewriting a declaration, which TestFieldMutationDuringServeIsRaceFree forbids.
+    revisit_if: VisibleFields is called on a hot path, where one snapshot build per call would cost.
+    upholds: [visible-fields-republishes-the-snapshot]

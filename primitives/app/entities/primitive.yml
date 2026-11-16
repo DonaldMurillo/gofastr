@@ -1,0 +1,189 @@
+primitive: app.entities
+summary: "What the App holds about declared entities: the versioned registry, the boot checks on display and exposure, and typed hooks."
+code:
+  - framework/registry.go
+  - framework/display_check.go
+  - framework/exposure_check.go
+  - framework/typed_hooks.go
+docs:
+  - framework/docs/content/entity-declarations.md
+  - framework/docs/content/api-versioning.md
+  - framework/docs/content/hooks-and-transactions.md
+invariants:
+  - id: register-validates-config
+    rule: Registry.Register runs entity.Validate, so a misconfigured declaration is refused at App.Entity, not at migrate or the first request.
+    enforced_by:
+      - test: framework.TestRegisterRejectsInvalidConfig
+  - id: one-entity-per-name-and-version
+    rule: The registry holds at most one entity per (name, version), and an unversioned entity is the one App.Entity registers.
+    enforced_by:
+      - test: framework.TestCovEntityDuplicatePanics
+      - test: framework.TestCovGroupEntityDuplicatePanics
+  - id: get-refuses-ambiguous-name
+    rule: Registry.Get answers the unversioned entity, else a name's only version, and errors on a name with several versions and no unversioned one instead of picking one.
+    enforced_by:
+      - test: framework.TestRegistry_GetVersionedAndHandlerLookup
+      - test: framework.TestMultiVersionSameNameNoPanic
+  - id: versions-share-table-and-ddl-owner
+    rule: The versions of one entity name declare the same table and the same Unmanaged setting.
+    enforced_by:
+      - test: framework.TestUnion_RejectsSameNameDifferentTable
+      - test: framework.TestUnion_RejectsMixedManagedUnmanaged
+  - id: versions-share-row-isolation
+    rule: The versions of one entity name agree on MultiTenant, the resolved tenant column, OwnerField, SoftDelete, Public, Access and CrossOwnerRead, so no version prefix reads or deletes rows another version scopes.
+    enforced_by:
+      - test: framework.TestUnion_RejectsMismatchedRowScopes
+      - test: framework.TestVersionConflict_TenantColumnDiverges
+      - test: framework.TestVersionsSameTenantColumnAccepted
+      - test: framework.TestVersionsMustAgreeOnAccess
+  - id: one-seed-per-name
+    rule: At most one version of an entity name declares a Seed.
+    enforced_by:
+      - test: framework.TestSweepModulesSeedInTwoVersionsRefused
+  - id: shared-table-columns-match
+    rule: Two managed declarations on one table, its name compared case-folded, give every column both declare, its name compared case-folded, the same SQL type on Postgres and SQLite, Unique, Required, AutoGenerate, Default and primary-key membership; Hidden, WireName, ReadOnly and validation rules may differ.
+    enforced_by:
+      - test: framework.TestVersionConflict_EveryColumnAttributeThatReachesDDL
+      - test: framework.TestUnion_RejectsConflictingStringMax
+      - test: framework.TestMultiVersionMigrate_WireOnlyDifferencesRegisterFine
+      - test: framework.TestSharedTableConflict_DifferentNames
+      - test: framework.TestUnion_FoldsTableCase
+      - test: framework.TestSweepModulesColumnNamesFoldCase
+  - id: shared-table-same-primary-key
+    rule: Two managed declarations on one table declare the same primary-key columns in the same order.
+    enforced_by:
+      - test: framework.TestSweepModulesVersionsAgreeOnPrimaryKey
+  - id: unmanaged-skips-column-check
+    rule: An Unmanaged declaration is held to no column, index or foreign-key agreement with another declaration on its table.
+    enforced_by:
+      - test: framework.TestSweepModulesUnmanagedSkipsColumnCheck
+  - id: shared-table-no-exclusive-mandatory
+    rule: A column that is Required with no Default and no AutoGenerate in one declaration on a table is refused when another declaration on that table lacks it.
+    enforced_by:
+      - test: framework.TestUnion_RejectsVersionExclusiveRequired
+      - test: framework.TestVersionConflict_MandatoryColumnExclusiveToOneVersion
+  - id: shared-table-indices-and-keys-match
+    rule: An index name, explicit or derived, that two declarations on one table both use has the same columns in order, expression and uniqueness, and a foreign key on the same columns has the same type, target, target key, pivot and local key.
+    enforced_by:
+      - test: framework.TestUnion_RejectsConflictingNamedIndex
+      - test: framework.TestVersionConflict_UnnamedIndexDiverges
+      - test: framework.TestVersionConflict_IndexColumnsAndOrderDiverge
+      - test: framework.TestUnion_RejectsConflictingForeignKey
+      - test: framework.TestRegistry_RejectsConflictingRelationsAcrossVersions
+  - id: transition-not-on-composite-foreign-key
+    rule: Registration refuses a state field or transition stamp that is one column of a multi-column belongs_to foreign key on the same table, in the entity itself or any declaration sharing its table.
+    enforced_by:
+      - test: framework.TestTransitionForeignKeyTable
+  - id: display-queries-parse-at-boot
+    rule: Every Display view's Where and Sort, and every field's ShowWhen, parse at registration, Sort with dsl.ParseSort, and a bad one refuses the entity, naming it.
+    enforced_by:
+      - test: framework.TestDisplayViewWhereRefused
+      - test: framework.TestDisplayViewSortParsedByDSL
+      - test: framework.TestGroupEntityRefusesBadViewWhere
+  - id: show-when-is-one-browser-term
+    rule: A ShowWhen is one `field = value` or `field in [...]` term on another, editable Enum or Bool field that may be NoQuery but not Hidden, naming only values that field holds.
+    enforced_by:
+      - test: framework.TestDisplayShowWhenRefused
+      - test: framework.TestDisplayQueriesAcceptValid
+      - test: framework.TestDisplayAutoControllerRefused
+  - id: validate-display-matches-boot
+    rule: ValidateDisplay refuses what App.Entity's display check refuses and answers a declaration entity.Define panics on with an error.
+    enforced_by:
+      - test: framework.TestValidateDisplayParsesQueries
+      - test: framework.TestSweepModulesValidateDisplayReportsDefinePanic
+  - id: mcp-needs-crud
+    rule: ValidateExposure, which App.Entity runs when a database is attached, refuses MCP on with CRUD off, because MCP tools dispatch through the HTTP routes.
+    enforced_by:
+      - test: framework.TestSweepModulesValidateExposureRefusesMCPWithoutCRUD
+      - test: framework.TestExposureMCPWithoutCRUDRejected
+  - id: typed-hook-payload-drift-fails-closed
+    rule: A typed hook whose payload is not the type it expects returns an error instead of running its callback.
+    enforced_by:
+      - test: framework.TestTypedHookDeleteTypeDriftFailsClosed
+      - test: framework.TestTypedHook_TypeConfusedPayloadFailsClosed
+  - id: typed-before-hook-decode-error-is-phrased
+    rule: A typed Before hook that cannot decode the body answers 400 with the hook_body_type phrase, never encoding/json's text naming Go types.
+    enforced_by:
+      - test: framework.TestTypedHookTakesFormShapedBody
+  - id: typed-hook-reads-either-casing
+    rule: A typed hook's struct decodes each payload key under its own, camelCase and snake_case spelling, never replacing a key the payload holds itself.
+    enforced_by:
+      - test: framework.TestTypedHookSeesSnakeTaggedFields
+      - test: framework.TestSweepModulesHookAliasKeepsOwnKeys
+  - id: typed-hook-writes-back-changes-only
+    rule: A typed hook writes back exactly the fields its callback changed, a change to a zero value included and a change inside a map, slice or pointer included, under the payload's own key when it holds one and the snake_case name otherwise.
+    enforced_by:
+      - test: framework.TestTypedHook_ForcedZeroOverrides
+      - test: framework.TestTypedHook_UpdateNoForcedFieldUnchanged
+      - test: framework.TestTypedHookRedRefAliasMutationDrop
+      - test: framework.TestTypedHookRedRefAliasAfterResp
+      - test: framework.TestTypedHookRedRefAliasBeforeUpdate
+      - test: framework.TestTypedAfterHookRedactsCamelKey
+      - test: framework.TestTypedBeforeHookKeepsDigitKey
+  - id: typed-hook-fields-are-encoding-json-fields
+    rule: The fields a typed hook merges are the ones encoding/json encodes, embedded promotion and shadowing included, and a field under a nil embedded pointer reads as its zero value.
+    enforced_by:
+      - test: framework.TestJSONFieldsTaggedTieDropped
+      - test: framework.TestTypedHookShadowedFieldIgnored
+      - test: framework.TestTypedHookEmbeddedFieldMerges
+      - test: framework.TestTypedHookNilEmbedClears
+  - id: typed-hook-numbers-exact
+    rule: A number a typed hook writes back decodes as int64 when it is an integer literal in range, stays a json.Number when it is an integer float64 cannot hold exactly, and is float64 otherwise.
+    enforced_by:
+      - test: framework.TestSweepModulesTypedHookIntegersStayInt64
+      - test: framework.TestHookNonMapKeepsBigIntegers
+decisions:
+  - id: registry-keyed-by-name-and-version
+    date: 2026-11-16
+    status: accepted
+    decision: The registry keys an entity by (name, version), the version being its group prefix, so one name can mount under several API versions.
+    rejected:
+      - option: Key by name alone.
+        why: An entity could not exist under /api/v1 and /api/v2 at once.
+      - option: Have Get pick one version when several exist.
+        why: A caller would silently read or write through a version it did not mean.
+    upholds: [get-refuses-ambiguous-name]
+  - id: shared-table-checks-at-registration
+    date: 2026-11-16
+    status: accepted
+    decision: Declarations sharing a table are compared at registration, the column, index and foreign-key checks keyed on the folded table name and the table, Unmanaged, Seed and row-isolation checks on the entity name.
+    rejected:
+      - option: Detect conflicts when migrate builds the union at boot.
+        why: The author would see an opaque SQL error, or a schema that depends on which version migrate read first, long after app.Entity.
+      - option: Key the column checks on the entity name.
+        why: Two names on one table, the shape used before versions existed, emit DDL for the same table too.
+    upholds: [shared-table-columns-match, versions-share-table-and-ddl-owner]
+  - id: column-type-compared-as-rendered-sql
+    date: 2026-11-16
+    status: accepted
+    decision: The column check compares migrate.SQLType's rendering for both dialects instead of a list of field attributes.
+    rejected:
+      - option: Compare Type, RawType and String.Max one by one.
+        why: A hand-kept list drifts from the DDL migrate emits.
+    revisit_if: No dialect renders a type the other renders alike, which makes the second comparison dead.
+    upholds: [shared-table-columns-match]
+  - id: projection-may-differ-rows-may-not
+    date: 2026-11-16
+    status: accepted
+    decision: Versions may differ in which columns they show or accept, but not in which rows a request may reach.
+    rejected:
+      - option: Let row-scoping settings differ per version like Hidden and WireName.
+        why: The weaker version becomes a bypass of the stronger one, reading another tenant's or owner's rows or the whole table anonymously.
+    upholds: [versions-share-row-isolation]
+  - id: typed-hooks-wrap-untyped
+    date: 2026-11-16
+    status: accepted
+    decision: A typed hook registers an untyped wrapper that decodes the payload into T and merges T's changes back, so typed and untyped hooks share one HookRegistry.
+    rejected:
+      - option: A separate typed hook registry.
+        why: Declarative entities from JSON need the untyped path, and both kinds must run on one entity.
+  - id: typed-hook-merge-diffs-fields
+    date: 2026-11-16
+    status: accepted
+    decision: The merge diffs a JSON-round-trip snapshot of T against T after the callback, field by field.
+    rejected:
+      - option: Marshal T after the callback into the payload.
+        why: Generated structs tag fields omitempty, so a hook forcing is_admin to false would be dropped and the client's true written.
+      - option: Snapshot with a plain struct copy.
+        why: Maps, slices and pointers alias, so an in-place change compares equal and is skipped.
+    upholds: [typed-hook-writes-back-changes-only]

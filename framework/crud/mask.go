@@ -13,12 +13,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/entity"
 )
 
-func maskFieldsOf(ent *entity.Entity) []schema.Field {
-	if ent == nil {
-		return nil
-	}
+func maskFieldsOf(fields []schema.Field) []schema.Field {
 	var out []schema.Field
-	for _, f := range ent.GetFields() {
+	for _, f := range fields {
 		if f.Mask != nil && !f.Hidden {
 			out = append(out, f)
 		}
@@ -29,7 +26,13 @@ func maskFieldsOf(ent *entity.Entity) []schema.Field {
 // maskRows runs each Mask field of ent over rows in place; keyOf gives a
 // field's key in rows.
 func maskRows(ctx context.Context, ent *entity.Entity, keyOf func(string) string, rows []map[string]any) {
-	fields := maskFieldsOf(ent)
+	if ent != nil {
+		maskDeclared(ctx, ent, ent.GetFields(), keyOf, rows)
+	}
+}
+
+func maskDeclared(ctx context.Context, ent *entity.Entity, declared []schema.Field, keyOf func(string) string, rows []map[string]any) {
+	fields := maskFieldsOf(declared)
 	if len(fields) == 0 {
 		return
 	}
@@ -71,15 +74,25 @@ func runMask(ctx context.Context, ent *entity.Entity, f schema.Field, v any) (ou
 }
 
 func (ch *CrudHandler) maskOwn(ctx context.Context, rows ...map[string]any) {
-	maskRows(hookCtx(ctx), ch.Entity, ch.convertKey, rows)
+	if ch.Entity != nil {
+		maskDeclared(hookCtx(ctx), ch.Entity, ch.snapshotFields(), ch.convertKey, rows)
+	}
 }
 
 func (ch *CrudHandler) hasMasks() bool {
-	return len(maskFieldsOf(ch.Entity)) > 0
+	return len(ch.maskFields()) > 0
+}
+
+// maskFields is the handler's visible Mask fields, read from the snapshot.
+func (ch *CrudHandler) maskFields() []schema.Field {
+	if ch.Entity == nil {
+		return nil
+	}
+	return maskFieldsOf(ch.snapshotFields())
 }
 
 func (ch *CrudHandler) carriesMasked(body map[string]any) bool {
-	for _, f := range maskFieldsOf(ch.Entity) {
+	for _, f := range ch.maskFields() {
 		if _, sent := body[f.Name]; sent {
 			return true
 		}
@@ -94,7 +107,7 @@ func (ch *CrudHandler) maskedEchoes(ctx context.Context, body, stored map[string
 		return nil
 	}
 	var out []string
-	for _, f := range maskFieldsOf(ch.Entity) {
+	for _, f := range ch.maskFields() {
 		given, sent := body[f.Name]
 		held := stored[ch.convertKey(f.Name)]
 		if !sent || held == nil {
@@ -115,7 +128,7 @@ func (ch *CrudHandler) dropMaskedEchoes(ctx context.Context, r *http.Request, id
 	}
 	if pre == nil {
 		var cols []string
-		for _, f := range maskFieldsOf(ch.Entity) {
+		for _, f := range ch.maskFields() {
 			if _, sent := body[f.Name]; sent {
 				cols = append(cols, f.Name)
 			}

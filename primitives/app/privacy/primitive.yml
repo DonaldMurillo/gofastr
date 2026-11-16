@@ -1,0 +1,321 @@
+primitive: app.privacy
+summary: "A user's data lifecycle: export and import of everything an app holds for them, and erasure of it."
+code:
+  - framework/export_data.go
+  - framework/erase_data.go
+  - framework/erase_shared_keys.go
+docs:
+  - framework/docs/content/data-export.md
+on_change:
+  - An entity, column kind or stored-object reference that export learns to read, erase must learn to delete, and the reverse.
+twins:
+  - job: Group the registry's entities into physical tables, folded as the unquoted DDL folds them, with their keys and foreign keys.
+    why: Export's sources also carry each table's column union and its serial, timestamp and date columns, which the erase graph does not hold, so collectSources keeps its own entity grouping and reads the graph only for pivots and edges.
+    sites:
+      - path: framework/erase_data.go
+        note: buildDataGraph, the relation graph erasure walks and export orders by.
+      - path: framework/export_data.go
+        note: collectSources, one archive source per physical table.
+invariants:
+  - id: erase-refuses-blank-user
+    rule: EraseUserData refuses a user id that is empty or only spaces, because an owner match on "" erases every unowned row.
+    enforced_by:
+      - test: framework.TestEraseUserData_RejectsEmptyUserID
+  - id: erase-is-one-transaction
+    rule: Every SQL write of an erasure runs in one transaction, so an error at any point, the audit plane included, leaves every row as it was.
+    enforced_by:
+      - test: framework.TestEraseUserData_RollsBackOnMidFlightFailure
+  - id: erase-is-hard
+    rule: Erasure deletes the user's rows with raw SQL, soft-deleted rows included, and a second erasure of the same user changes nothing and does not error.
+    enforced_by:
+      - test: framework.TestEraseUserData
+      - test: framework.TestEraseUserData_EmailIdentityIdempotentSecondRun
+  - id: cascade-follows-foreign-keys
+    rule: A row whose BelongsTo or pivot key names an erased row is erased too, whoever owns it, children before parents in one transaction; a SET NULL relation and an Unmanaged table are not followed.
+    enforced_by:
+      - test: framework.TestEraseDeletesOtherUsersChildRows
+      - test: framework.TestEraseDeletesUnownedChildRows
+      - test: framework.TestEraseFollowsCompositeForeignKey
+      - test: framework.TestEraseDeletesPivotRows
+      - test: framework.TestEraseLeavesSetNullChildren
+      - test: framework.TestEraseUserData_ChildBeforeParentFKOrder
+      - test: framework.TestSweepPrivacyEraseSkipsUnmanagedChild
+  - id: restrict-blocks-erasure
+    rule: When a row the erasure does not remove names a row it would through a RESTRICT or NO ACTION relation, EraseUserData (dry run included) errors naming the relation and erases nothing; the user's own child rows do not block.
+    enforced_by:
+      - test: framework.TestEraseRefusesRestrictChild
+      - test: framework.TestEraseRestrictWithoutBlockers
+  - id: erase-refuses-unidentifiable-rows
+    rule: Erasure refuses, before any delete, a row it would remove whose primary key holds a NULL and a foreign key whose columns do not line up with the key it references.
+    enforced_by:
+      - test: framework.TestEraseRefusesNullKeyChild
+      - test: framework.TestSweepPrivacyEraseRefusesMisshapenForeignKey
+  - id: erase-cuts-reference-cycles
+    rule: References between erased rows that no delete order satisfies (a cycle of tables, a RESTRICT self-reference) are emptied before the deletes, and a cut through a primary-key column is refused.
+    enforced_by:
+      - test: framework.TestEraseTableCycle
+      - test: framework.TestEraseRestrictSelfReference
+      - test: framework.TestEraseCutThroughKeyRefused
+  - id: erase-missing-column-fails-loud
+    rule: An owner, eraser, Where or relation column the live table lacks fails the erasure before it writes, on SQLite too, where a quoted unknown column reads as a string literal and matches nothing.
+    enforced_by:
+      - test: framework.TestEraseUserData_ErrorsOnMissingOwnerColumn
+      - test: framework.TestEraseUserData_ErrorsOnMissingEraserColumn
+      - test: framework.TestEraseWhereRequiresTheColumn
+      - test: framework.TestRequireColumn
+  - id: erase-staging-hides-no-table
+    rule: A staging temp table's name is never one a graph table has, so it cannot shadow an app table, and the statements alias their target so a table named like an alias still matches only its own rows.
+    enforced_by:
+      - test: framework.TestEraseStagingNameAvoidsTables
+      - test: framework.TestEraseTableNamedLikeAlias
+  - id: erase-keyless-tables-first
+    rule: Tables with no primary key are deleted before every keyed table, so a SET NULL relation cannot empty the foreign key their match reads.
+    enforced_by:
+      - test: framework.TestEraseKeylessChildBeforeSetNull
+      - test: framework.TestEraseKeylessRawChild
+  - id: erase-folds-table-spellings
+    rule: Entities spelling one table in different cases are one table to the erase graph, as to export, so each row is staged and reported once.
+    enforced_by:
+      - test: framework.TestSweepPrivacyEraseFoldsTableSpellings
+      - test: framework.TestSweepPrivacyGraphAndSourcesAgreeOnTables
+  - id: eraser-matched-by-catalog-table
+    rule: A registered eraser's table is matched to the graph by the table the catalog resolves it to, never by its spelling, so a schema-qualified name joins its table and a case-kept quoted table stays apart.
+    enforced_by:
+      - test: framework.TestEraseSeedMatchesSchemaQualified
+      - test: framework.TestEraseKeepsCaseKeptTableApart
+  - id: delete-eraser-seeds-cascade
+    rule: A delete eraser on a graph table stages its matches like owned rows, so the rows a foreign key cascade removes with them lose their files and audit diffs too; a match with a NULL key is left to the eraser's own delete.
+    enforced_by:
+      - test: framework.TestEraseBatteryDeleteSeedsCascade
+      - test: framework.TestEraseSeedLeavesNullKeyToEraser
+      - test: framework.TestEraseBatteryRowsDropFiles
+  - id: erasers-read-before-write
+    rule: Every eraser's rows are read for audit ids and file keys before any eraser writes, and all anonymizers of one table run as one UPDATE, so no write hides a row from another eraser.
+    enforced_by:
+      - test: framework.TestEraseTwoAnonymizersOneColumn
+      - test: framework.TestEraseDeleteAfterAnonymizer
+      - test: framework.TestEraseBatteryRowsScrubAudit
+  - id: anonymize-scrubs-match-column
+    rule: An anonymizer must declare ScrubColumns and also sets its match column to the tombstone, so a second erasure matches nothing.
+    enforced_by:
+      - test: framework.TestEraseUserData_AnonymizeEraserScrubsAndIsIdempotent
+      - test: framework.TestEraseUserData_AnonymizeRequiresScrubColumns
+  - id: identity-without-resolver-fails
+    rule: An eraser declaring an identity with no registered resolver fails the erasure, and an identity whose resolver finds no row, an absent table or a blank value skips that eraser.
+    enforced_by:
+      - test: framework.TestEraseUserData_IdentityWithoutResolverFailsLoud
+      - test: framework.TestEraseUserData_EmailIdentityIdempotentSecondRun
+  - id: member-erasure-is-tenant-scoped
+    rule: A MemberSeparator eraser with a tenant (WithEraseTenant, or the context's) removes the bare value, the bare qualified form and that tenant's escaped form, never another tenant's entry; without a tenant it removes every tenant's, and an entry equal to the whole value always goes.
+    enforced_by:
+      - test: framework.TestEraseRemoveMemberTenantScoped
+      - test: framework.TestEraseRemoveMemberQualified
+      - test: framework.TestEraseRemoveMemberLegacyColonEntry
+  - id: audit-trail-is-anonymized-not-deleted
+    rule: Erasure keeps audit rows, sets the user's actor_id to the tombstone, and replaces with {"erased":true} the diff of the user's rows and of every row recording an erased row under its plain or digested id; record_id is kept.
+    enforced_by:
+      - test: framework.TestEraseScrubsAuditDiff
+      - test: framework.TestEraseAuditMatchesStrippedKey
+      - test: framework.TestSweepPrivacyEraseScrubsDigestedAuditRecord
+      - test: framework.TestEraseUserData_AuditTableAndTombstoneOptions
+  - id: audit-table-needs-actor
+    rule: An audit table without an actor_id column fails the erasure, and one without diff, entity or record_id skips only the scrubs that need them.
+    enforced_by:
+      - test: framework.TestEraseUserData_AuditTableAndTombstoneOptions
+      - test: framework.TestSweepPrivacyEraseRefusesAuditTableWithoutActor
+  - id: dry-run-is-the-real-run-rolled-back
+    rule: A dry run performs the whole erasure and rolls it back, so its counts and refusals are the real run's, and it removes no stored object and asks store erasers only to count.
+    enforced_by:
+      - test: framework.TestEraseDryRunCountsCascade
+      - test: framework.TestEraseDryRunCountsSharedRowOnce
+      - test: framework.TestEraseUserData_EmailIdentityDryRunCounts
+  - id: erase-deletes-only-attributable-objects
+    rule: After the commit, erasure deletes a stored object, renditions included, only when an erased row named it, it is not an http(s) URL and no surviving row in any entity names it; if that check fails it deletes none.
+    enforced_by:
+      - test: framework.TestEraseUserData_RemovesStoredFiles
+      - test: framework.TestEraseUserData_RemovesRenditions
+      - test: framework.TestEraseKeepsKeysOthersStillUse
+      - test: framework.TestUnsharedKeysSkipsExternalURLs
+      - test: framework.TestEraseSeesEscapedVariantKey
+  - id: surviving-objects-are-reported
+    rule: A stored object that fails to delete, other than one already gone, is named in EraseUserData's error after the rows commit.
+    enforced_by:
+      - test: framework.TestEraseUserData_ReportsSurvivingObjects
+      - test: framework.TestSweepPrivacyEraseToleratesGoneObject
+  - id: failed-share-check-deletes-nothing
+    rule: When the check for keys other rows still name errors, erasure deletes no stored object and says so in its error.
+    judge: Does this change let erasure delete stored objects when unsharedObjectKeys returned an error?
+  - id: store-erasers-run-after-commit
+    rule: Store erasers run after the SQL commit, every one even when another fails or panics, and each failure is named in the returned error.
+    enforced_by:
+      - test: framework.TestEraseRunsStoreErasersAfterCommit
+      - test: framework.TestEraseReportsFailedStoreEraser
+      - test: framework.TestStoreEraserPanicIsAnError
+      - test: framework.TestSweepPrivacyEveryStoreEraserRuns
+  - id: erase-locks-rows-it-reads-keys-of
+    rule: On Postgres the reads of file keys inside an erasure lock their rows FOR UPDATE until the commit, so no concurrent write swaps a key between the read and the delete.
+    enforced_by:
+      - test: framework.TestEraseLocksRowsItReadsKeysOf
+  - id: archive-is-owner-only
+    rule: ExportData writes the archive directory 0700 and its files owner-only, tightens an existing directory, and refuses a symlink.
+    enforced_by:
+      - test: framework.TestExportDataRestrictiveModes
+      - test: framework.TestExportRestrictsExistingDirectory
+      - test: framework.TestExportRefusesSymlinkDir
+  - id: export-reads-one-snapshot
+    rule: On Postgres and on SQLite in WAL mode every table of an export is read in one read-only snapshot transaction.
+    enforced_by:
+      - test: framework.TestSQLiteWALExportReadsOneSnapshot
+      - test: framework.TestPostgresExportReadsOneSnapshot
+  - id: export-is-raw-and-exact
+    rule: Export reads every physical column and row with no scope or soft-delete filter, and a restore writes back the same values, binary bytes, integers past 2^53 and timestamp text included; a non-finite float or invalid UTF-8 text is refused.
+    enforced_by:
+      - test: framework.TestExportImportDataRoundTrip
+      - test: framework.TestImportKeepsBinaryBytes
+      - test: framework.TestImportKeepsLargeIntegers
+      - test: framework.TestSweepPrivacyArchiveValuesDecodeExactly
+      - test: framework.TestSQLiteRestoreKeepsTimestampText
+      - test: framework.TestExportRefusesNonUTF8Text
+      - test: framework.TestExportNamesNonfiniteCell
+  - id: export-refuses-null-key
+    rule: Export refuses a table with a NULL primary key instead of paging past it and dropping the rest under a valid checksum.
+    enforced_by:
+      - test: framework.TestExportNullKeyRefused
+  - id: one-source-per-table
+    rule: Each physical table is one archive source, whatever the entity versions or spellings naming it; two spellings that resolve to one table are refused, and an exporter on an entity table adds its columns to that source.
+    enforced_by:
+      - test: framework.TestExportData_MultiVersionOneFilePerTable
+      - test: framework.TestExportFoldsTableIdentity
+      - test: framework.TestExportRefusesTwoSpellingsOfTable
+      - test: framework.TestExportKeepsExporterColumnsOfEntity
+  - id: absent-table-skipped
+    rule: A registered table the database does not hold is left out of the export and skipped by erasure, and an import of a source whose table is absent is refused.
+    enforced_by:
+      - test: framework.TestExportSkipsAbsentRegisteredTable
+      - test: framework.TestEraseUserData_AbsentEraserTableIsSkipped
+      - test: framework.TestImportRefusesAbsentTable
+  - id: import-validates-before-writing
+    rule: ImportData refuses, before it writes a row, an unknown format, a source or column the live schema lacks, a source listed twice, a table that differs from the live one and an archive missing a key column; archive names never reach SQL unchecked.
+    enforced_by:
+      - test: framework.TestImportManifestErrors
+      - test: framework.TestImportRejectsUnknownSource
+      - test: framework.TestImportRejectsIncompatibleColumns
+      - test: framework.TestImportRejectsSQLMetacharacters
+      - test: framework.TestImportRefusesASourceListedTwice
+      - test: framework.TestSweepPrivacyImportRefusesRenamedTable
+      - test: framework.TestImportRefusesKeylessArchive
+      - test: framework.TestImportRejectsTraversalSourceName
+  - id: import-checks-the-bytes-it-restores
+    rule: Each archive file is read once, inside the import transaction, and its checksum is checked on those bytes; a mismatch or a row with a null key rolls every source back.
+    enforced_by:
+      - test: framework.TestImportRestoresTheBytesItChecked
+      - test: framework.TestImportRejectsChecksumMismatch
+      - test: framework.TestImportRefusesNullKeyRow
+      - test: framework.TestImportExecErrorRollsBack
+  - id: import-writes-parents-first
+    rule: Import writes sources in the live schema's parents-first order, rows of a self-referencing table after the rows they name, and sets the references a cycle keeps out once every row is in.
+    enforced_by:
+      - test: framework.TestImportWritesParentsFirst
+      - test: framework.TestSweepPrivacyImportReordersArchiveListing
+      - test: framework.TestImportOrdersSelfReferences
+      - test: framework.TestImportRestoresRowCycle
+      - test: framework.TestImportRestoresTableCycle
+      - test: framework.TestHeldRefsShareAColumn
+      - test: framework.TestHeldRefNullKeyRefused
+      - test: framework.TestDeferredRefMissingRowFails
+      - test: framework.TestSweepPrivacyHeldRefThroughKeyRefused
+  - id: import-advances-sequences
+    rule: On Postgres a restore moves each auto-increment sequence, of entity and raw tables, past the restored ids.
+    enforced_by:
+      - test: framework.TestImportAdvancesSerialSequence
+      - test: framework.TestImportAdvancesRawSerial
+      - test: framework.TestImportSerialBelowSequenceMin
+decisions:
+  - id: erasure-is-hard-delete
+    date: 2026-11-16
+    status: accepted
+    decision: Erasure hard-deletes the user's rows, soft-deleted ones included, with no tombstone and no undo.
+    rejected:
+      - option: Respect soft delete and leave deleted rows in place.
+        why: A row the user deleted earlier would survive the erasure meant to remove it.
+    upholds: [erase-is-hard]
+  - id: cascade-like-on-delete-cascade
+    date: 2026-11-16
+    status: accepted
+    decision: Erasure follows foreign keys as ON DELETE CASCADE would, whoever owns the child, and honours a declared SET NULL, RESTRICT or NO ACTION.
+    rejected:
+      - option: Erase only the owner-scoped tables.
+        why: The generated constraints carry no ON DELETE action, so the parent's delete fails, and children such as pivot rows and replies hold the user's data.
+      - option: Delete a RESTRICT child to get the parent out.
+        why: The developer declared that such a child blocks the parent's delete.
+    upholds: [cascade-follows-foreign-keys, restrict-blocks-erasure]
+  - id: keep-and-anonymize-audit
+    date: 2026-11-16
+    status: accepted
+    decision: The audit trail is kept as the compliance record, with the erased user's actor and the diffs that copy their data cut and record_id left as is.
+    rejected:
+      - option: Delete the user's audit rows.
+        why: It erases who did what, which the trail exists to keep.
+      - option: Scrub record_id too.
+        why: It holds what was acted on, a resource id or sometimes a user id, which is legitimate audit content.
+    upholds: [audit-trail-is-anonymized-not-deleted]
+  - id: dry-run-by-rollback
+    date: 2026-11-16
+    status: accepted
+    decision: A dry run is the real erasure inside a transaction that is rolled back.
+    rejected:
+      - option: Count each plane on its own.
+        why: The counts disagreed with the erasure wherever one write changes what the next matches, such as a row two erasers reach or a constraint only the delete trips.
+    upholds: [dry-run-is-the-real-run-rolled-back]
+  - id: object-attribution-by-reference
+    date: 2026-11-16
+    status: accepted
+    decision: A stored object is attributed to the erased user by asking the database, after the commit, whether any surviving row still names its key.
+    rejected:
+      - option: An upload ledger table.
+        why: Every key written before the ledger would be unattributed, so erasure would stop deleting files it deletes correctly today.
+      - option: An owner prefix in the storage key.
+        why: The same, and it changes the key format.
+    revisit_if: No row can name another user's key, because every write path checks upload provenance and no row predates that check.
+    upholds: [erase-deletes-only-attributable-objects]
+  - id: outside-writes-after-commit
+    date: 2026-11-16
+    status: accepted
+    decision: Stored objects and store erasers are removed after the SQL erasure commits.
+    rejected:
+      - option: Remove them before the commit.
+        why: A rollback would then leave the rows behind with their files and stores already gone, the worse of the two failures.
+    upholds: [store-erasers-run-after-commit, erase-deletes-only-attributable-objects]
+  - id: legacy-member-entry-erased
+    date: 2026-11-16
+    status: accepted
+    decision: A member list entry equal to the whole erased value is removed even when it also reads as another tenant's qualified entry.
+    rejected:
+      - option: Read such an entry as tenant-qualified only.
+        why: A list written before entries were qualified holds user ids with a separator, such as google:42, which would survive the erasure; privacy wins the ambiguity.
+    upholds: [member-erasure-is-tenant-scoped]
+  - id: raw-export
+    date: 2026-11-16
+    status: accepted
+    decision: Export and import read and write raw SQL, keeping ids, timestamps, owner and tenant columns, hidden columns and soft-deleted rows.
+    rejected:
+      - option: Go through the CRUD pipeline.
+        why: It regenerates ids, stamps owner and tenant, drops hidden columns and filters soft-deleted rows, and new ids break every foreign key.
+    upholds: [export-is-raw-and-exact]
+  - id: bytes-tagged-in-archive
+    date: 2026-11-16
+    status: accepted
+    decision: The v2 archive writes a binary value as {"$bytes":"<base64>"}, and ImportData still reads v1 archives.
+    rejected:
+      - option: A JSON string, as v1 wrote it.
+        why: It lost every byte that is not UTF-8 and restored as TEXT.
+    upholds: [export-is-raw-and-exact]
+  - id: no-snapshot-on-rollback-journal
+    date: 2026-11-16
+    status: accepted
+    decision: A SQLite database in rollback-journal mode is exported table by table, and the docs say to stop writes during the export.
+    rejected:
+      - option: One read transaction for the whole export.
+        why: In rollback-journal mode it holds a SHARED lock that blocks every writer for the whole export.
+    revisit_if: The SQLite driver offers a snapshot read that does not block writers outside WAL mode.
+    upholds: [export-reads-one-snapshot]

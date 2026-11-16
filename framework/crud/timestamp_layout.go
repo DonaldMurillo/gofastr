@@ -35,7 +35,7 @@ func storedTextColumn(field string) string {
 	return query.QuoteKeyword(field) + "||''"
 }
 
-// legacyTimestampsPossible: an Unmanaged entity on SQLite, whose Timestamp text may be in any layout.
+// legacyTimestampsPossible: an Unmanaged entity on SQLite, whose comparisons are checked before they run.
 func (ch *CrudHandler) legacyTimestampsPossible(ctx context.Context) bool {
 	return ch.Entity != nil && ch.Entity.Config.Unmanaged && !ch.onPostgres(ctx)
 }
@@ -48,7 +48,7 @@ func (ch *CrudHandler) storedTimestampKeys(ctx context.Context, fields []string)
 			timestampFields = append(timestampFields, field)
 		}
 	}
-	if len(timestampFields) == 0 || !ch.legacyTimestampsPossible(ctx) {
+	if len(timestampFields) == 0 || ch.onPostgres(ctx) {
 		return nil
 	}
 	keys := make(map[string]string, len(timestampFields))

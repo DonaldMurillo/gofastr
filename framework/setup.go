@@ -8,61 +8,32 @@ import (
 	"strings"
 )
 
-// SetupRunner is the interface a first-run setup implementation provides.
-// framework defines it (rather than importing battery/setup) to avoid a
-// layering cycle: battery/setup implements it and the host wires the
-// concrete runner via WithSetup.
-//
-// Lifecycle inside App.Start:
-//
-//  1. Incomplete is consulted after plugin init and before consumer start.
-//     When true (and GOFASTR_SETUP != "off"), Start enters setup mode.
-//  2. CanRunHeadless distinguishes the two skins. When true every required
-//     field resolves from the environment and RunSteps executes inline
-//     before the port binds, no wizard is ever served.
-//  3. When CanRunHeadless is false the interactive skin is served: Handler
-//     returns the wizard surface and swap is invoked once the final step
-//     succeeds, atomically switching to the real app handler and starting
-//     deferred background consumers.
+// SetupRunner is a first-run setup implementation, wired with WithSetup.
+// Start consults Incomplete after plugin init; when setup is incomplete it
+// runs RunSteps inline if CanRunHeadless, and serves Handler otherwise.
 type SetupRunner interface {
-	// Incomplete reports whether first-run setup has not yet finished.
 	Incomplete(ctx context.Context) (bool, error)
 
-	// CanRunHeadless reports whether every required field across all
-	// steps resolves from the environment, so bootstrap can run inline.
+	// CanRunHeadless reports whether every required value resolves from
+	// the environment.
 	CanRunHeadless(ctx context.Context) (bool, error)
 
-	// RunSteps runs all steps synchronously. Called only when
-	// CanRunHeadless returns true. An error aborts Start.
+	// RunSteps runs every step; an error aborts Start.
 	RunSteps(ctx context.Context) error
 
-	// Handler returns the interactive setup surface. swap is called
-	// once setup completes to switch to the real handler and start the
-	// deferred OnStart hooks; it returns once they have run. Call it from
-	// a wizard request or from a goroutine of the runner's own. A swap
-	// after Shutdown began starts nothing, and a Shutdown while the hooks
-	// run waits for them before it tears down. healthz and readyz are the
-	// app's existing health handlers, passed so the setup surface can
-	// serve /healthz and /readyz during setup.
+	// Handler returns the wizard. Call swap once setup completes: it
+	// switches to the real handler and returns once the deferred OnStart
+	// hooks have run. healthz and readyz serve the health routes meanwhile.
 	Handler(swap func(), healthz, readyz http.HandlerFunc) http.Handler
 
-	// SetupURL returns the operator-facing URL (with token) for the
-	// startup banner. scheme is "https" when the app serves TLS and
-	// "http" otherwise; addr is the bound listen address. Returns ""
-	// when not applicable (headless path or token disabled).
+	// SetupURL returns the banner's setup link for the bound addr, or ""
+	// when there is none.
 	SetupURL(scheme, addr string) string
 }
 
-// WithSetup wires a first-run setup runner. When the runner reports
-// incomplete setup at boot, Start either runs the steps headlessly (env
-// provides every required value) or serves an interactive wizard until
-// setup finishes, then atomically swaps to the real app router.
-//
-// Overrides via the GOFASTR_SETUP env var:
-//
-//   - "off":    never enter setup mode (Start proceeds normally)
-//   - "force":  enter setup mode even if Complete reports done (rescue)
-//   - invalid:  Start fails loudly
+// WithSetup wires a first-run setup runner. GOFASTR_SETUP=off never
+// enters setup, =force enters it even when complete, and any other
+// value but auto fails Start.
 func WithSetup(r SetupRunner) AppOption {
 	if r == nil {
 		panic("framework: WithSetup(nil)")
@@ -72,24 +43,8 @@ func WithSetup(r SetupRunner) AppOption {
 	}
 }
 
-// SetSetup wires a first-run setup runner after the App exists, and is
-// otherwise identical to [WithSetup], the runner is read at Start, never
-// during NewApp, so wiring it later changes nothing about boot.
-//
-// It exists because some steps need the app they run against:
-// setup.HealthStep takes the *App to call RunReadinessChecks, so the runner
-// cannot be built before NewApp returns, and WithSetup cannot receive it:
-//
-//	app := framework.NewApp(framework.WithDB(db))
-//	runner := setup.New(setup.Config{
-//	    Steps:    []setup.Step{adminStep, setup.HealthStep(app)},
-//	    Complete: complete,
-//	})
-//	app.SetSetup(runner)
-//
-// Registering routes before the runner is wired is also the supported order:
-// the setup surface intercepts until Complete reports done, then swaps to the
-// real router.
+// SetSetup is WithSetup for a runner that needs the App, such as one
+// holding setup.HealthStep(app). Call it before Start.
 func (a *App) SetSetup(r SetupRunner) *App {
 	if r == nil {
 		panic("framework: SetSetup(nil)")
@@ -98,18 +53,14 @@ func (a *App) SetSetup(r SetupRunner) *App {
 	return a
 }
 
-// setupEnvMode is the resolved GOFASTR_SETUP value.
 type setupEnvMode int
 
 const (
-	setupAuto  setupEnvMode = iota // GOFASTR_SETUP unset or empty: check Incomplete
-	setupOff                       // "off": never enter setup mode
-	setupForce                     // "force": enter setup even if Complete
+	setupAuto setupEnvMode = iota
+	setupOff
+	setupForce
 )
 
-// resolveSetupEnv parses the GOFASTR_SETUP env var, mirroring role.go's
-// fail-loud-on-unknown-value convention so a typo doesn't silently run
-// the wrong boot path.
 func resolveSetupEnv() (setupEnvMode, error) {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOFASTR_SETUP"))) {
 	case "", "auto":

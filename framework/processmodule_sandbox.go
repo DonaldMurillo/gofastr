@@ -14,67 +14,23 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/textsafe"
 )
 
-// This file implements design §6 decision C's fail-closed runner selection:
-//   - SandboxRunner = baseline hygiene (shared with TrustedProcessRunner via
-//     [prepareChildForSpawn]/[startPreparedChild]) + OS-enforced denials
-//     layered in by a per-OS [SandboxBackend] between prepare and start.
-//   - NewSandboxRunner PROBES the backend at construction (the §6 gate):
-//     every probe P1–P7 MUST pass. Any failure or unreachable ⇒ the
-//     constructor errors and the supervisor records the module
-//     InstalledDisabled / fails Register, never a silent downgrade to
-//     TrustedProcessRunner.
-//   - SelectRunner maps a descriptor's TrustTier to the right Runner:
-//     trusted → TrustedProcessRunner, untrusted → SandboxRunner (or
-//     fail-closed error). This is the inversion of the wave-2a site that
-//     unconditionally returned UntrustedNoSandboxError.
-//
-// The inversion of bash.go's nil-check (framework/experimental/harness/tool/builtins/
-// bash.go:121-123) is deliberate and load-bearing: bash's SandboxFn is
-// nil = no sandbox (fails OPEN, correct for a first-party dev tool behind
-// a blocklist); a nil/unconforming sandbox for an untrusted module fails
-// CLOSED. The two seams look alike but mean opposite things.
-
-// SandboxRunner is the wave-3a Runner for TrustUntrusted modules: baseline
-// hygiene (shared with [TrustedProcessRunner]) PLUS the OS-enforced
-// denials the selected [SandboxBackend] applies via Wrap. It is the only
-// Runner an untrusted descriptor may run under; selection is fail-closed
-// (a non-conforming backend ⇒ the constructor errors ⇒ the supervisor
-// refuses Register, never a silent TrustedProcessRunner downgrade).
+// SandboxRunner launches untrusted modules: the trusted runner's hygiene plus the
+// OS-enforced confinement its backend's Wrap applies.
 type SandboxRunner struct {
-	// backend is the per-OS confinement wrapper selected at construction.
-	// Immutable after NewSandboxRunner returns.
 	backend SandboxBackend
+	opts    SandboxOpts
 
-	// opts are the default per-module confinement parameters. Per-spec
-	// overrides (a descriptor with tighter Limits) narrow these at Start;
-	// they never widen, a descriptor cannot raise a ceiling.
-	opts SandboxOpts
-
-	// EnvAllowlist is the base env-var names the child receives (PATH,
-	// HOME, …). If nil, [DefaultChildEnvAllowlist] is used. This is the
-	// SAME baseline-hygiene allowlist TrustedProcessRunner applies, the
-	// two runners share it so P2 (no inherited secret) cannot drift.
+	// EnvAllowlist names the host variables the child gets; nil uses
+	// [DefaultChildEnvAllowlist].
 	EnvAllowlist []string
 
-	// NewCodec constructs a Codec over the supplied reader/writer. If nil,
-	// [moduleproto.NewCodec] is used with the spec's negotiated frame
-	// bytes. Mirrors TrustedProcessRunner.NewCodec for test injection.
+	// NewCodec builds the protocol codec; nil uses [moduleproto.NewCodec].
 	NewCodec func(r io.Reader, w io.Writer, maxFrameBytes int) (*moduleproto.Codec, error)
-
-	// report is the cached conformance pass from construction. Conforms()
-	// reads this; it is the fail-closed gate the supervisor consults.
-	report ConformanceReport
+	report   ConformanceReport
 }
 
-// NewSandboxRunner constructs a SandboxRunner over backend, PROBING the
-// backend at construction per design §6. Returns a non-nil error iff the
-// backend is unavailable or any probe P1–P7 fails or is unreachable.
-// The caller (supervisor wiring) treats that as "no sandbox on this host"
-// and fail-closes untrusted Register attempts.
-//
-// The probe pass runs the full suite once and caches the report on the
-// returned runner; subsequent Start calls do NOT re-probe (the backend's
-// enforcement capability is a property of the host, not per-spawn).
+// NewSandboxRunner probes backend with the full conformance suite and returns a
+// runner only when every probe passes, else a [SandboxConformanceError].
 func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner, error) {
 	if backend == nil {
 		return nil, &SandboxConformanceError{
@@ -88,9 +44,6 @@ func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner,
 			reason: fmt.Sprintf("backend %s unavailable: %s", backend.Name(), backend.MissingReason()),
 		}
 	}
-	// Probe at construction (§6 fail-closed gate). Two-minute budget is
-	// generous: the suite spawns seven short-lived children; even a
-	// hung dial (P4) is bounded by the per-probe timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	report := RunConformance(ctx, backend, nil)
@@ -103,17 +56,11 @@ func NewSandboxRunner(backend SandboxBackend, opts SandboxOpts) (*SandboxRunner,
 	return &SandboxRunner{backend: backend, opts: opts, report: report}, nil
 }
 
-// SandboxConformanceError is the error [NewSandboxRunner] (and so
-// [App.ProcessModuleSandbox]) returns when untrusted modules cannot run
-// on this host: no backend, a backend that is unavailable here, or one
-// that failed a P1–P7 probe. Report is the conformance report behind the
-// refusal, for an operator surface that wants the per-probe results
-// rather than the rendered text. It unwraps to [ErrSandboxUnavailable].
+// SandboxConformanceError is the refusal to run untrusted modules on this host;
+// it unwraps to [ErrSandboxUnavailable].
 type SandboxConformanceError struct {
-	// Report is the probe outcome. For a missing or unavailable backend
-	// every probe is Unreachable and Available is false.
+	// Report is the probe outcome; every probe is Unreachable for a missing backend.
 	Report ConformanceReport
-
 	reason string
 }
 
@@ -121,23 +68,15 @@ func (e *SandboxConformanceError) Error() string {
 	return ErrSandboxUnavailable.Error() + ": " + e.reason
 }
 
-// Unwrap lets errors.Is(err, ErrSandboxUnavailable) hold.
+// Unwrap returns [ErrSandboxUnavailable].
 func (e *SandboxConformanceError) Unwrap() error { return ErrSandboxUnavailable }
 
-// Start implements [Runner.Start]. It is the untrusted-tier spawn:
-// baseline hygiene (shared [prepareChildForSpawn]) + backend.Wrap (the
-// OS-enforced denials) + shared [startPreparedChild]. The backend.Wrap
-// step is the ONLY difference from TrustedProcessRunner.Start, that is
-// the design's point: the two runners are identical except for the
-// OS-enforced denial layer.
+// Start implements [Runner]; a Wrap error or panic fails the spawn before exec.
 func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild, error) {
 	prep, err := prepareChildForSpawn(spec, r.allowlist())
 	if err != nil {
 		return nil, err
 	}
-	// Build the per-spawn confinement opts from the runner defaults,
-	// narrowed by the descriptor's Limits (never widened, a descriptor
-	// may lower a ceiling, not raise it).
 	opts := r.opts
 	if opts.ScratchDir == "" {
 		opts.ScratchDir = prep.Scratch
@@ -145,12 +84,6 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	if prep.Spec.Descriptor.ArtifactPath != "" {
 		opts.PackageDir = filepath.Dir(prep.Spec.Descriptor.ArtifactPath)
 	}
-	// Apply OS-enforced denials on top of baseline hygiene. A Wrap error
-	// is fail-closed: we do NOT exec the child unconfined. Wrap runs
-	// under a recover guard for the same reason: the backend is swappable
-	// host-side code on the spawn path, and its panic must surface as a
-	// fail-closed spawn error (module quarantined/restarted) rather than
-	// escaping the spawn goroutine.
 	if err := wrapSandboxSafely(r.backend, prep.Cmd, opts); err != nil {
 		releasePrepFDs(prep)
 		prep.removeOwnedScratch()
@@ -159,9 +92,6 @@ func (r *SandboxRunner) Start(ctx context.Context, spec ChildSpec) (RunningChild
 	return startPreparedChild(ctx, prep, r.NewCodec)
 }
 
-// wrapSandboxSafely applies the backend's OS-enforced denials under a recover
-// guard, converting a panicking backend into the same fail-closed error
-// a returned one gets: the child is never exec'd unconfined.
 func wrapSandboxSafely(backend SandboxBackend, cmd *exec.Cmd, opts SandboxOpts) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
@@ -171,11 +101,7 @@ func wrapSandboxSafely(backend SandboxBackend, cmd *exec.Cmd, opts SandboxOpts) 
 	return backend.Wrap(cmd, opts)
 }
 
-// Conforms reports whether the backend passed every probe P1–P7 at
-// construction. The supervisor consults this at Register to fail-closed
-// an untrusted module whose host lost conformance (e.g. the operator
-// pointed NewSandboxRunner at a backend that was available at boot but
-// is now not, belt-and-suspenders alongside the constructor's gate).
+// Conforms reports whether every probe passed at construction; false for nil.
 func (r *SandboxRunner) Conforms() bool {
 	if r == nil {
 		return false
@@ -183,9 +109,7 @@ func (r *SandboxRunner) Conforms() bool {
 	return r.report.Conforms()
 }
 
-// Report returns the cached conformance report from construction.
-// Operator-facing surfaces (introspection, install UI) read this to show
-// WHY an untrusted module fail-closed on this host.
+// Report returns the conformance report from construction.
 func (r *SandboxRunner) Report() ConformanceReport {
 	if r == nil {
 		return ConformanceReport{Backend: "none", Available: false, MissingReason: "no sandbox runner configured"}
@@ -193,7 +117,7 @@ func (r *SandboxRunner) Report() ConformanceReport {
 	return r.report
 }
 
-// Backend returns the selected backend (for diagnostics / introspection).
+// Backend returns the backend, or nil.
 func (r *SandboxRunner) Backend() SandboxBackend {
 	if r == nil {
 		return nil
@@ -201,9 +125,6 @@ func (r *SandboxRunner) Backend() SandboxBackend {
 	return r.backend
 }
 
-// allowlist returns the runner's env allowlist, defaulting to
-// DefaultChildEnvAllowlist: mirrors TrustedProcessRunner.allowlist so
-// the two runners share the exact same baseline hygiene.
 func (r *SandboxRunner) allowlist() []string {
 	if r == nil || len(r.EnvAllowlist) == 0 {
 		return DefaultChildEnvAllowlist()
@@ -211,11 +132,6 @@ func (r *SandboxRunner) allowlist() []string {
 	return r.EnvAllowlist
 }
 
-// releasePrepFDs closes every descriptor prepareChildForSpawn opened
-// (both ends of the three stdio pipes and, on exec-by-fd platforms, the
-// verified artifact fd). It runs on each path that abandons a prepared spawn
-// (a Wrap error, a re-hash failure, a failed exec) so the parent leaks
-// no fd across a failed spawn.
 func releasePrepFDs(prep *childPrep) {
 	if prep == nil {
 		return
@@ -231,18 +147,8 @@ func releasePrepFDs(prep *childPrep) {
 	}
 }
 
-// SelectRunner maps a descriptor's TrustTier to the Runner the supervisor
-// spawns under (design §6 decision C, the inversion of the wave-2a
-// site that unconditionally errored on TrustUntrusted):
-//
-//   - TrustTrusted → trusted (TrustedProcessRunner).
-//   - TrustUntrusted + sandbox that Conforms() → sandbox (SandboxRunner).
-//   - TrustUntrusted + nil/non-conforming sandbox → ErrSandboxUnavailable
-//     (the caller, supervisor.Register, wraps this as
-//     [UntrustedNoSandboxError] and the module never reaches Ready).
-//
-// This is the single point that decides runner selection; the supervisor
-// calls it once at Register and stores the result on the moduleSlot.
+// SelectRunner returns the runner for tier: trusted for TrustTrusted, sandbox for
+// TrustUntrusted when it conforms, else [ErrSandboxUnavailable].
 func SelectRunner(tier TrustTier, trusted Runner, sandbox *SandboxRunner) (Runner, error) {
 	switch tier {
 	case TrustTrusted:

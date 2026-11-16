@@ -1,0 +1,241 @@
+primitive: app.mcp
+summary: "The App's MCP server wiring: introspection, control and contract tools, MCP Apps, the manifest and the dev-only bind."
+code:
+  - framework/mcp_*.go
+  - framework/devmcp_bind.go
+docs:
+  - framework/docs/content/mcp.md
+  - framework/docs/content/contracts.md
+on_change:
+  - "A new MCP tool is a public surface: document it in mcp.md and decide whether it is dev-only before it ships."
+imports:
+  - deny: framework/docs
+    from: [framework]
+    why: The docs corpus is embedded markdown, and linking it into framework would rebuild and retest every package that imports framework on each docs edit.
+    instead: Expose the docs tools through WithMCPTools(mcptools.Register) from framework/docs/mcptools, which the host imports.
+  - deny: framework/docs/mcptools
+    from: [framework]
+    why: The framework_docs_* tools are a separate opt-in that carries the docs corpus with it.
+    instead: Let the host pass mcptools.Register to WithMCPTools.
+twins:
+  - job: Render a migrate.Dialect for output, the empty dialect as "all".
+    why: migrate.dialectString is unexported and Dialect is an alias of coremig.Dialect, so it cannot be a method; merging means exporting it from framework/migrate.
+    sites:
+      - path: framework/mcp_introspection.go
+        note: dialectStringForTool, for the app_routines result.
+      - path: framework/migrate/routine.go
+        note: dialectString, for migrate's log attributes.
+invariants:
+  - id: control-tools-require-admin
+    rule: "The control tools installed by an explicit WithMCPControl run behind MCPRequireRole(\"admin\"), or the gate WithMCPControlGate names, never ungated."
+    enforced_by:
+      - test: framework.TestControlToolsRequireAdmin
+      - test: framework.TestControlToolsGatedInProduction
+      - test: framework.TestMCPControlGateOverridesRole
+  - id: gated-tool-hidden-from-list
+    rule: A gated framework MCP tool is registered with mcp.WithToolGate, so a caller its gate refuses can neither list its schema nor call it.
+    enforced_by:
+      - test: framework.TestSweepAgentsControlToolsUnlistedForAnonymous
+      - test: framework.TestControlToolsRequireAdmin
+  - id: empty-gate-panics
+    rule: WithMCPGate and WithMCPControlGate given a nil gate, and MCPRequireRole given no role, panic at wiring time instead of admitting every caller.
+    enforced_by:
+      - test: framework.TestWithMCPGateRejectsNilGate
+      - test: framework.TestSweepAgentsGateConstructorsRefuseEmpty
+  - id: require-user-refusals
+    rule: MCPRequireUser refuses a caller with no resolved user, a caller on an embed grant, and a caller the access Decider denies on access.RoleGateCapability.
+    enforced_by:
+      - test: framework.TestMCPRequireUserRefusesAnonymous
+      - test: framework.TestMCPRequireUserRefusesEmbedGrant
+      - test: framework.TestMCPGatesHonorDeciderDeny
+  - id: role-gate-narrowed-by-scope
+    rule: A scope-restricted caller passes MCPRequireRole only on a role one of its held scopes grants through access.RoleScope, while the Decider is asked with every role the caller holds.
+    enforced_by:
+      - test: framework.TestRoleGatesNarrowByScope
+      - test: framework.TestControlToolsRefuseNarrowToken
+      - test: framework.TestRoleGateDeciderSeesAllRoles
+  - id: refusals-are-rpc-errors
+    rule: A framework MCP tool returns a refusal of the caller's arguments (a missing name, an unknown module or rule, a rule with no autofix) as an mcp.RPCError carrying its message, because the server redacts any other error to "internal tool error".
+    enforced_by:
+      - test: framework.TestMCPControlUnknownModuleErrors
+      - test: framework.TestContractRefusalsReachTheAgent
+  - id: empty-host-is-exposed
+    rule: bindIsLoopback treats the empty address, a bare port, an empty host and every hostname other than localhost as exposed, and never resolves a name.
+    enforced_by:
+      - test: framework.TestDevMCPRefusesNonLoopbackBind
+      - test: framework.TestDevMCPStartEmptyAddrIsExposed
+  - id: bind-judges-the-network
+    rule: A listener is local only on an in-process network or on a TCP loopback address; a unix socket is exposed whatever its path reads like.
+    enforced_by:
+      - test: framework.TestDevGuardsJudgeTheNetwork
+  - id: exposed-bind-withdraws-dev-implied
+    rule: On an exposed bind without GOFASTR_DEV_MCP_EXPOSE=1, guardDevMCPBind removes every dev-implied MCP tool, including those an early InitPlugins already registered, and keeps every tool an explicit option asked for.
+    enforced_by:
+      - test: framework.TestGuardDevMCPBindWithdrawsOnlyDevImplied
+      - test: framework.TestDevMCPRefusesExposedStartLive
+      - test: framework.TestDevIntrospectionWithdrawnOnExposed
+  - id: dev-tools-marked-dev-implied
+    rule: The introspection tools the dev loop implies and both contract dev tools register with mcp.WithDevImplied, so the bind guard withdraws them with the rest of the set.
+    enforced_by:
+      - test: framework.TestDevIntrospectionWithdrawnOnExposed
+  - id: expose-opt-in-lifts-host-pin
+    rule: GOFASTR_DEV_MCP_EXPOSE=1 on an exposed bind keeps the dev tools and lifts the loopback Host pin; a loopback bind keeps the pin whatever the variable says, and only a true value enables it.
+    enforced_by:
+      - test: framework.TestDevMCPExposeAcceptsRemoteHost
+      - test: framework.TestDevMCPExposeOptInIsExplicit
+  - id: livereload-off-on-exposed-bind
+    rule: On an exposed bind without GOFASTR_DEV_LIVERELOAD_EXPOSE, the dev livereload stream is withdrawn, and a host-owned stream on that path is left on with a warning.
+    enforced_by:
+      - test: framework.TestLiveReloadOffOnExposedBind
+      - test: framework.TestExposedBindWarnsHostStream
+  - id: contract-dev-tools-dev-loop-only
+    rule: contracts_verify and contracts_fix register only in the dev loop and are absent, not gated, everywhere else.
+    enforced_by:
+      - test: framework.TestContractDevToolsAreAbsentOutsideDevLoop
+      - test: framework.TestContractToolsFollowDevMode
+  - id: verify-never-echoes-secrets
+    rule: contracts_verify replaces the message of a diagnostic marked RedactSnippet with its rule title.
+    judge: Does this change let contracts_verify return the message of a diagnostic marked RedactSnippet instead of its rule title?
+  - id: fix-reports-partial-writes
+    rule: When contracts_fix fails after rewriting some files, its error result names the files already written.
+    enforced_by:
+      - test: framework.TestContractsFixAdmitsPartialWritesOnFailure
+      - test: framework.TestContractsFixPartialWriteOverMCP
+  - id: capability-checked-before-scan
+    rule: contracts_verify refuses an unknown capability before it reads the config or scans the tree.
+    enforced_by:
+      - test: framework.TestContractsVerifyRefusesAnUnknownCapabilityBeforeScanning
+  - id: readiness-tool-redacts
+    rule: app_readiness never carries raw check error text, whatever the verbose readiness setting, and reports not ready while draining or when no check is registered.
+    enforced_by:
+      - test: framework.TestMCPAppReadinessRedactsEvenWhenVerbose
+      - test: framework.TestMCPAppReadinessNoChecksNotReady
+      - test: framework.TestReadinessToolReportsDraining
+  - id: routines-report-what-they-know
+    rule: app_routines reports ledger_state unknown when the ledger could not be read, missing when the ledger table does not exist yet, skipped_for_dialect for a routine declared for another engine, and static fields without failing when no DB is wired.
+    enforced_by:
+      - test: framework.TestRoutinesUnreadableLedgerUnknown
+      - test: framework.TestSweepAgentsRoutinesSkipOtherDialect
+      - test: framework.TestMCPAppRoutinesSurvivesNilDB
+      - test: framework.TestMCPAppRoutinesReportsMissingLedgerRow
+  - id: goroutine-leak-tool-bounded
+    rule: app_goroutine_leaks writes the goroutineleak profile at debug level 1, which holds only leaked stacks, and returns at most 64 KiB of them.
+    judge: Does this change make app_goroutine_leaks write the profile at debug level 2 or higher, which dumps every goroutine, or remove the cap on the stacks it returns?
+  - id: dev-entity-collision-skips-builtin
+    rule: A built-in MCP tool whose name a dev-implied entity tool already holds is skipped with a warning, while a collision with an explicitly exposed tool still fails registration.
+    enforced_by:
+      - test: framework.TestDevEntityBuiltinCollisionsBoot
+      - test: framework.TestDevEntityCatalogCollisionBoots
+      - test: framework.TestDevExplicitCollisionStillFails
+      - test: framework.TestReplacedDevToolCollisionFails
+      - test: framework.TestSweepAgentsExplicitEntityCollisionFails
+decisions:
+  - id: control-separate-from-introspection
+    date: 2026-11-16
+    status: accepted
+    decision: The mutating control tools are their own opt-in, WithMCPControl, apart from the read-only WithMCPIntrospection, and they change only runtime state the app already models.
+    rejected:
+      - option: One option for both surfaces.
+        why: A docs site or staging server that only wants disclosure would also get tools that reconfigure the app.
+      - option: MCP tools that change screens, entities or handlers.
+        why: Code changes belong to the gofastr dev edit, rebuild and reload loop.
+  - id: control-default-admin
+    date: 2026-11-16
+    status: accepted
+    decision: "The control tools default to MCPRequireRole(\"admin\"), the default /.debug uses too."
+    rejected:
+      - option: Leave them ungated.
+        why: A reachable /mcp becomes a control plane for whoever finds it.
+      - option: MCPRequireUser, an identity alone.
+        why: On an app with open sign-up any account could turn a module off for everyone.
+    upholds: [control-tools-require-admin]
+  - id: dev-implied-ungated-bounded-by-bind
+    date: 2026-11-16
+    status: accepted
+    decision: Dev-implied MCP tools carry no gate, and their exposure is bounded by withdrawing them on a non-loopback bind.
+    rejected:
+      - option: Gate the dev-implied tools.
+        why: gofastr dev runs with no auth configured, so a gate would lock the dev loop out of its own app.
+      - option: Rely on the transport's loopback Host pin.
+        why: The pin stops DNS rebinding from a browser but not a direct TCP client, which sets Host freely.
+    upholds: [exposed-bind-withdraws-dev-implied]
+  - id: withdraw-dev-implied-as-one-set
+    date: 2026-11-16
+    status: accepted
+    decision: Every dev-implied mutating or disclosing tool is marked with mcp.WithDevImplied and withdrawn as one set by UnregisterDevImpliedTools.
+    rejected:
+      - option: Withdraw each feature's tools separately.
+        why: The per-feature spelling left the entity write tools and log_set_level live on an exposed bind while the control tools were dropped.
+    upholds: [exposed-bind-withdraws-dev-implied, dev-tools-marked-dev-implied]
+  - id: hostname-is-exposed
+    date: 2026-11-16
+    status: accepted
+    decision: A bind host that is not localhost or a loopback IP literal counts as exposed without resolving it.
+    rejected:
+      - option: Resolve the name and check the addresses.
+        why: A name that resolves to 127.0.0.1 today can resolve elsewhere tomorrow, and the answer decides whether an unauthenticated control plane is published.
+    upholds: [empty-host-is-exposed]
+  - id: one-control-tool-list
+    date: 2026-11-16
+    status: accepted
+    decision: controlToolSpecs is the one list both registerControlTools and the bind guard's withdrawal read.
+    rejected:
+      - option: A separate list of names to withdraw.
+        why: Two hand-kept lists drift, and the drift leaves an exposed dev bind serving a tool nobody removed.
+    upholds: [exposed-bind-withdraws-dev-implied]
+  - id: handshake-stays-open
+    date: 2026-11-16
+    status: accepted
+    decision: WithMCPGate leaves initialize and ping open.
+    rejected:
+      - option: Gate the handshake too.
+        why: They carry only the protocol version, capability flags and server name, and a client that cannot handshake cannot present credentials.
+  - id: contract-dev-tools-absent-in-production
+    date: 2026-11-16
+    status: accepted
+    decision: contracts_verify and contracts_fix exist only in the dev loop, and the always-on contract tools only read the rule catalog.
+    rejected:
+      - option: Register them everywhere behind a gate.
+        why: A deployed binary has no source tree, and the schema in tools/list would still tell callers the server reads local files on request.
+      - option: Run analyzers from the catalog tools.
+        why: A live app has no source tree of its own, and gofastr verify --json is the run surface agents already have.
+    upholds: [contract-dev-tools-dev-loop-only]
+  - id: baseline-applies-to-verify-only
+    date: 2026-11-16
+    status: accepted
+    decision: contracts_verify applies the project's baseline and contracts_fix ignores it.
+    rejected:
+      - option: Apply the baseline in both.
+        why: The baseline records debt the team agreed to carry, and a fix tool that skipped every baselined finding would look broken.
+      - option: Apply it in neither.
+        why: contracts_verify would disagree with gofastr verify, gofastr build and the dev watcher about the same tree.
+  - id: analyzer-errors-relayed-verbatim
+    date: 2026-11-16
+    status: accepted
+    decision: contracts_verify relays analyzer errors, recovered panics included, verbatim.
+    rejected:
+      - option: Redact them like other tool errors.
+        why: passed=false with no findings and no errors leaves an agent nothing to act on, and the dev-loop caller already has the files.
+    revisit_if: The contract dev tools become reachable off a loopback dev bind.
+  - id: introspection-is-opt-in
+    date: 2026-11-16
+    status: accepted
+    decision: The introspection tools register only under WithMCPIntrospection or the dev loop.
+    rejected:
+      - option: Register them with every /mcp.
+        why: Read-only as they are, together they reveal every route, module and config field to whoever reaches /mcp.
+  - id: sqlite-liveness-unknown
+    date: 2026-11-16
+    status: accepted
+    decision: app_routines reports liveness unknown on SQLite and on any catalog query error.
+    rejected:
+      - option: Read sqlite_master.
+        why: SQLite has no stored functions or procedures, so present or absent from sqlite_master would mislead for those kinds.
+  - id: dev-entity-tool-provenance
+    date: 2026-11-16
+    status: accepted
+    decision: The App records the names of dev-implied entity tools in devEntityMCPTools to tell a dev collision from an explicit one.
+    rejected:
+      - option: Read core/mcp's dev-implied marker.
+        why: Dev-only read tools are not marked, because they survive the bind withdrawal on purpose.
+    upholds: [dev-entity-collision-skips-builtin]

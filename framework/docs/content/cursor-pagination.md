@@ -148,13 +148,17 @@ fractional digits kept (`2026-10-27T07:05:07.500000Z`), so on SQLite,
 which compares `DATETIME` columns as text, the keyset compares against
 the stored string byte for byte. crud writes every Timestamp in that
 layout, a client's `2026-10-27T09:05:07+02:00` included (same instant,
-stored as `2026-10-27T07:05:07.000000Z`). On an `Unmanaged` entity
-over SQLite (a legacy table, or one another writer fills) the stored
-text may be in another layout (`2026-03-03 09:00:00`,
-`2026-01-02T12:00:00Z`), so there a Timestamp cursor column carries and
-binds the anchor row's stored text instead: the keyset compares the
+stored as `2026-10-27T07:05:07.000000Z`). A SQLite table can also hold
+text crud did not write: rows a seed script or a migration inserted, or
+an `Unmanaged` entity's table that another writer fills
+(`2026-03-03 09:00:00`, `2026-01-02T12:00:00Z`). So on SQLite a
+Timestamp cursor column carries and binds the anchor row's stored text,
+whether crud manages the entity or not: the keyset compares the
 same text `ORDER BY` sorts, and the walk serves the rows in the sorted
-list's order, each once. The carried text must still read as a
+list's order, each once. That order is the text's, which is time order
+only while every row is in one layout: `…05.5Z` sorts before `…05Z`.
+Rewrite seeded rows in the layout above to get time order. The carried
+text must still read as a
 timestamp (RFC 3339 or a form SQLite's date functions read), or the
 cursor is a 400. Postgres compares a timestamp column as an instant and
 binds the canonical value either way. A Date value is the date

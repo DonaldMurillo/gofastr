@@ -10,20 +10,6 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/contracts"
 )
 
-// Contract tools, registered alongside the introspection set by
-// [WithMCPIntrospection].
-//
-// The catalog is the interesting half. An agent connected to a live app
-// can ask "what does this framework actually require of me" and get every
-// rule with its reasoning, its remedy, and a worked example, before
-// writing code, rather than after a build rejects it. That is the whole
-// point of making the rules data rather than error strings.
-//
-// Running analyzers is deliberately NOT exposed here. A live app serves
-// requests; it does not have its own source tree to scan, and pointing an
-// MCP tool at an arbitrary filesystem path is a capability nobody asked
-// for. `gofastr verify --json` is the run surface, and agents already
-// have a shell.
 func (a *App) registerContractTools() error {
 	tools := []struct {
 		name        string
@@ -89,17 +75,10 @@ func (a *App) registerContractTools() error {
 	return nil
 }
 
-// contractRefusal is a refusal of the caller's arguments: an unknown
-// rule or capability, a rule with no autofix. It answers as invalid
-// params carrying its message, because the server redacts any other
-// error to "internal tool error" and the agent could not act on that.
 func contractRefusal(format string, args ...any) error {
 	return &mcp.RPCError{Code: mcp.ErrInvalidParams, Message: fmt.Sprintf(format, args...)}
 }
 
-// contractRuleView is the wire shape of a rule over MCP. It flattens the
-// derived fields (doc URL, suppression syntax) so a consumer never has to
-// know how to build them.
 type contractRuleView struct {
 	ID          string              `json:"id"`
 	Slug        string              `json:"slug"`
@@ -117,9 +96,6 @@ type contractRuleView struct {
 	Suppress    string              `json:"suppress,omitempty"`
 }
 
-// summaryView omits the long-form fields, a catalog listing of 43 rules
-// with full Why text is a wall an agent has to page through to find the
-// one it needs.
 func summaryView(r contracts.Rule) contractRuleView {
 	return contractRuleView{
 		ID: r.ID, Slug: r.Slug, Title: r.Title,

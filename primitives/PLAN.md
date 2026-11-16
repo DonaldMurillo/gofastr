@@ -86,8 +86,11 @@ Done when non-test Go code is under 8% comment lines, from 24% today.
 
 Status: `framework/crud` is swept, 29.2% to 6.3%. Its rules are 185
 invariants, each naming a test that was watched failing, and 79
-decisions. The repository as a whole is at the share the script prints;
-`framework/` is next.
+decisions. The root `framework` package is swept too, 33.1% to 5.1%: 397
+more invariants and 151 decisions on `app` and its children. The
+repository as a whole is at the share the script prints. Next, in order:
+`framework/headless`, `framework/uihost`, `framework/ui`, then the rest
+of `framework/`.
 
 ### 3. Bring the known twins in, and merge them
 
@@ -106,6 +109,12 @@ check useful outside `framework/crud`.
 
 Done when `go run ./cmd/primitives for <path>` finds an owner for every
 non-test Go file under those three trees.
+
+Status: done ahead of order for the root `framework` package, so its
+sweep had owners to write to: `app` and its children, `app.processmodule`
+among them, own all 87 files. `TestCoveredPackagesHaveNoUnownedFile`
+fails when a file in a covered package has no owner; add a package to
+its list as this step reaches it.
 
 A rule that spans primitives keeps one home and lists the other files
 it governs under `applies` (settled in step 1: `crud.scope`'s
