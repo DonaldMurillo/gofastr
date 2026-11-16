@@ -2,3 +2,109 @@ primitive: app.processmodule.probe
 summary: The sandbox conformance probes P1 to P7 a runner must pass before it may launch an untrusted module.
 code:
   - framework/processmodule_probe*.go
+invariants:
+  - id: conforms-only-when-every-probe-passes
+    rule: A report conforms only when its backend was available and all seven probes passed; one Fail, Unreachable or Unknown disqualifies it, and an unavailable or nil backend records every probe Unreachable.
+    enforced_by:
+      - test: framework.TestConformanceReport_Conforms
+      - test: framework.TestSweepPMHostConformsNeedsEveryPass
+      - test: framework.TestRunConformance_NilBackend
+      - test: framework.TestRunConformance_UnavailableBackend
+  - id: result-line-protocol
+    rule: The child's verdict is the first output line starting with PASS, BREACH or UNREACHABLE; a timeout is Unreachable, and a child that printed no such line is Fail, except P6, where it is Unreachable.
+    enforced_by:
+      - test: framework.TestParseProbeOutput_Contract
+      - test: framework.TestAuditParseProbeOutputKilledChildContract
+      - test: framework.TestAuditParseProbeOutputStderrShadowsResult
+  - id: detail-scrubbed
+    rule: Every child-supplied text in a ProbeResult Detail has its terminal control bytes removed, keeping only newline and tab.
+    enforced_by:
+      - test: framework.TestProbeDetailScrubsControlBytes
+  - id: runner-wait-bounded
+    rule: The runner returns from a probe within its timeout plus WaitDelay even when a descendant that left the process group keeps the output pipe open.
+    enforced_by:
+      - test: framework.TestAuditProbeRunnerWaitUnboundedPastTimeout
+  - id: child-env-is-allowlist
+    rule: The probe child's environment is DefaultChildEnvAllowlist plus the probe's own GOFASTR_PROBE_* context and never copies the host environment.
+    enforced_by:
+      - test: framework.TestSweepPMHostProbeChildEnvOmitsHostEnv
+  - id: bodies-attempt-the-action
+    rule: Each Unix probe body attempts its forbidden action and reports BREACH when it succeeds, so P1, P2 and P5 breach when run unconfined.
+    enforced_by:
+      - test: framework.TestSweepPMHostUnconfinedProbeBodiesBreach
+  - id: p3-matches-by-identity
+    rule: P3 reports a breach only for an open fd naming the planted file's device and inode, never for the child's own descriptors, and is Unreachable with no planted identity.
+    enforced_by:
+      - test: framework.TestP3FindsPlantedFDByIdentity
+      - test: framework.TestP3BodyMatchesOnlyPlantedFD
+      - test: framework.TestP3NoIdentityIsUnreachable
+  - id: p4-proves-refusal-against-controls
+    rule: P4 passes only when the child is refused by listeners the runner reached itself; with no control it is Unreachable, and a control that accepted a connection from the child fails it whatever the child printed.
+    enforced_by:
+      - test: framework.TestP4NoControlIsUnreachable
+      - test: framework.TestP4ReachedControlIsBreach
+      - test: framework.TestP4ProofDialIsNotCounted
+  - id: p6-caps-must-fire
+    rule: P6 holds every unit alive while it pushes fds and processes past each limit, counts only EMFILE or EAGAIN as the cap, treats any other stop as Unreachable, and fails an allocating child that touched twice the memory limit.
+    enforced_by:
+      - test: framework.TestCapRunOtherErrorIsNotCap
+      - test: framework.TestCapRunHoldsEveryUnit
+      - test: framework.TestClassifyMemHog
+      - test: framework.TestMemHogUnconfinedBreaches
+  - id: probe-child-dispatched-by-init
+    rule: Any binary that links package framework runs one probe and exits, before main, when GOFASTR_SANDBOX_PROBE is set.
+    enforced_by:
+      - test: framework.TestProbeChildDispatchedByPackageInit
+  - id: scratch-traversable-not-readable
+    rule: The conformance scratch directory is mode 0711, so a sandbox account reaches its own per-probe directory but cannot list the planted 0600 secrets.
+    judge: Does this change give the probe scratch directory a read bit for other accounts, or stop a backend that runs the child as another account from traversing it?
+  - id: windows-stub-never-conforms
+    rule: On Windows the P1 body reports BREACH and the P3, P6 and P7 bodies report UNREACHABLE, so no Windows backend conforms until those bodies are written.
+    judge: Does this change make a Windows probe body report PASS for a property the Windows backend does not enforce?
+decisions:
+  - id: outcome-based-probes
+    date: 2026-11-16
+    status: accepted
+    decision: Conformance is defined by observed outcomes, a child attempting each forbidden action under the backend and being denied, not by the syscalls a backend uses.
+    rejected:
+      - option: Check per-OS mechanisms (namespaces, sandbox-exec profiles, AppContainer).
+        why: The three OSes reach the same denials by incompatible mechanisms, so no mechanism check is portable or CI-gateable.
+    upholds: [conforms-only-when-every-probe-passes]
+  - id: probe-child-in-package-init
+    date: 2026-11-16
+    status: accepted
+    decision: The probe child is the running binary re-executed with GOFASTR_SANDBOX_PROBE set, dispatched from package framework's init, and GOFASTR_SANDBOX_PROBE is reserved for that.
+    rejected:
+      - option: An exported ProbeChildMaybeRun every host calls first in main.
+        why: A host that forgets the call launches a second copy of the app instead of the probe.
+      - option: A dedicated probe helper binary shipped beside the app.
+        why: Every deploy must carry it, and the probe then proves the helper's confinement, not the host's.
+    upholds: [probe-child-dispatched-by-init]
+  - id: probe-memory-limit-256mib
+    date: 2026-11-16
+    status: accepted
+    decision: The P6 memory limit is 256 MiB, and the allocating child asks for twice that.
+    rejected:
+      - option: A lower limit.
+        why: An RLIMIT_DATA cap counts the Go runtime's arena index and cgo thread stacks, so a cgo-linked binary does not start under about 128 MiB.
+  - id: cpu-not-probed
+    date: 2026-11-16
+    status: accepted
+    decision: P6 does not probe CPU throttling.
+    rejected:
+      - option: Measure the child's CPU time against the quota.
+        why: Throttling is only visible in timing, and a loaded host makes an unthrottled child look throttled.
+  - id: memhog-maps-around-the-heap
+    date: 2026-11-16
+    status: accepted
+    decision: The allocating child maps anonymous memory with mmap and touches every page, and unmaps before printing a refusal.
+    rejected:
+      - option: Allocate on the Go heap.
+        why: Under RLIMIT_DATA the runtime can fault in its GC instead of failing cleanly, and a crash proves nothing about the cap.
+    upholds: [p6-caps-must-fire]
+  - id: windows-backend-is-a-stub
+    date: 2026-11-16
+    status: accepted
+    decision: The Windows probe bodies report the stub backend honestly, so untrusted modules fail closed on Windows.
+    revisit_if: A Windows backend with AppContainer tokens, Job Objects and per-SID WFP rules lands.
+    upholds: [windows-stub-never-conforms]
