@@ -765,6 +765,7 @@ payment backend), WebMCP (client-side browser API), ap2 (server-only).
 All absolute discovery URLs (agent card `url`, `Link` header targets) use one
 canonical origin, resolved in this order: `WithAgentReady{BaseURL}`, then
 `WithSitemap{BaseURL}`, then the per-request scheme + the request's own `Host`.
+A `BaseURL` made only of slashes counts as unset.
 The per-request scheme comes from the TLS state. `X-Forwarded-Proto`
 (exactly `http` or `https`) overrides it only when the TCP peer is listed
 in `uihost.WithTrustedProxies` or, when the host sets no list, in the
