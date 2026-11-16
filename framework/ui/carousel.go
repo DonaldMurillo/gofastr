@@ -11,19 +11,11 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/headless"
 )
 
-// ─── Carousel ───────────────────────────────────────────────────────
-//
-// Horizontal scroll-snap slider rendered through headless.Carousel:
-// a labelled region, a native scrollable track, prev/next controls and
-// dot anchors as fragment hrefs (the no-script contract), the active
-// slide + status bound by the registered headless-carousel module.
-
 // CarouselSlide is one entry.
 type CarouselSlide struct {
-	// Content is the slide body (required). Caller decides the shape.
+	// Content is the slide body (required).
 	Content render.HTML
-	// Label is the slide's accessible label. Defaults to the
-	// Strings.CarouselSlide sentence ("Slide {n} of {total}").
+	// Label is the slide's accessible label. Default "Slide {n} of {total}".
 	Label string
 }
 
@@ -31,37 +23,29 @@ type CarouselSlide struct {
 type CarouselConfig struct {
 	// Slides are the entries (≥1).
 	Slides []CarouselSlide
-	// Label is the accessible label for the carousel region (required,
-	// becomes role=region + aria-label).
+	// Label names the carousel region (required).
 	Label string
 	// NoDots hides the pagination dots.
 	NoDots bool
 	// NoArrows hides the Prev/Next buttons.
 	NoArrows bool
-	// AutoRotateMs, when > 0, auto-advances every N ms. Paused on
-	// hover, focus, hidden tab and prefers-reduced-motion.
+	// AutoRotateMs, when > 0, auto-advances every N ms, paused on hover,
+	// focus, a hidden tab and prefers-reduced-motion.
 	AutoRotateMs int
-	// Loop makes Next-on-last wrap to first (and vice versa). Default
-	// false: Prev/Next refuse at the ends.
+	// Loop wraps Next on the last slide to the first, and Prev back.
 	Loop bool
-	// VisiblePerView (default 1) is the most slides shown side by
-	// side: a carousel narrower than 40rem shows at most two, and one
-	// narrower than 26rem shows one, without its arrows when it has dots.
+	// VisiblePerView (1 to 8, default 1) is the most slides shown side by side.
 	VisiblePerView int
 	ID             string
 	Class          string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the carousel's root.
-	// Keys the component owns are dropped: class and id, the data-hui-*
-	// wiring, and the region contract (role, aria-roledescription,
-	// aria-label).
+	// ExtraAttrs lands on the root; class, id, data-hui-*, role, aria-roledescription and aria-label are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the
-	// carousel's sentences. When nil, English fallbacks apply.
+	// Ctx is the request context the carousel's sentences are said in.
 	Ctx context.Context
 }
 
-// Carousel renders the slider.
+// Carousel renders the slider. It panics without Label or a slide, or
+// with a slide that has no Content.
 func Carousel(cfg CarouselConfig) render.HTML {
 	if len(cfg.Slides) == 0 {
 		panic("ui: Carousel requires ≥1 Slide")
@@ -75,22 +59,16 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	}
 
 	classes := headless.Classes{
-		headless.PartRoot:          "fui-carousel",
-		headless.PartCarouselStage: "fui-carousel__stage",
-		headless.PartCarouselTrack: "fui-carousel__track",
-		headless.PartCarouselSlide: "fui-carousel__slide",
-		headless.PartCarouselDot:   "fui-carousel__dot",
-		headless.PartCarouselPrev:  "fui-carousel__prev",
-		headless.PartCarouselNext:  "fui-carousel__next",
-		headless.PartMarker:        "fui-carousel__dots",
-		// The slide status live region: read, never seen.
+		headless.PartRoot:           "fui-carousel",
+		headless.PartCarouselStage:  "fui-carousel__stage",
+		headless.PartCarouselTrack:  "fui-carousel__track",
+		headless.PartCarouselSlide:  "fui-carousel__slide",
+		headless.PartCarouselDot:    "fui-carousel__dot",
+		headless.PartCarouselPrev:   "fui-carousel__prev",
+		headless.PartCarouselNext:   "fui-carousel__next",
+		headless.PartMarker:         "fui-carousel__dots",
 		headless.PartVisuallyHidden: "fui-visually-hidden",
 	}
-	// The visible-per-view variant rides the root as a class modifier;
-	// the count clamps to the CSS ceiling (8) the way it always did.
-	// The public contract clamps the WHOLE out-of-range band
-	// (negative, zero, huge) into cols-1..cols-8 — the emitted class
-	// must always have a matching CSS rule.
 	v := cfg.VisiblePerView
 	if v < 1 {
 		v = 1
@@ -112,13 +90,6 @@ func Carousel(cfg CarouselConfig) render.HTML {
 	}
 	id := cfg.ID
 	if id == "" && !render.HasIDScope(ctx) {
-		// With an id scope the primitive derives the id itself
-		// (render.UniqueID over its content hash, with the track and
-		// slide ids as its family), so two identical carousels get -2
-		// and an island's carousel keeps one id on the page and in the
-		// RPC answer. With none, the content hash alone would repeat
-		// for identical carousels: autoID's process-wide counter keeps
-		// them apart.
 		id = autoID("ui-carousel")
 	}
 	out := headless.Carousel(headless.CarouselProps{
