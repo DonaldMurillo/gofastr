@@ -413,21 +413,21 @@ func TestMaskedUpsertEchoFollowsAHookChangedKey(t *testing.T) {
 // upsert binds the held value into its VALUES.
 func TestPGMaskedUpsertEchoFollowsAHookChangedKey(t *testing.T) {
 	for _, c := range []struct {
-		name, table, seedLower, sent, want string
+		name, seedLower, sent, want string
 	}{
-		{"new key has no row", "mask_hook_cards_a", "", maskedPAN, maskedPAN},
-		{"new key holds another value", "mask_hook_cards_b", "5500000000002222", maskedPAN, maskedPAN},
-		{"new key's own echo", "mask_hook_cards_c", "5500000000002222", "****2222", "5500000000002222"},
+		{"new key has no row", "", maskedPAN, maskedPAN},
+		{"new key holds another value", "5500000000002222", maskedPAN, maskedPAN},
+		{"new key's own echo", "5500000000002222", "****2222", "5500000000002222"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ch, db := pgCrudSetup(t, entity.EntityConfig{
-				Name: c.table, Table: c.table,
+				Name: "mask_hook_cards", Table: "mask_hook_cards",
 				Fields: []schema.Field{
 					{Name: "id", Type: schema.String},
 					{Name: "label", Type: schema.String},
 					{Name: "pan", Type: schema.String, Required: true, Mask: maskLastFour},
 				},
-			}.WithTimestamps(false), `CREATE TABLE `+c.table+` (id TEXT PRIMARY KEY, label TEXT, pan TEXT NOT NULL)`)
+			}.WithTimestamps(false), `CREATE TABLE mask_hook_cards (id TEXT PRIMARY KEY, label TEXT, pan TEXT NOT NULL)`)
 			ch.Hooks = hook.NewHookRegistry()
 			ch.Hooks.RegisterHook(hook.BeforeCreate, func(_ context.Context, data any) error {
 				body := data.(map[string]any)
@@ -438,15 +438,15 @@ func TestPGMaskedUpsertEchoFollowsAHookChangedKey(t *testing.T) {
 			if c.seedLower != "" {
 				seed = append(seed, map[string]any{"id": "abc", "label": "lower", "pan": c.seedLower})
 			}
-			pgSeed(t, db, c.table, seed)
+			pgSeed(t, db, "mask_hook_cards", seed)
 			if _, err := ch.UpsertOne(ctxWithUser("u1"), map[string]any{"id": "ABC", "label": "new", "pan": c.sent}); err != nil {
 				t.Fatalf("UpsertOne: %v", err)
 			}
 			var lower, upper string
-			if err := db.QueryRow(`SELECT pan FROM ` + c.table + ` WHERE id = 'abc'`).Scan(&lower); err != nil {
+			if err := db.QueryRow(`SELECT pan FROM mask_hook_cards WHERE id = 'abc'`).Scan(&lower); err != nil {
 				t.Fatal(err)
 			}
-			if err := db.QueryRow(`SELECT pan FROM ` + c.table + ` WHERE id = 'ABC'`).Scan(&upper); err != nil {
+			if err := db.QueryRow(`SELECT pan FROM mask_hook_cards WHERE id = 'ABC'`).Scan(&upper); err != nil {
 				t.Fatal(err)
 			}
 			if lower != c.want {

@@ -31,7 +31,7 @@ func ruleNullableKey(p *contracts.Pass, rel string, file *ast.File) []contracts.
 					continue
 				}
 				out = append(out, diag(p, contracts.RuleNullableKey, rel, ecPosIn(root, m[0]), fmt.Sprintf(
-					"CREATE TABLE %s declares primary key column %s without NOT NULL: SQLite stores a NULL there, any number of times, where Postgres refuses the row — write NOT NULL on every key column (only a lone INTEGER PRIMARY KEY, the rowid, and a SERIAL key fill themselves), or annotate //gofastr:allow(GOFASTR1418) <why>",
+					"table %s declares primary key column %s without NOT NULL: SQLite stores a NULL there, any number of times, where Postgres refuses the row — write NOT NULL on every key column (only a lone INTEGER PRIMARY KEY, the rowid, and a SERIAL key fill themselves), or annotate //gofastr:allow(GOFASTR1418) <why>",
 					name, strings.Join(bad, ", "))))
 			}
 		})
