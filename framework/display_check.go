@@ -11,11 +11,9 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/filter"
 )
 
-// ValidateDisplay runs the whole display boot check App.Entity runs, over
-// a declaration that never passed registration, for code generators (an
-// app spec's display: block): entity.ValidateDisplay's name, type and
-// key checks, then the view and ShowWhen queries. A display the app
-// would refuse at boot comes back as the error, naming the entity.
+// ValidateDisplay runs the display boot check App.Entity runs on an
+// unregistered declaration, for code generators, and returns the error the
+// app would refuse it with at boot, naming the entity.
 func ValidateDisplay(name string, cfg EntityConfig) (err error) {
 	if err := entity.ValidateDisplay(name, cfg); err != nil {
 		return err
@@ -32,14 +30,6 @@ func ValidateDisplay(name string, cfg EntityConfig) (err error) {
 	return nil
 }
 
-// validateDisplayQueries parses the query strings an entity's Display
-// holds, the half of the Display boot check framework/entity cannot run
-// because it cannot import the DSL: every view's Where and Sort, and
-// every field's ShowWhen. A bad one refuses the registration, naming
-// the entity and the offender, the same way entity.Validate refuses a
-// bad field name. Sort goes through dsl.ParseSort — the same grammar
-// ?sort= parses — so a view's sort and a caller's sort can never
-// disagree about what a term means.
 func validateDisplayQueries(ent *entity.Entity) error {
 	d := ent.Config.Display
 	if d == nil {
@@ -68,15 +58,7 @@ func validateDisplayQueries(ent *entity.Entity) error {
 	return nil
 }
 
-// checkShowWhen holds a ShowWhen condition to the shape the form's when
-// behaviour evaluates in the browser: one `field = value` or
-// `field in [...]` term over an editable Enum or Bool field, naming only
-// values that field can hold. Anything wider would render a condition the
-// browser cannot evaluate, so it is refused here rather than ignored there.
 func checkShowWhen(target, text string, fields []schema.Field, hints map[string]entity.FieldDisplay) error {
-	// A condition is evaluated in the browser, not in SQL, so NoQuery
-	// does not bar a controller; Hidden still does (it is never on the
-	// form). Parse against a copy with NoQuery cleared.
 	parseFields := slices.Clone(fields)
 	for i := range parseFields {
 		parseFields[i].NoQuery = false
@@ -88,7 +70,6 @@ func checkShowWhen(target, text string, fields []schema.Field, hints map[string]
 	if p == nil {
 		return fmt.Errorf("is blank")
 	}
-	// An and/or group carries no Op, so this also refuses compounds.
 	if p.Op != filter.OpEq && p.Op != filter.OpIn {
 		return fmt.Errorf("must be one `field = value` or `field in [...]` term")
 	}
@@ -104,8 +85,6 @@ func checkShowWhen(target, text string, fields []schema.Field, hints map[string]
 	if ctl == nil {
 		return fmt.Errorf("names unknown field %q", p.Field)
 	}
-	// The controller must be on the form and editable, or the condition
-	// can never change in the browser.
 	if ctl.ReadOnly || ctl.AutoGenerate != schema.AutoNone || hints[ctl.Name].Omit || hints[ctl.Name].Locked {
 		return fmt.Errorf("controller %q is not an editable form field", ctl.Name)
 	}

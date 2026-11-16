@@ -5,3 +5,84 @@ code:
   - framework/entityui_bulk.go
 docs:
   - framework/docs/content/entityui.md
+invariants:
+  - id: entityui-once
+    rule: App.EntityUI panics on a second call, and on Extensions.Jobs when the app has no database.
+    enforced_by:
+      - test: framework.TestEntityUISecondCallPanics
+      - test: framework.TestEntityUIJobsNeedDatabase
+  - id: bulk-routes-refuse-overlap
+    rule: App.EntityUI panics, changing nothing, when a bulk, export or picker route it would mount overlaps a route already registered.
+    enforced_by:
+      - test: framework.TestUIEndpointRefusalIsAtomic
+  - id: bulk-routes-on-the-entity-router
+    rule: An entity's bulk, export and picker routes mount on the router its CRUD routes went on, so a group's middleware guards them and no route answers outside the group.
+    enforced_by:
+      - test: framework.TestEntityUIGroupedRoutesKeepGroupGuard
+  - id: bulk-routes-for-the-name-owner
+    rule: Only the entity its name resolves to gets bulk, export and picker routes, and those routes answer 404 once a later registration takes the name.
+    enforced_by:
+      - test: framework.TestEntityUIVersionNotNamedGetsNoRoutes
+      - test: framework.TestEntityUIAmbiguousVersionsGetNoRoutes
+      - test: framework.TestEntityUIVersionLosesRoutesToLaterOwner
+  - id: late-entity-gets-bulk-routes
+    rule: An entity with write routes registered after App.EntityUI gets its bulk, export and picker routes.
+    enforced_by:
+      - test: framework.TestEntityUILateEntityGetsRoutes
+  - id: audit-trail-scoped
+    rule: A record's audit trail holds only rows stamped with the caller's tenant, starts after the key's last purge, or delete on an entity without soft delete, that a later row follows, and returns at most 200 rows.
+    enforced_by:
+      - test: framework.TestEntityUIAuditTrailTenantIsolation
+      - test: framework.TestAuditTrailStartsAfterDelete
+      - test: framework.TestAuditTrailSoftDeleteKeepsHistory
+      - test: framework.TestSweepModulesAuditTrailCapsLimit
+  - id: start-resumes-after-grace
+    rule: App start hands the job runner only unenqueued jobs created over a minute ago, and prunes finished jobs past entityui.BulkRetention.
+    enforced_by:
+      - test: framework.TestSweepModulesStartSkipsFreshUnenqueuedJob
+      - test: framework.TestEntityUIStartResumesAndPrunes
+  - id: one-queued-job-per-run-key
+    rule: A unique index lets one queued job hold a run key, and a second Create for that key answers the queued job and writes nothing.
+    enforced_by:
+      - test: framework.TestSQLBulkStoreRunKeyOneQueued
+  - id: bulk-lease-fences-writers
+    rule: Claim succeeds only on a queued job that is unclaimed, already the runner's, or under a lease expired at or before now, and Settle and Finish write only while the runner holds the lease.
+    enforced_by:
+      - test: framework.TestSQLBulkStoreLeaseFencesWriters
+  - id: bulk-lease-held-in-the-write
+    rule: Settle and Finish check the lease with an UPDATE inside their own transaction, so no other runner's Claim can land between the check and the writes.
+    judge: Does this change check a bulk job's lease outside the transaction that then writes its items or status?
+  - id: settle-keeps-first-outcome
+    rule: Settle never rewrites an item that already has an outcome.
+    enforced_by:
+      - test: framework.TestSQLBulkStoreRoundTrip
+  - id: resume-only-expired-leases
+    rule: Unenqueued lists queued jobs created before the cutoff that were never enqueued or whose lease expired before it.
+    enforced_by:
+      - test: framework.TestBulkResumeOnlyExpiredLeases
+  - id: prune-only-finished
+    rule: Prune deletes only jobs that are not queued and finished before the cutoff, with their items.
+    enforced_by:
+      - test: framework.TestSQLBulkStoreResumeAndPrune
+  - id: bulk-erasure-cuts-creator
+    rule: Erasing a user anonymizes the creator of their bulk jobs and keeps the jobs; the items, which hold record ids only, are exported and not erased.
+    enforced_by:
+      - test: framework.TestEraseCutsBulkJobCreator
+decisions:
+  - id: erasure-keeps-bulk-jobs
+    date: 2026-11-16
+    status: accepted
+    decision: An erasure keeps a bulk job, the record of an admin action, and tombstones its creator, so RunBulkJob's Principal cannot rebuild the erased user and their queued run stops.
+    rejected:
+      - option: Delete the erased user's jobs.
+        why: It drops the record of what was done to other users' data.
+      - option: Leave the creator in place.
+        why: A queued run would keep acting for an erased user.
+    upholds: [bulk-erasure-cuts-creator]
+  - id: resume-failure-is-logged
+    date: 2026-11-16
+    status: accepted
+    decision: A failed resume or prune at App start is logged and the app serves without it; the next start tries again.
+    rejected:
+      - option: Fail the boot.
+        why: A bulk table hiccup would take down every screen, not just queued runs.
