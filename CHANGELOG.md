@@ -25,6 +25,11 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A `BaseURL` of `/` no longer pins the agent-ready origin.** An
+  `AgentReadyConfig.BaseURL` or `SitemapConfig.BaseURL` made only of
+  slashes used to count as pinned and yield an empty origin; it now
+  counts as unset, so discovery URLs come from the request and card
+  signing refuses to start without a real origin.
 - **A failing audit `Redact` no longer stores the unredacted row.** When
   `AuditConfig.Redact` panics or returns a map that cannot be marshalled,
   the audit row keeps its keys and stores `"[redaction failed]"` for

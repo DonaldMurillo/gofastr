@@ -10,19 +10,7 @@ code:
   - framework/uihost/themevariant.go
 docs:
   - framework/docs/content/theming.md
-twins:
-  - job: Decide whether a request path resolves to a static file, a screen, the favicon or a dynamic llm.md.
-    why: serveOrRender interleaves each resolution step with ServeFile and redirect calls, so the predicate repeats the steps instead of sharing them.
-    sites:
-      - path: framework/uihost/static.go
-        note: resolvesStaticOrScreen, the predicate the 405 answer asks.
-      - path: framework/uihost/mount.go
-        note: serveOrRender, which resolves and serves.
 invariants:
-  - id: resolve-predicate-matches-serving
-    rule: resolvesStaticOrScreen reports true for exactly the paths serveOrRender answers with content.
-    enforced_by:
-      - test: framework/uihost.TestSweepAssetsResolvePredicateCoversEveryBranch
   - id: app-css-root-floor
     rule: app.css always begins with the theme's :root custom properties, the default theme's when App.Theme is unset, because component CSS references bare var(--*) tokens.
     enforced_by:

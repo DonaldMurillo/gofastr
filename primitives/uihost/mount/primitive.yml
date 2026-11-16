@@ -16,6 +16,7 @@ invariants:
     rule: resolvesStaticOrScreen reports true for exactly the paths serveOrRender answers with something other than 404.
     enforced_by:
       - test: framework/uihost.TestResolvePredicateMatchesServeOrRender
+      - test: framework/uihost.TestSweepAssetsResolvePredicateCoversEveryBranch
   - id: runtime-js-immutable-at-its-hash
     rule: /__gofastr/runtime.js is served immutable only when its v parameter equals widget.RuntimeHash.
     enforced_by:
