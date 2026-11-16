@@ -8,11 +8,14 @@ permissions:
   contents: read
 
 
-# Two jobs, split by runtime profile (history: CI runs
-# 27100756725..27161715772, June 2026):
+# Jobs split by runtime profile (history: CI runs
+# 27100756725..27161715772, June 2026), and since 2026-11 so that they run
+# side by side: the test job ran every gate in series for 21 minutes.
 #
 #   1. `test` (BLOCKING): build + vet + every package that produced
 #      deterministic results on the runners. This is the merge gate.
+#      `lint` (the repo analyzers, cross builds, desktop runtime) and
+#      `race` (the race detector) run beside it, each on its own cache.
 #
 #   2. `browser-e2e` (BLOCKING since 2026-06-10): the slow chromedp
 #      suites, one matrix shard per suite so each runs isolated on its
@@ -223,8 +226,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - name: Install Linux desktop runtime and virtual display
-        # Runtime libraries only: the shell must still build with CGO=0,
-        # without GTK headers or a C wrapper. Keep WebKit's sandbox enabled.
+        # The desktop steps moved to the lint job (2026-11); the libraries
+        # stay here so the suites below see the runner they always did.
         run: sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth dunst xdotool xcompmgr
 
       - name: Install the gofastr binary
@@ -234,97 +237,8 @@ jobs:
 
       - name: Build
         run: go build ./...
-      # The three gates `make build` runs locally (see Makefile + cmd/check-csp,
-      # cmd/check-embed, cmd/repolint). The Build step above uses plain
-      # `go build`, so until now these were local-only: a tree that fails them
-      # still merged green. Each is a `go run` of a cmd/ gate binary over the
-      # checkout: seconds, no services, no Chrome (verified 3-5s each,
-      # 2026-08-16).
-      - name: csp-check (no inline <script> / style emission)
-        run: make csp-check
-
-      - name: embed-check (no server actions in embeddable surfaces)
-        run: make embed-check
-
-      - name: repo-lint
-        run: make repo-lint
-
-      - name: Cross-compile smoke (windows, darwin, linux/386)
-        # The runner is ubuntu-only, so windows-tagged files never compile
-        # in any gate without this. Compile-only, no tests run. CGO_ENABLED
-        # is forced off: the job-level "1" would make the cross-build
-        # compile runtime/cgo with the host gcc, which cannot target the
-        # other OSes. linux/386 catches a constant past a 32-bit int or
-        # uint (an untyped 1<<53 bound, a uint compared to MaxInt64); test
-        # files hold 64-bit constants on purpose and are not built.
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          GOOS=windows go build ./...
-          GOOS=darwin go build ./...
-          GOOS=linux GOARCH=386 go build ./...
-
-      - name: Linux desktop (CGO-free runtime and CLI)
-        # The normal job uses runtime/cgo. Exercise the assembly runtime
-        # shim separately so neither build mode can hide a link regression.
-        env:
-          CGO_ENABLED: "0"
-        run: |
-          go test -count=1 ./battery/desktop/...
-          # Cross-link test executables: archive-only builds miss unresolved
-          # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
-          mkdir -p dist/ci/linux-arm64
-          GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
-          go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
-
-      - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
-        timeout-minutes: 20
-        # One process per suite, so a native crash names its suite, plus the
-        # bus-only check.
-        # Fail closed: an opt-in skip must never satisfy this blocking gate.
-        run: ./scripts/test-linux-desktop.sh
-
-      - name: gofmt (tracked files must be clean)
-        run: |
-          drift=$(git ls-files '*.go' | xargs gofmt -l)
-          if [ -n "$drift" ]; then
-            echo "gofmt drift in:"; echo "$drift"; exit 1
-          fi
-
       - name: Vet (affected packages)
         run: go run ./cmd/affected -- go vet
-
-      - name: Vet (repo analyzers)
-        # AGENTS.md hard rules as machine checks: no Go-emitted hard
-        # navigation / bespoke EventSource, no *BaseCSS outside the
-        # design system, no map-ordered SSR output. See internal/analyzers.
-        # Affected packages, except that a change under internal/analyzers
-        # or cmd/vettool vets everything: a new rule can flag code nobody
-        # touched.
-        #
-        # Then again as windows and darwin: the runner is ubuntu-only, so
-        # a _windows.go or _darwin.go file (battery/desktop, the desktop
-        # build command) was never vetted at all. affected runs as a built
-        # binary under each GOOS so its own go list sees that OS's files
-        # and OS-only packages; `go run` would build it for the target OS.
-        # CGO_ENABLED=0 for the same reason as the cross-compile smoke.
-        run: |
-          go build -o /tmp/gofastr-vettool ./cmd/vettool
-          go build -o /tmp/gofastr-affected ./cmd/affected
-          vet_flags="-all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/"
-          /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
-          for os in windows darwin; do
-            echo "vettool, GOOS=$os"
-            CGO_ENABLED=0 GOOS=$os /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
-          done
-
-      - name: Duplicate code (dupl, baseline-gated)
-        # make dupl counts dupl clone groups (threshold 100) over the
-        # repo's Go files and fails when the count GROWS past the
-        # committed scripts/dupl-baseline.txt. Pinned to an exact dupl
-        # version in scripts/dupl.sh so its tree matching cannot drift;
-        # ~7s on an M-series laptop, dominated by parsing, no services.
-        run: make dupl
 
       - name: Content-derived mtimes (test cache keys)
         # Go keys a cached test result on the size and mtime of every file
@@ -425,6 +339,294 @@ jobs:
         # SQLite only) to prove it still works. It measures nothing.
         run: make bench-smoke
 
+      - name: Nested module (battery/print/chromepdf)
+        # battery/print/chromepdf is its own go module: a nested module that
+        # isolates the chromedp/cdproto dependency surface from the print
+        # battery's core. A nested module is invisible to the root `./...`
+        # glob, so the build/vet/test steps above no longer cover it, this
+        # step keeps its build + vet + the non-chromium unit tests (the SSRF
+        # resolver-rules gate in ssrf_security_test.go) inside the blocking
+        # job. The chromium-tagged integration tests are intentionally not run
+        # here, matching the pre-split coverage: they build only under
+        # `-tags chromium`, which no root step passes.
+        run: cd battery/print/chromepdf && go build ./... && go vet ./... && go test ./...
+
+      - name: Coverage floors (claimed packages)
+        # Measures every floor-gated package from the Test step's merged
+        # profile and fails if any drops below its floor (~2 points under
+        # the recorded value). No second test run: that cost four to five
+        # minutes of this job (2026-10). On main every floor must appear in
+        # the profile; on a pull request a floor outside the affected set
+        # is skipped. Floor table + exclusions live in the script.
+        run: COVERPROFILE="$RUNNER_TEMP/cover.out" bash scripts/coverage-floors.sh
+
+      - name: Contracts (gofastr verify)
+        # The framework held to its own contract. Runs AFTER the test step
+        # so the semantic-coverage manifest those tests write is on disk,
+        # without it the testing rules report "no manifest" and check
+        # nothing, which would look like a pass.
+        #
+        # --no-vet because this job's Vet step and the lint job's Vet (repo
+        # analyzers) step already run it; a third pass adds no signal.
+        #
+        # --strict makes WARNINGS fail too, which is only tractable because
+        # of the baseline: .gofastr-contracts-baseline.json records the debt
+        # that existed when the gate went in, so this run fails on findings
+        # ADDED after that point and not on the ones already there.
+        #
+        # Without it the gate could only fail on errors, and a change adding
+        # fifty unguarded mutations would pass, which is the same as having
+        # no gate for two thirds of the catalog.
+        #
+        # Pay the debt down and re-record with `gofastr verify --strict
+        # --baseline-write`; the run tells you when an entry is
+        # over-accepting. Relaxations live in gofastr.settings.yml, in the
+        # repository, in review, not in this file as CI-only flags nobody
+        # reads.
+        run: |
+          go run ./cmd/gofastr verify --no-vet --strict
+
+      - name: Save the Go cache and coverage manifests (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/gofastr-coverage
+          key: go-test-${{ runner.os }}-${{ github.sha }}
+
+  lint:
+    # Split out of the test job (2026-11), which ran these steps one after
+    # another for 21 minutes before its tests started. Nothing here needs
+    # Postgres or Chrome; what it needs is its own cache entry, so vet and
+    # the cross builds replay.
+    name: analyzers · cross-compile · desktop (blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+      # The test job's affected scope: a pull request covers the import-graph
+      # closure of its change, every other trigger covers everything.
+      GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
+      GOFASTR_AFFECTED_DIFF_BASE: "1"
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Fetch the pull request base (affected scope)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
+
+      - name: Go module + build cache (lint, per-SHA)
+        id: go-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # Its own entry, not the test job's: vet results, the windows,
+          # darwin and linux/386 builds and the CGO-free desktop builds are
+          # cached only by the job that makes them, and only a save keeps
+          # them for the next run. Main saves, as in the test job. No
+          # fallback to go-test-: that entry is 2 GB of test artifacts this
+          # job never reads, and the repo's cache holds 10 GB.
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/gofastr-coverage
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-lint-${{ runner.os }}-
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          # See the test job: the cache step above replaces setup-go's.
+          cache: false
+
+      - name: Install Linux desktop runtime and virtual display
+        # Runtime libraries only: the shell must still build with CGO=0,
+        # without GTK headers or a C wrapper. Keep WebKit's sandbox enabled.
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-0 libnotify4 dbus xvfb xauth dunst xdotool xcompmgr
+
+      # The three gates `make build` runs locally (see Makefile + cmd/check-csp,
+      # cmd/check-embed, cmd/repolint). The test job's Build step uses plain
+      # `go build`, so until now these were local-only: a tree that fails them
+      # still merged green. Each is a `go run` of a cmd/ gate binary over the
+      # checkout: seconds, no services, no Chrome (verified 3-5s each,
+      # 2026-08-16).
+      - name: csp-check (no inline <script> / style emission)
+        run: make csp-check
+
+      - name: embed-check (no server actions in embeddable surfaces)
+        run: make embed-check
+
+      - name: repo-lint
+        run: make repo-lint
+
+      - name: Cross-compile smoke (windows, darwin, linux/386)
+        # The runner is ubuntu-only, so windows-tagged files never compile
+        # in any gate without this. Compile-only, no tests run. CGO_ENABLED
+        # is forced off: the job-level "1" would make the cross-build
+        # compile runtime/cgo with the host gcc, which cannot target the
+        # other OSes. linux/386 catches a constant past a 32-bit int or
+        # uint (an untyped 1<<53 bound, a uint compared to MaxInt64); test
+        # files hold 64-bit constants on purpose and are not built.
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          GOOS=windows go build ./...
+          GOOS=darwin go build ./...
+          GOOS=linux GOARCH=386 go build ./...
+
+      - name: gofmt (tracked files must be clean)
+        run: |
+          drift=$(git ls-files '*.go' | xargs gofmt -l)
+          if [ -n "$drift" ]; then
+            echo "gofmt drift in:"; echo "$drift"; exit 1
+          fi
+
+      - name: Vet (repo analyzers)
+        # AGENTS.md hard rules as machine checks: no Go-emitted hard
+        # navigation / bespoke EventSource, no *BaseCSS outside the
+        # design system, no map-ordered SSR output. See internal/analyzers.
+        # Affected packages, except that a change under internal/analyzers
+        # or cmd/vettool vets everything: a new rule can flag code nobody
+        # touched.
+        #
+        # Then again as windows and darwin: the runner is ubuntu-only, so
+        # a _windows.go or _darwin.go file (battery/desktop, the desktop
+        # build command) was never vetted at all. affected runs as a built
+        # binary under each GOOS so its own go list sees that OS's files
+        # and OS-only packages; `go run` would build it for the target OS.
+        # CGO_ENABLED=0 for the same reason as the cross-compile smoke.
+        #
+        # -buildvcs=false: go vet keys each cached result on the vettool
+        # binary's hash, and a stamped commit changed that hash on every
+        # run, so nothing ever replayed (3.7 minutes a run, 2026-11).
+        # repolint's vettool-buildvcs rule holds every build to it.
+        run: |
+          go build -buildvcs=false -o /tmp/gofastr-vettool ./cmd/vettool
+          go build -o /tmp/gofastr-affected ./cmd/affected
+          vet_flags="-all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/"
+          /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+          for os in windows darwin; do
+            echo "vettool, GOOS=$os"
+            CGO_ENABLED=0 GOOS=$os /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+          done
+
+      - name: Duplicate code (dupl, baseline-gated)
+        # make dupl counts dupl clone groups (threshold 100) over the
+        # repo's Go files and fails when the count GROWS past the
+        # committed scripts/dupl-baseline.txt. Pinned to an exact dupl
+        # version in scripts/dupl.sh so its tree matching cannot drift;
+        # ~7s on an M-series laptop, dominated by parsing, no services.
+        run: make dupl
+
+      - name: Linux desktop (CGO-free runtime and CLI)
+        # The normal job uses runtime/cgo. Exercise the assembly runtime
+        # shim separately so neither build mode can hide a link regression.
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go test -count=1 ./battery/desktop/...
+          # Cross-link test executables: archive-only builds miss unresolved
+          # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
+          mkdir -p dist/ci/linux-arm64
+          GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
+          go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
+
+      - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
+        timeout-minutes: 20
+        # One process per suite, so a native crash names its suite, plus the
+        # bus-only check.
+        # Fail closed: an opt-in skip must never satisfy this blocking gate.
+        run: ./scripts/test-linux-desktop.sh
+
+      - name: Save the Go cache (main only)
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/gofastr-coverage
+          key: go-lint-${{ runner.os }}-${{ github.sha }}
+
+  race:
+    # Split out of the test job (2026-11), where it ran after the whole
+    # deterministic suite. Same environment as that job: Postgres for the
+    # queue and outbox suites (PGTEST_REQUIRED fails a missing one), Chrome
+    # for framework/uihost, bubblewrap for the framework's sandbox probes.
+    name: race detector (blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: "1"
+      # The test job's affected scope: a pull request covers the import-graph
+      # closure of its change, every other trigger covers everything.
+      GOFASTR_TEST_ALL: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+      GOFASTR_AFFECTED_BASE: ${{ github.event.pull_request.base.sha }}
+      GOFASTR_AFFECTED_DIFF_BASE: "1"
+      TEST_POSTGRES_DSN: "postgres://test:test@localhost:5432/framework_test?sslmode=disable"
+      PGTEST_REQUIRED: "1"
+    services:
+      # The test job's service; keep the two in step.
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: framework_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d framework_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Fetch the pull request base (affected scope)
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "$GOFASTR_AFFECTED_BASE"
+
+      - name: Go module + build cache (race, per-SHA)
+        id: go-cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          # Its own entry for the same reason as the lint job's: -race
+          # builds and race test results are cached only by this job.
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+            ~/.cache/gofastr-coverage
+          key: go-race-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-race-${{ runner.os }}-
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          # See the test job: the cache step above replaces setup-go's.
+          cache: false
+
+      - name: Install Chrome (framework/uihost's chromedp tests)
+        uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce # v1
+        with:
+          install-dependencies: true
+
+      - name: Install bubblewrap (the framework's sandbox probes)
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Install the gofastr binary
+        run: go install ./cmd/gofastr
+
+      - name: Content-derived mtimes (test cache keys)
+        # See the test job: without it no raced package replays.
+        run: scripts/content-mtimes.sh
+
       - name: Race detector (concurrency packages)
         # The recurring defect class in this repo's release history is
         # concurrency — queue claim/lease fencing, per-consumer outbox
@@ -476,55 +678,7 @@ jobs:
             -match 'gofastr/(framework|battery/(queue|cache)(/.*)?|framework/(outbox|fanout|cron|event|hook|ratelimit|lifecycle|slowquery|uihost)(/.*)?|core/(fanout|stream)(/.*)?)$' \
             -- go test -race -timeout=20m
 
-      - name: Nested module (battery/print/chromepdf)
-        # battery/print/chromepdf is its own go module: a nested module that
-        # isolates the chromedp/cdproto dependency surface from the print
-        # battery's core. A nested module is invisible to the root `./...`
-        # glob, so the build/vet/test steps above no longer cover it, this
-        # step keeps its build + vet + the non-chromium unit tests (the SSRF
-        # resolver-rules gate in ssrf_security_test.go) inside the blocking
-        # job. The chromium-tagged integration tests are intentionally not run
-        # here, matching the pre-split coverage: they build only under
-        # `-tags chromium`, which no root step passes.
-        run: cd battery/print/chromepdf && go build ./... && go vet ./... && go test ./...
-
-      - name: Coverage floors (claimed packages)
-        # Measures every floor-gated package from the Test step's merged
-        # profile and fails if any drops below its floor (~2 points under
-        # the recorded value). No second test run: that cost four to five
-        # minutes of this job (2026-10). On main every floor must appear in
-        # the profile; on a pull request a floor outside the affected set
-        # is skipped. Floor table + exclusions live in the script.
-        run: COVERPROFILE="$RUNNER_TEMP/cover.out" bash scripts/coverage-floors.sh
-
-      - name: Contracts (gofastr verify)
-        # The framework held to its own contract. Runs AFTER the test step
-        # so the semantic-coverage manifest those tests write is on disk,
-        # without it the testing rules report "no manifest" and check
-        # nothing, which would look like a pass.
-        #
-        # --no-vet because the Vet step above already ran it over the whole
-        # module; repeating it here would double the slowest part of this
-        # job for no new signal.
-        #
-        # --strict makes WARNINGS fail too, which is only tractable because
-        # of the baseline: .gofastr-contracts-baseline.json records the debt
-        # that existed when the gate went in, so this run fails on findings
-        # ADDED after that point and not on the ones already there.
-        #
-        # Without it the gate could only fail on errors, and a change adding
-        # fifty unguarded mutations would pass, which is the same as having
-        # no gate for two thirds of the catalog.
-        #
-        # Pay the debt down and re-record with `gofastr verify --strict
-        # --baseline-write`; the run tells you when an entry is
-        # over-accepting. Relaxations live in gofastr.settings.yml, in the
-        # repository, in review, not in this file as CI-only flags nobody
-        # reads.
-        run: |
-          go run ./cmd/gofastr verify --no-vet --strict
-
-      - name: Save the Go cache and coverage manifests (main only)
+      - name: Save the Go cache (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -532,7 +686,7 @@ jobs:
             ~/go/pkg/mod
             ~/.cache/go-build
             ~/.cache/gofastr-coverage
-          key: go-test-${{ runner.os }}-${{ github.sha }}
+          key: go-race-${{ runner.os }}-${{ github.sha }}
 
   security:
     name: "vulncheck · secrets · mod-verify (blocking)"
@@ -681,16 +835,20 @@ jobs:
             run: go test -count=1 -timeout=15m -skip 'TestAxe' ./examples/site/
           # The axe gate scans every page under BOTH color schemes. It ran
           # as two shards while one runner took 11-15 minutes (2026-09);
-          # since each page loads once for both schemes (#595) a shard
-          # scans for about 85 s, so the gate runs whole again (#598).
-          # GOFASTR_AXE_SHARD=k/n still splits its work list
-          # (examples/site/axe_test.go) if it grows back. Its own shard:
-          # AGENTS.md documents the axe suite flaking when it shares a
-          # go-test run with the other chromedp tests. 30m: a 15m limit
-          # once failed slow runners with nothing hung.
-          - suite: site-axe
+          # since each page loads once for both schemes (#595) it ran whole
+          # (#598), until the scan alone took 481 s on main (2026-11) and
+          # made its runner one of the two longest in the workflow. Two
+          # shards again: GOFASTR_AXE_SHARD=k/n keeps every n-th page of
+          # its work list (examples/site/axe_test.go). Its own rows: AGENTS.md
+          # documents the axe suite flaking when it shares a go-test run
+          # with the other chromedp tests. 30m: a 15m limit once failed slow
+          # runners with nothing hung.
+          - suite: site-axe 1 of 2
             pkg: examples/site$
-            run: go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+            run: GOFASTR_AXE_SHARD=0/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
+          - suite: site-axe 2 of 2
+            pkg: examples/site$
+            run: GOFASTR_AXE_SHARD=1/2 go test -count=1 -timeout=30m -run 'TestAxe_AllPagesAreClean' ./examples/site/
           # Moved out of the blocking job's Test step (2026-10): both are
           # chromedp e2e suites and filled one of its two package slots.
           - suite: tracker
@@ -718,16 +876,26 @@ jobs:
             # one test binary. 25m covers its worst case: eleven examples
             # at the 90s per-example wait.
             run: go test -count=1 -timeout=25m -p 1 -run 'TestAppSpecCLIGeneratesEntireWorkingAppE2E|TestE2E_HotReload_BrowserAutoRefreshes|TestLivereloadSameBuildIDDoesNotReload|TestE2E_DevLoop_Examples' ./cmd/gofastr/ ./cmd/gofastr/internal/devcmd/
-          - suite: core-ui-runtime
+          # The runtime hydration suite launches a real Chrome per test
+          # binary; under the deterministic job's package parallelism the
+          # chromedp websocket connect starves and times out ("websocket
+          # url timeout reached", AGENTS.md documents this package as flaky
+          # under parallel load, run isolated). One runner took 863 s on
+          # main (2026-11, up from 581 s on 2026-11-01), the longest job in
+          # the workflow, so three rows split its top-level tests:
+          # scripts/go-test-shard.sh deals the sorted names out round-robin
+          # and the rows together run each test once. Each row still runs
+          # alone on its runner. 20m: the whole suite once came within 19 s
+          # of a 10m cap.
+          - suite: core-ui-runtime 1 of 3
             pkg: core-ui/runtime$
-            # The runtime hydration suite launches a real Chrome per test
-            # binary; under the deterministic job's -p 2 package
-            # parallelism the chromedp websocket connect starves and times
-            # out ("websocket url timeout reached", AGENTS.md documents
-            # this package as flaky under parallel load, run isolated).
-            # 20m: main's run took 581s on 2026-11-01, 19s under the old
-            # 10m cap, and the next run on a PR hit it.
-            run: go test -count=1 -timeout=20m ./core-ui/runtime/
+            run: scripts/go-test-shard.sh 0/3 ./core-ui/runtime/ -count=1 -timeout=20m
+          - suite: core-ui-runtime 2 of 3
+            pkg: core-ui/runtime$
+            run: scripts/go-test-shard.sh 1/3 ./core-ui/runtime/ -count=1 -timeout=20m
+          - suite: core-ui-runtime 3 of 3
+            pkg: core-ui/runtime$
+            run: scripts/go-test-shard.sh 2/3 ./core-ui/runtime/ -count=1 -timeout=20m
           - suite: core-ui-runtime-hosts
             pkg: core-ui/runtime/hosttest$
             # The runtime's tests that boot it inside a framework, uihost

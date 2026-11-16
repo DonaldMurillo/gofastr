@@ -148,6 +148,11 @@ func lintRepo(root string) ([]finding, error) {
 		return nil, err
 	}
 	findings = append(findings, selectorFindings...)
+	vettoolFindings, err := lintVettoolBuildVCS(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, vettoolFindings...)
 	sort.Slice(findings, func(i, j int) bool {
 		if findings[i].File != findings[j].File {
 			return findings[i].File < findings[j].File

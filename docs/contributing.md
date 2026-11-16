@@ -85,7 +85,10 @@ The registry paragraph that opened this list is still in `AGENTS.md`.
   in the pre-commit hook and CI's vet step. `make analyze` and CI vet
   each affected package three times, under linux, windows and darwin,
   so `_windows.go` and `_darwin.go` files are checked; the pre-commit
-  hook covers the host OS only. The registered set is
+  hook covers the host OS only. Every build of `cmd/vettool` passes
+  `-buildvcs=false` (repolint's `vettool-buildvcs` rule): go vet caches
+  each result under the vettool binary's hash, and a commit stamped into
+  the binary makes every commit re-vet everything. The registered set is
   `internal/analyzers/suite/suite.go`. Each analyzer's own package doc
   carries the bug shape it catches, the fix spelling it accepts and the
   postures it deliberately stays silent on: read it when a finding

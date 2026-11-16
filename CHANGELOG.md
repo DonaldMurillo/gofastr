@@ -25,6 +25,15 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Changed
+- **CI runs side by side.** The `build · vet · test` job ran every gate
+  in series for 21 minutes. The repo analyzers, cross builds and Linux
+  desktop steps now run in `analyzers · cross-compile · desktop`, the race
+  detector in `race detector`, core-ui/runtime in three shards
+  (`scripts/go-test-shard.sh`) and the axe gate in two. The vettool is
+  built with `-buildvcs=false`, so `go vet` reuses its cached results
+  instead of re-vetting every package on every commit (3.7 minutes a run
+  in CI, about 80 s a local commit). Branch protection on main needs the
+  new check names.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a
