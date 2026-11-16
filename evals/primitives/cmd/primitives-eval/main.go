@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,7 +37,7 @@ type config struct {
 }
 
 func main() {
-	var tasksFilter, conditionsFilter listFlag
+	var tasksFilter, conditionsFilter, taskRuns listFlag
 	cfg := config{}
 	flag.StringVar(&cfg.base, "base", "origin/main", "ref for the comments condition")
 	flag.StringVar(&cfg.head, "head", "HEAD", "ref for the registry and bare conditions")
@@ -53,9 +54,15 @@ func main() {
 	concurrency := flag.Int("concurrency", 3, "cells running at once")
 	flag.Var(&tasksFilter, "task", "run only this task (repeatable)")
 	flag.Var(&conditionsFilter, "condition", "run only this condition (repeatable)")
+	flag.Var(&taskRuns, "task-runs", "trials for one task, as <task>=<n>, overriding -runs and the task's own minimum (repeatable)")
 	flag.Parse()
 
-	if err := run(cfg, *suite, tasksFilter, conditionsFilter, *runs, *concurrency, *budget); err != nil {
+	perTask, err := parseTaskRuns(taskRuns)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "primitives-eval: %v\n", err)
+		os.Exit(2)
+	}
+	if err := run(cfg, *suite, tasksFilter, conditionsFilter, runCounts{all: *runs, perTask: perTask}, *concurrency, *budget); err != nil {
 		fmt.Fprintf(os.Stderr, "primitives-eval: %v\n", err)
 		os.Exit(1)
 	}
@@ -109,7 +116,58 @@ func resolveExisting(path string) string {
 	}
 }
 
-func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs, concurrency int, budget float64) error {
+// runCounts says how many trials each task gets: perTask when it names
+// the task, else the larger of all and the task's MinRuns.
+type runCounts struct {
+	all     int
+	perTask map[string]int
+}
+
+func (r runCounts) of(t task) int {
+	if n, ok := r.perTask[t.ID]; ok {
+		return n
+	}
+	return max(r.all, t.MinRuns)
+}
+
+func parseTaskRuns(specs []string) (map[string]int, error) {
+	out := map[string]int{}
+	for _, spec := range specs {
+		id, n, ok := strings.Cut(spec, "=")
+		count, err := strconv.Atoi(n)
+		if !ok || id == "" || err != nil || count < 1 {
+			return nil, fmt.Errorf("-task-runs %q: want <task>=<n> with n at least 1", spec)
+		}
+		if !slices.ContainsFunc(tasks, func(t task) bool { return t.ID == id }) {
+			return nil, fmt.Errorf("-task-runs %q: no task %q", spec, id)
+		}
+		out[id] = count
+	}
+	return out, nil
+}
+
+func planCells(suite string, tasksFilter, conditionsFilter []string, runs runCounts) []*cell {
+	var cells []*cell
+	for _, t := range tasks {
+		if len(tasksFilter) > 0 && !slices.Contains(tasksFilter, t.ID) {
+			continue
+		}
+		if suite != "all" && suite != t.Suite {
+			continue
+		}
+		for _, c := range suiteConditions[t.Suite] {
+			if len(conditionsFilter) > 0 && !slices.Contains(conditionsFilter, c) {
+				continue
+			}
+			for n := 1; n <= runs.of(t); n++ {
+				cells = append(cells, &cell{Task: t.ID, Condition: c, Run: n, task: t})
+			}
+		}
+	}
+	return cells
+}
+
+func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs runCounts, concurrency int, budget float64) error {
 	repo, err := gitOutput(".", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return err
@@ -153,23 +211,7 @@ func run(cfg config, suite string, tasksFilter, conditionsFilter []string, runs,
 		}
 	}
 
-	var cells []*cell
-	for _, t := range tasks {
-		if len(tasksFilter) > 0 && !slices.Contains(tasksFilter, t.ID) {
-			continue
-		}
-		if suite != "all" && suite != t.Suite {
-			continue
-		}
-		for _, c := range suiteConditions[t.Suite] {
-			if len(conditionsFilter) > 0 && !slices.Contains(conditionsFilter, c) {
-				continue
-			}
-			for n := 1; n <= runs; n++ {
-				cells = append(cells, &cell{Task: t.ID, Condition: c, Run: n, task: t})
-			}
-		}
-	}
+	cells := planCells(suite, tasksFilter, conditionsFilter, runs)
 	if len(cells) == 0 {
 		return fmt.Errorf("no cell matches the -suite, -task and -condition filters")
 	}

@@ -82,7 +82,8 @@ first. Exported doc comments, directives and test comments stay. Order:
 `core-ui/`, `battery/`, `cmd/`, `internal/`.
 
 Done when non-test Go code is under 8% comment lines, from 24% today.
-`scripts/comment-ratio.sh [dir...]` counts them.
+`scripts/comment-ratio.sh [dir...]` counts them, and prints the share
+for `_test.go` files on a second line, which a sweep should not raise.
 
 Status: `framework/crud` is swept, 29.2% to 6.3%. Its rules are 185
 invariants, each naming a test that was watched failing, and 79

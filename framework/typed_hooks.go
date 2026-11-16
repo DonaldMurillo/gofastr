@@ -187,15 +187,74 @@ func hookDecodeKeys(m map[string]any) map[string]any {
 }
 
 func snapshotDeepCopy[T any](v T) T {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return v
+	if b, err := json.Marshal(v); err == nil {
+		var out T
+		if err := decodeHookJSON(b, &out); err == nil {
+			return out
+		}
 	}
-	var out T
-	if err := decodeHookJSON(b, &out); err != nil {
-		return v
+	src := reflect.ValueOf(&v).Elem()
+	out := reflect.New(src.Type()).Elem()
+	out.Set(deepCopyValue(src, map[uintptr]reflect.Value{}))
+	return out.Interface().(T)
+}
+
+func deepCopyValue(v reflect.Value, seen map[uintptr]reflect.Value) reflect.Value {
+	switch v.Kind() {
+	case reflect.Pointer:
+		if v.IsNil() {
+			return v
+		}
+		if cp, ok := seen[v.Pointer()]; ok {
+			return cp
+		}
+		cp := reflect.New(v.Type().Elem())
+		seen[v.Pointer()] = cp
+		cp.Elem().Set(deepCopyValue(v.Elem(), seen))
+		return cp
+	case reflect.Map:
+		if v.IsNil() {
+			return v
+		}
+		cp := reflect.MakeMapWithSize(v.Type(), v.Len())
+		iter := v.MapRange()
+		for iter.Next() {
+			cp.SetMapIndex(iter.Key(), deepCopyValue(iter.Value(), seen))
+		}
+		return cp
+	case reflect.Slice:
+		if v.IsNil() {
+			return v
+		}
+		cp := reflect.MakeSlice(v.Type(), v.Len(), v.Len())
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Array:
+		cp := reflect.New(v.Type()).Elem()
+		for i := range v.Len() {
+			cp.Index(i).Set(deepCopyValue(v.Index(i), seen))
+		}
+		return cp
+	case reflect.Struct:
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(v)
+		for i := range v.NumField() {
+			if cp.Field(i).CanSet() {
+				cp.Field(i).Set(deepCopyValue(v.Field(i), seen))
+			}
+		}
+		return cp
+	case reflect.Interface:
+		if v.IsNil() {
+			return v
+		}
+		cp := reflect.New(v.Type()).Elem()
+		cp.Set(deepCopyValue(v.Elem(), seen))
+		return cp
 	}
-	return out
+	return v
 }
 
 func decodeHookJSON(b []byte, dest any) error {

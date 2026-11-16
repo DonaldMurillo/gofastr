@@ -25,6 +25,18 @@ few lines, and link the PR or the docs page for the rest.
 ## [Unreleased]
 
 ### Fixed
+- **A failing audit `Redact` no longer stores the unredacted row.** When
+  `AuditConfig.Redact` panics or returns a map that cannot be marshalled,
+  the audit row keeps its keys and stores `"[redaction failed]"` for
+  every value, where before it stored the row as it was before `Redact`
+  ran. A delete whose `Redact` panics keeps the original `record_id`.
+  See `audit-log.md`.
+- **A typed hook on a struct that cannot be marshalled keeps in-place
+  changes.** `OnBeforeCreate` and its siblings snapshot `*T` to tell what
+  the callback changed; a `T` with a `chan` or `func` field, or a
+  `MarshalJSON` that errors, fell back to a shallow copy, so a change made
+  inside a map, slice or pointer field was dropped. The fallback is now a
+  deep copy.
 - **Cursor pages over seeded SQLite timestamps no longer repeat.** A
   managed entity paged on `created_at` whose rows a seed script or
   migration inserted as `2026-01-02T03:04:05Z` served its first page

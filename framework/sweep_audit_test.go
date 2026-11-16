@@ -111,9 +111,8 @@ func TestSweepAuditHookRefusesDriftedPayload(t *testing.T) {
 	}
 }
 
-// A Redact that panics still leaves an audit row, holding the row as it
-// was before Redact ran.
-func TestSweepAuditRedactPanicKeepsPreRedactRow(t *testing.T) {
+// A Redact that panics keeps the row's keys with every value masked.
+func TestSweepAuditRedactPanicMasksValues(t *testing.T) {
 	db := openTestDB(t, DialectSQLite)
 	app := auditAppWithRedact(t, db, func(string, map[string]any) map[string]any { panic("boom") })
 	TestHarness(t, app).Post("/posts", map[string]any{"title": "hello"}).AssertStatus(t, http.StatusCreated)
@@ -122,14 +121,14 @@ func TestSweepAuditRedactPanicKeepsPreRedactRow(t *testing.T) {
 		t.Fatalf("audit rows = %d, want 1", len(rows))
 	}
 	diff, _ := rows[0]["diff"].(string)
-	if !strings.Contains(diff, `"title":"hello"`) {
-		t.Fatalf("diff = %q, want the pre-redact row", diff)
+	if strings.Contains(diff, "hello") || !strings.Contains(diff, `"title":"[redaction failed]"`) {
+		t.Fatalf("diff = %q, want the title key with its value masked", diff)
 	}
 }
 
-// A Redact whose output cannot be marshalled leaves the pre-redact row in
-// the diff, on create and on update, rather than an empty change.
-func TestSweepAuditUnmarshalableRedactKeepsEvidence(t *testing.T) {
+// A Redact whose output cannot be marshalled keeps the row's keys with
+// every value masked, on create and on update, old image included.
+func TestSweepAuditUnmarshalableRedactMasksValues(t *testing.T) {
 	db := openTestDB(t, DialectSQLite)
 	ta := TestHarness(t, auditAppWithRedact(t, db, func(_ string, row map[string]any) map[string]any {
 		row["poison"] = func() {}
@@ -146,10 +145,34 @@ func TestSweepAuditUnmarshalableRedactKeepsEvidence(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("audit rows = %d, want 2", len(rows))
 	}
-	for i, want := range []string{`"title":"before"`, `"title":"after"`} {
-		if diff, _ := rows[i]["diff"].(string); !strings.Contains(diff, want) {
-			t.Errorf("%s diff = %q, want it to hold %s", rows[i]["op"], diff, want)
+	for _, row := range rows {
+		diff, _ := row["diff"].(string)
+		if strings.Contains(diff, "before") || strings.Contains(diff, "after") || !strings.Contains(diff, `"title":"[redaction failed]"`) {
+			t.Errorf("%s diff = %q, want the title key with its value masked", row["op"], diff)
 		}
+	}
+}
+
+// A delete Redact that panics keeps the original record_id.
+func TestSweepAuditDeleteRedactPanicKeepsRecordID(t *testing.T) {
+	db := openTestDB(t, DialectSQLite)
+	ta := TestHarness(t, auditAppWithRedact(t, db, func(_ string, row map[string]any) map[string]any {
+		if len(row) == 1 {
+			panic("boom")
+		}
+		return row
+	}))
+	create := ta.Post("/posts", map[string]any{"title": "x"})
+	create.AssertStatus(t, http.StatusCreated)
+	var created map[string]any
+	if err := json.Unmarshal([]byte(create.Body()), singleMap(&created)); err != nil {
+		t.Fatal(err)
+	}
+	id := created["id"].(string)
+	ta.Delete("/posts/"+id).AssertStatus(t, http.StatusNoContent)
+	rows := readAuditRows(t, db)
+	if last := rows[len(rows)-1]; last["record_id"] != id {
+		t.Fatalf("delete record_id = %v, want %s", last["record_id"], id)
 	}
 }
 

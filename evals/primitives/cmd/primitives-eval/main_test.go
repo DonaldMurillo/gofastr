@@ -459,7 +459,7 @@ func TestRunRefusesAWorkDirectoryInsideTheRepository(t *testing.T) {
 	work := filepath.Join(repo, "..cells")
 	// The task filter matches nothing, so a run that got past the refusal
 	// would stop there instead of starting cells.
-	err = run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, 1, 1, 0)
+	err = run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, runCounts{all: 1}, 1, 0)
 	if err == nil || !strings.Contains(err.Error(), "is inside the repository") {
 		t.Errorf("run with -work %s returned %v, want the refusal", work, err)
 	}
@@ -594,8 +594,34 @@ func TestWorkBelowAGuideIsRefused(t *testing.T) {
 	}
 	// The task filter matches nothing, so a run that got past the refusal
 	// would stop there instead of starting cells.
-	err := run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, 1, 1, 0)
+	err := run(config{work: work, out: t.TempDir()}, suiteTrap, []string{"no-such-task"}, nil, runCounts{all: 1}, 1, 0)
 	if err == nil || !strings.Contains(err.Error(), "Claude Code loads it into every cell") {
 		t.Errorf("run with -work under a CLAUDE.md returned %v, want the refusal", err)
+	}
+}
+
+func TestNodeBlockEntityRunsSixTimesByDefault(t *testing.T) {
+	counts := map[string]int{}
+	for _, c := range planCells(suiteReplay, nil, []string{"harness"}, runCounts{all: 2}) {
+		counts[c.Task]++
+	}
+	if counts["node-block-entity"] != 6 || counts["observer-panic"] != 2 {
+		t.Errorf("cells per task = %v, want node-block-entity 6 and the rest 2", counts)
+	}
+	override, err := parseTaskRuns([]string{"node-block-entity=3", "observer-panic=4"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts = map[string]int{}
+	for _, c := range planCells(suiteReplay, nil, []string{"harness"}, runCounts{all: 2, perTask: override}) {
+		counts[c.Task]++
+	}
+	if counts["node-block-entity"] != 3 || counts["observer-panic"] != 4 || counts["form-field-typo"] != 2 {
+		t.Errorf("cells per task with -task-runs = %v", counts)
+	}
+	for _, bad := range []string{"node-block-entity", "nope=2", "observer-panic=0"} {
+		if _, err := parseTaskRuns([]string{bad}); err == nil {
+			t.Errorf("parseTaskRuns(%q) accepted it", bad)
+		}
 	}
 }
