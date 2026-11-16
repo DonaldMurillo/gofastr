@@ -4,11 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/DonaldMurillo/gofastr/core/query"
-	"github.com/DonaldMurillo/gofastr/core/schema"
 	"github.com/DonaldMurillo/gofastr/framework/file"
 	"github.com/DonaldMurillo/gofastr/framework/migrate"
 )
@@ -23,43 +21,19 @@ func (a *App) collectFileRefColumns(ctx context.Context, dialect migrate.Dialect
 	if a.Registry == nil {
 		return nil, nil
 	}
-	merged := migrate.UnionEntities(a.registryView())
-	names := make([]string, 0, len(merged))
-	for n := range merged {
-		names = append(names, n)
+	g, err := a.buildDataGraph()
+	if err != nil {
+		return nil, err
 	}
-	sort.Strings(names)
-	byTable := map[string]*fileRefColumns{}
 	var order []string
-	for _, n := range names {
-		ent := merged[n]
-		if ent == nil {
-			continue
-		}
-		declared := map[string]bool{}
-		for _, f := range ent.GetFields() {
-			declared[f.Name] = true
-		}
-		for _, f := range ent.GetFields() {
-			if f.Type != schema.Image && f.Type != schema.File {
-				continue
-			}
-			t := ent.GetTable()
-			c := byTable[t]
-			if c == nil {
-				c = &fileRefColumns{table: t}
-				byTable[t] = c
-				order = append(order, t)
-			}
-			c.files = appendUnique(c.files, f.Name)
-			if v := f.Name + "_variants"; declared[v] {
-				c.variants = appendUnique(c.variants, v)
-			}
+	for _, t := range g.sorted {
+		if dt := g.tables[t]; len(dt.fileCols)+len(dt.variantCols) > 0 {
+			order = append(order, t)
 		}
 	}
 	out := make([]fileRefColumns, 0, len(order))
 	for _, t := range order {
-		c := byTable[t]
+		dt := g.tables[t]
 		live, err := migrate.ReadLiveColumns(ctx, a.DB, t, dialect)
 		if err != nil {
 			return nil, fmt.Errorf("read columns of %q: %w", t, err)
@@ -73,12 +47,12 @@ func (a *App) collectFileRefColumns(ctx context.Context, dialect migrate.Dialect
 			return false
 		}
 		kept := fileRefColumns{table: t}
-		for _, f := range c.files {
+		for _, f := range dt.fileCols {
 			if has(f) {
 				kept.files = append(kept.files, f)
 			}
 		}
-		for _, v := range c.variants {
+		for _, v := range dt.variantCols {
 			if has(v) {
 				kept.variants = append(kept.variants, v)
 			}

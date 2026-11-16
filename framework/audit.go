@@ -300,6 +300,10 @@ func (c AuditConfig) keyID(k auditKey, id string) string {
 	if c.Redact != nil || id == "" || !k.sensitive() {
 		return id
 	}
+	return auditKeyDigest(id)
+}
+
+func auditKeyDigest(id string) string {
 	sum := sha256.Sum256([]byte(id))
 	return "sha256:" + hex.EncodeToString(sum[:])
 }

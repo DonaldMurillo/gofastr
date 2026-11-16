@@ -2,9 +2,7 @@ package framework
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -932,8 +930,7 @@ func readRecordIDs(ctx context.Context, tx *sql.Tx, stmt string, args []any, wid
 			continue
 		}
 		id = sanitizeAuditField(id)
-		sum := sha256.Sum256([]byte(id))
-		ids = append(ids, id, "sha256:"+hex.EncodeToString(sum[:]))
+		ids = append(ids, id, auditKeyDigest(id))
 	}
 	return ids, rows.Err()
 }
