@@ -25,46 +25,20 @@ func (ds *UIHost) CustomCSS() string {
 	return ds.customCSS
 }
 
-// AppCSS returns the merged app-level stylesheet body: theme :root
-// custom properties + every registered theme override
-// (.cui-theme-<hash> blocks for ui.Themed wrappers) + customCSS +
-// every style.Contribute'd fragment, in that order. Used by the SSG
-// so static export ships the same single asset the live server
-// serves.
-//
-// The :root block is ALWAYS emitted, even when the host has no
-// explicit App.Theme. Per-component CSS emits bare var(--*)
-// references (no in-CSS fallbacks); without the :root floor every
-// component would render with UA defaults. The DefaultTheme()
-// floor guarantees var() resolution.
+// AppCSS returns the app stylesheet under the app theme, the body
+// /__gofastr/app.css serves and static export writes.
 func (ds *UIHost) AppCSS() string {
 	return ds.AppCSSFor(ds.activeTheme())
 }
 
-// AppCSSFor renders the app stylesheet against an explicit theme instead of
-// the boot-time App.Theme. Everything except the :root custom-property block
-// and token resolution is theme-independent, so the two callers that need a
-// per-request palette, an embedded surface carrying a host's brand color, and
-// the theme configurator previewing an unsaved theme, go through here rather
-// than mutating App.Theme, which is process-global and shared across requests.
-//
-// Callers are responsible for content-addressing the result: component CSS is
-// already busted by registry.VersionFor(theme), and app.css must be keyed the
-// same way or a second theme would be served the first theme's cached bytes.
+// AppCSSFor returns the app stylesheet under t without touching App.Theme.
+// The caller content-addresses the result.
 func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	out := t.CSSCustomProperties() + "\n"
-	// Framework-built-in helpers: visually-hidden for skip links, live
-	// regions, etc. Inlined here (not via WithCustomCSS) so apps don't
-	// have to opt in to have working accessibility primitives.
 	out += ds.frameworkCSS()
-	// Overlay chrome for intercepting routes: only when a route declares
-	// one, so an app that never intercepts ships none of it.
 	if ds.hasInterceptingRoute() {
 		out += app.InterceptOverlayCSS() + "\n"
 	}
-	// Every layout's typed transitions, collected here so an app never
-	// concatenates TransitionCSS by hand (a forgotten layout silently
-	// lost its transition). Before customCSS, which can override them.
 	for _, l := range ds.App.Layouts() {
 		out += l.TransitionCSS()
 	}
@@ -72,12 +46,6 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 		out += overrides + "\n"
 	}
 	out += ds.customCSS
-	// Co-located screen styles registered via style.Contribute. The host
-	// fans them in itself, no WithCustomCSS hand-wiring required, and
-	// resolves theme tokens ({spacing.lg} → var(--spacing-lg)) against the
-	// active theme. Emitted LAST so contributed rules can override the
-	// app's customCSS base rules by re-declaring the same selector, the
-	// layer the documented style.Apply pattern always put them in.
 	contrib := style.NewStyleSheet(t)
 	style.Apply(contrib)
 	if css := contrib.CSS(); css != "" {
@@ -86,10 +54,6 @@ func (ds *UIHost) AppCSSFor(t style.Theme) string {
 	return out
 }
 
-// frameworkCSS composes the framework's built-in stylesheet: the base
-// helpers, exactly ONE page-wide navigation indicator (the default
-// progress strip, or the host's page-loading component when
-// WithPageLoading set one), then the per-region dim rules.
 func (ds *UIHost) frameworkCSS() string {
 	if ds.pageLoading != nil {
 		return frameworkBuiltinCSS + frameworkPageLoadingCSS + frameworkDimCSS
@@ -245,13 +209,6 @@ html[aria-busy="true"] {
 }
 `
 
-// frameworkProgressStripCSS is the DEFAULT page-wide navigation
-// indicator (the animated top strip on html[aria-busy]). AppCSSFor
-// drops it in favor of frameworkPageLoadingCSS when the host sets a
-// page-wide loading component (WithPageLoading): two simultaneous
-// page-wide indicators is never what an author meant.
-//
-// Knobs: --ui-nav-progress-height (2px, the strip's thickness).
 const frameworkProgressStripCSS = `html[aria-busy="true"]::after {
   content: '';
   position: fixed;
@@ -270,13 +227,6 @@ html[aria-busy="true"]:dir(rtl)::after { animation-direction: reverse; }
   100% { transform: translateX(100%); }
 }`
 
-// frameworkPageLoadingCSS shows a host's page-wide loading component
-// ([data-fui-page-loading], WithPageLoading) while a navigation is in
-// flight. The state carrier is the same html[aria-busy] the default
-// strip keys off; visibility+opacity (never display:none) so the
-// element can transition BOTH ways in pure CSS, an exit animation
-// without runtime involvement included.
-// .
 const frameworkPageLoadingCSS = `[data-fui-page-loading] {
   visibility: hidden;
   opacity: 0;
@@ -336,15 +286,13 @@ const frameworkDimCSS = `
 @keyframes fui-load-out { to { opacity: 0; } }
 `
 
-// ActiveTheme returns the configured theme or the default if unset.
-// Exposed for tooling (e.g. the static-site builder) that needs to
-// resolve theme tokens at build time.
+// ActiveTheme returns App.Theme, or the default theme when it is unset.
 func (ds *UIHost) ActiveTheme() style.Theme {
 	return ds.activeTheme()
 }
 
-// ComponentCSSFiles returns one asset per registered component:
-// urlPath ("/__gofastr/comp/<name>.css") and the scoped CSS body
+// ComponentCSSFiles maps each registered component's sheet path
+// ("/__gofastr/comp/<name>.css") to its CSS under the app theme.
 func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	all := registry.All()
 	if len(all) == 0 {
@@ -358,22 +306,6 @@ func (ds *UIHost) ComponentCSSFiles() map[string]string {
 	return out
 }
 
-// handleAppCSS serves the app-level CSS asset: theme :root custom
-// properties + registered .cui-theme-<hash> override blocks +
-// WithCustomCSS payload + style.Contribute'd fragments concatenated.
-// One request per page replaces the legacy theme.css + styles.css
-// split.
-// An optional ?t=<themeHash> selects a registered theme variant
-// (RegisterThemeVariant) instead of App.Theme. The hash is a LOOKUP KEY, never
-// a theme description: an unregistered hash falls back to the app theme, so a
-// request can neither inject CSS nor mint an unbounded set of cache entries.
-//
-// Requests naming a variant are content-addressed and therefore immutable: the
-// hash changes whenever the emitted CSS does. The default-theme sheet is
-// composed and fingerprinted ONCE (appCSSCached) and served through the shared
-// versioned-text policy: the injected <link> carries ?v=<fingerprint>, so a
-// deploy's sheet is immutable and a bare/stale URL revalidates via ETag
-// instead of re-downloading the full body.
 func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	if hash := r.URL.Query().Get("t"); hash != "" {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
@@ -382,9 +314,6 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, minify.ServedCSS(ds.AppCSSFor(t)))
 			return
 		}
-		// Unknown variant: serve the app theme, but do NOT mark it immutable.
-		// The URL says one thing and the bytes say another, so caching it under
-		// that key would poison the variant once it is registered.
 		w.Header().Set("Cache-Control", "no-cache")
 		body, _ := ds.appCSSCached()
 		fmt.Fprint(w, body)
@@ -395,12 +324,6 @@ func (ds *UIHost) handleAppCSS(w http.ResponseWriter, r *http.Request) {
 	serveVersionedText(w, r, "text/css; charset=utf-8", body, hash, false)
 }
 
-// appCSSCached composes the default-theme app.css once and content-
-// addresses it with style.CSSFingerprint, the same digest family the
-// theme-variant registry keys on, so one addressing scheme covers every
-// app.css response. The sheet freezes at first render: a
-// style.Contribute that lands later can no longer ship, which was
-// already true in effect for theme variants and is now loudly logged.
 func (ds *UIHost) appCSSCached() (body, hash string) {
 	ds.appCSSOnce.Do(func() {
 		ds.appCSSContribN = style.ContributedCount()
@@ -423,9 +346,6 @@ func (ds *UIHost) appCSSCached() (body, hash string) {
 	return ds.appCSSBody, ds.appCSSHash
 }
 
-// warnLateTransitionLayouts names layouts with typed transitions that
-// were registered after app.css was composed: their transition CSS
-// never ships, matching the style.Contribute freeze.
 func (ds *UIHost) warnLateTransitionLayouts() {
 	for _, l := range ds.App.Layouts() {
 		if !ds.appCSSTransitionLayouts[l] && l.TransitionCSS() != "" {
@@ -435,9 +355,6 @@ func (ds *UIHost) warnLateTransitionLayouts() {
 	}
 }
 
-// handleColorSchemeJS serves the color-scheme bootstrap script, a
-// tiny synchronous snippet that ships at the top of <head> so dark-
-// mode CSS tokens take effect during first paint with no FOUC.
 func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	js, err := runtime.ColorSchemeJS()
 	if err != nil {
@@ -447,7 +364,6 @@ func (ds *UIHost) handleColorSchemeJS(w http.ResponseWriter, r *http.Request) {
 	serveVersionedText(w, r, "application/javascript; charset=utf-8", js, colorSchemeHash(), false)
 }
 
-// colorSchemeHash content-addresses the color-scheme bootstrap once.
 var (
 	colorSchemeHashOnce sync.Once
 	colorSchemeHashVal  string
@@ -462,26 +378,13 @@ func colorSchemeHash() string {
 	return colorSchemeHashVal
 }
 
-// componentCSSTags returns the <link> tags to inject into <head> for
-// the components rendered on this page. It scans page for
-// data-cui-comp and data-cui-scope markers (kit component roots and
-// owned-style roots), adds every LoadAlways entry, and emits one
-// bundled link when ≥2 names are involved (single direct link
-// otherwise). Inline emission is forbidden: the bundle endpoint is
-// content-addressed so the browser caches it across pages with the
-// same component set.
-//
-// A sheet only <template> content needs (a confirm dialog, a toast
-// item) gets a <link rel="prefetch"> instead: the browser fetches it at
-// idle priority, off the render-blocking path, and the runtime's link
-// for the clone it makes later is a cache hit.
 func (ds *UIHost) componentCSSTags(page string, bundle bool, always ...string) string {
 	names, held := pageSheetNames(page, always...)
 	if len(names) == 0 && len(held) == 0 {
 		return ""
 	}
 	theme := ds.activeTheme()
-	th := style.ThemeHash(theme) // once per page, not once per component
+	th := style.ThemeHash(theme)
 	links := ds.stylesheetLinks(names, bundle, theme, th)
 	prefetch := prefetchLinks(held, setOf(names), theme, th)
 	if links != "" && prefetch != "" {
@@ -490,17 +393,6 @@ func (ds *UIHost) componentCSSTags(page string, bundle bool, always ...string) s
 	return links + prefetch
 }
 
-// pageSheetNames returns the sorted component sheets a page's first
-// paint needs (rendered markers, every LoadAlways entry and the always
-// names the caller adds) and the sheets only its <template> content
-// needs.
-//
-// Only registered, path-safe names are kept. A marker can name nothing
-// (host markup, a typo, a CMS field, a component this replica does not
-// have mid-deploy), and every name here goes into the bundle URL and
-// its data-cui-bundle list: an unknown one made the bundle answer 404
-// while the runtime, seeded from the list, never fetched the real
-// sheets on its own, so the whole page stayed unstyled.
 func pageSheetNames(page string, always ...string) (names, held []string) {
 	used, held := registry.ScanSplit(page)
 	eager := registry.EagerNames()
@@ -529,10 +421,6 @@ func setOf(names []string) map[string]struct{} {
 	return m
 }
 
-// prefetchLinks returns a <link rel="prefetch"> for each held sheet not
-// already in linked. The href is the URL loadComponentCSS builds from
-// the catalog (stylePath + "?v=" + version), so the prefetch is the
-// cache entry the runtime's own link reads.
 func prefetchLinks(held []string, linked map[string]struct{}, theme style.Theme, th string) string {
 	b := borrowBuilder()
 	defer returnBuilder(b)
@@ -552,15 +440,11 @@ func prefetchLinks(held []string, linked map[string]struct{}, theme style.Theme,
 	return b.String()
 }
 
-// stylesheetLinks returns the render-blocking links for names: one per
-// component, or one bundle link for two or more on a live page.
 func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme, th string) string {
 	if len(names) == 0 {
 		return ""
 	}
 	if len(names) == 1 || !bundle {
-		// Static-export path also takes this branch: emit one <link>
-		// per component to avoid the query-paramed bundle URL.
 		b := borrowBuilder()
 		defer returnBuilder(b)
 		for i, n := range names {
@@ -569,19 +453,11 @@ func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme
 				continue
 			}
 			if !safeComponentName(n) {
-				// A name outside the marker charset would rewrite the
-				// /__gofastr/comp/<name>.css path instead of naming a
-				// component. Fail closed: no <link> for it.
 				continue
 			}
 			if i > 0 {
 				b.WriteByte('\n')
 			}
-			// The marker the runtime dedupes on (loadComponentCSS checks
-			// link[data-cui-style=name]). Without it, a static page got a
-			// second copy of every component stylesheet appended after
-			// app.css on load, which reversed the cascade against the
-			// host's own overrides.
 			fmt.Fprintf(b, `<link rel="stylesheet" href="/__gofastr/comp/%s.css?v=%s" data-cui-style="%s" id="cui-css-%s">`,
 				n, e.VersionForHash(theme, th), n, n)
 		}
@@ -591,10 +467,6 @@ func (ds *UIHost) stylesheetLinks(names []string, bundle bool, theme style.Theme
 		liveSheetURL(names, theme, th), strings.Join(names, ","))
 }
 
-// liveSheetURL is the URL a live page's head links for names: the
-// component's own sheet for one, the bundle for several. The bundle's
-// hash combines the per-component versions in the sorted order embedded
-// in names, so any change to any included component busts the URL.
 func liveSheetURL(names []string, theme style.Theme, th string) string {
 	if len(names) == 1 {
 		e, ok := registry.Lookup(names[0])
@@ -614,12 +486,6 @@ func liveSheetURL(names []string, theme style.Theme, th string) string {
 	return "/__gofastr/comp-bundle.css?names=" + strings.Join(names, ",") + "&v=" + hashStrings(versions...)
 }
 
-// safeComponentName reports whether n is safe to interpolate as the
-// /__gofastr/comp/<name>.css path segment: exactly the charset the
-// data-cui-comp marker regex captures (registry/render.go), so any
-// name Scan can produce — and anything a registered component may
-// carry that would rewrite the path ('/', '?', '#', ".." tricks need
-// chars outside it) — is refused before it reaches the URL.
 func safeComponentName(n string) bool {
 	if n == "" {
 		return false
@@ -633,16 +499,6 @@ func safeComponentName(n string) bool {
 	return true
 }
 
-// handleComponentCSS serves a single registered component's scoped
-// stylesheet at /__gofastr/comp/{name}.css.
-//
-// Cache policy: the URL is content-addressed via ?v=<hash>. We only
-// stamp the response as `immutable` when the supplied v matches the
-// current Entry.VersionFor. Otherwise a stale cached HTML
-// referencing an old ?v= URL would receive fresh bytes back and
-// the browser would cache the (old-URL, new-body) pair as immutable
-// for a year. On mismatch we serve no-cache so the browser
-// re-fetches next time.
 func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/__gofastr/comp/")
 	name = strings.TrimSuffix(name, ".css")
@@ -666,19 +522,6 @@ func (ds *UIHost) handleComponentCSS(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, css)
 }
 
-// handleCompBundleCSS serves /__gofastr/comp-bundle.css?names=a,b,c
-// It concatenates the named components' scoped CSS. Names come in
-// sorted order (the host emits them sorted) so cache keys are
-// stable across requests.
-//
-// Cache policy mirrors handleComponentCSS: `immutable` only when
-// the supplied v matches the freshly-computed combined hash;
-// otherwise no-cache to avoid pinning a stale URL to fresh bytes.
-// An unknown name is skipped, not refused: a page another replica
-// rendered mid-deploy can name a component this one lacks, and a 404
-// would drop every sheet in the bundle. A bundle that skipped a name is
-// never immutable, whatever its v says. Only names that are all unknown
-// 404.
 func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	namesParam := r.URL.Query().Get("names")
 	if namesParam == "" {
@@ -686,14 +529,6 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	names := strings.Split(namesParam, ",")
-	// requestTheme, not activeTheme: the SAME rule handleComponentCSS
-	// follows. The single-component handler was converted to per-request
-	// theming and this one, which serves the identical CSS in bulk, was left
-	// reading the boot-time theme. A component whose StyleFn reads
-	// style.Theme directly (rather than emitting a var(--*) token) then kept
-	// painting the base palette under a requested variant, so both the embed
-	// frame and the theme editor's preview showed a half-applied theme, and
-	// the editor could write a theme its operator had never actually seen.
 	theme := ds.requestTheme(r)
 	th := style.ThemeHash(theme)
 	versions := make([]string, 0, len(names))
@@ -712,10 +547,6 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 		seen[n] = struct{}{}
 		e, ok := registry.Lookup(n)
 		if !ok {
-			// Skip, don't refuse: a page another replica rendered can
-			// name a component this one lacks mid-deploy, and a 404
-			// would drop every other sheet in the bundle. Such an
-			// answer is never immutable (skipped, below).
 			skipped = true
 			continue
 		}
@@ -739,7 +570,6 @@ func (ds *UIHost) handleCompBundleCSS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// activeTheme returns the configured theme or the default if unset.
 func (ds *UIHost) activeTheme() style.Theme {
 	if ds.App != nil && ds.App.Theme != nil {
 		return *ds.App.Theme
@@ -768,8 +598,8 @@ func hashStrings(parts ...string) string {
 	return hex.EncodeToString(sum[:6])
 }
 
-// ReadCustomCSSFile reads a CSS file and returns its content.
-// This is a helper for the demo main.go.
+// ReadCustomCSSFile returns the content of the file at path, or "" when it
+// cannot be read.
 func ReadCustomCSSFile(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
