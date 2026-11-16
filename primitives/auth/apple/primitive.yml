@@ -1,0 +1,54 @@
+primitive: auth.apple
+summary: Sign in with Apple, the OIDC provider with a signed client secret and a form-post callback.
+code:
+  - battery/auth/apple.go
+docs:
+  - framework/docs/content/auth.md
+invariants:
+  - id: client-secret-signed-per-exchange
+    rule: Each code exchange sends an ES256 JWT signed with the configured key as client_secret (kid the key id, iss the team, sub the Services ID, aud the issuer, a few minutes of life) with client_id in the form.
+    enforced_by:
+      - test: battery/auth.TestApple_ExchangeSignsClientSecretAndReadsStringVerified
+      - test: battery/auth.TestApple_FormPostCallbackSignsIn
+  - id: asks-for-form-post
+    rule: The authorize URL asks for scope "openid email" with response_mode=form_post.
+    enforced_by:
+      - test: battery/auth.TestApple_AuthURLAsksForFormPost
+  - id: key-is-p256-pkcs8
+    rule: NewAppleProvider refuses a missing ID, a key that is not PEM, PEM that is not PKCS 8, and a key that is not P-256.
+    enforced_by:
+      - test: battery/auth.TestApple_ConfigRefusals
+  - id: form-post-route-only-hops
+    rule: "POST {basePath}/oauth/{provider}/callback answers only a provider whose CallbackIsFormPost is true, and only with a same-origin page that loads the GET callback with the posted code and state; it signs in nobody, and the GET runs every callback check."
+    enforced_by:
+      - test: battery/auth.TestApple_FormPostCallbackSignsIn
+      - test: battery/auth.TestApple_FormPostHopDoesNotBindAnotherBrowser
+      - test: battery/auth.TestOAuthFormPostRouteOnlyForFormPostProviders
+      - test: battery/auth.TestAppleFormPostSignInInBrowser
+    applies:
+      - battery/auth/oauth2.go
+  - id: bff-passes-form-post-callback
+    rule: "WithBFFPosture lets every POST to {BasePath}/oauth/{provider}/callback, for any provider name, past its CSRF check and origin guard, beside its logout CSRF exemption, and the callback handler then refuses a provider that is not a form-post one."
+    enforced_by:
+      - test: battery/auth.TestBFFPostureLetsFormPostCallbackThrough
+      - test: battery/auth.TestIsFormPostCallback
+    applies:
+      - battery/auth/bff.go
+decisions:
+  - id: form-post-hops-through-a-page
+    date: 2026-11-16
+    status: accepted
+    decision: The form-post callback answers a same-origin page that reloads the GET callback.
+    rejected:
+      - option: Answer the POST with a 303 to the GET callback.
+        why: Whether a browser sends the SameSite=Lax state cookie on a redirect that follows a cross-site POST varies; Chrome does, but a page's own navigation is same-site in every browser.
+    upholds: [form-post-route-only-hops]
+  - id: send-pkce-to-apple
+    date: 2026-11-16
+    status: accepted
+    decision: The provider sends PKCE as every provider does, with DisablePKCE to stop it.
+    rejected:
+      - option: Leave PKCE off for Apple.
+        why: An authorization server must ignore parameters it does not know, so sending it costs nothing and binds the code to the flow where Apple checks it.
+    revisit_if: Apple's token endpoint refuses code_verifier.
+    upholds: [client-secret-signed-per-exchange]

@@ -154,6 +154,9 @@ var (
 	reasonPasswordUnchanged              = i18n.Define("auth.password_unchanged", "new password matches the current one")
 	reasonMustDiffer                     = i18n.Define("auth.must_differ", "must differ from the current password")
 	reasonMagicLinkSent                  = i18n.Define("auth.magic_link_sent", "magic link sent")
+	reasonEmailCodeSent                  = i18n.Define("auth.email_code_sent", "sign-in code sent")
+	reasonEmailCodeDeliveryNotConfigured = i18n.Define("auth.email_code_delivery_not_configured", "sign-in code delivery not configured")
+	reasonCodeAttemptsSpent              = i18n.Define("auth.code_attempts_spent", "too many attempts: request a new code")
 	reasonInvalidCredentials             = i18n.Define("auth.invalid_credentials", "invalid credentials")
 	reasonCrossSiteRequest               = i18n.Define("auth.cross_site_request", "cross-site request refused")
 	// reasonComposedEmail answers ErrEmailNotComposed; it names the fix

@@ -1038,3 +1038,87 @@ func TestEraseUserData_EmailIdentityBindsQuotedValue(t *testing.T) {
 		t.Errorf("u2 token after erase = %d, want 1 (quote must not inject past the match)", got)
 	}
 }
+
+// A user row stored before canonicalization still reaches its tokens,
+// which hold the canonical address: the resolver's Canonicalize rewrites
+// the bound value. One returning "" binds the raw value.
+func TestEraseUserData_EmailIdentityCanonicalizes(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO auth_users (id, email) VALUES ('u1','Mixed@X.test'),('u2','Raw@X.test'),('u3','other@x.test')`,
+		`INSERT INTO magic_link_tokens (token, email, expires_at) VALUES
+			('a','magiclink:mixed@x.test',0),('b','magiclink:Raw@X.test',0),('c','magiclink:other@x.test',0)`,
+	} {
+		if _, err := db.ExecContext(ctx, q); err != nil {
+			t.Fatalf("seed: %v", err)
+		}
+	}
+	datexport.Reset(t)
+	datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
+		Canonicalize: func(s string) string {
+			if strings.HasPrefix(s, "Raw") {
+				return ""
+			}
+			return strings.ToLower(s)
+		},
+	})
+	datexport.RegisterEraser(datexport.DataEraser{
+		Name: "ml", Source: "auth", Table: "magic_link_tokens", Column: "email",
+		Mode: datexport.EraseDelete, Identity: datexport.IdentityEmail, ValuePrefix: "magiclink:",
+	})
+	for _, id := range []string{"u1", "u2"} {
+		if _, err := app.EraseUserData(ctx, id); err != nil {
+			t.Fatalf("EraseUserData %s: %v", id, err)
+		}
+	}
+	for val, want := range map[string]int{
+		"magiclink:mixed@x.test": 0, "magiclink:Raw@X.test": 0, "magiclink:other@x.test": 1,
+	} {
+		if got := countWhere(t, db, "magic_link_tokens", "email", val); got != want {
+			t.Errorf("rows for %q = %d, want %d", val, got, want)
+		}
+	}
+}
+
+// A store eraser with EraseResolved gets the identities the erasure
+// resolved before its SQL part deleted the user row they come from.
+func TestEraseUserData_StoreEraserGetsResolvedIdentities(t *testing.T) {
+	app, db := newIdentityEraseApp(t)
+	defer db.Close()
+	createMagicLinkTables(t, db)
+	ctx := context.Background()
+	if _, err := db.ExecContext(ctx, `INSERT INTO auth_users (id, email) VALUES ('u1','u1@x.test')`); err != nil {
+		t.Fatal(err)
+	}
+	registerMagicLinkEraseScenario(t)
+	var got []datexport.ErasedUser
+	_, _ = datexport.RegisterStoreEraser(datexport.StoreEraser{Name: "mem", Source: "test",
+		EraseResolved: func(_ context.Context, u datexport.ErasedUser, _ bool) (int, error) {
+			got = append(got, u)
+			return 0, nil
+		}})
+	for _, dry := range []bool{true, false} {
+		var opts []EraseOption
+		if dry {
+			opts = append(opts, WithEraseDryRun())
+		}
+		if _, err := app.EraseUserData(ctx, "u1", opts...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("store eraser ran %d times, want 2 (dry run, erase)", len(got))
+	}
+	for i, u := range got {
+		if email, ok := u.Identity(datexport.IdentityEmail); u.ID != "u1" || !ok || email != "u1@x.test" {
+			t.Errorf("run %d got %+v", i, u)
+		}
+	}
+	if n := countWhere(t, db, "auth_users", "id", "u1"); n != 0 {
+		t.Fatalf("the user row should be gone by the store eraser's run: %d", n)
+	}
+}

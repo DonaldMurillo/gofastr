@@ -121,6 +121,9 @@ type OIDCProvider struct {
 	// verified id_token claims cached by access token so FetchUserInfo doesn't
 	// re-fetch. Bounded (cap 1024); evicts oldest by insert order.
 	claims *orderedCache
+
+	// clientSecret, when set, mints the client secret for each exchange.
+	clientSecret func() (string, error)
 }
 
 // NewOIDCProvider validates cfg and returns a provider WITHOUT performing any
@@ -465,9 +468,15 @@ func (p *OIDCProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verif
 	data.Set("code", code)
 	data.Set("redirect_uri", p.cfg.RedirectURL)
 	setPKCEVerifier(data, verifier, p.cfg.DisablePKCE)
+	secret := p.cfg.ClientSecret
+	if p.clientSecret != nil {
+		if secret, err = p.clientSecret(); err != nil {
+			return nil, err
+		}
+	}
 	if method == OIDCAuthClientSecretPost {
 		data.Set("client_id", p.cfg.ClientID)
-		data.Set("client_secret", p.cfg.ClientSecret)
+		data.Set("client_secret", secret)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		d.TokenEndpoint, strings.NewReader(data.Encode()))
@@ -475,7 +484,7 @@ func (p *OIDCProvider) ExchangeCodeWithVerifier(ctx context.Context, code, verif
 		return nil, err
 	}
 	if method == OIDCAuthClientSecretBasic {
-		req.SetBasicAuth(url.QueryEscape(p.cfg.ClientID), url.QueryEscape(p.cfg.ClientSecret))
+		req.SetBasicAuth(url.QueryEscape(p.cfg.ClientID), url.QueryEscape(secret))
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
