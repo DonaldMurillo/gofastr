@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DonaldMurillo/gofastr/core/a2a"
 	"github.com/DonaldMurillo/gofastr/core/handler"
 	"github.com/DonaldMurillo/gofastr/core/mcp"
 	"github.com/DonaldMurillo/gofastr/core/schema"
@@ -392,5 +393,44 @@ func TestSweepApp3DebugEndpointsOnlyWhenEnabled(t *testing.T) {
 		if rec.Code != want {
 			t.Errorf("DebugEndpoints=%v: /.debug/stats = %d, want %d", enabled, rec.Code, want)
 		}
+	}
+}
+
+// Shutdown ends detached A2A runs before the stop hooks run, so a run's
+// final write never meets a closed store.
+func TestSweepApp3A2ARunsEndBeforeStopHooks(t *testing.T) {
+	started, returned := make(chan struct{}), make(chan struct{})
+	hold := a2a.Skill{
+		ID: "hold", Name: "Hold", Description: "Runs until cancelled.",
+		Handler: func(ctx context.Context, _ a2a.TaskContext) error {
+			close(started)
+			<-ctx.Done()
+			time.Sleep(50 * time.Millisecond)
+			close(returned)
+			return ctx.Err()
+		},
+	}
+	e := newA2ATestEnv(t, A2AConfig{Skills: []a2a.Skill{hold}, DisableEntitySkills: true})
+	var endedFirst atomic.Bool
+	e.app.OnStop(func() error {
+		select {
+		case <-returned:
+			endedFirst.Store(true)
+		default:
+		}
+		return nil
+	})
+	status, body := e.a2aRequest(t, "tok-alice", `{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{`+
+		`"message":{"messageId":"m1","role":"ROLE_USER","parts":[{"text":"go"}],"metadata":{"skill":"hold"}},`+
+		`"configuration":{"returnImmediately":true}}}`)
+	if status != http.StatusOK {
+		t.Fatalf("SendMessage: %d %s", status, body)
+	}
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = e.app.Shutdown(ctx)
+	if !endedFirst.Load() {
+		t.Fatal("an OnStop hook ran while an A2A run was still running")
 	}
 }
