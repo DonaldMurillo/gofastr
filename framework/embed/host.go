@@ -204,6 +204,9 @@ type Host struct {
 	// surface rendering surfacePath. Nil refuses every widget path. See
 	// SetWidgetReach.
 	widgetOnSurface func(name, surfacePath string) bool
+
+	// now is the host's clock: time.Now, replaced only by tests.
+	now func() time.Time
 }
 
 // ResolvedSurface is a declared Surface with its origins normalized once at
@@ -277,6 +280,7 @@ func New(cfg Config) (*Host, error) {
 		grantTTL:      cfg.GrantTTL,
 		grantMaxAge:   cfg.GrantMaxAge,
 		reserved:      slices.Clone(reservedPrefixes),
+		now:           time.Now,
 	}
 	if h.nonceTTL <= 0 {
 		h.nonceTTL = DefaultNonceTTL
@@ -605,7 +609,7 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 	if !h.Ready() {
 		return ExchangeResult{}, errors.New("embed: no signing key")
 	}
-	now := time.Now()
+	now := h.now()
 	n, err := h.verifyNonce(nonceToken, now)
 	// A frame reloaded after the nonce's lifetime re-sends the same nonce,
 	// and the exchange is idempotent within the grant's lifetime, not the
@@ -687,6 +691,11 @@ func (h *Host) Exchange(ctx context.Context, nonceToken, framedOrigin string) (E
 		return ExchangeResult{}, err
 	}
 	if issued == "" {
+		// A claim made after its own retention deadline is refused by the
+		// store; the nonce died during the burn, so it is expired, not used.
+		if !h.now().Before(retain) {
+			return ExchangeResult{}, ErrExpired
+		}
 		return ExchangeResult{}, ErrSpent
 	}
 	if replay {
