@@ -86,8 +86,11 @@ Done when non-test Go code is under 8% comment lines, from 24% today.
 
 Status: `framework/crud` is swept, 29.2% to 6.3%. Its rules are 185
 invariants, each naming a test that was watched failing, and 79
-decisions. The repository as a whole is at the share the script prints;
-`framework/` is next.
+decisions. The root `framework` package is swept too, 33.1% to 5.1%: 397
+more invariants and 151 decisions on `app` and its children. The
+repository as a whole is at the share the script prints. Next, in order:
+`framework/headless`, `framework/uihost`, `framework/ui`, then the rest
+of `framework/`.
 
 ### 3. Bring the known twins in, and merge them
 
