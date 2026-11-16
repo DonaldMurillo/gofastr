@@ -598,3 +598,43 @@ func TestGoCachePathsMatch(t *testing.T) {
 		}
 	}
 }
+
+// Each browser-e2e row decides whether its suite runs by matching its
+// matrix.pkg with grep -E against the import paths e2e-scope lists, where
+// cmd/affected -match used Go's regexp. The two read literals, `.`, `|`,
+// groups, `?`, `*`, `+` and the `^`/`$` anchors alike over one import path
+// per line; escapes, classes, bounded repeats and Go's (?flags) groups they
+// do not, and a row would then skip a suite its change reaches. A pattern
+// is held to the shared part, and must also compile in Go.
+func TestBrowserE2EPatternsArePortable(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Strategy struct {
+				Matrix struct {
+					Include []map[string]string `yaml:"include"`
+				} `yaml:"matrix"`
+			} `yaml:"strategy"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	rows := wf.Jobs["browser-e2e"].Strategy.Matrix.Include
+	if len(rows) == 0 {
+		t.Fatal("browser-e2e has no matrix rows; the parser or ci.yml changed shape")
+	}
+	portable := regexp.MustCompile(`^[A-Za-z0-9_/.|()?*+^$-]+$`)
+	for _, row := range rows {
+		pkg := row["pkg"]
+		if pkg == "" {
+			t.Errorf("row %q has no pkg pattern", row["suite"])
+			continue
+		}
+		if !portable.MatchString(pkg) || strings.Contains(pkg, "(?") {
+			t.Errorf("row %q: pkg %q uses syntax grep -E and Go's regexp read differently; keep to literals, . | ( ) ? * + ^ $", row["suite"], pkg)
+		}
+		if _, err := regexp.Compile(pkg); err != nil {
+			t.Errorf("row %q: pkg %q: %v", row["suite"], pkg, err)
+		}
+	}
+}

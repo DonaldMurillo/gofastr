@@ -53,6 +53,11 @@ few lines, and link the PR or the docs page for the rest.
   instead of re-vetting every package on every commit (3.7 minutes a run
   in CI, about 80 s a local commit). Branch protection on main needs the
   new check names.
+- **A browser e2e row a pull request does not reach costs seconds.** One
+  `browser e2e scope` job lists the affected packages once; each row
+  checks its pattern against that list before it restores the Go cache or
+  installs anything. Rows used to spend 1 to 1.6 minutes each finding out
+  they had nothing to run.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a

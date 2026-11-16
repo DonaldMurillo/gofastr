@@ -2901,6 +2901,9 @@ func TestBrowser_EscClearsChatInput(t *testing.T) {
 	if err := chromedp.Run(ctx,
 		chromedp.Navigate(urlBase+"/"),
 		chromedp.WaitVisible(`.kiln-input`, chromedp.ByQuery),
+		// The Esc handler is wired by a demand-loaded module; an Esc
+		// pressed before it lands reaches no listener.
+		chromedp.Poll(`!!window.__gofastr?.loadedModules?.widgethelpers`, nil),
 		chromedp.SendKeys(`.kiln-input`, "abandon ship"),
 		chromedp.Focus(`.kiln-input`, chromedp.ByQuery),
 		chromedp.KeyEvent(kb.Escape),
