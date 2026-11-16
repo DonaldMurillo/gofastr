@@ -11,6 +11,10 @@ import (
 	"github.com/DonaldMurillo/gofastr/core/fanout"
 	"github.com/DonaldMurillo/gofastr/core/i18n"
 	"github.com/DonaldMurillo/gofastr/core/router"
+	"github.com/DonaldMurillo/gofastr/core/schema"
+	"github.com/DonaldMurillo/gofastr/framework/entity"
+	frameworkopenapi "github.com/DonaldMurillo/gofastr/framework/openapi"
+	"github.com/DonaldMurillo/gofastr/framework/routegroup"
 	"github.com/DonaldMurillo/gofastr/internal/clientip"
 )
 
@@ -123,5 +127,21 @@ func TestSweepApp2TrustedProxiesOnContextWithoutDefaults(t *testing.T) {
 	app.Router().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/p", nil))
 	if !trusted {
 		t.Fatal("the trusted-proxy list was not on the request context")
+	}
+}
+
+// A grouped entity's operations carry the group's OpenAPI tag.
+func TestSweepApp2GroupEntityOperationsCarryGroupTag(t *testing.T) {
+	app := NewApp(WithoutDefaultMiddleware())
+	v1 := app.Group("/api/v1", routegroup.WithOpenAPITag("v1"))
+	app.GroupEntity(v1, "posts", entity.EntityConfig{Table: "posts",
+		Fields: []schema.Field{{Name: "title", Type: schema.String}},
+	})
+	doc := frameworkopenapi.EntityOpenAPI(app.Registry, "Test", "1.0.0", nil).Build()
+	paths, _ := doc["paths"].(map[string]map[string]any)
+	op, _ := paths["/api/v1/posts"]["get"].(map[string]any)
+	tags, _ := op["tags"].([]string)
+	if len(tags) != 1 || tags[0] != "v1" {
+		t.Fatalf("GET /api/v1/posts tags = %v, want [v1]", op["tags"])
 	}
 }
