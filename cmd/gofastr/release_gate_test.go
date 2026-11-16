@@ -638,3 +638,56 @@ func TestBrowserE2EPatternsArePortable(t *testing.T) {
 		}
 	}
 }
+
+// Every setup-chrome step installs one fixed Chrome. A moving version
+// (latest, the default, or a release channel) installs a new build under a
+// new directory that lands on PATH, and Go's test cache keys each result on
+// the variables a test read: a snapshot bump re-ran 175 of 403 packages on
+// a main run that changed three files (2026-11-16). One value across the
+// steps, so the browser suites test the Chrome the cached results saw.
+func TestChromeIsPinned(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join("..", "..", ".github", "workflows"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixed := regexp.MustCompile(`^([0-9]+|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)$`)
+	versions := map[string][]string{}
+	steps := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yml") {
+			continue
+		}
+		var wf struct {
+			Jobs map[string]struct {
+				Steps []struct {
+					Name string            `yaml:"name"`
+					Uses string            `yaml:"uses"`
+					With map[string]string `yaml:"with"`
+				} `yaml:"steps"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal([]byte(workflowSource(t, e.Name())), &wf); err != nil {
+			t.Fatalf("parse %s: %v", e.Name(), err)
+		}
+		for _, job := range slices.Sorted(maps.Keys(wf.Jobs)) {
+			for _, step := range wf.Jobs[job].Steps {
+				if !strings.HasPrefix(step.Uses, "browser-actions/setup-chrome@") {
+					continue
+				}
+				steps++
+				at := e.Name() + ": " + job + ": " + step.Name
+				v := step.With["chrome-version"]
+				if !fixed.MatchString(v) {
+					t.Errorf("%s installs chrome-version %q; pin a snapshot number or a four-part version, since a moving one changes PATH and empties the test cache", at, v)
+				}
+				versions[v] = append(versions[v], at)
+			}
+		}
+	}
+	if steps == 0 {
+		t.Fatal("found no setup-chrome step; the parser or the workflows changed shape")
+	}
+	if len(versions) > 1 {
+		t.Errorf("setup-chrome steps install different versions; bump them together: %v", versions)
+	}
+}
