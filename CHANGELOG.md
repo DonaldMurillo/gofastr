@@ -139,6 +139,19 @@ few lines, and link the PR or the docs page for the rest.
   `scripts/go-cache-prune.sh` now ages the restored entries and removes
   the ones no step touched before the save.
   `TestGoCacheIsPrunedBeforeSave` holds the two steps in each saving job.
+- **The analyzer vet reads each file once.** CI vetted every affected
+  package three times, as linux, windows and darwin. The windows and
+  darwin passes now vet only the packages whose Go files differ from the
+  ones the linux pass read: 41 and 15 of 457
+  (`cmd/affected -files-differ-from`). On the whole tree from a cold
+  cache the three passes took 246 s here, down from 469 s. A finding that
+  depends on another package's OS-specific types, in a package whose own
+  files are the same on every OS, is no longer looked for on windows and
+  darwin.
+- **The Linux desktop steps run when a change reaches them.** Both go
+  through `cmd/affected`: a pull request runs the `battery/desktop`
+  packages its change reaches, main runs them all. They ran in full on
+  every pull request, 2.7 to 4.6 minutes.
 - **`primitives stop` skips testdata modules** when a nested `go.mod`
   or `go.sum` changed. Fixture trees such as `cmd/check-embed/testdata`
   are meant not to type-check; `go build ./...` there is no longer a

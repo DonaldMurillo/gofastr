@@ -664,6 +664,64 @@ func TestGoCacheIsPrunedBeforeSave(t *testing.T) {
 	}
 }
 
+// The lint job vets every affected package once, as the runner's own OS,
+// and then only the packages whose Go files differ on windows and darwin
+// (cmd/affected -files-differ-from). What a narrowed pass skips is what
+// the full pass read, so the full pass comes first and unfiltered, and
+// the narrowed ones compare against its environment as go reports it,
+// cgo included: against a hand-written one, a file the full pass did not
+// build (a `!cgo` file, say) could count as read and be vetted by no pass.
+func TestNarrowedVetPassesCompareWithTheFullPass(t *testing.T) {
+	var wf struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				Name string `yaml:"name"`
+				Run  string `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal([]byte(workflowSource(t, "ci.yml")), &wf); err != nil {
+		t.Fatal(err)
+	}
+	var script string
+	for _, step := range wf.Jobs["lint"].Steps {
+		if step.Name == "Vet (repo analyzers)" {
+			script = step.Run
+		}
+	}
+	if script == "" {
+		t.Fatal("the lint job has no \"Vet (repo analyzers)\" step; the parser or ci.yml changed shape")
+	}
+	const first = `first="GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) CGO_ENABLED=$(go env CGO_ENABLED)"`
+	full, firstAt, narrowed := -1, -1, 0
+	for i, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == first:
+			firstAt = i
+		case !strings.Contains(line, "go vet -vettool="):
+		case strings.Contains(line, "-files-differ-from"):
+			narrowed++
+			if firstAt < 0 || !strings.Contains(line, `-files-differ-from "$first"`) {
+				t.Errorf("a narrowed vet pass does not compare with $first, set from go env before it:\n%s", line)
+			}
+		case strings.Contains(line, "GOOS="):
+			t.Errorf("an unfiltered vet pass under another GOOS; narrow it with -files-differ-from \"$first\":\n%s", line)
+		default:
+			if full >= 0 {
+				t.Errorf("a second full vet pass:\n%s", line)
+			}
+			full = i
+		}
+	}
+	if full < 0 || firstAt < full {
+		t.Errorf("want one full vet pass, then the line\n%s\nfound the pass at line %d and that line at %d", first, full, firstAt)
+	}
+	if narrowed == 0 {
+		t.Error("no vet pass uses -files-differ-from; windows and darwin files are vetted by no pass, or by a full one each")
+	}
+}
+
 // Each browser-e2e row decides whether its suite runs by matching its
 // matrix.pkg with grep -E against the import paths e2e-scope lists, where
 // cmd/affected -match used Go's regexp. The two read literals, `.`, `|`,

@@ -525,6 +525,14 @@ jobs:
         # and OS-only packages; `go run` would build it for the target OS.
         # CGO_ENABLED=0 for the same reason as the cross-compile smoke.
         #
+        # Those two passes vet only the packages whose Go files are not
+        # the ones the first pass read (-files-differ-from: 41 on windows
+        # and 15 on darwin of 457, 2026-11). Each full pass compiles every
+        # package's test variant, about 155 s an OS from cold, to read the
+        # same source three times. $first is the first pass's environment
+        # as go reports it, cgo included: a `!cgo` file is new to a pass
+        # without cgo.
+        #
         # -buildvcs=false: go vet keys each cached result on the vettool
         # binary's hash, and a stamped commit changed that hash on every
         # run, so nothing ever replayed (3.7 minutes a run, 2026-11).
@@ -534,9 +542,10 @@ jobs:
           go build -o /tmp/gofastr-affected ./cmd/affected
           vet_flags="-all-if-changed internal/analyzers/ -all-if-changed cmd/vettool/"
           /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+          first="GOOS=$(go env GOOS) GOARCH=$(go env GOARCH) CGO_ENABLED=$(go env CGO_ENABLED)"
           for os in windows darwin; do
-            echo "vettool, GOOS=$os"
-            CGO_ENABLED=0 GOOS=$os /tmp/gofastr-affected $vet_flags -- go vet -vettool=/tmp/gofastr-vettool
+            echo "vettool, GOOS=$os, packages whose files differ from $first"
+            CGO_ENABLED=0 GOOS=$os /tmp/gofastr-affected $vet_flags -files-differ-from "$first" -- go vet -vettool=/tmp/gofastr-vettool
           done
 
       - name: Duplicate code (dupl, baseline-gated)
@@ -550,22 +559,37 @@ jobs:
       - name: Linux desktop (CGO-free runtime and CLI)
         # The normal job uses runtime/cgo. Exercise the assembly runtime
         # shim separately so neither build mode can hide a link regression.
+        #
+        # Through the affected binary the Vet step built, like every other
+        # test step: a pull request runs the desktop packages its change
+        # reaches and main runs them all. They ran in full on every pull
+        # request, 2.7 to 4.6 minutes with the graphical step below. The
+        # built binary, because under GOARCH=arm64 `go run` would build
+        # affected for arm64.
         env:
           CGO_ENABLED: "0"
         run: |
-          go test -count=1 ./battery/desktop/...
+          desktop='gofastr/battery/desktop(/.*)?$'
+          /tmp/gofastr-affected -match "$desktop" -- go test -count=1
           # Cross-link test executables: archive-only builds miss unresolved
           # ARM64 FFI/GTK assembly symbols. These binaries are not executed.
           mkdir -p dist/ci/linux-arm64
-          GOOS=linux GOARCH=arm64 go test -c -o dist/ci/linux-arm64/ ./battery/desktop/...
-          go test -count=1 -run 'Test(Desktop|LinuxDesktop)' ./cmd/gofastr/ ./cmd/gofastr/internal/desktopcmd/ ./cmd/gofastr/internal/devcmd/
+          GOOS=linux GOARCH=arm64 /tmp/gofastr-affected -match "$desktop" -- go test -c -o dist/ci/linux-arm64/
+          /tmp/gofastr-affected -match 'gofastr/cmd/gofastr(/internal/(desktopcmd|devcmd))?$' -- go test -count=1 -run 'Test(Desktop|LinuxDesktop)'
 
       - name: Linux desktop graphical tests (CGO-free GTK and WebKit)
         timeout-minutes: 20
         # One process per suite, so a native crash names its suite, plus the
         # bus-only check.
         # Fail closed: an opt-in skip must never satisfy this blocking gate.
-        run: ./scripts/test-linux-desktop.sh
+        # The script tests battery/desktop/linux without cgo, so it runs
+        # when the change reaches that package or edits the script. sh -c
+        # drops the package list affected appends; a selection that fails
+        # fails the step, as in every other affected step.
+        run: |
+          CGO_ENABLED=0 /tmp/gofastr-affected -all-if-changed scripts/test-linux-desktop.sh \
+            -match 'gofastr/battery/desktop/linux$' \
+            -- sh -c ./scripts/test-linux-desktop.sh
 
       - name: Prune the Go cache to what this run used (main only)
         if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
