@@ -104,6 +104,19 @@ invariants:
       - test: framework/crud.TestMaskRefusesAggregates
       - test: framework/crud.TestGroupCountDecimalIsString
       - test: framework/crud.TestGroupCountAllNormalizesBool
+  - id: sort-nulls-order-as-postgres
+    rule: A sort on a column that can hold NULL puts the null rows last ascending and first descending on SQLite and Postgres alike, on the offset list, the stream, ListAll, TypedQuery.Order, the DSL's order() and GroupCountAll's groups; crud pins the position only on SQLite and only for such a column, through query.OrderTerm.
+    enforced_by:
+      - test: framework.TestSortNullOrderMatchesAcrossDialects
+      - test: framework/crud.TestSortPinsNullsOnlyOnSQLiteNullableColumns
+      - test: core/query.TestOrderTermPinsPostgresNullPosition
+    applies:
+      - framework/crud/key.go
+      - framework/crud/crud.go
+      - framework/crud/crud_api.go
+      - framework/dsl/dsl.go
+      - framework/filter/filter.go
+      - core/query/query.go
   - id: typed-reads-match-http-reads
     rule: A TypedQuery refuses a MultiTenant read with no tenant on ctx, orders an offset page by the key, runs AfterList on Find and AfterGet (not AfterList) on First under WithReadHooks, and hands its includes the caller's ctx.
     enforced_by:
@@ -179,6 +192,19 @@ invariants:
       - test: framework/crud.TestPivotReadGateRBAC
       - test: framework/crud.TestListAll_NestedFilterParity
 decisions:
+  - id: sqlite-sorts-nulls-as-postgres
+    date: 2026-11-16
+    status: accepted
+    decision: SQLite takes Postgres's default null order (last ascending, first descending) for every sort the framework emits; Postgres SQL from crud is unchanged, and only a column that can hold NULL gets the NULLS term (maintainer decision, issue 698).
+    rejected:
+      - option: Emit SQLite's order (nulls first ascending) on both dialects.
+        why: On Postgres a null position other than the index's own stops a plain index from serving the sort.
+      - option: Document the drift beside ?sort=.
+        why: An app built on SQLite would still page a different list on Postgres.
+      - option: Write the NULLS term after every order column on SQLite.
+        why: SQLite then sorts instead of walking a composite index over never-null columns, which is what the default created_at, key order and a keyset page use.
+    revisit_if: A third dialect is supported, or a Required column that holds NULL in old rows needs the same order.
+    upholds: [sort-nulls-order-as-postgres]
   - id: cursor-carries-values-then-key
     date: 2026-11-15
     status: accepted

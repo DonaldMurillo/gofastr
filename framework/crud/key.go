@@ -86,6 +86,31 @@ func (ch *CrudHandler) withKeyTiebreak(sorts []filter.ParsedSort) []filter.Parse
 	return out
 }
 
+// sortTerms is withKeyTiebreak with PinNulls set where pinsNulls says, so
+// every list path orders nulls as Postgres does.
+func (ch *CrudHandler) sortTerms(ctx context.Context, sorts []filter.ParsedSort) []filter.ParsedSort {
+	out := ch.withKeyTiebreak(sorts)
+	for i := range out {
+		out[i].PinNulls = ch.pinsNulls(ctx, out[i].Field)
+	}
+	return out
+}
+
+// pinsNulls reports whether an ORDER BY on column must spell the null
+// position: the column can hold NULL and the database is SQLite.
+func (ch *CrudHandler) pinsNulls(ctx context.Context, column string) bool {
+	if ch.Entity == nil {
+		return false
+	}
+	keys := ch.keyCols()
+	for _, f := range ch.Entity.GetFields() {
+		if f.Name == column && !entity.CanHoldNull(f, keys) {
+			return false
+		}
+	}
+	return !isPostgres(ctx, ch.dialectHandle(), ch.conn(ctx))
+}
+
 func (ch *CrudHandler) keyColumn() (string, error) {
 	cols := ch.keyCols()
 	if len(cols) != 1 {

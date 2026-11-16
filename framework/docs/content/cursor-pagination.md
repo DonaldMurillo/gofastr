@@ -122,9 +122,8 @@ key. A `CursorFields` list that names one column twice fails `Define`.
 
 **A cursor column must never hold NULL.** The keyset comparison
 `(created_at, id) > ($1, $2)` is never true for a row whose
-`created_at` is NULL, so those rows would be skipped, and SQLite sorts
-NULLs first where Postgres sorts them last. `entity.Define` panics on a
-cursor column that is not a key column, not `Required`, and not
+`created_at` is NULL, so those rows would be skipped. `entity.Define`
+panics on a cursor column that is not a key column, not `Required`, and not
 framework-generated (`AutoGenerate`, which covers the injected
 `created_at` and an auto id); the app spec refuses the same column at
 decode time. If a row's keyset value is NULL anyway (a raw INSERT that
@@ -210,7 +209,9 @@ first-read intermediary parsed differently.
   timestamps, and in key order when it has none. Without the key, rows
   tied on the sort column can come back in a different order for each
   page on Postgres, so a walk would serve some rows twice and others
-  never.
+  never. Rows with no value in a sort column come last ascending and
+  first descending on both databases
+  ([entity declarations](entity-declarations.md), "sort").
 
 ## When to use which mode
 

@@ -59,6 +59,9 @@ func (o Order) Apply(qb *query.QueryBuilder) {
 	qb.Order(o.column, o.dir)
 }
 
+// Term is the order's column and its direction, "ASC" or "DESC".
+func (o Order) Term() (column, dir string) { return o.column, o.dir }
+
 // rawColumn is the shared base for every typed column, it's just the DB
 // column name. Asc/Desc/IsNull/IsNotNull are the operations that work on any
 // type so they live here.

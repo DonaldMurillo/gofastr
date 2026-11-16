@@ -579,7 +579,7 @@ func (ch *CrudHandler) List() http.HandlerFunc {
 		for _, c := range listPayload.Where {
 			qb.Where(c.SQL, c.Args...)
 		}
-		filter.ApplySortToQuery(qb, ch.withKeyTiebreak(sorts))
+		filter.ApplySortToQuery(qb, ch.sortTerms(ctx, sorts))
 
 		offset := pagination.OffsetForPage(page, perPage)
 		if o, ok := explicitOffsetValues(q); ok {
