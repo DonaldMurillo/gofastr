@@ -14,18 +14,7 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// bannerDismissCookiePrefix is the key the headless module's
-// rememberDismissal writes (behavior.js): the dismissal is mirrored
-// into a cookie under this key — the id component-encoded — so the
-// server can skip rendering a dismissed banner.
 const bannerDismissCookiePrefix = "gofastr.banner-dismiss."
-
-// ─── Banner / InlineAlert ───────────────────────────────────────────
-//
-// A persistent in-page status strip. Different from Toast (transient,
-// floating) and Notification (record-bound). Banner is for global
-// status: maintenance notices, billing alerts, deprecation warnings,
-// "you're impersonating" admin reminders.
 
 // BannerVariant picks the color / icon family.
 type BannerVariant string
@@ -47,38 +36,22 @@ type BannerConfig struct {
 	Variant BannerVariant
 	// Strip renders a full-width announcement with square edges and inline copy.
 	Strip bool
-	// Dismissible adds an X button. When DismissID is set the runtime
-	// records the dismissal in localStorage AND a same-name cookie; when
-	// Ctx also carries the request (app.WithRequest, layouts and screens
-	// get this automatically), Banner sees the cookie and renders nothing
-	// at all on later requests, no flash of a dismissed banner before
-	// the runtime's hide pass. (Richer server-side persistence is still
-	// up to the app. Banner doesn't ship its own RPC.)
+	// Dismissible adds a dismiss button. With DismissID set, a dismissed
+	// Banner whose Ctx carries the request renders nothing.
 	Dismissible bool
 	DismissID   string
-	// Action is an optional inline call-to-action (a Link or Button
-	// rendered to the right of the body).
+	// Action is an optional call-to-action beside the body.
 	Action render.HTML
-	// ID / Class are passed through to the outer element.
+	// ID names the banner when DismissID is empty; Class joins the root's classes.
 	ID    string
 	Class string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the banner's root <div>.
-	// Keys the component owns are dropped: class and id (use Class /
-	// ID), data-cui-*, and the severity contract (role, aria-live,
-	// derived from Variant).
+	// ExtraAttrs forwards attributes to the root; class, id, data-cui-*, role and aria-live are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the dismiss label.
-	// When nil, English fallbacks apply.
+	// Ctx resolves the dismiss label and carries the request; nil uses English.
 	Ctx context.Context
 }
 
-// Banner renders a persistent page-status strip.
-//
-// SR semantics: every tone is a polite status — role="status" — so a
-// banner never interrupts; the offline banner (NetworkRetryBanner) is
-// the one that alerts, because everything the reader does next fails
-// until the connection is back.
+// Banner renders a persistent page-status strip, role=status in every tone.
 func Banner(cfg BannerConfig) render.HTML {
 	if cfg.Title == "" {
 		panic("ui: Banner requires Title")
@@ -97,8 +70,6 @@ func Banner(cfg BannerConfig) render.HTML {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	// Flash-free dismissal: the runtime mirrors a DismissID dismissal into
-	// a cookie; if this request carries it, skip the banner entirely.
 	if cfg.DismissID != "" {
 		if r := app.RequestFromContext(ctx); r != nil {
 			if c, err := r.Cookie(bannerDismissCookiePrefix + cfg.DismissID); err == nil && c.Value == "1" {
@@ -107,10 +78,6 @@ func Banner(cfg BannerConfig) render.HTML {
 		}
 	}
 
-	// A banner is page-wide, so the SystemBanner primitive owns it:
-	// the message is shown, the dismiss is remembered by the headless
-	// module for the session, and the posture is polite whatever the
-	// tone (the offline banner is the one that alerts).
 	dismiss := cfg.Dismissible
 	if cfg.Strip {
 		cfg.Class += " fui-banner--strip"
@@ -120,16 +87,12 @@ func Banner(cfg BannerConfig) render.HTML {
 		parts.Attrs = headless.PartAttrs{headless.PartRoot: {"class": cfg.Class}}
 	}
 	return bannerStyle.WrapHTML(headless.SystemBanner(headless.SystemBannerProps{
-		ID: orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), bannerIdentity(cfg)),
-		// Banner has no Icon field of its own: the icon is always this
-		// component's own choice, drawn from Variant, never a caller's.
-		Icon:   headless.Own(render.HTML(bannerIcon(cfg.Variant))),
-		Tone:   tone,
-		Title:  cfg.Title,
-		Text:   cfg.Body,
-		Action: cfg.Action,
-		// SystemBanner's own roles already carry the severity: the
-		// offline/urgent banner alerts, the rest are polite status.
+		ID:           orDefaultStr(orDefaultStr(cfg.DismissID, cfg.ID), bannerIdentity(cfg)),
+		Icon:         headless.Own(render.HTML(bannerIcon(cfg.Variant))),
+		Tone:         tone,
+		Title:        cfg.Title,
+		Text:         cfg.Body,
+		Action:       cfg.Action,
 		Dismiss:      &dismiss,
 		DismissLabel: i18nui.BannerDismiss.Text(ctx),
 		Shown:        true,
@@ -146,9 +109,6 @@ func orDefaultStr(s, fallback string) string {
 	return s
 }
 
-// bannerClasses dresses headless.SystemBanner's parts in this
-// package's own vocabulary — the names the registered ui-banner sheet
-// matches.
 var bannerClasses = headless.Classes{
 	headless.PartRoot:           "fui-banner",
 	headless.PartVisuallyHidden: "fui-visually-hidden",
@@ -294,11 +254,6 @@ func bannerCSS(_ style.Theme) string {
 [data-cui-comp="ui-banner"][hidden] { display: none; }`
 }
 
-// bannerIdentity names a banner given no DismissID or ID by its message,
-// so the same banner keeps one identity on every render, on every
-// replica, and a dismissal the runtime remembers for the session still
-// hides it after an island re-render or a page navigation. A counter
-// gave each render a new one, and the dismissed banner came back.
 func bannerIdentity(cfg BannerConfig) string {
 	h := fnv.New64a()
 	for _, s := range []string{string(cfg.Variant), cfg.Title, cfg.Body} {

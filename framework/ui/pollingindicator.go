@@ -10,37 +10,22 @@ import (
 	"github.com/DonaldMurillo/gofastr/framework/i18nui"
 )
 
-// ─── PollingIndicator ───────────────────────────────────────────────
-//
-// Tiny pulsing dot + label that confirms a polling RPC or live-update
-// pipeline is firing. Pairs with `data-cui-rpc-trigger="input"` to give
-// users feedback that the live-search / live-validate is actually
-// searching. Pure CSS, no runtime module needed.
-
 // PollingIndicatorConfig configures a PollingIndicator.
 type PollingIndicatorConfig struct {
-	// Label is the text rendered next to the pulsing dot.
-	// Defaults to "Live".
+	// Label is the text beside the dot. Defaults to "Live".
 	Label string
-	// Paused freezes the pulse animation and dims the dot, use when
-	// the upstream polling has been paused or completed.
+	// Paused stops the pulse and dims the dot.
 	Paused bool
 	ID     string
 	Class  string
-	// ExtraAttrs forwards additional attributes (data-* test hooks,
-	// analytics markers, ARIA overrides) to the indicator's root
-	// element. Keys the component owns are dropped: class and id
-	// (use Class / ID), data-cui-*, role, and aria-live — the
-	// live-region contract.
+	// ExtraAttrs forwards attributes to the root; class, id, data-cui-*, role and aria-live are dropped.
 	ExtraAttrs html.Attrs
-	// Ctx carries the per-request context used to resolve the live label.
-	// When nil, English fallbacks apply.
+	// Ctx resolves the default label; nil uses English.
 	Ctx context.Context
 }
 
-// PollingIndicator renders the small pulsing-dot + label combination.
-// Uses role="status" + aria-live="polite" so the label text is
-// announced when it changes (e.g. swapping "Live" for "Paused").
+// PollingIndicator renders a pulsing dot and a label, in a polite
+// status region, that confirm a poll or live update is running.
 func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	ctx := cfg.Ctx
 	if ctx == nil {
@@ -57,7 +42,6 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	if cfg.Class != "" {
 		cls += " " + cfg.Class
 	}
-	// Sanitized extras first, owned keys on top so they win.
 	attrs := html.SafeExtraAttrs(cfg.ExtraAttrs, "role", "aria-live")
 	if attrs == nil {
 		attrs = html.Attrs{}
@@ -68,8 +52,6 @@ func PollingIndicator(cfg PollingIndicatorConfig) render.HTML {
 	if cfg.ID != "" {
 		attrs["id"] = cfg.ID
 	}
-	// Every field PollingIndicator draws from is a string or bool, so
-	// the dot and the label both hold none of a caller's markup.
 	return pollingIndicatorStyle.WrapHTML(render.Tag("span", attrs,
 		render.Tag("span", map[string]string{
 			"class":             "fui-polling-indicator__dot",
@@ -84,7 +66,6 @@ var pollingIndicatorStyle = registry.RegisterStyle("ui-polling-indicator", func(
 	return pollingIndicatorCSSText
 })
 
-// Knobs: --ui-polling-indicator-dot-size (0.5rem) sizes the dot.
 const pollingIndicatorCSSText = `
 .fui-polling-indicator {
   display: inline-flex;
