@@ -292,7 +292,13 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 		// verify exactly as a mailed one does (cookie, kept on resend,
 		// guess budget, lock), so nothing a client can try tells a
 		// cooldown from a mail.
-		if !p.holdsLiveChallenge(r, email) {
+		live, err := p.holdsLiveChallenge(r, email)
+		if err != nil {
+			slog.Warn("auth: email-code challenge lookup failed: keeping the browser's challenge", "err", err)
+			writeAuthError(w, r, http.StatusServiceUnavailable, reasonTryAgainShortly)
+			return
+		}
+		if !live {
 			token, err := createPurposeToken(r.Context(), p.tokenStore, purposeEmailCode, email, p.config.CodeTTL)
 			if err != nil {
 				writeAuthError(w, r, http.StatusInternalServerError, reasonFailedToCreateToken)
@@ -333,18 +339,22 @@ func (p *EmailCodePlugin) sendHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // holdsLiveChallenge reports whether r carries an unexpired challenge
-// cookie for email.
-func (p *EmailCodePlugin) holdsLiveChallenge(r *http.Request, email string) bool {
+// cookie for email. A store error is returned, not read as "none": the
+// caller would replace a live challenge whose code is already mailed.
+func (p *EmailCodePlugin) holdsLiveChallenge(r *http.Request, email string) (bool, error) {
 	c, err := r.Cookie(p.cookieName())
 	if err != nil || c.Value == "" || len(c.Value) > 128 {
-		return false
+		return false, nil
 	}
 	raw, err := p.peeker.PeekToken(r.Context(), c.Value)
+	if errors.Is(err, ErrTokenNotFound) {
+		return false, nil
+	}
 	if err != nil {
-		return false
+		return false, err
 	}
 	addr, ok := peekPurposePayload(raw, purposeEmailCode)
-	return ok && addr == email
+	return ok && addr == email, nil
 }
 
 func (p *EmailCodePlugin) writeSent(w http.ResponseWriter, r *http.Request) {

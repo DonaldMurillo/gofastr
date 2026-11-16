@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"sync"
 
@@ -77,14 +79,27 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 		Source: "auth",
 		EraseResolved: func(ctx context.Context, user datexport.ErasedUser, dryRun bool) (int, error) {
 			userID := user.ID
+			// The resolved email is already canonical (the resolver's
+			// Canonicalize); only the user store's raw value is
+			// canonicalized here, so a non-idempotent canonicalizer is
+			// never applied twice. A failed lookup is an incomplete
+			// erasure, not an empty address.
+			// The battery's SQL user store is erased in the SQL part, so
+			// its row is gone by now; only a store the SQL erasure does
+			// not reach can still say.
 			email, ok := user.Identity(datexport.IdentityEmail)
-			if !ok && len(tokens) > 0 {
-				if u, err := mgr.UserStore().FindByID(ctx, userID); err == nil && u != nil {
+			if _, sqlUsers := mgr.UserStore().(*EntityUserStore); !ok && !sqlUsers && holdsEmailKeyed(tokens) {
+				u, err := mgr.UserStore().FindByID(ctx, userID)
+				switch {
+				case errors.Is(err, ErrUserNotFound):
+				case err != nil:
+					return 0, fmt.Errorf("auth: reading the erased user's email: %w", err)
+				case u != nil:
 					email = u.GetEmail()
+					if c, err := mgr.canonicalizeEmail(email); err == nil {
+						email = c
+					}
 				}
-			}
-			if c, err := mgr.canonicalizeEmail(email); err == nil {
-				email = c
 			}
 			n := 0
 			if sessions != nil {
@@ -105,6 +120,24 @@ func registerMemoryStoreEraser(mgr *AuthManager) {
 	memoryEraseMu.Lock()
 	mgr.memoryEraseName, mgr.unregisterMemoryErase = name, unregister
 	memoryEraseMu.Unlock()
+}
+
+// holdsEmailKeyed reports whether any of the stores holds a magic-link or
+// emailed-code token, the only ones the user's email is needed for.
+func holdsEmailKeyed(stores []*MemoryMagicLinkTokenStore) bool {
+	for _, ts := range stores {
+		ts.mu.RLock()
+		n := countMatching(ts.tokens, func(e *magicLinkEntry) bool {
+			_, link := peekPurposePayload(e.email, purposeMagicLink)
+			_, code := peekPurposePayload(e.email, purposeEmailCode)
+			return link || code
+		})
+		ts.mu.RUnlock()
+		if n > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *MemorySessionStore) eraseUser(userID string, dryRun bool) int {

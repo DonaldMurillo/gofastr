@@ -96,7 +96,9 @@ func TestMemoryStoresReachedByErasure(t *testing.T) {
 
 // Under App.EraseUserData the SQL part deletes the user row before store
 // erasers run, so the in-memory token store takes the email the erasure
-// resolved beforehand, canonicalized, for a row stored as "Mixed@...".
+// resolved beforehand. The resolver has already canonicalized it (a row
+// stored as "Mixed@..." resolves to "mixed@..."; the full path is
+// TestEraseReachesEmailKeyedTokensFromLegacyRow), and it is used as is.
 func TestMemoryTokenStoreErasedByResolvedEmail(t *testing.T) {
 	ctx := context.Background()
 	tokens := NewMemoryMagicLinkTokenStore()
@@ -119,7 +121,7 @@ func TestMemoryTokenStoreErasedByResolvedEmail(t *testing.T) {
 			eraser = e
 		}
 	}
-	gone := datexport.ErasedUser{ID: "u-gone", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: "Mixed@Example.com"}}
+	gone := datexport.ErasedUser{ID: "u-gone", Identities: map[datexport.IdentityKind]string{datexport.IdentityEmail: "mixed@example.com"}}
 	if n, err := eraser.EraseResolved(ctx, gone, false); err != nil || n != 2 {
 		t.Fatalf("erased %d, %v; want the two tokens for mixed@example.com", n, err)
 	}

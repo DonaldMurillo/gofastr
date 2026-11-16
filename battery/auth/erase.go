@@ -143,16 +143,20 @@ func resolveEraseTables(mgr *AuthManager) {
 			Column: "user_id", Mode: datexport.EraseDelete,
 		})
 	}
-	// The resolver carries the manager's canonicalizer, which may be the
-	// host's own (AuthConfig.CanonicalizeEmail).
-	email := datexport.DataIdentityResolver{
-		Table: "auth_users", IDColumn: "id", ValueColumn: "email",
-		Canonicalize: canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail),
-	}
+	// The battery's own resolver carries the manager's canonicalizer,
+	// which may be the host's (AuthConfig.CanonicalizeEmail). A resolver
+	// the host registered for its own user store keeps its table; it only
+	// gains the canonicalizer when it has none.
 	if us, ok := mgr.UserStore().(*EntityUserStore); ok {
-		email.Table, email.IDColumn, email.ValueColumn = us.table, us.fieldMap.ID, us.fieldMap.Email
+		datexport.RegisterIdentityResolver(datexport.IdentityEmail, datexport.DataIdentityResolver{
+			Table: us.table, IDColumn: us.fieldMap.ID, ValueColumn: us.fieldMap.Email,
+			Canonicalize: canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail),
+		})
+	} else if r, ok := datexport.ResolveIdentity(datexport.IdentityEmail); ok &&
+		(r.Canonicalize == nil || (r.Table == "auth_users" && r.IDColumn == "id" && r.ValueColumn == "email")) {
+		r.Canonicalize = canonicalEmailOrEmpty(mgr.config.CanonicalizeEmail)
+		datexport.RegisterIdentityResolver(datexport.IdentityEmail, r)
 	}
-	datexport.RegisterIdentityResolver(datexport.IdentityEmail, email)
 	if ss, ok := mgr.SessionStore().(*EntitySessionStore); ok {
 		datexport.RegisterEraser(datexport.DataEraser{
 			Name: "auth_sessions", Source: "auth", Table: ss.table,
