@@ -160,14 +160,14 @@ func TestSweepFeedbackToastTemplateCarriesEveryVariant(t *testing.T) {
 }
 
 func TestSweepFeedbackTooltipSkipsLeadingComments(t *testing.T) {
-	h := string(Tooltip(TooltipConfig{Text: "x"}, render.HTML(` <!-- a > b --><button>Hi</button>`)))
+	h := string(Tooltip(TooltipConfig{Text: "x", Ctx: render.WithIDScope(context.Background())}, render.HTML(` <!-- a > b --><button>Hi</button>`)))
 	if !strings.Contains(h, `<!-- a > b --><button aria-describedby="tip-x">`) {
 		t.Fatalf("the splice did not skip the leading comment:\n%s", h)
 	}
 }
 
 func TestSweepFeedbackTooltipSplicesBeforeASelfClose(t *testing.T) {
-	h := string(Tooltip(TooltipConfig{Text: "x"}, render.HTML(`<input type="text"/>`)))
+	h := string(Tooltip(TooltipConfig{Text: "x", Ctx: render.WithIDScope(context.Background())}, render.HTML(`<input type="text"/>`)))
 	if !strings.Contains(h, `<input type="text" aria-describedby="tip-x"/>`) {
 		t.Fatalf("the splice landed after the self-closing slash:\n%s", h)
 	}

@@ -35,7 +35,7 @@ type TooltipConfig struct {
 	// ExtraAttrs forwards attributes to the wrapper span; class, id and data-cui-* are dropped.
 	ExtraAttrs html.Attrs
 
-	// Ctx is the page's render context; with it, a derived id is unique on the page.
+	// Ctx is the page's render context; without an id scope a derived id takes a counter suffix.
 	Ctx context.Context
 }
 
@@ -51,9 +51,7 @@ func Tooltip(cfg TooltipConfig, trigger render.HTML) render.HTML {
 		if id == "tip-" {
 			id += textHash(cfg.Text)
 		}
-		if cfg.Ctx != nil {
-			id = render.UniqueID(cfg.Ctx, id)
-		}
+		id = scopedID(cfg.Ctx, id)
 	}
 
 	cls := "fui-tooltip"

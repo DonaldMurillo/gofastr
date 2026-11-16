@@ -131,11 +131,12 @@ invariants:
       - test: framework/ui.TestToastTemplateCarriesTheKitSkin
       - test: framework/ui.TestSweepFeedbackToastTemplateCarriesEveryVariant
   - id: tooltip-describes-its-trigger
-    rule: Tooltip gives its trigger an aria-describedby naming a role=tooltip pop whose id is ID, or else tip- and the slug of Text (a hash of Text when the slug is empty), made unique on the page by Ctx's id scope.
+    rule: Tooltip gives its trigger an aria-describedby naming a role=tooltip pop whose id is ID, or else tip- and the slug of Text (a hash of Text when the slug is empty), made unique on the page by Ctx's id scope, or by the process counter when Ctx has no scope.
     enforced_by:
       - test: framework/ui.TestTooltipWrapsTriggerAndAddsAriaDescribedBy
       - test: framework/ui.TestTooltipCustomIDOverridesSlug
       - test: framework/ui.TestTooltipsGetDistinctIDs
+      - test: framework/ui.TestTooltipsWithoutAScopeGetDistinctIDs
   - id: tooltip-splices-the-first-open-tag
     rule: The aria-describedby splice goes into the trigger's first open tag past leading whitespace and comments, before a self-closing slash, ignores a > inside quotes, and is skipped only when that tag already carries the attribute.
     enforced_by:
@@ -145,6 +146,17 @@ invariants:
       - test: framework/ui.TestSweepFeedbackTooltipSkipsLeadingComments
       - test: framework/ui.TestSweepFeedbackTooltipSplicesBeforeASelfClose
 decisions:
+  - id: tooltip-unscoped-id-takes-a-counter
+    date: 2026-11-16
+    status: accepted
+    decision: A Tooltip with no ID and no id scope on Ctx takes its id from the ui package's scopedID, which appends the process counter, so two same-text tooltips never share an id.
+    rejected:
+      - option: Keep the slugged id unchanged without a scope and tell callers to pass the page's ctx.
+        why: A caller passing context.Background() got two tooltips with one id, and the second trigger announced the first's text.
+      - option: Put the counter fallback in core/render.UniqueID for every caller.
+        why: UniqueID's other callers derive ids that are link targets (section headings as #fragments, form field ids) and promise to keep the derived id without a scope; a counter there would change them on every render.
+    revisit_if: Every render path that reaches Tooltip carries an id scope, so the counter branch is dead.
+    upholds: [tooltip-describes-its-trigger]
   - id: banner-polite-in-every-tone
     date: 2026-11-16
     status: accepted

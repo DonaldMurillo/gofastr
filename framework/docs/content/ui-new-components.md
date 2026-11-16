@@ -178,7 +178,7 @@ same field on the primitive. `headless.ComboboxRows` renders the rows for any is
 - **bottomsheet**: `core-ui/widget/preset.BottomSheet`, bottom-anchored Drawer variant
 - **popover**: `core-ui/widget/preset.Popover`, click-triggered floating surface
 - **floatingpanel**: `core-ui/widget/preset.FloatingPanel`, corner-anchored persistent panel
-- **tooltip**: `framework/ui.Tooltip`, CSS-only hover/focus reveal. Pass `Ctx` (the page's render context) so two tooltips with the same `Text` get different ids
+- **tooltip**: `framework/ui.Tooltip`, CSS-only hover/focus reveal. Pass `Ctx` (the page's render context) so two tooltips with the same `Text` get different ids that stay the same on every render; without an id scope on `Ctx` a derived id takes a process counter suffix (`tip-need-help-3`), unique but different on each render
 - **toast**: `core-ui/widget/preset.ToastStack`, client-side slide-in notifications (no SSE, no server queue)
 - **notificationbell**: `framework/ui.NotificationBell`, bell + unread badge + popover dropdown.
   The trigger is an anchor to `Href`; its accessible name keeps the required
