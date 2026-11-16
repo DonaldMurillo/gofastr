@@ -633,6 +633,7 @@
       _wEv('fui:widget-open', { name, root: r.root, hydrated: r.hydrated, reinserted: true });
     }
   };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !NS._wEsc && NS._modalStack.length + (NS._popoverStack || []).length) NS.loadModule('widgetfocus').then(() => NS._wEsc(e)); });
   const _kr = NS.doc.reattach;
   NS.doc.reattach = () => { _kr(); NS._reattachWidgets(); };
   (NS.loadedModules ||= {}).widgets = true;
